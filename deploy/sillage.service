@@ -1,0 +1,30 @@
+# Unité systemd utilisateur.
+# Installation :
+#   cp deploy/sillage.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now sillage
+#   loginctl enable-linger $USER   # pour que le daemon survive à la déconnexion
+
+[Unit]
+Description=Sillage, plateforme de developpement agentique
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/sillage
+ExecStart=/usr/bin/node --max-old-space-size=256 %h/projects/sillage/apps/server/dist/main.js
+Environment=NODE_ENV=production
+# Le PATH d'une unite systemd est minimal et n'inclut ni ~/.local/bin ni les binaires
+# npm globaux : sans cette ligne, aucun CLI agent n'est trouvable depuis le service.
+Environment=PATH=%h/.local/bin:%h/.npm-global/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=5
+
+# Garde-fou : le daemon lui-meme tient dans ~110 Mo, les process agent sont ses enfants
+# et comptent dans ce total. A relever si max_concurrent_sessions est augmente.
+MemoryHigh=2G
+
+StandardOutput=append:%h/.local/share/sillage/logs/sillage.log
+StandardError=append:%h/.local/share/sillage/logs/sillage.log
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <!-- `maximum-scale` complete la taille de police des champs : sans les deux,
+         iOS zoome a la mise au point d'une saisie et ne revient jamais en arriere. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0b0d1c" />
+    <!-- iOS ignore le manifest pour le mode plein écran et l'icône d'accueil. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Sillage" />
+    <!-- Sans icône déclarée, le navigateur réclame /favicon.ico à chaque page et
+         récolte un 404. -->
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Sillage</title>
+    <script>
+      // Appliqué avant l'hydratation, sinon un flash de thème clair au chargement.
+      (() => {
+        const root = document.documentElement
+        const stored = localStorage.getItem('sillage.theme')
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        root.dataset.theme = stored ?? (prefersDark ? 'dark' : 'light')
+
+        // La palette de coloration suit le meme chemin : posee avant l'hydratation,
+        // sinon le premier bloc de code s'affiche dans la palette par defaut puis
+        // change de couleurs sous les yeux.
+        const syntax = localStorage.getItem('sillage.syntax')
+        if (syntax && syntax !== 'sillage') root.dataset.syntax = syntax
+
+        // Doit rester aligné sur APPEARANCE_SETTINGS (src/lib/appearance.ts) : ce
+        // script s'exécute avant le bundle, il ne peut pas l'importer.
+        for (const [key, prop] of [
+          ['sillage.hue', '--sg-hue'],
+          ['sillage.tint', '--sg-tint'],
+          ['sillage.lift', '--sg-lift'],
+        ]) {
+          const raw = localStorage.getItem(key)
+          if (raw === null) continue
+          const value = Number(raw)
+          if (Number.isFinite(value)) root.style.setProperty(prop, String(value))
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

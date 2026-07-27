@@ -1,0 +1,661 @@
+import { randomUUID } from 'node:crypto'
+import { and, asc, desc, eq, isNull, min, or } from 'drizzle-orm'
+import type { FastifyInstance } from 'fastify'
+import { conversations, projects, type ConversationRow } from '@sillage/db'
+import {
+  createConversationBodySchema,
+  editDiffQuerySchema,
+  elicitationAnswerBodySchema,
+  forkConversationBodySchema,
+  permissionDecisionBodySchema,
+  planDecisionBodySchema,
+  questionAnswerBodySchema,
+  parseAgentConfig,
+  reorderConversationsBodySchema,
+  sendMessageBodySchema,
+  steerBodySchema,
+  updateConversationBodySchema,
+  type ConversationDto,
+  type ConversationStatus,
+  type EditDiffDto,
+  type JournalPageDto,
+  type WorkingDiffDto,
+} from '@sillage/protocol'
+import { describeEdit as describeClaudeEdit } from '../../agents/claude/file-edits.js'
+import { describeEdit as describeCodexEdit } from '../../agents/codex/file-edits.js'
+import type { AgentCatalogs } from '../../agents/catalogs.js'
+import type { OutgoingAttachment } from '../../agents/types.js'
+import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
+import { readGitStatus, readHeadCommit, readWorkingDiff } from '../../git.js'
+import type { EventLog } from '../../events/event-log.js'
+import { dropConversation } from '../../search/search-index.js'
+import { ForkError } from '../../sessions/fork.js'
+import type { SessionManager } from '../../sessions/session-manager.js'
+import type { AppContext } from '../context.js'
+import { badRequest, forbidden, notFound } from '../errors.js'
+import { requireUser } from '../require-user.js'
+
+const PAGE_SIZE = 500
+const PROVISIONAL_TITLE_MAX = 60
+
+/**
+ * Titre affiché entre la création et le résumé du CLI, c'est-à-dire le temps du
+ * premier tour. Un extrait du message dit déjà de quoi il s'agit, contrairement à un
+ * « Nouvelle conversation » identique pour toutes.
+ */
+function provisionalTitle(firstMessage: string | undefined): string {
+  const text = firstMessage?.trim().replace(/\s+/g, ' ')
+  if (!text) return 'Nouvelle conversation'
+  return text.length <= PROVISIONAL_TITLE_MAX
+    ? text
+    : `${text.slice(0, PROVISIONAL_TITLE_MAX).trimEnd()}...`
+}
+
+function toDto(row: ConversationRow, userId: string): ConversationDto {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    worktreeId: row.worktreeId,
+    userId: row.userId,
+    title: row.title,
+    titleSetByUser: row.titleSetByUser,
+    agent: row.agent,
+    forkedFromId: row.forkedFromId,
+    config: parseAgentConfig(row.config),
+    status: row.status,
+    lastSeq: row.lastSeq,
+    costUsd: row.costUsd,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    pinned: row.pinned,
+    position: row.position,
+    archivedAt: row.archivedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    isOwner: row.userId === userId,
+  }
+}
+
+export function registerConversationRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  log: EventLog,
+  sessions: SessionManager,
+  catalogs: AgentCatalogs,
+  attachments: AttachmentStore,
+): void {
+  /**
+   * Résout les pièces jointes à envoyer, dans l'ordre choisi par le client.
+   *
+   * Un identifiant inconnu, appartenant à quelqu'un d'autre ou déjà envoyé fait
+   * échouer l'ensemble : envoyer un message amputé d'un de ses fichiers serait pire
+   * qu'un refus, l'utilisateur croirait l'agent en possession de tout.
+   */
+  const resolveAttachments = (userId: string, ids: string[]): OutgoingAttachment[] => {
+    if (ids.length === 0) return []
+
+    const byId = new Map(attachments.listClaimable(userId, ids).map((row) => [row.id, row]))
+    return ids.map((id) => {
+      const row = byId.get(id)
+      if (!row) {
+        throw badRequest('attachment_unavailable', 'Une pièce jointe est introuvable ou déjà envoyée.')
+      }
+      return {
+        id: row.id,
+        filename: row.filename,
+        mimeType: row.mimeType,
+        sizeBytes: row.sizeBytes,
+        path: row.storagePath,
+        inlineImage: isInlineImage(row.mimeType),
+      }
+    })
+  }
+  /** Lecture : propriétaire du projet ou projet partagé. Écriture : propriétaire du fil. */
+  const loadReadable = async (conversationId: string, userId: string) => {
+    const row = ctx.db
+      .select({ conversation: conversations, ownerId: projects.ownerId, visibility: projects.visibility })
+      .from(conversations)
+      .innerJoin(projects, eq(projects.id, conversations.projectId))
+      .where(eq(conversations.id, conversationId))
+      .get()
+
+    if (!row) throw notFound('Conversation introuvable.')
+    if (row.ownerId !== userId && row.visibility !== 'shared') {
+      throw notFound('Conversation introuvable.')
+    }
+    return row.conversation
+  }
+
+  const loadWritable = async (conversationId: string, userId: string) => {
+    const conversation = await loadReadable(conversationId, userId)
+    if (conversation.userId !== userId) {
+      throw forbidden('Seul le propriétaire de la conversation peut y écrire.')
+    }
+    return conversation
+  }
+
+  /**
+   * Toutes les conversations visibles, tous projets confondus. La sidebar les affiche
+   * groupées sous leur projet : une requête plutôt qu'une par projet.
+   */
+  app.get('/api/conversations', async (request) => {
+    const user = requireUser(request)
+
+    const rows = ctx.db
+      .select({ conversation: conversations })
+      .from(conversations)
+      .innerJoin(projects, eq(projects.id, conversations.projectId))
+      .where(
+        and(
+          isNull(conversations.archivedAt),
+          or(eq(projects.ownerId, user.id), eq(projects.visibility, 'shared')),
+        ),
+      )
+      .orderBy(desc(conversations.pinned), asc(conversations.position))
+      .all()
+
+    return rows.map((row) => toDto(row.conversation, user.id))
+  })
+
+  app.get('/api/projects/:id/conversations', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const includeArchived = (request.query as { archived?: string }).archived === '1'
+
+    const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
+    if (!project) throw notFound('Projet introuvable.')
+    if (project.ownerId !== user.id && project.visibility !== 'shared') {
+      throw notFound('Projet introuvable.')
+    }
+
+    const rows = ctx.db
+      .select()
+      .from(conversations)
+      .where(
+        includeArchived
+          ? eq(conversations.projectId, id)
+          : and(eq(conversations.projectId, id), isNull(conversations.archivedAt)),
+      )
+      .orderBy(desc(conversations.pinned), asc(conversations.position))
+      .all()
+
+    return rows.map((row) => toDto(row, user.id))
+  })
+
+  app.post('/api/projects/:id/conversations', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = createConversationBodySchema.parse(request.body)
+
+    if (body.config.agent !== body.agent) {
+      throw badRequest('config_agent_mismatch', "La configuration ne correspond pas au CLI choisi.")
+    }
+
+    const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
+    if (!project) throw notFound('Projet introuvable.')
+    if (project.ownerId !== user.id && project.visibility !== 'shared') {
+      throw notFound('Projet introuvable.')
+    }
+
+    // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
+    // base : la conversation garde ensuite une configuration explicite et stable.
+    const config = await catalogs.resolveDefaults(body.config)
+
+    // Position en tête du projet : c'est l'ordre qu'avait le tri par date, et une
+    // nouvelle conversation en bas de liste passerait inaperçue.
+    const [lowest] = ctx.db
+      .select({ min: min(conversations.position) })
+      .from(conversations)
+      .where(eq(conversations.projectId, id))
+      .all()
+
+    const now = Date.now()
+    const row: ConversationRow = {
+      id: randomUUID(),
+      projectId: id,
+      worktreeId: body.worktreeId,
+      userId: user.id,
+      title: body.title ?? provisionalTitle(body.firstMessage?.text),
+      titleSetByUser: body.title !== undefined,
+      agent: body.agent,
+      agentSessionId: null,
+      forkedFromId: null,
+      config: JSON.stringify(config),
+      status: 'idle',
+      lastSeq: 0,
+      costUsd: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      pinned: false,
+      position: (lowest?.min ?? 0) - 1,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    ctx.db.insert(conversations).values(row).run()
+
+    if (body.firstMessage) {
+      // Si l'envoi échoue, la conversation ne doit pas rester comme un fil vide :
+      // on la retire et on remonte l'erreur telle quelle.
+      try {
+        const files = resolveAttachments(user.id, body.firstMessage.attachmentIds)
+        await sessions.sendMessage(
+          row.id,
+          body.firstMessage.clientMessageId,
+          body.firstMessage.text,
+          files,
+          body.firstMessage.mentions,
+        )
+        // Rattachées seulement après un envoi réussi : si le CLI refuse, la
+        // conversation est supprimée juste en dessous et les fichiers restent
+        // réutilisables pour une nouvelle tentative.
+        attachments.claim(body.firstMessage.attachmentIds, row.id)
+      } catch (err) {
+        ctx.db.delete(conversations).where(eq(conversations.id, row.id)).run()
+        throw err
+      }
+    }
+
+    return reply.status(201).send(toDto(row, user.id))
+  })
+
+  /**
+   * Ordre manuel des conversations d'un projet. Le client envoie la liste complète
+   * telle qu'elle doit s'afficher : réécrire les positions en bloc évite les trous et
+   * les égalités qu'un déplacement unitaire finirait par produire.
+   */
+  app.post('/api/projects/:id/conversations/order', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = reorderConversationsBodySchema.parse(request.body)
+
+    const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
+    if (!project) throw notFound('Projet introuvable.')
+    if (project.ownerId !== user.id && project.visibility !== 'shared') {
+      throw notFound('Projet introuvable.')
+    }
+
+    const known = new Set(
+      ctx.db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(eq(conversations.projectId, id))
+        .all()
+        .map((row) => row.id),
+    )
+    // Un identifiant étranger au projet déplacerait une conversation d'ailleurs :
+    // on refuse l'ensemble plutôt que d'appliquer un ordre partiel.
+    const intruder = body.ids.find((conversationId) => !known.has(conversationId))
+    if (intruder) throw badRequest('conversation_not_in_project', 'Ordre invalide.')
+
+    ctx.db.transaction((tx) => {
+      body.ids.forEach((conversationId, index) => {
+        tx.update(conversations)
+          .set({ position: index })
+          .where(eq(conversations.id, conversationId))
+          .run()
+      })
+    })
+
+    return { ok: true }
+  })
+
+  /**
+   * Branche une conversation à un point du fil.
+   *
+   * Lecture suffisante sur la source : brancher une conversation partagée est une
+   * lecture, et la branche appartient à celui qui la crée. L'ordre des opérations
+   * compte : la session est forkée d'abord, parce que c'est la seule étape qui peut
+   * échouer pour une raison extérieure, et rien ne doit rester en base si elle échoue.
+   */
+  app.post('/api/conversations/:id/fork', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = forkConversationBodySchema.parse(request.body)
+    const source = await loadReadable(id, user.id)
+
+    if (body.throughSeq > source.lastSeq) {
+      throw badRequest('fork_point_unknown', 'Ce point de coupe est au-delà du fil.')
+    }
+
+    let agentSessionId: string
+    try {
+      agentSessionId = await sessions.forkSession(id, body.throughSeq)
+    } catch (err) {
+      if (err instanceof ForkError) throw badRequest('fork_failed', err.message)
+      throw err
+    }
+
+    const [lowest] = ctx.db
+      .select({ min: min(conversations.position) })
+      .from(conversations)
+      .where(eq(conversations.projectId, source.projectId))
+      .all()
+
+    const now = Date.now()
+    const row: ConversationRow = {
+      ...source,
+      id: randomUUID(),
+      userId: user.id,
+      title: body.title ?? `${source.title} (branche)`,
+      titleSetByUser: body.title !== undefined,
+      agentSessionId,
+      forkedFromId: source.id,
+      status: 'idle',
+      // Le journal est recopié juste après, qui posera le vrai compteur.
+      lastSeq: 0,
+      pinned: false,
+      position: (lowest?.min ?? 0) - 1,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    ctx.db.insert(conversations).values(row).run()
+
+    // Sans cette copie, la branche s'afficherait vide alors que l'agent, lui, se
+    // souvient de tout l'historique conservé (invariant I2).
+    const copied = log.copyThrough(id, row.id, body.throughSeq)
+
+    return reply.status(201).send(toDto({ ...row, lastSeq: copied }, user.id))
+  })
+
+  app.get('/api/conversations/:id', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    return toDto(await loadReadable(id, user.id), user.id)
+  })
+
+  app.get('/api/conversations/:id/events', async (request): Promise<JournalPageDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const after = Number((request.query as { after?: string }).after ?? 0)
+    const conversation = await loadReadable(id, user.id)
+
+    const entries = log.read(id, Number.isFinite(after) ? after : 0, PAGE_SIZE)
+    return {
+      entries: entries.map((entry) => ({ seq: entry.seq, ts: entry.ts, event: entry.event })),
+      lastSeq: conversation.lastSeq,
+    }
+  })
+
+  /**
+   * Diff du répertoire de travail de la conversation, worktree compris. Calculé à la
+   * demande plutôt que journalisé : c'est un état courant du disque, pas un événement.
+   */
+  app.get('/api/conversations/:id/diff', async (request): Promise<WorkingDiffDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadReadable(id, user.id)
+
+    const cwd = sessions.workingDirectory(id)
+    try {
+      // Les trois lectures partent ensemble : elles lancent chacune un process git, et
+      // les enchaîner triplerait le temps d'ouverture de l'onglet.
+      const [diff, status, head] = await Promise.all([
+        readWorkingDiff(cwd),
+        readGitStatus(cwd),
+        readHeadCommit(cwd),
+      ])
+      return {
+        files: diff?.files ?? null,
+        patch: diff?.patch ?? '',
+        truncated: diff?.truncated ?? false,
+        cwd,
+        branch: status?.branch ?? null,
+        head,
+      }
+    } catch (err) {
+      throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  /**
+   * Ce qu'un appel d'outil a fait d'un fichier, pour l'historique du panneau.
+   *
+   * Reconstitué depuis le payload natif conservé dans le journal (invariant I3 : la
+   * lecture est faite par l'adaptateur du CLI concerné). Un tour passé n'a pas de
+   * diff git à interroger, le disque ayant continué d'évoluer depuis.
+   */
+  app.get('/api/conversations/:id/edits/:toolCallId', async (request): Promise<EditDiffDto> => {
+    const user = requireUser(request)
+    const { id, toolCallId } = request.params as { id: string; toolCallId: string }
+    const { path } = editDiffQuerySchema.parse(request.query)
+
+    const conversation = await loadReadable(id, user.id)
+    const raw = log.rawOfTool(id, toolCallId)
+
+    if (conversation.agent === 'codex') {
+      return describeCodexEdit(raw.completed, sessions.workingDirectory(id), path)
+    }
+    return describeClaudeEdit(raw.started, path, log.fileEditAction(id, toolCallId, path) ?? 'modified')
+  })
+
+  app.patch('/api/conversations/:id', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = updateConversationBodySchema.parse(request.body)
+    const conversation = await loadWritable(id, user.id)
+
+    const patch: Partial<ConversationRow> = {}
+    if (body.title !== undefined) {
+      patch.title = body.title.trim()
+      patch.titleSetByUser = true
+    }
+    if (body.pinned !== undefined) patch.pinned = body.pinned
+    if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
+
+    if (body.config !== undefined) {
+      if (body.config.agent !== conversation.agent) {
+        throw badRequest('config_agent_mismatch', 'Le CLI d\'une conversation ne change pas.')
+      }
+      patch.config = JSON.stringify(body.config)
+    }
+
+    if (Object.keys(patch).length > 0) {
+      ctx.db.update(conversations).set(patch).where(eq(conversations.id, id)).run()
+    }
+
+    // Le SDK applique modèle, effort et mode de permission à chaud : la session garde
+    // son contexte. Le repli par redémarrage est géré, et signalé, par le gestionnaire.
+    if (body.config !== undefined) await sessions.reloadConfig(id)
+
+    return { ok: true }
+  })
+
+  app.delete('/api/conversations/:id', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadWritable(id, user.id)
+    // Les fichiers d'abord : la cascade de la base n'efface que les lignes.
+    await attachments.removeForConversations([id])
+    // L'index de recherche est une table virtuelle : aucune cascade ne l'atteint.
+    dropConversation(ctx.db, id)
+    ctx.db.delete(conversations).where(eq(conversations.id, id)).run()
+    return reply.status(204).send()
+  })
+
+  app.post('/api/conversations/:id/messages', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = sendMessageBodySchema.parse(request.body)
+    await loadWritable(id, user.id)
+
+    const files = resolveAttachments(user.id, body.attachmentIds)
+    await sessions.sendMessage(id, body.clientMessageId, body.text, files, body.mentions)
+    attachments.claim(body.attachmentIds, id)
+
+    return reply.status(202).send({ accepted: true })
+  })
+
+  /**
+   * Infléchit le tour en cours.
+   *
+   * Distinct de `/messages`, qui met en file pendant un tour : les deux gestes ne
+   * produisent pas le même résultat, et lequel s'applique doit rester le choix de
+   * l'utilisateur. Un refus est donc rendu tel quel plutôt que replié sur la file.
+   */
+  app.post('/api/conversations/:id/steer', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = steerBodySchema.parse(request.body)
+    await loadWritable(id, user.id)
+
+    const files = resolveAttachments(user.id, body.attachmentIds)
+    const steered = await sessions.steer(
+      id,
+      body.clientMessageId,
+      body.text,
+      files,
+      body.mentions,
+    )
+    if (!steered) {
+      throw badRequest(
+        'steer_unavailable',
+        "Aucun tour en cours à infléchir, ou ce CLI ne le permet pas.",
+      )
+    }
+    attachments.claim(body.attachmentIds, id)
+
+    return reply.status(202).send({ accepted: true })
+  })
+
+  /** Demande à l'agent de résumer la conversation pour libérer du contexte. */
+  app.post('/api/conversations/:id/compact', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadWritable(id, user.id)
+
+    if (!(await sessions.compact(id))) {
+      throw badRequest('compact_unsupported', 'Ce CLI ne gère pas la compaction.')
+    }
+    return reply.status(202).send({ accepted: true })
+  })
+
+  app.post('/api/conversations/:id/interrupt', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadWritable(id, user.id)
+    await sessions.interrupt(id)
+    return reply.status(204).send()
+  })
+
+  app.post('/api/conversations/:id/permissions/:requestId', async (request) => {
+    const user = requireUser(request)
+    const { id, requestId } = request.params as { id: string; requestId: string }
+    const body = permissionDecisionBodySchema.parse(request.body)
+    await loadWritable(id, user.id)
+
+    if (!sessions.hasPendingPermission(id, requestId)) {
+      throw notFound('Demande de permission inconnue.')
+    }
+
+    const resolved = sessions.resolvePermission(id, requestId, {
+      decision: body.decision,
+      scope: body.scope,
+      decidedBy: user.id,
+    })
+    if (!resolved) {
+      // La session a pu s'arrêter entre l'affichage et le clic : le dire explicitement
+      // plutôt que de laisser l'UI attendre une réponse qui ne viendra pas.
+      throw badRequest('permission_expired', 'Cette demande a expiré, la session est terminée.')
+    }
+    return { ok: true }
+  })
+
+  /**
+   * Réponse à une question de l'agent. Contrairement aux permissions, l'état ne vit
+   * que dans le runner : c'est le journal qui garde la trace, et une demande qui n'y
+   * est plus en attente n'a plus personne pour l'écouter.
+   */
+  app.post('/api/conversations/:id/questions/:requestId', async (request) => {
+    const user = requireUser(request)
+    const { id, requestId } = request.params as { id: string; requestId: string }
+    const body = questionAnswerBodySchema.parse(request.body)
+    await loadWritable(id, user.id)
+
+    const answered = sessions.answerQuestion(id, requestId, {
+      status: body.status,
+      answers: body.answers,
+      decidedBy: user.id,
+    })
+    if (!answered) {
+      throw badRequest('question_expired', "Cette question n'attend plus de réponse.")
+    }
+    return { ok: true }
+  })
+
+  /** Retire de la file un message qui n'est pas encore parti au CLI. */
+  app.delete('/api/conversations/:id/queue/:queueId', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, queueId } = request.params as { id: string; queueId: string }
+    await loadWritable(id, user.id)
+
+    if (!sessions.cancelQueued(id, queueId)) {
+      throw badRequest('queue_entry_gone', 'Ce message est déjà parti.')
+    }
+    return reply.status(204).send()
+  })
+
+  app.post('/api/conversations/:id/elicitations/:requestId', async (request) => {
+    const user = requireUser(request)
+    const { id, requestId } = request.params as { id: string; requestId: string }
+    const body = elicitationAnswerBodySchema.parse(request.body)
+    await loadWritable(id, user.id)
+
+    const resolved = sessions.resolveElicitation(id, requestId, {
+      action: body.action,
+      content: body.content,
+      decidedBy: user.id,
+    })
+    if (!resolved) {
+      throw badRequest('elicitation_expired', "Cette demande n'attend plus de réponse.")
+    }
+    return { ok: true }
+  })
+
+  app.post('/api/conversations/:id/plans/:requestId', async (request) => {
+    const user = requireUser(request)
+    const { id, requestId } = request.params as { id: string; requestId: string }
+    const body = planDecisionBodySchema.parse(request.body)
+    await loadWritable(id, user.id)
+
+    const reviewed = sessions.reviewPlan(id, requestId, {
+      decision: body.decision,
+      followUpMode: body.followUpMode,
+      decidedBy: user.id,
+    })
+    if (!reviewed) {
+      throw badRequest('plan_expired', "Ce plan n'attend plus de décision.")
+    }
+    return { ok: true }
+  })
+}
+
+/** Statut courant, pour l'instantané envoyé à l'abonnement WebSocket. */
+export function readConversationStatus(
+  ctx: AppContext,
+  conversationId: string,
+): ConversationStatus | null {
+  const row = ctx.db
+    .select({ status: conversations.status })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .get()
+  return row?.status ?? null
+}
+
+/** Conversations visibles par un utilisateur, pour l'abonnement WebSocket. */
+export function canReadConversation(ctx: AppContext, conversationId: string, userId: string): boolean {
+  const row = ctx.db
+    .select({ ownerId: projects.ownerId, visibility: projects.visibility })
+    .from(conversations)
+    .innerJoin(projects, eq(projects.id, conversations.projectId))
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        or(eq(projects.ownerId, userId), eq(projects.visibility, 'shared')),
+      ),
+    )
+    .get()
+  return row !== undefined
+}

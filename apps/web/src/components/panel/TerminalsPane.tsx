@@ -1,0 +1,132 @@
+import { Loader, Plus, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { MAX_TERMINALS_PER_CONVERSATION } from '@sillage/protocol'
+import { useCloseTerminal, useOpenTerminal, useTerminals } from '../../lib/terminals'
+import { Banner, cx } from '../ui'
+import { TerminalView } from './TerminalView'
+
+/**
+ * Onglets de terminaux, et le terminal actif en dessous.
+ *
+ * Les vues restent toutes montées : une commande qui tourne dans l'un ne doit pas être
+ * coupée parce qu'on regarde l'autre, et remonter un terminal repartirait d'un écran
+ * vide alors que le pty, lui, a continué.
+ */
+export function TerminalsPane({
+  conversationId,
+  visible,
+}: {
+  conversationId: string
+  visible: boolean
+}) {
+  const { data: terminals, error, isPending } = useTerminals(conversationId, visible)
+  const open = useOpenTerminal(conversationId)
+  const close = useCloseTerminal(conversationId)
+  const [active, setActive] = useState<string | null>(null)
+
+  // La sélection suit la liste : un terminal fermé, ou une liste vidée par un
+  // redémarrage du daemon, ne doit pas laisser une vue pointant sur rien.
+  useEffect(() => {
+    if (!terminals) return
+    setActive((current) =>
+      current && terminals.some((terminal) => terminal.id === current)
+        ? current
+        : (terminals[0]?.id ?? null),
+    )
+  }, [terminals])
+
+  const full = (terminals?.length ?? 0) >= MAX_TERMINALS_PER_CONVERSATION
+
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <div className="flex shrink-0 items-center gap-px overflow-x-auto border-b border-line">
+        {(terminals ?? []).map((terminal) => (
+          <div
+            key={terminal.id}
+            className={cx(
+              'group/term flex h-8 shrink-0 items-center gap-1 border-r border-line pr-1 pl-2.5',
+              terminal.id === active ? 'bg-surface text-ink' : 'bg-sunken text-ink-faint',
+            )}
+          >
+            <button type="button" onClick={() => setActive(terminal.id)} className="text-xs">
+              {terminal.title}
+            </button>
+            {/* Vivant ou terminé : sans ce repère, un onglet dont le shell est mort
+                ressemble à un onglet inactif. */}
+            <span
+              aria-label={terminal.alive ? 'Shell actif' : 'Shell terminé'}
+              className={cx(
+                'size-1.5 shrink-0 rounded-full',
+                terminal.alive ? 'bg-positive' : 'bg-ink-faint/50',
+              )}
+            />
+            <button
+              type="button"
+              onClick={() => close.mutate(terminal.id)}
+              aria-label={`Fermer ${terminal.title}`}
+              className="rounded p-0.5 text-ink-faint opacity-0 hover:text-ink group-hover/term:opacity-100"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+
+        <button
+          type="button"
+          // Le nouveau terminal devient l'actif : cliquer sur « + » sans rien voir
+          // changer donne l'impression que rien ne s'est passé.
+          onClick={() => open.mutate(undefined, { onSuccess: (created) => setActive(created.id) })}
+          disabled={full || open.isPending}
+          aria-label="Nouveau terminal"
+          title={
+            full
+              ? `Maximum ${MAX_TERMINALS_PER_CONVERSATION} terminaux par conversation`
+              : 'Nouveau terminal'
+          }
+          className="flex size-8 shrink-0 items-center justify-center text-ink-faint hover:text-ink disabled:opacity-40"
+        >
+          {open.isPending ? <Loader size={13} className="animate-spin" /> : <Plus size={14} />}
+        </button>
+      </div>
+
+      {error || open.error || close.error ? (
+        <div className="p-2">
+          <Banner>
+            {(error ?? open.error ?? close.error) instanceof Error
+              ? (error ?? open.error ?? close.error)?.message
+              : 'Terminal indisponible.'}
+          </Banner>
+        </div>
+      ) : null}
+
+      {isPending ? (
+        <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">
+          <Loader size={11} className="animate-spin" />
+          Lecture des terminaux...
+        </p>
+      ) : null}
+
+      {terminals?.length === 0 ? (
+        <p className="px-2.5 py-3 text-xs text-ink-faint">
+          Aucun terminal. Le « + » en ouvre un dans le répertoire de travail de la conversation.
+        </p>
+      ) : null}
+
+      {(terminals ?? []).map((terminal) => (
+        <div
+          key={terminal.id}
+          className={cx(
+            'min-h-0 min-w-0 flex-1',
+            terminal.id === active && visible ? 'block' : 'hidden',
+          )}
+        >
+          <TerminalView
+            conversationId={conversationId}
+            terminalId={terminal.id}
+            visible={terminal.id === active && visible}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}

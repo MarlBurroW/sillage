@@ -1,0 +1,486 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/*
+ * Mapping des tokens vers l'espace de nommage Tailwind.
+ * Règle : la clé Tailwind et le token source ne portent jamais le même nom, sinon
+ * la variable s'auto-référence et devient invalide. Aucun nom ne doit non plus
+ * collisionner avec une échelle intégrée (base, sm, md, lg, xl... pour text-*).
+ */
+@theme inline {
+  --color-canvas: var(--sg-canvas);
+  --color-surface: var(--sg-surface);
+  --color-surface-high: var(--sg-surface-high);
+  --color-sunken: var(--sg-sunken);
+
+  --color-ink: var(--sg-ink);
+  --color-ink-soft: var(--sg-ink-soft);
+  --color-ink-faint: var(--sg-ink-faint);
+
+  --color-accent: var(--sg-accent);
+  --color-accent-hover: var(--sg-accent-hover);
+  --color-accent-ink: var(--sg-accent-ink);
+  --color-accent-wash: var(--sg-accent-wash);
+
+  --color-line: var(--sg-line);
+  --color-line-strong: var(--sg-line-strong);
+
+  --color-positive: var(--sg-positive);
+  --color-caution: var(--sg-caution);
+  --color-critical: var(--sg-critical);
+}
+
+/* Valeurs littérales : ni thémables ni sujettes à l'auto-référence. */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+:root {
+  --header-height: 3.25rem;
+  --sidebar-width: 16.5rem;
+  /*
+   * Largeur sur grand écran, ajustable par la poignée et réécrite en place par le
+   * script. Le tiroir mobile garde la largeur de base : il se recouvre à l'écran, une
+   * poignée n'y aurait aucun sens, et une largeur choisie au clavier peut dépasser
+   * celle du téléphone.
+   */
+  --sidebar-desktop-width: var(--sidebar-width);
+  /* Hauteur minimale d'une cible tactile, imposée par la spec. */
+  --tap: 2.75rem;
+
+  /*
+   * Encoches de l'appareil, nommées plutôt qu'appelées directement par `env()`.
+   *
+   * Deux raisons. Une barre de hauteur fixe doit pouvoir *ajouter* l'encoche à sa
+   * hauteur (`calc()` ne sait pas le faire depuis une classe utilitaire), et ces
+   * valeurs valent zéro dans un navigateur mais pas dans une PWA installée : les
+   * nommer permet de rejouer la géométrie d'un iPhone sur un poste de développement,
+   * au lieu de découvrir le décalage une fois l'application installée.
+   */
+  --sg-safe-top: env(safe-area-inset-top, 0px);
+  --sg-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@layer base {
+  html {
+    background-color: var(--sg-canvas);
+    color: var(--sg-ink);
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /*
+   * L'application est un calque fixe dimensionné sur le viewport visuel : le document
+   * lui-même ne défile jamais. Sans ça, iOS fait rebondir la page derrière le clavier
+   * et décale tout ce qui est positionné en fixe.
+   */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    margin: 0;
+    overscroll-behavior: none;
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--sg-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--sg-accent-wash);
+    color: var(--sg-ink);
+  }
+
+  /* Barres de défilement discrètes, teintées comme le reste. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sg-line-strong) transparent;
+  }
+}
+
+/*
+ * iOS zoome sur un champ dont le texte fait moins de 16 px, et ce zoom ne se défait
+ * jamais tout seul : il laisse la page décalée et un défilement horizontal parasite.
+ *
+ * Volontairement hors de toute couche : les tailles de texte viennent d'utilitaires
+ * Tailwind, et une règle placée dans `@layer base` leur céderait la place. Un style
+ * sans couche, lui, l'emporte sur toutes les couches. La contrainte ne vaut qu'au
+ * doigt, pour ne pas grossir les champs sur desktop.
+ */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+}
+
+@layer utilities {
+  /*
+   * Fond de l'application. `background-color` reste posé en dessous : il sert de
+   * repli au thème contrasté, où le dégradé vaut `none`, et de couleur de fond au
+   * navigateur avant que l'image soit peinte.
+   */
+  .gradient-canvas {
+    background-color: var(--sg-canvas);
+    background-image: var(--sg-gradient-canvas);
+  }
+
+  /* Le dégradé signature, réservé aux surfaces élevées. */
+  .surface {
+    background: var(--sg-gradient-surface);
+    background-color: var(--sg-surface);
+  }
+
+  .gradient-accent {
+    background: var(--sg-gradient-accent);
+    background-color: var(--sg-accent);
+  }
+
+  .shadow-card {
+    box-shadow: var(--sg-shadow-sm);
+  }
+  .shadow-float {
+    box-shadow: var(--sg-shadow-md);
+  }
+  .shadow-pop {
+    box-shadow: var(--sg-shadow-lg);
+  }
+
+  .tap-target {
+    min-height: var(--tap);
+  }
+
+  .pb-safe {
+    padding-bottom: var(--sg-safe-bottom);
+  }
+  .pt-safe {
+    padding-top: var(--sg-safe-top);
+  }
+
+  /*
+   * Barre de hauteur fixe qui descend sous l'encoche.
+   *
+   * `h-[var(--header-height)]` et `pt-safe` sur le même élément ne se combinent pas :
+   * la boîte garde 52 px, le contenu est poussé de 59 px, et il déborde donc *sous*
+   * la barre, où la vue le recouvre. C'était invisible au navigateur, où l'encoche
+   * vaut zéro, et cassait l'en-tête dans la PWA installée.
+   */
+  .header-bar {
+    height: calc(var(--header-height) + var(--sg-safe-top));
+    padding-top: var(--sg-safe-top);
+  }
+}
+
+/*
+ * Le contenu markdown est injecté en HTML brut : Tailwind ne peut pas styler ces
+ * balises par utilitaires, elles sont donc traitées ici, une seule fois.
+ */
+@layer components {
+  .sg-markdown > * + * {
+    margin-top: 0.75em;
+  }
+
+  .sg-markdown h1,
+  .sg-markdown h2,
+  .sg-markdown h3 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1.4em;
+  }
+  .sg-markdown h1 {
+    font-size: 1.25em;
+  }
+  .sg-markdown h2 {
+    font-size: 1.125em;
+  }
+  .sg-markdown h3 {
+    font-size: 1em;
+  }
+
+  .sg-markdown ul,
+  .sg-markdown ol {
+    padding-left: 1.35em;
+  }
+  .sg-markdown ul {
+    list-style: disc;
+  }
+  .sg-markdown ol {
+    list-style: decimal;
+  }
+  .sg-markdown li + li {
+    margin-top: 0.25em;
+  }
+
+  /*
+   * Une URL sans espace ne casse nulle part : elle élargit son conteneur et fait
+   * défiler la page entière de côté sur un écran étroit. `anywhere` autorise la
+   * coupure à l'intérieur du mot, mais seulement quand il ne tient pas, donc le
+   * texte courant garde ses coupures normales.
+   *
+   * Posé sur le conteneur plutôt que sur `a` seul : un identifiant ou un chemin
+   * collé en texte brut produit exactement le même débordement.
+   */
+  .sg-markdown {
+    overflow-wrap: anywhere;
+  }
+
+  .sg-markdown a {
+    color: var(--sg-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .sg-markdown code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--sg-sunken);
+    border: 1px solid var(--sg-line);
+    border-radius: var(--radius-sm);
+    padding: 0.1em 0.35em;
+  }
+
+  /*
+   * Blocs indentés de quatre espaces. Les blocs délimités par des accents graves ne
+   * passent plus par ici : ils sont rendus par CodeBlock, avec leur barre d'outils.
+   */
+  .sg-markdown pre {
+    overflow-x: auto;
+    background: var(--sg-sunken);
+    border: 1px solid var(--sg-line);
+    border-radius: var(--radius-md);
+    padding: 0.75rem;
+  }
+  /* Dans un bloc, le code ne reprend pas le cadre de l'inline. */
+  .sg-markdown pre code {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: 0.8125rem;
+    line-height: 1.55;
+  }
+
+  /* Liste de tâches : la case remplace la puce, elle ne s'y ajoute pas. */
+  .sg-markdown li.sg-task-item {
+    list-style: none;
+    margin-left: -1.35em;
+    padding-left: 1.35em;
+    position: relative;
+  }
+  .sg-markdown li.sg-task-item > input[type='checkbox'] {
+    position: absolute;
+    left: 0;
+    top: 0.3em;
+    accent-color: var(--sg-accent);
+  }
+
+  .sg-markdown blockquote {
+    border-left: 2px solid var(--sg-line-strong);
+    padding-left: 0.75em;
+    color: var(--sg-ink-soft);
+  }
+
+  .sg-markdown hr {
+    border: 0;
+    border-top: 1px solid var(--sg-line);
+  }
+
+  /*
+   * Le défilement appartient à l'enveloppe, le tableau garde `display: table` : c'est
+   * la seule façon d'occuper toute la largeur tout en gardant des colonnes alignées.
+   */
+  .sg-table-scroll table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875em;
+  }
+  .sg-table-scroll th,
+  .sg-table-scroll td {
+    border-top: 1px solid var(--sg-line);
+    padding: 0.4em 0.7em;
+    text-align: left;
+    vertical-align: top;
+  }
+  .sg-table-scroll th + th,
+  .sg-table-scroll td + td {
+    border-left: 1px solid var(--sg-line);
+  }
+  .sg-table-scroll thead th {
+    border-top: 0;
+    background: var(--sg-surface-high);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /*
+   * Coloration syntaxique. highlight.js émet des classes `hljs-*` ; les couleurs sont
+   * définies ici avec les tokens de thème, plutôt qu'importées d'une feuille toute
+   * faite qui ignorerait le thème clair, sombre et contrasté.
+   */
+  .hljs-comment,
+  .hljs-quote {
+    color: var(--sg-syn-comment);
+    font-style: italic;
+  }
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-literal,
+  .hljs-doctag {
+    color: var(--sg-syn-keyword);
+  }
+  .hljs-string,
+  .hljs-regexp,
+  .hljs-addition {
+    color: var(--sg-syn-string);
+  }
+  .hljs-number,
+  .hljs-symbol,
+  .hljs-bullet,
+  .hljs-meta {
+    color: var(--sg-syn-number);
+  }
+  .hljs-title,
+  .hljs-section,
+  .hljs-name,
+  .hljs-selector-id {
+    color: var(--sg-syn-function);
+  }
+  .hljs-type,
+  .hljs-class .hljs-title,
+  .hljs-built_in,
+  .hljs-selector-class {
+    color: var(--sg-syn-type);
+  }
+  .hljs-attr,
+  .hljs-attribute,
+  .hljs-variable,
+  .hljs-template-variable,
+  .hljs-property {
+    color: var(--sg-syn-attribute);
+  }
+  .hljs-deletion {
+    color: var(--sg-critical);
+  }
+  .hljs-emphasis {
+    font-style: italic;
+  }
+  .hljs-strong {
+    font-weight: 600;
+  }
+}
+
+/*
+ * xterm pose `user-select: none` sur tout le terminal et gère la sélection lui-même.
+ * C'est ce qui rend l'appui long sans effet sur téléphone. On rend les lignes
+ * sélectionnables nativement : le geste du système redevient disponible, et la
+ * sélection propre à xterm continue de fonctionner à la souris.
+ */
+.sg-terminal .xterm .xterm-screen,
+.sg-terminal .xterm .xterm-rows {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/*
+ * Curseur de teinte : le dégradé est porté par l'élément lui-même (style en ligne),
+ * on retire donc la piste native pour le laisser voir. Les deux moteurs ont des
+ * pseudo-éléments distincts et ne tolèrent pas d'être regroupés dans un même sélecteur.
+ */
+.sg-hue-slider {
+  appearance: none;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--sg-line);
+}
+.sg-hue-slider::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 100%;
+}
+.sg-hue-slider::-moz-range-track {
+  background: transparent;
+  height: 100%;
+}
+.sg-hue-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.15rem;
+  border-radius: 999px;
+  background: var(--sg-surface);
+  border: 2px solid var(--sg-ink);
+  cursor: pointer;
+}
+.sg-hue-slider::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: var(--sg-surface);
+  border: 2px solid var(--sg-ink);
+  cursor: pointer;
+}
+
+/*
+ * Message atteint par la navigation de tours. L'anneau s'estompe tout seul : c'est un
+ * repère du regard, pas un état à refermer.
+ */
+@keyframes sg-flash-turn {
+  0%,
+  55% {
+    box-shadow: 0 0 0 2px var(--sg-accent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.sg-flash-turn > * {
+  border-radius: var(--radius-lg);
+  animation: sg-flash-turn 1.4s ease-out;
+}
+
+/*
+ * Surlignage de la recherche dans le fil. `::highlight()` colore des plages sans
+ * toucher au document : insérer des balises casserait le rendu markdown et les blocs
+ * de code. Les noms doivent rester en accord avec ThreadSearch.
+ */
+::highlight(sg-find) {
+  background-color: var(--sg-accent-wash);
+}
+
+::highlight(sg-find-current) {
+  background-color: var(--sg-accent);
+  color: var(--sg-accent-ink);
+}
+
+/* Vague des points de l'indicateur de tour. */
+@keyframes sg-pulse-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
