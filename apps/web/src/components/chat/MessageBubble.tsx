@@ -110,7 +110,7 @@ export const MessageBubble = memo(function MessageBubble({
   if (message.role === 'user') {
     return (
       <div className="group flex flex-col items-end gap-0.5">
-        <div className="surface flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-br-sm border border-line px-3.5 py-2.5 shadow-card">
+        <div className="sg-bubble surface flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-br-sm border border-line px-3.5 py-2.5 shadow-card">
           {shown ? <Markdown text={shown} /> : null}
           <Attachments images={images} files={files} />
         </div>
@@ -133,7 +133,9 @@ export const MessageBubble = memo(function MessageBubble({
       <Attachments images={images} files={files} />
       {shown ? (
         <>
-          <div className="min-w-0">
+          {/* `sg-bubble` désigne la cible du surlignage de tour et de recherche. Une
+              réponse d'agent n'a pas de bulle, c'est son contenu qui fait office. */}
+          <div className="sg-bubble min-w-0 rounded-lg">
             <Markdown text={shown} />
           </div>
           <MessageFooter ts={message.ts} text={shown} label="Copier la réponse" align="start" />

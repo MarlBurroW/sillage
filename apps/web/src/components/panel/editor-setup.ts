@@ -1,4 +1,9 @@
-import { HighlightStyle, LanguageSupport, syntaxHighlighting } from '@codemirror/language'
+import {
+  HighlightStyle,
+  LanguageSupport,
+  syntaxHighlighting,
+  type StreamParser,
+} from '@codemirror/language'
 import { EditorView } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 
@@ -141,11 +146,30 @@ export const editorHighlight = syntaxHighlighting(
 )
 
 /**
+ * Un mode hérité de CodeMirror 5, enveloppé pour CodeMirror 6.
+ *
+ * `@codemirror/legacy-modes` n'a pas de grammaire Lezer : ses modes sont des analyseurs
+ * ligne à ligne, moins fins qu'une vraie grammaire (pas de repli de code, pas
+ * d'indentation contextuelle), mais ils couvrent d'un seul paquet le shell, TOML, INI,
+ * Dockerfile et une vingtaine d'autres. Colorer approximativement un fichier `.env`
+ * vaut mieux que le laisser tout blanc.
+ *
+ * Le module est passé en fonction et non en chaîne : un `import()` construit par
+ * concaténation sort du champ d'analyse du bundler, qui ne saurait plus quoi produire.
+ */
+function legacy(load: () => Promise<StreamParser<unknown>>): () => Promise<LanguageSupport> {
+  return async () => {
+    const [{ StreamLanguage }, parser] = await Promise.all([import('@codemirror/language'), load()])
+    return new LanguageSupport(StreamLanguage.define(parser))
+  }
+}
+
+/**
  * Modes chargés à la demande, comme highlight.js pour le fil : embarquer tous les
  * langages ferait grossir le paquet initial pour un panneau qu'on n'ouvre pas toujours.
  *
- * Les extensions sont les clés, ce que le serveur renvoie déjà. Une extension absente
- * ne colore rien plutôt que d'appliquer un mode approximatif.
+ * Les extensions sont les clés. Une extension absente ne colore rien plutôt que
+ * d'appliquer un mode approximatif.
  */
 const LOADERS: Record<string, () => Promise<LanguageSupport>> = {
   ts: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ typescript: true })),
@@ -167,9 +191,83 @@ const LOADERS: Record<string, () => Promise<LanguageSupport>> = {
   sql: () => import('@codemirror/lang-sql').then((m) => m.sql()),
   xml: () => import('@codemirror/lang-xml').then((m) => m.xml()),
   svg: () => import('@codemirror/lang-xml').then((m) => m.xml()),
+
+  go: () => import('@codemirror/lang-go').then((m) => m.go()),
+  php: () => import('@codemirror/lang-php').then((m) => m.php()),
+  java: () => import('@codemirror/lang-java').then((m) => m.java()),
+  c: () => import('@codemirror/lang-cpp').then((m) => m.cpp()),
+  h: () => import('@codemirror/lang-cpp').then((m) => m.cpp()),
+  cpp: () => import('@codemirror/lang-cpp').then((m) => m.cpp()),
+  cc: () => import('@codemirror/lang-cpp').then((m) => m.cpp()),
+  hpp: () => import('@codemirror/lang-cpp').then((m) => m.cpp()),
+
+  sh: legacy(() => import('@codemirror/legacy-modes/mode/shell').then((m) => m.shell)),
+  bash: legacy(() => import('@codemirror/legacy-modes/mode/shell').then((m) => m.shell)),
+  zsh: legacy(() => import('@codemirror/legacy-modes/mode/shell').then((m) => m.shell)),
+  fish: legacy(() => import('@codemirror/legacy-modes/mode/shell').then((m) => m.shell)),
+  toml: legacy(() => import('@codemirror/legacy-modes/mode/toml').then((m) => m.toml)),
+  ini: legacy(() => import('@codemirror/legacy-modes/mode/properties').then((m) => m.properties)),
+  conf: legacy(() => import('@codemirror/legacy-modes/mode/properties').then((m) => m.properties)),
+  env: legacy(() => import('@codemirror/legacy-modes/mode/properties').then((m) => m.properties)),
+  properties: legacy(() =>
+    import('@codemirror/legacy-modes/mode/properties').then((m) => m.properties),
+  ),
+  dockerfile: legacy(() =>
+    import('@codemirror/legacy-modes/mode/dockerfile').then((m) => m.dockerFile),
+  ),
+  rb: legacy(() => import('@codemirror/legacy-modes/mode/ruby').then((m) => m.ruby)),
+  lua: legacy(() => import('@codemirror/legacy-modes/mode/lua').then((m) => m.lua)),
+  pl: legacy(() => import('@codemirror/legacy-modes/mode/perl').then((m) => m.perl)),
+  swift: legacy(() => import('@codemirror/legacy-modes/mode/swift').then((m) => m.swift)),
+  kt: legacy(() => import('@codemirror/legacy-modes/mode/clike').then((m) => m.kotlin)),
+  scala: legacy(() => import('@codemirror/legacy-modes/mode/clike').then((m) => m.scala)),
+  cs: legacy(() => import('@codemirror/legacy-modes/mode/clike').then((m) => m.csharp)),
+  diff: legacy(() => import('@codemirror/legacy-modes/mode/diff').then((m) => m.diff)),
+  patch: legacy(() => import('@codemirror/legacy-modes/mode/diff').then((m) => m.diff)),
+  nginx: legacy(() => import('@codemirror/legacy-modes/mode/nginx').then((m) => m.nginx)),
+  ps1: legacy(() => import('@codemirror/legacy-modes/mode/powershell').then((m) => m.powerShell)),
+  r: legacy(() => import('@codemirror/legacy-modes/mode/r').then((m) => m.r)),
+  hs: legacy(() => import('@codemirror/legacy-modes/mode/haskell').then((m) => m.haskell)),
+  cmake: legacy(() => import('@codemirror/legacy-modes/mode/cmake').then((m) => m.cmake)),
 }
 
-export async function loadLanguage(extension: string): Promise<LanguageSupport | null> {
-  const loader = LOADERS[extension]
+/**
+ * Fichiers que leur nom entier identifie, faute d'extension.
+ *
+ * `extname('.env')` rend une chaîne vide : pour Node, un fichier qui commence par un
+ * point n'a pas d'extension, il a un nom. C'est pour ça qu'un `.env` s'affichait tout
+ * blanc, commentaires compris. Les préfixes couvrent les déclinaisons (`.env.local`,
+ * `Dockerfile.dev`).
+ */
+const NAMED: { prefix: string; extension: string }[] = [
+  { prefix: '.env', extension: 'env' },
+  { prefix: 'dockerfile', extension: 'dockerfile' },
+  { prefix: 'cmakelists.txt', extension: 'cmake' },
+  { prefix: '.gitignore', extension: 'ini' },
+  { prefix: '.dockerignore', extension: 'ini' },
+  { prefix: '.editorconfig', extension: 'ini' },
+  { prefix: '.npmrc', extension: 'ini' },
+  { prefix: '.bashrc', extension: 'sh' },
+  { prefix: '.zshrc', extension: 'sh' },
+  { prefix: '.profile', extension: 'sh' },
+]
+
+/**
+ * Le mode d'un fichier, d'après son chemin.
+ *
+ * Le nom entier passe avant l'extension : `.env.local` a bien « local » pour extension
+ * au sens de Node, ce qui ne désigne aucun langage.
+ */
+export function extensionOfPath(path: string): string {
+  const name = (path.split('/').pop() ?? '').toLowerCase()
+  const named = NAMED.find((entry) => name === entry.prefix || name.startsWith(entry.prefix + '.'))
+  if (named) return named.extension
+
+  const dot = name.lastIndexOf('.')
+  return dot <= 0 ? '' : name.slice(dot + 1)
+}
+
+export async function loadLanguage(path: string): Promise<LanguageSupport | null> {
+  const loader = LOADERS[extensionOfPath(path)]
   return loader ? loader() : null
 }

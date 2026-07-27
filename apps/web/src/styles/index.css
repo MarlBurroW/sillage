@@ -443,8 +443,12 @@
     box-shadow: 0 0 0 2px transparent;
   }
 }
-.sg-flash-turn > * {
-  border-radius: var(--radius-lg);
+/*
+ * L'anneau vise la bulle et non la rangée qui la contient : celle-ci fait toute la
+ * largeur du fil, horodatage et actions compris, et l'encadrer désignait une zone
+ * bien plus grande que le message qu'on cherchait.
+ */
+.sg-flash-turn .sg-bubble {
   animation: sg-flash-turn 1.4s ease-out;
 }
 
