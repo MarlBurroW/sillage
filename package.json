@@ -1,0 +1,25 @@
+{
+  "name": "sillage",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" build",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @sillage/db generate",
+    "db:migrate": "pnpm --filter @sillage/server migrate",
+    "user:create": "pnpm --filter @sillage/server user:create",
+    "codex:types": "node scripts/codex-types.mjs",
+    "codex:types:check": "node scripts/codex-types.mjs --check",
+    "lint": "pnpm --filter @sillage/web lint"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

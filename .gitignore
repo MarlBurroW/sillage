@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+# Jeu d'icônes copié depuis node_modules par `pnpm icons:sync`
+apps/web/public/file-icons/
+*.tsbuildinfo
+.env
+.env.local
+
+# Données locales de développement
+data/
+*.db
+*.db-wal
+*.db-shm

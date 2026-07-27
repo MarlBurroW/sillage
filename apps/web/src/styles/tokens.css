@@ -1,0 +1,418 @@
+/*
+ * Tokens de thème de Sillage.
+ *
+ * Préfixés `--sg-` : les noms de l'espace Tailwind (base, sans, md, lg...) sont
+ * réservés. Nommer un token `base` écrase silencieusement l'utilitaire `text-base`,
+ * et un token qui porte le nom de sa cible Tailwind produit une auto-référence
+ * circulaire qui invalide la variable. Le mapping vers Tailwind est dans index.css.
+ *
+ * Trois réglages pilotent l'ensemble des surfaces :
+ *   --sg-hue   la teinte, partagée avec la couleur d'accent
+ *   --sg-tint  un multiplicateur de chroma, pour doser l'intensité de la teinte
+ *   --sg-lift  un décalage de luminosité, pour éclaircir ou assombrir le shading
+ *
+ * `lift` ne s'applique qu'aux surfaces et aux bordures. L'appliquer aussi au texte
+ * annulerait le gain : les deux bougeraient ensemble et le contraste resterait figé.
+ *
+ * La chroma perçue s'effondre dans les valeurs sombres : à L=0.21 il faut environ
+ * 0.06 de chroma pour qu'une surface se lise comme teintée et non comme grise.
+ */
+
+:root {
+  --sg-tint: 1;
+  --sg-lift: 0;
+}
+
+:root[data-theme='light'] {
+  --sg-hue: 275;
+
+  --sg-canvas: oklch(calc(0.975 + var(--sg-lift)) calc(0.016 * var(--sg-tint)) var(--sg-hue));
+  --sg-surface: oklch(calc(0.995 + var(--sg-lift)) calc(0.007 * var(--sg-tint)) var(--sg-hue));
+  --sg-surface-high: oklch(calc(0.955 + var(--sg-lift)) calc(0.022 * var(--sg-tint)) var(--sg-hue));
+  --sg-sunken: oklch(calc(0.945 + var(--sg-lift)) calc(0.026 * var(--sg-tint)) var(--sg-hue));
+
+  --sg-ink: oklch(0.24 calc(0.05 * var(--sg-tint)) var(--sg-hue));
+  --sg-ink-soft: oklch(0.46 calc(0.045 * var(--sg-tint)) var(--sg-hue));
+  --sg-ink-faint: oklch(0.6 calc(0.04 * var(--sg-tint)) var(--sg-hue));
+
+  --sg-accent: oklch(0.54 0.19 var(--sg-hue));
+  --sg-accent-hover: oklch(0.48 0.2 var(--sg-hue));
+  --sg-accent-ink: oklch(0.99 0.01 var(--sg-hue));
+  --sg-accent-wash: oklch(0.93 0.06 var(--sg-hue));
+
+  --sg-line: oklch(calc(0.895 + var(--sg-lift)) calc(0.032 * var(--sg-tint)) var(--sg-hue));
+  --sg-line-strong: oklch(calc(0.8 + var(--sg-lift)) calc(0.05 * var(--sg-tint)) var(--sg-hue));
+
+  --sg-positive: oklch(0.55 0.13 155);
+  --sg-caution: oklch(0.62 0.14 75);
+  --sg-critical: oklch(0.55 0.19 25);
+
+  /*
+   * Palette de coloration syntaxique. Teintes absolues, comme positive/caution :
+   * les faire suivre `--sg-hue` rapprocherait les rôles jusqu'à les confondre dès que
+   * la teinte du thème change.
+   */
+  --sg-syn-comment: oklch(0.62 0.03 var(--sg-hue));
+  --sg-syn-keyword: oklch(0.5 0.19 305);
+  --sg-syn-string: oklch(0.5 0.13 150);
+  --sg-syn-number: oklch(0.55 0.14 55);
+  --sg-syn-function: oklch(0.52 0.16 250);
+  --sg-syn-type: oklch(0.53 0.11 195);
+  --sg-syn-attribute: oklch(0.53 0.16 20);
+
+  /*
+   * Fond de l'application. Deux halos très diffus posés sur une base légèrement
+   * dégradée : le halo du bas emprunte une teinte décalée, comme le dégradé d'accent,
+   * ce qui donne sa profondeur au fond sans jamais devenir une couleur en soi.
+   *
+   * Les trois réglages d'apparence continuent de le piloter : `hue` oriente les deux
+   * halos, `tint` dose leur chroma, `lift` ne bouge que la base, pour ne pas éclaircir
+   * les halos en même temps que la surface.
+   */
+  --sg-gradient-canvas:
+    radial-gradient(
+      120% 85% at 12% -15%,
+      oklch(0.93 calc(0.06 * var(--sg-tint)) var(--sg-hue) / 0.55) 0%,
+      transparent 62%
+    ),
+    radial-gradient(
+      110% 80% at 100% 108%,
+      oklch(0.93 calc(0.055 * var(--sg-tint)) calc(var(--sg-hue) + 45) / 0.5) 0%,
+      transparent 58%
+    ),
+    linear-gradient(
+      180deg,
+      oklch(calc(0.985 + var(--sg-lift)) calc(0.012 * var(--sg-tint)) var(--sg-hue)) 0%,
+      oklch(calc(0.962 + var(--sg-lift)) calc(0.022 * var(--sg-tint)) var(--sg-hue)) 100%
+    );
+
+  --sg-gradient-surface: linear-gradient(
+    180deg,
+    oklch(calc(1 + var(--sg-lift)) calc(0.006 * var(--sg-tint)) var(--sg-hue)) 0%,
+    oklch(calc(0.968 + var(--sg-lift)) calc(0.024 * var(--sg-tint)) var(--sg-hue)) 100%
+  );
+  --sg-gradient-accent: linear-gradient(
+    135deg,
+    oklch(0.56 0.19 var(--sg-hue)) 0%,
+    oklch(0.5 0.18 calc(var(--sg-hue) + 40)) 100%
+  );
+
+  --sg-shadow-sm: 0 1px 2px oklch(0.3 0.08 var(--sg-hue) / 0.09);
+  --sg-shadow-md: 0 4px 16px oklch(0.3 0.08 var(--sg-hue) / 0.12);
+  --sg-shadow-lg: 0 12px 32px oklch(0.3 0.08 var(--sg-hue) / 0.16);
+}
+
+:root[data-theme='dark'] {
+  --sg-hue: 275;
+
+  --sg-canvas: oklch(calc(0.168 + var(--sg-lift)) calc(0.055 * var(--sg-tint)) var(--sg-hue));
+  --sg-surface: oklch(calc(0.215 + var(--sg-lift)) calc(0.062 * var(--sg-tint)) var(--sg-hue));
+  --sg-surface-high: oklch(calc(0.262 + var(--sg-lift)) calc(0.072 * var(--sg-tint)) var(--sg-hue));
+  --sg-sunken: oklch(calc(0.135 + var(--sg-lift)) calc(0.05 * var(--sg-tint)) var(--sg-hue));
+
+  --sg-ink: oklch(0.96 calc(0.02 * var(--sg-tint)) var(--sg-hue));
+  --sg-ink-soft: oklch(0.78 calc(0.045 * var(--sg-tint)) var(--sg-hue));
+  --sg-ink-faint: oklch(0.63 calc(0.055 * var(--sg-tint)) var(--sg-hue));
+
+  --sg-accent: oklch(0.71 0.17 var(--sg-hue));
+  --sg-accent-hover: oklch(0.78 0.16 var(--sg-hue));
+  --sg-accent-ink: oklch(0.15 0.04 var(--sg-hue));
+  --sg-accent-wash: oklch(0.33 0.1 var(--sg-hue));
+
+  --sg-line: oklch(calc(0.305 + var(--sg-lift)) calc(0.075 * var(--sg-tint)) var(--sg-hue));
+  --sg-line-strong: oklch(calc(0.42 + var(--sg-lift)) calc(0.09 * var(--sg-tint)) var(--sg-hue));
+
+  --sg-positive: oklch(0.74 0.15 155);
+  --sg-caution: oklch(0.79 0.14 80);
+  --sg-critical: oklch(0.69 0.18 25);
+
+  --sg-syn-comment: oklch(0.58 0.03 var(--sg-hue));
+  --sg-syn-keyword: oklch(0.75 0.16 305);
+  --sg-syn-string: oklch(0.78 0.14 150);
+  --sg-syn-number: oklch(0.79 0.13 60);
+  --sg-syn-function: oklch(0.75 0.13 245);
+  --sg-syn-type: oklch(0.79 0.1 195);
+  --sg-syn-attribute: oklch(0.76 0.13 20);
+
+  /*
+   * Même construction qu'en clair, mais les halos y sont plus lumineux que la base :
+   * sur un fond sombre, un halo plus foncé ne se verrait pas, il boucherait.
+   */
+  --sg-gradient-canvas:
+    radial-gradient(
+      120% 85% at 12% -15%,
+      oklch(0.3 calc(0.09 * var(--sg-tint)) var(--sg-hue) / 0.5) 0%,
+      transparent 62%
+    ),
+    radial-gradient(
+      110% 80% at 100% 108%,
+      oklch(0.28 calc(0.085 * var(--sg-tint)) calc(var(--sg-hue) + 45) / 0.45) 0%,
+      transparent 58%
+    ),
+    linear-gradient(
+      180deg,
+      oklch(calc(0.182 + var(--sg-lift)) calc(0.058 * var(--sg-tint)) var(--sg-hue)) 0%,
+      oklch(calc(0.152 + var(--sg-lift)) calc(0.048 * var(--sg-tint)) var(--sg-hue)) 100%
+    );
+
+  --sg-gradient-surface: linear-gradient(
+    180deg,
+    oklch(calc(0.238 + var(--sg-lift)) calc(0.072 * var(--sg-tint)) var(--sg-hue)) 0%,
+    oklch(calc(0.196 + var(--sg-lift)) calc(0.055 * var(--sg-tint)) var(--sg-hue)) 100%
+  );
+  --sg-gradient-accent: linear-gradient(
+    135deg,
+    oklch(0.7 0.17 var(--sg-hue)) 0%,
+    oklch(0.62 0.17 calc(var(--sg-hue) + 45)) 100%
+  );
+
+  --sg-shadow-sm: 0 1px 2px oklch(0.05 0.03 var(--sg-hue) / 0.5);
+  --sg-shadow-md: 0 4px 20px oklch(0.05 0.03 var(--sg-hue) / 0.55);
+  --sg-shadow-lg: 0 16px 40px oklch(0.05 0.03 var(--sg-hue) / 0.65);
+}
+
+/* Contraste renforcé : surfaces strictement neutres, aucun dégradé, aucune ombre. */
+:root[data-theme='dark-contrast'] {
+  --sg-hue: 275;
+
+  --sg-canvas: oklch(calc(0.115 + var(--sg-lift)) 0 0);
+  --sg-surface: oklch(calc(0.17 + var(--sg-lift)) 0 0);
+  --sg-surface-high: oklch(calc(0.22 + var(--sg-lift)) 0 0);
+  --sg-sunken: oklch(calc(0.08 + var(--sg-lift)) 0 0);
+
+  --sg-ink: oklch(1 0 0);
+  --sg-ink-soft: oklch(0.86 0 0);
+  --sg-ink-faint: oklch(0.72 0 0);
+
+  --sg-accent: oklch(0.81 0.16 var(--sg-hue));
+  --sg-accent-hover: oklch(0.88 0.15 var(--sg-hue));
+  --sg-accent-ink: oklch(0.11 0 0);
+  --sg-accent-wash: oklch(0.32 0.08 var(--sg-hue));
+
+  --sg-line: oklch(calc(0.36 + var(--sg-lift)) 0 0);
+  --sg-line-strong: oklch(calc(0.54 + var(--sg-lift)) 0 0);
+
+  --sg-positive: oklch(0.82 0.16 155);
+  --sg-caution: oklch(0.87 0.15 85);
+  --sg-critical: oklch(0.74 0.19 25);
+
+  /* Luminosité relevée pour tenir le contraste sur le fond très sombre du thème. */
+  --sg-syn-comment: oklch(0.7 0 0);
+  --sg-syn-keyword: oklch(0.83 0.16 305);
+  --sg-syn-string: oklch(0.86 0.15 150);
+  --sg-syn-number: oklch(0.86 0.14 65);
+  --sg-syn-function: oklch(0.83 0.13 245);
+  --sg-syn-type: oklch(0.86 0.1 195);
+  --sg-syn-attribute: oklch(0.83 0.13 20);
+
+  /* Aucun dégradé ici : le thème contrasté tient sa lisibilité de surfaces plates. */
+  --sg-gradient-canvas: none;
+  --sg-gradient-surface: none;
+  --sg-gradient-accent: none;
+
+  --sg-shadow-sm: none;
+  --sg-shadow-md: none;
+  --sg-shadow-lg: none;
+}
+
+/*
+ * Palettes de coloration syntaxique, choisies dans les réglages.
+ *
+ * Chacune fixe les sept mêmes rôles, en clair et en sombre, et rien d'autre : le reste
+ * de l'interface ne bouge pas. Le thème contrasté garde volontairement sa propre
+ * palette, relevée en luminosité, dont le contraste est la raison d'être : la remplacer
+ * par une palette d'ambiance annulerait ce pour quoi ce thème est choisi.
+ *
+ * Sans attribut, c'est la palette par défaut définie plus haut qui s'applique.
+ *
+ * Les sélecteurs ne sont volontairement pas ancrés sur `:root` : un aperçu peut ainsi
+ * porter les deux attributs et montrer les vraies couleurs de la palette sans que
+ * l'application entière en change.
+ */
+
+[data-theme='light'][data-syntax='ocean'] {
+  --sg-syn-comment: oklch(0.62 0.03 240);
+  --sg-syn-keyword: oklch(0.48 0.16 265);
+  --sg-syn-string: oklch(0.5 0.11 200);
+  --sg-syn-number: oklch(0.52 0.12 230);
+  --sg-syn-function: oklch(0.52 0.14 245);
+  --sg-syn-type: oklch(0.54 0.09 195);
+  --sg-syn-attribute: oklch(0.5 0.13 300);
+}
+
+[data-theme='dark'][data-syntax='ocean'] {
+  --sg-syn-comment: oklch(0.58 0.03 240);
+  --sg-syn-keyword: oklch(0.76 0.13 265);
+  --sg-syn-string: oklch(0.8 0.1 200);
+  --sg-syn-number: oklch(0.78 0.11 230);
+  --sg-syn-function: oklch(0.76 0.12 245);
+  --sg-syn-type: oklch(0.82 0.08 195);
+  --sg-syn-attribute: oklch(0.76 0.12 300);
+}
+
+[data-theme='light'][data-syntax='agrume'] {
+  --sg-syn-comment: oklch(0.63 0.03 60);
+  --sg-syn-keyword: oklch(0.52 0.17 25);
+  --sg-syn-string: oklch(0.53 0.13 135);
+  --sg-syn-number: oklch(0.56 0.14 70);
+  --sg-syn-function: oklch(0.55 0.15 45);
+  --sg-syn-type: oklch(0.55 0.11 95);
+  --sg-syn-attribute: oklch(0.5 0.16 350);
+}
+
+[data-theme='dark'][data-syntax='agrume'] {
+  --sg-syn-comment: oklch(0.6 0.03 60);
+  --sg-syn-keyword: oklch(0.75 0.15 25);
+  --sg-syn-string: oklch(0.8 0.13 135);
+  --sg-syn-number: oklch(0.82 0.13 75);
+  --sg-syn-function: oklch(0.8 0.13 50);
+  --sg-syn-type: oklch(0.84 0.1 95);
+  --sg-syn-attribute: oklch(0.76 0.14 350);
+}
+
+[data-theme='light'][data-syntax='foret'] {
+  --sg-syn-comment: oklch(0.62 0.03 150);
+  --sg-syn-keyword: oklch(0.47 0.13 165);
+  --sg-syn-string: oklch(0.52 0.12 125);
+  --sg-syn-number: oklch(0.55 0.12 85);
+  --sg-syn-function: oklch(0.5 0.11 190);
+  --sg-syn-type: oklch(0.53 0.09 145);
+  --sg-syn-attribute: oklch(0.52 0.14 40);
+}
+
+[data-theme='dark'][data-syntax='foret'] {
+  --sg-syn-comment: oklch(0.58 0.03 150);
+  --sg-syn-keyword: oklch(0.78 0.12 165);
+  --sg-syn-string: oklch(0.82 0.12 125);
+  --sg-syn-number: oklch(0.83 0.11 85);
+  --sg-syn-function: oklch(0.78 0.1 190);
+  --sg-syn-type: oklch(0.83 0.09 145);
+  --sg-syn-attribute: oklch(0.78 0.12 40);
+}
+
+/*
+ * Quasi monochrome : une seule couleur, pour les chaînes, le reste jouant sur la
+ * luminosité. Utile quand la couleur sert déjà à autre chose à l'écran, un diff par
+ * exemple.
+ */
+[data-theme='light'][data-syntax='sobre'] {
+  --sg-syn-comment: oklch(0.66 0.02 var(--sg-hue));
+  --sg-syn-keyword: oklch(0.3 0.02 var(--sg-hue));
+  --sg-syn-string: oklch(0.48 0.1 230);
+  --sg-syn-number: oklch(0.4 0.03 var(--sg-hue));
+  --sg-syn-function: oklch(0.34 0.02 var(--sg-hue));
+  --sg-syn-type: oklch(0.42 0.03 var(--sg-hue));
+  --sg-syn-attribute: oklch(0.45 0.05 var(--sg-hue));
+}
+
+[data-theme='dark'][data-syntax='sobre'] {
+  --sg-syn-comment: oklch(0.56 0.02 var(--sg-hue));
+  --sg-syn-keyword: oklch(0.92 0.01 var(--sg-hue));
+  --sg-syn-string: oklch(0.78 0.09 230);
+  --sg-syn-number: oklch(0.8 0.02 var(--sg-hue));
+  --sg-syn-function: oklch(0.88 0.01 var(--sg-hue));
+  --sg-syn-type: oklch(0.76 0.02 var(--sg-hue));
+  --sg-syn-attribute: oklch(0.72 0.04 var(--sg-hue));
+}
+
+[data-theme='light'][data-syntax='nuit'] {
+  --sg-syn-comment: oklch(0.63 0.03 300);
+  --sg-syn-keyword: oklch(0.52 0.18 315);
+  --sg-syn-string: oklch(0.5 0.11 205);
+  --sg-syn-number: oklch(0.53 0.13 285);
+  --sg-syn-function: oklch(0.5 0.15 265);
+  --sg-syn-type: oklch(0.55 0.1 175);
+  --sg-syn-attribute: oklch(0.52 0.15 340);
+}
+
+[data-theme='dark'][data-syntax='nuit'] {
+  --sg-syn-comment: oklch(0.59 0.03 300);
+  --sg-syn-keyword: oklch(0.78 0.15 315);
+  --sg-syn-string: oklch(0.8 0.1 205);
+  --sg-syn-number: oklch(0.79 0.12 285);
+  --sg-syn-function: oklch(0.76 0.13 265);
+  --sg-syn-type: oklch(0.84 0.09 175);
+  --sg-syn-attribute: oklch(0.78 0.13 340);
+}
+
+/* Bleu-gris : colorée, mais d'une seule famille, sauf les propriétés qui tranchent. */
+[data-theme='light'][data-syntax='ardoise'] {
+  --sg-syn-comment: oklch(0.6 0.02 250);
+  --sg-syn-keyword: oklch(0.45 0.09 250);
+  --sg-syn-string: oklch(0.5 0.09 175);
+  --sg-syn-number: oklch(0.5 0.08 250);
+  --sg-syn-function: oklch(0.42 0.07 250);
+  --sg-syn-type: oklch(0.52 0.06 210);
+  --sg-syn-attribute: oklch(0.5 0.1 25);
+}
+
+[data-theme='dark'][data-syntax='ardoise'] {
+  --sg-syn-comment: oklch(0.58 0.02 250);
+  --sg-syn-keyword: oklch(0.8 0.07 250);
+  --sg-syn-string: oklch(0.82 0.08 175);
+  --sg-syn-number: oklch(0.8 0.07 250);
+  --sg-syn-function: oklch(0.86 0.05 250);
+  --sg-syn-type: oklch(0.8 0.05 210);
+  --sg-syn-attribute: oklch(0.78 0.09 25);
+}
+
+[data-theme='light'][data-syntax='cerise'] {
+  --sg-syn-comment: oklch(0.63 0.03 350);
+  --sg-syn-keyword: oklch(0.5 0.18 350);
+  --sg-syn-string: oklch(0.52 0.12 155);
+  --sg-syn-number: oklch(0.55 0.13 35);
+  --sg-syn-function: oklch(0.5 0.15 320);
+  --sg-syn-type: oklch(0.54 0.1 265);
+  --sg-syn-attribute: oklch(0.52 0.14 15);
+}
+
+[data-theme='dark'][data-syntax='cerise'] {
+  --sg-syn-comment: oklch(0.6 0.03 350);
+  --sg-syn-keyword: oklch(0.76 0.15 350);
+  --sg-syn-string: oklch(0.82 0.12 155);
+  --sg-syn-number: oklch(0.82 0.12 35);
+  --sg-syn-function: oklch(0.78 0.13 320);
+  --sg-syn-type: oklch(0.82 0.09 265);
+  --sg-syn-attribute: oklch(0.78 0.12 15);
+}
+
+[data-theme='light'][data-syntax='sable'] {
+  --sg-syn-comment: oklch(0.6 0.03 85);
+  --sg-syn-keyword: oklch(0.5 0.12 95);
+  --sg-syn-string: oklch(0.52 0.11 175);
+  --sg-syn-number: oklch(0.54 0.13 45);
+  --sg-syn-function: oklch(0.5 0.13 250);
+  --sg-syn-type: oklch(0.53 0.1 135);
+  --sg-syn-attribute: oklch(0.52 0.15 20);
+}
+
+[data-theme='dark'][data-syntax='sable'] {
+  --sg-syn-comment: oklch(0.58 0.03 85);
+  --sg-syn-keyword: oklch(0.8 0.11 95);
+  --sg-syn-string: oklch(0.82 0.1 175);
+  --sg-syn-number: oklch(0.82 0.12 45);
+  --sg-syn-function: oklch(0.78 0.11 250);
+  --sg-syn-type: oklch(0.82 0.09 135);
+  --sg-syn-attribute: oklch(0.78 0.13 20);
+}
+
+/* Encre unique, pour qui veut du code sans couleur du tout ou presque. */
+[data-theme='light'][data-syntax='encre'] {
+  --sg-syn-comment: oklch(0.68 0.01 var(--sg-hue));
+  --sg-syn-keyword: oklch(0.24 0.01 var(--sg-hue));
+  --sg-syn-string: oklch(0.46 0.01 var(--sg-hue));
+  --sg-syn-number: oklch(0.46 0.01 var(--sg-hue));
+  --sg-syn-function: oklch(0.32 0.01 var(--sg-hue));
+  --sg-syn-type: oklch(0.4 0.01 var(--sg-hue));
+  --sg-syn-attribute: oklch(0.4 0.01 var(--sg-hue));
+}
+
+[data-theme='dark'][data-syntax='encre'] {
+  --sg-syn-comment: oklch(0.54 0.01 var(--sg-hue));
+  --sg-syn-keyword: oklch(0.95 0.01 var(--sg-hue));
+  --sg-syn-string: oklch(0.74 0.01 var(--sg-hue));
+  --sg-syn-number: oklch(0.74 0.01 var(--sg-hue));
+  --sg-syn-function: oklch(0.88 0.01 var(--sg-hue));
+  --sg-syn-type: oklch(0.8 0.01 var(--sg-hue));
+  --sg-syn-attribute: oklch(0.8 0.01 var(--sg-hue));
+}

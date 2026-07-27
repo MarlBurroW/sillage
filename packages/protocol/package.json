@@ -1,0 +1,18 @@
+{
+  "name": "@sillage/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./codex": "./src/codex/index.ts",
+    "./codex/v2": "./src/codex/v2/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  }
+}
