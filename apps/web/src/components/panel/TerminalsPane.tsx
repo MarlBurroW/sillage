@@ -1,8 +1,8 @@
-import { Loader, Plus, X } from 'lucide-react'
+import { Loader, Plus, SquareTerminal as TerminalIcon, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { MAX_TERMINALS_PER_CONVERSATION } from '@sillage/protocol'
 import { useCloseTerminal, useOpenTerminal, useTerminals } from '../../lib/terminals'
-import { Banner, cx } from '../ui'
+import { Banner, Button, cx } from '../ui'
 import { TerminalView } from './TerminalView'
 
 /**
@@ -107,9 +107,30 @@ export function TerminalsPane({
       ) : null}
 
       {terminals?.length === 0 ? (
-        <p className="px-2.5 py-3 text-xs text-ink-faint">
-          Aucun terminal. Le « + » en ouvre un dans le répertoire de travail de la conversation.
-        </p>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          <span className="grid size-12 place-items-center rounded-xl border border-line bg-surface-high text-ink-faint">
+            <TerminalIcon size={22} />
+          </span>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium text-ink">Aucun terminal ouvert</p>
+            <p className="max-w-[22rem] text-xs text-ink-faint">
+              Un shell dans le répertoire de travail de cette conversation, worktree compris.
+              Il reste ouvert tant que le panneau l'est.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            disabled={open.isPending}
+            onClick={() => open.mutate(undefined, { onSuccess: (created) => setActive(created.id) })}
+          >
+            {open.isPending ? (
+              <Loader size={14} className="animate-spin" />
+            ) : (
+              <Plus size={14} />
+            )}
+            Nouveau terminal
+          </Button>
+        </div>
       ) : null}
 
       {(terminals ?? []).map((terminal) => (

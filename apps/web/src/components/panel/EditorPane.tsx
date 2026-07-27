@@ -299,7 +299,7 @@ function FileView({
       <div className="min-h-0 min-w-0 flex-1">
         <CodeEditor
           initial={file.content}
-          extension={file.extension}
+          path={file.path}
           onChange={(value) => {
             draft.current = value
             markDirty(path, value !== file.content)

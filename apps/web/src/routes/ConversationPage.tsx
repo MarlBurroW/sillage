@@ -31,7 +31,7 @@ import { TurnNav } from '../components/chat/TurnNav'
 import { UsagePanel } from '../components/chat/UsagePanel'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useClaudeModels } from '../lib/agents'
-import { Banner, EmptyState, IconButton, Menu, MenuItem, cx } from '../components/ui'
+import { Banner, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, cx } from '../components/ui'
 import { api } from '../lib/api'
 import {
   compactConversation,
@@ -96,6 +96,8 @@ export function ConversationPage() {
   const rows = useMemo(() => buildRows(stream.state.items), [stream.state.items])
   const [usageOpen, setUsageOpen] = useState(false)
   const [forking, setForking] = useState(false)
+  /** Message dont le fork est proposé : le geste est trop peu courant pour être direct. */
+  const [forkTarget, setForkTarget] = useState<MessageItem | null>(null)
   /** Échec d'une action ponctuelle sur la conversation : fork, compaction. */
   const [actionError, setActionError] = useState<string | null>(null)
   const [compacting, setCompacting] = useState(false)
@@ -300,6 +302,7 @@ export function ConversationPage() {
     async (message: MessageItem) => {
       if (!conversationId) return
 
+      setForkTarget(null)
       setForking(true)
       setActionError(null)
       try {
@@ -476,47 +479,94 @@ export function ConversationPage() {
             <span className="hidden md:inline">Utilisation</span>
           </button>
 
-          {/* Le panneau appartient à la conversation : il lit le répertoire de travail
-              de ce fil, worktree compris, pas celui du projet. */}
+          {/* Sur grand écran les deux actions sont posées directement : elles sont peu
+              nombreuses, et un menu qui n'en cache que deux coûte un clic pour rien.
+              Au doigt la place manque, elles repassent derrière les trois points.
+
+              Lire une conversation partagée donne le droit d'y chercher : seule la
+              compaction touche à l'état du fil, et elle reste au propriétaire. */}
+          <span className="hidden md:contents">
+            <IconButton label="Rechercher dans la conversation" onClick={() => setFindOpen(true)}>
+              <Search size={18} />
+            </IconButton>
+            {isOwner ? (
+              <IconButton
+                label={
+                  compacting || stream.state.compacting
+                    ? 'Compaction en cours...'
+                    : 'Compacter le contexte'
+                }
+                // Le contexte bouge encore pendant un tour : compacter au milieu
+                // résumerait un état que l'agent est en train de changer.
+                disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
+                onClick={() => void compact()}
+              >
+                <Shrink size={18} />
+              </IconButton>
+            ) : null}
+          </span>
+
+          <span className="md:hidden">
+            <Menu
+              trigger={
+                <IconButton label="Actions de la conversation">
+                  <MoreHorizontal size={18} />
+                </IconButton>
+              }
+            >
+              <MenuItem icon={<Search size={14} />} onSelect={() => setFindOpen(true)}>
+                Rechercher dans la conversation
+              </MenuItem>
+              {isOwner ? (
+                <MenuItem
+                  icon={<Shrink size={14} />}
+                  disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
+                  onSelect={() => void compact()}
+                >
+                  {compacting || stream.state.compacting
+                    ? 'Compaction en cours...'
+                    : 'Compacter le contexte'}
+                </MenuItem>
+              ) : null}
+            </Menu>
+          </span>
+
+          {/* Tout à droite, contre le bord : c'est le panneau qu'il ouvre, et il doit
+              se trouver du côté où celui-ci apparaît. Le panneau appartient à la
+              conversation, il lit le répertoire de travail de ce fil, worktree
+              compris, pas celui du projet. */}
           <IconButton
             label={panel.open ? 'Fermer le panneau' : 'Ouvrir le panneau'}
             onClick={() => setPanelOpen(!panel.open)}
           >
             <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
           </IconButton>
-
-          {/* Actions qui portent sur la conversation elle-même. Compacter vivait sur la
-              jauge de contexte, mais une jauge cliquable ne dit pas ce que le clic ferait,
-              et l'apprendre demandait de l'essayer sur une conversation en cours. */}
-          <Menu
-            trigger={
-              <IconButton label="Actions de la conversation">
-                <MoreHorizontal size={18} />
-              </IconButton>
-            }
-          >
-            {/* Lire une conversation partagée donne le droit d'y chercher : seule la
-                compaction touche à l'état du fil, et elle reste au propriétaire. */}
-            <MenuItem icon={<Search size={14} />} onSelect={() => setFindOpen(true)}>
-              Rechercher dans la conversation
-            </MenuItem>
-            {isOwner ? (
-              <MenuItem
-                icon={<Shrink size={14} />}
-                // Le contexte bouge encore pendant un tour : compacter au milieu
-                // résumerait un état que l'agent est en train de changer.
-                disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
-                onSelect={() => void compact()}
-              >
-                {compacting || stream.state.compacting
-                  ? 'Compaction en cours...'
-                  : 'Compacter le contexte'}
-              </MenuItem>
-            ) : null}
-          </Menu>
         </header>
 
         <UsagePanel agent={conversation.agent} open={usageOpen} onOpenChange={setUsageOpen} />
+
+        <ConfirmDialog
+          open={forkTarget !== null}
+          onOpenChange={(next) => {
+            if (!next) setForkTarget(null)
+          }}
+          title="Forker à partir de ce message ?"
+          confirmLabel="Forker"
+          busy={forking}
+          onConfirm={() => {
+            if (forkTarget) void fork(forkTarget)
+          }}
+        >
+          <p>
+            Une nouvelle conversation est créée avec tout l'historique <em>jusqu'au message
+            précédent</em>. Ce message-ci n'en fait pas partie : il revient dans la barre de
+            saisie de la branche, prêt à être reformulé.
+          </p>
+          <p>
+            La conversation actuelle n'est pas touchée, et l'agent de la branche repart du
+            contexte tel qu'il était à cet instant.
+          </p>
+        </ConfirmDialog>
 
         <ThreadSearch
           scroller={scroller}
@@ -580,7 +630,7 @@ export function ConversationPage() {
                     >
                       <MessageBubble
                         message={item}
-                        onFork={item.role === 'user' && isOwner && !forking ? fork : undefined}
+                        onFork={item.role === 'user' && isOwner && !forking ? setForkTarget : undefined}
                       />
                     </div>
                   )

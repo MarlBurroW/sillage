@@ -1423,6 +1423,16 @@ explicitement plutôt que par `basicSetup`, qui embarque justement l'autocomplé
 linting. Les modes de langage sont chargés à la demande, comme highlight.js pour le fil, et
 une extension inconnue ne colore rien plutôt que d'appliquer un mode approximatif.
 
+Aux grammaires Lezer officielles s'ajoutent les modes hérités de CodeMirror 5
+(`@codemirror/legacy-modes`), moins fins mais qui couvrent d'un seul paquet le shell,
+TOML, INI, Dockerfile et une vingtaine d'autres. Colorer approximativement vaut mieux que
+laisser un fichier tout blanc, ce qui restait le cas de la moitié d'un dépôt réel.
+
+Le mode se décide sur le **nom** du fichier, pas sur son extension au sens de Node :
+`extname('.env')` rend une chaîne vide, un fichier qui commence par un point n'ayant pas
+d'extension mais un nom. C'est pour ça qu'un `.env` s'affichait tout blanc, commentaires
+compris. Une table de préfixes couvre `.env.local`, `Dockerfile.dev` et consorts.
+
 Le thème n'est pas importé : il est écrit sur les mêmes jetons `--sg-syn-*` que la
 coloration des blocs de code du fil, en `var()` et non en couleurs résolues, donc changer de
 thème ou de teinte déplace l'éditeur avec. Vérifié au navigateur : un mot-clé rend

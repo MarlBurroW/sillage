@@ -53,12 +53,12 @@ const SEARCH_PHRASES: Record<string, string> = {
 export function CodeEditor({
   /** Contenu initial. Un changement de fichier remonte l'éditeur par sa clé. */
   initial,
-  extension,
+  path,
   onChange,
   onSave,
 }: {
   initial: string
-  extension: string
+  path: string
   onChange: (value: string) => void
   onSave: () => void
 }) {
@@ -122,7 +122,7 @@ export function CodeEditor({
     // Le mode arrive après coup : l'attendre laisserait un éditeur vide le temps du
     // chargement, alors que le texte est déjà là.
     let cancelled = false
-    void loadLanguage(extension).then((support) => {
+    void loadLanguage(path).then((support) => {
       if (cancelled || !support) return
       editor.dispatch({ effects: language.reconfigure(support) })
     })
@@ -131,7 +131,7 @@ export function CodeEditor({
       cancelled = true
       editor.destroy()
     }
-  }, [initial, extension])
+  }, [initial, path])
 
   return <div ref={host} className="h-full overflow-hidden" />
 }
