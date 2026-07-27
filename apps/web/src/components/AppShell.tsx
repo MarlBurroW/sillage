@@ -61,6 +61,7 @@ import { PROJECT_COLORS } from '../lib/project-colors'
 import { useCurrentUser, useLogout } from '../lib/session'
 import { AgentIcon } from './AgentIcon'
 import { CommandPalette } from './CommandPalette'
+import { Logo } from './Logo'
 import { UpdatePrompt } from './UpdatePrompt'
 import {
   IconButton,
@@ -309,6 +310,7 @@ export function AppShell() {
           <IconButton label="Ouvrir la navigation" onClick={() => setNavOpen(true)}>
             <MenuIcon size={20} />
           </IconButton>
+          <Logo size={18} className="text-accent" />
           <span className="font-medium">Sillage</span>
         </header>
 
@@ -378,7 +380,7 @@ function Sidebar({
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-[var(--header-height)] shrink-0 items-center gap-2 px-4">
-        <span className="gradient-accent size-2.5 rounded-full" aria-hidden />
+        <Logo size={20} className="text-accent" />
         <span className="text-[0.9375rem] font-semibold tracking-tight">Sillage</span>
         {/* Enveloppes plutôt que `hidden` sur le bouton : `IconButton` pose déjà un
             `inline-flex`, et entre deux utilitaires de display c'est l'ordre du CSS

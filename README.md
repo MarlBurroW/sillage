@@ -1,4 +1,4 @@
-# Sillage
+<img src="docs/brand/wordmark.svg" alt="Sillage" width="340" height="72">
 
 Plateforme de développement agentique self-hosted et multi-CLI. Une UI web, pensée
 mobile d'abord, pour piloter Claude Code et Codex sur ses projets depuis n'importe où.
@@ -69,6 +69,7 @@ apps/web         UI React, PWA
 packages/protocol schéma d'événements et types partagés
 packages/db      schéma Drizzle et migrations
 deploy/          unité systemd et configuration d'exemple
+docs/brand/      la marque, et les fichiers qui en dérivent
 ```
 
 ## Licence
