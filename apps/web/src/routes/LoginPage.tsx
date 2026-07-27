@@ -2,6 +2,7 @@ import { KeyRound, User } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { ApiRequestError } from '../lib/api'
 import { useLogin } from '../lib/session'
+import { Logo } from '../components/Logo'
 import { Banner, Button, Card, CardBody, Field } from '../components/ui'
 
 export function LoginPage() {
@@ -25,7 +26,9 @@ export function LoginPage() {
     <div className="gradient-canvas flex min-h-dvh items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-3">
-          <span className="gradient-accent shadow-float size-11 rounded-xl" aria-hidden />
+          <span className="gradient-accent shadow-float grid size-14 place-items-center rounded-2xl">
+            <Logo size={34} className="text-accent-ink" />
+          </span>
           <div className="text-center">
             <h1 className="text-xl font-semibold tracking-tight">Sillage</h1>
             <p className="mt-1 text-sm text-ink-faint">Plateforme de développement agentique</p>

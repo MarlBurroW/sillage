@@ -15,10 +15,26 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Sillage" />
     <!-- Sans icône déclarée, le navigateur réclame /favicon.ico à chaque page et
-         récolte un 404. -->
+         récolte un 404. Le SVG passe en premier, il reste net à toutes les densités ;
+         le PNG reste pour les navigateurs qui ne le prennent pas. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Sillage</title>
+    <meta
+      name="description"
+      content="Plateforme de développement agentique self-hosted et multi-CLI : Claude Code et Codex depuis une seule interface web."
+    />
+    <!-- Chemins relatifs : chaque instance est servie derrière sa propre origine, il n'y
+         a pas de domaine canonique à écrire en dur. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Sillage" />
+    <meta
+      property="og:description"
+      content="Plateforme de développement agentique self-hosted et multi-CLI : Claude Code et Codex depuis une seule interface web."
+    />
+    <meta property="og:image" content="/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
     <script>
       // Appliqué avant l'hydratation, sinon un flash de thème clair au chargement.
       (() => {

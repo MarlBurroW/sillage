@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 72" width="340" height="72" role="img" aria-label="Sillage">
+  <!--
+    En-tête du dépôt. Rendu par GitHub comme une image, donc sans accès aux jetons du
+    thème : les deux modes sont portés par une requête de préférence, que le navigateur
+    évalue même à l'intérieur d'un SVG chargé en `<img>`.
+
+    Le texte reste du texte, pas des tracés : la pile de polices système suffit ici, et
+    vectoriser le mot le figerait sans rien apporter.
+  -->
+  <style>
+    :root { --mark: #535cda; --word: #181d37; --sub: #797f99; }
+    @media (prefers-color-scheme: dark) {
+      :root { --mark: #8f9bff; --word: #eceaf7; --sub: #9a97b5; }
+    }
+    .word {
+      font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 30px;
+      font-weight: 650;
+      letter-spacing: -0.6px;
+      fill: var(--word);
+    }
+    .sub {
+      font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      fill: var(--sub);
+    }
+  </style>
+
+  <g transform="translate(4 12) scale(1.5)">
+    <circle cx="16" cy="6.4" r="3.4" fill="var(--mark)" />
+    <g fill="none" stroke="var(--mark)" stroke-width="3" stroke-linecap="round">
+      <path d="M10.8 13.8Q16 17.4 21.2 13.8" />
+      <path d="M7.4 19.2Q16 24.6 24.6 19.2" opacity="0.7" />
+      <path d="M4 24.6Q16 31.4 28 24.6" opacity="0.45" />
+    </g>
+  </g>
+
+  <text class="word" x="60" y="34">Sillage</text>
+  <text class="sub" x="61" y="54">Plateforme de développement agentique</text>
+</svg>

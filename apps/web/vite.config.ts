@@ -28,7 +28,7 @@ export default defineConfig({
       injectRegister: null,
       // `push-sw.js` doit être copié tel quel : il n'est pas importé par le bundle,
       // c'est le service worker qui le charge à l'exécution.
-      includeAssets: ['apple-touch-icon.png', 'push-sw.js'],
+      includeAssets: ['apple-touch-icon.png', 'favicon.svg', 'push-sw.js'],
       manifest: {
         name: 'Sillage',
         short_name: 'Sillage',

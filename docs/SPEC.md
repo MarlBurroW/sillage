@@ -1138,6 +1138,19 @@ donc une vue ajoutée aujourd'hui s'applique aux conversations d'hier.
 
 ### 12.6 Design et thèmes
 
+**La marque.** Un point qui avance, et les rides qu'il laisse derrière lui : trois arcs
+qui s'élargissent et s'effacent en s'éloignant, comme les vagues transversales d'un vrai
+sillage. Trois instants du même événement, ce qu'un journal contient.
+
+Elle est unie, jamais en dégradé, et tracée en `currentColor` : posée sur `text-accent`,
+elle suit le curseur de teinte des réglages, ce qu'un dégradé codé en dur ne saurait pas
+faire. Le dégradé ne sert qu'à la tuile des icônes d'application, où la marque est posée
+en blanc dessus.
+
+Le tracé existe forcément en plusieurs exemplaires, parce qu'un favicon et un en-tête de
+README sont chargés comme des images et n'héritent d'aucun jeton : `docs/brand/README.md`
+tient la liste et la règle de mise à jour.
+
 Registre visuel : épuré, dégradés très légers, hiérarchie portée par l'espacement et la
 typographie plutôt que par les bordures et les ombres.
 
