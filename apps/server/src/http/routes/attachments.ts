@@ -43,13 +43,13 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
     const { id } = request.params as { id: string }
 
     const row = store.get(id)
-    if (!row) throw notFound('Pièce jointe introuvable.')
+    if (!row) throw notFound('attachment_not_found', 'Attachment not found.')
     // Le partage se fait au niveau du projet, pas du fichier téléversé : seul son
     // propriétaire le relit.
-    if (row.userId !== user.id) throw forbidden('Pièce jointe inaccessible.')
+    if (row.userId !== user.id) throw forbidden('attachment_forbidden', 'This attachment is not yours.')
 
     const info = await stat(row.storagePath).catch(() => null)
-    if (!info) throw notFound('Le fichier a disparu du disque.')
+    if (!info) throw notFound('attachment_file_missing', 'The file is gone from disk.')
 
     const disposition = INLINE_DISPOSITION.test(row.mimeType) ? 'inline' : 'attachment'
     return reply
@@ -69,7 +69,7 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
 
     const row = store.get(id)
     if (!row) return reply.status(204).send()
-    if (row.userId !== user.id) throw forbidden('Pièce jointe inaccessible.')
+    if (row.userId !== user.id) throw forbidden('attachment_forbidden', 'This attachment is not yours.')
     // Retirer une pièce jointe déjà envoyée réécrirait l'historique du fil, que le
     // journal doit pouvoir rejouer à l'identique (invariant I2).
     if (row.conversationId) {
