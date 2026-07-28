@@ -48,6 +48,15 @@ jobs:
       - name: Install production dependencies
         run: npm install --omit=dev --legacy-peer-deps
         working-directory: out/sillage
+      # Ces paquets optionnels du SDK Claude ne contiennent qu'une chose : le binaire
+      # `claude` lui-même, 263 Mo par architecture. Sillage lance désormais le CLI du
+      # système, résolu sur le PATH, et passe toujours `pathToClaudeCodeExecutable` au
+      # SDK pour que sa propre résolution ne soit jamais consultée. Les garder ferait
+      # transporter un CLI que la release n'utilise pas.
+      # Suppression ciblée plutôt que `--omit=optional` : les autres dépendances
+      # optionnelles de l'arbre restent légitimes.
+      - name: Drop the bundled Claude CLI binaries
+        run: rm -rf out/sillage/node_modules/@anthropic-ai/claude-agent-sdk-*
       - name: Smoke test (native modules load)
         run: SILLAGE_DATA_DIR="$(mktemp -d)" node out/sillage/server/cli/migrate.js
       - name: Pack
