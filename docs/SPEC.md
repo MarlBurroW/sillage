@@ -1215,7 +1215,25 @@ Le thème contrasté garde sa propre palette quoi qu'il arrive, et le dit : son 
 est ce pour quoi on le choisit, une palette d'ambiance l'annulerait. Même raisonnement que
 pour la teinte et l'intensité, déjà neutralisées sur ce thème.
 
-### 12.7 Réglages
+### 12.7 Écran de création
+
+Le CLI se choisit sur deux cartes et non dans une liste déroulante : c'est le choix qui
+engage le plus, il n'y en a que deux, et chacun porte la phrase qui le distingue de
+l'autre. Descriptive, pas promotionnelle : les deux passent par le même journal et la
+même interface, la différence est ailleurs.
+
+Le répertoire de travail suit le même principe, options dépliées plutôt que repliées.
+Une liste déroulante cache ce qu'on peut choisir avant qu'on l'ouvre, et ne montre jamais
+deux options côte à côte ; quand elles sont peu nombreuses et qu'elles portent une
+explication (la branche courante, l'état d'un worktree), les montrer coûte quelques
+lignes et évite l'ouverture. Au-delà d'une demi-douzaine, la liste déroulante reprend
+l'avantage, et c'est pourquoi la même liste reste déroulante ailleurs dans l'application.
+
+Dans les deux cas la coche du choix retenu occupe une place réservée en permanence :
+apparaissant au clic, elle décalerait le libellé de chaque ligne au moment même où on
+vise.
+
+### 12.8 Réglages
 
 Rangés par catégorie, chacune une route : elles se partagent, se mettent en favori, et
 le bouton retour du téléphone les traverse. Une page unique empilait des cartes sans
@@ -1250,7 +1268,7 @@ L'aperçu est une fausse conversation qui réutilise les vrais composants du fil
 comprise, plutôt qu'une imitation qui finirait par diverger. Rien ne lui est transmis :
 les réglages étant sur `<html>`, il suit comme le reste.
 
-### 12.8 PWA
+### 12.9 PWA
 
 - `manifest.webmanifest` : `display: standalone`, icônes 192/512 et maskable, `theme_color`
   aligné sur le thème actif.
@@ -1283,7 +1301,7 @@ les réglages étant sur `<html>`, il suit comme le reste.
   confortable : tu lances une tâche, tu ranges ton téléphone, tu es rappelé quand l'agent
   a besoin de toi. Prévu au lot 5, pas en v1.
 
-### 12.9 Recherche
+### 12.10 Recherche
 
 Deux surfaces, une seule palette (Cmd+K, Ctrl+K, et une entrée dans la sidebar puisque le
 raccourci n'existe pas au doigt).
@@ -1364,7 +1382,7 @@ exactement ce que le `memo` de `MessageBubble` prétendait éviter. La fonction 
 stable, et la barre relit ses occurrences si elle en trouve une repliée, le fil pouvant
 toujours changer sous elle pendant qu'un tour se déroule.
 
-### 12.10 Panneau du workspace
+### 12.11 Panneau du workspace
 
 Troisième colonne à droite, dépliable, largeur à la poignée et mémorisée, comme la
 sidebar. Sur téléphone il ne peut pas coexister avec le fil dans 390 px : il devient une
