@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { TESTED_CLI_RELEASES } from '@sillage/protocol'
+import { PREFERRED_CLI_RELEASES } from '@sillage/protocol'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
 import { HttpError } from '../errors.js'
@@ -36,7 +36,7 @@ export function registerAgentRoutes(
     const agents = await Promise.all(
       registry.all().map(async (adapter) => ({
         ...(await adapter.cli.describe(force)),
-        testedVersion: TESTED_CLI_RELEASES[adapter.kind].version,
+        preferredVersion: PREFERRED_CLI_RELEASES[adapter.kind].version,
         install: installer.state(adapter.kind),
       })),
     )

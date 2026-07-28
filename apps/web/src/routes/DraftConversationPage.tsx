@@ -242,7 +242,7 @@ export function DraftConversationPage() {
                   >
                     {entry.install.status === 'failed'
                       ? 'Réessayer'
-                      : `Installer ${entry.testedVersion}`}
+                      : `Installer ${entry.preferredVersion}`}
                   </Button>
                 </div>
               ))}

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  TESTED_CLI_RELEASES,
+  PREFERRED_CLI_RELEASES,
+  isCompatibleVersion,
   type AgentAvailabilityDto,
   type AgentAvailabilityListDto,
   type AgentEffortDto,
@@ -59,17 +60,18 @@ export function unavailableReason(entry: AgentAvailabilityDto | undefined): stri
 }
 
 /**
- * Écart entre la version installée et celle sur laquelle Sillage est testé, à afficher
- * comme un avertissement. Null quand elles concordent, ou qu'il n'y a rien à comparer.
+ * Écart entre la version installée et celle que Sillage vise, à afficher comme un
+ * avertissement. Null quand elles sont compatibles, ou qu'il n'y a rien à comparer.
  *
- * Comparaison à l'identique, sans intervalle de compatibilité : Sillage n'a testé qu'un
- * numéro, et prétendre qu'une plage fonctionne serait une affirmation qu'on n'a pas
- * vérifiée. L'écart n'empêche rien, il se signale.
+ * L'écart n'empêche rien et ne grise aucune carte : il se signale, et l'installation de
+ * la version visée reste offerte à côté.
  */
 export function versionMismatch(entry: AgentAvailabilityDto | undefined): string | null {
   if (!entry?.installed || !entry.version) return null
-  const tested = TESTED_CLI_RELEASES[entry.agent].version
-  return entry.version === tested ? null : `Version ${entry.version}, testée avec ${tested}.`
+  const preferred = PREFERRED_CLI_RELEASES[entry.agent].version
+  // `null` vaut « illisible, donc rien à dire » : seul un faux avéré justifie d'alerter.
+  if (isCompatibleVersion(entry.version, preferred) !== false) return null
+  return `Version ${entry.version} installée, Sillage vise ${preferred} : des différences de comportement sont possibles.`
 }
 
 /**
