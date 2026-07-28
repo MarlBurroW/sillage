@@ -634,7 +634,15 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   reviewPlan(requestId: string, review: PlanReview): boolean {
-    return this.interactions.resolvePlanReview(requestId, review)
+    // Normalisé avant journalisation : la valeur vient du client et le schéma commun
+    // n'y voit qu'une chaîne opaque. Un identifiant que cet adaptateur ne connaît
+    // pas vaut « pas de changement de mode », et c'est cette lecture-là qui doit se
+    // retrouver dans le journal, pas la chaîne inventée.
+    const parsed = claudePermissionModeSchema.safeParse(review.followUpMode)
+    return this.interactions.resolvePlanReview(requestId, {
+      ...review,
+      followUpMode: parsed.success ? parsed.data : null,
+    })
   }
 
   resolvePermission(requestId: string, decision: PermissionDecision): boolean {
