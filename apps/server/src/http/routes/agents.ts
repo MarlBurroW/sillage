@@ -14,7 +14,7 @@ export function registerAgentRoutes(
   const resolveAdapter = (params: unknown): AgentAdapter => {
     const { agent } = params as { agent: string }
     const adapter = registry.find(agent)
-    if (!adapter) throw new HttpError(404, 'unknown_agent', `CLI inconnu : ${agent}`)
+    if (!adapter) throw new HttpError(404, 'unknown_agent', 'Unknown CLI: {agent}.', { agent })
     return adapter
   }
 
@@ -58,7 +58,8 @@ export function registerAgentRoutes(
       throw new HttpError(
         409,
         'install_in_progress',
-        `Une installation de ${adapter.label} est déjà en cours.`,
+        'An installation of {label} is already in progress.',
+        { label: adapter.label },
       )
     }
     return reply.status(202).send(installer.state(adapter.kind))
@@ -80,9 +81,8 @@ export function registerAgentRoutes(
       throw new HttpError(
         502,
         'usage_unavailable',
-        `Impossible de lire la consommation depuis ${adapter.label} : ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        'Could not read usage from {label}: {error}.',
+        { label: adapter.label, error: err instanceof Error ? err.message : String(err) },
       )
     }
   })
@@ -99,9 +99,8 @@ export function registerAgentRoutes(
       throw new HttpError(
         502,
         'model_list_unavailable',
-        `Impossible de lire les modèles depuis ${adapter.label} : ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        'Could not read models from {label}: {error}.',
+        { label: adapter.label, error: err instanceof Error ? err.message : String(err) },
       )
     }
   })

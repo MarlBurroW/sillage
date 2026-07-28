@@ -81,7 +81,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const { upToMessageId } = cut as ClaudeForkCut
     if (!upToMessageId) {
       throw new ForkError(
-        "Aucun message de l'agent avant ce point : il n'y a rien à reprendre dans la branche.",
+        'No agent message before this point: there is nothing to resume in the branch.',
       )
     }
 
@@ -93,7 +93,7 @@ export class ClaudeAdapter implements AgentAdapter {
       return forked.sessionId
     } catch (err) {
       throw new ForkError(
-        `Claude Code n'a pas pu forker la session : ${err instanceof Error ? err.message : String(err)}`,
+        `Claude Code could not fork the session: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
   }

@@ -28,7 +28,7 @@ function visibilityFilter(userId: string) {
 
 async function assertUsableWorkspace(path: string): Promise<string> {
   if (!isAbsolute(path)) {
-    throw badRequest('workspace_not_absolute', 'Le chemin du workspace doit être absolu.')
+    throw badRequest('workspace_not_absolute', 'The workspace path must be absolute.')
   }
 
   const resolved = resolve(path)
@@ -36,11 +36,11 @@ async function assertUsableWorkspace(path: string): Promise<string> {
   try {
     info = await stat(resolved)
   } catch {
-    throw badRequest('workspace_missing', `Le dossier ${resolved} n'existe pas.`)
+    throw badRequest('workspace_missing', 'Directory {path} does not exist.', { path: resolved })
   }
 
   if (!info.isDirectory()) {
-    throw badRequest('workspace_not_a_directory', `${resolved} n'est pas un dossier.`)
+    throw badRequest('workspace_not_a_directory', '{path} is not a directory.', { path: resolved })
   }
 
   return resolved
@@ -59,7 +59,7 @@ export function registerProjectRoutes(
         .where(and(eq(projects.id, projectId), visibilityFilter(userId)))
         .limit(1)
     )[0]
-    if (!row) throw notFound('Projet introuvable.')
+    if (!row) throw notFound('project_not_found', 'Project not found.')
     return row
   }
 
@@ -167,7 +167,7 @@ export function registerProjectRoutes(
     // Un projet invisible dans la liste reclasserait quelque chose que l'utilisateur
     // n'a pas le droit de voir : on refuse l'ensemble plutôt qu'un ordre partiel.
     const intruder = body.ids.find((id) => !visible.has(id))
-    if (intruder) throw notFound('Projet introuvable.')
+    if (intruder) throw notFound('project_not_found', 'Project not found.')
 
     ctx.db.transaction((tx) => {
       body.ids.forEach((id, index) => {
@@ -185,7 +185,7 @@ export function registerProjectRoutes(
 
     const project = await loadVisibleProject(id, user.id)
     if (project.ownerId !== user.id) {
-      throw forbidden('Seul le propriétaire peut modifier ce projet.')
+      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
     }
 
     const patch: Partial<typeof projects.$inferInsert> = {}
@@ -214,7 +214,7 @@ export function registerProjectRoutes(
 
     const project = await loadVisibleProject(id, user.id)
     if (project.ownerId !== user.id) {
-      throw forbidden('Seul le propriétaire peut supprimer ce projet.')
+      throw forbidden('project_delete_forbidden', 'Only the owner can delete this project.')
     }
 
     // Les conversations du projet partent en cascade, donc leurs pièces jointes
@@ -249,7 +249,7 @@ export function registerProjectRoutes(
     let cwd = project.workspacePath
     if (worktreeId) {
       const worktree = ctx.db.select().from(worktrees).where(eq(worktrees.id, worktreeId)).get()
-      if (!worktree || worktree.projectId !== id) throw notFound('Worktree introuvable.')
+      if (!worktree || worktree.projectId !== id) throw notFound('worktree_not_found', 'Worktree not found.')
       if (!worktree.removedAt) cwd = worktree.path
     }
 

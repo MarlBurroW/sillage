@@ -30,7 +30,7 @@ export function registerSystemRoutes(app: FastifyInstance): void {
     // vers la dernière release connue, jamais vers une version arbitraire.
     const info = await checker.getVersionInfo()
     if (!info.updateAvailable || !info.latest) {
-      throw new HttpError(409, 'no_update', 'Aucune mise à jour disponible.')
+      throw new HttpError(409, 'no_update', 'No update is available.')
     }
     try {
       executor.start(info.latest)

@@ -62,9 +62,9 @@ export function registerClaudeSessionRoutes(
 ): void {
   const loadProject = (projectId: string, userId: string) => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
-    if (!project) throw notFound('Projet introuvable.')
+    if (!project) throw notFound('project_not_found', 'Project not found.')
     if (project.ownerId !== userId && project.visibility !== 'shared') {
-      throw notFound('Projet introuvable.')
+      throw notFound('project_not_found', 'Project not found.')
     }
     return project
   }
@@ -91,7 +91,8 @@ export function registerClaudeSessionRoutes(
     } catch (err) {
       throw badRequest(
         'sessions_unavailable',
-        `Impossible de lister les sessions du CLI : ${err instanceof Error ? err.message : String(err)}`,
+        'Unable to list CLI sessions: {reason}.',
+        { reason: err instanceof Error ? err.message : String(err) },
       )
     }
 
@@ -122,12 +123,15 @@ export function registerClaudeSessionRoutes(
     const project = loadProject(params.id, user.id)
 
     if (linkedSessionIds().has(sessionId)) {
-      throw badRequest('session_already_imported', 'Cette session a déjà sa conversation.')
+      throw badRequest('session_already_imported', 'This session already has a conversation.')
     }
 
     const entries = await readTranscript(project.workspacePath, sessionId)
     if (entries.length === 0) {
-      throw notFound('Aucun transcript pour cette session dans le dossier du projet.')
+      throw notFound(
+        'transcript_not_found',
+        'No transcript found for this session in the project folder.',
+      )
     }
 
     const sidechains = await readSubAgentTranscripts(project.workspacePath, sessionId, entries)
@@ -205,10 +209,10 @@ export function registerClaudeSessionRoutes(
     const { id } = request.params as { id: string }
 
     const conversation = ctx.db.select().from(conversations).where(eq(conversations.id, id)).get()
-    if (!conversation) throw notFound('Conversation introuvable.')
-    if (conversation.userId !== user.id) throw notFound('Conversation introuvable.')
+    if (!conversation) throw notFound('conversation_not_found', 'Conversation not found.')
+    if (conversation.userId !== user.id) throw notFound('conversation_not_found', 'Conversation not found.')
     if (conversation.agent !== 'claude') {
-      throw badRequest('claude_only', 'Seules les conversations Claude Code se resynchronisent.')
+      throw badRequest('claude_only', 'Only Claude Code conversations can be resynced.')
     }
 
     // Rien à faire tant que la session n'a jamais démarré, ou qu'un tour est en

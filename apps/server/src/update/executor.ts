@@ -53,18 +53,18 @@ export class UpdateExecutor {
    */
   start(targetTag: string): void {
     if (detectChannel() !== 'installer') {
-      throw new UpdateError('unsupported_channel', 'Cette installation ne gère pas la mise à jour intégrée.')
+      throw new UpdateError('unsupported_channel', 'This installation does not support the built-in update.')
     }
     if (this.isRunning()) {
-      throw new UpdateError('update_running', 'Une mise à jour est déjà en cours.')
+      throw new UpdateError('update_running', 'An update is already in progress.')
     }
     const target = targetTag.replace(/^v/, '')
     if (compareVersions(target, CURRENT_VERSION) <= 0) {
-      throw new UpdateError('not_newer', `La version ${target} n'est pas plus récente que ${CURRENT_VERSION}.`)
+      throw new UpdateError('not_newer', `Version ${target} is not newer than ${CURRENT_VERSION}.`)
     }
     const assetUrl = this.checker.findAsset(target)
     if (!assetUrl) {
-      throw new UpdateError('asset_not_found', `Aucune archive pour cette plateforme dans la release v${target}.`)
+      throw new UpdateError('asset_not_found', `No archive for this platform in release v${target}.`)
     }
 
     this.status = {

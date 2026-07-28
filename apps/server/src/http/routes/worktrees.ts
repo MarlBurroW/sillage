@@ -18,9 +18,9 @@ import { requireUser } from '../require-user.js'
 export function registerWorktreeRoutes(app: FastifyInstance, ctx: AppContext): void {
   const loadProject = (projectId: string, userId: string): ProjectRow => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
-    if (!project) throw notFound('Projet introuvable.')
+    if (!project) throw notFound('project_not_found', 'Project not found.')
     if (project.ownerId !== userId && project.visibility !== 'shared') {
-      throw notFound('Projet introuvable.')
+      throw notFound('project_not_found', 'Project not found.')
     }
     return project
   }
@@ -65,7 +65,7 @@ export function registerWorktreeRoutes(app: FastifyInstance, ctx: AppContext): v
 
     const project = loadProject(id, user.id)
     if (!(await readGitStatus(project.workspacePath))) {
-      throw badRequest('not_a_repository', "Ce projet n'est pas un dépôt git.")
+      throw badRequest('not_a_repository', 'This project is not a git repository.')
     }
 
     const existing = ctx.db
@@ -74,7 +74,7 @@ export function registerWorktreeRoutes(app: FastifyInstance, ctx: AppContext): v
       .where(and(eq(worktrees.projectId, id), eq(worktrees.name, body.name)))
       .get()
     if (existing && !existing.removedAt) {
-      throw conflict('worktree_exists', `Le worktree « ${body.name} » existe déjà.`)
+      throw conflict('worktree_exists', 'Worktree {name} already exists.', { name: body.name })
     }
 
     // Les worktrees vivent dans le répertoire de données, pas dans le projet : ils ne
@@ -114,11 +114,11 @@ export function registerWorktreeRoutes(app: FastifyInstance, ctx: AppContext): v
     const force = (request.query as { force?: string }).force === '1'
 
     const row = ctx.db.select().from(worktrees).where(eq(worktrees.id, id)).get()
-    if (!row || row.removedAt) throw notFound('Worktree introuvable.')
+    if (!row || row.removedAt) throw notFound('worktree_not_found', 'Worktree not found.')
 
     const project = loadProject(row.projectId, user.id)
     if (project.ownerId !== user.id) {
-      throw forbidden('Seul le propriétaire du projet peut supprimer un worktree.')
+      throw forbidden('worktree_delete_forbidden', 'Only the project owner can delete a worktree.')
     }
 
     // Le travail non commité est perdu à la suppression : on le dit, et on exige une
@@ -127,7 +127,8 @@ export function registerWorktreeRoutes(app: FastifyInstance, ctx: AppContext): v
     if (status?.isDirty && !force) {
       throw conflict(
         'worktree_dirty',
-        `Le worktree « ${row.name} » contient des modifications non commitées.`,
+        'Worktree {name} has uncommitted changes.',
+        { name: row.name },
       )
     }
 

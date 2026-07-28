@@ -58,22 +58,23 @@ export function registerFsRoutes(app: FastifyInstance): void {
     const path = resolve(query.path ?? home)
 
     if (isDenied(path)) {
-      throw forbidden("Ce dossier système n'est pas explorable.")
+      throw forbidden('system_directory_denied', 'This system directory cannot be browsed.')
     }
 
     let info
     try {
       info = await stat(path)
     } catch {
-      throw notFound(`Le dossier ${path} n'existe pas.`)
+      throw notFound('directory_not_found', 'Directory {path} does not exist.', { path })
     }
-    if (!info.isDirectory()) throw badRequest('not_a_directory', `${path} n'est pas un dossier.`)
+    if (!info.isDirectory())
+      throw badRequest('not_a_directory', '{path} is not a directory.', { path })
 
     let names: string[]
     try {
       names = await readdir(path)
     } catch {
-      throw forbidden(`Lecture refusée sur ${path}.`)
+      throw forbidden('directory_read_denied', 'Read access to {path} was denied.', { path })
     }
 
     const visible = names

@@ -91,7 +91,7 @@ export class CodexAdapter implements AgentAdapter {
       return branchId
     } catch (err) {
       throw new ForkError(
-        `Codex n'a pas pu forker le fil : ${err instanceof Error ? err.message : String(err)}`,
+        `Codex could not fork the thread: ${err instanceof Error ? err.message : String(err)}`,
       )
     } finally {
       client.close()

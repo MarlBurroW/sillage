@@ -35,7 +35,8 @@ class LoginThrottle {
       throw new HttpError(
         429,
         'too_many_attempts',
-        `Trop de tentatives. Réessaye dans ${retryIn} secondes.`,
+        'Too many attempts. Try again in {seconds} seconds.',
+        { seconds: retryIn },
       )
     }
   }
@@ -81,7 +82,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     )[0]
 
     // Message identique dans les deux cas : ne pas révéler l'existence d'un compte.
-    const invalid = new HttpError(401, 'invalid_credentials', 'Identifiants incorrects.')
+    const invalid = new HttpError(401, 'invalid_credentials', 'Incorrect username or password.')
     if (!row) throw invalid
     if (!(await verifyPassword(row.passwordHash, body.password))) throw invalid
 
