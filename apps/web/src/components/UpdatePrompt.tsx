@@ -29,6 +29,13 @@ export function UpdatePrompt() {
   } = useRegisterSW({
     onRegisteredSW(_url, registration) {
       if (!registration) return
+
+      // Vérification immédiate, et pas seulement au premier intervalle. Une PWA
+      // installée reprend depuis la mémoire sans naviguer : sans cet appel, une version
+      // déployée pouvait n'être proposée qu'une demi-heure après l'ouverture, ou
+      // jamais si l'application était refermée avant.
+      void registration.update()
+
       const timer = setInterval(() => void registration.update(), CHECK_INTERVAL_MS)
       // La page vit aussi longtemps que l'application : l'intervalle n'a pas de fin
       // propre, mais il ne survit pas au document.
