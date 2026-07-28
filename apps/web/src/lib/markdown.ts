@@ -16,6 +16,21 @@ import type Token from 'markdown-it/lib/token.mjs'
  */
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
+/**
+ * Seuls les liens portant un schéma sont détectés automatiquement.
+ *
+ * Le mode approximatif de linkify-it lie tout ce qui ressemble à `nom.tld` sans schéma,
+ * or `.md`, `.sh`, `.io` ou `.ts` sont de vrais domaines de premier niveau : « CLAUDE.md »
+ * devenait un lien vers `http://claude.md`, un domaine que Sillage ne contrôle pas. Dans
+ * un outil où l'on cite des fichiers à longueur de message, c'est la règle qui se trompe
+ * le plus souvent, et elle se trompe vers l'extérieur.
+ *
+ * Le prix est qu'un `github.com/org/depot` écrit sans `https://` reste du texte. Les
+ * modèles écrivent des URL complètes, et une URL qu'il faut copier vaut mieux qu'un nom
+ * de fichier qui emmène ailleurs.
+ */
+md.linkify.set({ fuzzyLink: false })
+
 // Les liens sortants ne doivent pas pouvoir manipuler l'onglet de Sillage.
 md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
   tokens[idx]?.attrSet('target', '_blank')
@@ -61,11 +76,97 @@ md.core.ruler.push('sg_task_lists', (state) => {
   return true
 })
 
+/**
+ * Ce qui, dans un `code span`, peut valoir la peine d'être soumis au serveur.
+ *
+ * Filtre grossier et volontairement large : il ne tranche pas, il évite seulement
+ * d'envoyer des commandes shell et des URL. C'est le workspace qui dit ensuite ce qui
+ * est un fichier, parce que la forme ne prouve rien : `text/plain`, `fs/promises` et
+ * `@sillage/protocol` ressemblent tous à des chemins.
+ *
+ * Le suffixe `:12` ou `:12:5` des sorties de `grep` est toléré et retiré : le chemin
+ * qu'il désigne existe, seule la position ne se transmet pas à l'éditeur.
+ */
+const PATH_CANDIDATE = /^(?!-)(?!\w+:\/\/)[\w./@+-]{1,300}$/
+const LINE_SUFFIX = /:\d+(?::\d+)?$/
+
+/** Chemin porté par un `code span`, ou null s'il ne peut pas en être un. */
+function pathCandidate(content: string): string | null {
+  // Le `./` d'écriture est retiré, le workspace attend un chemin relatif à sa racine.
+  const path = content.replace(LINE_SUFFIX, '').replace(/^\.\//, '')
+  if (!PATH_CANDIDATE.test(path)) return null
+  // Un chemin sans séparateur ni extension est un mot : `useState`, `null`, `main`.
+  // `Makefile` et `LICENSE` y perdent, sauf écrits avec leur dossier ; l'inverse
+  // enverrait au serveur chaque mot mis entre accents graves dans une phrase.
+  if (!path.includes('/') && !/\.\w{1,10}$/.test(path)) return null
+  // Un segment `.` ou `..` sort du workspace, ou n'y désigne rien.
+  if (/(^|\/)\.\.?($|\/)/.test(path)) return null
+  return path
+}
+
+/**
+ * Rend cliquables les `code spans` qui désignent un fichier du workspace.
+ *
+ * Seuls les chemins de `known` sont transformés : le rendu ne décide de rien, il
+ * applique une réponse déjà obtenue. Sans `known`, la passe ne fait que collecter les
+ * candidats, que l'appelant soumettra.
+ *
+ * L'attribut porte le chemin, et c'est un écouteur délégué qui ouvre l'onglet : le HTML
+ * est injecté tel quel, il n'y a pas de composant React où accrocher un `onClick`.
+ */
+function markFilePaths(md: MarkdownIt): void {
+  md.core.ruler.push('sg_file_paths', (state) => {
+    const env = state.env as MarkdownEnv
+    for (const token of state.tokens) {
+      if (token.type !== 'inline') continue
+      for (const child of token.children ?? []) {
+        if (child.type !== 'code_inline') continue
+
+        const path = pathCandidate(child.content)
+        if (!path) continue
+
+        env.candidates?.add(path)
+        if (env.knownFiles?.has(path)) child.attrSet('data-sg-path', path)
+      }
+    }
+    return true
+  })
+
+  /**
+   * Un chemin confirmé se rend en bouton, pas en `<code>` cliquable : il est alors
+   * atteignable au clavier et annoncé comme une action, ce qu'un écouteur posé sur un
+   * élément inerte ne donne pas.
+   */
+  md.renderer.rules.code_inline = (tokens, idx, _options, _env, self) => {
+    const token = tokens[idx]
+    const content = md.utils.escapeHtml(token?.content ?? '')
+    if (!token?.attrGet('data-sg-path')) return `<code>${content}</code>`
+
+    return `<button type="button" class="sg-file"${self.renderAttrs(token)}>${content}</button>`
+  }
+}
+
+markFilePaths(md)
+
+/** Ce que la passe de rendu reçoit et remplit. */
+interface MarkdownEnv {
+  /** Chemins possibles rencontrés, à soumettre au serveur. */
+  candidates?: Set<string>
+  /** Chemins dont le serveur a confirmé qu'ils sont des fichiers. */
+  knownFiles?: Set<string>
+}
+
 /** Un segment de contenu, tel que le composant React doit le rendre. */
 export type MarkdownSegment =
   | { kind: 'html'; html: string }
   | { kind: 'code'; language: string; code: string }
   | { kind: 'table'; html: string; rows: string[][] }
+
+export interface MarkdownDocument {
+  segments: MarkdownSegment[]
+  /** Chemins possibles du document, qu'ils aient été rendus cliquables ou non. */
+  candidates: Set<string>
+}
 
 /** Texte d'une cellule, débarrassé de son balisage, pour l'export CSV. */
 function cellText(inline: Token | undefined): string {
@@ -104,8 +205,9 @@ function tableRows(tokens: Token[], start: number, end: number): string[][] {
  * d'un tableau sont rendus en bloc par markdown-it, plutôt qu'un par un : c'est le
  * seul moyen de garder son HTML exactement tel qu'il le produit.
  */
-export function parseMarkdown(text: string): MarkdownSegment[] {
-  const env = {}
+export function parseMarkdown(text: string, knownFiles?: Set<string>): MarkdownDocument {
+  const candidates = new Set<string>()
+  const env: MarkdownEnv = { candidates, knownFiles }
   const tokens = md.parse(text, env)
   const segments: MarkdownSegment[] = []
 
@@ -148,5 +250,5 @@ export function parseMarkdown(text: string): MarkdownSegment[] {
   }
 
   flushHtml(tokens.length)
-  return segments
+  return { segments, candidates }
 }
