@@ -56,6 +56,12 @@ import { describeActivity, type MessageItem } from '../lib/chat-fold'
 import { buildBackground, type BackgroundWork } from '../lib/background'
 import { buildSubAgents } from '../lib/subagents'
 import { buildRows } from '../lib/tool-rows'
+import {
+  INITIAL_WINDOW_ROWS,
+  WINDOW_STEP_ROWS,
+  windowRows,
+  windowToReveal,
+} from '../lib/thread-window'
 import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useWorktrees } from '../lib/worktrees'
@@ -150,6 +156,42 @@ export function ConversationPage() {
   const [flashed, setFlashed] = useState<string | null>(null)
   const [metaOpen, setMetaOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
+
+  /** Nombre de lignes montées, en partant de la fin. Voir `thread-window`. */
+  const [windowSize, setWindowSize] = useState(INITIAL_WINDOW_ROWS)
+  /** Position du fil avant un dépliage, pour la reposer une fois le début inséré. */
+  const scrollAnchor = useRef<{ height: number; top: number } | null>(null)
+  /** Tour visé alors qu'il n'était pas monté : le saut part une fois qu'il l'est. */
+  const pendingJump = useRef<string | null>(null)
+
+  // Une autre conversation repart de la fin, sinon elle s'ouvrirait dépliée d'autant de
+  // lignes que la précédente, sans rapport avec sa propre longueur.
+  useEffect(() => setWindowSize(INITIAL_WINDOW_ROWS), [conversationId])
+
+  const view = useMemo(
+    // La recherche dans le fil parcourt le DOM : avec une fenêtre, elle chercherait
+    // dans un fil tronqué et annoncerait moins d'occurrences qu'il n'y en a. Tant
+    // qu'elle est ouverte, tout est monté.
+    () => windowRows(rows, findOpen ? Number.POSITIVE_INFINITY : windowSize),
+    [rows, windowSize, findOpen],
+  )
+
+  /** Monte une ligne restée avant la fenêtre. Faux si elle n'est pas dans le fil. */
+  const reveal = useCallback(
+    (itemId: string) => {
+      const needed = windowToReveal(rows, itemId)
+      if (needed === null) return false
+      setWindowSize((size) => Math.max(size, needed))
+      return true
+    },
+    [rows],
+  )
+
+  const showEarlier = useCallback(() => {
+    const node = scroller.current
+    if (node) scrollAnchor.current = { height: node.scrollHeight, top: node.scrollTop }
+    setWindowSize((size) => size + WINDOW_STEP_ROWS)
+  }, [])
   /** Message visé par un résultat de recherche, une fois le fil chargé. */
   const [searchParams] = useSearchParams()
   const anchorSeq = Number(searchParams.get('seq'))
@@ -204,17 +246,53 @@ export function ConversationPage() {
     })
   }, [syncVisibleTurns])
 
-  const jumpToTurn = useCallback((id: string) => {
-    const anchor = turnAnchors.current.get(id)
+  const jumpToTurn = useCallback(
+    (id: string) => {
+      const node = scroller.current
+      if (!node) return
+
+      const anchor = turnAnchors.current.get(id)
+      // La réglette liste tous les tours, y compris ceux restés avant la fenêtre : on
+      // les monte, et le saut repart de l'effet de mise en page une fois l'ancre posée.
+      if (!anchor) {
+        if (reveal(id)) pendingJump.current = id
+        return
+      }
+
+      // `scrollTo` plutôt que `scrollIntoView` : ce dernier fait aussi défiler les
+      // conteneurs parents, donc la page entière sur mobile.
+      node.scrollTo({ top: anchor.offsetTop - 12, behavior: 'smooth' })
+      // Sur un fil dense, arriver quelque part sans savoir où l'on a atterri ne vaut
+      // guère mieux que de ne pas s'être déplacé : le message atteint se signale.
+      setFlashed(id)
+    },
+    [reveal],
+  )
+
+  // Saut différé le temps que le tour visé soit monté, et repositionnement du fil
+  // après un dépliage. Les deux sont des corrections de défilement à faire avant
+  // peinture, sinon le fil part au mauvais endroit puis se rattrape à l'écran.
+  useLayoutEffect(() => {
     const node = scroller.current
-    if (!anchor || !node) return
-    // `scrollTo` plutôt que `scrollIntoView` : ce dernier fait aussi défiler les
-    // conteneurs parents, donc la page entière sur mobile.
-    node.scrollTo({ top: anchor.offsetTop - 12, behavior: 'smooth' })
-    // Sur un fil dense, arriver quelque part sans savoir où l'on a atterri ne vaut
-    // guère mieux que de ne pas s'être déplacé : le message atteint se signale.
-    setFlashed(id)
-  }, [])
+    if (!node) return
+
+    const jump = pendingJump.current
+    if (jump) {
+      const anchor = turnAnchors.current.get(jump)
+      if (!anchor) return
+      pendingJump.current = null
+      // Sans animation : le tour vient d'apparaître, et l'y faire glisser depuis une
+      // position qui n'existait pas au clic ne montre rien d'utile.
+      node.scrollTo({ top: anchor.offsetTop - 12 })
+      setFlashed(jump)
+      return
+    }
+
+    const saved = scrollAnchor.current
+    if (!saved) return
+    scrollAnchor.current = null
+    node.scrollTop = saved.top + (node.scrollHeight - saved.height)
+  }, [view.rows])
 
   /**
    * La recherche dans le fil prend le raccourci de recherche du navigateur.
@@ -275,9 +353,10 @@ export function ConversationPage() {
   /**
    * Ouverture sur un message précis, quand on arrive depuis la recherche.
    *
-   * Le journal est chargé en entier, donc le message est déjà dans le fil : il ne
-   * reste qu'à l'y trouver. Une seule fois par cible, sinon chaque événement reçu
-   * ramènerait le défilement au même endroit pour le reste de la session.
+   * Le journal est chargé en entier, donc le message est déjà dans le fil, mais pas
+   * forcément monté : la cible peut être restée avant la fenêtre, auquel cas on la
+   * dévoile et l'effet repasse au rendu suivant. Une seule fois par cible, sinon chaque
+   * événement reçu ramènerait le défilement au même endroit pour le reste de la session.
    */
   useEffect(() => {
     const node = scroller.current
@@ -287,13 +366,18 @@ export function ConversationPage() {
     const target = stream.state.items.find(
       (item) => item.kind === 'message' && item.seq === anchorSeq,
     )
+    if (!target) return
+
     const element = node.querySelector<HTMLElement>(`[data-seq="${anchorSeq}"]`)
-    if (!target || !element) return
+    if (!element) {
+      reveal(target.id)
+      return
+    }
 
     anchored.current = anchorSeq
     node.scrollTo({ top: element.offsetTop - 12 })
     setFlashed(target.id)
-  }, [anchorSeq, stream.loading, stream.state.items])
+  }, [anchorSeq, stream.loading, stream.state.items, view.rows, reveal])
 
   /**
    * Tour suivant ou précédent, à partir de la position de défilement.
@@ -306,25 +390,41 @@ export function ConversationPage() {
    * Les ancres sont relues à chaque appel : elles bougent à mesure que le contenu
    * grandit, et une position mémorisée serait périmée dès le tour suivant.
    */
-  const step = useCallback((direction: -1 | 1) => {
-    const node = scroller.current
-    if (!node) return
+  const step = useCallback(
+    (direction: -1 | 1) => {
+      const node = scroller.current
+      if (!node) return
 
-    const anchors = [...turnAnchors.current.entries()]
-      .map(([id, element]) => ({ id, top: element.offsetTop }))
-      .sort((a, b) => a.top - b.top)
+      const anchors = [...turnAnchors.current.entries()]
+        .map(([id, element]) => ({ id, top: element.offsetTop }))
+        .sort((a, b) => a.top - b.top)
 
-    // Tolérance : le saut se pose à `offsetTop - 12`, et un défilement fluide
-    // s'arrête à quelques pixels près. Sans elle, le tour où l'on vient d'arriver
-    // se retrouve « en dessous » de lui-même et la flèche fait du surplace.
-    const cursor = node.scrollTop + 16
-    const target =
-      direction === 1
-        ? anchors.find((anchor) => anchor.top > cursor)
-        : [...anchors].reverse().find((anchor) => anchor.top < cursor - 8)
+      // Tolérance : le saut se pose à `offsetTop - 12`, et un défilement fluide
+      // s'arrête à quelques pixels près. Sans elle, le tour où l'on vient d'arriver
+      // se retrouve « en dessous » de lui-même et la flèche fait du surplace.
+      const cursor = node.scrollTop + 16
+      const target =
+        direction === 1
+          ? anchors.find((anchor) => anchor.top > cursor)
+          : [...anchors].reverse().find((anchor) => anchor.top < cursor - 8)
 
-    if (target) jumpToTurn(target.id)
-  }, [jumpToTurn])
+      if (target) {
+        jumpToTurn(target.id)
+        return
+      }
+
+      // Plus rien au-dessus dans ce qui est monté, mais le fil continue avant la
+      // fenêtre : sans ce relais, la flèche s'arrêterait au premier tour affiché comme
+      // si la conversation commençait là.
+      if (direction === -1 && view.hidden > 0) {
+        const first = anchors[0]
+        const index = first ? turns.findIndex((turn) => turn.id === first.id) : turns.length
+        const previous = turns[index - 1]
+        if (previous) jumpToTurn(previous.id)
+      }
+    },
+    [jumpToTurn, turns, view.hidden],
+  )
 
   // Défilement avant peinture : sinon le fil saute visiblement à chaque delta.
   useLayoutEffect(() => {
@@ -689,8 +789,26 @@ export function ConversationPage() {
               />
             ) : null}
 
+            {view.hidden > 0 ? (
+              <button
+                type="button"
+                onClick={showEarlier}
+                className={cx(
+                  'surface mx-auto rounded-full border border-line px-3 py-1.5',
+                  'text-xs text-ink-soft transition-colors hover:text-ink',
+                )}
+              >
+                {t(
+                  view.hidden > 1
+                    ? 'conversation.thread.earlier.other'
+                    : 'conversation.thread.earlier.one',
+                  { count: view.hidden },
+                )}
+              </button>
+            ) : null}
+
             <ChatThread
-              rows={rows}
+              rows={view.rows}
               conversationId={conversationId}
               canDecide={isOwner}
               onFork={isOwner && !forking ? setForkTarget : undefined}
