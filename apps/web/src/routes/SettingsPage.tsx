@@ -1,7 +1,8 @@
-import { Bell, ChevronRight, FolderOpen, Palette, UserRound, Users } from 'lucide-react'
+import { Bell, ChevronRight, FolderOpen, Info, Palette, UserRound, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useCurrentUser } from '../lib/session'
+import { useVersionInfo } from '../lib/system'
 import { useMediaQuery } from '../lib/viewport'
 import { cx } from '../components/ui'
 
@@ -58,10 +59,17 @@ const SECTIONS: Section[] = [
     icon: <Users size={16} />,
     adminOnly: true,
   },
+  {
+    to: 'a-propos',
+    label: 'À propos',
+    description: 'Version installée, nouveautés, mise à jour',
+    icon: <Info size={16} />,
+  },
 ]
 
 export function SettingsLayout() {
   const { data: user } = useCurrentUser()
+  const { data: versionInfo } = useVersionInfo()
   const { pathname } = useLocation()
   const sections = SECTIONS.filter((section) => !section.adminOnly || user?.isAdmin)
   const onIndex = pathname === '/settings' || pathname === '/settings/'
@@ -88,7 +96,13 @@ export function SettingsLayout() {
                   )
                 }
               >
-                <span className="shrink-0 text-ink-faint">{section.icon}</span>
+                <span className="relative shrink-0 text-ink-faint">
+                  {section.icon}
+                  {/* Une pastille, pas un toast : la mise à jour attend sans presser. */}
+                  {section.to === 'a-propos' && versionInfo?.updateAvailable ? (
+                    <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-accent" />
+                  ) : null}
+                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{section.label}</span>
                   {/* La description n'aide qu'au doigt, où la liste est la page entière
@@ -106,7 +120,7 @@ export function SettingsLayout() {
         {/* Sans repère de version, « je ne vois pas la correction » ne se tranche pas :
             rien à l'écran ne dit quelle version tourne réellement. */}
         <p className="mt-4 px-2.5 text-[0.6875rem] text-ink-faint">
-          Version installée du{' '}
+          Sillage {__APP_VERSION__} · build du{' '}
           <time dateTime={__BUILD_TIME__}>{new Date(__BUILD_TIME__).toLocaleString('fr-FR')}</time>
         </p>
       </nav>

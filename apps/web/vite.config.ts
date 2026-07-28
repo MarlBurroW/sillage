@@ -1,9 +1,23 @@
+import { execSync } from 'node:child_process'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const SERVER_PORT = process.env.SILLAGE_PORT ?? '7317'
+
+// Même résolution que apps/server/tsup.config.ts : tag fourni par la CI de
+// release, describe git en build local, `dev` hors dépôt.
+function resolveVersion(): string {
+  if (process.env.SILLAGE_VERSION) return process.env.SILLAGE_VERSION.replace(/^v/, '')
+  try {
+    return execSync('git describe --tags --always --dirty', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+  } catch {
+    return 'dev'
+  }
+}
 
 export default defineConfig({
   plugins: [
@@ -81,6 +95,7 @@ export default defineConfig({
    */
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __APP_VERSION__: JSON.stringify(resolveVersion()),
   },
   build: {
     outDir: 'dist',

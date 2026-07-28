@@ -8,6 +8,7 @@ import { HomePage } from './routes/HomePage'
 import { LoginPage } from './routes/LoginPage'
 import { ProjectPage } from './routes/ProjectPage'
 import { ProjectsSettingsPage } from './routes/ProjectsSettingsPage'
+import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { AppearanceSection } from './routes/AppearanceSection'
 import { NotificationsSection } from './routes/NotificationsSection'
@@ -48,6 +49,7 @@ export function App() {
             <Route path="notifications" element={<NotificationsSection />} />
             <Route path="projets" element={<ProjectsSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />
+            <Route path="a-propos" element={<AboutSection />} />
           </Route>
           <Route path="/design" element={<DesignPage />} />
         </Route>
