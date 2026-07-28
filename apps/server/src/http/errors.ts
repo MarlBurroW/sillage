@@ -1,25 +1,50 @@
 import type { FastifyError, FastifyInstance } from 'fastify'
 import { ZodError } from 'zod'
 
+/**
+ * Erreur destinée au client, sous la forme `{ code, params?, message }`.
+ *
+ * Le `code` est ce que l'interface traduit ; le `message` est écrit en anglais et sert
+ * de repli lisible, pour les logs et pour ce qui appelle l'API hors de l'interface. Le
+ * serveur ne connaît donc jamais la langue de l'utilisateur, ce qui vaut aussi pour le
+ * WebSocket, où aucune préférence ne transite.
+ *
+ * `params` porte ce que le message interpole. Sans lui, la traduction côté client ne
+ * pourrait pas reconstruire une phrase qui nomme un fichier ou un agent, et devrait se
+ * rabattre sur une formule vague.
+ */
 export class HttpError extends Error {
   constructor(
     readonly statusCode: number,
     readonly code: string,
     message: string,
+    readonly params?: Record<string, string | number>,
   ) {
     super(message)
     this.name = 'HttpError'
   }
 }
 
-export const badRequest = (code: string, message: string) => new HttpError(400, code, message)
-export const unauthorized = () =>
-  new HttpError(401, 'unauthorized', 'Authentification requise.')
-export const forbidden = (message = 'Accès refusé.') =>
-  new HttpError(403, 'forbidden', message)
-export const notFound = (message = 'Ressource introuvable.') =>
-  new HttpError(404, 'not_found', message)
-export const conflict = (code: string, message: string) => new HttpError(409, code, message)
+type Params = Record<string, string | number>
+
+export const badRequest = (code: string, message: string, params?: Params) =>
+  new HttpError(400, code, message, params)
+export const unauthorized = () => new HttpError(401, 'unauthorized', 'Authentication required.')
+
+/**
+ * `code` est obligatoire sur ces deux-là, et ce n'est pas une formalité.
+ *
+ * Ils partageaient auparavant un code unique pour 12 et 11 situations distinctes, du
+ * « seul le propriétaire peut supprimer ce projet » au « worktree introuvable ». Un
+ * client qui traduit par code les aurait toutes écrasées en une phrase générique, donc
+ * moins informative que le français en dur qu'on remplace.
+ */
+export const forbidden = (code: string, message: string, params?: Params) =>
+  new HttpError(403, code, message, params)
+export const notFound = (code: string, message: string, params?: Params) =>
+  new HttpError(404, code, message, params)
+export const conflict = (code: string, message: string, params?: Params) =>
+  new HttpError(409, code, message, params)
 
 /**
  * Toutes les erreurs sortent sous la forme { error: { code, message } } pour que
@@ -37,7 +62,13 @@ function redactBody(url: string, body: unknown): unknown {
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((err: FastifyError, request, reply) => {
     if (err instanceof HttpError) {
-      return reply.status(err.statusCode).send({ error: { code: err.code, message: err.message } })
+      return reply.status(err.statusCode).send({
+        error: {
+          code: err.code,
+          message: err.message,
+          ...(err.params ? { params: err.params } : {}),
+        },
+      })
     }
 
     if (err instanceof ZodError) {

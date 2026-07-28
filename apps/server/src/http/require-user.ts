@@ -9,6 +9,6 @@ export function requireUser(request: FastifyRequest): UserRow {
 
 export function requireAdmin(request: FastifyRequest): UserRow {
   const user = requireUser(request)
-  if (!user.isAdmin) throw forbidden('Réservé aux administrateurs.')
+  if (!user.isAdmin) throw forbidden('admin_only', 'Administrators only.')
   return user
 }
