@@ -1,5 +1,6 @@
 import { Flame, Snowflake, Waves, Wifi, WifiOff } from 'lucide-react'
-import type { AgentKind, BackgroundTask } from '@sillage/protocol'
+import type { AgentKind } from '@sillage/protocol'
+import type { BackgroundWork } from '../../lib/background'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
@@ -24,7 +25,7 @@ export function ComposerStatus({
   warm: boolean | null
   queued: number
   /** Travaux que le CLI poursuit en dehors du tour. Vide la plupart du temps. */
-  background: BackgroundTask[]
+  background: BackgroundWork[]
 }) {
   const t = useTranslate()
   return (

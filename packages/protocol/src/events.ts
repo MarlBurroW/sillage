@@ -392,6 +392,61 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     tasks: z.array(backgroundTaskSchema),
   }),
 
+  /**
+   * Un travail vient d'être enregistré par le CLI.
+   *
+   * Complète la liste de niveau sur un point qu'elle ne porte pas : l'appel d'outil
+   * d'où vient le travail. C'est lui qui permet de distinguer un sous-agent que le fil
+   * suit déjà d'un travail que plus personne ne regarde, les deux étant annoncés dans
+   * la même liste.
+   */
+  z.object({
+    type: z.literal('task.started'),
+    taskId: z.string(),
+    /** Nul pour un travail que le harnais lance de lui-même, sans passer par un outil. */
+    toolCallId: z.string().nullable().default(null),
+    kind: z.string(),
+    description: z.string(),
+  }),
+
+  /**
+   * Un travail a avancé.
+   *
+   * Émis à chaque appel d'outil du travail, ce qui suffit à le décrire : un agent qui
+   * n'appelle rien est en train de réfléchir, et le dernier outil reste alors ce qu'on
+   * peut dire de plus juste sur ce qu'il fait.
+   *
+   * `activity` est la description que le CLI donne du moment présent, pas un cumul :
+   * chaque événement remplace le précédent.
+   */
+  z.object({
+    type: z.literal('task.progress'),
+    taskId: z.string(),
+    activity: z.string(),
+    lastTool: z.string().nullable().default(null),
+    toolUses: z.number(),
+    totalTokens: z.number(),
+    durationMs: z.number(),
+  }),
+
+  /**
+   * Un travail s'est arrêté, avec ce qu'il en reste.
+   *
+   * `summary` est le compte rendu du CLI. Pour un travail que le fil suivait, il
+   * double le résultat de l'appel d'outil ; pour un travail de fond, c'est la seule
+   * réponse à « qu'a-t-il fait pendant ce temps », la liste de niveau se contentant
+   * de le retirer.
+   */
+  z.object({
+    type: z.literal('task.completed'),
+    taskId: z.string(),
+    status: z.enum(['completed', 'failed', 'stopped']),
+    summary: z.string(),
+    durationMs: z.number().nullable().default(null),
+    /** Travail d'entretien, que le CLI demande de ne pas montrer dans le fil. */
+    ambient: z.boolean().default(false),
+  }),
+
   // Métadonnées
   z.object({
     type: z.literal('plan.updated'),

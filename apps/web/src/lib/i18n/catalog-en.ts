@@ -65,6 +65,9 @@ export const en = {
   'conversation.status.error': 'Error',
   'conversation.status.background.one': '{count} background task',
   'conversation.status.background.many': '{count} background tasks',
+  'task.status.completed': 'Finished in the background',
+  'task.status.failed': 'Failed in the background',
+  'task.status.stopped': 'Stopped before finishing',
 
   // Composer - réglages du tour
   'composer.permission.manual': 'Ask',
@@ -137,6 +140,9 @@ export const en = {
   'panel.background.kind.shell': 'Shell command',
   'panel.background.kind.subagent': 'Sub-agent',
   'panel.background.kind.monitor': 'Monitor',
+  'panel.background.tools.one': '{count} tool',
+  'panel.background.tools.many': '{count} tools',
+  'subagent.tokens': '{count} tokens',
 
   // Coquille applicative (navigation, projets, comptes)
   'shell.nav.resize.aria': 'Navigation width',

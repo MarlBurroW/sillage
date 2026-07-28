@@ -1,9 +1,10 @@
 import { ArrowLeft, Bot, Radio, SquareTerminal, Waves } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
-import type { BackgroundTask } from '@sillage/protocol'
+import type { BackgroundWork } from '../../lib/background'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { clearSubAgent, showSubAgent } from '../../lib/panel'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
+import { formatTokens } from '../../lib/tokens'
 import { buildRows } from '../../lib/tool-rows'
 import { ChatThread } from '../chat/ChatThread'
 import { SubAgentRow } from '../chat/SubAgentRow'
@@ -25,7 +26,7 @@ export function AgentsPane({
   conversationId: string
   agents: SubAgent[]
   /** Travaux poursuivis hors du tour, sans fil à ouvrir : le CLI n'en transmet rien. */
-  background: BackgroundTask[]
+  background: BackgroundWork[]
   selectedId: string | null
 }) {
   const t = useTranslate()
@@ -97,11 +98,11 @@ const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
 /**
  * Les travaux de fond, au-dessus des sous-agents et non mêlés à eux.
  *
- * Ils n'ont ni fil ni durée : le CLI n'annonce que leur existence, à chaque fois que
- * la liste change. Une ligne sans clic est donc honnête, là où une ligne cliquable
+ * Ils n'ont pas de fil à ouvrir : le CLI en donne l'activité du moment, jamais ce
+ * qu'ils écrivent. Une ligne sans clic est donc honnête, là où une ligne cliquable
  * promettrait un détail qui n'existe pas.
  */
-function BackgroundList({ tasks }: { tasks: BackgroundTask[] }) {
+function BackgroundList({ tasks }: { tasks: BackgroundWork[] }) {
   const t = useTranslate()
   if (tasks.length === 0) return null
 
@@ -125,9 +126,23 @@ function BackgroundList({ tasks }: { tasks: BackgroundTask[] }) {
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs text-ink">{task.description}</span>
               <span className="block truncate text-[0.6875rem] text-ink-faint">
-                {family ? t(KIND_LABELS[family]) : task.kind}
+                {/* La famille dit quelle sorte de travail tourne, l'activité ce qu'il
+                    fait à l'instant : les deux tiennent sur la ligne. */}
+                {task.activity
+                  ? `${family ? t(KIND_LABELS[family]) : task.kind} · ${task.activity}`
+                  : family
+                    ? t(KIND_LABELS[family])
+                    : task.kind}
               </span>
             </span>
+
+            {task.toolUses > 0 ? (
+              <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+                {t(task.toolUses > 1 ? 'panel.background.tools.many' : 'panel.background.tools.one', {
+                  count: task.toolUses,
+                })}
+              </span>
+            ) : null}
           </div>
         )
       })}
@@ -165,6 +180,14 @@ function SubAgentThread({
             {agent.activity ? `${agent.type} · ${agent.activity}` : agent.type}
           </span>
         </span>
+
+        {/* Les tokens d'un sous-agent n'apparaissent nulle part ailleurs : ils ne
+            comptent pas dans l'usage du tour, que seul l'agent principal alimente. */}
+        {agent.totalTokens > 0 ? (
+          <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+            {t('subagent.tokens', { count: formatTokens(agent.totalTokens) })}
+          </span>
+        ) : null}
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-3">

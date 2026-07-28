@@ -285,6 +285,51 @@ export class ClaudeRunner implements AgentRunner {
           )
           return
         }
+        if (message.subtype === 'task_started') {
+          this.ctx.emit(
+            {
+              type: 'task.started',
+              taskId: message.task_id,
+              toolCallId: message.tool_use_id ?? null,
+              // `task_type` manque sur les sous-agents lancés par l'outil Task, que le
+              // CLI décrit par leur type d'agent. Le repli garde la même famille que
+              // celle annoncée dans la liste de niveau.
+              kind: message.task_type ?? 'local_agent',
+              description: message.description,
+            },
+            message,
+          )
+          return
+        }
+        if (message.subtype === 'task_progress') {
+          this.ctx.emit(
+            {
+              type: 'task.progress',
+              taskId: message.task_id,
+              activity: message.description,
+              lastTool: message.last_tool_name ?? null,
+              toolUses: message.usage.tool_uses,
+              totalTokens: message.usage.total_tokens,
+              durationMs: message.usage.duration_ms,
+            },
+            message,
+          )
+          return
+        }
+        if (message.subtype === 'task_notification') {
+          this.ctx.emit(
+            {
+              type: 'task.completed',
+              taskId: message.task_id,
+              status: message.status,
+              summary: message.summary,
+              durationMs: message.usage?.duration_ms ?? null,
+              ambient: message.skip_transcript ?? false,
+            },
+            message,
+          )
+          return
+        }
         if (message.subtype === 'init') {
           this.sessionId = message.session_id
           this.ctx.setAgentSessionId(message.session_id)
