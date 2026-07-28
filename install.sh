@@ -40,8 +40,8 @@ NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 systemctl --user show-environment >/dev/null 2>&1 \
   || fail "systemd user session unreachable. Log in as a regular user (not su/sudo) and retry."
 
-command -v claude >/dev/null || say "note: 'claude' CLI not found on PATH. Install and authenticate it for the Claude agent."
-command -v codex  >/dev/null || say "note: 'codex' CLI not found on PATH. Install and authenticate it for the Codex agent."
+command -v claude >/dev/null || say "note: 'claude' CLI not found on PATH. Sillage can install it for you from the web interface; you will still need to authenticate it."
+command -v codex  >/dev/null || say "note: 'codex' CLI not found on PATH. Sillage can install it for you from the web interface; you will still need to authenticate it."
 
 # --- resolve version ---------------------------------------------------------
 

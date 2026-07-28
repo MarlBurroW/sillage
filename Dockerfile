@@ -22,32 +22,25 @@ RUN SILLAGE_VERSION=$SILLAGE_VERSION pnpm build \
 # est en zod 3 ; pnpm tolère cet écart, la résolution stricte de npm non.
  && cd /out && npm install --omit=dev --legacy-peer-deps \
 # Ces paquets optionnels ne contiennent que le binaire `claude`, 263 Mo par
-# architecture, et l'image l'installe déjà globalement plus bas. Les garder
-# doublerait le CLI dans l'image ; c'était le cas, et c'était la copie embarquée
-# qui servait tant que le runner laissait le SDK résoudre son exécutable.
+# architecture. Le runner passe toujours `pathToClaudeCodeExecutable`, résolu sur
+# le CLI du système ou sur celui que Sillage a installé, donc la résolution interne
+# du SDK n'est jamais consultée et ce binaire ne servirait à rien.
  && rm -rf /out/node_modules/@anthropic-ai/claude-agent-sdk-*
 
 # ---- runtime ----
 FROM node:22-bookworm-slim
 
-# git est indispensable (worktrees, diffs) ; tini récolte les enfants des PTY ;
-# les CLIs agents sont préinstallés, l'utilisateur ne monte que ses credentials.
+# git est indispensable (worktrees, diffs) ; tini récolte les enfants des PTY.
 #
-# Versions épinglées, et à bumper à la main. Sans épinglage l'image embarquerait
-# le CLI que npm servait le jour du build, et comme cette couche ne dépend ni du
-# code ni de SILLAGE_VERSION, le cache de build la fige à une date arbitraire :
-# deux images du même tag pourraient tourner sur des CLI différents sans que rien
-# ne le dise. Un numéro écrit ici est relisible dans l'historique.
-#
-# claude-code 2.1.220 est la version que le SDK embarquait
-# (@anthropic-ai/claude-agent-sdk 0.3.220), donc l'image ne change pas de
-# comportement en passant au CLI du système.
-ARG CLAUDE_CODE_VERSION=2.1.220
-ARG CODEX_VERSION=0.145.0
+# Les CLI agents ne sont pas dans l'image. Ils pèsent 263 et 347 Mo, ce qui en
+# faisait 73 % du poids, et chaque CLI ajouté aurait creusé l'écart. Sillage les
+# installe à la demande depuis l'interface, dans le répertoire de données : c'est
+# déjà un volume, donc ils survivent au remplacement du conteneur, et l'utilisateur
+# n'installe que ceux dont il se sert. npm, fourni par l'image de base, est ce qui
+# les pose.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates openssh-client tini \
- && rm -rf /var/lib/apt/lists/* \
- && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@openai/codex@${CODEX_VERSION}"
+ && rm -rf /var/lib/apt/lists/*
 
 # L'utilisateur `node` (uid 1000) de l'image de base fait l'affaire : les agents
 # ont besoin d'un vrai compte avec un HOME inscriptible pour leurs credentials.
