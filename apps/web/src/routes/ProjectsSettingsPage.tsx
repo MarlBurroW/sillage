@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { ApiRequestError } from '../lib/api'
 import { useCreateProject, useProjects, type CreateProjectInput } from '../lib/projects'
 import { PathField } from '../components/PathField'
+import { SectionHeader } from './SettingsPage'
 import {
   Badge,
   Banner,
@@ -52,8 +53,8 @@ export function ProjectsSettingsPage() {
     createProject.error instanceof ApiRequestError ? createProject.error.message : null
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 md:p-8">
-      <h1 className="text-lg font-semibold tracking-tight">Projets</h1>
+    <div className="flex flex-col gap-4">
+      <SectionHeader title="Projets" description="Un projet est un répertoire de travail et sa visibilité." />
 
       <Card>
         <CardHeader

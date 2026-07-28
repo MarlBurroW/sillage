@@ -14,7 +14,7 @@ export function Markdown({ text }: { text: string }) {
   const segments = useMemo(() => parseMarkdown(text), [text])
 
   return (
-    <div className="flex flex-col gap-3 text-[0.9375rem] leading-relaxed">
+    <div className="sg-reading flex flex-col gap-3">
       {segments.map((segment, index) => {
         // L'index comme clé : les segments n'ont pas d'identité propre et la liste est
         // reconstruite entièrement à chaque changement du texte.

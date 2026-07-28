@@ -422,7 +422,7 @@ function Sidebar({
           <span className="text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
             Projets
           </span>
-          <NavLink to="/settings/projects" onClick={onNavigate} aria-label="Ajouter un projet">
+          <NavLink to="/settings/projets" onClick={onNavigate} aria-label="Ajouter un projet">
             <IconButton label="Ajouter un projet" size="sm">
               <FolderPlus size={15} />
             </IconButton>

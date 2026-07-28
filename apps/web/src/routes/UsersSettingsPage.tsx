@@ -13,6 +13,7 @@ import {
   Select,
 } from '../components/ui'
 import { AccountForm } from '../components/AccountForm'
+import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { useCurrentUser } from '../lib/session'
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type CreateUserInput } from '../lib/users'
@@ -57,8 +58,8 @@ export function UsersSettingsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 md:p-8">
-      <h1 className="text-lg font-semibold tracking-tight">Comptes</h1>
+    <div className="flex flex-col gap-4">
+      <SectionHeader title="Comptes" description="Les comptes de l'instance, et ce qu'ils peuvent faire." />
 
       <Banner tone="info">
         Un compte ouvre l&apos;accès à cette instance, sans isolation : tous les agents

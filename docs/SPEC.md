@@ -1215,7 +1215,42 @@ Le thème contrasté garde sa propre palette quoi qu'il arrive, et le dit : son 
 est ce pour quoi on le choisit, une palette d'ambiance l'annulerait. Même raisonnement que
 pour la teinte et l'intensité, déjà neutralisées sur ce thème.
 
-### 12.7 PWA
+### 12.7 Réglages
+
+Rangés par catégorie, chacune une route : elles se partagent, se mettent en favori, et
+le bouton retour du téléphone les traverse. Une page unique empilait des cartes sans
+rapport, et chaque réglage ajouté allongeait le défilement.
+
+Deux dispositions pour un seul arbre de routes. Sur grand écran, la liste est une colonne
+posée à gauche et la section vit à côté ; `/settings` sans section y redirige vers la
+première, faute de quoi la colonne de droite serait vide. Au doigt, la liste **est** la
+page, et ouvrir une catégorie la remplace, avec un retour vers la liste.
+
+La redirection est conditionnée à la largeur réelle, pas à une classe `hidden` : un
+élément caché en CSS reste monté, donc une redirection montée est une redirection
+exécutée, et la liste du téléphone se serait redirigée toute seule.
+
+**Confort de lecture.** Trois réglages qui ne touchent qu'au texte des messages : taille,
+interligne, et douceur de l'encre. Agrandir la conversation ne doit pas déplacer la barre
+latérale ni la barre de saisie, donc ils vivent sur une classe posée sur le rendu markdown
+et non sur la racine du document.
+
+La douceur mélange l'encre vers sa nuance atténuée (`color-mix`) plutôt que de baisser une
+opacité : un texte translucide laisse passer le fond, et un même message ne se lirait pas
+pareil dans une bulle et hors d'elle. Elle répond au blanc pur sur fond très sombre, dur à
+lire longtemps.
+
+Ils passent par le même mécanisme que la teinte et la luminosité : variables CSS sur
+`<html>`, mémorisées en `localStorage`, appliquées avant l'hydratation par le script de
+`index.html` qui doit rester aligné sur `APPEARANCE_SETTINGS`. La remise à zéro est bornée
+aux curseurs affichés : le bouton posé sous la typographie ne doit pas emporter la teinte
+choisie ailleurs.
+
+L'aperçu est une fausse conversation qui réutilise les vrais composants du fil, bulle
+comprise, plutôt qu'une imitation qui finirait par diverger. Rien ne lui est transmis :
+les réglages étant sur `<html>`, il suit comme le reste.
+
+### 12.8 PWA
 
 - `manifest.webmanifest` : `display: standalone`, icônes 192/512 et maskable, `theme_color`
   aligné sur le thème actif.
@@ -1248,7 +1283,7 @@ pour la teinte et l'intensité, déjà neutralisées sur ce thème.
   confortable : tu lances une tâche, tu ranges ton téléphone, tu es rappelé quand l'agent
   a besoin de toi. Prévu au lot 5, pas en v1.
 
-### 12.8 Recherche
+### 12.9 Recherche
 
 Deux surfaces, une seule palette (Cmd+K, Ctrl+K, et une entrée dans la sidebar puisque le
 raccourci n'existe pas au doigt).
@@ -1329,7 +1364,7 @@ exactement ce que le `memo` de `MessageBubble` prétendait éviter. La fonction 
 stable, et la barre relit ses occurrences si elle en trouve une repliée, le fil pouvant
 toujours changer sous elle pendant qu'un tour se déroule.
 
-### 12.9 Panneau du workspace
+### 12.10 Panneau du workspace
 
 Troisième colonne à droite, dépliable, largeur à la poignée et mémorisée, comme la
 sidebar. Sur téléphone il ne peut pas coexister avec le fil dans 390 px : il devient une

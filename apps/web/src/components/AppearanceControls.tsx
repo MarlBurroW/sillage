@@ -6,6 +6,12 @@ const LABELS: Record<AppearanceKey, { title: string; hint: string }> = {
   hue: { title: 'Teinte', hint: 'Partagée avec la couleur d’accent' },
   tint: { title: 'Intensité', hint: 'Chroma des surfaces, sans toucher aux accents' },
   lift: { title: 'Luminosité', hint: 'Éclaircit ou assombrit le shading, texte inchangé' },
+  readingSize: { title: 'Taille du texte', hint: 'Messages du fil uniquement' },
+  readingLeading: { title: 'Interligne', hint: 'Air entre les lignes d’un paragraphe' },
+  readingSoftness: {
+    title: 'Douceur du texte',
+    hint: 'Rapproche l’encre du gris : moins dur sur fond très sombre',
+  },
 }
 
 /**
@@ -19,9 +25,12 @@ export function AppearanceControls({
   appearance,
   /** Curseurs à afficher : tous les thèmes ne réagissent pas aux mêmes réglages. */
   keys = ['hue', 'tint', 'lift'],
+  swatches = true,
 }: {
   appearance: ReturnType<typeof useAppearance>
   keys?: AppearanceKey[]
+  /** La bande de surfaces ne dit rien des réglages de typographie. */
+  swatches?: boolean
 }) {
   const { values, set, reset } = appearance
 
@@ -37,16 +46,22 @@ export function AppearanceControls({
       ))}
 
       {/* Aperçu vivant : les curseurs s'appliquent à <html>, ces surfaces suivent donc
-          en direct, comme le reste de l'application. */}
+          en direct, comme le reste de l'application. Il ne s'affiche que pour les
+          réglages de couleur : sous des curseurs de typographie, une bande de surfaces
+          ne montrerait rien de ce qu'ils changent. */}
       <div className="flex items-center gap-2">
-        <div className="flex flex-1 overflow-hidden rounded-md border border-line">
-          <span className="h-8 flex-1 bg-canvas" />
-          <span className="h-8 flex-1 bg-surface" />
-          <span className="h-8 flex-1 bg-surface-high" />
-          <span className="h-8 flex-1 bg-accent-wash" />
-          <span className="gradient-accent h-8 flex-1" />
-        </div>
-        <Button variant="ghost" size="sm" icon={<RotateCcw size={14} />} onClick={reset}>
+        {swatches ? (
+          <div className="flex flex-1 overflow-hidden rounded-md border border-line">
+            <span className="h-8 flex-1 bg-canvas" />
+            <span className="h-8 flex-1 bg-surface" />
+            <span className="h-8 flex-1 bg-surface-high" />
+            <span className="h-8 flex-1 bg-accent-wash" />
+            <span className="gradient-accent h-8 flex-1" />
+          </div>
+        ) : (
+          <span className="flex-1" />
+        )}
+        <Button variant="ghost" size="sm" icon={<RotateCcw size={14} />} onClick={() => reset(keys)}>
           Défaut
         </Button>
       </div>

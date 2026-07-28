@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
 /**
  * Hauteur réellement visible, publiée dans `--sg-app-height`.
@@ -54,4 +54,29 @@ export function useVisualViewport(): void {
       root.style.removeProperty('--sg-viewport-top')
     }
   }, [])
+}
+
+/**
+ * Suit une requête média.
+ *
+ * Nécessaire là où une classe `hidden` ne suffit pas : un élément caché en CSS est
+ * quand même monté, et une redirection montée est une redirection exécutée. La liste
+ * de réglages en dépend, elle est la page entière au doigt et une colonne ailleurs.
+ */
+export function useMediaQuery(query: string): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const list = window.matchMedia(query)
+      list.addEventListener('change', onChange)
+      return () => list.removeEventListener('change', onChange)
+    },
+    [query],
+  )
+
+  return useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia(query).matches,
+    // Rendu serveur absent ici, mais `useSyncExternalStore` réclame l'instantané.
+    () => false,
+  )
 }
