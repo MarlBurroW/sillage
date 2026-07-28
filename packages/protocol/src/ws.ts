@@ -48,6 +48,14 @@ export type ServerMessage =
        * conversation froide n'a plus de CLI, donc plus de travail de fond.
        */
       background: number
+      /**
+       * Nombre de boucles armées pour cette conversation.
+       *
+       * Doublonne `loops.updated` pour la même raison que `background` : la sidebar
+       * doit distinguer une conversation au repos d'une conversation qui repartira
+       * seule, sans avoir son journal à replier.
+       */
+      loops: number
     }
   /**
    * Le CLI a proposé un titre pour la conversation. Poussé plutôt que redécouvert par

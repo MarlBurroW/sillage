@@ -22,6 +22,8 @@ const statuses = new Map<string, ConversationStatus>()
  * fin. Deux tables de valeurs primitives évitent le mémo.
  */
 const backgrounds = new Map<string, number>()
+/** Boucles armées par conversation. Table à part pour la même raison. */
+const loops = new Map<string, number>()
 const listeners = new Set<() => void>()
 
 function subscribe(listener: () => void): () => void {
@@ -58,6 +60,20 @@ export function useLiveBackground(conversationId: string): number {
 }
 
 /**
+ * Nombre de boucles armées, 0 tant que rien n'a été poussé.
+ *
+ * Toujours 0 pour une conversation froide : une tâche planifiée ne tire que pendant
+ * que le CLI tourne.
+ */
+export function useLiveLoops(conversationId: string): number {
+  return useSyncExternalStore(
+    subscribe,
+    () => loops.get(conversationId) ?? 0,
+    () => 0,
+  )
+}
+
+/**
  * Branche l'onglet sur le flux de statuts. Monté par la sidebar, qui est la seule vue
  * à afficher des conversations qu'elle n'a pas ouvertes.
  */
@@ -66,13 +82,15 @@ export function useStatusFeed(): void {
 
   useEffect(() => {
     return wsClient.watchStatuses({
-      onStatus: (conversationId, status, _warm, background) => {
+      onStatus: (conversationId, status, _warm, background, loopCount) => {
         const changed =
           statuses.get(conversationId) !== status ||
-          (backgrounds.get(conversationId) ?? 0) !== background
+          (backgrounds.get(conversationId) ?? 0) !== background ||
+          (loops.get(conversationId) ?? 0) !== loopCount
         if (!changed) return
         statuses.set(conversationId, status)
         backgrounds.set(conversationId, background)
+        loops.set(conversationId, loopCount)
         emit()
       },
       onResync: () => {
@@ -80,6 +98,7 @@ export function useStatusFeed(): void {
         // reprend la main, et les prochaines poussées repartent d'elle.
         statuses.clear()
         backgrounds.clear()
+        loops.clear()
         emit()
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       },

@@ -4,6 +4,7 @@ import type {
   ContentBlock,
   ElicitationField,
   ElicitationValue,
+  Loop,
   PermissionOption,
   PlanFollowUpOption,
   SillageEvent,
@@ -243,6 +244,22 @@ export interface ChatState {
    */
   background: BackgroundTask[]
   /**
+   * Les boucles armées, telles que le dernier relevé de fin de tour les décrit.
+   *
+   * Remplacée et jamais complétée, comme `background` : le CLI ne raconte ni la
+   * création ni la fin d'une boucle, il ne répond qu'à l'inventaire.
+   */
+  loops: Loop[]
+  /**
+   * Les réveils observés, par consigne réinjectée : combien, et le dernier quand.
+   *
+   * Tenue à part de `loops` parce qu'elle doit survivre au remplacement de la liste.
+   * Indexée sur la consigne faute de mieux : le CLI réinjecte le texte seul, sans dire
+   * de quelle tâche il vient. Deux boucles partageant leurs 200 premiers caractères
+   * mêleraient donc leurs comptes, ce qui reste préférable à ne rien compter.
+   */
+  loopFires: Map<string, { count: number; lastAt: number }>
+  /**
    * Ce que le CLI dit de chaque travail enregistré, de son lancement à son arrêt.
    *
    * Tenue à part de `background` : la liste de niveau dit qui vit, cette table dit
@@ -296,8 +313,21 @@ export function emptyChatState(): ChatState {
     turnRunning: false,
     compacting: false,
     background: [],
+    loops: [],
+    loopFires: new Map(),
     tasks: new Map(),
   }
+}
+
+/**
+ * Clé d'appariement entre une consigne réinjectée et la boucle qui la porte.
+ *
+ * Tronquée bien en deçà des 1000 caractères auxquels le CLI coupe les consignes qu'il
+ * inventorie : comparer les chaînes entières ferait manquer l'appariement des longues,
+ * seules celles-là étant coupées d'un côté et pas de l'autre.
+ */
+export function loopKey(prompt: string): string {
+  return prompt.slice(0, 200)
 }
 
 /**
@@ -632,8 +662,11 @@ export function applyEvent(
       state.turnRunning = false
       state.compacting = false
       // Le travail de fond appartient au process du CLI : il s'arrête avec lui, sans
-      // que rien ne vienne l'annoncer.
+      // que rien ne vienne l'annoncer. Les boucles aussi, une tâche planifiée ne tirant
+      // que pendant que le CLI tourne. Les réveils déjà comptés restent, eux : ce sont
+      // des faits du journal, pas un état de process.
       state.background = []
+      state.loops = []
       closeRunningTools(state)
       break
     }
@@ -914,6 +947,18 @@ export function applyEvent(
           putTask(state, { ...known, unattended: true })
         }
       }
+      break
+    }
+
+    case 'loops.updated': {
+      state.loops = event.loops
+      break
+    }
+
+    case 'prompt.injected': {
+      const key = loopKey(event.text)
+      const seen = state.loopFires.get(key)
+      state.loopFires.set(key, { count: (seen?.count ?? 0) + 1, lastAt: ts })
       break
     }
 

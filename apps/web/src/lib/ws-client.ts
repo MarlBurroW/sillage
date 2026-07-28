@@ -29,6 +29,7 @@ export interface StatusWatcher {
     status: ConversationStatus,
     warm: boolean,
     background: number,
+    loops: number,
   ): void
   /**
    * Socket rétabli après une coupure. Les transitions survenues pendant celle-ci n'ont
@@ -176,7 +177,13 @@ class WsClient {
 
     if (message.t === 'status') {
       for (const watcher of this.statusWatchers) {
-        watcher.onStatus(message.conversationId, message.status, message.warm, message.background)
+        watcher.onStatus(
+          message.conversationId,
+          message.status,
+          message.warm,
+          message.background,
+          message.loops,
+        )
       }
     }
 

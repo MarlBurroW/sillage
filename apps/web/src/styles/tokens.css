@@ -60,6 +60,12 @@
   --sg-positive: oklch(0.55 0.13 155);
   --sg-caution: oklch(0.62 0.14 75);
   --sg-critical: oklch(0.55 0.19 25);
+  /*
+   * Boucle armée. Teinte absolue elle aussi : `accent` porte déjà le travail de fond,
+   * le tour en cours et la sélection, et une boucle doit rester lisible à côté d'eux
+   * quelle que soit la teinte choisie par l'utilisateur.
+   */
+  --sg-loop: oklch(0.56 0.13 210);
 
   /*
    * Palette de coloration syntaxique. Teintes absolues, comme positive/caution :
@@ -139,6 +145,7 @@
   --sg-positive: oklch(0.74 0.15 155);
   --sg-caution: oklch(0.79 0.14 80);
   --sg-critical: oklch(0.69 0.18 25);
+  --sg-loop: oklch(0.75 0.12 210);
 
   --sg-syn-comment: oklch(0.58 0.03 var(--sg-hue));
   --sg-syn-keyword: oklch(0.75 0.16 305);
@@ -209,6 +216,7 @@
   --sg-positive: oklch(0.82 0.16 155);
   --sg-caution: oklch(0.87 0.15 85);
   --sg-critical: oklch(0.74 0.19 25);
+  --sg-loop: oklch(0.83 0.13 210);
 
   /* Luminosité relevée pour tenir le contraste sur le fond très sombre du thème. */
   --sg-syn-comment: oklch(0.7 0 0);
