@@ -57,6 +57,8 @@ export const en = {
   'conversation.empty.title': 'Empty conversation',
   'conversation.empty.description': 'Write a first message to start the agent.',
   'conversation.scroll.bottom': 'Back to bottom',
+  'conversation.thread.earlier.one': 'Show {count} earlier entry',
+  'conversation.thread.earlier.other': 'Show {count} earlier entries',
   'conversation.fork.error': 'Fork failed.',
   'conversation.compact.error': 'Compaction failed.',
   'conversation.status.running': 'Running',

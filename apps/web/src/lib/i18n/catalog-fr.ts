@@ -43,6 +43,8 @@ export const fr: Catalog = {
   'conversation.empty.title': 'Conversation vide',
   'conversation.empty.description': "Écris un premier message pour lancer l'agent.",
   'conversation.scroll.bottom': 'Revenir en bas',
+  'conversation.thread.earlier.one': 'Afficher {count} élément précédent',
+  'conversation.thread.earlier.other': 'Afficher {count} éléments précédents',
   'conversation.fork.error': 'Fork impossible.',
   'conversation.compact.error': 'Compaction impossible.',
   'conversation.status.running': 'En cours',
