@@ -27,6 +27,7 @@ import { registerHealthRoutes } from './routes/health.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerPushRoutes } from './routes/push.js'
 import { registerSearchRoutes } from './routes/search.js'
+import { registerSystemRoutes } from './routes/system.js'
 import { registerTerminalRoutes } from './routes/terminals.js'
 import { registerTreeRoutes } from './routes/tree.js'
 import { registerUserRoutes } from './routes/users.js'
@@ -95,6 +96,7 @@ export async function buildApp(
   registerAttachmentRoutes(app, attachments)
   registerPushRoutes(app, push)
   registerSearchRoutes(app, ctx)
+  registerSystemRoutes(app)
   registerTreeRoutes(app, ctx)
   registerFileRoutes(app, ctx)
   registerTerminalRoutes(app, ctx, sessions, terminals)
