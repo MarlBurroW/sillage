@@ -116,6 +116,29 @@ export function useTranslate(): (key: MessageKey, params?: MessageParams) => str
   )
 }
 
+/**
+ * Traduit une erreur du serveur à partir de son code.
+ *
+ * Le serveur ne connaît pas la langue de l'utilisateur : il envoie un code, ce que la
+ * phrase interpole, et un message anglais. La traduction se fait donc ici, et le message
+ * du serveur sert de repli.
+ *
+ * Ce repli n'est pas une politesse. Le code est une chaîne d'exécution, pas une
+ * `MessageKey` : rien ne garantit à la compilation qu'il soit au catalogue, et un code
+ * ajouté côté serveur sans sa clé afficherait sinon un identifiant brut. Avec le repli,
+ * il affiche une phrase juste, seulement pas traduite.
+ */
+export function translateError(
+  code: string,
+  message: string,
+  params?: MessageParams,
+): string {
+  const key = `error.${code}`
+  const catalog = catalogFor(current)
+  const template = catalog[key as MessageKey] ?? catalogFor(FALLBACK)[key as MessageKey]
+  return template ? interpolate(template, params) : interpolate(message, params)
+}
+
 /** Langue courante, pour les composants qui affichent ou changent le réglage. */
 export function useLocale(): Locale {
   return useSyncExternalStore(subscribe, locale, () => FALLBACK)

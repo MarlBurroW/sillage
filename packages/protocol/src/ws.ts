@@ -52,7 +52,7 @@ export type ServerMessage =
    */
   | { t: 'catchup'; conversationId: string; fromSeq: number; toSeq: number }
   | { t: 'pong' }
-  | { t: 'error'; code: string; message: string }
+  | { t: 'error'; code: string; message: string; params?: Record<string, string | number> }
 
 export const CATCHUP_THRESHOLD = 500
 export const HEARTBEAT_INTERVAL_MS = 25_000

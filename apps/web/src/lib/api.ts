@@ -1,5 +1,14 @@
 import type { ApiError } from '@sillage/protocol'
+import { translate, translateError } from './i18n'
 
+/**
+ * Erreur d'API telle que l'interface l'affiche.
+ *
+ * Le message est déjà traduit à la construction, et c'est le seul endroit où ça se joue :
+ * tous les appels passent par `request`, donc les composants qui affichent `err.message`
+ * n'ont rien à savoir de l'i18n. Le `code` reste exposé pour ceux qui distinguent un cas
+ * précis plutôt que d'afficher la phrase.
+ */
 export class ApiRequestError extends Error {
   constructor(
     readonly status: number,
@@ -26,10 +35,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   if (!response.ok) {
     const payload = parsed as ApiError | null
+    const error = payload?.error
     throw new ApiRequestError(
       response.status,
-      payload?.error?.code ?? 'unknown',
-      payload?.error?.message ?? `Erreur ${response.status}`,
+      error?.code ?? 'unknown',
+      // Une réponse sans corps exploitable (proxy, coupure) n'a ni code ni message : le
+      // statut HTTP est alors tout ce qu'on peut dire honnêtement.
+      error
+        ? translateError(error.code, error.message, error.params)
+        : translate('error.http', { status: response.status }),
     )
   }
 
