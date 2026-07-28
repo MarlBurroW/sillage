@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentQuestion, ElicitationField, PermissionOption } from '@sillage/protocol'
+import type {
+  AgentQuestion,
+  ElicitationField,
+  PermissionOption,
+  PlanFollowUpOption,
+} from '@sillage/protocol'
 import type {
   ElicitationAnswer,
   PermissionDecision,
@@ -164,10 +169,18 @@ export class PendingInteractions {
     return true
   }
 
-  requestPlanReview(plan: string, respond: (review: PlanReview | null) => void): string {
+  requestPlanReview(
+    details: { plan: string; followUpOptions: PlanFollowUpOption[] },
+    respond: (review: PlanReview | null) => void,
+  ): string {
     const requestId = randomUUID()
     this.ctx.setStatus('awaiting_input')
-    this.ctx.emit({ type: 'plan.review_requested', requestId, plan })
+    this.ctx.emit({
+      type: 'plan.review_requested',
+      requestId,
+      plan: details.plan,
+      followUpOptions: details.followUpOptions,
+    })
     this.plans.set(requestId, respond)
     return requestId
   }

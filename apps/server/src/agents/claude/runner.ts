@@ -13,10 +13,12 @@ import {
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import {
+  claudePermissionModeSchema,
   parseElicitationFields,
   type AgentConfig,
   type ClaudeConfig,
   type ContentBlock,
+  type PlanFollowUpOption,
 } from '@sillage/protocol'
 import { AsyncQueue } from '../async-queue.js'
 import { PendingInteractions } from '../interactions.js'
@@ -50,6 +52,24 @@ import {
  * qu'un nouveau type de message inconnu soit visible et non avalé.
  */
 const IGNORED_SUBTYPES = new Set(['thinking_tokens', 'session_state_changed', 'commands_changed'])
+
+/**
+ * Suites proposées à la validation d'un plan. Les identifiants sont des modes de
+ * permission de Claude Code : c'est cet adaptateur qui les propose et qui les
+ * revalide au retour, le schéma commun n'y voit que des chaînes opaques.
+ */
+const PLAN_FOLLOW_UP_OPTIONS: PlanFollowUpOption[] = [
+  {
+    id: 'acceptEdits',
+    label: 'Valider et laisser écrire',
+    hint: 'Les modifications de fichiers passent sans demande',
+  },
+  {
+    id: 'manual',
+    label: 'Valider et demander',
+    hint: 'Chaque outil reste soumis à ton accord',
+  },
+]
 
 /**
  * Blocs acceptés dans un message utilisateur, dérivés du type du SDK plutôt que
@@ -514,40 +534,45 @@ export class ClaudeRunner implements AgentRunner {
 
   private requestPlanReview(input: Record<string, unknown>): Promise<PermissionResult> {
     return new Promise<PermissionResult>((resolve) => {
-      this.interactions.requestPlanReview(toPlan(input), (review) => {
-        if (review === null) {
-          resolve({ behavior: 'deny', message: 'Session terminée avant la réponse.' })
-          return
-        }
-        if (review.decision === 'rejected') {
-          resolve({
-            behavior: 'deny',
-            message: "Plan refusé : continue à planifier sans rien exécuter.",
-          })
-          return
-        }
+      this.interactions.requestPlanReview(
+        { plan: toPlan(input), followUpOptions: PLAN_FOLLOW_UP_OPTIONS },
+        (review) => {
+          if (review === null) {
+            resolve({ behavior: 'deny', message: 'Session terminée avant la réponse.' })
+            return
+          }
+          if (review.decision === 'rejected') {
+            resolve({
+              behavior: 'deny',
+              message: "Plan refusé : continue à planifier sans rien exécuter.",
+            })
+            return
+          }
 
-        // Sortir du mode plan ne dit pas comment continuer : sans ce changement de
-        // mode, l'agent retomberait dans celui qui l'a fait planifier et
-        // replanifierait.
-        const mode = review.followUpMode
-        resolve({
-          behavior: 'allow',
-          ...(mode
-            ? {
-                updatedPermissions: [
-                  { type: 'setMode', mode: toPermissionMode(mode), destination: 'session' },
-                ],
-              }
-            : {}),
-        })
-        if (mode) {
-          this.config = { ...this.config, permissionMode: mode }
-          // Persisté tout de suite : le mode adopté doit survivre au runner, sinon les
-          // réglages affichent l'ancien et une reprise repartirait en mode plan.
-          this.ctx.updateConfig(this.config)
-        }
-      })
+          // Sortir du mode plan ne dit pas comment continuer : sans ce changement de
+          // mode, l'agent retomberait dans celui qui l'a fait planifier et
+          // replanifierait. La valeur vient du client : revalidée ici, un identifiant
+          // inconnu vaut « pas de changement de mode » plutôt qu'un mode inventé.
+          const parsed = claudePermissionModeSchema.safeParse(review.followUpMode)
+          const mode = parsed.success ? parsed.data : null
+          resolve({
+            behavior: 'allow',
+            ...(mode
+              ? {
+                  updatedPermissions: [
+                    { type: 'setMode', mode: toPermissionMode(mode), destination: 'session' },
+                  ],
+                }
+              : {}),
+          })
+          if (mode) {
+            this.config = { ...this.config, permissionMode: mode }
+            // Persisté tout de suite : le mode adopté doit survivre au runner, sinon
+            // les réglages affichent l'ancien et une reprise repartirait en mode plan.
+            this.ctx.updateConfig(this.config)
+          }
+        },
+      )
     })
   }
 

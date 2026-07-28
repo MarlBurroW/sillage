@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sillage/protocol": "workspace:*",
     "better-sqlite3": "^11.8.1",
     "drizzle-orm": "^0.38.4"
   },

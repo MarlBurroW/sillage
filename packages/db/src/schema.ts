@@ -1,3 +1,4 @@
+import type { AgentKind } from '@sillage/protocol'
 import { sql } from 'drizzle-orm'
 import {
   index,
@@ -106,7 +107,9 @@ export const conversations = sqliteTable(
      * jamais l'écraser derrière son dos.
      */
     titleSetByUser: integer('title_set_by_user', { mode: 'boolean' }).notNull().default(false),
-    agent: text('agent').$type<'claude' | 'codex'>().notNull(),
+    // Dérivé de l'enum du protocole : ajouter un CLI ne demande pas de retoucher
+    // la colonne, et une divergence entre les deux listes ne peut plus s'installer.
+    agent: text('agent').$type<AgentKind>().notNull(),
     /** Identifiant natif du CLI, pour `--resume` ou `thread/resume`. */
     agentSessionId: text('agent_session_id'),
     /**

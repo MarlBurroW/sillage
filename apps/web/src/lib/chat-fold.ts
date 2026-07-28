@@ -1,10 +1,10 @@
 import type {
   AgentQuestion,
-  ClaudePermissionMode,
   ContentBlock,
   ElicitationField,
   ElicitationValue,
   PermissionOption,
+  PlanFollowUpOption,
   SillageEvent,
 } from '@sillage/protocol'
 
@@ -84,7 +84,10 @@ export interface PlanItem {
   id: string
   plan: string
   status: 'pending' | 'approved' | 'rejected' | 'expired'
-  followUpMode: ClaudePermissionMode | null
+  /** Suites proposées par l'adaptateur ; vide sur les journaux d'avant le champ. */
+  followUpOptions: PlanFollowUpOption[]
+  /** L'`id` de l'option retenue, opaque pour l'UI. */
+  followUpMode: string | null
 }
 
 export interface ErrorItem {
@@ -684,6 +687,7 @@ export function applyEvent(
         id: event.requestId,
         plan: event.plan,
         status: 'pending',
+        followUpOptions: event.followUpOptions,
         followUpMode: null,
       })
       break
