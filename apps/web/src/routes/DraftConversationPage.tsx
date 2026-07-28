@@ -237,6 +237,9 @@ export function DraftConversationPage() {
       </div>
 
       <Composer
+        // Le brouillon d'une conversation pas encore créée appartient à son projet :
+        // c'est le seul fil qu'on puisse en désigner avant qu'il existe.
+        draftKey={`new:${projectId ?? ''}`}
         config={effective}
         status="idle"
         disabled={createConversation.isPending}
