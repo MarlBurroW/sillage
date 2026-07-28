@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sillage: a self-hosted web UI for Claude Code and Codex</title>
+  <meta name="description" content="Vibe-code from anywhere. A self-hosted, mobile-first web UI that drives the native Claude Code and Codex CLIs on your own machine.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <meta property="og:title" content="Sillage">
+  <meta property="og:description" content="A self-hosted, mobile-first web UI for the native Claude Code and Codex CLIs.">
+  <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
+  <meta property="og:type" content="website">
+</head>
+<body>
+  <header class="hero">
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="56" height="56">
+        <circle cx="16" cy="6.4" r="3.4" fill="currentColor"/>
+        <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+          <path d="M10.8 13.8Q16 17.4 21.2 13.8"/>
+          <path d="M7.4 19.2Q16 24.6 24.6 19.2" opacity="0.7"/>
+          <path d="M4 24.6Q16 31.4 28 24.6" opacity="0.45"/>
+        </g>
+      </svg>
+    </div>
+    <h1>Sillage</h1>
+    <p class="tagline">Vibe-code from anywhere.</p>
+    <p class="sub">
+      A self-hosted, mobile-first web UI that drives the native Claude Code and Codex
+      CLIs on your own machine. The official agent harnesses, without the terminal.
+    </p>
+    <p class="hero-actions">
+      <a class="button" href="#install">Install</a>
+      <a class="button ghost" href="https://github.com/MarlBurroW/sillage">GitHub</a>
+      <a id="version-badge" class="version" href="https://github.com/MarlBurroW/sillage/releases/latest" hidden>
+        <span data-version></span>
+      </a>
+    </p>
+  </header>
+
+  <main>
+    <section class="why">
+      <h2>Why it exists</h2>
+      <p>
+        Coding agents work best inside their official harness: the prompts, tools and
+        permission flows their vendors ship with the CLI. But a terminal is a poor fit
+        for a phone, and half the ideas worth trying show up away from a keyboard.
+        Sillage keeps the CLIs and replaces the terminal with a web UI you can open
+        from anywhere. Built for personal use first, shared because it holds up.
+      </p>
+    </section>
+
+    <section class="features">
+      <h2>What you get</h2>
+      <ul>
+        <li>
+          <h3>Native CLIs</h3>
+          <p>Claude Code and Codex run unmodified, with your existing subscriptions and credentials.</p>
+        </li>
+        <li>
+          <h3>Mobile-first PWA</h3>
+          <p>Installable, push notifications when a turn finishes, designed for one-hand use.</p>
+        </li>
+        <li>
+          <h3>Real conversations</h3>
+          <p>Streaming chat, tool calls, interactive permission prompts, full-text search across history.</p>
+        </li>
+        <li>
+          <h3>IDE panel</h3>
+          <p>File explorer, editor, diffs and terminals, next to the conversation that produced them.</p>
+        </li>
+        <li>
+          <h3>Projects and worktrees</h3>
+          <p>Point it at your repositories; isolate experiments in git worktrees.</p>
+        </li>
+        <li>
+          <h3>Built-in updates</h3>
+          <p>The UI shows the installed version, what changed since, and updates itself in one click.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="install" id="install">
+      <h2>Install</h2>
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="docker">Docker</button>
+        <button role="tab" aria-selected="false" data-tab="script">One-line script</button>
+      </div>
+
+      <div class="tab-panel" data-panel="docker">
+        <pre><code># docker-compose.yml
+services:
+  sillage:
+    image: ghcr.io/marlburrow/sillage:latest
+    ports: ["127.0.0.1:7317:7317"]
+    volumes:
+      - sillage-data:/home/node/.local/share/sillage
+      - ~/.claude:/home/node/.claude
+      - ~/.codex:/home/node/.codex
+      - ~/projects:/home/node/workspace
+volumes:
+  sillage-data:</code></pre>
+        <p>
+          The image ships with the claude and codex CLIs preinstalled; mount your
+          credential directories and your projects. Then create the first account:
+        </p>
+        <pre><code>docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
+      </div>
+
+      <div class="tab-panel" data-panel="script" hidden>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
+        <p>
+          Linux x64/arm64 with systemd and Node 22+. Installs under
+          <code>~/.local/share/sillage</code>, runs as a systemd user service, and
+          updates from the web UI afterwards. No Docker required.
+        </p>
+      </div>
+    </section>
+
+    <section class="security">
+      <h2>A word on security</h2>
+      <p>
+        Sillage is built for a trusted circle, not for the open Internet. Agents run
+        under your system account with your credentials, and every account on the
+        instance shares them. It listens on localhost and does not terminate TLS:
+        reach it through a VPN, a tailnet or a reverse proxy you control.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      MIT licensed.
+      <a href="https://github.com/MarlBurroW/sillage">Source on GitHub</a>
+    </p>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>
