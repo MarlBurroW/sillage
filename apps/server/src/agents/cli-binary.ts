@@ -26,7 +26,7 @@ const run = promisify(execFile)
  * Ce que `describe` rend : la disponibilité, sans ce qui relève de l'installation.
  * L'état d'une installation en cours appartient à `CliInstaller`, pas au binaire.
  */
-export type CliDescription = Omit<AgentAvailabilityDto, 'testedVersion' | 'install'>
+export type CliDescription = Omit<AgentAvailabilityDto, 'preferredVersion' | 'install'>
 
 /** Ce qu'on sait d'un CLI, une fois cherché sur le disque. */
 export type CliStatus =

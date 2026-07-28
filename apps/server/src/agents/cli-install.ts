@@ -1,14 +1,17 @@
 import { execFile } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
-import { TESTED_CLI_RELEASES, type AgentKind, type CliInstallStateDto } from '@sillage/protocol'
+import {
+  PREFERRED_CLI_RELEASES,
+  type AgentKind,
+  type CliInstallStateDto,
+} from '@sillage/protocol'
 
 /**
  * Installation des CLI agents par Sillage lui-même.
  *
  * Les binaires ne viennent plus de la release, donc un serveur fraîchement installé peut
  * n'avoir aucun CLI. Plutôt que de renvoyer l'utilisateur à un terminal qu'il n'a pas
- * toujours (image Docker, machine distante), Sillage sait poser la version sur laquelle
- * il est testé, dans un préfixe npm qui lui appartient.
+ * toujours (image Docker, machine distante), Sillage sait poser la version qu'il vise, dans un préfixe npm qui lui appartient.
  *
  * En tâche de fond, et non dans la requête : le paquet pèse plusieurs centaines de
  * mégaoctets, et une installation qui tient dans le temps d'une requête HTTP tiendrait
@@ -54,7 +57,7 @@ export class CliInstaller {
   start(kind: AgentKind): boolean {
     if (this.states.get(kind)?.status === 'running') return false
 
-    const { package: pkg, version } = TESTED_CLI_RELEASES[kind]
+    const { package: pkg, version } = PREFERRED_CLI_RELEASES[kind]
     this.states.set(kind, { status: 'running', version, startedAt: Date.now() })
     void this.run(kind, pkg, version)
     return true

@@ -459,8 +459,8 @@ export interface AgentAvailabilityDto {
   version: string | null
   /** Pourquoi l'agent est indisponible ; null quand il l'est. */
   reason: 'disabled' | 'not_on_path' | 'not_executable' | null
-  /** Version que Sillage poserait, et qu'il a testée. */
-  testedVersion: string
+  /** Version que Sillage vise pour cette release, et que l'installation poserait. */
+  preferredVersion: string
   install: CliInstallStateDto
 }
 
