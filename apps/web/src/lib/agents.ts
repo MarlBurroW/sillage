@@ -1,6 +1,60 @@
 import { useQuery } from '@tanstack/react-query'
-import type { AgentEffortDto, AgentKind, AgentModelDto, AgentModelsDto } from '@sillage/protocol'
+import {
+  TESTED_CLI_VERSIONS,
+  type AgentAvailabilityDto,
+  type AgentAvailabilityListDto,
+  type AgentEffortDto,
+  type AgentKind,
+  type AgentModelDto,
+  type AgentModelsDto,
+} from '@sillage/protocol'
 import { api } from './api'
+
+/**
+ * Présence et version des CLI sur la machine du serveur.
+ *
+ * Sillage ne transporte plus les binaires : un agent dont le CLI manque ne doit pas être
+ * proposé, sans quoi l'utilisateur découvre l'absence à l'échec de son premier message.
+ */
+export function useAgentAvailability() {
+  return useQuery({
+    queryKey: ['agents', 'availability'],
+    queryFn: () => api.get<AgentAvailabilityListDto>('/api/agents'),
+    // La sonde lance un process par CLI présent. Un CLI ne s'installe pas pendant qu'on
+    // remplit un formulaire, et le serveur a son propre cache derrière.
+    staleTime: 60 * 1000,
+  })
+}
+
+/**
+ * Pourquoi un agent ne peut pas être choisi, en une phrase affichable. Null quand il
+ * le peut.
+ */
+export function unavailableReason(entry: AgentAvailabilityDto | undefined): string | null {
+  if (!entry || entry.installed) return null
+  switch (entry.reason) {
+    case 'disabled':
+      return 'Désactivé dans la configuration du serveur.'
+    case 'not_executable':
+      return `Trouvé à ${entry.binary}, mais pas exécutable.`
+    default:
+      return `Introuvable sur le PATH du serveur (${entry.binary}).`
+  }
+}
+
+/**
+ * Écart entre la version installée et celle sur laquelle Sillage est testé, à afficher
+ * comme un avertissement. Null quand elles concordent, ou qu'il n'y a rien à comparer.
+ *
+ * Comparaison à l'identique, sans intervalle de compatibilité : Sillage n'a testé qu'un
+ * numéro, et prétendre qu'une plage fonctionne serait une affirmation qu'on n'a pas
+ * vérifiée. L'écart n'empêche rien, il se signale.
+ */
+export function versionMismatch(entry: AgentAvailabilityDto | undefined): string | null {
+  if (!entry?.installed || !entry.version) return null
+  const tested = TESTED_CLI_VERSIONS[entry.agent]
+  return entry.version === tested ? null : `Version ${entry.version}, testée avec ${tested}.`
+}
 
 /**
  * Modèles déclarés par le CLI installé, sous la forme commune du protocole. Rien

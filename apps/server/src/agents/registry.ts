@@ -9,6 +9,7 @@ import type {
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
 import { ClaudeAdapter } from './claude/adapter.js'
+import type { CliBinary } from './cli-binary.js'
 import { CodexAdapter } from './codex/adapter.js'
 import type { AgentRunner, RunnerContext } from './types.js'
 
@@ -47,6 +48,12 @@ export interface AgentAdapter {
    * absolu est la seule façon fiable de lancer un CLI installé dans ~/.local/bin.
    */
   readonly binary: string
+  /**
+   * Le CLI sur la machine : résolution sur le PATH, présence et version. Sillage ne
+   * transporte plus les binaires, donc l'absence est un état normal que l'interface
+   * doit pouvoir montrer.
+   */
+  readonly cli: CliBinary
   /**
    * Capacités annoncées, tirées de la table partagée du protocole : l'UI s'en sert
    * pour ne pas proposer un geste refusé, le runner garde le refus comme filet.
@@ -102,6 +109,12 @@ export class AgentRegistry {
   /** Variante tolérante pour les paramètres d'URL, où le nom vient du client. */
   find(kind: string): AgentAdapter | null {
     return this.adapters.get(kind as AgentKind) ?? null
+  }
+
+  /** Tous les adaptateurs inscrits, y compris ceux dont le CLI est désactivé : leur
+   *  état fait partie de ce que l'écran doit montrer. */
+  all(): AgentAdapter[] {
+    return [...this.adapters.values()]
   }
 }
 

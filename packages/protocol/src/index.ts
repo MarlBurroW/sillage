@@ -1,6 +1,7 @@
 export * from './events.js'
 export * from './agent-config.js'
 export * from './capabilities.js'
+export * from './cli-versions.js'
 export * from './tools.js'
 export * from './api.js'
 export * from './ws.js'

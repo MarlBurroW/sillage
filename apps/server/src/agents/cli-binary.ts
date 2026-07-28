@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { accessSync, constants } from 'node:fs'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { promisify } from 'node:util'
+import type { AgentAvailabilityDto, AgentKind } from '@sillage/protocol'
 import { CachedProbe } from './cached-probe.js'
 
 const run = promisify(execFile)
@@ -96,20 +97,44 @@ async function probe(binary: string): Promise<CliStatus> {
 }
 
 /**
- * Sonde mise en cache pour un binaire donné.
+ * Le CLI d'un agent : où il est, quelle version, et s'il est utilisable.
  *
- * Une instance par adaptateur : le cache et la lecture unique en vol appartiennent au
- * CLI, pas à l'appelant.
+ * Une instance par adaptateur, parce que le cache et la lecture unique en vol
+ * appartiennent au CLI et non à l'appelant. Elle porte aussi la mise en forme pour
+ * l'API : les deux adaptateurs la recomposeraient à l'identique.
  */
 export class CliBinary {
   private readonly cache: CachedProbe<{ status: CliStatus }>
 
-  constructor(readonly configured: string) {
+  constructor(
+    private readonly kind: AgentKind,
+    readonly configured: string,
+    private readonly enabled: boolean,
+  ) {
     this.cache = new CachedProbe(TTL_MS, async () => ({ status: await probe(configured) }))
   }
 
   async status(force = false): Promise<CliStatus> {
     return (await this.cache.read(force)).status
+  }
+
+  /**
+   * État tel que l'écran le lit.
+   *
+   * Un agent désactivé en configuration n'est pas sondé : lancer un process pour un CLI
+   * que l'utilisateur a explicitement écarté serait du travail pour rien, et « absent »
+   * répondrait à côté de la raison réelle.
+   */
+  async describe(force = false): Promise<AgentAvailabilityDto> {
+    const base = { agent: this.kind, binary: this.configured, enabled: this.enabled }
+    if (!this.enabled) {
+      return { ...base, installed: false, path: null, version: null, reason: 'disabled' }
+    }
+
+    const status = await this.status(force)
+    return status.found
+      ? { ...base, installed: true, path: status.path, version: status.version, reason: null }
+      : { ...base, installed: false, path: null, version: null, reason: status.reason }
   }
 
   /**

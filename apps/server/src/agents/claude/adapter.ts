@@ -13,6 +13,7 @@ import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
+import { CliBinary } from '../cli-binary.js'
 import { describeEdit } from './file-edits.js'
 import { ClaudeModelCatalog } from './model-catalog.js'
 import { ClaudeRunner } from './runner.js'
@@ -53,9 +54,11 @@ export class ClaudeAdapter implements AgentAdapter {
    */
   private readonly catalog = new ClaudeModelCatalog()
   private readonly usageReader = new ClaudeUsageReader()
+  readonly cli: CliBinary
 
   constructor(config: Config) {
     this.binary = config.agents.claude.binary
+    this.cli = new CliBinary('claude', this.binary, config.agents.claude.enabled)
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
