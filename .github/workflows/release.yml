@@ -1,0 +1,139 @@
+name: Release
+
+# Publier = pousser un tag `vX.Y.Z`. Le workflow construit les archives Linux
+# (x64 et arm64, node_modules natifs précompilés inclus), l'image Docker
+# multi-arch sur ghcr.io, puis crée la release GitHub avec ses notes générées.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/marlburrow/sillage
+
+jobs:
+  tarball:
+    # Runners natifs par architecture : compiler node-pty sous QEMU est lent et
+    # fragile. ubuntu-22.04 fixe la glibc de référence (2.35, Debian 12+).
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+        env:
+          SILLAGE_VERSION: ${{ github.ref_name }}
+      - name: Stage runtime tree
+        run: node scripts/stage-runtime.mjs out/sillage
+        env:
+          SILLAGE_VERSION: ${{ github.ref_name }}
+      # npm et non pnpm : il produit un node_modules à plat, sans liens
+      # symboliques, qui survit à l'archivage tar. --legacy-peer-deps parce que
+      # le SDK Claude déclare un peer zod@^4 que pnpm tolère et npm refuse.
+      - name: Install production dependencies
+        run: npm install --omit=dev --legacy-peer-deps
+        working-directory: out/sillage
+      - name: Smoke test (native modules load)
+        run: SILLAGE_DATA_DIR="$(mktemp -d)" node out/sillage/server/cli/migrate.js
+      - name: Pack
+        run: tar -czf "sillage-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz" -C out sillage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball-${{ matrix.arch }}
+          path: sillage-*.tar.gz
+          if-no-files-found: error
+
+  docker:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: amd64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          build-args: SILLAGE_VERSION=${{ github.ref_name }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest='${{ steps.build.outputs.digest }}'
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+
+  docker-manifest:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: /tmp/digests
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Merge digests into a multi-arch manifest
+        run: |
+          version='${{ github.ref_name }}'
+          version="${version#v}"
+          cd /tmp/digests
+          docker buildx imagetools create \
+            -t "$IMAGE:$version" \
+            -t "$IMAGE:latest" \
+            $(printf "$IMAGE@sha256:%s " *)
+
+  release:
+    needs: [tarball, docker-manifest]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tarball-*
+          merge-multiple: true
+          path: dist
+      # Les notes générées listent les PR et commits depuis le tag précédent ;
+      # l'écran « À propos » de l'application les affiche telles quelles.
+      - name: Create the GitHub release
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes dist/*.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
