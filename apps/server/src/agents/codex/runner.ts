@@ -272,14 +272,14 @@ export class CodexRunner implements AgentRunner {
     switch (method) {
       case 'item/agentMessage/delta': {
         const p = params as AgentMessageDeltaNotification
-        this.ctx.emit({ type: 'message.delta', messageId: p.itemId, text: p.delta })
+        this.ctx.emit({ type: 'message.delta', messageId: p.itemId, text: p.delta, parentToolCallId: null })
         return
       }
 
       case 'item/reasoning/textDelta':
       case 'item/reasoning/summaryTextDelta': {
         const p = params as ReasoningTextDeltaNotification
-        this.ctx.emit({ type: 'thinking.delta', messageId: p.itemId, text: p.delta })
+        this.ctx.emit({ type: 'thinking.delta', messageId: p.itemId, text: p.delta, parentToolCallId: null })
         return
       }
 
@@ -479,7 +479,10 @@ export class CodexRunner implements AgentRunner {
     switch (item.type) {
       case 'agentMessage': {
         const blocks: ContentBlock[] = [{ type: 'text', text: item.text }]
-        this.ctx.emit({ type: 'message.completed', messageId: item.id, role: 'assistant', blocks }, raw)
+        this.ctx.emit(
+          { type: 'message.completed', messageId: item.id, role: 'assistant', blocks, parentToolCallId: null },
+          raw,
+        )
         return
       }
 
@@ -492,6 +495,7 @@ export class CodexRunner implements AgentRunner {
             messageId: item.id,
             role: 'assistant',
             blocks: [{ type: 'thinking', text }],
+            parentToolCallId: null,
           },
           raw,
         )
@@ -734,7 +738,13 @@ export class CodexRunner implements AgentRunner {
     if (!this.client || !this.threadId) throw new Error('La session Codex n\'est pas démarrée.')
 
     const { blocks, input } = buildUserInput(text, attachments, mentions)
-    this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks })
+    this.ctx.emit({
+      type: 'message.completed',
+      messageId: randomUUID(),
+      role: 'user',
+      blocks,
+      parentToolCallId: null,
+    })
     this.ctx.setStatus('running')
 
     // La configuration est passée à chaque tour : c'est le protocole qui le prévoit,
@@ -802,7 +812,13 @@ export class CodexRunner implements AgentRunner {
       input,
     })
 
-    this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks })
+    this.ctx.emit({
+      type: 'message.completed',
+      messageId: randomUUID(),
+      role: 'user',
+      blocks,
+      parentToolCallId: null,
+    })
     return true
   }
 

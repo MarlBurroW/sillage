@@ -44,6 +44,15 @@ export const contentBlockSchema = z.discriminatedUnion('type', [
 ])
 export type ContentBlock = z.infer<typeof contentBlockSchema>
 
+/**
+ * Appel d'outil dont l'événement descend, quand il vient d'un sous-agent : c'est
+ * l'appel qui a lancé ce sous-agent. Null pour tout ce que produit l'agent principal.
+ *
+ * Défaut à null plutôt que champ requis : le journal est rejoué indéfiniment (I2), et
+ * les événements écrits avant l'ajout de ce champ doivent continuer à se relire.
+ */
+const parentToolCallIdSchema = z.string().nullable().default(null)
+
 /** Une option proposée par le CLI dans une demande de permission. */
 export const permissionOptionSchema = z.object({
   id: z.string(),
@@ -140,6 +149,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     type: z.literal('message.delta'),
     messageId: z.string(),
     text: z.string(),
+    parentToolCallId: parentToolCallIdSchema,
   }),
   /**
    * Un même `messageId` peut recevoir plusieurs `message.completed` successifs : les
@@ -151,11 +161,13 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     messageId: z.string(),
     role: z.enum(['user', 'assistant']),
     blocks: z.array(contentBlockSchema),
+    parentToolCallId: parentToolCallIdSchema,
   }),
   z.object({
     type: z.literal('thinking.delta'),
     messageId: z.string(),
     text: z.string(),
+    parentToolCallId: parentToolCallIdSchema,
   }),
 
   // Outils

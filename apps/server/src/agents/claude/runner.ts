@@ -129,7 +129,8 @@ export class ClaudeRunner implements AgentRunner {
   private readonly pendingEdits = new Map<string, { path: string; existed: boolean }>()
   private readonly abort = new AbortController()
   private session: Query | null = null
-  private streamingMessageId: string | null = null
+  /** Message en cours de réception, par auteur : l'agent principal (null) et chaque sous-agent. */
+  private readonly streamingMessageIds = new Map<string | null, string>()
   /** Identifiant natif, requis pour relire le résumé de session. */
   private sessionId: string | null = null
   private stopped = false
@@ -278,20 +279,27 @@ export class ClaudeRunner implements AgentRunner {
         // comme messageId produit un identifiant different a chaque token. Le seul
         // identifiant stable est celui de l'API, annonce par message_start et repris
         // par le message assistant final.
+        //
+        // Le flux de l'agent principal et celui de chaque sous-agent passent par le
+        // même canal, entrelacés. L'identifiant courant est donc retenu par auteur :
+        // un seul suffisait tant qu'un seul agent parlait, mais le `message_start`
+        // d'un sous-agent l'écrasait, et la suite de la réponse principale partait
+        // grossir le message du sous-agent.
+        const parentToolCallId = message.parent_tool_use_id
         if (event.type === 'message_start') {
-          this.streamingMessageId = event.message.id
+          this.streamingMessageIds.set(parentToolCallId, event.message.id)
           return
         }
         if (event.type !== 'content_block_delta') return
 
-        const messageId = this.streamingMessageId
+        const messageId = this.streamingMessageIds.get(parentToolCallId)
         if (!messageId) return
 
         const delta = event.delta
         if (delta.type === 'text_delta') {
-          this.ctx.emit({ type: 'message.delta', messageId, text: delta.text })
+          this.ctx.emit({ type: 'message.delta', messageId, text: delta.text, parentToolCallId })
         } else if (delta.type === 'thinking_delta') {
-          this.ctx.emit({ type: 'thinking.delta', messageId, text: delta.thinking })
+          this.ctx.emit({ type: 'thinking.delta', messageId, text: delta.thinking, parentToolCallId })
         }
         return
       }
@@ -333,6 +341,7 @@ export class ClaudeRunner implements AgentRunner {
               messageId: message.message.id,
               role: 'assistant',
               blocks,
+              parentToolCallId: message.parent_tool_use_id,
             },
             message,
           )
@@ -646,7 +655,13 @@ export class ClaudeRunner implements AgentRunner {
   ): Promise<void> {
     const { blocks, prompt } = await buildUserMessage(text, attachments)
 
-    this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks })
+    this.ctx.emit({
+      type: 'message.completed',
+      messageId: randomUUID(),
+      role: 'user',
+      blocks,
+      parentToolCallId: null,
+    })
     this.ctx.emit({ type: 'turn.started' })
     this.ctx.setStatus('running')
 

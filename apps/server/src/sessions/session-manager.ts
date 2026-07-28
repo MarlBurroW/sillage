@@ -546,13 +546,39 @@ export class SessionManager {
     if (!managed) return
 
     managed.lastActivity = Date.now()
+    this.armIdleTimer(conversationId, managed)
+  }
+
+  private armIdleTimer(conversationId: string, managed: ManagedRunner): void {
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
     managed.idleTimer = setTimeout(
-      () => void this.stopRunner(conversationId),
+      () => this.reapIfIdle(conversationId),
       this.config.limits.sessionIdleTimeoutMin * 60 * 1000,
     )
     // Un runner en veille ne doit pas maintenir le process en vie à lui seul.
     managed.idleTimer.unref()
+  }
+
+  /**
+   * Échéance du délai d'inactivité.
+   *
+   * Le compteur ne court que sur les actions de l'utilisateur : il expirait donc aussi
+   * au milieu d'un tour long, où l'agent travaille seul sans rien demander, et le
+   * coupait net. Un tour en cours n'est pas de l'inactivité, on réarme.
+   *
+   * Une demande restée sans réponse se récolte, elle : le tour est déjà figé, personne
+   * n'y répondra, et `expireAll` la clôt proprement dans le journal.
+   */
+  private reapIfIdle(conversationId: string): void {
+    const managed = this.runners.get(conversationId)
+    if (!managed) return
+
+    if (managed.status === 'running') {
+      this.armIdleTimer(conversationId, managed)
+      return
+    }
+
+    void this.stopRunner(conversationId)
   }
 
   /**
@@ -827,14 +853,22 @@ export class SessionManager {
   }
 
   /**
-   * Arrête le runner d'une conversation, s'il tourne.
+   * Arrête le runner d'une conversation, s'il tourne, et dit s'il a bien été libéré.
    *
    * Utilisé par la resynchronisation depuis le transcript CLI : un process encore
    * chaud garde en mémoire un contexte qui ignore les tours faits au CLI, alors
    * qu'une reprise repart du fichier, qui a tout.
+   *
+   * Refuse tant qu'un tour est en cours. L'appelant vérifie le statut avant de lire le
+   * transcript sur disque, mais un tour peut démarrer entre les deux : couper là perd
+   * le tour, et fait écrire au CLI un `[Request interrupted by user]` que la
+   * resynchronisation suivante relit comme un message. C'est le direct qui fait foi.
    */
-  async releaseRunner(conversationId: string): Promise<void> {
+  async releaseRunner(conversationId: string): Promise<boolean> {
+    if (this.isBusy(conversationId)) return false
+
     await this.stopRunner(conversationId)
+    return true
   }
 
   private async stopRunner(conversationId: string): Promise<void> {

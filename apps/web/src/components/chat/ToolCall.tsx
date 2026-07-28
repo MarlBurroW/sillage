@@ -21,6 +21,7 @@ import { isSettled, type ToolNode } from '../../lib/tool-rows'
 import { readableView } from '../tools/registry'
 import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
+import { MessageBubble } from './MessageBubble'
 
 /**
  * Rendu de l'arbre d'appels d'outils : un appel, et la suite d'appels repliée.
@@ -182,12 +183,15 @@ export const ToolCall = memo(function ToolCall({ node }: { node: ToolNode }) {
         </div>
       ) : null}
 
-      {/* Les appels du sous-agent vivent dans la carte de l'outil qui l'a lancé :
-          l'appartenance est visible, y compris quand deux sous-agents tournent en
-          parallèle et que leurs appels s'entremêlent dans le journal. */}
-      {node.children.length > 0 ? (
-        <div className="border-t border-line px-2 py-2">
-          <SubAgentCalls nodes={node.children} />
+      {/* Le travail du sous-agent vit dans la carte de l'outil qui l'a lancé : ses
+          appels comme ce qu'il écrit. L'appartenance est visible, y compris quand deux
+          sous-agents tournent en parallèle et s'entremêlent dans le journal. */}
+      {node.children.length > 0 || node.messages.length > 0 ? (
+        <div className="flex flex-col gap-2 border-t border-line px-2 py-2">
+          {node.children.length > 0 ? <SubAgentCalls nodes={node.children} /> : null}
+          {node.messages.map((message) => (
+            <MessageBubble key={message.id} message={message} />
+          ))}
         </div>
       ) : null}
     </div>

@@ -247,8 +247,11 @@ export function registerClaudeSessionRoutes(
     if (events.length === 0) return { imported: 0 }
 
     // Un runner encore chaud garde un contexte qui ignore ces tours : on l'arrête,
-    // la reprise au prochain message repartira du fichier, qui a tout.
-    if (sessions.isWarm(id)) await sessions.releaseRunner(id)
+    // la reprise au prochain message repartira du fichier, qui a tout. Un tour a pu
+    // démarrer pendant la lecture du transcript, après la vérification de statut
+    // ci-dessus : il journalise lui-même ce qu'il produit, importer par-dessus
+    // doublerait le fil.
+    if (!(await sessions.releaseRunner(id))) return { imported: 0 }
 
     log.appendBatch(id, events, TRANSCRIPT_RAW_FORMAT)
     return { imported: events.length }
