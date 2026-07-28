@@ -435,7 +435,12 @@ function updateMessage(
 ): void {
   const index = messageIndex(state, id, role, ts, seq, parentToolCallId)
   const current = state.items[index] as MessageItem
-  replaceItem(state, index, update(current))
+  // Un même message peut arriver en morceaux de provenances mêlées : des deltas
+  // journalisés avant l'ajout du champ (parent absent), puis un `message.completed`
+  // qui le porte. Le premier événement qui nomme un parent fait foi ; on n'oublie
+  // jamais un parent connu, une resynchronisation de transcript émettant null.
+  const parent = current.parentToolCallId ?? parentToolCallId
+  replaceItem(state, index, { ...update(current), parentToolCallId: parent })
 }
 
 /**

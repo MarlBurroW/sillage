@@ -64,8 +64,12 @@ export class ClaudeAdapter implements AgentAdapter {
 
   forkCut(log: EventLog, conversationId: string, throughSeq: number): ClaudeForkCut {
     // L'identifiant de transcript ne vit que dans le payload natif conservé à la
-    // traduction (invariant I3) : c'est là qu'on le relit.
-    const raw = log.lastRawOfType(conversationId, 'message.completed', throughSeq)
+    // traduction (invariant I3) : c'est là qu'on le relit. Les messages de
+    // sous-agents sont écartés : leur uuid appartient à une sidechain, et couper là
+    // fait échouer le fork ou vise le mauvais point du fil principal.
+    const raw = log.lastRawOfType(conversationId, 'message.completed', throughSeq, {
+      topLevelOnly: true,
+    })
     const uuid = (raw as { uuid?: unknown } | null)?.uuid
     return { upToMessageId: typeof uuid === 'string' ? uuid : null }
   }

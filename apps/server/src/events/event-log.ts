@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { and, asc, desc, eq, gt, inArray, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm'
 import { conversations, events, type Db } from '@sillage/db'
 import { sillageEventSchema, type JournalEntry, type SillageEvent } from '@sillage/protocol'
 import { indexConversation, indexMessage } from '../search/search-index.js'
@@ -288,18 +288,31 @@ export class EventLog {
    *
    * Sert au fork Claude : le point de coupe est une entrée du fichier de transcript,
    * dont l'identifiant n'existe que dans `raw`.
+   *
+   * `topLevelOnly` écarte les événements produits par un sous-agent (payload portant
+   * un `parentToolCallId`) : leur `raw` vient d'une sidechain du transcript, et un
+   * point de coupe pris là viserait le mauvais fichier. Les événements d'avant le
+   * champ n'en portent pas et restent inclus, comme avant.
    */
-  lastRawOfType(conversationId: string, type: string, throughSeq: number): unknown {
+  lastRawOfType(
+    conversationId: string,
+    type: string,
+    throughSeq: number,
+    opts: { topLevelOnly?: boolean } = {},
+  ): unknown {
+    const conditions = [
+      eq(events.conversationId, conversationId),
+      eq(events.type, type),
+      lte(events.seq, throughSeq),
+    ]
+    if (opts.topLevelOnly) {
+      conditions.push(sql`coalesce(${events.payload} ->> '$.parentToolCallId', '') = ''`)
+    }
+
     const row = this.db
       .select({ raw: events.raw })
       .from(events)
-      .where(
-        and(
-          eq(events.conversationId, conversationId),
-          eq(events.type, type),
-          lte(events.seq, throughSeq),
-        ),
-      )
+      .where(and(...conditions))
       .orderBy(desc(events.seq))
       .limit(1)
       .get()
