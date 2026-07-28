@@ -1,16 +1,20 @@
 import { RotateCcw } from 'lucide-react'
 import { APPEARANCE_SETTINGS, type AppearanceKey, type useAppearance } from '../lib/appearance'
+import { useTranslate, type MessageKey } from '../lib/i18n'
 import { Button, cx } from './ui'
 
-const LABELS: Record<AppearanceKey, { title: string; hint: string }> = {
-  hue: { title: 'Teinte', hint: 'Partagée avec la couleur d’accent' },
-  tint: { title: 'Intensité', hint: 'Chroma des surfaces, sans toucher aux accents' },
-  lift: { title: 'Luminosité', hint: 'Éclaircit ou assombrit le shading, texte inchangé' },
-  readingSize: { title: 'Taille du texte', hint: 'Messages du fil uniquement' },
-  readingLeading: { title: 'Interligne', hint: 'Air entre les lignes d’un paragraphe' },
+const LABEL_KEYS: Record<AppearanceKey, { title: MessageKey; hint: MessageKey }> = {
+  hue: { title: 'appearance.hue.title', hint: 'appearance.hue.hint' },
+  tint: { title: 'appearance.tint.title', hint: 'appearance.tint.hint' },
+  lift: { title: 'appearance.lift.title', hint: 'appearance.lift.hint' },
+  readingSize: { title: 'appearance.readingSize.title', hint: 'appearance.readingSize.hint' },
+  readingLeading: {
+    title: 'appearance.readingLeading.title',
+    hint: 'appearance.readingLeading.hint',
+  },
   readingSoftness: {
-    title: 'Douceur du texte',
-    hint: 'Rapproche l’encre du gris : moins dur sur fond très sombre',
+    title: 'appearance.readingSoftness.title',
+    hint: 'appearance.readingSoftness.hint',
   },
 }
 
@@ -33,6 +37,7 @@ export function AppearanceControls({
   swatches?: boolean
 }) {
   const { values, set, reset } = appearance
+  const t = useTranslate()
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,7 +67,7 @@ export function AppearanceControls({
           <span className="flex-1" />
         )}
         <Button variant="ghost" size="sm" icon={<RotateCcw size={14} />} onClick={() => reset(keys)}>
-          Défaut
+          {t('appearance.reset')}
         </Button>
       </div>
     </div>
@@ -91,7 +96,9 @@ function Slider({
   onChange: (value: number) => void
 }) {
   const setting = APPEARANCE_SETTINGS[name]
-  const { title, hint } = LABELS[name]
+  const t = useTranslate()
+  const title = t(LABEL_KEYS[name].title)
+  const hint = t(LABEL_KEYS[name].hint)
   const spectrum = name === 'hue'
 
   return (

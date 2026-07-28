@@ -5,6 +5,7 @@ import { Check, ClipboardPaste, Copy, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { TerminalServerMessage } from '@sillage/protocol'
 import { useCopy } from '../../lib/clipboard'
+import { translate, useTranslate } from '../../lib/i18n'
 import { Button, cx } from '../ui'
 
 /**
@@ -54,6 +55,7 @@ export function TerminalView({ conversationId }: { conversationId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [pasting, setPasting] = useState(false)
   const { state: copyState, copy } = useCopy()
+  const t = useTranslate()
 
   useEffect(() => {
     const node = host.current
@@ -101,16 +103,18 @@ export function TerminalView({ conversationId }: { conversationId: string }) {
       } else if (message.t === 'output') {
         terminal.write(message.data)
       } else if (message.t === 'exit') {
-        terminal.write(`\r\n\x1b[2mLe shell s'est terminé (code ${message.code}).\x1b[0m\r\n`)
+        terminal.write(
+          `\r\n\x1b[2m${translate('terminal.view.shellExited', { code: message.code })}\x1b[0m\r\n`,
+        )
       } else {
         setError(message.message)
       }
     }
 
-    socket.onerror = () => setError('Connexion au terminal impossible.')
+    socket.onerror = () => setError(translate('terminal.view.connectionFailed'))
     socket.onclose = (event) => {
-      if (event.code === 4401) setError('Session expirée, reconnecte-toi.')
-      else if (event.code === 4404) setError('Conversation introuvable.')
+      if (event.code === 4401) setError(translate('terminal.view.sessionExpired'))
+      else if (event.code === 4404) setError(translate('terminal.view.conversationNotFound'))
     }
 
     const input = terminal.onData((data) => {
@@ -175,11 +179,15 @@ export function TerminalView({ conversationId }: { conversationId: string }) {
       <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-2 py-1.5">
         <Button size="sm" variant="ghost" onClick={copyTerminal}>
           {copyState === 'copied' ? <Check size={14} /> : <Copy size={14} />}
-          {copyState === 'copied' ? 'Copié' : copyState === 'failed' ? 'Échec' : 'Copier'}
+          {copyState === 'copied'
+            ? t('terminal.view.copy.copied')
+            : copyState === 'failed'
+              ? t('terminal.view.copy.failed')
+              : t('terminal.view.copy.action')}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => setPasting(true)}>
           <ClipboardPaste size={14} />
-          Coller
+          {t('terminal.view.paste.action')}
         </Button>
 
         {error ? (
@@ -197,7 +205,7 @@ export function TerminalView({ conversationId }: { conversationId: string }) {
           peut ni compléter un chemin ni interrompre une commande. */}
       <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-line px-2 py-1.5 md:hidden">
         {[
-          { label: 'Échap', sequence: '\x1b' },
+          { label: t('terminal.view.key.escape'), sequence: '\x1b' },
           { label: 'Tab', sequence: '\t' },
           { label: 'Ctrl+C', sequence: '\x03' },
           { label: 'Ctrl+D', sequence: '\x04' },
@@ -238,12 +246,11 @@ function PastePanel({
   onCancel: () => void
 }) {
   const [value, setValue] = useState('')
+  const t = useTranslate()
 
   return (
     <div className="flex shrink-0 flex-col gap-1.5 border-b border-line bg-surface p-2">
-      <p className="text-xs text-ink-faint">
-        Colle ici avec ton raccourci habituel ou un appui long, puis envoie.
-      </p>
+      <p className="text-xs text-ink-faint">{t('terminal.view.paste.hint')}</p>
       <textarea
         autoFocus
         value={value}
@@ -263,10 +270,10 @@ function PastePanel({
       />
       <div className="flex gap-1.5">
         <Button size="sm" disabled={!value} onClick={() => onPaste(value)}>
-          Envoyer au terminal
+          {t('terminal.view.paste.send')}
         </Button>
         <Button size="sm" variant="ghost" icon={<X size={14} />} onClick={onCancel}>
-          Annuler
+          {t('common.cancel')}
         </Button>
       </div>
     </div>

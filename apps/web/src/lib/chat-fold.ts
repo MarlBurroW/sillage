@@ -7,6 +7,7 @@ import type {
   PlanFollowUpOption,
   SillageEvent,
 } from '@sillage/protocol'
+import { translate } from './i18n'
 
 /**
  * Fold du journal vers le modèle d'affichage (invariant I2 : le rendu est une
@@ -255,9 +256,14 @@ function thousands(tokens: number): string {
  * Claude donne les deux tailles, Codex n'en donne aucune.
  */
 function describeCompaction(preTokens: number | null, postTokens: number | null): string {
-  if (preTokens === null) return 'Contexte résumé'
-  if (postTokens === null) return `Contexte résumé, ${thousands(preTokens)} tokens avant`
-  return `Contexte résumé, ${thousands(preTokens)} vers ${thousands(postTokens)} tokens`
+  if (preTokens === null) return translate('activity.compaction.done')
+  if (postTokens === null) {
+    return translate('activity.compaction.doneWithPre', { tokens: thousands(preTokens) })
+  }
+  return translate('activity.compaction.doneWithBoth', {
+    pre: thousands(preTokens),
+    post: thousands(postTokens),
+  })
 }
 
 /**
@@ -274,8 +280,8 @@ export function describeActivity(state: ChatState): string | null {
   // La taille annoncée est celle d'avant, la seule connue tant qu'elle n'est pas finie.
   if (state.compacting) {
     return state.context
-      ? `Compaction du contexte, ${thousands(state.context.usedTokens)} tokens`
-      : 'Compaction du contexte'
+      ? translate('activity.compacting.tokens', { tokens: thousands(state.context.usedTokens) })
+      : translate('activity.compacting')
   }
   if (!state.turnRunning) return null
 
@@ -304,19 +310,21 @@ export function activityOf(items: ChatItem[], thread: string | null): string | n
       item.kind === 'elicitation' ||
       item.kind === 'plan'
     ) {
-      return 'Réflexion'
+      return translate('message.thinking.label')
     }
     if (item.kind === 'tool') {
-      return item.status === 'running' ? `${item.name} en cours` : 'Réflexion'
+      return item.status === 'running'
+        ? translate('activity.toolRunning', { name: item.name })
+        : translate('message.thinking.label')
     }
     if (item.kind === 'message') {
-      if (item.role === 'user') return 'Réflexion'
-      if (item.streamingText) return 'Rédaction'
-      return 'Réflexion'
+      if (item.role === 'user') return translate('message.thinking.label')
+      if (item.streamingText) return translate('activity.writing')
+      return translate('message.thinking.label')
     }
   }
 
-  return 'Réflexion'
+  return translate('message.thinking.label')
 }
 
 /** Au-delà, l'intitulé d'un tour déborde de la colonne du panneau. */
@@ -346,7 +354,7 @@ function lastUserMessage(state: ChatState): { id: string; label: string } {
     }
   }
 
-  return { id: `seq-${state.lastSeq}`, label: 'Sans message' }
+  return { id: `seq-${state.lastSeq}`, label: translate('activity.turn.noMessage') }
 }
 
 /**
@@ -511,7 +519,7 @@ export function applyEvent(
         appendItem(state, {
           kind: 'notice',
           id: `model-${seq}`,
-          text: `Modèle passé à ${event.model}`,
+          text: translate('activity.modelChanged', { model: event.model }),
         })
       }
       state.model = event.model

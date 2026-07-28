@@ -20,6 +20,7 @@ import { memo, useState, type ReactNode } from 'react'
 import { isSpawnTool } from '@sillage/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
+import { useTranslate } from '../../lib/i18n'
 import { showSubAgent } from '../../lib/panel'
 import { readableView } from '../tools/registry'
 import { cx } from '../ui'
@@ -140,6 +141,7 @@ function asPayload(value: unknown, fallback = ''): { content: string; language: 
 }
 
 export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolItem }) {
+  const t = useTranslate()
   const [open, setOpen] = useState(false)
   const [raw, setRaw] = useState(false)
   const summary = summarize(tool.name, tool.input)
@@ -193,9 +195,12 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolItem }) {
             readable
           ) : (
             <>
-              <Payload label="Entrée" {...asPayload(tool.input)} />
+              <Payload label={t('toolcall.payload.input')} {...asPayload(tool.input)} />
               {tool.status !== 'running' ? (
-                <Payload label="Sortie" {...asPayload(tool.output, languageOfInput(tool.input))} />
+                <Payload
+                  label={t('toolcall.payload.output')}
+                  {...asPayload(tool.output, languageOfInput(tool.input))}
+                />
               ) : null}
             </>
           )}
@@ -214,7 +219,7 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolItem }) {
           )}
         >
           <CornerDownRight size={11} className="shrink-0" />
-          Voir le fil du sous-agent
+          {t('toolcall.subagent.view')}
         </button>
       ) : null}
     </div>
@@ -229,11 +234,12 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolItem }) {
  * qu'elle a jugé secondaire. Il reste donc à un clic, sur chaque appel.
  */
 function ViewSwitch({ raw, onChange }: { raw: boolean; onChange: (raw: boolean) => void }) {
+  const t = useTranslate()
   return (
     <div className="flex w-fit gap-0.5 rounded-md border border-line bg-sunken p-0.5">
       {[
-        { label: 'Lisible', value: false },
-        { label: 'Brut', value: true },
+        { label: t('toolcall.view.readable'), value: false },
+        { label: t('toolcall.view.raw'), value: true },
       ].map((mode) => (
         <button
           key={mode.label}
@@ -261,6 +267,7 @@ function Payload({
   content: string
   language: string
 }) {
+  const t = useTranslate()
   return (
     <div className="flex flex-col gap-1">
       <span className="text-[0.6875rem] font-medium tracking-wide text-ink-faint uppercase">
@@ -275,7 +282,7 @@ function Payload({
         />
       ) : (
         <p className="rounded-md border border-line bg-sunken p-2 font-mono text-xs text-ink-faint">
-          (vide)
+          {t('toolcall.payload.empty')}
         </p>
       )}
     </div>
@@ -298,6 +305,7 @@ function summarizeNames(tools: ToolItem[]): string {
  * une erreur du champ de vision.
  */
 export const ToolCallGroup = memo(function ToolCallGroup({ tools }: { tools: ToolItem[] }) {
+  const t = useTranslate()
   const [open, setOpen] = useState(false)
 
   const failed = tools.filter((tool) => tool.status === 'failed').length
@@ -316,14 +324,22 @@ export const ToolCallGroup = memo(function ToolCallGroup({ tools }: { tools: Too
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
         <Wrench size={14} className="shrink-0 text-ink-faint" />
-        <span className="shrink-0 font-medium text-ink">{tools.length} outils</span>
+        <span className="shrink-0 font-medium text-ink">
+          {t(
+            tools.length > 1 ? 'toolcall.group.count.other' : 'toolcall.group.count.one',
+            { count: tools.length },
+          )}
+        </span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink-faint">
           {summarizeNames(tools)}
         </span>
 
         {failed > 0 ? (
           <span className="shrink-0 text-[0.6875rem] font-medium text-critical">
-            {failed} échec{failed > 1 ? 's' : ''}
+            {t(
+              failed > 1 ? 'toolcall.group.failed.other' : 'toolcall.group.failed.one',
+              { count: failed },
+            )}
           </span>
         ) : null}
         {total > 0 ? (

@@ -3,13 +3,8 @@ import { useState } from 'react'
 import type { AgentQuestion } from '@sillage/protocol'
 import type { QuestionItem } from '../../lib/chat-fold'
 import { answerQuestion } from '../../lib/conversations'
+import { useTranslate } from '../../lib/i18n'
 import { Badge, Button, cx } from '../ui'
-
-const STATUS_LABEL: Record<Exclude<QuestionItem['status'], 'pending'>, string> = {
-  answered: 'Répondu',
-  cancelled: 'Sans réponse',
-  expired: 'Expiré',
-}
 
 /**
  * Questions posées par l'agent.
@@ -31,6 +26,13 @@ export function QuestionPrompt({
   const [other, setOther] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const t = useTranslate()
+
+  const STATUS_LABEL: Record<Exclude<QuestionItem['status'], 'pending'>, string> = {
+    answered: t('question.status.answered'),
+    cancelled: t('question.status.cancelled'),
+    expired: t('question.status.expired'),
+  }
 
   const pending = item.status === 'pending'
 
@@ -74,7 +76,7 @@ export function QuestionPrompt({
     } catch (err) {
       // L'événement `question.resolved` viendra du serveur : on n'anticipe pas l'état
       // ici, sinon l'affichage cesserait d'être un pur fold du journal.
-      setError(err instanceof Error ? err.message : 'Réponse impossible.')
+      setError(err instanceof Error ? err.message : t('question.error.generic'))
       setBusy(false)
     }
   }
@@ -89,7 +91,7 @@ export function QuestionPrompt({
       <div className="flex items-start gap-2.5">
         <MessageCircleQuestion size={16} className="mt-0.5 shrink-0 text-accent" />
         <p className="min-w-0 flex-1 text-sm font-medium">
-          {pending ? "L'agent te demande de choisir" : "Question de l'agent"}
+          {pending ? t('question.prompt.title') : t('question.prompt.pastTitle')}
         </p>
         {item.status !== 'pending' ? <Badge>{STATUS_LABEL[item.status]}</Badge> : null}
       </div>
@@ -151,7 +153,9 @@ export function QuestionPrompt({
                   }
                   disabled={busy}
                   placeholder={
-                    question.options.length > 0 ? 'Autre réponse...' : 'Écris ta réponse...'
+                    question.options.length > 0
+                      ? t('question.other.placeholderWithOptions')
+                      : t('question.other.placeholder')
                   }
                   className={cx(
                     'h-9 w-full rounded-md border border-line bg-surface px-2.5 text-sm',
@@ -167,7 +171,7 @@ export function QuestionPrompt({
       {pending && canDecide ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" disabled={busy || !complete} onClick={() => void submit('answered')}>
-            Envoyer
+            {t('question.submit')}
           </Button>
           <Button
             size="sm"
@@ -175,15 +179,13 @@ export function QuestionPrompt({
             disabled={busy}
             onClick={() => void submit('cancelled')}
           >
-            Ne pas répondre
+            {t('question.skip')}
           </Button>
         </div>
       ) : null}
 
       {pending && !canDecide ? (
-        <p className="mt-2 text-xs text-ink-faint">
-          Seul le propriétaire de la conversation peut répondre.
-        </p>
+        <p className="mt-2 text-xs text-ink-faint">{t('question.ownerOnly')}</p>
       ) : null}
 
       {error ? <p className="mt-2 text-xs text-critical">{error}</p> : null}

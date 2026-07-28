@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react'
 import { catalogFor, LOCALES, type Locale } from './catalogs'
 import type { MessageKey } from './catalog-en'
 
-export { LOCALES, type Locale } from './catalogs'
+export { LOCALES, LOCALE_LABELS, type Locale } from './catalogs'
 export type { MessageKey } from './catalog-en'
 
 /**

@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
@@ -13,6 +14,7 @@ import { cx } from '../ui'
  * recouvraient les messages.
  */
 export function TurnNav({ count, onStep }: { count: number; onStep: (direction: -1 | 1) => void }) {
+  const t = useTranslate()
   // Un seul tour ne se parcourt pas.
   if (count < 2) return null
 
@@ -25,8 +27,8 @@ export function TurnNav({ count, onStep }: { count: number; onStep: (direction: 
       <button
         type="button"
         onClick={() => onStep(-1)}
-        aria-label="Tour précédent"
-        title="Tour précédent"
+        aria-label={t('turn.nav.previous')}
+        title={t('turn.nav.previous')}
         className="flex size-9 items-center justify-center text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
       >
         <ChevronUp size={16} />
@@ -35,8 +37,8 @@ export function TurnNav({ count, onStep }: { count: number; onStep: (direction: 
       <button
         type="button"
         onClick={() => onStep(1)}
-        aria-label="Tour suivant"
-        title="Tour suivant"
+        aria-label={t('turn.nav.next')}
+        title={t('turn.nav.next')}
         className="flex size-9 items-center justify-center text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
       >
         <ChevronDown size={16} />

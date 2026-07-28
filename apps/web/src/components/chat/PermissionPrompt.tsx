@@ -2,14 +2,9 @@ import { ShieldQuestion } from 'lucide-react'
 import { useState } from 'react'
 import type { PermissionItem } from '../../lib/chat-fold'
 import { decidePermission } from '../../lib/conversations'
+import { useTranslate } from '../../lib/i18n'
 import { Badge, Button, cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
-
-const STATUS_LABEL: Record<Exclude<PermissionItem['status'], 'pending'>, string> = {
-  allowed: 'Autorisé',
-  denied: 'Refusé',
-  expired: 'Expiré',
-}
 
 export function PermissionPrompt({
   conversationId,
@@ -22,6 +17,13 @@ export function PermissionPrompt({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const t = useTranslate()
+
+  const STATUS_LABEL: Record<Exclude<PermissionItem['status'], 'pending'>, string> = {
+    allowed: t('permission.status.allowed'),
+    denied: t('permission.status.denied'),
+    expired: t('permission.status.expired'),
+  }
 
   const decide = async (decision: 'allowed' | 'denied', scope: 'once' | 'session') => {
     setBusy(true)
@@ -31,7 +33,7 @@ export function PermissionPrompt({
     } catch (err) {
       // L'événement `permission.resolved` viendra du serveur : on n'anticipe pas
       // l'état ici, sinon l'affichage cesserait d'être un pur fold du journal.
-      setError(err instanceof Error ? err.message : 'Décision impossible.')
+      setError(err instanceof Error ? err.message : t('permission.error.generic'))
       setBusy(false)
     }
   }
@@ -55,8 +57,8 @@ export function PermissionPrompt({
           <p className="text-sm font-medium">
             {permission.title ??
               (permission.status === 'pending'
-                ? `${permission.toolName} demande une autorisation`
-                : `Autorisation pour ${permission.toolName}`)}
+                ? t('permission.title.pending', { tool: permission.toolName })
+                : t('permission.title.past', { tool: permission.toolName }))}
           </p>
           {permission.description ? (
             <p className="mt-0.5 text-xs text-ink-soft">{permission.description}</p>
@@ -80,7 +82,7 @@ export function PermissionPrompt({
       {permission.status === 'pending' && canDecide ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" disabled={busy} onClick={() => void decide('allowed', 'once')}>
-            Autoriser
+            {t('permission.allow')}
           </Button>
           <Button
             size="sm"
@@ -88,7 +90,7 @@ export function PermissionPrompt({
             disabled={busy}
             onClick={() => void decide('allowed', 'session')}
           >
-            Autoriser pour la session
+            {t('permission.allowSession')}
           </Button>
           <Button
             size="sm"
@@ -96,15 +98,13 @@ export function PermissionPrompt({
             disabled={busy}
             onClick={() => void decide('denied', 'once')}
           >
-            Refuser
+            {t('permission.deny')}
           </Button>
         </div>
       ) : null}
 
       {permission.status === 'pending' && !canDecide ? (
-        <p className="mt-2 text-xs text-ink-faint">
-          Seul le propriétaire de la conversation peut décider.
-        </p>
+        <p className="mt-2 text-xs text-ink-faint">{t('permission.ownerOnly')}</p>
       ) : null}
 
       {error ? <p className="mt-2 text-xs text-critical">{error}</p> : null}

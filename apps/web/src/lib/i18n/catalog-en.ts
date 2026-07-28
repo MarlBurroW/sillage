@@ -555,6 +555,198 @@ export const en = {
   // Sous-agents
   'subagent.bar.count.one': '{count} sub-agent running',
   'subagent.bar.count.other': '{count} sub-agents running',
+
+  // Réglages : apparence et langue
+  'settings.appearance.title': 'Appearance',
+  'settings.appearance.description': 'Stored on this device: changing it here changes nothing elsewhere.',
+  'settings.language.title': 'Language',
+  'settings.language.description': 'Applies to the interface. Messages written by the CLIs stay in their own language.',
+  'settings.theme.title': 'Theme and colors',
+  'settings.theme.description': 'The hue drives surfaces and the accent.',
+
+  // Activité du fil (compaction, écriture, outils, changement de modèle)
+  'activity.compaction.done': 'Context summarized',
+  'activity.compaction.doneWithPre': 'Context summarized, {tokens} tokens before',
+  'activity.compaction.doneWithBoth': 'Context summarized, {pre} to {post} tokens',
+  'activity.compacting': 'Compacting context',
+  'activity.compacting.tokens': 'Compacting context, {tokens} tokens',
+  'activity.writing': 'Writing',
+  'activity.toolRunning': '{name} running',
+  'activity.turn.noMessage': 'No message',
+  'activity.modelChanged': 'Model switched to {model}',
+
+  // Projets (réglages)
+  'projects.title': 'Projects',
+  'projects.description': 'A project is a working directory and its visibility.',
+  'projects.create.title': 'New project',
+  'projects.create.description':
+    "Sillage points to an existing folder: it doesn't create it and doesn't touch it. The CLI is chosen per conversation, not here.",
+  'projects.create.name': 'Name',
+  'projects.create.name.placeholder': 'My project',
+  'projects.create.workspacePath': 'Workspace folder',
+  'projects.create.workspacePath.hint': 'Absolute path on the host machine, or browse the tree.',
+  'projects.create.pending': 'Creating...',
+  'projects.create.submit': 'Create project',
+  'projects.existing.title': 'Existing',
+  'projects.empty.title': 'No projects yet',
+  'projects.empty.description': 'Create one with the form above.',
+
+  // Question de l'agent
+  'question.status.answered': 'Answered',
+  'question.status.cancelled': 'No answer',
+  'question.status.expired': 'Expired',
+  'question.prompt.title': 'The agent is asking you to choose',
+  'question.prompt.pastTitle': "Agent's question",
+  'question.other.placeholderWithOptions': 'Other answer...',
+  'question.other.placeholder': 'Write your answer...',
+  'question.error.generic': 'Could not answer.',
+  'question.submit': 'Send',
+  'question.skip': "Don't answer",
+  'question.ownerOnly': 'Only the conversation owner can answer.',
+
+  // Compte (réglages)
+  'account.password.changed': 'Password changed.',
+  'account.updated': 'Account updated.',
+  'account.username.label': 'Username',
+  'account.username.hint': 'Used to sign in.',
+  'account.displayName.label': 'Display name',
+  'account.password.current.label': 'Current password',
+  'account.password.current.hint': 'Only required to set a new one.',
+  'account.password.next.label': 'New password',
+  'account.password.next.hint.self': 'Leave empty to keep it unchanged. Other devices will be signed out.',
+  'account.password.next.hint.other':
+    'Leave empty to keep it unchanged. All sessions of this account will be closed.',
+  'account.save.pending': 'Saving...',
+  'account.save.action': 'Save',
+
+  // Apparence (réglages fins)
+  'appearance.hue.title': 'Hue',
+  'appearance.hue.hint': 'Shared with the accent color',
+  'appearance.tint.title': 'Tint',
+  'appearance.tint.hint': 'Chroma of surfaces, accents untouched',
+  'appearance.lift.title': 'Lift',
+  'appearance.lift.hint': 'Lightens or darkens the shading, text unchanged',
+  'appearance.readingSize.title': 'Text size',
+  'appearance.readingSize.hint': 'Thread messages only',
+  'appearance.readingLeading.title': 'Line height',
+  'appearance.readingLeading.hint': 'Space between the lines of a paragraph',
+  'appearance.readingSoftness.title': 'Text softness',
+  'appearance.readingSoftness.hint': 'Brings the ink closer to gray: less harsh on a very dark background',
+  'appearance.reset': 'Reset',
+
+  // Notifications push
+  'push.insecure':
+    "Notifications require an HTTPS connection. The browser gives access to neither the service worker nor the Push API otherwise.",
+  'push.unsupported': "This browser doesn't support push notifications.",
+  'push.description':
+    "Notified when an agent asks for a decision, or finishes a turn while you're looking elsewhere. Nothing is sent while the conversation is open in front of you.",
+  'push.disable': 'Turn off on this device',
+  'push.enable': 'Turn on on this device',
+
+  // Permissions (demandes de l'agent)
+  'permission.status.allowed': 'Allowed',
+  'permission.status.denied': 'Denied',
+  'permission.status.expired': 'Expired',
+  'permission.error.generic': 'Could not decide.',
+  'permission.title.pending': '{tool} is requesting a permission',
+  'permission.title.past': 'Permission for {tool}',
+  'permission.allow': 'Allow',
+  'permission.allowSession': 'Allow for the session',
+  'permission.deny': 'Deny',
+  'permission.ownerOnly': 'Only the conversation owner can decide.',
+
+  // Vue terminal
+  'terminal.view.shellExited': 'The shell ended (code {code}).',
+  'terminal.view.connectionFailed': 'Could not connect to the terminal.',
+  'terminal.view.sessionExpired': 'Session expired, sign in again.',
+  'terminal.view.conversationNotFound': 'Conversation not found.',
+  'terminal.view.copy.copied': 'Copied',
+  'terminal.view.copy.failed': 'Failed',
+  'terminal.view.copy.action': 'Copy',
+  'terminal.view.paste.action': 'Paste',
+  'terminal.view.key.escape': 'Esc',
+  'terminal.view.paste.hint': 'Paste here with your usual shortcut or a long press, then send.',
+  'terminal.view.paste.send': 'Send to the terminal',
+
+  // Éditeur - recherche et remplacement
+  'editor.search.find': 'Find',
+  'editor.search.replace': 'Replace',
+  'editor.search.next': 'next',
+  'editor.search.previous': 'previous',
+  'editor.search.all': 'all',
+  'editor.search.matchCase': 'match case',
+  'editor.search.byWord': 'by word',
+  'editor.search.regexp': 'regexp',
+  'editor.search.replaceAction': 'replace',
+  'editor.search.replaceAll': 'replace all',
+  'editor.search.close': 'close',
+  'editor.search.currentMatch': 'current match',
+  'editor.search.replacedMatches': 'replaced $ matches',
+  'editor.search.replacedMatchOnLine': 'replaced match on line $',
+  'editor.search.onLine': 'on line',
+
+  // Sélecteur de dossier
+  'directoryPicker.title': 'Choose a folder',
+  'directoryPicker.hidden.hide': 'Hide hidden folders',
+  'directoryPicker.hidden.show': 'Show hidden folders',
+  'directoryPicker.empty.all': 'No subfolder here.',
+  'directoryPicker.empty.visible': 'No visible subfolder here.',
+  'directoryPicker.truncated': 'List truncated: only the first 500 folders are shown.',
+  'directoryPicker.gitRepo': 'git repo',
+  'directoryPicker.confirm': 'Choose this folder',
+
+  // Panneau des sous-agents
+  'subagent.pane.empty.title': 'No sub-agent',
+  'subagent.pane.empty.description': 'Agents launched by the conversation will appear here, with their full thread.',
+  'subagent.pane.back': 'Back to the sub-agent list',
+  'subagent.pane.starting': 'The sub-agent is starting...',
+  'subagent.pane.silent': "This sub-agent hasn't sent anything.",
+  'subagent.row.toolCount.one': '{count} tool',
+  'subagent.row.toolCount.other': '{count} tools',
+
+  // Aperçu de lecture (design system)
+  'readingPreview.question': 'Why did the `.env` file show up without any coloring?',
+  'readingPreview.answer':
+    "Because `extname('.env')` returns an empty string: for Node, a file\nthat starts with a dot has no extension, it has a **name**.\n\nTwo consequences:\n\n- no mode was ever found, so no highlighting;\n- even the comments were rendered as plain text.\n\nThe mode is now decided from the file name.",
+
+  // Rendu des appels d'outils (payload et groupes)
+  'toolcall.payload.input': 'Input',
+  'toolcall.payload.output': 'Output',
+  'toolcall.payload.empty': '(empty)',
+  'toolcall.subagent.view': "View the sub-agent's thread",
+  'toolcall.view.readable': 'Readable',
+  'toolcall.view.raw': 'Raw',
+  'toolcall.group.count.one': '{count} tool',
+  'toolcall.group.count.other': '{count} tools',
+  'toolcall.group.failed.one': '{count} failure',
+  'toolcall.group.failed.other': '{count} failures',
+
+  // CLI agents - présentation
+  'agent.blurb.claude': 'Sub-agents, plan mode, tool-by-tool permission prompts.',
+  'agent.blurb.codex': 'Plan mode, sandboxed execution, batched approvals.',
+
+  // Bloc de code
+  'code.filename.default': 'snippet.txt',
+  'code.filename': 'snippet.{extension}',
+  'code.language.plain': 'text',
+  'code.wrap.disable': 'Disable line wrap',
+  'code.wrap.enable': 'Wrap lines',
+  'code.download': 'Download the block',
+  'code.copy': 'Copy the block',
+  'code.copy.failed': 'Copy failed',
+
+  // Recherche dans le fil et navigation par tours
+  'thread.search.placeholder': 'Search in the conversation...',
+  'thread.search.noResults': 'No results',
+  'thread.search.position': '{index} of {count}',
+  'thread.search.previous': 'Previous match',
+  'thread.search.next': 'Next match',
+  'thread.search.close': 'Close search',
+  'turn.nav.previous': 'Previous turn',
+  'turn.nav.next': 'Next turn',
+
+  // Commun
+  'common.select.placeholder': 'Choose...',
 } as const
 
 /**
