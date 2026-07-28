@@ -207,20 +207,13 @@ export function AppShell() {
 
   return (
     /**
-     * Calque fixe aux dimensions du viewport **visuel**, pas du viewport de mise en
-     * page.
+     * Calque fixe de l'application, dimensionné par `.app-layer`.
      *
-     * À l'ouverture du clavier, `100dvh` continue de valoir la hauteur de l'écran
-     * entier et la barre de saisie se retrouve dessous. Ici, l'application entière est
-     * redimensionnée et remontée de `--sg-viewport-top` : le clavier pousse tout vers
-     * le haut, au lieu de recouvrir le bas.
+     * À l'ouverture du clavier, il se cale sur le viewport visuel et remonte de
+     * `--sg-viewport-top` : le clavier pousse tout vers le haut au lieu de recouvrir la
+     * barre de saisie.
      */
-    <div
-      className={cx(
-        'fixed inset-x-0 top-[var(--sg-viewport-top,0px)] flex overflow-hidden',
-        'h-[var(--sg-app-height,100dvh)] gradient-canvas text-ink',
-      )}
-    >
+    <div className="app-layer flex overflow-hidden gradient-canvas text-ink">
       <aside
         ref={aside}
         className={cx(

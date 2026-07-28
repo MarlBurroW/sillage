@@ -57,11 +57,14 @@
   /*
    * Encoches de l'appareil, nommées plutôt qu'appelées directement par `env()`.
    *
-   * Deux raisons. Une barre de hauteur fixe doit pouvoir *ajouter* l'encoche à sa
-   * hauteur (`calc()` ne sait pas le faire depuis une classe utilitaire), et ces
-   * valeurs valent zéro dans un navigateur mais pas dans une PWA installée : les
-   * nommer permet de rejouer la géométrie d'un iPhone sur un poste de développement,
-   * au lieu de découvrir le décalage une fois l'application installée.
+   * Une barre de hauteur fixe doit pouvoir *ajouter* l'encoche à sa hauteur, ce que
+   * `calc()` ne sait pas faire depuis une classe utilitaire, et les nommer permet de
+   * rejouer la géométrie d'un iPhone sur un poste de développement.
+   *
+   * Elles valent zéro tant que le document ne demande pas `viewport-fit=cover`, ce que
+   * Sillage ne fait plus : le viewport épouse alors déjà la zone sûre, et il n'y a rien
+   * à écarter. Conservées parce qu'elles redeviennent justes le jour où l'on reprend le
+   * bord à bord, et parce qu'un `padding` de zéro ne coûte rien.
    */
   --sg-safe-top: env(safe-area-inset-top, 0px);
   --sg-safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -160,6 +163,20 @@
 
   .tap-target {
     min-height: var(--tap);
+  }
+
+  /*
+   * Calque de l'application.
+   *
+   * `dvh` dans un navigateur, où il est la seule unité à suivre la barre d'adresse qui
+   * se replie. `--sg-app-height` par-dessus quand le clavier est ouvert.
+   */
+  .app-layer {
+    position: fixed;
+    top: var(--sg-viewport-top, 0px);
+    right: 0;
+    left: 0;
+    height: var(--sg-app-height, 100dvh);
   }
 
   .pb-safe {
