@@ -40,15 +40,12 @@ export function SidePanel({
   editTurns,
   turnRunning,
   subAgents,
-  canDecide,
   open,
 }: {
   conversationId: string
   editTurns: EditTurn[]
   turnRunning: boolean
   subAgents: SubAgent[]
-  /** Faux sur une conversation partagée en lecture. */
-  canDecide: boolean
   /** Faux pendant la sortie : le panneau est encore monté, mais s'en va. */
   open: boolean
 }) {
@@ -264,7 +261,6 @@ export function SidePanel({
           conversationId={conversationId}
           agents={subAgents}
           selectedId={selectedSubAgent}
-          canDecide={canDecide}
         />
       ) : null}
 

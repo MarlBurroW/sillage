@@ -3,6 +3,7 @@ import {
   ChevronRight,
   CircleAlert,
   CircleCheck,
+  CircleSlash,
   CornerDownRight,
   FileText,
   FolderSearch,
@@ -16,10 +17,10 @@ import {
   Wrench,
 } from 'lucide-react'
 import { memo, useState, type ReactNode } from 'react'
+import { isSpawnTool } from '@sillage/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
 import { showSubAgent } from '../../lib/panel'
-import { isSpawnTool } from '../../lib/subagents'
 import { readableView } from '../tools/registry'
 import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
@@ -85,6 +86,20 @@ function summarize(name: string, input: unknown): ToolSummary | null {
     if (typeof value === 'string' && value.length > 0) return { text: value, mono: true }
   }
   return null
+}
+
+/**
+ * L'issue d'un appel, en une icône.
+ *
+ * « Interrompu » n'est pas un échec : l'appel n'a simplement jamais rendu sa réponse,
+ * le CLI ayant été coupé. Le confondre avec une erreur ferait chercher une cause qui
+ * n'existe pas.
+ */
+export function ToolStatusIcon({ status }: { status: ToolItem['status'] }) {
+  if (status === 'running') return <Loader size={13} className="shrink-0 animate-spin text-accent" />
+  if (status === 'failed') return <CircleAlert size={13} className="shrink-0 text-critical" />
+  if (status === 'interrupted') return <CircleSlash size={13} className="shrink-0 text-ink-faint" />
+  return <CircleCheck size={13} className="shrink-0 text-positive" />
 }
 
 /**
@@ -162,13 +177,7 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolItem }) {
           <span className="flex-1" />
         )}
 
-        {tool.status === 'running' ? (
-          <Loader size={13} className="shrink-0 animate-spin text-accent" />
-        ) : tool.status === 'failed' ? (
-          <CircleAlert size={13} className="shrink-0 text-critical" />
-        ) : (
-          <CircleCheck size={13} className="shrink-0 text-positive" />
-        )}
+        <ToolStatusIcon status={tool.status} />
         {tool.durationMs !== null ? (
           <span className="shrink-0 text-[0.6875rem] text-ink-faint">
             {formatDuration(tool.durationMs)}

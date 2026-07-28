@@ -238,16 +238,14 @@ export function registerClaudeSessionRoutes(
     }
     if (after.length === 0) return { imported: 0 }
 
-    // Les fils de sous-agents ne se découpent pas au point commun : ils vivent dans
-    // leurs propres fichiers, avec leur propre chronologie. C'est donc entrée par
-    // entrée qu'on écarte ce que le journal porte déjà.
+    // Un fil de sous-agent vit dans son propre fichier, avec sa propre chronologie :
+    // le découpage au point commun ne lui convient pas, et l'`uuid` non plus, la
+    // plupart de ses entrées ne laissant aucun `raw` qui en porte un. C'est donc tout
+    // ou rien, par sous-agent : dès qu'il a laissé la moindre trace au journal, on le
+    // tient pour importé.
     const sidechains = await readSubAgentTranscripts(cwd, conversation.agentSessionId, entries)
-    for (const [toolCallId, sideEntries] of sidechains) {
-      const fresh = sideEntries.filter(
-        (entry) => typeof entry.uuid !== 'string' || !anchors.uuids.has(entry.uuid),
-      )
-      if (fresh.length > 0) sidechains.set(toolCallId, fresh)
-      else sidechains.delete(toolCallId)
+    for (const toolCallId of sidechains.keys()) {
+      if (anchors.subAgentIds.has(toolCallId)) sidechains.delete(toolCallId)
     }
 
     const events = translateTranscript(after, cwd, sidechains).events.filter((item) => {

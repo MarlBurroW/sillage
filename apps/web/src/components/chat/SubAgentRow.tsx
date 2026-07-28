@@ -1,9 +1,9 @@
-import { Bot, ChevronRight, CircleAlert, CircleCheck, Loader } from 'lucide-react'
+import { Bot, ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { SubAgent } from '../../lib/subagents'
 import { subAgentLabel } from '../../lib/subagents'
 import { cx } from '../ui'
-import { formatDuration } from './ToolCall'
+import { ToolStatusIcon, formatDuration } from './ToolCall'
 
 /** Une seconde : au-delà le chronomètre paraît figé, en deçà il ne dit rien de plus. */
 const TICK_MS = 1000
@@ -33,16 +33,7 @@ function useElapsed(startedAt: number, running: boolean): number {
  * Les deux montrent la même chose et mènent au même endroit : un seul composant, pour
  * qu'un sous-agent se reconnaisse à l'identique d'une vue à l'autre.
  */
-export function SubAgentRow({
-  agent,
-  onSelect,
-  active = false,
-}: {
-  agent: SubAgent
-  onSelect: () => void
-  /** Vrai pour le sous-agent affiché, dans la liste du panneau. */
-  active?: boolean
-}) {
+export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: () => void }) {
   const running = agent.status === 'running'
   const elapsed = useElapsed(agent.startedAt, running)
 
@@ -51,9 +42,8 @@ export function SubAgentRow({
       type="button"
       onClick={onSelect}
       className={cx(
-        'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs',
-        'transition-colors hover:border-line-strong',
-        active ? 'border-accent bg-accent-wash' : 'border-line bg-surface/60',
+        'flex w-full items-center gap-2 rounded-md border border-line bg-surface/60',
+        'px-2 py-1.5 text-left text-xs transition-colors hover:border-line-strong',
       )}
     >
       <Bot size={14} className={cx('shrink-0', running ? 'text-accent' : 'text-ink-faint')} />
@@ -77,13 +67,7 @@ export function SubAgentRow({
         {formatDuration(running ? elapsed : (agent.durationMs ?? elapsed))}
       </span>
 
-      {running ? (
-        <Loader size={13} className="shrink-0 animate-spin text-accent" />
-      ) : agent.status === 'failed' ? (
-        <CircleAlert size={13} className="shrink-0 text-critical" />
-      ) : (
-        <CircleCheck size={13} className="shrink-0 text-positive" />
-      )}
+      <ToolStatusIcon status={agent.status} />
 
       <ChevronRight size={14} className="shrink-0 text-ink-faint" />
     </button>

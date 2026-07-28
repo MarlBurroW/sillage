@@ -41,7 +41,7 @@ export interface ToolItem {
   name: string
   input: unknown
   output: unknown
-  status: 'running' | 'done' | 'failed'
+  status: 'running' | 'done' | 'failed' | 'interrupted'
   durationMs: number | null
   parentToolCallId: string | null
 }
@@ -460,6 +460,23 @@ function updateMessage(
 }
 
 /**
+ * Clôt les appels restés ouverts à la fin d'un tour ou d'une session.
+ *
+ * Un CLI interrompu n'envoie pas le résultat des appels en vol : sans ce filet ils
+ * restent « en cours » pour toujours, y compris après rechargement, et un `Task`
+ * abandonné annonce alors un sous-agent qui travaille encore, chronomètre à l'appui.
+ *
+ * Un `tool.completed` en retard reprend la main : il réécrit le statut sans condition.
+ */
+function closeRunningTools(state: ChatState): void {
+  state.items.forEach((item, index) => {
+    if (item.kind === 'tool' && item.status === 'running') {
+      replaceItem(state, index, { ...item, status: 'interrupted' as const })
+    }
+  })
+}
+
+/**
  * Applique un événement. L'état est muté puis renvoyé dans un nouvel objet : les
  * conversations longues rendent une copie profonde par événement trop coûteuse sur
  * un téléphone, et seule la référence racine sert à déclencher le rendu React.
@@ -496,6 +513,7 @@ export function applyEvent(
 
     case 'turn.completed': {
       state.turnRunning = false
+      closeRunningTools(state)
       // Filet : une compaction qui se termine sans frontière ni erreur laisserait
       // sinon l'indicateur allumé jusqu'au rechargement.
       state.compacting = false
@@ -510,6 +528,7 @@ export function applyEvent(
     case 'session.ended': {
       state.turnRunning = false
       state.compacting = false
+      closeRunningTools(state)
       break
     }
 
