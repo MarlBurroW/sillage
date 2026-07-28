@@ -1,8 +1,12 @@
 # Copier vers docker-compose.yml et ajuster les chemins montés.
 #
-# Les CLIs claude et codex sont préinstallés dans l'image : il suffit de monter
-# leurs répertoires de credentials depuis l'hôte (authentifiez-vous une fois sur
-# l'hôte avec `claude` / `codex login`, ou dans le conteneur via `docker exec`).
+# Les CLIs agents ne sont pas dans l'image : installez ceux dont vous vous servez
+# depuis l'interface, au premier écran de nouvelle conversation. Ils atterrissent
+# dans le volume de données, donc ils survivent au remplacement du conteneur.
+#
+# Reste à les authentifier : montez les répertoires de credentials depuis l'hôte
+# (authentifiez-vous une fois sur l'hôte avec `claude` / `codex login`), ou faites-le
+# dans le conteneur via `docker exec`.
 #
 # Premier compte (administrateur d'office) :
 #   docker compose exec -it sillage node /app/server/cli/user-create.js
@@ -19,7 +23,9 @@ services:
       # un reverse proxy / VPN, jamais directement sur Internet.
       - "127.0.0.1:7317:7317"
     volumes:
-      # Base, pièces jointes, worktrees, logs.
+      # Base, pièces jointes, worktrees, logs, et les CLIs agents installés depuis
+      # l'interface. Volume obligatoire : sans lui, les CLIs seraient à réinstaller
+      # à chaque remplacement du conteneur.
       - sillage-data:/home/node/.local/share/sillage
       # Config optionnelle (config.toml).
       - sillage-config:/home/node/.config/sillage

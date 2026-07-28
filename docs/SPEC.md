@@ -27,8 +27,8 @@ Décision initiale : pas de Docker, parce que les agents ont besoin d'un accès 
 système de fichiers de l'hôte (les workspaces sont des dossiers réels), aux credentials
 de l'hôte, à `git` et aux clés SSH. Tout cela reste vrai : l'image Docker publiée depuis
 la 0.1 n'apporte aucune isolation, elle monte credentials et projets depuis l'hôte. Elle
-existe parce qu'elle simplifie l'installation (CLIs agents préinstallés, pas de Node à
-gérer), pas pour cloisonner. Le déploiement de référence reste le daemon systemd sous
+existe parce qu'elle simplifie l'installation (pas de Node à gérer, CLIs agents posés
+depuis l'interface), pas pour cloisonner. Le déploiement de référence reste le daemon systemd sous
 ton compte utilisateur, désormais posé par `install.sh` avec un layout versionné
 (`app/releases/vX.Y.Z` + lien `current`) qui permet la mise à jour depuis l'UI.
 
@@ -1864,8 +1864,9 @@ Trois modes d'installation :
    l'écran À propos affiche la version installée, les nouveautés publiées depuis, et
    un administrateur peut mettre à jour en un clic (téléchargement, bascule du lien,
    redémarrage via systemd, `Restart=always`).
-2. **Docker** (`ghcr.io/marlburrow/sillage`), CLIs agents préinstallés, credentials et
-   projets montés depuis l'hôte. `SILLAGE_UPDATE_CHANNEL=docker` désactive la mise à
+2. **Docker** (`ghcr.io/marlburrow/sillage`), sans CLI agent embarqué : ils s'installent
+   depuis l'interface dans le volume de données. Credentials et projets montés depuis
+   l'hôte. `SILLAGE_UPDATE_CHANNEL=docker` désactive la mise à
    jour intégrée : l'UI affiche la commande `docker pull` à la place.
 3. **Depuis les sources**, pour le développement (`pnpm dev`) ou un déploiement manuel.
 
