@@ -48,6 +48,23 @@ export interface Paths {
   webRoot: string
 }
 
+/**
+ * Le fichier d'exemple et l'usage TOML courant écrivent `max_concurrent_sessions`,
+ * mais le schéma est en camelCase. Sans cette passe, les clés snake_case étaient
+ * silencieusement ignorées et l'utilisateur tournait sur les défauts en croyant
+ * ses réglages appliqués. On accepte donc les deux graphies.
+ */
+function camelizeKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(camelizeKeys)
+  if (value === null || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, val]) => [
+      key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()),
+      camelizeKeys(val),
+    ]),
+  )
+}
+
 function xdg(envVar: string, fallback: string): string {
   const fromEnv = process.env[envVar]
   return fromEnv && fromEnv.length > 0 ? fromEnv : join(homedir(), fallback)
@@ -83,11 +100,25 @@ export function loadConfig(): Config {
     }
   }
 
-  const parsed = configSchema.safeParse(raw)
+  const parsed = configSchema.safeParse(camelizeKeys(raw))
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n')
     throw new Error(`Configuration invalide (${configPath}):\n${issues}`)
   }
 
-  return { ...parsed.data, paths: resolvePaths() }
+  const config = parsed.data
+
+  // En conteneur, écrire un fichier TOML pour changer l'adresse d'écoute est
+  // disproportionné : l'image Docker fixe SILLAGE_HOST=0.0.0.0 et l'utilisateur
+  // ajuste le port par variable d'environnement.
+  if (process.env.SILLAGE_HOST) config.server.host = process.env.SILLAGE_HOST
+  if (process.env.SILLAGE_PORT) {
+    const port = Number(process.env.SILLAGE_PORT)
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(`SILLAGE_PORT invalide: ${process.env.SILLAGE_PORT}`)
+    }
+    config.server.port = port
+  }
+
+  return { ...config, paths: resolvePaths() }
 }
