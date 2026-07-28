@@ -1,5 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import type { ReactNode } from 'react'
+import { useTranslate } from '../../lib/i18n'
 import { Button } from './Button'
 import { cx } from './cx'
 
@@ -30,6 +31,7 @@ export function ConfirmDialog({
   busy?: boolean
   children: ReactNode
 }) {
+  const t = useTranslate()
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -49,7 +51,7 @@ export function ConfirmDialog({
 
           <div className="mt-1 flex justify-end gap-2">
             <Dialog.Close asChild>
-              <Button variant="ghost">Annuler</Button>
+              <Button variant="ghost">{t('dialog.cancel')}</Button>
             </Dialog.Close>
             <Button
               variant={tone === 'critical' ? 'danger' : 'primary'}

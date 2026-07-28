@@ -2,14 +2,9 @@ import { ClipboardCheck } from 'lucide-react'
 import { useState } from 'react'
 import type { PlanItem } from '../../lib/chat-fold'
 import { decidePlan } from '../../lib/conversations'
+import { useTranslate } from '../../lib/i18n'
 import { Badge, Button, cx } from '../ui'
 import { Markdown } from './Markdown'
-
-const STATUS_LABEL: Record<Exclude<PlanItem['status'], 'pending'>, string> = {
-  approved: 'Validé',
-  rejected: 'Refusé',
-  expired: 'Expiré',
-}
 
 export function PlanReview({
   conversationId,
@@ -22,6 +17,13 @@ export function PlanReview({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const t = useTranslate()
+
+  const STATUS_LABEL: Record<Exclude<PlanItem['status'], 'pending'>, string> = {
+    approved: t('plan.status.approved'),
+    rejected: t('plan.status.rejected'),
+    expired: t('plan.status.expired'),
+  }
 
   const pending = item.status === 'pending'
 
@@ -39,7 +41,7 @@ export function PlanReview({
     try {
       await decidePlan(conversationId, item.id, decision, followUpMode)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Décision impossible.')
+      setError(err instanceof Error ? err.message : t('plan.review.decideError'))
       setBusy(false)
     }
   }
@@ -54,7 +56,7 @@ export function PlanReview({
       <div className="flex items-start gap-2.5">
         <ClipboardCheck size={16} className="mt-0.5 shrink-0 text-accent" />
         <p className="min-w-0 flex-1 text-sm font-medium">
-          {pending ? 'Plan proposé, à valider' : 'Plan proposé'}
+          {pending ? t('plan.review.pendingTitle') : t('plan.review.title')}
         </p>
         {item.status !== 'pending' ? (
           <Badge tone={item.status === 'approved' ? 'positive' : 'neutral'}>
@@ -89,7 +91,7 @@ export function PlanReview({
               disabled={busy}
               onClick={() => void decide('approved', null)}
             >
-              Valider le plan
+              {t('plan.review.approve')}
             </Button>
           )}
           <Button
@@ -98,15 +100,13 @@ export function PlanReview({
             disabled={busy}
             onClick={() => void decide('rejected', null)}
           >
-            Continuer à planifier
+            {t('plan.review.continuePlanning')}
           </Button>
         </div>
       ) : null}
 
       {pending && !canDecide ? (
-        <p className="mt-2 text-xs text-ink-faint">
-          Seul le propriétaire de la conversation peut décider.
-        </p>
+        <p className="mt-2 text-xs text-ink-faint">{t('plan.review.ownerOnly')}</p>
       ) : null}
 
       {error ? <p className="mt-2 text-xs text-critical">{error}</p> : null}

@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { SlidersHorizontal, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { useTranslate } from '../../lib/i18n'
 import { cx, type SelectTone } from '../ui'
 
 /**
@@ -25,6 +26,7 @@ interface ComposerSettingsProps {
 
 export function ComposerSettings({ controls, tone }: ComposerSettingsProps) {
   const [open, setOpen] = useState(false)
+  const t = useTranslate()
 
   // Replier ne doit pas revenir à cacher : le déclencheur porte l'état de tous les
   // réglages, pas seulement du modèle, faute de quoi il faut ouvrir la feuille pour
@@ -55,7 +57,7 @@ export function ComposerSettings({ controls, tone }: ComposerSettingsProps) {
           type="button"
           onClick={() => setOpen(true)}
           // Le nom du modèle seul ne dit pas qu'on ouvre les réglages.
-          aria-label={`Réglages de la conversation, ${summary}`}
+          aria-label={t('composer.settings.label', { summary })}
           className={cx(
             'flex h-8 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-xs',
             'transition-colors',
@@ -82,10 +84,10 @@ export function ComposerSettings({ controls, tone }: ComposerSettingsProps) {
           >
             <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
               <Dialog.Title className="flex-1 text-sm font-semibold">
-                Réglages de la conversation
+                {t('composer.settings.title')}
               </Dialog.Title>
               <Dialog.Close
-                aria-label="Fermer"
+                aria-label={t('common.close')}
                 className="rounded-md p-1 text-ink-faint transition-colors hover:text-ink"
               >
                 <X size={18} />

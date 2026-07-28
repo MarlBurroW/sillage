@@ -3,6 +3,7 @@ import { memo, useState } from 'react'
 import type { ContentBlock } from '@sillage/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
+import { locale, useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 import { CopyButton } from './CopyButton'
 import { Markdown } from './Markdown'
@@ -18,7 +19,7 @@ function formatTimestamp(ts: number): string {
   const date = new Date(ts)
   const sameDay = new Date().toDateString() === date.toDateString()
 
-  return date.toLocaleString('fr-FR', {
+  return date.toLocaleString(locale(), {
     hour: '2-digit',
     minute: '2-digit',
     ...(sameDay ? {} : { day: 'numeric', month: 'short' }),
@@ -40,6 +41,7 @@ function MessageFooter({
   /** Proposé sur les seuls messages utilisateur : ce sont eux qui ouvrent un tour. */
   onFork?: () => void
 }) {
+  const t = useTranslate()
   return (
     <div
       className={cx(
@@ -49,7 +51,7 @@ function MessageFooter({
     >
       {/* Toujours visible, contrairement aux actions : c'est un repère de lecture, pas
           une commande, et le faire apparaître au survol le rendrait inutile. */}
-      <time dateTime={new Date(ts).toISOString()} title={new Date(ts).toLocaleString('fr-FR')}>
+      <time dateTime={new Date(ts).toISOString()} title={new Date(ts).toLocaleString(locale())}>
         {formatTimestamp(ts)}
       </time>
       <CopyButton text={text} label={label} />
@@ -57,7 +59,7 @@ function MessageFooter({
         <button
           type="button"
           onClick={onFork}
-          title="Créer une conversation qui reprend l'historique jusqu'ici, sans ce message"
+          title={t('message.fork.title')}
           className={cx(
             'flex items-center gap-1 rounded-md px-1.5 py-1 transition-[color,opacity]',
             'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
@@ -65,7 +67,7 @@ function MessageFooter({
           )}
         >
           <GitBranch size={13} />
-          Forker
+          {t('message.fork.action')}
         </button>
       ) : null}
     </div>
@@ -86,6 +88,7 @@ export const MessageBubble = memo(function MessageBubble({
   /** Absent en lecture seule, ou quand la conversation ne peut pas être branchée. */
   onFork?: (message: MessageItem) => void
 }) {
+  const t = useTranslate()
   const blocks = renderableBlocks(message.blocks)
   const thinking = blocks
     .filter((block) => block.type === 'thinking')
@@ -118,7 +121,7 @@ export const MessageBubble = memo(function MessageBubble({
           <MessageFooter
             ts={message.ts}
             text={shown}
-            label="Copier ce message"
+            label={t('message.copy.user')}
             align="end"
             onFork={onFork ? () => onFork(message) : undefined}
           />
@@ -138,7 +141,7 @@ export const MessageBubble = memo(function MessageBubble({
           <div className="sg-bubble min-w-0 rounded-lg">
             <Markdown text={shown} />
           </div>
-          <MessageFooter ts={message.ts} text={shown} label="Copier la réponse" align="start" />
+          <MessageFooter ts={message.ts} text={shown} label={t('message.copy.agent')} align="start" />
         </>
       ) : null}
     </div>
@@ -156,6 +159,7 @@ function Attachments({
   images: Extract<ContentBlock, { type: 'image' }>[]
   files: Extract<ContentBlock, { type: 'file' }>[]
 }) {
+  const t = useTranslate()
   if (images.length === 0 && files.length === 0) return null
 
   return (
@@ -166,7 +170,7 @@ function Attachments({
             <a key={image.url} href={image.url} target="_blank" rel="noopener noreferrer">
               <img
                 src={image.url}
-                alt="Pièce jointe"
+                alt={t('message.attachment.alt')}
                 loading="lazy"
                 className="max-h-56 rounded-md border border-line object-contain"
               />
@@ -202,6 +206,7 @@ function Attachments({
  */
 function ThinkingBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
+  const t = useTranslate()
 
   return (
     <div className="rounded-md border border-line bg-surface/40">
@@ -216,7 +221,7 @@ function ThinkingBlock({ text }: { text: string }) {
           className={cx('shrink-0 transition-transform', open && 'rotate-90')}
         />
         <Brain size={13} className="shrink-0" />
-        <span>Réflexion</span>
+        <span>{t('message.thinking.label')}</span>
       </button>
       {open ? (
         <p className="border-t border-line px-2.5 py-2 text-xs whitespace-pre-wrap text-ink-soft">

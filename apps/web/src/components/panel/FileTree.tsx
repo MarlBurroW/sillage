@@ -23,6 +23,7 @@ import {
   useMoveEntry,
 } from '../../lib/entries'
 import { fileIconUrl } from '../../lib/file-icons'
+import { translate, useTranslate } from '../../lib/i18n'
 import { useFileSearch, useTreeLevel } from '../../lib/tree'
 import {
   ConfirmDialog,
@@ -68,6 +69,7 @@ export function FileTree({
   /** Bascule sur l'éditeur : ouvrir un fichier sans le montrer ne servirait à rien. */
   onOpenFile: () => void
 }) {
+  const t = useTranslate()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [query, setQuery] = useState('')
   /** Entrée dont la suppression est proposée : le geste est sans retour possible. */
@@ -116,8 +118,8 @@ export function FileTree({
             onKeyDown={(event) => {
               if (event.key === 'Escape') setQuery('')
             }}
-            placeholder="Chercher un fichier..."
-            aria-label="Chercher un fichier"
+            placeholder={t('filetree.search.placeholder')}
+            aria-label={t('filetree.search.label')}
             className={cx(
               'h-7 w-full rounded-md border border-line bg-sunken pr-6 pl-7',
               'text-[0.8125rem] text-ink placeholder:text-ink-faint',
@@ -128,7 +130,7 @@ export function FileTree({
             <button
               type="button"
               onClick={() => setQuery('')}
-              aria-label="Effacer la recherche"
+              aria-label={t('filetree.search.clear')}
               className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 text-ink-faint hover:text-ink"
             >
               <X size={12} />
@@ -138,12 +140,12 @@ export function FileTree({
 
         {/* Le dossier racine n'a pas de ligne à survoler : ses actions vivent ici. */}
         <RootAction
-          label="Nouveau fichier à la racine"
+          label={t('filetree.root.newFile')}
           icon={<FilePlus2 size={13} />}
           onClick={() => setDraft({ mode: 'create', parent: '', kind: 'file' })}
         />
         <RootAction
-          label="Nouveau dossier à la racine"
+          label={t('filetree.root.newFolder')}
           icon={<FolderPlus size={13} />}
           onClick={() => setDraft({ mode: 'create', parent: '', kind: 'directory' })}
         />
@@ -151,7 +153,7 @@ export function FileTree({
 
       {error ? (
         <p className="mx-2 mb-1 rounded border border-critical/40 bg-critical/12 px-2 py-1 text-xs text-critical">
-          {error instanceof Error ? error.message : 'Opération impossible.'}
+          {error instanceof Error ? error.message : t('filetree.error.generic')}
         </p>
       ) : null}
 
@@ -169,8 +171,12 @@ export function FileTree({
         onOpenChange={(next) => {
           if (!next) setPendingDelete(null)
         }}
-        title={pendingDelete?.isDirectory ? 'Supprimer ce dossier ?' : 'Supprimer ce fichier ?'}
-        confirmLabel="Supprimer"
+        title={
+          pendingDelete?.isDirectory
+            ? t('filetree.delete.confirmFolder')
+            : t('filetree.delete.confirmFile')
+        }
+        confirmLabel={t('filetree.delete.confirm')}
         tone="critical"
         onConfirm={() => {
           if (pendingDelete) remove.mutate({ path: pendingDelete.path })
@@ -180,10 +186,9 @@ export function FileTree({
         <p className="font-mono text-xs break-all text-ink">{pendingDelete?.path}</p>
         <p>
           {pendingDelete?.isDirectory
-            ? 'Le dossier et tout son contenu sont supprimés du disque.'
-            : 'Le fichier est supprimé du disque.'}{' '}
-          Rien ne passe par la corbeille : seul git peut le rendre, et seulement s'il
-          était déjà suivi.
+            ? t('filetree.delete.bodyFolder')
+            : t('filetree.delete.bodyFile')}{' '}
+          {t('filetree.delete.note')}
         </p>
       </ConfirmDialog>
     </div>
@@ -200,12 +205,13 @@ function SearchResults({
   query: string
   actions: Actions
 }) {
+  const t = useTranslate()
   const { data, isPending, error } = useFileSearch(conversationId, query)
 
   if (error) {
     return (
       <p className="px-2 py-1.5 text-xs text-critical">
-        {error instanceof Error ? error.message : 'Recherche impossible.'}
+        {error instanceof Error ? error.message : t('filetree.search.error')}
       </p>
     )
   }
@@ -214,13 +220,13 @@ function SearchResults({
     return (
       <p className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-ink-faint">
         <Loader size={11} className="animate-spin" />
-        Recherche...
+        {t('filetree.search.loading')}
       </p>
     )
   }
 
   if (data.entries.length === 0) {
-    return <p className="px-2 py-1.5 text-xs text-ink-faint">Aucun fichier de ce nom.</p>
+    return <p className="px-2 py-1.5 text-xs text-ink-faint">{t('filetree.search.empty')}</p>
   }
 
   return (
@@ -238,7 +244,7 @@ function SearchResults({
 
       {data.truncated ? (
         <li className="px-2 py-1.5 text-[0.6875rem] text-ink-faint">
-          Liste tronquée : précise la recherche.
+          {t('filetree.search.truncated')}
         </li>
       ) : null}
     </ul>
@@ -295,6 +301,7 @@ function Level({
   expanded: boolean
   actions: Actions
 }) {
+  const t = useTranslate()
   const { data, isPending, error } = useTreeLevel(actions.conversationId, path, expanded)
   const draft = actions.draft
   const creatingHere = draft?.mode === 'create' && draft.parent === path
@@ -304,7 +311,7 @@ function Level({
   if (error) {
     return (
       <p className="px-2 py-1 text-xs text-critical" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
-        {error instanceof Error ? error.message : 'Dossier illisible.'}
+        {error instanceof Error ? error.message : t('filetree.error.unreadable')}
       </p>
     )
   }
@@ -316,7 +323,7 @@ function Level({
         style={{ paddingLeft: depth * INDENT_PX + 8 }}
       >
         <Loader size={11} className="animate-spin" />
-        Lecture...
+        {t('filetree.loading')}
       </p>
     )
   }
@@ -340,7 +347,7 @@ function Level({
           className="px-2 py-1 text-xs text-ink-faint"
           style={{ paddingLeft: depth * INDENT_PX + 8 }}
         >
-          Dossier vide
+          {t('filetree.empty')}
         </li>
       ) : null}
 
@@ -380,7 +387,7 @@ function entryActions(entry: TreeEntryDto, actions: Actions, expand: () => void)
           {
             key: 'new-file',
             icon: <FilePlus2 size={14} />,
-            label: 'Nouveau fichier',
+            label: translate('filetree.entry.newFile'),
             run: () => {
               expand()
               actions.setDraft({ mode: 'create', parent: entry.path, kind: 'file' })
@@ -389,7 +396,7 @@ function entryActions(entry: TreeEntryDto, actions: Actions, expand: () => void)
           {
             key: 'new-dir',
             icon: <FolderPlus size={14} />,
-            label: 'Nouveau dossier',
+            label: translate('filetree.entry.newFolder'),
             run: () => {
               expand()
               actions.setDraft({ mode: 'create', parent: entry.path, kind: 'directory' })
@@ -400,26 +407,26 @@ function entryActions(entry: TreeEntryDto, actions: Actions, expand: () => void)
           {
             key: 'open',
             icon: <FileSymlink size={14} />,
-            label: "Ouvrir dans l'éditeur",
+            label: translate('filetree.entry.open'),
             run: open,
           },
           {
             key: 'reference',
             icon: <AtSign size={14} />,
-            label: 'Référencer dans le prompt',
+            label: translate('filetree.entry.reference'),
             run: () => referenceInComposer(entry.path),
           },
         ]),
     {
       key: 'rename',
       icon: <Pencil size={14} />,
-      label: 'Renommer',
+      label: translate('filetree.entry.rename'),
       run: () => actions.setDraft({ mode: 'rename', path: entry.path, name: entry.name }),
     },
     {
       key: 'delete',
       icon: <Trash2 size={14} />,
-      label: 'Supprimer',
+      label: translate('filetree.entry.delete'),
       tone: 'critical' as const,
       run: () => actions.onDelete(entry),
     },
@@ -503,6 +510,7 @@ function Entry({
   depth: number
   actions: Actions
 }) {
+  const t = useTranslate()
   const [open, setOpen] = useState(false)
   const [dropping, setDropping] = useState(false)
   const state = entry.state ? STATES[entry.state] : null
@@ -627,7 +635,7 @@ function Entry({
                 trigger={
                   <button
                     type="button"
-                    aria-label={`Actions de ${entry.name}`}
+                    aria-label={t('filetree.entry.actions', { name: entry.name })}
                     className="flex size-6 items-center justify-center rounded text-ink-faint hover:text-ink"
                   >
                     <MoreHorizontal size={14} />
@@ -676,6 +684,7 @@ function NameInput({
   onCommit: (name: string) => void
   onCancel: () => void
 }) {
+  const t = useTranslate()
   const [value, setValue] = useState(initial)
 
   return (
@@ -687,7 +696,7 @@ function NameInput({
       <img src={icon} alt="" aria-hidden className="size-4 shrink-0" />
       <input
         autoFocus
-        aria-label="Nom"
+        aria-label={t('filetree.name.label')}
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onFocus={(event) => {

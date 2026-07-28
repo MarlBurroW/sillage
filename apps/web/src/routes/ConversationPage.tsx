@@ -47,6 +47,7 @@ import {
 } from '../lib/conversations'
 import { useFileDrop } from '../lib/file-drop'
 import { FileLinkContext } from '../lib/file-links'
+import { useTranslate, type MessageKey } from '../lib/i18n'
 import { clearSubAgent, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useCurrentUser } from '../lib/session'
 import { useSidebarHidden } from '../lib/sidebar'
@@ -88,6 +89,7 @@ function scrollToBottom(node: HTMLElement): void {
 }
 
 export function ConversationPage() {
+  const t = useTranslate()
   const { conversationId } = useParams()
   const navigate = useNavigate()
   // Brouillon transmis par un fork : le message coupé revient dans la barre de saisie.
@@ -210,8 +212,10 @@ export function ConversationPage() {
 
       // Depuis le panneau, c'est l'éditeur qui doit chercher dans son fichier :
       // sans ce partage, le raccourci ouvrait les deux recherches à la fois.
+      // `data-panel` plutôt que l'`aria-label` : celui-ci est traduit, et une
+      // langue changée ne doit pas casser ce repérage.
       const target = event.target
-      if (target instanceof Element && target.closest('[aria-label="Panneau du workspace"]')) return
+      if (target instanceof Element && target.closest('[data-panel="workspace"]')) return
 
       event.preventDefault()
       setFindOpen(true)
@@ -366,12 +370,12 @@ export function ConversationPage() {
           .join('\n\n')
         navigate(`/p/${branch.projectId}/c/${branch.id}`, { state: { draft } })
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : 'Fork impossible.')
+        setActionError(err instanceof Error ? err.message : t('conversation.fork.error'))
       } finally {
         setForking(false)
       }
     },
-    [conversationId, navigate, queryClient],
+    [conversationId, navigate, queryClient, t],
   )
 
   if (!conversationId || !conversation) return null
@@ -397,7 +401,7 @@ export function ConversationPage() {
     try {
       await compactConversation(conversationId)
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Compaction impossible.')
+      setActionError(err instanceof Error ? err.message : t('conversation.compact.error'))
     } finally {
       setCompacting(false)
     }
@@ -442,7 +446,7 @@ export function ConversationPage() {
               'rounded-xl border-2 border-dashed border-accent bg-canvas/80 text-sm text-accent',
             )}
           >
-            Déposer pour joindre au message
+            {t('conversation.drop.attach')}
           </div>
         ) : null}
 
@@ -483,9 +487,13 @@ export function ConversationPage() {
 
               <Meta
                 icon={worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
-                title={worktree ? `Worktree ${worktree.name}` : 'Dossier du projet'}
+                title={
+                  worktree
+                    ? t('conversation.meta.worktree', { name: worktree.name })
+                    : t('conversation.meta.projectFolder')
+                }
               >
-                {worktree ? worktree.name : 'projet'}
+                {worktree ? worktree.name : t('conversation.meta.project')}
               </Meta>
 
               {/* Une branche dit d'où elle vient : sans ça, deux fils presque identiques
@@ -495,7 +503,7 @@ export function ConversationPage() {
                 <Link
                   to={`/p/${origin.projectId}/c/${origin.id}`}
                   className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
-                  title={`Branche de « ${origin.title} »`}
+                  title={t('conversation.meta.branchOf', { title: origin.title })}
                 >
                   <GitBranch size={10} />
                   <span className="max-w-32 truncate">{origin.title}</span>
@@ -520,14 +528,14 @@ export function ConversationPage() {
             type="button"
             onClick={() => setMetaOpen((value) => !value)}
             aria-expanded={metaOpen}
-            aria-label={metaOpen ? 'Masquer les détails' : 'Afficher les détails'}
+            aria-label={metaOpen ? t('conversation.meta.hide') : t('conversation.meta.show')}
             className="flex size-9 shrink-0 items-center justify-center rounded-md text-ink-faint md:hidden"
           >
             <ChevronDown size={16} className={cx('transition-transform', metaOpen && 'rotate-180')} />
           </button>
 
           {!stream.connected ? (
-            <span title="Hors ligne, reconnexion en cours" className="shrink-0 text-caution">
+            <span title={t('conversation.offline')} className="shrink-0 text-caution">
               <WifiOff size={15} />
             </span>
           ) : null}
@@ -538,7 +546,7 @@ export function ConversationPage() {
           <button
             type="button"
             onClick={() => setUsageOpen(true)}
-            title="Consommation du compte"
+            title={t('conversation.usage.title')}
             className={cx(
               'flex shrink-0 items-center gap-1.5 rounded-full border border-line',
               'bg-surface-high px-2 py-1 text-[0.6875rem] font-medium text-ink-soft',
@@ -548,7 +556,7 @@ export function ConversationPage() {
             <GaugeCircle size={13} />
             {/* Réduit à son icône au doigt : la consommation doit rester joignable
                 depuis un téléphone, c'est le libellé qui prend la place, pas le bouton. */}
-            <span className="hidden md:inline">Utilisation</span>
+            <span className="hidden md:inline">{t('conversation.usage.label')}</span>
           </button>
 
           {/* Sur grand écran les deux actions sont posées directement : elles sont peu
@@ -558,15 +566,15 @@ export function ConversationPage() {
               Lire une conversation partagée donne le droit d'y chercher : seule la
               compaction touche à l'état du fil, et elle reste au propriétaire. */}
           <span className="hidden md:contents">
-            <IconButton label="Rechercher dans la conversation" onClick={() => setFindOpen(true)}>
+            <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
               <Search size={18} />
             </IconButton>
             {isOwner ? (
               <IconButton
                 label={
                   compacting || stream.state.compacting
-                    ? 'Compaction en cours...'
-                    : 'Compacter le contexte'
+                    ? t('conversation.compact.running')
+                    : t('conversation.compact.action')
                 }
                 // Le contexte bouge encore pendant un tour : compacter au milieu
                 // résumerait un état que l'agent est en train de changer.
@@ -581,13 +589,13 @@ export function ConversationPage() {
           <span className="md:hidden">
             <Menu
               trigger={
-                <IconButton label="Actions de la conversation">
+                <IconButton label={t('conversation.actions')}>
                   <MoreHorizontal size={18} />
                 </IconButton>
               }
             >
               <MenuItem icon={<Search size={14} />} onSelect={() => setFindOpen(true)}>
-                Rechercher dans la conversation
+                {t('conversation.search')}
               </MenuItem>
               {isOwner ? (
                 <MenuItem
@@ -596,8 +604,8 @@ export function ConversationPage() {
                   onSelect={() => void compact()}
                 >
                   {compacting || stream.state.compacting
-                    ? 'Compaction en cours...'
-                    : 'Compacter le contexte'}
+                    ? t('conversation.compact.running')
+                    : t('conversation.compact.action')}
                 </MenuItem>
               ) : null}
             </Menu>
@@ -608,7 +616,7 @@ export function ConversationPage() {
               conversation, il lit le répertoire de travail de ce fil, worktree
               compris, pas celui du projet. */}
           <IconButton
-            label={panel.open ? 'Fermer le panneau' : 'Ouvrir le panneau'}
+            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
             onClick={() => setPanelOpen(!panel.open)}
           >
             <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
@@ -622,22 +630,18 @@ export function ConversationPage() {
           onOpenChange={(next) => {
             if (!next) setForkTarget(null)
           }}
-          title="Forker à partir de ce message ?"
-          confirmLabel="Forker"
+          title={t('conversation.fork.confirm.title')}
+          confirmLabel={t('conversation.fork.confirm.action')}
           busy={forking}
           onConfirm={() => {
             if (forkTarget) void fork(forkTarget)
           }}
         >
           <p>
-            Une nouvelle conversation est créée avec tout l'historique <em>jusqu'au message
-            précédent</em>. Ce message-ci n'en fait pas partie : il revient dans la barre de
-            saisie de la branche, prêt à être reformulé.
+            {t('conversation.fork.confirm.before')} <em>{t('conversation.fork.confirm.emphasis')}</em>
+            {t('conversation.fork.confirm.after')}
           </p>
-          <p>
-            La conversation actuelle n'est pas touchée, et l'agent de la branche repart du
-            contexte tel qu'il était à cet instant.
-          </p>
+          <p>{t('conversation.fork.confirm.unaffected')}</p>
         </ConfirmDialog>
 
         <ThreadSearch
@@ -662,8 +666,8 @@ export function ConversationPage() {
 
             {!stream.loading && stream.state.items.length === 0 ? (
               <EmptyState
-                title="Conversation vide"
-                description="Écris un premier message pour lancer l'agent."
+                title={t('conversation.empty.title')}
+                description={t('conversation.empty.description')}
               />
             ) : null}
 
@@ -712,7 +716,7 @@ export function ConversationPage() {
                   'absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2',
                   'surface rounded-full border border-line p-2 text-ink-soft shadow-float',
                 )}
-                aria-label="Revenir en bas"
+                aria-label={t('conversation.scroll.bottom')}
               >
                 <ArrowDown size={16} />
               </button>
@@ -796,16 +800,17 @@ function Meta({
 }
 
 const STATUS_PILLS: Partial<
-  Record<ConversationStatus, { label: string; dot: string; text: string }>
+  Record<ConversationStatus, { key: MessageKey; dot: string; text: string }>
 > = {
-  running: { label: 'En cours', dot: 'bg-accent animate-pulse', text: 'text-accent' },
-  awaiting_input: { label: 'En attente', dot: 'bg-caution', text: 'text-caution' },
-  interrupted: { label: 'Interrompu', dot: 'bg-caution', text: 'text-caution' },
-  error: { label: 'Erreur', dot: 'bg-critical', text: 'text-critical' },
+  running: { key: 'conversation.status.running', dot: 'bg-accent animate-pulse', text: 'text-accent' },
+  awaiting_input: { key: 'conversation.status.waiting', dot: 'bg-caution', text: 'text-caution' },
+  interrupted: { key: 'conversation.status.interrupted', dot: 'bg-caution', text: 'text-caution' },
+  error: { key: 'conversation.status.error', dot: 'bg-critical', text: 'text-critical' },
 }
 
 /** Au repos, aucun indicateur : c'est l'état normal, l'afficher ne dit rien. */
 function StatusPill({ status }: { status: ConversationStatus }) {
+  const t = useTranslate()
   const pill = STATUS_PILLS[status]
   if (!pill) return null
 
@@ -818,7 +823,7 @@ function StatusPill({ status }: { status: ConversationStatus }) {
       )}
     >
       <span className={cx('size-1.5 rounded-full', pill.dot)} />
-      <span className="hidden sm:inline">{pill.label}</span>
+      <span className="hidden sm:inline">{t(pill.key)}</span>
     </span>
   )
 }

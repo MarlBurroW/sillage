@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 import { HighlightedCode } from './chat/HighlightedCode'
+import { useTranslate } from '../lib/i18n'
 import { SYNTAX_THEMES, SYNTAX_THEME_LABELS, useSyntaxTheme } from '../lib/syntax-theme'
 import { useTheme } from '../lib/theme'
 import { cx } from './ui'
@@ -31,6 +32,7 @@ const SWATCHES = ['keyword', 'string', 'function', 'number', 'comment'] as const
 export function SyntaxThemeControls() {
   const [theme] = useTheme()
   const [syntax, setSyntax] = useSyntaxTheme()
+  const t = useTranslate()
 
   // Le thème contrasté impose sa propre palette : l'aperçu doit montrer ce qui
   // s'affichera réellement, pas la palette choisie mais inappliquée.
@@ -83,11 +85,7 @@ export function SyntaxThemeControls() {
       </div>
 
       {applies ? null : (
-        <p className="text-xs text-caution">
-          Le thème contrasté garde sa propre palette : son contraste est ce pour quoi on
-          le choisit, et une palette d'ambiance l'annulerait. Le réglage reprendra effet
-          sur les thèmes clair et sombre.
-        </p>
+        <p className="text-xs text-caution">{t('theme.syntax.contrastNotice')}</p>
       )}
 
       <HighlightedCode

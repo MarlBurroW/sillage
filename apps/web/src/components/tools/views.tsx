@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { ToolItem } from '../../lib/chat-fold'
 import { parseUnifiedDiff } from '../../lib/diff'
 import { languageFromPath } from '../../lib/highlight'
+import { translate, type MessageKey } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
 import { Markdown } from '../chat/Markdown'
 import { cx } from '../ui'
@@ -29,14 +30,14 @@ function pending(tool: ToolItem): boolean {
 }
 
 /** La sortie telle quelle, en texte. Rien à afficher tant que l'appel tourne. */
-function TextOutput({ tool, label = 'Sortie' }: { tool: ToolItem; label?: string }) {
+function TextOutput({ tool, label = translate('tool.output.label') }: { tool: ToolItem; label?: string }) {
   if (pending(tool)) return null
 
   const content = outputText(tool.output)
   if (content === null || content.length === 0) {
     return (
       <Section label={label}>
-        <Empty>(vide)</Empty>
+        <Empty>{translate('tool.output.empty')}</Empty>
       </Section>
     )
   }
@@ -54,12 +55,12 @@ const bash: ToolView = (tool) => {
 
   const hints = [
     text(tool.input, 'cwd'),
-    flag(tool.input, 'run_in_background') ? 'arrière-plan' : null,
+    flag(tool.input, 'run_in_background') ? translate('tool.bash.background') : null,
   ].filter((hint): hint is string => hint !== null)
 
   return (
     <>
-      <Section label="Commande" hint={hints.join(' · ')}>
+      <Section label={translate('tool.bash.command')} hint={hints.join(' · ')}>
         <Code content={command} language="bash" wrap />
       </Section>
       <TextOutput tool={tool} />
@@ -75,8 +76,8 @@ const read: ToolView = (tool) => {
   const limit = scalar(tool.input, 'limit')
   const hint = [
     path,
-    offset === null ? null : `à partir de la ligne ${offset}`,
-    limit === null ? null : `${limit} lignes`,
+    offset === null ? null : translate('tool.read.fromLine', { line: offset }),
+    limit === null ? null : translate('tool.read.lines', { count: limit }),
   ]
     .filter((part): part is string => part !== null)
     .join(' · ')
@@ -85,9 +86,9 @@ const read: ToolView = (tool) => {
   const stripped = content === null ? null : stripLineNumbers(content)
 
   return (
-    <Section label="Contenu" hint={hint}>
+    <Section label={translate('tool.read.content')} hint={hint}>
       {content === null ? (
-        <Empty>Lecture en cours...</Empty>
+        <Empty>{translate('tool.read.loading')}</Empty>
       ) : stripped === null ? (
         <Plain content={content} />
       ) : (
@@ -105,7 +106,7 @@ const write: ToolView = (tool) => {
   if (path === null || content === null) return null
 
   return (
-    <Section label="Écrit" hint={path}>
+    <Section label={translate('tool.write.label')} hint={path}>
       <Code content={content} language={languageFromPath(path)} />
     </Section>
   )
@@ -133,14 +134,14 @@ const edit: ToolView = (tool) => {
   return (
     <>
       <Section
-        label="Remplacé"
-        hint={[path, flag(tool.input, 'replace_all') ? 'toutes les occurrences' : null]
+        label={translate('tool.edit.replaced')}
+        hint={[path, flag(tool.input, 'replace_all') ? translate('tool.edit.allOccurrences') : null]
           .filter(Boolean)
           .join(' · ')}
       >
         <Code content={before} language={language} />
       </Section>
-      <Section label="Par">
+      <Section label={translate('tool.edit.by')}>
         <Code content={after} language={language} />
       </Section>
     </>
@@ -148,10 +149,10 @@ const edit: ToolView = (tool) => {
 }
 
 /** Nature d'un changement Codex, dans le vocabulaire qu'il emploie lui-même. */
-const CHANGE_LABELS: Record<string, string> = {
-  add: 'Créé',
-  delete: 'Supprimé',
-  update: 'Modifié',
+const CHANGE_LABELS: Record<string, MessageKey> = {
+  add: 'tool.change.created',
+  delete: 'tool.change.deleted',
+  update: 'tool.change.modified',
 }
 
 function CodexChanges({ changes }: { changes: unknown[] }) {
@@ -161,7 +162,7 @@ function CodexChanges({ changes }: { changes: unknown[] }) {
         const path = text(change, 'path') ?? ''
         const diff = text(change, 'diff') ?? ''
         const kind = text(fields(change)?.kind, 'type') ?? 'update'
-        const label = CHANGE_LABELS[kind] ?? 'Modifié'
+        const label = translate(CHANGE_LABELS[kind] ?? 'tool.change.modified')
 
         return (
           <Section key={`${path}-${index}`} label={label} hint={path}>
@@ -185,7 +186,7 @@ function CodexChanges({ changes }: { changes: unknown[] }) {
 }
 
 /** Recherches dont la sortie est une liste de résultats, un par ligne. */
-function matchesView(inputLabel: string, keys: string[]): ToolView {
+function matchesView(inputLabelKey: MessageKey, keys: string[]): ToolView {
   return (tool) => {
     const query = keys.map((key) => text(tool.input, key)).find((value) => value !== null)
     if (!query) return null
@@ -197,15 +198,25 @@ function matchesView(inputLabel: string, keys: string[]): ToolView {
 
     return (
       <>
-        <Section label={inputLabel} hint={scope || null}>
+        <Section label={translate(inputLabelKey)} hint={scope || null}>
           <Plain content={query} />
         </Section>
         {pending(tool) ? null : (
           <Section
-            label="Résultats"
-            hint={lines === null ? null : `${lines.length} ligne${lines.length > 1 ? 's' : ''}`}
+            label={translate('tool.search.results')}
+            hint={
+              lines === null
+                ? null
+                : lines.length > 1
+                  ? translate('tool.search.lineCountMany', { count: lines.length })
+                  : translate('tool.search.lineCountOne', { count: lines.length })
+            }
           >
-            {lines === null ? <Empty>Aucun résultat.</Empty> : <Plain content={lines.join('\n')} />}
+            {lines === null ? (
+              <Empty>{translate('tool.search.noResults')}</Empty>
+            ) : (
+              <Plain content={lines.join('\n')} />
+            )}
           </Section>
         )}
       </>
@@ -232,7 +243,7 @@ const todos: ToolView = (tool) => {
   if (entries === null) return null
 
   return (
-    <Section label="Tâches">
+    <Section label={translate('tool.todo.label')}>
       <ul className="flex flex-col gap-1 rounded-md border border-line bg-sunken p-2">
         {entries.map((entry, index) => {
           const status = text(entry, 'status') ?? 'pending'
@@ -266,11 +277,11 @@ const subAgent: ToolView = (tool) => {
 
   return (
     <>
-      <Section label="Consigne" hint={text(tool.input, 'subagent_type')}>
+      <Section label={translate('tool.subagent.instructions')} hint={text(tool.input, 'subagent_type')}>
         <Plain content={prompt} />
       </Section>
       {report === null ? null : (
-        <Section label="Rapport">
+        <Section label={translate('tool.subagent.report')}>
           <div className="max-h-80 overflow-auto rounded-md border border-line bg-sunken px-2 py-1.5">
             <Markdown text={report} />
           </div>
@@ -289,7 +300,7 @@ const webFetch: ToolView = (tool) => {
 
   return (
     <>
-      <Section label="Page">
+      <Section label={translate('tool.webfetch.page')}>
         <a
           href={url}
           target="_blank"
@@ -300,12 +311,12 @@ const webFetch: ToolView = (tool) => {
         </a>
       </Section>
       {question === null ? null : (
-        <Section label="Question">
+        <Section label={translate('tool.webfetch.question')}>
           <Plain content={question} />
         </Section>
       )}
       {answer === null ? null : (
-        <Section label="Réponse">
+        <Section label={translate('tool.webfetch.answer')}>
           <div className="max-h-80 overflow-auto rounded-md border border-line bg-sunken px-2 py-1.5">
             <Markdown text={answer} />
           </div>
@@ -320,7 +331,7 @@ const plan: ToolView = (tool) => {
   if (content === null) return null
 
   return (
-    <Section label="Plan proposé">
+    <Section label={translate('tool.plan.label')}>
       <div className="max-h-80 overflow-auto rounded-md border border-line bg-sunken px-2 py-1.5">
         <Markdown text={content} />
       </div>
@@ -371,7 +382,7 @@ export const genericView: ToolView = (tool) => {
       {output === null ? null : typeof output === 'string' || Array.isArray(output) ? (
         <TextOutput tool={tool} />
       ) : (
-        <Section label="Sortie">
+        <Section label={translate('tool.output.label')}>
           <Code content={JSON.stringify(output, null, 2)} language="json" />
         </Section>
       )}
@@ -398,9 +409,9 @@ export const VIEWS: Record<string, ToolView> = {
   Read: read,
   Write: write,
   Edit: edit,
-  Glob: matchesView('Motif', ['pattern']),
-  Grep: matchesView('Motif', ['pattern']),
-  WebSearch: matchesView('Recherche', ['query']),
+  Glob: matchesView('tool.search.patternLabel', ['pattern']),
+  Grep: matchesView('tool.search.patternLabel', ['pattern']),
+  WebSearch: matchesView('tool.search.queryLabel', ['query']),
   TodoWrite: todos,
   Task: subAgent,
   Agent: subAgent,

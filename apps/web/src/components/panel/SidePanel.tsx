@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { EditTurn } from '../../lib/chat-fold'
 import { openTab } from '../../lib/editor-tabs'
+import { useTranslate } from '../../lib/i18n'
 import {
   restorePanelWidth,
   setPanelOpen,
@@ -51,6 +52,7 @@ export function SidePanel({
 }) {
   // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
   // diff comme en désignant un sous-agent depuis le bandeau.
+  const t = useTranslate()
   const tab = usePanelTab()
   const selectedSubAgent = useSelectedSubAgent()
   /**
@@ -118,7 +120,10 @@ export function SidePanel({
   return (
     <aside
       ref={aside}
-      aria-label="Panneau du workspace"
+      aria-label={t('panel.aria')}
+      // Repère stable pour le raccourci de recherche du fil, qui doit savoir si
+      // l'événement vient d'ici : l'`aria-label` ci-dessus, lui, change de langue.
+      data-panel="workspace"
       className={cx(
         // Pas d'`overflow-hidden` ici : il rognerait la poignée, posée en débord sur
         // le bord gauche. C'est la zone de défilement interne qui borne le contenu.
@@ -153,31 +158,31 @@ export function SidePanel({
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
           <Tab
             icon={<FolderTree size={14} />}
-            label="Explorateur"
+            label={t('panel.tab.explorer')}
             active={tab === 'explorer'}
             onSelect={() => setPanelTab('explorer')}
           />
           <Tab
             icon={<FileCode size={14} />}
-            label="Éditeur"
+            label={t('panel.tab.editor')}
             active={tab === 'editor'}
             onSelect={() => setPanelTab('editor')}
           />
           <Tab
             icon={<GitCompare size={14} />}
-            label="Modifications"
+            label={t('panel.tab.changes')}
             active={tab === 'changes'}
             onSelect={() => setPanelTab('changes')}
           />
           <Tab
             icon={<SquareTerminal size={14} />}
-            label="Terminaux"
+            label={t('panel.tab.terminals')}
             active={tab === 'terminals'}
             onSelect={() => setPanelTab('terminals')}
           />
           <Tab
             icon={<Bot size={14} />}
-            label="Sous-agents"
+            label={t('panel.tab.agents')}
             badge={subAgents.filter((agent) => agent.status === 'running').length}
             active={tab === 'agents'}
             onSelect={() => setPanelTab('agents')}
@@ -186,11 +191,11 @@ export function SidePanel({
 
         <div className="flex shrink-0 items-center gap-0.5 pl-1">
           {tab === 'explorer' ? (
-            <IconButton label="Rafraîchir l'arborescence" size="sm" onClick={refresh}>
+            <IconButton label={t('panel.tree.refresh')} size="sm" onClick={refresh}>
               <RefreshCw size={15} />
             </IconButton>
           ) : null}
-          <IconButton label="Fermer le panneau" size="sm" onClick={() => setPanelOpen(false)}>
+          <IconButton label={t('panel.close')} size="sm" onClick={() => setPanelOpen(false)}>
             <X size={17} />
           </IconButton>
         </div>
@@ -269,7 +274,7 @@ export function SidePanel({
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Largeur du panneau"
+        aria-label={t('panel.resize.aria')}
         tabIndex={0}
         onPointerDown={startResize}
         onKeyDown={resizeByKey}
@@ -298,6 +303,7 @@ function Tab({
   badge?: number
   onSelect: () => void
 }) {
+  const t = useTranslate()
   return (
     <button
       type="button"
@@ -305,7 +311,7 @@ function Tab({
       aria-pressed={active}
       // Le nom reste porté par le bouton même quand il n'est plus écrit : une icône
       // seule ne dit pas ce qu'elle ouvre, ni à l'œil ni à un lecteur d'écran.
-      aria-label={badge > 0 ? `${label}, ${badge} en cours` : label}
+      aria-label={badge > 0 ? t('panel.tab.badge', { label, count: badge }) : label}
       title={label}
       className={cx(
         'flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors',

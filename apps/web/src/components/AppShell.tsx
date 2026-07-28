@@ -58,6 +58,7 @@ import {
   useSidebarHidden,
 } from '../lib/sidebar'
 import { useFileDropGuard } from '../lib/file-drop'
+import { useTranslate } from '../lib/i18n'
 import { useVisualViewport } from '../lib/viewport'
 import { PROJECT_COLORS } from '../lib/project-colors'
 import { useCurrentUser, useLogout } from '../lib/session'
@@ -148,6 +149,7 @@ function useDragSensors() {
  * Un seul composant de navigation, deux présentations.
  */
 export function AppShell() {
+  const t = useTranslate()
   const [navOpen, setNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const hidden = useSidebarHidden()
@@ -256,7 +258,7 @@ export function AppShell() {
           <div
             role="separator"
             aria-orientation="vertical"
-            aria-label="Largeur de la navigation"
+            aria-label={t('shell.nav.resize.aria')}
             tabIndex={0}
             onPointerDown={startResize}
             onKeyDown={resizeByKey}
@@ -274,7 +276,7 @@ export function AppShell() {
 
       {hidden ? (
         <div className="absolute top-2 left-2 z-30 hidden md:block">
-          <IconButton label="Afficher la navigation" onClick={() => setSidebarHidden(false)}>
+          <IconButton label={t('shell.nav.show')} onClick={() => setSidebarHidden(false)}>
             <PanelLeft size={18} />
           </IconButton>
         </div>
@@ -286,7 +288,7 @@ export function AppShell() {
       {navOpen ? (
         <button
           type="button"
-          aria-label="Fermer la navigation"
+          aria-label={t('shell.nav.close')}
           onClick={() => setNavOpen(false)}
           className="absolute inset-0 z-20 bg-black/50 backdrop-blur-[2px] md:hidden"
         />
@@ -303,7 +305,7 @@ export function AppShell() {
             'border-b border-line bg-canvas/85 backdrop-blur-md md:hidden',
           )}
         >
-          <IconButton label="Ouvrir la navigation" onClick={() => setNavOpen(true)}>
+          <IconButton label={t('shell.nav.open')} onClick={() => setNavOpen(true)}>
             <MenuIcon size={20} />
           </IconButton>
           <Logo size={18} className="text-accent" />
@@ -331,6 +333,7 @@ function Sidebar({
   onCollapse: () => void
   onSearch: () => void
 }) {
+  const t = useTranslate()
   const { data: user } = useCurrentUser()
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
@@ -384,12 +387,12 @@ function Sidebar({
             généré qui tranche, pas celui de la chaîne de classes. Les deux boutons
             s'affichaient donc côte à côte sur mobile. */}
         <span className="ml-auto md:hidden">
-          <IconButton label="Fermer la navigation" onClick={onClose}>
+          <IconButton label={t('shell.nav.close')} onClick={onClose}>
             <X size={18} />
           </IconButton>
         </span>
         <span className="ml-auto hidden md:block">
-          <IconButton label="Masquer la navigation" onClick={onCollapse}>
+          <IconButton label={t('shell.nav.collapse')} onClick={onCollapse}>
             <PanelLeftClose size={18} />
           </IconButton>
         </span>
@@ -407,7 +410,7 @@ function Sidebar({
           )}
         >
           <Search size={15} className="shrink-0" />
-          <span className="flex-1">Rechercher</span>
+          <span className="flex-1">{t('shell.search')}</span>
           <kbd className="hidden shrink-0 rounded border border-line px-1 text-[0.625rem] text-ink-faint md:block">
             {SEARCH_HINT}
           </kbd>
@@ -417,10 +420,10 @@ function Sidebar({
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
         <div className="flex items-center justify-between py-1 pr-1 pl-2.5">
           <span className="text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
-            Projets
+            {t('shell.projects.heading')}
           </span>
-          <NavLink to="/settings/projets" onClick={onNavigate} aria-label="Ajouter un projet">
-            <IconButton label="Ajouter un projet" size="sm">
+          <NavLink to="/settings/projets" onClick={onNavigate} aria-label={t('shell.projects.add')}>
+            <IconButton label={t('shell.projects.add')} size="sm">
               <FolderPlus size={15} />
             </IconButton>
           </NavLink>
@@ -457,14 +460,14 @@ function Sidebar({
             </SortableContext>
           </DndContext>
         ) : (
-          <p className="px-2.5 py-1 text-sm text-ink-faint">Aucun projet</p>
+          <p className="px-2.5 py-1 text-sm text-ink-faint">{t('shell.projects.empty')}</p>
         )}
       </nav>
 
       <div className="shrink-0 border-t border-line p-2 pb-safe">
         <SidebarRow to="/settings" onClick={onNavigate}>
           <Settings size={16} className="shrink-0" />
-          <span className="truncate">{user?.displayName ?? 'Réglages'}</span>
+          <span className="truncate">{user?.displayName ?? t('shell.settings.fallback')}</span>
         </SidebarRow>
         <button
           type="button"
@@ -475,7 +478,7 @@ function Sidebar({
           )}
         >
           <LogOut size={16} className="shrink-0" />
-          Se déconnecter
+          {t('shell.logout')}
         </button>
       </div>
     </div>
@@ -497,6 +500,7 @@ function ProjectGroup({
   onToggle,
   onNavigate,
 }: ProjectGroupProps) {
+  const t = useTranslate()
   const navigate = useNavigate()
   const updateProject = useUpdateProject()
   const reorder = useReorderConversations(project.id)
@@ -572,7 +576,11 @@ function ProjectGroup({
         <button
           type="button"
           onClick={onToggle}
-          aria-label={open ? `Replier ${project.name}` : `Déplier ${project.name}`}
+          aria-label={
+            open
+              ? t('shell.project.collapse', { name: project.name })
+              : t('shell.project.expand', { name: project.name })
+          }
           aria-expanded={open}
           className="flex size-6 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink"
         >
@@ -611,7 +619,7 @@ function ProjectGroup({
               <Users
                 size={12}
                 className="shrink-0 text-ink-faint"
-                aria-label="Projet partagé"
+                aria-label={t('shell.project.shared')}
               />
             ) : null}
           </NavLink>
@@ -621,7 +629,7 @@ function ProjectGroup({
           <Menu
             trigger={
               <IconButton
-                label={`Actions du projet ${project.name}`}
+                label={t('shell.project.actions', { name: project.name })}
                 size="sm"
                 className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
               >
@@ -630,7 +638,7 @@ function ProjectGroup({
             }
           >
             <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
-              Renommer
+              {t('shell.rename')}
             </MenuItem>
             <MenuItem
               icon={<SlidersHorizontal size={14} />}
@@ -639,12 +647,12 @@ function ProjectGroup({
                 navigate(`/p/${project.id}`)
               }}
             >
-              Réglages du projet
+              {t('shell.project.settings')}
             </MenuItem>
             <MenuSeparator />
             <MenuLabel>
               <span className="flex items-center gap-1.5">
-                <Palette size={11} /> Couleur
+                <Palette size={11} /> {t('shell.color')}
               </span>
             </MenuLabel>
             <MenuSwatchRow>
@@ -688,7 +696,7 @@ function ProjectGroup({
               </SortableContext>
             </DndContext>
           ) : (
-            <li className="px-2 py-1.5 text-xs text-ink-faint">Aucune conversation</li>
+            <li className="px-2 py-1.5 text-xs text-ink-faint">{t('shell.conversations.empty')}</li>
           )}
         </ul>
       ) : null}
@@ -703,6 +711,7 @@ function ConversationRow({
   conversation: ConversationDto
   onNavigate: () => void
 }) {
+  const t = useTranslate()
   const rename = useRenameConversation()
   const remove = useDeleteConversation()
   const navigate = useNavigate()
@@ -771,7 +780,7 @@ function ConversationRow({
         <span className="truncate">{conversation.title}</span>
         {busy ? (
           <span
-            aria-label="En cours"
+            aria-label={t('shell.conversation.running')}
             className={cx(
               'ml-auto size-1.5 shrink-0 rounded-full',
               status === 'awaiting_input' ? 'bg-caution' : 'bg-accent animate-pulse',
@@ -784,7 +793,7 @@ function ConversationRow({
         <Menu
           trigger={
             <IconButton
-              label="Actions de la conversation"
+              label={t('shell.conversation.actions')}
               size="sm"
               className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
             >
@@ -793,14 +802,15 @@ function ConversationRow({
           }
         >
           <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
-            Renommer
+            {t('shell.rename')}
           </MenuItem>
           <MenuSeparator />
           <MenuItem
             icon={<Trash2 size={14} />}
             tone="critical"
             onSelect={() => {
-              if (!confirm(`Supprimer "${conversation.title}" ?`)) return
+              if (!confirm(t('shell.conversation.deleteConfirm', { title: conversation.title })))
+                return
               const wasOpen = openMatch?.params.conversationId === conversation.id
               remove.mutate(conversation.id, {
                 // Ne quitter la vue que si c'est bien celle qu'on vient de supprimer.
@@ -810,7 +820,7 @@ function ConversationRow({
               })
             }}
           >
-            Supprimer
+            {t('shell.delete')}
           </MenuItem>
         </Menu>
       ) : null}

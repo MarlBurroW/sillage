@@ -1,6 +1,7 @@
 import { Flame, Snowflake, Wifi, WifiOff } from 'lucide-react'
 import type { AgentKind } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
+import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
@@ -22,6 +23,7 @@ export function ComposerStatus({
   warm: boolean | null
   queued: number
 }) {
+  const t = useTranslate()
   return (
     <div
       className={cx(
@@ -39,39 +41,31 @@ export function ComposerStatus({
       {warm !== null ? (
         <span
           className="flex items-center gap-1"
-          title={
-            warm
-              ? 'Le process CLI tourne : le prochain message part immédiatement.'
-              : 'Aucun process CLI : le prochain message relance la session et recharge son contexte.'
-          }
+          title={warm ? t('composer.status.warm.title') : t('composer.status.cold.title')}
         >
           {warm ? <Flame size={11} className="text-accent" /> : <Snowflake size={11} />}
-          {warm ? 'Session chargée' : 'Session au repos'}
+          {warm ? t('composer.status.warm.label') : t('composer.status.cold.label')}
         </span>
       ) : null}
 
       <span
         className={cx('flex items-center gap-1', !connected && 'text-caution')}
-        title={
-          connected
-            ? 'Le flux temps réel est établi.'
-            : "Liaison perdue : l'agent continue de travailler, le fil sera rattrapé à la reconnexion."
-        }
+        title={connected ? t('composer.status.connected.title') : t('composer.status.disconnected.title')}
       >
         {connected ? <Wifi size={11} /> : <WifiOff size={11} />}
-        {connected ? 'Connecté' : 'Reconnexion...'}
+        {connected ? t('composer.status.connected.label') : t('composer.status.disconnected.label')}
       </span>
 
       {queued > 0 ? (
         <span className="text-ink-soft">
-          {queued} message{queued > 1 ? 's' : ''} en attente
+          {t(queued > 1 ? 'composer.status.queued.many' : 'composer.status.queued.one', {
+            count: queued,
+          })}
         </span>
       ) : null}
 
       {/* Le raccourci ne se découvre pas tout seul, et il n'a pas de sens au doigt. */}
-      <span className="ml-auto hidden pointer-fine:inline">
-        Entrée pour envoyer, Maj+Entrée pour un retour à la ligne
-      </span>
+      <span className="ml-auto hidden pointer-fine:inline">{t('composer.status.shortcut')}</span>
     </div>
   )
 }

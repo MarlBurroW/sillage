@@ -1,6 +1,7 @@
 import { FolderTree, GitBranch, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { ApiRequestError } from '../lib/api'
+import { useTranslate } from '../lib/i18n'
 import { useBranches, useCreateWorktree, useWorktrees } from '../lib/worktrees'
 import { Banner, Button, ChoiceList, Field, Select, cx, type SelectOption } from './ui'
 
@@ -36,6 +37,7 @@ export function WorktreeSelect({
   const { data: worktrees } = useWorktrees(isRepository ? projectId : undefined)
   const { data: branchInfo } = useBranches(isRepository ? projectId : undefined)
   const createWorktree = useCreateWorktree(projectId)
+  const t = useTranslate()
 
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -46,17 +48,17 @@ export function WorktreeSelect({
   const options: SelectOption<string>[] = [
     {
       value: ROOT,
-      label: 'Dossier du projet',
+      label: t('worktree.root.label'),
       icon: <FolderTree size={15} />,
-      hint: branchInfo?.current ? `Branche ${branchInfo.current}` : undefined,
+      hint: branchInfo?.current ? t('worktree.root.hint', { branch: branchInfo.current }) : undefined,
     },
     ...(worktrees ?? []).map((worktree) => ({
       value: worktree.id,
       label: worktree.name,
       icon: <GitBranch size={15} />,
-      hint: worktree.git?.isDirty ? 'Modifications non commitées' : 'Worktree',
+      hint: worktree.git?.isDirty ? t('worktree.dirty') : t('worktree.label'),
     })),
-    { value: NEW, label: 'Nouveau worktree...', icon: <Plus size={15} /> },
+    { value: NEW, label: t('worktree.new'), icon: <Plus size={15} /> },
   ]
 
   const submit = () => {
@@ -93,7 +95,7 @@ export function WorktreeSelect({
     <div className="flex flex-col gap-2">
       {layout === 'list' ? (
         <ChoiceList
-          label="Répertoire de travail"
+          label={t('worktree.select.label')}
           value={selected}
           options={options.map(({ value: option, label, icon, hint }) => ({
             value: option,
@@ -105,7 +107,7 @@ export function WorktreeSelect({
         />
       ) : (
         <Select
-          label="Répertoire de travail"
+          label={t('worktree.select.label')}
           value={selected}
           onChange={pick}
           options={options}
@@ -115,17 +117,17 @@ export function WorktreeSelect({
       {creating ? (
         <div className={cx('flex flex-col gap-2 rounded-md border border-line bg-sunken p-3')}>
           <Field
-            label="Nom de branche"
+            label={t('worktree.branch.label')}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="feat/mon-chantier"
-            hint="Une branche existante est réutilisée telle quelle."
+            placeholder={t('worktree.branch.placeholder')}
+            hint={t('worktree.branch.hint')}
             className="font-mono"
             autoCapitalize="none"
             spellCheck={false}
           />
           <Field
-            label="Depuis"
+            label={t('worktree.branch.from')}
             value={baseRef}
             onChange={(event) => setBaseRef(event.target.value)}
             placeholder={branchInfo?.current ?? 'HEAD'}
@@ -136,10 +138,10 @@ export function WorktreeSelect({
           {error ? <Banner>{error}</Banner> : null}
           <div className="flex gap-2">
             <Button size="sm" onClick={submit} disabled={!name.trim() || createWorktree.isPending}>
-              {createWorktree.isPending ? 'Création...' : 'Créer'}
+              {createWorktree.isPending ? t('worktree.create.pending') : t('worktree.create.action')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>
-              Annuler
+              {t('common.cancel')}
             </Button>
           </div>
         </div>

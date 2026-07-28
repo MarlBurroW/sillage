@@ -1,6 +1,7 @@
 import { Loader, Plus, SquareTerminal as TerminalIcon, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { MAX_TERMINALS_PER_CONVERSATION } from '@sillage/protocol'
+import { useTranslate } from '../../lib/i18n'
 import { useCloseTerminal, useOpenTerminal, useTerminals } from '../../lib/terminals'
 import { Banner, Button, cx } from '../ui'
 import { TerminalView } from './TerminalView'
@@ -23,6 +24,7 @@ export function TerminalsPane({
   const open = useOpenTerminal(conversationId)
   const close = useCloseTerminal(conversationId)
   const [active, setActive] = useState<string | null>(null)
+  const t = useTranslate()
 
   // La sélection suit la liste : un terminal fermé, ou une liste vidée par un
   // redémarrage du daemon, ne doit pas laisser une vue pointant sur rien.
@@ -54,7 +56,7 @@ export function TerminalsPane({
             {/* Vivant ou terminé : sans ce repère, un onglet dont le shell est mort
                 ressemble à un onglet inactif. */}
             <span
-              aria-label={terminal.alive ? 'Shell actif' : 'Shell terminé'}
+              aria-label={terminal.alive ? t('terminal.tab.shellAlive') : t('terminal.tab.shellDone')}
               className={cx(
                 'size-1.5 shrink-0 rounded-full',
                 terminal.alive ? 'bg-positive' : 'bg-ink-faint/50',
@@ -63,7 +65,7 @@ export function TerminalsPane({
             <button
               type="button"
               onClick={() => close.mutate(terminal.id)}
-              aria-label={`Fermer ${terminal.title}`}
+              aria-label={t('terminal.tab.close', { title: terminal.title })}
               className="rounded p-0.5 text-ink-faint opacity-0 hover:text-ink group-hover/term:opacity-100"
             >
               <X size={12} />
@@ -77,11 +79,11 @@ export function TerminalsPane({
           // changer donne l'impression que rien ne s'est passé.
           onClick={() => open.mutate(undefined, { onSuccess: (created) => setActive(created.id) })}
           disabled={full || open.isPending}
-          aria-label="Nouveau terminal"
+          aria-label={t('terminal.new')}
           title={
             full
-              ? `Maximum ${MAX_TERMINALS_PER_CONVERSATION} terminaux par conversation`
-              : 'Nouveau terminal'
+              ? t('terminal.max', { max: MAX_TERMINALS_PER_CONVERSATION })
+              : t('terminal.new')
           }
           className="flex size-8 shrink-0 items-center justify-center text-ink-faint hover:text-ink disabled:opacity-40"
         >
@@ -94,7 +96,7 @@ export function TerminalsPane({
           <Banner>
             {(error ?? open.error ?? close.error) instanceof Error
               ? (error ?? open.error ?? close.error)?.message
-              : 'Terminal indisponible.'}
+              : t('terminal.unavailable')}
           </Banner>
         </div>
       ) : null}
@@ -102,7 +104,7 @@ export function TerminalsPane({
       {isPending ? (
         <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">
           <Loader size={11} className="animate-spin" />
-          Lecture des terminaux...
+          {t('terminal.loading')}
         </p>
       ) : null}
 
@@ -112,10 +114,9 @@ export function TerminalsPane({
             <TerminalIcon size={22} />
           </span>
           <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium text-ink">Aucun terminal ouvert</p>
+            <p className="text-sm font-medium text-ink">{t('terminal.empty.title')}</p>
             <p className="max-w-[22rem] text-xs text-ink-faint">
-              Un shell dans le répertoire de travail de cette conversation, worktree compris.
-              Il reste ouvert tant que le panneau l'est.
+              {t('terminal.empty.description')}
             </p>
           </div>
           <Button
@@ -128,7 +129,7 @@ export function TerminalsPane({
             ) : (
               <Plus size={14} />
             )}
-            Nouveau terminal
+            {t('terminal.new')}
           </Button>
         </div>
       ) : null}

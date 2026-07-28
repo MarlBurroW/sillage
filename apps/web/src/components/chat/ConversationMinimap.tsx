@@ -1,4 +1,5 @@
 import type { TurnMarker } from '../../lib/turns'
+import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
@@ -26,12 +27,14 @@ export function ConversationMinimap({
   agentLabel: string
   onJump: (id: string) => void
 }) {
+  const t = useTranslate()
+
   // Un seul tour ne se situe pas : la réglette n'apporterait rien.
   if (turns.length < 2) return null
 
   return (
     <nav
-      aria-label="Tours de la conversation"
+      aria-label={t('minimap.nav.label')}
       className={cx(
         'pointer-events-none absolute top-1/2 left-5 z-10 hidden -translate-y-1/2',
         // Seuil aligné sur la gouttière que le fil réserve à cette largeur : au-delà,
@@ -55,7 +58,7 @@ export function ConversationMinimap({
               <button
                 type="button"
                 onClick={() => onJump(turn.id)}
-                aria-label={turn.user || 'Tour sans texte'}
+                aria-label={turn.user || t('minimap.turn.untitled')}
                 className="flex h-3 w-6 items-center justify-start"
               >
                 <span
@@ -79,9 +82,9 @@ export function ConversationMinimap({
                 )}
               >
                 <p className="text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">
-                  Toi
+                  {t('minimap.turn.you')}
                 </p>
-                <p className="mt-0.5 text-xs text-ink">{turn.user || '(pièce jointe seule)'}</p>
+                <p className="mt-0.5 text-xs text-ink">{turn.user || t('minimap.turn.attachmentOnly')}</p>
 
                 {turn.assistant ? (
                   <>

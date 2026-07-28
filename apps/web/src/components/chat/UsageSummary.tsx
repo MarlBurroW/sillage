@@ -1,24 +1,32 @@
 import type { ClaudeAccountDto } from '@sillage/protocol'
 import type { RateLimitState } from '../../lib/chat-fold'
+import { locale, translate, useTranslate, type MessageKey } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /** Libellés des fenêtres de quota annoncées par le CLI. */
-const WINDOW_LABELS: Record<string, string> = {
-  five_hour: '5 h',
-  seven_day: '7 j',
-  seven_day_opus: '7 j Opus',
-  seven_day_sonnet: '7 j Sonnet',
-  seven_day_overage_included: '7 j + dépassement',
-  overage: 'dépassement',
+const WINDOW_LABEL_KEYS: Record<string, MessageKey> = {
+  five_hour: 'usage.window.fiveHour',
+  seven_day: 'usage.window.sevenDay',
+  seven_day_opus: 'usage.window.sevenDayOpus',
+  seven_day_sonnet: 'usage.window.sevenDaySonnet',
+  seven_day_overage_included: 'usage.window.sevenDayOverageIncluded',
+  overage: 'usage.window.overage',
+}
+
+function windowLabel(type: string): string {
+  const key = WINDOW_LABEL_KEYS[type]
+  return key ? translate(key) : type
 }
 
 function formatCountdown(resetsAt: number): string {
   const remaining = resetsAt - Date.now()
-  if (remaining <= 0) return 'réinitialisé'
+  if (remaining <= 0) return translate('usage.quota.reset')
 
   const hours = Math.floor(remaining / 3_600_000)
   const minutes = Math.round((remaining % 3_600_000) / 60_000)
-  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`
+  return hours > 0
+    ? translate('usage.quota.countdown.hours', { hours, minutes })
+    : translate('usage.quota.countdown.minutes', { minutes })
 }
 
 /**
@@ -27,11 +35,16 @@ function formatCountdown(resetsAt: number): string {
  * est l'information exploitable.
  */
 function describeQuota(rateLimit: RateLimitState): string {
-  const window = WINDOW_LABELS[rateLimit.type] ?? rateLimit.type
+  const window = windowLabel(rateLimit.type)
   if (rateLimit.utilization !== null) {
-    return `${window} ${Math.round(rateLimit.utilization * 100)} %`
+    return translate('usage.quota.utilization', {
+      window,
+      percent: Math.round(rateLimit.utilization * 100),
+    })
   }
-  return rateLimit.resetsAt === null ? window : `${window} · ${formatCountdown(rateLimit.resetsAt)}`
+  return rateLimit.resetsAt === null
+    ? window
+    : translate('usage.quota.countdownFor', { window, countdown: formatCountdown(rateLimit.resetsAt) })
 }
 
 function formatTokens(count: number): string {
@@ -67,6 +80,7 @@ export function UsageSummary({
   cacheCreationTokens,
   cacheReadTokens,
 }: UsageSummaryProps) {
+  const t = useTranslate()
   // Le cache domine la consommation réelle : l'exclure du total afficherait quelques
   // dizaines de tokens là où la conversation en a consommé des dizaines de milliers.
   const tokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens
@@ -76,9 +90,14 @@ export function UsageSummary({
     <>
       {tokens > 0 ? (
         <span
-          title={`Entrée ${inputTokens} · sortie ${outputTokens} · cache écrit ${cacheCreationTokens} · cache lu ${cacheReadTokens}`}
+          title={t('usage.tokens.breakdown', {
+            input: inputTokens,
+            output: outputTokens,
+            cacheWrite: cacheCreationTokens,
+            cacheRead: cacheReadTokens,
+          })}
         >
-          {formatTokens(tokens)} tok
+          {t('usage.tokens.total', { count: formatTokens(tokens) })}
         </span>
       ) : null}
 
@@ -90,15 +109,17 @@ export function UsageSummary({
           )}
           title={
             rateLimit.resetsAt === null
-              ? 'Quota de la fenêtre en cours'
-              : `Quota réinitialisé le ${new Date(rateLimit.resetsAt).toLocaleString('fr-FR')}`
+              ? t('usage.quota.current')
+              : t('usage.quota.resetAt', {
+                  date: new Date(rateLimit.resetsAt).toLocaleString(locale()),
+                })
           }
         >
           {describeQuota(rateLimit)}
         </span>
       ) : null}
 
-      {showCost ? <span title="Facturé à l'usage">{costUsd.toFixed(3)} $</span> : null}
+      {showCost ? <span title={t('usage.billed.perUse')}>{t('usage.cost.amount', { amount: costUsd.toFixed(3) })}</span> : null}
     </>
   )
 }

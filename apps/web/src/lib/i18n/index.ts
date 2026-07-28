@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 import { catalogFor, LOCALES, type Locale } from './catalogs'
 import type { MessageKey } from './catalog-en'
 
@@ -98,10 +98,22 @@ export function translate(key: MessageKey, params?: MessageParams): string {
 /**
  * Traduction abonnée à la langue courante : changer de langue rerend tout ce qui
  * l'utilise, sans avoir à faire remonter la valeur dans un contexte.
+ *
+ * L'identité de la fonction change avec la langue, et c'est délibéré. Renvoyer
+ * `translate` telle quelle serait plus simple mais piégeux : sa référence étant stable,
+ * un `useMemo(..., [t])` ne se recalculerait jamais au changement de langue, et les
+ * libellés mémoïsés resteraient figés dans l'ancienne. Avec une identité qui bouge,
+ * `[t]` suffit, et la règle des dépendances de hooks dit la vérité.
  */
 export function useTranslate(): (key: MessageKey, params?: MessageParams) => string {
-  useSyncExternalStore(subscribe, locale, () => FALLBACK)
-  return translate
+  const active = useSyncExternalStore(subscribe, locale, () => FALLBACK)
+  return useCallback(
+    (key: MessageKey, params?: MessageParams) => {
+      const catalog = catalogFor(active)
+      return interpolate(catalog[key] ?? catalogFor(FALLBACK)[key], params)
+    },
+    [active],
+  )
 }
 
 /** Langue courante, pour les composants qui affichent ou changent le réglage. */
