@@ -19,6 +19,7 @@ import { registerErrorHandler } from './errors.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
+import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerConversationRoutes } from './routes/conversations.js'
 import { registerFileRoutes } from './routes/files.js'
 import { registerFsRoutes } from './routes/fs.js'
@@ -86,6 +87,7 @@ export async function buildApp(
   registerAuthRoutes(app, ctx)
   registerProjectRoutes(app, ctx, attachments)
   registerConversationRoutes(app, ctx, log, sessions, catalogs, attachments)
+  registerClaudeSessionRoutes(app, ctx, log, sessions, catalogs)
   registerFsRoutes(app)
   registerAgentRoutes(app, catalogs)
   registerWorktreeRoutes(app, ctx)

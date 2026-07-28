@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react'
+import { Check, History } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -9,8 +9,9 @@ import {
 } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
-import { cx } from '../components/ui'
+import { Banner, cx } from '../components/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
+import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
 import { useSidebarHidden } from '../lib/sidebar'
@@ -35,6 +36,16 @@ const AGENTS: { value: AgentKind; vendor: string; blurb: string }[] = [
     blurb: 'Mode plan, exécution en bac à sable, approbations groupées.',
   },
 ]
+
+/** Jour et heure courts : assez pour situer une session, sans manger la ligne. */
+function formatDay(ts: number): string {
+  return new Date(ts).toLocaleString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 /**
  * Conversation pas encore créée.
@@ -75,6 +86,17 @@ export function DraftConversationPage() {
     () => (config?.agent === agent ? config : defaults),
     [config, agent, defaults],
   )
+
+  // Chargées seulement quand Claude est le CLI retenu : Codex n'a pas d'équivalent.
+  // Un worktree écarte la liste : ces sessions vivent dans le dossier racine du projet.
+  const { data: cliSessions } = useClaudeSessions(projectId, agent === 'claude' && !worktreeId)
+  const cliSessionList = worktreeId ? [] : (cliSessions?.sessions ?? [])
+  const importSession = useImportClaudeSession(projectId ?? '')
+
+  const importAndOpen = async (sessionId: string) => {
+    const created = await importSession.mutateAsync(sessionId)
+    navigate(`/p/${projectId}/c/${created.id}`, { replace: true })
+  }
 
   const send = async (text: string, attachmentIds: string[], mentions: string[]) => {
     if (!projectId) return
@@ -172,6 +194,58 @@ export function DraftConversationPage() {
               isRepository={project?.git !== null && project !== undefined}
               layout="list"
             />
+          ) : null}
+
+          {/* Sessions commencées au CLI dans ce dossier : plutôt qu'une nouvelle
+              conversation, on peut adopter l'une d'elles. Importer ne copie rien,
+              c'est la même session, qui reste reprenable avec `claude --resume`. */}
+          {agent === 'claude' && cliSessionList.length > 0 ? (
+            <section className="flex flex-col gap-1.5">
+              <h2 className="text-xs font-medium text-ink-soft">
+                Ou reprendre une session Claude Code
+              </h2>
+              <p className="text-xs leading-snug text-ink-faint">
+                Commencées avec le CLI dans ce dossier. La conversation continue la même
+                session, dans les deux sens ; il suffit de ne pas être sur les deux en
+                même temps.
+              </p>
+              <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto">
+                {cliSessionList.map((session) => (
+                  <button
+                    key={session.sessionId}
+                    type="button"
+                    disabled={importSession.isPending}
+                    onClick={() => void importAndOpen(session.sessionId)}
+                    className="flex items-center gap-2.5 rounded-md border border-line px-3 py-2 text-left transition-colors hover:border-line-strong hover:bg-surface-high disabled:opacity-60"
+                  >
+                    <History size={15} className="shrink-0 text-ink-faint" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-ink">{session.title}</span>
+                      {session.firstPrompt && session.firstPrompt !== session.title ? (
+                        <span className="block truncate text-xs text-ink-faint">
+                          {session.firstPrompt}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 text-right text-[0.6875rem] leading-tight text-ink-faint">
+                      <time dateTime={new Date(session.lastModified).toISOString()}>
+                        {formatDay(session.lastModified)}
+                      </time>
+                      {session.gitBranch ? (
+                        <span className="block max-w-32 truncate">{session.gitBranch}</span>
+                      ) : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {importSession.isError ? (
+                <Banner>
+                  {importSession.error instanceof Error
+                    ? importSession.error.message
+                    : "L'import a échoué."}
+                </Banner>
+              ) : null}
+            </section>
           ) : null}
         </div>
       </div>

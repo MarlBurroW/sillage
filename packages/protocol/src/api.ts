@@ -344,6 +344,31 @@ export interface WorkingDiffDto {
   head: { hash: string; subject: string; relativeDate: string } | null
 }
 
+// Sessions Claude Code existantes sur le disque
+
+/**
+ * Une session commencée avec le CLI Claude Code dans le dossier du projet, pas encore
+ * rattachée à une conversation Sillage. L'import n'en fait pas une copie : Sillage
+ * retient l'identifiant natif et reconstruit son journal depuis le transcript, puis
+ * chaque tour reprend la même session côté CLI.
+ */
+export interface ClaudeSessionDto {
+  sessionId: string
+  title: string
+  firstPrompt: string | null
+  gitBranch: string | null
+  lastModified: number
+}
+
+export interface ClaudeSessionsDto {
+  sessions: ClaudeSessionDto[]
+}
+
+/** Résultat d'une resynchronisation : nombre d'événements repris du transcript. */
+export interface ClaudeSyncDto {
+  imported: number
+}
+
 // Capacités des CLI
 
 /**

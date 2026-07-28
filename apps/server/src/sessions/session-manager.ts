@@ -765,6 +765,17 @@ export class SessionManager {
     this.setStatus(conversationId, 'idle')
   }
 
+  /**
+   * Arrête le runner d'une conversation, s'il tourne.
+   *
+   * Utilisé par la resynchronisation depuis le transcript CLI : un process encore
+   * chaud garde en mémoire un contexte qui ignore les tours faits au CLI, alors
+   * qu'une reprise repart du fichier, qui a tout.
+   */
+  async releaseRunner(conversationId: string): Promise<void> {
+    await this.stopRunner(conversationId)
+  }
+
   private async stopRunner(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (!managed) return

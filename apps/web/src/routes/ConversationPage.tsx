@@ -31,6 +31,7 @@ import { TurnNav } from '../components/chat/TurnNav'
 import { UsagePanel } from '../components/chat/UsagePanel'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useClaudeModels } from '../lib/agents'
+import { syncClaudeConversation } from '../lib/claude-sessions'
 import { Banner, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, cx } from '../components/ui'
 import { api } from '../lib/api'
 import {
@@ -190,6 +191,23 @@ export function ConversationPage() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  /**
+   * Rattrape les tours faits au CLI Claude Code hors de Sillage.
+   *
+   * Le CLI relit toujours le transcript complet, mais le journal est sa propre copie :
+   * sans ce rattrapage à l'ouverture, une session poursuivie au terminal s'afficherait
+   * ici tronquée. Les événements repris arrivent par l'abonnement WebSocket, comme le
+   * direct, donc il n'y a rien à recharger.
+   */
+  useEffect(() => {
+    if (!conversationId || conversation?.agent !== 'claude' || !conversation.isOwner) return
+    syncClaudeConversation(conversationId).catch((err: unknown) => {
+      // Un rattrapage manqué n'empêche pas la conversation de vivre, mais le taire
+      // rendrait indiagnosticable un fil qui semble incomplet.
+      console.error('Resynchronisation du transcript CLI impossible :', err)
+    })
+  }, [conversationId, conversation?.agent, conversation?.isOwner])
 
   // L'anneau s'efface tout seul. Sans ça, il resterait sur un message qu'on a quitté
   // depuis longtemps et cesserait de vouloir dire « c'est là que tu viens d'arriver ».

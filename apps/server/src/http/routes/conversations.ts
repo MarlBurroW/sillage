@@ -51,7 +51,7 @@ function provisionalTitle(firstMessage: string | undefined): string {
     : `${text.slice(0, PROVISIONAL_TITLE_MAX).trimEnd()}...`
 }
 
-function toDto(row: ConversationRow, userId: string): ConversationDto {
+export function conversationToDto(row: ConversationRow, userId: string): ConversationDto {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -154,7 +154,7 @@ export function registerConversationRoutes(
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
 
-    return rows.map((row) => toDto(row.conversation, user.id))
+    return rows.map((row) => conversationToDto(row.conversation, user.id))
   })
 
   app.get('/api/projects/:id/conversations', async (request) => {
@@ -179,7 +179,7 @@ export function registerConversationRoutes(
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
 
-    return rows.map((row) => toDto(row, user.id))
+    return rows.map((row) => conversationToDto(row, user.id))
   })
 
   app.post('/api/projects/:id/conversations', async (request, reply) => {
@@ -256,7 +256,7 @@ export function registerConversationRoutes(
       }
     }
 
-    return reply.status(201).send(toDto(row, user.id))
+    return reply.status(201).send(conversationToDto(row, user.id))
   })
 
   /**
@@ -356,13 +356,13 @@ export function registerConversationRoutes(
     // souvient de tout l'historique conservé (invariant I2).
     const copied = log.copyThrough(id, row.id, body.throughSeq)
 
-    return reply.status(201).send(toDto({ ...row, lastSeq: copied }, user.id))
+    return reply.status(201).send(conversationToDto({ ...row, lastSeq: copied }, user.id))
   })
 
   app.get('/api/conversations/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    return toDto(await loadReadable(id, user.id), user.id)
+    return conversationToDto(await loadReadable(id, user.id), user.id)
   })
 
   app.get('/api/conversations/:id/events', async (request): Promise<JournalPageDto> => {

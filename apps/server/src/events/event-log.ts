@@ -86,6 +86,92 @@ export class EventLog {
     return entry
   }
 
+  /**
+   * Ajoute d'un bloc les événements traduits d'un transcript CLI (import ou
+   * resynchronisation), avec leurs dates d'origine.
+   *
+   * Une transaction pour l'ensemble : un import de plusieurs centaines d'événements
+   * en autant de transactions multiplierait les fsync pour rien, et un échec à
+   * mi-course laisserait un fil tronqué sans que rien ne le dise. La diffusion sur le
+   * bus reste par événement, comme pour `append` : un onglet déjà abonné voit la
+   * resynchronisation arriver en direct.
+   */
+  appendBatch(
+    conversationId: string,
+    batch: { ts: number; event: SillageEvent; raw?: unknown }[],
+  ): number {
+    if (batch.length === 0) return 0
+
+    const entries = this.db.transaction((tx): JournalEntry[] => {
+      const row = tx
+        .select({ lastSeq: conversations.lastSeq })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .get()
+      if (!row) throw new Error(`Conversation inconnue : ${conversationId}`)
+
+      const appended = batch.map((item, index): JournalEntry => {
+        const seq = row.lastSeq + index + 1
+        tx.insert(events)
+          .values({
+            conversationId,
+            seq,
+            ts: item.ts,
+            type: item.event.type,
+            payload: JSON.stringify(item.event),
+            raw: item.raw === undefined ? null : JSON.stringify(item.raw),
+          })
+          .run()
+        if (item.event.type === 'message.completed') indexMessage(tx, conversationId, seq)
+        return { conversationId, seq, ts: item.ts, event: item.event }
+      })
+
+      tx.update(conversations)
+        .set({ lastSeq: row.lastSeq + batch.length, updatedAt: Date.now() })
+        .where(eq(conversations.id, conversationId))
+        .run()
+
+      return appended
+    })
+
+    for (const entry of entries) this.bus.emit(conversationId, entry)
+    return entries.at(-1)?.seq ?? 0
+  }
+
+  /**
+   * Repères pour aligner le journal sur le transcript CLI.
+   *
+   * `uuids` : identifiants de transcript déjà connus, portés par les `raw` (le flux
+   * vivant comme l'import les conservent). Le dernier commun aux deux côtés donne le
+   * point de reprise. `completedToolCallIds` : les résultats d'outils déjà
+   * journalisés, dont l'entrée de transcript peut se trouver après ce point quand un
+   * tour a été interrompu, et qu'il ne faut pas réimporter en doublon.
+   */
+  importAnchors(conversationId: string): {
+    uuids: Set<string>
+    completedToolCallIds: Set<string>
+  } {
+    const rows = this.db
+      .select({ type: events.type, payload: events.payload, raw: events.raw })
+      .from(events)
+      .where(eq(events.conversationId, conversationId))
+      .all()
+
+    const uuids = new Set<string>()
+    const completedToolCallIds = new Set<string>()
+    for (const row of rows) {
+      if (row.raw) {
+        const raw = JSON.parse(row.raw) as { uuid?: unknown }
+        if (typeof raw.uuid === 'string') uuids.add(raw.uuid)
+      }
+      if (row.type === 'tool.completed') {
+        const payload = JSON.parse(row.payload) as { toolCallId?: unknown }
+        if (typeof payload.toolCallId === 'string') completedToolCallIds.add(payload.toolCallId)
+      }
+    }
+    return { uuids, completedToolCallIds }
+  }
+
   read(conversationId: string, afterSeq: number, limit: number): JournalEntry[] {
     const rows = this.db
       .select()
