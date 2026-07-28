@@ -9,6 +9,7 @@ import {
   type AgentModelDto,
   type AgentModelsDto,
 } from '@sillage/protocol'
+import { translate } from './i18n'
 import { api } from './api'
 
 /**
@@ -51,11 +52,11 @@ export function unavailableReason(entry: AgentAvailabilityDto | undefined): stri
   if (!entry || entry.installed) return null
   switch (entry.reason) {
     case 'disabled':
-      return 'Désactivé dans la configuration du serveur.'
+      return translate('agent.unavailable.disabled')
     case 'not_executable':
-      return `Trouvé à ${entry.binary}, mais pas exécutable.`
+      return translate('agent.unavailable.notExecutable', { binary: entry.binary })
     default:
-      return `Introuvable sur le PATH du serveur (${entry.binary}).`
+      return translate('agent.unavailable.notOnPath', { binary: entry.binary })
   }
 }
 
@@ -71,7 +72,7 @@ export function versionMismatch(entry: AgentAvailabilityDto | undefined): string
   const preferred = PREFERRED_CLI_RELEASES[entry.agent].version
   // `null` vaut « illisible, donc rien à dire » : seul un faux avéré justifie d'alerter.
   if (isCompatibleVersion(entry.version, preferred) !== false) return null
-  return `Version ${entry.version} installée, Sillage vise ${preferred} : des différences de comportement sont possibles.`
+  return translate('agent.version.mismatch', { installed: entry.version, preferred })
 }
 
 /**

@@ -21,6 +21,7 @@ import {
 import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
+import { locale, useTranslate } from '../lib/i18n'
 import { useSidebarHidden } from '../lib/sidebar'
 import { uuidv4 } from '../lib/uuid'
 
@@ -29,7 +30,7 @@ const AGENTS = agentKindSchema.options.map((value) => ({ value, ...AGENT_META[va
 
 /** Jour et heure courts : assez pour situer une session, sans manger la ligne. */
 function formatDay(ts: number): string {
-  return new Date(ts).toLocaleString('fr-FR', {
+  return new Date(ts).toLocaleString(locale(), {
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
@@ -63,6 +64,7 @@ export function DraftConversationPage() {
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
   const { data: availability } = useAgentAvailability()
   const install = useInstallAgent()
+  const t = useTranslate()
 
   // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
   // une carte grisée, et l'envoi resterait possible puisque le grisage ne bloque que le
@@ -133,7 +135,7 @@ export function DraftConversationPage() {
         )}
       >
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">Nouvelle conversation</p>
+          <p className="truncate text-sm font-medium">{t('draft.title')}</p>
           <div className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
             <AgentIcon agent={agent} size={11} />
             <span>{AGENT_LABELS[agent]}</span>
@@ -144,17 +146,14 @@ export function DraftConversationPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-md flex-col gap-6 px-4 py-8">
           <div className="flex flex-col gap-1 text-center">
-            <h1 className="text-xl font-semibold tracking-tight">Nouvelle conversation</h1>
-            <p className="text-sm text-ink-faint">
-              Elle sera créée à l&apos;envoi du premier message, et prendra le titre que le
-              CLI lui donne.
-            </p>
+            <h1 className="text-xl font-semibold tracking-tight">{t('draft.title')}</h1>
+            <p className="text-sm text-ink-faint">{t('draft.subtitle')}</p>
           </div>
 
           {/* Deux cartes plutôt qu'une liste déroulante : le CLI est le choix qui engage
               le plus, il n'y en a que deux, et chacun mérite sa phrase. */}
           <fieldset className="flex flex-col gap-1.5">
-            <legend className="mb-1.5 text-xs font-medium text-ink-soft">CLI</legend>
+            <legend className="mb-1.5 text-xs font-medium text-ink-soft">{t('draft.cli.legend')}</legend>
             <div role="radiogroup" aria-label="CLI" className="grid gap-2 sm:grid-cols-2">
               {AGENTS.map((option) => {
                 const selected = option.value === agent
@@ -229,10 +228,13 @@ export function DraftConversationPage() {
                 >
                   <span className="min-w-0 text-xs leading-snug text-ink-faint">
                     {entry.install.status === 'running'
-                      ? `Installation de ${AGENT_LABELS[entry.agent]} ${entry.install.version}…`
+                      ? t('agent.install.running', {
+                          label: AGENT_LABELS[entry.agent],
+                          version: entry.install.version,
+                        })
                       : entry.install.status === 'failed'
                         ? entry.install.error
-                        : `${AGENT_LABELS[entry.agent]} n'est pas installé sur le serveur.`}
+                        : t('agent.install.missing', { label: AGENT_LABELS[entry.agent] })}
                   </span>
                   <Button
                     size="sm"
@@ -241,8 +243,8 @@ export function DraftConversationPage() {
                     onClick={() => install.mutate(entry.agent)}
                   >
                     {entry.install.status === 'failed'
-                      ? 'Réessayer'
-                      : `Installer ${entry.preferredVersion}`}
+                      ? t('agent.install.retry')
+                      : t('agent.install.action', { version: entry.preferredVersion })}
                   </Button>
                 </div>
               ))}
