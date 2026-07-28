@@ -422,9 +422,6 @@ function updateMessage(
  * Applique un événement. L'état est muté puis renvoyé dans un nouvel objet : les
  * conversations longues rendent une copie profonde par événement trop coûteuse sur
  * un téléphone, et seule la référence racine sert à déclencher le rendu React.
- */
-/**
- * Applique un événement.
  *
  * `ts` vient du journal : c'est la date d'écriture côté serveur, la seule qui ait un
  * sens partagé. Une date posée par le client varierait d'un appareil à l'autre pour un

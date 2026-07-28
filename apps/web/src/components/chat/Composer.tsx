@@ -185,8 +185,10 @@ export function Composer({
   const [mentioned, setMentioned] = useState<Set<string>>(() => new Set())
   const textarea = useRef<HTMLTextAreaElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
-  const { data: catalog, error: catalogError } = useClaudeModels()
-  const { data: codexCatalog } = useCodexModels()
+  // Chaque sonde démarre le CLI correspondant côté serveur : seule celle de l'agent
+  // de la conversation a le droit de partir.
+  const { data: catalog, error: catalogError } = useClaudeModels(config.agent === 'claude')
+  const { data: codexCatalog } = useCodexModels(config.agent === 'codex')
 
   const running = status === 'running' || status === 'awaiting_input'
 

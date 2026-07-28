@@ -58,6 +58,12 @@ export interface RunnerContext {
   setStatus(status: ConversationStatus): void
   /** Mémorise l'identifiant natif dès que le CLI l'annonce, pour pouvoir reprendre. */
   setAgentSessionId(sessionId: string): void
+  /**
+   * Persiste une configuration que la session vient de changer d'elle-même (mode de
+   * permission adopté à l'approbation d'un plan, par exemple). Sans cette écriture,
+   * l'UI de réglages et la prochaine reprise repartiraient de l'ancienne valeur.
+   */
+  updateConfig(config: AgentConfig): void
   /** Enregistre une demande de permission en attente et retourne son identifiant. */
   openPermissionRequest(toolName: string, input: unknown): string
   closePermissionRequest(requestId: string, decision: PermissionDecision): void

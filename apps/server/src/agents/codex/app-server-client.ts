@@ -41,6 +41,12 @@ export interface CodexClientOptions {
   onNotification?: (method: string, params: unknown) => void
   /** Requêtes serveur à répondre, dont les demandes d'approbation. */
   onServerRequest?: (method: string, params: unknown) => Promise<unknown>
+  /**
+   * Mort du process hors d'un `close()` demandé. Sans ce signal, une conversation
+   * sans requête en vol resterait `running` pour toujours : rejeter les appels en
+   * attente ne prévient personne quand il n'y en a aucun.
+   */
+  onExit?: (code: number | null) => void
 }
 
 export class CodexAppServerClient {
@@ -66,8 +72,10 @@ export class CodexAppServerClient {
     this.reader.on('line', (line) => this.handleLine(line))
 
     this.child.on('exit', (code) => {
+      const expected = this.closed
       this.closed = true
       this.rejectAll(new Error(`codex app-server s'est arrêté (code ${code ?? 'inconnu'}).`))
+      if (!expected) this.options.onExit?.(code)
     })
   }
 
