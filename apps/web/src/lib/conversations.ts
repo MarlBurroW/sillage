@@ -245,35 +245,46 @@ export function decidePlan(
   })
 }
 
-export interface JournalChunk {
-  entries: { seq: number; ts: number; event: SillageEvent }[]
-  lastSeq: number
-}
+export type JournalPage = { seq: number; ts: number; event: SillageEvent }[]
 
 /**
  * Rattrapage complet depuis un curseur. La route est paginée, donc on boucle
  * jusqu'à rejoindre le dernier `seq` connu du serveur : s'arrêter à la première page
  * laisserait des trous invisibles dans le fil.
+ *
+ * Chaque page est rendue à l'appelant dès son arrivée plutôt qu'à la fin. Une
+ * conversation de vingt mille événements en demande une quarantaine, et les attendre
+ * toutes laissait l'écran vide le temps d'autant d'allers-retours enchaînés. Le fil
+ * s'affiche maintenant dès la première et grandit jusqu'à sa fin.
+ *
+ * Les pages ne peuvent pas être demandées en parallèle : le curseur d'une page est le
+ * dernier `seq` de la précédente, et `seq` comporte des trous après compaction des
+ * deltas, donc il n'y a pas de découpage calculable à l'avance.
  */
-export async function fetchJournal(conversationId: string, afterSeq: number): Promise<JournalChunk> {
-  const entries: { seq: number; ts: number; event: SillageEvent }[] = []
+export async function fetchJournal(
+  conversationId: string,
+  afterSeq: number,
+  onPage: (entries: JournalPage) => void,
+): Promise<void> {
   let cursor = afterSeq
-  let lastSeq = afterSeq
 
   for (;;) {
     const page = await api.get<JournalPageDto>(
       `/api/conversations/${conversationId}/events?after=${cursor}`,
     )
-    lastSeq = page.lastSeq
 
-    for (const entry of page.entries) {
-      entries.push({ seq: entry.seq, ts: entry.ts, event: entry.event as SillageEvent })
+    if (page.entries.length > 0) {
+      onPage(
+        page.entries.map((entry) => ({
+          seq: entry.seq,
+          ts: entry.ts,
+          event: entry.event as SillageEvent,
+        })),
+      )
     }
 
     const last = page.entries.at(-1)
-    if (!last || last.seq >= page.lastSeq) break
+    if (!last || last.seq >= page.lastSeq) return
     cursor = last.seq
   }
-
-  return { entries, lastSeq }
 }

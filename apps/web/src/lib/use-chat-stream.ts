@@ -78,12 +78,21 @@ export function useChatStream(
 
     const loadFromRest = async () => {
       try {
-        const journal = await fetchJournal(conversationId, stateRef.current.lastSeq)
+        await fetchJournal(conversationId, stateRef.current.lastSeq, (entries) => {
+          if (cancelled) return
+
+          for (const entry of entries) enqueue(entry.seq, entry.ts, entry.event)
+          // Replié et peint page par page : les laisser s'accumuler dans la file
+          // jusqu'au bout ne montrerait rien avant la fin du rattrapage, qui est
+          // justement ce qui prend du temps sur une conversation longue.
+          flush()
+          setLoading(false)
+        })
         if (cancelled) return
 
-        for (const entry of journal.entries) enqueue(entry.seq, entry.ts, entry.event)
-        flush()
         wsClient.setCursor(conversationId, stateRef.current.lastSeq)
+        // Le rappel ne passe pas quand le journal n'a rien de neuf : sans cette
+        // seconde levée, une conversation vide resterait en chargement.
         setLoading(false)
       } catch (err) {
         if (cancelled) return
