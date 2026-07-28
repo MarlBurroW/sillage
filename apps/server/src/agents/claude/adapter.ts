@@ -33,6 +33,7 @@ export class ClaudeAdapter implements AgentAdapter {
   readonly label = 'Claude Code'
   readonly binary: string
   readonly capabilities = AGENT_CAPABILITIES.claude
+  readonly rawFormat = 'claude-agent-sdk@0.3'
 
   /**
    * Un seul exemplaire de chaque sonde par daemon : catalogue et lecteur de quota

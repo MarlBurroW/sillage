@@ -164,6 +164,16 @@ export const events = sqliteTable(
     payload: text('payload').notNull(),
     /** JSON natif du CLI, conservé pour les renderers d'outils spécialisés. */
     raw: text('raw'),
+    /**
+     * Provenance du `raw` (« claude-agent-sdk@0.3 », « codex-app-server@v2 »...).
+     *
+     * Sans elle, la forme du payload natif se devine par `conversations.agent`, ce
+     * qui ne survit pas à un changement de protocole du CLI : deux générations de
+     * `raw` se mélangent alors dans un même fil sans que rien ne les distingue.
+     * Nullable : les événements d'avant l'estampille restent de la génération
+     * courante de leur agent, jusqu'au premier bump.
+     */
+    rawFormat: text('raw_format'),
   },
   (t) => [primaryKey({ columns: [t.conversationId, t.seq] })],
 )

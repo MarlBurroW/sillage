@@ -46,7 +46,12 @@ export class EventLog {
    * Incrémente `seq` et insère l'événement dans la même transaction : deux écritures
    * concurrentes sur la même conversation ne peuvent pas obtenir le même numéro.
    */
-  append(conversationId: string, event: SillageEvent, raw?: unknown): JournalEntry {
+  append(
+    conversationId: string,
+    event: SillageEvent,
+    raw?: unknown,
+    rawFormat?: string,
+  ): JournalEntry {
     const ts = Date.now()
 
     const entry = this.db.transaction((tx): JournalEntry => {
@@ -67,6 +72,7 @@ export class EventLog {
           type: event.type,
           payload: JSON.stringify(event),
           raw: raw === undefined ? null : JSON.stringify(raw),
+          rawFormat: raw === undefined ? null : (rawFormat ?? null),
         })
         .run()
 
@@ -99,6 +105,8 @@ export class EventLog {
   appendBatch(
     conversationId: string,
     batch: { ts: number; event: SillageEvent; raw?: unknown }[],
+    /** Provenance commune des `raw` du lot, quand ils viennent d'une même source. */
+    rawFormat?: string,
   ): number {
     if (batch.length === 0) return 0
 
@@ -120,6 +128,7 @@ export class EventLog {
             type: item.event.type,
             payload: JSON.stringify(item.event),
             raw: item.raw === undefined ? null : JSON.stringify(item.raw),
+            rawFormat: item.raw === undefined ? null : (rawFormat ?? null),
           })
           .run()
         if (item.event.type === 'message.completed') indexMessage(tx, conversationId, seq)
@@ -146,6 +155,10 @@ export class EventLog {
    * point de reprise. `completedToolCallIds` : les résultats d'outils déjà
    * journalisés, dont l'entrée de transcript peut se trouver après ce point quand un
    * tour a été interrompu, et qu'il ne faut pas réimporter en doublon.
+   *
+   * Contrat Claude : `raw.uuid` est un identifiant d'entrée du transcript de Claude
+   * Code, seul CLI à en écrire un. Les `raw` Codex n'en portent pas, la lecture est
+   * donc inoffensive ailleurs, mais elle n'a de sens que pour cet adaptateur.
    */
   importAnchors(conversationId: string): {
     uuids: Set<string>
@@ -252,6 +265,7 @@ export class EventLog {
             type: row.type,
             payload: row.payload,
             raw: row.raw,
+            rawFormat: row.rawFormat,
           })
           .run()
       })

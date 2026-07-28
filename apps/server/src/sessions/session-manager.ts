@@ -382,17 +382,18 @@ export class SessionManager {
 
   private buildContext(conversation: ConversationRow): RunnerContext {
     const conversationId = conversation.id
+    const adapter = this.registry.adapter(conversation.agent)
 
     return {
       conversationId,
       cwd: this.resolveCwd(conversation),
       config: parseAgentConfig(conversation.config),
-      binary: this.registry.adapter(conversation.agent).binary,
+      binary: adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SillageEvent, raw?: unknown) => {
-        this.log.append(conversationId, event, raw)
+        this.log.append(conversationId, event, raw, adapter.rawFormat)
         void this.notifyIfAway(conversationId, event)
         if (event.type === 'turn.completed') {
           // Le CLI ne résume la session qu'une fois le tour fini : c'est le premier
