@@ -4,8 +4,10 @@ import {
   deleteEntryBodySchema,
   moveEntryBodySchema,
   treeQuerySchema,
+  treeSearchQuerySchema,
   type FileState,
   type TreeListingDto,
+  type TreeSearchDto,
 } from '@sillage/protocol'
 import { readFileStates } from '../../git.js'
 import {
@@ -14,6 +16,7 @@ import {
   deleteEntry,
   listDirectory,
   moveEntry,
+  searchEntries,
 } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { requireUser } from '../require-user.js'
@@ -79,6 +82,22 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
       }),
       versioned: true,
     }
+  })
+
+  /**
+   * Recherche d'un fichier par son nom, dans tout le répertoire de travail.
+   *
+   * Séparée de l'arborescence, qui est paginée par niveau : chercher demande de
+   * traverser, et traverser à la demande depuis le client ferait une requête par
+   * dossier. Aucun état git n'est joint, la liste ne sert qu'à rejoindre un fichier.
+   */
+  app.get('/api/conversations/:id/tree/search', async (request): Promise<TreeSearchDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { q } = treeSearchQuerySchema.parse(request.query)
+
+    const cwd = conversationWorkspace(ctx.db, id, user.id)
+    return searchEntries(cwd, q)
   })
 
   /**

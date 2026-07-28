@@ -1412,6 +1412,31 @@ partagé, mais un terminal exécute des commandes arbitraires sous le compte Uni
 donc sur toute la machine et pas seulement sur le workspace : à réserver à des comptes
 administrés par le propriétaire de l'instance.
 
+**Gestes de l'explorateur.** Un dossier se déplie au clic simple, c'est ce qu'on attend
+de lui. Un fichier, non : le clic simple ne fait que le désigner, le double clic l'ouvre.
+Ouvrir au premier clic remplissait la barre d'onglets en parcourant l'arborescence, et
+empêchait de viser une ligne pour la renommer sans en subir l'ouverture.
+
+Le clic droit ouvre les mêmes actions que les trois points de la ligne. Les deux menus
+viennent de modules Radix distincts, dont les éléments ne se partagent pas : les actions
+sont donc décrites une fois en données et rendues deux fois, pour que les listes ne
+divergent pas. Parmi elles, « Référencer dans le prompt » insère `@chemin` dans la barre
+de saisie et l'ajoute aux mentions retenues, comme s'il avait été choisi dans la liste de
+complétion.
+
+**Recherche de fichier.** Une requête à part de l'arborescence, qui est paginée par
+niveau : chercher demande de traverser, et traverser depuis le client ferait une requête
+par dossier. Sous-chaîne insensible à la casse et aux accents, pas de correspondance
+floue : sur une arborescence de projet le flou remonte surtout du bruit, et on tape
+presque toujours un morceau exact du nom. Les correspondances sur le nom passent avant
+celles sur le chemin, et les plus courtes avant les plus longues. La marche saute les
+dossiers de dépendances et de construction, et reste bornée en nombre d'entrées visitées :
+un répertoire de travail peut être n'importe quoi, y compris un point de montage réseau.
+Une liste tronquée le dit, faute de quoi « aucun résultat » mentirait.
+
+Les résultats remplacent l'arborescence au lieu de la filtrer sur place : les niveaux
+dépliés doivent être retrouvés intacts en effaçant la recherche.
+
 **Onglets et éditeur.** Un clic sur un fichier de l'explorateur l'ouvre en onglet et
 bascule sur l'éditeur : l'ouvrir sans le montrer ne servirait à rien. Les deux vues
 restent montées, pour qu'un aller-retour ne replie pas l'arborescence ni ne relise le

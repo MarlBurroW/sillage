@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
-import type { TreeListingDto } from '@sillage/protocol'
+import type { TreeListingDto, TreeSearchDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
@@ -24,6 +24,26 @@ export function useTreeLevel(conversationId: string, path: string, enabled: bool
     // L'arborescence change quand l'agent écrit, pas toute seule : le rafraîchissement
     // est déclenché par la fin d'un tour et par le bouton, jamais par un sondage.
     staleTime: Infinity,
+  })
+}
+
+/**
+ * Recherche d'un fichier par son nom, dans tout le répertoire de travail.
+ *
+ * Requête distincte de l'arborescence : celle-ci est paginée par niveau, chercher
+ * demande de traverser. Désactivée sous deux caractères, où la liste ne discrimine
+ * rien et où la marche coûte le plus cher.
+ */
+export function useFileSearch(conversationId: string, query: string) {
+  const trimmed = query.trim()
+  return useQuery({
+    queryKey: ['tree-search', conversationId, trimmed],
+    queryFn: () =>
+      api.get<TreeSearchDto>(
+        `/api/conversations/${conversationId}/tree/search?q=${encodeURIComponent(trimmed)}`,
+      ),
+    enabled: trimmed.length >= 2,
+    staleTime: 30_000,
   })
 }
 
