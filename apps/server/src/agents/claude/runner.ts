@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { isAbsolute } from 'node:path'
 import {
   getSessionInfo,
   query,
@@ -21,6 +20,7 @@ import {
   type PlanFollowUpOption,
 } from '@sillage/protocol'
 import { AsyncQueue } from '../async-queue.js'
+import { resolveBinary } from '../cli-binary.js'
 import { PendingInteractions } from '../interactions.js'
 import { describeOutgoingMessage } from '../outgoing.js'
 import { toWorkspacePath } from '../paths.js'
@@ -164,9 +164,11 @@ export class ClaudeRunner implements AgentRunner {
         forwardSubagentText: true,
         abortController: this.abort,
         ...(this.ctx.resumeSessionId ? { resume: this.ctx.resumeSessionId } : {}),
-        // Le SDK sait résoudre son propre exécutable ; on ne l'écrase que si la
-        // configuration désigne explicitement un chemin absolu.
-        ...(isAbsolute(this.ctx.binary) ? { pathToClaudeCodeExecutable: this.ctx.binary } : {}),
+        // Toujours renseigné, jamais laissé au SDK. Sa résolution interne cherche le
+        // binaire dans le paquet plateforme `@anthropic-ai/claude-agent-sdk-<os>-<arch>`,
+        // que la release ne transporte plus : sans ce chemin, le SDK échouerait sur
+        // « Native CLI binary not found » au lieu d'utiliser le CLI du système.
+        pathToClaudeCodeExecutable: resolveBinary(this.ctx.binary) ?? this.ctx.binary,
         canUseTool: this.handleToolRequest,
         onElicitation: this.handleElicitation,
         stderr: (data) => {
