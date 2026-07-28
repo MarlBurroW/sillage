@@ -20,12 +20,8 @@ import {
   type ConversationStatus,
 } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
-import { MessageBubble } from '../components/chat/MessageBubble'
-import { ElicitationPrompt } from '../components/chat/ElicitationPrompt'
-import { PermissionPrompt } from '../components/chat/PermissionPrompt'
-import { PlanReview } from '../components/chat/PlanReview'
-import { QuestionPrompt } from '../components/chat/QuestionPrompt'
-import { ToolCall, ToolCallGroup } from '../components/chat/ToolCall'
+import { ChatThread } from '../components/chat/ChatThread'
+import { SubAgentBar } from '../components/chat/SubAgentBar'
 import { Composer } from '../components/chat/Composer'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
@@ -49,10 +45,11 @@ import {
   useAllConversations,
   useConversation,
 } from '../lib/conversations'
-import { setPanelOpen, usePanelPresence } from '../lib/panel'
+import { clearSubAgent, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useCurrentUser } from '../lib/session'
 import { useSidebarHidden } from '../lib/sidebar'
 import { describeActivity, type MessageItem } from '../lib/chat-fold'
+import { buildSubAgents } from '../lib/subagents'
 import { buildRows } from '../lib/tool-rows'
 import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
@@ -101,6 +98,11 @@ export function ConversationPage() {
 
   const turns = useMemo(() => buildTurns(stream.state.items), [stream.state.items])
   const rows = useMemo(() => buildRows(stream.state.items), [stream.state.items])
+  const subAgents = useMemo(() => buildSubAgents(stream.state.items), [stream.state.items])
+  const runningSubAgents = useMemo(
+    () => subAgents.filter((agent) => agent.status === 'running'),
+    [subAgents],
+  )
   const [usageOpen, setUsageOpen] = useState(false)
   const [forking, setForking] = useState(false)
   /** Message dont le fork est proposé : le geste est trop peu courant pour être direct. */
@@ -215,6 +217,10 @@ export function ConversationPage() {
       console.error('Resynchronisation du transcript CLI impossible :', err)
     })
   }, [conversationId, conversation?.agent, conversation?.isOwner])
+
+  // Un appel de spawn n'existe que dans son fil : gardée d'une conversation à l'autre,
+  // la sélection ouvrirait le panneau sur un sous-agent introuvable.
+  useEffect(() => clearSubAgent, [conversationId])
 
   // L'anneau s'efface tout seul. Sans ça, il resterait sur un message qu'on a quitté
   // depuis longtemps et cesserait de vouloir dire « c'est là que tu viens d'arriver ».
@@ -622,97 +628,14 @@ export function ConversationPage() {
               />
             ) : null}
 
-            {rows.map((row) => {
-              if (row.kind === 'tool-group') {
-                return <ToolCallGroup key={row.key} nodes={row.nodes} />
-              }
-              if (row.kind === 'tool') {
-                return <ToolCall key={row.key} node={row.node} />
-              }
-
-              const item = row.item
-              switch (item.kind) {
-                case 'message':
-                  // `data-seq` sur les deux rôles : un résultat de recherche peut viser
-                  // une réponse de l'agent. L'ancre de tour, elle, ne concerne que les
-                  // messages utilisateur, qui délimitent les tours dans la réglette.
-                  return (
-                    <div
-                      key={item.id}
-                      data-seq={item.seq}
-                      className={cx(flashed === item.id && 'sg-flash-turn')}
-                      ref={
-                        item.role === 'user'
-                          ? (node) => {
-                              if (!node) return
-                              turnAnchors.current.set(item.id, node)
-                              // Corps en bloc : `Map.delete` renvoie un booléen, or React
-                              // attend une fonction de nettoyage sans valeur de retour.
-                              return () => {
-                                turnAnchors.current.delete(item.id)
-                              }
-                            }
-                          : undefined
-                      }
-                    >
-                      <MessageBubble
-                        message={item}
-                        onFork={item.role === 'user' && isOwner && !forking ? setForkTarget : undefined}
-                      />
-                    </div>
-                  )
-                case 'permission':
-                  return (
-                    <PermissionPrompt
-                      key={item.id}
-                      conversationId={conversationId}
-                      permission={item}
-                      canDecide={isOwner}
-                    />
-                  )
-                case 'question':
-                  return (
-                    <QuestionPrompt
-                      key={item.id}
-                      conversationId={conversationId}
-                      item={item}
-                      canDecide={isOwner}
-                    />
-                  )
-                case 'elicitation':
-                  return (
-                    <ElicitationPrompt
-                      key={item.id}
-                      conversationId={conversationId}
-                      item={item}
-                      canDecide={isOwner}
-                    />
-                  )
-                case 'plan':
-                  return (
-                    <PlanReview
-                      key={item.id}
-                      conversationId={conversationId}
-                      item={item}
-                      canDecide={isOwner}
-                    />
-                  )
-                case 'error':
-                  return (
-                    <Banner key={item.id} tone={item.recoverable ? 'caution' : 'critical'}>
-                      {item.message}
-                    </Banner>
-                  )
-                case 'notice':
-                  return (
-                    <div key={item.id} className="flex items-center gap-3 py-1">
-                      <span className="h-px flex-1 bg-line" />
-                      <span className="text-[0.6875rem] text-ink-faint">{item.text}</span>
-                      <span className="h-px flex-1 bg-line" />
-                    </div>
-                  )
-              }
-            })}
+            <ChatThread
+              rows={rows}
+              conversationId={conversationId}
+              canDecide={isOwner}
+              onFork={isOwner && !forking ? setForkTarget : undefined}
+              flashedId={flashed}
+              anchors={turnAnchors}
+            />
 
             {activity ? <TurnActivity label={activity} /> : null}
 
@@ -761,6 +684,10 @@ export function ConversationPage() {
             </>
           ) : null}
 
+          {/* Entre le fil et la barre de saisie : c'est la dernière chose qu'on voit
+              avant d'écrire, et elle reste en place quand on remonte lire le fil. */}
+          <SubAgentBar agents={runningSubAgents} />
+
           <Composer
             key={conversationId}
             initialText={draft}
@@ -799,6 +726,8 @@ export function ConversationPage() {
             conversationId={conversationId}
             editTurns={stream.state.editTurns}
             turnRunning={stream.state.turnRunning}
+            subAgents={subAgents}
+            canDecide={isOwner}
             open={panel.open}
           />
         </Suspense>
