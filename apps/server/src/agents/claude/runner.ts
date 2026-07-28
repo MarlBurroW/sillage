@@ -20,7 +20,6 @@ import {
   type PlanFollowUpOption,
 } from '@sillage/protocol'
 import { AsyncQueue } from '../async-queue.js'
-import { resolveBinary } from '../cli-binary.js'
 import { PendingInteractions } from '../interactions.js'
 import { describeOutgoingMessage } from '../outgoing.js'
 import { toWorkspacePath } from '../paths.js'
@@ -168,7 +167,7 @@ export class ClaudeRunner implements AgentRunner {
         // binaire dans le paquet plateforme `@anthropic-ai/claude-agent-sdk-<os>-<arch>`,
         // que la release ne transporte plus : sans ce chemin, le SDK échouerait sur
         // « Native CLI binary not found » au lieu d'utiliser le CLI du système.
-        pathToClaudeCodeExecutable: resolveBinary(this.ctx.binary) ?? this.ctx.binary,
+        pathToClaudeCodeExecutable: this.ctx.binary,
         canUseTool: this.handleToolRequest,
         onElicitation: this.handleElicitation,
         stderr: (data) => {

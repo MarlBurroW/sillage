@@ -14,6 +14,7 @@ import {
   type SillageEvent,
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
+import { resolveBinary } from '../agents/cli-binary.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -388,7 +389,11 @@ export class SessionManager {
       conversationId,
       cwd: this.resolveCwd(conversation),
       config: parseAgentConfig(conversation.config),
-      binary: adapter.binary,
+      // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
+      // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Sillage
+      // installe les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc
+      // les installations faites depuis l'interface.
+      binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
       resumeSessionId: conversation.agentSessionId,
 

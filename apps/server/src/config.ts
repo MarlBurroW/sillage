@@ -43,6 +43,14 @@ export interface Paths {
   data: string
   database: string
   attachments: string
+  /**
+   * Préfixe npm où Sillage installe les CLI qu'il gère lui-même.
+   *
+   * Sous le répertoire de données, et non ailleurs : en Docker c'est déjà le volume
+   * monté, donc les CLI survivent au remplacement du conteneur sans qu'il faille en
+   * monter un second, et le dossier appartient déjà à l'utilisateur du service.
+   */
+  agents: string
   worktrees: string
   logs: string
   webRoot: string
@@ -76,6 +84,7 @@ function resolvePaths(): Paths {
     data,
     database: join(data, 'sillage.db'),
     attachments: join(data, 'attachments'),
+    agents: join(data, 'agents'),
     worktrees: join(data, 'worktrees'),
     logs: join(data, 'logs'),
     webRoot: process.env.SILLAGE_WEB_ROOT ?? join(import.meta.dirname, '../../web/dist'),

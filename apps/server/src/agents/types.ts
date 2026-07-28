@@ -45,10 +45,12 @@ export interface RunnerContext {
   cwd: string
   config: AgentConfig
   /**
-   * Exécutable du CLI, tel que la configuration le déclare. Ne jamais réécrire en dur
-   * le nom du binaire dans un runner : sous systemd le PATH est minimal, et pointer
-   * sur un chemin absolu est la seule façon fiable de lancer un CLI installé dans
-   * ~/.local/bin.
+   * Exécutable du CLI, déjà résolu en chemin absolu quand il a pu l'être.
+   *
+   * Ne jamais le re-résoudre ni réécrire en dur le nom du binaire dans un runner : sous
+   * systemd le PATH est minimal, et la résolution tient compte du préfixe où Sillage
+   * installe les CLI qu'il gère, que `spawn` ne connaît pas. Reste le nom configuré
+   * quand rien n'a été trouvé, pour que l'échec porte le nom demandé.
    */
   binary: string
   /** Racine de stockage des pièces jointes, à autoriser en lecture pour l'agent. */

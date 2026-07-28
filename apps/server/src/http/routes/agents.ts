@@ -1,9 +1,15 @@
 import type { FastifyInstance } from 'fastify'
+import { TESTED_CLI_RELEASES } from '@sillage/protocol'
+import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
 import { HttpError } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-export function registerAgentRoutes(app: FastifyInstance, registry: AgentRegistry): void {
+export function registerAgentRoutes(
+  app: FastifyInstance,
+  registry: AgentRegistry,
+  installer: CliInstaller,
+): void {
   /** Le nom du CLI vient de l'URL : un inconnu vaut 404, pas un défaut silencieux. */
   const resolveAdapter = (params: unknown): AgentAdapter => {
     const { agent } = params as { agent: string }
@@ -27,7 +33,35 @@ export function registerAgentRoutes(app: FastifyInstance, registry: AgentRegistr
     // En parallèle : chaque sonde absente coûte une résolution de PATH, chaque sonde
     // présente un lancement de process, et les faire à la queue leu leu ferait attendre
     // l'écran pour rien.
-    return { agents: await Promise.all(registry.all().map((a) => a.cli.describe(force))) }
+    const agents = await Promise.all(
+      registry.all().map(async (adapter) => ({
+        ...(await adapter.cli.describe(force)),
+        testedVersion: TESTED_CLI_RELEASES[adapter.kind].version,
+        install: installer.state(adapter.kind),
+      })),
+    )
+    return { agents }
+  })
+
+  /**
+   * Installe la version testée d'un CLI dans le préfixe que Sillage gère.
+   *
+   * Répond avant la fin : le paquet pèse plusieurs centaines de mégaoctets, et attendre
+   * dans la requête la ferait dépendre de la patience d'un proxy. L'avancement se lit
+   * sur `GET /api/agents`.
+   */
+  app.post('/api/agents/:agent/install', async (request, reply) => {
+    requireUser(request)
+    const adapter = resolveAdapter(request.params)
+
+    if (!installer.start(adapter.kind)) {
+      throw new HttpError(
+        409,
+        'install_in_progress',
+        `Une installation de ${adapter.label} est déjà en cours.`,
+      )
+    }
+    return reply.status(202).send(installer.state(adapter.kind))
   })
 
   /**

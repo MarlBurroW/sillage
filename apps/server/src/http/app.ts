@@ -5,6 +5,7 @@ import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentRegistry } from '../agents/registry.js'
+import { CliInstaller } from '../agents/cli-install.js'
 import type { AttachmentStore } from '../attachments/store.js'
 import { SESSION_COOKIE, resolveSession } from '../auth/sessions.js'
 import type { EventLog } from '../events/event-log.js'
@@ -89,7 +90,7 @@ export async function buildApp(
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)
-  registerAgentRoutes(app, registry)
+  registerAgentRoutes(app, registry, new CliInstaller(ctx.config.paths.agents))
   registerWorktreeRoutes(app, ctx)
   registerUserRoutes(app, ctx)
   registerAttachmentRoutes(app, attachments)

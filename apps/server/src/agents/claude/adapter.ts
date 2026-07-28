@@ -58,7 +58,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = config.agents.claude.binary
-    this.cli = new CliBinary('claude', this.binary, config.agents.claude.enabled)
+    this.cli = new CliBinary('claude', this.binary, config.agents.claude.enabled, config.paths.agents)
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
