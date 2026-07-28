@@ -1,4 +1,10 @@
-import type { AgentConfig, AgentKind, AgentUsage, EditDiffDto } from '@sillage/protocol'
+import type {
+  AgentCapabilities,
+  AgentConfig,
+  AgentKind,
+  AgentUsage,
+  EditDiffDto,
+} from '@sillage/protocol'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
 import { ClaudeAdapter } from './claude/adapter.js'
@@ -40,6 +46,11 @@ export interface AgentAdapter {
    * absolu est la seule façon fiable de lancer un CLI installé dans ~/.local/bin.
    */
   readonly binary: string
+  /**
+   * Capacités annoncées, tirées de la table partagée du protocole : l'UI s'en sert
+   * pour ne pas proposer un geste refusé, le runner garde le refus comme filet.
+   */
+  readonly capabilities: AgentCapabilities
   createRunner(ctx: RunnerContext): AgentRunner
   /**
    * Point de coupe natif d'un fork, lu depuis le journal. Opaque hors de

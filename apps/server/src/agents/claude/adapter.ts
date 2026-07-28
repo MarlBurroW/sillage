@@ -1,5 +1,6 @@
 import { forkSession } from '@anthropic-ai/claude-agent-sdk'
 import {
+  AGENT_CAPABILITIES,
   CLI_DEFAULT,
   type AgentConfig,
   type AgentUsage,
@@ -31,6 +32,7 @@ export class ClaudeAdapter implements AgentAdapter {
   readonly kind = 'claude' as const
   readonly label = 'Claude Code'
   readonly binary: string
+  readonly capabilities = AGENT_CAPABILITIES.claude
 
   /**
    * Un seul exemplaire de chaque sonde par daemon : catalogue et lecteur de quota

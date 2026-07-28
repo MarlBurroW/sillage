@@ -2,8 +2,9 @@ import { Check, History } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  DEFAULT_CLAUDE_CONFIG,
-  DEFAULT_CODEX_CONFIG,
+  AGENT_CAPABILITIES,
+  agentKindSchema,
+  defaultConfigFor,
   type AgentConfig,
   type AgentKind,
 } from '@sillage/protocol'
@@ -65,11 +66,10 @@ export function DraftConversationPage() {
 
   // Valeur de départ seulement : le CLI reste modifiable tant que rien n'est envoyé.
   // Sans ça, le « + » de la sidebar enfermerait sur le CLI du dernier fil.
-  const requested = params.get('agent')
-  const suggested: AgentKind =
-    requested === 'claude' || requested === 'codex'
-      ? requested
-      : (conversations?.find((c) => c.projectId === projectId)?.agent ?? 'claude')
+  const requested = agentKindSchema.safeParse(params.get('agent'))
+  const suggested: AgentKind = requested.success
+    ? requested.data
+    : (conversations?.find((c) => c.projectId === projectId)?.agent ?? 'claude')
 
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
   const agent = chosenAgent ?? suggested
@@ -79,7 +79,7 @@ export function DraftConversationPage() {
   const { data: projects } = useProjects()
   const project = projects?.find((p) => p.id === projectId)
 
-  const defaults = agent === 'claude' ? DEFAULT_CLAUDE_CONFIG : DEFAULT_CODEX_CONFIG
+  const defaults = defaultConfigFor(agent)
   // Une configuration Claude n'a aucun sens pour Codex : elle est abandonnée dès que
   // le CLI change, plutôt que conservée et rejetée par le serveur.
   const effective = useMemo(
@@ -87,9 +87,12 @@ export function DraftConversationPage() {
     [config, agent, defaults],
   )
 
-  // Chargées seulement quand Claude est le CLI retenu : Codex n'a pas d'équivalent.
+  // Chargées seulement quand le CLI retenu persiste des sessions locales relisibles.
   // Un worktree écarte la liste : ces sessions vivent dans le dossier racine du projet.
-  const { data: cliSessions } = useClaudeSessions(projectId, agent === 'claude' && !worktreeId)
+  const { data: cliSessions } = useClaudeSessions(
+    projectId,
+    AGENT_CAPABILITIES[agent].cliSessions && !worktreeId,
+  )
   const cliSessionList = worktreeId ? [] : (cliSessions?.sessions ?? [])
   const importSession = useImportClaudeSession(projectId ?? '')
 
@@ -199,10 +202,10 @@ export function DraftConversationPage() {
           {/* Sessions commencées au CLI dans ce dossier : plutôt qu'une nouvelle
               conversation, on peut adopter l'une d'elles. Importer ne copie rien,
               c'est la même session, qui reste reprenable avec `claude --resume`. */}
-          {agent === 'claude' && cliSessionList.length > 0 ? (
+          {AGENT_CAPABILITIES[agent].cliSessions && cliSessionList.length > 0 ? (
             <section className="flex flex-col gap-1.5">
               <h2 className="text-xs font-medium text-ink-soft">
-                Ou reprendre une session Claude Code
+                Ou reprendre une session {AGENT_LABELS[agent]}
               </h2>
               <p className="text-xs leading-snug text-ink-faint">
                 Commencées avec le CLI dans ce dossier. La conversation continue la même

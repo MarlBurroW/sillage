@@ -1,4 +1,5 @@
 import {
+  AGENT_CAPABILITIES,
   CLI_DEFAULT,
   type AgentConfig,
   type AgentUsage,
@@ -34,6 +35,7 @@ export class CodexAdapter implements AgentAdapter {
   readonly kind = 'codex' as const
   readonly label = 'Codex'
   readonly binary: string
+  readonly capabilities = AGENT_CAPABILITIES.codex
 
   private readonly catalog: CodexModelCatalog
   private readonly usageReader: CodexUsageReader

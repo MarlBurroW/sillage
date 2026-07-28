@@ -190,7 +190,16 @@ export function parseAgentConfig(stored: string): AgentConfig {
   return agentConfigSchema.parse(JSON.parse(stored))
 }
 
+/**
+ * Table plutôt que ternaire : un CLI ajouté à l'enum sans sa ligne ici ne compile
+ * pas, là où le ternaire binaire lui aurait attribué les défauts Codex en silence.
+ */
+export const DEFAULT_CONFIGS: Record<AgentConfig['agent'], AgentConfig> = {
+  claude: DEFAULT_CLAUDE_CONFIG,
+  codex: DEFAULT_CODEX_CONFIG,
+}
+
 export function defaultConfigFor(agent: AgentConfig['agent']): AgentConfig {
-  return agent === 'claude' ? DEFAULT_CLAUDE_CONFIG : DEFAULT_CODEX_CONFIG
+  return DEFAULT_CONFIGS[agent]
 }
 

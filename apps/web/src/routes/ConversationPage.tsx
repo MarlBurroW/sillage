@@ -13,7 +13,12 @@ import {
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { agentConfigSchema, type AgentConfig, type ConversationStatus } from '@sillage/protocol'
+import {
+  AGENT_CAPABILITIES,
+  agentConfigSchema,
+  type AgentConfig,
+  type ConversationStatus,
+} from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { MessageBubble } from '../components/chat/MessageBubble'
 import { ElicitationPrompt } from '../components/chat/ElicitationPrompt'
@@ -203,7 +208,8 @@ export function ConversationPage() {
    * direct, donc il n'y a rien à recharger.
    */
   useEffect(() => {
-    if (!conversationId || conversation?.agent !== 'claude' || !conversation.isOwner) return
+    if (!conversationId || !conversation?.isOwner) return
+    if (!AGENT_CAPABILITIES[conversation.agent].cliSessions) return
     syncClaudeConversation(conversationId).catch((err: unknown) => {
       // Un rattrapage manqué n'empêche pas la conversation de vivre, mais le taire
       // rendrait indiagnosticable un fil qui semble incomplet.
@@ -766,7 +772,7 @@ export function ConversationPage() {
             // Seul Codex sait infléchir un tour (`turn/steer`). Côté Claude, un message
             // poussé en cours de tour s'y mêle au lieu de le réorienter, donc le bouton
             // n'existe pas plutôt que d'être proposé puis refusé.
-            onSteer={isOwner && conversation.agent === 'codex' ? steer : undefined}
+            onSteer={isOwner && AGENT_CAPABILITIES[conversation.agent].steer ? steer : undefined}
             onSend={send}
             onInterrupt={() => void interruptConversation(conversationId)}
             onConfigChange={(next) => void updateConfig(next)}
