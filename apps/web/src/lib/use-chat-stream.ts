@@ -134,14 +134,19 @@ export function useChatStream(
 /**
  * Réconcilie le statut poussé avec ce que dit le journal (invariant I2).
  *
- * Le statut arrive par le socket, donc un changement survenu avant l'abonnement ou
- * pendant une coupure n'est jamais rattrapé : la vue reste « en cours » alors que le
- * journal porte déjà le `turn.completed`, et la barre de saisie garde son bouton Stop.
- * Le journal fait donc foi pour l'état occupé ; les états que lui seul ne décrit pas
- * (interrompu, erreur) restent ceux du serveur.
+ * Le journal ne peut qu'ajouter de l'occupation, jamais en retirer : une sollicitation
+ * ouverte ou un tour en cours priment sur un statut qui n'est pas encore arrivé, mais
+ * un journal qui paraît au repos ne fait pas taire le serveur.
+ *
+ * Il le faisait, et ramenait tout `running` poussé à `idle` : la sidebar montrait la
+ * conversation en cours pendant que l'en-tête n'affichait rien et que la barre de saisie
+ * gardait son bouton d'envoi. Le statut du serveur est la valeur en base, poussée à
+ * chaque transition, renvoyée en instantané à chaque abonnement, et remise à
+ * `interrupted` au démarrage du daemon pour les conversations qu'un arrêt brutal avait
+ * laissées en cours. Rien ne justifie de le contredire.
  */
 function reconcileStatus(pushed: ConversationStatus, state: ChatState): ConversationStatus {
   if (state.items.some(isAwaitingUser)) return 'awaiting_input'
   if (state.turnRunning) return 'running'
-  return pushed === 'running' || pushed === 'awaiting_input' ? 'idle' : pushed
+  return pushed
 }

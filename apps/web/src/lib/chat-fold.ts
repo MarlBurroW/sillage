@@ -491,6 +491,18 @@ export function applyEvent(
   ts: number,
   event: SillageEvent,
 ): ChatState {
+  // Un tour se reconnaît à ce qu'il produit, pas seulement à son marqueur d'ouverture.
+  //
+  // `turn.started` n'est émis que quand Sillage envoie un message, alors que
+  // `turn.completed` l'est à chaque `result` du CLI : un redémarrage de session laisse
+  // donc des complétions orphelines, et le fil se croyait au repos pendant que l'agent
+  // travaillait, sans bouton Stop ni indicateur d'activité. Du texte qui arrive ou un
+  // outil qui démarre prouvent le contraire, et `turn.completed` refermera de toute
+  // façon.
+  if (event.type === 'message.delta' || event.type === 'tool.started') {
+    state.turnRunning = true
+  }
+
   switch (event.type) {
     case 'session.started': {
       // Le CLI ré-émet son init quand le modèle change en cours de session : c'est
