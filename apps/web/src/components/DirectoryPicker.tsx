@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from 'react'
 import { ApiRequestError } from '../lib/api'
 import { breadcrumbSegments, useDirectoryListing } from '../lib/fs'
+import { useTranslate } from '../lib/i18n'
 import { Badge, Banner, Button, IconButton, cx } from './ui'
 
 interface DirectoryPickerProps {
@@ -29,6 +30,7 @@ export function DirectoryPicker({
   initialPath,
   onConfirm,
 }: DirectoryPickerProps) {
+  const t = useTranslate()
   // null signifie "laisse le serveur choisir", c'est-à-dire le dossier personnel.
   const [path, setPath] = useState<string | null>(initialPath || null)
   const [showHidden, setShowHidden] = useState(false)
@@ -42,7 +44,11 @@ export function DirectoryPicker({
 
   const current = listing.data
   const error =
-    listing.error instanceof ApiRequestError ? listing.error.message : listing.error ? 'Dossier illisible.' : null
+    listing.error instanceof ApiRequestError
+      ? listing.error.message
+      : listing.error
+        ? t('filetree.error.unreadable')
+        : null
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -59,16 +65,16 @@ export function DirectoryPicker({
         >
           <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2 pt-safe">
             <Dialog.Title className="flex-1 text-sm font-semibold">
-              Choisir un dossier
+              {t('directoryPicker.title')}
             </Dialog.Title>
             <IconButton
-              label={showHidden ? 'Masquer les dossiers cachés' : 'Afficher les dossiers cachés'}
+              label={showHidden ? t('directoryPicker.hidden.hide') : t('directoryPicker.hidden.show')}
               onClick={() => setShowHidden((value) => !value)}
             >
               {showHidden ? <Eye size={18} /> : <EyeOff size={18} />}
             </IconButton>
             <Dialog.Close asChild>
-              <IconButton label="Fermer">
+              <IconButton label={t('common.close')}>
                 <X size={18} />
               </IconButton>
             </Dialog.Close>
@@ -141,13 +147,13 @@ export function DirectoryPicker({
 
             {current && current.entries.length === 0 && !error ? (
               <p className="px-3 py-6 text-center text-sm text-ink-faint">
-                Aucun sous-dossier{showHidden ? '' : ' visible'} ici.
+                {showHidden ? t('directoryPicker.empty.all') : t('directoryPicker.empty.visible')}
               </p>
             ) : null}
 
             {current?.truncated ? (
               <p className="px-3 py-2 text-center text-xs text-ink-faint">
-                Listing tronqué : seuls les 500 premiers dossiers sont affichés.
+                {t('directoryPicker.truncated')}
               </p>
             ) : null}
           </div>
@@ -159,7 +165,7 @@ export function DirectoryPicker({
               </p>
               {current?.isGitRepo ? (
                 <Badge tone="accent" icon={<FolderGit2 size={11} />}>
-                  dépôt git
+                  {t('directoryPicker.gitRepo')}
                 </Badge>
               ) : null}
             </div>
@@ -172,7 +178,7 @@ export function DirectoryPicker({
                 }
               }}
             >
-              Choisir ce dossier
+              {t('directoryPicker.confirm')}
             </Button>
           </footer>
         </Dialog.Content>

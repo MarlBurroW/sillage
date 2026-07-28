@@ -5,6 +5,7 @@ import { ApiRequestError } from '../lib/api'
 import { useCreateProject, useProjects, type CreateProjectInput } from '../lib/projects'
 import { PathField } from '../components/PathField'
 import { SectionHeader } from './SettingsPage'
+import { useTranslate } from '../lib/i18n'
 import {
   Badge,
   Banner,
@@ -24,25 +25,26 @@ const EMPTY_FORM: CreateProjectInput = {
   visibility: 'private',
 }
 
-const VISIBILITY_OPTIONS: SelectOption<CreateProjectInput['visibility']>[] = [
-  {
-    value: 'private',
-    label: 'Privé',
-    icon: <Lock size={15} />,
-    hint: 'Visible par toi seul',
-  },
-  {
-    value: 'shared',
-    label: 'Partagé',
-    icon: <Globe size={15} />,
-    hint: 'Visible par tous les comptes',
-  },
-]
-
 export function ProjectsSettingsPage() {
+  const t = useTranslate()
   const { data: projects } = useProjects()
   const createProject = useCreateProject()
   const [form, setForm] = useState<CreateProjectInput>(EMPTY_FORM)
+
+  const VISIBILITY_OPTIONS: SelectOption<CreateProjectInput['visibility']>[] = [
+    {
+      value: 'private',
+      label: t('project.visibility.private'),
+      icon: <Lock size={15} />,
+      hint: t('project.visibility.private.hint'),
+    },
+    {
+      value: 'shared',
+      label: t('project.visibility.shared'),
+      icon: <Globe size={15} />,
+      hint: t('project.visibility.shared.hint'),
+    },
+  ]
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -54,46 +56,46 @@ export function ProjectsSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title="Projets" description="Un projet est un répertoire de travail et sa visibilité." />
+      <SectionHeader title={t('projects.title')} description={t('projects.description')} />
 
       <Card>
         <CardHeader
-          title="Nouveau projet"
-          description="Sillage pointe sur un dossier existant, il ne le crée pas et n'y touche pas. Le CLI se choisit à chaque conversation, pas ici."
+          title={t('projects.create.title')}
+          description={t('projects.create.description')}
           icon={<FolderOpen size={16} />}
         />
         <CardBody>
           <form onSubmit={submit} className="flex flex-col gap-4">
             <Field
-              label="Nom"
+              label={t('projects.create.name')}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="Mon projet"
+              placeholder={t('projects.create.name.placeholder')}
               required
             />
             <PathField
-              label="Dossier du workspace"
+              label={t('projects.create.workspacePath')}
               value={form.workspacePath}
               onChange={(workspacePath) => setForm({ ...form, workspacePath })}
               placeholder="/home/marlburrow/projects/mon-projet"
-              hint="Chemin absolu sur la machine hôte, ou parcours l'arborescence."
+              hint={t('projects.create.workspacePath.hint')}
             />
             <Select
-              label="Visibilité"
+              label={t('project.settings.visibility')}
               value={form.visibility}
               onChange={(visibility) => setForm({ ...form, visibility })}
               options={VISIBILITY_OPTIONS}
             />
             {createError ? <Banner>{createError}</Banner> : null}
             <Button type="submit" disabled={createProject.isPending} className="self-start">
-              {createProject.isPending ? 'Création...' : 'Créer le projet'}
+              {createProject.isPending ? t('projects.create.pending') : t('projects.create.submit')}
             </Button>
           </form>
         </CardBody>
       </Card>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-ink-soft">Existants</h2>
+        <h2 className="text-sm font-semibold text-ink-soft">{t('projects.existing.title')}</h2>
 
         {projects && projects.length > 0 ? (
           projects.map((project) => (
@@ -109,7 +111,9 @@ export function ProjectsSettingsPage() {
                       tone={project.visibility === 'shared' ? 'accent' : 'neutral'}
                       icon={project.visibility === 'shared' ? <Globe size={11} /> : <Lock size={11} />}
                     >
-                      {project.visibility === 'shared' ? 'Partagé' : 'Privé'}
+                      {project.visibility === 'shared'
+                        ? t('project.visibility.shared')
+                        : t('project.visibility.private')}
                     </Badge>
                   </div>
                   <p className="mt-0.5 truncate font-mono text-xs text-ink-faint">
@@ -132,8 +136,8 @@ export function ProjectsSettingsPage() {
           <Card>
             <EmptyState
               icon={<FolderOpen size={22} />}
-              title="Aucun projet pour le moment"
-              description="Crée-en un avec le formulaire ci-dessus."
+              title={t('projects.empty.title')}
+              description={t('projects.empty.description')}
             />
           </Card>
         )}

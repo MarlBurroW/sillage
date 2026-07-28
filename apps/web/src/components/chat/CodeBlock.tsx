@@ -2,6 +2,7 @@ import { Check, Copy, Download, WrapText } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useCopy } from '../../lib/clipboard'
 import { downloadText } from '../../lib/download'
+import { translate, useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
 
@@ -28,9 +29,9 @@ const EXTENSIONS: Record<string, string> = {
 }
 
 function filenameFor(language: string): string {
-  if (!language) return 'extrait.txt'
+  if (!language) return translate('code.filename.default')
   const extension = EXTENSIONS[language] ?? language
-  return extension === 'Dockerfile' ? 'Dockerfile' : `extrait.${extension}`
+  return extension === 'Dockerfile' ? 'Dockerfile' : translate('code.filename', { extension })
 }
 
 export function ToolbarButton({
@@ -71,29 +72,30 @@ export function ToolbarButton({
 export function CodeBlock({ language, code }: { language: string; code: string }) {
   const [wrap, setWrap] = useState(false)
   const { state, copy } = useCopy()
+  const t = useTranslate()
 
   return (
     <div className="overflow-hidden rounded-md border border-line bg-sunken">
       <div className="flex items-center gap-1 border-b border-line px-2 py-1">
         <span className="min-w-0 flex-1 truncate font-mono text-[0.6875rem] text-ink-faint">
-          {language || 'texte'}
+          {language || t('code.language.plain')}
         </span>
 
         <ToolbarButton
-          label={wrap ? 'Ne pas revenir à la ligne' : 'Revenir à la ligne'}
+          label={wrap ? t('code.wrap.disable') : t('code.wrap.enable')}
           active={wrap}
           onClick={() => setWrap((value) => !value)}
         >
           <WrapText size={13} />
         </ToolbarButton>
         <ToolbarButton
-          label="Télécharger le bloc"
+          label={t('code.download')}
           onClick={() => downloadText(filenameFor(language), code, 'text/plain')}
         >
           <Download size={13} />
         </ToolbarButton>
         <ToolbarButton
-          label={state === 'failed' ? 'Copie impossible' : 'Copier le bloc'}
+          label={state === 'failed' ? t('code.copy.failed') : t('code.copy')}
           onClick={() => copy(code)}
         >
           {state === 'copied' ? (

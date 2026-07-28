@@ -1,6 +1,7 @@
 import { KeyRound, UserRound } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { ApiRequestError } from '../lib/api'
+import { useTranslate } from '../lib/i18n'
 import { useUpdateUser } from '../lib/users'
 import { Banner, Button, Field } from './ui'
 
@@ -25,6 +26,7 @@ export function AccountForm({
   onDone?: () => void
 }) {
   const updateUser = useUpdateUser()
+  const t = useTranslate()
 
   const [form, setForm] = useState({ username, displayName })
   const [passwords, setPasswords] = useState({ current: '', next: '' })
@@ -62,7 +64,7 @@ export function AccountForm({
       {
         onSuccess: () => {
           setPasswords({ current: '', next: '' })
-          setDone(changingPassword ? 'Mot de passe changé.' : 'Compte mis à jour.')
+          setDone(changingPassword ? t('account.password.changed') : t('account.updated'))
           onDone?.()
         },
       },
@@ -76,16 +78,16 @@ export function AccountForm({
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
-          label="Nom d'utilisateur"
+          label={t('account.username.label')}
           icon={<UserRound size={16} />}
           value={form.username}
           onChange={(event) => setForm({ ...form, username: event.target.value })}
-          hint="Sert à la connexion."
+          hint={t('account.username.hint')}
           autoCapitalize="none"
           autoCorrect="off"
         />
         <Field
-          label="Nom affiché"
+          label={t('account.displayName.label')}
           value={form.displayName}
           onChange={(event) => setForm({ ...form, displayName: event.target.value })}
         />
@@ -93,26 +95,26 @@ export function AccountForm({
 
       {isSelf ? (
         <Field
-          label="Mot de passe actuel"
+          label={t('account.password.current.label')}
           type="password"
           icon={<KeyRound size={16} />}
           value={passwords.current}
           onChange={(event) => setPasswords({ ...passwords, current: event.target.value })}
-          hint="Requis seulement pour en définir un nouveau."
+          hint={t('account.password.current.hint')}
           autoComplete="current-password"
         />
       ) : null}
 
       <Field
-        label="Nouveau mot de passe"
+        label={t('account.password.next.label')}
         type="password"
         icon={<KeyRound size={16} />}
         value={passwords.next}
         onChange={(event) => setPasswords({ ...passwords, next: event.target.value })}
         hint={
           isSelf
-            ? 'Laisse vide pour ne pas le changer. Les autres appareils seront déconnectés.'
-            : 'Laisse vide pour ne pas le changer. Toutes les sessions de ce compte seront fermées.'
+            ? t('account.password.next.hint.self')
+            : t('account.password.next.hint.other')
         }
         autoComplete="new-password"
       />
@@ -121,7 +123,7 @@ export function AccountForm({
       {done && !error ? <Banner tone="positive">{done}</Banner> : null}
 
       <Button type="submit" disabled={!canSubmit} className="self-start">
-        {updateUser.isPending ? 'Enregistrement...' : 'Enregistrer'}
+        {updateUser.isPending ? t('account.save.pending') : t('account.save.action')}
       </Button>
     </form>
   )

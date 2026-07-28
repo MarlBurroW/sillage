@@ -1,5 +1,6 @@
 import { Bot, ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useTranslate } from '../../lib/i18n'
 import type { SubAgent } from '../../lib/subagents'
 import { subAgentLabel } from '../../lib/subagents'
 import { cx } from '../ui'
@@ -36,6 +37,7 @@ function useElapsed(startedAt: number, running: boolean): number {
 export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: () => void }) {
   const running = agent.status === 'running'
   const elapsed = useElapsed(agent.startedAt, running)
+  const t = useTranslate()
 
   return (
     <button
@@ -59,7 +61,9 @@ export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: ()
 
       {agent.toolCount > 0 ? (
         <span className="shrink-0 text-[0.6875rem] text-ink-faint">
-          {agent.toolCount} outil{agent.toolCount > 1 ? 's' : ''}
+          {t(agent.toolCount > 1 ? 'subagent.row.toolCount.other' : 'subagent.row.toolCount.one', {
+            count: agent.toolCount,
+          })}
         </span>
       ) : null}
 

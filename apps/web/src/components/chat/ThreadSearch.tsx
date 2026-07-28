@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { findRanges, supportsHighlight } from '../../lib/find-in-page'
+import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /** Noms des registres de surlignage, à tenir en accord avec `::highlight()` dans le CSS. */
@@ -44,6 +45,7 @@ export function ThreadSearch({
   const [index, setIndex] = useState(0)
   const ranges = useRef<Range[]>([])
   const input = useRef<HTMLInputElement>(null)
+  const t = useTranslate()
 
   // Les plages appartiennent au DOM du fil : elles ne survivent ni à sa fermeture ni à
   // un changement de conversation.
@@ -147,19 +149,23 @@ export function ThreadSearch({
             step(event.shiftKey ? -1 : 1)
           }
         }}
-        placeholder="Rechercher dans la conversation..."
+        placeholder={t('thread.search.placeholder')}
         className="h-8 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
       />
 
       <span className="shrink-0 text-xs text-ink-faint tabular-nums">
-        {query.trim() === '' ? '' : count === 0 ? 'Aucun résultat' : `${index + 1} sur ${count}`}
+        {query.trim() === ''
+          ? ''
+          : count === 0
+            ? t('thread.search.noResults')
+            : t('thread.search.position', { index: index + 1, count })}
       </span>
 
       <button
         type="button"
         onClick={() => step(-1)}
         disabled={count === 0}
-        aria-label="Occurrence précédente"
+        aria-label={t('thread.search.previous')}
         className="flex size-7 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink disabled:opacity-40"
       >
         <ChevronUp size={15} />
@@ -168,7 +174,7 @@ export function ThreadSearch({
         type="button"
         onClick={() => step(1)}
         disabled={count === 0}
-        aria-label="Occurrence suivante"
+        aria-label={t('thread.search.next')}
         className="flex size-7 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink disabled:opacity-40"
       >
         <ChevronDown size={15} />
@@ -176,7 +182,7 @@ export function ThreadSearch({
       <button
         type="button"
         onClick={onClose}
-        aria-label="Fermer la recherche"
+        aria-label={t('thread.search.close')}
         className="flex size-7 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink"
       >
         <X size={15} />

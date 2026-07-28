@@ -1,5 +1,6 @@
 import { ArrowLeft, Bot } from 'lucide-react'
 import { useMemo } from 'react'
+import { useTranslate } from '../../lib/i18n'
 import { clearSubAgent, showSubAgent } from '../../lib/panel'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
 import { buildRows } from '../../lib/tool-rows'
@@ -23,6 +24,7 @@ export function AgentsPane({
   agents: SubAgent[]
   selectedId: string | null
 }) {
+  const t = useTranslate()
   const selected = agents.find((agent) => agent.id === selectedId) ?? null
 
   if (selected) {
@@ -35,8 +37,8 @@ export function AgentsPane({
     return (
       <div className="flex min-h-0 flex-1 items-center p-4">
         <EmptyState
-          title="Aucun sous-agent"
-          description="Les agents lancés par la conversation apparaîtront ici, avec leur fil complet."
+          title={t('subagent.pane.empty.title')}
+          description={t('subagent.pane.empty.description')}
         />
       </div>
     )
@@ -62,6 +64,7 @@ function SubAgentThread({
   agent: SubAgent
   onBack: () => void
 }) {
+  const t = useTranslate()
   const rows = useMemo(() => buildRows(agent.items, agent.id), [agent.items, agent.id])
 
   return (
@@ -70,7 +73,7 @@ function SubAgentThread({
         <button
           type="button"
           onClick={onBack}
-          aria-label="Revenir à la liste des sous-agents"
+          aria-label={t('subagent.pane.back')}
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-ink"
         >
           <ArrowLeft size={15} />
@@ -90,8 +93,8 @@ function SubAgentThread({
             {/* Le CLI transmet le travail du sous-agent au fil de l'eau : entre le
                 lancement et son premier mot, il n'y a rien à montrer. */}
             {agent.status === 'running'
-              ? 'Le sous-agent démarre...'
-              : "Ce sous-agent n'a rien transmis."}
+              ? t('subagent.pane.starting')
+              : t('subagent.pane.silent')}
           </p>
         ) : (
           <ChatThread rows={rows} conversationId={conversationId} />

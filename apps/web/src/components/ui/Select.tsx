@@ -1,6 +1,7 @@
 import * as RadixSelect from '@radix-ui/react-select'
 import { Check, ChevronDown } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useTranslate } from '../../lib/i18n'
 import { cx } from './cx'
 
 export interface SelectOption<T extends string> {
@@ -57,12 +58,13 @@ export function Select<T extends string>({
   onChange,
   options,
   label,
-  placeholder = 'Choisir...',
+  placeholder,
   disabled,
   variant = 'field',
   tone = 'neutral',
   className,
 }: SelectProps<T>) {
+  const t = useTranslate()
   const selected = options.find((option) => option.value === value)
 
   return (
@@ -95,7 +97,11 @@ export function Select<T extends string>({
             </span>
           ) : null}
           <span className="min-w-0 truncate">
-            <RadixSelect.Value placeholder={<span className="text-ink-faint">{placeholder}</span>} />
+            <RadixSelect.Value
+              placeholder={
+                <span className="text-ink-faint">{placeholder ?? t('common.select.placeholder')}</span>
+              }
+            />
           </span>
           <RadixSelect.Icon
             className={cx(

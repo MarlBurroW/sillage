@@ -541,4 +541,197 @@ export const fr: Catalog = {
   // Sous-agents
   'subagent.bar.count.one': '{count} sous-agent en cours',
   'subagent.bar.count.other': '{count} sous-agents en cours',
+
+  // Réglages : apparence et langue
+  'settings.appearance.title': 'Apparence',
+  'settings.appearance.description': "Mémorisé sur cet appareil : régler ici ne change rien sur les autres.",
+  'settings.language.title': 'Langue',
+  'settings.language.description': "S'applique à l'interface. Les messages écrits par les CLI restent dans leur langue.",
+  'settings.theme.title': 'Thème et couleurs',
+  'settings.theme.description': "La teinte pilote les surfaces et l'accent.",
+
+  // Activité du fil (compaction, écriture, outils, changement de modèle)
+  'activity.compaction.done': 'Contexte résumé',
+  'activity.compaction.doneWithPre': 'Contexte résumé, {tokens} tokens avant',
+  'activity.compaction.doneWithBoth': 'Contexte résumé, {pre} vers {post} tokens',
+  'activity.compacting': 'Compaction du contexte',
+  'activity.compacting.tokens': 'Compaction du contexte, {tokens} tokens',
+  'activity.writing': 'Rédaction',
+  'activity.toolRunning': '{name} en cours',
+  'activity.turn.noMessage': 'Sans message',
+  'activity.modelChanged': 'Modèle passé à {model}',
+
+  // Projets (réglages)
+  'projects.title': 'Projets',
+  'projects.description': 'Un projet est un répertoire de travail et sa visibilité.',
+  'projects.create.title': 'Nouveau projet',
+  'projects.create.description':
+    "Sillage pointe sur un dossier existant, il ne le crée pas et n'y touche pas. Le CLI se choisit à chaque conversation, pas ici.",
+  'projects.create.name': 'Nom',
+  'projects.create.name.placeholder': 'Mon projet',
+  'projects.create.workspacePath': 'Dossier du workspace',
+  'projects.create.workspacePath.hint': "Chemin absolu sur la machine hôte, ou parcours l'arborescence.",
+  'projects.create.pending': 'Création...',
+  'projects.create.submit': 'Créer le projet',
+  'projects.existing.title': 'Existants',
+  'projects.empty.title': 'Aucun projet pour le moment',
+  'projects.empty.description': 'Crée-en un avec le formulaire ci-dessus.',
+
+  // Question de l'agent
+  'question.status.answered': 'Répondu',
+  'question.status.cancelled': 'Sans réponse',
+  'question.status.expired': 'Expiré',
+  'question.prompt.title': "L'agent te demande de choisir",
+  'question.prompt.pastTitle': "Question de l'agent",
+  'question.other.placeholderWithOptions': 'Autre réponse...',
+  'question.other.placeholder': 'Écris ta réponse...',
+  'question.error.generic': 'Réponse impossible.',
+  'question.submit': 'Envoyer',
+  'question.skip': 'Ne pas répondre',
+  'question.ownerOnly': 'Seul le propriétaire de la conversation peut répondre.',
+
+  // Compte (réglages)
+  'account.password.changed': 'Mot de passe changé.',
+  'account.updated': 'Compte mis à jour.',
+  'account.username.label': "Nom d'utilisateur",
+  'account.username.hint': 'Sert à la connexion.',
+  'account.displayName.label': 'Nom affiché',
+  'account.password.current.label': 'Mot de passe actuel',
+  'account.password.current.hint': 'Requis seulement pour en définir un nouveau.',
+  'account.password.next.label': 'Nouveau mot de passe',
+  'account.password.next.hint.self': 'Laisse vide pour ne pas le changer. Les autres appareils seront déconnectés.',
+  'account.password.next.hint.other':
+    'Laisse vide pour ne pas le changer. Toutes les sessions de ce compte seront fermées.',
+  'account.save.pending': 'Enregistrement...',
+  'account.save.action': 'Enregistrer',
+
+  // Apparence (réglages fins)
+  'appearance.hue.title': 'Teinte',
+  'appearance.hue.hint': "Partagée avec la couleur d'accent",
+  'appearance.tint.title': 'Intensité',
+  'appearance.tint.hint': 'Chroma des surfaces, sans toucher aux accents',
+  'appearance.lift.title': 'Luminosité',
+  'appearance.lift.hint': 'Éclaircit ou assombrit le shading, texte inchangé',
+  'appearance.readingSize.title': 'Taille du texte',
+  'appearance.readingSize.hint': 'Messages du fil uniquement',
+  'appearance.readingLeading.title': 'Interligne',
+  'appearance.readingLeading.hint': "Air entre les lignes d'un paragraphe",
+  'appearance.readingSoftness.title': 'Douceur du texte',
+  'appearance.readingSoftness.hint': 'Rapproche l\'encre du gris : moins dur sur fond très sombre',
+  'appearance.reset': 'Défaut',
+
+  // Notifications push
+  'push.insecure':
+    "Les notifications exigent une connexion HTTPS. Le navigateur ne donne accès ni au service worker ni à l'API Push en clair.",
+  'push.unsupported': 'Ce navigateur ne gère pas les notifications push.',
+  'push.description':
+    "Prévenu quand un agent réclame une décision, ou termine un tour pendant que tu regardes ailleurs. Rien n'est envoyé tant que la conversation est ouverte sous tes yeux.",
+  'push.disable': 'Désactiver sur cet appareil',
+  'push.enable': 'Activer sur cet appareil',
+
+  // Permissions (demandes de l'agent)
+  'permission.status.allowed': 'Autorisé',
+  'permission.status.denied': 'Refusé',
+  'permission.status.expired': 'Expiré',
+  'permission.error.generic': 'Décision impossible.',
+  'permission.title.pending': '{tool} demande une autorisation',
+  'permission.title.past': 'Autorisation pour {tool}',
+  'permission.allow': 'Autoriser',
+  'permission.allowSession': 'Autoriser pour la session',
+  'permission.deny': 'Refuser',
+  'permission.ownerOnly': 'Seul le propriétaire de la conversation peut décider.',
+
+  // Vue terminal
+  'terminal.view.shellExited': "Le shell s'est terminé (code {code}).",
+  'terminal.view.connectionFailed': 'Connexion au terminal impossible.',
+  'terminal.view.sessionExpired': 'Session expirée, reconnecte-toi.',
+  'terminal.view.conversationNotFound': 'Conversation introuvable.',
+  'terminal.view.copy.copied': 'Copié',
+  'terminal.view.copy.failed': 'Échec',
+  'terminal.view.copy.action': 'Copier',
+  'terminal.view.paste.action': 'Coller',
+  'terminal.view.key.escape': 'Échap',
+  'terminal.view.paste.hint': 'Colle ici avec ton raccourci habituel ou un appui long, puis envoie.',
+  'terminal.view.paste.send': 'Envoyer au terminal',
+
+  // Éditeur - recherche et remplacement
+  'editor.search.find': 'Rechercher',
+  'editor.search.replace': 'Remplacer',
+  'editor.search.next': 'Suivant',
+  'editor.search.previous': 'Précédent',
+  'editor.search.all': 'Tout',
+  'editor.search.matchCase': 'Respecter la casse',
+  'editor.search.byWord': 'Mot entier',
+  'editor.search.regexp': 'Expression régulière',
+  'editor.search.replaceAction': 'Remplacer',
+  'editor.search.replaceAll': 'Tout remplacer',
+  'editor.search.close': 'Fermer',
+  'editor.search.currentMatch': 'Occurrence courante',
+  'editor.search.replacedMatches': '$ occurrences remplacées',
+  'editor.search.replacedMatchOnLine': 'occurrence remplacée ligne $',
+  'editor.search.onLine': 'ligne',
+
+  // Sélecteur de dossier
+  'directoryPicker.title': 'Choisir un dossier',
+  'directoryPicker.hidden.hide': 'Masquer les dossiers cachés',
+  'directoryPicker.hidden.show': 'Afficher les dossiers cachés',
+  'directoryPicker.empty.all': 'Aucun sous-dossier ici.',
+  'directoryPicker.empty.visible': 'Aucun sous-dossier visible ici.',
+  'directoryPicker.truncated': 'Listing tronqué : seuls les 500 premiers dossiers sont affichés.',
+  'directoryPicker.gitRepo': 'dépôt git',
+  'directoryPicker.confirm': 'Choisir ce dossier',
+
+  // Panneau des sous-agents
+  'subagent.pane.empty.title': 'Aucun sous-agent',
+  'subagent.pane.empty.description':
+    'Les agents lancés par la conversation apparaîtront ici, avec leur fil complet.',
+  'subagent.pane.back': 'Revenir à la liste des sous-agents',
+  'subagent.pane.starting': 'Le sous-agent démarre...',
+  'subagent.pane.silent': "Ce sous-agent n'a rien transmis.",
+  'subagent.row.toolCount.one': '{count} outil',
+  'subagent.row.toolCount.other': '{count} outils',
+
+  // Aperçu de lecture (design system)
+  'readingPreview.question': "Pourquoi le fichier `.env` s'affichait-il sans couleur ?",
+  'readingPreview.answer':
+    "Parce que `extname('.env')` rend une chaîne vide : pour Node, un fichier\nqui commence par un point n'a pas d'extension, il a un **nom**.\n\nDeux conséquences :\n\n- aucun mode n'était trouvé, donc aucune coloration ;\n- les commentaires eux-mêmes passaient en texte brut.\n\nLe mode se décide maintenant sur le nom du fichier.",
+
+  // Rendu des appels d'outils (payload et groupes)
+  'toolcall.payload.input': 'Entrée',
+  'toolcall.payload.output': 'Sortie',
+  'toolcall.payload.empty': '(vide)',
+  'toolcall.subagent.view': 'Voir le fil du sous-agent',
+  'toolcall.view.readable': 'Lisible',
+  'toolcall.view.raw': 'Brut',
+  'toolcall.group.count.one': '{count} outil',
+  'toolcall.group.count.other': '{count} outils',
+  'toolcall.group.failed.one': '{count} échec',
+  'toolcall.group.failed.other': '{count} échecs',
+
+  // CLI agents - présentation
+  'agent.blurb.claude': 'Sous-agents, mode plan, permissions demandées outil par outil.',
+  'agent.blurb.codex': 'Mode plan, exécution en bac à sable, approbations groupées.',
+
+  // Bloc de code
+  'code.filename.default': 'extrait.txt',
+  'code.filename': 'extrait.{extension}',
+  'code.language.plain': 'texte',
+  'code.wrap.disable': 'Ne pas revenir à la ligne',
+  'code.wrap.enable': 'Revenir à la ligne',
+  'code.download': 'Télécharger le bloc',
+  'code.copy': 'Copier le bloc',
+  'code.copy.failed': 'Copie impossible',
+
+  // Recherche dans le fil et navigation par tours
+  'thread.search.placeholder': 'Rechercher dans la conversation...',
+  'thread.search.noResults': 'Aucun résultat',
+  'thread.search.position': '{index} sur {count}',
+  'thread.search.previous': 'Occurrence précédente',
+  'thread.search.next': 'Occurrence suivante',
+  'thread.search.close': 'Fermer la recherche',
+  'turn.nav.previous': 'Tour précédent',
+  'turn.nav.next': 'Tour suivant',
+
+  // Commun
+  'common.select.placeholder': 'Choisir...',
 }

@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import type { AgentKind } from '@sillage/protocol'
+import { translate } from '../lib/i18n'
 
 /** Couleurs de marque, appliquées partout où le logo apparaît. */
 const BRAND: Record<AgentKind, string> = {
@@ -66,13 +67,13 @@ export const AGENT_META: Record<AgentKind, AgentMeta> = {
   claude: {
     label: 'Claude Code',
     vendor: 'Anthropic',
-    blurb: 'Sous-agents, mode plan, permissions demandées outil par outil.',
+    blurb: translate('agent.blurb.claude'),
     Mark: ClaudeMark,
   },
   codex: {
     label: 'Codex',
     vendor: 'OpenAI',
-    blurb: 'Mode plan, exécution en bac à sable, approbations groupées.',
+    blurb: translate('agent.blurb.codex'),
     Mark: OpenAiMark,
   },
 }

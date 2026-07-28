@@ -16,6 +16,7 @@ import {
   indentUnit,
 } from '@codemirror/language'
 import { useEffect, useRef } from 'react'
+import { translate } from '../../lib/i18n'
 import { editorHighlight, editorTheme, loadLanguage } from './editor-setup'
 
 /**
@@ -24,22 +25,24 @@ import { editorHighlight, editorTheme, loadLanguage } from './editor-setup'
  * CodeMirror expose ses libellés par la facette `phrases` : les traduire ici évite
  * d'avoir à réécrire le panneau, et c'est le mécanisme prévu pour ça.
  */
-const SEARCH_PHRASES: Record<string, string> = {
-  Find: 'Rechercher',
-  Replace: 'Remplacer',
-  next: 'Suivant',
-  previous: 'Précédent',
-  all: 'Tout',
-  'match case': 'Respecter la casse',
-  'by word': 'Mot entier',
-  regexp: 'Expression régulière',
-  replace: 'Remplacer',
-  'replace all': 'Tout remplacer',
-  close: 'Fermer',
-  'current match': 'Occurrence courante',
-  'replaced $ matches': '$ occurrences remplacées',
-  'replaced match on line $': 'occurrence remplacée ligne $',
-  'on line': 'ligne',
+function searchPhrases(): Record<string, string> {
+  return {
+    Find: translate('editor.search.find'),
+    Replace: translate('editor.search.replace'),
+    next: translate('editor.search.next'),
+    previous: translate('editor.search.previous'),
+    all: translate('editor.search.all'),
+    'match case': translate('editor.search.matchCase'),
+    'by word': translate('editor.search.byWord'),
+    regexp: translate('editor.search.regexp'),
+    replace: translate('editor.search.replaceAction'),
+    'replace all': translate('editor.search.replaceAll'),
+    close: translate('editor.search.close'),
+    'current match': translate('editor.search.currentMatch'),
+    'replaced $ matches': translate('editor.search.replacedMatches'),
+    'replaced match on line $': translate('editor.search.replacedMatchOnLine'),
+    'on line': translate('editor.search.onLine'),
+  }
 }
 
 /**
@@ -92,7 +95,7 @@ export function CodeEditor({
         // En haut : en bas, le panneau se retrouve sous la barre d'état du fichier,
         // et sur un panneau étroit il occupe alors la moitié de la hauteur visible.
         search({ top: true }),
-        EditorState.phrases.of(SEARCH_PHRASES),
+        EditorState.phrases.of(searchPhrases()),
         editorTheme,
         editorHighlight,
         EditorView.lineWrapping,

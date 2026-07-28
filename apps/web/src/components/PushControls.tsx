@@ -1,5 +1,6 @@
 import { Bell, BellOff } from 'lucide-react'
 import { ApiRequestError } from '../lib/api'
+import { useTranslate } from '../lib/i18n'
 import {
   pushAvailability,
   useSubscribePush,
@@ -19,18 +20,14 @@ export function PushControls() {
   const { data: status } = usePushStatus(availability === 'ok')
   const subscribe = useSubscribePush()
   const unsubscribe = useUnsubscribePush()
+  const t = useTranslate()
 
   if (availability === 'insecure') {
-    return (
-      <Banner tone="info">
-        Les notifications exigent une connexion HTTPS. Le navigateur ne donne accès ni au
-        service worker ni à l&apos;API Push en clair.
-      </Banner>
-    )
+    return <Banner tone="info">{t('push.insecure')}</Banner>
   }
 
   if (availability === 'unsupported') {
-    return <Banner tone="info">Ce navigateur ne gère pas les notifications push.</Banner>
+    return <Banner tone="info">{t('push.unsupported')}</Banner>
   }
 
   const error =
@@ -44,11 +41,7 @@ export function PushControls() {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-ink-soft">
-        Prévenu quand un agent réclame une décision, ou termine un tour pendant que tu
-        regardes ailleurs. Rien n&apos;est envoyé tant que la conversation est ouverte sous
-        tes yeux.
-      </p>
+      <p className="text-sm text-ink-soft">{t('push.description')}</p>
 
       {status?.subscribed ? (
         <Button
@@ -59,7 +52,7 @@ export function PushControls() {
           onClick={() => unsubscribe.mutate()}
           className="self-start"
         >
-          Désactiver sur cet appareil
+          {t('push.disable')}
         </Button>
       ) : (
         <Button
@@ -69,7 +62,7 @@ export function PushControls() {
           onClick={() => status && subscribe.mutate(status.publicKey)}
           className="self-start"
         >
-          Activer sur cet appareil
+          {t('push.enable')}
         </Button>
       )}
 
