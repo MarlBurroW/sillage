@@ -2,6 +2,7 @@ import { FileCode } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { FileMatchDto } from '../../lib/files'
 import { cx } from '../ui'
+import { useTranslate } from '../../lib/i18n'
 
 /**
  * Liste des fichiers proposés pour une mention.
@@ -22,6 +23,7 @@ export function MentionPicker({
   onPick: (file: FileMatchDto) => void
   onHover: (index: number) => void
 }) {
+  const t = useTranslate()
   const list = useRef<HTMLUListElement>(null)
 
   // La navigation au clavier peut sortir de la zone visible : l'élément actif est
@@ -42,7 +44,7 @@ export function MentionPicker({
     <ul
       ref={list}
       role="listbox"
-      aria-label="Fichiers à mentionner"
+      aria-label={t('mention.picker.aria')}
       className="surface mb-1.5 max-h-56 overflow-y-auto rounded-lg border border-line p-1 shadow-float"
     >
       {files.map((file, index) => (

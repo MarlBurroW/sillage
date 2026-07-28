@@ -1,5 +1,6 @@
 import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@sillage/protocol'
 import { ApiRequestError, api } from './api'
+import { translate } from './i18n'
 
 /**
  * Téléverse un fichier et retourne sa fiche.
@@ -13,7 +14,10 @@ export async function uploadAttachment(file: File): Promise<AttachmentDto> {
     throw new ApiRequestError(
       413,
       'file_too_large',
-      `« ${file.name} » dépasse ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} Mo.`,
+      translate('attachments.tooLarge', {
+        name: file.name,
+        max: Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024),
+      }),
     )
   }
 

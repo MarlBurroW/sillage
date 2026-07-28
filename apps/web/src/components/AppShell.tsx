@@ -660,7 +660,7 @@ function ProjectGroup({
                 <MenuSwatch
                   key={entry.value ?? 'default'}
                   color={entry.value}
-                  label={entry.label}
+                  label={t(entry.label)}
                   selected={project.color === entry.value}
                   onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
                 />

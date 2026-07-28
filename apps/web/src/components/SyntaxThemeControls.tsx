@@ -72,7 +72,7 @@ export function SyntaxThemeControls() {
               ))}
             </span>
             <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
-              {SYNTAX_THEME_LABELS[option]}
+              {t(SYNTAX_THEME_LABELS[option])}
             </span>
             {/* La coche occupe sa place même absente : la faire apparaître décalait
                 tout le reste de la case au moment du clic. */}
