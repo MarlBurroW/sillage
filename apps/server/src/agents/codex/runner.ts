@@ -43,9 +43,13 @@ import type {
   QuestionAnswer,
   RunnerContext,
 } from '../types.js'
-import { toWorkspacePath } from '../claude/file-edits.js'
+import { PendingInteractions } from '../interactions.js'
+import { describeOutgoingMessage } from '../outgoing.js'
+import { toWorkspacePath } from '../paths.js'
+import { ToolDurations } from '../tool-durations.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
+import { describeWindow } from './quota.js'
 
 /**
  * Adaptateur Codex (invariant I3) : traduit l'app-server vers le schéma d'événements
@@ -90,18 +94,9 @@ const IGNORED_NOTIFICATIONS = new Set([
   'mcpServer/startupStatus/updated',
 ])
 
-/** Libellé de fenêtre de quota, à partir de ce que le CLI annonce. */
-function describeWindow(limitName: string | null, durationMins: number | null): string {
-  if (limitName) return limitName
-  if (durationMins === null) return 'quota'
-  if (durationMins < 60) return `${durationMins} min`
-  const hours = durationMins / 60
-  // 168 h se lit mal : au-delà d'une journée, on exprime en jours.
-  return hours >= 24 && hours % 24 === 0 ? `${hours / 24} j` : `${Math.round(hours)} h`
-}
-
 /**
- * Traduit un message et ses pièces jointes pour l'app-server.
+ * Traduit un message et ses pièces jointes pour l'app-server. Les blocs journalisés
+ * viennent du module commun.
  *
  * Codex accepte un chemin local pour les images (`localImage`), là où Claude exige du
  * base64 : c'est le protocole de chacun qui décide, pas une préférence de Sillage.
@@ -111,18 +106,10 @@ function buildUserInput(
   attachments: OutgoingAttachment[],
   mentions: OutgoingMention[],
 ): { blocks: ContentBlock[]; input: UserInput[] } {
-  const blocks: ContentBlock[] = []
+  const { blocks, promptText } = describeOutgoingMessage(text, attachments)
   const input: UserInput[] = []
 
-  const files = attachments.filter((entry) => !entry.inlineImage)
-  const promptText = files.length
-    ? [text, '', 'Fichiers joints à ce message :', ...files.map((f) => `- ${f.filename} : ${f.path}`)]
-        .join('\n')
-        .trim()
-    : text
-
   if (promptText) {
-    blocks.push({ type: 'text', text })
     input.push({ type: 'text', text: promptText, text_elements: [] })
   }
 
@@ -135,19 +122,6 @@ function buildUserInput(
   for (const attachment of attachments) {
     if (attachment.inlineImage) {
       input.push({ type: 'localImage', path: attachment.path })
-      blocks.push({
-        type: 'image',
-        mimeType: attachment.mimeType,
-        url: `/api/attachments/${attachment.id}`,
-      })
-    } else {
-      blocks.push({
-        type: 'file',
-        name: attachment.filename,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-        url: `/api/attachments/${attachment.id}`,
-      })
     }
   }
 
@@ -180,31 +154,14 @@ function toQuestions(params: ToolRequestUserInputParams): AgentQuestion[] {
   }))
 }
 
-/** Une demande d'approbation en attente, avec la façon d'y répondre. */
-interface PendingApproval {
-  respond: (allowed: boolean, scope: PermissionDecision['scope']) => unknown
-}
-
-/** Une question en attente, avec la façon de renvoyer les réponses au CLI. */
-interface PendingQuestion {
-  respond: (answers: Record<string, string[]>) => void
-}
-
-/** Une élicitation MCP en attente. */
-interface PendingElicitation {
-  respond: (answer: ElicitationAnswer) => void
-}
-
 export class CodexRunner implements AgentRunner {
   readonly conversationId: string
 
   private client: CodexAppServerClient | null = null
   private threadId: string | null = null
   private config: CodexConfig
-  private readonly pendingApprovals = new Map<string, PendingApproval>()
-  private readonly pendingQuestions = new Map<string, PendingQuestion>()
-  private readonly pendingElicitations = new Map<string, PendingElicitation>()
-  private readonly itemStartedAt = new Map<string, number>()
+  private readonly interactions: PendingInteractions
+  private readonly durations = new ToolDurations()
   /** Nom que Codex donne au fil, annoncé par `thread/name/updated`. */
   private suggested: string | null = null
   /** Tour en cours : `turn/interrupt` l'exige, contrairement au SDK Claude. */
@@ -215,6 +172,7 @@ export class CodexRunner implements AgentRunner {
   constructor(private readonly ctx: RunnerContext) {
     this.conversationId = ctx.conversationId
     this.config = ctx.config as CodexConfig
+    this.interactions = new PendingInteractions(ctx)
   }
 
   /**
@@ -299,7 +257,7 @@ export class CodexRunner implements AgentRunner {
   private onProcessExit(code: number | null): void {
     this.client = null
     this.turnId = null
-    this.expirePending()
+    this.interactions.expireAll()
     this.ctx.emit({
       type: 'error',
       code: 'runner_failed',
@@ -333,7 +291,7 @@ export class CodexRunner implements AgentRunner {
 
       case 'item/started': {
         const { item } = params as { item: ThreadItem }
-        this.itemStartedAt.set(item.id, Date.now())
+        this.durations.start(item.id)
         this.onItemStarted(item, params)
         return
       }
@@ -434,7 +392,7 @@ export class CodexRunner implements AgentRunner {
             inputTokens: 0,
             outputTokens: 0,
             rateLimit: {
-              type: describeWindow(p.rateLimits.limitName, window.windowDurationMins),
+              type: describeWindow(p.rateLimits.limitName, window.windowDurationMins, true),
               // Pas de seuil d'alerte inventé : seul un dépassement annoncé par le CLI
               // change le statut, le pourcentage parle de lui-même.
               status: p.rateLimits.rateLimitReachedType ? 'rejected' : 'allowed',
@@ -516,9 +474,7 @@ export class CodexRunner implements AgentRunner {
   }
 
   private onItemCompleted(item: ThreadItem, raw: unknown): void {
-    const startedAt = this.itemStartedAt.get(item.id)
-    this.itemStartedAt.delete(item.id)
-    const durationMs = startedAt ? Date.now() - startedAt : 0
+    const durationMs = this.durations.stop(item.id)
 
     switch (item.type) {
       case 'agentMessage': {
@@ -679,41 +635,23 @@ export class CodexRunner implements AgentRunner {
   }
 
   private askQuestion(params: ToolRequestUserInputParams): Promise<ToolRequestUserInputResponse> {
-    const requestId = randomUUID()
-    this.ctx.setStatus('awaiting_input')
-    this.ctx.emit({ type: 'question.requested', requestId, questions: toQuestions(params) })
-
     return new Promise<ToolRequestUserInputResponse>((resolve) => {
-      this.pendingQuestions.set(requestId, {
-        respond: (answers) => {
-          resolve({
-            answers: Object.fromEntries(
-              Object.entries(answers).map(([id, values]) => [id, { answers: values }]),
-            ),
-          })
-        },
+      this.interactions.requestQuestion(toQuestions(params), (answer) => {
+        // Une annulation ou une expiration renvoie un jeu de réponses vide : le
+        // protocole n'a pas de variante « pas de réponse », et laisser la requête
+        // sans réponse figerait le tour.
+        const answers = answer === null || answer.status === 'cancelled' ? {} : answer.answers
+        resolve({
+          answers: Object.fromEntries(
+            Object.entries(answers).map(([id, values]) => [id, { answers: values }]),
+          ),
+        })
       })
     })
   }
 
   answerQuestion(requestId: string, answer: QuestionAnswer): boolean {
-    const pending = this.pendingQuestions.get(requestId)
-    if (!pending) return false
-    this.pendingQuestions.delete(requestId)
-
-    this.ctx.emit({
-      type: 'question.resolved',
-      requestId,
-      status: answer.status,
-      answers: answer.answers,
-      decidedBy: answer.decidedBy,
-    })
-
-    // Une annulation renvoie un jeu de réponses vide : le protocole n'a pas de
-    // variante « pas de réponse », et laisser la requête sans réponse figerait le tour.
-    pending.respond(answer.status === 'cancelled' ? {} : answer.answers)
-    this.ctx.setStatus('running')
-    return true
+    return this.interactions.resolveQuestion(requestId, answer)
   }
 
   /**
@@ -726,51 +664,38 @@ export class CodexRunner implements AgentRunner {
   private askElicitation(
     params: McpServerElicitationRequestParams,
   ): Promise<McpServerElicitationRequestResponse> {
-    const requestId = randomUUID()
-    this.ctx.setStatus('awaiting_input')
-
-    this.ctx.emit({
-      type: 'elicitation.requested',
-      requestId,
-      serverName: params.serverName,
-      // `openai/form` est un formulaire dont le schéma n'est pas typé par le protocole :
-      // il passe par le même analyseur, tolérant à ce qu'il ne reconnaît pas.
-      mode: params.mode === 'url' ? 'url' : 'form',
-      message: params.message,
-      url: params.mode === 'url' ? params.url : null,
-      fields: params.mode === 'url' ? [] : parseElicitationFields(params.requestedSchema),
-      title: null,
-    })
-
     return new Promise<McpServerElicitationRequestResponse>((resolve) => {
-      this.pendingElicitations.set(requestId, {
-        respond: (answer) => {
+      this.interactions.requestElicitation(
+        {
+          serverName: params.serverName,
+          // `openai/form` est un formulaire dont le schéma n'est pas typé par le
+          // protocole : il passe par le même analyseur, tolérant à ce qu'il ne
+          // reconnaît pas.
+          mode: params.mode === 'url' ? 'url' : 'form',
+          message: params.message,
+          url: params.mode === 'url' ? params.url : null,
+          fields: params.mode === 'url' ? [] : parseElicitationFields(params.requestedSchema),
+          title: null,
+        },
+        (answer) => {
+          if (answer === null) {
+            // `cancel` plutôt que `decline` : le serveur MCP distingue un refus
+            // explicite d'une demande qui n'a jamais atteint personne.
+            resolve({ action: 'cancel', content: null, _meta: null })
+            return
+          }
           resolve({
             action: answer.action,
             content: answer.action === 'accept' ? answer.content : null,
             _meta: null,
           })
         },
-      })
+      )
     })
   }
 
   resolveElicitation(requestId: string, answer: ElicitationAnswer): boolean {
-    const pending = this.pendingElicitations.get(requestId)
-    if (!pending) return false
-    this.pendingElicitations.delete(requestId)
-
-    this.ctx.emit({
-      type: 'elicitation.resolved',
-      requestId,
-      status: answer.action,
-      content: answer.content,
-      decidedBy: answer.decidedBy,
-    })
-
-    pending.respond(answer)
-    this.ctx.setStatus('running')
-    return true
+    return this.interactions.resolveElicitation(requestId, answer)
   }
 
   /**
@@ -787,93 +712,18 @@ export class CodexRunner implements AgentRunner {
     input: unknown,
     buildResponse: (allowed: boolean, scope: PermissionDecision['scope']) => unknown,
   ): Promise<unknown> {
-    const requestId = this.ctx.openPermissionRequest(toolName, input)
-    this.ctx.setStatus('awaiting_input')
-
-    this.ctx.emit({
-      type: 'permission.requested',
-      requestId,
-      toolName,
-      input,
-      suggestions: [
-        { id: 'allow-once', label: 'Autoriser', scope: 'once', behavior: 'allow' },
-        { id: 'allow-session', label: 'Autoriser pour la session', scope: 'session', behavior: 'allow' },
-        { id: 'deny', label: 'Refuser', scope: 'once', behavior: 'deny' },
-      ],
-    })
-
     return new Promise((resolve) => {
-      this.pendingApprovals.set(requestId, {
-        respond: (allowed, scope) => {
-          const response = buildResponse(allowed, scope)
-          resolve(response)
-          return response
-        },
+      this.interactions.requestPermission({ toolName, input }, (decision) => {
+        // Une expiration vaut refus ponctuel : le CLI reçoit la même réponse qu'un
+        // « non », il n'a pas de variante « resté sans réponse ».
+        const allowed = decision !== null && decision.decision === 'allowed'
+        resolve(buildResponse(allowed, decision?.scope ?? 'once'))
       })
     })
   }
 
   resolvePermission(requestId: string, decision: PermissionDecision): boolean {
-    const pending = this.pendingApprovals.get(requestId)
-    if (!pending) return false
-    this.pendingApprovals.delete(requestId)
-
-    this.ctx.closePermissionRequest(requestId, decision)
-    this.ctx.emit({
-      type: 'permission.resolved',
-      requestId,
-      decision: decision.decision,
-      scope: decision.scope,
-      decidedBy: decision.decidedBy,
-    })
-
-    pending.respond(decision.decision === 'allowed', decision.scope)
-    this.ctx.setStatus('running')
-    return true
-  }
-
-  /** Un runner qui s'arrête ne doit pas laisser le CLI attendre une réponse à jamais. */
-  private expirePending(): void {
-    for (const [requestId, pending] of this.pendingQuestions) {
-      this.ctx.emit({
-        type: 'question.resolved',
-        requestId,
-        status: 'expired',
-        answers: {},
-        decidedBy: null,
-      })
-      pending.respond({})
-    }
-    this.pendingQuestions.clear()
-
-    for (const [requestId, pending] of this.pendingElicitations) {
-      this.ctx.emit({
-        type: 'elicitation.resolved',
-        requestId,
-        status: 'expired',
-        content: {},
-        decidedBy: null,
-      })
-      pending.respond({ action: 'cancel', content: {}, decidedBy: null })
-    }
-    this.pendingElicitations.clear()
-
-    for (const [requestId, pending] of this.pendingApprovals) {
-      this.ctx.closePermissionRequest(requestId, {
-        decision: 'denied',
-        scope: 'once',
-        decidedBy: null,
-      })
-      this.ctx.emit({
-        type: 'permission.resolved',
-        requestId,
-        decision: 'expired',
-        scope: 'once',
-        decidedBy: null,
-      })
-      pending.respond(false, 'once')
-    }
-    this.pendingApprovals.clear()
+    return this.interactions.resolvePermission(requestId, decision)
   }
 
   async send(
@@ -989,7 +839,7 @@ export class CodexRunner implements AgentRunner {
   }
 
   async stop(): Promise<void> {
-    this.expirePending()
+    this.interactions.expireAll()
     this.client?.close()
     this.client = null
   }

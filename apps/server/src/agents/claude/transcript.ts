@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ContentBlock, SillageEvent } from '@sillage/protocol'
-import { editedPath, toWorkspacePath } from './file-edits.js'
+import { toWorkspacePath } from '../paths.js'
+import { editedPath } from './file-edits.js'
 
 /**
  * Lecture et traduction d'un transcript de session Claude Code.

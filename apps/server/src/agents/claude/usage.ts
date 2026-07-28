@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
 import { AsyncQueue } from '../async-queue.js'
+import { CachedProbe } from '../cached-probe.js'
 
 /**
  * Consommation du compte Claude, lue par la requête de contrôle qui alimente `/usage`.
@@ -121,21 +122,10 @@ function normalize(payload: unknown): Omit<AgentUsage, 'fetchedAt'> {
 }
 
 export class ClaudeUsageReader {
-  private cache: AgentUsage | null = null
-  /** Une sonde à la fois : dix ouvertures du panneau ne doivent pas lancer dix CLI. */
-  private inflight: Promise<Omit<AgentUsage, 'fetchedAt'>> | null = null
+  private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
 
-  async read(force = false): Promise<AgentUsage> {
-    if (!force && this.cache && Date.now() - this.cache.fetchedAt < CACHE_TTL_MS) {
-      return this.cache
-    }
-
-    this.inflight ??= this.probe().finally(() => {
-      this.inflight = null
-    })
-
-    this.cache = { ...(await this.inflight), fetchedAt: Date.now() }
-    return this.cache
+  read(force = false): Promise<AgentUsage> {
+    return this.cached.read(force)
   }
 
   private async probe(): Promise<Omit<AgentUsage, 'fetchedAt'>> {

@@ -1,4 +1,5 @@
 import type { CollaborationModeMask, Model, ModelListResponse } from '@sillage/protocol/codex/v2'
+import { CachedProbe } from '../cached-probe.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
 
@@ -18,21 +19,12 @@ interface Listing {
 const CACHE_TTL_MS = 60 * 60 * 1000
 
 export class CodexModelCatalog {
-  private cache: (Listing & { fetchedAt: number }) | null = null
-  private inflight: Promise<Listing> | null = null
+  private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
 
   constructor(private readonly binary: string) {}
 
-  async list(): Promise<Listing & { fetchedAt: number }> {
-    if (this.cache && Date.now() - this.cache.fetchedAt < CACHE_TTL_MS) return this.cache
-
-    this.inflight ??= this.probe().finally(() => {
-      this.inflight = null
-    })
-
-    const listing = await this.inflight
-    this.cache = { ...listing, fetchedAt: Date.now() }
-    return this.cache
+  list(): Promise<Listing & { fetchedAt: number }> {
+    return this.cached.read()
   }
 
   private async probe(): Promise<Listing> {

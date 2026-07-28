@@ -1,7 +1,7 @@
 import type { EditDiffDto } from '@sillage/protocol'
 import type { FileUpdateChange, ThreadItem } from '@sillage/protocol/codex/v2'
 import { additionDiff, deletionDiff } from '../../diff-lines.js'
-import { toWorkspacePath } from '../claude/file-edits.js'
+import { toWorkspacePath } from '../paths.js'
 
 /**
  * Ce qu'un `fileChange` a fait d'un fichier.
