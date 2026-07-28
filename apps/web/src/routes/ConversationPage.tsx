@@ -13,7 +13,7 @@ import {
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import type { AgentConfig, ConversationStatus } from '@sillage/protocol'
+import { agentConfigSchema, type AgentConfig, type ConversationStatus } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { MessageBubble } from '../components/chat/MessageBubble'
 import { ElicitationPrompt } from '../components/chat/ElicitationPrompt'
@@ -78,8 +78,10 @@ export function ConversationPage() {
   const { data: conversation } = useConversation(conversationId)
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
   // Le catalogue porte la nature du compte : elle décide si un montant a un sens.
-  // Comme tous les hooks, il doit rester avant le premier retour anticipé.
-  const { data: catalog } = useClaudeModels()
+  // Comme tous les hooks, il doit rester avant le premier retour anticipé. La sonde
+  // démarre le CLI Claude côté serveur : elle ne part que pour une conversation Claude,
+  // et le mode de facturation d'un compte Anthropic ne dit rien d'un coût Codex.
+  const { data: catalog } = useClaudeModels(conversation?.agent === 'claude')
   const { data: worktrees } = useWorktrees(conversation?.projectId)
   // Déjà chargée pour la sidebar : la provenance d'une branche s'y trouve sans requête
   // supplémentaire.
@@ -343,7 +345,9 @@ export function ConversationPage() {
   if (!conversationId || !conversation) return null
 
   const isOwner = conversation.userId === user?.id
-  const config = conversation.config as AgentConfig
+  // Relu par le schéma plutôt que casté : une configuration enregistrée avant un
+  // nouveau champ récupère ainsi ses valeurs par défaut au lieu d'arriver trouée.
+  const config = agentConfigSchema.parse(conversation.config)
   const worktree = worktrees?.find((entry) => entry.id === conversation.worktreeId)
   const origin = conversation.forkedFromId
     ? allConversations?.find((entry) => entry.id === conversation.forkedFromId)
@@ -451,7 +455,7 @@ export function ConversationPage() {
               {/* Tout vient du fold : le journal est la seule source d'affichage (I2),
                   et lui seul porte le détail des tokens de cache. */}
               <UsageSummary
-                account={catalog?.account}
+                account={conversation.agent === 'claude' ? catalog?.account : null}
                 rateLimit={stream.state.rateLimit}
                 costUsd={stream.state.costUsd}
                 inputTokens={stream.state.inputTokens}

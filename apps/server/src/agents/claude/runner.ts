@@ -670,7 +670,12 @@ export class ClaudeRunner implements AgentRunner {
             }
           : {}),
       })
-      if (mode) this.config = { ...this.config, permissionMode: mode }
+      if (mode) {
+        this.config = { ...this.config, permissionMode: mode }
+        // Persisté tout de suite : le mode adopté doit survivre au runner, sinon les
+        // réglages affichent l'ancien et une reprise repartirait en mode plan.
+        this.ctx.updateConfig(this.config)
+      }
     }
 
     this.ctx.setStatus('running')

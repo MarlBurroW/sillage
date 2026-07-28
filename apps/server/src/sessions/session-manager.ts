@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import {
   conversations,
   permissionRequests,
@@ -74,6 +74,8 @@ export interface ConversationNotifier {
 
 export class SessionManager {
   private readonly runners = new Map<string, ManagedRunner>()
+  /** Démarrages en cours, pour qu'un envoi concurrent attende au lieu de doubler. */
+  private readonly startingRunners = new Map<string, Promise<AgentRunner>>()
   private readonly recentClientMessages = new Map<string, number>()
   /**
    * Messages en attente, par conversation.
@@ -217,6 +219,11 @@ export class SessionManager {
     // Le tour vient de se terminer : c'est le seul moment où un message en attente
     // peut partir sans se mêler au contexte du tour précédent.
     if (status === 'idle') void this.flushQueue(conversationId)
+
+    // Un runner en erreur est mort pour de bon : le garder en mémoire renverrait
+    // les messages suivants vers un process hors d'état. L'arrêter libère la place,
+    // et le prochain message repartira en reprise sur une session neuve.
+    if (status === 'error') void this.stopRunner(conversationId)
   }
 
   /**
@@ -325,6 +332,10 @@ export class SessionManager {
    * dans un même tour, ce que la file existe justement pour éviter.
    */
   private async flushQueue(conversationId: string): Promise<void> {
+    // Un tour a pu redémarrer entre l'annonce du statut et ce flush : le message
+    // reste alors en file, il repartira à la prochaine transition vers `idle`.
+    if (this.isBusy(conversationId)) return
+
     const queue = this.queues.get(conversationId)
     const next = queue?.shift()
     if (!queue || !next) return
@@ -397,12 +408,14 @@ export class SessionManager {
           // Le CLI ne résume la session qu'une fois le tour fini : c'est le premier
           // moment où un titre utile existe.
           void this.adoptSuggestedTitle(conversationId)
+          // Incrément SQL et non addition en mémoire : `conversation` est la ligne lue
+          // à la création du runner, repartir d'elle écraserait les tours précédents.
           this.db
             .update(conversations)
             .set({
-              costUsd: conversation.costUsd + event.costUsd,
-              inputTokens: conversation.inputTokens + event.inputTokens,
-              outputTokens: conversation.outputTokens + event.outputTokens,
+              costUsd: sql`${conversations.costUsd} + ${event.costUsd}`,
+              inputTokens: sql`${conversations.inputTokens} + ${event.inputTokens}`,
+              outputTokens: sql`${conversations.outputTokens} + ${event.outputTokens}`,
             })
             .where(eq(conversations.id, conversationId))
             .run()
@@ -415,6 +428,14 @@ export class SessionManager {
         this.db
           .update(conversations)
           .set({ agentSessionId: sessionId })
+          .where(eq(conversations.id, conversationId))
+          .run()
+      },
+
+      updateConfig: (config) => {
+        this.db
+          .update(conversations)
+          .set({ config: JSON.stringify(config) })
           .where(eq(conversations.id, conversationId))
           .run()
       },
@@ -489,22 +510,44 @@ export class SessionManager {
     const existing = this.runners.get(conversation.id)
     if (existing) return existing.runner
 
+    // Un seul démarrage à la fois par conversation : `makeRoom` cède la main, et deux
+    // envois concurrents lanceraient chacun leur process CLI, dont un fuirait sans
+    // jamais être arrêté.
+    const inFlight = this.startingRunners.get(conversation.id)
+    if (inFlight) return inFlight
+
+    const starting = this.startRunner(conversation.id).finally(() => {
+      this.startingRunners.delete(conversation.id)
+    })
+    this.startingRunners.set(conversation.id, starting)
+    return starting
+  }
+
+  private async startRunner(conversationId: string): Promise<AgentRunner> {
     await this.makeRoom()
 
     // Relu depuis la base : agentSessionId a pu être renseigné par un runner précédent.
-    const fresh = this.loadConversation(conversation.id)
+    const fresh = this.loadConversation(conversationId)
     const context = this.buildContext(fresh)
     const runner: AgentRunner =
       fresh.agent === 'claude' ? new ClaudeRunner(context) : new CodexRunner(context)
 
-    this.runners.set(conversation.id, {
+    this.runners.set(conversationId, {
       runner,
       lastActivity: Date.now(),
       status: 'idle',
       idleTimer: null,
     })
 
-    await runner.start()
+    try {
+      await runner.start()
+    } catch (err) {
+      // Un runner qui n'a pas démarré ne doit pas occuper la place d'un vivant : le
+      // prochain envoi retenterait sinon sur un process qui n'existe pas.
+      this.runners.delete(conversationId)
+      await runner.stop().catch(() => undefined)
+      throw err
+    }
     return runner
   }
 
@@ -551,6 +594,14 @@ export class SessionManager {
   }
 
   /**
+   * Rend un identifiant réclamé mais jamais porté : l'envoi a échoué avant d'atteindre
+   * le CLI, et un renvoi légitime du client ne doit pas être avalé comme un doublon.
+   */
+  private releaseClientMessage(conversationId: string, clientMessageId: string): void {
+    this.recentClientMessages.delete(`${conversationId}:${clientMessageId}`)
+  }
+
+  /**
    * Infléchit le tour en cours plutôt que d'ouvrir le suivant.
    *
    * Retourne false quand ce n'est pas possible : CLI sans équivalent, session arrêtée,
@@ -568,15 +619,22 @@ export class SessionManager {
     // Un renvoi réseau ne doit pas infléchir deux fois : le premier a déjà porté.
     if (!this.claimClientMessage(conversationId, clientMessageId)) return true
 
-    const managed = this.runners.get(conversationId)
-    if (!managed) return false
+    // Un steer refusé ou échoué n'a pas porté : l'appelant retombe sur un envoi
+    // ordinaire avec le même identifiant, qui ne doit pas être pris pour un doublon.
+    let steered = false
+    try {
+      const managed = this.runners.get(conversationId)
+      if (!managed) return false
 
-    const conversation = this.loadConversation(conversationId)
-    const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
+      const conversation = this.loadConversation(conversationId)
+      const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
 
-    const steered = await managed.runner.steer(text, attachments, resolved)
-    if (steered) this.touch(conversationId)
-    return steered
+      steered = await managed.runner.steer(text, attachments, resolved)
+      if (steered) this.touch(conversationId)
+      return steered
+    } finally {
+      if (!steered) this.releaseClientMessage(conversationId, clientMessageId)
+    }
   }
 
   async sendMessage(
@@ -606,7 +664,14 @@ export class SessionManager {
       return
     }
 
-    await this.deliver(conversationId, text, attachments, mentions)
+    try {
+      await this.deliver(conversationId, text, attachments, mentions)
+    } catch (err) {
+      // L'envoi n'a pas atteint le CLI : rendre l'identifiant permet au client de
+      // renvoyer le même message sans qu'il soit avalé par la déduplication.
+      this.releaseClientMessage(conversationId, clientMessageId)
+      throw err
+    }
   }
 
   /** Transmet réellement le message au CLI, en démarrant le runner si besoin. */
@@ -698,7 +763,13 @@ export class SessionManager {
       .select({ id: permissionRequests.id })
       .from(permissionRequests)
       .where(
-        and(eq(permissionRequests.id, requestId), eq(permissionRequests.conversationId, conversationId)),
+        and(
+          eq(permissionRequests.id, requestId),
+          eq(permissionRequests.conversationId, conversationId),
+          // Une demande déjà tranchée n'est plus en attente : sans ce filtre, elle
+          // passerait pour ouverte et l'appelant répondrait « expirée » à tort.
+          eq(permissionRequests.status, 'pending'),
+        ),
       )
       .get()
     return row !== undefined

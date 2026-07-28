@@ -253,6 +253,7 @@ export class CodexRunner implements AgentRunner {
       cwd: this.ctx.cwd,
       onNotification: (method, params) => this.translate(method, params),
       onServerRequest: (method, params) => this.handleServerRequest(method, params),
+      onExit: (code) => this.onProcessExit(code),
     })
 
     await this.client.initialize(CLIENT_INFO)
@@ -288,6 +289,26 @@ export class CodexRunner implements AgentRunner {
       },
       started,
     )
+  }
+
+  /**
+   * Le process est mort sans qu'on le lui demande. Équivalent du chemin d'erreur de
+   * la boucle de consommation du runner Claude : clore ce qui attend une réponse,
+   * le dire dans le journal, et passer en erreur pour que le gestionnaire libère la
+   * session. Le prochain message repartira en reprise du fil.
+   */
+  private onProcessExit(code: number | null): void {
+    this.client = null
+    this.turnId = null
+    this.expirePending()
+    this.ctx.emit({
+      type: 'error',
+      code: 'runner_failed',
+      message: `codex app-server s'est arrêté de façon inattendue (code ${code ?? 'inconnu'}).`,
+      recoverable: true,
+    })
+    this.ctx.emit({ type: 'session.ended', reason: 'interrupted' })
+    this.ctx.setStatus('error')
   }
 
   private translate(method: string, params: unknown): void {
@@ -963,7 +984,9 @@ export class CodexRunner implements AgentRunner {
     // Sans tour en cours il n'y a rien à interrompre : le protocole exige un turnId.
     if (!this.client || !this.threadId || !this.turnId) return
     await this.client.call('turn/interrupt', { threadId: this.threadId, turnId: this.turnId })
-    this.ctx.setStatus('idle')
+    // Pas de passage à `idle` ici : l'app-server clôt le tour de son côté et envoie
+    // `turn/completed`, qui fait foi. L'annoncer avant ferait partir un message en
+    // file pendant que le tour interrompu se termine encore.
   }
 
   async stop(): Promise<void> {

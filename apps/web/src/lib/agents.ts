@@ -11,13 +11,15 @@ import { api } from './api'
  * Modèles déclarés par le CLI installé. Rien n'est codé en dur : mettre à jour Claude
  * Code suffit à faire apparaître ses nouveaux modèles, sans toucher à Sillage.
  */
-export function useClaudeModels() {
+export function useClaudeModels(enabled = true) {
   return useQuery({
     queryKey: ['agents', 'claude', 'models'],
     queryFn: () => api.get<ClaudeModelsDto>('/api/agents/claude/models'),
-    // La sonde démarre un CLI : inutile de la relancer à chaque montage du composer.
+    // La sonde démarre un CLI : inutile de la relancer à chaque montage du composer,
+    // et hors de question de la lancer pour une conversation d'un autre agent.
     staleTime: 60 * 60 * 1000,
     retry: false,
+    enabled,
   })
 }
 
@@ -33,12 +35,13 @@ export function effortLevelsFor(
 }
 
 /** Même contrat que pour Claude : les modèles viennent du CLI, jamais d'une liste figée. */
-export function useCodexModels() {
+export function useCodexModels(enabled = true) {
   return useQuery({
     queryKey: ['agents', 'codex', 'models'],
     queryFn: () => api.get<CodexModelsDto>('/api/agents/codex/models'),
     staleTime: 60 * 60 * 1000,
     retry: false,
+    enabled,
   })
 }
 
