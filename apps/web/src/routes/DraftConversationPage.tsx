@@ -10,9 +10,14 @@ import {
 } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
-import { Banner, cx } from '../components/ui'
+import { Banner, Button, cx } from '../components/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
-import { useAgentAvailability, unavailableReason, versionMismatch } from '../lib/agents'
+import {
+  useAgentAvailability,
+  useInstallAgent,
+  unavailableReason,
+  versionMismatch,
+} from '../lib/agents'
 import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
@@ -57,6 +62,7 @@ export function DraftConversationPage() {
 
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
   const { data: availability } = useAgentAvailability()
+  const install = useInstallAgent()
 
   // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
   // une carte grisée, et l'envoi resterait possible puisque le grisage ne bloque que le
@@ -210,6 +216,36 @@ export function DraftConversationPage() {
                 un absent : les cartes seules laisseraient l'écran sans explication de ce
                 que la barre de saisie refuse. */}
             {blocked ? <Banner>{blocked}</Banner> : null}
+
+            {/* Hors des cartes : chacune est déjà un bouton, et en imbriquer un second
+                donnerait du HTML invalide. Un rang par CLI manquant, désactivé exclu :
+                l'écarter est un choix de configuration, pas un manque à combler. */}
+            {availability?.agents
+              .filter((entry) => !entry.installed && entry.reason !== 'disabled')
+              .map((entry) => (
+                <div
+                  key={entry.agent}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-line p-2"
+                >
+                  <span className="min-w-0 text-xs leading-snug text-ink-faint">
+                    {entry.install.status === 'running'
+                      ? `Installation de ${AGENT_LABELS[entry.agent]} ${entry.install.version}…`
+                      : entry.install.status === 'failed'
+                        ? entry.install.error
+                        : `${AGENT_LABELS[entry.agent]} n'est pas installé sur le serveur.`}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={entry.install.status === 'running' || install.isPending}
+                    onClick={() => install.mutate(entry.agent)}
+                  >
+                    {entry.install.status === 'failed'
+                      ? 'Réessayer'
+                      : `Installer ${entry.testedVersion}`}
+                  </Button>
+                </div>
+              ))}
           </fieldset>
 
           {projectId ? (

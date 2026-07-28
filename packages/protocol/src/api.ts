@@ -452,12 +452,29 @@ export interface AgentAvailabilityDto {
   /** Faux quand la configuration désactive l'agent : rien n'a alors été sondé. */
   enabled: boolean
   installed: boolean
+  /** Vrai quand c'est Sillage qui l'a installé, faux quand il vient du PATH système. */
+  managed: boolean
   /** Chemin absolu réellement lancé ; null quand introuvable. */
   path: string | null
   version: string | null
   /** Pourquoi l'agent est indisponible ; null quand il l'est. */
   reason: 'disabled' | 'not_on_path' | 'not_executable' | null
+  /** Version que Sillage poserait, et qu'il a testée. */
+  testedVersion: string
+  install: CliInstallStateDto
 }
+
+/**
+ * Installation en cours ou dernier échec, pour un agent.
+ *
+ * `idle` couvre aussi bien « jamais tenté » que « terminé » : une installation réussie
+ * se lit dans `installed` et `version`, pas ici. Un état qui resterait « réussi » après
+ * coup dirait la même chose deux fois, et pourrait la dire autrement.
+ */
+export type CliInstallStateDto =
+  | { status: 'idle' }
+  | { status: 'running'; version: string }
+  | { status: 'failed'; version: string; error: string }
 
 /** Réponse de `/api/agents`. */
 export interface AgentAvailabilityListDto {

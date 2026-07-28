@@ -46,7 +46,7 @@ export class CodexAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = config.agents.codex.binary
-    this.cli = new CliBinary('codex', this.binary, config.agents.codex.enabled)
+    this.cli = new CliBinary('codex', this.binary, config.agents.codex.enabled, config.paths.agents)
     this.catalog = new CodexModelCatalog(this.binary)
     this.usageReader = new CodexUsageReader(this.binary)
   }

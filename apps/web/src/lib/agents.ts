@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  TESTED_CLI_VERSIONS,
+  TESTED_CLI_RELEASES,
   type AgentAvailabilityDto,
   type AgentAvailabilityListDto,
   type AgentEffortDto,
@@ -23,6 +23,22 @@ export function useAgentAvailability() {
     // La sonde lance un process par CLI présent. Un CLI ne s'installe pas pendant qu'on
     // remplit un formulaire, et le serveur a son propre cache derrière.
     staleTime: 60 * 1000,
+    // Sauf pendant une installation : elle se termine côté serveur sans rien pousser, et
+    // c'est le seul moment où l'état change tout seul.
+    refetchInterval: (query) =>
+      query.state.data?.agents.some((a) => a.install.status === 'running') ? 2000 : false,
+  })
+}
+
+/**
+ * Installe la version testée d'un CLI. Le serveur répond avant la fin ; c'est la sonde
+ * qui dira que c'est fini, d'où l'invalidation immédiate plutôt qu'une attente.
+ */
+export function useInstallAgent() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (agent: AgentKind) => api.post(`/api/agents/${agent}/install`, {}),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['agents', 'availability'] }),
   })
 }
 
@@ -52,7 +68,7 @@ export function unavailableReason(entry: AgentAvailabilityDto | undefined): stri
  */
 export function versionMismatch(entry: AgentAvailabilityDto | undefined): string | null {
   if (!entry?.installed || !entry.version) return null
-  const tested = TESTED_CLI_VERSIONS[entry.agent]
+  const tested = TESTED_CLI_RELEASES[entry.agent].version
   return entry.version === tested ? null : `Version ${entry.version}, testée avec ${tested}.`
 }
 

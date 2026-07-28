@@ -15,11 +15,18 @@ const run = promisify(execFile)
  * à afficher. Un CLI absent doit se voir dans l'interface, pas se découvrir à l'échec du
  * premier tour.
  *
- * Tout passe par `process.env.PATH`, jamais par une liste de dossiers écrite ici :
- * l'unité systemd pose déjà un `PATH` explicite parce que celui d'un service est minimal,
- * et c'est ce même `PATH` que `spawn` consultera. Résoudre ailleurs annoncerait des CLI
- * que le daemon serait incapable de lancer.
+ * Deux sources, dans cet ordre : le préfixe où Sillage installe les CLI qu'il gère, puis
+ * `process.env.PATH`. Jamais une liste de dossiers écrite en dur : l'unité systemd pose
+ * déjà un `PATH` explicite parce que celui d'un service est minimal, et c'est ce même
+ * `PATH` que `spawn` consultera. Résoudre ailleurs annoncerait des CLI que le daemon
+ * serait incapable de lancer.
  */
+
+/**
+ * Ce que `describe` rend : la disponibilité, sans ce qui relève de l'installation.
+ * L'état d'une installation en cours appartient à `CliInstaller`, pas au binaire.
+ */
+export type CliDescription = Omit<AgentAvailabilityDto, 'testedVersion' | 'install'>
 
 /** Ce qu'on sait d'un CLI, une fois cherché sur le disque. */
 export type CliStatus =
@@ -50,13 +57,23 @@ function isExecutable(path: string): boolean {
  * pris tel quel : la configuration désigne alors une installation précise, et lui
  * substituer une autre trahirait le réglage.
  */
-export function resolveBinary(binary: string): string | null {
+export function resolveBinary(binary: string, managedDir?: string): string | null {
   if (isAbsolute(binary)) return isExecutable(binary) ? binary : null
 
   // Un nom contenant un séparateur est un chemin relatif, que `spawn` résoudrait
   // depuis le répertoire courant du daemon. Ce répertoire n'a rien à voir avec le
   // workspace des conversations, donc le réglage n'aurait pas de sens : on refuse.
   if (binary.includes('/')) return null
+
+  // Ce que Sillage a installé passe avant le PATH du système. L'ordre suit l'intention :
+  // un CLI n'atterrit ici que parce que quelqu'un l'a demandé depuis l'interface, alors
+  // qu'un CLI du PATH peut n'être là que par accident d'environnement. C'est aussi la
+  // seule façon d'honorer « installer une version précise pour Sillage » quand le
+  // système en porte déjà une autre.
+  if (managedDir) {
+    const managed = join(managedDir, 'bin', binary)
+    if (isExecutable(managed)) return managed
+  }
 
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
     if (dir.length === 0) continue
@@ -86,8 +103,8 @@ async function probeVersion(path: string): Promise<string | null> {
   }
 }
 
-async function probe(binary: string): Promise<CliStatus> {
-  const path = resolveBinary(binary)
+async function probe(binary: string, managedDir: string): Promise<CliStatus> {
+  const path = resolveBinary(binary, managedDir)
   if (!path) {
     // Distinguer les deux cas vaut la peine : un binaire présent mais sans bit
     // d'exécution se répare d'un `chmod`, une absence demande une installation.
@@ -110,8 +127,12 @@ export class CliBinary {
     private readonly kind: AgentKind,
     readonly configured: string,
     private readonly enabled: boolean,
+    /** Préfixe npm des CLI que Sillage installe lui-même. */
+    readonly managedDir: string,
   ) {
-    this.cache = new CachedProbe(TTL_MS, async () => ({ status: await probe(configured) }))
+    this.cache = new CachedProbe(TTL_MS, async () => ({
+      status: await probe(configured, managedDir),
+    }))
   }
 
   async status(force = false): Promise<CliStatus> {
@@ -125,16 +146,40 @@ export class CliBinary {
    * que l'utilisateur a explicitement écarté serait du travail pour rien, et « absent »
    * répondrait à côté de la raison réelle.
    */
-  async describe(force = false): Promise<AgentAvailabilityDto> {
+  async describe(force = false): Promise<CliDescription> {
     const base = { agent: this.kind, binary: this.configured, enabled: this.enabled }
     if (!this.enabled) {
-      return { ...base, installed: false, path: null, version: null, reason: 'disabled' }
+      return {
+        ...base,
+        installed: false,
+        managed: false,
+        path: null,
+        version: null,
+        reason: 'disabled',
+      }
     }
 
     const status = await this.status(force)
-    return status.found
-      ? { ...base, installed: true, path: status.path, version: status.version, reason: null }
-      : { ...base, installed: false, path: null, version: null, reason: status.reason }
+    if (!status.found) {
+      return {
+        ...base,
+        installed: false,
+        managed: false,
+        path: null,
+        version: null,
+        reason: status.reason,
+      }
+    }
+    return {
+      ...base,
+      installed: true,
+      // D'où vient le binaire, pour que l'écran puisse le dire : entre un CLI du système
+      // et un que Sillage a posé, l'utilisateur n'a aucun moyen de deviner lequel tourne.
+      managed: status.path.startsWith(this.managedDir),
+      path: status.path,
+      version: status.version,
+      reason: null,
+    }
   }
 
   /**
