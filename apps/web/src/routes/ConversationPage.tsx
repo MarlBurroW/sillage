@@ -764,6 +764,7 @@ export function ConversationPage() {
           <Composer
             key={conversationId}
             initialText={draft}
+            draftKey={conversationId}
             config={config}
             status={stream.status}
             disabled={!isOwner}

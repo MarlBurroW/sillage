@@ -49,6 +49,7 @@ import {
   useRenameConversation,
   useReorderConversations,
 } from '../lib/conversations'
+import { useLiveStatus, useStatusFeed } from '../lib/conversation-status'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
 import {
   restoreSidebarWidth,
@@ -341,6 +342,7 @@ function Sidebar({
   const logout = useLogout()
   const reorder = useReorderProjects()
   const sensors = useDragSensors()
+  useStatusFeed()
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const toggle = (projectId: string) =>
@@ -711,6 +713,8 @@ function ConversationRow({
   const navigate = useNavigate()
   const openMatch = useMatch('/p/:projectId/c/:conversationId')
   const [editing, setEditing] = useState(false)
+  // Le statut du socket prime sur celui de la liste, qui date de son chargement.
+  const status = useLiveStatus(conversation.id) ?? conversation.status
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: conversation.id,
@@ -743,7 +747,7 @@ function ConversationRow({
   }
 
   const isActive = openMatch?.params.conversationId === conversation.id
-  const busy = conversation.status === 'running' || conversation.status === 'awaiting_input'
+  const busy = status === 'running' || status === 'awaiting_input'
 
   return (
     <li
@@ -775,7 +779,7 @@ function ConversationRow({
             aria-label="En cours"
             className={cx(
               'ml-auto size-1.5 shrink-0 rounded-full',
-              conversation.status === 'awaiting_input' ? 'bg-caution' : 'bg-accent animate-pulse',
+              status === 'awaiting_input' ? 'bg-caution' : 'bg-accent animate-pulse',
             )}
           />
         ) : null}

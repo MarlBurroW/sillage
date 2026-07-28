@@ -24,6 +24,7 @@ import {
 } from '@sillage/protocol'
 import { effortsFor, useAgentModels } from '../../lib/agents'
 import type { ContextState } from '../../lib/chat-fold'
+import { readDraft, saveDraft } from '../../lib/composer-drafts'
 import { useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
@@ -135,6 +136,14 @@ interface ComposerProps {
    * quand la conversation change.
    */
   initialText?: string
+  /**
+   * Identité du brouillon conservé entre deux montages.
+   *
+   * L'identifiant de la conversation, ou celui du projet pour un fil pas encore créé :
+   * ce qui est en train d'être écrit doit revenir à l'endroit où on l'a laissé, et pas
+   * ailleurs.
+   */
+  draftKey: string
   /** Projet et worktree consultés pour compléter les mentions `@`. */
   projectId?: string
   worktreeId?: string | null
@@ -158,14 +167,18 @@ export function Composer({
   context,
   onSteer,
   initialText = '',
+  draftKey,
   projectId,
   worktreeId = null,
   footer,
 }: ComposerProps) {
-  const [text, setText] = useState(initialText)
+  // Lu une seule fois au montage : à partir de là c'est l'état local qui fait foi, et
+  // c'est lui qui réalimente le brouillon.
+  const [restored] = useState(() => readDraft(draftKey))
+  const [text, setText] = useState(restored.text || initialText)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [attachments, setAttachments] = useState<AttachmentDto[]>([])
+  const [attachments, setAttachments] = useState<AttachmentDto[]>(restored.attachments)
   const [uploading, setUploading] = useState(0)
   const [token, setToken] = useState<MentionToken | null>(null)
   const [active, setActive] = useState(0)
@@ -175,7 +188,7 @@ export function Composer({
    * mention qui ne pointe nulle part. Claude, lui, développe de toute façon les `@`
    * du texte tout seul.
    */
-  const [mentioned, setMentioned] = useState<Set<string>>(() => new Set())
+  const [mentioned, setMentioned] = useState<Set<string>>(() => new Set(restored.mentions))
   const textarea = useRef<HTMLTextAreaElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
   // Une seule sonde, celle de l'agent de la conversation : chaque sonde démarre le
@@ -292,6 +305,12 @@ export function Composer({
     node.style.height = 'auto'
     node.style.height = `${Math.min(node.scrollHeight, MAX_TEXTAREA_PX)}px`
   }, [text])
+
+  // Le brouillon suit la saisie plutôt que le démontage : un composant démonté par un
+  // changement de route ne peut plus lire son état au moment où il disparaît.
+  useEffect(() => {
+    saveDraft(draftKey, { text, attachments, mentions: [...mentioned] })
+  }, [draftKey, text, attachments, mentioned])
 
   const { data: files, isFetching: searching } = useFileSuggestions(
     projectId,

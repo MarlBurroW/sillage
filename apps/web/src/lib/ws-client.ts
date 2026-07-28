@@ -16,6 +16,22 @@ export interface StreamListener {
   onConnectionChange(connected: boolean): void
 }
 
+/**
+ * Suivi des statuts de l'onglet entier, indépendant du fil ouvert.
+ *
+ * Le serveur pousse le statut de toutes les conversations lisibles ; cet abonné les
+ * reçoit sans avoir à s'abonner au journal de chacune, ce qui coûterait un rejeu
+ * d'événements pour une seule pastille.
+ */
+export interface StatusWatcher {
+  onStatus(conversationId: string, status: ConversationStatus, warm: boolean): void
+  /**
+   * Socket rétabli après une coupure. Les transitions survenues pendant celle-ci n'ont
+   * été poussées à personne : ce qui est affiché doit être relu à la source.
+   */
+  onResync(): void
+}
+
 const MAX_BACKOFF_MS = 15_000
 
 /**
@@ -30,10 +46,13 @@ class WsClient {
   private socket: WebSocket | null = null
   private readonly listeners = new Map<string, Set<StreamListener>>()
   private readonly cursors = new Map<string, number>()
+  private readonly statusWatchers = new Set<StatusWatcher>()
   private reconnectAttempts = 0
   private reconnectTimer: number | null = null
   private heartbeatTimer: number | null = null
   private disposed = false
+  /** Distingue la première ouverture d'une reprise, seule à devoir resynchroniser. */
+  private opened = false
 
   constructor() {
     // Un socket tué par la mise en veille du téléphone ne déclenche pas toujours
@@ -46,6 +65,11 @@ class WsClient {
 
   private get isOpen(): boolean {
     return this.socket?.readyState === WebSocket.OPEN
+  }
+
+  /** Plus personne n'attend rien : inutile de tenir ou de rétablir le socket. */
+  private get idle(): boolean {
+    return this.listeners.size === 0 && this.statusWatchers.size === 0
   }
 
   private send(message: ClientMessage): void {
@@ -79,6 +103,20 @@ class WsClient {
     }
   }
 
+  /**
+   * Suit les statuts de toutes les conversations lisibles, sans abonnement à un fil.
+   *
+   * Ouvre le socket à lui seul : la sidebar est visible sur des pages où aucune
+   * conversation n'est ouverte, et devait pourtant y rester à jour.
+   */
+  watchStatuses(watcher: StatusWatcher): () => void {
+    this.statusWatchers.add(watcher)
+    this.connect()
+    return () => {
+      this.statusWatchers.delete(watcher)
+    }
+  }
+
   /** Curseur courant, utilisé après un rechargement REST pour se réaligner. */
   setCursor(conversationId: string, seq: number): void {
     const current = this.cursors.get(conversationId) ?? -1
@@ -97,6 +135,12 @@ class WsClient {
       for (const [conversationId, afterSeq] of this.cursors) {
         this.send({ t: 'subscribe', conversationId, afterSeq })
       }
+      // Les fils rattrapent leur retard par leur curseur ; les statuts n'ont pas de
+      // journal derrière eux et doivent être relus autrement.
+      if (this.opened) {
+        for (const watcher of this.statusWatchers) watcher.onResync()
+      }
+      this.opened = true
       this.broadcastConnection(true)
       this.startHeartbeat()
     }
@@ -123,6 +167,12 @@ class WsClient {
     if (message.t === 'error') {
       console.warn('[sillage] websocket:', message.code, message.message)
       return
+    }
+
+    if (message.t === 'status') {
+      for (const watcher of this.statusWatchers) {
+        watcher.onStatus(message.conversationId, message.status, message.warm)
+      }
     }
 
     const listeners = this.listeners.get(message.conversationId)
@@ -158,7 +208,7 @@ class WsClient {
   }
 
   private scheduleReconnect(): void {
-    if (this.disposed || this.reconnectTimer !== null || this.listeners.size === 0) return
+    if (this.disposed || this.reconnectTimer !== null || this.idle) return
 
     const delay = Math.min(2 ** this.reconnectAttempts * 500, MAX_BACKOFF_MS)
     this.reconnectAttempts += 1
@@ -169,7 +219,7 @@ class WsClient {
   }
 
   private reconnectNow(): void {
-    if (this.isOpen || this.listeners.size === 0) return
+    if (this.isOpen || this.idle) return
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null

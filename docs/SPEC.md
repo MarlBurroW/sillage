@@ -671,7 +671,14 @@ utilisée aussi bien au chargement initial (depuis `after=0`) qu'après une long
 ### WebSocket
 
 Une seule connexion par onglet, sur `/api/ws`. Multiplexée : un client peut suivre
-plusieurs conversations (utile pour la sidebar, qui affiche les statuts).
+plusieurs conversations.
+
+`status` fait exception à l'abonnement : il part pour toute conversation lisible par le
+compte, abonnée ou non. La sidebar affiche des lignes qu'elle n'a pas ouvertes et n'a
+pas de journal à replier pour en déduire l'état ; l'abonner au flux de chacune ferait
+rejouer autant de journaux pour une pastille. Le droit de lecture est revérifié à chaque
+poussée, et la reprise après coupure relit la liste plutôt que d'attendre la prochaine
+transition.
 
 Client vers serveur :
 
@@ -985,6 +992,16 @@ utilisateur dans le fil, une réponse qui parle bien de volcans, et **aucun**
 `message.queued`. Deux détails relevés à cette occasion : le tour garde son identifiant,
 et l'app-server renvoie le message en écho sous forme d'item `userMessage`, que le
 traducteur ignore déjà pour ne pas l'écrire deux fois.
+
+**Le brouillon survit au changement de conversation.** Le composer est remonté par sa
+clé quand la conversation change : le texte tapé et les pièces jointes déjà téléversées
+sont donc gardés hors de React (`lib/composer-drafts.ts`), indexés par conversation, et
+retrouvés au retour. Un fil pas encore créé range le sien sous son projet, seul repère
+disponible avant qu'il existe.
+
+Le brouillon n'est pas persisté d'une session à l'autre : les pièces jointes n'y sont
+que des identifiants de fichiers téléversés, que le serveur ramasse comme orphelins, et
+un brouillon relu après un redémarrage désignerait des fichiers disparus.
 
 **Bande d'état sous la barre de saisie.** Elle porte les deux informations que l'en-tête
 ne donne pas : l'état de la liaison, et si un process CLI tourne encore pour cette

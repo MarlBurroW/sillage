@@ -99,8 +99,22 @@ class Connection {
     this.subscriptions.delete(conversationId)
   }
 
+  /**
+   * Le statut part pour toute conversation lisible, pas seulement pour le fil abonné :
+   * la sidebar suit des lignes qu'elle n'a pas ouvertes, et sans ça leur point « en
+   * cours » ne bougeait qu'au rechargement de la page.
+   *
+   * Le contrôle d'accès est refait à chaque poussée plutôt que porté par un abonnement :
+   * les changements de statut se comptent en quelques-uns par tour, la lecture est
+   * locale, et rien ne peut alors dériver d'un partage révoqué entre-temps.
+   */
   notifyStatus(conversationId: string, status: ConversationStatus, warm: boolean): void {
-    if (!this.subscriptions.has(conversationId)) return
+    if (
+      !this.subscriptions.has(conversationId) &&
+      !canReadConversation(this.ctx, conversationId, this.userId)
+    ) {
+      return
+    }
     this.send({ t: 'status', conversationId, status, warm })
   }
 
