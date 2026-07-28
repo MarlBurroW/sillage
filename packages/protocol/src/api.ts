@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { agentConfigSchema, claudePermissionModeSchema, type CodexMode } from './agent-config.js'
+import { agentConfigSchema, type CodexMode } from './agent-config.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
-import type { AgentKind } from './events.js'
+import { agentKindSchema, type AgentKind } from './events.js'
 
 export const conversationStatusSchema = z.enum([
   'idle',
@@ -179,7 +179,7 @@ const messagePayloadSchema = z
 // Conversations
 
 export const createConversationBodySchema = z.object({
-  agent: z.enum(['claude', 'codex']),
+  agent: agentKindSchema,
   config: agentConfigSchema,
   worktreeId: z.string().nullable().default(null),
   title: z.string().min(1).max(200).optional(),
@@ -257,8 +257,12 @@ export const elicitationAnswerBodySchema = z.object({
 
 export const planDecisionBodySchema = z.object({
   decision: z.enum(['approved', 'rejected']),
-  /** Comment poursuivre après validation. Null laisse le mode courant en place. */
-  followUpMode: claudePermissionModeSchema.nullable().default(null),
+  /**
+   * Comment poursuivre après validation : l'`id` d'une option annoncée par
+   * `plan.review_requested`. Null laisse le mode courant en place. Opaque ici,
+   * validé par l'adaptateur qui a proposé les options.
+   */
+  followUpMode: z.string().nullable().default(null),
 })
 
 export interface ConversationDto {
@@ -269,7 +273,7 @@ export interface ConversationDto {
   title: string
   /** Vrai si l'utilisateur a renommé : le CLI ne proposera plus de titre. */
   titleSetByUser: boolean
-  agent: 'claude' | 'codex'
+  agent: AgentKind
   /** Conversation d'origine si celle-ci est une branche. Null sinon. */
   forkedFromId: string | null
   config: unknown

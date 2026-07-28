@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentConfig,
-  ClaudePermissionMode,
   ElicitationAction,
   ElicitationValue,
   ConversationDto,
@@ -237,7 +236,8 @@ export function decidePlan(
   conversationId: string,
   requestId: string,
   decision: 'approved' | 'rejected',
-  followUpMode: ClaudePermissionMode | null,
+  /** L'`id` d'une option de suite annoncée par le plan, opaque pour le client. */
+  followUpMode: string | null,
 ): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/plans/${requestId}`, {
     decision,

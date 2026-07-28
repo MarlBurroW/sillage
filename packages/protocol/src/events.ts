@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { claudePermissionModeSchema } from './agent-config.js'
 import { elicitationContentSchema, elicitationFieldSchema } from './elicitation.js'
 
 /**
@@ -85,6 +84,20 @@ export const agentQuestionSchema = z.object({
   options: z.array(questionOptionSchema).default([]),
 })
 export type AgentQuestion = z.infer<typeof agentQuestionSchema>
+
+/**
+ * Une façon de poursuivre après validation d'un plan, proposée par l'adaptateur.
+ *
+ * Comme `permission.requested.suggestions` : c'est le CLI qui sait quels modes il
+ * accepte ensuite, pas le schéma commun. `id` est opaque pour le journal et l'UI, et
+ * n'a de sens que pour l'adaptateur qui l'a émis (un mode de permission chez Claude).
+ */
+export const planFollowUpOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  hint: z.string().default(''),
+})
+export type PlanFollowUpOption = z.infer<typeof planFollowUpOptionSchema>
 
 export const sillageEventSchema = z.discriminatedUnion('type', [
   // Cycle de vie
@@ -262,16 +275,24 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     requestId: z.string(),
     /** Le plan, en markdown, tel que l'agent le propose. */
     plan: z.string(),
+    /**
+     * Suites possibles après validation, fournies par l'adaptateur. Défaut vide pour
+     * les événements journalisés avant l'ajout du champ : l'UI propose alors une
+     * validation sans changement de mode.
+     */
+    followUpOptions: z.array(planFollowUpOptionSchema).default([]),
   }),
   z.object({
     type: z.literal('plan.review_resolved'),
     requestId: z.string(),
     decision: z.enum(['approved', 'rejected', 'expired']),
     /**
-     * Mode de permission adopté pour la suite quand le plan est accepté. C'est ce qui
-     * distingue « valide et poursuis en demandant » de « valide et laisse écrire ».
+     * Suite adoptée quand le plan est accepté : l'`id` d'une option proposée. C'est ce
+     * qui distingue « valide et poursuis en demandant » de « valide et laisse
+     * écrire ». Chaîne opaque ici : c'est l'adaptateur émetteur qui la valide, le
+     * schéma commun n'a pas à connaître les modes de permission d'un CLI.
      */
-    followUpMode: claudePermissionModeSchema.nullable().default(null),
+    followUpMode: z.string().nullable().default(null),
     decidedBy: z.string().nullable(),
   }),
 

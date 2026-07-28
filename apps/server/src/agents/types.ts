@@ -1,6 +1,5 @@
 import type {
   AgentConfig,
-  ClaudePermissionMode,
   ConversationStatus,
   ElicitationAction,
   ElicitationValue,
@@ -32,8 +31,11 @@ export interface ElicitationAnswer {
 /** Verdict de l'utilisateur sur un plan proposé par l'agent. */
 export interface PlanReview {
   decision: 'approved' | 'rejected'
-  /** Mode de permission pour la suite, quand le plan est accepté. */
-  followUpMode: ClaudePermissionMode | null
+  /**
+   * Suite retenue quand le plan est accepté : l'`id` d'une option que l'adaptateur a
+   * proposées dans `plan.review_requested`. Opaque ici, validé par l'adaptateur.
+   */
+  followUpMode: string | null
   decidedBy: string | null
 }
 

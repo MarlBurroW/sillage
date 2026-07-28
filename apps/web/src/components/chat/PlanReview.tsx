@@ -1,6 +1,5 @@
 import { ClipboardCheck } from 'lucide-react'
 import { useState } from 'react'
-import type { ClaudePermissionMode } from '@sillage/protocol'
 import type { PlanItem } from '../../lib/chat-fold'
 import { decidePlan } from '../../lib/conversations'
 import { Badge, Button, cx } from '../ui'
@@ -11,24 +10,6 @@ const STATUS_LABEL: Record<Exclude<PlanItem['status'], 'pending'>, string> = {
   rejected: 'Refusé',
   expired: 'Expiré',
 }
-
-/**
- * Valider un plan, c'est aussi décider comment la suite s'exécute : sortir du mode
- * plan sans choisir de mode ferait retomber l'agent dans celui qui l'a fait planifier,
- * et il replanifierait au lieu d'agir.
- */
-const FOLLOW_UP: { mode: ClaudePermissionMode; label: string; hint: string }[] = [
-  {
-    mode: 'acceptEdits',
-    label: 'Valider et laisser écrire',
-    hint: 'Les modifications de fichiers passent sans demande',
-  },
-  {
-    mode: 'manual',
-    label: 'Valider et demander',
-    hint: 'Chaque outil reste soumis à ton accord',
-  },
-]
 
 export function PlanReview({
   conversationId,
@@ -44,10 +25,15 @@ export function PlanReview({
 
   const pending = item.status === 'pending'
 
-  const decide = async (
-    decision: 'approved' | 'rejected',
-    followUpMode: ClaudePermissionMode | null,
-  ) => {
+  /**
+   * Valider un plan, c'est aussi décider comment la suite s'exécute : les options
+   * viennent de l'adaptateur, qui seul sait quels modes son CLI accepte ensuite. Un
+   * journal d'avant ce champ n'en propose aucune : la validation part alors sans
+   * changement de mode.
+   */
+  const followUp = item.followUpOptions
+
+  const decide = async (decision: 'approved' | 'rejected', followUpMode: string | null) => {
     setBusy(true)
     setError(null)
     try {
@@ -83,18 +69,29 @@ export function PlanReview({
 
       {pending && canDecide ? (
         <div className="mt-3 flex flex-wrap gap-2">
-          {FOLLOW_UP.map((option, index) => (
+          {followUp.length > 0 ? (
+            followUp.map((option, index) => (
+              <Button
+                key={option.id}
+                size="sm"
+                variant={index === 0 ? 'primary' : 'secondary'}
+                title={option.hint}
+                disabled={busy}
+                onClick={() => void decide('approved', option.id)}
+              >
+                {option.label}
+              </Button>
+            ))
+          ) : (
             <Button
-              key={option.mode}
               size="sm"
-              variant={index === 0 ? 'primary' : 'secondary'}
-              title={option.hint}
+              variant="primary"
               disabled={busy}
-              onClick={() => void decide('approved', option.mode)}
+              onClick={() => void decide('approved', null)}
             >
-              {option.label}
+              Valider le plan
             </Button>
-          ))}
+          )}
           <Button
             size="sm"
             variant="ghost"
