@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { SEARCH_MIN_QUERY, type ConversationDto, type SearchMessageDto } from '@sillage/protocol'
 import { useAllConversations } from '../lib/conversations'
+import { useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import { scoreMatch, splitExcerpt, useMessageSearch } from '../lib/search'
 import { AgentIcon } from './AgentIcon'
@@ -45,6 +46,7 @@ export function CommandPalette({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const t = useTranslate()
   const navigate = useNavigate()
   const { data: conversations } = useAllConversations()
   const { data: projects } = useProjects()
@@ -146,7 +148,7 @@ export function CommandPalette({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
         <Dialog.Content
-          aria-label="Recherche"
+          aria-label={t('search.dialog.label')}
           className={cx(
             'surface fixed z-50 flex flex-col overflow-hidden border-line shadow-pop',
             'inset-0 border-0',
@@ -155,7 +157,7 @@ export function CommandPalette({
           )}
           onKeyDown={onKeyDown}
         >
-          <Dialog.Title className="sr-only">Rechercher</Dialog.Title>
+          <Dialog.Title className="sr-only">{t('search.title')}</Dialog.Title>
 
           <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 pt-safe">
             <Search size={16} className="shrink-0 text-ink-faint" />
@@ -163,7 +165,7 @@ export function CommandPalette({
               autoFocus
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Rechercher une conversation ou un message..."
+              placeholder={t('search.placeholder')}
               className="h-12 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
             />
             {searching && isFetching ? (
@@ -174,7 +176,7 @@ export function CommandPalette({
                 voile à toucher à côté, donc rien pour en sortir sans ce bouton. Inutile
                 au-delà, où les deux gestes existent. */}
             <IconButton
-              label="Fermer la recherche"
+              label={t('search.close')}
               className="sm:hidden"
               onClick={() => onOpenChange(false)}
             >
@@ -183,7 +185,10 @@ export function CommandPalette({
           </div>
 
           <div ref={list} className="min-h-0 flex-1 overflow-y-auto p-1.5 pb-safe">
-            <Section label={query.trim() ? 'Conversations' : 'Récentes'} count={titleEntries.length}>
+            <Section
+              label={query.trim() ? t('search.section.conversations') : t('search.section.recent')}
+              count={titleEntries.length}
+            >
               {titleEntries.map((entry, index) => (
                 <Row
                   key={entry.key}
@@ -197,7 +202,7 @@ export function CommandPalette({
             </Section>
 
             {searching ? (
-              <Section label="Messages" count={messageMatches.length}>
+              <Section label={t('search.section.messages')} count={messageMatches.length}>
                 {messageMatches.map((entry, index) => (
                   <Row
                     key={entry.key}
@@ -214,8 +219,8 @@ export function CommandPalette({
             {entries.length === 0 ? (
               <p className="px-2.5 py-6 text-center text-sm text-ink-faint">
                 {query.trim().length > 0 && !searching
-                  ? `Encore ${SEARCH_MIN_QUERY - query.trim().length} caractère(s) pour chercher dans les messages.`
-                  : 'Aucun résultat.'}
+                  ? t('search.empty.moreChars', { count: SEARCH_MIN_QUERY - query.trim().length })
+                  : t('search.empty.none')}
               </p>
             ) : null}
           </div>
@@ -258,6 +263,7 @@ function Row({
   onHover: () => void
   onSelect: () => void
 }) {
+  const t = useTranslate()
   const { conversation, message } = entry
 
   return (
@@ -286,7 +292,7 @@ function Row({
         {message ? (
           <span className="mt-0.5 block text-xs text-ink-faint">
             <span className="mr-1.5 text-[0.6875rem]">
-              {message.role === 'user' ? 'Toi' : 'Agent'}
+              {message.role === 'user' ? t('search.role.user') : t('search.role.agent')}
             </span>
             {splitExcerpt(message.excerpt).map((part, index) =>
               part.hit ? (

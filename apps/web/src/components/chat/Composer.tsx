@@ -29,23 +29,37 @@ import { useComposerDrops, useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
+import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
 import { IconButton, Select, cx, type SelectOption, type SelectTone } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
 import { ComposerSettings, type ComposerControl } from './ComposerSettings'
 import { MentionPicker } from './MentionPicker'
 
-const PERMISSION_OPTIONS: SelectOption<ClaudeConfig['permissionMode']>[] = [
-  { value: 'manual', label: 'Demander', hint: 'Chaque outil est soumis à ton accord' },
-  { value: 'auto', label: 'Automatique', hint: 'Claude décide, demande en cas de doute' },
-  { value: 'acceptEdits', label: 'Éditions acceptées', hint: 'Les écritures passent sans demande' },
-  { value: 'plan', label: 'Plan', hint: 'Analyse seule, aucune modification' },
-  { value: 'dontAsk', label: 'Ne pas demander', hint: 'Aucune demande, les refus sont muets' },
-  {
-    value: 'bypassPermissions',
-    label: 'Tout autoriser',
-    hint: 'Aucun garde-fou, à réserver aux dossiers sans risque',
-  },
-]
+/** Traduction, passée aux fabriques d'options qui vivent hors du composant. */
+type Translate = (key: MessageKey, params?: MessageParams) => string
+
+function permissionOptions(t: Translate): SelectOption<ClaudeConfig['permissionMode']>[] {
+  return [
+    { value: 'manual', label: t('composer.permission.manual'), hint: t('composer.permission.manual.hint') },
+    { value: 'auto', label: t('composer.permission.auto'), hint: t('composer.permission.auto.hint') },
+    {
+      value: 'acceptEdits',
+      label: t('composer.permission.acceptEdits'),
+      hint: t('composer.permission.acceptEdits.hint'),
+    },
+    { value: 'plan', label: t('composer.permission.plan'), hint: t('composer.permission.plan.hint') },
+    {
+      value: 'dontAsk',
+      label: t('composer.permission.dontAsk'),
+      hint: t('composer.permission.dontAsk.hint'),
+    },
+    {
+      value: 'bypassPermissions',
+      label: t('composer.permission.bypass'),
+      hint: t('composer.permission.bypass.hint'),
+    },
+  ]
+}
 
 /**
  * Valeur d'affichage de la sentinelle `CLI_DEFAULT` dans le sélecteur d'approbation.
@@ -61,27 +75,47 @@ type ApprovalChoice = CodexApprovalName | typeof CLI_DEFAULT_CHOICE | 'granular'
  * deux CLI n'ont pas les mêmes concepts, et inventer une abstraction commune
  * mentirait sur ce qui se passe réellement.
  */
-const CODEX_APPROVAL_OPTIONS: SelectOption<ApprovalChoice>[] = [
-  {
-    value: CLI_DEFAULT_CHOICE,
-    label: 'Défaut du CLI',
-    hint: 'La politique configurée dans Codex s\'applique',
-  },
-  { value: 'untrusted', label: 'Non fiable', hint: 'Seules les commandes sûres passent seules' },
-  { value: 'on-request', label: 'Sur demande', hint: 'Codex demande quand il le juge utile' },
-  { value: 'on-failure', label: 'Sur échec', hint: 'Déprécié par le CLI, conservé par le protocole' },
-  { value: 'never', label: 'Jamais', hint: 'Aucune demande, les échecs remontent au modèle' },
-]
+function codexApprovalOptions(t: Translate): SelectOption<ApprovalChoice>[] {
+  return [
+    {
+      value: CLI_DEFAULT_CHOICE,
+      label: t('composer.approval.cliDefault'),
+      hint: t('composer.approval.cliDefault.hint'),
+    },
+    {
+      value: 'untrusted',
+      label: t('composer.approval.untrusted'),
+      hint: t('composer.approval.untrusted.hint'),
+    },
+    {
+      value: 'on-request',
+      label: t('composer.approval.onRequest'),
+      hint: t('composer.approval.onRequest.hint'),
+    },
+    {
+      value: 'on-failure',
+      label: t('composer.approval.onFailure'),
+      hint: t('composer.approval.onFailure.hint'),
+    },
+    { value: 'never', label: t('composer.approval.never'), hint: t('composer.approval.never.hint') },
+  ]
+}
 
-const CODEX_SANDBOX_OPTIONS: SelectOption<CodexConfig['sandbox']>[] = [
-  { value: 'read-only', label: 'Lecture seule', hint: 'Aucune écriture possible' },
-  { value: 'workspace-write', label: 'Écriture workspace', hint: 'Écriture limitée au projet' },
-  {
-    value: 'danger-full-access',
-    label: 'Accès total',
-    hint: 'Aucun garde-fou, à réserver aux dossiers sans risque',
-  },
-]
+function codexSandboxOptions(t: Translate): SelectOption<CodexConfig['sandbox']>[] {
+  return [
+    { value: 'read-only', label: t('composer.sandbox.readOnly'), hint: t('composer.sandbox.readOnly.hint') },
+    {
+      value: 'workspace-write',
+      label: t('composer.sandbox.workspaceWrite'),
+      hint: t('composer.sandbox.workspaceWrite.hint'),
+    },
+    {
+      value: 'danger-full-access',
+      label: t('composer.sandbox.fullAccess'),
+      hint: t('composer.sandbox.fullAccess.hint'),
+    },
+  ]
+}
 
 /** Le `@...` en cours de saisie, repéré autour du curseur. */
 interface MentionToken {
@@ -172,6 +206,9 @@ export function Composer({
   worktreeId = null,
   footer,
 }: ComposerProps) {
+  const t = useTranslate()
+  // `t` lui-même ne change jamais de référence : c'est la langue qu'il faut suivre
+  // pour recalculer les options mémoïsées qui l'appellent.
   // Lu une seule fois au montage : à partir de là c'est l'état local qui fait foi, et
   // c'est lui qui réalimente le brouillon.
   const [restored] = useState(() => readDraft(draftKey))
@@ -208,7 +245,7 @@ export function Composer({
       label: model.displayName,
       // `hint` porte la version réelle derrière un alias : sans elle, « Opus » ne
       // dit pas quelle génération va effectivement répondre.
-      hint: [model.description, model.hint, model.isDefault ? 'par défaut' : null]
+      hint: [model.description, model.hint, model.isDefault ? t('composer.model.default') : null]
         .filter(Boolean)
         .join(' · '),
     }))
@@ -216,10 +253,10 @@ export function Composer({
     // Le modèle enregistré doit rester sélectionnable même si le catalogue n'a pas pu
     // être lu, sinon le select s'affiche vide et efface le réglage de la conversation.
     if (!known.some((option) => option.value === config.model)) {
-      known.unshift({ value: config.model, label: config.model, hint: 'Réglage enregistré' })
+      known.unshift({ value: config.model, label: config.model, hint: t('composer.select.saved') })
     }
     return known
-  }, [catalog, config.model])
+  }, [catalog, config.model, t])
 
   const effortOptions = useMemo((): SelectOption<string>[] => {
     const known = effortsFor(catalog?.models, config.model).map((effort) => ({
@@ -238,12 +275,12 @@ export function Composer({
       known.unshift({
         value: current,
         label: current,
-        hint: 'Réglage enregistré',
+        hint: t('composer.select.saved'),
         icon: <Brain size={13} />,
       })
     }
     return known
-  }, [catalog, config])
+  }, [catalog, config, t])
 
   /**
    * Modes de collaboration annoncés par Codex. Le mode décide des outils accessibles
@@ -274,10 +311,15 @@ export function Composer({
 
   const approvalOptions: SelectOption<ApprovalChoice>[] = granular
     ? [
-        { value: 'granular', label: 'Granulaire', hint: 'Défini hors de Sillage', disabled: true },
-        ...CODEX_APPROVAL_OPTIONS,
+        {
+          value: 'granular',
+          label: t('composer.approval.granular'),
+          hint: t('composer.approval.granular.hint'),
+          disabled: true,
+        },
+        ...codexApprovalOptions(t),
       ]
-    : CODEX_APPROVAL_OPTIONS
+    : codexApprovalOptions(t)
 
   /**
    * Chaque modèle expose ses propres niveaux. Garder l'effort courant quand le
@@ -415,7 +457,7 @@ export function Composer({
       setText(value)
       setAttachments(sent)
       setMentioned(new Set(paths))
-      setError(err instanceof Error ? err.message : "L'envoi a échoué.")
+      setError(err instanceof Error ? err.message : t('composer.send.failed'))
     } finally {
       setSending(false)
     }
@@ -427,13 +469,13 @@ export function Composer({
 
     const room = MAX_ATTACHMENTS_PER_MESSAGE - attachments.length
     if (room <= 0) {
-      setError(`Maximum ${MAX_ATTACHMENTS_PER_MESSAGE} pièces jointes par message.`)
+      setError(t('composer.attachments.max', { max: MAX_ATTACHMENTS_PER_MESSAGE }))
       return
     }
 
     const selected = chosen.slice(0, room)
     if (selected.length < chosen.length) {
-      setError(`Seuls les ${room} premiers fichiers ont été retenus.`)
+      setError(t('composer.attachments.limited', { count: room }))
     }
 
     setUploading((count) => count + selected.length)
@@ -442,7 +484,7 @@ export function Composer({
         const uploaded = await uploadAttachment(file)
         setAttachments((current) => [...current, uploaded])
       } catch (err) {
-        setError(err instanceof Error ? err.message : `Envoi de « ${file.name} » impossible.`)
+        setError(err instanceof Error ? err.message : t('composer.attachments.uploadFailed', { name: file.name }))
       } finally {
         setUploading((count) => count - 1)
       }
@@ -519,7 +561,10 @@ export function Composer({
    * `CLI_DEFAULT`, qui n'a pas d'option nommée dans les listes de modèles.
    */
   const labelOf = <T extends string>(options: SelectOption<T>[], value: T): string =>
-    options.find((option) => option.value === value)?.label || value || 'Défaut'
+    options.find((option) => option.value === value)?.label || value || t('composer.select.default')
+
+  const permissionOptionList = permissionOptions(t)
+  const sandboxOptionList = codexSandboxOptions(t)
 
   /** Réglages de la session, dans l'ordre où on les change. */
   const controls: ComposerControl[] = claude
@@ -529,7 +574,7 @@ export function Composer({
           render: (variant) => (
             <Select
               variant={variant}
-              label={variant === 'field' ? 'Modèle' : undefined}
+              label={variant === 'field' ? t('composer.field.model') : undefined}
               value={claude.model}
               onChange={(model) =>
                 onConfigChange({ ...claude, model, effort: clampClaudeEffort(model, claude.effort) })
@@ -548,7 +593,7 @@ export function Composer({
                 render: (variant: 'pill' | 'field') => (
                   <Select
                     variant={variant}
-                    label={variant === 'field' ? 'Effort de réflexion' : undefined}
+                    label={variant === 'field' ? t('composer.field.effort') : undefined}
                     value={claude.effort}
                     onChange={(effort) => {
                       // Le select est générique sur des chaînes ; l'enum du protocole
@@ -568,17 +613,17 @@ export function Composer({
           render: (variant) => (
             <Select
               variant={variant}
-              label={variant === 'field' ? 'Permissions' : undefined}
+              label={variant === 'field' ? t('composer.field.permission') : undefined}
               tone={claude.permissionMode === 'bypassPermissions' ? 'caution' : 'neutral'}
               value={claude.permissionMode}
               onChange={(permissionMode) => onConfigChange({ ...claude, permissionMode })}
-              options={PERMISSION_OPTIONS.map((option) => ({
+              options={permissionOptionList.map((option) => ({
                 ...option,
                 icon: <ShieldCheck size={13} />,
               }))}
             />
           ),
-          current: labelOf(PERMISSION_OPTIONS, claude.permissionMode),
+          current: labelOf(permissionOptionList, claude.permissionMode),
         },
       ]
     : codex
@@ -588,7 +633,7 @@ export function Composer({
             render: (variant) => (
               <Select
                 variant={variant}
-                label={variant === 'field' ? 'Modèle' : undefined}
+                label={variant === 'field' ? t('composer.field.model') : undefined}
                 value={codex.model}
                 onChange={(model) =>
                   onConfigChange({
@@ -609,7 +654,7 @@ export function Composer({
                   render: (variant: 'pill' | 'field') => (
                     <Select
                       variant={variant}
-                      label={variant === 'field' ? 'Mode' : undefined}
+                      label={variant === 'field' ? t('composer.field.mode') : undefined}
                       value={codex.collaborationMode}
                       onChange={(collaborationMode) =>
                         onConfigChange({ ...codex, collaborationMode })
@@ -628,7 +673,7 @@ export function Composer({
                   render: (variant: 'pill' | 'field') => (
                     <Select
                       variant={variant}
-                      label={variant === 'field' ? 'Effort de réflexion' : undefined}
+                      label={variant === 'field' ? t('composer.field.effort') : undefined}
                       value={codex.reasoningEffort}
                       onChange={(reasoningEffort) => onConfigChange({ ...codex, reasoningEffort })}
                       options={effortOptions}
@@ -643,7 +688,7 @@ export function Composer({
             render: (variant) => (
               <Select
                 variant={variant}
-                label={variant === 'field' ? 'Approbations' : undefined}
+                label={variant === 'field' ? t('composer.field.approval') : undefined}
                 tone={approval === 'never' ? 'caution' : 'neutral'}
                 value={approvalValue}
                 onChange={(choice) => {
@@ -665,14 +710,14 @@ export function Composer({
             render: (variant) => (
               <Select
                 variant={variant}
-                label={variant === 'field' ? 'Bac à sable' : undefined}
+                label={variant === 'field' ? t('composer.field.sandbox') : undefined}
                 tone={codex.sandbox === 'danger-full-access' ? 'caution' : 'neutral'}
                 value={codex.sandbox}
                 onChange={(sandbox) => onConfigChange({ ...codex, sandbox })}
-                options={CODEX_SANDBOX_OPTIONS}
+                options={sandboxOptionList}
               />
             ),
-            current: labelOf(CODEX_SANDBOX_OPTIONS, codex.sandbox),
+            current: labelOf(sandboxOptionList, codex.sandbox),
           },
         ]
       : []
@@ -705,9 +750,7 @@ export function Composer({
         ) : null}
 
         {catalogError ? (
-          <p className="mb-1.5 px-1 text-xs text-caution">
-            Liste des modèles indisponible, le réglage enregistré est conservé.
-          </p>
+          <p className="mb-1.5 px-1 text-xs text-caution">{t('composer.catalog.unavailable')}</p>
         ) : null}
 
         {/* Un seul bloc porte le cadre : le champ et sa barre d'outils forment un
@@ -746,7 +789,7 @@ export function Composer({
             onPaste={onPaste}
             rows={1}
             disabled={disabled}
-            placeholder={disabled ? 'Conversation en lecture seule' : 'Écris ton message...'}
+            placeholder={disabled ? t('composer.placeholder.readonly') : t('composer.placeholder.write')}
             className={cx(
               'max-h-[200px] w-full resize-none bg-transparent px-2 py-2',
               'text-[0.9375rem] leading-relaxed text-ink outline-none',
@@ -770,7 +813,7 @@ export function Composer({
               }}
             />
             <IconButton
-              label="Joindre un fichier"
+              label={t('composer.attach.label')}
               size="sm"
               disabled={disabled || attachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
               onClick={() => filePicker.current?.click()}
@@ -792,8 +835,8 @@ export function Composer({
               <button
                 type="button"
                 onClick={() => void submit(onSteer)}
-                aria-label="Infléchir le tour en cours"
-                title="Pris en compte tout de suite, sans attendre la fin du tour"
+                aria-label={t('composer.steer.aria')}
+                title={t('composer.steer.hint')}
                 className={cx(
                   'flex size-9 shrink-0 items-center justify-center rounded-full',
                   'border border-accent text-accent transition-colors hover:bg-accent-wash',
@@ -807,8 +850,8 @@ export function Composer({
               <button
                 type="button"
                 onClick={onInterrupt}
-                aria-label="Interrompre l'agent"
-                title="Interrompre l'agent"
+                aria-label={t('composer.interrupt')}
+                title={t('composer.interrupt')}
                 className={cx(
                   'flex size-9 shrink-0 items-center justify-center rounded-full',
                   'border border-line bg-surface-high text-ink transition-colors hover:border-line-strong',
@@ -821,8 +864,8 @@ export function Composer({
             <button
               type="submit"
               disabled={!canSend}
-              aria-label={running ? 'Mettre le message en file' : 'Envoyer le message'}
-              title={running ? "Sera envoyé à la fin du tour en cours" : 'Envoyer le message'}
+              aria-label={running ? t('composer.send.queue') : t('composer.send.aria')}
+              title={running ? t('composer.send.queue.hint') : t('composer.send.aria')}
               className={cx(
                 'flex size-9 shrink-0 items-center justify-center rounded-full',
                 'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',

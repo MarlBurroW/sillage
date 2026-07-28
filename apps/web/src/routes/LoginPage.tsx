@@ -1,11 +1,13 @@
 import { KeyRound, User } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { ApiRequestError } from '../lib/api'
+import { useTranslate } from '../lib/i18n'
 import { useLogin } from '../lib/session'
 import { Logo } from '../components/Logo'
 import { Banner, Button, Card, CardBody, Field } from '../components/ui'
 
 export function LoginPage() {
+  const t = useTranslate()
   const login = useLogin()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -19,7 +21,7 @@ export function LoginPage() {
     login.error instanceof ApiRequestError
       ? login.error.message
       : login.error
-        ? 'Le serveur est injoignable.'
+        ? t('login.error.unreachable')
         : null
 
   return (
@@ -31,7 +33,7 @@ export function LoginPage() {
           </span>
           <div className="text-center">
             <h1 className="text-xl font-semibold tracking-tight">Sillage</h1>
-            <p className="mt-1 text-sm text-ink-faint">Plateforme de développement agentique</p>
+            <p className="mt-1 text-sm text-ink-faint">{t('login.subtitle')}</p>
           </div>
         </div>
 
@@ -39,7 +41,7 @@ export function LoginPage() {
           <CardBody>
             <form onSubmit={submit} className="flex flex-col gap-4">
               <Field
-                label="Nom d'utilisateur"
+                label={t('login.username.label')}
                 icon={<User size={16} />}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -49,7 +51,7 @@ export function LoginPage() {
                 required
               />
               <Field
-                label="Mot de passe"
+                label={t('login.password.label')}
                 type="password"
                 icon={<KeyRound size={16} />}
                 value={password}
@@ -59,7 +61,7 @@ export function LoginPage() {
               />
               {message ? <Banner>{message}</Banner> : null}
               <Button type="submit" disabled={login.isPending} className="mt-1 w-full">
-                {login.isPending ? 'Connexion...' : 'Se connecter'}
+                {login.isPending ? t('login.submit.pending') : t('login.submit.action')}
               </Button>
             </form>
           </CardBody>

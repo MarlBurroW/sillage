@@ -7,6 +7,7 @@ import type { EditTurn, EditedFile } from '../../lib/chat-fold'
 import { useEditDiff } from '../../lib/edits'
 import { parseUnifiedDiff, type DiffFile } from '../../lib/diff'
 import { languageFromPath } from '../../lib/highlight'
+import { locale, useTranslate } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
 import { HighlightedCode } from '../chat/HighlightedCode'
 import { Banner, IconButton, cx } from '../ui'
@@ -20,7 +21,7 @@ const ACTIONS: Record<EditedFile['action'], { icon: ReactNode; tone: string }> =
 
 /** Heure seule : l'historique ne couvre qu'une conversation, jamais plusieurs jours d'affilée. */
 function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  return new Date(ts).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })
 }
 
 /**
@@ -75,6 +76,7 @@ function WorkingDiff({
   turnRunning: boolean
   onOpenFile: (path: string) => void
 }) {
+  const t = useTranslate()
   const { data, error, isPending, isFetching, refetch } = useQuery({
     queryKey: ['diff', conversationId],
     queryFn: () => api.get<WorkingDiffDto>(`/api/conversations/${conversationId}/diff`),
@@ -105,12 +107,12 @@ function WorkingDiff({
     <section className="shrink-0">
       <SectionTitle
         action={
-          <IconButton label="Recalculer le diff" size="sm" onClick={() => void refetch()}>
+          <IconButton label={t('changes.diff.recalculate')} size="sm" onClick={() => void refetch()}>
             <RefreshCw size={13} className={cx(isFetching && 'animate-spin')} />
           </IconButton>
         }
       >
-        État courant
+        {t('changes.diff.current')}
       </SectionTitle>
 
       {data?.branch ? (
@@ -123,7 +125,9 @@ function WorkingDiff({
           {data.files && data.files.length > 0 ? (
             <span className="flex items-center gap-1.5">
               <span>
-                {data.files.length} fichier{data.files.length > 1 ? 's' : ''}
+                {data.files.length > 1
+                  ? t('changes.files.countMany', { count: data.files.length })
+                  : t('changes.files.countOne', { count: data.files.length })}
               </span>
               {added > 0 ? <span className="font-mono text-positive">+{added}</span> : null}
               {removed > 0 ? <span className="font-mono text-critical">-{removed}</span> : null}
@@ -149,24 +153,22 @@ function WorkingDiff({
       {isPending ? (
         <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">
           <Loader size={11} className="animate-spin" />
-          Lecture du dépôt...
+          {t('changes.diff.loading')}
         </p>
       ) : null}
 
       {error ? (
         <div className="p-2">
-          <Banner>{error instanceof Error ? error.message : 'Diff illisible.'}</Banner>
+          <Banner>{error instanceof Error ? error.message : t('changes.diff.error')}</Banner>
         </div>
       ) : null}
 
       {data && data.files === null ? (
-        <p className="px-2.5 py-2 text-xs text-ink-faint">
-          Ce répertoire de travail n'est pas un dépôt git.
-        </p>
+        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.diff.notGitRepo')}</p>
       ) : null}
 
       {data?.files?.length === 0 ? (
-        <p className="px-2.5 py-2 text-xs text-ink-faint">Aucune modification en cours.</p>
+        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.diff.none')}</p>
       ) : null}
 
       {files.map((file) => (
@@ -174,9 +176,7 @@ function WorkingDiff({
       ))}
 
       {data?.truncated ? (
-        <p className="px-2.5 py-2 text-[0.6875rem] text-caution">
-          Diff tronqué : seules les premières modifications sont affichées.
-        </p>
+        <p className="px-2.5 py-2 text-[0.6875rem] text-caution">{t('changes.diff.truncated')}</p>
       ) : null}
     </section>
   )
@@ -198,6 +198,7 @@ function FileDiff({
   file: DiffFile
   onOpenFile: (path: string) => void
 }) {
+  const t = useTranslate()
   const [open, setOpen] = useState(false)
   const action = ACTIONS[DIFF_ACTIONS[file.status]]
 
@@ -228,7 +229,7 @@ function FileDiff({
       {open ? (
         <div className="border-t border-line/60">
           {file.status === 'binary' ? (
-            <p className="px-2.5 py-2 text-xs text-ink-faint">Fichier binaire.</p>
+            <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.file.binary')}</p>
           ) : (
             <DiffHunks hunks={file.hunks} path={file.path} />
           )}
@@ -239,7 +240,7 @@ function FileDiff({
               onClick={() => onOpenFile(file.path)}
               className="px-2.5 py-1.5 text-[0.6875rem] text-ink-faint underline hover:text-ink"
             >
-              Ouvrir dans l'éditeur
+              {t('changes.file.open')}
             </button>
           )}
         </div>
@@ -257,14 +258,14 @@ function History({
   turns: EditTurn[]
   onOpenFile: (path: string) => void
 }) {
+  const t = useTranslate()
+
   return (
     <section className="shrink-0">
-      <SectionTitle>Historique de l'agent</SectionTitle>
+      <SectionTitle>{t('changes.history.title')}</SectionTitle>
 
       {turns.length === 0 ? (
-        <p className="px-2.5 py-2 text-xs text-ink-faint">
-          L'agent n'a modifié aucun fichier dans cette conversation.
-        </p>
+        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.history.empty')}</p>
       ) : null}
 
       {/* Le plus récent en tête : c'est le tour dont on vient de voir le résultat. */}
@@ -289,6 +290,7 @@ function HistoryTurn({
   turn: EditTurn
   onOpenFile: (path: string) => void
 }) {
+  const t = useTranslate()
   const [open, setOpen] = useState(false)
 
   return (
@@ -310,7 +312,9 @@ function HistoryTurn({
           {turn.label}
         </span>
         <span className="shrink-0 text-[0.625rem] text-ink-faint">
-          {turn.files.length} fichier{turn.files.length > 1 ? 's' : ''}
+          {turn.files.length > 1
+            ? t('changes.files.countMany', { count: turn.files.length })
+            : t('changes.files.countOne', { count: turn.files.length })}
         </span>
       </button>
 
@@ -347,6 +351,7 @@ function HistoryFile({
   file: EditedFile
   onOpenFile: (path: string) => void
 }) {
+  const t = useTranslate()
   const [open, setOpen] = useState(false)
 
   return (
@@ -377,7 +382,7 @@ function HistoryFile({
             chaque ligne n'apprendrait rien. */}
         {file.toolCallIds.length > 1 ? (
           <span className="shrink-0 text-[0.625rem] text-ink-faint">
-            {file.toolCallIds.length} passes
+            {t('changes.file.passes', { count: file.toolCallIds.length })}
           </span>
         ) : null}
       </button>
@@ -402,7 +407,7 @@ function HistoryFile({
               onClick={() => onOpenFile(file.path)}
               className="px-2.5 py-1.5 text-[0.6875rem] text-ink-faint underline hover:text-ink"
             >
-              Ouvrir dans l'éditeur
+              {t('changes.file.open')}
             </button>
           )}
         </div>
@@ -424,6 +429,7 @@ function EditDiff({
   /** Rang de la passe, quand le fichier a été repris plusieurs fois dans le tour. */
   rank: number | null
 }) {
+  const t = useTranslate()
   const { data, error, isPending } = useEditDiff(conversationId, toolCallId, path)
   const files = useMemo(
     () => (data?.kind === 'patch' ? parseUnifiedDiff(data.patch) : []),
@@ -434,7 +440,7 @@ function EditDiff({
     return (
       <p className="flex items-center gap-1.5 px-2.5 py-1.5 text-[0.6875rem] text-ink-faint">
         <Loader size={11} className="animate-spin" />
-        Lecture du journal...
+        {t('changes.edit.loading')}
       </p>
     )
   }
@@ -442,7 +448,7 @@ function EditDiff({
   if (error || !data) {
     return (
       <p className="px-2.5 py-1.5 text-[0.6875rem] text-critical">
-        {error instanceof Error ? error.message : 'Modification illisible.'}
+        {error instanceof Error ? error.message : t('changes.edit.error')}
       </p>
     )
   }
@@ -452,8 +458,8 @@ function EditDiff({
       {rank === null && !data.partial && data.kind === 'patch' ? null : (
         <p className="px-2.5 pt-1.5 text-[0.625rem] text-ink-faint">
           {[
-            rank === null ? null : `Passe ${rank}`,
-            data.partial ? 'extrait remplacé, numéros de ligne relatifs' : null,
+            rank === null ? null : t('changes.edit.pass', { rank }),
+            data.partial ? t('changes.edit.partial') : null,
             data.reason,
           ]
             .filter(Boolean)

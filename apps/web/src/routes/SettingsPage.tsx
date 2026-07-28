@@ -1,6 +1,7 @@
 import { Bell, ChevronRight, FolderOpen, Info, Palette, UserRound, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 import { useVersionInfo } from '../lib/system'
 import { useMediaQuery } from '../lib/viewport'
@@ -21,8 +22,8 @@ import { cx } from '../components/ui'
  */
 interface Section {
   to: string
-  label: string
-  description: string
+  labelKey: MessageKey
+  descriptionKey: MessageKey
   icon: ReactNode
   adminOnly?: boolean
 }
@@ -30,44 +31,45 @@ interface Section {
 const SECTIONS: Section[] = [
   {
     to: 'compte',
-    label: 'Compte',
-    description: 'Nom affiché, identifiant, mot de passe',
+    labelKey: 'settings.section.account',
+    descriptionKey: 'settings.section.account.description',
     icon: <UserRound size={16} />,
   },
   {
     to: 'apparence',
-    label: 'Apparence',
-    description: 'Thème, couleurs, confort de lecture, coloration du code',
+    labelKey: 'settings.section.appearance',
+    descriptionKey: 'settings.section.appearance.description',
     icon: <Palette size={16} />,
   },
   {
     to: 'notifications',
-    label: 'Notifications',
-    description: 'Alertes de fin de tour, propres à cet appareil',
+    labelKey: 'settings.section.notifications',
+    descriptionKey: 'settings.section.notifications.description',
     icon: <Bell size={16} />,
   },
   {
     to: 'projets',
-    label: 'Projets',
-    description: 'Créer un projet et régler sa visibilité',
+    labelKey: 'settings.section.projects',
+    descriptionKey: 'settings.section.projects.description',
     icon: <FolderOpen size={16} />,
   },
   {
     to: 'comptes',
-    label: 'Comptes',
-    description: "Gérer les comptes de l'instance",
+    labelKey: 'settings.section.accounts',
+    descriptionKey: 'settings.section.accounts.description',
     icon: <Users size={16} />,
     adminOnly: true,
   },
   {
     to: 'a-propos',
-    label: 'À propos',
-    description: 'Version installée, nouveautés, mise à jour',
+    labelKey: 'settings.section.about',
+    descriptionKey: 'settings.section.about.description',
     icon: <Info size={16} />,
   },
 ]
 
 export function SettingsLayout() {
+  const t = useTranslate()
   const { data: user } = useCurrentUser()
   const { data: versionInfo } = useVersionInfo()
   const { pathname } = useLocation()
@@ -81,7 +83,7 @@ export function SettingsLayout() {
       {/* La liste disparaît au doigt dès qu'une section est ouverte : les deux
           ensemble ne tiennent pas dans la largeur d'un téléphone. */}
       <nav className={cx('shrink-0 md:w-56', !onIndex && 'hidden md:block')}>
-        <h1 className="mb-3 px-1 text-lg font-semibold tracking-tight">Réglages</h1>
+        <h1 className="mb-3 px-1 text-lg font-semibold tracking-tight">{t('settings.title')}</h1>
         <ul className="flex flex-col gap-1">
           {sections.map((section) => (
             <li key={section.to}>
@@ -104,11 +106,11 @@ export function SettingsLayout() {
                   ) : null}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate">{section.label}</span>
+                  <span className="block truncate">{t(section.labelKey)}</span>
                   {/* La description n'aide qu'au doigt, où la liste est la page entière
                       et où rien d'autre ne dit ce qu'une catégorie contient. */}
                   <span className="block truncate text-xs text-ink-faint md:hidden">
-                    {section.description}
+                    {t(section.descriptionKey)}
                   </span>
                 </span>
                 <ChevronRight size={14} className="shrink-0 text-ink-faint md:hidden" />
@@ -120,8 +122,8 @@ export function SettingsLayout() {
         {/* Sans repère de version, « je ne vois pas la correction » ne se tranche pas :
             rien à l'écran ne dit quelle version tourne réellement. */}
         <p className="mt-4 px-2.5 text-[0.6875rem] text-ink-faint">
-          Sillage {__APP_VERSION__} · build du{' '}
-          <time dateTime={__BUILD_TIME__}>{new Date(__BUILD_TIME__).toLocaleString('fr-FR')}</time>
+          {t('settings.buildInfo', { version: __APP_VERSION__ })}{' '}
+          <time dateTime={__BUILD_TIME__}>{new Date(__BUILD_TIME__).toLocaleString(locale())}</time>
         </p>
       </nav>
 
@@ -138,6 +140,7 @@ export function SettingsLayout() {
 
 /** Retour vers la liste, au doigt seulement : ailleurs la colonne est déjà visible. */
 export function SectionHeader({ title, description }: { title: string; description?: string }) {
+  const t = useTranslate()
   return (
     <header className="mb-4 flex flex-col gap-1">
       <NavLink
@@ -145,7 +148,7 @@ export function SectionHeader({ title, description }: { title: string; descripti
         className="flex items-center gap-1 text-sm text-ink-faint hover:text-ink md:hidden"
       >
         <ChevronRight size={14} className="rotate-180" />
-        Réglages
+        {t('settings.title')}
       </NavLink>
       <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
       {description ? <p className="text-sm text-ink-faint">{description}</p> : null}

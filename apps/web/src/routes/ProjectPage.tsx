@@ -18,28 +18,39 @@ import {
 import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
 import { useDeleteWorktree, useWorktrees } from '../lib/worktrees'
+import { translate, useTranslate } from '../lib/i18n'
 import { useDeleteProject, useProjects, useUpdateProject } from '../lib/projects'
 
-const VISIBILITY_OPTIONS: SelectOption<ProjectVisibility>[] = [
-  { value: 'private', label: 'Privé', icon: <Lock size={15} />, hint: 'Visible par toi seul' },
-  {
-    value: 'shared',
-    label: 'Partagé',
-    icon: <Globe size={15} />,
-    hint: 'Visible par tous les comptes',
-  },
-]
+/** Recalculée à chaque rendu plutôt que figée au chargement du module : sinon un
+ *  changement de langue laisserait ces deux options dans l'ancienne. */
+function visibilityOptions(): SelectOption<ProjectVisibility>[] {
+  return [
+    {
+      value: 'private',
+      label: translate('project.visibility.private'),
+      icon: <Lock size={15} />,
+      hint: translate('project.visibility.private.hint'),
+    },
+    {
+      value: 'shared',
+      label: translate('project.visibility.shared'),
+      icon: <Globe size={15} />,
+      hint: translate('project.visibility.shared.hint'),
+    },
+  ]
+}
 
 export function ProjectPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const { data: projects, isPending } = useProjects()
   const { data: conversations } = useAllConversations()
+  const t = useTranslate()
 
   const project = projects?.find((p) => p.id === projectId)
 
   if (isPending) return null
-  if (!project) return <EmptyState title="Projet introuvable" />
+  if (!project) return <EmptyState title={t('project.notFound')} />
 
   const projectConversations = (conversations ?? []).filter((c) => c.projectId === project.id)
 
@@ -49,19 +60,21 @@ export function ProjectPage() {
         <h1 className="text-lg font-semibold tracking-tight">{project.name}</h1>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
-            {project.visibility === 'shared' ? 'Partagé' : 'Privé'}
+            {project.visibility === 'shared'
+              ? t('project.visibility.shared')
+              : t('project.visibility.private')}
           </Badge>
           {project.git ? (
             <>
               <Badge icon={<GitBranch size={11} />}>{project.git.branch}</Badge>
               {project.git.isDirty ? (
-                <Badge tone="caution">Modifications non commitées</Badge>
+                <Badge tone="caution">{t('project.git.dirty')}</Badge>
               ) : (
-                <Badge tone="positive">Arbre propre</Badge>
+                <Badge tone="positive">{t('project.git.clean')}</Badge>
               )}
             </>
           ) : (
-            <Badge>Pas un dépôt git</Badge>
+            <Badge>{t('project.git.none')}</Badge>
           )}
         </div>
       </header>
@@ -80,7 +93,7 @@ export function ProjectPage() {
       ) : (
         <Card>
           <CardBody className="text-sm text-ink-faint">
-            Projet partagé par {project.ownerName}. Seul son propriétaire peut le modifier.
+            {t('project.shared.readonly', { name: project.ownerName })}
           </CardBody>
         </Card>
       )}
@@ -91,14 +104,15 @@ export function ProjectPage() {
 function WorktreeList({ projectId, isRepository }: { projectId: string; isRepository: boolean }) {
   const { data: worktrees } = useWorktrees(isRepository ? projectId : undefined)
   const deleteWorktree = useDeleteWorktree(projectId)
+  const t = useTranslate()
 
   if (!isRepository || !worktrees || worktrees.length === 0) return null
 
   return (
     <Card>
       <CardHeader
-        title="Worktrees"
-        description="Créés depuis une nouvelle conversation. Ils vivent hors du projet, dans les données de Sillage."
+        title={t('project.worktrees.title')}
+        description={t('project.worktrees.description')}
         icon={<GitBranch size={16} />}
       />
       <CardBody className="flex flex-col gap-2">
@@ -109,16 +123,17 @@ function WorktreeList({ projectId, isRepository }: { projectId: string; isReposi
               <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-faint">
                 {worktree.git ? (
                   worktree.git.isDirty ? (
-                    <Badge tone="caution">Modifications non commitées</Badge>
+                    <Badge tone="caution">{t('project.git.dirty')}</Badge>
                   ) : (
-                    <Badge tone="positive">Arbre propre</Badge>
+                    <Badge tone="positive">{t('project.git.clean')}</Badge>
                   )
                 ) : (
-                  <Badge tone="critical">Dossier absent</Badge>
+                  <Badge tone="critical">{t('project.worktree.missing')}</Badge>
                 )}
                 <span>
-                  {worktree.conversationCount} conversation
-                  {worktree.conversationCount > 1 ? 's' : ''}
+                  {worktree.conversationCount > 1
+                    ? t('project.worktree.conversationsMany', { count: worktree.conversationCount })
+                    : t('project.worktree.conversationsOne', { count: worktree.conversationCount })}
                 </span>
               </div>
             </div>
@@ -130,18 +145,18 @@ function WorktreeList({ projectId, isRepository }: { projectId: string; isReposi
               onClick={() => {
                 const dirty = worktree.git?.isDirty === true
                 const warning = dirty
-                  ? `Le worktree « ${worktree.name} » contient du travail non commité, qui sera perdu.`
-                  : `Supprimer le worktree « ${worktree.name} » ?`
+                  ? translate('project.worktree.deleteDirtyWarning', { name: worktree.name })
+                  : translate('project.worktree.deleteConfirm', { name: worktree.name })
                 const used =
                   worktree.conversationCount > 0
-                    ? `\n${worktree.conversationCount} conversation(s) l'utilisent et passeront en lecture seule.`
+                    ? `\n${translate('project.worktree.deleteUsedCount', { count: worktree.conversationCount })}`
                     : ''
                 if (!confirm(warning + used)) return
                 // `force` uniquement si l'utilisateur a vu l'avertissement correspondant.
                 deleteWorktree.mutate({ id: worktree.id, force: dirty })
               }}
             >
-              Supprimer
+              {t('project.worktree.delete')}
             </Button>
           </div>
         ))}
@@ -167,6 +182,7 @@ function ProjectSettings({
 }) {
   const updateProject = useUpdateProject()
   const deleteProject = useDeleteProject()
+  const t = useTranslate()
 
   const [name, setName] = useState(initialName)
   const [workspacePath, setWorkspacePath] = useState(initialPath)
@@ -187,29 +203,30 @@ function ProjectSettings({
 
   return (
     <Card>
-      <CardHeader title="Réglages du projet" icon={<FolderOpen size={16} />} />
+      <CardHeader title={t('project.settings.title')} icon={<FolderOpen size={16} />} />
       <CardBody className="flex flex-col gap-4">
-        <Field label="Nom" value={name} onChange={(event) => setName(event.target.value)} />
+        <Field
+          label={t('project.settings.name')}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
 
         <PathField
-          label="Dossier du workspace"
+          label={t('project.settings.workspacePath')}
           value={workspacePath}
           onChange={setWorkspacePath}
-          hint="Chemin absolu sur la machine hôte."
+          hint={t('project.settings.workspacePath.hint')}
         />
 
         {pathChanged && hasConversations ? (
-          <Banner tone="caution">
-            Les conversations existantes reprendront dans ce nouveau dossier. Un agent en cours
-            d'exécution garde l'ancien jusqu'à son prochain démarrage.
-          </Banner>
+          <Banner tone="caution">{t('project.settings.pathChanged.warning')}</Banner>
         ) : null}
 
         <Select
-          label="Visibilité"
+          label={t('project.settings.visibility')}
           value={visibility}
           onChange={setVisibility}
-          options={VISIBILITY_OPTIONS}
+          options={visibilityOptions()}
         />
 
         {error ? <Banner>{error}</Banner> : null}
@@ -222,7 +239,7 @@ function ProjectSettings({
               updateProject.mutate({ id: projectId, name: name.trim(), workspacePath, visibility })
             }
           >
-            Enregistrer
+            {t('project.settings.save')}
           </Button>
           {dirty ? (
             <Button
@@ -233,7 +250,7 @@ function ProjectSettings({
                 setVisibility(initialVisibility)
               }}
             >
-              Annuler
+              {t('project.settings.cancel')}
             </Button>
           ) : null}
         </div>
@@ -241,19 +258,17 @@ function ProjectSettings({
 
       <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
         <TriangleAlert size={16} className="shrink-0 text-caution" />
-        <p className="min-w-0 flex-1 text-sm text-ink-faint">
-          Retirer le projet supprime ses conversations. Le dossier sur le disque n'est pas touché.
-        </p>
+        <p className="min-w-0 flex-1 text-sm text-ink-faint">{t('project.settings.remove.notice')}</p>
         <Button
           variant="danger"
           size="sm"
           icon={<Trash2 size={15} />}
           onClick={() => {
-            if (!confirm(`Retirer "${initialName}" de Sillage ?`)) return
+            if (!confirm(translate('project.settings.remove.confirm', { name: initialName }))) return
             deleteProject.mutate(projectId, { onSuccess: onDeleted })
           }}
         >
-          Retirer
+          {t('project.settings.remove')}
         </Button>
       </div>
     </Card>

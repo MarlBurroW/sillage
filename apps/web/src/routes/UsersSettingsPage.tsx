@@ -15,6 +15,7 @@ import {
 import { AccountForm } from '../components/AccountForm'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
+import { useTranslate } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type CreateUserInput } from '../lib/users'
 
@@ -35,6 +36,7 @@ const errorOf = (error: unknown): string | null =>
  * agents tournent sous le même utilisateur système et partagent tes credentials CLI.
  */
 export function UsersSettingsPage() {
+  const t = useTranslate()
   const { data: me } = useCurrentUser()
   const isAdmin = me?.isAdmin === true
   const { data: users } = useUsers(isAdmin)
@@ -46,8 +48,8 @@ export function UsersSettingsPage() {
     return (
       <EmptyState
         icon={<ShieldCheck size={22} />}
-        title="Réservé aux administrateurs"
-        description="Demande à un administrateur de l'instance."
+        title={t('users.adminOnly.title')}
+        description={t('users.adminOnly.description')}
       />
     )
   }
@@ -59,20 +61,17 @@ export function UsersSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title="Comptes" description="Les comptes de l'instance, et ce qu'ils peuvent faire." />
+      <SectionHeader title={t('users.section.title')} description={t('users.section.description')} />
 
-      <Banner tone="info">
-        Un compte ouvre l&apos;accès à cette instance, sans isolation : tous les agents
-        tournent sous le même utilisateur système et partagent les mêmes credentials CLI.
-      </Banner>
+      <Banner tone="info">{t('users.banner')}</Banner>
 
       <Card>
-        <CardHeader title="Nouveau compte" icon={<UserPlus size={16} />} />
+        <CardHeader title={t('users.create.title')} icon={<UserPlus size={16} />} />
         <CardBody>
           <form onSubmit={submit} className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
-                label="Nom d'utilisateur"
+                label={t('users.username.label')}
                 icon={<UserRound size={16} />}
                 value={form.username}
                 onChange={(event) => setForm({ ...form, username: event.target.value })}
@@ -81,46 +80,50 @@ export function UsersSettingsPage() {
                 required
               />
               <Field
-                label="Nom affiché"
+                label={t('users.displayName.label')}
                 value={form.displayName}
                 onChange={(event) => setForm({ ...form, displayName: event.target.value })}
                 required
               />
             </div>
             <Field
-              label="Mot de passe"
+              label={t('users.password.label')}
               type="password"
               icon={<KeyRound size={16} />}
               value={form.password}
               onChange={(event) => setForm({ ...form, password: event.target.value })}
-              hint="8 caractères minimum."
+              hint={t('users.password.hint')}
               autoComplete="new-password"
               required
             />
             <Select
-              label="Rôle"
+              label={t('users.role.label')}
               value={form.isAdmin ? 'admin' : 'member'}
               onChange={(role) => setForm({ ...form, isAdmin: role === 'admin' })}
               options={[
-                { value: 'member', label: 'Membre', hint: 'Accès aux projets partagés' },
+                {
+                  value: 'member',
+                  label: t('users.role.member.label'),
+                  hint: t('users.role.member.hint'),
+                },
                 {
                   value: 'admin',
-                  label: 'Administrateur',
+                  label: t('users.role.admin.label'),
                   icon: <ShieldCheck size={15} />,
-                  hint: 'Peut gérer les comptes',
+                  hint: t('users.role.admin.hint'),
                 },
               ]}
             />
             {errorOf(createUser.error) ? <Banner>{errorOf(createUser.error)}</Banner> : null}
             <Button type="submit" disabled={createUser.isPending} className="self-start">
-              {createUser.isPending ? 'Création...' : 'Créer le compte'}
+              {createUser.isPending ? t('users.create.pending') : t('users.create.action')}
             </Button>
           </form>
         </CardBody>
       </Card>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-ink-soft">Existants</h2>
+        <h2 className="text-sm font-semibold text-ink-soft">{t('users.existing.title')}</h2>
         {users?.map((user) => (
           <UserCard key={user.id} user={user} isSelf={user.id === me?.id} />
         ))}
@@ -130,6 +133,7 @@ export function UsersSettingsPage() {
 }
 
 function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
+  const t = useTranslate()
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
   const [editing, setEditing] = useState(false)
@@ -145,19 +149,27 @@ function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
               <p className="truncate font-medium">{user.displayName}</p>
               {user.isAdmin ? (
                 <Badge tone="accent" icon={<ShieldCheck size={11} />}>
-                  Administrateur
+                  {t('users.badge.admin')}
                 </Badge>
               ) : null}
-              {isSelf ? <Badge>Toi</Badge> : null}
+              {isSelf ? <Badge>{t('users.badge.self')}</Badge> : null}
             </div>
             <p className="mt-0.5 font-mono text-xs text-ink-faint">{user.username}</p>
             <p className="mt-2 text-xs text-ink-faint">
-              {user.ownedProjects} projet{user.ownedProjects > 1 ? 's' : ''}
+              {t(user.ownedProjects > 1 ? 'users.count.projects.other' : 'users.count.projects.one', {
+                count: user.ownedProjects,
+              })}
               {' · '}
-              {user.ownedConversations} conversation{user.ownedConversations > 1 ? 's' : ''}
+              {t(
+                user.ownedConversations > 1
+                  ? 'users.count.conversations.other'
+                  : 'users.count.conversations.one',
+                { count: user.ownedConversations },
+              )}
               {' · '}
-              {user.activeSessions} session{user.activeSessions > 1 ? 's' : ''} ouverte
-              {user.activeSessions > 1 ? 's' : ''}
+              {t(user.activeSessions > 1 ? 'users.count.sessions.other' : 'users.count.sessions.one', {
+                count: user.activeSessions,
+              })}
             </p>
           </div>
 
@@ -168,10 +180,10 @@ function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
               disabled={updateUser.isPending}
               onClick={() => updateUser.mutate({ id: user.id, isAdmin: !user.isAdmin })}
             >
-              {user.isAdmin ? 'Retirer le rôle' : 'Nommer admin'}
+              {user.isAdmin ? t('users.role.remove') : t('users.role.promote')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setEditing((value) => !value)}>
-              {editing ? 'Fermer' : 'Modifier'}
+              {editing ? t('users.edit.close') : t('users.edit.open')}
             </Button>
             {!isSelf ? (
               <Button
@@ -180,12 +192,12 @@ function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
                 icon={<Trash2 size={15} />}
                 disabled={deleteUser.isPending}
                 onClick={() => {
-                  if (confirm(`Supprimer le compte « ${user.username} » ?`)) {
+                  if (confirm(t('users.delete.confirm', { username: user.username }))) {
                     deleteUser.mutate(user.id)
                   }
                 }}
               >
-                Supprimer
+                {t('users.delete.action')}
               </Button>
             ) : null}
           </div>

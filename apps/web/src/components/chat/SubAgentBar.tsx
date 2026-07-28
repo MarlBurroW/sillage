@@ -1,5 +1,6 @@
 import { Bot, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslate } from '../../lib/i18n'
 import { showSubAgent } from '../../lib/panel'
 import type { SubAgent } from '../../lib/subagents'
 import { cx } from '../ui'
@@ -15,9 +16,13 @@ import { SubAgentRow } from './SubAgentRow'
  */
 export function SubAgentBar({ agents }: { agents: SubAgent[] }) {
   const [open, setOpen] = useState(false)
+  const t = useTranslate()
   if (agents.length === 0) return null
 
-  const label = `${agents.length} sous-agent${agents.length > 1 ? 's' : ''} en cours`
+  const label = t(
+    agents.length > 1 ? 'subagent.bar.count.other' : 'subagent.bar.count.one',
+    { count: agents.length },
+  )
 
   return (
     <div className="border-t border-line bg-surface-high/60">

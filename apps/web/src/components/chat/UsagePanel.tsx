@@ -3,6 +3,7 @@ import { Loader, RefreshCw, X } from 'lucide-react'
 import { useState } from 'react'
 import type { AgentKind, UsageWindow } from '@sillage/protocol'
 import { AGENT_LABELS } from '../AgentIcon'
+import { locale, translate, useTranslate } from '../../lib/i18n'
 import { useAgentUsage, useRefreshUsage } from '../../lib/usage'
 import { Banner, IconButton, cx } from '../ui'
 
@@ -32,23 +33,26 @@ function toneFor(utilization: number | null): string {
 function untilReset(resetsAt: number | null): string | null {
   if (resetsAt === null) return null
   const minutes = Math.round((resetsAt - Date.now()) / 60_000)
-  if (minutes <= 0) return 'imminent'
-  if (minutes < 60) return `dans ${minutes} min`
+  if (minutes <= 0) return translate('usage.reset.imminent')
+  if (minutes < 60) return translate('usage.reset.inMinutes', { minutes })
 
   const hours = Math.round(minutes / 60)
-  if (hours < 48) return `dans ${hours} h`
-  return `dans ${Math.round(hours / 24)} j`
+  if (hours < 48) return translate('usage.reset.inHours', { hours })
+  return translate('usage.reset.inDays', { days: Math.round(hours / 24) })
 }
 
 /** Ancienneté de la lecture. Une heure absolue n'apprend rien sur sa fraîcheur. */
 function readAge(fetchedAt: number): string {
   const seconds = Math.max(0, Math.round((Date.now() - fetchedAt) / 1000))
-  if (seconds < 60) return `il y a ${seconds} s`
+  if (seconds < 60) return translate('usage.age.seconds', { seconds })
   const minutes = Math.round(seconds / 60)
-  return minutes < 60 ? `il y a ${minutes} min` : `il y a ${Math.round(minutes / 60)} h`
+  return minutes < 60
+    ? translate('usage.age.minutes', { minutes })
+    : translate('usage.age.hours', { hours: Math.round(minutes / 60) })
 }
 
 function UsageBar({ window }: { window: UsageWindow }) {
+  const t = useTranslate()
   const percent = window.utilization === null ? null : Math.round(window.utilization * 100)
   const reset = untilReset(window.resetsAt)
 
@@ -70,7 +74,9 @@ function UsageBar({ window }: { window: UsageWindow }) {
         />
       </div>
 
-      {reset ? <p className="text-[0.6875rem] text-ink-faint">Remise à zéro {reset}</p> : null}
+      {reset ? (
+        <p className="text-[0.6875rem] text-ink-faint">{t('usage.reset.label', { reset })}</p>
+      ) : null}
     </div>
   )
 }
@@ -85,6 +91,7 @@ function UsageBar({ window }: { window: UsageWindow }) {
  * n'efface pas l'écran pour le remplir à nouveau.
  */
 function UsageContent({ agent }: { agent: AgentKind }) {
+  const t = useTranslate()
   const { data: usage, error, isPending, isFetching } = useAgentUsage(agent)
   const refresh = useRefreshUsage(agent)
   const [refreshing, setRefreshing] = useState(false)
@@ -104,13 +111,13 @@ function UsageContent({ agent }: { agent: AgentKind }) {
     <>
       <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2 pt-safe">
         <Dialog.Title className="flex-1 text-sm font-semibold">
-          Utilisation · {AGENT_LABELS[agent]}
+          {t('usage.title', { agent: AGENT_LABELS[agent] })}
         </Dialog.Title>
-        <IconButton label="Rafraîchir" onClick={() => void reload()} disabled={busy}>
+        <IconButton label={t('usage.refresh')} onClick={() => void reload()} disabled={busy}>
           <RefreshCw size={16} className={cx(busy && 'animate-spin')} />
         </IconButton>
         <Dialog.Close asChild>
-          <IconButton label="Fermer">
+          <IconButton label={t('usage.close')}>
             <X size={18} />
           </IconButton>
         </Dialog.Close>
@@ -119,26 +126,24 @@ function UsageContent({ agent }: { agent: AgentKind }) {
       <div className="min-h-0 flex-1 overflow-y-auto p-3 pb-safe">
         {isPending ? (
           <div className="flex items-center justify-center py-10 text-ink-faint">
-            <Loader size={22} className="animate-spin" aria-label="Lecture en cours" />
+            <Loader size={22} className="animate-spin" aria-label={t('usage.loading')} />
           </div>
         ) : null}
 
         {error ? (
-          <Banner>{error instanceof Error ? error.message : 'Lecture impossible.'}</Banner>
+          <Banner>{error instanceof Error ? error.message : t('usage.error')}</Banner>
         ) : null}
 
         {usage ? (
           <div className="flex flex-col gap-4">
             {usage.plan ? (
               <p className="text-xs text-ink-soft">
-                Forfait <span className="font-medium text-ink">{usage.plan}</span>
+                {t('usage.plan')} <span className="font-medium text-ink">{usage.plan}</span>
               </p>
             ) : null}
 
             {!usage.limitsAvailable ? (
-              <p className="text-sm text-ink-faint">
-                Ce compte n'est pas soumis aux limites d'un forfait : facturation à l'usage.
-              </p>
+              <p className="text-sm text-ink-faint">{t('usage.noLimits')}</p>
             ) : (
               <div className="flex flex-col gap-3.5">
                 {usage.windows.map((window) => (
@@ -152,7 +157,7 @@ function UsageContent({ agent }: { agent: AgentKind }) {
                 <div className="flex items-baseline gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate text-ink">{usage.credits.label}</span>
                   <span className="shrink-0 text-[0.6875rem] text-ink-faint">
-                    {usage.credits.enabled ? 'activés' : 'désactivés'}
+                    {usage.credits.enabled ? t('usage.credits.enabled') : t('usage.credits.disabled')}
                   </span>
                 </div>
                 {usage.credits.detail ? (
@@ -163,9 +168,9 @@ function UsageContent({ agent }: { agent: AgentKind }) {
 
             <p
               className="text-[0.6875rem] text-ink-faint"
-              title={new Date(usage.fetchedAt).toLocaleString('fr-FR')}
+              title={new Date(usage.fetchedAt).toLocaleString(locale())}
             >
-              Lu {readAge(usage.fetchedAt)}
+              {t('usage.readAt', { age: readAge(usage.fetchedAt) })}
             </p>
           </div>
         ) : null}

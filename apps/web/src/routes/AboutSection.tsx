@@ -4,6 +4,7 @@ import type { UpdatePhase } from '@sillage/protocol'
 import { Markdown } from '../components/chat/Markdown'
 import { Badge, Banner, Button, Card, CardBody, CardHeader, ConfirmDialog } from '../components/ui'
 import { api } from '../lib/api'
+import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 import {
   useRefreshVersionInfo,
@@ -13,16 +14,17 @@ import {
 } from '../lib/system'
 import { SectionHeader } from './SettingsPage'
 
-const PHASE_LABELS: Record<UpdatePhase, string> = {
-  idle: 'En attente',
-  downloading: 'Téléchargement…',
-  extracting: 'Extraction…',
-  switching: 'Bascule de version…',
-  restarting: 'Redémarrage du service…',
-  failed: 'Échec',
+const PHASE_LABEL_KEYS: Record<UpdatePhase, MessageKey> = {
+  idle: 'about.update.phase.idle',
+  downloading: 'about.update.phase.downloading',
+  extracting: 'about.update.phase.extracting',
+  switching: 'about.update.phase.switching',
+  restarting: 'about.update.phase.restarting',
+  failed: 'about.update.phase.failed',
 }
 
 export function AboutSection() {
+  const t = useTranslate()
   const { data: user } = useCurrentUser()
   const { data: info } = useVersionInfo()
   const refresh = useRefreshVersionInfo()
@@ -58,23 +60,25 @@ export function AboutSection() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title="À propos" description="Version installée et mises à jour." />
+      <SectionHeader title={t('about.title')} description={t('about.description')} />
 
       <Card>
-        <CardHeader title="Version" />
+        <CardHeader title={t('about.version.card')} />
         <CardBody className="flex flex-col gap-2 text-sm">
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
-            <dt className="text-ink-faint">Installée</dt>
+            <dt className="text-ink-faint">{t('about.version.installed')}</dt>
             <dd className="font-medium">{info?.version ?? __APP_VERSION__}</dd>
-            <dt className="text-ink-faint">Dernière publiée</dt>
+            <dt className="text-ink-faint">{t('about.version.latest')}</dt>
             <dd className="flex items-center gap-2">
               {info?.latest ?? '·'}
-              {info?.updateAvailable ? <Badge tone="accent">Mise à jour disponible</Badge> : null}
+              {info?.updateAvailable ? (
+                <Badge tone="accent">{t('about.badge.updateAvailable')}</Badge>
+              ) : null}
             </dd>
-            <dt className="text-ink-faint">Build du</dt>
+            <dt className="text-ink-faint">{t('about.build')}</dt>
             <dd>
               <time dateTime={__BUILD_TIME__}>
-                {new Date(__BUILD_TIME__).toLocaleString('fr-FR')}
+                {new Date(__BUILD_TIME__).toLocaleString(locale())}
               </time>
             </dd>
           </dl>
@@ -82,8 +86,8 @@ export function AboutSection() {
           {info?.checkError ? (
             <p className="text-xs text-ink-faint">
               {info.checkError === 'rate_limited'
-                ? 'Vérification des mises à jour temporairement limitée par GitHub.'
-                : 'Impossible de vérifier les mises à jour pour le moment.'}
+                ? t('about.check.rateLimited')
+                : t('about.check.failed')}
             </p>
           ) : null}
 
@@ -95,7 +99,7 @@ export function AboutSection() {
                 disabled={refresh.isPending}
               >
                 <RefreshCw size={14} className={refresh.isPending ? 'animate-spin' : undefined} />
-                Vérifier maintenant
+                {t('about.check.now')}
               </Button>
             </div>
           ) : null}
@@ -105,16 +109,13 @@ export function AboutSection() {
       {info?.updateAvailable ? (
         <Card>
           <CardHeader
-            title={`Nouveautés de la version ${info.latest}`}
-            description="Tout ce qui a été publié depuis votre version, du plus récent au plus ancien."
+            title={t('about.news.title', { version: info.latest ?? '' })}
+            description={t('about.news.description')}
           />
           <CardBody className="flex flex-col gap-4">
             {info.channel === 'docker' ? (
               <div className="flex flex-col gap-2 text-sm">
-                <p className="text-ink-soft">
-                  Cette instance tourne en Docker : mettez à jour en tirant la nouvelle image
-                  puis en recréant le conteneur.
-                </p>
+                <p className="text-ink-soft">{t('about.docker.instructions')}</p>
                 <pre className="overflow-x-auto rounded-md bg-surface-high px-3 py-2 font-mono text-xs">
                   docker pull ghcr.io/marlburrow/sillage:{info.latest}
                 </pre>
@@ -123,18 +124,14 @@ export function AboutSection() {
               isAdmin ? (
                 <div>
                   <Button onClick={() => setConfirming(true)} disabled={updating}>
-                    Mettre à jour vers {info.latest}
+                    {t('about.update.action', { version: info.latest ?? '' })}
                   </Button>
                 </div>
               ) : (
-                <p className="text-sm text-ink-faint">
-                  Demandez à un administrateur d'effectuer la mise à jour.
-                </p>
+                <p className="text-sm text-ink-faint">{t('about.update.askAdmin')}</p>
               )
             ) : (
-              <p className="text-sm text-ink-faint">
-                Installation gérée manuellement : récupérez la nouvelle version depuis GitHub.
-              </p>
+              <p className="text-sm text-ink-faint">{t('about.manual.instructions')}</p>
             )}
 
             {/* Les notes de release sont rédigées en anglais : elles viennent
@@ -149,7 +146,7 @@ export function AboutSection() {
                     rel="noreferrer"
                     className="flex shrink-0 items-center gap-1 text-xs text-ink-faint hover:text-ink"
                   >
-                    {new Date(release.publishedAt).toLocaleDateString('fr-FR')}
+                    {new Date(release.publishedAt).toLocaleDateString(locale())}
                     <ExternalLink size={12} />
                   </a>
                 </header>
@@ -165,10 +162,10 @@ export function AboutSection() {
           <CardHeader
             title={
               status.phase === 'failed'
-                ? 'La mise à jour a échoué'
-                : `Mise à jour vers ${status.targetVersion ?? ''}`
+                ? t('about.update.failed.title')
+                : t('about.update.title', { version: status.targetVersion ?? '' })
             }
-            description={PHASE_LABELS[status.phase]}
+            description={t(PHASE_LABEL_KEYS[status.phase])}
           />
           <CardBody className="flex flex-col gap-2">
             {status.phase === 'failed' && status.error ? (
@@ -178,14 +175,11 @@ export function AboutSection() {
               {status.log.join('\n')}
             </pre>
             {status.phase === 'restarting' ? (
-              <p className="text-xs text-ink-faint">
-                Le service redémarre : la page se rechargera d'elle-même dès que la nouvelle
-                version répondra.
-              </p>
+              <p className="text-xs text-ink-faint">{t('about.restarting.message')}</p>
             ) : null}
             {status.phase === 'failed' ? (
               <div>
-                <Button onClick={() => setConfirming(true)}>Réessayer</Button>
+                <Button onClick={() => setConfirming(true)}>{t('about.retry')}</Button>
               </div>
             ) : null}
           </CardBody>
@@ -195,16 +189,12 @@ export function AboutSection() {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={`Mettre à jour vers ${info?.latest ?? ''} ?`}
-        confirmLabel="Mettre à jour"
+        title={t('about.confirm.title', { version: info?.latest ?? '' })}
+        confirmLabel={t('about.confirm.action')}
         onConfirm={startNow}
         busy={startUpdate.isPending}
       >
-        <p>
-          Le service sera indisponible quelques secondes pendant le redémarrage. Les
-          conversations en cours d'exécution seront interrompues et reprendront au prochain
-          message.
-        </p>
+        <p>{t('about.confirm.body')}</p>
       </ConfirmDialog>
     </div>
   )

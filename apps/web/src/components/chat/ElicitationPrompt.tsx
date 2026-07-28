@@ -3,14 +3,8 @@ import { useState } from 'react'
 import type { ElicitationField, ElicitationValue } from '@sillage/protocol'
 import type { ElicitationItem } from '../../lib/chat-fold'
 import { answerElicitation } from '../../lib/conversations'
+import { useTranslate } from '../../lib/i18n'
 import { Badge, Button, cx } from '../ui'
-
-const STATUS_LABEL: Record<Exclude<ElicitationItem['status'], 'pending'>, string> = {
-  accept: 'Envoyé',
-  decline: 'Refusé',
-  cancel: 'Annulé',
-  expired: 'Expiré',
-}
 
 /**
  * Types d'input HTML correspondant aux formats de chaîne que MCP déclare. Ils
@@ -70,6 +64,14 @@ export function ElicitationPrompt({
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const t = useTranslate()
+
+  const STATUS_LABEL: Record<Exclude<ElicitationItem['status'], 'pending'>, string> = {
+    accept: t('elicitation.status.accept'),
+    decline: t('elicitation.status.decline'),
+    cancel: t('elicitation.status.cancel'),
+    expired: t('elicitation.status.expired'),
+  }
 
   const pending = item.status === 'pending'
   const shown = pending ? values : item.content
@@ -95,7 +97,7 @@ export function ElicitationPrompt({
     } catch (err) {
       // L'événement `elicitation.resolved` viendra du serveur : on n'anticipe pas
       // l'état ici, sinon l'affichage cesserait d'être un pur fold du journal.
-      setError(err instanceof Error ? err.message : 'Réponse impossible.')
+      setError(err instanceof Error ? err.message : t('elicitation.answerError'))
       setBusy(false)
     }
   }
@@ -112,9 +114,9 @@ export function ElicitationPrompt({
       <div className="flex items-start gap-2.5">
         <Plug size={16} className="mt-0.5 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{item.title ?? 'Un service demande une saisie'}</p>
+          <p className="text-sm font-medium">{item.title ?? t('elicitation.defaultTitle')}</p>
           <p className="mt-0.5 text-[0.6875rem] text-ink-faint">
-            Serveur MCP <span className="font-mono">{item.serverName}</span>
+            {t('elicitation.mcpServer')} <span className="font-mono">{item.serverName}</span>
           </p>
         </div>
         {item.status !== 'pending' ? <Badge>{STATUS_LABEL[item.status]}</Badge> : null}
@@ -154,7 +156,7 @@ export function ElicitationPrompt({
       {pending && canDecide ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" disabled={busy || missing} onClick={() => void submit('accept')}>
-            {item.mode === 'url' ? "J'ai terminé" : 'Envoyer'}
+            {item.mode === 'url' ? t('elicitation.action.done') : t('elicitation.action.send')}
           </Button>
           <Button
             size="sm"
@@ -162,18 +164,16 @@ export function ElicitationPrompt({
             disabled={busy}
             onClick={() => void submit('decline')}
           >
-            Refuser
+            {t('elicitation.action.decline')}
           </Button>
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void submit('cancel')}>
-            Annuler
+            {t('elicitation.action.cancel')}
           </Button>
         </div>
       ) : null}
 
       {pending && !canDecide ? (
-        <p className="mt-2 text-xs text-ink-faint">
-          Seul le propriétaire de la conversation peut répondre.
-        </p>
+        <p className="mt-2 text-xs text-ink-faint">{t('elicitation.ownerOnly')}</p>
       ) : null}
 
       {error ? <p className="mt-2 text-xs text-critical">{error}</p> : null}
@@ -197,6 +197,7 @@ function Field({
   editable: boolean
   onChange: (value: ElicitationValue) => void
 }) {
+  const t = useTranslate()
   const label = (
     <>
       <span className="text-sm text-ink">
@@ -266,7 +267,7 @@ function Field({
           onChange={(event) => onChange(event.target.value)}
           className={INPUT_CLASS}
         >
-          <option value="">Choisir...</option>
+          <option value="">{t('elicitation.selectPlaceholder')}</option>
           {field.options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}

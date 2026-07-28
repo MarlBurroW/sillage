@@ -12,6 +12,7 @@ import {
 import { fileIconUrl } from '../../lib/file-icons'
 import { languageFromPath } from '../../lib/highlight'
 import { rawFileUrl, readFile, writeFile } from '../../lib/files-io'
+import { useTranslate } from '../../lib/i18n'
 import { Banner, Menu, MenuItem, cx } from '../ui'
 import { CodeEditor } from './CodeEditor'
 
@@ -23,6 +24,7 @@ export function EditorPane({ conversationId }: { conversationId: string }) {
   const { paths, active } = useEditorTabs(conversationId)
   /** Onglets dont le contenu diverge du disque, pour la pastille de la barre. */
   const [dirty, setDirty] = useState<Set<string>>(() => new Set())
+  const t = useTranslate()
 
   const markDirty = useCallback((path: string, isDirty: boolean) => {
     setDirty((current) => {
@@ -36,9 +38,7 @@ export function EditorPane({ conversationId }: { conversationId: string }) {
 
   if (paths.length === 0) {
     return (
-      <p className="px-4 py-8 text-center text-sm text-ink-faint">
-        Aucun fichier ouvert. Clique sur un fichier dans l'explorateur.
-      </p>
+      <p className="px-4 py-8 text-center text-sm text-ink-faint">{t('editor.empty')}</p>
     )
   }
 
@@ -69,7 +69,7 @@ export function EditorPane({ conversationId }: { conversationId: string }) {
           trigger={
             <button
               type="button"
-              aria-label="Actions des onglets"
+              aria-label={t('editor.tabs.actions')}
               className="flex size-8 shrink-0 items-center justify-center border-l border-line text-ink-faint hover:text-ink"
             >
               <MoreHorizontal size={14} />
@@ -81,10 +81,10 @@ export function EditorPane({ conversationId }: { conversationId: string }) {
             disabled={active === null || paths.length < 2}
             onSelect={() => closeOtherTabs(conversationId, active)}
           >
-            Fermer les autres
+            {t('editor.tabs.closeOthers')}
           </MenuItem>
           <MenuItem icon={<X size={14} />} onSelect={() => closeOtherTabs(conversationId, null)}>
-            Fermer tout
+            {t('editor.tabs.closeAll')}
           </MenuItem>
         </Menu>
       </div>
@@ -129,6 +129,7 @@ function Tab({
   onDropAt: (from: string) => void
 }) {
   const [dropping, setDropping] = useState(false)
+  const t = useTranslate()
 
   return (
     <div
@@ -172,13 +173,13 @@ function Tab({
       </button>
 
       {dirty ? (
-        <span aria-label="Non enregistré" className="size-1.5 shrink-0 rounded-full bg-accent" />
+        <span aria-label={t('editor.tab.unsaved')} className="size-1.5 shrink-0 rounded-full bg-accent" />
       ) : null}
 
       <button
         type="button"
         onClick={onClose}
-        aria-label={`Fermer ${path}`}
+        aria-label={t('editor.tab.close', { path })}
         className="rounded p-0.5 text-ink-faint opacity-0 hover:text-ink group-hover/tab:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
       >
         <X size={12} />
@@ -206,6 +207,7 @@ function FileView({
   const draft = useRef('')
   const extension = languageFromPath(path)
   const isImage = extension in VIEWABLE_IMAGE_TYPES
+  const t = useTranslate()
 
   const load = useCallback(async () => {
     setError(null)
@@ -217,9 +219,9 @@ function FileView({
       markDirty(path, false)
     } catch (err) {
       setFile(null)
-      setError(err instanceof Error ? err.message : 'Lecture impossible.')
+      setError(err instanceof Error ? err.message : t('editor.error.read'))
     }
-  }, [conversationId, path, markDirty])
+  }, [conversationId, path, markDirty, t])
 
   useEffect(() => {
     if (!isImage) void load()
@@ -246,12 +248,12 @@ function FileView({
         // donc il se présente comme telle plutôt que comme un échec. Reconnu par le
         // code de l'API et non par son message, qui n'est fait que pour être lu.
         if (err instanceof ApiRequestError && err.code === 'stale_write') setConflict(true)
-        else setError(err instanceof Error ? err.message : 'Enregistrement impossible.')
+        else setError(err instanceof Error ? err.message : t('editor.error.write'))
       } finally {
         setSaving(false)
       }
     },
-    [conversationId, path, file, markDirty],
+    [conversationId, path, file, markDirty, t],
   )
 
   if (isImage) {
@@ -277,7 +279,7 @@ function FileView({
   if (!file) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center text-ink-faint">
-        <Loader size={20} className="animate-spin" aria-label="Lecture en cours" />
+        <Loader size={20} className="animate-spin" aria-label={t('editor.loading')} />
       </div>
     )
   }
@@ -286,12 +288,12 @@ function FileView({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {conflict ? (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-caution/40 bg-caution/12 px-3 py-2 text-xs text-caution">
-          <span className="flex-1">Modifié sur le disque depuis son ouverture.</span>
+          <span className="flex-1">{t('editor.conflict.message')}</span>
           <button type="button" onClick={() => void load()} className="font-medium underline">
-            Recharger
+            {t('editor.conflict.reload')}
           </button>
           <button type="button" onClick={() => void save(true)} className="font-medium underline">
-            Écraser
+            {t('editor.conflict.overwrite')}
           </button>
         </div>
       ) : null}
@@ -319,7 +321,7 @@ function FileView({
           className="flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:text-ink disabled:opacity-45"
         >
           {saving ? <Loader size={11} className="animate-spin" /> : <Save size={11} />}
-          Enregistrer
+          {t('editor.save')}
         </button>
       </div>
     </div>
