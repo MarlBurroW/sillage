@@ -22,15 +22,18 @@ import { ToolCall, ToolCallGroup } from './ToolCall'
 export function ChatThread({
   rows,
   conversationId,
-  canDecide,
+  canDecide = false,
   onFork,
   flashedId = null,
   anchors,
 }: {
   rows: ChatRow[]
   conversationId: string
-  /** Faux sur une conversation partagée en lecture : les prompts s'affichent sans agir. */
-  canDecide: boolean
+  /**
+   * Autorise à répondre aux sollicitations. Faux par défaut, et par défaut sur une
+   * conversation partagée en lecture : les prompts s'affichent alors sans agir.
+   */
+  canDecide?: boolean
   /** Absent quand le fil n'est pas forkable, un sous-agent n'ayant pas d'existence propre. */
   onFork?: (message: MessageItem) => void
   /** Message que l'on vient d'atteindre, signalé le temps qu'on le repère. */

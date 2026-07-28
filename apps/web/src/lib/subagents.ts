@@ -1,3 +1,4 @@
+import { isSpawnTool } from '@sillage/protocol'
 import { activityOf, type ChatItem, type ToolItem } from './chat-fold'
 
 /**
@@ -7,13 +8,6 @@ import { activityOf, type ChatItem, type ToolItem } from './chat-fold'
  * et tout ce qu'il produit porte l'identifiant de cet appel. Cet identifiant lui
  * sert donc d'identité ici, sans état parallèle à tenir ni requête à faire.
  */
-
-/** Outils qui lancent un sous-agent, selon les CLI. */
-const SPAWN_TOOLS = new Set(['Task', 'Agent'])
-
-export function isSpawnTool(name: string): boolean {
-  return SPAWN_TOOLS.has(name)
-}
 
 export interface SubAgent {
   /** L'appel qui l'a lancé. Sert d'identité et de clé de rattachement. */
@@ -30,7 +24,7 @@ export interface SubAgent {
   activity: string | null
   /** Le fil du sous-agent, dans l'ordre du journal. */
   items: ChatItem[]
-  /** Nombre d'appels d'outils qu'il a passés, sous-agents imbriqués compris. */
+  /** Ses propres appels d'outils. Ceux d'un sous-agent imbriqué comptent pour lui. */
   toolCount: number
   /** L'appel de spawn du sous-agent parent, pour les imbrications. */
   parentId: string | null

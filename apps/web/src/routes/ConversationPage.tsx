@@ -727,7 +727,6 @@ export function ConversationPage() {
             editTurns={stream.state.editTurns}
             turnRunning={stream.state.turnRunning}
             subAgents={subAgents}
-            canDecide={isOwner}
             open={panel.open}
           />
         </Suspense>

@@ -505,11 +505,16 @@ rendre leur fil, ni raisonnement ni messages intermédiaires.
 Le transcript relu sur disque les range à part, dans
 `<sessionId>/subagents/agent-<agentId>.jsonl`, sans y répéter l'appel d'origine : le lien
 passe par l'`agentId` que le transcript principal joint au résultat de l'appel `Task`.
-L'import relit ces fichiers et fusionne leurs événements par horodatage. Ils ne portent
-ni frontière de tour ni compaction : un sous-agent travaille *dans* le tour de son
-parent, il n'en ouvre pas. À la resynchronisation, le découpage au point commun ne leur
-convient pas, leur chronologie étant la leur : c'est entrée par entrée, sur l'`uuid`,
-qu'on écarte ce que le journal porte déjà.
+L'import relit ces fichiers, en repartant de chaque fil relu pour trouver les sous-agents
+imbriqués, et fusionne leurs événements par horodatage. Ils ne portent ni frontière de
+tour ni compaction : un sous-agent travaille *dans* le tour de son parent, il n'en ouvre
+pas.
+
+À la resynchronisation, le découpage au point commun ne leur convient pas, leur
+chronologie étant la leur, et l'`uuid` non plus : la plupart de leurs entrées ne laissent
+aucun `raw` qui en porte un, si bien qu'elles paraîtraient neuves à chaque passage. C'est
+donc tout ou rien, par sous-agent : dès qu'un appel a laissé la moindre trace au journal,
+son fil est tenu pour importé.
 
 ---
 
@@ -1144,6 +1149,12 @@ vision. Tant qu'un appel de la suite tourne, elle reste dépliée. Les élément
 n'affichent rien (un message d'agent ne portant que des `tool_use`) ne coupent pas la
 suite.
 
+**Un appel resté ouvert est clos à la fin du tour ou de la session**, avec un statut
+« interrompu » distinct de l'échec : le CLI coupé n'envoie pas le résultat des appels en
+vol, et sans ce filet ils restaient « en cours » pour toujours, y compris après
+rechargement. Un `Task` dans cet état annonçait un sous-agent au travail, chronomètre à
+l'appui, des jours après. Un `tool.completed` en retard reprend la main sans condition.
+
 **Renderers.** Un registre `Map<toolName, ToolView>` donne à chaque outil un rendu qui
 dit ce qu'il a fait plutôt que sous quelle forme le CLI l'a dit : une commande shell
 colorée et sa sortie pour `Bash`, le contenu lu débarrassé de la gouttière `cat -n` pour
@@ -1374,9 +1385,10 @@ message que le journal n'aurait pas. Trois conséquences, toutes livrées avec :
 - `pnpm --filter @sillage/server search:reindex` vide et rejoue. C'est ce chemin qui
   rattrapera l'existant le jour où le contenu indexé changera.
 
-Ce qui est indexé : les blocs de texte des `message.completed`, rien d'autre. Pas les
-deltas de streaming, qui décrivent le même contenu en cours d'écriture ; pas la réflexion ;
-pas les outils. Cette dernière exclusion est un choix de volume mesuré, pas une facilité :
+Ce qui est indexé : les blocs de texte des `message.completed` du fil principal, rien
+d'autre. Pas les deltas de streaming, qui décrivent le même contenu en cours d'écriture ;
+pas la réflexion ; pas les outils ; pas ce qu'écrivent les sous-agents, qui se lit dans le
+panneau et n'a donc pas d'ancre `?seq=` où un résultat pourrait mener. Cette dernière exclusion est un choix de volume mesuré, pas une facilité :
 sur une base peu remplie, `tool.completed` pèse déjà 3,4 Ko par appel contre 0,4 Ko par
 message, et indexer les sorties d'outils revient à indexer le contenu des fichiers lus.
 

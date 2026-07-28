@@ -96,29 +96,54 @@ export async function readSubAgentTranscripts(
   sessionId: string,
   entries: TranscriptEntry[],
 ): Promise<Map<string, TranscriptEntry[]>> {
-  const toolCallIdByAgent = new Map<string, string>()
+  const dir = join(transcriptPath(cwd, sessionId).replace(/\.jsonl$/, ''), 'subagents')
+  const threads = new Map<string, TranscriptEntry[]>()
+
+  // Un sous-agent peut en lancer un autre, et l'appel ne figure alors que dans le
+  // fichier du premier : la découverte repart donc de chaque fil relu, jusqu'à ce
+  // qu'aucun nouveau ne se présente.
+  let frontier = entries
+  while (frontier.length > 0) {
+    const found: TranscriptEntry[] = []
+    for (const [agentId, toolCallId] of spawnedAgents(frontier)) {
+      if (threads.has(toolCallId)) continue
+      const parsed = await readJsonl(join(dir, `agent-${agentId}.jsonl`))
+      // Un sous-agent encore en cours, ou d'une version de CLI qui n'écrivait pas ces
+      // fichiers, ne laisse rien : le reste de l'import n'en dépend pas.
+      if (parsed.length === 0) continue
+      threads.set(toolCallId, parsed)
+      found.push(...parsed)
+    }
+    frontier = found
+  }
+
+  return threads
+}
+
+/**
+ * Les sous-agents lancés depuis ces entrées, de leur `agentId` vers l'appel qui les a
+ * lancés.
+ *
+ * L'`agentId` est porté par l'entrée, l'identifiant d'appel par un bloc : une entrée
+ * qui groupe plusieurs résultats ne permet donc pas de dire lequel est l'appel de
+ * sous-agent, et rien ne vaut mieux qu'un rattachement au hasard, qui rendrait tout un
+ * fil invisible sans rien signaler.
+ */
+function spawnedAgents(entries: TranscriptEntry[]): Map<string, string> {
+  const spawned = new Map<string, string>()
   for (const entry of entries) {
     const agentId = entry.toolUseResult?.agentId
     if (typeof agentId !== 'string') continue
     const content = entry.message?.content
     if (!Array.isArray(content)) continue
-    for (const block of content as Record<string, unknown>[]) {
-      if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
-        toolCallIdByAgent.set(agentId, block.tool_use_id)
-      }
-    }
-  }
-  if (toolCallIdByAgent.size === 0) return new Map()
 
-  const dir = join(transcriptPath(cwd, sessionId).replace(/\.jsonl$/, ''), 'subagents')
-  const threads = new Map<string, TranscriptEntry[]>()
-  for (const [agentId, toolCallId] of toolCallIdByAgent) {
-    const parsed = await readJsonl(join(dir, `agent-${agentId}.jsonl`))
-    // Un sous-agent encore en cours, ou d'une version de CLI qui n'écrivait pas ces
-    // fichiers, ne laisse rien : le reste de l'import n'en dépend pas.
-    if (parsed.length > 0) threads.set(toolCallId, parsed)
+    const results = (content as Record<string, unknown>[]).filter(
+      (block) => block.type === 'tool_result' && typeof block.tool_use_id === 'string',
+    )
+    const only = results.length === 1 ? results[0] : undefined
+    if (only) spawned.set(agentId, only.tool_use_id as string)
   }
-  return threads
+  return spawned
 }
 
 function entryTs(entry: TranscriptEntry): number {
@@ -203,6 +228,10 @@ function translateThread(
   let inTurn = false
 
   for (const entry of entries) {
+    // Les versions de CLI qui écrivaient les tours de sous-agent en ligne dans le
+    // fichier principal les marquent ainsi. Repris comme fil principal, le prompt du
+    // sous-agent s'afficherait comme une chose que l'utilisateur aurait dite.
+    if (thread === null && entry.isSidechain === true) continue
     const ts = entryTs(entry)
 
     if (entry.type === 'assistant') {

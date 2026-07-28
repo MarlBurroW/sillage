@@ -155,6 +155,9 @@ export class EventLog {
    * point de reprise. `completedToolCallIds` : les résultats d'outils déjà
    * journalisés, dont l'entrée de transcript peut se trouver après ce point quand un
    * tour a été interrompu, et qu'il ne faut pas réimporter en doublon.
+   * `subAgentIds` : les appels dont le sous-agent a déjà laissé des traces au journal.
+   * Un fil de sous-agent ne se découpe pas au point de reprise, il a sa propre
+   * chronologie : c'est tout ou rien, et c'est cet ensemble qui le dit.
    *
    * Contrat Claude : `raw.uuid` est un identifiant d'entrée du transcript de Claude
    * Code, seul CLI à en écrire un. Les `raw` Codex n'en portent pas, la lecture est
@@ -163,6 +166,7 @@ export class EventLog {
   importAnchors(conversationId: string): {
     uuids: Set<string>
     completedToolCallIds: Set<string>
+    subAgentIds: Set<string>
   } {
     const rows = this.db
       .select({ type: events.type, payload: events.payload, raw: events.raw })
@@ -172,17 +176,22 @@ export class EventLog {
 
     const uuids = new Set<string>()
     const completedToolCallIds = new Set<string>()
+    const subAgentIds = new Set<string>()
     for (const row of rows) {
       if (row.raw) {
         const raw = JSON.parse(row.raw) as { uuid?: unknown }
         if (typeof raw.uuid === 'string') uuids.add(raw.uuid)
       }
-      if (row.type === 'tool.completed') {
-        const payload = JSON.parse(row.payload) as { toolCallId?: unknown }
-        if (typeof payload.toolCallId === 'string') completedToolCallIds.add(payload.toolCallId)
+      const payload = JSON.parse(row.payload) as {
+        toolCallId?: unknown
+        parentToolCallId?: unknown
       }
+      if (row.type === 'tool.completed' && typeof payload.toolCallId === 'string') {
+        completedToolCallIds.add(payload.toolCallId)
+      }
+      if (typeof payload.parentToolCallId === 'string') subAgentIds.add(payload.parentToolCallId)
     }
-    return { uuids, completedToolCallIds }
+    return { uuids, completedToolCallIds, subAgentIds }
   }
 
   read(conversationId: string, afterSeq: number, limit: number): JournalEntry[] {

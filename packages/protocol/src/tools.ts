@@ -32,3 +32,11 @@ export const CANONICAL_TOOLS = [
 ] as const
 
 export type CanonicalToolName = (typeof CANONICAL_TOOLS)[number]
+
+/** Les deux noms de l'outil de sous-agent, réunis là où le contrat les déclare. */
+const SPAWN_TOOLS: ReadonlySet<string> = new Set<CanonicalToolName>(['Task', 'Agent'])
+
+/** Vrai si cet appel lance un sous-agent, dont tout le travail se rattache à lui. */
+export function isSpawnTool(name: string): boolean {
+  return SPAWN_TOOLS.has(name)
+}

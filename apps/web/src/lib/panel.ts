@@ -93,6 +93,10 @@ export function usePanelTab(): PanelTab {
 export function setPanelTab(next: PanelTab): void {
   if (next === tab) return
   tab = next
+  // Cliquer l'onglet se lit comme « montre-moi les sous-agents », pas « rouvre celui
+  // que je consultais » : la sélection ne survit donc pas à un passage par un autre
+  // onglet, alors qu'elle survit à un aller-retour dans le fil.
+  subAgentId = null
   for (const listener of listeners) listener()
 }
 
@@ -109,10 +113,9 @@ export function useSelectedSubAgent(): string | null {
 export function showSubAgent(id: string): void {
   subAgentId = id
   tab = 'agents'
-  if (!open) {
-    open = true
-    localStorage.setItem(OPEN_KEY, '1')
-  }
+  // Après les deux affectations : `setPanelOpen` prévient les abonnés, qui doivent
+  // trouver l'onglet et la sélection déjà en place.
+  setPanelOpen(true)
   for (const listener of listeners) listener()
 }
 

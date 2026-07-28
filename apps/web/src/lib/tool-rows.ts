@@ -1,5 +1,5 @@
+import { isSpawnTool } from '@sillage/protocol'
 import { hasVisibleContent, type ChatItem, type ToolItem } from './chat-fold'
-import { isSpawnTool } from './subagents'
 
 /**
  * Mise en forme d'un fil avant rendu.
@@ -29,9 +29,10 @@ const MIN_GROUP_SIZE = 2
  * Découpe un fil en lignes affichables.
  *
  * `thread` désigne l'auteur du fil : `null` pour l'agent principal, l'identifiant de
- * l'appel de spawn pour un sous-agent. Les éléments interactifs (permission, plan,
- * question) n'ont pas d'auteur : ils restent dans le fil principal, seul endroit d'où
- * on peut y répondre.
+ * l'appel de spawn pour un sous-agent. Tout ce qui n'est ni message ni appel d'outil
+ * (permission, plan, question, erreur, repère) n'a pas d'auteur et reste dans le fil
+ * principal : c'est le seul endroit d'où l'on peut répondre à une sollicitation, et le
+ * seul où une erreur de session a un sens.
  */
 export function buildRows(items: ChatItem[], thread: string | null = null): ChatRow[] {
   const rows: ChatRow[] = []

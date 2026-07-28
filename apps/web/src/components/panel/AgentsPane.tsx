@@ -1,6 +1,5 @@
 import { ArrowLeft, Bot } from 'lucide-react'
 import { useMemo } from 'react'
-import type { ChatItem } from '../../lib/chat-fold'
 import { clearSubAgent, showSubAgent } from '../../lib/panel'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
 import { buildRows } from '../../lib/tool-rows'
@@ -19,23 +18,16 @@ export function AgentsPane({
   conversationId,
   agents,
   selectedId,
-  canDecide,
 }: {
   conversationId: string
   agents: SubAgent[]
   selectedId: string | null
-  canDecide: boolean
 }) {
   const selected = agents.find((agent) => agent.id === selectedId) ?? null
 
   if (selected) {
     return (
-      <SubAgentThread
-        conversationId={conversationId}
-        agent={selected}
-        canDecide={canDecide}
-        onBack={clearSubAgent}
-      />
+      <SubAgentThread conversationId={conversationId} agent={selected} onBack={clearSubAgent} />
     )
   }
 
@@ -64,12 +56,10 @@ export function AgentsPane({
 function SubAgentThread({
   conversationId,
   agent,
-  canDecide,
   onBack,
 }: {
   conversationId: string
   agent: SubAgent
-  canDecide: boolean
   onBack: () => void
 }) {
   const rows = useMemo(() => buildRows(agent.items, agent.id), [agent.items, agent.id])
@@ -104,7 +94,7 @@ function SubAgentThread({
               : "Ce sous-agent n'a rien transmis."}
           </p>
         ) : (
-          <ChatThread rows={rows} conversationId={conversationId} canDecide={canDecide} />
+          <ChatThread rows={rows} conversationId={conversationId} />
         )}
       </div>
     </div>
