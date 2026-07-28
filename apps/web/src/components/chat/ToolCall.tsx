@@ -303,8 +303,13 @@ function summarizeNames(tools: ToolItem[]): string {
  *
  * Les échecs sont comptés dans l'en-tête : replier ne doit jamais faire disparaître
  * une erreur du champ de vision.
+ *
+ * La comparaison porte sur le contenu du tableau, pas sur son identité : `buildRows`
+ * regroupe à chaque appel, donc à chaque lot de deltas, et rend un tableau neuf pour
+ * des appels inchangés. Comparé par référence, le `memo` ratait toujours et chaque
+ * groupe du fil se redessinait seize fois par seconde pendant un tour.
  */
-export const ToolCallGroup = memo(function ToolCallGroup({ tools }: { tools: ToolItem[] }) {
+const ToolCallGroupInner = function ToolCallGroup({ tools }: { tools: ToolItem[] }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
 
@@ -356,4 +361,13 @@ export const ToolCallGroup = memo(function ToolCallGroup({ tools }: { tools: Too
       ) : null}
     </div>
   )
-})
+}
+
+export const ToolCallGroup = memo(
+  ToolCallGroupInner,
+  (prev, next) =>
+    prev.tools.length === next.tools.length &&
+    // Le fold remplace l'objet d'un appel qui change : la comparaison par référence
+    // sur chaque élément est donc exacte, sans avoir à comparer champ par champ.
+    prev.tools.every((tool, index) => tool === next.tools[index]),
+)
