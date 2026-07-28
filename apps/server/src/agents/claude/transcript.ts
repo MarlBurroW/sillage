@@ -19,6 +19,12 @@ import { editedPath } from './file-edits.js'
  * dont l'`uuid` sert de point de coupe à un fork ultérieur (invariant I3).
  */
 
+/**
+ * Provenance des `raw` issus d'un transcript relu sur disque, par opposition au flux
+ * vivant du SDK : mêmes formes aujourd'hui, mais deux sources qui peuvent diverger.
+ */
+export const TRANSCRIPT_RAW_FORMAT = 'claude-transcript@1'
+
 /** Ce que le journal reçoit pour une entrée traduite. */
 export interface TranslatedEvent {
   ts: number

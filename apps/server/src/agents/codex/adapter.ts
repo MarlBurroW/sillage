@@ -36,6 +36,7 @@ export class CodexAdapter implements AgentAdapter {
   readonly label = 'Codex'
   readonly binary: string
   readonly capabilities = AGENT_CAPABILITIES.codex
+  readonly rawFormat = 'codex-app-server@v2'
 
   private readonly catalog: CodexModelCatalog
   private readonly usageReader: CodexUsageReader

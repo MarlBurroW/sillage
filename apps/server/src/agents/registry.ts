@@ -51,6 +51,12 @@ export interface AgentAdapter {
    * pour ne pas proposer un geste refusé, le runner garde le refus comme filet.
    */
   readonly capabilities: AgentCapabilities
+  /**
+   * Provenance estampillée sur les payloads natifs journalisés
+   * (« codex-app-server@v2 »...). À bumper quand le protocole du CLI change de
+   * forme : c'est ce qui permettra de relire un vieux `raw` avec le bon lecteur.
+   */
+  readonly rawFormat: string
   createRunner(ctx: RunnerContext): AgentRunner
   /**
    * Point de coupe natif d'un fork, lu depuis le journal. Opaque hors de

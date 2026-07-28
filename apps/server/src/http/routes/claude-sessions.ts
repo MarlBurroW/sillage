@@ -11,6 +11,7 @@ import {
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
 import {
+  TRANSCRIPT_RAW_FORMAT,
   readTranscript,
   translateTranscript,
   type TranslatedEvent,
@@ -185,7 +186,7 @@ export function registerClaudeSessionRoutes(
         tools: [],
       },
     }
-    const lastSeq = log.appendBatch(row.id, [opening, ...translated.events])
+    const lastSeq = log.appendBatch(row.id, [opening, ...translated.events], TRANSCRIPT_RAW_FORMAT)
 
     return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id))
   })
@@ -249,7 +250,7 @@ export function registerClaudeSessionRoutes(
     // la reprise au prochain message repartira du fichier, qui a tout.
     if (sessions.isWarm(id)) await sessions.releaseRunner(id)
 
-    log.appendBatch(id, events)
+    log.appendBatch(id, events, TRANSCRIPT_RAW_FORMAT)
     return { imported: events.length }
   })
 }
