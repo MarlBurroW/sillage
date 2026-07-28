@@ -8,6 +8,7 @@ import {
   PanelRight,
   Search,
   Shrink,
+  Waves,
   WifiOff,
 } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -17,6 +18,7 @@ import {
   AGENT_CAPABILITIES,
   agentConfigSchema,
   type AgentConfig,
+  type BackgroundTask,
   type ConversationStatus,
 } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
@@ -66,6 +68,9 @@ import { useWorktrees } from '../lib/worktrees'
 const SidePanel = lazy(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
 )
+
+/** Instance unique : une liste vide recréée à chaque rendu ferait rendre le panneau. */
+const NO_BACKGROUND: BackgroundTask[] = []
 
 /** Marge sous laquelle on considère que l'utilisateur suit le bas du fil. */
 const STICKY_THRESHOLD_PX = 120
@@ -122,6 +127,12 @@ export function ConversationPage() {
     () => subAgents.filter((agent) => agent.status === 'running'),
     [subAgents],
   )
+  /**
+   * Le journal peut rester sur un travail de fond que plus rien ne fait tourner : un
+   * démon tué net n'écrit pas la fin de session qui l'aurait éteint. Une session
+   * froide n'a plus de process, donc plus de travail de fond, quoi qu'en dise le fil.
+   */
+  const background = stream.warm === false ? NO_BACKGROUND : stream.state.background
   const [usageOpen, setUsageOpen] = useState(false)
   const [forking, setForking] = useState(false)
   /** Message dont le fork est proposé : le geste est trop peu courant pour être direct. */
@@ -540,6 +551,7 @@ export function ConversationPage() {
             </span>
           ) : null}
           <StatusPill status={stream.status} />
+          <BackgroundPill tasks={background} />
 
           {/* La consommation appartient au compte, pas à la conversation : le panneau
               reste le même quel que soit le fil ouvert. */}
@@ -754,6 +766,7 @@ export function ConversationPage() {
                 connected={stream.connected}
                 warm={stream.warm}
                 queued={stream.state.queued.length}
+                background={background}
               />
             }
           />
@@ -770,6 +783,7 @@ export function ConversationPage() {
             editTurns={stream.state.editTurns}
             turnRunning={stream.state.turnRunning}
             subAgents={subAgents}
+            background={background}
             open={panel.open}
           />
         </Suspense>
@@ -806,6 +820,37 @@ const STATUS_PILLS: Partial<
   awaiting_input: { key: 'conversation.status.waiting', dot: 'bg-caution', text: 'text-caution' },
   interrupted: { key: 'conversation.status.interrupted', dot: 'bg-caution', text: 'text-caution' },
   error: { key: 'conversation.status.error', dot: 'bg-critical', text: 'text-critical' },
+}
+
+/**
+ * Pastille du travail de fond, à côté de celle du statut plutôt qu'à sa place.
+ *
+ * C'est le cas que le fil ne savait pas montrer : le tour est fini, le statut dit
+ * « au repos », et un workflow continue d'écrire dans le dépôt pendant plusieurs
+ * minutes. Elle reste visible pendant un tour, où elle dit autre chose que la pastille
+ * d'activité : ce travail-là survivra à la fin du tour.
+ */
+function BackgroundPill({ tasks }: { tasks: BackgroundTask[] }) {
+  const t = useTranslate()
+  if (tasks.length === 0) return null
+
+  return (
+    <span
+      title={tasks.map((task) => task.description).join('\n')}
+      className={cx(
+        'flex shrink-0 items-center gap-1.5 rounded-full border border-line',
+        'bg-surface-high px-2 py-1 text-[0.6875rem] font-medium text-accent',
+      )}
+    >
+      <Waves size={11} className="animate-pulse" />
+      <span className="hidden sm:inline">
+        {t(
+          tasks.length > 1 ? 'conversation.status.background.many' : 'conversation.status.background.one',
+          { count: tasks.length },
+        )}
+      </span>
+    </span>
+  )
 }
 
 /** Au repos, aucun indicateur : c'est l'état normal, l'afficher ne dit rien. */

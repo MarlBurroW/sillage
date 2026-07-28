@@ -49,6 +49,8 @@ export const fr: Catalog = {
   'conversation.status.waiting': 'En attente',
   'conversation.status.interrupted': 'Interrompu',
   'conversation.status.error': 'Erreur',
+  'conversation.status.background.one': '{count} travail de fond',
+  'conversation.status.background.many': '{count} travaux de fond',
 
   // Composer - réglages du tour
   'composer.permission.manual': 'Demander',
@@ -116,6 +118,11 @@ export const fr: Catalog = {
   'panel.close': 'Fermer le panneau',
   'panel.resize.aria': 'Largeur du panneau',
   'panel.tab.badge': '{label}, {count} en cours',
+  'panel.background.title': 'Travail de fond',
+  'panel.background.kind.workflow': 'Workflow',
+  'panel.background.kind.shell': 'Commande shell',
+  'panel.background.kind.subagent': 'Sous-agent',
+  'panel.background.kind.monitor': 'Surveillance',
 
   // Coquille applicative (navigation, projets, comptes)
   'shell.nav.resize.aria': 'Largeur de la navigation',
@@ -138,6 +145,7 @@ export const fr: Catalog = {
   'shell.color': 'Couleur',
   'shell.conversations.empty': 'Aucune conversation',
   'shell.conversation.running': 'En cours',
+  'shell.conversation.background': 'Travail de fond en cours',
   'shell.conversation.actions': 'Actions de la conversation',
   'shell.delete': 'Supprimer',
   'shell.conversation.deleteConfirm': 'Supprimer "{title}" ?',
@@ -417,6 +425,8 @@ export const fr: Catalog = {
   'composer.status.disconnected.label': 'Reconnexion...',
   'composer.status.queued.one': '{count} message en attente',
   'composer.status.queued.many': '{count} messages en attente',
+  'composer.status.background.one': '{count} travail de fond',
+  'composer.status.background.many': '{count} travaux de fond',
   'composer.status.shortcut': 'Entrée pour envoyer, Maj+Entrée pour un retour à la ligne',
 
   // Éditeur

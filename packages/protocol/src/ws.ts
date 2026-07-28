@@ -39,6 +39,15 @@ export type ServerMessage =
        * intérêt à savoir avant de se demander pourquoi la réponse tarde.
        */
       warm: boolean
+      /**
+       * Nombre de travaux de fond vivants pour cette conversation.
+       *
+       * Doublonne l'événement `background.updated` du journal, et pour la même raison
+       * que `warm` : la sidebar suit des conversations qu'elle n'a pas ouvertes, donc
+       * sans journal à replier. C'est un état de process, jamais persisté : une
+       * conversation froide n'a plus de CLI, donc plus de travail de fond.
+       */
+      background: number
     }
   /**
    * Le CLI a proposé un titre pour la conversation. Poussé plutôt que redécouvert par

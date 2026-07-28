@@ -74,7 +74,13 @@ class Connection {
     // de journal à replier, elle ne peut pas le déduire elle-même.
     const status = readConversationStatus(this.ctx, conversationId)
     if (status) {
-      this.send({ t: 'status', conversationId, status, warm: this.sessions.isWarm(conversationId) })
+      this.send({
+        t: 'status',
+        conversationId,
+        status,
+        warm: this.sessions.isWarm(conversationId),
+        background: this.sessions.backgroundCount(conversationId),
+      })
     }
 
     const unsubscribe = this.log.subscribe(conversationId, (entry) => {
@@ -108,14 +114,19 @@ class Connection {
    * les changements de statut se comptent en quelques-uns par tour, la lecture est
    * locale, et rien ne peut alors dériver d'un partage révoqué entre-temps.
    */
-  notifyStatus(conversationId: string, status: ConversationStatus, warm: boolean): void {
+  notifyStatus(
+    conversationId: string,
+    status: ConversationStatus,
+    warm: boolean,
+    background: number,
+  ): void {
     if (
       !this.subscriptions.has(conversationId) &&
       !canReadConversation(this.ctx, conversationId, this.userId)
     ) {
       return
     }
-    this.send({ t: 'status', conversationId, status, warm })
+    this.send({ t: 'status', conversationId, status, warm, background })
   }
 
   notifyTitle(conversationId: string, title: string): void {
@@ -176,12 +187,16 @@ export async function registerWebSocketHub(
       conversationId,
       status,
       warm,
+      background,
     }: {
       conversationId: string
       status: ConversationStatus
       warm: boolean
+      background: number
     }) => {
-      for (const connection of connections) connection.notifyStatus(conversationId, status, warm)
+      for (const connection of connections) {
+        connection.notifyStatus(conversationId, status, warm, background)
+      }
     },
   )
 

@@ -7,6 +7,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react'
+import type { BackgroundTask } from '@sillage/protocol'
 import type { EditTurn } from '../../lib/chat-fold'
 import { openTab } from '../../lib/editor-tabs'
 import { useTranslate } from '../../lib/i18n'
@@ -41,12 +42,14 @@ export function SidePanel({
   editTurns,
   turnRunning,
   subAgents,
+  background,
   open,
 }: {
   conversationId: string
   editTurns: EditTurn[]
   turnRunning: boolean
   subAgents: SubAgent[]
+  background: BackgroundTask[]
   /** Faux pendant la sortie : le panneau est encore monté, mais s'en va. */
   open: boolean
 }) {
@@ -183,7 +186,7 @@ export function SidePanel({
           <Tab
             icon={<Bot size={14} />}
             label={t('panel.tab.agents')}
-            badge={subAgents.filter((agent) => agent.status === 'running').length}
+            badge={subAgents.filter((agent) => agent.status === 'running').length + background.length}
             active={tab === 'agents'}
             onSelect={() => setPanelTab('agents')}
           />
@@ -265,6 +268,7 @@ export function SidePanel({
         <AgentsPane
           conversationId={conversationId}
           agents={subAgents}
+          background={background}
           selectedId={selectedSubAgent}
         />
       ) : null}

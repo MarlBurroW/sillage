@@ -44,6 +44,13 @@ interface ManagedRunner {
   lastActivity: number
   status: ConversationStatus
   idleTimer: NodeJS.Timeout | null
+  /**
+   * Travaux de fond vivants, tels que le dernier `background.updated` les décrit.
+   *
+   * En mémoire et non en base : ils appartiennent au process CLI, et meurent avec
+   * lui. Une conversation rechargée après un redémarrage n'en a plus aucun.
+   */
+  background: number
 }
 
 /** Fenêtre de déduplication des envois (invariant I5). Voir sendMessage(). */
@@ -214,7 +221,7 @@ export class SessionManager {
     if (managed) managed.status = status
 
     this.db.update(conversations).set({ status }).where(eq(conversations.id, conversationId)).run()
-    this.statusBus.emit('status', { conversationId, status, warm: this.isWarm(conversationId) })
+    this.broadcastStatus(conversationId, status, this.isWarm(conversationId))
 
     // Le tour vient de se terminer : c'est le seul moment où un message en attente
     // peut partir sans se mêler au contexte du tour précédent.
@@ -224,6 +231,28 @@ export class SessionManager {
     // les messages suivants vers un process hors d'état. L'arrêter libère la place,
     // et le prochain message repartira en reprise sur une session neuve.
     if (status === 'error') void this.stopRunner(conversationId)
+  }
+
+  /**
+   * Diffuse un statut. `warm` est passé plutôt que relu : l'arrêt d'un runner annonce
+   * une session froide alors que la table le donne encore chaud.
+   */
+  private broadcastStatus(
+    conversationId: string,
+    status: ConversationStatus,
+    warm: boolean,
+  ): void {
+    this.statusBus.emit('status', {
+      conversationId,
+      status,
+      warm,
+      background: warm ? this.backgroundCount(conversationId) : 0,
+    })
+  }
+
+  /** Combien de travaux de fond tournent pour cette conversation, à l'instant. */
+  backgroundCount(conversationId: string): number {
+    return this.runners.get(conversationId)?.background ?? 0
   }
 
   /**
@@ -400,6 +429,15 @@ export class SessionManager {
       emit: (event: SillageEvent, raw?: unknown) => {
         this.log.append(conversationId, event, raw, adapter.rawFormat)
         void this.notifyIfAway(conversationId, event)
+        if (event.type === 'background.updated') {
+          // Le journal suffit au fil ouvert, qui le replie ; la liste des conversations
+          // n'a que le flux de statuts pour savoir qu'un travail continue ailleurs.
+          const managed = this.runners.get(conversationId)
+          if (managed) {
+            managed.background = event.tasks.length
+            this.broadcastStatus(conversationId, managed.status, true)
+          }
+        }
         if (event.type === 'turn.completed') {
           // Le CLI ne résume la session qu'une fois le tour fini : c'est le premier
           // moment où un titre utile existe.
@@ -533,6 +571,7 @@ export class SessionManager {
       lastActivity: Date.now(),
       status: 'idle',
       idleTimer: null,
+      background: 0,
     })
 
     try {
@@ -898,11 +937,7 @@ export class SessionManager {
 
     // Le statut ne bouge pas quand un runner expire : sans cette diffusion, l'UI
     // continuerait d'annoncer une session chaude qui n'existe plus.
-    this.statusBus.emit('status', {
-      conversationId,
-      status: managed.status,
-      warm: false,
-    })
+    this.broadcastStatus(conversationId, managed.status, false)
   }
 
   async stopAll(): Promise<void> {

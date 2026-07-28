@@ -1,5 +1,6 @@
 import type {
   AgentQuestion,
+  BackgroundTask,
   ContentBlock,
   ElicitationField,
   ElicitationValue,
@@ -214,6 +215,16 @@ export interface ChatState {
    * qui ne viendra pas.
    */
   compacting: boolean
+  /**
+   * Les travaux que le CLI poursuit hors du tour : workflows, commandes lancées en
+   * fond, sous-agents basculés en arrière-plan.
+   *
+   * Remplacée à chaque `background.updated` et jamais complétée : c'est un niveau, pas
+   * une suite de débuts et de fins. Non vide alors que `turnRunning` est faux décrit
+   * l'état que le fil ne savait pas montrer, celui où l'agent a rendu la main mais où
+   * des fichiers changent encore.
+   */
+  background: BackgroundTask[]
 }
 
 export function emptyChatState(): ChatState {
@@ -232,6 +243,7 @@ export function emptyChatState(): ChatState {
     editTurns: [],
     turnRunning: false,
     compacting: false,
+    background: [],
   }
 }
 
@@ -548,6 +560,9 @@ export function applyEvent(
     case 'session.ended': {
       state.turnRunning = false
       state.compacting = false
+      // Le travail de fond appartient au process du CLI : il s'arrête avec lui, sans
+      // que rien ne vienne l'annoncer.
+      state.background = []
       closeRunningTools(state)
       break
     }
@@ -801,6 +816,14 @@ export function applyEvent(
     case 'usage.updated': {
       if (event.rateLimit) state.rateLimit = event.rateLimit
       if (event.context) state.context = event.context
+      break
+    }
+
+    case 'background.updated': {
+      // Remplacement et non fusion : l'événement porte la liste entière, et c'est ce
+      // qui rend l'indicateur increvable. Un événement perdu se rattrape au suivant
+      // au lieu de laisser un travail allumé pour toujours.
+      state.background = event.tasks
       break
     }
 

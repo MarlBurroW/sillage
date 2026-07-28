@@ -1,5 +1,5 @@
-import { Flame, Snowflake, Wifi, WifiOff } from 'lucide-react'
-import type { AgentKind } from '@sillage/protocol'
+import { Flame, Snowflake, Waves, Wifi, WifiOff } from 'lucide-react'
+import type { AgentKind, BackgroundTask } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
@@ -16,12 +16,15 @@ export function ComposerStatus({
   connected,
   warm,
   queued,
+  background,
 }: {
   agent: AgentKind
   connected: boolean
   /** Null tant que le serveur ne l'a pas annoncé, c'est-à-dire avant l'abonnement. */
   warm: boolean | null
   queued: number
+  /** Travaux que le CLI poursuit en dehors du tour. Vide la plupart du temps. */
+  background: BackgroundTask[]
 }) {
   const t = useTranslate()
   return (
@@ -55,6 +58,19 @@ export function ComposerStatus({
         {connected ? <Wifi size={11} /> : <WifiOff size={11} />}
         {connected ? t('composer.status.connected.label') : t('composer.status.disconnected.label')}
       </span>
+
+      {background.length > 0 ? (
+        <span
+          className="flex items-center gap-1 text-accent"
+          title={background.map((task) => task.description).join('\n')}
+        >
+          <Waves size={11} className="animate-pulse" />
+          {t(
+            background.length > 1 ? 'composer.status.background.many' : 'composer.status.background.one',
+            { count: background.length },
+          )}
+        </span>
+      ) : null}
 
       {queued > 0 ? (
         <span className="text-ink-soft">
