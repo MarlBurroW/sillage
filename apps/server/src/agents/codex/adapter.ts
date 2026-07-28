@@ -2,10 +2,11 @@ import {
   AGENT_CAPABILITIES,
   CLI_DEFAULT,
   type AgentConfig,
+  type AgentModelDto,
+  type AgentModelsDto,
   type AgentUsage,
   type CodexMode,
   type CodexModeDto,
-  type CodexModelDto,
   type EditDiffDto,
 } from '@sillage/protocol'
 import type { CollaborationModeMask, ThreadForkResponse } from '@sillage/codex-bindings/v2'
@@ -94,20 +95,23 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
-  async models(): Promise<object> {
+  async models(): Promise<AgentModelsDto> {
     const listing = await this.catalog.list()
 
-    const models: CodexModelDto[] = listing.models.map((model) => ({
-      id: model.id,
-      model: model.model,
+    const models: AgentModelDto[] = listing.models.map((model) => ({
+      value: model.model,
       displayName: model.displayName,
       description: model.description,
-      supportedReasoningEfforts: model.supportedReasoningEfforts.map((effort) => ({
-        value: effort.reasoningEffort,
-        description: effort.description,
-      })),
-      defaultReasoningEffort: model.defaultReasoningEffort,
+      hint: null,
       isDefault: model.isDefault,
+      // Chaînes libres côté protocole, sans libellé rédigé : la valeur sert de
+      // libellé, la description du CLI d'infobulle.
+      efforts: model.supportedReasoningEfforts.map((effort) => ({
+        value: effort.reasoningEffort,
+        label: effort.reasoningEffort,
+        hint: effort.description,
+      })),
+      defaultEffort: model.defaultReasoningEffort,
     }))
 
     // `mode` est nullable côté protocole : un préréglage qui ne désigne aucun mode ne
@@ -116,7 +120,7 @@ export class CodexAdapter implements AgentAdapter {
       .filter((mask): mask is CollaborationModeMask & { mode: CodexMode } => mask.mode !== null)
       .map((mask) => ({ mode: mask.mode, label: mask.name }))
 
-    return { models, modes, fetchedAt: listing.fetchedAt }
+    return { models, modes, account: null, fetchedAt: listing.fetchedAt }
   }
 
   usage(force: boolean): Promise<AgentUsage> {

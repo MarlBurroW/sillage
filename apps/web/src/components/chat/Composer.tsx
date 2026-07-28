@@ -12,6 +12,7 @@ import {
 import {
   CLI_DEFAULT,
   MAX_ATTACHMENTS_PER_MESSAGE,
+  claudeEffortSchema,
   type AttachmentDto,
   DEFAULT_CLAUDE_CONFIG,
   type AgentConfig,
@@ -21,7 +22,7 @@ import {
   type CodexMode,
   type ConversationStatus,
 } from '@sillage/protocol'
-import { codexEffortsFor, effortLevelsFor, useClaudeModels, useCodexModels } from '../../lib/agents'
+import { effortsFor, useAgentModels } from '../../lib/agents'
 import type { ContextState } from '../../lib/chat-fold'
 import { useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
@@ -31,14 +32,6 @@ import { IconButton, Select, cx, type SelectOption, type SelectTone } from '../u
 import { AttachmentTray } from './AttachmentTray'
 import { ComposerSettings, type ComposerControl } from './ComposerSettings'
 import { MentionPicker } from './MentionPicker'
-
-const EFFORT_LABELS: Record<ClaudeConfig['effort'], string> = {
-  low: 'Faible',
-  medium: 'Moyen',
-  high: 'Élevé',
-  xhigh: 'Très élevé',
-  max: 'Maximal',
-}
 
 const PERMISSION_OPTIONS: SelectOption<ClaudeConfig['permissionMode']>[] = [
   { value: 'manual', label: 'Demander', hint: 'Chaque outil est soumis à ton accord' },
@@ -185,10 +178,9 @@ export function Composer({
   const [mentioned, setMentioned] = useState<Set<string>>(() => new Set())
   const textarea = useRef<HTMLTextAreaElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
-  // Chaque sonde démarre le CLI correspondant côté serveur : seule celle de l'agent
-  // de la conversation a le droit de partir.
-  const { data: catalog, error: catalogError } = useClaudeModels(config.agent === 'claude')
-  const { data: codexCatalog } = useCodexModels(config.agent === 'codex')
+  // Une seule sonde, celle de l'agent de la conversation : chaque sonde démarre le
+  // CLI correspondant côté serveur.
+  const { data: catalog, error: catalogError } = useAgentModels(config.agent)
 
   const running = status === 'running' || status === 'awaiting_input'
 
@@ -201,65 +193,43 @@ export function Composer({
     const known = (catalog?.models ?? []).map((model) => ({
       value: model.value,
       label: model.displayName,
-      // `resolvedModel` donne la version réelle derrière un alias : sans elle,
-      // « Opus » ne dit pas quelle génération va effectivement répondre.
-      hint: model.resolvedModel
-        ? `${model.description} · ${model.resolvedModel}`
-        : model.description,
+      // `hint` porte la version réelle derrière un alias : sans elle, « Opus » ne
+      // dit pas quelle génération va effectivement répondre.
+      hint: [model.description, model.hint, model.isDefault ? 'par défaut' : null]
+        .filter(Boolean)
+        .join(' · '),
     }))
 
     // Le modèle enregistré doit rester sélectionnable même si le catalogue n'a pas pu
     // être lu, sinon le select s'affiche vide et efface le réglage de la conversation.
-    if (config.agent === 'claude' && !known.some((option) => option.value === config.model)) {
+    if (!known.some((option) => option.value === config.model)) {
       known.unshift({ value: config.model, label: config.model, hint: 'Réglage enregistré' })
     }
     return known
-  }, [catalog, config])
+  }, [catalog, config.model])
 
-  const effortOptions = useMemo((): SelectOption<ClaudeConfig['effort']>[] => {
-    if (config.agent !== 'claude') return []
-    return effortLevelsFor(catalog?.models, config.model).map((level) => ({
-      value: level,
-      label: EFFORT_LABELS[level],
+  const effortOptions = useMemo((): SelectOption<string>[] => {
+    return effortsFor(catalog?.models, config.model).map((effort) => ({
+      value: effort.value,
+      label: effort.label,
+      hint: effort.hint ?? undefined,
       icon: <Brain size={13} />,
     }))
-  }, [catalog, config])
-
-  const codexModelOptions = useMemo((): SelectOption<string>[] => {
-    const known = (codexCatalog?.models ?? []).map((model) => ({
-      value: model.model,
-      label: model.displayName,
-      hint: model.isDefault ? `${model.description} · par défaut` : model.description,
-    }))
-    if (config.agent === 'codex' && !known.some((o) => o.value === config.model)) {
-      known.unshift({ value: config.model, label: config.model, hint: 'Réglage enregistré' })
-    }
-    return known
-  }, [codexCatalog, config])
+  }, [catalog, config.model])
 
   /**
    * Modes de collaboration annoncés par Codex. Le mode décide des outils accessibles
    * au modèle : en mode Plan, il peut poser des questions à choix, ce que le routeur
    * du CLI refuse autrement. La liste vient du CLI, donc elle disparaît si la version
-   * installée ne la connaît pas.
+   * installée ne la connaît pas, et reste vide pour les CLI sans cette notion.
    */
   const codexModeOptions = useMemo((): SelectOption<CodexMode>[] => {
-    return (codexCatalog?.modes ?? []).map((entry) => ({
+    return (catalog?.modes ?? []).map((entry) => ({
       value: entry.mode,
       label: entry.label,
       icon: <Compass size={13} />,
     }))
-  }, [codexCatalog])
-
-  const codexEffortOptions = useMemo((): SelectOption<string>[] => {
-    if (config.agent !== 'codex') return []
-    return codexEffortsFor(codexCatalog?.models, config.model).map((effort) => ({
-      value: effort.value,
-      label: effort.value,
-      hint: effort.description,
-      icon: <Brain size={13} />,
-    }))
-  }, [codexCatalog, config])
+  }, [catalog])
 
   // L'approbation peut être un objet granulaire, que Sillage n'édite pas : il est
   // alors affiché comme une option non modifiable plutôt que comme un select vide.
@@ -281,23 +251,22 @@ export function Composer({
       ]
     : CODEX_APPROVAL_OPTIONS
 
-  /** Un effort inconnu du nouveau modèle ferait échouer le tour. */
-  const clampCodexEffort = (model: string): string => {
-    if (config.agent !== 'codex') return ''
-    const levels = codexEffortsFor(codexCatalog?.models, model)
-    if (levels.some((l) => l.value === config.reasoningEffort)) return config.reasoningEffort
-    return codexCatalog?.models.find((m) => m.model === model)?.defaultReasoningEffort ?? ''
+  /**
+   * Chaque modèle expose ses propres niveaux. Garder l'effort courant quand le
+   * nouveau modèle ne le connaît pas ferait échouer le tour côté CLI : on retombe
+   * alors sur le repli annoncé par le catalogue.
+   */
+  const clampEffort = (model: string, current: string): string => {
+    if (effortsFor(catalog?.models, model).some((effort) => effort.value === current)) {
+      return current
+    }
+    return catalog?.models.find((entry) => entry.value === model)?.defaultEffort ?? ''
   }
 
-  /**
-   * Chaque modèle expose ses propres niveaux. Garder l'effort courant quand le nouveau
-   * modèle ne le connaît pas ferait échouer son lancement côté CLI.
-   */
-  const clampEffort = (model: string): ClaudeConfig['effort'] => {
-    const levels = effortLevelsFor(catalog?.models, model)
-    if (config.agent !== 'claude' || levels.length === 0) return DEFAULT_CLAUDE_CONFIG.effort
-    if (levels.includes(config.effort)) return config.effort
-    return levels.includes('medium') ? 'medium' : (levels[0] ?? DEFAULT_CLAUDE_CONFIG.effort)
+  /** Même repli, ramené dans l'enum du protocole que `ClaudeConfig.effort` exige. */
+  const clampClaudeEffort = (model: string, current: string): ClaudeConfig['effort'] => {
+    const parsed = claudeEffortSchema.safeParse(clampEffort(model, current))
+    return parsed.success ? parsed.data : DEFAULT_CLAUDE_CONFIG.effort
   }
 
   // Hauteur suivant le contenu, plafonnée : sur mobile, un champ qui pousse la
@@ -520,7 +489,9 @@ export function Composer({
               variant={variant}
               label={variant === 'field' ? 'Modèle' : undefined}
               value={claude.model}
-              onChange={(model) => onConfigChange({ ...claude, model, effort: clampEffort(model) })}
+              onChange={(model) =>
+                onConfigChange({ ...claude, model, effort: clampClaudeEffort(model, claude.effort) })
+              }
               options={modelOptions}
             />
           ),
@@ -537,11 +508,16 @@ export function Composer({
                     variant={variant}
                     label={variant === 'field' ? 'Effort de réflexion' : undefined}
                     value={claude.effort}
-                    onChange={(effort) => onConfigChange({ ...claude, effort })}
+                    onChange={(effort) => {
+                      // Le select est générique sur des chaînes ; l'enum du protocole
+                      // fait foi, une valeur inconnue ne part pas.
+                      const parsed = claudeEffortSchema.safeParse(effort)
+                      if (parsed.success) onConfigChange({ ...claude, effort: parsed.data })
+                    }}
                     options={effortOptions}
                   />
                 ),
-                current: EFFORT_LABELS[claude.effort],
+                current: labelOf(effortOptions, claude.effort),
               },
             ]
           : []),
@@ -573,12 +549,16 @@ export function Composer({
                 label={variant === 'field' ? 'Modèle' : undefined}
                 value={codex.model}
                 onChange={(model) =>
-                  onConfigChange({ ...codex, model, reasoningEffort: clampCodexEffort(model) })
+                  onConfigChange({
+                    ...codex,
+                    model,
+                    reasoningEffort: clampEffort(model, codex.reasoningEffort),
+                  })
                 }
-                options={codexModelOptions}
+                options={modelOptions}
               />
             ),
-            current: labelOf(codexModelOptions, codex.model),
+            current: labelOf(modelOptions, codex.model),
           },
           ...(codexModeOptions.length > 0
             ? [
@@ -599,7 +579,7 @@ export function Composer({
                 },
               ]
             : []),
-          ...(codexEffortOptions.length > 0
+          ...(effortOptions.length > 0
             ? [
                 {
                   key: 'effort',
@@ -609,10 +589,10 @@ export function Composer({
                       label={variant === 'field' ? 'Effort de réflexion' : undefined}
                       value={codex.reasoningEffort}
                       onChange={(reasoningEffort) => onConfigChange({ ...codex, reasoningEffort })}
-                      options={codexEffortOptions}
+                      options={effortOptions}
                     />
                   ),
-                  current: labelOf(codexEffortOptions, codex.reasoningEffort),
+                  current: labelOf(effortOptions, codex.reasoningEffort),
                 },
               ]
             : []),

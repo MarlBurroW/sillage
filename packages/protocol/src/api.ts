@@ -375,19 +375,30 @@ export interface ClaudeSyncDto {
 
 // Capacités des CLI
 
+/** Un niveau d'effort accepté par un modèle. Le libellé vient de l'adaptateur. */
+export interface AgentEffortDto {
+  value: string
+  label: string
+  hint: string | null
+}
+
 /**
- * Un modèle tel que le CLI installé le déclare. Rien n'est codé en dur côté Sillage :
- * une mise à jour de Claude Code fait apparaître ses nouveaux modèles sans rebuild.
+ * Un modèle tel que le CLI installé le déclare, sous une forme commune aux CLI.
+ * Rien n'est codé en dur côté Sillage : une mise à jour du CLI fait apparaître ses
+ * nouveaux modèles sans rebuild, et l'UI construit les mêmes sélecteurs pour tous.
  */
-export interface ClaudeModelDto {
+export interface AgentModelDto {
   /** Identifiant à passer au CLI : un alias (`sonnet`) ou un id complet. */
   value: string
-  /** Id de modèle canonique derrière l'alias, quand le CLI le donne. */
-  resolvedModel: string | null
   displayName: string
   description: string
+  /** Complément affiché (id canonique derrière un alias...), quand le CLI le donne. */
+  hint: string | null
+  isDefault: boolean
   /** Vide si le modèle ne gère pas les niveaux d'effort. */
-  supportedEffortLevels: ('low' | 'medium' | 'high' | 'xhigh' | 'max')[]
+  efforts: AgentEffortDto[]
+  /** Repli quand le niveau de la conversation n'existe pas sur ce modèle. */
+  defaultEffort: string | null
 }
 
 /**
@@ -405,24 +416,6 @@ export interface ClaudeAccountDto {
   billedBySubscription: boolean
 }
 
-export interface ClaudeModelsDto {
-  models: ClaudeModelDto[]
-  account: ClaudeAccountDto | null
-  fetchedAt: number
-}
-
-/** Un modèle déclaré par `model/list` sur l'app-server Codex. */
-export interface CodexModelDto {
-  id: string
-  model: string
-  displayName: string
-  description: string
-  /** Chaînes libres côté protocole : elles varient d'un modèle à l'autre. */
-  supportedReasoningEfforts: { value: string; description: string }[]
-  defaultReasoningEffort: string
-  isDefault: boolean
-}
-
 /**
  * Un mode de collaboration proposé par Codex, tel que `collaborationMode/list` le
  * déclare. Le nom affiché vient du CLI : Sillage ne traduit pas « Plan » en autre chose.
@@ -432,10 +425,13 @@ export interface CodexModeDto {
   label: string
 }
 
-export interface CodexModelsDto {
-  models: CodexModelDto[]
-  /** Vide si le CLI n'annonce aucun mode : le sélecteur disparaît plutôt que d'inventer. */
+/** Réponse de `/api/agents/:agent/models`, la même forme quel que soit le CLI. */
+export interface AgentModelsDto {
+  models: AgentModelDto[]
+  /** Modes de collaboration (Codex) ; vide quand le CLI n'en annonce pas. */
   modes: CodexModeDto[]
+  /** Nature du compte quand le CLI la déclare (Claude) ; null sinon. */
+  account: ClaudeAccountDto | null
   fetchedAt: number
 }
 

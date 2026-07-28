@@ -1,9 +1,5 @@
+import type { ComponentType } from 'react'
 import type { AgentKind } from '@sillage/protocol'
-
-export const AGENT_LABELS: Record<AgentKind, string> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-}
 
 /** Couleurs de marque, appliquées partout où le logo apparaît. */
 const BRAND: Record<AgentKind, string> = {
@@ -49,11 +45,48 @@ function OpenAiMark({ size }: { size: number }) {
   )
 }
 
+/**
+ * Ce que l'UI sait de chaque CLI : libellé, éditeur, phrase de présentation, marque.
+ *
+ * Table exhaustive sur l'enum plutôt que des ternaires dispersés : un CLI ajouté au
+ * protocole sans sa ligne ici ne compile pas, là où le ternaire binaire d'avant
+ * aurait affiché le logo OpenAI sur n'importe quel nouvel agent.
+ *
+ * Les phrases sont descriptives et non promotionnelles : le choix se fait sur ce qui
+ * distingue réellement les CLI, pas sur des adjectifs.
+ */
+export interface AgentMeta {
+  label: string
+  vendor: string
+  blurb: string
+  Mark: ComponentType<{ size: number }>
+}
+
+export const AGENT_META: Record<AgentKind, AgentMeta> = {
+  claude: {
+    label: 'Claude Code',
+    vendor: 'Anthropic',
+    blurb: 'Sous-agents, mode plan, permissions demandées outil par outil.',
+    Mark: ClaudeMark,
+  },
+  codex: {
+    label: 'Codex',
+    vendor: 'OpenAI',
+    blurb: 'Mode plan, exécution en bac à sable, approbations groupées.',
+    Mark: OpenAiMark,
+  },
+}
+
+export const AGENT_LABELS: Record<AgentKind, string> = Object.fromEntries(
+  Object.entries(AGENT_META).map(([kind, meta]) => [kind, meta.label]),
+) as Record<AgentKind, string>
+
 /** Repère visuel du CLI d'une conversation. */
 export function AgentIcon({ agent, size = 14 }: { agent: AgentKind; size?: number }) {
+  const { label, Mark } = AGENT_META[agent]
   return (
-    <span aria-label={AGENT_LABELS[agent]} className="inline-flex">
-      {agent === 'claude' ? <ClaudeMark size={size} /> : <OpenAiMark size={size} />}
+    <span aria-label={label} className="inline-flex">
+      <Mark size={size} />
     </span>
   )
 }

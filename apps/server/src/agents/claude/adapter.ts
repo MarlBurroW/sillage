@@ -3,9 +3,10 @@ import {
   AGENT_CAPABILITIES,
   CLI_DEFAULT,
   type AgentConfig,
+  type AgentModelDto,
+  type AgentModelsDto,
   type AgentUsage,
   type ClaudeAccountDto,
-  type ClaudeModelDto,
   type EditDiffDto,
 } from '@sillage/protocol'
 import type { Config } from '../../config.js'
@@ -26,6 +27,15 @@ import { ClaudeUsageReader } from './usage.js'
  */
 interface ClaudeForkCut {
   upToMessageId: string | null
+}
+
+/** Libellés des niveaux d'effort. Un niveau inconnu s'affiche par sa valeur. */
+const EFFORT_LABELS: Record<string, string> = {
+  low: 'Faible',
+  medium: 'Moyen',
+  high: 'Élevé',
+  xhigh: 'Très élevé',
+  max: 'Maximal',
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -81,16 +91,29 @@ export class ClaudeAdapter implements AgentAdapter {
     }
   }
 
-  async models(): Promise<object> {
+  async models(): Promise<AgentModelsDto> {
     const listing = await this.catalog.list()
 
-    const models: ClaudeModelDto[] = listing.models.map((model) => ({
-      value: model.value,
-      resolvedModel: model.resolvedModel ?? null,
-      displayName: model.displayName,
-      description: model.description,
-      supportedEffortLevels: model.supportedEffortLevels ?? [],
-    }))
+    const models: AgentModelDto[] = listing.models.map((model) => {
+      const efforts = model.supportedEffortLevels ?? []
+      return {
+        value: model.value,
+        displayName: model.displayName,
+        description: model.description,
+        // L'id canonique derrière un alias : sans lui, « Opus » ne dit pas quelle
+        // génération va effectivement répondre.
+        hint: model.resolvedModel ?? null,
+        isDefault: model.value === 'default',
+        efforts: efforts.map((level) => ({
+          value: level,
+          label: EFFORT_LABELS[level] ?? level,
+          hint: null,
+        })),
+        // `medium` est le défaut historique du CLI ; un modèle qui ne le connaît pas
+        // retombe sur son premier niveau plutôt que sur une valeur inventée.
+        defaultEffort: efforts.includes('medium') ? 'medium' : (efforts[0] ?? null),
+      }
+    })
 
     const account: ClaudeAccountDto | null = listing.account
       ? {
@@ -100,7 +123,7 @@ export class ClaudeAdapter implements AgentAdapter {
         }
       : null
 
-    return { models, account, fetchedAt: listing.fetchedAt }
+    return { models, modes: [], account, fetchedAt: listing.fetchedAt }
   }
 
   usage(force: boolean): Promise<AgentUsage> {

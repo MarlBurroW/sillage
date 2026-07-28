@@ -1,20 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import type {
-  ClaudeModelDto,
-  ClaudeModelsDto,
-  CodexModelDto,
-  CodexModelsDto,
-} from '@sillage/protocol'
+import type { AgentEffortDto, AgentKind, AgentModelDto, AgentModelsDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
- * Modèles déclarés par le CLI installé. Rien n'est codé en dur : mettre à jour Claude
- * Code suffit à faire apparaître ses nouveaux modèles, sans toucher à Sillage.
+ * Modèles déclarés par le CLI installé, sous la forme commune du protocole. Rien
+ * n'est codé en dur : mettre à jour le CLI suffit à faire apparaître ses nouveaux
+ * modèles, sans toucher à Sillage.
  */
-export function useClaudeModels(enabled = true) {
+export function useAgentModels(agent: AgentKind, enabled = true) {
   return useQuery({
-    queryKey: ['agents', 'claude', 'models'],
-    queryFn: () => api.get<ClaudeModelsDto>('/api/agents/claude/models'),
+    queryKey: ['agents', agent, 'models'],
+    queryFn: () => api.get<AgentModelsDto>(`/api/agents/${agent}/models`),
     // La sonde démarre un CLI : inutile de la relancer à chaque montage du composer,
     // et hors de question de la lancer pour une conversation d'un autre agent.
     staleTime: 60 * 60 * 1000,
@@ -27,31 +23,6 @@ export function useClaudeModels(enabled = true) {
  * Niveaux d'effort du modèle sélectionné. Tous n'en ont pas (Haiku, par exemple) :
  * proposer un réglage sans effet serait un mensonge d'interface.
  */
-export function effortLevelsFor(
-  models: ClaudeModelDto[] | undefined,
-  value: string,
-): ClaudeModelDto['supportedEffortLevels'] {
-  return models?.find((model) => model.value === value)?.supportedEffortLevels ?? []
-}
-
-/** Même contrat que pour Claude : les modèles viennent du CLI, jamais d'une liste figée. */
-export function useCodexModels(enabled = true) {
-  return useQuery({
-    queryKey: ['agents', 'codex', 'models'],
-    queryFn: () => api.get<CodexModelsDto>('/api/agents/codex/models'),
-    staleTime: 60 * 60 * 1000,
-    retry: false,
-    enabled,
-  })
-}
-
-/**
- * Niveaux d'effort du modèle Codex sélectionné. Le protocole les déclare en chaîne
- * libre, ils varient donc d'un modèle à l'autre.
- */
-export function codexEffortsFor(
-  models: CodexModelDto[] | undefined,
-  model: string,
-): { value: string; description: string }[] {
-  return models?.find((m) => m.model === model)?.supportedReasoningEfforts ?? []
+export function effortsFor(models: AgentModelDto[] | undefined, value: string): AgentEffortDto[] {
+  return models?.find((model) => model.value === value)?.efforts ?? []
 }
