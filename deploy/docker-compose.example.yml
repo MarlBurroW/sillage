@@ -1,0 +1,34 @@
+# Copier vers docker-compose.yml et ajuster les chemins montés.
+#
+# Les CLIs claude et codex sont préinstallés dans l'image : il suffit de monter
+# leurs répertoires de credentials depuis l'hôte (authentifiez-vous une fois sur
+# l'hôte avec `claude` / `codex login`, ou dans le conteneur via `docker exec`).
+#
+# Premier compte (administrateur d'office) :
+#   docker compose exec -it sillage node /app/server/cli/user-create.js
+#
+# Mise à jour : changer le tag de l'image puis `docker compose up -d --pull always`.
+
+services:
+  sillage:
+    image: ghcr.io/marlburrow/sillage:latest
+    container_name: sillage
+    restart: unless-stopped
+    ports:
+      # Le serveur ne gère pas TLS : n'exposez ce port qu'en local ou derrière
+      # un reverse proxy / VPN, jamais directement sur Internet.
+      - "127.0.0.1:7317:7317"
+    volumes:
+      # Base, pièces jointes, worktrees, logs.
+      - sillage-data:/home/node/.local/share/sillage
+      # Config optionnelle (config.toml).
+      - sillage-config:/home/node/.config/sillage
+      # Credentials des CLIs agents, partagés avec l'hôte.
+      - ~/.claude:/home/node/.claude
+      - ~/.codex:/home/node/.codex
+      # Vos dépôts : les projets créés dans Sillage pointent sur ces chemins.
+      - ~/projects:/home/node/workspace
+
+volumes:
+  sillage-data:
+  sillage-config:

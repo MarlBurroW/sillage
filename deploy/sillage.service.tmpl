@@ -1,0 +1,35 @@
+# Unité systemd utilisateur, rendue par install.sh.
+# Les placeholders __NODE__, __INSTALL_DIR__ et __HOME__ sont remplacés par des
+# chemins absolus à l'installation : les spécificateurs %h ne s'étendent pas de
+# façon fiable dans les lignes Environment= des vieux systemd.
+
+[Unit]
+Description=Sillage, plateforme de developpement agentique
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=__INSTALL_DIR__/current
+ExecStart=__NODE__ --max-old-space-size=256 __INSTALL_DIR__/current/server/main.js
+Environment=NODE_ENV=production
+Environment=SILLAGE_WEB_ROOT=__INSTALL_DIR__/current/web
+# Permet au serveur de savoir qu'il tourne sous le layout de l'installeur, et
+# donc d'offrir la mise à jour intégrée depuis l'interface.
+Environment=SILLAGE_INSTALL_DIR=__INSTALL_DIR__
+# Le PATH d'une unite systemd est minimal et n'inclut ni ~/.local/bin ni les binaires
+# npm globaux : sans cette ligne, aucun CLI agent n'est trouvable depuis le service.
+Environment=PATH=__NODE_DIR__:__HOME__/.local/bin:__HOME__/.npm-global/bin:__HOME__/.bun/bin:/usr/local/bin:/usr/bin:/bin
+# `always` et non `on-failure` : la mise à jour intégrée peut terminer le process
+# proprement en comptant sur systemd pour le relancer sur la nouvelle version.
+Restart=always
+RestartSec=2
+
+# Garde-fou : le daemon lui-meme tient dans ~110 Mo, les process agent sont ses enfants
+# et comptent dans ce total. A relever si max_concurrent_sessions est augmente.
+MemoryHigh=2G
+
+StandardOutput=append:__HOME__/.local/share/sillage/logs/sillage.log
+StandardError=append:__HOME__/.local/share/sillage/logs/sillage.log
+
+[Install]
+WantedBy=default.target
