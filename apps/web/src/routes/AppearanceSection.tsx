@@ -107,7 +107,7 @@ export function AppearanceSection() {
         <CardBody className="flex flex-col gap-5">
           <AppearanceControls
             appearance={appearance}
-            keys={['readingSize', 'readingLeading', 'readingSoftness']}
+            keys={['readingSize', 'readingLeading', 'readingSoftness', 'messageContrast']}
             swatches={false}
           />
           <ReadingPreview />
