@@ -13,14 +13,12 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react'
  * chacun ferait ramer le fil de conversation.
  */
 /**
- * En deçà, l'écart entre les deux viewports ne vient pas du clavier.
+ * Hauteur que le clavier doit prendre, au-delà de l'écart au repos, pour être reconnu.
  *
- * Une PWA installée rapporte un viewport visuel plus court que l'écran sans qu'aucun
- * clavier ne soit ouvert : imposer cette hauteur laissait une bande vide en bas de
- * l'application, sous la barre de saisie. Tant qu'on reste sous ce seuil, `100dvh`
- * fait foi et le calque remplit l'écran.
+ * Assez bas pour ne manquer aucun clavier, et sans rapport avec l'écart constant que
+ * certaines plateformes affichent hors saisie, lequel est mesuré séparément.
  */
-const KEYBOARD_MIN_PX = 120
+const KEYBOARD_MIN_PX = 80
 
 export function useVisualViewport(): void {
   useEffect(() => {
@@ -28,12 +26,34 @@ export function useVisualViewport(): void {
     if (!viewport) return
 
     const root = document.documentElement
+
+    /**
+     * Écart entre les deux viewports hors clavier.
+     *
+     * Une PWA installée en rapporte un non nul et constant, sans qu'aucun clavier ne
+     * soit ouvert. Il était traité par un seuil fixe, que l'écart réel d'un appareil
+     * pouvait dépasser : la hauteur du viewport visuel s'imposait alors en permanence
+     * et laissait une bande vide sous la barre de saisie, de la hauteur de cet écart.
+     *
+     * Le plus petit écart observé est celui d'un clavier fermé, donc il se mesure au
+     * lieu de se deviner. Un minimum ne fait que décroître, ce qui le corrige tout
+     * seul s'il a été relevé au mauvais moment.
+     */
+    let resting = Number.POSITIVE_INFINITY
+
+    const clear = () => {
+      root.style.removeProperty('--sg-app-height')
+      root.style.removeProperty('--sg-viewport-top')
+    }
+
     const apply = () => {
+      const gap = window.innerHeight - viewport.height
+      if (gap < resting) resting = gap
+
       // Le clavier est la seule raison d'imposer une hauteur : hors de ce cas, la
       // mesure est retirée plutôt que corrigée, et la règle CSS reprend la main.
-      if (window.innerHeight - viewport.height < KEYBOARD_MIN_PX) {
-        root.style.removeProperty('--sg-app-height')
-        root.style.removeProperty('--sg-viewport-top')
+      if (gap - resting < KEYBOARD_MIN_PX) {
+        clear()
         return
       }
 
@@ -43,15 +63,23 @@ export function useVisualViewport(): void {
       root.style.setProperty('--sg-viewport-top', `${viewport.offsetTop}px`)
     }
 
+    // Une rotation change l'écart au repos : la mesure repart de zéro, sans quoi
+    // l'ancienne, plus petite, ferait passer le nouvel écart pour un clavier.
+    const remeasure = () => {
+      resting = Number.POSITIVE_INFINITY
+      apply()
+    }
+
     apply()
     viewport.addEventListener('resize', apply)
     viewport.addEventListener('scroll', apply)
+    window.addEventListener('orientationchange', remeasure)
 
     return () => {
       viewport.removeEventListener('resize', apply)
       viewport.removeEventListener('scroll', apply)
-      root.style.removeProperty('--sg-app-height')
-      root.style.removeProperty('--sg-viewport-top')
+      window.removeEventListener('orientationchange', remeasure)
+      clear()
     }
   }, [])
 }

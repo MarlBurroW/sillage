@@ -25,7 +25,7 @@ import {
 import { effortsFor, useAgentModels } from '../../lib/agents'
 import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
-import { useComposerReferences } from '../../lib/composer-ref'
+import { useComposerDrops, useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
@@ -362,6 +362,14 @@ export function Composer({
   }, [])
 
   useComposerReferences(referenceFile)
+
+  // Le dépôt vise le fil, pas le champ : c'est ici que les fichiers atterrissent, avec
+  // les mêmes bornes et les mêmes erreurs qu'un collage ou qu'un choix au sélecteur.
+  useComposerDrops((files) => {
+    if (disabled) return
+    void addFiles(files)
+    textarea.current?.focus()
+  })
 
   const syncToken = (value: string, caret: number | null) => {
     setToken(mentionAt(value, caret ?? value.length))

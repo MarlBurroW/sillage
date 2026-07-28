@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { Loader, MessageSquare, Search } from 'lucide-react'
+import { Loader, MessageSquare, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { SEARCH_MIN_QUERY, type ConversationDto, type SearchMessageDto } from '@sillage/protocol'
@@ -7,7 +7,7 @@ import { useAllConversations } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
 import { scoreMatch, splitExcerpt, useMessageSearch } from '../lib/search'
 import { AgentIcon } from './AgentIcon'
-import { cx } from './ui'
+import { IconButton, cx } from './ui'
 
 /** Conversations proposées : au-delà, la section contenu passe sous la ligne de flottaison. */
 const TITLE_LIMIT = 6
@@ -169,6 +169,17 @@ export function CommandPalette({
             {searching && isFetching ? (
               <Loader size={15} className="shrink-0 animate-spin text-ink-faint" />
             ) : null}
+
+            {/* Au doigt la palette occupe tout l'écran : il n'y a ni touche Échap ni
+                voile à toucher à côté, donc rien pour en sortir sans ce bouton. Inutile
+                au-delà, où les deux gestes existent. */}
+            <IconButton
+              label="Fermer la recherche"
+              className="sm:hidden"
+              onClick={() => onOpenChange(false)}
+            >
+              <X size={18} />
+            </IconButton>
           </div>
 
           <div ref={list} className="min-h-0 flex-1 overflow-y-auto p-1.5 pb-safe">

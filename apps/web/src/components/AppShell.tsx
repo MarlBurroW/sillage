@@ -57,6 +57,7 @@ import {
   setSidebarWidth,
   useSidebarHidden,
 } from '../lib/sidebar'
+import { useFileDropGuard } from '../lib/file-drop'
 import { useVisualViewport } from '../lib/viewport'
 import { PROJECT_COLORS } from '../lib/project-colors'
 import { useCurrentUser, useLogout } from '../lib/session'
@@ -152,6 +153,7 @@ export function AppShell() {
   const hidden = useSidebarHidden()
   const aside = useRef<HTMLElement>(null)
   useVisualViewport()
+  useFileDropGuard()
 
   useEffect(restoreSidebarWidth, [])
 
