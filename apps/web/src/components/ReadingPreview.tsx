@@ -18,7 +18,7 @@ export function ReadingPreview() {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-canvas p-3">
       <div className="flex justify-end">
-        <div className="surface flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-br-sm border border-line px-3.5 py-2.5 shadow-card">
+        <div className="sg-user-bubble flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-br-sm border px-3.5 py-2.5 shadow-card">
           <Markdown text={t('readingPreview.question')} />
         </div>
       </div>

@@ -113,7 +113,7 @@ export const MessageBubble = memo(function MessageBubble({
   if (message.role === 'user') {
     return (
       <div className="group flex flex-col items-end gap-0.5">
-        <div className="sg-bubble surface flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-br-sm border border-line px-3.5 py-2.5 shadow-card">
+        <div className="sg-bubble sg-user-bubble flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-br-sm border px-3.5 py-2.5 shadow-card">
           {shown ? <Markdown text={shown} /> : null}
           <Attachments images={images} files={files} />
         </div>

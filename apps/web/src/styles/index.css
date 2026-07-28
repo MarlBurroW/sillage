@@ -146,6 +146,31 @@
     background-color: var(--sg-surface);
   }
 
+  /*
+   * Bulle d'un message utilisateur. Elle part de la surface du thème et reçoit une
+   * couche d'accent dosée par `--sg-message-contrast` : à zéro elle est exactement une
+   * `.surface`, au maximum elle porte le lavis d'accent plein.
+   *
+   * Le lavis est une couche d'image posée sur le dégradé de surface, et non une
+   * `background-color` : celle-ci passerait sous le dégradé, opaque dans le thème
+   * clair, et le réglage n'y produirait rien de visible.
+   */
+  .sg-user-bubble {
+    --sg-user-wash: color-mix(
+      in oklch,
+      transparent,
+      var(--sg-accent-wash) calc(var(--sg-message-contrast) * 100%)
+    );
+    background-color: var(--sg-surface);
+    background-image:
+      linear-gradient(var(--sg-user-wash), var(--sg-user-wash)), var(--sg-gradient-surface);
+    border-color: color-mix(
+      in oklch,
+      var(--sg-line),
+      var(--sg-accent) calc(var(--sg-message-contrast) * 60%)
+    );
+  }
+
   .gradient-accent {
     background: var(--sg-gradient-accent);
     background-color: var(--sg-accent);

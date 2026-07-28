@@ -21,6 +21,9 @@
 :root {
   --sg-tint: 1;
   --sg-lift: 0;
+
+  /* Dose de teinte d'accent sur la bulle utilisateur, voir `.sg-user-bubble`. */
+  --sg-message-contrast: 0.45;
 }
 
 :root[data-theme='light'] {

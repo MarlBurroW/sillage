@@ -16,6 +16,10 @@ const LABEL_KEYS: Record<AppearanceKey, { title: MessageKey; hint: MessageKey }>
     title: 'appearance.readingSoftness.title',
     hint: 'appearance.readingSoftness.hint',
   },
+  messageContrast: {
+    title: 'appearance.messageContrast.title',
+    hint: 'appearance.messageContrast.hint',
+  },
 }
 
 /**

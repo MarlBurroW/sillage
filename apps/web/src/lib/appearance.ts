@@ -56,6 +56,21 @@ export const APPEARANCE_SETTINGS = {
     max: 0.6,
     step: 0.05,
   },
+
+  /*
+   * Écart visuel entre une question et la réponse qui la suit. Il dose la teinte
+   * d'accent posée sur la bulle utilisateur : à zéro elle retrouve la surface neutre
+   * d'origine, au maximum elle se lit comme un bloc coloré. L'alignement et la largeur
+   * ne bougent pas, eux distinguent déjà les deux rôles sans réglage.
+   */
+  messageContrast: {
+    key: 'sillage.messageContrast',
+    property: '--sg-message-contrast',
+    fallback: 0.45,
+    min: 0,
+    max: 1,
+    step: 0.05,
+  },
 } satisfies Record<string, AppearanceSetting>
 
 export type AppearanceKey = keyof typeof APPEARANCE_SETTINGS

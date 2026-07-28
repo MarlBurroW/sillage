@@ -648,6 +648,8 @@ export const en = {
   'appearance.readingLeading.hint': 'Space between the lines of a paragraph',
   'appearance.readingSoftness.title': 'Text softness',
   'appearance.readingSoftness.hint': 'Brings the ink closer to gray: less harsh on a very dark background',
+  'appearance.messageContrast.title': 'Message contrast',
+  'appearance.messageContrast.hint': 'How far your messages stand out from the answers',
   'appearance.reset': 'Reset',
 
   // Notifications push

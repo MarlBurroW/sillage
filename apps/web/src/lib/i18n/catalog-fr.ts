@@ -634,6 +634,8 @@ export const fr: Catalog = {
   'appearance.readingLeading.hint': "Air entre les lignes d'un paragraphe",
   'appearance.readingSoftness.title': 'Douceur du texte',
   'appearance.readingSoftness.hint': 'Rapproche l\'encre du gris : moins dur sur fond très sombre',
+  'appearance.messageContrast.title': 'Contraste des messages',
+  'appearance.messageContrast.hint': 'Écart entre tes messages et les réponses',
   'appearance.reset': 'Défaut',
 
   // Notifications push
