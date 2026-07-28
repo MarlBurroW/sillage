@@ -1,4 +1,4 @@
-import { FileCode, FolderTree, GitCompare, RefreshCw, SquareTerminal, X } from 'lucide-react'
+import { Bot, FileCode, FolderTree, GitCompare, RefreshCw, SquareTerminal, X } from 'lucide-react'
 import {
   useEffect,
   useRef,
@@ -9,9 +9,18 @@ import {
 } from 'react'
 import type { EditTurn } from '../../lib/chat-fold'
 import { openTab } from '../../lib/editor-tabs'
-import { restorePanelWidth, setPanelOpen, setPanelWidth } from '../../lib/panel'
+import {
+  restorePanelWidth,
+  setPanelOpen,
+  setPanelTab,
+  setPanelWidth,
+  usePanelTab,
+  useSelectedSubAgent,
+} from '../../lib/panel'
+import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { IconButton, cx } from '../ui'
+import { AgentsPane } from './AgentsPane'
 import { ChangesPane } from './ChangesPane'
 import { EditorPane } from './EditorPane'
 import { FileTree } from './FileTree'
@@ -30,15 +39,23 @@ export function SidePanel({
   conversationId,
   editTurns,
   turnRunning,
+  subAgents,
+  canDecide,
   open,
 }: {
   conversationId: string
   editTurns: EditTurn[]
   turnRunning: boolean
+  subAgents: SubAgent[]
+  /** Faux sur une conversation partagée en lecture. */
+  canDecide: boolean
   /** Faux pendant la sortie : le panneau est encore monté, mais s'en va. */
   open: boolean
 }) {
-  const [tab, setTab] = useState<'explorer' | 'editor' | 'changes' | 'terminals'>('explorer')
+  // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
+  // diff comme en désignant un sous-agent depuis le bandeau.
+  const tab = usePanelTab()
+  const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
    * rendu suivant : un élément qui naît déjà en place n'a aucune transition à jouer,
@@ -134,32 +151,39 @@ export function SidePanel({
           panneau, et non celle de la fenêtre, puisqu'il se redimensionne. */}
       <header className="@container flex h-[var(--header-height)] shrink-0 items-center border-b border-line px-1.5">
         {/* La liste défile plutôt que de pousser les actions hors de l'écran : au
-            doigt, quatre onglets nommés chassaient la croix de fermeture du panneau,
+            doigt, les onglets nommés chassaient la croix de fermeture du panneau,
             qui devenait alors impossible à refermer. */}
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
           <Tab
             icon={<FolderTree size={14} />}
             label="Explorateur"
             active={tab === 'explorer'}
-            onSelect={() => setTab('explorer')}
+            onSelect={() => setPanelTab('explorer')}
           />
           <Tab
             icon={<FileCode size={14} />}
             label="Éditeur"
             active={tab === 'editor'}
-            onSelect={() => setTab('editor')}
+            onSelect={() => setPanelTab('editor')}
           />
           <Tab
             icon={<GitCompare size={14} />}
             label="Modifications"
             active={tab === 'changes'}
-            onSelect={() => setTab('changes')}
+            onSelect={() => setPanelTab('changes')}
           />
           <Tab
             icon={<SquareTerminal size={14} />}
             label="Terminaux"
             active={tab === 'terminals'}
-            onSelect={() => setTab('terminals')}
+            onSelect={() => setPanelTab('terminals')}
+          />
+          <Tab
+            icon={<Bot size={14} />}
+            label="Sous-agents"
+            badge={subAgents.filter((agent) => agent.status === 'running').length}
+            active={tab === 'agents'}
+            onSelect={() => setPanelTab('agents')}
           />
         </div>
 
@@ -184,7 +208,7 @@ export function SidePanel({
           tab === 'explorer' ? 'block' : 'hidden',
         )}
       >
-        <FileTree conversationId={conversationId} onOpenFile={() => setTab('editor')} />
+        <FileTree conversationId={conversationId} onOpenFile={() => setPanelTab('editor')} />
       </div>
 
       {/* `min-w-0` : sans lui, un enfant flex se dimensionne sur son contenu, et
@@ -213,7 +237,7 @@ export function SidePanel({
             turnRunning={turnRunning}
             onOpenFile={(path) => {
               openTab(conversationId, path)
-              setTab('editor')
+              setPanelTab('editor')
             }}
           />
         </div>
@@ -231,6 +255,18 @@ export function SidePanel({
           <TerminalsPane conversationId={conversationId} visible={tab === 'terminals'} />
         </div>
       </div>
+
+      {/* Monté seulement quand on le regarde, contrairement aux autres : il ne tient
+          rien de vivant, tout son contenu vient du journal, et ses chronomètres n'ont
+          rien à compter derrière un onglet fermé. */}
+      {tab === 'agents' ? (
+        <AgentsPane
+          conversationId={conversationId}
+          agents={subAgents}
+          selectedId={selectedSubAgent}
+          canDecide={canDecide}
+        />
+      ) : null}
 
       {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
           panneau occupe tout l'écran, il n'y a rien à ajuster. */}
@@ -256,11 +292,14 @@ function Tab({
   icon,
   label,
   active,
+  badge = 0,
   onSelect,
 }: {
   icon: ReactNode
   label: string
   active: boolean
+  /** Décompte affiché sur l'onglet. Zéro n'affiche rien. */
+  badge?: number
   onSelect: () => void
 }) {
   return (
@@ -270,7 +309,7 @@ function Tab({
       aria-pressed={active}
       // Le nom reste porté par le bouton même quand il n'est plus écrit : une icône
       // seule ne dit pas ce qu'elle ouvre, ni à l'œil ni à un lecteur d'écran.
-      aria-label={label}
+      aria-label={badge > 0 ? `${label}, ${badge} en cours` : label}
       title={label}
       className={cx(
         'flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors',
@@ -278,10 +317,17 @@ function Tab({
       )}
     >
       <span className="shrink-0">{icon}</span>
-      {/* Les quatre noms demandent ~470 px, que ni un téléphone ni la largeur par
-          défaut du panneau n'offrent : en dessous, seul l'onglet actif garde le sien,
-          ce qui dit où l'on est sans que la liste ait à défiler. */}
-      <span className={cx(active ? '' : '@max-[30rem]:hidden')}>{label}</span>
+      {/* Les noms demandent plus de place que n'en offrent un téléphone ou la largeur
+          par défaut du panneau : en dessous, seul l'onglet actif garde le sien, ce qui
+          dit où l'on est sans que la liste ait à défiler. */}
+      <span className={cx(active ? '' : '@max-[34rem]:hidden')}>{label}</span>
+      {/* Le décompte, lui, ne se replie jamais : c'est ce qui signale une activité
+          dont on ne verrait sinon aucune trace, l'onglet étant fermé. */}
+      {badge > 0 ? (
+        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-accent text-[0.625rem] font-semibold text-accent-ink">
+          {badge}
+        </span>
+      ) : null}
     </button>
   )
 }

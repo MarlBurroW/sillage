@@ -70,6 +70,62 @@ export function setPanelOpen(next: boolean): void {
   for (const listener of listeners) listener()
 }
 
+export type PanelTab = 'explorer' | 'editor' | 'changes' | 'terminals' | 'agents'
+
+/**
+ * Onglet affiché et sous-agent consulté.
+ *
+ * Ici plutôt que dans le panneau, parce que le fil les pilote : ouvrir un fichier
+ * depuis un diff bascule sur l'éditeur, et cliquer un sous-agent dans le bandeau doit
+ * ouvrir le panneau, choisir l'onglet et désigner lequel, en un seul geste.
+ */
+let tab: PanelTab = 'explorer'
+let subAgentId: string | null = null
+
+export function usePanelTab(): PanelTab {
+  return useSyncExternalStore(
+    subscribe,
+    () => tab,
+    () => 'explorer' as const,
+  )
+}
+
+export function setPanelTab(next: PanelTab): void {
+  if (next === tab) return
+  tab = next
+  for (const listener of listeners) listener()
+}
+
+/** L'appel de spawn du sous-agent consulté, ou null pour la liste. */
+export function useSelectedSubAgent(): string | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => subAgentId,
+    () => null,
+  )
+}
+
+/** Ouvre le panneau sur le fil d'un sous-agent, depuis n'importe où dans la vue. */
+export function showSubAgent(id: string): void {
+  subAgentId = id
+  tab = 'agents'
+  if (!open) {
+    open = true
+    localStorage.setItem(OPEN_KEY, '1')
+  }
+  for (const listener of listeners) listener()
+}
+
+/**
+ * Revient à la liste. Appelé aussi au changement de conversation : un appel de spawn
+ * n'existe que dans son fil, et le garder sélectionné afficherait un fil vide.
+ */
+export function clearSubAgent(): void {
+  if (subAgentId === null) return
+  subAgentId = null
+  for (const listener of listeners) listener()
+}
+
 /**
  * Largeur du panneau, publiée en variable CSS.
  *

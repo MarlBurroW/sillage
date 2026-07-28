@@ -16,19 +16,19 @@ import {
   Wrench,
 } from 'lucide-react'
 import { memo, useState, type ReactNode } from 'react'
+import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
-import { isSettled, type ToolNode } from '../../lib/tool-rows'
+import { showSubAgent } from '../../lib/panel'
+import { isSpawnTool } from '../../lib/subagents'
 import { readableView } from '../tools/registry'
 import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
-import { MessageBubble } from './MessageBubble'
 
 /**
- * Rendu de l'arbre d'appels d'outils : un appel, et la suite d'appels repliée.
+ * Rendu d'un appel d'outil, et d'une suite d'appels repliée derrière une ligne.
  *
- * Les deux vivent dans le même module parce qu'ils se rendent mutuellement, un groupe
- * contenant des appels et un appel repliant en groupe ce que son sous-agent a produit.
- * Les séparer donnerait un cycle d'imports pour rien.
+ * Les deux vivent dans le même module parce qu'un groupe déplié rend des appels :
+ * les séparer donnerait un cycle d'imports pour rien.
  */
 
 /** Icône par outil. Le rendu détaillé, lui, passe par le registre de vues (`tools/`). */
@@ -87,8 +87,19 @@ function summarize(name: string, input: unknown): ToolSummary | null {
   return null
 }
 
+/**
+ * Une durée, à la précision qu'elle mérite.
+ *
+ * Les minutes sont nommées plutôt que comptées en secondes : un sous-agent tourne
+ * couramment plusieurs minutes, et « 185.0 s » demande une conversion mentale à
+ * chaque coup d'œil.
+ */
 export function formatDuration(ms: number): string {
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
+  if (ms < 1000) return `${ms} ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`
+
+  const seconds = Math.round(ms / 1000)
+  return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`
 }
 
 /** Langage du fichier que l'appel déclare, quand il en déclare un. */
@@ -113,10 +124,9 @@ function asPayload(value: unknown, fallback = ''): { content: string; language: 
   return { content: JSON.stringify(value, null, 2), language: 'json' }
 }
 
-export const ToolCall = memo(function ToolCall({ node }: { node: ToolNode }) {
+export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolItem }) {
   const [open, setOpen] = useState(false)
   const [raw, setRaw] = useState(false)
-  const tool = node.tool
   const summary = summarize(tool.name, tool.input)
   const readable = open ? readableView(tool) : null
 
@@ -183,52 +193,24 @@ export const ToolCall = memo(function ToolCall({ node }: { node: ToolNode }) {
         </div>
       ) : null}
 
-      {/* Le travail du sous-agent vit dans la carte de l'outil qui l'a lancé : ses
-          appels comme ce qu'il écrit. L'appartenance est visible, y compris quand deux
-          sous-agents tournent en parallèle et s'entremêlent dans le journal. */}
-      {node.children.length > 0 || node.messages.length > 0 ? (
-        <div className="flex flex-col gap-2 border-t border-line px-2 py-2">
-          {node.children.length > 0 ? <SubAgentCalls nodes={node.children} /> : null}
-          {node.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
-          ))}
-        </div>
+      {/* Le fil du sous-agent est ailleurs, dans le panneau : sans ce passage, la
+          seule façon d'y arriver serait de le retrouver dans une liste. */}
+      {isSpawnTool(tool.name) ? (
+        <button
+          type="button"
+          onClick={() => showSubAgent(tool.id)}
+          className={cx(
+            'flex w-full items-center gap-1.5 border-t border-line px-2.5 py-1.5',
+            'text-left text-[0.6875rem] text-ink-faint hover:text-accent',
+          )}
+        >
+          <CornerDownRight size={11} className="shrink-0" />
+          Voir le fil du sous-agent
+        </button>
       ) : null}
     </div>
   )
 })
-
-/**
- * Appels produits par un sous-agent.
- *
- * Même règle qu'au premier niveau : tant qu'un appel tourne la liste reste dépliée,
- * c'est le moment où on veut la voir ; une fois tout terminé elle se replie derrière
- * son décompte. Un sous-agent en produit couramment vingt, qui repoussaient sa
- * conclusion hors de l'écran.
- *
- * Le basculement se fait par changement de composant plutôt que par un état qui
- * s'inverserait tout seul : le repliement mémorise ainsi une décision de
- * l'utilisateur, jamais l'avancement du tour.
- */
-function SubAgentCalls({ nodes }: { nodes: ToolNode[] }) {
-  const label = `${nodes.length} appel${nodes.length > 1 ? 's' : ''} du sous-agent`
-
-  if (nodes.every(isSettled)) return <ToolCallGroup nodes={nodes} label={label} />
-
-  return (
-    <>
-      <p className="mb-1.5 flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
-        <CornerDownRight size={11} className="shrink-0" />
-        {label}
-      </p>
-      <div className="flex flex-col gap-1.5 border-l-2 border-accent-wash pl-2">
-        {nodes.map((child) => (
-          <ToolCall key={child.tool.id} node={child} />
-        ))}
-      </div>
-    </>
-  )
-}
 
 /**
  * Bascule entre la vue lisible et le payload natif.
@@ -294,13 +276,8 @@ function Payload({
 /** Au-delà, l'énumération des noms d'outils déborde de la ligne. */
 const NAMES_SHOWN = 3
 
-/** Parcourt un appel et tout ce que ses sous-agents ont déclenché. */
-function flatten(nodes: ToolNode[]): ToolNode[] {
-  return nodes.flatMap((node) => [node, ...flatten(node.children)])
-}
-
-function summarizeNames(nodes: ToolNode[]): string {
-  const names = [...new Set(nodes.map((node) => node.tool.name))]
+function summarizeNames(tools: ToolItem[]): string {
+  const names = [...new Set(tools.map((tool) => tool.name))]
   const shown = names.slice(0, NAMES_SHOWN).join(', ')
   return names.length > NAMES_SHOWN ? `${shown}, +${names.length - NAMES_SHOWN}` : shown
 }
@@ -308,23 +285,14 @@ function summarizeNames(nodes: ToolNode[]): string {
 /**
  * Suite d'appels d'outils terminés, repliée derrière une ligne.
  *
- * Les échecs sont comptés dans l'en-tête, sous-agents compris : replier ne doit
- * jamais faire disparaître une erreur du champ de vision.
+ * Les échecs sont comptés dans l'en-tête : replier ne doit jamais faire disparaître
+ * une erreur du champ de vision.
  */
-export const ToolCallGroup = memo(function ToolCallGroup({
-  nodes,
-  label,
-}: {
-  nodes: ToolNode[]
-  /** Remplace le décompte d'outils quand la suite a une provenance à nommer. */
-  label?: string
-}) {
+export const ToolCallGroup = memo(function ToolCallGroup({ tools }: { tools: ToolItem[] }) {
   const [open, setOpen] = useState(false)
 
-  const all = flatten(nodes)
-  const failed = all.filter((node) => node.tool.status === 'failed').length
-  // Somme des seules racines : la durée d'un `Agent` couvre déjà celle de ses appels.
-  const total = nodes.reduce((sum, node) => sum + (node.tool.durationMs ?? 0), 0)
+  const failed = tools.filter((tool) => tool.status === 'failed').length
+  const total = tools.reduce((sum, tool) => sum + (tool.durationMs ?? 0), 0)
 
   return (
     <div className="rounded-md border border-line bg-surface/60 text-sm">
@@ -338,14 +306,10 @@ export const ToolCallGroup = memo(function ToolCallGroup({
           size={14}
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
-        {label ? (
-          <CornerDownRight size={13} className="shrink-0 text-ink-faint" />
-        ) : (
-          <Wrench size={14} className="shrink-0 text-ink-faint" />
-        )}
-        <span className="shrink-0 font-medium text-ink">{label ?? `${all.length} outils`}</span>
+        <Wrench size={14} className="shrink-0 text-ink-faint" />
+        <span className="shrink-0 font-medium text-ink">{tools.length} outils</span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink-faint">
-          {summarizeNames(all)}
+          {summarizeNames(tools)}
         </span>
 
         {failed > 0 ? (
@@ -360,8 +324,8 @@ export const ToolCallGroup = memo(function ToolCallGroup({
 
       {open ? (
         <div className="flex flex-col gap-1.5 border-t border-line p-1.5">
-          {nodes.map((node) => (
-            <ToolCall key={node.tool.id} node={node} />
+          {tools.map((tool) => (
+            <ToolCall key={tool.id} tool={tool} />
           ))}
         </div>
       ) : null}

@@ -384,7 +384,8 @@ type SillageEvent =
 ```
 
 `ContentBlock` couvre `text`, `thinking`, `image`, `file`, `tool_use`, `tool_result`. Le
-champ `parentToolCallId` permet d'imbriquer l'affichage des sous-agents.
+champ `parentToolCallId` désigne l'appel qui a lancé le sous-agent auteur de
+l'événement : c'est lui qui sépare le fil principal des fils de sous-agents.
 
 ### 5.1 Sollicitations de l'utilisateur
 
@@ -496,8 +497,10 @@ n'est pas mémorisable comme défaut de projet.
 | `rate_limit_event` | `usage.updated` (champ `rateLimit`) |
 | `system/thinking_tokens` | ignoré (liste d'exclusion : bruit de progression) |
 
-Les sous-agents (`parent_tool_use_id` non nul) sont conservés et rendus imbriqués sous
-l'appel `Task` parent.
+Les sous-agents (`parent_tool_use_id` non nul) sont conservés et portent cet identifiant
+jusqu'au journal. L'option `forwardSubagentText` est activée : sans elle le SDK ne
+transmet que leurs appels d'outils, de quoi faire battre un compteur mais pas de quoi
+rendre leur fil, ni raisonnement ni messages intermédiaires.
 
 ---
 
@@ -1110,19 +1113,27 @@ chemin, motif) reprend alors la main. Une phrase se rend en police de texte, un 
 de code en police à chasse fixe. La commande n'est jamais perdue : elle reste sous
 l'entrée de l'appel déplié.
 
-**Imbrication.** Les appels d'un sous-agent (`parentToolCallId`) sont rendus *dans* la
-carte de l'outil qui l'a lancé, sous un intitulé qui les nomme. Une simple indentation ne
-dirait pas de quel sous-agent ils viennent, et deux sous-agents en parallèle seraient
-indémêlables. Ces appels obéissent à la même règle de repliement que le premier niveau :
-un sous-agent en produit couramment vingt, qui repoussaient sa conclusion hors de l'écran.
-Une fois tous terminés, ils se replient derrière leur décompte (« 18 appels du
-sous-agent ») ; tant que l'un tourne, la liste reste dépliée.
+**Séparation des fils.** Un fil ne montre que ce que son auteur a produit. Tout ce qui
+porte un `parentToolCallId` sort du fil principal : mêlé aux réponses de l'agent, le
+travail d'un sous-agent s'y lit comme si c'était lui qui parlait, et deux sous-agents en
+parallèle deviennent indémêlables. Le fil principal ne garde donc que l'appel de spawn,
+qui garde toujours sa ligne propre et ne rejoint jamais un groupe replié : c'est le seul
+repère disant qu'un pan entier du travail s'est fait ailleurs. La consigne et le rapport
+restent dans sa carte, à un clic, avec un passage vers le fil complet (section 12.11).
+
+**Bandeau des sous-agents en cours.** Posé entre le fil et la barre de saisie, hors du
+flux de défilement. Un sous-agent tourne pendant des minutes, et le fil principal
+n'avance pas pendant ce temps : placé dans le flux, l'indicateur partait hors de l'écran
+dès qu'on remontait lire ce qui précède, et la conversation avait alors toutes les
+apparences d'une session au repos. C'est le défaut qui a motivé tout ce découpage : le
+seul signe de vie restant était le compteur d'outils d'un groupe replié. Le bandeau se
+déplie sur la liste des sous-agents actifs, et chaque ligne ouvre son fil.
 
 **Regroupement.** Une suite d'appels terminés se replie en une ligne, qui compte les
-appels imbriqués et les échecs : replier ne doit jamais faire disparaître une erreur du
-champ de vision. Tant qu'un appel de la suite tourne, sous-agents compris, elle reste
-dépliée. Les éléments qui n'affichent rien (un message d'agent ne portant que des
-`tool_use`) ne coupent pas la suite.
+appels et les échecs : replier ne doit jamais faire disparaître une erreur du champ de
+vision. Tant qu'un appel de la suite tourne, elle reste dépliée. Les éléments qui
+n'affichent rien (un message d'agent ne portant que des `tool_use`) ne coupent pas la
+suite.
 
 **Renderers.** Un registre `Map<toolName, ToolView>` donne à chaque outil un rendu qui
 dit ce qu'il a fait plutôt que sous quelle forme le CLI l'a dit : une commande shell
@@ -1429,9 +1440,9 @@ suivant le montage, un élément qui naît déjà en place n'ayant aucune transi
 
 **La barre d'onglets ne chasse jamais ses actions.** Les onglets vivent dans une zone qui
 défile, le rafraîchissement et la fermeture dans un bloc qui ne se comprime pas : au doigt,
-quatre onglets nommés poussaient la croix hors de l'écran et le panneau ne pouvait plus se
-refermer. Les quatre noms demandent environ 470 px, que ni un téléphone ni la largeur par
-défaut du panneau n'offrent : en dessous, seul l'onglet actif garde le sien, ce qui dit où
+les onglets nommés poussaient la croix hors de l'écran et le panneau ne pouvait plus se
+refermer. Les noms demandent plus de place que n'en offrent un téléphone ou la largeur
+par défaut du panneau : en dessous, seul l'onglet actif garde le sien, ce qui dit où
 l'on est sans que la liste ait à défiler. Le nom reste porté par `aria-label` et `title`
 même quand il n'est plus écrit. L'invariant I2 ne s'y applique pas :
 un fichier et un diff sont l'état vivant du disque, pas des événements, donc le panneau
@@ -1712,6 +1723,28 @@ Le second n'a été trouvé qu'en mesurant : un observateur témoin posé sur le
 tirait treize fois pendant le glissement, ce qui a écarté la mise en page, puis la sonde a
 montré le `visible: false` figé. Le commentaire du code affirmait l'inverse, ce qui rendait
 le défaut invisible à la relecture.
+
+**Sous-agents.** Cinquième onglet, seul à ne pas lire le disque : tout son contenu vient
+du journal. Un sous-agent n'a pas d'existence côté serveur, c'est un appel d'outil, et
+l'identifiant de cet appel lui sert d'identité : `buildSubAgents` regroupe par
+`parentToolCallId` ce que le journal porte déjà, sans état parallèle ni requête.
+
+La liste donne, par sous-agent, son type, ce qu'on lui a demandé, son activité du moment,
+son nombre d'appels d'outils et un chronomètre. Le chronomètre est tenu par l'affichage
+tant que l'appel tourne : le CLI ne publie la durée qu'à la fin, et un compteur qui avance
+est le signal le plus direct qu'il se passe encore quelque chose.
+
+Le fil d'un sous-agent est rendu par le **même composant** que le fil principal
+(`ChatThread`), avec la même fonction de découpe (`buildRows`) à qui l'on passe
+l'identifiant de l'auteur. Ce sont les mêmes événements : leur donner un second rendu
+obligerait à tenir deux vues en accord pour un seul contenu. Seuls diffèrent les ajouts
+propres à la page, ancres de tours et fork, qui sont optionnels. Les éléments interactifs
+(permission, plan, question) n'ont pas d'auteur et restent dans le fil principal, seul
+endroit d'où l'on peut y répondre.
+
+Le décompte des sous-agents en cours est porté par l'onglet, où il ne se replie jamais
+avec le nom : c'est ce qui signale une activité dont on ne verrait sinon aucune trace,
+l'onglet étant fermé.
 
 ---
 
@@ -2066,11 +2099,12 @@ par l'agent. Le terminal du lot 5 y est déjà prêt (section 10).
 
 Ils sont peu nombreux et aucun ne bloque le lot 0 ou le lot 1.
 
-0. **Messages des sous-agents.** Les appels d'outils d'un sous-agent sont rattachés à leur
-   parent (section 12.5), mais pas ses messages : le schéma d'événements ne porte pas de
-   parent sur `message.completed`. Le texte produit par un sous-agent s'affiche donc au
-   même niveau que celui de l'agent principal. Corriger demande un champ supplémentaire
-   dans le schéma, donc une décision sur la tolérance de relecture du journal.
+0. **Sous-agents côté Codex.** Le runner Codex câble `parentToolCallId` à `null` : les
+   sous-agents y sont donc invisibles, bandeau et onglet restant vides. L'app-server a
+   pourtant de quoi les rattacher (`thread_spawn` avec `parent_thread_id`, item
+   `subAgentActivity`), non exploité. Le transcript Claude relu sur disque a le même
+   trou : les sidechains vivent dans `<session>/subagents/agent-*.jsonl`, rattachables
+   par le `agentId` que porte le `toolUseResult` de l'appel `Task`.
 
 2. **Steering.** Livré côté Codex, voir section 12.3. Claude n'a pas d'équivalent, donc
    le bouton n'apparaît que sur les conversations Codex.

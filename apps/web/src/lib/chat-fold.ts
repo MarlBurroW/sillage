@@ -36,6 +36,8 @@ export interface MessageItem {
 export interface ToolItem {
   kind: 'tool'
   id: string
+  /** Date d'ouverture de l'appel : la seule base pour un chronomètre en cours. */
+  ts: number
   name: string
   input: unknown
   output: unknown
@@ -277,9 +279,23 @@ export function describeActivity(state: ChatState): string | null {
   }
   if (!state.turnRunning) return null
 
-  for (let i = state.items.length - 1; i >= 0; i -= 1) {
-    const item = state.items[i]
+  return activityOf(state.items, null)
+}
+
+/**
+ * Ce que fait l'auteur d'un fil, d'après son dernier élément.
+ *
+ * `thread` désigne l'auteur : `null` pour l'agent principal, l'appel de spawn pour un
+ * sous-agent. Sans ce filtre, un sous-agent occupé fait dire au fil principal qu'il
+ * cherche dans les fichiers alors qu'il attend son rapport.
+ */
+export function activityOf(items: ChatItem[], thread: string | null): string | null {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i]
     if (!item) continue
+    if ((item.kind === 'tool' || item.kind === 'message') && item.parentToolCallId !== thread) {
+      continue
+    }
 
     if (isAwaitingUser(item)) return null
     if (
@@ -559,6 +575,7 @@ export function applyEvent(
       appendItem(state, {
         kind: 'tool',
         id: event.toolCallId,
+        ts,
         name: event.name,
         input: event.input,
         output: null,

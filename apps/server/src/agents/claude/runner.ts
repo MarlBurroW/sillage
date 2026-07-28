@@ -157,6 +157,11 @@ export class ClaudeRunner implements AgentRunner {
         // autorisé, l'agent se verrait refuser la lecture des fichiers qu'on lui joint.
         additionalDirectories: [...config.additionalDirectories, this.ctx.attachmentsRoot],
         includePartialMessages: true,
+        // Sans ça le SDK ne transmet des sous-agents que leurs appels d'outils, de
+        // quoi faire battre un compteur mais pas de quoi rendre leur fil : ni
+        // raisonnement, ni messages intermédiaires. Sillage les affiche comme des
+        // conversations à part entière, donc il lui faut tout.
+        forwardSubagentText: true,
         abortController: this.abort,
         ...(this.ctx.resumeSessionId ? { resume: this.ctx.resumeSessionId } : {}),
         // Le SDK sait résoudre son propre exécutable ; on ne l'écrase que si la
@@ -432,8 +437,10 @@ export class ClaudeRunner implements AgentRunner {
       default: {
         const subtype = 'subtype' in message ? String(message.subtype) : message.type
         if (IGNORED_SUBTYPES.has(subtype)) return
-        // Types non traduits : conservés bruts dans le journal pour ne rien perdre,
-        // sans polluer le fil. Ils deviendront des événements typés si besoin.
+        // Types non traduits, donc non journalisés : le journal est la source
+        // d'affichage (I2), et y écrire un événement que rien ne sait rendre le
+        // ferait grossir sans que personne le lise. Ce qui manquerait à l'écran
+        // devient un événement traduit, pas une ligne brute de plus.
         return
       }
     }
