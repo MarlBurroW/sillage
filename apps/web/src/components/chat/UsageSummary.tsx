@@ -1,6 +1,7 @@
 import type { ClaudeAccountDto } from '@sillage/protocol'
 import type { RateLimitState } from '../../lib/chat-fold'
 import { locale, translate, useTranslate, type MessageKey } from '../../lib/i18n'
+import { formatTokens } from '../../lib/tokens'
 import { cx } from '../ui'
 
 /** Libellés des fenêtres de quota annoncées par le CLI. */
@@ -45,12 +46,6 @@ function describeQuota(rateLimit: RateLimitState): string {
   return rateLimit.resetsAt === null
     ? window
     : translate('usage.quota.countdownFor', { window, countdown: formatCountdown(rateLimit.resetsAt) })
-}
-
-function formatTokens(count: number): string {
-  if (count < 1000) return String(count)
-  if (count < 1_000_000) return `${(count / 1000).toFixed(1)} k`
-  return `${(count / 1_000_000).toFixed(1)} M`
 }
 
 interface UsageSummaryProps {

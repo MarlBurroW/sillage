@@ -1,5 +1,5 @@
 import { isSpawnTool } from '@sillage/protocol'
-import { activityOf, type ChatItem, type ToolItem } from './chat-fold'
+import { activityOf, type ChatItem, type ChatState, type TaskState, type ToolItem } from './chat-fold'
 
 /**
  * Les sous-agents d'une conversation, dérivés du seul journal (invariant I2).
@@ -26,6 +26,12 @@ export interface SubAgent {
   items: ChatItem[]
   /** Ses propres appels d'outils. Ceux d'un sous-agent imbriqué comptent pour lui. */
   toolCount: number
+  /**
+   * Ce qu'il a consommé, tel que le CLI le compte. Zéro tant qu'il n'a pas rendu
+   * compte : le fil ne peut pas le déduire, les tokens d'un sous-agent n'apparaissent
+   * nulle part ailleurs.
+   */
+  totalTokens: number
   /** L'appel de spawn du sous-agent parent, pour les imbrications. */
   parentId: string | null
 }
@@ -43,21 +49,37 @@ function field(input: unknown, key: string): string {
  * le lancement et le premier événement du sous-agent, il s'écoule plusieurs secondes,
  * et l'omettre ferait apparaître puis clignoter le bandeau.
  */
-export function buildSubAgents(items: ChatItem[]): SubAgent[] {
+export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): SubAgent[] {
   const byId = new Map<string, SubAgent>()
+  // Le CLI décrit ses travaux par leur propre identifiant ; le fil, lui, ne connaît
+  // que l'appel d'outil. C'est ce dernier qui fait le lien entre les deux vues.
+  const byToolCall = new Map<string, TaskState>()
+  for (const task of tasks.values()) {
+    if (task.toolCallId) byToolCall.set(task.toolCallId, task)
+  }
 
   for (const item of items) {
     if (item.kind !== 'tool' || !isSpawnTool(item.name)) continue
+    const task = byToolCall.get(item.id)
+    /*
+     * Un agent passé en arrière-plan rend son appel d'outil aussitôt, avec un résultat
+     * qui dit seulement qu'il continue ailleurs. Sans ce redressement, la ligne
+     * l'annonçait terminé en quarante millisecondes alors qu'il travaillait encore
+     * vingt secondes, et le bandeau cessait de le compter parmi les agents actifs.
+     */
+    const backgrounded = task !== undefined && !task.done && item.status === 'done'
     byId.set(item.id, {
       id: item.id,
       type: field(item.input, 'subagent_type') || item.name,
       description: field(item.input, 'description'),
-      status: item.status,
+      status: backgrounded ? 'running' : item.status,
       startedAt: item.ts,
-      durationMs: item.durationMs,
+      // La durée de l'appel n'est celle du travail que tant qu'il l'attend.
+      durationMs: task && task.durationMs > 0 ? task.durationMs : item.durationMs,
       activity: null,
       items: [],
       toolCount: 0,
+      totalTokens: task?.totalTokens ?? 0,
       parentId: item.parentToolCallId,
     })
   }
@@ -75,7 +97,11 @@ export function buildSubAgents(items: ChatItem[]): SubAgent[] {
 
   const agents = [...byId.values()]
   for (const agent of agents) {
-    agent.activity = agent.status === 'running' ? activityOf(agent.items, agent.id) : null
+    if (agent.status !== 'running') continue
+    // Le CLI décrit lui-même ce que fait son agent, y compris pendant qu'il réfléchit
+    // sans rien appeler. Le repli sur le journal couvre les secondes qui précèdent son
+    // premier compte rendu, et les CLI qui n'en donnent aucun.
+    agent.activity = byToolCall.get(agent.id)?.activity ?? activityOf(agent.items, agent.id)
   }
   return agents
 }

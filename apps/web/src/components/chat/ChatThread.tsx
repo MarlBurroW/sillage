@@ -7,6 +7,7 @@ import { MessageBubble } from './MessageBubble'
 import { PermissionPrompt } from './PermissionPrompt'
 import { PlanReview } from './PlanReview'
 import { QuestionPrompt } from './QuestionPrompt'
+import { TaskResult } from './TaskResult'
 import { ToolCall, ToolCallGroup } from './ToolCall'
 
 /**
@@ -120,6 +121,8 @@ export function ChatThread({
                 {item.message}
               </Banner>
             )
+          case 'task':
+            return <TaskResult key={item.id} item={item} />
           case 'notice':
             return (
               <div key={item.id} className="flex items-center gap-3 py-1">

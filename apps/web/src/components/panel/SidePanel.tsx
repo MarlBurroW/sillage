@@ -7,7 +7,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react'
-import type { BackgroundTask } from '@sillage/protocol'
+import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn } from '../../lib/chat-fold'
 import { openTab } from '../../lib/editor-tabs'
 import { useTranslate } from '../../lib/i18n'
@@ -49,7 +49,7 @@ export function SidePanel({
   editTurns: EditTurn[]
   turnRunning: boolean
   subAgents: SubAgent[]
-  background: BackgroundTask[]
+  background: BackgroundWork[]
   /** Faux pendant la sortie : le panneau est encore monté, mais s'en va. */
   open: boolean
 }) {

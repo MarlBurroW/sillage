@@ -51,6 +51,9 @@ export const fr: Catalog = {
   'conversation.status.error': 'Erreur',
   'conversation.status.background.one': '{count} travail de fond',
   'conversation.status.background.many': '{count} travaux de fond',
+  'task.status.completed': 'Terminé en arrière-plan',
+  'task.status.failed': 'Échoué en arrière-plan',
+  'task.status.stopped': 'Arrêté avant la fin',
 
   // Composer - réglages du tour
   'composer.permission.manual': 'Demander',
@@ -123,6 +126,9 @@ export const fr: Catalog = {
   'panel.background.kind.shell': 'Commande shell',
   'panel.background.kind.subagent': 'Sous-agent',
   'panel.background.kind.monitor': 'Surveillance',
+  'panel.background.tools.one': '{count} outil',
+  'panel.background.tools.many': '{count} outils',
+  'subagent.tokens': '{count} tokens',
 
   // Coquille applicative (navigation, projets, comptes)
   'shell.nav.resize.aria': 'Largeur de la navigation',

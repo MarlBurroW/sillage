@@ -18,7 +18,6 @@ import {
   AGENT_CAPABILITIES,
   agentConfigSchema,
   type AgentConfig,
-  type BackgroundTask,
   type ConversationStatus,
 } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
@@ -54,6 +53,7 @@ import { clearSubAgent, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useCurrentUser } from '../lib/session'
 import { useSidebarHidden } from '../lib/sidebar'
 import { describeActivity, type MessageItem } from '../lib/chat-fold'
+import { buildBackground, type BackgroundWork } from '../lib/background'
 import { buildSubAgents } from '../lib/subagents'
 import { buildRows } from '../lib/tool-rows'
 import { buildTurns } from '../lib/turns'
@@ -70,7 +70,7 @@ const SidePanel = lazy(() =>
 )
 
 /** Instance unique : une liste vide recréée à chaque rendu ferait rendre le panneau. */
-const NO_BACKGROUND: BackgroundTask[] = []
+const NO_BACKGROUND: BackgroundWork[] = []
 
 /** Marge sous laquelle on considère que l'utilisateur suit le bas du fil. */
 const STICKY_THRESHOLD_PX = 120
@@ -122,7 +122,10 @@ export function ConversationPage() {
 
   const turns = useMemo(() => buildTurns(stream.state.items), [stream.state.items])
   const rows = useMemo(() => buildRows(stream.state.items), [stream.state.items])
-  const subAgents = useMemo(() => buildSubAgents(stream.state.items), [stream.state.items])
+  const subAgents = useMemo(
+    () => buildSubAgents(stream.state.items, stream.state.tasks),
+    [stream.state.items, stream.state.tasks],
+  )
   const runningSubAgents = useMemo(
     () => subAgents.filter((agent) => agent.status === 'running'),
     [subAgents],
@@ -132,7 +135,10 @@ export function ConversationPage() {
    * démon tué net n'écrit pas la fin de session qui l'aurait éteint. Une session
    * froide n'a plus de process, donc plus de travail de fond, quoi qu'en dise le fil.
    */
-  const background = stream.warm === false ? NO_BACKGROUND : stream.state.background
+  const background = useMemo(
+    () => (stream.warm === false ? NO_BACKGROUND : buildBackground(stream.state)),
+    [stream.warm, stream.state],
+  )
   const [usageOpen, setUsageOpen] = useState(false)
   const [forking, setForking] = useState(false)
   /** Message dont le fork est proposé : le geste est trop peu courant pour être direct. */
@@ -830,7 +836,7 @@ const STATUS_PILLS: Partial<
  * minutes. Elle reste visible pendant un tour, où elle dit autre chose que la pastille
  * d'activité : ce travail-là survivra à la fin du tour.
  */
-function BackgroundPill({ tasks }: { tasks: BackgroundTask[] }) {
+function BackgroundPill({ tasks }: { tasks: BackgroundWork[] }) {
   const t = useTranslate()
   if (tasks.length === 0) return null
 

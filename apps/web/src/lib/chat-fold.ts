@@ -111,6 +111,22 @@ export interface NoticeItem {
   text: string
 }
 
+/**
+ * Le compte rendu d'un travail que le fil ne suivait plus.
+ *
+ * Seuls les travaux devenus autonomes en ont un. Un sous-agent que le fil suit rend
+ * déjà son résultat dans l'appel qui l'a lancé : le répéter ici mettrait deux fois la
+ * même chose à l'écran.
+ */
+export interface TaskItem {
+  kind: 'task'
+  id: string
+  description: string
+  status: 'completed' | 'failed' | 'stopped'
+  summary: string
+  durationMs: number | null
+}
+
 export type ChatItem =
   | MessageItem
   | ToolItem
@@ -120,6 +136,7 @@ export type ChatItem =
   | PlanItem
   | ErrorItem
   | NoticeItem
+  | TaskItem
 
 /** Vrai si un élément attend une décision de l'utilisateur pour que le tour reprenne. */
 export function isAwaitingUser(item: ChatItem): boolean {
@@ -225,6 +242,41 @@ export interface ChatState {
    * des fichiers changent encore.
    */
   background: BackgroundTask[]
+  /**
+   * Ce que le CLI dit de chaque travail enregistré, de son lancement à son arrêt.
+   *
+   * Tenue à part de `background` : la liste de niveau dit qui vit, cette table dit
+   * quoi. Elle garde aussi les travaux déjà finis, dont on affiche encore le compte
+   * rendu.
+   */
+  tasks: Map<string, TaskState>
+}
+
+/** L'avancement d'un travail, tel que les événements `task.*` le décrivent. */
+export interface TaskState {
+  id: string
+  /** L'appel d'outil qui l'a lancé, nul quand le harnais l'a lancé de lui-même. */
+  toolCallId: string | null
+  kind: string
+  description: string
+  /** Ce qu'il fait à l'instant, nul tant qu'il n'a pas rendu compte une première fois. */
+  activity: string | null
+  lastTool: string | null
+  toolUses: number
+  totalTokens: number
+  durationMs: number
+  /**
+   * Vrai dès que le travail a continué alors que le fil ne le suivait plus : son appel
+   * d'outil était déjà rendu, ou il n'en avait aucun.
+   *
+   * C'est ce qui sépare un workflow d'un sous-agent ordinaire, les deux étant annoncés
+   * dans la même liste. Une fois posé, l'indicateur ne retombe pas : un travail rendu
+   * à lui-même le reste, et son compte rendu de fin doit arriver dans le fil même si
+   * la dernière liste de niveau l'a déjà retiré.
+   */
+  unattended: boolean
+  /** Vrai une fois son compte rendu reçu. Le travail peut alors être cru sur parole. */
+  done: boolean
 }
 
 export function emptyChatState(): ChatState {
@@ -244,6 +296,7 @@ export function emptyChatState(): ChatState {
     turnRunning: false,
     compacting: false,
     background: [],
+    tasks: new Map(),
   }
 }
 
@@ -488,6 +541,24 @@ function updateMessage(
  *
  * Un `tool.completed` en retard reprend la main : il réécrit le statut sans condition.
  */
+/**
+ * Remplace un travail dans la table. La table entière est recopiée, pour la même
+ * raison que les éléments du fil : muter en place laisserait la référence inchangée,
+ * et les vues mémoïsées sur elle ne se redessineraient pas.
+ */
+function putTask(state: ChatState, task: TaskState): void {
+  const tasks = new Map(state.tasks)
+  tasks.set(task.id, task)
+  state.tasks = tasks
+}
+
+/** L'état d'un appel d'outil du fil, ou null s'il n'y en a pas trace. */
+function toolStatus(state: ChatState, toolCallId: string): ToolItem['status'] | null {
+  const index = findLastIndex(state.items, (item) => item.kind === 'tool' && item.id === toolCallId)
+  const item = index === -1 ? null : state.items[index]
+  return item && item.kind === 'tool' ? item.status : null
+}
+
 function closeRunningTools(state: ChatState): void {
   state.items.forEach((item, index) => {
     if (item.kind === 'tool' && item.status === 'running') {
@@ -652,6 +723,15 @@ export function applyEvent(
           status: event.isError ? 'failed' : 'done',
           durationMs: event.durationMs,
         })
+      }
+      // L'appel est rendu alors que le travail qu'il a lancé vit encore : personne ne
+      // le suit plus. La liste de niveau pose la même marque de son côté, parce que
+      // rien ne garantit lequel des deux événements arrive en premier.
+      for (const task of state.tasks.values()) {
+        if (task.toolCallId !== event.toolCallId || task.unattended) continue
+        if (state.background.some((live) => live.id === task.id)) {
+          putTask(state, { ...task, unattended: true })
+        }
       }
       break
     }
@@ -824,6 +904,73 @@ export function applyEvent(
       // qui rend l'indicateur increvable. Un événement perdu se rattrape au suivant
       // au lieu de laisser un travail allumé pour toujours.
       state.background = event.tasks
+      // Un travail encore vivant alors que son appel d'outil est rendu n'est plus
+      // suivi par personne. C'est le seul moment où la question se pose : la liste
+      // est justement ce qui dit qu'il vit encore.
+      for (const task of event.tasks) {
+        const known = state.tasks.get(task.id)
+        if (!known || known.unattended) continue
+        if (known.toolCallId === null || toolStatus(state, known.toolCallId) !== 'running') {
+          putTask(state, { ...known, unattended: true })
+        }
+      }
+      break
+    }
+
+    case 'task.started': {
+      putTask(state, {
+        id: event.taskId,
+        toolCallId: event.toolCallId,
+        kind: event.kind,
+        description: event.description,
+        activity: null,
+        lastTool: null,
+        toolUses: 0,
+        totalTokens: 0,
+        durationMs: 0,
+        unattended: false,
+        done: false,
+      })
+      break
+    }
+
+    case 'task.progress': {
+      const known = state.tasks.get(event.taskId)
+      // Un avancement sans lancement connu vient d'un journal tronqué par la
+      // rétention : il n'y a rien à quoi le rattacher, et l'inventer donnerait un
+      // travail sans nom ni origine.
+      if (!known) break
+      putTask(state, {
+        ...known,
+        activity: event.activity,
+        lastTool: event.lastTool,
+        toolUses: event.toolUses,
+        totalTokens: event.totalTokens,
+        durationMs: event.durationMs,
+      })
+      break
+    }
+
+    case 'task.completed': {
+      const known = state.tasks.get(event.taskId)
+      if (known) {
+        putTask(state, {
+          ...known,
+          activity: null,
+          durationMs: event.durationMs ?? known.durationMs,
+          done: true,
+        })
+      }
+      if (known?.unattended && !event.ambient) {
+        appendItem(state, {
+          kind: 'task',
+          id: `task-${event.taskId}`,
+          description: known.description,
+          status: event.status,
+          summary: event.summary,
+          durationMs: event.durationMs,
+        })
+      }
       break
     }
 
