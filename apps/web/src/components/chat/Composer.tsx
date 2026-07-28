@@ -239,6 +239,16 @@ export function Composer({
   const claude = config.agent === 'claude' ? config : null
   const codex = config.agent === 'codex' ? config : null
 
+  /**
+   * Modèle réellement en vigueur. `CLI_DEFAULT` ne désigne aucune entrée du catalogue :
+   * l'afficher tel quel donnait un sélecteur vide et, faute de modèle trouvé, aucun
+   * niveau d'effort. Le CLI annonce lequel de ses modèles il prendrait, c'est celui-là
+   * que la barre montre. La configuration, elle, garde la sentinelle : c'est au serveur
+   * de la résoudre au moment de créer la conversation.
+   */
+  const resolvedModel =
+    config.model || catalog?.models.find((model) => model.isDefault)?.value || CLI_DEFAULT
+
   const modelOptions = useMemo((): SelectOption<string>[] => {
     const known = (catalog?.models ?? []).map((model) => ({
       value: model.value,
@@ -252,14 +262,15 @@ export function Composer({
 
     // Le modèle enregistré doit rester sélectionnable même si le catalogue n'a pas pu
     // être lu, sinon le select s'affiche vide et efface le réglage de la conversation.
-    if (!known.some((option) => option.value === config.model)) {
+    // Seulement s'il y a un réglage à préserver : la sentinelle n'en est pas un.
+    if (config.model && !known.some((option) => option.value === config.model)) {
       known.unshift({ value: config.model, label: config.model, hint: t('composer.select.saved') })
     }
     return known
   }, [catalog, config.model, t])
 
   const effortOptions = useMemo((): SelectOption<string>[] => {
-    const known = effortsFor(catalog?.models, config.model).map((effort) => ({
+    const known = effortsFor(catalog?.models, resolvedModel).map((effort) => ({
       value: effort.value,
       label: effort.label,
       hint: effort.hint ?? undefined,
@@ -280,7 +291,17 @@ export function Composer({
       })
     }
     return known
-  }, [catalog, config, t])
+  }, [catalog, config, resolvedModel, t])
+
+  /**
+   * Même sentinelle côté effort, que seul Codex laisse vide : le niveau montré est
+   * celui que le modèle retenu annonce par défaut.
+   */
+  const resolvedEffort = codex
+    ? codex.reasoningEffort ||
+      catalog?.models.find((model) => model.value === resolvedModel)?.defaultEffort ||
+      CLI_DEFAULT
+    : CLI_DEFAULT
 
   /**
    * Modes de collaboration annoncés par Codex. Le mode décide des outils accessibles
@@ -575,14 +596,14 @@ export function Composer({
             <Select
               variant={variant}
               label={variant === 'field' ? t('composer.field.model') : undefined}
-              value={claude.model}
+              value={resolvedModel}
               onChange={(model) =>
                 onConfigChange({ ...claude, model, effort: clampClaudeEffort(model, claude.effort) })
               }
               options={modelOptions}
             />
           ),
-          current: labelOf(modelOptions, claude.model),
+          current: labelOf(modelOptions, resolvedModel),
         },
         // Absent plutôt que grisé quand le modèle n'a pas de niveaux d'effort : un
         // réglage sans effet n'a pas à occuper la barre.
@@ -634,7 +655,7 @@ export function Composer({
               <Select
                 variant={variant}
                 label={variant === 'field' ? t('composer.field.model') : undefined}
-                value={codex.model}
+                value={resolvedModel}
                 onChange={(model) =>
                   onConfigChange({
                     ...codex,
@@ -645,7 +666,7 @@ export function Composer({
                 options={modelOptions}
               />
             ),
-            current: labelOf(modelOptions, codex.model),
+            current: labelOf(modelOptions, resolvedModel),
           },
           ...(codexModeOptions.length > 0
             ? [
@@ -674,12 +695,12 @@ export function Composer({
                     <Select
                       variant={variant}
                       label={variant === 'field' ? t('composer.field.effort') : undefined}
-                      value={codex.reasoningEffort}
+                      value={resolvedEffort}
                       onChange={(reasoningEffort) => onConfigChange({ ...codex, reasoningEffort })}
                       options={effortOptions}
                     />
                   ),
-                  current: labelOf(effortOptions, codex.reasoningEffort),
+                  current: labelOf(effortOptions, resolvedEffort),
                 },
               ]
             : []),
