@@ -4,7 +4,7 @@ import cookie from '@fastify/cookie'
 import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyInstance } from 'fastify'
-import { AgentCatalogs } from '../agents/catalogs.js'
+import type { AgentRegistry } from '../agents/registry.js'
 import type { AttachmentStore } from '../attachments/store.js'
 import { SESSION_COOKIE, resolveSession } from '../auth/sessions.js'
 import type { EventLog } from '../events/event-log.js'
@@ -40,6 +40,7 @@ export async function buildApp(
   ctx: AppContext,
   log: EventLog,
   sessions: SessionManager,
+  registry: AgentRegistry,
   attachments: AttachmentStore,
   terminals: TerminalManager,
   push: PushService,
@@ -82,15 +83,13 @@ export async function buildApp(
     }
   })
 
-  const catalogs = new AgentCatalogs(ctx.config)
-
   registerHealthRoutes(app)
   registerAuthRoutes(app, ctx)
   registerProjectRoutes(app, ctx, attachments)
-  registerConversationRoutes(app, ctx, log, sessions, catalogs, attachments)
-  registerClaudeSessionRoutes(app, ctx, log, sessions, catalogs)
+  registerConversationRoutes(app, ctx, log, sessions, registry, attachments)
+  registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)
-  registerAgentRoutes(app, catalogs)
+  registerAgentRoutes(app, registry)
   registerWorktreeRoutes(app, ctx)
   registerUserRoutes(app, ctx)
   registerAttachmentRoutes(app, attachments)

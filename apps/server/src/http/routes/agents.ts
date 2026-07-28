@@ -1,27 +1,16 @@
 import type { FastifyInstance } from 'fastify'
-import type {
-  ClaudeAccountDto,
-  ClaudeModelDto,
-  CodexMode,
-  CodexModeDto,
-  CodexModelDto,
-} from '@sillage/protocol'
-import type { CollaborationModeMask } from '@sillage/protocol/codex/v2'
-import type { AgentCatalogs } from '../../agents/catalogs.js'
+import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
 import { HttpError } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-/** Les deux CLI échouent de la même façon : absent, non authentifié, ou trop lent. */
-function unavailable(cli: string, err: unknown): HttpError {
-  return new HttpError(
-    502,
-    'model_list_unavailable',
-    `Impossible de lire les modèles depuis ${cli} : ${err instanceof Error ? err.message : String(err)}`,
-  )
-}
-
-export function registerAgentRoutes(app: FastifyInstance, catalogs: AgentCatalogs): void {
-  const { claude, codex } = catalogs
+export function registerAgentRoutes(app: FastifyInstance, registry: AgentRegistry): void {
+  /** Le nom du CLI vient de l'URL : un inconnu vaut 404, pas un défaut silencieux. */
+  const resolveAdapter = (params: unknown): AgentAdapter => {
+    const { agent } = params as { agent: string }
+    const adapter = registry.find(agent)
+    if (!adapter) throw new HttpError(404, 'unknown_agent', `CLI inconnu : ${agent}`)
+    return adapter
+  }
 
   /**
    * Consommation du compte. Lue à la demande plutôt que poussée : chaque lecture
@@ -30,87 +19,38 @@ export function registerAgentRoutes(app: FastifyInstance, catalogs: AgentCatalog
    */
   app.get('/api/agents/:agent/usage', async (request) => {
     requireUser(request)
-    const { agent } = request.params as { agent: string }
+    const adapter = resolveAdapter(request.params)
     const force = (request.query as { refresh?: string }).refresh === '1'
 
-    if (agent !== 'claude' && agent !== 'codex') {
-      throw new HttpError(404, 'unknown_agent', `CLI inconnu : ${agent}`)
-    }
-
     try {
-      return agent === 'claude'
-        ? await catalogs.claudeUsage.read(force)
-        : await catalogs.codexUsage.read(force)
+      return await adapter.usage(force)
     } catch (err) {
       throw new HttpError(
         502,
         'usage_unavailable',
-        `Impossible de lire la consommation depuis ${agent === 'claude' ? 'Claude Code' : 'Codex'} : ${
+        `Impossible de lire la consommation depuis ${adapter.label} : ${
           err instanceof Error ? err.message : String(err)
         }`,
       )
     }
   })
 
-  app.get('/api/agents/claude/models', async (request) => {
+  app.get('/api/agents/:agent/models', async (request) => {
     requireUser(request)
+    const adapter = resolveAdapter(request.params)
 
-    let listing
     try {
-      listing = await claude.list()
+      return await adapter.models()
     } catch (err) {
       // Renvoyer une liste en dur mentirait sur ce qui est réellement disponible.
-      throw unavailable('Claude Code', err)
+      // Absent, non authentifié ou trop lent : le CLI échoue toujours de la même façon.
+      throw new HttpError(
+        502,
+        'model_list_unavailable',
+        `Impossible de lire les modèles depuis ${adapter.label} : ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
     }
-
-    const models: ClaudeModelDto[] = listing.models.map((model) => ({
-      value: model.value,
-      resolvedModel: model.resolvedModel ?? null,
-      displayName: model.displayName,
-      description: model.description,
-      supportedEffortLevels: model.supportedEffortLevels ?? [],
-    }))
-
-    const account: ClaudeAccountDto | null = listing.account
-      ? {
-          subscriptionType: listing.account.subscriptionType ?? null,
-          organization: listing.account.organization ?? null,
-          billedBySubscription: Boolean(listing.account.subscriptionType),
-        }
-      : null
-
-    return { models, account, fetchedAt: listing.fetchedAt }
-  })
-
-  app.get('/api/agents/codex/models', async (request) => {
-    requireUser(request)
-
-    let listing
-    try {
-      listing = await codex.list()
-    } catch (err) {
-      throw unavailable('Codex', err)
-    }
-
-    const models: CodexModelDto[] = listing.models.map((model) => ({
-      id: model.id,
-      model: model.model,
-      displayName: model.displayName,
-      description: model.description,
-      supportedReasoningEfforts: model.supportedReasoningEfforts.map((effort) => ({
-        value: effort.reasoningEffort,
-        description: effort.description,
-      })),
-      defaultReasoningEffort: model.defaultReasoningEffort,
-      isDefault: model.isDefault,
-    }))
-
-    // `mode` est nullable côté protocole : un préréglage qui ne désigne aucun mode ne
-    // peut pas être proposé comme choix, il est écarté plutôt que rendu inerte.
-    const modes: CodexModeDto[] = listing.modes
-      .filter((mask): mask is CollaborationModeMask & { mode: CodexMode } => mask.mode !== null)
-      .map((mask) => ({ mode: mask.mode, label: mask.name }))
-
-    return { models, modes, fetchedAt: listing.fetchedAt }
   })
 }

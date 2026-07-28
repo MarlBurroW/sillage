@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
 import type { GetAccountRateLimitsResponse, RateLimitSnapshot } from '@sillage/protocol/codex/v2'
 import { CodexAppServerClient } from './app-server-client.js'
+import { CLIENT_INFO } from './client-info.js'
 
 /**
  * Consommation du compte Codex, lue par `account/rateLimits/read`.
@@ -11,7 +12,6 @@ import { CodexAppServerClient } from './app-server-client.js'
  */
 
 const CACHE_TTL_MS = 60_000
-const CLIENT_INFO = { name: 'sillage', title: 'Sillage', version: '0.1.0' } as const
 
 /** Libellé d'une fenêtre, à partir de ce que le CLI annonce. */
 function describeWindow(limitName: string | null, durationMins: number | null): string {
