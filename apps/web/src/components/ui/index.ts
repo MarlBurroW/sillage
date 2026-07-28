@@ -1,6 +1,7 @@
 export { cx } from './cx'
 export { Button, IconButton } from './Button'
 export { Card, CardHeader, CardBody } from './Card'
+export { ChoiceList, type Choice } from './ChoiceList'
 export { ConfirmDialog } from './ConfirmDialog'
 export { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './ContextMenu'
 export { Field } from './Field'

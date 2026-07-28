@@ -2,7 +2,7 @@ import { FolderTree, GitBranch, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { ApiRequestError } from '../lib/api'
 import { useBranches, useCreateWorktree, useWorktrees } from '../lib/worktrees'
-import { Banner, Button, Field, Select, cx, type SelectOption } from './ui'
+import { Banner, Button, ChoiceList, Field, Select, cx, type SelectOption } from './ui'
 
 /** Valeur sentinelle : travailler dans le dossier du projet, sans worktree. */
 const ROOT = '__root__'
@@ -14,13 +14,25 @@ interface WorktreeSelectProps {
   onChange: (worktreeId: string | null) => void
   /** Masqué quand le projet n'est pas un dépôt git : un worktree n'y a aucun sens. */
   isRepository: boolean
+  /**
+   * `list` déplie les options au lieu de les cacher derrière une liste déroulante.
+   * Réservé à l'écran de création, où il n'y a rien d'autre à regarder et où le choix
+   * mérite d'être vu ; ailleurs la place manque.
+   */
+  layout?: 'select' | 'list'
 }
 
 /**
  * Choix du répertoire de travail d'une conversation. Sillage gère les worktrees
  * lui-même pour que le comportement soit identique entre Claude et Codex.
  */
-export function WorktreeSelect({ projectId, value, onChange, isRepository }: WorktreeSelectProps) {
+export function WorktreeSelect({
+  projectId,
+  value,
+  onChange,
+  isRepository,
+  layout = 'select',
+}: WorktreeSelectProps) {
   const { data: worktrees } = useWorktrees(isRepository ? projectId : undefined)
   const { data: branchInfo } = useBranches(isRepository ? projectId : undefined)
   const createWorktree = useCreateWorktree(projectId)
@@ -66,21 +78,39 @@ export function WorktreeSelect({ projectId, value, onChange, isRepository }: Wor
   const error =
     createWorktree.error instanceof ApiRequestError ? createWorktree.error.message : null
 
+  const pick = (choice: string) => {
+    if (choice === NEW) {
+      setCreating(true)
+      return
+    }
+    setCreating(false)
+    onChange(choice === ROOT ? null : choice)
+  }
+
+  const selected = creating ? NEW : (value ?? ROOT)
+
   return (
     <div className="flex flex-col gap-2">
-      <Select
-        label="Répertoire de travail"
-        value={creating ? NEW : (value ?? ROOT)}
-        onChange={(choice) => {
-          if (choice === NEW) {
-            setCreating(true)
-            return
-          }
-          setCreating(false)
-          onChange(choice === ROOT ? null : choice)
-        }}
-        options={options}
-      />
+      {layout === 'list' ? (
+        <ChoiceList
+          label="Répertoire de travail"
+          value={selected}
+          options={options.map(({ value: option, label, icon, hint }) => ({
+            value: option,
+            label,
+            icon,
+            hint,
+          }))}
+          onChange={pick}
+        />
+      ) : (
+        <Select
+          label="Répertoire de travail"
+          value={selected}
+          onChange={pick}
+          options={options}
+        />
+      )}
 
       {creating ? (
         <div className={cx('flex flex-col gap-2 rounded-md border border-line bg-sunken p-3')}>
