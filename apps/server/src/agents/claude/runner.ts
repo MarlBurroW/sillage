@@ -8,7 +8,6 @@ import {
   type ElicitationRequest,
   type ElicitationResult,
   type PermissionResult,
-  type PermissionUpdate,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
@@ -20,6 +19,10 @@ import {
   type ContentBlock,
 } from '@sillage/protocol'
 import { AsyncQueue } from '../async-queue.js'
+import { PendingInteractions } from '../interactions.js'
+import { describeOutgoingMessage } from '../outgoing.js'
+import { toWorkspacePath } from '../paths.js'
+import { ToolDurations } from '../tool-durations.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -30,7 +33,7 @@ import type {
   QuestionAnswer,
   RunnerContext,
 } from '../types.js'
-import { editedPath, fileExists, toWorkspacePath } from './file-edits.js'
+import { editedPath, fileExists } from './file-edits.js'
 import { toPermissionMode } from './permission-mode.js'
 import {
   ASK_USER_QUESTION,
@@ -60,100 +63,45 @@ type InlineImageSource = Extract<
 >
 
 /**
- * Traduit un message et ses pièces jointes en deux formes : les blocs journalisés,
- * qui décrivent ce que l'utilisateur a envoyé, et le contenu réellement transmis au
- * modèle. Les images partent en base64, les autres fichiers par leur chemin, seule
- * façon pour l'agent de les ouvrir avec ses propres outils.
+ * Traduit un message et ses pièces jointes vers le protocole du SDK. Les blocs
+ * journalisés viennent du module commun ; les images partent en base64, les autres
+ * fichiers par leur chemin, seule façon pour l'agent de les ouvrir avec ses outils.
  */
 async function buildUserMessage(
   text: string,
   attachments: OutgoingAttachment[],
 ): Promise<{ blocks: ContentBlock[]; prompt: PromptBlock[] }> {
-  const blocks: ContentBlock[] = []
+  const { blocks, promptText } = describeOutgoingMessage(text, attachments)
   const prompt: PromptBlock[] = []
 
-  const files = attachments.filter((entry) => !entry.inlineImage)
-  const promptText = files.length
-    ? [
-        text,
-        '',
-        'Fichiers joints à ce message :',
-        ...files.map((file) => `- ${file.filename} : ${file.path}`),
-      ]
-        .join('\n')
-        .trim()
-    : text
-
   if (promptText) {
-    blocks.push({ type: 'text', text })
     prompt.push({ type: 'text', text: promptText })
   }
 
   for (const attachment of attachments) {
-    if (attachment.inlineImage) {
-      const data = await readFile(attachment.path)
-      prompt.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          // Le type est déjà restreint aux formats acceptés par l'API au moment de
-          // décider `inlineImage` : c'est ce contrôle qui rend ce cast sûr.
-          media_type: attachment.mimeType as InlineImageSource['media_type'],
-          data: data.toString('base64'),
-        },
-      })
-      blocks.push({
-        type: 'image',
-        mimeType: attachment.mimeType,
-        url: `/api/attachments/${attachment.id}`,
-      })
-    } else {
-      blocks.push({
-        type: 'file',
-        name: attachment.filename,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-        url: `/api/attachments/${attachment.id}`,
-      })
-    }
+    if (!attachment.inlineImage) continue
+    const data = await readFile(attachment.path)
+    prompt.push({
+      type: 'image',
+      source: {
+        type: 'base64',
+        // Le type est déjà restreint aux formats acceptés par l'API au moment de
+        // décider `inlineImage` : c'est ce contrôle qui rend ce cast sûr.
+        media_type: attachment.mimeType as InlineImageSource['media_type'],
+        data: data.toString('base64'),
+      },
+    })
   }
 
   return { blocks, prompt }
-}
-
-interface PendingPermission {
-  resolve: (result: PermissionResult) => void
-  /**
-   * Mises à jour de permission proposées par le CLI pour ne plus reposer la question.
-   * Sans les renvoyer, « autoriser pour la session » n'autorise que cet appel-là et la
-   * demande revient à l'identique au suivant.
-   */
-  suggestions: PermissionUpdate[]
-}
-
-interface PendingQuestion {
-  resolve: (result: PermissionResult) => void
-  /** L'entrée d'origine, que la réponse complète au lieu de la remplacer. */
-  input: Record<string, unknown>
-}
-
-interface PendingPlan {
-  resolve: (result: PermissionResult) => void
-}
-
-interface PendingElicitation {
-  resolve: (result: ElicitationResult) => void
 }
 
 export class ClaudeRunner implements AgentRunner {
   readonly conversationId: string
 
   private readonly input = new AsyncQueue<SDKUserMessage>()
-  private readonly pendingPermissions = new Map<string, PendingPermission>()
-  private readonly pendingQuestions = new Map<string, PendingQuestion>()
-  private readonly pendingPlans = new Map<string, PendingPlan>()
-  private readonly pendingElicitations = new Map<string, PendingElicitation>()
-  private readonly toolStartedAt = new Map<string, number>()
+  private readonly interactions: PendingInteractions
+  private readonly durations = new ToolDurations()
   /**
    * Écritures en cours, par appel : le chemin visé et son existence avant l'appel.
    * Le résultat d'outil ne porte ni l'un ni l'autre, il faut donc les retenir.
@@ -171,6 +119,7 @@ export class ClaudeRunner implements AgentRunner {
   constructor(private readonly ctx: RunnerContext) {
     this.conversationId = ctx.conversationId
     this.config = ctx.config as ClaudeConfig
+    this.interactions = new PendingInteractions(ctx)
   }
 
   async start(): Promise<void> {
@@ -229,7 +178,7 @@ export class ClaudeRunner implements AgentRunner {
         this.ctx.setStatus('error')
       }
     } finally {
-      this.expirePending()
+      this.interactions.expireAll()
     }
   }
 
@@ -336,7 +285,7 @@ export class ClaudeRunner implements AgentRunner {
           } else if (block.type === 'thinking') {
             blocks.push({ type: 'thinking', text: block.thinking })
           } else if (block.type === 'tool_use') {
-            this.toolStartedAt.set(block.id, Date.now())
+            this.durations.start(block.id)
             this.trackEdit(block.id, block.name, block.input)
             blocks.push({
               type: 'tool_use',
@@ -379,8 +328,6 @@ export class ClaudeRunner implements AgentRunner {
 
         for (const block of content) {
           if (block.type !== 'tool_result') continue
-          const startedAt = this.toolStartedAt.get(block.tool_use_id)
-          this.toolStartedAt.delete(block.tool_use_id)
 
           this.ctx.emit(
             {
@@ -388,7 +335,7 @@ export class ClaudeRunner implements AgentRunner {
               toolCallId: block.tool_use_id,
               output: block.content ?? null,
               isError: block.is_error === true,
-              durationMs: startedAt ? Date.now() - startedAt : 0,
+              durationMs: this.durations.stop(block.tool_use_id),
             },
             block,
           )
@@ -508,79 +455,104 @@ export class ClaudeRunner implements AgentRunner {
     input: Record<string, unknown>,
     options: Parameters<CanUseTool>[2],
   ): Promise<PermissionResult> {
-    const requestId = this.ctx.openPermissionRequest(toolName, input)
-    this.ctx.setStatus('awaiting_input')
-
-    this.ctx.emit({
-      type: 'permission.requested',
-      requestId,
-      toolName,
-      input,
-      // Les libellés viennent du CLI, qui sait pourquoi il demande : chemin hors des
-      // dossiers autorisés, règle déclenchée, portée réclamée. Une phrase reconstruite
-      // depuis le nom de l'outil perdrait tout ça.
-      title: options.title ?? null,
-      description: options.description ?? null,
-      displayName: options.displayName ?? null,
-      suggestions: [
-        { id: 'allow-once', label: 'Autoriser', scope: 'once', behavior: 'allow' },
-        { id: 'allow-session', label: 'Autoriser pour la session', scope: 'session', behavior: 'allow' },
-        { id: 'deny', label: 'Refuser', scope: 'once', behavior: 'deny' },
-      ],
-    })
+    /**
+     * Mises à jour de permission proposées par le CLI pour ne plus reposer la
+     * question. Sans les renvoyer, « autoriser pour la session » n'autorise que cet
+     * appel-là et la demande revient à l'identique au suivant.
+     */
+    const suggestions = options.suggestions ?? []
 
     return new Promise<PermissionResult>((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve, suggestions: options.suggestions ?? [] })
+      this.interactions.requestPermission(
+        {
+          toolName,
+          input,
+          // Les libellés viennent du CLI, qui sait pourquoi il demande : chemin hors
+          // des dossiers autorisés, règle déclenchée, portée réclamée. Une phrase
+          // reconstruite depuis le nom de l'outil perdrait tout ça.
+          title: options.title ?? null,
+          description: options.description ?? null,
+          displayName: options.displayName ?? null,
+        },
+        (decision) => {
+          if (decision === null) {
+            resolve({ behavior: 'deny', message: 'Session terminée avant la réponse.' })
+          } else if (decision.decision === 'allowed') {
+            // Une autorisation ponctuelle ne change aucune règle ; au-delà, on renvoie
+            // les mises à jour que le CLI a lui-même proposées, seule façon qu'il
+            // cesse de reposer la question.
+            resolve({
+              behavior: 'allow',
+              ...(decision.scope === 'once' ? {} : { updatedPermissions: suggestions }),
+            })
+          } else {
+            resolve({ behavior: 'deny', message: 'Refusé depuis Sillage.' })
+          }
+        },
+      )
     })
   }
 
   private requestQuestion(input: Record<string, unknown>): Promise<PermissionResult> {
-    const requestId = randomUUID()
-    this.ctx.setStatus('awaiting_input')
-    this.ctx.emit({ type: 'question.requested', requestId, questions: toQuestions(input) })
-
     return new Promise<PermissionResult>((resolve) => {
-      this.pendingQuestions.set(requestId, { resolve, input })
+      this.interactions.requestQuestion(toQuestions(input), (answer) => {
+        if (answer === null || answer.status === 'cancelled') {
+          // Autoriser sans réponse : le CLI produit alors « The user did not answer
+          // the questions », et le modèle poursuit sans être bloqué. Un refus, lui,
+          // ferait remonter une erreur d'outil pour un geste parfaitement légitime.
+          resolve({ behavior: 'allow' })
+        } else {
+          resolve({
+            behavior: 'allow',
+            // L'entrée d'origine est complétée par la réponse, pas remplacée.
+            updatedInput: toUpdatedInput(input, answer.answers),
+          })
+        }
+      })
     })
   }
 
   private requestPlanReview(input: Record<string, unknown>): Promise<PermissionResult> {
-    const requestId = randomUUID()
-    this.ctx.setStatus('awaiting_input')
-    this.ctx.emit({ type: 'plan.review_requested', requestId, plan: toPlan(input) })
-
     return new Promise<PermissionResult>((resolve) => {
-      this.pendingPlans.set(requestId, { resolve })
+      this.interactions.requestPlanReview(toPlan(input), (review) => {
+        if (review === null) {
+          resolve({ behavior: 'deny', message: 'Session terminée avant la réponse.' })
+          return
+        }
+        if (review.decision === 'rejected') {
+          resolve({
+            behavior: 'deny',
+            message: "Plan refusé : continue à planifier sans rien exécuter.",
+          })
+          return
+        }
+
+        // Sortir du mode plan ne dit pas comment continuer : sans ce changement de
+        // mode, l'agent retomberait dans celui qui l'a fait planifier et
+        // replanifierait.
+        const mode = review.followUpMode
+        resolve({
+          behavior: 'allow',
+          ...(mode
+            ? {
+                updatedPermissions: [
+                  { type: 'setMode', mode: toPermissionMode(mode), destination: 'session' },
+                ],
+              }
+            : {}),
+        })
+        if (mode) {
+          this.config = { ...this.config, permissionMode: mode }
+          // Persisté tout de suite : le mode adopté doit survivre au runner, sinon les
+          // réglages affichent l'ancien et une reprise repartirait en mode plan.
+          this.ctx.updateConfig(this.config)
+        }
+      })
     })
   }
 
   answerQuestion(requestId: string, answer: QuestionAnswer): boolean {
-    const pending = this.pendingQuestions.get(requestId)
-    if (!pending) return false
-    this.pendingQuestions.delete(requestId)
-
-    this.ctx.emit({
-      type: 'question.resolved',
-      requestId,
-      status: answer.status,
-      answers: answer.answers,
-      decidedBy: answer.decidedBy,
-    })
-
-    if (answer.status === 'cancelled') {
-      // Autoriser sans réponse : le CLI produit alors « The user did not answer the
-      // questions », et le modèle poursuit sans être bloqué. Un refus, lui, ferait
-      // remonter une erreur d'outil pour un geste parfaitement légitime.
-      pending.resolve({ behavior: 'allow' })
-    } else {
-      pending.resolve({
-        behavior: 'allow',
-        updatedInput: toUpdatedInput(pending.input, answer.answers),
-      })
-    }
-
-    this.ctx.setStatus('running')
-    return true
+    return this.interactions.resolveQuestion(requestId, answer)
   }
 
   /**
@@ -593,181 +565,46 @@ export class ClaudeRunner implements AgentRunner {
    * Champ défini plutôt que méthode : le SDK appelle la référence telle quelle.
    */
   private readonly handleElicitation = (request: ElicitationRequest): Promise<ElicitationResult> => {
-    const requestId = randomUUID()
-    this.ctx.setStatus('awaiting_input')
-
-    this.ctx.emit({
-      type: 'elicitation.requested',
-      requestId,
-      serverName: request.serverName,
-      // `mode` est facultatif côté SDK ; le formulaire est le comportement historique.
-      mode: request.mode === 'url' ? 'url' : 'form',
-      message: request.message,
-      url: request.url ?? null,
-      fields: parseElicitationFields(request.requestedSchema),
-      title: request.title ?? null,
-    })
-
     return new Promise<ElicitationResult>((resolve) => {
-      this.pendingElicitations.set(requestId, { resolve })
+      this.interactions.requestElicitation(
+        {
+          serverName: request.serverName,
+          // `mode` est facultatif côté SDK ; le formulaire est le comportement historique.
+          mode: request.mode === 'url' ? 'url' : 'form',
+          message: request.message,
+          url: request.url ?? null,
+          fields: parseElicitationFields(request.requestedSchema),
+          title: request.title ?? null,
+        },
+        (answer) => {
+          if (answer === null) {
+            // `cancel` plutôt que `decline` : le serveur MCP distingue un refus
+            // explicite d'une demande qui n'a jamais atteint personne.
+            resolve({ action: 'cancel' })
+            return
+          }
+          // Le contenu n'accompagne qu'une acceptation : MCP ne prévoit rien à
+          // transporter avec un refus ou une annulation.
+          resolve(
+            answer.action === 'accept'
+              ? { action: 'accept', content: answer.content }
+              : { action: answer.action },
+          )
+        },
+      )
     })
   }
 
   resolveElicitation(requestId: string, answer: ElicitationAnswer): boolean {
-    const pending = this.pendingElicitations.get(requestId)
-    if (!pending) return false
-    this.pendingElicitations.delete(requestId)
-
-    this.ctx.emit({
-      type: 'elicitation.resolved',
-      requestId,
-      status: answer.action,
-      content: answer.content,
-      decidedBy: answer.decidedBy,
-    })
-
-    // Le contenu n'accompagne qu'une acceptation : MCP ne prévoit rien à transporter
-    // avec un refus ou une annulation.
-    pending.resolve(
-      answer.action === 'accept'
-        ? { action: 'accept', content: answer.content }
-        : { action: answer.action },
-    )
-
-    this.ctx.setStatus('running')
-    return true
+    return this.interactions.resolveElicitation(requestId, answer)
   }
 
   reviewPlan(requestId: string, review: PlanReview): boolean {
-    const pending = this.pendingPlans.get(requestId)
-    if (!pending) return false
-    this.pendingPlans.delete(requestId)
-
-    this.ctx.emit({
-      type: 'plan.review_resolved',
-      requestId,
-      decision: review.decision,
-      followUpMode: review.followUpMode,
-      decidedBy: review.decidedBy,
-    })
-
-    if (review.decision === 'rejected') {
-      pending.resolve({
-        behavior: 'deny',
-        message: "Plan refusé : continue à planifier sans rien exécuter.",
-      })
-    } else {
-      // Sortir du mode plan ne dit pas comment continuer : sans ce changement de mode,
-      // l'agent retomberait dans celui qui l'a fait planifier et replanifierait.
-      const mode = review.followUpMode
-      pending.resolve({
-        behavior: 'allow',
-        ...(mode
-          ? {
-              updatedPermissions: [
-                { type: 'setMode', mode: toPermissionMode(mode), destination: 'session' },
-              ],
-            }
-          : {}),
-      })
-      if (mode) {
-        this.config = { ...this.config, permissionMode: mode }
-        // Persisté tout de suite : le mode adopté doit survivre au runner, sinon les
-        // réglages affichent l'ancien et une reprise repartirait en mode plan.
-        this.ctx.updateConfig(this.config)
-      }
-    }
-
-    this.ctx.setStatus('running')
-    return true
+    return this.interactions.resolvePlanReview(requestId, review)
   }
 
   resolvePermission(requestId: string, decision: PermissionDecision): boolean {
-    const pending = this.pendingPermissions.get(requestId)
-    if (!pending) return false
-    this.pendingPermissions.delete(requestId)
-
-    this.ctx.closePermissionRequest(requestId, decision)
-    this.ctx.emit({
-      type: 'permission.resolved',
-      requestId,
-      decision: decision.decision,
-      scope: decision.scope,
-      decidedBy: decision.decidedBy,
-    })
-
-    if (decision.decision === 'allowed') {
-      // Une autorisation ponctuelle ne change aucune règle ; au-delà, on renvoie les
-      // mises à jour que le CLI a lui-même proposées, seule façon qu'il cesse de
-      // reposer la question.
-      pending.resolve({
-        behavior: 'allow',
-        ...(decision.scope === 'once' ? {} : { updatedPermissions: pending.suggestions }),
-      })
-    } else {
-      pending.resolve({ behavior: 'deny', message: 'Refusé depuis Sillage.' })
-    }
-
-    this.ctx.setStatus('running')
-    return true
-  }
-
-  /** Un runner qui s'arrête ne doit pas laisser le CLI attendre une réponse à jamais. */
-  private expirePending(): void {
-    for (const [requestId, pending] of this.pendingQuestions) {
-      this.ctx.emit({
-        type: 'question.resolved',
-        requestId,
-        status: 'expired',
-        answers: {},
-        decidedBy: null,
-      })
-      pending.resolve({ behavior: 'allow' })
-    }
-    this.pendingQuestions.clear()
-
-    for (const [requestId, pending] of this.pendingElicitations) {
-      this.ctx.emit({
-        type: 'elicitation.resolved',
-        requestId,
-        status: 'expired',
-        content: {},
-        decidedBy: null,
-      })
-      // `cancel` plutôt que `decline` : le serveur MCP distingue un refus explicite
-      // d'une demande qui n'a jamais atteint personne.
-      pending.resolve({ action: 'cancel' })
-    }
-    this.pendingElicitations.clear()
-
-    for (const [requestId, pending] of this.pendingPlans) {
-      this.ctx.emit({
-        type: 'plan.review_resolved',
-        requestId,
-        decision: 'expired',
-        followUpMode: null,
-        decidedBy: null,
-      })
-      pending.resolve({ behavior: 'deny', message: 'Session terminée avant la réponse.' })
-    }
-    this.pendingPlans.clear()
-
-    for (const [requestId, pending] of this.pendingPermissions) {
-      this.ctx.closePermissionRequest(requestId, {
-        decision: 'denied',
-        scope: 'once',
-        decidedBy: null,
-      })
-      this.ctx.emit({
-        type: 'permission.resolved',
-        requestId,
-        decision: 'expired',
-        scope: 'once',
-        decidedBy: null,
-      })
-      pending.resolve({ behavior: 'deny', message: 'Session terminée avant la réponse.' })
-    }
-    this.pendingPermissions.clear()
+    return this.interactions.resolvePermission(requestId, decision)
   }
 
   /**
@@ -874,6 +711,6 @@ export class ClaudeRunner implements AgentRunner {
     this.stopped = true
     this.input.close()
     this.abort.abort()
-    this.expirePending()
+    this.interactions.expireAll()
   }
 }

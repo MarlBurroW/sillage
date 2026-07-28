@@ -6,6 +6,7 @@ import {
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import { AsyncQueue } from '../async-queue.js'
+import { CachedProbe } from '../cached-probe.js'
 
 /**
  * Catalogue Claude : modèles et compte, lus depuis le CLI installé plutôt que codés
@@ -20,29 +21,19 @@ import { AsyncQueue } from '../async-queue.js'
 const CACHE_TTL_MS = 60 * 60 * 1000
 const PROBE_TIMEOUT_MS = 20_000
 
-interface Probe {
+interface Listing {
   models: ModelInfo[]
   account: AccountInfo | null
-  fetchedAt: number
 }
 
 export class ClaudeModelCatalog {
-  private cache: Probe | null = null
-  /** Une sonde à la fois : dix requêtes simultanées ne doivent pas lancer dix CLI. */
-  private inflight: Promise<Omit<Probe, 'fetchedAt'>> | null = null
+  private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
 
-  async list(): Promise<Probe> {
-    if (this.cache && Date.now() - this.cache.fetchedAt < CACHE_TTL_MS) return this.cache
-
-    this.inflight ??= this.probe().finally(() => {
-      this.inflight = null
-    })
-
-    this.cache = { ...(await this.inflight), fetchedAt: Date.now() }
-    return this.cache
+  list(): Promise<Listing & { fetchedAt: number }> {
+    return this.cached.read()
   }
 
-  private async probe(): Promise<Omit<Probe, 'fetchedAt'>> {
+  private async probe(): Promise<Listing> {
     // La file reste vide : le CLI démarre, répond aux requêtes de contrôle, et
     // s'arrête sans qu'aucun tour de conversation n'ait lieu.
     const input = new AsyncQueue<SDKUserMessage>()

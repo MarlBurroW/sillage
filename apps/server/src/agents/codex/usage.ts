@@ -1,8 +1,10 @@
 import { homedir } from 'node:os'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
 import type { GetAccountRateLimitsResponse, RateLimitSnapshot } from '@sillage/protocol/codex/v2'
+import { CachedProbe } from '../cached-probe.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
+import { describeWindow } from './quota.js'
 
 /**
  * Consommation du compte Codex, lue par `account/rateLimits/read`.
@@ -12,16 +14,6 @@ import { CLIENT_INFO } from './client-info.js'
  */
 
 const CACHE_TTL_MS = 60_000
-
-/** Libellé d'une fenêtre, à partir de ce que le CLI annonce. */
-function describeWindow(limitName: string | null, durationMins: number | null): string {
-  if (limitName) return limitName
-  if (durationMins === null) return 'quota'
-  if (durationMins < 60) return `${durationMins} min`
-  const hours = durationMins / 60
-  // 168 h se lit mal : au-delà d'une journée, on exprime en jours.
-  return hours >= 24 && hours % 24 === 0 ? `${hours / 24} jours` : `${Math.round(hours)} heures`
-}
 
 function toWindow(
   id: string,
@@ -82,22 +74,12 @@ function normalize(response: GetAccountRateLimitsResponse): Omit<AgentUsage, 'fe
 }
 
 export class CodexUsageReader {
-  private cache: AgentUsage | null = null
-  private inflight: Promise<Omit<AgentUsage, 'fetchedAt'>> | null = null
+  private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
 
   constructor(private readonly binary: string) {}
 
-  async read(force = false): Promise<AgentUsage> {
-    if (!force && this.cache && Date.now() - this.cache.fetchedAt < CACHE_TTL_MS) {
-      return this.cache
-    }
-
-    this.inflight ??= this.probe().finally(() => {
-      this.inflight = null
-    })
-
-    this.cache = { ...(await this.inflight), fetchedAt: Date.now() }
-    return this.cache
+  read(force = false): Promise<AgentUsage> {
+    return this.cached.read(force)
   }
 
   private async probe(): Promise<Omit<AgentUsage, 'fetchedAt'>> {

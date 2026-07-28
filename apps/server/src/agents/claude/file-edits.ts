@@ -1,5 +1,4 @@
 import { statSync } from 'node:fs'
-import { isAbsolute, relative, resolve } from 'node:path'
 import type { EditDiffDto } from '@sillage/protocol'
 import { additionDiff, unifiedDiff } from '../../diff-lines.js'
 
@@ -86,18 +85,6 @@ export function editedPath(toolName: string, input: unknown): string | null {
 
   const value = (input as Record<string, unknown>)[field]
   return typeof value === 'string' && value.length > 0 ? value : null
-}
-
-/**
- * Chemin relatif au répertoire de travail quand il en fait partie.
- *
- * Un chemin hors workspace reste absolu : le raccourcir mentirait sur l'endroit
- * touché, et l'explorateur ne saurait de toute façon pas l'afficher.
- */
-export function toWorkspacePath(cwd: string, path: string): string {
-  const absolute = isAbsolute(path) ? path : resolve(cwd, path)
-  const inside = relative(cwd, absolute)
-  return inside.startsWith('..') || isAbsolute(inside) ? absolute : inside
 }
 
 /**
