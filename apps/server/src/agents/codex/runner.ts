@@ -82,6 +82,9 @@ type ExperimentalTurnStartParams = TurnStartParams & {
  * que `item/completed` apporte déjà. Liste nommée plutôt qu'un `default:` muet, pour
  * qu'une notification inconnue reste visible.
  */
+/** Délai accordé au CLI pour clore un tour interrompu avant de forcer `idle`. */
+const INTERRUPT_GRACE_MS = 15_000
+
 const IGNORED_NOTIFICATIONS = new Set([
   'thread/status/changed',
   'item/reasoning/summaryPartAdded',
@@ -166,6 +169,8 @@ export class CodexRunner implements AgentRunner {
   private suggested: string | null = null
   /** Tour en cours : `turn/interrupt` l'exige, contrairement au SDK Claude. */
   private turnId: string | null = null
+  /** Garde-fou d'interruption : force `idle` si le CLI ne clôt jamais le tour. */
+  private interruptWatchdog: NodeJS.Timeout | null = null
   /** Modèle réellement retenu par le CLI, seul connu quand la conversation dit « défaut ». */
   private threadModel: string | null = null
 
@@ -257,6 +262,14 @@ export class CodexRunner implements AgentRunner {
   private onProcessExit(code: number | null): void {
     this.client = null
     this.turnId = null
+    this.clearInterruptWatchdog()
+
+    // Mort pendant le démarrage : la session n'a jamais existé. L'appel `initialize`
+    // ou `thread/start` en vol est rejeté, `start()` échoue, et le gestionnaire
+    // nettoie et remonte l'erreur HTTP. Journaliser ici en plus écrirait une fin de
+    // session et un statut d'erreur pour une conversation qui n'a rien commencé.
+    if (!this.threadId) return
+
     this.interactions.expireAll()
     this.ctx.emit({
       type: 'error',
@@ -313,6 +326,7 @@ export class CodexRunner implements AgentRunner {
       case 'turn/completed': {
         const p = params as TurnCompletedNotification
         this.turnId = null
+        this.clearInterruptWatchdog()
         this.ctx.emit(
           {
             type: 'turn.completed',
@@ -848,13 +862,32 @@ export class CodexRunner implements AgentRunner {
   async interrupt(): Promise<void> {
     // Sans tour en cours il n'y a rien à interrompre : le protocole exige un turnId.
     if (!this.client || !this.threadId || !this.turnId) return
+    const interrupted = this.turnId
     await this.client.call('turn/interrupt', { threadId: this.threadId, turnId: this.turnId })
+
     // Pas de passage à `idle` ici : l'app-server clôt le tour de son côté et envoie
     // `turn/completed`, qui fait foi. L'annoncer avant ferait partir un message en
-    // file pendant que le tour interrompu se termine encore.
+    // file pendant que le tour interrompu se termine encore. Le garde-fou couvre le
+    // cas où cette clôture ne vient jamais (approbation restée sans réponse, par
+    // exemple) : sans lui, la conversation resterait occupée jusqu'à l'échéance
+    // d'inactivité et les messages suivants seraient mis en file pour rien.
+    this.clearInterruptWatchdog()
+    this.interruptWatchdog = setTimeout(() => {
+      if (this.turnId !== interrupted) return
+      this.turnId = null
+      this.interactions.expireAll()
+      this.ctx.setStatus('idle')
+    }, INTERRUPT_GRACE_MS)
+    this.interruptWatchdog.unref()
+  }
+
+  private clearInterruptWatchdog(): void {
+    if (this.interruptWatchdog) clearTimeout(this.interruptWatchdog)
+    this.interruptWatchdog = null
   }
 
   async stop(): Promise<void> {
+    this.clearInterruptWatchdog()
     this.interactions.expireAll()
     this.client?.close()
     this.client = null
