@@ -32,7 +32,7 @@ export interface TranslatedEvent {
   raw?: unknown
 }
 
-interface TranscriptEntry {
+export interface TranscriptEntry {
   type?: unknown
   subtype?: unknown
   uuid?: unknown
@@ -41,7 +41,7 @@ interface TranscriptEntry {
   isMeta?: unknown
   isCompactSummary?: unknown
   message?: { id?: unknown; model?: unknown; content?: unknown }
-  toolUseResult?: { type?: unknown }
+  toolUseResult?: { type?: unknown; agentId?: unknown }
   compactMetadata?: { trigger?: unknown; preTokens?: unknown; postTokens?: unknown }
 }
 
@@ -57,10 +57,14 @@ export function transcriptPath(cwd: string, sessionId: string): string {
 }
 
 /** Les entrées du transcript, ou une liste vide si le fichier n'existe pas. */
-export async function readTranscript(cwd: string, sessionId: string): Promise<TranscriptEntry[]> {
+export function readTranscript(cwd: string, sessionId: string): Promise<TranscriptEntry[]> {
+  return readJsonl(transcriptPath(cwd, sessionId))
+}
+
+async function readJsonl(path: string): Promise<TranscriptEntry[]> {
   let content: string
   try {
-    content = await readFile(transcriptPath(cwd, sessionId), 'utf8')
+    content = await readFile(path, 'utf8')
   } catch {
     return []
   }
@@ -77,6 +81,44 @@ export async function readTranscript(cwd: string, sessionId: string): Promise<Tr
     }
   }
   return entries
+}
+
+/**
+ * Les fils de sous-agents de la session, indexés par l'appel qui les a lancés.
+ *
+ * Le CLI les écrit à part, dans `<sessionId>/subagents/agent-<agentId>.jsonl`, sans y
+ * répéter l'appel d'origine : le lien passe par l'`agentId` que le transcript principal
+ * joint au résultat de l'appel `Task`. Sans cette relecture, une conversation
+ * resynchronisée perd tout ce que ses sous-agents ont fait.
+ */
+export async function readSubAgentTranscripts(
+  cwd: string,
+  sessionId: string,
+  entries: TranscriptEntry[],
+): Promise<Map<string, TranscriptEntry[]>> {
+  const toolCallIdByAgent = new Map<string, string>()
+  for (const entry of entries) {
+    const agentId = entry.toolUseResult?.agentId
+    if (typeof agentId !== 'string') continue
+    const content = entry.message?.content
+    if (!Array.isArray(content)) continue
+    for (const block of content as Record<string, unknown>[]) {
+      if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+        toolCallIdByAgent.set(agentId, block.tool_use_id)
+      }
+    }
+  }
+  if (toolCallIdByAgent.size === 0) return new Map()
+
+  const dir = join(transcriptPath(cwd, sessionId).replace(/\.jsonl$/, ''), 'subagents')
+  const threads = new Map<string, TranscriptEntry[]>()
+  for (const [agentId, toolCallId] of toolCallIdByAgent) {
+    const parsed = await readJsonl(join(dir, `agent-${agentId}.jsonl`))
+    // Un sous-agent encore en cours, ou d'une version de CLI qui n'écrivait pas ces
+    // fichiers, ne laisse rien : le reste de l'import n'en dépend pas.
+    if (parsed.length > 0) threads.set(toolCallId, parsed)
+  }
+  return threads
 }
 
 function entryTs(entry: TranscriptEntry): number {
@@ -119,12 +161,41 @@ interface ToolUse {
  * n'est pas écrit dans le fichier), et les compteurs de tokens ne sont pas repris,
  * le transcript ne portant pas les totaux par tour.
  *
- * Les entrées `isSidechain` (sous-agents) sont écartées : le fil vivant ne les montre
- * que rattachées à leur appel parent, un lien que le transcript n'exprime pas.
+ * `sidechains` porte les fils de sous-agents, indexés par l'appel qui les a lancés.
+ * Leurs événements sont fusionnés par horodatage : le CLI les écrit dans des fichiers
+ * séparés, mais ils appartiennent au même journal que le fil principal.
  */
 export function translateTranscript(
   entries: TranscriptEntry[],
   cwd: string,
+  sidechains: Map<string, TranscriptEntry[]> = new Map(),
+): { events: TranslatedEvent[]; model: string | null } {
+  const main = translateThread(entries, cwd, null)
+  if (sidechains.size === 0) return main
+
+  const events = [...main.events]
+  for (const [toolCallId, sideEntries] of sidechains) {
+    events.push(...translateThread(sideEntries, cwd, toolCallId).events)
+  }
+
+  // Tri stable : deux événements de même horodatage gardent l'ordre dans lequel leur
+  // fil les a produits, ce que la milliseconde du transcript ne suffit pas à départager.
+  const order = new Map(events.map((event, index) => [event, index]))
+  events.sort((a, b) => a.ts - b.ts || (order.get(a) ?? 0) - (order.get(b) ?? 0))
+
+  return { events, model: main.model }
+}
+
+/**
+ * Un fil et un seul : le principal (`thread` nul) ou celui d'un sous-agent.
+ *
+ * Les frontières de tour et les compactions n'appartiennent qu'au fil principal : un
+ * sous-agent travaille *dans* un tour, il n'en ouvre pas.
+ */
+function translateThread(
+  entries: TranscriptEntry[],
+  cwd: string,
+  thread: string | null,
 ): { events: TranslatedEvent[]; model: string | null } {
   const events: TranslatedEvent[] = []
   const pendingTools = new Map<string, ToolUse>()
@@ -132,7 +203,6 @@ export function translateTranscript(
   let inTurn = false
 
   for (const entry of entries) {
-    if (entry.isSidechain === true) continue
     const ts = entryTs(entry)
 
     if (entry.type === 'assistant') {
@@ -159,7 +229,7 @@ export function translateTranscript(
               toolCallId: block.id,
               name,
               input: block.input,
-              parentToolCallId: null,
+              parentToolCallId: thread,
             },
             raw: block,
           })
@@ -174,9 +244,7 @@ export function translateTranscript(
             messageId: message.id,
             role: 'assistant',
             blocks,
-            // Comme les appels d'outils ci-dessus : le transcript range les tours de
-            // sous-agent dans un fichier annexe, que cet import ne relit pas.
-            parentToolCallId: null,
+            parentToolCallId: thread,
           },
           raw: entry,
         })
@@ -238,7 +306,9 @@ export function translateTranscript(
             : ''
       if (!text.trim() || isLocalCommand(text) || INTERRUPT_MARKER.test(text.trim())) continue
 
-      if (!inTurn) {
+      // Un sous-agent n'ouvre pas de tour : il travaille dans celui de son parent,
+      // et le sien ferait clignoter l'indicateur d'activité du fil principal.
+      if (!inTurn && thread === null) {
         events.push({ ts, event: { type: 'turn.started' } })
         inTurn = true
       }
@@ -249,14 +319,14 @@ export function translateTranscript(
           messageId: typeof entry.uuid === 'string' ? entry.uuid : `import-${events.length}`,
           role: 'user',
           blocks: [{ type: 'text', text }],
-          parentToolCallId: null,
+          parentToolCallId: thread,
         },
         raw: entry,
       })
       continue
     }
 
-    if (entry.type === 'system') {
+    if (entry.type === 'system' && thread === null) {
       // Sans condition sur `inTurn` : une resynchronisation peut reprendre au milieu
       // d'un tour dont l'ouverture est déjà au journal, et sa clôture doit passer.
       if (entry.subtype === 'turn_duration') {
