@@ -73,7 +73,7 @@ export function registerTerminalHub(
         try {
           parsed = terminalClientMessageSchema.parse(JSON.parse(raw.toString()))
         } catch {
-          send({ t: 'error', code: 'bad_message', message: 'Message illisible.' })
+          send({ t: 'error', code: 'bad_message', message: 'Unreadable message.' })
           return
         }
 

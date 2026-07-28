@@ -744,9 +744,18 @@ export interface SearchMessageDto {
 // Erreurs
 
 /** Toutes les erreurs d'API partagent cette forme, pour un affichage uniforme côté UI. */
+/**
+ * Forme unique des erreurs de l'API.
+ *
+ * Le `code` est ce que l'interface traduit ; `params` porte ce que la phrase interpole ;
+ * `message` est le repli anglais écrit par le serveur, affiché tel quel quand le code
+ * n'est pas connu du catalogue. Ce repli est ce qui garantit qu'un code oublié montre
+ * une phrase lisible et non un identifiant.
+ */
 export interface ApiError {
   error: {
     code: string
     message: string
+    params?: Record<string, string | number>
   }
 }

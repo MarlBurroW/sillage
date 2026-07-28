@@ -39,7 +39,7 @@ class Connection {
 
   subscribe(conversationId: string, afterSeq: number): void {
     if (!canReadConversation(this.ctx, conversationId, this.userId)) {
-      this.send({ t: 'error', code: 'not_found', message: 'Conversation introuvable.' })
+      this.send({ t: 'error', code: 'conversation_not_found', message: 'Conversation not found.' })
       return
     }
 
@@ -208,7 +208,7 @@ export async function registerWebSocketHub(
       try {
         parsed = clientMessageSchema.parse(JSON.parse(raw.toString()))
       } catch {
-        connection.send({ t: 'error', code: 'bad_message', message: 'Message illisible.' })
+        connection.send({ t: 'error', code: 'bad_message', message: 'Unreadable message.' })
         return
       }
 
