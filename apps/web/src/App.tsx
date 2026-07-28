@@ -8,7 +8,10 @@ import { HomePage } from './routes/HomePage'
 import { LoginPage } from './routes/LoginPage'
 import { ProjectPage } from './routes/ProjectPage'
 import { ProjectsSettingsPage } from './routes/ProjectsSettingsPage'
-import { SettingsPage } from './routes/SettingsPage'
+import { AccountSection } from './routes/AccountSection'
+import { AppearanceSection } from './routes/AppearanceSection'
+import { NotificationsSection } from './routes/NotificationsSection'
+import { SettingsLayout } from './routes/SettingsPage'
 import { UsersSettingsPage } from './routes/UsersSettingsPage'
 
 export function App() {
@@ -39,9 +42,13 @@ export function App() {
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/settings/projects" element={<ProjectsSettingsPage />} />
-          <Route path="/settings/users" element={<UsersSettingsPage />} />
+          <Route path="/settings" element={<SettingsLayout />}>
+            <Route path="compte" element={<AccountSection />} />
+            <Route path="apparence" element={<AppearanceSection />} />
+            <Route path="notifications" element={<NotificationsSection />} />
+            <Route path="projets" element={<ProjectsSettingsPage />} />
+            <Route path="comptes" element={<UsersSettingsPage />} />
+          </Route>
           <Route path="/design" element={<DesignPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

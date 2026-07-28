@@ -1,152 +1,140 @@
-import {
-  Bell,
-  ChevronRight,
-  Code,
-  Contrast,
-  Moon,
-  Palette,
-  ShieldCheck,
-  Sun,
-  UserRound,
-  Users,
-} from 'lucide-react'
+import { Bell, ChevronRight, FolderOpen, Palette, UserRound, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import { AccountForm } from '../components/AccountForm'
-import { PushControls } from '../components/PushControls'
-import { AppearanceControls } from '../components/AppearanceControls'
-import { SyntaxThemeControls } from '../components/SyntaxThemeControls'
-import { useAppearance } from '../lib/appearance'
-import { THEMES, THEME_LABELS, useTheme, type Theme } from '../lib/theme'
+import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useCurrentUser } from '../lib/session'
-import { Badge, Card, CardBody, CardHeader, cx } from '../components/ui'
+import { useMediaQuery } from '../lib/viewport'
+import { cx } from '../components/ui'
 
-const THEME_ICONS: Record<Theme, ReactNode> = {
-  light: <Sun size={15} />,
-  dark: <Moon size={15} />,
-  'dark-contrast': <Contrast size={15} />,
+/**
+ * Réglages, rangés par catégorie.
+ *
+ * Une page unique empilait des cartes sans rapport les unes sous les autres, et chaque
+ * réglage ajouté allongeait le défilement. Les catégories sont des routes : elles se
+ * partagent, se mettent en favori, et le bouton retour du téléphone les traverse.
+ *
+ * Deux dispositions pour un seul arbre de routes. Sur grand écran, la liste est une
+ * colonne posée à gauche et la section vit à côté. Au doigt, la liste est la page :
+ * `/settings` la montre seule, et ouvrir une catégorie la remplace, avec un retour vers
+ * la liste. C'est le motif liste-détail habituel, et il évite d'entasser une colonne de
+ * navigation dans une largeur qui n'en a pas.
+ */
+interface Section {
+  to: string
+  label: string
+  description: string
+  icon: ReactNode
+  adminOnly?: boolean
 }
 
-export function SettingsPage() {
+const SECTIONS: Section[] = [
+  {
+    to: 'compte',
+    label: 'Compte',
+    description: 'Nom affiché, identifiant, mot de passe',
+    icon: <UserRound size={16} />,
+  },
+  {
+    to: 'apparence',
+    label: 'Apparence',
+    description: 'Thème, couleurs, confort de lecture, coloration du code',
+    icon: <Palette size={16} />,
+  },
+  {
+    to: 'notifications',
+    label: 'Notifications',
+    description: 'Alertes de fin de tour, propres à cet appareil',
+    icon: <Bell size={16} />,
+  },
+  {
+    to: 'projets',
+    label: 'Projets',
+    description: 'Créer un projet et régler sa visibilité',
+    icon: <FolderOpen size={16} />,
+  },
+  {
+    to: 'comptes',
+    label: 'Comptes',
+    description: "Gérer les comptes de l'instance",
+    icon: <Users size={16} />,
+    adminOnly: true,
+  },
+]
+
+export function SettingsLayout() {
   const { data: user } = useCurrentUser()
-  const [theme, setTheme] = useTheme()
-  const appearance = useAppearance()
+  const { pathname } = useLocation()
+  const sections = SECTIONS.filter((section) => !section.adminOnly || user?.isAdmin)
+  const onIndex = pathname === '/settings' || pathname === '/settings/'
+  // Doit rester aligné sur `md:` de Tailwind, qui commande les deux dispositions.
+  const wide = useMediaQuery('(min-width: 48rem)')
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 md:p-8">
-      <h1 className="text-lg font-semibold tracking-tight">Réglages</h1>
-
-      <Card>
-        <CardHeader
-          title="Compte"
-          icon={<UserRound size={16} />}
-          actions={
-            user?.isAdmin ? (
-              <Badge tone="accent" icon={<ShieldCheck size={11} />}>
-                Administrateur
-              </Badge>
-            ) : undefined
-          }
-        />
-        <CardBody>
-          {user ? (
-            <AccountForm
-              userId={user.id}
-              username={user.username}
-              displayName={user.displayName}
-              isSelf
-            />
-          ) : null}
-        </CardBody>
-      </Card>
-
-      {user?.isAdmin ? (
-        <Link to="/settings/users" className="block">
-          <Card className="transition-colors hover:border-line-strong">
-            <CardBody className="flex items-center gap-3">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-wash text-accent">
-                <Users size={16} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[0.9375rem] font-semibold">Comptes</p>
-                <p className="text-sm text-ink-faint">
-                  Créer, promouvoir ou supprimer les comptes de l&apos;instance.
-                </p>
-              </div>
-              <ChevronRight size={16} className="shrink-0 text-ink-faint" />
-            </CardBody>
-          </Card>
-        </Link>
-      ) : null}
-
-      <Card>
-        <CardHeader
-          title="Notifications"
-          description="Propre à cet appareil : activer ici ne change rien sur les autres."
-          icon={<Bell size={16} />}
-        />
-        <CardBody>
-          <PushControls />
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader
-          title="Apparence"
-          description="Mémorisé sur cet appareil. La teinte pilote les surfaces et l'accent."
-          icon={<Palette size={16} />}
-        />
-        <CardBody className="flex flex-col gap-5">
-          <div className="grid grid-cols-3 gap-2">
-            {THEMES.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setTheme(option)}
-                aria-pressed={theme === option}
-                className={cx(
-                  'flex flex-col items-center gap-2 rounded-md border px-3 py-3 transition-colors',
-                  theme === option
-                    ? 'border-accent bg-accent-wash text-ink'
-                    : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
-                )}
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 md:flex-row md:gap-8 md:p-8">
+      {/* La liste disparaît au doigt dès qu'une section est ouverte : les deux
+          ensemble ne tiennent pas dans la largeur d'un téléphone. */}
+      <nav className={cx('shrink-0 md:w-56', !onIndex && 'hidden md:block')}>
+        <h1 className="mb-3 px-1 text-lg font-semibold tracking-tight">Réglages</h1>
+        <ul className="flex flex-col gap-1">
+          {sections.map((section) => (
+            <li key={section.to}>
+              <NavLink
+                to={section.to}
+                className={({ isActive }) =>
+                  cx(
+                    'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
+                    isActive
+                      ? 'bg-accent-wash font-medium text-ink'
+                      : 'text-ink-soft hover:bg-surface-high hover:text-ink',
+                  )
+                }
               >
-                {THEME_ICONS[option]}
-                <span className="text-xs font-medium">{THEME_LABELS[option]}</span>
-              </button>
-            ))}
-          </div>
+                <span className="shrink-0 text-ink-faint">{section.icon}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{section.label}</span>
+                  {/* La description n'aide qu'au doigt, où la liste est la page entière
+                      et où rien d'autre ne dit ce qu'une catégorie contient. */}
+                  <span className="block truncate text-xs text-ink-faint md:hidden">
+                    {section.description}
+                  </span>
+                </span>
+                <ChevronRight size={14} className="shrink-0 text-ink-faint md:hidden" />
+              </NavLink>
+            </li>
+          ))}
+        </ul>
 
-          {/* Le thème contrasté est neutre par construction : teinte et intensité
-              n'y produiraient rien, seule la luminosité a un effet. */}
-          <AppearanceControls
-            appearance={appearance}
-            keys={theme === 'dark-contrast' ? ['lift'] : ['hue', 'tint', 'lift']}
-          />
-        </CardBody>
-      </Card>
+        {/* Sans repère de version, « je ne vois pas la correction » ne se tranche pas :
+            rien à l'écran ne dit quelle version tourne réellement. */}
+        <p className="mt-4 px-2.5 text-[0.6875rem] text-ink-faint">
+          Version installée du{' '}
+          <time dateTime={__BUILD_TIME__}>{new Date(__BUILD_TIME__).toLocaleString('fr-FR')}</time>
+        </p>
+      </nav>
 
-      {/* Carte à part : la palette de code ne touche à rien d'autre que le code, et
-          la mélanger aux réglages de surfaces laisserait croire l'inverse. */}
-      <Card>
-        <CardHeader
-          title="Coloration syntaxique"
-          description="S'applique au code du fil, aux appels d'outils, aux diffs et à l'éditeur."
-          icon={<Code size={16} />}
-        />
-        <CardBody>
-          <SyntaxThemeControls />
-        </CardBody>
-      </Card>
-
-      {/* Sans repère de version, « je ne vois pas la correction » ne se tranche pas :
-          rien à l'écran ne dit quelle version tourne réellement. */}
-      <p className="px-1 text-[0.6875rem] text-ink-faint">
-        Version installée du{' '}
-        <time dateTime={__BUILD_TIME__}>
-          {new Date(__BUILD_TIME__).toLocaleString('fr-FR')}
-        </time>
-      </p>
+      <div className={cx('min-w-0 flex-1', onIndex && 'hidden md:block')}>
+        {/* Sur grand écran, arriver sur `/settings` sans section afficherait une colonne
+            vide : la première prend la main. La redirection est conditionnée à la
+            largeur réelle et non à une classe `hidden` : un élément caché en CSS reste
+            monté, et la liste du téléphone se serait redirigée toute seule. */}
+        {onIndex ? wide ? <Navigate to="compte" replace /> : null : <Outlet />}
+      </div>
     </div>
+  )
+}
+
+/** Retour vers la liste, au doigt seulement : ailleurs la colonne est déjà visible. */
+export function SectionHeader({ title, description }: { title: string; description?: string }) {
+  return (
+    <header className="mb-4 flex flex-col gap-1">
+      <NavLink
+        to="/settings"
+        className="flex items-center gap-1 text-sm text-ink-faint hover:text-ink md:hidden"
+      >
+        <ChevronRight size={14} className="rotate-180" />
+        Réglages
+      </NavLink>
+      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      {description ? <p className="text-sm text-ink-faint">{description}</p> : null}
+    </header>
   )
 }

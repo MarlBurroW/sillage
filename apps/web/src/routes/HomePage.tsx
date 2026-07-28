@@ -17,7 +17,7 @@ export function HomePage() {
       title="Aucun projet"
       description="Un projet pointe sur un dossier de ta machine. C'est le point de départ de toute conversation."
       action={
-        <Link to="/settings/projects">
+        <Link to="/settings/projets">
           <Button>Créer un projet</Button>
         </Link>
       }

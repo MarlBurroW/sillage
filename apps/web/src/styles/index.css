@@ -453,6 +453,27 @@
 }
 
 /*
+ * Confort de lecture du fil.
+ *
+ * `.sg-reading` porte les trois réglages : la taille en `rem` pour rester indexée sur
+ * la préférence du navigateur, l'interligne sans unité, et une encre mélangée vers sa
+ * nuance atténuée plutôt qu'une opacité. Un texte translucide laisserait passer le
+ * fond, et un même message ne se lirait pas pareil dans une bulle et hors d'elle.
+ *
+ * Posé sur le texte des messages uniquement : agrandir la conversation ne doit pas
+ * déplacer la barre latérale ni la barre de saisie.
+ */
+.sg-reading {
+  font-size: calc(var(--sg-read-size) * 1rem);
+  line-height: var(--sg-read-leading);
+  color: color-mix(
+    in oklch,
+    var(--sg-ink),
+    var(--sg-ink-faint) calc(var(--sg-read-softness) * 100%)
+  );
+}
+
+/*
  * Surlignage de la recherche dans le fil. `::highlight()` colore des plages sans
  * toucher au document : insérer des balises casserait le rendu markdown et les blocs
  * de code. Les noms doivent rester en accord avec ThreadSearch.

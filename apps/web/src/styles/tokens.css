@@ -26,6 +26,17 @@
 :root[data-theme='light'] {
   --sg-hue: 275;
 
+  /*
+   * Confort de lecture du fil, pilotés depuis les réglages (`appearance.ts`).
+   * Déclarés une seule fois, hors des blocs de thème : ils ne dépendent pas du thème,
+   * et `--sg-read-ink` se recompose tout seul puisqu'il part de jetons qui, eux, en
+   * dépendent.
+   */
+  --sg-read-size: 0.9375;
+  --sg-read-leading: 1.65;
+  --sg-read-softness: 0;
+
+
   --sg-canvas: oklch(calc(0.975 + var(--sg-lift)) calc(0.016 * var(--sg-tint)) var(--sg-hue));
   --sg-surface: oklch(calc(0.995 + var(--sg-lift)) calc(0.007 * var(--sg-tint)) var(--sg-hue));
   --sg-surface-high: oklch(calc(0.955 + var(--sg-lift)) calc(0.022 * var(--sg-tint)) var(--sg-hue));
