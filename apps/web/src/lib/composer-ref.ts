@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 /**
  * Chemins envoyés de l'explorateur vers la barre de saisie.
@@ -26,4 +26,37 @@ export function useComposerReferences(onReference: Listener): void {
       listeners.delete(onReference)
     }
   }, [onReference])
+}
+
+/**
+ * Fichiers déposés sur la conversation.
+ *
+ * Même canal et mêmes raisons que les chemins : le geste part du fil, où la barre de
+ * saisie n'est pas, et c'est elle qui sait téléverser. Déposer deux fois le même
+ * fichier doit produire deux pièces jointes.
+ */
+type FileListener = (files: File[]) => void
+
+const fileListeners = new Set<FileListener>()
+
+export function dropInComposer(files: File[]): void {
+  for (const listener of fileListeners) listener(files)
+}
+
+/**
+ * L'abonnement est posé une fois, mais appelle toujours la dernière version reçue :
+ * le traitement d'un dépôt lit les pièces jointes déjà présentes, et une fonction
+ * capturée au montage en compterait un nombre périmé.
+ */
+export function useComposerDrops(onDrop: FileListener): void {
+  const latest = useRef(onDrop)
+  latest.current = onDrop
+
+  useEffect(() => {
+    const listener: FileListener = (files) => latest.current(files)
+    fileListeners.add(listener)
+    return () => {
+      fileListeners.delete(listener)
+    }
+  }, [])
 }

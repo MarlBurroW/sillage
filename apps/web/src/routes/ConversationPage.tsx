@@ -45,6 +45,7 @@ import {
   useAllConversations,
   useConversation,
 } from '../lib/conversations'
+import { useFileDrop } from '../lib/file-drop'
 import { FileLinkContext } from '../lib/file-links'
 import { clearSubAgent, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useCurrentUser } from '../lib/session'
@@ -70,6 +71,21 @@ const STICKY_THRESHOLD_PX = 120
 
 /** Doit couvrir l'animation `sg-flash-turn`, sinon l'anneau est coupé net. */
 const FLASH_DURATION_MS = 1500
+
+/**
+ * Ramène le fil tout en bas.
+ *
+ * La position visée est calculée plutôt que laissée au rognage d'un `scrollTop` trop
+ * grand, et reposée à la frame suivante : la hauteur du fil bouge encore après le saut,
+ * le temps que les blocs de code et les images se mettent en place, et viser une hauteur
+ * périmée laisse le fil arrêté avant sa fin.
+ */
+function scrollToBottom(node: HTMLElement): void {
+  node.scrollTop = node.scrollHeight - node.clientHeight
+  requestAnimationFrame(() => {
+    node.scrollTop = node.scrollHeight - node.clientHeight
+  })
+}
 
 export function ConversationPage() {
   const { conversationId } = useParams()
@@ -122,6 +138,10 @@ export function ConversationPage() {
   const activity = describeActivity(stream.state)
   const sidebarHidden = useSidebarHidden()
   const panel = usePanelPresence()
+  // Le fil entier accepte les fichiers, pas seulement la barre de saisie : c'est sur la
+  // conversation qu'on lâche une capture d'écran, et viser un champ de 40 pixels de haut
+  // au doigt ou à la souris n'a rien d'évident.
+  const drop = useFileDrop(conversation !== undefined && conversation.userId === user?.id)
 
   /**
    * Tours dont la région croise la zone affichée. La région d'un tour va de son
@@ -289,7 +309,7 @@ export function ConversationPage() {
   useLayoutEffect(() => {
     if (!stuckToBottom) return
     const node = scroller.current
-    if (node) node.scrollTop = node.scrollHeight
+    if (node) scrollToBottom(node)
   }, [stream.state.items, stream.state.lastSeq, stuckToBottom])
 
   // Le contenu qui grandit déplace les tours : la réglette doit suivre, y compris
@@ -304,7 +324,7 @@ export function ConversationPage() {
 
     const stick = () => {
       const node = scroller.current
-      if (stuckToBottom && node) node.scrollTop = node.scrollHeight
+      if (stuckToBottom && node) scrollToBottom(node)
     }
     viewport.addEventListener('resize', stick)
     return () => viewport.removeEventListener('resize', stick)
@@ -411,7 +431,21 @@ export function ConversationPage() {
           // visuel. Un calcul local reproduirait ce que la coque sait déjà.
           '@container relative flex h-full min-w-0 flex-1 flex-col pb-safe',
         )}
+        {...drop.handlers}
       >
+        {/* Voile de dépôt, en surimpression et sans capter le pointeur : intercaler une
+            couche cliquable interromprait le glissement qu'elle annonce. */}
+        {drop.dragging ? (
+          <div
+            className={cx(
+              'pointer-events-none absolute inset-2 z-30 flex items-center justify-center',
+              'rounded-xl border-2 border-dashed border-accent bg-canvas/80 text-sm text-accent',
+            )}
+          >
+            Déposer pour joindre au message
+          </div>
+        ) : null}
+
         <header
           className={cx(
             'surface sticky top-0 z-10 flex shrink-0 items-center gap-3',
@@ -671,7 +705,7 @@ export function ConversationPage() {
                 type="button"
                 onClick={() => {
                   const node = scroller.current
-                  if (node) node.scrollTop = node.scrollHeight
+                  if (node) scrollToBottom(node)
                   setStuckToBottom(true)
                 }}
                 className={cx(
