@@ -502,6 +502,15 @@ jusqu'au journal. L'option `forwardSubagentText` est activée : sans elle le SDK
 transmet que leurs appels d'outils, de quoi faire battre un compteur mais pas de quoi
 rendre leur fil, ni raisonnement ni messages intermédiaires.
 
+Le transcript relu sur disque les range à part, dans
+`<sessionId>/subagents/agent-<agentId>.jsonl`, sans y répéter l'appel d'origine : le lien
+passe par l'`agentId` que le transcript principal joint au résultat de l'appel `Task`.
+L'import relit ces fichiers et fusionne leurs événements par horodatage. Ils ne portent
+ni frontière de tour ni compaction : un sous-agent travaille *dans* le tour de son
+parent, il n'en ouvre pas. À la resynchronisation, le découpage au point commun ne leur
+convient pas, leur chronologie étant la leur : c'est entrée par entrée, sur l'`uuid`,
+qu'on écarte ce que le journal porte déjà.
+
 ---
 
 ## 7. Adaptateur Codex
@@ -2102,9 +2111,7 @@ Ils sont peu nombreux et aucun ne bloque le lot 0 ou le lot 1.
 0. **Sous-agents côté Codex.** Le runner Codex câble `parentToolCallId` à `null` : les
    sous-agents y sont donc invisibles, bandeau et onglet restant vides. L'app-server a
    pourtant de quoi les rattacher (`thread_spawn` avec `parent_thread_id`, item
-   `subAgentActivity`), non exploité. Le transcript Claude relu sur disque a le même
-   trou : les sidechains vivent dans `<session>/subagents/agent-*.jsonl`, rattachables
-   par le `agentId` que porte le `toolUseResult` de l'appel `Task`.
+   `subAgentActivity`), non exploité.
 
 2. **Steering.** Livré côté Codex, voir section 12.3. Claude n'a pas d'équivalent, donc
    le bouton n'apparaît que sur les conversations Codex.

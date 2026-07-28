@@ -12,6 +12,7 @@ import {
 import type { AgentRegistry } from '../../agents/registry.js'
 import {
   TRANSCRIPT_RAW_FORMAT,
+  readSubAgentTranscripts,
   readTranscript,
   translateTranscript,
   type TranslatedEvent,
@@ -129,7 +130,8 @@ export function registerClaudeSessionRoutes(
       throw notFound('Aucun transcript pour cette session dans le dossier du projet.')
     }
 
-    const translated = translateTranscript(entries, project.workspacePath)
+    const sidechains = await readSubAgentTranscripts(project.workspacePath, sessionId, entries)
+    const translated = translateTranscript(entries, project.workspacePath, sidechains)
     const info =
       (await getSessionInfo(sessionId, { dir: project.workspacePath }).catch(() => null)) ?? null
     const firstPrompt = translated.events.find(
@@ -236,7 +238,19 @@ export function registerClaudeSessionRoutes(
     }
     if (after.length === 0) return { imported: 0 }
 
-    const events = translateTranscript(after, cwd).events.filter((item) => {
+    // Les fils de sous-agents ne se découpent pas au point commun : ils vivent dans
+    // leurs propres fichiers, avec leur propre chronologie. C'est donc entrée par
+    // entrée qu'on écarte ce que le journal porte déjà.
+    const sidechains = await readSubAgentTranscripts(cwd, conversation.agentSessionId, entries)
+    for (const [toolCallId, sideEntries] of sidechains) {
+      const fresh = sideEntries.filter(
+        (entry) => typeof entry.uuid !== 'string' || !anchors.uuids.has(entry.uuid),
+      )
+      if (fresh.length > 0) sidechains.set(toolCallId, fresh)
+      else sidechains.delete(toolCallId)
+    }
+
+    const events = translateTranscript(after, cwd, sidechains).events.filter((item) => {
       // Un tour interrompu peut laisser son résultat d'outil après le point commun
       // alors que le flux vivant l'a déjà journalisé.
       if (item.event.type === 'tool.completed' || item.event.type === 'file.edited') {
