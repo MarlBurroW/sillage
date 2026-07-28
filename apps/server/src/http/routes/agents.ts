@@ -13,6 +13,24 @@ export function registerAgentRoutes(app: FastifyInstance, registry: AgentRegistr
   }
 
   /**
+   * Présence et version des CLI, tous agents confondus.
+   *
+   * Sillage ne transporte plus les binaires : ils viennent du système, donc l'écran doit
+   * pouvoir dire lequel manque et pourquoi plutôt que de proposer un agent que le serveur
+   * échouerait à lancer. `?refresh=1` force la sonde, pour le bouton de rafraîchissement
+   * après une installation faite à côté.
+   */
+  app.get('/api/agents', async (request) => {
+    requireUser(request)
+    const force = (request.query as { refresh?: string }).refresh === '1'
+
+    // En parallèle : chaque sonde absente coûte une résolution de PATH, chaque sonde
+    // présente un lancement de process, et les faire à la queue leu leu ferait attendre
+    // l'écran pour rien.
+    return { agents: await Promise.all(registry.all().map((a) => a.cli.describe(force))) }
+  })
+
+  /**
    * Consommation du compte. Lue à la demande plutôt que poussée : chaque lecture
    * démarre un process CLI, et la valeur n'intéresse que le moment où on l'ouvre.
    * `?refresh=1` court-circuite le cache, pour le bouton de rafraîchissement.

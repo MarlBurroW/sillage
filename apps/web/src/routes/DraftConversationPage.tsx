@@ -12,6 +12,7 @@ import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { Banner, cx } from '../components/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
+import { useAgentAvailability, unavailableReason, versionMismatch } from '../lib/agents'
 import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
@@ -55,7 +56,23 @@ export function DraftConversationPage() {
     : (conversations?.find((c) => c.projectId === projectId)?.agent ?? 'claude')
 
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
-  const agent = chosenAgent ?? suggested
+  const { data: availability } = useAgentAvailability()
+
+  // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
+  // une carte grisée, et l'envoi resterait possible puisque le grisage ne bloque que le
+  // clic : le CLI par défaut est « claude » ou celui du dernier fil du projet, deux
+  // valeurs qui ne savent rien de ce qui est réellement installé.
+  //
+  // Un choix explicite n'est jamais réécrit, lui : ni le clic de l'utilisateur, ni le
+  // `?agent=` de l'URL. Basculer sous les doigts de quelqu'un qui vient de désigner un
+  // CLI serait pire que de le laisser voir qu'il manque.
+  const installed = (kind: AgentKind) =>
+    availability?.agents.find((a) => a.agent === kind)?.installed !== false
+  const fallback = availability?.agents.find((a) => a.installed)?.agent
+  const agent =
+    chosenAgent ?? (requested.success || installed(suggested) ? suggested : (fallback ?? suggested))
+
+  const blocked = unavailableReason(availability?.agents.find((a) => a.agent === agent))
 
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const [worktreeId, setWorktreeId] = useState<string | null>(null)
@@ -135,18 +152,28 @@ export function DraftConversationPage() {
             <div role="radiogroup" aria-label="CLI" className="grid gap-2 sm:grid-cols-2">
               {AGENTS.map((option) => {
                 const selected = option.value === agent
+                const entry = availability?.agents.find((a) => a.agent === option.value)
+                // Indisponible seulement quand le serveur l'a dit. Tant que la sonde n'a
+                // pas répondu, la carte reste active : griser par défaut ferait clignoter
+                // le formulaire à chaque ouverture, et bloquerait un choix valide si la
+                // route échouait.
+                const unavailable = unavailableReason(entry)
+                const mismatch = versionMismatch(entry)
                 return (
                   <button
                     key={option.value}
                     type="button"
                     role="radio"
                     aria-checked={selected}
+                    disabled={unavailable !== null}
                     onClick={() => setChosenAgent(option.value)}
                     className={cx(
                       'flex flex-col gap-2 rounded-lg border p-3 text-left transition-colors',
-                      selected
-                        ? 'border-accent bg-accent-wash'
-                        : 'border-line hover:border-line-strong hover:bg-surface-high',
+                      unavailable
+                        ? 'cursor-not-allowed border-line bg-surface-high opacity-60'
+                        : selected
+                          ? 'border-accent bg-accent-wash'
+                          : 'border-line hover:border-line-strong hover:bg-surface-high',
                     )}
                   >
                     <span className="flex items-center gap-2">
@@ -165,11 +192,24 @@ export function DraftConversationPage() {
                         {selected ? <Check size={16} /> : null}
                       </span>
                     </span>
-                    <span className="text-xs leading-snug text-ink-faint">{option.blurb}</span>
+                    {/* La raison remplace l'accroche : sur une carte qu'on ne peut pas
+                        choisir, vanter le CLI passe après le fait de dire pourquoi. */}
+                    <span className="text-xs leading-snug text-ink-faint">
+                      {unavailable ?? option.blurb}
+                    </span>
+                    {/* L'écart de version n'empêche rien : il s'ajoute, il ne remplace
+                        pas, et ne grise pas la carte. */}
+                    {mismatch ? (
+                      <span className="text-xs leading-snug text-caution">{mismatch}</span>
+                    ) : null}
                   </button>
                 )
               })}
             </div>
+            {/* Le cas où aucun CLI n'est installé, et celui d'un `?agent=` qui en désigne
+                un absent : les cartes seules laisseraient l'écran sans explication de ce
+                que la barre de saisie refuse. */}
+            {blocked ? <Banner>{blocked}</Banner> : null}
           </fieldset>
 
           {projectId ? (
@@ -242,7 +282,9 @@ export function DraftConversationPage() {
         draftKey={`new:${projectId ?? ''}`}
         config={effective}
         status="idle"
-        disabled={createConversation.isPending}
+        // Un CLI absent ne se rattrape pas côté serveur : le tour échouerait après
+        // création de la conversation, laissant un fil vide et un message perdu.
+        disabled={createConversation.isPending || blocked !== null}
         onSend={send}
         onInterrupt={() => {}}
         onConfigChange={setConfig}

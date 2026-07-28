@@ -14,6 +14,7 @@ import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
+import { CliBinary } from '../cli-binary.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
 import { describeEdit } from './file-edits.js'
@@ -41,9 +42,11 @@ export class CodexAdapter implements AgentAdapter {
 
   private readonly catalog: CodexModelCatalog
   private readonly usageReader: CodexUsageReader
+  readonly cli: CliBinary
 
   constructor(config: Config) {
     this.binary = config.agents.codex.binary
+    this.cli = new CliBinary('codex', this.binary, config.agents.codex.enabled)
     this.catalog = new CodexModelCatalog(this.binary)
     this.usageReader = new CodexUsageReader(this.binary)
   }

@@ -435,6 +435,35 @@ export interface AgentModelsDto {
   fetchedAt: number
 }
 
+/**
+ * Ce que Sillage trouve d'un CLI sur la machine, pour un agent donné.
+ *
+ * L'écran s'en sert pour ne pas proposer un agent que le serveur ne saurait pas lancer :
+ * le CLI n'est plus embarqué dans la release, donc son absence est un état normal et
+ * doit se lire, pas se découvrir à l'échec du premier tour.
+ *
+ * `version` peut être null sur un CLI pourtant présent : un binaire qui ne répond pas à
+ * `--version` reste utilisable, et le dire introuvable serait faux.
+ */
+export interface AgentAvailabilityDto {
+  agent: AgentKind
+  /** Nom ou chemin déclaré en configuration, à montrer quand la résolution échoue. */
+  binary: string
+  /** Faux quand la configuration désactive l'agent : rien n'a alors été sondé. */
+  enabled: boolean
+  installed: boolean
+  /** Chemin absolu réellement lancé ; null quand introuvable. */
+  path: string | null
+  version: string | null
+  /** Pourquoi l'agent est indisponible ; null quand il l'est. */
+  reason: 'disabled' | 'not_on_path' | 'not_executable' | null
+}
+
+/** Réponse de `/api/agents`. */
+export interface AgentAvailabilityListDto {
+  agents: AgentAvailabilityDto[]
+}
+
 // Explorateur de dossiers
 
 export const browseQuerySchema = z.object({
