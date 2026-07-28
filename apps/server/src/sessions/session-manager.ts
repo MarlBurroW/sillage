@@ -51,6 +51,11 @@ interface ManagedRunner {
    * lui. Une conversation rechargée après un redémarrage n'en a plus aucun.
    */
   background: number
+  /**
+   * Boucles armées, telles que le dernier `loops.updated` les décrit. En mémoire pour
+   * la même raison que `background` : elles ne survivent pas au process CLI.
+   */
+  loops: number
 }
 
 /** Fenêtre de déduplication des envois (invariant I5). Voir sendMessage(). */
@@ -247,12 +252,18 @@ export class SessionManager {
       status,
       warm,
       background: warm ? this.backgroundCount(conversationId) : 0,
+      loops: warm ? this.loopCount(conversationId) : 0,
     })
   }
 
   /** Combien de travaux de fond tournent pour cette conversation, à l'instant. */
   backgroundCount(conversationId: string): number {
     return this.runners.get(conversationId)?.background ?? 0
+  }
+
+  /** Combien de boucles sont armées pour cette conversation, à l'instant. */
+  loopCount(conversationId: string): number {
+    return this.runners.get(conversationId)?.loops ?? 0
   }
 
   /**
@@ -438,6 +449,15 @@ export class SessionManager {
             this.broadcastStatus(conversationId, managed.status, true)
           }
         }
+        if (event.type === 'loops.updated') {
+          // Même partage des rôles que pour les travaux de fond : le fil ouvert replie
+          // le journal, la sidebar n'a que le statut.
+          const managed = this.runners.get(conversationId)
+          if (managed) {
+            managed.loops = event.loops.length
+            this.broadcastStatus(conversationId, managed.status, true)
+          }
+        }
         if (event.type === 'turn.completed') {
           // Le CLI ne résume la session qu'une fois le tour fini : c'est le premier
           // moment où un titre utile existe.
@@ -572,6 +592,7 @@ export class SessionManager {
       status: 'idle',
       idleTimer: null,
       background: 0,
+      loops: 0,
     })
 
     try {

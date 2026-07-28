@@ -6,6 +6,7 @@ import {
   type CanUseTool,
   type ElicitationRequest,
   type ElicitationResult,
+  type HookCallback,
   type PermissionResult,
   type Query,
   type SDKMessage,
@@ -172,6 +173,11 @@ export class ClaudeRunner implements AgentRunner {
         pathToClaudeCodeExecutable: this.ctx.binary,
         canUseTool: this.handleToolRequest,
         onElicitation: this.handleElicitation,
+        // Seul canal par lequel le CLI livre les tâches planifiées de la session. Ni
+        // le flux ni le canal de contrôle n'en portent l'état : `CronList` n'existe
+        // que comme outil du modèle, et aucun message ne joue pour les boucles le rôle
+        // que `background_tasks_changed` joue pour le travail de fond.
+        hooks: { Stop: [{ hooks: [this.handleStop] }] },
         stderr: (data) => {
           // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
           // perdre rend tout diagnostic impossible.
@@ -185,6 +191,9 @@ export class ClaudeRunner implements AgentRunner {
     // sans quoi une relecture du journal garderait allumés les travaux du process
     // précédent, qui sont morts avec lui.
     this.ctx.emit({ type: 'background.updated', tasks: [] })
+    // Même raison pour les boucles, qui meurent elles aussi avec le process. Le hook
+    // les rétablira à la fin du premier tour si le CLI en a restauré à la reprise.
+    this.ctx.emit({ type: 'loops.updated', loops: [] })
 
     // Consommé en tâche de fond : le runner survit à la requête HTTP qui l'a créé.
     void this.consume()
@@ -456,7 +465,12 @@ export class ClaudeRunner implements AgentRunner {
         // Les messages user émis par le CLI portent les résultats d'outils. Le message
         // saisi par l'utilisateur, lui, est journalisé par send().
         const content = message.message.content
-        if (typeof content === 'string') return
+        if (typeof content === 'string') {
+          // Reste le texte nu, que ni l'un ni l'autre ne produit : c'est une consigne
+          // que le CLI se réinjecte, typiquement une boucle qui vient d'échoir.
+          this.ctx.emit({ type: 'prompt.injected', text: content }, message)
+          return
+        }
 
         for (const block of content) {
           if (block.type !== 'tool_result') continue
@@ -693,6 +707,30 @@ export class ClaudeRunner implements AgentRunner {
 
   answerQuestion(requestId: string, answer: QuestionAnswer): boolean {
     return this.interactions.resolveQuestion(requestId, answer)
+  }
+
+  /**
+   * Observateur pur : il relève les boucles armées et rend la main sans rien décider.
+   *
+   * La cadence est celle des fins de tour, ce qui suffit ici : une tâche planifiée ne
+   * tire qu'entre deux tours, jamais pendant. Un relevé par fin de tour voit donc tout
+   * ce qui peut changer, au moment où ça change.
+   *
+   * Champ défini plutôt que méthode : le SDK appelle la référence telle quelle.
+   */
+  private readonly handleStop: HookCallback = async (input) => {
+    if (input.hook_event_name === 'Stop') {
+      this.ctx.emit({
+        type: 'loops.updated',
+        loops: (input.session_crons ?? []).map((cron) => ({
+          id: cron.id,
+          schedule: cron.schedule,
+          recurring: cron.recurring,
+          prompt: cron.prompt,
+        })),
+      })
+    }
+    return { continue: true }
   }
 
   /**

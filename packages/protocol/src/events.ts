@@ -124,6 +124,27 @@ export const backgroundTaskSchema = z.object({
 })
 export type BackgroundTask = z.infer<typeof backgroundTaskSchema>
 
+/**
+ * Une tâche planifiée qui rouvrira la session d'elle-même : `/loop`, qu'il tourne à
+ * intervalle fixe ou à cadence choisie par l'agent. Les deux passent par le même
+ * registre côté CLI, le second s'y inscrivant comme tâche à tir unique réarmée à
+ * chaque tour.
+ *
+ * `schedule` est une expression cron à cinq champs, interprétée dans le fuseau du
+ * serveur. Elle ne donne pas la date du prochain tir : le CLI ajoute une gigue qui va
+ * jusqu'à la moitié de l'intervalle, donc l'affichage montre la cadence et le dernier
+ * réveil observé plutôt qu'un compte à rebours qui mentirait.
+ *
+ * `prompt` est tronqué à 1000 caractères par le CLI, avec un marqueur en fin de chaîne.
+ */
+export const loopSchema = z.object({
+  id: z.string(),
+  schedule: z.string(),
+  recurring: z.boolean(),
+  prompt: z.string(),
+})
+export type Loop = z.infer<typeof loopSchema>
+
 export const sillageEventSchema = z.discriminatedUnion('type', [
   // Cycle de vie
   z.object({
@@ -390,6 +411,36 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('background.updated'),
     tasks: z.array(backgroundTaskSchema),
+  }),
+
+  /**
+   * Les boucles armées pour cette session, relevées à la fin de chaque tour.
+   *
+   * Même sémantique de remplacement que `background.updated`, et pour une raison plus
+   * forte encore : le CLI n'annonce ni la création ni la fin d'une boucle, il répond
+   * seulement quand on lui demande la liste. Une boucle expirée disparaît donc sans
+   * rien émettre, et seul le relevé suivant la fait tomber.
+   *
+   * Sans ça une conversation qui se réveille toute seule est indiscernable d'une
+   * conversation terminée, et le tour qu'elle ouvre s'affiche comme si l'utilisateur
+   * l'avait écrit.
+   */
+  z.object({
+    type: z.literal('loops.updated'),
+    loops: z.array(loopSchema),
+  }),
+
+  /**
+   * Une consigne est entrée dans la session sans que Sillage l'ait envoyée : le CLI l'a
+   * réinjectée lui-même, une boucle arrivée à échéance étant le cas courant.
+   *
+   * Reconnue à ce que le CLI la livre en texte, là où les messages de Sillage sont
+   * toujours des blocs et ceux du CLI des résultats d'outils. C'est ce que compte le
+   * nombre d'itérations d'une boucle, faute de compteur côté CLI.
+   */
+  z.object({
+    type: z.literal('prompt.injected'),
+    text: z.string(),
   }),
 
   /**

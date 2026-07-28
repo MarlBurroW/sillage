@@ -80,6 +80,7 @@ class Connection {
         status,
         warm: this.sessions.isWarm(conversationId),
         background: this.sessions.backgroundCount(conversationId),
+        loops: this.sessions.loopCount(conversationId),
       })
     }
 
@@ -119,6 +120,7 @@ class Connection {
     status: ConversationStatus,
     warm: boolean,
     background: number,
+    loops: number,
   ): void {
     if (
       !this.subscriptions.has(conversationId) &&
@@ -126,7 +128,7 @@ class Connection {
     ) {
       return
     }
-    this.send({ t: 'status', conversationId, status, warm, background })
+    this.send({ t: 'status', conversationId, status, warm, background, loops })
   }
 
   notifyTitle(conversationId: string, title: string): void {
@@ -188,14 +190,16 @@ export async function registerWebSocketHub(
       status,
       warm,
       background,
+      loops,
     }: {
       conversationId: string
       status: ConversationStatus
       warm: boolean
       background: number
+      loops: number
     }) => {
       for (const connection of connections) {
-        connection.notifyStatus(conversationId, status, warm, background)
+        connection.notifyStatus(conversationId, status, warm, background, loops)
       }
     },
   )

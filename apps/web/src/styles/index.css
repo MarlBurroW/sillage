@@ -28,6 +28,7 @@
   --color-positive: var(--sg-positive);
   --color-caution: var(--sg-caution);
   --color-critical: var(--sg-critical);
+  --color-loop: var(--sg-loop);
 }
 
 /* Valeurs littérales : ni thémables ni sujettes à l'auto-référence. */
