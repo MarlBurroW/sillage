@@ -2,6 +2,7 @@ import type {
   AgentCapabilities,
   AgentConfig,
   AgentKind,
+  AgentModelsDto,
   AgentUsage,
   EditDiffDto,
 } from '@sillage/protocol'
@@ -71,7 +72,7 @@ export interface AgentAdapter {
    */
   fork(target: ForkTarget, cut: unknown): Promise<string>
   /** Payload de la route `/api/agents/:agent/models`, lu sur le CLI installé. */
-  models(): Promise<object>
+  models(): Promise<AgentModelsDto>
   usage(force: boolean): Promise<AgentUsage>
   /**
    * Remplace les `CLI_DEFAULT` d'une configuration par ce que le CLI annonce

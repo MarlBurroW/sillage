@@ -35,7 +35,7 @@ import { TurnActivity } from '../components/chat/TurnActivity'
 import { TurnNav } from '../components/chat/TurnNav'
 import { UsagePanel } from '../components/chat/UsagePanel'
 import { UsageSummary } from '../components/chat/UsageSummary'
-import { useClaudeModels } from '../lib/agents'
+import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
 import { Banner, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, cx } from '../components/ui'
 import { api } from '../lib/api'
@@ -84,9 +84,8 @@ export function ConversationPage() {
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
   // Le catalogue porte la nature du compte : elle décide si un montant a un sens.
   // Comme tous les hooks, il doit rester avant le premier retour anticipé. La sonde
-  // démarre le CLI Claude côté serveur : elle ne part que pour une conversation Claude,
-  // et le mode de facturation d'un compte Anthropic ne dit rien d'un coût Codex.
-  const { data: catalog } = useClaudeModels(conversation?.agent === 'claude')
+  // démarre le CLI côté serveur : elle ne part que pour l'agent de la conversation.
+  const { data: catalog } = useAgentModels(conversation?.agent ?? 'claude', Boolean(conversation))
   const { data: worktrees } = useWorktrees(conversation?.projectId)
   // Déjà chargée pour la sidebar : la provenance d'une branche s'y trouve sans requête
   // supplémentaire.
@@ -461,7 +460,7 @@ export function ConversationPage() {
               {/* Tout vient du fold : le journal est la seule source d'affichage (I2),
                   et lui seul porte le détail des tokens de cache. */}
               <UsageSummary
-                account={conversation.agent === 'claude' ? catalog?.account : null}
+                account={catalog?.account}
                 rateLimit={stream.state.rateLimit}
                 costUsd={stream.state.costUsd}
                 inputTokens={stream.state.inputTokens}

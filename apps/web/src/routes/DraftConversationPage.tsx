@@ -8,7 +8,7 @@ import {
   type AgentConfig,
   type AgentKind,
 } from '@sillage/protocol'
-import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
+import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { Banner, cx } from '../components/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
@@ -18,25 +18,8 @@ import { useProjects } from '../lib/projects'
 import { useSidebarHidden } from '../lib/sidebar'
 import { uuidv4 } from '../lib/uuid'
 
-/**
- * Ce que chaque CLI apporte, en une phrase.
- *
- * Descriptif et non promotionnel : le choix se fait sur ce qui distingue réellement les
- * deux, pas sur des adjectifs. Les deux sont pilotés par le même journal et la même
- * interface, la différence est ailleurs.
- */
-const AGENTS: { value: AgentKind; vendor: string; blurb: string }[] = [
-  {
-    value: 'claude',
-    vendor: 'Anthropic',
-    blurb: 'Sous-agents, mode plan, permissions demandées outil par outil.',
-  },
-  {
-    value: 'codex',
-    vendor: 'OpenAI',
-    blurb: 'Mode plan, exécution en bac à sable, approbations groupées.',
-  },
-]
+/** Les cartes de choix suivent l'enum du protocole : un CLI ajouté apparaît seul. */
+const AGENTS = agentKindSchema.options.map((value) => ({ value, ...AGENT_META[value] }))
 
 /** Jour et heure courts : assez pour situer une session, sans manger la ligne. */
 function formatDay(ts: number): string {
