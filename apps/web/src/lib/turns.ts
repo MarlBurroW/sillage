@@ -37,6 +37,9 @@ export function buildTurns(items: ChatItem[]): TurnMarker[] {
 
   for (const item of items) {
     if (item.kind !== 'message') continue
+    // Le rapport d'un sous-agent vit dans la carte de son appel, pas dans le fil :
+    // le citer comme réponse du tour renverrait vers un texte absent à l'ancre.
+    if (item.parentToolCallId) continue
 
     if (item.role === 'user') {
       turns.push({ id: item.id, user: excerpt(item), assistant: '' })
