@@ -4,7 +4,7 @@ import type {
   ClientRequest,
   InitializeParams,
   InitializeResponse,
-} from '@sillage/protocol/codex'
+} from '@sillage/codex-bindings'
 
 /**
  * Méthodes et paramètres tirés de l'union générée : un nom de méthode inexistant ou

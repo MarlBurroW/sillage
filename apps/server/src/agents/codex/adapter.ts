@@ -8,7 +8,7 @@ import {
   type CodexModelDto,
   type EditDiffDto,
 } from '@sillage/protocol'
-import type { CollaborationModeMask, ThreadForkResponse } from '@sillage/protocol/codex/v2'
+import type { CollaborationModeMask, ThreadForkResponse } from '@sillage/codex-bindings/v2'
 import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'

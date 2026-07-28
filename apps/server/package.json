@@ -19,6 +19,7 @@
     "@fastify/static": "^8.0.4",
     "@fastify/websocket": "^11.3.0",
     "@node-rs/argon2": "^2.0.2",
+    "@sillage/codex-bindings": "workspace:*",
     "@sillage/db": "workspace:*",
     "@sillage/protocol": "workspace:*",
     "better-sqlite3": "^11.8.1",

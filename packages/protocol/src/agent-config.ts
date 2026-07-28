@@ -1,7 +1,6 @@
 import { z } from 'zod'
-import type { ModeKind } from './codex/ModeKind'
-import type { AskForApproval } from './codex/v2/AskForApproval'
-import type { SandboxMode } from './codex/v2/SandboxMode'
+import type { ModeKind } from '@sillage/codex-bindings'
+import type { AskForApproval, SandboxMode } from '@sillage/codex-bindings/v2'
 
 /**
  * Réglages d'une conversation, par CLI.
@@ -34,7 +33,7 @@ export type ClaudeConfig = z.infer<typeof claudeConfigSchema>
 
 /**
  * Les valeurs Codex ci-dessous ne sont pas choisies par Sillage : elles doivent
- * refléter `packages/protocol/src/codex`, généré par le binaire installé. Les
+ * refléter `@sillage/codex-bindings`, généré par le binaire installé. Les
  * assertions de type en fin de fichier échouent à la compilation si elles divergent,
  * ce qui rend impossible une recopie approximative comme celle qui traînait ici.
  */

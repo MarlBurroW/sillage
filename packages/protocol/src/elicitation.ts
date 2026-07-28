@@ -1,7 +1,9 @@
 import { z } from 'zod'
-import type { McpElicitationPrimitiveSchema } from './codex/v2/McpElicitationPrimitiveSchema'
-import type { McpElicitationSchema } from './codex/v2/McpElicitationSchema'
-import type { McpServerElicitationAction } from './codex/v2/McpServerElicitationAction'
+import type {
+  McpElicitationPrimitiveSchema,
+  McpElicitationSchema,
+  McpServerElicitationAction,
+} from '@sillage/codex-bindings/v2'
 
 /**
  * Élicitations MCP : un serveur MCP réclame une saisie à l'utilisateur.

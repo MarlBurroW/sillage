@@ -4,15 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./codex": "./src/codex/index.ts",
-    "./codex/v2": "./src/codex/v2/index.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sillage/codex-bindings": "workspace:*",
     "zod": "^3.24.1"
   }
 }

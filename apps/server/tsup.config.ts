@@ -35,5 +35,5 @@ export default defineConfig({
   // Les modules natifs doivent rester externes, esbuild ne sait pas les embarquer.
   external: ['better-sqlite3', '@node-rs/argon2'],
   // Les paquets du monorepo n'exposent que du TypeScript : il faut les compiler ici.
-  noExternal: ['@sillage/db', '@sillage/protocol'],
+  noExternal: ['@sillage/codex-bindings', '@sillage/db', '@sillage/protocol'],
 })
