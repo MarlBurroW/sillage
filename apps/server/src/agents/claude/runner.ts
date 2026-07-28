@@ -133,6 +133,8 @@ export class ClaudeRunner implements AgentRunner {
   /** Identifiant natif, requis pour relire le résumé de session. */
   private sessionId: string | null = null
   private stopped = false
+  /** Vrai entre l'ouverture d'un tour et le `result` qui le referme. */
+  private turnOpen = false
   /** Suit les changements appliqués à chaud, contrairement à `ctx.config` qui est figé. */
   private config: ClaudeConfig
 
@@ -211,6 +213,7 @@ export class ClaudeRunner implements AgentRunner {
         this.ctx.setStatus('error')
       }
     } finally {
+      this.turnOpen = false
       this.interactions.expireAll()
     }
   }
@@ -229,7 +232,31 @@ export class ClaudeRunner implements AgentRunner {
     this.pendingEdits.set(toolCallId, { path, existed: fileExists(path) })
   }
 
+  /**
+   * Ouvre un tour s'il n'y en a pas déjà un.
+   *
+   * Claude Code n'annonce pas le début d'un tour, contrairement à Codex : le SDK émet
+   * `result` à chaque fin, mais rien à l'ouverture. Un tour que Sillage n'a pas
+   * déclenché (reprise de session, relance après un réglage appliqué à chaud) ne
+   * passait donc par aucun `setStatus('running')`, et la conversation restait `idle`
+   * en base pendant tout le travail. Le fil ouvert s'en sortait en repliant son
+   * journal, la liste des conversations n'a pas de journal et n'affichait rien.
+   */
+  private openTurn(): void {
+    if (this.turnOpen) return
+
+    this.turnOpen = true
+    this.ctx.emit({ type: 'turn.started' })
+    this.ctx.setStatus('running')
+  }
+
   private translate(message: SDKMessage): void {
+    // Tout ce que le CLI raconte de son travail vaut ouverture : ces trois types
+    // portent le texte de l'agent, ses appels d'outil et leurs résultats.
+    if (message.type === 'stream_event' || message.type === 'assistant' || message.type === 'user') {
+      this.openTurn()
+    }
+
     switch (message.type) {
       case 'system': {
         if (message.subtype === 'compact_boundary') {
@@ -476,6 +503,7 @@ export class ClaudeRunner implements AgentRunner {
           },
           message,
         )
+        this.turnOpen = false
         this.ctx.setStatus('idle')
         // Le contexte n'est connu qu'en interrogeant le CLI : le message `result`
         // n'en dit rien. Fait après coup pour ne pas retarder la fin du tour.
@@ -748,8 +776,7 @@ export class ClaudeRunner implements AgentRunner {
       blocks,
       parentToolCallId: null,
     })
-    this.ctx.emit({ type: 'turn.started' })
-    this.ctx.setStatus('running')
+    this.openTurn()
 
     this.input.push({
       type: 'user',
@@ -782,8 +809,7 @@ export class ClaudeRunner implements AgentRunner {
   async compact(): Promise<boolean> {
     if (!this.session) return false
 
-    this.ctx.emit({ type: 'turn.started' })
-    this.ctx.setStatus('running')
+    this.openTurn()
     this.input.push({
       type: 'user',
       message: { role: 'user', content: [{ type: 'text', text: '/compact' }] },
@@ -830,6 +856,7 @@ export class ClaudeRunner implements AgentRunner {
 
   async interrupt(): Promise<void> {
     await this.session?.interrupt()
+    this.turnOpen = false
     this.ctx.setStatus('idle')
   }
 
