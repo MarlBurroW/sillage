@@ -1,5 +1,6 @@
 import { ArrowUp, Brain, Compass, Paperclip, ShieldCheck, Square, Waypoints } from 'lucide-react'
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -22,6 +23,7 @@ import {
 } from '@sillage/protocol'
 import { codexEffortsFor, effortLevelsFor, useClaudeModels, useCodexModels } from '../../lib/agents'
 import type { ContextState } from '../../lib/chat-fold'
+import { useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
@@ -330,6 +332,31 @@ export function Composer({
       node.setSelectionRange(caret, caret)
     })
   }
+
+  /**
+   * Fichier référencé depuis l'explorateur.
+   *
+   * Ajouté en fin de texte et non au curseur : le geste part de l'autre colonne de la
+   * page, où le champ n'a pas le focus et où sa position d'insertion n'a plus de sens.
+   * Le chemin rejoint aussi les mentions retenues, comme s'il avait été choisi dans la
+   * liste : c'est bien un fichier du répertoire de travail, et Codex refuse une mention
+   * qui ne pointe nulle part.
+   */
+  const referenceFile = useCallback((path: string) => {
+    setMentioned((current) => new Set(current).add(path))
+    setText((current) => {
+      const separator = current.length === 0 || current.endsWith(' ') || current.endsWith('\n')
+      return `${current}${separator ? '' : ' '}@${path} `
+    })
+    requestAnimationFrame(() => {
+      const node = textarea.current
+      if (!node) return
+      node.focus()
+      node.setSelectionRange(node.value.length, node.value.length)
+    })
+  }, [])
+
+  useComposerReferences(referenceFile)
 
   const syncToken = (value: string, caret: number | null) => {
     setToken(mentionAt(value, caret ?? value.length))

@@ -187,6 +187,114 @@ export async function deleteEntry(root: string, relativePath: string): Promise<v
  * un lien vers la racine ferait boucler l'explorateur, et le suivre contournerait le
  * bornage au workspace.
  */
+/**
+ * Dossiers écartés de la recherche.
+ *
+ * Ils ne sont pas cachés de l'explorateur, où les déplier est un choix ; les traverser
+ * pour trouver un fichier est autre chose : `node_modules` seul pèse plus que tout le
+ * reste du dépôt réuni, et ses résultats ne sont jamais ceux qu'on cherche.
+ */
+const SEARCH_SKIP = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  'target',
+  'vendor',
+  '.next',
+  '.nuxt',
+  '.venv',
+  '__pycache__',
+  '.pnpm-store',
+  'coverage',
+])
+
+/** Au-delà, la liste ne se lit plus et la marche coûte plus qu'elle ne rapporte. */
+const SEARCH_MAX_RESULTS = 80
+const SEARCH_MAX_VISITED = 30_000
+
+/**
+ * Recherche un fichier par son nom dans tout le répertoire de travail.
+ *
+ * Sous-chaîne insensible à la casse et aux accents, pas de correspondance floue : sur
+ * une arborescence de projet, le flou remonte surtout du bruit, et on tape presque
+ * toujours un morceau exact du nom. Les correspondances sur le nom passent avant celles
+ * sur le chemin, et les plus courtes avant les plus longues, parce que `panel.ts` est
+ * plus probablement la cible que `panel-transition-helpers.ts`.
+ *
+ * La marche est bornée en largeur comme en profondeur d'exploration : un répertoire de
+ * travail peut être n'importe quoi, y compris un point de montage réseau.
+ */
+export async function searchEntries(
+  root: string,
+  query: string,
+): Promise<{ entries: TreeEntryDto[]; truncated: boolean }> {
+  const needle = fold(query)
+  const found: TreeEntryDto[] = []
+  const queue: string[] = ['']
+  let visited = 0
+  let truncated = false
+
+  while (queue.length > 0) {
+    const relative = queue.shift() as string
+
+    let entries
+    try {
+      entries = await readdir(resolveInside(root, relative), { withFileTypes: true })
+    } catch {
+      // Un dossier illisible (droits, lien cassé) n'interrompt pas la recherche : il
+      // n'est simplement pas exploré.
+      continue
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isFile()) continue
+
+      visited += 1
+      if (visited > SEARCH_MAX_VISITED) {
+        truncated = true
+        return { entries: rank(found, needle), truncated }
+      }
+
+      const path = relative ? `${relative}/${entry.name}` : entry.name
+
+      if (entry.isDirectory()) {
+        if (!SEARCH_SKIP.has(entry.name)) queue.push(path)
+        continue
+      }
+
+      if (!fold(path).includes(needle)) continue
+
+      found.push({ name: entry.name, path, isDirectory: false })
+      if (found.length >= SEARCH_MAX_RESULTS) {
+        truncated = true
+        return { entries: rank(found, needle), truncated }
+      }
+    }
+  }
+
+  return { entries: rank(found, needle), truncated }
+}
+
+/** Casse et accents retirés : chercher « recu » doit trouver « reçu ». */
+function fold(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+}
+
+function rank(entries: TreeEntryDto[], needle: string): TreeEntryDto[] {
+  return entries.sort((a, b) => {
+    const inNameA = fold(a.name).includes(needle)
+    const inNameB = fold(b.name).includes(needle)
+    if (inNameA !== inNameB) return inNameA ? -1 : 1
+    if (a.path.length !== b.path.length) return a.path.length - b.path.length
+    return a.path.localeCompare(b.path, 'fr')
+  })
+}
+
 export async function listDirectory(root: string, relativePath: string): Promise<TreeEntryDto[]> {
   const absolute = resolveInside(root, relativePath)
 

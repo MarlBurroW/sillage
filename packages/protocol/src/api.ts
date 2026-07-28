@@ -508,6 +508,20 @@ export interface TreeListingDto {
   versioned: boolean
 }
 
+export const treeSearchQuerySchema = z.object({
+  q: z.string().min(1).max(200),
+})
+
+export interface TreeSearchDto {
+  entries: TreeEntryDto[]
+  /**
+   * Vrai quand la marche s'est arrêtée avant d'avoir tout vu, faute de quoi une
+   * recherche sur un gros dépôt afficherait « aucun résultat » là où il y en avait
+   * simplement plus loin.
+   */
+  truncated: boolean
+}
+
 /**
  * Un nom d'entrée, et rien d'autre.
  *

@@ -1,14 +1,19 @@
 import {
+  AtSign,
   ChevronRight,
   FilePlus2,
+  FileSymlink,
   FolderPlus,
   Loader,
   MoreHorizontal,
   Pencil,
+  Search,
   Trash2,
+  X,
 } from 'lucide-react'
-import { useState, type DragEvent } from 'react'
+import { Fragment, useState, type DragEvent, type ReactNode } from 'react'
 import type { FileState, TreeEntryDto } from '@sillage/protocol'
+import { referenceInComposer } from '../../lib/composer-ref'
 import { openTab } from '../../lib/editor-tabs'
 import {
   parentOf,
@@ -18,8 +23,17 @@ import {
   useMoveEntry,
 } from '../../lib/entries'
 import { fileIconUrl } from '../../lib/file-icons'
-import { useTreeLevel } from '../../lib/tree'
-import { Menu, MenuItem, MenuSeparator, cx } from '../ui'
+import { useFileSearch, useTreeLevel } from '../../lib/tree'
+import {
+  ConfirmDialog,
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  cx,
+} from '../ui'
 
 /**
  * Couleur et lettre par état git, dans le vocabulaire de `git status`.
@@ -55,6 +69,9 @@ export function FileTree({
   onOpenFile: () => void
 }) {
   const [draft, setDraft] = useState<Draft | null>(null)
+  const [query, setQuery] = useState('')
+  /** Entrée dont la suppression est proposée : le geste est sans retour possible. */
+  const [pendingDelete, setPendingDelete] = useState<TreeEntryDto | null>(null)
   const create = useCreateEntry(conversationId)
   const move = useMoveEntry(conversationId)
   const remove = useDeleteEntry(conversationId)
@@ -79,22 +96,47 @@ export function FileTree({
       const to = toParent ? `${toParent}/${name}` : name
       if (to !== from) move.mutate({ from, to })
     },
-    onDelete: (path, isDirectory) => {
-      const what = isDirectory ? 'le dossier et tout son contenu' : 'le fichier'
-      if (confirm(`Supprimer ${what} « ${path} » ?`)) remove.mutate({ path })
-    },
+    onDelete: setPendingDelete,
   }
+
+  const searching = query.trim().length >= 2
 
   return (
     <div>
-      {error ? (
-        <p className="mx-2 mb-1 rounded border border-critical/40 bg-critical/12 px-2 py-1 text-xs text-critical">
-          {error instanceof Error ? error.message : 'Opération impossible.'}
-        </p>
-      ) : null}
+      <div className="flex items-center gap-1 px-2 pb-1.5">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            size={13}
+            className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-ink-faint"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setQuery('')
+            }}
+            placeholder="Chercher un fichier..."
+            aria-label="Chercher un fichier"
+            className={cx(
+              'h-7 w-full rounded-md border border-line bg-sunken pr-6 pl-7',
+              'text-[0.8125rem] text-ink placeholder:text-ink-faint',
+              'outline-none focus:border-accent',
+            )}
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Effacer la recherche"
+              className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 text-ink-faint hover:text-ink"
+            >
+              <X size={12} />
+            </button>
+          ) : null}
+        </div>
 
-      {/* Le dossier racine n'a pas de ligne à survoler : ses actions vivent ici. */}
-      <div className="flex items-center gap-0.5 px-2 pb-1">
+        {/* Le dossier racine n'a pas de ligne à survoler : ses actions vivent ici. */}
         <RootAction
           label="Nouveau fichier à la racine"
           icon={<FilePlus2 size={13} />}
@@ -107,8 +149,99 @@ export function FileTree({
         />
       </div>
 
-      <Level path="" depth={0} expanded actions={actions} />
+      {error ? (
+        <p className="mx-2 mb-1 rounded border border-critical/40 bg-critical/12 px-2 py-1 text-xs text-critical">
+          {error instanceof Error ? error.message : 'Opération impossible.'}
+        </p>
+      ) : null}
+
+      {/* La recherche remplace l'arborescence au lieu de la filtrer sur place : replier
+          et déplier des dossiers pour suivre un résultat ferait perdre le fil, et les
+          niveaux dépliés doivent être retrouvés intacts en effaçant la recherche. */}
+      {searching ? (
+        <SearchResults conversationId={conversationId} query={query} actions={actions} />
+      ) : (
+        <Level path="" depth={0} expanded actions={actions} />
+      )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingDelete(null)
+        }}
+        title={pendingDelete?.isDirectory ? 'Supprimer ce dossier ?' : 'Supprimer ce fichier ?'}
+        confirmLabel="Supprimer"
+        tone="critical"
+        onConfirm={() => {
+          if (pendingDelete) remove.mutate({ path: pendingDelete.path })
+          setPendingDelete(null)
+        }}
+      >
+        <p className="font-mono text-xs break-all text-ink">{pendingDelete?.path}</p>
+        <p>
+          {pendingDelete?.isDirectory
+            ? 'Le dossier et tout son contenu sont supprimés du disque.'
+            : 'Le fichier est supprimé du disque.'}{' '}
+          Rien ne passe par la corbeille : seul git peut le rendre, et seulement s'il
+          était déjà suivi.
+        </p>
+      </ConfirmDialog>
     </div>
+  )
+}
+
+/** Résultats plats : un chemin complet dit mieux d'où vient un fichier qu'une indentation. */
+function SearchResults({
+  conversationId,
+  query,
+  actions,
+}: {
+  conversationId: string
+  query: string
+  actions: Actions
+}) {
+  const { data, isPending, error } = useFileSearch(conversationId, query)
+
+  if (error) {
+    return (
+      <p className="px-2 py-1.5 text-xs text-critical">
+        {error instanceof Error ? error.message : 'Recherche impossible.'}
+      </p>
+    )
+  }
+
+  if (isPending) {
+    return (
+      <p className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-ink-faint">
+        <Loader size={11} className="animate-spin" />
+        Recherche...
+      </p>
+    )
+  }
+
+  if (data.entries.length === 0) {
+    return <p className="px-2 py-1.5 text-xs text-ink-faint">Aucun fichier de ce nom.</p>
+  }
+
+  return (
+    <ul>
+      {data.entries.map((entry) => (
+        <li key={entry.path}>
+          <EntryRow entry={entry} actions={actions}>
+            <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
+              <span className="truncate text-[0.8125rem] text-ink-soft">{entry.name}</span>
+              <span className="truncate text-[0.6875rem] text-ink-faint">{entry.path}</span>
+            </span>
+          </EntryRow>
+        </li>
+      ))}
+
+      {data.truncated ? (
+        <li className="px-2 py-1.5 text-[0.6875rem] text-ink-faint">
+          Liste tronquée : précise la recherche.
+        </li>
+      ) : null}
+    </ul>
   )
 }
 
@@ -148,7 +281,7 @@ interface Actions {
   onCreate: (parent: string, name: string, kind: 'file' | 'directory') => void
   onRename: (path: string, name: string) => void
   onMove: (from: string, toParent: string) => void
-  onDelete: (path: string, isDirectory: boolean) => void
+  onDelete: (entry: TreeEntryDto) => void
 }
 
 function Level({
@@ -218,6 +351,149 @@ function Level({
   )
 }
 
+/** Une action proposée sur une entrée, rendue dans les deux menus. */
+interface EntryAction {
+  key: string
+  icon: ReactNode
+  label: string
+  tone?: 'critical'
+  run: () => void
+}
+
+/**
+ * Les actions d'une entrée, en données plutôt qu'en éléments.
+ *
+ * Elles s'affichent à deux endroits, au clic droit et derrière les trois points, et
+ * les deux menus viennent de modules Radix distincts dont les éléments ne se
+ * partagent pas. Décrire les actions une fois et les rendre deux fois évite que les
+ * deux listes divergent.
+ */
+function entryActions(entry: TreeEntryDto, actions: Actions, expand: () => void): EntryAction[] {
+  const open = () => {
+    openTab(actions.conversationId, entry.path)
+    actions.onOpenFile()
+  }
+
+  return [
+    ...(entry.isDirectory
+      ? [
+          {
+            key: 'new-file',
+            icon: <FilePlus2 size={14} />,
+            label: 'Nouveau fichier',
+            run: () => {
+              expand()
+              actions.setDraft({ mode: 'create', parent: entry.path, kind: 'file' })
+            },
+          },
+          {
+            key: 'new-dir',
+            icon: <FolderPlus size={14} />,
+            label: 'Nouveau dossier',
+            run: () => {
+              expand()
+              actions.setDraft({ mode: 'create', parent: entry.path, kind: 'directory' })
+            },
+          },
+        ]
+      : [
+          {
+            key: 'open',
+            icon: <FileSymlink size={14} />,
+            label: "Ouvrir dans l'éditeur",
+            run: open,
+          },
+          {
+            key: 'reference',
+            icon: <AtSign size={14} />,
+            label: 'Référencer dans le prompt',
+            run: () => referenceInComposer(entry.path),
+          },
+        ]),
+    {
+      key: 'rename',
+      icon: <Pencil size={14} />,
+      label: 'Renommer',
+      run: () => actions.setDraft({ mode: 'rename', path: entry.path, name: entry.name }),
+    },
+    {
+      key: 'delete',
+      icon: <Trash2 size={14} />,
+      label: 'Supprimer',
+      tone: 'critical' as const,
+      run: () => actions.onDelete(entry),
+    },
+  ]
+}
+
+/** La séparation isole les créations du reste : elles n'agissent pas sur l'entrée visée. */
+function separatorAfter(entry: TreeEntryDto): string {
+  return entry.isDirectory ? 'new-dir' : 'reference'
+}
+
+/**
+ * Ligne d'un résultat de recherche.
+ *
+ * Plus simple qu'une ligne d'arborescence : ni chevron, ni glisser-déposer, ni
+ * décalage, puisqu'il n'y a pas de niveau à représenter.
+ */
+function EntryRow({
+  entry,
+  actions,
+  children,
+}: {
+  entry: TreeEntryDto
+  actions: Actions
+  children: ReactNode
+}) {
+  return (
+    <ContextMenu
+      trigger={
+        <button
+          type="button"
+          onDoubleClick={() => {
+            openTab(actions.conversationId, entry.path)
+            actions.onOpenFile()
+          }}
+          className={cx(
+            'flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left',
+            'transition-colors hover:bg-surface-high',
+          )}
+        >
+          <img src={fileIconUrl(entry.name, false)} alt="" aria-hidden className="size-4 shrink-0" />
+          {children}
+        </button>
+      }
+    >
+      <EntryMenuItems entry={entry} actions={actions} expand={() => {}} />
+    </ContextMenu>
+  )
+}
+
+function EntryMenuItems({
+  entry,
+  actions,
+  expand,
+}: {
+  entry: TreeEntryDto
+  actions: Actions
+  expand: () => void
+}) {
+  const separator = separatorAfter(entry)
+  return (
+    <>
+      {entryActions(entry, actions, expand).map((action) => (
+        <Fragment key={action.key}>
+          <ContextMenuItem icon={action.icon} tone={action.tone} onSelect={action.run}>
+            {action.label}
+          </ContextMenuItem>
+          {action.key === separator ? <ContextMenuSeparator /> : null}
+        </Fragment>
+      ))}
+    </>
+  )
+}
+
 function Entry({
   entry,
   depth,
@@ -261,131 +537,118 @@ function Entry({
     actions.onMove(from, dropTarget)
   }
 
+  const expand = () => setOpen(true)
+
   return (
     <li>
-      <div
-        className={cx('group/entry flex items-center', dropping && 'bg-accent-wash')}
-        draggable
-        onDragStart={(event) => {
-          event.dataTransfer.setData(DRAG_TYPE, entry.path)
-          event.dataTransfer.effectAllowed = 'move'
-        }}
-        onDragOver={(event) => {
-          // Sans `preventDefault`, le navigateur refuse le dépôt sans rien dire.
-          if (!event.dataTransfer.types.includes(DRAG_TYPE)) return
-          event.preventDefault()
-          event.dataTransfer.dropEffect = 'move'
-          setDropping(true)
-        }}
-        onDragLeave={() => setDropping(false)}
-        onDrop={onDrop}
-      >
-        <button
-          type="button"
-          onClick={
-            entry.isDirectory
-              ? () => setOpen((value) => !value)
-              : () => {
-                  openTab(actions.conversationId, entry.path)
-                  actions.onOpenFile()
-                }
-          }
-          aria-expanded={entry.isDirectory ? open : undefined}
-          className={cx(
-            'flex h-7 min-w-0 flex-1 items-center gap-1.5 text-left text-[0.8125rem]',
-            'transition-colors group-hover/entry:bg-surface-high',
-            entry.state === 'ignored' ? 'text-ink-faint/60' : 'text-ink-soft',
-          )}
-          style={{ paddingLeft: depth * INDENT_PX + 6 }}
-        >
-          {entry.isDirectory ? (
-            <ChevronRight
-              size={12}
-              className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
-            />
-          ) : (
-            <span className="w-3 shrink-0" />
-          )}
-
-          {/* `alt` vide : l'icône répète le nom écrit juste à côté. */}
-          <img
-            src={fileIconUrl(entry.name, entry.isDirectory, open)}
-            alt=""
-            aria-hidden
-            className="size-4 shrink-0"
-          />
-
-          <span className={cx('min-w-0 flex-1 truncate', state && state.tone)}>{entry.name}</span>
-
-          {state?.letter ? (
-            <span className={cx('shrink-0 font-mono text-[0.625rem]', state.tone)}>
-              {state.letter}
-            </span>
-          ) : null}
-        </button>
-
-        {/* Le menu reste visible tant qu'il est ouvert : sinon il disparaît sous le
-            curseur dès que celui-ci quitte la ligne pour aller le choisir. */}
-        <div
-          className={cx(
-            'shrink-0 pr-1 opacity-0 transition-opacity',
-            'group-hover/entry:opacity-100 has-[[data-state=open]]:opacity-100',
-            'focus-within:opacity-100 pointer-coarse:opacity-100',
-          )}
-        >
-          <Menu
-            trigger={
-              <button
-                type="button"
-                aria-label={`Actions de ${entry.name}`}
-                className="flex size-6 items-center justify-center rounded text-ink-faint hover:text-ink"
-              >
-                <MoreHorizontal size={14} />
-              </button>
-            }
+      <ContextMenu
+        trigger={
+          <div
+            className={cx('group/entry flex items-center', dropping && 'bg-accent-wash')}
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData(DRAG_TYPE, entry.path)
+              event.dataTransfer.effectAllowed = 'move'
+            }}
+            onDragOver={(event) => {
+              // Sans `preventDefault`, le navigateur refuse le dépôt sans rien dire.
+              if (!event.dataTransfer.types.includes(DRAG_TYPE)) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'move'
+              setDropping(true)
+            }}
+            onDragLeave={() => setDropping(false)}
+            onDrop={onDrop}
           >
-            {entry.isDirectory ? (
-              <>
-                <MenuItem
-                  icon={<FilePlus2 size={14} />}
-                  onSelect={() => {
-                    setOpen(true)
-                    actions.setDraft({ mode: 'create', parent: entry.path, kind: 'file' })
-                  }}
-                >
-                  Nouveau fichier
-                </MenuItem>
-                <MenuItem
-                  icon={<FolderPlus size={14} />}
-                  onSelect={() => {
-                    setOpen(true)
-                    actions.setDraft({ mode: 'create', parent: entry.path, kind: 'directory' })
-                  }}
-                >
-                  Nouveau dossier
-                </MenuItem>
-                <MenuSeparator />
-              </>
-            ) : null}
-
-            <MenuItem
-              icon={<Pencil size={14} />}
-              onSelect={() =>
-                actions.setDraft({ mode: 'rename', path: entry.path, name: entry.name })
+            <button
+              type="button"
+              /*
+               * Un dossier se déplie au clic simple, c'est le geste qu'on attend de lui.
+               * Un fichier, non : le clic simple ne fait que le désigner, et c'est le
+               * double clic qui l'ouvre. Ouvrir au premier clic remplissait la barre
+               * d'onglets en parcourant l'arborescence, et empêchait de viser une ligne
+               * pour la renommer ou la déplacer sans en subir l'ouverture.
+               */
+              onClick={entry.isDirectory ? () => setOpen((value) => !value) : undefined}
+              onDoubleClick={
+                entry.isDirectory
+                  ? undefined
+                  : () => {
+                      openTab(actions.conversationId, entry.path)
+                      actions.onOpenFile()
+                    }
               }
+              aria-expanded={entry.isDirectory ? open : undefined}
+              className={cx(
+                'flex h-7 min-w-0 flex-1 items-center gap-1.5 text-left text-[0.8125rem]',
+                'transition-colors group-hover/entry:bg-surface-high',
+                entry.state === 'ignored' ? 'text-ink-faint/60' : 'text-ink-soft',
+              )}
+              style={{ paddingLeft: depth * INDENT_PX + 6 }}
             >
-              Renommer
-            </MenuItem>
-            <MenuItem
-              icon={<Trash2 size={14} />}
-              tone="critical"
-              onSelect={() => actions.onDelete(entry.path, entry.isDirectory)}
+              {entry.isDirectory ? (
+                <ChevronRight
+                  size={12}
+                  className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
+                />
+              ) : (
+                <span className="w-3 shrink-0" />
+              )}
+
+              {/* `alt` vide : l'icône répète le nom écrit juste à côté. */}
+              <img
+                src={fileIconUrl(entry.name, entry.isDirectory, open)}
+                alt=""
+                aria-hidden
+                className="size-4 shrink-0"
+              />
+
+              <span className={cx('min-w-0 flex-1 truncate', state && state.tone)}>
+                {entry.name}
+              </span>
+
+              {state?.letter ? (
+                <span className={cx('shrink-0 font-mono text-[0.625rem]', state.tone)}>
+                  {state.letter}
+                </span>
+              ) : null}
+            </button>
+
+            {/* Le menu reste visible tant qu'il est ouvert : sinon il disparaît sous le
+                curseur dès que celui-ci quitte la ligne pour aller le choisir. */}
+            <div
+              className={cx(
+                'shrink-0 pr-1 opacity-0 transition-opacity',
+                'group-hover/entry:opacity-100 has-[[data-state=open]]:opacity-100',
+                'focus-within:opacity-100 pointer-coarse:opacity-100',
+              )}
             >
-              Supprimer
-            </MenuItem>
-          </Menu>
-        </div>
-      </div>
+              <Menu
+                trigger={
+                  <button
+                    type="button"
+                    aria-label={`Actions de ${entry.name}`}
+                    className="flex size-6 items-center justify-center rounded text-ink-faint hover:text-ink"
+                  >
+                    <MoreHorizontal size={14} />
+                  </button>
+                }
+              >
+                {entryActions(entry, actions, expand).map((action) => (
+                  <Fragment key={action.key}>
+                    <MenuItem icon={action.icon} tone={action.tone} onSelect={action.run}>
+                      {action.label}
+                    </MenuItem>
+                    {action.key === separatorAfter(entry) ? <MenuSeparator /> : null}
+                  </Fragment>
+                ))}
+              </Menu>
+            </div>
+          </div>
+        }
+      >
+        <EntryMenuItems entry={entry} actions={actions} expand={expand} />
+      </ContextMenu>
 
       {entry.isDirectory ? (
         <Level path={entry.path} depth={depth + 1} expanded={open} actions={actions} />
