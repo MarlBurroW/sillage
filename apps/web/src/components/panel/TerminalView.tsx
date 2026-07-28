@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { TerminalClientMessage, TerminalServerMessage } from '@sillage/protocol'
 import { cx } from '../ui'
 import '@xterm/xterm/css/xterm.css'
+import { translate } from '../../lib/i18n'
 
 /**
  * Un terminal, relié à son pty par la socket dédiée.
@@ -113,7 +114,7 @@ export function TerminalView({
         terminal.write(payload.data)
       } else if (payload.t === 'exit') {
         setStatus('exited')
-        setMessage(`Le shell s'est terminé (code ${payload.code}).`)
+        setMessage(translate('terminal.shell.exited', { code: payload.code }))
       } else {
         setStatus('error')
         setMessage(payload.message)

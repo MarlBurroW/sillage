@@ -1,6 +1,7 @@
 import { Sheet } from 'lucide-react'
 import { downloadText, toCsv } from '../../lib/download'
 import { ToolbarButton } from './CodeBlock'
+import { useTranslate } from '../../lib/i18n'
 
 /**
  * Tableau markdown, sur toute la largeur disponible, avec export CSV.
@@ -10,6 +11,7 @@ import { ToolbarButton } from './CodeBlock'
  * cellules cessent de s'aligner dès qu'une ligne est plus longue que les autres.
  */
 export function MarkdownTable({ html, rows }: { html: string; rows: string[][] }) {
+  const t = useTranslate()
   return (
     <div className="overflow-hidden rounded-md border border-line">
       <div className="flex items-center gap-1 border-b border-line px-2 py-1">
@@ -18,7 +20,7 @@ export function MarkdownTable({ html, rows }: { html: string; rows: string[][] }
           {Math.max(rows.length - 1, 0)} ligne{rows.length > 2 ? 's' : ''}
         </span>
         <ToolbarButton
-          label="Télécharger en CSV"
+          label={t('markdown.table.downloadCsv')}
           onClick={() => downloadText('tableau.csv', toCsv(rows), 'text/csv')}
         >
           <Sheet size={13} />

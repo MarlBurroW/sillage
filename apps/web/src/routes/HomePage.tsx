@@ -2,8 +2,10 @@ import { FolderOpen } from 'lucide-react'
 import { Link, Navigate } from 'react-router-dom'
 import { useProjects } from '../lib/projects'
 import { Button, EmptyState } from '../components/ui'
+import { useTranslate } from '../lib/i18n'
 
 export function HomePage() {
+  const t = useTranslate()
   const { data: projects, isPending } = useProjects()
 
   if (isPending) return null
@@ -14,11 +16,11 @@ export function HomePage() {
   return (
     <EmptyState
       icon={<FolderOpen size={22} />}
-      title="Aucun projet"
-      description="Un projet pointe sur un dossier de ta machine. C'est le point de départ de toute conversation."
+      title={t('home.empty.title')}
+      description={t('home.empty.description')}
       action={
         <Link to="/settings/projets">
-          <Button>Créer un projet</Button>
+          <Button>{t('home.createProject')}</Button>
         </Link>
       }
     />

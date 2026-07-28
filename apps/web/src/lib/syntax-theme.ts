@@ -1,3 +1,4 @@
+import type { MessageKey } from './i18n'
 import { useCallback, useSyncExternalStore } from 'react'
 
 /**
@@ -25,17 +26,17 @@ export const SYNTAX_THEMES = [
 ] as const
 export type SyntaxTheme = (typeof SYNTAX_THEMES)[number]
 
-export const SYNTAX_THEME_LABELS: Record<SyntaxTheme, string> = {
-  sillage: 'Sillage',
-  ocean: 'Océan',
-  nuit: 'Nuit',
-  agrume: 'Agrume',
-  cerise: 'Cerise',
-  foret: 'Forêt',
-  sable: 'Sable',
-  ardoise: 'Ardoise',
-  sobre: 'Sobre',
-  encre: 'Encre',
+export const SYNTAX_THEME_LABELS: Record<SyntaxTheme, MessageKey> = {
+  sillage: 'syntax.theme.sillage',
+  ocean: 'syntax.theme.ocean',
+  nuit: 'syntax.theme.nuit',
+  agrume: 'syntax.theme.agrume',
+  cerise: 'syntax.theme.cerise',
+  foret: 'syntax.theme.forest',
+  sable: 'syntax.theme.sable',
+  ardoise: 'syntax.theme.ardoise',
+  sobre: 'syntax.theme.sobre',
+  encre: 'syntax.theme.encre',
 }
 
 const STORAGE_KEY = 'sillage.syntax'

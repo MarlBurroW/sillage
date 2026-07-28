@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { PushStatusDto } from '@sillage/protocol'
 import { api } from './api'
+import { translate } from './i18n'
 
 const PUSH_KEY = ['push']
 
@@ -57,8 +58,8 @@ export function useSubscribePush() {
       if (permission !== 'granted') {
         throw new Error(
           permission === 'denied'
-            ? 'Les notifications sont bloquées pour ce site dans les réglages du navigateur.'
-            : 'Autorisation refusée.',
+            ? translate('push.permission.blocked')
+            : translate('push.permission.denied'),
         )
       }
 

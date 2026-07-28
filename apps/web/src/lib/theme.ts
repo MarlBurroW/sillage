@@ -1,12 +1,13 @@
+import type { MessageKey } from './i18n'
 import { useCallback, useSyncExternalStore } from 'react'
 
 export const THEMES = ['light', 'dark', 'dark-contrast'] as const
 export type Theme = (typeof THEMES)[number]
 
-export const THEME_LABELS: Record<Theme, string> = {
-  light: 'Clair',
-  dark: 'Sombre',
-  'dark-contrast': 'Sombre contrasté',
+export const THEME_LABELS: Record<Theme, MessageKey> = {
+  light: 'theme.light',
+  dark: 'theme.dark',
+  'dark-contrast': 'theme.darkContrast',
 }
 
 const STORAGE_KEY = 'sillage.theme'

@@ -82,7 +82,7 @@ export function AppearanceSection() {
                 )}
               >
                 {THEME_ICONS[option]}
-                <span className="text-xs font-medium">{THEME_LABELS[option]}</span>
+                <span className="text-xs font-medium">{t(THEME_LABELS[option])}</span>
               </button>
             ))}
           </div>
@@ -101,7 +101,7 @@ export function AppearanceSection() {
       <Card>
         <CardHeader
           title="Confort de lecture"
-          description="S'applique au texte des messages, pas à l'interface."
+          description={t('settings.reading.description')}
           icon={<TextQuote size={16} />}
         />
         <CardBody className="flex flex-col gap-5">
@@ -119,7 +119,7 @@ export function AppearanceSection() {
       <Card>
         <CardHeader
           title="Coloration syntaxique"
-          description="S'applique au code du fil, aux appels d'outils, aux diffs et à l'éditeur."
+          description={t('settings.syntax.description')}
           icon={<Code size={16} />}
         />
         <CardBody>

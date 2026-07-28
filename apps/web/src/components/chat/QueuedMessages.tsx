@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { QueuedMessage } from '../../lib/chat-fold'
 import { cancelQueuedMessage } from '../../lib/conversations'
 import { IconButton, cx } from '../ui'
+import { useTranslate } from '../../lib/i18n'
 
 /**
  * Messages écrits pendant qu'un tour est en cours.
@@ -20,6 +21,7 @@ export function QueuedMessages({
   messages: QueuedMessage[]
   canCancel: boolean
 }) {
+  const t = useTranslate()
   const [busy, setBusy] = useState<string | null>(null)
 
   if (messages.length === 0) return null
@@ -58,8 +60,12 @@ export function QueuedMessages({
             {message.attachmentCount > 0 ? (
               <p className="mt-1 flex items-center gap-1 text-[0.6875rem] text-ink-faint">
                 <Paperclip size={11} />
-                {message.attachmentCount} pièce{message.attachmentCount > 1 ? 's' : ''} jointe
-                {message.attachmentCount > 1 ? 's' : ''}
+                {t(
+                  message.attachmentCount > 1
+                    ? 'queued.attachments.many'
+                    : 'queued.attachments.one',
+                  { count: message.attachmentCount },
+                )}
               </p>
             ) : null}
           </div>
