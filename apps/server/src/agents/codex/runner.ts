@@ -7,7 +7,7 @@ import {
   type CodexConfig,
   type ContentBlock,
 } from '@sillage/protocol'
-import type { CollaborationMode } from '@sillage/protocol/codex'
+import type { CollaborationMode } from '@sillage/codex-bindings'
 import type {
   AccountRateLimitsUpdatedNotification,
   AskForApproval,
@@ -32,7 +32,7 @@ import type {
   TurnStartParams,
   TurnStartResponse,
   UserInput,
-} from '@sillage/protocol/codex/v2'
+} from '@sillage/codex-bindings/v2'
 import type {
   AgentRunner,
   ElicitationAnswer,

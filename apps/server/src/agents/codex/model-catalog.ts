@@ -1,4 +1,4 @@
-import type { CollaborationModeMask, Model, ModelListResponse } from '@sillage/protocol/codex/v2'
+import type { CollaborationModeMask, Model, ModelListResponse } from '@sillage/codex-bindings/v2'
 import { CachedProbe } from '../cached-probe.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'

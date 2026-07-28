@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 /**
  * Régénère les bindings du protocole Codex depuis le binaire installé.
  *
- *   node scripts/codex-types.mjs          écrit dans packages/protocol/src/codex
+ *   node scripts/codex-types.mjs          écrit dans packages/codex-bindings/src
  *   node scripts/codex-types.mjs --check  échoue si le commité a dérivé
  *
  * Le mode --check est ce qui transforme une montée de version de Codex en échec
@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url'
  */
 
 const root = join(fileURLToPath(import.meta.url), '../..')
-const target = join(root, 'packages/protocol/src/codex')
+const target = join(root, 'packages/codex-bindings/src')
 const check = process.argv.includes('--check')
 
 /** Fichiers écrits par Sillage, à préserver et à exclure de la comparaison. */
