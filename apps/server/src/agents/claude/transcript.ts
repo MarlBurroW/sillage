@@ -92,6 +92,19 @@ function isLocalCommand(text: string): boolean {
   return text.startsWith('<command-') || text.startsWith('<local-command-')
 }
 
+/**
+ * Marqueur écrit par le CLI quand un tour est coupé, sous les formes
+ * `[Request interrupted by user]` et `[Request interrupted by user for tool use]`.
+ *
+ * Le transcript l'enregistre comme un message utilisateur, mais personne ne l'a écrit :
+ * c'est la trace de l'interruption. Repris tel quel, il apparaissait dans le fil comme
+ * une chose que l'utilisateur aurait dite, une fois de plus à chaque interruption.
+ *
+ * Ancré aux deux bouts : un message qui cite le marqueur pour en parler, lui, est bien
+ * un message.
+ */
+const INTERRUPT_MARKER = /^\[Request interrupted by user[^\]]*\]$/
+
 interface ToolUse {
   name: string
   input: unknown
@@ -156,7 +169,15 @@ export function translateTranscript(
       if (blocks.length > 0 && typeof message.id === 'string') {
         events.push({
           ts,
-          event: { type: 'message.completed', messageId: message.id, role: 'assistant', blocks },
+          event: {
+            type: 'message.completed',
+            messageId: message.id,
+            role: 'assistant',
+            blocks,
+            // Comme les appels d'outils ci-dessus : le transcript range les tours de
+            // sous-agent dans un fichier annexe, que cet import ne relit pas.
+            parentToolCallId: null,
+          },
           raw: entry,
         })
       }
@@ -215,7 +236,7 @@ export function translateTranscript(
                 .map((block) => block.text as string)
                 .join('\n')
             : ''
-      if (!text.trim() || isLocalCommand(text)) continue
+      if (!text.trim() || isLocalCommand(text) || INTERRUPT_MARKER.test(text.trim())) continue
 
       if (!inTurn) {
         events.push({ ts, event: { type: 'turn.started' } })
@@ -228,6 +249,7 @@ export function translateTranscript(
           messageId: typeof entry.uuid === 'string' ? entry.uuid : `import-${events.length}`,
           role: 'user',
           blocks: [{ type: 'text', text }],
+          parentToolCallId: null,
         },
         raw: entry,
       })

@@ -29,6 +29,8 @@ export interface MessageItem {
   /** Texte en cours de réception, vidé dès que le message correspondant arrive. */
   streamingText: string
   streamingThinking: string
+  /** Appel qui a lancé le sous-agent auteur du message. Null pour l'agent principal. */
+  parentToolCallId: string | null
 }
 
 export interface ToolItem {
@@ -331,9 +333,20 @@ function lastUserMessage(state: ChatState): { id: string; label: string } {
   return { id: `seq-${state.lastSeq}`, label: 'Sans message' }
 }
 
-/** Les blocs `tool_use` sont rendus comme éléments propres, pas dans la bulle. */
+/**
+ * Blocs qui ont leur place dans la bulle.
+ *
+ * Les `tool_use` sont rendus comme éléments propres. Les blocs de texte et de
+ * réflexion sans contenu sont écartés : Fable et Opus raisonnent côté serveur et
+ * renvoient un bloc `thinking` vide, réduit à sa signature chiffrée, dont le seul
+ * effet à l'écran serait un volet « Réflexion » qui ne s'ouvre sur rien.
+ */
 export function renderableBlocks(blocks: ContentBlock[]): ContentBlock[] {
-  return blocks.filter((block) => block.type !== 'tool_use' && block.type !== 'tool_result')
+  return blocks.filter((block) => {
+    if (block.type === 'tool_use' || block.type === 'tool_result') return false
+    if (block.type === 'text' || block.type === 'thinking') return block.text.trim() !== ''
+    return true
+  })
 }
 
 /**
@@ -341,11 +354,12 @@ export function renderableBlocks(blocks: ContentBlock[]): ContentBlock[] {
  *
  * Un message d'agent qui ne porte que des `tool_use` n'affiche rien : ses blocs sont
  * rendus à part, comme appels d'outils. Il reste pourtant dans le fil, et le compter
- * comme visible coupait une suite d'outils en deux groupes sans raison apparente.
+ * comme visible laissait une ligne vide dans la gouttière, en plus de couper une suite
+ * d'outils en deux groupes sans raison apparente.
  */
 export function hasVisibleContent(item: ChatItem): boolean {
   if (item.kind !== 'message') return true
-  if (item.streamingText || item.streamingThinking) return true
+  if (item.streamingText.trim() || item.streamingThinking.trim()) return true
   return renderableBlocks(item.blocks).length > 0
 }
 
@@ -389,6 +403,7 @@ function messageIndex(
   role: 'user' | 'assistant',
   ts: number,
   seq: number,
+  parentToolCallId: string | null,
 ): number {
   const existing = findLastIndex(state.items, (item) => item.kind === 'message' && item.id === id)
   if (existing !== -1) return existing
@@ -404,6 +419,7 @@ function messageIndex(
     blocks: [],
     streamingText: '',
     streamingThinking: '',
+    parentToolCallId,
   })
   return state.items.length - 1
 }
@@ -414,9 +430,10 @@ function updateMessage(
   role: 'user' | 'assistant',
   ts: number,
   seq: number,
+  parentToolCallId: string | null,
   update: (message: MessageItem) => MessageItem,
 ): void {
-  const index = messageIndex(state, id, role, ts, seq)
+  const index = messageIndex(state, id, role, ts, seq, parentToolCallId)
   const current = state.items[index] as MessageItem
   replaceItem(state, index, update(current))
 }
@@ -476,7 +493,7 @@ export function applyEvent(
     }
 
     case 'message.delta': {
-      updateMessage(state, event.messageId, 'assistant', ts, seq, (message) => ({
+      updateMessage(state, event.messageId, 'assistant', ts, seq, event.parentToolCallId, (message) => ({
         ...message,
         streamingText: message.streamingText + event.text,
       }))
@@ -484,7 +501,7 @@ export function applyEvent(
     }
 
     case 'thinking.delta': {
-      updateMessage(state, event.messageId, 'assistant', ts, seq, (message) => ({
+      updateMessage(state, event.messageId, 'assistant', ts, seq, event.parentToolCallId, (message) => ({
         ...message,
         streamingThinking: message.streamingThinking + event.text,
       }))
@@ -492,7 +509,7 @@ export function applyEvent(
     }
 
     case 'message.completed': {
-      updateMessage(state, event.messageId, event.role, ts, seq, (message) => ({
+      updateMessage(state, event.messageId, event.role, ts, seq, event.parentToolCallId, (message) => ({
         ...message,
         // Un message arrive en plusieurs morceaux sous le même identifiant : les
         // blocs s'ajoutent, ils ne remplacent pas. Le contenu reçu en flux est
