@@ -605,6 +605,18 @@ export const VIEWABLE_IMAGE_TYPES: Record<string, string> = {
 
 export const filePathQuerySchema = z.object({ path: z.string().min(1).max(1024) })
 
+/**
+ * Chemins dont le fil demande s'ils désignent un fichier, pour n'en rendre cliquables
+ * que ceux qui existent.
+ *
+ * Groupé par message : un message cite couramment une dizaine de chemins, et autant
+ * d'allers-retours pour afficher un lien coûterait plus que le lien ne rapporte. Le
+ * plafond suit `MAX_RESULTS` de la recherche de fichiers, pour la même raison.
+ */
+export const filesExistBodySchema = z.object({
+  paths: z.array(z.string().min(1).max(1024)).max(50),
+})
+
 export interface FileContentDto {
   path: string
   content: string

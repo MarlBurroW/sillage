@@ -1145,9 +1145,17 @@ déplie sur la liste des sous-agents actifs, et chaque ligne ouvre son fil.
 
 **Regroupement.** Une suite d'appels terminés se replie en une ligne, qui compte les
 appels et les échecs : replier ne doit jamais faire disparaître une erreur du champ de
-vision. Tant qu'un appel de la suite tourne, elle reste dépliée. Les éléments qui
-n'affichent rien (un message d'agent ne portant que des `tool_use`) ne coupent pas la
-suite.
+vision. Un appel en cours garde sa propre ligne, à sa place chronologique, et rejoint le
+groupe une fois terminé. Les éléments qui n'affichent rien (un message d'agent ne portant
+que des `tool_use`) ne coupent pas la suite.
+
+Le groupe ne se dissout pas pendant qu'un appel tourne derrière lui. La règle précédente,
+qui dépliait la suite entière tant qu'un de ses appels n'était pas terminé, coûtait deux
+défauts pour un gain nul : la suite se dépliait puis se repliait à chaque appel, pour la
+durée exacte de celui-ci, ce qui faisait sursauter le fil sans qu'aucune règle soit
+lisible depuis l'écran ; et un groupe ouvert à la main se refermait au passage, puisque sa
+ligne disparaissait et que le composant perdait son état d'ouverture. Ce qu'on veut voir
+pendant qu'un appel tourne, c'est cet appel-là, pas les dix qui l'ont précédé.
 
 **Un appel resté ouvert est clos à la fin du tour ou de la session**, avec un statut
 « interrompu » distinct de l'échec : le CLI coupé n'envoie pas le résultat des appels en

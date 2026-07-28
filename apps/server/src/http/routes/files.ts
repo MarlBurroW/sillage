@@ -6,6 +6,7 @@ import {
   VIEWABLE_IMAGE_TYPES,
   filePathQuerySchema,
   fileWriteBodySchema,
+  filesExistBodySchema,
   type FileContentDto,
 } from '@sillage/protocol'
 import { conversationWorkspace, resolveInside } from '../../workspace.js'
@@ -83,6 +84,40 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
    * d'extensions : servir n'importe quel binaire avec un type deviné inviterait le
    * navigateur à l'interpréter.
    */
+  /**
+   * Parmi les chemins proposés, ceux qui désignent un fichier de ce workspace.
+   *
+   * Le fil s'en sert pour ne rendre cliquable que ce qui s'ouvrira vraiment. Une forme
+   * de chemin ne prouve rien : `text/plain`, `@sillage/protocol` ou `fs/promises` en
+   * ont une, et un lien qui mène à une erreur vaut moins que du texte.
+   *
+   * `POST` pour une lecture, parce que la liste tient mal dans une URL et qu'elle est
+   * la clé du cache côté client.
+   */
+  app.post('/api/conversations/:id/files/exist', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { paths } = filesExistBodySchema.parse(request.body)
+
+    const workspace = workspaceOf(id, user.id)
+    const checked = await Promise.all(
+      paths.map(async (path) => {
+        // `resolveInside` rejette ce qui sort du workspace : un `../` glissé dans un
+        // message ne doit pas révéler l'existence d'un fichier au-dehors.
+        let absolute
+        try {
+          absolute = resolveInside(workspace, path)
+        } catch {
+          return null
+        }
+        const info = await stat(absolute).catch(() => null)
+        return info?.isFile() ? path : null
+      }),
+    )
+
+    return { files: checked.filter((path): path is string => path !== null) }
+  })
+
   app.get('/api/conversations/:id/file/raw', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

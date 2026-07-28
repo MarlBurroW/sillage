@@ -242,13 +242,30 @@
     text-underline-offset: 2px;
   }
 
-  .sg-markdown code {
+  .sg-markdown code,
+  .sg-markdown .sg-file {
     font-family: var(--font-mono);
     font-size: 0.875em;
     background: var(--sg-sunken);
     border: 1px solid var(--sg-line);
     border-radius: var(--radius-sm);
     padding: 0.1em 0.35em;
+  }
+
+  /*
+   * Chemin dont le serveur a confirmé qu'il désigne un fichier du workspace : il ouvre
+   * l'éditeur. Il garde l'aspect d'un `code span`, avec pour seule différence la teinte
+   * d'accent et le curseur, parce qu'il reste avant tout un chemin cité dans une phrase.
+   */
+  .sg-markdown .sg-file {
+    color: var(--sg-accent);
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .sg-markdown .sg-file:hover {
+    border-color: var(--sg-accent);
+    background: var(--sg-accent-wash);
   }
 
   /*

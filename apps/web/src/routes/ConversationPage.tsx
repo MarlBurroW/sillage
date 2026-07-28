@@ -45,6 +45,7 @@ import {
   useAllConversations,
   useConversation,
 } from '../lib/conversations'
+import { FileLinkContext } from '../lib/file-links'
 import { clearSubAgent, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useCurrentUser } from '../lib/session'
 import { useSidebarHidden } from '../lib/sidebar'
@@ -393,8 +394,12 @@ export function ConversationPage() {
   // `relative` porte le bouton de retour en bas, et la hauteur retire l'en-tête
   // mobile de la coque, absent en desktop.
   return (
-    // Deux colonnes : le fil, et le panneau latéral quand il est ouvert. `relative`
-    // sert d'ancrage au panneau, qui se met en surimpression au doigt.
+    // Le workspace de cette conversation sert de référence aux chemins cités dans le
+    // fil : c'est lui, et pas le projet, qui décide de ce qu'un chemin relatif désigne
+    // quand la conversation tourne dans un worktree.
+    <FileLinkContext.Provider value={conversationId}>
+    {/* Deux colonnes : le fil, et le panneau latéral quand il est ouvert. `relative`
+        sert d'ancrage au panneau, qui se met en surimpression au doigt. */}
     <div className="relative flex h-full">
       <div
         className={cx(
@@ -732,6 +737,7 @@ export function ConversationPage() {
         </Suspense>
       ) : null}
     </div>
+    </FileLinkContext.Provider>
   )
 }
 

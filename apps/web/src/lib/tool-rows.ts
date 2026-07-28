@@ -13,8 +13,8 @@ import { hasVisibleContent, type ChatItem, type ToolItem } from './chat-fold'
  *     fil principal ne garde donc que l'appel de spawn ; le reste se lit dans le
  *     panneau, découpé par ce même module ;
  *   - une suite d'appels terminés se replie en une ligne, parce qu'elle n'apporte
- *     rien ligne par ligne et éloigne la réponse. Tant qu'un appel tourne, la suite
- *     reste dépliée : c'est justement le moment où on veut voir ce qui se passe.
+ *     rien ligne par ligne et éloigne la réponse. Un appel en cours garde la sienne :
+ *     c'est le seul qu'on ait une raison de regarder pendant qu'il tourne.
  */
 
 export type ChatRow =
@@ -38,14 +38,42 @@ export function buildRows(items: ChatItem[], thread: string | null = null): Chat
   const rows: ChatRow[] = []
   let run: ToolItem[] = []
 
+  /**
+   * Vide la suite courante.
+   *
+   * Les appels terminés se regroupent, les appels en cours gardent leur ligne, et
+   * l'ordre chronologique est conservé : plusieurs appels peuvent tourner en parallèle,
+   * et rien ne garantit que celui qui tourne soit le dernier de la suite.
+   *
+   * Le groupe ne se dissout pas quand un appel démarre derrière lui. Il le faisait
+   * auparavant, et c'était visible deux fois : la suite entière se dépliait le temps du
+   * nouvel appel puis se repliait d'un coup, et un groupe ouvert à la main se refermait
+   * en même temps, puisque la ligne disparaissait et que le composant perdait son état.
+   */
   const flush = () => {
     if (run.length === 0) return
-    const first = run[0]
-    if (first && run.length >= MIN_GROUP_SIZE && run.every((tool) => tool.status !== 'running')) {
-      rows.push({ kind: 'tool-group', key: `tools-${first.id}`, tools: run })
-    } else {
-      for (const tool of run) rows.push({ kind: 'tool', key: tool.id, tool })
+
+    let done: ToolItem[] = []
+    const flushDone = () => {
+      const first = done[0]
+      if (first && done.length >= MIN_GROUP_SIZE) {
+        rows.push({ kind: 'tool-group', key: `tools-${first.id}`, tools: done })
+      } else {
+        for (const tool of done) rows.push({ kind: 'tool', key: tool.id, tool })
+      }
+      done = []
     }
+
+    for (const tool of run) {
+      if (tool.status === 'running') {
+        flushDone()
+        rows.push({ kind: 'tool', key: tool.id, tool })
+      } else {
+        done.push(tool)
+      }
+    }
+    flushDone()
+
     run = []
   }
 
