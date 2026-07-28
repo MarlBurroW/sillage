@@ -178,6 +178,12 @@ export class ClaudeRunner implements AgentRunner {
       },
     })
 
+    // Le niveau des travaux de fond appartient au process : le CLI n'en annonce rien
+    // au démarrage, il n'émet qu'aux changements. Sillage pose donc le zéro lui-même,
+    // sans quoi une relecture du journal garderait allumés les travaux du process
+    // précédent, qui sont morts avec lui.
+    this.ctx.emit({ type: 'background.updated', tasks: [] })
+
     // Consommé en tâche de fond : le runner survit à la requête HTTP qui l'a créé.
     void this.consume()
   }
@@ -258,6 +264,25 @@ export class ClaudeRunner implements AgentRunner {
               message,
             )
           }
+          return
+        }
+        // Le seul signal que le CLI donne du travail qu'il poursuit hors du tour :
+        // workflows, commandes lancées en fond, sous-agents basculés en arrière-plan.
+        // Rien de tout ça n'apparaît dans le flux des messages, et l'attribution par
+        // `parentToolCallId` ne le voit pas non plus : l'orchestration d'un workflow
+        // se fait au-dessus de ce que le SDK expose en sous-agents.
+        if (message.subtype === 'background_tasks_changed') {
+          this.ctx.emit(
+            {
+              type: 'background.updated',
+              tasks: message.tasks.map((task) => ({
+                id: task.task_id,
+                kind: task.task_type,
+                description: task.description,
+              })),
+            },
+            message,
+          )
           return
         }
         if (message.subtype === 'init') {

@@ -63,6 +63,8 @@ export const en = {
   'conversation.status.waiting': 'Waiting',
   'conversation.status.interrupted': 'Interrupted',
   'conversation.status.error': 'Error',
+  'conversation.status.background.one': '{count} background task',
+  'conversation.status.background.many': '{count} background tasks',
 
   // Composer - réglages du tour
   'composer.permission.manual': 'Ask',
@@ -130,6 +132,11 @@ export const en = {
   'panel.close': 'Close the panel',
   'panel.resize.aria': 'Panel width',
   'panel.tab.badge': '{label}, {count} running',
+  'panel.background.title': 'Background work',
+  'panel.background.kind.workflow': 'Workflow',
+  'panel.background.kind.shell': 'Shell command',
+  'panel.background.kind.subagent': 'Sub-agent',
+  'panel.background.kind.monitor': 'Monitor',
 
   // Coquille applicative (navigation, projets, comptes)
   'shell.nav.resize.aria': 'Navigation width',
@@ -152,6 +159,7 @@ export const en = {
   'shell.color': 'Color',
   'shell.conversations.empty': 'No conversations',
   'shell.conversation.running': 'Running',
+  'shell.conversation.background': 'Background work in progress',
   'shell.conversation.actions': 'Conversation actions',
   'shell.delete': 'Delete',
   'shell.conversation.deleteConfirm': 'Delete "{title}"?',
@@ -431,6 +439,8 @@ export const en = {
   'composer.status.disconnected.label': 'Reconnecting...',
   'composer.status.queued.one': '{count} message pending',
   'composer.status.queued.many': '{count} messages pending',
+  'composer.status.background.one': '{count} background task',
+  'composer.status.background.many': '{count} background tasks',
   'composer.status.shortcut': 'Enter to send, Shift+Enter for a new line',
 
   // Éditeur

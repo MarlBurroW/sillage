@@ -1,6 +1,7 @@
-import { ArrowLeft, Bot } from 'lucide-react'
-import { useMemo } from 'react'
-import { useTranslate } from '../../lib/i18n'
+import { ArrowLeft, Bot, Radio, SquareTerminal, Waves } from 'lucide-react'
+import { useMemo, type ReactNode } from 'react'
+import type { BackgroundTask } from '@sillage/protocol'
+import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { clearSubAgent, showSubAgent } from '../../lib/panel'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
 import { buildRows } from '../../lib/tool-rows'
@@ -18,10 +19,13 @@ import { EmptyState, cx } from '../ui'
 export function AgentsPane({
   conversationId,
   agents,
+  background,
   selectedId,
 }: {
   conversationId: string
   agents: SubAgent[]
+  /** Travaux poursuivis hors du tour, sans fil à ouvrir : le CLI n'en transmet rien. */
+  background: BackgroundTask[]
   selectedId: string | null
 }) {
   const t = useTranslate()
@@ -33,7 +37,7 @@ export function AgentsPane({
     )
   }
 
-  if (agents.length === 0) {
+  if (agents.length === 0 && background.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center p-4">
         <EmptyState
@@ -46,12 +50,88 @@ export function AgentsPane({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
+      <BackgroundList tasks={background} />
       {agents.map((agent) => (
         <div key={agent.id} className={cx(agent.parentId && 'pl-3')}>
           <SubAgentRow agent={agent} onSelect={() => showSubAgent(agent.id)} />
         </div>
       ))}
     </div>
+  )
+}
+
+type BackgroundFamily = 'workflow' | 'shell' | 'subagent' | 'monitor'
+
+/**
+ * Les noms sous lesquels le CLI annonce chaque famille de travaux.
+ *
+ * Deux orthographes par famille parce que le CLI les mélange : le SDK documente des
+ * libellés lisibles (`shell`, `subagent`), et la version 2.1 émet ses discriminants
+ * bruts (`local_bash`, `local_agent`). Le préfixe `local_` est retiré avant la
+ * recherche, ce qui rattrape les deux d'un coup.
+ */
+const KIND_ALIASES: Record<string, BackgroundFamily | undefined> = {
+  workflow: 'workflow',
+  bash: 'shell',
+  shell: 'shell',
+  agent: 'subagent',
+  subagent: 'subagent',
+  mcp_task: 'monitor',
+  monitor: 'monitor',
+}
+
+const KIND_ICONS: Record<BackgroundFamily, ReactNode> = {
+  workflow: <Waves size={13} />,
+  shell: <SquareTerminal size={13} />,
+  subagent: <Bot size={13} />,
+  monitor: <Radio size={13} />,
+}
+
+const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
+  workflow: 'panel.background.kind.workflow',
+  shell: 'panel.background.kind.shell',
+  subagent: 'panel.background.kind.subagent',
+  monitor: 'panel.background.kind.monitor',
+}
+
+/**
+ * Les travaux de fond, au-dessus des sous-agents et non mêlés à eux.
+ *
+ * Ils n'ont ni fil ni durée : le CLI n'annonce que leur existence, à chaque fois que
+ * la liste change. Une ligne sans clic est donc honnête, là où une ligne cliquable
+ * promettrait un détail qui n'existe pas.
+ */
+function BackgroundList({ tasks }: { tasks: BackgroundTask[] }) {
+  const t = useTranslate()
+  if (tasks.length === 0) return null
+
+  return (
+    <section className="mb-1 flex flex-col gap-1">
+      <h2 className="px-1 text-[0.6875rem] font-medium uppercase tracking-wide text-ink-faint">
+        {t('panel.background.title')}
+      </h2>
+      {tasks.map((task) => {
+        // Un type inconnu s'affiche tel qu'il est venu plutôt que d'être rangé de
+        // force dans une famille : le CLI en ajoute au fil des versions.
+        const family = KIND_ALIASES[task.kind.replace(/^local_/, '')]
+        return (
+          <div
+            key={task.id}
+            className="flex items-center gap-2 rounded-md border border-line bg-surface-high px-2 py-1.5"
+          >
+            <span className="shrink-0 text-accent">
+              {family ? KIND_ICONS[family] : <Waves size={13} />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs text-ink">{task.description}</span>
+              <span className="block truncate text-[0.6875rem] text-ink-faint">
+                {family ? t(KIND_LABELS[family]) : task.kind}
+              </span>
+            </span>
+          </div>
+        )
+      })}
+    </section>
   )
 }
 

@@ -24,7 +24,12 @@ export interface StreamListener {
  * d'événements pour une seule pastille.
  */
 export interface StatusWatcher {
-  onStatus(conversationId: string, status: ConversationStatus, warm: boolean): void
+  onStatus(
+    conversationId: string,
+    status: ConversationStatus,
+    warm: boolean,
+    background: number,
+  ): void
   /**
    * Socket rétabli après une coupure. Les transitions survenues pendant celle-ci n'ont
    * été poussées à personne : ce qui est affiché doit être relu à la source.
@@ -171,7 +176,7 @@ class WsClient {
 
     if (message.t === 'status') {
       for (const watcher of this.statusWatchers) {
-        watcher.onStatus(message.conversationId, message.status, message.warm)
+        watcher.onStatus(message.conversationId, message.status, message.warm, message.background)
       }
     }
 

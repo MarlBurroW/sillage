@@ -108,6 +108,22 @@ export const planFollowUpOptionSchema = z.object({
 })
 export type PlanFollowUpOption = z.infer<typeof planFollowUpOptionSchema>
 
+/**
+ * Un travail qui continue en dehors du tour : workflow, sous-agent passé en fond,
+ * commande lancée en tâche de fond, surveillance d'un service.
+ *
+ * `kind` reste une chaîne libre plutôt qu'une énumération : le CLI en ajoute au fil
+ * des versions et retombe sur son discriminant brut pour ceux qu'il ne nomme pas.
+ * L'UI traduit ceux qu'elle connaît et affiche les autres tels quels, au lieu de
+ * refuser un événement dont le seul tort serait d'être récent.
+ */
+export const backgroundTaskSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  description: z.string(),
+})
+export type BackgroundTask = z.infer<typeof backgroundTaskSchema>
+
 export const sillageEventSchema = z.discriminatedUnion('type', [
   // Cycle de vie
   z.object({
@@ -356,6 +372,24 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     trigger: z.enum(['manual', 'auto', 'unknown']),
     preTokens: z.number().nullable().default(null),
     postTokens: z.number().nullable().default(null),
+  }),
+
+  /**
+   * Les travaux de fond vivants ont changé : un workflow a démarré, une commande
+   * lancée en tâche de fond s'est terminée, un sous-agent est passé en arrière-plan.
+   *
+   * Sémantique de remplacement, et non d'incrément : chaque événement porte la liste
+   * complète, l'état d'affichage se remplace au lieu de s'apparier. C'est ce qui
+   * distingue ce travail-là du reste du journal, où un début et une fin se répondent.
+   * Un événement manqué ne peut donc pas laisser un indicateur allumé pour toujours.
+   *
+   * Sans ça, un workflow tourne pendant plusieurs minutes sans que rien ne l'affiche :
+   * le tour se termine, le fil passe au repos, et des fichiers changent sous les yeux
+   * de l'utilisateur dans une session qui se dit inactive.
+   */
+  z.object({
+    type: z.literal('background.updated'),
+    tasks: z.array(backgroundTaskSchema),
   }),
 
   // Métadonnées

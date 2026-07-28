@@ -14,6 +14,14 @@ import { wsClient } from './ws-client'
  */
 
 const statuses = new Map<string, ConversationStatus>()
+/**
+ * Travaux de fond par conversation, dans une table à part.
+ *
+ * Séparée des statuts plutôt que fondue dans un objet : `useSyncExternalStore` compare
+ * les instantanés par identité, et un objet recomposé à chaque lecture rendrait sans
+ * fin. Deux tables de valeurs primitives évitent le mémo.
+ */
+const backgrounds = new Map<string, number>()
 const listeners = new Set<() => void>()
 
 function subscribe(listener: () => void): () => void {
@@ -37,6 +45,19 @@ export function useLiveStatus(conversationId: string): ConversationStatus | unde
 }
 
 /**
+ * Nombre de travaux de fond en cours, 0 tant que rien n'a été poussé.
+ *
+ * Toujours 0 pour une conversation froide : ces travaux vivent dans le process du CLI.
+ */
+export function useLiveBackground(conversationId: string): number {
+  return useSyncExternalStore(
+    subscribe,
+    () => backgrounds.get(conversationId) ?? 0,
+    () => 0,
+  )
+}
+
+/**
  * Branche l'onglet sur le flux de statuts. Monté par la sidebar, qui est la seule vue
  * à afficher des conversations qu'elle n'a pas ouvertes.
  */
@@ -45,15 +66,20 @@ export function useStatusFeed(): void {
 
   useEffect(() => {
     return wsClient.watchStatuses({
-      onStatus: (conversationId, status) => {
-        if (statuses.get(conversationId) === status) return
+      onStatus: (conversationId, status, _warm, background) => {
+        const changed =
+          statuses.get(conversationId) !== status ||
+          (backgrounds.get(conversationId) ?? 0) !== background
+        if (!changed) return
         statuses.set(conversationId, status)
+        backgrounds.set(conversationId, background)
         emit()
       },
       onResync: () => {
         // Ce qui a été poussé avant la coupure ne fait plus autorité : la liste relue
         // reprend la main, et les prochaines poussées repartent d'elle.
         statuses.clear()
+        backgrounds.clear()
         emit()
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       },

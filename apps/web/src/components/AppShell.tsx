@@ -49,7 +49,7 @@ import {
   useRenameConversation,
   useReorderConversations,
 } from '../lib/conversations'
-import { useLiveStatus, useStatusFeed } from '../lib/conversation-status'
+import { useLiveBackground, useLiveStatus, useStatusFeed } from '../lib/conversation-status'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
 import {
   restoreSidebarWidth,
@@ -719,6 +719,7 @@ function ConversationRow({
   const [editing, setEditing] = useState(false)
   // Le statut du socket prime sur celui de la liste, qui date de son chargement.
   const status = useLiveStatus(conversation.id) ?? conversation.status
+  const background = useLiveBackground(conversation.id)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: conversation.id,
@@ -785,6 +786,14 @@ function ConversationRow({
               'ml-auto size-1.5 shrink-0 rounded-full',
               status === 'awaiting_input' ? 'bg-caution' : 'bg-accent animate-pulse',
             )}
+          />
+        ) : background > 0 ? (
+          // Le point survit à la fin du tour tant qu'un travail continue : sans lui,
+          // une conversation qu'on a quittée pour une autre paraît terminée alors
+          // qu'un workflow y écrit encore.
+          <span
+            aria-label={t('shell.conversation.background')}
+            className="ml-auto size-1.5 shrink-0 rounded-full bg-accent/50 animate-pulse"
           />
         ) : null}
       </NavLink>
