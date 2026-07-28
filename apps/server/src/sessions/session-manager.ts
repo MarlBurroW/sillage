@@ -195,7 +195,7 @@ export class SessionManager {
       .from(conversations)
       .where(eq(conversations.id, conversationId))
       .get()
-    if (!row) throw notFound('Conversation introuvable.')
+    if (!row) throw notFound('conversation_not_found', 'Conversation not found.')
     return row
   }
 
@@ -244,7 +244,7 @@ export class SessionManager {
       throw new HttpError(
         400,
         'no_agent_session',
-        "Cette conversation n'a jamais démarré de session : il n'y a rien à forker.",
+        'This conversation never started a session: there is nothing to fork.',
       )
     }
 
@@ -495,7 +495,8 @@ export class SessionManager {
       throw new HttpError(
         503,
         'session_limit_reached',
-        `Les ${this.config.limits.maxConcurrentSessions} sessions simultanées sont occupées. Attends qu'une conversation se termine.`,
+        'All {limit} concurrent sessions are busy. Wait for a conversation to finish.',
+        { limit: this.config.limits.maxConcurrentSessions },
       )
     }
 
@@ -723,7 +724,7 @@ export class SessionManager {
       throw new HttpError(
         409,
         'conversation_busy',
-        'Un tour est en cours : attends qu\'il se termine pour compacter.',
+        'A turn is in progress: wait for it to finish before compacting.',
       )
     }
 

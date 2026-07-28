@@ -22,7 +22,7 @@ export function registerTerminalRoutes(
 ): void {
   const guard = (conversationId: string, userId: string): void => {
     if (!canReadConversation(ctx, conversationId, userId)) {
-      throw new HttpError(404, 'not_found', 'Conversation introuvable.')
+      throw new HttpError(404, 'conversation_not_found', 'Conversation not found.')
     }
   }
 

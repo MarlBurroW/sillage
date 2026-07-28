@@ -68,7 +68,10 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
       .all()
 
     if ((others?.total ?? 0) === 0) {
-      throw conflict('last_admin', "C'est le dernier administrateur : l'instance deviendrait ingérable.")
+      throw conflict(
+        'last_admin',
+        'This is the last administrator: the instance would become unmanageable.',
+      )
     }
   }
 
@@ -82,7 +85,11 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     const body = createUserBodySchema.parse(request.body)
 
     const existing = ctx.db.select().from(users).where(eq(users.username, body.username)).get()
-    if (existing) throw conflict('username_taken', `L'utilisateur « ${body.username} » existe déjà.`)
+    if (existing) {
+      throw conflict('username_taken', 'Username {username} is already taken.', {
+        username: body.username,
+      })
+    }
 
     ctx.db
       .insert(users)
@@ -113,28 +120,37 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
 
     const isSelf = id === actor.id
     if (!isSelf && !actor.isAdmin) {
-      throw forbidden("Seul un administrateur peut modifier un autre compte.")
+      throw forbidden('user_edit_forbidden', 'Only an administrator can modify another account.')
     }
 
     const target = ctx.db.select().from(users).where(eq(users.id, id)).get()
-    if (!target) throw notFound('Utilisateur introuvable.')
+    if (!target) throw notFound('user_not_found', 'User not found.')
 
     const patch: Partial<typeof users.$inferInsert> = {}
     if (body.displayName !== undefined) patch.displayName = body.displayName
 
     if (body.username !== undefined && body.username !== target.username) {
       const taken = ctx.db.select().from(users).where(eq(users.username, body.username)).get()
-      if (taken) throw conflict('username_taken', `« ${body.username} » est déjà pris.`)
+      if (taken) {
+        throw conflict('username_taken', 'Username {username} is already taken.', {
+          username: body.username,
+        })
+      }
       patch.username = body.username
     }
 
     if (body.isAdmin !== undefined && body.isAdmin !== target.isAdmin) {
       // Se donner le rôle soi-même viderait la distinction de tout sens.
-      if (!actor.isAdmin) throw forbidden('Seul un administrateur peut changer un rôle.')
+      if (!actor.isAdmin) {
+        throw forbidden('role_change_forbidden', 'Only an administrator can change a role.')
+      }
       // Se retirer soi-même le droit d'administrer donne un écran qu'on ne peut plus
       // rouvrir : c'est une erreur assez coûteuse pour valoir un refus explicite.
       if (isSelf && !body.isAdmin) {
-        throw forbidden('Retire-toi le rôle depuis un autre compte administrateur.')
+        throw forbidden(
+          'self_demote_forbidden',
+          'Remove your own admin role from another administrator account.',
+        )
       }
       if (!body.isAdmin) assertAnotherAdminRemains(target.id)
       patch.isAdmin = body.isAdmin
@@ -145,10 +161,10 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
       // écran resté déverrouillé suffit à prendre le compte définitivement.
       if (isSelf) {
         if (!body.currentPassword) {
-          throw badRequest('current_password_required', 'Indique ton mot de passe actuel.')
+          throw badRequest('current_password_required', 'Enter your current password.')
         }
         if (!(await verifyPassword(target.passwordHash, body.currentPassword))) {
-          throw forbidden('Mot de passe actuel incorrect.')
+          throw forbidden('password_incorrect', 'Current password is incorrect.')
         }
       }
       patch.passwordHash = await hashPassword(body.password)
@@ -181,17 +197,22 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
 
-    if (id === admin.id) throw badRequest('self_delete', 'Impossible de supprimer son propre compte.')
+    if (id === admin.id) throw badRequest('self_delete', 'You cannot delete your own account.')
 
     const target = listUsers().find((entry) => entry.id === id)
-    if (!target) throw notFound('Utilisateur introuvable.')
+    if (!target) throw notFound('user_not_found', 'User not found.')
 
     // Les clés étrangères vers `users` ne sont pas en cascade : la suppression
     // échouerait au niveau de la base. On l'explique au lieu de la laisser planter.
     if (target.ownedProjects > 0 || target.ownedConversations > 0) {
       throw conflict(
         'user_owns_resources',
-        `« ${target.username} » possède ${target.ownedProjects} projet(s) et ${target.ownedConversations} conversation(s). Transfère-les ou supprime-les d'abord.`,
+        'User {username} owns {projectCount} project(s) and {conversationCount} conversation(s). Transfer or delete them first.',
+        {
+          username: target.username,
+          projectCount: target.ownedProjects,
+          conversationCount: target.ownedConversations,
+        },
       )
     }
 

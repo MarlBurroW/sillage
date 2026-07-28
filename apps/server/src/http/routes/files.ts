@@ -55,20 +55,22 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     const absolute = resolveInside(workspaceOf(id, user.id), path)
 
     const info = await stat(absolute).catch(() => null)
-    if (!info?.isFile()) throw new HttpError(404, 'not_a_file', 'Ce chemin n\'est pas un fichier.')
+    if (!info?.isFile()) throw new HttpError(404, 'not_a_file', 'This path is not a file.')
     if (info.size > MAX_EDITABLE_BYTES) {
       throw new HttpError(
         413,
         'too_large',
-        `Fichier de ${Math.round(info.size / 1024)} Ko : au-delà de ${Math.round(
-          MAX_EDITABLE_BYTES / 1024,
-        )} Ko, il n'est pas ouvert.`,
+        'File is {sizeKb} KB, above the {maxKb} KB limit, and will not be opened.',
+        {
+          sizeKb: Math.round(info.size / 1024),
+          maxKb: Math.round(MAX_EDITABLE_BYTES / 1024),
+        },
       )
     }
 
     const buffer = await readFile(absolute)
     if (buffer.subarray(0, SNIFF_BYTES).includes(0)) {
-      throw new HttpError(415, 'binary', 'Fichier binaire, non éditable comme du texte.')
+      throw new HttpError(415, 'binary', 'Binary file, not editable as text.')
     }
 
     return {
@@ -125,11 +127,11 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
 
     const extension = extensionOf(path)
     const type = VIEWABLE_IMAGE_TYPES[extension]
-    if (!type) throw new HttpError(415, 'not_viewable', 'Ce type de fichier ne s\'affiche pas.')
+    if (!type) throw new HttpError(415, 'not_viewable', 'This file type cannot be displayed.')
 
     const absolute = resolveInside(workspaceOf(id, user.id), path)
     const info = await stat(absolute).catch(() => null)
-    if (!info?.isFile()) throw notFound('Fichier introuvable.')
+    if (!info?.isFile()) throw notFound('file_not_found', 'File not found.')
 
     // `Content-Security-Policy` : un SVG est un document, donc capable de porter du
     // script. Servi comme image inerte plutôt que comme page.
@@ -149,7 +151,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
 
     const info = await stat(absolute).catch(() => null)
     if (info && !info.isFile()) {
-      throw new HttpError(400, 'not_a_file', 'Ce chemin n\'est pas un fichier.')
+      throw new HttpError(400, 'not_a_file', 'This path is not a file.')
     }
 
     // L'agent écrit dans les mêmes fichiers pendant qu'on les édite. Sans cette
@@ -162,7 +164,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         throw new HttpError(
           409,
           'stale_write',
-          'Le fichier a changé sur le disque depuis son ouverture.',
+          'The file changed on disk since it was opened.',
         )
       }
     }

@@ -105,7 +105,7 @@ export class TerminalManager {
     if (existing.length >= MAX_TERMINALS_PER_CONVERSATION) {
       throw new TerminalError(
         'too_many_terminals',
-        `Maximum ${MAX_TERMINALS_PER_CONVERSATION} terminaux par conversation.`,
+        `Maximum ${MAX_TERMINALS_PER_CONVERSATION} terminals per conversation.`,
       )
     }
 
@@ -218,7 +218,7 @@ export class TerminalManager {
   private require(conversationId: string, terminalId: string): ManagedTerminal {
     const managed = this.terminals.get(terminalId)
     if (!managed || managed.conversationId !== conversationId) {
-      throw new TerminalError('terminal_not_found', 'Terminal introuvable.')
+      throw new TerminalError('terminal_not_found', 'Terminal not found.')
     }
     return managed
   }

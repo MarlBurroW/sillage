@@ -95,7 +95,11 @@ export function registerConversationRoutes(
     return ids.map((id) => {
       const row = byId.get(id)
       if (!row) {
-        throw badRequest('attachment_unavailable', 'Une pièce jointe est introuvable ou déjà envoyée.')
+        throw badRequest(
+          'attachment_unavailable',
+          'Attachment {id} is unavailable or has already been sent.',
+          { id },
+        )
       }
       return {
         id: row.id,
@@ -116,9 +120,9 @@ export function registerConversationRoutes(
       .where(eq(conversations.id, conversationId))
       .get()
 
-    if (!row) throw notFound('Conversation introuvable.')
+    if (!row) throw notFound('conversation_not_found', 'Conversation not found.')
     if (row.ownerId !== userId && row.visibility !== 'shared') {
-      throw notFound('Conversation introuvable.')
+      throw notFound('conversation_not_found', 'Conversation not found.')
     }
     return row.conversation
   }
@@ -126,7 +130,7 @@ export function registerConversationRoutes(
   const loadWritable = async (conversationId: string, userId: string) => {
     const conversation = await loadReadable(conversationId, userId)
     if (conversation.userId !== userId) {
-      throw forbidden('Seul le propriétaire de la conversation peut y écrire.')
+      throw forbidden('conversation_write_forbidden', 'Only the conversation owner can write to it.')
     }
     return conversation
   }
@@ -160,9 +164,9 @@ export function registerConversationRoutes(
     const includeArchived = (request.query as { archived?: string }).archived === '1'
 
     const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
-    if (!project) throw notFound('Projet introuvable.')
+    if (!project) throw notFound('project_not_found', 'Project not found.')
     if (project.ownerId !== user.id && project.visibility !== 'shared') {
-      throw notFound('Projet introuvable.')
+      throw notFound('project_not_found', 'Project not found.')
     }
 
     const rows = ctx.db
@@ -185,13 +189,13 @@ export function registerConversationRoutes(
     const body = createConversationBodySchema.parse(request.body)
 
     if (body.config.agent !== body.agent) {
-      throw badRequest('config_agent_mismatch', "La configuration ne correspond pas au CLI choisi.")
+      throw badRequest('config_agent_mismatch', 'The configuration does not match the selected CLI.')
     }
 
     const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
-    if (!project) throw notFound('Projet introuvable.')
+    if (!project) throw notFound('project_not_found', 'Project not found.')
     if (project.ownerId !== user.id && project.visibility !== 'shared') {
-      throw notFound('Projet introuvable.')
+      throw notFound('project_not_found', 'Project not found.')
     }
 
     // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
@@ -267,9 +271,9 @@ export function registerConversationRoutes(
     const body = reorderConversationsBodySchema.parse(request.body)
 
     const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
-    if (!project) throw notFound('Projet introuvable.')
+    if (!project) throw notFound('project_not_found', 'Project not found.')
     if (project.ownerId !== user.id && project.visibility !== 'shared') {
-      throw notFound('Projet introuvable.')
+      throw notFound('project_not_found', 'Project not found.')
     }
 
     const known = new Set(
@@ -283,7 +287,13 @@ export function registerConversationRoutes(
     // Un identifiant étranger au projet déplacerait une conversation d'ailleurs :
     // on refuse l'ensemble plutôt que d'appliquer un ordre partiel.
     const intruder = body.ids.find((conversationId) => !known.has(conversationId))
-    if (intruder) throw badRequest('conversation_not_in_project', 'Ordre invalide.')
+    if (intruder) {
+      throw badRequest(
+        'conversation_not_in_project',
+        'Conversation {id} does not belong to this project.',
+        { id: intruder },
+      )
+    }
 
     ctx.db.transaction((tx) => {
       body.ids.forEach((conversationId, index) => {
@@ -312,7 +322,7 @@ export function registerConversationRoutes(
     const source = await loadReadable(id, user.id)
 
     if (body.throughSeq > source.lastSeq) {
-      throw badRequest('fork_point_unknown', 'Ce point de coupe est au-delà du fil.')
+      throw badRequest('fork_point_unknown', 'This cut point is beyond the end of the thread.')
     }
 
     let agentSessionId: string
@@ -444,7 +454,7 @@ export function registerConversationRoutes(
 
     if (body.config !== undefined) {
       if (body.config.agent !== conversation.agent) {
-        throw badRequest('config_agent_mismatch', 'Le CLI d\'une conversation ne change pas.')
+        throw badRequest('config_agent_immutable', 'The CLI of a conversation cannot change.')
       }
       patch.config = JSON.stringify(body.config)
     }
@@ -509,7 +519,7 @@ export function registerConversationRoutes(
     if (!steered) {
       throw badRequest(
         'steer_unavailable',
-        "Aucun tour en cours à infléchir, ou ce CLI ne le permet pas.",
+        'No turn in progress to steer, or this CLI does not support it.',
       )
     }
     attachments.claim(body.attachmentIds, id)
@@ -524,7 +534,7 @@ export function registerConversationRoutes(
     await loadWritable(id, user.id)
 
     if (!(await sessions.compact(id))) {
-      throw badRequest('compact_unsupported', 'Ce CLI ne gère pas la compaction.')
+      throw badRequest('compact_unsupported', 'This CLI does not support compaction.')
     }
     return reply.status(202).send({ accepted: true })
   })
@@ -544,7 +554,7 @@ export function registerConversationRoutes(
     await loadWritable(id, user.id)
 
     if (!sessions.hasPendingPermission(id, requestId)) {
-      throw notFound('Demande de permission inconnue.')
+      throw notFound('permission_request_not_found', 'Permission request not found.')
     }
 
     const resolved = sessions.resolvePermission(id, requestId, {
@@ -555,7 +565,7 @@ export function registerConversationRoutes(
     if (!resolved) {
       // La session a pu s'arrêter entre l'affichage et le clic : le dire explicitement
       // plutôt que de laisser l'UI attendre une réponse qui ne viendra pas.
-      throw badRequest('permission_expired', 'Cette demande a expiré, la session est terminée.')
+      throw badRequest('permission_expired', 'This request has expired, the session has ended.')
     }
     return { ok: true }
   })
@@ -577,7 +587,7 @@ export function registerConversationRoutes(
       decidedBy: user.id,
     })
     if (!answered) {
-      throw badRequest('question_expired', "Cette question n'attend plus de réponse.")
+      throw badRequest('question_expired', 'This question is no longer awaiting an answer.')
     }
     return { ok: true }
   })
@@ -589,7 +599,7 @@ export function registerConversationRoutes(
     await loadWritable(id, user.id)
 
     if (!sessions.cancelQueued(id, queueId)) {
-      throw badRequest('queue_entry_gone', 'Ce message est déjà parti.')
+      throw badRequest('queue_entry_gone', 'This message has already been sent.')
     }
     return reply.status(204).send()
   })
@@ -606,7 +616,7 @@ export function registerConversationRoutes(
       decidedBy: user.id,
     })
     if (!resolved) {
-      throw badRequest('elicitation_expired', "Cette demande n'attend plus de réponse.")
+      throw badRequest('elicitation_expired', 'This request is no longer awaiting an answer.')
     }
     return { ok: true }
   })
@@ -623,7 +633,7 @@ export function registerConversationRoutes(
       decidedBy: user.id,
     })
     if (!reviewed) {
-      throw badRequest('plan_expired', "Ce plan n'attend plus de décision.")
+      throw badRequest('plan_expired', 'This plan is no longer awaiting a decision.')
     }
     return { ok: true }
   })

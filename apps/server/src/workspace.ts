@@ -35,9 +35,9 @@ export function conversationWorkspace(db: Db, conversationId: string, userId: st
     .where(eq(conversations.id, conversationId))
     .get()
 
-  if (!row) throw notFound('Conversation introuvable.')
+  if (!row) throw notFound('conversation_not_found', 'Conversation not found.')
   if (row.ownerId !== userId && row.visibility !== 'shared') {
-    throw notFound('Conversation introuvable.')
+    throw notFound('conversation_not_found', 'Conversation not found.')
   }
   return resolveConversationCwd(db, row.conversation)
 }
@@ -53,7 +53,7 @@ export function resolveConversationCwd(db: Db, conversation: ConversationRow): s
   }
 
   const project = db.select().from(projects).where(eq(projects.id, conversation.projectId)).get()
-  if (!project) throw notFound('Projet introuvable.')
+  if (!project) throw notFound('project_not_found', 'Project not found.')
   return project.workspacePath
 }
 
@@ -70,7 +70,8 @@ export function resolveInside(root: string, relativePath: string): string {
     throw new HttpError(
       400,
       'path_outside_workspace',
-      `« ${relativePath} » sort du répertoire de travail.`,
+      'Path {path} is outside the working directory.',
+      { path: relativePath },
     )
   }
   return absolute
@@ -94,7 +95,7 @@ export function resolveMention(
  */
 function refuseGitInternals(relativePath: string): void {
   if (relativePath.split('/').includes('.git')) {
-    throw new HttpError(400, 'git_internals', 'Le dossier .git ne se manipule pas ici.')
+    throw new HttpError(400, 'git_internals', 'The .git folder cannot be manipulated here.')
   }
 }
 
@@ -117,7 +118,7 @@ export async function createEntry(
 
   const absolute = resolveInside(root, relativePath)
   if (await exists(absolute)) {
-    throw new HttpError(409, 'entry_exists', `« ${name} » existe déjà.`)
+    throw new HttpError(409, 'entry_exists', '{name} already exists.', { name })
   }
 
   try {
@@ -126,7 +127,10 @@ export async function createEntry(
     // contrôle ci-dessus renseigne, celui-ci décide.
     else await writeFile(absolute, '', { flag: 'wx' })
   } catch (err) {
-    throw new HttpError(400, 'create_failed', err instanceof Error ? err.message : String(err))
+    throw new HttpError(400, 'create_failed', 'Could not create {name}: {reason}.', {
+      name,
+      reason: err instanceof Error ? err.message : String(err),
+    })
   }
 
   return relativePath
@@ -149,17 +153,21 @@ export async function moveEntry(root: string, from: string, to: string): Promise
   // Déplacer un dossier dans lui-même détruirait son contenu : `rename` le refuse sur
   // certains systèmes et l'accepte sur d'autres, donc on tranche ici.
   if (destination.startsWith(`${source}/`)) {
-    throw new HttpError(400, 'move_into_self', 'Un dossier ne peut pas être déplacé dans lui-même.')
+    throw new HttpError(400, 'move_into_self', 'A folder cannot be moved into itself.')
   }
   if (await exists(destination)) {
-    throw new HttpError(409, 'entry_exists', `« ${to} » existe déjà.`)
+    throw new HttpError(409, 'entry_exists', '{name} already exists.', { name: to })
   }
 
   try {
     await mkdir(dirname(destination), { recursive: true })
     await rename(source, destination)
   } catch (err) {
-    throw new HttpError(400, 'move_failed', err instanceof Error ? err.message : String(err))
+    throw new HttpError(400, 'move_failed', 'Could not move {from} to {to}: {reason}.', {
+      from,
+      to,
+      reason: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 
@@ -169,14 +177,17 @@ export async function deleteEntry(root: string, relativePath: string): Promise<v
 
   const absolute = resolveInside(root, relativePath)
   if (absolute === resolve(root)) {
-    throw new HttpError(400, 'delete_root', 'Le répertoire de travail ne se supprime pas.')
+    throw new HttpError(400, 'delete_root', 'The working directory cannot be deleted.')
   }
-  if (!(await exists(absolute))) throw notFound('Entrée introuvable.')
+  if (!(await exists(absolute))) throw notFound('entry_not_found', 'Entry not found.')
 
   try {
     await rm(absolute, { recursive: true, force: true })
   } catch (err) {
-    throw new HttpError(400, 'delete_failed', err instanceof Error ? err.message : String(err))
+    throw new HttpError(400, 'delete_failed', 'Could not delete {path}: {reason}.', {
+      path: relativePath,
+      reason: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 
@@ -302,11 +313,10 @@ export async function listDirectory(root: string, relativePath: string): Promise
   try {
     entries = await readdir(absolute, { withFileTypes: true })
   } catch (err) {
-    throw new HttpError(
-      404,
-      'directory_unreadable',
-      `Dossier illisible : ${err instanceof Error ? err.message : String(err)}`,
-    )
+    throw new HttpError(404, 'directory_unreadable', 'Directory {path} is unreadable: {reason}.', {
+      path: relativePath,
+      reason: err instanceof Error ? err.message : String(err),
+    })
   }
 
   const listed: TreeEntryDto[] = entries

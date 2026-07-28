@@ -15,18 +15,17 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
     const user = requireUser(request)
 
     const file = await request.file({ limits: { fileSize: MAX_ATTACHMENT_BYTES } })
-    if (!file) throw badRequest('no_file', 'Aucun fichier reçu.')
+    if (!file) throw badRequest('no_file', 'No file received.')
 
     const content = await file.toBuffer().catch(() => null)
     // `toBuffer` échoue quand la limite est franchie : la taille est donc contrôlée
     // pendant la lecture, sans jamais charger un fichier démesuré en mémoire.
     if (!content) {
-      throw badRequest(
-        'file_too_large',
-        `Fichier trop volumineux (maximum ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} Mo).`,
-      )
+      throw badRequest('file_too_large', 'File is too large (maximum {maxMb} MB).', {
+        maxMb: Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024),
+      })
     }
-    if (content.byteLength === 0) throw badRequest('empty_file', 'Fichier vide.')
+    if (content.byteLength === 0) throw badRequest('empty_file', 'File is empty.')
 
     // `basename` neutralise un nom qui contiendrait un chemin : il est affiché et
     // transmis à l'agent, il ne doit désigner aucun répertoire.
@@ -73,7 +72,7 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
     // Retirer une pièce jointe déjà envoyée réécrirait l'historique du fil, que le
     // journal doit pouvoir rejouer à l'identique (invariant I2).
     if (row.conversationId) {
-      throw badRequest('already_sent', 'Cette pièce jointe fait déjà partie de la conversation.')
+      throw badRequest('already_sent', 'This attachment is already part of the conversation.')
     }
 
     await store.remove(id)
