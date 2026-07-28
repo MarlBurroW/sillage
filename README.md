@@ -1,77 +1,101 @@
 <img src="docs/brand/wordmark.svg" alt="Sillage" width="340" height="72">
 
-Plateforme de développement agentique self-hosted et multi-CLI. Une UI web, pensée
-mobile d'abord, pour piloter Claude Code et Codex sur ses projets depuis n'importe où.
+[![Latest release](https://img.shields.io/github/v/release/MarlBurroW/sillage)](https://github.com/MarlBurroW/sillage/releases/latest)
+[![CI](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml/badge.svg)](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-La spec complète est dans [docs/SPEC.md](docs/SPEC.md).
+A self-hosted, mobile-first web UI that drives the native Claude Code and Codex
+CLIs on your own machine. Vibe-code from anywhere: the official agent harnesses,
+without the terminal.
 
-## État
+Website: [marlburrow.github.io/sillage](https://marlburrow.github.io/sillage)
 
-Utilisable au quotidien. Les deux adaptateurs (Claude Code et Codex) sont en place, avec
-le chat, les appels d'outils, les permissions interactives, la recherche plein texte, un
-panneau IDE (explorateur, éditeur, diffs, terminaux) et la PWA mobile.
+## Why
 
-## Prérequis
+Coding agents work best inside their official harness: the prompts, tools and
+permission flows their vendors ship with the CLI. But a terminal is a poor fit for
+a phone. Sillage keeps the CLIs and replaces the terminal with a web UI: streaming
+chat, tool calls, interactive permissions, full-text search, an IDE panel (file
+explorer, editor, diffs, terminals) and an installable PWA with push notifications.
 
-- Node 22 ou plus
-- pnpm 9
-- `claude` et `codex` installés et déjà authentifiés sur la machine hôte
+The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 
-## Démarrage en développement
+## Install
+
+### Docker
+
+The image ships with the `claude` and `codex` CLIs preinstalled. Mount your
+credential directories and your projects:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/MarlBurroW/sillage/main/deploy/docker-compose.example.yml
+mv docker-compose.example.yml docker-compose.yml   # then adjust the mounted paths
+docker compose up -d
+docker compose exec -it sillage node /app/server/cli/user-create.js   # first account, admin
+```
+
+Update by pulling a newer image tag. The UI tells you when a release is available
+and what changed.
+
+### One-line script (Linux, no Docker)
+
+Requires Linux x64/arm64, systemd and Node.js 22+, with `claude` and `codex`
+installed and authenticated on the host:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash
+```
+
+This installs under `~/.local/share/sillage`, sets up a systemd user service and
+creates the first account. Later updates happen from the web UI (Settings > About)
+or by re-running the script. Remember `loginctl enable-linger $USER` so the
+service survives logout.
+
+### From source (development)
+
+Requires Node 22+, pnpm 9, and the `claude` / `codex` CLIs on the host:
 
 ```bash
 pnpm install
-pnpm db:generate          # seulement après avoir modifié packages/db/src/schema.ts
-pnpm user:create          # crée le premier compte, administrateur d'office
-pnpm dev                  # API sur :7317, UI Vite sur :5317 avec proxy /api
+pnpm db:generate          # only after changing packages/db/src/schema.ts
+pnpm user:create          # first account, admin
+pnpm dev                  # API on :7317, Vite UI on :5317 with /api proxy
 ```
 
-## Production
+## Security model
 
-```bash
-pnpm build
-cp deploy/config.example.toml ~/.config/sillage/config.toml
-cp deploy/sillage.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now sillage
-loginctl enable-linger $USER   # pour que le daemon survive à la déconnexion
-```
+Sillage is built for a trusted circle, not for public exposure:
 
-Le daemon sert alors l'UI buildée et l'API sur le même port.
+- Agents run under your system account, with your Claude and Codex credentials.
+  Every account on the instance shares your subscriptions.
+- Terminal mode gives a full shell under that same account.
+- There is no system-level isolation between users: a shared project is readable
+  by every account.
 
-Deux points qui se paient cher si on les oublie :
+The server listens on `127.0.0.1` by default and does not terminate TLS. To reach
+it remotely, go through a reverse proxy (Caddy) or a tunnel (Tailscale, Cloudflare
+Tunnel). Never expose it directly to the Internet.
 
-- Le `PATH` d'une unité systemd est minimal et n'inclut pas `~/.local/bin`, où vivent
-  généralement `claude` et `codex`. L'unité fournie le complète explicitement ; sans ça,
-  chaque conversation échoue au lancement du CLI. Si tes binaires sont ailleurs, ajuste
-  la ligne `Environment=PATH=` ou renseigne un chemin absolu dans `agents.*.binary`.
-- Ne lance pas le daemon avec un simple `node ... &` depuis un terminal : il reçoit un
-  `SIGTERM` à la fermeture du shell. C'est systemd qui doit le superviser.
+## Releases
 
-## Sécurité
+Releases are git tags (`vX.Y.Z`). Each tag builds Linux tarballs (x64 and arm64,
+prebuilt native modules included), a multi-arch Docker image on
+`ghcr.io/marlburrow/sillage`, and a GitHub release with generated notes. The app
+shows the installed version, checks for newer releases, and on installer-based
+setups can update itself from the UI.
 
-Sillage est conçu pour un cercle de confiance, pas pour un accès public :
-
-- Les agents tournent sous ton compte utilisateur, avec tes credentials Claude et Codex.
-  Tous les utilisateurs de l'instance consomment donc ton abonnement.
-- Le mode terminal (lot 5) donne un shell complet sous ce même compte.
-- Il n'y a pas d'isolation système entre utilisateurs. Un projet partagé est lisible par
-  tous les comptes de l'instance.
-
-Le serveur écoute sur `127.0.0.1` par défaut et ne gère pas TLS. Pour y accéder à
-distance, passe par un reverse proxy (Caddy) ou un tunnel (Tailscale, Cloudflare Tunnel).
-Ne l'expose jamais directement sur Internet.
-
-## Structure
+## Repository layout
 
 ```
-apps/server      daemon Fastify : API, WebSocket, supervision des CLI
-apps/web         UI React, PWA
-packages/protocol schéma d'événements et types partagés
-packages/db      schéma Drizzle et migrations
-deploy/          unité systemd et configuration d'exemple
-docs/brand/      la marque, et les fichiers qui en dérivent
+apps/server       Fastify daemon: API, WebSocket, CLI supervision
+apps/web          React UI, PWA
+packages/protocol shared event schema and types
+packages/db       Drizzle schema and migrations
+deploy/           systemd unit template, config example, docker-compose example
+site/             one-page website (GitHub Pages)
+docs/brand/       the brand and the files derived from it
 ```
 
-## Licence
+## License
 
-MIT, voir [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).

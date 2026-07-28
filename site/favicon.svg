@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    Marque de Sillage, dessinée pour l'onglet du navigateur.
+
+    La couleur ne peut pas venir des jetons du thème : un favicon est chargé comme une
+    image, hors du document, et n'hérite de rien. Elle est donc figée sur l'accent par
+    défaut (teinte 275), avec une variante plus claire en thème sombre pour rester
+    lisible sur la barre d'onglets.
+
+    Même tracé que `apps/web/src/components/Logo.tsx`.
+  -->
+  <style>
+    :root { --mark: #535cda; }
+    @media (prefers-color-scheme: dark) { :root { --mark: #8f9bff; } }
+  </style>
+  <circle cx="16" cy="6.4" r="3.4" fill="var(--mark)" />
+  <g fill="none" stroke="var(--mark)" stroke-width="3" stroke-linecap="round">
+    <path d="M10.8 13.8Q16 17.4 21.2 13.8" />
+    <path d="M7.4 19.2Q16 24.6 24.6 19.2" opacity="0.7" />
+    <path d="M4 24.6Q16 31.4 28 24.6" opacity="0.45" />
+  </g>
+</svg>

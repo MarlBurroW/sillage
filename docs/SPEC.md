@@ -18,16 +18,19 @@ technique centrale du produit : rien de ce qui se passe n'est perdu si le résea
 | Backend | Node 22 + TypeScript + Fastify |
 | Frontend | React 19 + Vite + Tailwind, PWA installable |
 | Base | SQLite (WAL) via Drizzle ORM |
-| Déploiement | Unité systemd sur la machine hôte, pas de Docker |
+| Déploiement | Unité systemd sur la machine hôte (installeur fourni) ; image Docker en option |
 | CLI cibles v1 | Claude Code 2.1.x, Codex 0.142.x |
 
-### Pourquoi pas Docker
+### Docker : optionnel, pas isolant
 
-Les agents ont besoin d'un accès direct au système de fichiers de l'hôte (les workspaces
-sont des dossiers réels), aux credentials de l'hôte, à `git` de l'hôte et à ses clés SSH.
-Conteneuriser reviendrait à monter tout ça dans le conteneur, ce qui annule le bénéfice
-d'isolation tout en ajoutant une couche de complexité et de mémoire. Sillage est un
-daemon qui tourne sous ton compte utilisateur.
+Décision initiale : pas de Docker, parce que les agents ont besoin d'un accès direct au
+système de fichiers de l'hôte (les workspaces sont des dossiers réels), aux credentials
+de l'hôte, à `git` et aux clés SSH. Tout cela reste vrai : l'image Docker publiée depuis
+la 0.1 n'apporte aucune isolation, elle monte credentials et projets depuis l'hôte. Elle
+existe parce qu'elle simplifie l'installation (CLIs agents préinstallés, pas de Node à
+gérer), pas pour cloisonner. Le déploiement de référence reste le daemon systemd sous
+ton compte utilisateur, désormais posé par `install.sh` avec un layout versionné
+(`app/releases/vX.Y.Z` + lien `current`) qui permet la mise à jour depuis l'UI.
 
 ### Pourquoi pas Rust
 
@@ -1248,6 +1251,15 @@ La redirection est conditionnée à la largeur réelle, pas à une classe `hidde
 élément caché en CSS reste monté, donc une redirection montée est une redirection
 exécutée, et la liste du téléphone se serait redirigée toute seule.
 
+**À propos.** Dernière catégorie, visible de tous : version installée, dernière version
+publiée, et les notes de toutes les releases parues depuis (telles quelles depuis
+GitHub, donc en anglais). Une pastille discrète sur l'icône signale une mise à jour
+disponible, sans toast : la mise à jour attend sans presser. L'action de mise à jour
+est réservée aux administrateurs et n'apparaît que sur le canal `installer` ; en
+Docker, l'écran affiche la commande `docker pull` équivalente. Pendant la mise à jour,
+la progression est sondée sur `/api/system/update/status`, puis le client sonde
+`/api/health` jusqu'à ce que la nouvelle version réponde et se recharge.
+
 **Confort de lecture.** Trois réglages qui ne touchent qu'au texte des messages : taille,
 interligne, et douceur de l'encre. Agrandir la conversation ne doit pas déplacer la barre
 latérale ni la barre de saisie, donc ils vivent sur une classe posée sur le rendu markdown
@@ -1763,12 +1775,34 @@ binary = "codex"
 enabled = true
 ```
 
-Unité systemd utilisateur (`~/.config/systemd/user/sillage.service`), avec
-`Restart=on-failure`, `MemoryHigh=1G` en garde-fou, et `ExecStart` pointant sur
-`node --max-old-space-size=256 apps/server/dist/main.js`.
+Trois modes d'installation :
+
+1. **Installeur (`install.sh`)**, le mode de référence. Télécharge le tarball de la
+   release (bundle serveur + frontend + node_modules natifs précompilés) dans
+   `~/.local/share/sillage/app/releases/vX.Y.Z`, bascule un lien `current` atomique,
+   rend l'unité systemd depuis `deploy/sillage.service.tmpl` et démarre le service.
+   L'unité pose `SILLAGE_INSTALL_DIR`, ce qui active la mise à jour intégrée :
+   l'écran À propos affiche la version installée, les nouveautés publiées depuis, et
+   un administrateur peut mettre à jour en un clic (téléchargement, bascule du lien,
+   redémarrage via systemd, `Restart=always`).
+2. **Docker** (`ghcr.io/marlburrow/sillage`), CLIs agents préinstallés, credentials et
+   projets montés depuis l'hôte. `SILLAGE_UPDATE_CHANNEL=docker` désactive la mise à
+   jour intégrée : l'UI affiche la commande `docker pull` à la place.
+3. **Depuis les sources**, pour le développement (`pnpm dev`) ou un déploiement manuel.
+
+Les releases sont des tags git `vX.Y.Z` : la CI construit tarballs Linux x64/arm64,
+image Docker multi-arch et release GitHub à notes générées. La version est figée dans
+les bundles à la compilation (`SILLAGE_VERSION`), exposée par `/api/health` et
+`/api/system/version`.
+
+Variables d'environnement reconnues : `SILLAGE_HOST` et `SILLAGE_PORT` (priment sur le
+TOML), `SILLAGE_CONFIG`, `SILLAGE_DATA_DIR`, `SILLAGE_WEB_ROOT`, `SILLAGE_MIGRATIONS`,
+`SILLAGE_INSTALL_DIR`, `SILLAGE_UPDATE_CHANNEL`. Le TOML accepte les clés en snake_case
+comme en camelCase.
 
 L'exposition à l'extérieur se fait par Caddy ou par un tunnel (Tailscale, Cloudflare
-Tunnel). Sillage n'écoute pas sur `0.0.0.0` par défaut et ne gère pas TLS lui-même.
+Tunnel). Sillage n'écoute pas sur `0.0.0.0` par défaut (hors Docker) et ne gère pas TLS
+lui-même.
 
 ---
 
