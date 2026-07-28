@@ -33,6 +33,11 @@ export type ChatRow =
 const MIN_GROUP_SIZE = 2
 
 /** Un appel n'est terminé que lorsque tout ce qu'il a déclenché l'est aussi. */
+/** Vrai si le sous-agent de cet appel, ou d'un appel imbriqué, a écrit un rapport. */
+function hasReport(node: ToolNode): boolean {
+  return node.messages.length > 0 || node.children.some(hasReport)
+}
+
 export function isSettled(node: ToolNode): boolean {
   return node.tool.status !== 'running' && node.children.every(isSettled)
 }
@@ -90,7 +95,18 @@ export function buildRows(items: ChatItem[]): ChatRow[] {
       // Les appels d'un sous-agent sont déjà rendus sous leur parent.
       if (!roots.has(item.id)) continue
       const node = nodes.get(item.id)
-      if (node) run.push(node)
+      if (!node) continue
+
+      // Un appel dont le sous-agent a écrit un rapport garde sa carte dépliée dans
+      // le fil : replié dans un groupe « N outils », le rapport disparaîtrait de
+      // l'écran (et de la recherche en page) alors que c'est souvent la substance
+      // du tour.
+      if (hasReport(node)) {
+        flush()
+        rows.push({ kind: 'tool', key: node.tool.id, node })
+      } else {
+        run.push(node)
+      }
       continue
     }
 

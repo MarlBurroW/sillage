@@ -209,13 +209,28 @@ export function Composer({
   }, [catalog, config.model])
 
   const effortOptions = useMemo((): SelectOption<string>[] => {
-    return effortsFor(catalog?.models, config.model).map((effort) => ({
+    const known = effortsFor(catalog?.models, config.model).map((effort) => ({
       value: effort.value,
       label: effort.label,
       hint: effort.hint ?? undefined,
       icon: <Brain size={13} />,
     }))
-  }, [catalog, config.model])
+
+    // Même règle que pour le modèle : le niveau enregistré reste sélectionnable et
+    // lisible quand le catalogue ne le déclare pas (ou plus). Seulement si le modèle
+    // gère l'effort : sinon le sélecteur n'a pas à exister.
+    const current =
+      config.agent === 'claude' ? config.effort : config.agent === 'codex' ? config.reasoningEffort : ''
+    if (known.length > 0 && current && !known.some((option) => option.value === current)) {
+      known.unshift({
+        value: current,
+        label: current,
+        hint: 'Réglage enregistré',
+        icon: <Brain size={13} />,
+      })
+    }
+    return known
+  }, [catalog, config])
 
   /**
    * Modes de collaboration annoncés par Codex. Le mode décide des outils accessibles

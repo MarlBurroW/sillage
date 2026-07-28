@@ -22,6 +22,11 @@ const EXTRACT = sql`
   FROM events AS event, json_each(event.payload ->> '$.blocks') AS block
   WHERE event.type = 'message.completed'
     AND block.value ->> '$.type' = 'text'
+    -- Les messages de sous-agents vivent dans la carte de l'appel qui les a lancés,
+    -- sans ancre propre dans le fil : un résultat de recherche qui y mènerait
+    -- n'aurait nulle part où défiler. Le coalesce garde les événements d'avant le
+    -- champ, qui restent des lignes du fil principal.
+    AND coalesce(event.payload ->> '$.parentToolCallId', '') = ''
 `
 
 /** Écriture d'un client Drizzle ou d'une transaction : les deux savent exécuter du SQL. */
