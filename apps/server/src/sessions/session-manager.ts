@@ -13,8 +13,7 @@ import {
   type PushPayload,
   type SillageEvent,
 } from '@sillage/protocol'
-import { ClaudeRunner } from '../agents/claude/runner.js'
-import { CodexRunner } from '../agents/codex/runner.js'
+import type { AgentRegistry } from '../agents/registry.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -29,7 +28,6 @@ import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
 import { resolveConversationCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
-import { forkAgentSession } from './fork.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
 interface QueuedMessage {
@@ -96,6 +94,7 @@ export class SessionManager {
     private readonly db: Db,
     private readonly log: EventLog,
     private readonly config: Config,
+    private readonly registry: AgentRegistry,
   ) {
     this.statusBus.setMaxListeners(200)
   }
@@ -248,22 +247,13 @@ export class SessionManager {
       )
     }
 
-    // Côté Claude, le point de coupe est une entrée du transcript, dont l'identifiant
-    // ne vit que dans le payload natif conservé à la traduction (invariant I3).
-    const raw = this.log.lastRawOfType(conversationId, 'message.completed', throughSeq)
-    const uuid = (raw as { uuid?: unknown } | null)?.uuid
-
-    // Côté Codex, la coupe s'exprime en nombre de tours retirés depuis la fin.
-    const turns = this.log.countByType(conversationId, 'turn.completed', throughSeq)
-
-    return forkAgentSession({
-      agent: conversation.agent,
-      agentSessionId: conversation.agentSessionId,
-      binary: this.config.agents[conversation.agent].binary,
-      cwd: this.resolveCwd(conversation),
-      claudeUpToMessageId: typeof uuid === 'string' ? uuid : null,
-      codexTurnsToDrop: Math.max(turns.total - turns.kept, 0),
-    })
+    // Le point de coupe est propre à chaque CLI (entrée de transcript, tours à
+    // retirer...) : l'adaptateur le calcule depuis le journal et le consomme lui-même.
+    const adapter = this.registry.adapter(conversation.agent)
+    return adapter.fork(
+      { agentSessionId: conversation.agentSessionId, cwd: this.resolveCwd(conversation) },
+      adapter.forkCut(this.log, conversationId, throughSeq),
+    )
   }
 
   setNotifier(notifier: ConversationNotifier): void {
@@ -397,7 +387,7 @@ export class SessionManager {
       conversationId,
       cwd: this.resolveCwd(conversation),
       config: parseAgentConfig(conversation.config),
-      binary: this.config.agents[conversation.agent].binary,
+      binary: this.registry.adapter(conversation.agent).binary,
       attachmentsRoot: this.config.paths.attachments,
       resumeSessionId: conversation.agentSessionId,
 
@@ -529,8 +519,7 @@ export class SessionManager {
     // Relu depuis la base : agentSessionId a pu être renseigné par un runner précédent.
     const fresh = this.loadConversation(conversationId)
     const context = this.buildContext(fresh)
-    const runner: AgentRunner =
-      fresh.agent === 'claude' ? new ClaudeRunner(context) : new CodexRunner(context)
+    const runner = this.registry.adapter(fresh.agent).createRunner(context)
 
     this.runners.set(conversationId, {
       runner,

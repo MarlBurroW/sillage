@@ -45,6 +45,7 @@ import type {
 } from '../types.js'
 import { toWorkspacePath } from '../claude/file-edits.js'
 import { CodexAppServerClient } from './app-server-client.js'
+import { CLIENT_INFO } from './client-info.js'
 
 /**
  * Adaptateur Codex (invariant I3) : traduit l'app-server vers le schéma d'événements
@@ -54,8 +55,6 @@ import { CodexAppServerClient } from './app-server-client.js'
  * sandbox **à chaque tour**, donc changer un réglage ne demande jamais de relancer le
  * process.
  */
-
-const CLIENT_INFO = { name: 'sillage', title: 'Sillage', version: '0.1.0' } as const
 
 /** Vocabulaire de `PatchChangeKind` vers celui du journal. */
 const FILE_ACTIONS: Record<PatchChangeKind['type'], 'created' | 'modified' | 'deleted'> = {

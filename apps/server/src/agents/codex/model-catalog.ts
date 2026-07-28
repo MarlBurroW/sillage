@@ -1,5 +1,6 @@
 import type { CollaborationModeMask, Model, ModelListResponse } from '@sillage/protocol/codex/v2'
 import { CodexAppServerClient } from './app-server-client.js'
+import { CLIENT_INFO } from './client-info.js'
 
 /**
  * Catalogue des modèles et des modes de collaboration Codex, lus sur l'app-server.
@@ -15,8 +16,6 @@ interface Listing {
 }
 
 const CACHE_TTL_MS = 60 * 60 * 1000
-
-const CLIENT_INFO = { name: 'sillage', title: 'Sillage', version: '0.1.0' } as const
 
 export class CodexModelCatalog {
   private cache: (Listing & { fetchedAt: number }) | null = null

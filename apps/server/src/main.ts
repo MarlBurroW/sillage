@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { openDatabase } from '@sillage/db'
+import { createAgentRegistry } from './agents/registry.js'
 import { purgeExpiredSessions } from './auth/sessions.js'
 import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
@@ -21,7 +22,10 @@ async function main(): Promise<void> {
   await purgeExpiredSessions(db)
 
   const log = new EventLog(db)
-  const sessions = new SessionManager(db, log, config)
+  // Partagé entre le gestionnaire de sessions et les routes : les adaptateurs portent
+  // les caches de catalogue et de quota, qui ne doivent exister qu'une fois.
+  const registry = createAgentRegistry(config)
+  const sessions = new SessionManager(db, log, config, registry)
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
   const recovered = sessions.recoverInterrupted()
@@ -30,7 +34,7 @@ async function main(): Promise<void> {
   const orphans = await attachments.purgeOrphans()
 
   const push = new PushService(db, config.paths.data)
-  const app = await buildApp({ db, config }, log, sessions, attachments, terminals, push)
+  const app = await buildApp({ db, config }, log, sessions, registry, attachments, terminals, push)
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
   if (recovered > 0) {

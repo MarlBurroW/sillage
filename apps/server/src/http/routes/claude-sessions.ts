@@ -9,7 +9,7 @@ import {
   type ClaudeSessionsDto,
   type ClaudeSyncDto,
 } from '@sillage/protocol'
-import type { AgentCatalogs } from '../../agents/catalogs.js'
+import type { AgentRegistry } from '../../agents/registry.js'
 import {
   readTranscript,
   translateTranscript,
@@ -56,7 +56,7 @@ export function registerClaudeSessionRoutes(
   ctx: AppContext,
   log: EventLog,
   sessions: SessionManager,
-  catalogs: AgentCatalogs,
+  registry: AgentRegistry,
 ): void {
   const loadProject = (projectId: string, userId: string) => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
@@ -139,7 +139,7 @@ export function registerClaudeSessionRoutes(
         ? (firstPrompt.event.blocks.find((block) => block.type === 'text')?.text ?? null)
         : null
 
-    const config = await catalogs.resolveDefaults(DEFAULT_CLAUDE_CONFIG)
+    const config = await registry.adapter('claude').resolveDefaults(DEFAULT_CLAUDE_CONFIG)
 
     const [lowest] = ctx.db
       .select({ min: min(conversations.position) })

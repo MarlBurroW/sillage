@@ -21,15 +21,12 @@ import {
   type JournalPageDto,
   type WorkingDiffDto,
 } from '@sillage/protocol'
-import { describeEdit as describeClaudeEdit } from '../../agents/claude/file-edits.js'
-import { describeEdit as describeCodexEdit } from '../../agents/codex/file-edits.js'
-import type { AgentCatalogs } from '../../agents/catalogs.js'
+import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { readGitStatus, readHeadCommit, readWorkingDiff } from '../../git.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
-import { ForkError } from '../../sessions/fork.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
@@ -81,7 +78,7 @@ export function registerConversationRoutes(
   ctx: AppContext,
   log: EventLog,
   sessions: SessionManager,
-  catalogs: AgentCatalogs,
+  registry: AgentRegistry,
   attachments: AttachmentStore,
 ): void {
   /**
@@ -199,7 +196,7 @@ export function registerConversationRoutes(
 
     // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
     // base : la conversation garde ensuite une configuration explicite et stable.
-    const config = await catalogs.resolveDefaults(body.config)
+    const config = await registry.adapter(body.agent).resolveDefaults(body.config)
 
     // Position en tête du projet : c'est l'ordre qu'avait le tri par date, et une
     // nouvelle conversation en bas de liste passerait inaperçue.
@@ -422,12 +419,13 @@ export function registerConversationRoutes(
     const { path } = editDiffQuerySchema.parse(request.query)
 
     const conversation = await loadReadable(id, user.id)
-    const raw = log.rawOfTool(id, toolCallId)
-
-    if (conversation.agent === 'codex') {
-      return describeCodexEdit(raw.completed, sessions.workingDirectory(id), path)
-    }
-    return describeClaudeEdit(raw.started, path, log.fileEditAction(id, toolCallId, path) ?? 'modified')
+    return registry.adapter(conversation.agent).describeEdit({
+      log,
+      conversationId: id,
+      toolCallId,
+      cwd: sessions.workingDirectory(id),
+      path,
+    })
   })
 
   app.patch('/api/conversations/:id', async (request) => {
