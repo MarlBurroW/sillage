@@ -209,6 +209,10 @@ export class WebhookService {
         clientMessageId,
         stopReason: completed.stopReason ?? 'unknown',
         lastMessage: this.lastAssistantText(entry.conversationId),
+        // Un tour peut se refermer en laissant des commandes ou des agents en
+        // arrière-plan : ce compte dit à l'appelant que la vraie fin viendra dans une
+        // livraison suivante, au lieu de le laisser conclure trop tôt.
+        backgroundJobs: this.backgroundJobCount(entry.conversationId),
       })
       return
     }
@@ -325,6 +329,19 @@ export class WebhookService {
       secret: row.token.webhookSecret,
       replyDeadlineSec: row.options?.replyDeadlineSec ?? 0,
     }
+  }
+
+  /**
+   * Travaux de fond encore ouverts, d'après le dernier `background.updated`.
+   *
+   * Le CLI publie la liste entière à chaque changement : la dernière entrée du journal
+   * est donc l'état courant, sans rien à apparier.
+   */
+  private backgroundJobCount(conversationId: string): number {
+    const [latest] = this.log.latest(conversationId, ['background.updated'], 1)
+    if (!latest) return 0
+    const event = latest.event as { tasks?: unknown[] }
+    return event.tasks?.length ?? 0
   }
 
   private lastAssistantText(conversationId: string): string | null {
