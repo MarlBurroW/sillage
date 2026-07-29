@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -49,7 +50,14 @@ import {
   useRenameConversation,
   useReorderConversations,
 } from '../lib/conversations'
-import { useLiveBackground, useLiveStatus, useStatusFeed } from '../lib/conversation-status'
+import {
+  useLiveBackground,
+  useLiveLoops,
+  useLiveStatus,
+  useStatusFeed,
+} from '../lib/conversation-status'
+import { buildSidebarSignals, presentSignal } from '../lib/signals'
+import { SignalDot } from './chat/Signals'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
 import {
   restoreSidebarWidth,
@@ -720,6 +728,13 @@ function ConversationRow({
   // Le statut du socket prime sur celui de la liste, qui date de son chargement.
   const status = useLiveStatus(conversation.id) ?? conversation.status
   const background = useLiveBackground(conversation.id)
+  const loops = useLiveLoops(conversation.id)
+  const signals = useMemo(
+    () => buildSidebarSignals({ status, background, loops }),
+    [status, background, loops],
+  )
+  const present = presentSignal(signals)
+  const loop = signals.find((signal) => signal.kind === 'loop') ?? null
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: conversation.id,
@@ -752,7 +767,6 @@ function ConversationRow({
   }
 
   const isActive = openMatch?.params.conversationId === conversation.id
-  const busy = status === 'running' || status === 'awaiting_input'
 
   return (
     <li
@@ -779,23 +793,16 @@ function ConversationRow({
           <AgentIcon agent={conversation.agent} size={13} />
         </span>
         <span className="truncate">{conversation.title}</span>
-        {busy ? (
-          <span
-            aria-label={t('shell.conversation.running')}
-            className={cx(
-              'ml-auto size-1.5 shrink-0 rounded-full',
-              status === 'awaiting_input' ? 'bg-caution' : 'bg-accent animate-pulse',
-            )}
-          />
-        ) : background > 0 ? (
-          // Le point survit à la fin du tour tant qu'un travail continue : sans lui,
-          // une conversation qu'on a quittée pour une autre paraît terminée alors
-          // qu'un workflow y écrit encore.
-          <span
-            aria-label={t('shell.conversation.background')}
-            className="ml-auto size-1.5 shrink-0 rounded-full bg-accent/50 animate-pulse"
-          />
-        ) : null}
+        {/*
+          Deux points au plus, et jamais davantage : l'état présent, et la boucle.
+          Le premier est le plus grave de ce qui se passe maintenant ; la seconde parle
+          de ce qui arrivera, donc elle ne lui fait pas concurrence et s'affiche à côté,
+          y compris pendant un tour.
+        */}
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {present ? <SignalDot signal={present} /> : null}
+          {loop ? <SignalDot signal={loop} /> : null}
+        </span>
       </NavLink>
 
       {conversation.isOwner ? (

@@ -266,12 +266,10 @@ export function DraftConversationPage() {
           {AGENT_CAPABILITIES[agent].cliSessions && cliSessionList.length > 0 ? (
             <section className="flex flex-col gap-1.5">
               <h2 className="text-xs font-medium text-ink-soft">
-                Ou reprendre une session {AGENT_LABELS[agent]}
+                {t('draft.cliSessions.title', { label: AGENT_LABELS[agent] })}
               </h2>
               <p className="text-xs leading-snug text-ink-faint">
-                Commencées avec le CLI dans ce dossier. La conversation continue la même
-                session, dans les deux sens ; il suffit de ne pas être sur les deux en
-                même temps.
+                {t('draft.cliSessions.description')}
               </p>
               <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto">
                 {cliSessionList.map((session) => (
@@ -306,7 +304,7 @@ export function DraftConversationPage() {
                 <Banner>
                   {importSession.error instanceof Error
                     ? importSession.error.message
-                    : "L'import a échoué."}
+                    : t('draft.import.error')}
                 </Banner>
               ) : null}
             </section>
