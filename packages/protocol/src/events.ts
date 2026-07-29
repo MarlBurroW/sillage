@@ -289,8 +289,11 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('message.dequeued'),
     queueId: z.string(),
-    /** `sent` : le message part au CLI et devient un message ordinaire du fil. */
-    reason: z.enum(['sent', 'cancelled', 'expired']),
+    /**
+     * `sent` : le message part au CLI et devient un message ordinaire du fil.
+     * `steered` : il y part aussi, mais dans le tour en cours plutôt qu'au suivant.
+     */
+    reason: z.enum(['sent', 'steered', 'cancelled', 'expired']),
   }),
 
   // Saisie réclamée par un serveur MCP (elicitation/create)

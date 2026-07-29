@@ -220,6 +220,11 @@ export function cancelQueuedMessage(conversationId: string, queueId: string): Pr
   return api.delete(`/api/conversations/${conversationId}/queue/${queueId}`)
 }
 
+/** Fait passer un message en attente dans le tour en cours au lieu du suivant. */
+export function steerQueuedMessage(conversationId: string, queueId: string): Promise<unknown> {
+  return api.post(`/api/conversations/${conversationId}/queue/${queueId}/steer`)
+}
+
 export function answerElicitation(
   conversationId: string,
   requestId: string,

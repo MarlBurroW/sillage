@@ -604,6 +604,31 @@ export function registerConversationRoutes(
     return reply.status(204).send()
   })
 
+  /**
+   * Fait passer un message en attente dans le tour en cours.
+   *
+   * Le pendant de `DELETE` sur la même entrée : le message est déjà écrit et déjà en
+   * file, ce geste ne fait que choisir quand l'agent le lit.
+   */
+  app.post('/api/conversations/:id/queue/:queueId/steer', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, queueId } = request.params as { id: string; queueId: string }
+    await loadWritable(id, user.id)
+
+    const outcome = await sessions.steerQueued(id, queueId)
+    if (outcome === 'gone') {
+      throw badRequest('queue_entry_gone', 'This message has already been sent.')
+    }
+    if (outcome === 'unavailable') {
+      throw badRequest(
+        'steer_unavailable',
+        'No turn in progress to steer, or this CLI does not support it.',
+      )
+    }
+
+    return reply.status(202).send({ accepted: true })
+  })
+
   app.post('/api/conversations/:id/elicitations/:requestId', async (request) => {
     const user = requireUser(request)
     const { id, requestId } = request.params as { id: string; requestId: string }

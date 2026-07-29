@@ -700,6 +700,14 @@ export function ConversationPage() {
   if (!conversationId || !conversation) return null
 
   const isOwner = conversation.userId === user?.id
+  // Infléchir suppose un tour ouvert et un CLI qui sait le faire : proposer le geste
+  // ailleurs reviendrait à annoncer une action que le serveur refuserait. Seul Codex
+  // sait le faire (`turn/steer`) ; côté Claude, un message poussé en cours de tour s'y
+  // mêle au lieu de le réorienter.
+  const canSteer =
+    isOwner &&
+    AGENT_CAPABILITIES[conversation.agent].steer &&
+    (stream.status === 'running' || stream.status === 'awaiting_input')
   // Relu par le schéma plutôt que casté : une configuration enregistrée avant un
   // nouveau champ récupère ainsi ses valeurs par défaut au lieu d'arriver trouée.
   const config = agentConfigSchema.parse(conversation.config)
@@ -1047,6 +1055,7 @@ export function ConversationPage() {
                 conversationId={conversationId}
                 messages={stream.state.queued}
                 canCancel={isOwner}
+                canSteer={canSteer}
               />
             </div>
           </div>
@@ -1112,10 +1121,7 @@ export function ConversationPage() {
             status={stream.status}
             disabled={!isOwner}
             context={stream.state.context}
-            // Seul Codex sait infléchir un tour (`turn/steer`). Côté Claude, un message
-            // poussé en cours de tour s'y mêle au lieu de le réorienter, donc le bouton
-            // n'existe pas plutôt que d'être proposé puis refusé.
-            onSteer={isOwner && AGENT_CAPABILITIES[conversation.agent].steer ? steer : undefined}
+            onSteer={canSteer ? steer : undefined}
             onSend={send}
             onInterrupt={() => void interruptConversation(conversationId)}
             onConfigChange={(next) => void updateConfig(next)}

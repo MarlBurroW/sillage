@@ -395,6 +395,49 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Sort un message de la file pour l'injecter dans le tour en cours.
+   *
+   * Le message est retiré avant l'appel au CLI et remis à sa place si celui-ci refuse :
+   * un `steer` est asynchrone, et le laisser en file le temps de l'aller-retour
+   * l'exposerait à partir une seconde fois par `flushQueue`. Un refus le laisse donc
+   * là où il était, à attendre la fin du tour comme avant le clic.
+   */
+  async steerQueued(
+    conversationId: string,
+    queueId: string,
+  ): Promise<'steered' | 'gone' | 'unavailable'> {
+    const queue = this.queues.get(conversationId)
+    const entry = queue?.find((item) => item.queueId === queueId)
+    if (!queue || !entry) return 'gone'
+
+    const managed = this.runners.get(conversationId)
+    if (!managed) return 'unavailable'
+
+    const index = queue.indexOf(entry)
+    queue.splice(index, 1)
+    if (queue.length === 0) this.queues.delete(conversationId)
+
+    const conversation = this.loadConversation(conversationId)
+    const resolved = this.resolveMentions(this.resolveCwd(conversation), entry.mentions)
+
+    let steered = false
+    try {
+      steered = await managed.runner.steer(entry.text, entry.attachments, resolved)
+    } finally {
+      if (!steered) {
+        const restored = this.queues.get(conversationId) ?? []
+        restored.splice(index, 0, entry)
+        this.queues.set(conversationId, restored)
+      }
+    }
+    if (!steered) return 'unavailable'
+
+    this.log.append(conversationId, { type: 'message.dequeued', queueId, reason: 'steered' })
+    this.touch(conversationId)
+    return 'steered'
+  }
+
   /** Retire un message de la file avant qu'il ne parte. */
   cancelQueued(conversationId: string, queueId: string): boolean {
     const queue = this.queues.get(conversationId)
