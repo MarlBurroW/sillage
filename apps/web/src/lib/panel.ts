@@ -70,7 +70,7 @@ export function setPanelOpen(next: boolean): void {
   for (const listener of listeners) listener()
 }
 
-export type PanelTab = 'explorer' | 'editor' | 'changes' | 'terminals' | 'agents'
+export type PanelTab = 'explorer' | 'editor' | 'changes' | 'terminals' | 'agents' | 'mcp'
 
 /**
  * Onglet affiché et sous-agent consulté.

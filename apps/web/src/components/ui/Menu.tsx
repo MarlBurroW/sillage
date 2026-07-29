@@ -1,4 +1,5 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cx } from './cx'
 
@@ -63,6 +64,43 @@ export function MenuItem({
       {icon ? <span className="shrink-0">{icon}</span> : null}
       {children}
     </DropdownMenu.Item>
+  )
+}
+
+/**
+ * Entrée à cocher, pour un menu qui règle plusieurs choses à la fois.
+ *
+ * Le menu reste ouvert à la sélection, contrairement à `MenuItem` : cocher trois
+ * serveurs demanderait sinon de le rouvrir trois fois.
+ */
+export function MenuCheckboxItem({
+  checked,
+  onCheckedChange,
+  disabled = false,
+  children,
+}: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  disabled?: boolean
+  children: ReactNode
+}) {
+  return (
+    <DropdownMenu.CheckboxItem
+      checked={checked}
+      onCheckedChange={onCheckedChange}
+      onSelect={(event) => event.preventDefault()}
+      disabled={disabled}
+      className={cx(
+        'flex cursor-pointer items-center gap-2.5 rounded-md py-2 pr-2.5 pl-7 text-sm outline-none',
+        'relative text-ink-soft data-[disabled]:pointer-events-none data-[disabled]:opacity-45',
+        'data-[highlighted]:bg-accent-wash data-[highlighted]:text-ink',
+      )}
+    >
+      <DropdownMenu.ItemIndicator className="absolute left-2 flex items-center">
+        <Check size={13} />
+      </DropdownMenu.ItemIndicator>
+      {children}
+    </DropdownMenu.CheckboxItem>
   )
 }
 

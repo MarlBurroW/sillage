@@ -1143,6 +1143,7 @@ export function ConversationPage() {
             turnRunning={stream.state.turnRunning}
             subAgents={subAgents}
             background={background}
+            mcpServers={stream.state.mcp}
             open={panel.open}
           />
         </Suspense>
