@@ -257,6 +257,7 @@ export const en = {
   'apiTokens.webhook.hint': 'Optional. Called when a task finishes, blocks on a request, fails or is stopped. Signed with the webhook secret shown at creation.',
   'apiTokens.secret.token': 'API token',
   'apiTokens.secret.webhook': 'Webhook signing secret',
+  'apiTokens.permission.label': 'Permissions',
   'apiTokens.lifetime.label': 'Lifetime',
   'apiTokens.lifetime.none': 'Until revoked',
   'apiTokens.lifetime.days': '{days} days',

@@ -242,6 +242,7 @@ export const fr: Catalog = {
   'apiTokens.webhook.hint': "Facultative. Appelée quand une tâche se termine, se bloque sur une demande, échoue ou est arrêtée. Signée avec le secret de webhook montré à la création.",
   'apiTokens.secret.token': "Jeton d'API",
   'apiTokens.secret.webhook': 'Secret de signature des webhooks',
+  'apiTokens.permission.label': 'Permissions',
   'apiTokens.lifetime.label': 'Durée de vie',
   'apiTokens.lifetime.none': "Jusqu'à révocation",
   'apiTokens.lifetime.days': '{days} jours',
