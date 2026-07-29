@@ -24,6 +24,8 @@ import {
 import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
+import { createConversation } from '../../conversations/create.js'
+import { assertWorktreeBelongs } from '../v1/access.js'
 import { readGitStatus, readHeadCommit, readWorkingDiff } from '../../git.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
@@ -33,20 +35,6 @@ import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 const PAGE_SIZE = 500
-const PROVISIONAL_TITLE_MAX = 60
-
-/**
- * Titre affiché entre la création et le résumé du CLI, c'est-à-dire le temps du
- * premier tour. Un extrait du message dit déjà de quoi il s'agit, contrairement à un
- * « Nouvelle conversation » identique pour toutes.
- */
-function provisionalTitle(firstMessage: string | undefined): string {
-  const text = firstMessage?.trim().replace(/\s+/g, ' ')
-  if (!text) return 'Nouvelle conversation'
-  return text.length <= PROVISIONAL_TITLE_MAX
-    ? text
-    : `${text.slice(0, PROVISIONAL_TITLE_MAX).trimEnd()}...`
-}
 
 export function conversationToDto(row: ConversationRow, userId: string): ConversationDto {
   return {
@@ -70,6 +58,9 @@ export function conversationToDto(row: ConversationRow, userId: string): Convers
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     isOwner: row.userId === userId,
+    origin: row.originLabel
+      ? { tokenId: row.createdByTokenId, label: row.originLabel }
+      : null,
   }
 }
 
@@ -198,64 +189,32 @@ export function registerConversationRoutes(
       throw notFound('project_not_found', 'Project not found.')
     }
 
+    if (body.worktreeId) assertWorktreeBelongs(ctx, id, body.worktreeId)
+
     // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
     // base : la conversation garde ensuite une configuration explicite et stable.
     const config = await registry.adapter(body.agent).resolveDefaults(body.config)
 
-    // Position en tête du projet : c'est l'ordre qu'avait le tri par date, et une
-    // nouvelle conversation en bas de liste passerait inaperçue.
-    const [lowest] = ctx.db
-      .select({ min: min(conversations.position) })
-      .from(conversations)
-      .where(eq(conversations.projectId, id))
-      .all()
-
-    const now = Date.now()
-    const row: ConversationRow = {
-      id: randomUUID(),
+    const firstMessage = body.firstMessage
+    const row = await createConversation(ctx.db, sessions, {
       projectId: id,
-      worktreeId: body.worktreeId,
       userId: user.id,
-      title: body.title ?? provisionalTitle(body.firstMessage?.text),
-      titleSetByUser: body.title !== undefined,
       agent: body.agent,
-      agentSessionId: null,
-      forkedFromId: null,
-      config: JSON.stringify(config),
-      status: 'idle',
-      lastSeq: 0,
-      costUsd: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      pinned: false,
-      position: (lowest?.min ?? 0) - 1,
-      archivedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    }
-    ctx.db.insert(conversations).values(row).run()
+      config,
+      worktreeId: body.worktreeId,
+      title: body.title,
+      origin: null,
+      firstMessage: firstMessage && {
+        clientMessageId: firstMessage.clientMessageId,
+        text: firstMessage.text,
+        attachments: resolveAttachments(user.id, firstMessage.attachmentIds),
+        mentions: firstMessage.mentions,
+      },
+    })
 
-    if (body.firstMessage) {
-      // Si l'envoi échoue, la conversation ne doit pas rester comme un fil vide :
-      // on la retire et on remonte l'erreur telle quelle.
-      try {
-        const files = resolveAttachments(user.id, body.firstMessage.attachmentIds)
-        await sessions.sendMessage(
-          row.id,
-          body.firstMessage.clientMessageId,
-          body.firstMessage.text,
-          files,
-          body.firstMessage.mentions,
-        )
-        // Rattachées seulement après un envoi réussi : si le CLI refuse, la
-        // conversation est supprimée juste en dessous et les fichiers restent
-        // réutilisables pour une nouvelle tentative.
-        attachments.claim(body.firstMessage.attachmentIds, row.id)
-      } catch (err) {
-        ctx.db.delete(conversations).where(eq(conversations.id, row.id)).run()
-        throw err
-      }
-    }
+    // Rattachées seulement après un envoi réussi : si le CLI refuse, la conversation
+    // a été supprimée et les fichiers restent réutilisables pour une nouvelle tentative.
+    if (firstMessage) attachments.claim(firstMessage.attachmentIds, row.id)
 
     return reply.status(201).send(conversationToDto(row, user.id))
   })
@@ -348,6 +307,10 @@ export function registerConversationRoutes(
       titleSetByUser: body.title !== undefined,
       agentSessionId,
       forkedFromId: source.id,
+      // La branche est ouverte depuis l'interface, par une personne : hériter du
+      // marqueur d'origine de la source lui attribuerait un jeton qui n'y est pour rien.
+      createdByTokenId: null,
+      originLabel: null,
       status: 'idle',
       // Le journal est recopié juste après, qui posera le vrai compteur.
       lastSeq: 0,

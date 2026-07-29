@@ -212,6 +212,41 @@ export class EventLog {
   }
 
   /**
+   * Les derniers événements de certains types, du plus récent au plus ancien.
+   *
+   * Replier un journal entier pour dire où en est une conversation coûterait le prix de
+   * tout son historique à chaque appel. Ce qui décrit le présent tient dans les
+   * dernières entrées, et `limit` borne la lecture.
+   */
+  latest(conversationId: string, types: string[], limit: number): JournalEntry[] {
+    const rows = this.db
+      .select()
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), inArray(events.type, types)))
+      .orderBy(desc(events.seq))
+      .limit(limit)
+      .all()
+
+    return rows.map((row) => ({
+      conversationId: row.conversationId,
+      seq: row.seq,
+      ts: row.ts,
+      event: this.parseStored(row.seq, row.payload),
+    }))
+  }
+
+  /** Nombre d'événements d'un type, sans les charger. */
+  count(conversationId: string, type: string): number {
+    const row = this.db
+      .select({ n: sql<number>`count(*)` })
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), eq(events.type, type)))
+      .get()
+
+    return row?.n ?? 0
+  }
+
+  /**
    * Demandes d'interaction encore ouvertes : une requête dont la résolution n'a jamais
    * été journalisée.
    *

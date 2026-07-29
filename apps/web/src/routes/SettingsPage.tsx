@@ -6,6 +6,7 @@ import {
   KeyRound,
   Palette,
   Plug,
+  Terminal,
   UserRound,
   Users,
 } from 'lucide-react'
@@ -68,6 +69,12 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.mcp',
     descriptionKey: 'settings.section.mcp.description',
     icon: <Plug size={16} />,
+  },
+  {
+    to: 'api',
+    labelKey: 'settings.section.api',
+    descriptionKey: 'settings.section.api.description',
+    icon: <Terminal size={16} />,
   },
   {
     to: 'secrets',
