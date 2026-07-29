@@ -1069,5 +1069,6 @@ export const fr: Catalog = {
   'error.reply_expired': "Cette demande a expiré, la session s'est terminée.",
   'error.idempotency_in_flight': "Une tâche avec cette clé d'idempotence est déjà en cours de création.",
   'error.config_field_locked': "Ces réglages sont fixés par le jeton et ne se changent pas par tâche : {fields}.",
+  'error.config_requires_autonomous': "Une configuration sans garde-fou exige la portée tasks:autonomous.",
   'error.model_unknown': "Modèle {model} inconnu pour {agent}. Connus : {known}.",
 }

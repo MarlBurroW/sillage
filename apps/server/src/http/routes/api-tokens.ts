@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { apiTokens, projects } from '@sillage/db'
 import {
   createApiTokenBodySchema,
+  isPermissiveConfig,
   updateApiTokenBodySchema,
   type CreatedApiTokenDto,
 } from '@sillage/protocol'
@@ -57,6 +58,12 @@ export function registerApiTokenRoutes(
 
     if (body.config.agent !== body.agent) {
       throw badRequest('config_agent_mismatch', 'The configuration does not match the selected CLI.')
+    }
+    if (isPermissiveConfig(body.config) && !body.scopes.includes('tasks:autonomous')) {
+      throw badRequest(
+        'config_requires_autonomous',
+        'A configuration without guardrails requires the tasks:autonomous scope.',
+      )
     }
     assertProjectsVisible(user.id, body.projectIds)
 

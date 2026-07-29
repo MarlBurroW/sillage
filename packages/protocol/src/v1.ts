@@ -288,6 +288,17 @@ export const OVERRIDABLE_CONFIG_FIELDS: Record<AgentKind, readonly string[]> = {
   codex: ['model', 'reasoningEffort', 'collaborationMode'],
 }
 
+/**
+ * Une configuration où le CLI n'a plus de garde-fou : rien ne sera demandé, tout
+ * s'exécute. Elle exige la portée `tasks:autonomous`, où qu'elle vienne : réglages du
+ * jeton, préréglage du projet servant de socle, ou surcharge. Le contrôle se fait sur
+ * la configuration résolue, pour qu'aucun chemin détourné n'y échappe.
+ */
+export function isPermissiveConfig(config: AgentConfig): boolean {
+  if (config.agent === 'claude') return config.permissionMode === 'bypassPermissions'
+  return config.askForApproval === 'never' || config.sandbox === 'danger-full-access'
+}
+
 export type CreateTaskBody = z.infer<typeof createTaskBodySchema>
 export type TaskSteerBody = z.infer<typeof taskSteerBodySchema>
 

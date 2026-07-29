@@ -50,13 +50,14 @@ const SCOPES = apiScopeSchema.options
  * `bypassPermissions` n'y est pas, à dessein : il vaudra la portée `tasks:autonomous`
  * de la tranche 3, pas une option de formulaire parmi d'autres.
  */
-const API_PERMISSION_MODES = ['manual', 'auto', 'acceptEdits', 'dontAsk'] as const
+const API_PERMISSION_MODES = ['manual', 'auto', 'acceptEdits', 'dontAsk', 'bypassPermissions'] as const
 type ApiPermissionMode = (typeof API_PERMISSION_MODES)[number]
 const PERMISSION_MODE_KEYS = {
   manual: 'composer.permission.manual',
   auto: 'composer.permission.auto',
   acceptEdits: 'composer.permission.acceptEdits',
   dontAsk: 'composer.permission.dontAsk',
+  bypassPermissions: 'composer.permission.bypass',
 } as const
 const AGENTS: AgentKind[] = ['claude', 'codex']
 
@@ -278,7 +279,14 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
             <Select
               label={t('apiTokens.permission.label')}
               value={permissionMode}
-              onChange={setPermissionMode}
+              onChange={(mode) => {
+                setPermissionMode(mode)
+                // Tout permettre exige la portée dédiée : la cocher soi-même serait
+                // facile à oublier, et le serveur refuserait le formulaire entier.
+                if (mode === 'bypassPermissions' && !scopes.includes('tasks:autonomous')) {
+                  setScopes([...scopes, 'tasks:autonomous'])
+                }
+              }}
               className="sm:max-w-xs"
               options={API_PERMISSION_MODES.map((mode) => ({
                 value: mode,

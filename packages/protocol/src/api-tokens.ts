@@ -11,7 +11,19 @@ import { agentKindSchema, type AgentKind } from './events.js'
  * comptes.
  */
 
-export const apiScopeSchema = z.enum(['projects:read', 'tasks:read', 'tasks:write'])
+/**
+ * `tasks:autonomous` est la portée du mode sans garde-fou : elle seule autorise une
+ * configuration où le CLI ne demande rien (`bypassPermissions`, ou `never` +
+ * `danger-full-access` côté Codex). Portée dédiée et non simple option, pour qu'un
+ * jeton capable d'exécution arbitraire se voie comme tel dans la liste, et se révoque
+ * comme tel.
+ */
+export const apiScopeSchema = z.enum([
+  'projects:read',
+  'tasks:read',
+  'tasks:write',
+  'tasks:autonomous',
+])
 export type ApiScope = z.infer<typeof apiScopeSchema>
 
 /** Préfixe en clair, pour qu'un jeton trouvé dans un fichier de configuration se reconnaisse. */
