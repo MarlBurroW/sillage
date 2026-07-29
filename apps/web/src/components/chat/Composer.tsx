@@ -1,4 +1,4 @@
-import { ArrowUp, Brain, Compass, Paperclip, ShieldCheck, Square, Waypoints } from 'lucide-react'
+import { ArrowUp, Brain, Compass, FastForward, Paperclip, ShieldCheck, Square } from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -905,7 +905,7 @@ export function Composer({
                   'border border-accent text-accent transition-colors hover:bg-accent-wash',
                 )}
               >
-                <Waypoints size={16} />
+                <FastForward size={16} />
               </button>
             ) : null}
 
