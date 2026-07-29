@@ -14,5 +14,6 @@ export {
   MenuSwatch,
   MenuSwatchRow,
 } from './Menu'
-export { Select, type SelectOption, type SelectTone } from './Select'
+export { Popover } from './Popover'
+export { Select, type SelectOption } from './Select'
 export { Badge, Banner, EmptyState } from './feedback'
