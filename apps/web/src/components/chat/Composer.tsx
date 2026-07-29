@@ -23,6 +23,7 @@ import {
   type ConversationStatus,
 } from '@sillage/protocol'
 import { effortsFor, useAgentModels } from '../../lib/agents'
+import type { McpServerStatus } from '@sillage/protocol'
 import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
 import { useComposerDrops, useComposerReferences } from '../../lib/composer-ref'
@@ -153,6 +154,8 @@ interface ComposerProps {
   config: AgentConfig
   status: ConversationStatus
   disabled: boolean
+  /** Inventaire MCP de la session, pour dire ce qui est réellement chargé. */
+  mcpInventory: McpServerStatus[]
   onSend(text: string, attachmentIds: string[], mentions: string[]): Promise<void>
   onInterrupt(): void
   onConfigChange(config: AgentConfig): void
@@ -197,6 +200,7 @@ export function Composer({
   config,
   status,
   disabled,
+  mcpInventory,
   onSend,
   onInterrupt,
   onConfigChange,
@@ -658,6 +662,7 @@ export function Composer({
             <McpControl
               variant={variant}
               servers={mcpServers}
+              inventory={mcpInventory}
               selected={claude.mcpServers}
               onSelectedChange={(ids) => onConfigChange({ ...claude, mcpServers: ids })}
               strict={claude.strictMcp}
@@ -665,7 +670,7 @@ export function Composer({
               disabled={disabled}
             />
           ),
-          current: mcpSummary(claude.mcpServers.length),
+          current: mcpSummary(claude.mcpServers.length, mcpInventory.length),
         },
       ]
     : codex
@@ -767,6 +772,7 @@ export function Composer({
               <McpControl
                 variant={variant}
                 servers={mcpServers}
+                inventory={mcpInventory}
                 selected={codex.mcpServers}
                 onSelectedChange={(ids) => onConfigChange({ ...codex, mcpServers: ids })}
                 strict={null}
@@ -774,7 +780,7 @@ export function Composer({
                 disabled={disabled}
               />
             ),
-            current: mcpSummary(codex.mcpServers.length),
+            current: mcpSummary(codex.mcpServers.length, mcpInventory.length),
           },
         ]
       : []

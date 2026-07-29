@@ -1119,6 +1119,7 @@ export function ConversationPage() {
             onSend={send}
             onInterrupt={() => void interruptConversation(conversationId)}
             onConfigChange={(next) => void updateConfig(next)}
+            mcpInventory={stream.state.mcp}
             projectId={conversation.projectId}
             worktreeId={conversation.worktreeId}
             footer={

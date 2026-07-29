@@ -8,6 +8,7 @@ import {
   type AgentConfig,
   type AgentKind,
 } from '@sillage/protocol'
+import type { McpServerStatus } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { Banner, Button, cx } from '../components/ui'
@@ -46,6 +47,8 @@ function formatDay(ts: number): string {
  * premier message partent ensemble, et c'est ce premier tour qui donne son titre à la
  * conversation.
  */
+const NO_MCP_INVENTORY: McpServerStatus[] = []
+
 export function DraftConversationPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -317,6 +320,8 @@ export function DraftConversationPage() {
         // c'est le seul fil qu'on puisse en désigner avant qu'il existe.
         draftKey={`new:${projectId ?? ''}`}
         config={effective}
+        // Rien n'est encore lancé : aucun CLI n'a d'inventaire à rapporter.
+        mcpInventory={NO_MCP_INVENTORY}
         status="idle"
         // Un CLI absent ne se rattrape pas côté serveur : le tour échouerait après
         // création de la conversation, laissant un fil vide et un message perdu.
