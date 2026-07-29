@@ -13,29 +13,6 @@ export interface SelectOption<T extends string> {
   disabled?: boolean
 }
 
-/**
- * `field` est le select de formulaire ; `pill` est sa version compacte et sans
- * cadre, pour les barres d'outils denses comme celle du composer.
- */
-export type SelectVariant = 'field' | 'pill'
-
-const TRIGGER_VARIANTS: Record<SelectVariant, string> = {
-  field: 'tap-target w-full gap-2 rounded-md border border-line bg-sunken px-3 text-sm',
-  pill: 'h-8 max-w-full gap-1.5 rounded-full border border-transparent bg-surface-high px-2.5 text-xs',
-}
-
-/**
- * `caution` signale un réglage qui retire un garde-fou. Porté par le contrôle
- * lui-même plutôt que par un bandeau : l'avertissement est ainsi à l'endroit exact
- * où on le change, et disparaît dès qu'on en sort.
- */
-export type SelectTone = 'neutral' | 'caution'
-
-const TRIGGER_TONES: Record<SelectTone, string> = {
-  neutral: 'text-ink hover:border-line-strong',
-  caution: 'border-caution/50 bg-caution/12 text-caution hover:border-caution',
-}
-
 interface SelectProps<T extends string> {
   value: T
   onChange: (value: T) => void
@@ -43,8 +20,6 @@ interface SelectProps<T extends string> {
   label?: string
   placeholder?: string
   disabled?: boolean
-  variant?: SelectVariant
-  tone?: SelectTone
   className?: string
 }
 
@@ -60,8 +35,6 @@ export function Select<T extends string>({
   label,
   placeholder,
   disabled,
-  variant = 'field',
-  tone = 'neutral',
   className,
 }: SelectProps<T>) {
   const t = useTranslate()
@@ -87,15 +60,11 @@ export function Select<T extends string>({
             'group flex min-w-0 items-center',
             'transition-colors data-[state=open]:border-accent',
             'disabled:pointer-events-none disabled:opacity-45',
-            TRIGGER_VARIANTS[variant],
-            TRIGGER_TONES[tone],
+            'tap-target w-full gap-2 rounded-md border border-line bg-sunken px-3 text-sm',
+            'text-ink hover:border-line-strong',
           )}
         >
-          {selected?.icon ? (
-            <span className={cx('shrink-0', tone === 'neutral' && 'text-ink-faint')}>
-              {selected.icon}
-            </span>
-          ) : null}
+          {selected?.icon ? <span className="shrink-0 text-ink-faint">{selected.icon}</span> : null}
           <span className="min-w-0 truncate">
             <RadixSelect.Value
               placeholder={
@@ -105,12 +74,11 @@ export function Select<T extends string>({
           </span>
           <RadixSelect.Icon
             className={cx(
-              'shrink-0 transition-transform group-data-[state=open]:rotate-180',
-              tone === 'neutral' && 'text-ink-faint',
-              variant === 'field' && 'ml-auto',
+              'ml-auto shrink-0 text-ink-faint transition-transform',
+              'group-data-[state=open]:rotate-180',
             )}
           >
-            <ChevronDown size={variant === 'pill' ? 13 : 16} />
+            <ChevronDown size={16} />
           </RadixSelect.Icon>
         </RadixSelect.Trigger>
 
