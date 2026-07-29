@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { TerminalClientMessage, TerminalServerMessage } from '@sillage/protocol'
 import { cx } from '../ui'
 import '@xterm/xterm/css/xterm.css'
-import { translate } from '../../lib/i18n'
+import { translate, useTranslate } from '../../lib/i18n'
 
 /**
  * Un terminal, relié à son pty par la socket dédiée.
@@ -53,6 +53,7 @@ export function TerminalView({
   terminalId: string
   visible: boolean
 }) {
+  const t = useTranslate()
   const host = useRef<HTMLDivElement>(null)
   const fit = useRef<FitAddon | null>(null)
   /**
@@ -206,7 +207,7 @@ export function TerminalView({
       <div ref={host} className="sg-terminal min-h-0 min-w-0 flex-1 bg-sunken p-1.5" />
 
       <p className="shrink-0 border-t border-line px-2.5 py-1 text-[0.625rem] text-ink-faint">
-        Ctrl+Maj+C copier · Ctrl+Maj+V ou clic droit coller · Ctrl+C interrompt
+        {t('terminal.shortcuts')}
       </p>
     </div>
   )

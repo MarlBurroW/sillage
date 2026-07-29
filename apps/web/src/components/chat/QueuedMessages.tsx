@@ -72,7 +72,7 @@ export function QueuedMessages({
 
           {canCancel ? (
             <IconButton
-              label="Retirer ce message de la file"
+              label={t('queued.remove')}
               size="sm"
               disabled={busy !== null}
               onClick={() => void cancel(message.queueId)}

@@ -8,8 +8,6 @@ import {
   PanelRight,
   Search,
   Shrink,
-  Waves,
-  WifiOff,
 } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -18,11 +16,9 @@ import {
   AGENT_CAPABILITIES,
   agentConfigSchema,
   type AgentConfig,
-  type ConversationStatus,
 } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
-import { SubAgentBar } from '../components/chat/SubAgentBar'
 import { Composer } from '../components/chat/Composer'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
@@ -48,12 +44,15 @@ import {
 } from '../lib/conversations'
 import { useFileDrop } from '../lib/file-drop'
 import { FileLinkContext } from '../lib/file-links'
-import { useTranslate, type MessageKey } from '../lib/i18n'
+import { useTranslate } from '../lib/i18n'
 import { clearSubAgent, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useCurrentUser } from '../lib/session'
 import { useSidebarHidden } from '../lib/sidebar'
 import { describeActivity, type MessageItem } from '../lib/chat-fold'
 import { buildBackground, type BackgroundWork } from '../lib/background'
+import { buildLoops, type ArmedLoop } from '../lib/loops'
+import { buildSignals, type SignalKind } from '../lib/signals'
+import { SignalRow } from '../components/chat/Signals'
 import { buildSubAgents } from '../lib/subagents'
 import { buildRows } from '../lib/tool-rows'
 import {
@@ -77,6 +76,25 @@ const SidePanel = lazy(() =>
 
 /** Instance unique : une liste vide recréée à chaque rendu ferait rendre le panneau. */
 const NO_BACKGROUND: BackgroundWork[] = []
+const NO_LOOPS: ArmedLoop[] = []
+
+/** Ce que l'en-tête garde : les états sous lesquels ce qu'on lit n'est plus à jour. */
+const HEADER_SIGNALS = new Set<SignalKind>(['error', 'interrupted', 'offline'])
+
+/** Assez lâche pour une ancienneté affichée à la minute, assez court pour ne pas mentir. */
+const TICK_MS = 30_000
+
+function useTicker(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!active) return
+    const timer = setInterval(() => setNow(Date.now()), TICK_MS)
+    return () => clearInterval(timer)
+  }, [active])
+
+  return now
+}
 
 /** Marge sous laquelle on considère que l'utilisateur suit le bas du fil. */
 const STICKY_THRESHOLD_PX = 120
@@ -145,6 +163,30 @@ export function ConversationPage() {
     () => (stream.warm === false ? NO_BACKGROUND : buildBackground(stream.state)),
     [stream.warm, stream.state],
   )
+  /** Même raison que le travail de fond : une tâche planifiée ne tire que si le CLI vit. */
+  const loops = useMemo(
+    () => (stream.warm === false ? NO_LOOPS : buildLoops(stream.state)),
+    [stream.warm, stream.state],
+  )
+  /**
+   * Réveillé périodiquement pour que l'ancienneté du dernier réveil d'une boucle ne
+   * fige pas. Sans boucle armée, aucun signal ne dépend de l'heure et le minuteur ne
+   * tourne pas.
+   */
+  const now = useTicker(loops.length > 0)
+  const signals = useMemo(
+    () =>
+      buildSignals({
+        status: stream.status,
+        connected: stream.connected,
+        subAgents: runningSubAgents,
+        background,
+        loops,
+        queued: stream.state.queued,
+        now,
+      }),
+    [stream.status, stream.connected, runningSubAgents, background, loops, stream.state.queued, now],
+  )
   const [usageOpen, setUsageOpen] = useState(false)
   const [forking, setForking] = useState(false)
   /** Message dont le fork est proposé : le geste est trop peu courant pour être direct. */
@@ -192,6 +234,7 @@ export function ConversationPage() {
     if (node) scrollAnchor.current = { height: node.scrollHeight, top: node.scrollTop }
     setWindowSize((size) => size + WINDOW_STEP_ROWS)
   }, [])
+
   /** Message visé par un résultat de recherche, une fois le fil chargé. */
   const [searchParams] = useSearchParams()
   const anchorSeq = Number(searchParams.get('seq'))
@@ -651,13 +694,12 @@ export function ConversationPage() {
             <ChevronDown size={16} className={cx('transition-transform', metaOpen && 'rotate-180')} />
           </button>
 
-          {!stream.connected ? (
-            <span title={t('conversation.offline')} className="shrink-0 text-caution">
-              <WifiOff size={15} />
-            </span>
-          ) : null}
-          <StatusPill status={stream.status} />
-          <BackgroundPill tasks={background} />
+          {/*
+            L'en-tête ne garde que ce qui invalide la lecture en cours : une erreur, un
+            tour interrompu, une liaison coupée. Le reste vit au-dessus du composer, qui
+            est visible en même temps que lui, et le répéter ici l'afficherait deux fois.
+          */}
+          <SignalRow signals={signals.filter((signal) => HEADER_SIGNALS.has(signal.kind))} />
 
           {/* La consommation appartient au compte, pas à la conversation : le panneau
               reste le même quel que soit le fil ouvert. */}
@@ -863,9 +905,17 @@ export function ConversationPage() {
             </>
           ) : null}
 
-          {/* Entre le fil et la barre de saisie : c'est la dernière chose qu'on voit
-              avant d'écrire, et elle reste en place quand on remonte lire le fil. */}
-          <SubAgentBar agents={runningSubAgents} />
+          {/*
+            Au-dessus de la barre de saisie et non sous elle : c'est la dernière chose
+            qu'on lit avant d'écrire. Aligné sur la largeur du composer pour que les deux
+            forment un bloc. `TurnActivity` dit la même activité un peu plus haut, mais
+            depuis le fil, donc il sort de l'écran dès qu'on remonte ; cette rangée reste.
+          */}
+          <SignalRow
+            signals={signals}
+            onSelect={() => setPanelOpen(true)}
+            className="mx-auto max-w-3xl px-1.5 pb-2"
+          />
 
           <Composer
             key={conversationId}
@@ -889,8 +939,6 @@ export function ConversationPage() {
                 agent={conversation.agent}
                 connected={stream.connected}
                 warm={stream.warm}
-                queued={stream.state.queued.length}
-                background={background}
               />
             }
           />
@@ -933,66 +981,6 @@ function Meta({
     >
       {icon}
       <span className="max-w-40 truncate font-mono">{children}</span>
-    </span>
-  )
-}
-
-const STATUS_PILLS: Partial<
-  Record<ConversationStatus, { key: MessageKey; dot: string; text: string }>
-> = {
-  running: { key: 'conversation.status.running', dot: 'bg-accent animate-pulse', text: 'text-accent' },
-  awaiting_input: { key: 'conversation.status.waiting', dot: 'bg-caution', text: 'text-caution' },
-  interrupted: { key: 'conversation.status.interrupted', dot: 'bg-caution', text: 'text-caution' },
-  error: { key: 'conversation.status.error', dot: 'bg-critical', text: 'text-critical' },
-}
-
-/**
- * Pastille du travail de fond, à côté de celle du statut plutôt qu'à sa place.
- *
- * C'est le cas que le fil ne savait pas montrer : le tour est fini, le statut dit
- * « au repos », et un workflow continue d'écrire dans le dépôt pendant plusieurs
- * minutes. Elle reste visible pendant un tour, où elle dit autre chose que la pastille
- * d'activité : ce travail-là survivra à la fin du tour.
- */
-function BackgroundPill({ tasks }: { tasks: BackgroundWork[] }) {
-  const t = useTranslate()
-  if (tasks.length === 0) return null
-
-  return (
-    <span
-      title={tasks.map((task) => task.description).join('\n')}
-      className={cx(
-        'flex shrink-0 items-center gap-1.5 rounded-full border border-line',
-        'bg-surface-high px-2 py-1 text-[0.6875rem] font-medium text-accent',
-      )}
-    >
-      <Waves size={11} className="animate-pulse" />
-      <span className="hidden sm:inline">
-        {t(
-          tasks.length > 1 ? 'conversation.status.background.many' : 'conversation.status.background.one',
-          { count: tasks.length },
-        )}
-      </span>
-    </span>
-  )
-}
-
-/** Au repos, aucun indicateur : c'est l'état normal, l'afficher ne dit rien. */
-function StatusPill({ status }: { status: ConversationStatus }) {
-  const t = useTranslate()
-  const pill = STATUS_PILLS[status]
-  if (!pill) return null
-
-  return (
-    <span
-      className={cx(
-        'flex shrink-0 items-center gap-1.5 rounded-full border border-line',
-        'bg-surface-high px-2 py-1 text-[0.6875rem] font-medium',
-        pill.text,
-      )}
-    >
-      <span className={cx('size-1.5 rounded-full', pill.dot)} />
-      <span className="hidden sm:inline">{t(pill.key)}</span>
     </span>
   )
 }
