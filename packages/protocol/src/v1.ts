@@ -242,10 +242,10 @@ export interface WebhookPayload {
   stopReason?: string
   lastMessage?: string | null
   /**
-   * Travaux de fond encore en cours à la fin du tour (commandes ou agents que le CLI
-   * a mis en arrière-plan). Non nul, ce `task.completed` n'est PAS la fin de la
-   * tâche : le CLI sera re-réveillé quand ces travaux aboutiront, et un autre tour
-   * suivra. Un consommateur qui conclut sur cette livraison conclut trop tôt.
+   * Travaux de fond encore en cours à la fin du tour. Toujours 0 aujourd'hui : un
+   * tour qui laisse du travail derrière lui n'est pas livré du tout, la livraison du
+   * tour final suffira. Le champ reste au contrat pour qu'un consommateur puisse s'y
+   * fier si cette politique s'assouplit un jour.
    */
   backgroundJobs?: number
   /** task.awaiting_input */
