@@ -1,8 +1,8 @@
 import { ChevronDown, PlugZap } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { McpServer } from '@sillage/protocol'
+import type { McpServer, McpServerStatus } from '@sillage/protocol'
 import { translate, useTranslate } from '../../lib/i18n'
-import { Menu, MenuCheckboxItem, MenuSeparator, cx } from '../ui'
+import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
 
 /**
  * Serveurs MCP actifs sur la conversation, et l'isolation stricte de Claude.
@@ -11,6 +11,11 @@ import { Menu, MenuCheckboxItem, MenuSeparator, cx } from '../ui'
  * « avec quels outils cet agent travaille » : les séparer obligerait à ouvrir deux
  * réglages pour comprendre ce que le CLI a réellement chargé.
  *
+ * C'est cette même question qui justifie d'y montrer les serveurs venus du CLI, que
+ * Sillage n'a pas déclarés et ne peut pas régler. Les taire donnait un composeur qui
+ * annonçait « Aucun » à une session où l'agent disposait déjà de sept outils : le
+ * réglage disait vrai sur ce qu'il contrôle, et faux sur ce qui est chargé.
+ *
  * `strictMcp` n'est proposé que pour Claude, et le dit. Codex n'a pas d'équivalent :
  * son `config.toml` et son serveur intégré restent là quoi qu'on fasse, et offrir la
  * bascule des deux côtés promettrait une isolation qu'un des deux ne tient pas.
@@ -18,7 +23,15 @@ import { Menu, MenuCheckboxItem, MenuSeparator, cx } from '../ui'
 
 interface McpControlProps {
   variant: 'pill' | 'field'
+  /** Registre de Sillage : le seul que ce contrôle peut activer ou désactiver. */
   servers: McpServer[]
+  /**
+   * Inventaire que le CLI rapporte pour la session en cours.
+   *
+   * Vide sur une conversation au repos, qui n'a pas de process : le contrôle retombe
+   * alors sur ce que la configuration décrit, faute de mieux.
+   */
+  inventory: McpServerStatus[]
   selected: string[]
   onSelectedChange: (ids: string[]) => void
   /** Null pour Codex, qui n'a pas d'isolation à régler. */
@@ -30,6 +43,7 @@ interface McpControlProps {
 export function McpControl({
   variant,
   servers,
+  inventory,
   selected,
   onSelectedChange,
   strict,
@@ -38,6 +52,8 @@ export function McpControl({
 }: McpControlProps) {
   const t = useTranslate()
   const active = new Set(selected)
+  const external = inventory.filter((server) => server.external)
+  const toolsByName = new Map(inventory.map((server) => [server.name, server.tools.length]))
 
   const toggle = (id: string, checked: boolean) => {
     // Reconstruit depuis l'ordre du registre plutôt qu'en ajoutant en fin de liste :
@@ -54,17 +70,47 @@ export function McpControl({
       {servers.length === 0 ? (
         <p className="px-2.5 py-2 text-xs text-ink-faint">{t('composer.mcp.empty')}</p>
       ) : (
-        servers.map((server) => (
-          <MenuCheckboxItem
-            key={server.id}
-            checked={active.has(server.id)}
-            onCheckedChange={(checked) => toggle(server.id, checked)}
-            disabled={disabled || !server.enabled}
-          >
-            {server.name}
-          </MenuCheckboxItem>
-        ))
+        <>
+          {/* L'intitulé n'apparaît que s'il y a de quoi le distinguer d'autre chose :
+              sans serveur du CLI, une seule section n'a pas besoin d'être nommée. */}
+          {external.length > 0 ? <MenuLabel>{t('composer.mcp.sillage')}</MenuLabel> : null}
+          {servers.map((server) => (
+            <MenuCheckboxItem
+              key={server.id}
+              checked={active.has(server.id)}
+              onCheckedChange={(checked) => toggle(server.id, checked)}
+              disabled={disabled || !server.enabled}
+            >
+              <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                <span className="min-w-0 truncate">{server.name}</span>
+                <ToolCount count={toolsByName.get(server.name)} />
+              </span>
+            </MenuCheckboxItem>
+          ))}
+        </>
       )}
+
+      {external.length > 0 ? (
+        <>
+          <MenuSeparator />
+          <MenuLabel>{t('composer.mcp.fromCli')}</MenuLabel>
+          {external.map((server) => (
+            // Une ligne inerte plutôt qu'une case grisée : une case, même désactivée,
+            // laisse croire qu'elle deviendra cochable, alors que Sillage ne pourra
+            // jamais régler un serveur qu'il n'a pas déclaré.
+            <div
+              key={server.name}
+              className="flex items-baseline gap-2 rounded-md px-2.5 py-1.5 text-sm text-ink-faint"
+            >
+              <span className="min-w-0 flex-1 truncate">{server.name}</span>
+              <ToolCount count={server.tools.length} />
+            </div>
+          ))}
+          <p className="px-2.5 pb-1 text-[0.6875rem] text-ink-faint">
+            {t('composer.mcp.fromCli.hint')}
+          </p>
+        </>
+      ) : null}
 
       {strict === null ? null : (
         <>
@@ -91,6 +137,7 @@ export function McpControl({
   // Les entrées à cocher sont des primitives Radix et exigent le contexte du menu :
   // les sortir pour les poser à plat dans la feuille les fait échouer au rendu. Les
   // deux variantes gardent donc le menu, et ne diffèrent que par leur déclencheur.
+  const summary = mcpSummary(selected.length, inventory.length)
   const trigger =
     variant === 'pill' ? (
       <button
@@ -103,7 +150,7 @@ export function McpControl({
         )}
       >
         <PlugZap size={13} className="shrink-0 text-ink-faint" />
-        <span className="min-w-0 truncate">{mcpSummary(selected.length)}</span>
+        <span className="min-w-0 truncate">{summary}</span>
         <ChevronDown
           size={13}
           className="shrink-0 text-ink-faint transition-transform group-data-[state=open]:rotate-180"
@@ -120,7 +167,7 @@ export function McpControl({
         )}
       >
         <PlugZap size={16} className="shrink-0 text-ink-faint" />
-        <span className="min-w-0 flex-1 truncate text-left">{mcpSummary(selected.length)}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{summary}</span>
         <ChevronDown
           size={16}
           className="shrink-0 text-ink-faint transition-transform group-data-[state=open]:rotate-180"
@@ -144,14 +191,39 @@ export function McpControl({
   )
 }
 
+/** Absent tant que le CLI n'a pas répondu : un « 0 outil » se lirait comme un échec. */
+function ToolCount({ count }: { count: number | undefined }) {
+  const t = useTranslate()
+  if (count === undefined || count === 0) return null
+
+  return (
+    <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+      {t(count > 1 ? 'composer.mcp.tools.many' : 'composer.mcp.tools.one', { count })}
+    </span>
+  )
+}
+
 /**
  * Résumé affiché par le composer sur son déclencheur replié.
+ *
+ * Compte ce que la session a réellement chargé dès que le CLI l'a dit, et non ce que
+ * la configuration décrit : c'est la question à laquelle ce contrôle sert à répondre,
+ * et les serveurs du CLI en font partie sans que Sillage les ait déclarés. Une
+ * conversation au repos n'a pas d'inventaire, le compte configuré prend alors le
+ * relais faute de mieux.
  *
  * Fonction appelée au rendu et non constante de module : un libellé composé au
  * chargement se figerait dans la langue d'alors et resterait en place après un
  * changement de langue.
  */
-export function mcpSummary(count: number): string {
-  if (count === 0) return translate('composer.mcp.none')
-  return translate(count > 1 ? 'composer.mcp.count.many' : 'composer.mcp.count.one', { count })
+export function mcpSummary(configured: number, loaded: number): string {
+  if (loaded > 0) {
+    return translate(loaded > 1 ? 'composer.mcp.loaded.many' : 'composer.mcp.loaded.one', {
+      count: loaded,
+    })
+  }
+  if (configured === 0) return translate('composer.mcp.none')
+  return translate(configured > 1 ? 'composer.mcp.count.many' : 'composer.mcp.count.one', {
+    count: configured,
+  })
 }
