@@ -1,4 +1,4 @@
-import { Plug, Plus, Trash2 } from 'lucide-react'
+import { Plug, Plus, Trash2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type { McpServer, McpTransport } from '@sillage/protocol'
 import {
@@ -11,8 +11,9 @@ import {
   ConfirmDialog,
   EmptyState,
   Field,
+  IconButton,
   Select,
-  TextArea,
+  cx,
 } from '../components/ui'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
@@ -30,72 +31,88 @@ import { useCurrentUser } from '../lib/session'
 /**
  * Registre des serveurs MCP.
  *
- * Le formulaire garde les listes et les tables sous forme de texte, une entrée par
- * ligne, et ne les convertit qu'à l'envoi. Une structure éditée champ par champ
- * demanderait d'ajouter et de retirer des lignes à la souris là où un bloc de texte se
- * colle depuis la documentation du serveur qu'on installe.
+ * Les arguments, les variables d'environnement et les en-têtes se saisissent en lignes
+ * ajoutées une à une, et non dans un bloc de texte à découper. Le bloc de texte se
+ * collait bien depuis une documentation, mais il demandait de tenir un format dans sa
+ * tête, et une ligne mal séparée disparaissait sans rien dire.
  */
+
+/**
+ * Une ligne de liste porte un identifiant propre.
+ *
+ * Sans lui, la clé de rendu serait l'indice, et supprimer une ligne du milieu ferait
+ * glisser le focus et l'état des champs suivants d'un cran.
+ */
+interface Row {
+  id: string
+  key: string
+  value: string
+}
 
 interface FormState {
   name: string
   type: McpTransport['type']
   command: string
-  args: string
-  env: string
+  args: Row[]
+  env: Row[]
   url: string
-  headers: string
+  headers: Row[]
 }
 
 const EMPTY_FORM: FormState = {
   name: '',
   type: 'stdio',
   command: '',
-  args: '',
-  env: '',
+  args: [],
+  env: [],
   url: '',
-  headers: '',
+  headers: [],
 }
+
+/** Habillage commun aux champs d'une ligne, la largeur restant propre à chacun. */
+const ROW_INPUT =
+  'tap-target min-w-0 rounded-md border border-line bg-sunken px-3 font-mono text-sm text-ink ' +
+  'outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus:border-accent'
+
+let nextRowId = 0
+const emptyRow = (): Row => ({ id: `row-${nextRowId++}`, key: '', value: '' })
 
 const errorOf = (error: unknown): string | null =>
   error instanceof ApiRequestError ? error.message : null
 
-const linesOf = (text: string): string[] =>
-  text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-
 /**
- * Une ligne sans séparateur est ignorée plutôt que refusée : elle arrive en cours de
- * frappe, et faire échouer l'envoi pour une ligne à moitié écrite serait plus pénible
- * qu'utile. Seul ce qui a la forme d'une paire est retenu.
+ * Les lignes sans nom sont ignorées plutôt que refusées : une ligne fraîchement
+ * ajoutée est vide par construction, et faire échouer l'envoi pour elle serait plus
+ * pénible qu'utile. Deux lignes de même nom se départagent par la dernière, comme le
+ * ferait le CLI qui reçoit la table.
  */
-const parsePairs = (text: string, separator: string): Record<string, string> => {
-  const pairs = linesOf(text).flatMap((line) => {
-    const at = line.indexOf(separator)
-    if (at <= 0) return []
-    return [[line.slice(0, at).trim(), line.slice(at + separator.length).trim()] as const]
-  })
-  return Object.fromEntries(pairs)
-}
+const toRecord = (rows: Row[]): Record<string, string> =>
+  Object.fromEntries(
+    rows.filter((row) => row.key.trim().length > 0).map((row) => [row.key.trim(), row.value]),
+  )
 
-const formatPairs = (pairs: Record<string, string>, separator: string): string =>
-  Object.entries(pairs)
-    .map(([key, value]) => `${key}${separator}${value}`)
-    .join('\n')
+const fromRecord = (pairs: Record<string, string>): Row[] =>
+  Object.entries(pairs).map(([key, value]) => ({ ...emptyRow(), key, value }))
+
+/** Les arguments n'ont pas de nom : la valeur seule est saisie, dans `value`. */
+const toValues = (rows: Row[]): string[] =>
+  rows.map((row) => row.value.trim()).filter((value) => value.length > 0)
+
+const fromValues = (values: string[]): Row[] =>
+  values.map((value) => ({ ...emptyRow(), value }))
 
 const toTransport = (form: FormState): McpTransport =>
   form.type === 'stdio'
     ? {
         type: 'stdio',
         command: form.command.trim(),
-        args: linesOf(form.args),
-        env: parsePairs(form.env, '='),
+        args: toValues(form.args),
+        env: toRecord(form.env),
       }
     : {
         type: form.type,
         url: form.url.trim(),
-        headers: parsePairs(form.headers, ':'),
+        headers: toRecord(form.headers),
       }
 
 const toForm = (server: McpServer): FormState => ({
@@ -105,12 +122,12 @@ const toForm = (server: McpServer): FormState => ({
   ...(server.transport.type === 'stdio'
     ? {
         command: server.transport.command,
-        args: server.transport.args.join('\n'),
-        env: formatPairs(server.transport.env, '='),
+        args: fromValues(server.transport.args),
+        env: fromRecord(server.transport.env),
       }
     : {
         url: server.transport.url,
-        headers: formatPairs(server.transport.headers, ': '),
+        headers: fromRecord(server.transport.headers),
       }),
 })
 
@@ -219,19 +236,21 @@ function TransportFields({
             autoCorrect="off"
             required
           />
-          <TextArea
+          <RowList
             label={t('mcp.args.label')}
-            hint={t('mcp.args.hint')}
-            rows={3}
-            value={form.args}
-            onChange={(event) => onChange({ ...form, args: event.target.value })}
+            addLabel={t('mcp.args.add')}
+            valuePlaceholder={t('mcp.args.placeholder')}
+            rows={form.args}
+            onChange={(args) => onChange({ ...form, args })}
           />
-          <TextArea
+          <RowList
             label={t('mcp.env.label')}
             hint={t('mcp.env.hint')}
-            rows={3}
-            value={form.env}
-            onChange={(event) => onChange({ ...form, env: event.target.value })}
+            addLabel={t('mcp.env.add')}
+            keyPlaceholder={t('mcp.env.name')}
+            valuePlaceholder={t('mcp.value.placeholder')}
+            rows={form.env}
+            onChange={(env) => onChange({ ...form, env })}
           />
         </>
       ) : (
@@ -245,16 +264,99 @@ function TransportFields({
             autoCorrect="off"
             required
           />
-          <TextArea
+          <RowList
             label={t('mcp.headers.label')}
             hint={t('mcp.headers.hint')}
-            rows={3}
-            value={form.headers}
-            onChange={(event) => onChange({ ...form, headers: event.target.value })}
+            addLabel={t('mcp.headers.add')}
+            keyPlaceholder={t('mcp.headers.name')}
+            valuePlaceholder={t('mcp.value.placeholder')}
+            rows={form.headers}
+            onChange={(headers) => onChange({ ...form, headers })}
           />
         </>
       )}
     </>
+  )
+}
+
+/**
+ * Liste de lignes ajoutées à la demande.
+ *
+ * Sans `keyPlaceholder`, la ligne n'a qu'une valeur : c'est le cas des arguments, qui
+ * sont une suite et non une table. Le même composant sert les deux pour que la
+ * mécanique d'ajout et de retrait ne soit pas écrite deux fois.
+ */
+function RowList({
+  label,
+  hint,
+  addLabel,
+  keyPlaceholder,
+  valuePlaceholder,
+  rows,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  addLabel: string
+  keyPlaceholder?: string
+  valuePlaceholder: string
+  rows: Row[]
+  onChange: (rows: Row[]) => void
+}) {
+  const t = useTranslate()
+
+  const patch = (id: string, part: Partial<Row>) =>
+    onChange(rows.map((row) => (row.id === id ? { ...row, ...part } : row)))
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-sm font-medium text-ink-soft">{label}</span>
+
+      {rows.map((row) => (
+        <div key={row.id} className="flex items-center gap-2">
+          {keyPlaceholder === undefined ? null : (
+            <input
+              value={row.key}
+              onChange={(event) => patch(row.id, { key: event.target.value })}
+              placeholder={keyPlaceholder}
+              aria-label={keyPlaceholder}
+              autoCapitalize="none"
+              autoCorrect="off"
+              className={cx(ROW_INPUT, 'flex-1')}
+            />
+          )}
+          <input
+            value={row.value}
+            onChange={(event) => patch(row.id, { value: event.target.value })}
+            placeholder={valuePlaceholder}
+            aria-label={valuePlaceholder}
+            autoCapitalize="none"
+            autoCorrect="off"
+            className={cx(ROW_INPUT, 'flex-[2]')}
+          />
+          <IconButton
+            label={t('mcp.row.remove')}
+            size="sm"
+            onClick={() => onChange(rows.filter((other) => other.id !== row.id))}
+          >
+            <X size={15} />
+          </IconButton>
+        </div>
+      ))}
+
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        icon={<Plus size={14} />}
+        className="self-start"
+        onClick={() => onChange([...rows, emptyRow()])}
+      >
+        {addLabel}
+      </Button>
+
+      {hint ? <p className="text-xs text-ink-faint">{hint}</p> : null}
+    </div>
   )
 }
 
