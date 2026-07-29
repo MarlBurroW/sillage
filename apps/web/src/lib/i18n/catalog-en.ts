@@ -37,6 +37,7 @@ export const en = {
   'conversation.meta.projectFolder': 'Project folder',
   'conversation.meta.project': 'project',
   'conversation.meta.branchOf': 'Branch of "{title}"',
+  'conversation.meta.apiControlled': 'External session driven by {label}',
   'conversation.meta.hide': 'Hide details',
   'conversation.meta.show': 'Show details',
   'conversation.usage.title': 'Account usage',
@@ -214,6 +215,7 @@ export const en = {
   'shell.conversations.empty': 'No conversations',
   'shell.conversation.actions': 'Conversation actions',
   'shell.conversation.origin': 'Launched by {label}',
+  'shell.conversation.api': 'API',
   'shell.delete': 'Delete',
   'shell.conversation.deleteConfirm': 'Delete "{title}"?',
 

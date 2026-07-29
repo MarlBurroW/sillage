@@ -9,6 +9,7 @@ import {
   PanelRight,
   Search,
   Shrink,
+  Terminal,
 } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -833,6 +834,19 @@ export function ConversationPage() {
                   <GitBranch size={10} />
                   <span className="max-w-32 truncate">{origin.title}</span>
                 </Link>
+              ) : null}
+
+              {/* Une conversation lancée par l'API se dit en toutes lettres : on peut y
+                  écrire comme dans une autre, mais un agent distant la pilote aussi, et
+                  découvrir un tour qu'on n'a pas demandé sans savoir d'où il vient est
+                  la pire façon de l'apprendre. */}
+              {/* Pas un `Meta` : ceux-ci sont en chasse fixe et tronqués à 10rem, ce qui
+                  couperait la phrase au milieu. Elle se lit entière ou ne sert à rien. */}
+              {conversation.origin ? (
+                <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-wash px-1.5 py-0.5 text-accent">
+                  <Terminal size={10} />
+                  {t('conversation.meta.apiControlled', { label: conversation.origin.label })}
+                </span>
               ) : null}
 
               {/* Tout vient du fold : le journal est la seule source d'affichage (I2),

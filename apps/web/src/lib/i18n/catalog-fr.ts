@@ -23,6 +23,7 @@ export const fr: Catalog = {
   'conversation.meta.projectFolder': 'Dossier du projet',
   'conversation.meta.project': 'projet',
   'conversation.meta.branchOf': 'Branche de « {title} »',
+  'conversation.meta.apiControlled': 'Session externe pilotée par {label}',
   'conversation.meta.hide': 'Masquer les détails',
   'conversation.meta.show': 'Afficher les détails',
   'conversation.usage.title': 'Consommation du compte',
@@ -199,6 +200,7 @@ export const fr: Catalog = {
   'shell.conversations.empty': 'Aucune conversation',
   'shell.conversation.actions': 'Actions de la conversation',
   'shell.conversation.origin': 'Lancée par {label}',
+  'shell.conversation.api': 'API',
   'shell.delete': 'Supprimer',
   'shell.conversation.deleteConfirm': 'Supprimer "{title}" ?',
 
