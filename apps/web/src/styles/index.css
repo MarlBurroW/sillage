@@ -62,16 +62,33 @@
    * `calc()` ne sait pas faire depuis une classe utilitaire, et les nommer permet de
    * rejouer la géométrie d'un iPhone sur un poste de développement.
    *
-   * Elles valent zéro tant que le document ne demande pas `viewport-fit=cover`, ce que
-   * Sillage ne fait plus : le viewport épouse alors déjà la zone sûre, et il n'y a rien
-   * à écarter. Conservées parce qu'elles redeviennent justes le jour où l'on reprend le
-   * bord à bord, et parce qu'un `padding` de zéro ne coûte rien.
+   * Elles ne portent l'écart réel que parce que le document demande `viewport-fit=cover` ;
+   * sans lui elles valent zéro. Elles restent nulles dans un navigateur de bureau.
    */
   --sg-safe-top: env(safe-area-inset-top, 0px);
-  --sg-safe-bottom: env(safe-area-inset-bottom, 0px);
+  /*
+   * L'encoche du bas est amputée de ce que le viewport n'atteint déjà pas, mesuré par
+   * `useVisualViewport` : sans ça, une application installée sur iOS écarte le contenu
+   * d'un indicateur d'accueil qui se trouve 62 px plus bas, hors du viewport.
+   */
+  --sg-safe-bottom: max(
+    0px,
+    calc(env(safe-area-inset-bottom, 0px) - var(--sg-viewport-gap, 0px))
+  );
 }
 
 @layer base {
+  /*
+   * Le fond de l'application est porté par la racine, et il est plat.
+   *
+   * Une application installée sur iOS remonte le viewport de la hauteur de la barre
+   * d'état : 894 px mesurés pour un écran de 956, ancrés en haut. La bande qui reste en
+   * bas est hors du viewport, donc hors d'atteinte de tout élément, `position: fixed`
+   * compris. Seul le fond de la racine, propagé au canevas du document, la peint. Un
+   * dégradé y aurait toujours fini par se raccorder de travers, puisque le calque et la
+   * bande ne partagent ni la même hauteur ni la même origine : le fond est donc une
+   * couleur unique, que les deux prennent sans discussion.
+   */
   html {
     background-color: var(--sg-canvas);
     color: var(--sg-ink);
@@ -132,13 +149,15 @@
 
 @layer utilities {
   /*
-   * Fond de l'application. `background-color` reste posé en dessous : il sert de
-   * repli au thème contrasté, où le dégradé vaut `none`, et de couleur de fond au
-   * navigateur avant que l'image soit peinte.
+   * Fondu du fil à son bord bas.
+   *
+   * Le fil se coupe net au ras de la barre de saisie, souvent au milieu d'une ligne :
+   * une phrase tranchée dessine la limite du conteneur mieux que n'importe quelle
+   * bordure. Le masque la dissout sur la hauteur d'une ligne. Il porte sur la boîte de
+   * l'élément, pas sur son contenu, donc le fondu reste en bas pendant le défilement.
    */
-  .gradient-canvas {
-    background-color: var(--sg-canvas);
-    background-image: var(--sg-gradient-canvas);
+  .fade-bottom {
+    mask-image: linear-gradient(to bottom, black calc(100% - 1.5rem), transparent);
   }
 
   /* Le dégradé signature, réservé aux surfaces élevées. */

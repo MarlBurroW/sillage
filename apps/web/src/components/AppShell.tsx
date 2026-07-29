@@ -223,7 +223,7 @@ export function AppShell() {
      * `--sg-viewport-top` : le clavier pousse tout vers le haut au lieu de recouvrir la
      * barre de saisie.
      */
-    <div className="app-layer flex overflow-hidden gradient-canvas text-ink">
+    <div className="app-layer flex overflow-hidden text-ink">
       <aside
         ref={aside}
         className={cx(

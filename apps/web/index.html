@@ -5,19 +5,26 @@
     <!-- `maximum-scale` complete la taille de police des champs : sans les deux,
          iOS zoome a la mise au point d'une saisie et ne revient jamais en arriere.
 
-         Pas de `viewport-fit=cover`. Il etend la peinture a tout l'ecran mais rabote le
-         viewport de mise en page de la hauteur de la barre d'etat : mesure sur un ecran
-         de 956 px, le viewport n'en faisait que 894. Les 62 px restants sont hors du
-         viewport, donc hors d'atteinte de toute regle CSS, et le viewport y decoupe
-         meme ce qui depasse. L'application laissait une bande sous la barre de saisie
-         et s'y faisait couper le bord, sans qu'aucune hauteur puisse y changer quoi que
-         ce soit. Sans `cover`, le viewport epouse la zone sure et l'ecart disparait. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+         `viewport-fit=cover` rend leurs vraies valeurs aux `env(safe-area-inset-*)`,
+         sans quoi elles valent zero et l'application ne peut plus ecarter son contenu
+         des encoches. Il ne suffit pas a couvrir l'ecran pour autant : une application
+         installee sur iOS garde un viewport rabote de la hauteur de la barre d'etat
+         (894 px mesures sur un ecran de 956) et ancre en haut. La bande qui reste en bas
+         n'est peinte que par le fond de la racine, voir `index.css`. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+    />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#0b0d1c" />
-    <!-- iOS ignore le manifest pour le mode plein écran et l'icône d'accueil. -->
+    <!-- iOS ignore le manifest pour le mode plein écran et l'icône d'accueil.
+
+         Pas de `apple-mobile-web-app-status-bar-style`. `black-translucent` décalait le
+         viewport vers le haut sans l'agrandir, laissant une bande morte en bas que
+         Sillage ne pouvait pas peindre : elle gardait la couleur du lancement, donc ne
+         suivait ni le thème ni les curseurs d'apparence. Sans cette balise, la barre
+         d'état se pose sur la page, qui la peint avec le reste. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Sillage" />
     <!-- Sans icône déclarée, le navigateur réclame /favicon.ico à chaque page et
          récolte un 404. Le SVG passe en premier, il reste net à toutes les densités ;

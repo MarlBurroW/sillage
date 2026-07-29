@@ -1007,7 +1007,7 @@ export function ConversationPage() {
           <div
             ref={scroller}
             onScroll={onScroll}
-            className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+            className="fade-bottom relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
           >
             {/* Seule la réglette latérale a besoin d'une gouttière, et seulement là où elle
                 s'affiche. Elle est symétrique, sinon le fil cesse d'être centré. Rien à
