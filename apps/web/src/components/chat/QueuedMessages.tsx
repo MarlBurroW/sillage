@@ -1,7 +1,7 @@
-import { Clock, Paperclip, X } from 'lucide-react'
+import { Clock, Paperclip, Waypoints, X } from 'lucide-react'
 import { useState } from 'react'
 import type { QueuedMessage } from '../../lib/chat-fold'
-import { cancelQueuedMessage } from '../../lib/conversations'
+import { cancelQueuedMessage, steerQueuedMessage } from '../../lib/conversations'
 import { IconButton, cx } from '../ui'
 import { useTranslate } from '../../lib/i18n'
 
@@ -11,28 +11,38 @@ import { useTranslate } from '../../lib/i18n'
  * Affichés sous l'indicateur d'activité, et non dans le fil : leur position dit ce
  * qu'ils sont, c'est-à-dire ce que l'agent n'a pas encore lu. Un message posé au-dessus
  * de l'indicateur laisserait croire qu'il est déjà pris en compte.
+ *
+ * Attendre la fin du tour reste le comportement par défaut. Infléchir est le geste qui
+ * y déroge, donc il est proposé ici, sur le message déjà écrit et relu, plutôt qu'au
+ * moment de la saisie où l'on ne sait pas encore si le tour va durer.
  */
 export function QueuedMessages({
   conversationId,
   messages,
   canCancel,
+  canSteer,
 }: {
   conversationId: string
   messages: QueuedMessage[]
   canCancel: boolean
+  canSteer: boolean
 }) {
   const t = useTranslate()
   const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   if (messages.length === 0) return null
 
-  const cancel = async (queueId: string) => {
+  // L'événement `message.dequeued` retire l'entrée : on ne l'anticipe pas ici, sinon
+  // l'affichage cesserait d'être un pur fold du journal.
+  const run = async (queueId: string, action: () => Promise<unknown>, fallback: string) => {
     setBusy(queueId)
+    setError(null)
     try {
-      await cancelQueuedMessage(conversationId, queueId)
+      await action()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallback)
     } finally {
-      // L'événement `message.dequeued` retire l'entrée : on ne l'anticipe pas ici,
-      // sinon l'affichage cesserait d'être un pur fold du journal.
       setBusy(null)
     }
   }
@@ -42,8 +52,8 @@ export function QueuedMessages({
       <p className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
         <Clock size={11} />
         {messages.length === 1
-          ? 'En attente de la fin du tour'
-          : `${messages.length} messages en attente de la fin du tour`}
+          ? t('queued.waiting.one')
+          : t('queued.waiting.many', { count: messages.length })}
       </p>
 
       {messages.map((message) => (
@@ -68,6 +78,31 @@ export function QueuedMessages({
                 )}
               </p>
             ) : null}
+
+            {/* Visible sans survol, contrairement au retrait : c'est l'action qu'on
+                vient chercher ici, et une icône seule ne la nommait pas. */}
+            {canSteer ? (
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() =>
+                  void run(
+                    message.queueId,
+                    () => steerQueuedMessage(conversationId, message.queueId),
+                    t('queued.steer.failed'),
+                  )
+                }
+                title={t('queued.steer.hint')}
+                className={cx(
+                  'mt-1.5 flex items-center gap-1 rounded-full border border-accent px-2 py-0.5',
+                  'text-[0.6875rem] text-accent transition-colors hover:bg-accent-wash',
+                  'disabled:pointer-events-none disabled:opacity-50',
+                )}
+              >
+                <Waypoints size={11} />
+                {t('queued.steer')}
+              </button>
+            ) : null}
           </div>
 
           {canCancel ? (
@@ -75,7 +110,13 @@ export function QueuedMessages({
               label={t('queued.remove')}
               size="sm"
               disabled={busy !== null}
-              onClick={() => void cancel(message.queueId)}
+              onClick={() =>
+                void run(
+                  message.queueId,
+                  () => cancelQueuedMessage(conversationId, message.queueId),
+                  t('queued.remove.failed'),
+                )
+              }
               className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
             >
               <X size={14} />
@@ -83,6 +124,12 @@ export function QueuedMessages({
           ) : null}
         </div>
       ))}
+
+      {error ? (
+        <p role="alert" className="max-w-[85%] text-[0.6875rem] text-critical">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
