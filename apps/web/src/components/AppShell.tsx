@@ -789,24 +789,7 @@ function ConversationRow({
         }}
         className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-[0.8125rem]"
       >
-        {/*
-          L'origine se marque ici, sur l'icône d'agent, et non à droite : cette ligne
-          budgète deux signaux d'état, et un troisième leur ferait concurrence. Un
-          anneau ne prend aucune largeur et laisse le titre entier.
-        */}
-        <span
-          className={cx(
-            'shrink-0 text-ink-faint',
-            conversation.origin
-              ? 'rounded-full p-0.5 ring-1 ring-accent/60'
-              : '',
-          )}
-          title={
-            conversation.origin
-              ? t('shell.conversation.origin', { label: conversation.origin.label })
-              : undefined
-          }
-        >
+        <span className="shrink-0 text-ink-faint">
           <AgentIcon agent={conversation.agent} size={13} />
         </span>
         <span className="truncate">{conversation.title}</span>
@@ -815,8 +798,20 @@ function ConversationRow({
           Le premier est le plus grave de ce qui se passe maintenant ; la seconde parle
           de ce qui arrivera, donc elle ne lui fait pas concurrence et s'affiche à côté,
           y compris pendant un tour.
+
+          La pastille d'origine les précède sans leur faire concurrence : elle ne dit pas
+          un état mais une provenance, elle ne change jamais, et elle s'efface au survol
+          pour rendre la place aux actions de la ligne.
         */}
         <span className="ml-auto flex shrink-0 items-center gap-1">
+          {conversation.origin ? (
+            <span
+              title={t('shell.conversation.origin', { label: conversation.origin.label })}
+              className="rounded-full bg-accent-wash px-1 py-px text-[0.5625rem] font-semibold uppercase tracking-wide text-accent"
+            >
+              {t('shell.conversation.api')}
+            </span>
+          ) : null}
           {present ? <SignalDot signal={present} /> : null}
           {loop ? <SignalDot signal={loop} /> : null}
         </span>
