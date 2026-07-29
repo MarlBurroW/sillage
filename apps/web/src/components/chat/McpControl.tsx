@@ -1,4 +1,4 @@
-import { ChevronDown, PlugZap } from 'lucide-react'
+import { PlugZap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { McpServer, McpServerStatus } from '@sillage/protocol'
 import { translate, useTranslate } from '../../lib/i18n'
@@ -22,7 +22,6 @@ import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
  */
 
 interface McpControlProps {
-  variant: 'pill' | 'field'
   /** Registre de Sillage : le seul que ce contrôle peut activer ou désactiver. */
   servers: McpServer[]
   /**
@@ -41,7 +40,6 @@ interface McpControlProps {
 }
 
 export function McpControl({
-  variant,
   servers,
   inventory,
   selected,
@@ -134,60 +132,39 @@ export function McpControl({
     </>
   )
 
-  // Les entrées à cocher sont des primitives Radix et exigent le contexte du menu :
-  // les sortir pour les poser à plat dans la feuille les fait échouer au rendu. Les
-  // deux variantes gardent donc le menu, et ne diffèrent que par leur déclencheur.
+  // Une pastille d'icône et de compte plutôt qu'un sélecteur nommé : la question
+  // « avec quels outils » se lit d'un coup d'œil et ne mérite pas d'occuper la barre
+  // à hauteur des réglages qu'on change à chaque tour.
   const summary = mcpSummary(selected.length, inventory.length)
-  const trigger =
-    variant === 'pill' ? (
-      <button
-        type="button"
-        disabled={disabled}
-        className={cx(
-          'group flex h-8 max-w-full items-center gap-1.5 rounded-full border border-transparent',
-          'bg-surface-high px-2.5 text-xs text-ink transition-colors',
-          'data-[state=open]:border-accent disabled:pointer-events-none disabled:opacity-45',
-        )}
-      >
-        <PlugZap size={13} className="shrink-0 text-ink-faint" />
-        <span className="min-w-0 truncate">{summary}</span>
-        <ChevronDown
-          size={13}
-          className="shrink-0 text-ink-faint transition-transform group-data-[state=open]:rotate-180"
-        />
-      </button>
-    ) : (
-      <button
-        type="button"
-        disabled={disabled}
-        className={cx(
-          'tap-target group flex w-full items-center gap-2 rounded-md border border-line bg-sunken px-3',
-          'text-sm text-ink transition-colors',
-          'data-[state=open]:border-accent disabled:pointer-events-none disabled:opacity-45',
-        )}
-      >
-        <PlugZap size={16} className="shrink-0 text-ink-faint" />
-        <span className="min-w-0 flex-1 truncate text-left">{summary}</span>
-        <ChevronDown
-          size={16}
-          className="shrink-0 text-ink-faint transition-transform group-data-[state=open]:rotate-180"
-        />
-      </button>
-    )
-
-  const menu = (
-    <Menu align="start" trigger={trigger}>
-      {items}
-    </Menu>
-  )
-
-  if (variant === 'pill') return menu
+  const count = inventory.length > 0 ? inventory.length : selected.length
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <span className="text-sm font-medium text-ink-soft">{t('composer.field.mcp')}</span>
-      {menu}
-    </div>
+    <Menu
+      align="start"
+      trigger={
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={t('composer.mcp.label', { summary })}
+          title={summary}
+          className={cx(
+            'flex h-8 shrink-0 items-center gap-1 rounded-full px-2 text-xs tabular-nums',
+            'border border-transparent bg-transparent text-ink-faint transition-colors',
+            'hover:bg-surface-high hover:text-ink',
+            'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
+            'data-[state=open]:bg-surface-high data-[state=open]:text-ink',
+            'disabled:pointer-events-none disabled:opacity-45',
+          )}
+        >
+          <PlugZap size={14} className="shrink-0" />
+          {/* Rien à zéro : un « 0 » se lirait comme une panne, pour la même raison
+              que le compte d'outils reste muet tant que le CLI n'a pas répondu. */}
+          {count > 0 ? <span>{count}</span> : null}
+        </button>
+      }
+    >
+      {items}
+    </Menu>
   )
 }
 

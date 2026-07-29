@@ -1,4 +1,14 @@
-import { ArrowUp, Brain, Compass, FastForward, Paperclip, ShieldCheck, Square } from 'lucide-react'
+import {
+  ArrowUp,
+  Box,
+  Brain,
+  Compass,
+  FastForward,
+  Paperclip,
+  ShieldCheck,
+  Sparkles,
+  Square,
+} from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -23,7 +33,7 @@ import {
   type ConversationStatus,
 } from '@sillage/protocol'
 import { effortsFor, useAgentModels } from '../../lib/agents'
-import type { McpServerStatus } from '@sillage/protocol'
+import type { AgentModelDto, McpServerStatus } from '@sillage/protocol'
 import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
 import { useComposerDrops, useComposerReferences } from '../../lib/composer-ref'
@@ -32,16 +42,22 @@ import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
 import { useMcpServers } from '../../lib/mcp'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
-import { IconButton, Select, cx, type SelectOption, type SelectTone } from '../ui'
+import { IconButton, cx } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
-import { ComposerSettings, type ComposerControl } from './ComposerSettings'
-import { McpControl, mcpSummary } from './McpControl'
+import {
+  ComposerSettings,
+  setting,
+  type SettingChoice,
+  type SettingGroup,
+  type SummarySegment,
+} from './ComposerSettings'
+import { McpControl } from './McpControl'
 import { MentionPicker } from './MentionPicker'
 
 /** Traduction, passée aux fabriques d'options qui vivent hors du composant. */
 type Translate = (key: MessageKey, params?: MessageParams) => string
 
-function permissionOptions(t: Translate): SelectOption<ClaudeConfig['permissionMode']>[] {
+function permissionOptions(t: Translate): SettingChoice<ClaudeConfig['permissionMode']>[] {
   return [
     { value: 'manual', label: t('composer.permission.manual'), hint: t('composer.permission.manual.hint') },
     { value: 'auto', label: t('composer.permission.auto'), hint: t('composer.permission.auto.hint') },
@@ -60,6 +76,7 @@ function permissionOptions(t: Translate): SelectOption<ClaudeConfig['permissionM
       value: 'bypassPermissions',
       label: t('composer.permission.bypass'),
       hint: t('composer.permission.bypass.hint'),
+      tone: 'caution',
     },
   ]
 }
@@ -78,7 +95,7 @@ type ApprovalChoice = CodexApprovalName | typeof CLI_DEFAULT_CHOICE | 'granular'
  * deux CLI n'ont pas les mêmes concepts, et inventer une abstraction commune
  * mentirait sur ce qui se passe réellement.
  */
-function codexApprovalOptions(t: Translate): SelectOption<ApprovalChoice>[] {
+function codexApprovalOptions(t: Translate): SettingChoice<ApprovalChoice>[] {
   return [
     {
       value: CLI_DEFAULT_CHOICE,
@@ -100,11 +117,16 @@ function codexApprovalOptions(t: Translate): SelectOption<ApprovalChoice>[] {
       label: t('composer.approval.onFailure'),
       hint: t('composer.approval.onFailure.hint'),
     },
-    { value: 'never', label: t('composer.approval.never'), hint: t('composer.approval.never.hint') },
+    {
+      value: 'never',
+      label: t('composer.approval.never'),
+      hint: t('composer.approval.never.hint'),
+      tone: 'caution',
+    },
   ]
 }
 
-function codexSandboxOptions(t: Translate): SelectOption<CodexConfig['sandbox']>[] {
+function codexSandboxOptions(t: Translate): SettingChoice<CodexConfig['sandbox']>[] {
   return [
     { value: 'read-only', label: t('composer.sandbox.readOnly'), hint: t('composer.sandbox.readOnly.hint') },
     {
@@ -116,8 +138,28 @@ function codexSandboxOptions(t: Translate): SelectOption<CodexConfig['sandbox']>
       value: 'danger-full-access',
       label: t('composer.sandbox.fullAccess'),
       hint: t('composer.sandbox.fullAccess.hint'),
+      tone: 'caution',
     },
   ]
+}
+
+/**
+ * Nomme le modèle derrière la ligne par défaut du catalogue.
+ *
+ * Claude Code appelle la sienne « Default (recommended) », ce qui est long et ne dit
+ * pas qui répondra. Une autre ligne pointe le même `resolvedModel` et porte, elle, un
+ * nom lisible : c'est celui-là qu'on affiche. Null quand aucune ne correspond, faute
+ * de quoi il faudrait inventer un nom de modèle, ce qui serait pire que de rester
+ * vague.
+ */
+function defaultModelLabel(
+  models: AgentModelDto[],
+  row: AgentModelDto,
+  t: Translate,
+): string | null {
+  if (!row.hint) return null
+  const alias = models.find((model) => !model.isDefault && model.hint === row.hint)
+  return alias ? t('composer.model.defaultNamed', { model: alias.displayName }) : null
 }
 
 /** Le `@...` en cours de saisie, repéré autour du curseur. */
@@ -255,16 +297,25 @@ export function Composer({
   const resolvedModel =
     config.model || catalog?.models.find((model) => model.isDefault)?.value || CLI_DEFAULT
 
-  const modelOptions = useMemo((): SelectOption<string>[] => {
-    const known = (catalog?.models ?? []).map((model) => ({
-      value: model.value,
-      label: model.displayName,
-      // `hint` porte la version réelle derrière un alias : sans elle, « Opus » ne
-      // dit pas quelle génération va effectivement répondre.
-      hint: [model.description, model.hint, model.isDefault ? t('composer.model.default') : null]
-        .filter(Boolean)
-        .join(' · '),
-    }))
+  const modelOptions = useMemo((): SettingChoice<string>[] => {
+    const models = catalog?.models ?? []
+    const known = models.map((model) => {
+      const named = model.isDefault ? defaultModelLabel(models, model, t) : null
+      return {
+        value: model.value,
+        label: named ?? model.displayName,
+        // `hint` porte la version réelle derrière un alias : sans elle, « Opus » ne
+        // dit pas quelle génération va effectivement répondre. Le rappel « par
+        // défaut » ne sert que si le libellé n'a pas déjà pu le dire.
+        hint: [
+          model.description,
+          model.hint,
+          !named && model.isDefault ? t('composer.model.default') : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      }
+    })
 
     // Le modèle enregistré doit rester sélectionnable même si le catalogue n'a pas pu
     // être lu, sinon le select s'affiche vide et efface le réglage de la conversation.
@@ -275,12 +326,11 @@ export function Composer({
     return known
   }, [catalog, config.model, t])
 
-  const effortOptions = useMemo((): SelectOption<string>[] => {
+  const effortOptions = useMemo((): SettingChoice<string>[] => {
     const known = effortsFor(catalog?.models, resolvedModel).map((effort) => ({
       value: effort.value,
       label: effort.label,
       hint: effort.hint ?? undefined,
-      icon: <Brain size={13} />,
     }))
 
     // Même règle que pour le modèle : le niveau enregistré reste sélectionnable et
@@ -289,12 +339,7 @@ export function Composer({
     const current =
       config.agent === 'claude' ? config.effort : config.agent === 'codex' ? config.reasoningEffort : ''
     if (known.length > 0 && current && !known.some((option) => option.value === current)) {
-      known.unshift({
-        value: current,
-        label: current,
-        hint: t('composer.select.saved'),
-        icon: <Brain size={13} />,
-      })
+      known.unshift({ value: current, label: current, hint: t('composer.select.saved') })
     }
     return known
   }, [catalog, config, resolvedModel, t])
@@ -315,12 +360,8 @@ export function Composer({
    * du CLI refuse autrement. La liste vient du CLI, donc elle disparaît si la version
    * installée ne la connaît pas, et reste vide pour les CLI sans cette notion.
    */
-  const codexModeOptions = useMemo((): SelectOption<CodexMode>[] => {
-    return (catalog?.modes ?? []).map((entry) => ({
-      value: entry.mode,
-      label: entry.label,
-      icon: <Compass size={13} />,
-    }))
+  const codexModeOptions = useMemo((): SettingChoice<CodexMode>[] => {
+    return (catalog?.modes ?? []).map((entry) => ({ value: entry.mode, label: entry.label }))
   }, [catalog])
 
   // L'approbation peut être un objet granulaire, que Sillage n'édite pas : il est
@@ -336,7 +377,7 @@ export function Composer({
       ? CLI_DEFAULT_CHOICE
       : approval
 
-  const approvalOptions: SelectOption<ApprovalChoice>[] = granular
+  const approvalOptions: SettingChoice<ApprovalChoice>[] = granular
     ? [
         {
           value: 'granular',
@@ -587,8 +628,25 @@ export function Composer({
    * Intitulé de la valeur en cours. Le repli sur la valeur brute couvre la sentinelle
    * `CLI_DEFAULT`, qui n'a pas d'option nommée dans les listes de modèles.
    */
-  const labelOf = <T extends string>(options: SelectOption<T>[], value: T): string =>
+  const labelOf = <T extends string>(options: SettingChoice<T>[], value: T): string =>
     options.find((option) => option.value === value)?.label || value || t('composer.select.default')
+
+  /**
+   * Un créneau du résumé porté par le déclencheur.
+   *
+   * Le ton vient de l'option choisie, et non d'une seconde liste de valeurs
+   * dangereuses tenue en parallèle. Un garde-fou levé passe en tête d'ordre : aucune
+   * largeur ne doit pouvoir l'effacer.
+   */
+  const segment = <T extends string>(
+    key: string,
+    options: SettingChoice<T>[],
+    value: T,
+    drop: 0 | 1 | 2,
+  ): SummarySegment => {
+    const tone = options.find((option) => option.value === value)?.tone
+    return { key, label: labelOf(options, value), tone, drop: tone === 'caution' ? 0 : drop }
+  }
 
   // Le registre est partagé par toute l'instance : la requête est mise en cache par
   // React Query et ne repart pas à chaque conversation ouverte.
@@ -598,200 +656,159 @@ export function Composer({
   const sandboxOptionList = codexSandboxOptions(t)
 
   /** Réglages de la session, dans l'ordre où on les change. */
-  const controls: ComposerControl[] = claude
-    ? [
-        {
-          key: 'model',
-          render: (variant) => (
-            <Select
-              variant={variant}
-              label={variant === 'field' ? t('composer.field.model') : undefined}
-              value={resolvedModel}
-              onChange={(model) =>
-                onConfigChange({ ...claude, model, effort: clampClaudeEffort(model, claude.effort) })
-              }
-              options={modelOptions}
-            />
-          ),
-          current: labelOf(modelOptions, resolvedModel),
-        },
-        // Absent plutôt que grisé quand le modèle n'a pas de niveaux d'effort : un
-        // réglage sans effet n'a pas à occuper la barre.
-        ...(effortOptions.length > 0
-          ? [
-              {
-                key: 'effort',
-                render: (variant: 'pill' | 'field') => (
-                  <Select
-                    variant={variant}
-                    label={variant === 'field' ? t('composer.field.effort') : undefined}
-                    value={claude.effort}
-                    onChange={(effort) => {
-                      // Le select est générique sur des chaînes ; l'enum du protocole
-                      // fait foi, une valeur inconnue ne part pas.
-                      const parsed = claudeEffortSchema.safeParse(effort)
-                      if (parsed.success) onConfigChange({ ...claude, effort: parsed.data })
-                    }}
-                    options={effortOptions}
-                  />
-                ),
-                current: labelOf(effortOptions, claude.effort),
-              },
-            ]
-          : []),
-        {
-          key: 'permission',
-          render: (variant) => (
-            <Select
-              variant={variant}
-              label={variant === 'field' ? t('composer.field.permission') : undefined}
-              tone={claude.permissionMode === 'bypassPermissions' ? 'caution' : 'neutral'}
-              value={claude.permissionMode}
-              onChange={(permissionMode) => onConfigChange({ ...claude, permissionMode })}
-              options={permissionOptionList.map((option) => ({
-                ...option,
-                icon: <ShieldCheck size={13} />,
-              }))}
-            />
-          ),
-          current: labelOf(permissionOptionList, claude.permissionMode),
-        },
-        {
-          key: 'mcp',
-          render: (variant) => (
-            <McpControl
-              variant={variant}
-              servers={mcpServers}
-              inventory={mcpInventory}
-              selected={claude.mcpServers}
-              onSelectedChange={(ids) => onConfigChange({ ...claude, mcpServers: ids })}
-              strict={claude.strictMcp}
-              onStrictChange={(strictMcp) => onConfigChange({ ...claude, strictMcp })}
-              disabled={disabled}
-            />
-          ),
-          current: mcpSummary(claude.mcpServers.length, mcpInventory.length),
-        },
-      ]
-    : codex
-      ? [
-          {
-            key: 'model',
-            render: (variant) => (
-              <Select
-                variant={variant}
-                label={variant === 'field' ? t('composer.field.model') : undefined}
-                value={resolvedModel}
-                onChange={(model) =>
-                  onConfigChange({
-                    ...codex,
-                    model,
-                    reasoningEffort: clampEffort(model, codex.reasoningEffort),
-                  })
-                }
-                options={modelOptions}
-              />
-            ),
-            current: labelOf(modelOptions, resolvedModel),
-          },
-          ...(codexModeOptions.length > 0
-            ? [
-                {
-                  key: 'mode',
-                  render: (variant: 'pill' | 'field') => (
-                    <Select
-                      variant={variant}
-                      label={variant === 'field' ? t('composer.field.mode') : undefined}
-                      value={codex.collaborationMode}
-                      onChange={(collaborationMode) =>
-                        onConfigChange({ ...codex, collaborationMode })
-                      }
-                      options={codexModeOptions}
-                    />
-                  ),
-                  current: labelOf(codexModeOptions, codex.collaborationMode),
-                },
-              ]
-            : []),
-          ...(effortOptions.length > 0
-            ? [
-                {
-                  key: 'effort',
-                  render: (variant: 'pill' | 'field') => (
-                    <Select
-                      variant={variant}
-                      label={variant === 'field' ? t('composer.field.effort') : undefined}
-                      value={resolvedEffort}
-                      onChange={(reasoningEffort) => onConfigChange({ ...codex, reasoningEffort })}
-                      options={effortOptions}
-                    />
-                  ),
-                  current: labelOf(effortOptions, resolvedEffort),
-                },
-              ]
-            : []),
-          {
-            key: 'approval',
-            render: (variant) => (
-              <Select
-                variant={variant}
-                label={variant === 'field' ? t('composer.field.approval') : undefined}
-                tone={approval === 'never' ? 'caution' : 'neutral'}
-                value={approvalValue}
-                onChange={(choice) => {
-                  // 'granular' n'est qu'un repère d'affichage, il n'est pas
-                  // sélectionnable et ne doit jamais repartir vers le serveur.
-                  if (choice === 'granular') return
-                  onConfigChange({
-                    ...codex,
-                    askForApproval: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice,
-                  })
-                }}
-                options={approvalOptions}
-              />
-            ),
-            current: labelOf(approvalOptions, approvalValue),
-          },
-          {
-            key: 'sandbox',
-            render: (variant) => (
-              <Select
-                variant={variant}
-                label={variant === 'field' ? t('composer.field.sandbox') : undefined}
-                tone={codex.sandbox === 'danger-full-access' ? 'caution' : 'neutral'}
-                value={codex.sandbox}
-                onChange={(sandbox) => onConfigChange({ ...codex, sandbox })}
-                options={sandboxOptionList}
-              />
-            ),
-            current: labelOf(sandboxOptionList, codex.sandbox),
-          },
-          {
-            key: 'mcp',
-            render: (variant) => (
-              <McpControl
-                variant={variant}
-                servers={mcpServers}
-                inventory={mcpInventory}
-                selected={codex.mcpServers}
-                onSelectedChange={(ids) => onConfigChange({ ...codex, mcpServers: ids })}
-                strict={null}
-                onStrictChange={() => {}}
-                disabled={disabled}
-              />
-            ),
-            current: mcpSummary(codex.mcpServers.length, mcpInventory.length),
-          },
-        ]
-      : []
+  let groups: SettingGroup[] = []
+  /** Ce que le déclencheur montre sans qu'on l'ouvre. */
+  let summary: SummarySegment[] = []
+  let mcp: ReactNode = null
 
-  /** Un garde-fou retiré doit rester visible même quand les réglages sont repliés. */
-  const settingsTone: SelectTone =
-    claude?.permissionMode === 'bypassPermissions' ||
-    codex?.sandbox === 'danger-full-access' ||
-    approval === 'never'
-      ? 'caution'
-      : 'neutral'
+  if (claude) {
+    groups = [
+      setting({
+        key: 'model',
+        label: t('composer.setting.model'),
+        icon: <Sparkles size={15} />,
+        options: modelOptions,
+        value: resolvedModel,
+        onChange: (model) =>
+          onConfigChange({ ...claude, model, effort: clampClaudeEffort(model, claude.effort) }),
+      }),
+      // Absente plutôt que grisée quand le modèle n'a pas de niveaux d'effort : un
+      // réglage sans effet n'a pas à occuper le panneau.
+      ...(effortOptions.length > 0
+        ? [
+            setting({
+              key: 'effort',
+              label: t('composer.setting.effort'),
+              icon: <Brain size={15} />,
+              options: effortOptions,
+              value: claude.effort,
+              onChange: (effort) => {
+                // Les options sont génériques sur des chaînes ; l'enum du protocole
+                // fait foi, une valeur inconnue ne part pas.
+                const parsed = claudeEffortSchema.safeParse(effort)
+                if (parsed.success) onConfigChange({ ...claude, effort: parsed.data })
+              },
+            }),
+          ]
+        : []),
+      setting({
+        key: 'permission',
+        label: t('composer.setting.permission'),
+        icon: <ShieldCheck size={15} />,
+        options: permissionOptionList,
+        value: claude.permissionMode,
+        onChange: (permissionMode) => onConfigChange({ ...claude, permissionMode }),
+      }),
+    ]
+
+    summary = [
+      segment('model', modelOptions, resolvedModel, 0),
+      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, claude.effort, 2)] : []),
+      segment('permission', permissionOptionList, claude.permissionMode, 1),
+    ]
+
+    mcp = (
+      <McpControl
+        servers={mcpServers}
+        inventory={mcpInventory}
+        selected={claude.mcpServers}
+        onSelectedChange={(ids) => onConfigChange({ ...claude, mcpServers: ids })}
+        strict={claude.strictMcp}
+        onStrictChange={(strictMcp) => onConfigChange({ ...claude, strictMcp })}
+        disabled={disabled}
+      />
+    )
+  } else if (codex) {
+    groups = [
+      setting({
+        key: 'model',
+        label: t('composer.setting.model'),
+        icon: <Sparkles size={15} />,
+        options: modelOptions,
+        value: resolvedModel,
+        onChange: (model) =>
+          onConfigChange({
+            ...codex,
+            model,
+            reasoningEffort: clampEffort(model, codex.reasoningEffort),
+          }),
+      }),
+      ...(codexModeOptions.length > 0
+        ? [
+            setting({
+              key: 'mode',
+              label: t('composer.setting.mode'),
+              icon: <Compass size={15} />,
+              options: codexModeOptions,
+              value: codex.collaborationMode,
+              onChange: (collaborationMode) => onConfigChange({ ...codex, collaborationMode }),
+            }),
+          ]
+        : []),
+      ...(effortOptions.length > 0
+        ? [
+            setting({
+              key: 'effort',
+              label: t('composer.setting.effort'),
+              icon: <Brain size={15} />,
+              options: effortOptions,
+              value: resolvedEffort,
+              onChange: (reasoningEffort) => onConfigChange({ ...codex, reasoningEffort }),
+            }),
+          ]
+        : []),
+      setting({
+        key: 'approval',
+        label: t('composer.setting.approval'),
+        icon: <ShieldCheck size={15} />,
+        options: approvalOptions,
+        value: approvalValue,
+        onChange: (choice) => {
+          // 'granular' n'est qu'un repère d'affichage, il n'est pas sélectionnable et
+          // ne doit jamais repartir vers le serveur.
+          if (choice === 'granular') return
+          onConfigChange({
+            ...codex,
+            askForApproval: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice,
+          })
+        },
+      }),
+      setting({
+        key: 'sandbox',
+        label: t('composer.setting.sandbox'),
+        icon: <Box size={15} />,
+        options: sandboxOptionList,
+        value: codex.sandbox,
+        onChange: (sandbox) => onConfigChange({ ...codex, sandbox }),
+      }),
+    ]
+
+    // Le mode de collaboration reste dans le panneau : il décide des outils
+    // accessibles, pas de ce qui peut être détruit, et trois créneaux sont le maximum
+    // lisible. Le bac à sable tient celui de la sûreté, sauf quand c'est l'approbation
+    // qui est levée ; les deux levées, les deux s'affichent.
+    const approvalOff = approvalValue === 'never'
+    summary = [
+      segment('model', modelOptions, resolvedModel, 0),
+      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort, 2)] : []),
+      ...(approvalOff ? [segment('approval', approvalOptions, approvalValue, 1)] : []),
+      ...(approvalOff && codex.sandbox !== 'danger-full-access'
+        ? []
+        : [segment('sandbox', sandboxOptionList, codex.sandbox, 1)]),
+    ]
+
+    mcp = (
+      <McpControl
+        servers={mcpServers}
+        inventory={mcpInventory}
+        selected={codex.mcpServers}
+        onSelectedChange={(ids) => onConfigChange({ ...codex, mcpServers: ids })}
+        strict={null}
+        onStrictChange={() => {}}
+        disabled={disabled}
+      />
+    )
+  }
 
   return (
     // L'encoche est portée par la page (`pb-safe`), pas ici : deux `env()` empilés
@@ -884,7 +901,13 @@ export function Composer({
               <Paperclip size={16} />
             </IconButton>
 
-            <ComposerSettings controls={controls} tone={settingsTone} />
+            <ComposerSettings
+              groups={groups}
+              summary={summary}
+              aside={mcp}
+              disabled={disabled}
+              onDone={() => textarea.current?.focus()}
+            />
 
             {context ? <ContextMeter context={context} /> : null}
 
