@@ -643,13 +643,14 @@ GET    /api/conversations/:id/events        ?after=<seq>&limit=500
 POST   /api/conversations/:id/messages      { clientMessageId, text,
                                               attachmentIds[], mentions[] }
 POST   /api/conversations/:id/fork           { throughSeq, title? } -> branche
-POST   /api/conversations/:id/steer          infléchit le tour en cours (Codex)
+POST   /api/conversations/:id/steer          infléchit le tour en cours
 POST   /api/conversations/:id/interrupt
 POST   /api/conversations/:id/compact
 POST   /api/conversations/:id/permissions/:requestId  { decision, scope }
 POST   /api/conversations/:id/questions/:requestId    { status, answers }
 POST   /api/conversations/:id/elicitations/:requestId { action, content }
 DELETE /api/conversations/:id/queue/:queueId          retire un message en attente
+POST   /api/conversations/:id/queue/:queueId/steer    l'injecte dans le tour en cours
 POST   /api/conversations/:id/plans/:requestId        { decision, followUpMode }
 
 POST   /api/attachments                     multipart -> { id, filename, ... }
@@ -974,41 +975,63 @@ message est mis en file **côté serveur** et affiché sous l'indicateur d'activ
 position dit ce qu'il est, c'est-à-dire ce que l'agent n'a pas encore lu. Il part seul à
 la fin du tour, un à la fois, et peut être retiré avant son départ.
 
-La file vit côté serveur et non dans le CLI, parce que pousser un message en cours de
-tour ne fait pas ce qu'on croit. Vérifié sur le CLI installé : le second message s'est
-mêlé au tour courant, sa réponse est sortie avant que le premier soit achevé, puis une
-seconde fois au tour suivant. Le déterminisme vient donc de Sillage, et le comportement
-est identique pour les deux CLI.
+La file vit côté serveur et non dans le CLI, parce qu'un message poussé en cours de tour
+y est repris tout de suite. C'est exactement ce que fait le geste d'inflexion décrit plus
+bas, et ce n'est pas ce qu'on attend d'un envoi ordinaire : le déterminisme vient donc de
+Sillage, et le comportement par défaut est identique pour les deux CLI.
 
 Elle est en mémoire : un message qui n'a jamais atteint le CLI n'a pas à survivre à un
 redémarrage. Le journal, lui, porte de quoi les clore proprement à la reprise
 (`EventLog.openQueuedMessages`), sans quoi le fil rejoué les afficherait pour toujours
 comme en attente.
 
-**Infléchir le tour en cours.** Là où le CLI le permet, un second bouton apparaît
-pendant un tour, à côté de Stop : le message est pris en compte **immédiatement**, à
-l'intérieur du tour déjà commencé, au lieu d'attendre sa fin comme le fait la file.
+**Infléchir le tour en cours.** Le message est pris en compte **immédiatement**, à
+l'intérieur du tour déjà commencé, au lieu d'attendre sa fin comme le fait la file. Les
+deux CLI le permettent, par deux mécanismes sans rapport.
 
-| | Mécanisme | Disponible |
+| | Mécanisme | Repli garanti |
 | --- | --- | --- |
 | Codex | `turn/steer` avec `expectedTurnId` | oui |
-| Claude Code | aucun équivalent | non |
+| Claude Code | `priority: 'next'` sur le message poussé dans le flux | non |
+
+Côté Codex, `expectedTurnId` est une précondition du protocole : si le tour s'est terminé
+entre l'affichage du bouton et le clic, la requête échoue, ce qui est le comportement
+voulu. Un tour de type `review` ou `compact` refuse le steering
+(`activeTurnNotSteerable`).
+
+Côté Claude Code, il n'y a pas de requête dédiée : le message part par le flux ordinaire,
+et `priority` dit au CLI où le poser. La valeur `next`, qui est aussi le défaut, replie le
+message dans le tour courant à la prochaine frontière de lot d'outils, où il arrive au
+modèle précédé de « The user sent a new message while you were working ». La valeur
+`later` lui fait attendre le tour suivant. Deux limites en découlent : le repli n'a lieu
+qu'à une frontière de lot d'outils, donc un agent qui rédige déjà sa réponse finale
+termine son tour et le message ouvre le suivant ; et rien dans le flux ne dit laquelle des
+deux choses s'est produite. Le champ est exporté sans commentaire par le SDK et la
+documentation décrit encore une file strictement séquentielle : `pnpm steer:probe` est ce
+qui a relevé le comportement, et ce qui permettra de le revérifier au prochain bump.
 
 Les deux gestes ne produisent pas le même résultat, donc lequel s'applique reste le choix
 de l'utilisateur : la file est l'action par défaut, infléchir est explicite, et un refus
 est rendu tel quel (`steer_unavailable`) plutôt que replié sur la file dans le dos de
-l'utilisateur. Le bouton n'existe pas du tout sur Claude, plutôt que d'être proposé puis
-refusé, et disparaît hors tour ou quand il n'y a rien à envoyer.
+l'utilisateur. Le geste se propose à deux endroits, et le second est le principal : un
+bouton dans le composer tant que le message est en cours de frappe, et une action
+**Infléchir maintenant** sur chaque message déjà en file. Le premier seul ne suffisait
+pas, puisqu'il dépend du texte présent dans la zone de saisie et disparaît donc au moment
+même où l'envoi le vide. Un message sorti de la file par ce geste est clos par
+`message.dequeued` avec la raison `steered`, distincte de `sent`.
 
-`expectedTurnId` est une précondition du protocole : si le tour s'est terminé entre
-l'affichage du bouton et le clic, la requête échoue, ce qui est le comportement voulu.
+Sortir un message de la file demande un aller-retour vers le CLI, pendant lequel il ne
+doit pas rester exposé au `flushQueue` d'une fin de tour : il est retiré avant l'appel et
+remis à sa place exacte si le CLI refuse.
 
-Vérifié de bout en bout contre un vrai CLI : un tour lancé sur les marées, infléchi vers
-les volcans en cours de route, produit **un seul** `turn.started`, deux messages
-utilisateur dans le fil, une réponse qui parle bien de volcans, et **aucun**
-`message.queued`. Deux détails relevés à cette occasion : le tour garde son identifiant,
-et l'app-server renvoie le message en écho sous forme d'item `userMessage`, que le
-traducteur ignore déjà pour ne pas l'écrire deux fois.
+Vérifié de bout en bout contre de vrais CLI. Codex : un tour lancé sur les marées,
+infléchi vers les volcans en cours de route, produit **un seul** `turn.started`, deux
+messages utilisateur dans le fil, une réponse qui parle bien de volcans, et **aucun**
+`message.queued` ; le tour garde son identifiant, et l'app-server renvoie le message en
+écho sous forme d'item `userMessage`, que le traducteur ignore déjà pour ne pas l'écrire
+deux fois. Claude : un tour parti sur trois commandes lentes, infléchi pendant la
+première, s'arrête après elle et répond le mot demandé, pour **un seul** `turn.started` et
+**un seul** `turn.completed`.
 
 **Le brouillon survit au changement de conversation.** Le composer est remonté par sa
 clé quand la conversation change : le texte tapé et les pièces jointes déjà téléversées

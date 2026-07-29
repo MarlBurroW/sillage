@@ -701,9 +701,7 @@ export function ConversationPage() {
 
   const isOwner = conversation.userId === user?.id
   // Infléchir suppose un tour ouvert et un CLI qui sait le faire : proposer le geste
-  // ailleurs reviendrait à annoncer une action que le serveur refuserait. Seul Codex
-  // sait le faire (`turn/steer`) ; côté Claude, un message poussé en cours de tour s'y
-  // mêle au lieu de le réorienter.
+  // ailleurs reviendrait à annoncer une action que le serveur refuserait.
   const canSteer =
     isOwner &&
     AGENT_CAPABILITIES[conversation.agent].steer &&
