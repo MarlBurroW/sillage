@@ -7,6 +7,7 @@ import {
   type CodexConfig,
   type ContentBlock,
   type McpServer,
+  type McpServerStatus,
 } from '@sillage/protocol'
 import type { CollaborationMode } from '@sillage/codex-bindings'
 import type {
@@ -50,6 +51,7 @@ import { PendingInteractions } from '../interactions.js'
 import { describeOutgoingMessage } from '../outgoing.js'
 import { toWorkspacePath } from '../paths.js'
 import { ToolDurations } from '../tool-durations.js'
+import { failedStatuses } from '../mcp-registry.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
 import { fromCodexMcpStatus, toCodexThreadConfig, type CodexMcpStartup } from './mcp.js'
@@ -167,6 +169,8 @@ export class CodexRunner implements AgentRunner {
   private threadId: string | null = null
   /** Serveurs transmis au thread courant, pour distinguer les nôtres de ceux du CLI. */
   private mcpServers: McpServer[] = []
+  /** Serveurs qu'on n'a pas pu lancer, à joindre à l'inventaire que le CLI rapporte. */
+  private mcpFailures: McpServerStatus[] = []
   /** Dernier démarrage annoncé par serveur : l'inventaire ne porte ni état ni erreur. */
   private readonly mcpStartup = new Map<string, CodexMcpStartup>()
   /** Dernier inventaire publié, pour n'écrire au journal que ce qui change. */
@@ -229,7 +233,9 @@ export class CodexRunner implements AgentRunner {
 
     await this.client.initialize(CLIENT_INFO)
 
-    this.mcpServers = this.ctx.resolveMcpServers(this.config.mcpServers)
+    const resolved = this.ctx.resolveMcpServers(this.config.mcpServers)
+    this.mcpServers = resolved.servers
+    this.mcpFailures = failedStatuses(resolved.failures)
     // Repassé au `thread/resume` autant qu'au `thread/start`, et ce n'est pas une
     // précaution : une surcharge de thread n'est pas persistée avec le thread. Sondé,
     // un thread créé avec des serveurs MCP puis repris sans cette configuration les
@@ -294,7 +300,12 @@ export class CodexRunner implements AgentRunner {
         'mcpServerStatus/list',
         { threadId, detail: 'toolsAndAuthOnly' },
       )
-      const servers = fromCodexMcpStatus(inventory.data, this.mcpServers, this.mcpStartup)
+      // Même raison que côté Claude : un serveur écarté faute d'un secret n'a jamais
+      // été transmis, donc l'inventaire du CLI l'ignore.
+      const servers = [
+        ...this.mcpFailures,
+        ...fromCodexMcpStatus(inventory.data, this.mcpServers, this.mcpStartup),
+      ]
 
       const payload = JSON.stringify(servers)
       if (payload === this.lastMcpPayload) return

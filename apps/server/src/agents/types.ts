@@ -3,9 +3,9 @@ import type {
   ConversationStatus,
   ElicitationAction,
   ElicitationValue,
-  McpServer,
   SillageEvent,
 } from '@sillage/protocol'
+import type { ResolvedMcpServers } from './mcp-registry.js'
 
 export interface PermissionDecision {
   decision: 'allowed' | 'denied'
@@ -64,7 +64,7 @@ export interface RunnerContext {
    * thread, et Claude peut la remplacer à chaud. Un instantané pris au lancement
    * mentirait dans les deux cas.
    */
-  resolveMcpServers(ids: string[]): McpServer[]
+  resolveMcpServers(ids: string[]): ResolvedMcpServers
   /** Identifiant de session natif à reprendre, null pour une nouvelle session. */
   resumeSessionId: string | null
   /** Écrit dans le journal puis diffuse. `raw` conserve le message natif du CLI. */

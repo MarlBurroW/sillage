@@ -1,4 +1,14 @@
-import { Bell, ChevronRight, FolderOpen, Info, Palette, Plug, UserRound, Users } from 'lucide-react'
+import {
+  Bell,
+  ChevronRight,
+  FolderOpen,
+  Info,
+  KeyRound,
+  Palette,
+  Plug,
+  UserRound,
+  Users,
+} from 'lucide-react'
 import type { ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
@@ -58,6 +68,13 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.mcp',
     descriptionKey: 'settings.section.mcp.description',
     icon: <Plug size={16} />,
+  },
+  {
+    to: 'secrets',
+    labelKey: 'settings.section.secrets',
+    descriptionKey: 'settings.section.secrets.description',
+    icon: <KeyRound size={16} />,
+    adminOnly: true,
   },
   {
     to: 'comptes',
