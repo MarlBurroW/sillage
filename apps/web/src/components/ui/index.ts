@@ -15,5 +15,4 @@ export {
   MenuSwatchRow,
 } from './Menu'
 export { Select, type SelectOption, type SelectTone } from './Select'
-export { TextArea } from './TextArea'
 export { Badge, Banner, EmptyState } from './feedback'
