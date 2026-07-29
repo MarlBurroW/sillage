@@ -1,4 +1,4 @@
-import { Bell, ChevronRight, FolderOpen, Info, Palette, UserRound, Users } from 'lucide-react'
+import { Bell, ChevronRight, FolderOpen, Info, Palette, Plug, UserRound, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
@@ -52,6 +52,12 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.projects',
     descriptionKey: 'settings.section.projects.description',
     icon: <FolderOpen size={16} />,
+  },
+  {
+    to: 'mcp',
+    labelKey: 'settings.section.mcp',
+    descriptionKey: 'settings.section.mcp.description',
+    icon: <Plug size={16} />,
   },
   {
     to: 'comptes',

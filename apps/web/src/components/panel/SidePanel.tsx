@@ -1,4 +1,4 @@
-import { Bot, FileCode, FolderTree, GitCompare, RefreshCw, SquareTerminal, X } from 'lucide-react'
+import { Bot, FileCode, FolderTree, GitCompare, PlugZap, RefreshCw, SquareTerminal, X } from 'lucide-react'
 import {
   useEffect,
   useRef,
@@ -7,6 +7,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react'
+import type { McpServerStatus } from '@sillage/protocol'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn } from '../../lib/chat-fold'
 import { openTab } from '../../lib/editor-tabs'
@@ -26,6 +27,7 @@ import { AgentsPane } from './AgentsPane'
 import { ChangesPane } from './ChangesPane'
 import { EditorPane } from './EditorPane'
 import { FileTree } from './FileTree'
+import { McpPane } from './McpPane'
 import { TerminalsPane } from './TerminalsPane'
 
 /**
@@ -43,6 +45,7 @@ export function SidePanel({
   turnRunning,
   subAgents,
   background,
+  mcpServers,
   open,
 }: {
   conversationId: string
@@ -50,6 +53,7 @@ export function SidePanel({
   turnRunning: boolean
   subAgents: SubAgent[]
   background: BackgroundWork[]
+  mcpServers: McpServerStatus[]
   /** Faux pendant la sortie : le panneau est encore monté, mais s'en va. */
   open: boolean
 }) {
@@ -190,6 +194,15 @@ export function SidePanel({
             active={tab === 'agents'}
             onSelect={() => setPanelTab('agents')}
           />
+          <Tab
+            icon={<PlugZap size={14} />}
+            label={t('panel.tab.mcp')}
+            // Seuls les serveurs en défaut se comptent : une pastille sur un
+            // inventaire sain crierait en permanence pour ne rien dire.
+            badge={mcpServers.filter((s) => s.state === 'failed' || s.state === 'needs-auth').length}
+            active={tab === 'mcp'}
+            onSelect={() => setPanelTab('mcp')}
+          />
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5 pl-1">
@@ -272,6 +285,10 @@ export function SidePanel({
           selectedId={selectedSubAgent}
         />
       ) : null}
+
+      {/* Même raison que les sous-agents : son contenu vient du journal, rien ne se
+          perd à ne le monter que lorsqu'on le regarde. */}
+      {tab === 'mcp' ? <McpPane servers={mcpServers} /> : null}
 
       {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
           panneau occupe tout l'écran, il n'y a rien à ajuster. */}

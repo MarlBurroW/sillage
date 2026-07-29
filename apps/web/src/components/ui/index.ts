@@ -5,6 +5,15 @@ export { ChoiceList, type Choice } from './ChoiceList'
 export { ConfirmDialog } from './ConfirmDialog'
 export { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './ContextMenu'
 export { Field } from './Field'
-export { Menu, MenuItem, MenuLabel, MenuSeparator, MenuSwatch, MenuSwatchRow } from './Menu'
+export {
+  Menu,
+  MenuCheckboxItem,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MenuSwatch,
+  MenuSwatchRow,
+} from './Menu'
 export { Select, type SelectOption, type SelectTone } from './Select'
+export { TextArea } from './TextArea'
 export { Badge, Banner, EmptyState } from './feedback'

@@ -5,6 +5,7 @@ import type {
   ElicitationField,
   ElicitationValue,
   Loop,
+  McpServerStatus,
   PermissionOption,
   PlanFollowUpOption,
   SillageEvent,
@@ -251,6 +252,15 @@ export interface ChatState {
    */
   loops: Loop[]
   /**
+   * Les serveurs MCP de la session, tels que le CLI les rapporte.
+   *
+   * Remplacée et jamais complétée, comme `background` et `loops` : le CLI publie
+   * l'inventaire entier à chaque changement. Contient aussi les serveurs venus de sa
+   * propre configuration, marqués `external`, que l'utilisateur subit sans les avoir
+   * déclarés dans Sillage et doit pouvoir voir échouer.
+   */
+  mcp: McpServerStatus[]
+  /**
    * Les réveils observés, par consigne réinjectée : combien, et le dernier quand.
    *
    * Tenue à part de `loops` parce qu'elle doit survivre au remplacement de la liste.
@@ -314,6 +324,7 @@ export function emptyChatState(): ChatState {
     compacting: false,
     background: [],
     loops: [],
+    mcp: [],
     loopFires: new Map(),
     tasks: new Map(),
   }
@@ -952,6 +963,11 @@ export function applyEvent(
 
     case 'loops.updated': {
       state.loops = event.loops
+      break
+    }
+
+    case 'mcp.updated': {
+      state.mcp = event.servers
       break
     }
 

@@ -29,10 +29,12 @@ import { useComposerDrops, useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
+import { useMcpServers } from '../../lib/mcp'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
 import { IconButton, Select, cx, type SelectOption, type SelectTone } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
 import { ComposerSettings, type ComposerControl } from './ComposerSettings'
+import { McpControl, mcpSummary } from './McpControl'
 import { MentionPicker } from './MentionPicker'
 
 /** Traduction, passée aux fabriques d'options qui vivent hors du composant. */
@@ -584,6 +586,10 @@ export function Composer({
   const labelOf = <T extends string>(options: SelectOption<T>[], value: T): string =>
     options.find((option) => option.value === value)?.label || value || t('composer.select.default')
 
+  // Le registre est partagé par toute l'instance : la requête est mise en cache par
+  // React Query et ne repart pas à chaque conversation ouverte.
+  const mcpServers = useMcpServers().data?.servers ?? []
+
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
 
@@ -645,6 +651,21 @@ export function Composer({
             />
           ),
           current: labelOf(permissionOptionList, claude.permissionMode),
+        },
+        {
+          key: 'mcp',
+          render: (variant) => (
+            <McpControl
+              variant={variant}
+              servers={mcpServers}
+              selected={claude.mcpServers}
+              onSelectedChange={(ids) => onConfigChange({ ...claude, mcpServers: ids })}
+              strict={claude.strictMcp}
+              onStrictChange={(strictMcp) => onConfigChange({ ...claude, strictMcp })}
+              disabled={disabled}
+            />
+          ),
+          current: mcpSummary(claude.mcpServers.length),
         },
       ]
     : codex
@@ -739,6 +760,21 @@ export function Composer({
               />
             ),
             current: labelOf(sandboxOptionList, codex.sandbox),
+          },
+          {
+            key: 'mcp',
+            render: (variant) => (
+              <McpControl
+                variant={variant}
+                servers={mcpServers}
+                selected={codex.mcpServers}
+                onSelectedChange={(ids) => onConfigChange({ ...codex, mcpServers: ids })}
+                strict={null}
+                onStrictChange={() => {}}
+                disabled={disabled}
+              />
+            ),
+            current: mcpSummary(codex.mcpServers.length),
           },
         ]
       : []
