@@ -20,12 +20,33 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react'
  */
 const KEYBOARD_MIN_PX = 80
 
+/**
+ * Écart entre le bas du viewport et le bas de l'écran, publié dans `--sg-viewport-gap`.
+ *
+ * Une application installée sur iOS remonte le viewport de la hauteur de la barre
+ * d'état et l'ancre en haut : 894 px de viewport pour un écran de 956, donc 62 px hors
+ * d'atteinte en bas. L'indicateur d'accueil, lui, est dans ces 62 px : écarter le
+ * contenu de `env(safe-area-inset-bottom)` par-dessus le paie une deuxième fois, et
+ * c'est autant de hauteur perdue sur un téléphone.
+ *
+ * L'écart est donc mesuré et retranché de l'encoche. Réservé au mode installé : un
+ * navigateur ordinaire montre le même écart quand ses barres d'outils sont dépliées, et
+ * le contenu passerait dessous. La mesure suppose le portrait, ce que le manifeste
+ * impose déjà.
+ */
+function publishViewportGap(root: HTMLElement): void {
+  if (!matchMedia('(display-mode: standalone)').matches) return
+  const gap = Math.max(0, screen.height - window.innerHeight)
+  root.style.setProperty('--sg-viewport-gap', `${gap}px`)
+}
+
 export function useVisualViewport(): void {
   useEffect(() => {
     const viewport = window.visualViewport
     if (!viewport) return
 
     const root = document.documentElement
+    publishViewportGap(root)
 
     /**
      * Écart entre les deux viewports hors clavier.
@@ -67,6 +88,7 @@ export function useVisualViewport(): void {
     // l'ancienne, plus petite, ferait passer le nouvel écart pour un clavier.
     const remeasure = () => {
       resting = Number.POSITIVE_INFINITY
+      publishViewportGap(root)
       apply()
     }
 
@@ -79,6 +101,7 @@ export function useVisualViewport(): void {
       viewport.removeEventListener('resize', apply)
       viewport.removeEventListener('scroll', apply)
       window.removeEventListener('orientationchange', remeasure)
+      root.style.removeProperty('--sg-viewport-gap')
       clear()
     }
   }, [])

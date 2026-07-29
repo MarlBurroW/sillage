@@ -80,32 +80,6 @@
   --sg-syn-type: oklch(0.53 0.11 195);
   --sg-syn-attribute: oklch(0.53 0.16 20);
 
-  /*
-   * Fond de l'application. Deux halos très diffus posés sur une base légèrement
-   * dégradée : le halo du bas emprunte une teinte décalée, comme le dégradé d'accent,
-   * ce qui donne sa profondeur au fond sans jamais devenir une couleur en soi.
-   *
-   * Les trois réglages d'apparence continuent de le piloter : `hue` oriente les deux
-   * halos, `tint` dose leur chroma, `lift` ne bouge que la base, pour ne pas éclaircir
-   * les halos en même temps que la surface.
-   */
-  --sg-gradient-canvas:
-    radial-gradient(
-      120% 85% at 12% -15%,
-      oklch(0.93 calc(0.06 * var(--sg-tint)) var(--sg-hue) / 0.55) 0%,
-      transparent 62%
-    ),
-    radial-gradient(
-      110% 80% at 100% 108%,
-      oklch(0.93 calc(0.055 * var(--sg-tint)) calc(var(--sg-hue) + 45) / 0.5) 0%,
-      transparent 58%
-    ),
-    linear-gradient(
-      180deg,
-      oklch(calc(0.985 + var(--sg-lift)) calc(0.012 * var(--sg-tint)) var(--sg-hue)) 0%,
-      oklch(calc(0.962 + var(--sg-lift)) calc(0.022 * var(--sg-tint)) var(--sg-hue)) 100%
-    );
-
   --sg-gradient-surface: linear-gradient(
     180deg,
     oklch(calc(1 + var(--sg-lift)) calc(0.006 * var(--sg-tint)) var(--sg-hue)) 0%,
@@ -154,27 +128,6 @@
   --sg-syn-function: oklch(0.75 0.13 245);
   --sg-syn-type: oklch(0.79 0.1 195);
   --sg-syn-attribute: oklch(0.76 0.13 20);
-
-  /*
-   * Même construction qu'en clair, mais les halos y sont plus lumineux que la base :
-   * sur un fond sombre, un halo plus foncé ne se verrait pas, il boucherait.
-   */
-  --sg-gradient-canvas:
-    radial-gradient(
-      120% 85% at 12% -15%,
-      oklch(0.3 calc(0.09 * var(--sg-tint)) var(--sg-hue) / 0.5) 0%,
-      transparent 62%
-    ),
-    radial-gradient(
-      110% 80% at 100% 108%,
-      oklch(0.28 calc(0.085 * var(--sg-tint)) calc(var(--sg-hue) + 45) / 0.45) 0%,
-      transparent 58%
-    ),
-    linear-gradient(
-      180deg,
-      oklch(calc(0.182 + var(--sg-lift)) calc(0.058 * var(--sg-tint)) var(--sg-hue)) 0%,
-      oklch(calc(0.152 + var(--sg-lift)) calc(0.048 * var(--sg-tint)) var(--sg-hue)) 100%
-    );
 
   --sg-gradient-surface: linear-gradient(
     180deg,
@@ -228,7 +181,6 @@
   --sg-syn-attribute: oklch(0.83 0.13 20);
 
   /* Aucun dégradé ici : le thème contrasté tient sa lisibilité de surfaces plates. */
-  --sg-gradient-canvas: none;
   --sg-gradient-surface: none;
   --sg-gradient-accent: none;
 

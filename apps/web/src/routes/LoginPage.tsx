@@ -25,7 +25,7 @@ export function LoginPage() {
         : null
 
   return (
-    <div className="gradient-canvas flex min-h-dvh items-center justify-center p-4">
+    <div className="flex min-h-dvh items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-3">
           <span className="gradient-accent shadow-float grid size-14 place-items-center rounded-2xl">
