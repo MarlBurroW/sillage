@@ -14,6 +14,11 @@ export interface ChatStream {
   connected: boolean
   /** Un process CLI tourne encore pour cette conversation. Null tant qu'on l'ignore. */
   warm: boolean | null
+  /**
+   * Le journal n'a pas fini d'être rejoué. Vrai jusqu'à la dernière page, et non
+   * jusqu'à la première : c'est ce qui permet à la page de garder le fil masqué le
+   * temps qu'il se construise, plutôt que de le montrer pousser par paquets.
+   */
   loading: boolean
   error: string | null
 }
@@ -82,17 +87,14 @@ export function useChatStream(
           if (cancelled) return
 
           for (const entry of entries) enqueue(entry.seq, entry.ts, entry.event)
-          // Replié et peint page par page : les laisser s'accumuler dans la file
-          // jusqu'au bout ne montrerait rien avant la fin du rattrapage, qui est
-          // justement ce qui prend du temps sur une conversation longue.
+          // Replié page par page plutôt qu'en un bloc à la fin : le fil reste masqué
+          // pendant ce temps, mais étaler le fold laisse la main à l'interface entre
+          // deux pages, ce qui est ce qui compte sur une conversation longue.
           flush()
-          setLoading(false)
         })
         if (cancelled) return
 
         wsClient.setCursor(conversationId, stateRef.current.lastSeq)
-        // Le rappel ne passe pas quand le journal n'a rien de neuf : sans cette
-        // seconde levée, une conversation vide resterait en chargement.
         setLoading(false)
       } catch (err) {
         if (cancelled) return

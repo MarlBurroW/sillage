@@ -55,6 +55,7 @@ import { buildSignals, type SignalKind } from '../lib/signals'
 import { SignalRow } from '../components/chat/Signals'
 import { buildSubAgents } from '../lib/subagents'
 import { buildRows } from '../lib/tool-rows'
+import { readThreadScroll, saveThreadScroll } from '../lib/thread-scroll'
 import {
   INITIAL_WINDOW_ROWS,
   WINDOW_STEP_ROWS,
@@ -138,6 +139,15 @@ export function ConversationPage() {
 
   const scroller = useRef<HTMLDivElement>(null)
   const [stuckToBottom, setStuckToBottom] = useState(true)
+  /**
+   * Le fil est en place et peut se montrer.
+   *
+   * Faux pendant tout le rejeu du journal : le fil s'y construit par paquets, à une
+   * position qui ne veut encore rien dire, et le donner à voir dans cet état revient à
+   * montrer l'échafaudage. Faux aussi le temps d'un changement de conversation, où le
+   * fil précédent est encore monté.
+   */
+  const [placed, setPlaced] = useState(false)
 
   /** Position de chaque tour dans le fil, alimentée par les messages utilisateur. */
   const turnAnchors = useRef(new Map<string, HTMLElement>())
@@ -208,7 +218,14 @@ export function ConversationPage() {
 
   // Une autre conversation repart de la fin, sinon elle s'ouvrirait dépliée d'autant de
   // lignes que la précédente, sans rapport avec sa propre longueur.
-  useEffect(() => setWindowSize(INITIAL_WINDOW_ROWS), [conversationId])
+  //
+  // Avant peinture, et `placed` avec : la page n'est pas remontée d'un fil à l'autre,
+  // donc au premier rendu du nouvel identifiant le fil précédent est encore monté, à sa
+  // position, et se donnerait à voir le temps d'une image sous le nouveau titre.
+  useLayoutEffect(() => {
+    setWindowSize(INITIAL_WINDOW_ROWS)
+    setPlaced(false)
+  }, [conversationId])
 
   const view = useMemo(
     // La recherche dans le fil parcourt le DOM : avec une fenêtre, elle chercherait
@@ -238,6 +255,7 @@ export function ConversationPage() {
   /** Message visé par un résultat de recherche, une fois le fil chargé. */
   const [searchParams] = useSearchParams()
   const anchorSeq = Number(searchParams.get('seq'))
+  const hasAnchor = Number.isInteger(anchorSeq) && anchorSeq > 0
   const anchored = useRef<number | null>(null)
   const activity = describeActivity(stream.state)
   const sidebarHidden = useSidebarHidden()
@@ -276,9 +294,46 @@ export function ConversationPage() {
     )
   }, [])
 
+  /**
+   * Retient l'endroit lu, pour rouvrir la conversation là où on l'a laissée.
+   *
+   * Le repère est le message le plus haut affiché : les éléments sont dans l'ordre du
+   * document, donc le dernier dont le sommet est passé au-dessus du bord est celui
+   * qu'on est en train de lire. Aucun au-dessus veut dire qu'on est avant le premier
+   * message, et le premier fait alors l'affaire.
+   */
+  const rememberScroll = useCallback(
+    (node: HTMLElement) => {
+      if (!conversationId) return
+
+      const top = node.scrollTop
+      if (node.scrollHeight - top - node.clientHeight < STICKY_THRESHOLD_PX) {
+        saveThreadScroll(conversationId, { atBottom: true, seq: 0, offset: 0 })
+        return
+      }
+
+      let anchor: HTMLElement | null = null
+      for (const element of node.querySelectorAll<HTMLElement>('[data-seq]')) {
+        if (anchor && element.offsetTop > top) break
+        anchor = element
+      }
+      if (!anchor) return
+
+      const seq = Number(anchor.dataset.seq)
+      if (!Number.isInteger(seq)) return
+      saveThreadScroll(conversationId, { atBottom: false, seq, offset: anchor.offsetTop - top })
+    },
+    [conversationId],
+  )
+
   const onScroll = useCallback(() => {
     const node = scroller.current
-    if (!node) return
+    // Tant que le fil se construit, ses hauteurs bougent à chaque paquet replié et le
+    // collage se repose à chaque fois : les événements de défilement qui en découlent
+    // ne disent rien de l'intention de qui lit, et les prendre pour tels décollait le
+    // fil de son bas avant même qu'il ne s'affiche.
+    if (!node || !placed) return
+
     const distance = node.scrollHeight - node.scrollTop - node.clientHeight
     setStuckToBottom(distance < STICKY_THRESHOLD_PX)
 
@@ -286,8 +341,9 @@ export function ConversationPage() {
     visibilityFrame.current = requestAnimationFrame(() => {
       visibilityFrame.current = null
       syncVisibleTurns()
+      rememberScroll(node)
     })
-  }, [syncVisibleTurns])
+  }, [syncVisibleTurns, rememberScroll, placed])
 
   const jumpToTurn = useCallback(
     (id: string) => {
@@ -394,6 +450,28 @@ export function ConversationPage() {
   }, [flashed])
 
   /**
+   * Monte un message resté avant la fenêtre, par son `seq`.
+   *
+   * Rend vrai seulement si la fenêtre grandit vraiment, donc si un rendu suivra. C'est
+   * ce que demandent les deux placements d'ouverture ci-dessous : ils gardent le fil
+   * masqué le temps que la cible soit montée, et une attente que rien ne réveillerait
+   * le laisserait invisible pour de bon.
+   */
+  const growWindowTo = useCallback(
+    (seq: number): boolean => {
+      const target = stream.state.items.find(
+        (item) => item.kind === 'message' && item.seq === seq,
+      )
+      if (!target) return false
+      const needed = windowToReveal(rows, target.id)
+      if (needed === null || needed <= windowSize) return false
+      setWindowSize(needed)
+      return true
+    },
+    [stream.state.items, rows, windowSize],
+  )
+
+  /**
    * Ouverture sur un message précis, quand on arrive depuis la recherche.
    *
    * Le journal est chargé en entier, donc le message est déjà dans le fil, mais pas
@@ -401,26 +479,79 @@ export function ConversationPage() {
    * dévoile et l'effet repasse au rendu suivant. Une seule fois par cible, sinon chaque
    * événement reçu ramènerait le défilement au même endroit pour le reste de la session.
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = scroller.current
-    if (stream.loading || !node || !Number.isInteger(anchorSeq) || anchorSeq <= 0) return
-    if (anchored.current === anchorSeq) return
+    // `conversation` pour la même raison que le placement ci-dessous : c'est elle qui
+    // décide que le fil est monté, donc qu'il y a un nœud à mesurer.
+    if (stream.loading || !conversation || !node) return
+    if (!hasAnchor || anchored.current === anchorSeq) return
+    if (growWindowTo(anchorSeq)) return
 
+    // Marquée avant de savoir si la cible existe : le journal est entièrement replié à
+    // ce stade, donc un message introuvable ne viendra plus, et laisser la cible en
+    // attente retiendrait indéfiniment l'affichage du fil.
+    anchored.current = anchorSeq
+
+    const element = node.querySelector<HTMLElement>(`[data-seq="${anchorSeq}"]`)
+    if (!element) return
+
+    node.scrollTo({ top: element.offsetTop - 12 })
     const target = stream.state.items.find(
       (item) => item.kind === 'message' && item.seq === anchorSeq,
     )
-    if (!target) return
+    if (target) setFlashed(target.id)
+  }, [anchorSeq, hasAnchor, stream.loading, stream.state.items, conversation, growWindowTo])
 
-    const element = node.querySelector<HTMLElement>(`[data-seq="${anchorSeq}"]`)
-    if (!element) {
-      reveal(target.id)
+  /**
+   * Place le fil à son ouverture, puis le donne à voir.
+   *
+   * Une seule fois par conversation, une fois le journal replié en entier : c'est la
+   * seule position qui ait un sens, celles d'avant portant sur un fil encore en train
+   * de se construire. Tant que ce n'est pas fait, `placed` garde le fil masqué.
+   */
+  useLayoutEffect(() => {
+    const node = scroller.current
+    // La conversation, et pas seulement son identifiant : le fil n'est rendu qu'une fois
+    // ses métadonnées connues, et un journal replié avant elles laisserait cet effet
+    // sans nœud à mesurer, sans que rien ne le rappelle une fois le fil monté.
+    if (placed || stream.loading || !conversationId || !conversation || !node) return
+
+    /**
+     * Pose la position d'ouverture, `null` valant le bas du fil, et lève le masque.
+     *
+     * Le collage est relu sur le résultat plutôt que déduit de l'intention : une
+     * position d'avant peut se retrouver au bas d'un fil qui a peu grandi, et l'annoncer
+     * décollé afficherait la flèche de retour en bas alors qu'on y est.
+     */
+    const settle = (top: number | null) => {
+      if (top === null) scrollToBottom(node)
+      else node.scrollTop = top
+      setStuckToBottom(node.scrollHeight - node.scrollTop - node.clientHeight < STICKY_THRESHOLD_PX)
+      setPlaced(true)
+    }
+
+    // La recherche l'emporte : ouvrir un fil depuis un résultat doit montrer le
+    // résultat, pas l'endroit d'une lecture précédente. L'effet ci-dessus l'a placé,
+    // il ne reste qu'à en tirer le collage et à lever le masque.
+    if (hasAnchor) {
+      if (anchored.current === anchorSeq) settle(node.scrollTop)
       return
     }
 
-    anchored.current = anchorSeq
-    node.scrollTo({ top: element.offsetTop - 12 })
-    setFlashed(target.id)
-  }, [anchorSeq, stream.loading, stream.state.items, view.rows, reveal])
+    const saved = readThreadScroll(conversationId)
+    if (saved.atBottom) {
+      settle(null)
+      return
+    }
+
+    // Le message repéré peut être resté avant la fenêtre : on l'y ramène et le
+    // placement reprend au rendu suivant, toujours masqué.
+    if (growWindowTo(saved.seq)) return
+
+    const element = node.querySelector<HTMLElement>(`[data-seq="${saved.seq}"]`)
+    // Plus dans le fil : compacté, forké, effacé. Le bas reste le bon défaut.
+    settle(element ? element.offsetTop - saved.offset : null)
+  }, [placed, stream.loading, conversationId, conversation, hasAnchor, anchorSeq, growWindowTo])
 
   /**
    * Tour suivant ou précédent, à partir de la position de défilement.
@@ -470,11 +601,15 @@ export function ConversationPage() {
   )
 
   // Défilement avant peinture : sinon le fil saute visiblement à chaque delta.
+  //
+  // Rien tant que le fil n'est pas placé : cet effet est déclaré après le placement,
+  // donc il passerait après lui dans la même vague, avec un `stuckToBottom` d'avant, et
+  // renverrait au bas du fil la position de lecture qu'on vient tout juste de rétablir.
   useLayoutEffect(() => {
-    if (!stuckToBottom) return
+    if (!placed || !stuckToBottom) return
     const node = scroller.current
     if (node) scrollToBottom(node)
-  }, [stream.state.items, stream.state.lastSeq, stuckToBottom])
+  }, [stream.state.items, stream.state.lastSeq, stuckToBottom, placed])
 
   // Le contenu qui grandit déplace les tours : la réglette doit suivre, y compris
   // quand on ne défile pas soi-même.
@@ -820,7 +955,16 @@ export function ConversationPage() {
               s'affiche. Elle est symétrique, sinon le fil cesse d'être centré. Rien à
               réserver à droite : les flèches de navigation sont posées au-dessus de la
               barre de saisie, hors du fil. */}
-          <div className="mx-auto flex max-w-3xl flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12">
+          {/* Masqué et non démonté tant que le fil n'est pas placé : le placement se
+              fait sur des hauteurs mesurées, qu'un fil absent de la mise en page
+              n'aurait pas. L'apparition est fondue, la disparition immédiate : au
+              changement de conversation, ce qui s'efface est le fil précédent. */}
+          <div
+            className={cx(
+              'mx-auto flex max-w-3xl flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12',
+              placed ? 'opacity-100 transition-opacity duration-200' : 'opacity-0',
+            )}
+          >
             {stream.error ? <Banner>{stream.error}</Banner> : null}
             {actionError ? <Banner>{actionError}</Banner> : null}
 
@@ -869,19 +1013,23 @@ export function ConversationPage() {
           </div>
         </div>
 
-        <ConversationMinimap
-          turns={turns}
-          visibleIds={visibleTurns}
-          agentLabel={AGENT_LABELS[conversation.agent]}
-          onJump={jumpToTurn}
-        />
+        {/* Avec le fil : une réglette qui se remplit toute seule à côté d'un fil vide
+            montre la construction que le masquage vient d'épargner. */}
+        {placed ? (
+          <ConversationMinimap
+            turns={turns}
+            visibleIds={visibleTurns}
+            agentLabel={AGENT_LABELS[conversation.agent]}
+            onJump={jumpToTurn}
+          />
+        ) : null}
 
         {/* Les commandes de défilement se posent juste au-dessus de la barre de saisie,
             dont la hauteur varie : `bottom-full` sur ce conteneur les y ancre sans
             dépendre d'un décalage fixe. Elles ne servent qu'une fois le fil quitté du
             bas, donc elles disparaissent quand on y est revenu. */}
         <div className="relative shrink-0">
-          {!stuckToBottom ? (
+          {placed && !stuckToBottom ? (
             <>
               <button
                 type="button"
