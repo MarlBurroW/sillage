@@ -200,6 +200,14 @@ export class WebhookService {
     if (!target) return
 
     if (type === 'turn.completed') {
+      // Un tour refermé en laissant des travaux de fond n'est pas une fin : le CLI
+      // sera re-réveillé à leur aboutissement et un autre tour suivra. Livrer ici
+      // ferait conclure l'appelant trop tôt (constaté au premier essai réel), et une
+      // livraison dont le contenu serait « ignorez-moi » ne vaut pas ses tokens : on
+      // se tait, la livraison du tour final dira la vraie fin.
+      const backgroundJobs = this.backgroundJobCount(entry.conversationId)
+      if (backgroundJobs > 0) return
+
       const completed = entry.event as { stopReason: string | null }
       const clientMessageId = this.lastClientMessage.get(entry.conversationId) ?? null
       this.lastClientMessage.delete(entry.conversationId)
@@ -209,10 +217,7 @@ export class WebhookService {
         clientMessageId,
         stopReason: completed.stopReason ?? 'unknown',
         lastMessage: this.lastAssistantText(entry.conversationId),
-        // Un tour peut se refermer en laissant des commandes ou des agents en
-        // arrière-plan : ce compte dit à l'appelant que la vraie fin viendra dans une
-        // livraison suivante, au lieu de le laisser conclure trop tôt.
-        backgroundJobs: this.backgroundJobCount(entry.conversationId),
+        backgroundJobs,
       })
       return
     }
