@@ -23,6 +23,6 @@ export interface AgentCapabilities {
 }
 
 export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
-  claude: { steer: false, planReview: true, cliSessions: true },
+  claude: { steer: true, planReview: true, cliSessions: true },
   codex: { steer: true, planReview: false, cliSessions: false },
 }

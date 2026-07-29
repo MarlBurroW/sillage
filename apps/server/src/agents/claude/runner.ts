@@ -878,13 +878,52 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Claude Code n'a pas d'équivalent de `turn/steer` : un message poussé en cours de
-   * tour s'y mêle au contexte courant au lieu de l'infléchir, ce qui a été observé sur
-   * le CLI installé (réponse sortie avant la fin du tour, puis une seconde fois).
-   * Renvoyer false le dit franchement, et la file d'attente couvre le besoin.
+   * Infléchit le tour en cours.
+   *
+   * Il n'y a pas de requête dédiée comme le `turn/steer` de Codex : le message part
+   * par le flux ordinaire, et c'est `priority` qui dit au CLI où le poser. `next`
+   * replie le message dans le tour courant, à la prochaine frontière de lot d'outils,
+   * où il arrive au modèle précédé de « The user sent a new message while you were
+   * working ». `later` lui ferait attendre le tour suivant, ce que fait déjà la file.
+   *
+   * La valeur est écrite plutôt que laissée au défaut, qui vaut `next` : elle est le
+   * seul écart entre ce geste et `send`, et le lecteur doit pouvoir le voir.
+   *
+   * Deux limites, relevées à la sonde sur le CLI installé et absentes de la
+   * documentation. Le repli n'a lieu qu'à une frontière de lot d'outils : si l'agent
+   * rédige déjà sa réponse finale sans autre appel, le tour se termine et le message
+   * ouvre le suivant. Et rien dans le flux ne dit laquelle des deux choses s'est
+   * produite, donc `true` affirme que le message est parti dans un tour ouvert, pas
+   * qu'il l'a réorienté.
    */
-  async steer(): Promise<boolean> {
-    return false
+  async steer(
+    text: string,
+    attachments: OutgoingAttachment[],
+    _mentions: OutgoingMention[],
+  ): Promise<boolean> {
+    if (!this.session || !this.turnOpen) return false
+
+    const { blocks, prompt } = await buildUserMessage(text, attachments)
+
+    this.ctx.emit({
+      type: 'message.completed',
+      messageId: randomUUID(),
+      role: 'user',
+      blocks,
+      parentToolCallId: null,
+    })
+
+    // Pas de `openTurn()`, contrairement à `send` : le tour est déjà ouvert, c'est la
+    // condition même du geste, et en ouvrir un second fausserait le compte.
+    this.input.push({
+      type: 'user',
+      message: { role: 'user', content: prompt },
+      parent_tool_use_id: null,
+      session_id: '',
+      priority: 'next',
+    } as SDKUserMessage)
+
+    return true
   }
 
   /**
