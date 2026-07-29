@@ -4,6 +4,7 @@ import {
   FolderTree,
   GaugeCircle,
   GitBranch,
+  Loader,
   MoreHorizontal,
   PanelRight,
   Search,
@@ -104,6 +105,17 @@ const STICKY_THRESHOLD_PX = 120
 const FLASH_DURATION_MS = 1500
 
 /**
+ * Au-delà, le rejeu du journal cesse d'être instantané et s'annonce.
+ *
+ * Le fil est masqué le temps qu'il se construise, ce qui suffit tant que c'est l'affaire
+ * d'une image ou deux. Un fil de vingt mille événements demande une quarantaine de pages
+ * enchaînées, le curseur d'une page étant le dernier `seq` de la précédente, et le
+ * masquage seul y rendrait l'écran mort. Assez long pour qu'une conversation ordinaire
+ * s'ouvre sans jamais le montrer.
+ */
+const SLOW_REPLAY_MS = 400
+
+/**
  * Ramène le fil tout en bas.
  *
  * La position visée est calculée plutôt que laissée au rognage d'un `scrollTop` trop
@@ -148,6 +160,8 @@ export function ConversationPage() {
    * fil précédent est encore monté.
    */
   const [placed, setPlaced] = useState(false)
+  /** Le rejeu dure assez pour qu'un fil masqué passe pour un écran mort. */
+  const [slowReplay, setSlowReplay] = useState(false)
 
   /** Position de chaque tour dans le fil, alimentée par les messages utilisateur. */
   const turnAnchors = useRef(new Map<string, HTMLElement>())
@@ -226,6 +240,16 @@ export function ConversationPage() {
     setWindowSize(INITIAL_WINDOW_ROWS)
     setPlaced(false)
   }, [conversationId])
+
+  // L'indicateur n'est armé qu'une fois le fil masqué, et désarmé dès qu'il se montre :
+  // sur une conversation ordinaire le minuteur n'arrive jamais à son terme, et rien ne
+  // clignote entre deux fils.
+  useEffect(() => {
+    setSlowReplay(false)
+    if (placed) return
+    const timer = setTimeout(() => setSlowReplay(true), SLOW_REPLAY_MS)
+    return () => clearTimeout(timer)
+  }, [placed, conversationId])
 
   const view = useMemo(
     // La recherche dans le fil parcourt le DOM : avec une fenêtre, elle chercherait
@@ -946,70 +970,85 @@ export function ConversationPage() {
           revision={stream.state.lastSeq}
         />
 
-        <div
-          ref={scroller}
-          onScroll={onScroll}
-          className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        >
-          {/* Seule la réglette latérale a besoin d'une gouttière, et seulement là où elle
-              s'affiche. Elle est symétrique, sinon le fil cesse d'être centré. Rien à
-              réserver à droite : les flèches de navigation sont posées au-dessus de la
-              barre de saisie, hors du fil. */}
-          {/* Masqué et non démonté tant que le fil n'est pas placé : le placement se
-              fait sur des hauteurs mesurées, qu'un fil absent de la mise en page
-              n'aurait pas. L'apparition est fondue, la disparition immédiate : au
-              changement de conversation, ce qui s'efface est le fil précédent. */}
-          <div
-            className={cx(
-              'mx-auto flex max-w-3xl flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12',
-              placed ? 'opacity-100 transition-opacity duration-200' : 'opacity-0',
-            )}
-          >
-            {stream.error ? <Banner>{stream.error}</Banner> : null}
-            {actionError ? <Banner>{actionError}</Banner> : null}
-
-            {!stream.loading && stream.state.items.length === 0 ? (
-              <EmptyState
-                title={t('conversation.empty.title')}
-                description={t('conversation.empty.description')}
+        {/* Contexte de positionnement de l'indicateur d'attente : posé dans le fil, il
+            se placerait par rapport à son contenu et se retrouverait hors de l'écran
+            dès que celui-ci dépasse la hauteur affichée. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {!placed && slowReplay ? (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+              <Loader
+                size={22}
+                className="animate-spin text-ink-faint"
+                aria-label={t('conversation.loading')}
               />
-            ) : null}
+            </div>
+          ) : null}
 
-            {view.hidden > 0 ? (
-              <button
-                type="button"
-                onClick={showEarlier}
-                className={cx(
-                  'surface mx-auto rounded-full border border-line px-3 py-1.5',
-                  'text-xs text-ink-soft transition-colors hover:text-ink',
-                )}
-              >
-                {t(
-                  view.hidden > 1
-                    ? 'conversation.thread.earlier.other'
-                    : 'conversation.thread.earlier.one',
-                  { count: view.hidden },
-                )}
-              </button>
-            ) : null}
-
-            <ChatThread
-              rows={view.rows}
-              conversationId={conversationId}
-              canDecide={isOwner}
-              onFork={isOwner && !forking ? setForkTarget : undefined}
-              flashedId={flashed}
-              anchors={turnAnchors}
-            />
-
-            {activity ? <TurnActivity label={activity} /> : null}
-
-            {/* Sous l'indicateur : ce que l'agent n'a pas encore lu. */}
-            <QueuedMessages
-              conversationId={conversationId}
-              messages={stream.state.queued}
-              canCancel={isOwner}
-            />
+          <div
+            ref={scroller}
+            onScroll={onScroll}
+            className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
+            {/* Seule la réglette latérale a besoin d'une gouttière, et seulement là où elle
+                s'affiche. Elle est symétrique, sinon le fil cesse d'être centré. Rien à
+                réserver à droite : les flèches de navigation sont posées au-dessus de la
+                barre de saisie, hors du fil. */}
+            {/* Masqué et non démonté tant que le fil n'est pas placé : le placement se
+                fait sur des hauteurs mesurées, qu'un fil absent de la mise en page
+                n'aurait pas. L'apparition est fondue, la disparition immédiate : au
+                changement de conversation, ce qui s'efface est le fil précédent. */}
+            <div
+              className={cx(
+                'mx-auto flex max-w-3xl flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12',
+                placed ? 'opacity-100 transition-opacity duration-200' : 'opacity-0',
+              )}
+            >
+              {stream.error ? <Banner>{stream.error}</Banner> : null}
+              {actionError ? <Banner>{actionError}</Banner> : null}
+    
+              {!stream.loading && stream.state.items.length === 0 ? (
+                <EmptyState
+                  title={t('conversation.empty.title')}
+                  description={t('conversation.empty.description')}
+                />
+              ) : null}
+    
+              {view.hidden > 0 ? (
+                <button
+                  type="button"
+                  onClick={showEarlier}
+                  className={cx(
+                    'surface mx-auto rounded-full border border-line px-3 py-1.5',
+                    'text-xs text-ink-soft transition-colors hover:text-ink',
+                  )}
+                >
+                  {t(
+                    view.hidden > 1
+                      ? 'conversation.thread.earlier.other'
+                      : 'conversation.thread.earlier.one',
+                    { count: view.hidden },
+                  )}
+                </button>
+              ) : null}
+    
+              <ChatThread
+                rows={view.rows}
+                conversationId={conversationId}
+                canDecide={isOwner}
+                onFork={isOwner && !forking ? setForkTarget : undefined}
+                flashedId={flashed}
+                anchors={turnAnchors}
+              />
+    
+              {activity ? <TurnActivity label={activity} /> : null}
+    
+              {/* Sous l'indicateur : ce que l'agent n'a pas encore lu. */}
+              <QueuedMessages
+                conversationId={conversationId}
+                messages={stream.state.queued}
+                canCancel={isOwner}
+              />
+            </div>
           </div>
         </div>
 

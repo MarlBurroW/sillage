@@ -39,6 +39,7 @@ export const fr: Catalog = {
   'conversation.fork.confirm.emphasis': "jusqu'au message précédent",
   'conversation.fork.confirm.after': ". Ce message-ci n'en fait pas partie : il revient dans la barre de saisie de la branche, prêt à être reformulé.",
   'conversation.fork.confirm.unaffected': "La conversation actuelle n'est pas touchée, et l'agent de la branche repart du contexte tel qu'il était à cet instant.",
+  'conversation.loading': 'Lecture du fil',
   'conversation.empty.title': 'Conversation vide',
   'conversation.empty.description': "Écris un premier message pour lancer l'agent.",
   'conversation.scroll.bottom': 'Revenir en bas',

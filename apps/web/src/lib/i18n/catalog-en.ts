@@ -53,6 +53,7 @@ export const en = {
   'conversation.fork.confirm.emphasis': 'up to the previous message',
   'conversation.fork.confirm.after': ". This message is not part of it: it comes back in the branch's composer, ready to be rephrased.",
   'conversation.fork.confirm.unaffected': "The current conversation is not affected, and the branch's agent starts again from the context as it was at that moment.",
+  'conversation.loading': 'Loading the thread',
   'conversation.empty.title': 'Empty conversation',
   'conversation.empty.description': 'Write a first message to start the agent.',
   'conversation.scroll.bottom': 'Back to bottom',
