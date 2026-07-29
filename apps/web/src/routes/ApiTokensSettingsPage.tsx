@@ -44,6 +44,20 @@ import { useProjects } from '../lib/projects'
  */
 
 const SCOPES = apiScopeSchema.options
+
+/**
+ * Modes de permission proposables sur un jeton : ceux où le CLI garde un garde-fou.
+ * `bypassPermissions` n'y est pas, à dessein : il vaudra la portée `tasks:autonomous`
+ * de la tranche 3, pas une option de formulaire parmi d'autres.
+ */
+const API_PERMISSION_MODES = ['manual', 'auto', 'acceptEdits', 'dontAsk'] as const
+type ApiPermissionMode = (typeof API_PERMISSION_MODES)[number]
+const PERMISSION_MODE_KEYS = {
+  manual: 'composer.permission.manual',
+  auto: 'composer.permission.auto',
+  acceptEdits: 'composer.permission.acceptEdits',
+  dontAsk: 'composer.permission.dontAsk',
+} as const
 const AGENTS: AgentKind[] = ['claude', 'codex']
 
 /** Durées de vie proposées, en jours. `none` laisse le jeton valable jusqu'à révocation. */
@@ -165,6 +179,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
   const [projectIds, setProjectIds] = useState<string[]>([])
   const [lifetime, setLifetime] = useState<LifetimeChoice>('none')
   const [webhookUrl, setWebhookUrl] = useState('')
+  const [permissionMode, setPermissionMode] = useState<ApiPermissionMode>('manual')
 
   const { data: catalog } = useAgentModels(agent)
   const models = catalog?.models ?? []
@@ -181,6 +196,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
     // Le champ d'effort porte le nom natif du CLI, `effort` ou `reasoningEffort`.
     const config: Record<string, unknown> = { ...DEFAULT_CONFIGS[agent], model }
     if (effort) config[EFFORT_FIELD[agent]] = effort
+    if (agent === 'claude') config.permissionMode = permissionMode
 
     const days = LIFETIMES[lifetime]
     createToken.mutate(
@@ -257,6 +273,20 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
               ]}
             />
           </div>
+
+          {agent === 'claude' ? (
+            <Select
+              label={t('apiTokens.permission.label')}
+              value={permissionMode}
+              onChange={setPermissionMode}
+              className="sm:max-w-xs"
+              options={API_PERMISSION_MODES.map((mode) => ({
+                value: mode,
+                label: t(PERMISSION_MODE_KEYS[mode]),
+                hint: t(`${PERMISSION_MODE_KEYS[mode]}.hint` as Parameters<typeof t>[0]),
+              }))}
+            />
+          ) : null}
 
           <Select
             label={t('apiTokens.lifetime.label')}
