@@ -1,6 +1,7 @@
 import type { ApiTokenRow, ProjectRow } from '@sillage/db'
 import {
   defaultConfigFor,
+  isPermissiveConfig,
   mergeAgentConfig,
   type AgentConfig,
   type AgentKind,
@@ -48,6 +49,17 @@ export async function resolveTaskConfig(
 
   if (typeof body.config?.model === 'string' && body.config.model.length > 0) {
     await assertModelExists(registry, agent, body.config.model)
+  }
+
+  // Sur la configuration résolue, pas sur celle du jeton : le socle peut aussi venir
+  // du préréglage du projet quand la tâche vise l'autre CLI, et ce chemin-là ne doit
+  // pas contourner la portée.
+  const scopes = JSON.parse(token.scopes) as string[]
+  if (isPermissiveConfig(merged) && !scopes.includes('tasks:autonomous')) {
+    throw badRequest(
+      'config_requires_autonomous',
+      'A configuration without guardrails requires the tasks:autonomous scope.',
+    )
   }
 
   return { agent, config: await registry.adapter(agent).resolveDefaults(merged) }

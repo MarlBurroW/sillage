@@ -1083,6 +1083,7 @@ export const en = {
   'error.reply_expired': "This request has expired, the session has ended.",
   'error.idempotency_in_flight': "A task with this Idempotency-Key is still being created.",
   'error.config_field_locked': "These settings are fixed by the token and cannot be set per task: {fields}.",
+  'error.config_requires_autonomous': "A configuration without guardrails requires the tasks:autonomous scope.",
   'error.model_unknown': "Unknown model {model} for {agent}. Known: {known}.",
   'error.http': 'Request failed ({status}).',
 } as const
