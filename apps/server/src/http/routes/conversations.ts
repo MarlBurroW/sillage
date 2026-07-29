@@ -25,6 +25,7 @@ import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { createConversation } from '../../conversations/create.js'
+import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
 import { readGitStatus, readHeadCommit, readWorkingDiff } from '../../git.js'
 import type { EventLog } from '../../events/event-log.js'
@@ -71,6 +72,7 @@ export function registerConversationRoutes(
   sessions: SessionManager,
   registry: AgentRegistry,
   attachments: AttachmentStore,
+  webhooks: WebhookService,
 ): void {
   /**
    * Résout les pièces jointes à envoyer, dans l'ordre choisi par le client.
@@ -507,6 +509,9 @@ export function registerConversationRoutes(
     const { id } = request.params as { id: string }
     await loadWritable(id, user.id)
     await sessions.interrupt(id)
+    // Une tâche lancée par un jeton et arrêtée ici laisserait son appelant suspendu à
+    // une complétion qui ne viendra jamais : le webhook `task.stopped` le lui dit.
+    webhooks.taskStopped(id, { kind: 'user', id: user.id, label: user.displayName })
     return reply.status(204).send()
   })
 

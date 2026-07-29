@@ -4,6 +4,7 @@ import {
   DEFAULT_CONFIGS,
   EFFORT_FIELD,
   apiScopeSchema,
+  type CreatedApiTokenDto,
   type AgentKind,
   type ApiScope,
   type ApiTokenDto,
@@ -56,7 +57,7 @@ const errorOf = (error: unknown): string | null =>
 export function ApiTokensSettingsPage() {
   const t = useTranslate()
   const { data: tokens } = useApiTokens()
-  const [secret, setSecret] = useState<string | null>(null)
+  const [created, setCreated] = useState<CreatedApiTokenDto | null>(null)
 
   return (
     <div className="flex flex-col gap-4">
@@ -67,9 +68,9 @@ export function ApiTokensSettingsPage() {
 
       <Banner tone="info">{t('apiTokens.banner')}</Banner>
 
-      {secret ? <SecretReveal secret={secret} onDismiss={() => setSecret(null)} /> : null}
+      {created ? <SecretReveal created={created} onDismiss={() => setCreated(null)} /> : null}
 
-      <CreateTokenCard onCreated={setSecret} />
+      <CreateTokenCard onCreated={setCreated} />
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-ink-soft">{t('apiTokens.existing.title')}</h2>
@@ -88,46 +89,70 @@ export function ApiTokensSettingsPage() {
 }
 
 /**
- * Le secret ne s'affiche qu'ici, et une seule fois.
+ * Les secrets ne s'affichent qu'ici, et une seule fois.
  *
- * Seule son empreinte est stockée : rien ne permettra de le relire, et une bannière
- * discrète le laisserait perdre à la première navigation.
+ * Le jeton parce que seule son empreinte est stockée ; le secret de webhook parce que
+ * l'écran n'a aucune raison de le réexposer ensuite. Une bannière discrète les
+ * laisserait perdre à la première navigation.
  */
-function SecretReveal({ secret, onDismiss }: { secret: string; onDismiss: () => void }) {
+function SecretReveal({
+  created,
+  onDismiss,
+}: {
+  created: CreatedApiTokenDto
+  onDismiss: () => void
+}) {
   const t = useTranslate()
-  const [copied, setCopied] = useState(false)
-
-  const copy = async () => {
-    if (!(await copyText(secret))) return
-    setCopied(true)
-  }
 
   return (
     <Card>
       <CardHeader title={t('apiTokens.secret.title')} icon={<KeyRound size={16} />} />
       <CardBody className="flex flex-col gap-3">
         <Banner tone="caution">{t('apiTokens.secret.once')}</Banner>
-        <code className="break-all rounded-md bg-sunken px-3 py-2 font-mono text-xs text-ink">
-          {secret}
-        </code>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            icon={copied ? <Check size={15} /> : <Copy size={15} />}
-            onClick={() => void copy()}
-          >
-            {copied ? t('apiTokens.secret.copied') : t('apiTokens.secret.copy')}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onDismiss}>
-            {t('apiTokens.secret.dismiss')}
-          </Button>
-        </div>
+        <CopyableSecret label={t('apiTokens.secret.token')} value={created.secret} />
+        {created.token.webhookUrl ? (
+          <CopyableSecret
+            label={t('apiTokens.secret.webhook')}
+            value={created.webhookSecret}
+          />
+        ) : null}
+        <Button size="sm" variant="ghost" onClick={onDismiss} className="self-start">
+          {t('apiTokens.secret.dismiss')}
+        </Button>
       </CardBody>
     </Card>
   )
 }
 
-function CreateTokenCard({ onCreated }: { onCreated: (secret: string) => void }) {
+function CopyableSecret({ label, value }: { label: string; value: string }) {
+  const t = useTranslate()
+  const [copied, setCopied] = useState(false)
+
+  const copy = async () => {
+    if (!(await copyText(value))) return
+    setCopied(true)
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-ink-soft">{label}</span>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 break-all rounded-md bg-sunken px-3 py-2 font-mono text-xs text-ink">
+          {value}
+        </code>
+        <Button
+          size="sm"
+          icon={copied ? <Check size={15} /> : <Copy size={15} />}
+          onClick={() => void copy()}
+        >
+          {copied ? t('apiTokens.secret.copied') : t('apiTokens.secret.copy')}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDto) => void }) {
   const t = useTranslate()
   const { data: projects } = useProjects()
   const createToken = useCreateApiToken()
@@ -139,6 +164,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (secret: string) => void })
   const [scopes, setScopes] = useState<ApiScope[]>(['projects:read', 'tasks:read', 'tasks:write'])
   const [projectIds, setProjectIds] = useState<string[]>([])
   const [lifetime, setLifetime] = useState<LifetimeChoice>('none')
+  const [webhookUrl, setWebhookUrl] = useState('')
 
   const { data: catalog } = useAgentModels(agent)
   const models = catalog?.models ?? []
@@ -165,12 +191,14 @@ function CreateTokenCard({ onCreated }: { onCreated: (secret: string) => void })
         agent,
         config,
         expiresAt: days === null ? null : Date.now() + days * DAY_MS,
+        webhookUrl: webhookUrl.trim() || null,
       },
       {
         onSuccess: (created) => {
-          onCreated(created.secret)
+          onCreated(created)
           setLabel('')
           setProjectIds([])
+          setWebhookUrl('')
         },
       },
     )
@@ -241,6 +269,15 @@ function CreateTokenCard({ onCreated }: { onCreated: (secret: string) => void })
               { value: '90', label: t('apiTokens.lifetime.days', { days: 90 }) },
               { value: '365', label: t('apiTokens.lifetime.days', { days: 365 }) },
             ]}
+          />
+
+          <Field
+            label={t('apiTokens.webhook.label')}
+            hint={t('apiTokens.webhook.hint')}
+            type="url"
+            placeholder="https://..."
+            value={webhookUrl}
+            onChange={(event) => setWebhookUrl(event.target.value)}
           />
 
           <fieldset className="flex flex-col gap-1.5">

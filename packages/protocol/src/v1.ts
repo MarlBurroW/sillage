@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentConfigSchema, type AgentConfig } from './agent-config.js'
 import { conversationStatusSchema } from './api.js'
+import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind, type SillageEvent } from './events.js'
 
 /**
@@ -31,7 +32,50 @@ export const createTaskBodySchema = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
   worktreeId: z.string().nullable().default(null),
   title: z.string().max(200).optional(),
+  /** Remplace l'URL de webhook du jeton pour cette tâche. Signée avec le même secret. */
+  webhookUrl: z.string().url().optional(),
+  /**
+   * Combien de temps une sollicitation de cette tâche attend une réponse avant que la
+   * couche v1 la refuse et interrompe la tâche. 0 désactive : la tâche attend alors
+   * comme le ferait une conversation humaine, en occupant une place de session.
+   */
+  replyDeadlineSec: z.number().int().min(0).max(86_400).optional(),
 })
+
+/** Échéance appliquée aux tâches d'API qui n'en demandent pas d'autre. */
+export const DEFAULT_REPLY_DEADLINE_SEC = 600
+
+/**
+ * Réponse à une sollicitation, les quatre types par la même route.
+ *
+ * Le corps nomme le type attendu plutôt que de le deviner : un appelant qui répond
+ * `permission` à ce qui est devenu une question doit être refusé, pas interprété.
+ * Les vocabulaires de décision sont ceux des routes natives (`allowed`, `approved`...),
+ * pour qu'il n'existe pas un second jeu de mots à documenter.
+ */
+export const taskReplyBodySchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('permission'),
+    decision: z.enum(['allowed', 'denied']),
+    scope: z.enum(['once', 'session', 'always']).default('once'),
+  }),
+  z.object({
+    kind: z.literal('question'),
+    status: z.enum(['answered', 'cancelled']).default('answered'),
+    answers: z.record(z.string(), z.array(z.string())).default({}),
+  }),
+  z.object({
+    kind: z.literal('plan'),
+    decision: z.enum(['approved', 'rejected']),
+    followUpMode: z.string().nullable().default(null),
+  }),
+  z.object({
+    kind: z.literal('elicitation'),
+    action: elicitationActionSchema,
+    content: elicitationContentSchema.default({}),
+  }),
+])
+export type TaskReplyBody = z.infer<typeof taskReplyBodySchema>
 
 export const taskMessageBodySchema = z.object({
   prompt: z.string().min(1),
@@ -156,6 +200,56 @@ export interface TaskEventsPageDto {
   /** Curseur à repasser en `after` au prochain appel. */
   nextAfter: number
   hasMore: boolean
+}
+
+// Webhooks
+
+/**
+ * ATTENTION AU VOCABULAIRE. Le journal contient déjà des événements `task.started`,
+ * `task.progress` et `task.completed` : ils y désignent un travail de fond du CLI
+ * (workflow, commande en arrière-plan), pas une tâche au sens de cette API. Les types
+ * ci-dessous ne circulent QUE dans les livraisons de webhook, jamais dans le journal,
+ * et un consommateur qui lit les deux ne doit pas les confondre : le canal fait foi.
+ */
+export type WebhookEventType =
+  | 'task.completed'
+  | 'task.awaiting_input'
+  | 'task.failed'
+  | 'task.stopped'
+
+export type WebhookFailureReason = 'runner_failed' | 'reply_deadline_exceeded' | 'session_ended'
+
+/**
+ * Corps d'une livraison de webhook.
+ *
+ * `seq` permet de reclasser des livraisons arrivées dans le désordre après reprise, et
+ * `clientMessageId` de reconnaître le message qui a ouvert le tour : un message écrit
+ * dans l'interface sur une tâche d'agent produit un `task.completed` que l'appelant n'a
+ * pas demandé, qu'il ne peut interpréter sans cette corrélation. Null quand le serveur
+ * a redémarré entre l'envoi et la fin du tour, ou quand le tour ne vient pas de l'API.
+ */
+export interface WebhookPayload {
+  type: WebhookEventType
+  taskId: string
+  projectId: string
+  seq: number
+  ts: number
+  clientMessageId: string | null
+  status: z.infer<typeof conversationStatusSchema>
+  title: string
+  url: string
+  /** task.completed */
+  stopReason?: string
+  lastMessage?: string | null
+  /** task.awaiting_input */
+  pending?: { kind: TaskPendingDto['kind']; requestId: string; event: SillageEvent }
+  /** Échéance de réponse, absente quand la tâche n'en a pas. */
+  replyDeadlineAt?: number
+  /** task.failed */
+  reason?: WebhookFailureReason
+  message?: string
+  /** task.stopped : qui a repris la main. Jamais le jeton appelant lui-même. */
+  by?: { kind: 'user' | 'token'; label: string }
 }
 
 /**

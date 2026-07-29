@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import type { AgentRegistry } from '../../agents/registry.js'
 import type { EventLog } from '../../events/event-log.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
+import type { WebhookService } from '../../webhooks/service.js'
 import type { AppContext } from '../context.js'
 import { registerDiscoveryRoutes } from './discovery.js'
 import { registerTaskRoutes } from './tasks.js'
@@ -20,7 +21,8 @@ export function registerV1Routes(
   log: EventLog,
   sessions: SessionManager,
   registry: AgentRegistry,
+  webhooks: WebhookService,
 ): void {
   registerDiscoveryRoutes(app, ctx, registry)
-  registerTaskRoutes(app, ctx, log, sessions, registry)
+  registerTaskRoutes(app, ctx, log, sessions, registry, webhooks)
 }

@@ -120,7 +120,7 @@ export class SessionManager {
    * runners sont morts avec le process précédent. Les laisser en `running` afficherait
    * un état mensonger et bloquerait l'envoi de messages.
    */
-  recoverInterrupted(): number {
+  recoverInterrupted(): string[] {
     const stale = this.db
       .select({ id: conversations.id })
       .from(conversations)
@@ -156,7 +156,7 @@ export class SessionManager {
       .where(eq(permissionRequests.status, 'pending'))
       .run()
 
-    return stale.length + awaiting.length
+    return [...stale, ...awaiting].map((row) => row.id)
   }
 
   /**

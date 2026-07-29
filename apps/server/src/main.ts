@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { openDatabase } from '@sillage/db'
 import { createAgentRegistry } from './agents/registry.js'
 import { purgeIdempotencyKeys } from './auth/api-tokens.js'
+import { WebhookService } from './webhooks/service.js'
 import { purgeExpiredSessions } from './auth/sessions.js'
 import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
   const recovered = sessions.recoverInterrupted()
+  const webhooks = new WebhookService(db, log, sessions, config.server.publicUrl)
 
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
   const orphans = await attachments.purgeOrphans()
@@ -49,16 +51,25 @@ async function main(): Promise<void> {
     terminals,
     push,
     secrets,
+    webhooks,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
-  if (recovered > 0) {
-    app.log.info({ recovered }, 'conversations marquees interrompues apres redemarrage')
+  if (recovered.length > 0) {
+    app.log.info({ recovered: recovered.length }, 'conversations marquees interrompues apres redemarrage')
   }
+  // Après buildApp pour que le logger existe, avant listen pour ne rien manquer :
+  // chaque tâche d'API tuée par le redémarrage doit le dire à son appelant.
+  webhooks.start()
+  webhooks.sessionEnded(recovered)
   await app.listen({ host: config.server.host, port: config.server.port })
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'arrêt en cours')
+    // Avant stopAll, qui expire les sollicitations : les statuts disent encore ce qui
+    // était en vol, et les livraisons persistées partiront au prochain démarrage.
+    webhooks.shutdownFlush()
+    webhooks.stop()
     await sessions.stopAll()
     terminals.closeAll()
     await app.close()

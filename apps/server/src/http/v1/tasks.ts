@@ -3,26 +3,30 @@ import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   apiIdempotency,
+  apiTaskOptions,
   conversations,
   projects,
   type ApiTokenRow,
   type ConversationRow,
 } from '@sillage/db'
 import {
+  DEFAULT_REPLY_DEADLINE_SEC,
   V1_NOISY_EVENT_TYPES,
   createTaskBodySchema,
   taskEventsQuerySchema,
   taskListQuerySchema,
   taskMessageBodySchema,
+  taskReplyBodySchema,
   taskSteerBodySchema,
   type TaskEventsPageDto,
 } from '@sillage/protocol'
+import type { WebhookService } from '../../webhooks/service.js'
 import type { AgentRegistry } from '../../agents/registry.js'
 import { createConversation } from '../../conversations/create.js'
 import type { EventLog } from '../../events/event-log.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import type { AppContext } from '../context.js'
-import { badRequest, conflict } from '../errors.js'
+import { badRequest, conflict, notFound } from '../errors.js'
 import { requireScope } from '../require-user.js'
 import {
   allowedProjectIds,
@@ -42,6 +46,7 @@ export function registerTaskRoutes(
   log: EventLog,
   sessions: SessionManager,
   registry: AgentRegistry,
+  webhooks: WebhookService,
 ): void {
   const view = (request: FastifyRequest, row: ConversationRow) =>
     taskToDto(log, row, publicBaseUrl(ctx, request))
@@ -147,6 +152,7 @@ export function registerTaskRoutes(
       if (body.worktreeId) assertWorktreeBelongs(ctx, id, body.worktreeId)
       const { agent, config } = await resolveTaskConfig(registry, token, project, body)
 
+      const clientMessageId = randomUUID()
       row = await createConversation(ctx.db, sessions, {
         projectId: id,
         userId: user.id,
@@ -156,12 +162,24 @@ export function registerTaskRoutes(
         title: body.title,
         origin: { tokenId: token.id, label: token.label },
         firstMessage: {
-          clientMessageId: randomUUID(),
+          clientMessageId,
           text: body.prompt,
           attachments: [],
           mentions: [],
         },
       })
+
+      // Après la création : les options référencent la conversation, et une création
+      // échouée ne doit pas laisser une ligne orpheline.
+      ctx.db
+        .insert(apiTaskOptions)
+        .values({
+          conversationId: row.id,
+          webhookUrl: body.webhookUrl ?? null,
+          replyDeadlineSec: body.replyDeadlineSec ?? DEFAULT_REPLY_DEADLINE_SEC,
+        })
+        .run()
+      webhooks.trackMessage(row.id, clientMessageId)
     } catch (err) {
       // Une réservation qui n'a rien créé doit disparaître, sinon la même clé resterait
       // bloquée en « création en cours » et l'appelant ne pourrait plus réessayer.
@@ -262,8 +280,12 @@ export function registerTaskRoutes(
     const body = taskMessageBodySchema.parse(request.body)
     loadTaskForToken(ctx, token, user.id, id)
 
-    await sessions.sendMessage(id, randomUUID(), body.prompt, [], [])
-    return reply.status(202).send({ accepted: true })
+    const clientMessageId = randomUUID()
+    await sessions.sendMessage(id, clientMessageId, body.prompt, [], [])
+    // Rendu à l'appelant ET retenu pour la corrélation : le webhook `task.completed`
+    // du tour qui suivra portera ce même identifiant.
+    webhooks.trackMessage(id, clientMessageId)
+    return reply.status(202).send({ accepted: true, clientMessageId })
   })
 
   /**
@@ -279,8 +301,12 @@ export function registerTaskRoutes(
     const body = taskSteerBodySchema.parse(request.body)
     loadTaskForToken(ctx, token, user.id, id)
 
-    const steered = await sessions.steer(id, randomUUID(), body.prompt, [], [])
-    if (steered) return reply.status(202).send({ accepted: true, applied: 'steer' })
+    const clientMessageId = randomUUID()
+    const steered = await sessions.steer(id, clientMessageId, body.prompt, [], [])
+    if (steered) {
+      webhooks.trackMessage(id, clientMessageId)
+      return reply.status(202).send({ accepted: true, applied: 'steer', clientMessageId })
+    }
 
     if (body.onMissedTurn === 'fail') {
       throw badRequest(
@@ -289,8 +315,9 @@ export function registerTaskRoutes(
       )
     }
 
-    await sessions.sendMessage(id, randomUUID(), body.prompt, [], [])
-    return reply.status(202).send({ accepted: true, applied: 'message' })
+    await sessions.sendMessage(id, clientMessageId, body.prompt, [], [])
+    webhooks.trackMessage(id, clientMessageId)
+    return reply.status(202).send({ accepted: true, applied: 'message', clientMessageId })
   })
 
   /**
@@ -303,6 +330,77 @@ export function registerTaskRoutes(
     loadTaskForToken(ctx, token, user.id, id)
 
     await sessions.interrupt(id)
+    // Le service n'émet rien si l'auteur est le jeton d'origine : il le sait déjà.
+    webhooks.taskStopped(id, { kind: 'token', id: token.id, label: token.label })
     return reply.status(202).send({ accepted: true })
+  })
+
+  /**
+   * Répond à une sollicitation, les quatre types par la même route.
+   *
+   * C'est le gain d'ergonomie principal de la v1 : un client machine n'a pas à choisir
+   * entre quatre chemins REST selon la nature de la demande. Le corps déclare le type
+   * attendu et un désaccord est un refus, pas une interprétation : répondre
+   * `permission` à ce qui est devenu une question ne doit jamais passer.
+   */
+  app.post('/api/v1/tasks/:id/replies/:requestId', async (request) => {
+    const { token, user } = requireScope(request, 'tasks:write')
+    const { id, requestId } = request.params as { id: string; requestId: string }
+    const body = taskReplyBodySchema.parse(request.body)
+    loadTaskForToken(ctx, token, user.id, id)
+
+    const pending = log.openPrompts(id).find((prompt) => prompt.requestId === requestId)
+    if (!pending) {
+      throw notFound('reply_request_not_found', 'No open request with this id on this task.')
+    }
+    if (pending.kind !== body.kind) {
+      throw badRequest('reply_kind_mismatch', 'This request is a {kind}, not a {sent}.', {
+        kind: pending.kind,
+        sent: body.kind,
+      })
+    }
+
+    // L'id de l'utilisateur, comme un clic dans l'interface : `permission_requests`
+    // référence `users.id`, et un jeton emprunte l'identité de son propriétaire sans en
+    // créer une seconde. Le marqueur d'origine de la tâche dit déjà qu'un agent pilote.
+    const decidedBy = user.id
+    let resolved: boolean
+    switch (body.kind) {
+      case 'permission':
+        resolved = sessions.resolvePermission(id, requestId, {
+          decision: body.decision,
+          scope: body.scope,
+          decidedBy,
+        })
+        break
+      case 'question':
+        resolved = sessions.answerQuestion(id, requestId, {
+          status: body.status,
+          answers: body.answers,
+          decidedBy,
+        })
+        break
+      case 'plan':
+        resolved = sessions.reviewPlan(id, requestId, {
+          decision: body.decision,
+          followUpMode: body.followUpMode,
+          decidedBy,
+        })
+        break
+      case 'elicitation':
+        resolved = sessions.resolveElicitation(id, requestId, {
+          action: body.action,
+          content: body.content,
+          decidedBy,
+        })
+        break
+    }
+
+    if (!resolved) {
+      // Le journal la dit ouverte mais le runner est mort entre-temps : même langage
+      // que les routes de l'interface.
+      throw badRequest('reply_expired', 'This request has expired, the session has ended.')
+    }
+    return { ok: true }
   })
 }

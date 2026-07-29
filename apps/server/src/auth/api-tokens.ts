@@ -38,6 +38,7 @@ export function apiTokenToDto(row: ApiTokenRow): ApiTokenDto {
     projectIds: JSON.parse(row.projectIds) as string[],
     agent: row.agent,
     config: JSON.parse(row.config) as unknown,
+    webhookUrl: row.webhookUrl,
     createdAt: row.createdAt,
     lastUsedAt: row.lastUsedAt,
     expiresAt: row.expiresAt,
@@ -53,12 +54,18 @@ export interface NewApiToken {
   agent: AgentKind
   config: unknown
   expiresAt: number | null
+  webhookUrl: string | null
 }
 
-/** Retourne le secret en clair, qui n'existera plus nulle part après cet appel. */
+/**
+ * Retourne le secret d'authentification en clair, qui n'existera plus nulle part après
+ * cet appel. Le secret de webhook est lui toujours généré, même sans URL : une tâche
+ * peut en déclarer une plus tard, et il faut alors un secret déjà connu de l'appelant.
+ */
 export function createApiToken(db: Db, input: NewApiToken): { row: ApiTokenRow; secret: string } {
   const random = randomBytes(SECRET_BYTES).toString('base64url')
   const secret = `${API_TOKEN_PREFIX}${random}`
+  const webhookSecret = `whsec_${randomBytes(SECRET_BYTES).toString('base64url')}`
 
   const row: ApiTokenRow = {
     id: randomUUID(),
@@ -70,6 +77,8 @@ export function createApiToken(db: Db, input: NewApiToken): { row: ApiTokenRow; 
     projectIds: JSON.stringify(input.projectIds),
     agent: input.agent,
     config: JSON.stringify(input.config),
+    webhookUrl: input.webhookUrl,
+    webhookSecret,
     createdAt: Date.now(),
     lastUsedAt: null,
     expiresAt: input.expiresAt,

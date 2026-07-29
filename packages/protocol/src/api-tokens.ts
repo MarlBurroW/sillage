@@ -27,16 +27,24 @@ export interface ApiTokenDto {
   projectIds: string[]
   agent: AgentKind
   config: unknown
+  /** URL appelée sur les événements de tâche ; null quand le jeton n'en veut pas. */
+  webhookUrl: string | null
   createdAt: number
   lastUsedAt: number | null
   expiresAt: number | null
   revokedAt: number | null
 }
 
-/** Le secret n'est rendu qu'une fois, à la création : seule son empreinte est stockée. */
+/**
+ * Le secret d'authentification n'est rendu qu'une fois, à la création : seule son
+ * empreinte est stockée. Le secret de webhook, lui, sert à signer côté serveur, donc
+ * il reste lisible en base ; il n'est montré qu'ici parce qu'après, l'écran n'a plus
+ * de raison de l'exposer.
+ */
 export interface CreatedApiTokenDto {
   token: ApiTokenDto
   secret: string
+  webhookSecret: string
 }
 
 /**
@@ -51,6 +59,8 @@ export const createApiTokenBodySchema = z.object({
   agent: agentKindSchema,
   config: agentConfigSchema,
   expiresAt: z.number().int().positive().nullable().default(null),
+  /** Où livrer les webhooks de tâches. Facultative : le polling reste complet sans. */
+  webhookUrl: z.string().url().nullable().default(null),
 })
 
 /**
