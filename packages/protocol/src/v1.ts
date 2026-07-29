@@ -241,6 +241,13 @@ export interface WebhookPayload {
   /** task.completed */
   stopReason?: string
   lastMessage?: string | null
+  /**
+   * Travaux de fond encore en cours à la fin du tour (commandes ou agents que le CLI
+   * a mis en arrière-plan). Non nul, ce `task.completed` n'est PAS la fin de la
+   * tâche : le CLI sera re-réveillé quand ces travaux aboutiront, et un autre tour
+   * suivra. Un consommateur qui conclut sur cette livraison conclut trop tôt.
+   */
+  backgroundJobs?: number
   /** task.awaiting_input */
   pending?: { kind: TaskPendingDto['kind']; requestId: string; event: SillageEvent }
   /** Échéance de réponse, absente quand la tâche n'en a pas. */
