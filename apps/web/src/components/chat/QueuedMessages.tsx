@@ -78,32 +78,27 @@ export function QueuedMessages({
                 )}
               </p>
             ) : null}
-
-            {/* Visible sans survol, contrairement au retrait : c'est l'action qu'on
-                vient chercher ici, et une icône seule ne la nommait pas. */}
-            {canSteer ? (
-              <button
-                type="button"
-                disabled={busy !== null}
-                onClick={() =>
-                  void run(
-                    message.queueId,
-                    () => steerQueuedMessage(conversationId, message.queueId),
-                    t('queued.steer.failed'),
-                  )
-                }
-                title={t('queued.steer.hint')}
-                className={cx(
-                  'mt-1.5 flex items-center gap-1 rounded-full border border-accent px-2 py-0.5',
-                  'text-[0.6875rem] text-accent transition-colors hover:bg-accent-wash',
-                  'disabled:pointer-events-none disabled:opacity-50',
-                )}
-              >
-                <Waypoints size={11} />
-                {t('queued.steer')}
-              </button>
-            ) : null}
           </div>
+
+          {/* Visible sans survol, contrairement au retrait : c'est l'action qu'on vient
+              chercher ici, et la teinte d'accent la distingue de la croix voisine. */}
+          {canSteer ? (
+            <IconButton
+              label={t('queued.steer')}
+              size="sm"
+              disabled={busy !== null}
+              onClick={() =>
+                void run(
+                  message.queueId,
+                  () => steerQueuedMessage(conversationId, message.queueId),
+                  t('queued.steer.failed'),
+                )
+              }
+              className="text-accent hover:bg-accent-wash hover:text-accent"
+            >
+              <Waypoints size={15} />
+            </IconButton>
+          ) : null}
 
           {canCancel ? (
             <IconButton
