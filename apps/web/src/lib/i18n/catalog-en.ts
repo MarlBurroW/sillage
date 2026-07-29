@@ -888,8 +888,9 @@ export const en = {
   'queued.attachments.many': '{count} attachments',
   'queued.waiting.one': 'Waiting for the turn to end',
   'queued.waiting.many': '{count} messages waiting for the turn to end',
-  'queued.steer': 'Steer now',
-  'queued.steer.hint': 'Hand this message to the agent without waiting for the turn to end',
+  // Le bouton n'a qu'une icône : son libellé sert d'infobulle et de nom accessible,
+  // donc il dit le geste et son effet plutôt que le seul verbe.
+  'queued.steer': 'Steer now, without waiting for the turn to end',
   'queued.steer.failed': 'This message could not be steered, it stays queued.',
   'terminal.shell.exited': 'The shell exited (code {code}).',
   'attachments.tooLarge': '"{name}" exceeds {max} MB.',
