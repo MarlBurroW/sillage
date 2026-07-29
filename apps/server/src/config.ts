@@ -9,6 +9,15 @@ const configSchema = z.object({
     .object({
       host: z.string().default('127.0.0.1'),
       port: z.number().int().min(1).max(65535).default(7317),
+      /**
+       * Racine publique de l'instance, pour les liens que l'API met dans ses réponses.
+       *
+       * Vide, elle se déduit de l'en-tête `Host` de la requête, ce qui marche aussi bien
+       * par le nom de domaine que par l'adresse locale. La renseigner ferme le cas où un
+       * appelant forge ce `Host` pour obtenir un lien vers un autre site, qu'il ferait
+       * ensuite suivre à un humain.
+       */
+      publicUrl: z.string().default(''),
     })
     .default({}),
   limits: z

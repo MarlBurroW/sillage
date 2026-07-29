@@ -120,6 +120,19 @@ export const conversations = sqliteTable(
      * l'UI cesse simplement d'afficher la provenance.
      */
     forkedFromId: text('forked_from_id'),
+    /**
+     * Jeton d'API qui a créé la conversation, pour l'audit et pour que `GET /api/v1/tasks`
+     * puisse rendre à un appelant ce qu'il a lui-même lancé. Sans cascade : supprimer un
+     * jeton n'efface pas les conversations qu'il a ouvertes.
+     */
+    createdByTokenId: text('created_by_token_id'),
+    /**
+     * Libellé du jeton d'origine, figé à la création. NULL vaut « créée dans l'interface ».
+     *
+     * Dupliqué du jeton à dessein : c'est ce qui permet à la sidebar de garder son
+     * marqueur quand le jeton a été supprimé.
+     */
+    originLabel: text('origin_label'),
     /** JSON AgentConfig. */
     config: text('config').notNull(),
     status: text('status')
@@ -296,7 +309,67 @@ export const secrets = sqliteTable('secrets', {
   updatedAt: timestamp('updated_at').notNull(),
 })
 
+/**
+ * Jetons d'API, porteurs d'identité des clients machine.
+ *
+ * Même stockage que les sessions : seul le SHA-256 du secret est retenu, le jeton en
+ * clair n'existe que dans la réponse à sa création. Une révocation garde la ligne, pour
+ * que le libellé reste lisible dans l'audit des conversations qu'il a lancées.
+ */
+export const apiTokens = sqliteTable(
+  'api_tokens',
+  {
+    id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull().unique(),
+    /** Premiers caractères du secret, pour reconnaître une ligne sans la révéler. */
+    hint: text('hint').notNull(),
+    label: text('label').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** JSON ApiScope[]. */
+    scopes: text('scopes').notNull(),
+    /** JSON string[] d'identifiants de projets ; vide signifie « tous ceux qu'il voit ». */
+    projectIds: text('project_ids').notNull(),
+    agent: text('agent').$type<AgentKind>().notNull(),
+    /** JSON AgentConfig : avec quoi les tâches de ce jeton travaillent par défaut. */
+    config: text('config').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    lastUsedAt: timestamp('last_used_at'),
+    expiresAt: timestamp('expires_at'),
+    revokedAt: timestamp('revoked_at'),
+  },
+  (t) => [index('idx_api_tokens_user').on(t.userId)],
+)
+
+/**
+ * Clés d'idempotence des créations de tâche.
+ *
+ * La déduplication des envois vit en mémoire sur cinq minutes, ce qui convient à un
+ * renvoi réseau mais pas à un agent qui réessaie dix minutes plus tard : sans cette
+ * table, il ouvrirait une seconde conversation.
+ *
+ * La clé se réserve avant la création, d'où un `conversation_id` nullable : entre les
+ * deux, une requête concurrente doit voir la réservation et attendre plutôt que de
+ * lancer un second tour. Sans référence non plus, pour que la réservation puisse
+ * exister avant sa conversation ; la conversation supprimée laisse une clé orpheline,
+ * que la purge finit par emporter.
+ */
+export const apiIdempotency = sqliteTable(
+  'api_idempotency',
+  {
+    tokenId: text('token_id')
+      .notNull()
+      .references(() => apiTokens.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    conversationId: text('conversation_id'),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.tokenId, t.key] })],
+)
+
 export type UserRow = typeof users.$inferSelect
+export type ApiTokenRow = typeof apiTokens.$inferSelect
 export type ProjectRow = typeof projects.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
 export type EventRow = typeof events.$inferSelect

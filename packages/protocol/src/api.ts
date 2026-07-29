@@ -289,6 +289,13 @@ export interface ConversationDto {
   createdAt: number
   updatedAt: number
   isOwner: boolean
+  /**
+   * Jeton d'API qui a lancé la conversation ; null quand elle vient de l'interface.
+   *
+   * Le libellé est figé à la création plutôt que résolu à la lecture : une conversation
+   * ne doit pas perdre son origine parce qu'on a fait le ménage dans ses jetons.
+   */
+  origin: { tokenId: string | null; label: string } | null
 }
 
 export interface JournalPageDto {

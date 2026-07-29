@@ -85,6 +85,13 @@
       "when": 1785327717132,
       "tag": "0011_bright_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1785341694655,
+      "tag": "0012_broken_thor_girl",
+      "breakpoints": true
     }
   ]
 }
