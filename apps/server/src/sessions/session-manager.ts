@@ -632,14 +632,19 @@ export class SessionManager {
    * au milieu d'un tour long, où l'agent travaille seul sans rien demander, et le
    * coupait net. Un tour en cours n'est pas de l'inactivité, on réarme.
    *
-   * Une demande restée sans réponse se récolte, elle : le tour est déjà figé, personne
-   * n'y répondra, et `expireAll` la clôt proprement dans le journal.
+   * Une sollicitation ouverte non plus, et c'est `isBusy` qui le dit pour tout le
+   * monde. Le CLI est arrêté sur son appel d'outil et ne consomme rien tant qu'on ne
+   * lui a pas répondu. La récolter perdait la question, tuait la session et laissait le
+   * tour figé, au terme d'un délai qui n'était même pas le délai entier : il courait
+   * depuis la dernière action de l'utilisateur, donc le travail de l'agent avant sa
+   * question en mangeait la moitié sans que rien ne l'annonce. Une demande attend une
+   * intervention humaine, aussi longtemps qu'il le faut.
    */
   private reapIfIdle(conversationId: string): void {
     const managed = this.runners.get(conversationId)
     if (!managed) return
 
-    if (managed.status === 'running') {
+    if (this.isBusy(conversationId)) {
       this.armIdleTimer(conversationId, managed)
       return
     }
