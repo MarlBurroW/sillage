@@ -1,4 +1,4 @@
-import { Clock, Paperclip, Waypoints, X } from 'lucide-react'
+import { Clock, FastForward, Paperclip, X } from 'lucide-react'
 import { useState } from 'react'
 import type { QueuedMessage } from '../../lib/chat-fold'
 import { cancelQueuedMessage, steerQueuedMessage } from '../../lib/conversations'
@@ -60,7 +60,9 @@ export function QueuedMessages({
         <div
           key={message.queueId}
           className={cx(
-            'group flex max-w-[85%] items-start gap-1 rounded-lg rounded-br-sm',
+            // `items-center` et non `items-start` : un bouton de 28px calé en haut d'une
+            // ligne de texte de 20px pend visiblement sous elle.
+            'group flex max-w-[85%] items-center gap-1 rounded-lg rounded-br-sm',
             'border border-dashed border-line-strong bg-surface/40 px-3 py-2',
             busy === message.queueId && 'opacity-50',
           )}
@@ -96,7 +98,7 @@ export function QueuedMessages({
               }
               className="text-accent hover:bg-accent-wash hover:text-accent"
             >
-              <Waypoints size={15} />
+              <FastForward size={15} />
             </IconButton>
           ) : null}
 
