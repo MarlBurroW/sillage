@@ -8,6 +8,7 @@ import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
+import { SecretStore, loadOrCreateKey } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
 import { TerminalManager } from './terminals/terminal-manager.js'
 
@@ -25,7 +26,10 @@ async function main(): Promise<void> {
   // Partagé entre le gestionnaire de sessions et les routes : les adaptateurs portent
   // les caches de catalogue et de quota, qui ne doivent exister qu'une fois.
   const registry = createAgentRegistry(config)
-  const sessions = new SessionManager(db, log, config, registry)
+  // La clé vit à côté de la base, pas dedans : c'est ce qui fait qu'une base copiée
+  // seule ne livre pas les secrets qu'elle contient.
+  const secrets = new SecretStore(db, loadOrCreateKey(config.paths.data))
+  const sessions = new SessionManager(db, log, config, registry, secrets)
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
   const recovered = sessions.recoverInterrupted()
@@ -34,7 +38,16 @@ async function main(): Promise<void> {
   const orphans = await attachments.purgeOrphans()
 
   const push = new PushService(db, config.paths.data)
-  const app = await buildApp({ db, config }, log, sessions, registry, attachments, terminals, push)
+  const app = await buildApp(
+    { db, config },
+    log,
+    sessions,
+    registry,
+    attachments,
+    terminals,
+    push,
+    secrets,
+  )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
   if (recovered > 0) {

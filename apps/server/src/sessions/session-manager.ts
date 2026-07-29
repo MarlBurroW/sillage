@@ -16,6 +16,7 @@ import {
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
+import type { SecretStore } from '../secrets/store.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -109,6 +110,7 @@ export class SessionManager {
     private readonly log: EventLog,
     private readonly config: Config,
     private readonly registry: AgentRegistry,
+    private readonly secrets: SecretStore,
   ) {
     this.statusBus.setMaxListeners(200)
   }
@@ -437,7 +439,7 @@ export class SessionManager {
       // les installations faites depuis l'interface.
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
-      resolveMcpServers: (ids) => resolveMcpServers(this.db, ids),
+      resolveMcpServers: (ids) => resolveMcpServers(this.db, this.secrets, ids),
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SillageEvent, raw?: unknown) => {

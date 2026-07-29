@@ -279,6 +279,23 @@ export const mcpServers = sqliteTable('mcp_servers', {
   updatedAt: timestamp('updated_at').notNull(),
 })
 
+/**
+ * Dépôt de secrets de l'instance, chiffré au repos.
+ *
+ * Le nom est la clé primaire : c'est lui qu'on écrit dans `{{secret.NOM}}`, et deux
+ * secrets homonymes n'auraient aucun moyen d'être départagés. La valeur est chiffrée
+ * en AES-256-GCM avec la clé du dossier de données ; `iv` et `authTag` appartiennent
+ * au chiffré et n'ont pas à être secrets, mais doivent être conservés avec lui.
+ */
+export const secrets = sqliteTable('secrets', {
+  name: text('name').primaryKey(),
+  ciphertext: text('ciphertext').notNull(),
+  iv: text('iv').notNull(),
+  authTag: text('auth_tag').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+})
+
 export type UserRow = typeof users.$inferSelect
 export type ProjectRow = typeof projects.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
@@ -286,3 +303,4 @@ export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect
 export type McpServerRow = typeof mcpServers.$inferSelect
+export type SecretRow = typeof secrets.$inferSelect

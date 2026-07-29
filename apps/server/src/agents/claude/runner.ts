@@ -19,8 +19,10 @@ import {
   type AgentConfig,
   type ClaudeConfig,
   type ContentBlock,
+  type McpServerStatus,
   type PlanFollowUpOption,
 } from '@sillage/protocol'
+import { failedStatuses } from '../mcp-registry.js'
 import { AsyncQueue } from '../async-queue.js'
 import { PendingInteractions } from '../interactions.js'
 import { describeOutgoingMessage } from '../outgoing.js'
@@ -146,6 +148,8 @@ export class ClaudeRunner implements AgentRunner {
    * coupe des connexions qui marchaient.
    */
   private appliedMcpServers: Record<string, McpServerConfig> = {}
+  /** Serveurs qu'on n'a pas pu lancer, à joindre à l'inventaire que le CLI rapporte. */
+  private mcpFailures: McpServerStatus[] = []
 
   constructor(private readonly ctx: RunnerContext) {
     this.conversationId = ctx.conversationId
@@ -155,7 +159,9 @@ export class ClaudeRunner implements AgentRunner {
 
   async start(): Promise<void> {
     const config = this.config
-    this.appliedMcpServers = toSdkMcpServers(this.ctx.resolveMcpServers(config.mcpServers))
+    const resolved = this.ctx.resolveMcpServers(config.mcpServers)
+    this.appliedMcpServers = toSdkMcpServers(resolved.servers)
+    this.mcpFailures = failedStatuses(resolved.failures)
 
     this.session = query({
       prompt: this.input,
@@ -764,7 +770,13 @@ export class ClaudeRunner implements AgentRunner {
     if (!session) return
 
     try {
-      this.ctx.emit({ type: 'mcp.updated', servers: fromSdkMcpStatus(await session.mcpServerStatus()) })
+      // Les serveurs écartés faute d'un secret n'ont jamais été transmis au CLI : il
+      // ne peut pas les rapporter, et sans cet ajout ils disparaîtraient au lieu de
+      // s'afficher en échec.
+      this.ctx.emit({
+        type: 'mcp.updated',
+        servers: [...this.mcpFailures, ...fromSdkMcpStatus(await session.mcpServerStatus())],
+      })
     } catch (err) {
       // Un inventaire manquant ne justifie pas de faire tomber la session : la
       // conversation reste utilisable, seul l'écran d'état est en retard.
@@ -918,10 +930,12 @@ export class ClaudeRunner implements AgentRunner {
     // Comparé sur les serveurs résolus et non sur les identifiants : une entrée du
     // registre corrigée entre-temps doit repartir, alors que la liste d'identifiants,
     // elle, n'a pas bougé.
-    const desired = toSdkMcpServers(this.ctx.resolveMcpServers(config.mcpServers))
+    const resolved = this.ctx.resolveMcpServers(config.mcpServers)
+    const desired = toSdkMcpServers(resolved.servers)
     if (JSON.stringify(desired) !== JSON.stringify(this.appliedMcpServers)) {
       await this.session.setMcpServers(desired)
       this.appliedMcpServers = desired
+      this.mcpFailures = failedStatuses(resolved.failures)
       await this.publishMcpStatus()
     }
 

@@ -19,6 +19,8 @@ import type { AppContext } from './context.js'
 import { registerErrorHandler } from './errors.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
+import { registerSecretRoutes } from './routes/secrets.js'
+import type { SecretStore } from '../secrets/store.js'
 import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
@@ -46,6 +48,7 @@ export async function buildApp(
   attachments: AttachmentStore,
   terminals: TerminalManager,
   push: PushService,
+  secrets: SecretStore,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -93,6 +96,7 @@ export async function buildApp(
   registerFsRoutes(app)
   registerAgentRoutes(app, registry, new CliInstaller(ctx.config.paths.agents))
   registerMcpRoutes(app, ctx)
+  registerSecretRoutes(app, ctx, secrets)
   registerWorktreeRoutes(app, ctx)
   registerUserRoutes(app, ctx)
   registerAttachmentRoutes(app, attachments)

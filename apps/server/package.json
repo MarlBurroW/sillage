@@ -11,6 +11,7 @@
     "user:create": "tsx src/cli/user-create.ts",
     "search:reindex": "tsx src/cli/search-reindex.ts",
     "mcp:probe": "tsx src/cli/mcp-probe.ts",
+    "secrets:check": "tsx src/cli/secret-check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
