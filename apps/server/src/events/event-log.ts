@@ -89,6 +89,7 @@ export class EventLog {
     })
 
     this.bus.emit(conversationId, entry)
+    this.bus.emit(ALL_EVENTS, entry)
     return entry
   }
 
@@ -494,4 +495,19 @@ export class EventLog {
     this.bus.on(conversationId, listener)
     return () => this.bus.off(conversationId, listener)
   }
+
+  /**
+   * Toutes les conversations à la fois, pour les consommateurs transverses (webhooks).
+   *
+   * Volontairement absent du chemin des imports (`appendBatch`) : rejouer un transcript
+   * n'est pas de l'activité, et notifier un appelant pour chaque événement importé
+   * l'inonderait de tours vieux de plusieurs jours.
+   */
+  subscribeAll(listener: (entry: JournalEntry) => void): () => void {
+    this.bus.on(ALL_EVENTS, listener)
+    return () => this.bus.off(ALL_EVENTS, listener)
+  }
 }
+
+/** Canal du bus réservé aux abonnés transverses ; hors de portée d'un id de conversation. */
+const ALL_EVENTS = Symbol('all-events')

@@ -72,9 +72,16 @@ export function registerApiTokenRoutes(
       agent: body.agent,
       config,
       expiresAt: body.expiresAt,
+      webhookUrl: body.webhookUrl,
     })
 
-    const payload: CreatedApiTokenDto = { token: apiTokenToDto(row), secret }
+    const payload: CreatedApiTokenDto = {
+      token: apiTokenToDto(row),
+      secret,
+      // Lisible en base contrairement au secret d'authentification, mais montré une
+      // seule fois quand même : l'écran n'a aucune raison de le réexposer ensuite.
+      webhookSecret: row.webhookSecret ?? '',
+    }
     return reply.status(201).send(payload)
   })
 

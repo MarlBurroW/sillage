@@ -26,6 +26,7 @@ export interface CreateApiTokenInput {
   agent: AgentKind
   config: unknown
   expiresAt: number | null
+  webhookUrl: string | null
 }
 
 export function useCreateApiToken() {

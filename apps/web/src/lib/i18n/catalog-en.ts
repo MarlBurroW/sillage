@@ -253,6 +253,10 @@ export const en = {
   'apiTokens.effort.label': 'Effort',
   'apiTokens.effort.default': "The model's own default",
   'apiTokens.scopes.label': 'Scopes',
+  'apiTokens.webhook.label': 'Webhook URL',
+  'apiTokens.webhook.hint': 'Optional. Called when a task finishes, blocks on a request, fails or is stopped. Signed with the webhook secret shown at creation.',
+  'apiTokens.secret.token': 'API token',
+  'apiTokens.secret.webhook': 'Webhook signing secret',
   'apiTokens.lifetime.label': 'Lifetime',
   'apiTokens.lifetime.none': 'Until revoked',
   'apiTokens.lifetime.days': '{days} days',
@@ -1073,6 +1077,12 @@ export const en = {
   'error.token_not_found': "Token not found.",
   'error.token_revoked': "This token is already revoked.",
   'error.token_not_revoked': "Revoke the token before deleting it.",
+  'error.reply_request_not_found': "No open request with this id on this task.",
+  'error.reply_kind_mismatch': "This request is a {kind}, not a {sent}.",
+  'error.reply_expired': "This request has expired, the session has ended.",
+  'error.idempotency_in_flight': "A task with this Idempotency-Key is still being created.",
+  'error.config_field_locked': "These settings are fixed by the token and cannot be set per task: {fields}.",
+  'error.model_unknown': "Unknown model {model} for {agent}. Known: {known}.",
   'error.http': 'Request failed ({status}).',
 } as const
 

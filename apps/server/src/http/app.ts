@@ -20,6 +20,7 @@ import type { AppContext } from './context.js'
 import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
 import { registerApiTokenRoutes } from './routes/api-tokens.js'
 import { registerV1Routes } from './v1/index.js'
+import type { WebhookService } from '../webhooks/service.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
 import { registerSecretRoutes } from './routes/secrets.js'
@@ -62,6 +63,7 @@ export async function buildApp(
   terminals: TerminalManager,
   push: PushService,
   secrets: SecretStore,
+  webhooks: WebhookService,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -125,7 +127,7 @@ export async function buildApp(
   registerHealthRoutes(app)
   registerAuthRoutes(app, ctx)
   registerProjectRoutes(app, ctx, attachments)
-  registerConversationRoutes(app, ctx, log, sessions, registry, attachments)
+  registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)
   registerAgentRoutes(app, registry, new CliInstaller(ctx.config.paths.agents))
@@ -134,7 +136,7 @@ export async function buildApp(
   registerWorktreeRoutes(app, ctx)
   registerUserRoutes(app, ctx)
   registerApiTokenRoutes(app, ctx, registry)
-  registerV1Routes(app, ctx, log, sessions, registry)
+  registerV1Routes(app, ctx, log, sessions, registry, webhooks)
   registerAttachmentRoutes(app, attachments)
   registerPushRoutes(app, push)
   registerSearchRoutes(app, ctx)

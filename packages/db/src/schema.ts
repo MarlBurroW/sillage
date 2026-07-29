@@ -334,12 +334,63 @@ export const apiTokens = sqliteTable(
     agent: text('agent').$type<AgentKind>().notNull(),
     /** JSON AgentConfig : avec quoi les tâches de ce jeton travaillent par défaut. */
     config: text('config').notNull(),
+    /** URL appelée sur les événements de tâche ; NULL quand le jeton n'en veut pas. */
+    webhookUrl: text('webhook_url'),
+    /**
+     * Secret HMAC des livraisons, en clair : le serveur doit pouvoir signer, donc le
+     * chiffrer avec une clé posée à côté de la base ne protégerait de rien. Il ne donne
+     * aucun accès à Sillage, seulement la capacité de forger des livraisons vers
+     * l'endpoint du consommateur, qui exige aussi de connaître l'URL.
+     */
+    webhookSecret: text('webhook_secret'),
     createdAt: timestamp('created_at').notNull(),
     lastUsedAt: timestamp('last_used_at'),
     expiresAt: timestamp('expires_at'),
     revokedAt: timestamp('revoked_at'),
   },
   (t) => [index('idx_api_tokens_user').on(t.userId)],
+)
+
+/**
+ * Réglages propres aux tâches lancées par l'API : surcharge de webhook, échéance de
+ * réponse. Table à part plutôt que des colonnes sur `conversations`, qui appartient au
+ * noyau et n'a pas à porter les préoccupations d'un appelant machine.
+ */
+export const apiTaskOptions = sqliteTable('api_task_options', {
+  conversationId: text('conversation_id')
+    .primaryKey()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  webhookUrl: text('webhook_url'),
+  /** 0 signifie « pas d'échéance », choisi explicitement par l'appelant. */
+  replyDeadlineSec: integer('reply_deadline_sec').notNull(),
+})
+
+/**
+ * Livraisons de webhook, persistées avant le premier essai.
+ *
+ * Un redémarrage du service ne doit pas avaler la seule notification qu'attendait
+ * l'appelant : la reprise relit ce qui n'a pas été livré et reprend le barème là où
+ * il en était. `nextAttemptAt` NULL marque l'abandon après épuisement des essais.
+ */
+export const webhookDeliveries = sqliteTable(
+  'webhook_deliveries',
+  {
+    id: text('id').primaryKey(),
+    tokenId: text('token_id')
+      .notNull()
+      .references(() => apiTokens.id, { onDelete: 'cascade' }),
+    conversationId: text('conversation_id').notNull(),
+    url: text('url').notNull(),
+    type: text('type').notNull(),
+    /** JSON WebhookPayload. */
+    payload: text('payload').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at'),
+    deliveredAt: timestamp('delivered_at'),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (t) => [index('idx_webhook_deliveries_due').on(t.deliveredAt, t.nextAttemptAt)],
 )
 
 /**
@@ -377,3 +428,4 @@ export type WorktreeRow = typeof worktrees.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect
 export type McpServerRow = typeof mcpServers.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect
+export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect
