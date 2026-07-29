@@ -789,7 +789,24 @@ function ConversationRow({
         }}
         className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-[0.8125rem]"
       >
-        <span className="shrink-0 text-ink-faint">
+        {/*
+          L'origine se marque ici, sur l'icône d'agent, et non à droite : cette ligne
+          budgète deux signaux d'état, et un troisième leur ferait concurrence. Un
+          anneau ne prend aucune largeur et laisse le titre entier.
+        */}
+        <span
+          className={cx(
+            'shrink-0 text-ink-faint',
+            conversation.origin
+              ? 'rounded-full p-0.5 ring-1 ring-accent/60'
+              : '',
+          )}
+          title={
+            conversation.origin
+              ? t('shell.conversation.origin', { label: conversation.origin.label })
+              : undefined
+          }
+        >
           <AgentIcon agent={conversation.agent} size={13} />
         </span>
         <span className="truncate">{conversation.title}</span>

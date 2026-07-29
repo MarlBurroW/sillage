@@ -13,6 +13,7 @@ import { AccountSection } from './routes/AccountSection'
 import { AppearanceSection } from './routes/AppearanceSection'
 import { McpSettingsPage } from './routes/McpSettingsPage'
 import { NotificationsSection } from './routes/NotificationsSection'
+import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
 import { SecretsSettingsPage } from './routes/SecretsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
 import { UsersSettingsPage } from './routes/UsersSettingsPage'
@@ -51,6 +52,7 @@ export function App() {
             <Route path="notifications" element={<NotificationsSection />} />
             <Route path="projets" element={<ProjectsSettingsPage />} />
             <Route path="mcp" element={<McpSettingsPage />} />
+            <Route path="api" element={<ApiTokensSettingsPage />} />
             <Route path="secrets" element={<SecretsSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />
             <Route path="a-propos" element={<AboutSection />} />

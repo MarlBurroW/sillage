@@ -7,6 +7,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentRegistry } from '../agents/registry.js'
 import { CliInstaller } from '../agents/cli-install.js'
 import type { AttachmentStore } from '../attachments/store.js'
+import { bearerSecret, resolveApiToken } from '../auth/api-tokens.js'
 import { SESSION_COOKIE, resolveSession } from '../auth/sessions.js'
 import type { EventLog } from '../events/event-log.js'
 import type { PushService } from '../push/push-service.js'
@@ -16,7 +17,9 @@ import { registerTerminalHub } from '../ws/terminal-hub.js'
 import { registerWebSocketHub } from '../ws/hub.js'
 import { MAX_ATTACHMENT_BYTES } from '@sillage/protocol'
 import type { AppContext } from './context.js'
-import { registerErrorHandler } from './errors.js'
+import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
+import { registerApiTokenRoutes } from './routes/api-tokens.js'
+import { registerV1Routes } from './v1/index.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
 import { registerSecretRoutes } from './routes/secrets.js'
@@ -39,6 +42,16 @@ import { registerWorktreeRoutes } from './routes/worktrees.js'
 
 /** Routes accessibles sans session. Tout le reste exige un utilisateur. */
 const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health'])
+
+/**
+ * L'API publique, réservée aux jetons.
+ *
+ * La frontière est nette dans les deux sens : un cookie n'y entre pas, un jeton ne sort
+ * pas de ce préfixe. C'est ce qui permet aux DTO de l'interface de bouger sans devenir
+ * un contrat public, et ce qui interdit à un jeton volé d'atteindre l'administration
+ * des comptes.
+ */
+const API_V1_PREFIX = '/api/v1/'
 
 export async function buildApp(
   ctx: AppContext,
@@ -68,24 +81,45 @@ export async function buildApp(
     limits: { files: 1, fileSize: MAX_ATTACHMENT_BYTES },
   })
 
-  // Résolution de session sur toute requête. Les routes décident ensuite si elles
+  // Résolution de l'identité sur toute requête. Les routes décident ensuite si elles
   // exigent un utilisateur, via requireUser().
   app.addHook('onRequest', async (request) => {
+    const secret = bearerSecret(request.headers.authorization)
+    const identity = secret ? resolveApiToken(ctx.db, secret) : null
+    if (identity) {
+      request.apiToken = identity.token
+      request.user = identity.user
+      return
+    }
+
+    // Repli sur le cookie même en présence d'un en-tête `Authorization` : un proxy ou
+    // une extension qui en ajoute un ne doit pas rendre l'interface inutilisable.
     const token = request.cookies[SESSION_COOKIE]
     if (!token) return
     const user = await resolveSession(ctx.db, token)
     if (user) request.user = user
   })
 
-  app.addHook('onRequest', async (request, reply) => {
+  app.addHook('onRequest', async (request) => {
     if (!request.url.startsWith('/api/')) return
     const path = request.url.split('?')[0] ?? request.url
     if (PUBLIC_ROUTES.has(path) || path === '/api/auth/logout') return
-    if (!request.user) {
-      return reply
-        .status(401)
-        .send({ error: { code: 'unauthorized', message: 'Authentification requise.' } })
+
+    if (path.startsWith(API_V1_PREFIX)) {
+      if (!request.apiToken) {
+        throw new HttpError(401, 'api_token_required', 'This API requires a bearer token.')
+      }
+      return
     }
+
+    if (request.apiToken) {
+      throw new HttpError(
+        403,
+        'token_outside_api',
+        'A bearer token only grants access to /api/v1.',
+      )
+    }
+    if (!request.user) throw unauthorized()
   })
 
   registerHealthRoutes(app)
@@ -99,6 +133,8 @@ export async function buildApp(
   registerSecretRoutes(app, ctx, secrets)
   registerWorktreeRoutes(app, ctx)
   registerUserRoutes(app, ctx)
+  registerApiTokenRoutes(app, ctx, registry)
+  registerV1Routes(app, ctx, log, sessions, registry)
   registerAttachmentRoutes(app, attachments)
   registerPushRoutes(app, push)
   registerSearchRoutes(app, ctx)

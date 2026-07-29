@@ -165,6 +165,8 @@ export function registerClaudeSessionRoutes(
       agent: 'claude',
       agentSessionId: sessionId,
       forkedFromId: null,
+      createdByTokenId: null,
+      originLabel: null,
       config: JSON.stringify(config),
       status: 'idle',
       lastSeq: 0,

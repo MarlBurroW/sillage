@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { openDatabase } from '@sillage/db'
 import { createAgentRegistry } from './agents/registry.js'
+import { purgeIdempotencyKeys } from './auth/api-tokens.js'
 import { purgeExpiredSessions } from './auth/sessions.js'
 import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
@@ -21,6 +22,7 @@ async function main(): Promise<void> {
   const { db, sqlite } = openDatabase(config.paths.database)
   runPendingMigrations(db, migrationsFolder())
   await purgeExpiredSessions(db)
+  purgeIdempotencyKeys(db)
 
   const log = new EventLog(db)
   // Partagé entre le gestionnaire de sessions et les routes : les adaptateurs portent
