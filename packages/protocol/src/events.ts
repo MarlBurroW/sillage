@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { elicitationContentSchema, elicitationFieldSchema } from './elicitation.js'
+import { mcpServerStatusSchema } from './mcp.js'
 
 /**
  * Schéma d'événements normalisé (invariant I3 de la spec).
@@ -411,6 +412,24 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('background.updated'),
     tasks: z.array(backgroundTaskSchema),
+  }),
+
+  /**
+   * L'inventaire MCP de la session a changé : un serveur s'est connecté, a échoué, ou
+   * réclame une authentification.
+   *
+   * Même sémantique de remplacement que `background.updated` : le CLI publie l'état de
+   * tous ses serveurs à la fois, jamais un delta. La liste contient aussi les serveurs
+   * venus du disque du CLI, marqués `external`, parce que l'utilisateur les subit au
+   * même titre que les siens et doit pouvoir les voir échouer.
+   *
+   * Sans ça, un serveur mal configuré échoue en silence : l'agent n'a simplement pas
+   * l'outil attendu, et rien ne distingue ce cas d'un modèle qui a choisi de ne pas
+   * s'en servir.
+   */
+  z.object({
+    type: z.literal('mcp.updated'),
+    servers: z.array(mcpServerStatusSchema),
   }),
 
   /**

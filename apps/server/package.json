@@ -10,6 +10,7 @@
     "migrate": "tsx src/cli/migrate.ts",
     "user:create": "tsx src/cli/user-create.ts",
     "search:reindex": "tsx src/cli/search-reindex.ts",
+    "mcp:probe": "tsx src/cli/mcp-probe.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

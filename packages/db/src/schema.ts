@@ -256,9 +256,33 @@ export const userSettings = sqliteTable('user_settings', {
   data: text('data').notNull().default(sql`'{}'`),
 })
 
+/**
+ * Registre des serveurs MCP, partagé par tous les CLI et tous les projets.
+ *
+ * Déclarés une fois ici, activés conversation par conversation via `mcpServers` de
+ * l'`AgentConfig`. Rien n'est écrit dans `~/.claude.json` ni dans le `config.toml` de
+ * Codex : Sillage transmet ces serveurs en mémoire à chaque lancement de session, et
+ * ne devient donc pas copropriétaire de fichiers qu'il n'a pas écrits. Conséquence
+ * assumée : une conversation reprise dans un CLI natif n'a pas ces serveurs.
+ */
+export const mcpServers = sqliteTable('mcp_servers', {
+  id: text('id').primaryKey(),
+  /**
+   * Unique : le nom sert de clé côté CLI, deux serveurs homonymes s'écraseraient
+   * l'un l'autre dans la table qu'on lui transmet, en silence.
+   */
+  name: text('name').notNull().unique(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  /** JSON McpTransport : la forme dépend du transport, la colonne n'a pas à le savoir. */
+  transport: text('transport').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+})
+
 export type UserRow = typeof users.$inferSelect
 export type ProjectRow = typeof projects.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect
+export type McpServerRow = typeof mcpServers.$inferSelect

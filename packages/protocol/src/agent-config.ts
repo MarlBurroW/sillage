@@ -28,6 +28,17 @@ export const claudeConfigSchema = z.object({
   effort: claudeEffortSchema,
   permissionMode: claudePermissionModeSchema,
   additionalDirectories: z.array(z.string()).default([]),
+  /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
+  mcpServers: z.array(z.string()).default([]),
+  /**
+   * Ignore les serveurs déclarés sur le disque du CLI (`~/.claude.json`, `.mcp.json`,
+   * connecteurs claude.ai) pour ne garder que ceux de Sillage.
+   *
+   * Faux par défaut : activer l'isolation d'office ferait disparaître sans prévenir des
+   * serveurs que l'utilisateur a déclarés lui-même. Propre à Claude, Codex n'ayant pas
+   * d'équivalent : son `config.toml` et son `codex_apps` intégré restent de toute façon.
+   */
+  strictMcp: z.boolean().default(false),
 })
 export type ClaudeConfig = z.infer<typeof claudeConfigSchema>
 
@@ -118,6 +129,8 @@ export const codexConfigSchema = z.object({
   webSearch: z.boolean().default(false),
   profile: z.string().nullable().default(null),
   additionalDirectories: z.array(z.string()).default([]),
+  /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
+  mcpServers: z.array(z.string()).default([]),
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
 
@@ -142,6 +155,8 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   effort: 'medium',
   permissionMode: 'manual',
   additionalDirectories: [],
+  mcpServers: [],
+  strictMcp: false,
 }
 
 export const DEFAULT_CODEX_CONFIG: CodexConfig = {
@@ -154,6 +169,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   webSearch: false,
   profile: null,
   additionalDirectories: [],
+  mcpServers: [],
 }
 
 /**

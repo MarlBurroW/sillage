@@ -7,6 +7,7 @@ import {
   type ElicitationRequest,
   type ElicitationResult,
   type HookCallback,
+  type McpServerConfig,
   type PermissionResult,
   type Query,
   type SDKMessage,
@@ -36,6 +37,7 @@ import type {
   RunnerContext,
 } from '../types.js'
 import { editedPath, fileExists } from './file-edits.js'
+import { fromSdkMcpStatus, toSdkMcpServers } from './mcp.js'
 import { toPermissionMode } from './permission-mode.js'
 import {
   ASK_USER_QUESTION,
@@ -138,6 +140,12 @@ export class ClaudeRunner implements AgentRunner {
   private turnOpen = false
   /** Suit les changements appliqués à chaud, contrairement à `ctx.config` qui est figé. */
   private config: ClaudeConfig
+  /**
+   * Ce que la session a réellement reçu, pour ne renvoyer `setMcpServers` que sur un
+   * vrai changement. Le SDK relance chaque serveur à l'appel, donc un appel inutile
+   * coupe des connexions qui marchaient.
+   */
+  private appliedMcpServers: Record<string, McpServerConfig> = {}
 
   constructor(private readonly ctx: RunnerContext) {
     this.conversationId = ctx.conversationId
@@ -147,6 +155,7 @@ export class ClaudeRunner implements AgentRunner {
 
   async start(): Promise<void> {
     const config = this.config
+    this.appliedMcpServers = toSdkMcpServers(this.ctx.resolveMcpServers(config.mcpServers))
 
     this.session = query({
       prompt: this.input,
@@ -158,6 +167,12 @@ export class ClaudeRunner implements AgentRunner {
         // Les pièces jointes sont stockées hors du workspace : sans ce dossier
         // autorisé, l'agent se verrait refuser la lecture des fichiers qu'on lui joint.
         additionalDirectories: [...config.additionalDirectories, this.ctx.attachmentsRoot],
+        // Transmis en mémoire, à chaque lancement. Rien n'en est écrit dans
+        // `~/.claude.json` : une conversation reprise dans le CLI natif n'aura donc pas
+        // ces serveurs, ce qui est le prix de ne pas toucher aux fichiers de
+        // l'utilisateur. Relevé par sonde, ce n'est pas déductible de la documentation.
+        mcpServers: this.appliedMcpServers,
+        strictMcpConfig: config.strictMcp,
         includePartialMessages: true,
         // Sans ça le SDK ne transmet des sous-agents que leurs appels d'outils, de
         // quoi faire battre un compteur mais pas de quoi rendre leur fil : ni
@@ -194,6 +209,7 @@ export class ClaudeRunner implements AgentRunner {
     // Même raison pour les boucles, qui meurent elles aussi avec le process. Le hook
     // les rétablira à la fin du premier tour si le CLI en a restauré à la reprise.
     this.ctx.emit({ type: 'loops.updated', loops: [] })
+    void this.publishMcpStatus()
 
     // Consommé en tâche de fond : le runner survit à la requête HTTP qui l'a créé.
     void this.consume()
@@ -729,8 +745,33 @@ export class ClaudeRunner implements AgentRunner {
           prompt: cron.prompt,
         })),
       })
+      // Un serveur peut tomber ou finir de s'authentifier en cours de session : sans ce
+      // relevé, l'inventaire resterait celui du démarrage.
+      void this.publishMcpStatus()
     }
     return { continue: true }
+  }
+
+  /**
+   * Publie l'inventaire MCP tel que le CLI le voit.
+   *
+   * Interrogé plutôt que déduit de ce que Sillage a transmis : c'est la seule façon de
+   * savoir qu'un serveur a échoué à démarrer, et la seule qui montre aussi ceux venus
+   * du disque du CLI, que l'utilisateur subit sans les avoir déclarés ici.
+   */
+  private async publishMcpStatus(): Promise<void> {
+    const session = this.session
+    if (!session) return
+
+    try {
+      this.ctx.emit({ type: 'mcp.updated', servers: fromSdkMcpStatus(await session.mcpServerStatus()) })
+    } catch (err) {
+      // Un inventaire manquant ne justifie pas de faire tomber la session : la
+      // conversation reste utilisable, seul l'écran d'état est en retard.
+      process.stderr.write(
+        `[claude ${this.conversationId}] inventaire MCP indisponible : ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+    }
   }
 
   /**
@@ -859,15 +900,30 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Le SDK expose des requêtes de contrôle pour ces trois réglages : les changer ne
-   * demande pas de relancer le CLI, donc la session garde son contexte chargé.
+   * Le SDK expose des requêtes de contrôle pour ces réglages : les changer ne demande
+   * pas de relancer le CLI, donc la session garde son contexte chargé.
    */
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'claude' || !this.session) return false
 
+    // `strictMcpConfig` n'est qu'une option de lancement : le SDK n'expose aucune
+    // requête de contrôle pour l'inverser. Refuser ici fait redémarrer le runner, qui
+    // repartira en reprise avec la bonne valeur.
+    if (config.strictMcp !== this.config.strictMcp) return false
+
     await this.session.setModel(config.model)
     await this.session.applyFlagSettings({ effortLevel: config.effort })
     await this.session.setPermissionMode(toPermissionMode(config.permissionMode))
+
+    // Comparé sur les serveurs résolus et non sur les identifiants : une entrée du
+    // registre corrigée entre-temps doit repartir, alors que la liste d'identifiants,
+    // elle, n'a pas bougé.
+    const desired = toSdkMcpServers(this.ctx.resolveMcpServers(config.mcpServers))
+    if (JSON.stringify(desired) !== JSON.stringify(this.appliedMcpServers)) {
+      await this.session.setMcpServers(desired)
+      this.appliedMcpServers = desired
+      await this.publishMcpStatus()
+    }
 
     this.config = config
     return true

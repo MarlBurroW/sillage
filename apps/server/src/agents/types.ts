@@ -3,6 +3,7 @@ import type {
   ConversationStatus,
   ElicitationAction,
   ElicitationValue,
+  McpServer,
   SillageEvent,
 } from '@sillage/protocol'
 
@@ -55,6 +56,15 @@ export interface RunnerContext {
   binary: string
   /** Racine de stockage des pièces jointes, à autoriser en lecture pour l'agent. */
   attachmentsRoot: string
+  /**
+   * Résout des identifiants du registre MCP en serveurs, en écartant les désactivés et
+   * les disparus.
+   *
+   * Fonction et non tableau figé : Codex doit rejouer la liste à chaque reprise de
+   * thread, et Claude peut la remplacer à chaud. Un instantané pris au lancement
+   * mentirait dans les deux cas.
+   */
+  resolveMcpServers(ids: string[]): McpServer[]
   /** Identifiant de session natif à reprendre, null pour une nouvelle session. */
   resumeSessionId: string | null
   /** Écrit dans le journal puis diffuse. `raw` conserve le message natif du CLI. */

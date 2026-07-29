@@ -6,6 +6,7 @@ import {
   type AgentQuestion,
   type CodexConfig,
   type ContentBlock,
+  type McpServer,
 } from '@sillage/protocol'
 import type { CollaborationMode } from '@sillage/codex-bindings'
 import type {
@@ -15,7 +16,9 @@ import type {
   CommandExecutionOutputDeltaNotification,
   CommandExecutionRequestApprovalParams,
   FileChangeRequestApprovalParams,
+  ListMcpServerStatusResponse,
   McpServerElicitationRequestParams,
+  McpServerStatusUpdatedNotification,
   PatchChangeKind,
   McpServerElicitationRequestResponse,
   PermissionsRequestApprovalParams,
@@ -49,6 +52,7 @@ import { toWorkspacePath } from '../paths.js'
 import { ToolDurations } from '../tool-durations.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
+import { fromCodexMcpStatus, toCodexThreadConfig, type CodexMcpStartup } from './mcp.js'
 import { describeWindow } from './quota.js'
 
 /**
@@ -94,7 +98,6 @@ const IGNORED_NOTIFICATIONS = new Set([
   'model/safetyBuffering/updated',
   'fuzzyFileSearch/sessionUpdated',
   'fuzzyFileSearch/sessionCompleted',
-  'mcpServer/startupStatus/updated',
 ])
 
 /**
@@ -162,6 +165,12 @@ export class CodexRunner implements AgentRunner {
 
   private client: CodexAppServerClient | null = null
   private threadId: string | null = null
+  /** Serveurs transmis au thread courant, pour distinguer les nôtres de ceux du CLI. */
+  private mcpServers: McpServer[] = []
+  /** Dernier démarrage annoncé par serveur : l'inventaire ne porte ni état ni erreur. */
+  private readonly mcpStartup = new Map<string, CodexMcpStartup>()
+  /** Dernier inventaire publié, pour n'écrire au journal que ce qui change. */
+  private lastMcpPayload: string | null = null
   private config: CodexConfig
   private readonly interactions: PendingInteractions
   private readonly durations = new ToolDurations()
@@ -220,6 +229,13 @@ export class CodexRunner implements AgentRunner {
 
     await this.client.initialize(CLIENT_INFO)
 
+    this.mcpServers = this.ctx.resolveMcpServers(this.config.mcpServers)
+    // Repassé au `thread/resume` autant qu'au `thread/start`, et ce n'est pas une
+    // précaution : une surcharge de thread n'est pas persistée avec le thread. Sondé,
+    // un thread créé avec des serveurs MCP puis repris sans cette configuration les
+    // perd entièrement, sans erreur ni trace. Ne pas simplifier.
+    const threadConfig = toCodexThreadConfig(this.mcpServers)
+
     const started = this.ctx.resumeSessionId
       ? await this.client.call<ThreadStartResponse, 'thread/resume'>('thread/resume', {
           threadId: this.ctx.resumeSessionId,
@@ -227,12 +243,14 @@ export class CodexRunner implements AgentRunner {
           approvalPolicy: this.approvalPolicy(),
           sandbox: this.config.sandbox,
           model: this.config.model,
+          config: threadConfig,
         })
       : await this.client.call<ThreadStartResponse, 'thread/start'>('thread/start', {
           cwd: this.ctx.cwd,
           approvalPolicy: this.approvalPolicy(),
           sandbox: this.config.sandbox,
           model: this.config.model,
+          config: threadConfig,
         })
 
     this.threadId = started.thread.id
@@ -251,6 +269,45 @@ export class CodexRunner implements AgentRunner {
       },
       started,
     )
+    void this.publishMcpStatus()
+  }
+
+  /**
+   * Publie l'inventaire MCP du thread.
+   *
+   * Interrogé avec `threadId` : sans lui, l'app-server ne répond que les serveurs de la
+   * configuration de l'utilisateur, et les surcharges posées par Sillage restent
+   * invisibles. C'est la contrepartie de ne rien écrire dans son `config.toml`.
+   *
+   * Codex annonce un démarrage par serveur, et chaque annonce relit l'inventaire
+   * entier. Les publications identiques sont donc écartées : restent celles où un
+   * serveur a réellement changé d'état ou d'outils, qui sont la seule chose que le
+   * journal a besoin de garder.
+   */
+  private async publishMcpStatus(): Promise<void> {
+    const client = this.client
+    const threadId = this.threadId
+    if (!client || !threadId) return
+
+    try {
+      const inventory = await client.call<ListMcpServerStatusResponse, 'mcpServerStatus/list'>(
+        'mcpServerStatus/list',
+        { threadId, detail: 'toolsAndAuthOnly' },
+      )
+      const servers = fromCodexMcpStatus(inventory.data, this.mcpServers, this.mcpStartup)
+
+      const payload = JSON.stringify(servers)
+      if (payload === this.lastMcpPayload) return
+      this.lastMcpPayload = payload
+
+      this.ctx.emit({ type: 'mcp.updated', servers })
+    } catch (err) {
+      // Le thread reste utilisable sans son inventaire : seul l'écran d'état est en
+      // retard, et la prochaine annonce de démarrage le rattrapera.
+      process.stderr.write(
+        `[codex ${this.conversationId}] inventaire MCP indisponible : ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+    }
   }
 
   /**
@@ -299,6 +356,13 @@ export class CodexRunner implements AgentRunner {
       case 'item/commandExecution/outputDelta': {
         const p = params as CommandExecutionOutputDeltaNotification
         this.ctx.emit({ type: 'tool.output_delta', toolCallId: p.itemId, chunk: p.delta })
+        return
+      }
+
+      case 'mcpServer/startupStatus/updated': {
+        const p = params as McpServerStatusUpdatedNotification
+        this.mcpStartup.set(p.name, { status: p.status, error: p.error })
+        void this.publishMcpStatus()
         return
       }
 

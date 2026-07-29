@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { agentConfigSchema, type CodexMode } from './agent-config.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
+import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
 
 export const conversationStatusSchema = z.enum([
   'idle',
@@ -739,6 +740,26 @@ export interface SearchMessageDto {
   role: 'user' | 'assistant'
   ts: number
   excerpt: string
+}
+
+// Serveurs MCP
+
+export const createMcpServerBodySchema = z.object({
+  name: mcpServerNameSchema,
+  enabled: z.boolean().default(true),
+  transport: mcpTransportSchema,
+})
+
+export const updateMcpServerBodySchema = z
+  .object({
+    name: mcpServerNameSchema,
+    enabled: z.boolean(),
+    transport: mcpTransportSchema,
+  })
+  .partial()
+
+export interface McpServerListDto {
+  servers: McpServer[]
 }
 
 // Erreurs
