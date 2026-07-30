@@ -47,8 +47,11 @@ export class CodexAdapter implements AgentAdapter {
   constructor(config: Config) {
     this.binary = config.agents.codex.binary
     this.cli = new CliBinary('codex', this.binary, config.agents.codex.enabled, config.paths.agents)
-    this.catalog = new CodexModelCatalog(this.binary)
-    this.usageReader = new CodexUsageReader(this.binary)
+    // Le nom configuré ne suffit pas : `spawn` ne connaît que le PATH, alors que le
+    // préfixe des CLI installés par Sillage l'emporte. Sonder le nom nu ferait lister
+    // les modèles d'une version que les conversations, elles, n'utilisent pas.
+    this.catalog = new CodexModelCatalog(() => this.cli.executable())
+    this.usageReader = new CodexUsageReader(() => this.cli.executable())
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
@@ -63,7 +66,7 @@ export class CodexAdapter implements AgentAdapter {
   async fork(target: ForkTarget, cut: unknown): Promise<string> {
     const { turnsToDrop } = cut as CodexForkCut
     const client = new CodexAppServerClient({
-      binary: this.binary,
+      binary: await this.cli.executable(),
       cwd: target.cwd,
       onNotification: () => {},
       onServerRequest: () =>

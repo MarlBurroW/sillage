@@ -9,6 +9,10 @@ import { CLIENT_INFO } from './client-info.js'
  * Même contrat que côté Claude : rien n'est codé en dur, et le résultat est mis en
  * cache parce que la sonde démarre un process CLI. Les deux listes sont lues dans la
  * même sonde, pour ne pas payer un second démarrage.
+ *
+ * Le binaire est résolu à chaque sonde et non retenu à la construction : c'est le seul
+ * moyen d'honorer le préfixe où Sillage installe les CLI qu'il gère, et de voir le
+ * catalogue d'une version installée pendant que le daemon tourne.
  */
 
 interface Listing {
@@ -21,14 +25,14 @@ const CACHE_TTL_MS = 60 * 60 * 1000
 export class CodexModelCatalog {
   private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
 
-  constructor(private readonly binary: string) {}
+  constructor(private readonly executable: () => Promise<string>) {}
 
   list(): Promise<Listing & { fetchedAt: number }> {
     return this.cached.read()
   }
 
   private async probe(): Promise<Listing> {
-    const client = new CodexAppServerClient({ binary: this.binary })
+    const client = new CodexAppServerClient({ binary: await this.executable() })
     try {
       await client.initialize(CLIENT_INFO)
 
