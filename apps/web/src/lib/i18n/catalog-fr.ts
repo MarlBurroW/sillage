@@ -95,8 +95,6 @@ export const fr: Catalog = {
   'composer.approval.untrusted.hint': 'Seules les commandes sûres passent seules',
   'composer.approval.onRequest': 'Sur demande',
   'composer.approval.onRequest.hint': 'Codex demande quand il le juge utile',
-  'composer.approval.onFailure': 'Sur échec',
-  'composer.approval.onFailure.hint': 'Déprécié par le CLI, conservé par le protocole',
   'composer.approval.never': 'Jamais',
   'composer.approval.never.hint': 'Aucune demande, les échecs remontent au modèle',
   'composer.sandbox.readOnly': 'Lecture seule',

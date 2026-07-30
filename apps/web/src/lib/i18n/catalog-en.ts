@@ -110,8 +110,6 @@ export const en = {
   'composer.approval.untrusted.hint': 'Only safe commands run on their own',
   'composer.approval.onRequest': 'On request',
   'composer.approval.onRequest.hint': 'Codex asks when it finds it useful',
-  'composer.approval.onFailure': 'On failure',
-  'composer.approval.onFailure.hint': 'Deprecated by the CLI, kept by the protocol',
   'composer.approval.never': 'Never',
   'composer.approval.never.hint': 'No prompts, failures are reported to the model',
   'composer.sandbox.readOnly': 'Read only',
