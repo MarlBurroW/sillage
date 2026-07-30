@@ -16,13 +16,16 @@ import type {
   AgentMessageDeltaNotification,
   CommandExecutionOutputDeltaNotification,
   CommandExecutionRequestApprovalParams,
+  CommandExecutionRequestApprovalResponse,
   FileChangeRequestApprovalParams,
+  FileChangeRequestApprovalResponse,
   ListMcpServerStatusResponse,
   McpServerElicitationRequestParams,
   McpServerStatusUpdatedNotification,
   PatchChangeKind,
   McpServerElicitationRequestResponse,
   PermissionsRequestApprovalParams,
+  PermissionsRequestApprovalResponse,
   ReasoningTextDeltaNotification,
   SandboxPolicy,
   ThreadItem,
@@ -692,16 +695,24 @@ export class CodexRunner implements AgentRunner {
     switch (method) {
       case 'item/commandExecution/requestApproval': {
         const p = params as CommandExecutionRequestApprovalParams
-        return this.askPermission('Bash', { command: p.command, cwd: p.cwd, reason: p.reason }, (allowed, scope) => ({
-          decision: allowed ? (scope === 'session' ? 'acceptForSession' : 'accept') : 'decline',
-        }))
+        return this.askPermission(
+          'Bash',
+          { command: p.command, cwd: p.cwd, reason: p.reason },
+          (allowed, scope): CommandExecutionRequestApprovalResponse => ({
+            decision: allowed ? (scope === 'session' ? 'acceptForSession' : 'accept') : 'decline',
+          }),
+        )
       }
 
       case 'item/fileChange/requestApproval': {
         const p = params as FileChangeRequestApprovalParams
-        return this.askPermission('Edit', { reason: p.reason, grantRoot: p.grantRoot }, (allowed, scope) => ({
-          decision: allowed ? (scope === 'session' ? 'acceptForSession' : 'accept') : 'decline',
-        }))
+        return this.askPermission(
+          'Edit',
+          { reason: p.reason, grantRoot: p.grantRoot },
+          (allowed, scope): FileChangeRequestApprovalResponse => ({
+            decision: allowed ? (scope === 'session' ? 'acceptForSession' : 'accept') : 'decline',
+          }),
+        )
       }
 
       case 'item/permissions/requestApproval': {
@@ -709,10 +720,18 @@ export class CodexRunner implements AgentRunner {
         return this.askPermission(
           'Permissions',
           { reason: p.reason, cwd: p.cwd, permissions: p.permissions },
-          (allowed, scope) => ({
+          (allowed, scope): PermissionsRequestApprovalResponse => ({
             // Refuser, c'est n'accorder aucune permission : le protocole n'a pas de
             // variante « refus », il attend le profil réellement accordé.
-            permissions: allowed ? p.permissions : {},
+            //
+            // Accorder, c'est recopier le profil demandé, à ceci près qu'un volet
+            // non demandé y vaut `null` alors que le profil accordé le veut absent.
+            permissions: allowed
+              ? {
+                  network: p.permissions.network ?? undefined,
+                  fileSystem: p.permissions.fileSystem ?? undefined,
+                }
+              : {},
             scope: scope === 'session' ? 'session' : 'turn',
           }),
         )
@@ -806,12 +825,12 @@ export class CodexRunner implements AgentRunner {
     return false
   }
 
-  private askPermission(
+  private askPermission<T>(
     toolName: string,
     input: unknown,
-    buildResponse: (allowed: boolean, scope: PermissionDecision['scope']) => unknown,
-  ): Promise<unknown> {
-    return new Promise((resolve) => {
+    buildResponse: (allowed: boolean, scope: PermissionDecision['scope']) => T,
+  ): Promise<T> {
+    return new Promise<T>((resolve) => {
       this.interactions.requestPermission({ toolName, input }, (decision) => {
         // Une expiration vaut refus ponctuel : le CLI reçoit la même réponse qu'un
         // « non », il n'a pas de variante « resté sans réponse ».

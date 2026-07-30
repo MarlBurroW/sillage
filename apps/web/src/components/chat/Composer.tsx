@@ -113,11 +113,6 @@ function codexApprovalOptions(t: Translate): SettingChoice<ApprovalChoice>[] {
       hint: t('composer.approval.onRequest.hint'),
     },
     {
-      value: 'on-failure',
-      label: t('composer.approval.onFailure'),
-      hint: t('composer.approval.onFailure.hint'),
-    },
-    {
       value: 'never',
       label: t('composer.approval.never'),
       hint: t('composer.approval.never.hint'),

@@ -60,13 +60,7 @@ export const codexGranularApprovalSchema = z.object({
   }),
 })
 
-/** `on-failure` est marqué déprécié par le CLI mais reste accepté par le protocole. */
-export const codexApprovalNameSchema = z.enum([
-  'untrusted',
-  'on-failure',
-  'on-request',
-  'never',
-])
+export const codexApprovalNameSchema = z.enum(['untrusted', 'on-request', 'never'])
 
 export type CodexApprovalName = z.infer<typeof codexApprovalNameSchema>
 
@@ -86,12 +80,15 @@ export const codexApprovalSchema = z.union([
  * `thread/start` et `turn/start` déclarent `approvalPolicy` nullable, et un null y
  * signifie « applique la politique configurée dans le CLI ». La sentinelle exprime
  * exactement cet état, au même titre que pour le modèle et l'effort.
+ *
+ * `on-failure`, déprécié de longue date, a disparu du protocole avec Codex 0.146. Les
+ * conversations écrites avant le retrait le portent encore en base : elles se relisent
+ * sur `on-request`, le plus proche, plutôt que de devenir illisibles.
  */
-export const codexApprovalConfigSchema = z.union([
-  z.literal(''),
-  codexApprovalNameSchema,
-  codexGranularApprovalSchema,
-])
+export const codexApprovalConfigSchema = z.preprocess(
+  (value) => (value === 'on-failure' ? 'on-request' : value),
+  z.union([z.literal(''), codexApprovalNameSchema, codexGranularApprovalSchema]),
+)
 
 export const codexSandboxSchema = z.enum([
   'read-only',
