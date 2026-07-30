@@ -27,7 +27,7 @@ export interface PreferredCliRelease {
 
 export const PREFERRED_CLI_RELEASES: Record<AgentKind, PreferredCliRelease> = {
   claude: { package: '@anthropic-ai/claude-code', version: '2.1.220' },
-  codex: { package: '@openai/codex', version: '0.145.0' },
+  codex: { package: '@openai/codex', version: '0.146.0' },
 }
 
 interface Parsed {
