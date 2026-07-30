@@ -402,6 +402,12 @@ export class CodexRunner implements AgentRunner {
         const p = params as TurnCompletedNotification
         this.turnId = null
         this.clearInterruptWatchdog()
+        // Le tour fini, plus personne n'attend de réponse : une sollicitation encore
+        // ouverte est morte avec lui. La laisser vivante est ce qui bloquait les
+        // conversations interrompues sur une demande d'approbation : le clic
+        // « autoriser » suivant repassait la conversation en `running` pour un tour
+        // qui n'existait plus, et rien ne pouvait plus la faire redescendre.
+        this.interactions.expireAll()
         this.ctx.emit(
           {
             type: 'turn.completed',
@@ -936,7 +942,13 @@ export class CodexRunner implements AgentRunner {
 
   async interrupt(): Promise<void> {
     // Sans tour en cours il n'y a rien à interrompre : le protocole exige un turnId.
-    if (!this.client || !this.threadId || !this.turnId) return
+    // Le geste reste une sortie pour autant : si la conversation se croit occupée
+    // sans tour ouvert, un retour silencieux la laisserait ainsi pour de bon.
+    if (!this.client || !this.threadId || !this.turnId) {
+      this.interactions.expireAll()
+      this.ctx.setStatus('idle')
+      return
+    }
     const interrupted = this.turnId
     await this.client.call('turn/interrupt', { threadId: this.threadId, turnId: this.turnId })
 
