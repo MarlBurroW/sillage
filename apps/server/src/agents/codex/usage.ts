@@ -76,7 +76,7 @@ function normalize(response: GetAccountRateLimitsResponse): Omit<AgentUsage, 'fe
 export class CodexUsageReader {
   private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
 
-  constructor(private readonly binary: string) {}
+  constructor(private readonly executable: () => Promise<string>) {}
 
   read(force = false): Promise<AgentUsage> {
     return this.cached.read(force)
@@ -84,7 +84,7 @@ export class CodexUsageReader {
 
   private async probe(): Promise<Omit<AgentUsage, 'fetchedAt'>> {
     const client = new CodexAppServerClient({
-      binary: this.binary,
+      binary: await this.executable(),
       cwd: homedir(),
       onNotification: () => {},
       onServerRequest: () =>
