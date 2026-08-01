@@ -870,6 +870,8 @@ export const en = {
 
   // Sélecteur de dossier
   'directoryPicker.title': 'Choose a folder',
+  'directoryPicker.newFolder': 'New folder',
+  'directoryPicker.newFolder.placeholder': 'Folder name',
   'directoryPicker.hidden.hide': 'Hide hidden folders',
   'directoryPicker.hidden.show': 'Show hidden folders',
   'directoryPicker.empty.all': 'No subfolder here.',
@@ -1021,6 +1023,7 @@ export const en = {
   'error.install_in_progress': "An installation of {label} is already in progress.",
   'error.internal_error': "Internal server error.",
   'error.invalid_credentials': "Incorrect username or password.",
+  'error.invalid_name': "{name} is not a valid folder name.",
   'error.last_admin': "This is the last administrator: the instance would become unmanageable.",
   'error.model_list_unavailable': "Could not read models from {label}: {error}.",
   'error.move_failed': "Could not move {from} to {to}: {reason}.",

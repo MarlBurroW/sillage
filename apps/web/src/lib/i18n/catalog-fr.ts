@@ -856,6 +856,8 @@ export const fr: Catalog = {
 
   // Sélecteur de dossier
   'directoryPicker.title': 'Choisir un dossier',
+  'directoryPicker.newFolder': 'Nouveau dossier',
+  'directoryPicker.newFolder.placeholder': 'Nom du dossier',
   'directoryPicker.hidden.hide': 'Masquer les dossiers cachés',
   'directoryPicker.hidden.show': 'Afficher les dossiers cachés',
   'directoryPicker.empty.all': 'Aucun sous-dossier ici.',
@@ -1007,6 +1009,7 @@ export const fr: Catalog = {
   'error.install_in_progress': "Une installation de {label} est déjà en cours.",
   'error.internal_error': "Erreur interne du serveur.",
   'error.invalid_credentials': "Identifiant ou mot de passe incorrect.",
+  'error.invalid_name': "{name} n'est pas un nom de dossier valide.",
   'error.last_admin': "C'est le dernier administrateur : l'instance deviendrait ingérable.",
   'error.model_list_unavailable': "Impossible de lire les modèles depuis {label} : {error}.",
   'error.move_failed': "Déplacement de {from} vers {to} impossible : {reason}.",

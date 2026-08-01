@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import type { FsListingDto } from '@sillage/protocol'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { FsEntryDto, FsListingDto } from '@sillage/protocol'
 import { api } from './api'
 
 export function useDirectoryListing(path: string | null, showHidden: boolean) {
@@ -15,6 +15,16 @@ export function useDirectoryListing(path: string | null, showHidden: boolean) {
     // listing affiché pendant le chargement du suivant pour éviter le clignotement.
     staleTime: 5_000,
     placeholderData: (previous) => previous,
+  })
+}
+
+/** Crée un dossier dans `path` et invalide tous les listings ouverts pour le refléter. */
+export function useCreateDirectory() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { path: string; name: string }) =>
+      api.post<FsEntryDto>('/api/fs/mkdir', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['fs'] }),
   })
 }
 

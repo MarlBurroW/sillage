@@ -496,6 +496,11 @@ export const browseQuerySchema = z.object({
   showHidden: z.coerce.boolean().default(false),
 })
 
+export const mkdirBodySchema = z.object({
+  path: z.string(),
+  name: z.string().min(1),
+})
+
 export interface FsEntryDto {
   name: string
   path: string
