@@ -1,10 +1,10 @@
 import { constants, existsSync } from 'node:fs'
-import { access, readdir, stat } from 'node:fs/promises'
+import { access, mkdir, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { browseQuerySchema, type FsEntryDto, type FsListingDto } from '@sillage/protocol'
-import { badRequest, forbidden, notFound } from '../errors.js'
+import { browseQuerySchema, mkdirBodySchema, type FsEntryDto, type FsListingDto } from '@sillage/protocol'
+import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
@@ -100,5 +100,44 @@ export function registerFsRoutes(app: FastifyInstance): void {
         { label: 'Racine', path: '/' },
       ],
     }
+  })
+
+  app.post('/api/fs/mkdir', async (request): Promise<FsEntryDto> => {
+    requireUser(request)
+    const body = mkdirBodySchema.parse(request.body)
+
+    // Un nom qui contient '/' viserait un autre dossier que celui affiché ; '.' et '..'
+    // n'ont pas de sens comme nom d'entrée à créer.
+    if (body.name.includes('/') || body.name === '.' || body.name === '..') {
+      throw badRequest('invalid_name', '{name} is not a valid folder name.', { name: body.name })
+    }
+
+    const parent = resolve(body.path)
+    if (isDenied(parent)) {
+      throw forbidden('system_directory_denied', 'This system directory cannot be browsed.')
+    }
+
+    const target = join(parent, body.name)
+    if (existsSync(target)) {
+      throw conflict('entry_exists', '{name} already exists.', { name: body.name })
+    }
+
+    try {
+      await mkdir(target)
+    } catch (err) {
+      throw badRequest('create_failed', 'Could not create {name}: {reason}.', {
+        name: body.name,
+        reason: err instanceof Error ? err.message : String(err),
+      })
+    }
+
+    const entry = await describeEntry(parent, body.name)
+    if (!entry) {
+      throw badRequest('create_failed', 'Could not create {name}: {reason}.', {
+        name: body.name,
+        reason: 'directory unreadable right after creation',
+      })
+    }
+    return entry
   })
 }

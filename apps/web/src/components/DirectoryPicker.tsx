@@ -6,13 +6,14 @@ import {
   EyeOff,
   Folder,
   FolderGit2,
+  FolderPlus,
   Home,
   Lock,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { ApiRequestError } from '../lib/api'
-import { breadcrumbSegments, useDirectoryListing } from '../lib/fs'
+import { breadcrumbSegments, useCreateDirectory, useDirectoryListing } from '../lib/fs'
 import { useTranslate } from '../lib/i18n'
 import { Badge, Banner, Button, IconButton, cx } from './ui'
 
@@ -34,7 +35,9 @@ export function DirectoryPicker({
   // null signifie "laisse le serveur choisir", c'est-à-dire le dossier personnel.
   const [path, setPath] = useState<string | null>(initialPath || null)
   const [showHidden, setShowHidden] = useState(false)
+  const [creating, setCreating] = useState(false)
   const listing = useDirectoryListing(open ? path : null, showHidden)
+  const createDir = useCreateDirectory()
 
   // Rouvrir la fenêtre doit repartir du chemin courant du formulaire, pas du
   // dernier dossier visité lors de la session précédente.
@@ -42,13 +45,32 @@ export function DirectoryPicker({
     if (open) setPath(initialPath || null)
   }, [open, initialPath])
 
+  // Changer de dossier abandonne une création en cours : la saisie ne vise plus
+  // le même parent.
+  useEffect(() => {
+    setCreating(false)
+  }, [path])
+
   const current = listing.data
   const error =
-    listing.error instanceof ApiRequestError
-      ? listing.error.message
-      : listing.error
+    createDir.error instanceof ApiRequestError
+      ? createDir.error.message
+      : createDir.error
         ? t('filetree.error.unreadable')
-        : null
+        : listing.error instanceof ApiRequestError
+          ? listing.error.message
+          : listing.error
+            ? t('filetree.error.unreadable')
+            : null
+
+  const handleCreateFolder = (name: string) => {
+    if (!current) return
+    setCreating(false)
+    createDir.mutate(
+      { path: current.path, name },
+      { onSuccess: (entry) => setPath(entry.path) },
+    )
+  }
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -67,6 +89,13 @@ export function DirectoryPicker({
             <Dialog.Title className="flex-1 text-sm font-semibold">
               {t('directoryPicker.title')}
             </Dialog.Title>
+            <IconButton
+              label={t('directoryPicker.newFolder')}
+              disabled={!current}
+              onClick={() => setCreating(true)}
+            >
+              <FolderPlus size={18} />
+            </IconButton>
             <IconButton
               label={showHidden ? t('directoryPicker.hidden.hide') : t('directoryPicker.hidden.show')}
               onClick={() => setShowHidden((value) => !value)}
@@ -112,6 +141,10 @@ export function DirectoryPicker({
               <div className="p-2">
                 <Banner>{error}</Banner>
               </div>
+            ) : null}
+
+            {creating ? (
+              <NewFolderInput onCommit={handleCreateFolder} onCancel={() => setCreating(false)} />
             ) : null}
 
             {current?.parent ? (
@@ -217,5 +250,44 @@ function Row({
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {trailing ? <span className="shrink-0">{trailing}</span> : null}
     </button>
+  )
+}
+
+function NewFolderInput({
+  onCommit,
+  onCancel,
+}: {
+  onCommit: (name: string) => void
+  onCancel: () => void
+}) {
+  const t = useTranslate()
+  const [value, setValue] = useState('')
+
+  return (
+    <div className="tap-target flex w-full items-center gap-2.5 rounded-md px-2.5">
+      <span className="shrink-0 text-ink-faint">
+        <Folder size={16} />
+      </span>
+      <input
+        autoFocus
+        aria-label={t('directoryPicker.newFolder')}
+        placeholder={t('directoryPicker.newFolder.placeholder')}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            const name = value.trim()
+            if (name) onCommit(name)
+          }
+          if (event.key === 'Escape') onCancel()
+        }}
+        onBlur={() => {
+          const name = value.trim()
+          if (name) onCommit(name)
+          else onCancel()
+        }}
+        className="h-7 min-w-0 flex-1 rounded border border-accent bg-sunken px-1.5 text-sm text-ink outline-none"
+      />
+    </div>
   )
 }
