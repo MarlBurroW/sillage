@@ -58,6 +58,12 @@ import {
 const IGNORED_SUBTYPES = new Set(['thinking_tokens', 'session_state_changed', 'commands_changed'])
 
 /**
+ * Délai laissé au CLI pour refermer lui-même un tour dont on soupçonne qu'il ne
+ * produira pas de `result`. Voir `armTurnWatchdog`.
+ */
+const TURN_CLOSE_GRACE_MS = 15_000
+
+/**
  * Suites proposées à la validation d'un plan. Les identifiants sont des modes de
  * permission de Claude Code : c'est cet adaptateur qui les propose et qui les
  * revalide au retour, le schéma commun n'y voit que des chaînes opaques.
@@ -140,6 +146,8 @@ export class ClaudeRunner implements AgentRunner {
   private stopped = false
   /** Vrai entre l'ouverture d'un tour et le `result` qui le referme. */
   private turnOpen = false
+  /** Échéance de clôture d'office, armée quand aucun `result` n'est attendu. */
+  private turnWatchdog: ReturnType<typeof setTimeout> | null = null
   /** Suit les changements appliqués à chaud, contrairement à `ctx.config` qui est figé. */
   private config: ClaudeConfig
   /**
@@ -244,6 +252,7 @@ export class ClaudeRunner implements AgentRunner {
         this.ctx.setStatus('error')
       }
     } finally {
+      this.clearTurnWatchdog()
       this.turnOpen = false
       this.interactions.expireAll()
     }
@@ -281,7 +290,51 @@ export class ClaudeRunner implements AgentRunner {
     this.ctx.setStatus('running')
   }
 
+  /**
+   * Referme le tour d'office si le CLI ne donne plus signe de vie.
+   *
+   * `openTurn` fait foi pour l'ouverture, mais un `result` fait foi pour la fermeture,
+   * et il ne vient pas toujours. Une commande de barre oblique traitée en local par le
+   * CLI (`/model`, par exemple) répond par sa seule sortie et n'engage aucun tour de
+   * modèle ; une interruption alors qu'aucun tour n'est réellement en cours ne fait rien
+   * remonter non plus. Dans les deux cas la conversation restait occupée pour de bon :
+   * `isBusy` mettait en file tout message suivant, la récolte d'inactivité réarmait au
+   * lieu de récolter, et le fil web gardait son indicateur allumé puisque son
+   * `turnRunning` ne retombe que sur `turn.completed`.
+   *
+   * L'échéance est désarmée par le premier message du CLI, quel qu'il soit : s'il parle,
+   * c'est qu'un tour vit et que son `result` viendra. Codex a le même filet sur son
+   * interruption, pour la même raison.
+   */
+  private armTurnWatchdog(stopReason: string): void {
+    this.clearTurnWatchdog()
+    this.turnWatchdog = setTimeout(() => {
+      this.turnWatchdog = null
+      if (!this.turnOpen) return
+
+      this.turnOpen = false
+      this.ctx.emit({
+        type: 'turn.completed',
+        stopReason,
+        costUsd: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      })
+      this.ctx.setStatus('idle')
+    }, TURN_CLOSE_GRACE_MS)
+    this.turnWatchdog.unref()
+  }
+
+  private clearTurnWatchdog(): void {
+    if (this.turnWatchdog) clearTimeout(this.turnWatchdog)
+    this.turnWatchdog = null
+  }
+
   private translate(message: SDKMessage): void {
+    this.clearTurnWatchdog()
+
     // Tout ce que le CLI raconte de son travail vaut ouverture : ces trois types
     // portent le texte de l'agent, ses appels d'outil et leurs résultats.
     if (message.type === 'stream_event' || message.type === 'assistant' || message.type === 'user') {
@@ -489,8 +542,10 @@ export class ClaudeRunner implements AgentRunner {
         const content = message.message.content
         if (typeof content === 'string') {
           // Reste le texte nu, que ni l'un ni l'autre ne produit : c'est une consigne
-          // que le CLI se réinjecte, typiquement une boucle qui vient d'échoir.
+          // que le CLI se réinjecte, typiquement une boucle qui vient d'échoir, ou la
+          // sortie d'une commande de barre oblique qu'il a traitée sans le modèle.
           this.ctx.emit({ type: 'prompt.injected', text: content }, message)
+          this.armTurnWatchdog('local_command')
           return
         }
 
@@ -1003,12 +1058,20 @@ export class ClaudeRunner implements AgentRunner {
 
   async interrupt(): Promise<void> {
     await this.session?.interrupt()
-    this.turnOpen = false
     this.ctx.setStatus('idle')
+
+    // Le tour n'est pas refermé ici : le CLI répond à l'interruption d'un tour vivant
+    // par un `result`, qui porte le `turn.completed` sur lequel le fil web raccroche son
+    // indicateur d'activité. Le fermer d'avance ferait taire le statut sans que le fil
+    // le sache, et le geste paraîtrait sans effet, activité et bouton Stop toujours à
+    // l'écran. Quand aucun tour n'était réellement en cours, ce `result` ne vient pas :
+    // c'est le filet qui referme.
+    this.armTurnWatchdog('interrupted')
   }
 
   async stop(): Promise<void> {
     this.stopped = true
+    this.clearTurnWatchdog()
     this.input.close()
     this.abort.abort()
     this.interactions.expireAll()
