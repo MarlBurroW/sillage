@@ -56,6 +56,37 @@ export function outputText(output: unknown): string | null {
   return null
 }
 
+export interface ImageBlock {
+  mediaType: string
+  data: string
+}
+
+/**
+ * Le bloc image d'une sortie, s'il y en a un.
+ *
+ * Symétrique d'`outputText` : là où celui-ci ignore les blocs image, celui-ci ne
+ * retient qu'eux. Une lecture de fichier binaire (screenshot, photo) rend un tableau
+ * à un seul bloc `image` en base64 ; c'est le seul cas géré ici, une image distante
+ * par URL n'existe pas dans ce format de `tool_result`.
+ */
+export function imageBlock(output: unknown): ImageBlock | null {
+  if (!Array.isArray(output)) return null
+
+  for (const block of output) {
+    const f = fields(block)
+    if (f?.type !== 'image') continue
+    const source = fields(f.source)
+    if (source?.type !== 'base64') continue
+    const mediaType = source.media_type
+    const data = source.data
+    if (typeof mediaType === 'string' && typeof data === 'string' && data.length > 0) {
+      return { mediaType, data }
+    }
+  }
+
+  return null
+}
+
 /** Lignes non vides d'une sortie, pour les outils qui en produisent une par résultat. */
 export function outputLines(output: unknown): string[] | null {
   const raw = outputText(output)

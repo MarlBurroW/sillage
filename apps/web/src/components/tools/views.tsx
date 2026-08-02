@@ -8,7 +8,7 @@ import { DiffHunks } from '../DiffHunks'
 import { Markdown } from '../chat/Markdown'
 import { cx } from '../ui'
 import { Code, Empty, Plain, Section } from './parts'
-import { fields, flag, list, outputLines, outputText, scalar, stripLineNumbers, text } from './payload'
+import { fields, flag, imageBlock, list, outputLines, outputText, scalar, stripLineNumbers, text } from './payload'
 
 /**
  * Rendu lisible d'un appel d'outil.
@@ -81,6 +81,19 @@ const read: ToolView = (tool) => {
   ]
     .filter((part): part is string => part !== null)
     .join(' · ')
+
+  const image = pending(tool) ? null : imageBlock(tool.output)
+  if (image !== null) {
+    return (
+      <Section label={translate('tool.read.content')} hint={hint}>
+        <img
+          src={`data:${image.mediaType};base64,${image.data}`}
+          alt={path}
+          className="max-h-80 rounded-md border border-line object-contain"
+        />
+      </Section>
+    )
+  }
 
   const content = pending(tool) ? null : outputText(tool.output)
   const stripped = content === null ? null : stripLineNumbers(content)
