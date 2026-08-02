@@ -23,6 +23,23 @@ export const mcpServerNameSchema = z
   .max(64)
   .regex(/^[a-zA-Z0-9_-]+$/)
 
+/**
+ * Nom du serveur MCP que Sillage monte lui-même dans chaque conversation.
+ *
+ * Réservé : une entrée du registre qui porterait ce nom prendrait sa place dans la
+ * table que les deux CLI construisent par nom, et le remplacerait en silence.
+ */
+export const BUILTIN_MCP_SERVER_NAME = 'sillage'
+
+/**
+ * Vérifié à l'écriture du registre et non dans `mcpServerNameSchema` : le schéma relit
+ * aussi les lignes déjà en base, et une entrée créée avant la réserve doit rester
+ * lisible pour pouvoir être renommée plutôt que de rendre la table inexploitable.
+ */
+export function isReservedMcpServerName(name: string): boolean {
+  return name.toLowerCase() === BUILTIN_MCP_SERVER_NAME
+}
+
 const stdioTransportSchema = z.object({
   type: z.literal('stdio'),
   command: z.string().min(1),

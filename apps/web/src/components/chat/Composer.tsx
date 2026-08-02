@@ -645,7 +645,12 @@ export function Composer({
 
   // Le registre est partagé par toute l'instance : la requête est mise en cache par
   // React Query et ne repart pas à chaque conversation ouverte.
-  const mcpServers = useMcpServers().data?.servers ?? []
+  const mcpRegistry = useMcpServers().data
+  const mcpServers = mcpRegistry?.servers ?? []
+  // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
+  // le serveur : la ligne apparaît alors au chargement du registre, plutôt que de
+  // s'afficher d'abord puis de disparaître sous le curseur.
+  const sillageAvailable = mcpRegistry?.sillageServer === true
 
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
@@ -708,6 +713,8 @@ export function Composer({
         inventory={mcpInventory}
         selected={claude.mcpServers}
         onSelectedChange={(ids) => onConfigChange({ ...claude, mcpServers: ids })}
+        sillage={sillageAvailable ? claude.sillageMcp : null}
+        onSillageChange={(sillageMcp) => onConfigChange({ ...claude, sillageMcp })}
         strict={claude.strictMcp}
         onStrictChange={(strictMcp) => onConfigChange({ ...claude, strictMcp })}
         disabled={disabled}
@@ -798,6 +805,8 @@ export function Composer({
         inventory={mcpInventory}
         selected={codex.mcpServers}
         onSelectedChange={(ids) => onConfigChange({ ...codex, mcpServers: ids })}
+        sillage={sillageAvailable ? codex.sillageMcp : null}
+        onSillageChange={(sillageMcp) => onConfigChange({ ...codex, sillageMcp })}
         strict={null}
         onStrictChange={() => {}}
         disabled={disabled}
