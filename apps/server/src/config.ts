@@ -34,6 +34,20 @@ const configSchema = z.object({
       archivedEventsDays: z.number().int().min(1).default(90),
     })
     .default({}),
+  mcp: z
+    .object({
+      /**
+       * Monte le serveur MCP de Sillage dans les conversations, qui ouvre à l'agent
+       * l'historique du projet.
+       *
+       * Vrai par défaut, et coupable ici pour toute l'instance : certains ne veulent de
+       * Sillage qu'une interface à Claude Code et Codex, sans les capacités que la
+       * plateforme ajoute par-dessus. À faux, l'entrée disparaît aussi de l'interface,
+       * un réglage visible mais inopérant valant moins que pas de réglage du tout.
+       */
+      sillageServer: z.boolean().default(true),
+    })
+    .default({}),
   agents: z
     .object({
       claude: z

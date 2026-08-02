@@ -167,7 +167,7 @@ export class ClaudeRunner implements AgentRunner {
 
   async start(): Promise<void> {
     const config = this.config
-    const resolved = this.ctx.resolveMcpServers(config.mcpServers)
+    const resolved = this.ctx.resolveMcpServers(config)
     this.appliedMcpServers = toSdkMcpServers(resolved.servers)
     this.mcpFailures = failedStatuses(resolved.failures)
 
@@ -1024,7 +1024,7 @@ export class ClaudeRunner implements AgentRunner {
     // Comparé sur les serveurs résolus et non sur les identifiants : une entrée du
     // registre corrigée entre-temps doit repartir, alors que la liste d'identifiants,
     // elle, n'a pas bougé.
-    const resolved = this.ctx.resolveMcpServers(config.mcpServers)
+    const resolved = this.ctx.resolveMcpServers(config)
     const desired = toSdkMcpServers(resolved.servers)
     if (JSON.stringify(desired) !== JSON.stringify(this.appliedMcpServers)) {
       await this.session.setMcpServers(desired)

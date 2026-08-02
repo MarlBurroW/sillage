@@ -22,6 +22,16 @@ export type ClaudePermissionMode = z.infer<typeof claudePermissionModeSchema>
 
 export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 
+/**
+ * Monte le serveur MCP de Sillage, qui ouvre à l'agent l'historique du projet.
+ *
+ * Vrai par défaut : c'est ce que la plateforme apporte de plus qu'un lancement direct du
+ * CLI. Décochable par conversation pour le sujet où cette mémoire n'aide pas, et
+ * coupable pour l'instance entière dans `config.toml`. Commun aux deux CLI, le serveur
+ * ne devant rien à l'un ni à l'autre.
+ */
+const sillageMcpSchema = z.boolean().default(true)
+
 export const claudeConfigSchema = z.object({
   agent: z.literal('claude'),
   model: z.string(),
@@ -30,6 +40,7 @@ export const claudeConfigSchema = z.object({
   additionalDirectories: z.array(z.string()).default([]),
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
+  sillageMcp: sillageMcpSchema,
   /**
    * Ignore les serveurs déclarés sur le disque du CLI (`~/.claude.json`, `.mcp.json`,
    * connecteurs claude.ai) pour ne garder que ceux de Sillage.
@@ -128,6 +139,7 @@ export const codexConfigSchema = z.object({
   additionalDirectories: z.array(z.string()).default([]),
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
+  sillageMcp: sillageMcpSchema,
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
 
@@ -153,6 +165,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   permissionMode: 'manual',
   additionalDirectories: [],
   mcpServers: [],
+  sillageMcp: true,
   strictMcp: false,
 }
 
@@ -167,6 +180,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   profile: null,
   additionalDirectories: [],
   mcpServers: [],
+  sillageMcp: true,
 }
 
 /**

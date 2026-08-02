@@ -236,7 +236,7 @@ export class CodexRunner implements AgentRunner {
 
     await this.client.initialize(CLIENT_INFO)
 
-    const resolved = this.ctx.resolveMcpServers(this.config.mcpServers)
+    const resolved = this.ctx.resolveMcpServers(this.config)
     this.mcpServers = resolved.servers
     this.mcpFailures = failedStatuses(resolved.failures)
     // Repassé au `thread/resume` autant qu'au `thread/start`, et ce n'est pas une
