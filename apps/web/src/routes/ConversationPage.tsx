@@ -1071,18 +1071,21 @@ export function ConversationPage() {
               />
             </div>
           </div>
-        </div>
 
-        {/* Avec le fil : une réglette qui se remplit toute seule à côté d'un fil vide
-            montre la construction que le masquage vient d'épargner. */}
-        {placed ? (
-          <ConversationMinimap
-            turns={turns}
-            visibleIds={visibleTurns}
-            agentLabel={AGENT_LABELS[conversation.agent]}
-            onJump={jumpToTurn}
-          />
-        ) : null}
+          {/* Posée dans la zone de fil et non dans la colonne entière : centrée sur
+              celle-ci, elle passait sous la barre de saisie dès que la saisie
+              s'agrandissait. Avec le fil, aussi : une réglette qui se remplit toute
+              seule à côté d'un fil vide montre la construction que le masquage vient
+              d'épargner. */}
+          {placed ? (
+            <ConversationMinimap
+              turns={turns}
+              visibleIds={visibleTurns}
+              agentLabel={AGENT_LABELS[conversation.agent]}
+              onJump={jumpToTurn}
+            />
+          ) : null}
+        </div>
 
         {/* Les commandes de défilement se posent juste au-dessus de la barre de saisie,
             dont la hauteur varie : `bottom-full` sur ce conteneur les y ancre sans
