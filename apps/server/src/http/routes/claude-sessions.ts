@@ -169,6 +169,8 @@ export function registerClaudeSessionRoutes(
       originLabel: null,
       config: JSON.stringify(config),
       status: 'idle',
+      backgroundCount: 0,
+      loopCount: 0,
       lastSeq: 0,
       costUsd: 0,
       inputTokens: 0,

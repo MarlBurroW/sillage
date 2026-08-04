@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, gt, or, sql } from 'drizzle-orm'
 import {
   conversations,
   permissionRequests,
@@ -163,6 +163,15 @@ export class SessionManager {
       .where(eq(permissionRequests.status, 'pending'))
       .run()
 
+    // Sur toutes les conversations et pas seulement celles qu'on vient d'interrompre :
+    // un travail de fond survit à la fin de son tour, donc une conversation `idle` peut
+    // en porter, et son process est mort avec le daemon comme les autres.
+    this.db
+      .update(conversations)
+      .set({ backgroundCount: 0, loopCount: 0 })
+      .where(or(gt(conversations.backgroundCount, 0), gt(conversations.loopCount, 0)))
+      .run()
+
     return [...stale, ...awaiting].map((row) => row.id)
   }
 
@@ -265,6 +274,51 @@ export class SessionManager {
       background: warm ? this.backgroundCount(conversationId) : 0,
       loops: warm ? this.loopCount(conversationId) : 0,
     })
+  }
+
+  /**
+   * Enregistre le travail détaché qui continue pour une conversation.
+   *
+   * Trois écritures d'un seul geste : la mémoire, que le flux de statuts lit ; la ligne
+   * de conversation, seule visible depuis un autre process ; la diffusion, qui prévient
+   * les clients. Les séparer, c'est laisser une des trois se désynchroniser des deux
+   * autres, ce qui était déjà le cas avant que la base en fasse partie.
+   *
+   * Sans runner en mémoire, il n'y a rien à enregistrer : l'événement vient d'un process
+   * qui n'existe plus, et la remise à zéro du démontage a déjà eu lieu.
+   */
+  private setActivity(
+    conversationId: string,
+    patch: { background?: number; loops?: number },
+  ): void {
+    const managed = this.runners.get(conversationId)
+    if (!managed) return
+
+    if (patch.background !== undefined) managed.background = patch.background
+    if (patch.loops !== undefined) managed.loops = patch.loops
+
+    this.db
+      .update(conversations)
+      .set({ backgroundCount: managed.background, loopCount: managed.loops })
+      .where(eq(conversations.id, conversationId))
+      .run()
+
+    this.broadcastStatus(conversationId, managed.status, true)
+  }
+
+  /**
+   * Efface le travail détaché d'une conversation dont le process s'en va.
+   *
+   * Appelée au démontage d'un runner : les travaux de fond et les boucles appartiennent
+   * au process CLI, donc ils n'existent plus. Sans elle, la ligne garderait un compte
+   * non nul indéfiniment et la conversation passerait pour active à jamais.
+   */
+  private clearActivity(conversationId: string): void {
+    this.db
+      .update(conversations)
+      .set({ backgroundCount: 0, loopCount: 0 })
+      .where(eq(conversations.id, conversationId))
+      .run()
   }
 
   /** Combien de travaux de fond tournent pour cette conversation, à l'instant. */
@@ -529,23 +583,14 @@ export class SessionManager {
       emit: (event: SillageEvent, raw?: unknown) => {
         this.log.append(conversationId, event, raw, adapter.rawFormat)
         void this.notifyIfAway(conversationId, event)
+        // Le journal suffit au fil ouvert, qui le replie ; la liste des conversations et
+        // tout lecteur hors de ce process n'ont que la ligne de conversation pour savoir
+        // qu'un travail continue ailleurs.
         if (event.type === 'background.updated') {
-          // Le journal suffit au fil ouvert, qui le replie ; la liste des conversations
-          // n'a que le flux de statuts pour savoir qu'un travail continue ailleurs.
-          const managed = this.runners.get(conversationId)
-          if (managed) {
-            managed.background = event.tasks.length
-            this.broadcastStatus(conversationId, managed.status, true)
-          }
+          this.setActivity(conversationId, { background: event.tasks.length })
         }
         if (event.type === 'loops.updated') {
-          // Même partage des rôles que pour les travaux de fond : le fil ouvert replie
-          // le journal, la sidebar n'a que le statut.
-          const managed = this.runners.get(conversationId)
-          if (managed) {
-            managed.loops = event.loops.length
-            this.broadcastStatus(conversationId, managed.status, true)
-          }
+          this.setActivity(conversationId, { loops: event.loops.length })
         }
         if (event.type === 'turn.completed') {
           // Le CLI ne résume la session qu'une fois le tour fini : c'est le premier
@@ -691,6 +736,7 @@ export class SessionManager {
       // Un runner qui n'a pas démarré ne doit pas occuper la place d'un vivant : le
       // prochain envoi retenterait sinon sur un process qui n'existe pas.
       this.runners.delete(conversationId)
+      this.clearActivity(conversationId)
       await runner.stop().catch(() => undefined)
       throw err
     }
@@ -1089,6 +1135,7 @@ export class SessionManager {
     }
 
     this.runners.delete(conversationId)
+    this.clearActivity(conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
     await managed.runner.stop()
 

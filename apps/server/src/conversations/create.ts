@@ -72,6 +72,8 @@ export async function createConversation(
     originLabel: input.origin?.label ?? null,
     config: JSON.stringify(input.config),
     status: 'idle',
+    backgroundCount: 0,
+    loopCount: 0,
     lastSeq: 0,
     costUsd: 0,
     inputTokens: 0,

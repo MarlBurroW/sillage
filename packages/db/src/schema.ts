@@ -138,6 +138,21 @@ export const conversations = sqliteTable(
     status: text('status')
       .$type<'idle' | 'running' | 'awaiting_input' | 'interrupted' | 'error'>()
       .notNull(),
+    /**
+     * Travaux de fond et boucles vivants, tels que le dernier `background.updated` et
+     * le dernier `loops.updated` les décrivent.
+     *
+     * Persistés alors qu'ils appartiennent au process CLI et meurent avec lui, parce
+     * qu'ils sont le seul signe qu'une conversation `idle` travaille encore : le statut
+     * retombe à la fin du tour, pas à la fin du travail. Sans eux, répondre « cette
+     * session travaille-t-elle » demande de replier le journal de chaque conversation,
+     * ce qui est ruineux dès qu'on en énumère plus d'une.
+     *
+     * Remis à zéro au démarrage par `recoverInterrupted` : les process sont morts avec
+     * le daemon, donc toute valeur non nulle relue au boot est un reste.
+     */
+    backgroundCount: integer('background_count').notNull().default(0),
+    loopCount: integer('loop_count').notNull().default(0),
     lastSeq: integer('last_seq').notNull().default(0),
     costUsd: real('cost_usd').notNull().default(0),
     inputTokens: integer('input_tokens').notNull().default(0),
