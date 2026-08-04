@@ -1,0 +1,151 @@
+import { and, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
+import { conversations, worktrees, type Db } from '@sillage/db'
+
+/**
+ * Ce qui se passe sur le projet, injecté au démarrage d'une session.
+ *
+ * Un CLI arrive sans rien savoir de ce que les autres ont fait, et rien ne le pousse à
+ * aller le demander : les outils du serveur MCP répondent quand on les interroge, encore
+ * faut-il y penser. Cet aperçu est le seul élément qui arrive sans initiative de l'agent,
+ * et c'est ce qui le justifie malgré son coût en jetons.
+ *
+ * Calculé et non stocké. Une note écrite quelque part et jamais relue vieillit et finit
+ * par tromper avec l'autorité d'une note ; recalculer à chaque démarrage coûte une
+ * requête et ne peut pas mentir. C'est aussi pour ça qu'aucun magasin de mémoire ne
+ * vient s'ajouter à `CLAUDE.md`, à la roadmap et au journal.
+ *
+ * Le projet entier et non le seul worktree, contrairement à `find_file_edits` : ici on
+ * cherche à savoir quels chantiers sont ouverts, et un chantier sur une autre branche
+ * en est un. Le worktree est dit ligne par ligne, pour que l'agent fasse la part des
+ * choses lui-même.
+ */
+
+/** Au-delà, l'aperçu pèse plus qu'il n'oriente. */
+const MAX_SESSIONS = 6
+
+/**
+ * Fenêtre des sessions dites « récentes ».
+ *
+ * Trois jours plutôt qu'une journée : un chantier ouvert vendredi est toujours le
+ * chantier en cours le lundi, et l'ignorer ferait repartir de zéro sur un sujet déjà
+ * traité. Les sessions qui travaillent en ce moment sortent de toute façon, quelle que
+ * soit leur ancienneté.
+ */
+const RECENT_MS = 3 * 24 * 60 * 60 * 1000
+
+interface OverviewInput {
+  projectId: string
+  conversationId: string
+  /** L'agent a-t-il les outils du serveur MCP de Sillage sous la main. */
+  sillageMcp: boolean
+}
+
+interface Row {
+  id: string
+  title: string
+  agent: string
+  status: string
+  background: number
+  loops: number
+  createdAt: number
+  updatedAt: number
+  tokens: number
+  worktree: string | null
+}
+
+/** Ancienneté en clair, l'horodatage absolu obligeant le modèle à faire la soustraction. */
+function ago(ts: number, now: number): string {
+  const minutes = Math.max(0, Math.round((now - ts) / 60_000))
+  if (minutes < 1) return "à l'instant"
+  if (minutes < 60) return `il y a ${minutes} min`
+  const hours = Math.round(minutes / 60)
+  return hours < 24 ? `il y a ${hours} h` : `il y a ${Math.round(hours / 24)} j`
+}
+
+/** Taille du chantier, arrondie : ce qui compte est l'ordre de grandeur. */
+function size(tokens: number): string {
+  if (tokens < 1000) return 'quelques échanges'
+  return `~${Math.round(tokens / 1000)} k jetons`
+}
+
+function describe(row: Row, now: number): string {
+  const working = row.status === 'running' || row.background > 0 || row.loops > 0
+  const state = working
+    ? row.status === 'running'
+      ? 'en cours'
+      : `travail de fond en cours`
+    : row.status === 'awaiting_input'
+      ? 'attend une réponse'
+      : row.status === 'interrupted'
+        ? 'interrompue'
+        : 'terminée'
+
+  const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
+  return `- ${row.title}\n  ${row.agent}, ${state}, ${where}, ${size(row.tokens)}, ouverte ${ago(row.createdAt, now)}, dernier échange ${ago(row.updatedAt, now)}`
+}
+
+/**
+ * Null quand il n'y a rien à dire, et c'est important : un aperçu vide répété à chaque
+ * démarrage apprend au modèle à ne plus le lire, et le jour où il porte quelque chose
+ * il passe inaperçu.
+ */
+export function projectOverview(db: Db, input: OverviewInput): string | null {
+  const now = Date.now()
+
+  const rows = db
+    .select({
+      id: conversations.id,
+      title: conversations.title,
+      agent: conversations.agent,
+      status: conversations.status,
+      background: conversations.backgroundCount,
+      loops: conversations.loopCount,
+      createdAt: conversations.createdAt,
+      updatedAt: conversations.updatedAt,
+      tokens: sql<number>`${conversations.inputTokens} + ${conversations.outputTokens}`,
+      worktree: worktrees.name,
+    })
+    .from(conversations)
+    .leftJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
+    .where(
+      and(
+        eq(conversations.projectId, input.projectId),
+        ne(conversations.id, input.conversationId),
+        isNull(conversations.archivedAt),
+        or(
+          eq(conversations.status, 'running'),
+          gt(conversations.backgroundCount, 0),
+          gt(conversations.loopCount, 0),
+          gt(conversations.updatedAt, now - RECENT_MS),
+        ),
+      ),
+    )
+    .orderBy(desc(conversations.updatedAt))
+    .limit(MAX_SESSIONS)
+    .all() as Row[]
+
+  if (rows.length === 0) return null
+
+  const working = rows.filter(
+    (row) => row.status === 'running' || row.background > 0 || row.loops > 0,
+  )
+
+  const parts = [
+    `Autres sessions Sillage sur ce projet, ${working.length > 0 ? `dont ${working.length} en cours` : 'aucune en cours'} :`,
+    rows.map((row) => describe(row, now)).join('\n'),
+  ]
+
+  if (working.length > 0) {
+    parts.push(
+      "Une session en cours travaille peut-être dans le même arbre : avant de défaire une modification que tu n'as pas faite, regarde d'où elle vient.",
+    )
+  }
+
+  if (input.sillageMcp) {
+    parts.push(
+      'Les outils du serveur `sillage` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment.',
+    )
+  }
+
+  return parts.join('\n\n')
+}

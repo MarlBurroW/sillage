@@ -54,10 +54,14 @@ export interface BuiltinMcpParams {
  * `strictMcp` l'emporte sur l'activation : le drapeau annonce « rien d'autre que ce que
  * j'ai déclaré » et se contredirait à garder une exception maison.
  */
+export function builtinMcpEnabled(enabled: boolean, config: AgentConfig): boolean {
+  if (!enabled || !config.sillageMcp) return false
+  return !(config.agent === 'claude' && config.strictMcp)
+}
+
 export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
   const { enabled, config, databasePath, projectId, conversationId } = params
-  if (!enabled || !config.sillageMcp) return null
-  if (config.agent === 'claude' && config.strictMcp) return null
+  if (!builtinMcpEnabled(enabled, config)) return null
 
   return {
     id: BUILTIN_MCP_SERVER_ID,
