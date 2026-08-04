@@ -198,7 +198,7 @@ export function registerClaudeSessionRoutes(
     }
     const lastSeq = log.appendBatch(row.id, [opening, ...translated.events], TRANSCRIPT_RAW_FORMAT)
 
-    return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id))
+    return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0))
   })
 
   /**
