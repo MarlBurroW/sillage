@@ -60,11 +60,16 @@ const TOOLS = [
   {
     name: 'read_conversation',
     description:
-      "Lit le fil d'une conversation passée de ce projet, identifiée par le `id` rendu par search_history. Rend les messages de l'utilisateur et de l'agent, sans les appels d'outils. Le fil est tronqué s'il est long.",
+      "Lit le fil d'une conversation passée de ce projet, identifiée par le `id` rendu par search_history. Rend les messages de l'utilisateur et de l'agent, sans les appels d'outils. D'un fil trop long pour tenir d'un coup, rend la demande initiale et la fin, en annonçant combien de messages ont été élidés et comment les lire.",
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Identifiant rendu par search_history.' },
+        before: {
+          type: 'integer',
+          description:
+            "Remonte dans le fil : rend la tranche qui précède ce numéro de message, tel qu'annoncé par un appel précédent. Omettre pour lire la demande et la fin.",
+        },
       },
       required: ['id'],
     },
@@ -151,7 +156,8 @@ function readConversation(id) {
 
   const messages = db
     .prepare(
-      `SELECT event.payload ->> '$.role' AS role,
+      `SELECT event.seq AS seq,
+              event.payload ->> '$.role' AS role,
               event.ts AS ts,
               group_concat(block.value ->> '$.text', char(10)) AS text
        FROM events AS event, json_each(event.payload ->> '$.blocks') AS block
@@ -184,30 +190,65 @@ function renderSearch(query, results) {
   return `${results.length} conversation(s) pour « ${query} » :\n${lines.join('\n')}`
 }
 
-function renderThread(found) {
+const block = (role, body) => `## ${role === 'user' ? 'Utilisateur' : 'Agent'}\n${body}`
+
+/**
+ * Remplit un budget en partant de la fin, sans casser l'ordre chronologique.
+ *
+ * Un message seul plus gros que le budget entier est rendu quand même, tronqué : rendre
+ * une tranche vide en disant qu'elle ne tient pas laisserait l'appelant sans recours.
+ */
+function fillFromEnd(messages, budget) {
+  const kept = []
+  let total = 0
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const body = clip(messages[i].text ?? '', MAX_MESSAGE_CHARS)
+    if (total + body.length > budget && kept.length > 0) break
+    total += body.length
+    kept.unshift({ ...messages[i], body })
+  }
+  return kept
+}
+
+/**
+ * Le fil, ou ce qui en tient dans le budget.
+ *
+ * Les deux bouts plutôt que le début : la fin porte les conclusions, mais le premier
+ * message porte la demande, et des conclusions sans énoncé se lisent de travers. Le
+ * milieu est ce qu'on sacrifie, en annonçant combien de messages manquent et par où les
+ * reprendre.
+ *
+ * Le curseur est le numéro de message et non un numéro de page : les messages ont des
+ * tailles très inégales, donc une page n'est pas une unité stable, et une conversation
+ * reprise plus tard décalerait toute numérotation partant de la fin.
+ */
+function renderThread(found, before) {
   const { conversation, messages } = found
   const header = `${conversation.title} (${conversation.agent}, ${asDate(conversation.createdAt)})`
   if (messages.length === 0) return `${header}\n\nAucun message dans ce fil.`
 
-  const rendered = []
-  let total = 0
-  let dropped = 0
+  const scoped = before === null ? messages : messages.filter((message) => message.seq < before)
+  if (scoped.length === 0) return `${header}\n\nAucun message avant ${before} dans ce fil.`
 
-  for (const message of messages) {
-    // Tronqué par la fin : dans une conversation, ce sont les derniers échanges qui
-    // portent la conclusion, mais les premiers qui portent la demande. On garde donc le
-    // début et on annonce ce qui manque, plutôt que de rendre un extrait sans énoncé.
-    const body = clip(message.text ?? '', MAX_MESSAGE_CHARS)
-    if (total + body.length > MAX_THREAD_CHARS) {
-      dropped = messages.length - rendered.length
-      break
-    }
-    total += body.length
-    rendered.push(`## ${message.role === 'user' ? 'Utilisateur' : 'Agent'}\n${body}`)
+  // La demande n'est reprise qu'à la première lecture : en remontant le fil, l'appelant
+  // l'a déjà, et la lui resservir mangerait le budget de ce qu'il est venu chercher.
+  const head = before === null && scoped[0].role === 'user' ? scoped[0] : null
+  const rest = head ? scoped.slice(1) : scoped
+  const headBody = head ? clip(head.text ?? '', MAX_MESSAGE_CHARS) : ''
+  const tail = fillFromEnd(rest, MAX_THREAD_CHARS - headBody.length)
+
+  const parts = head ? [block(head.role, headBody)] : []
+
+  const elided = rest.length - tail.length
+  if (elided > 0) {
+    parts.push(
+      `[${elided} message(s) élidés. Rappeler read_conversation avec before=${tail[0].seq} pour lire ce qui précède.]`,
+    )
   }
+  for (const message of tail) parts.push(block(message.role, message.body))
 
-  const suffix = dropped > 0 ? `\n\n[${dropped} message(s) suivants non rendus, fil tronqué]` : ''
-  return `${header}\n\n${rendered.join('\n\n')}${suffix}`
+  return `${header}\n\n${parts.join('\n\n')}`
 }
 
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
@@ -231,7 +272,8 @@ function callTool(name, args) {
         isError: true,
       }
     }
-    return text(renderThread(found))
+    const before = Number.isInteger(args?.before) ? args.before : null
+    return text(renderThread(found, before))
   }
 
   return { ...text(`Outil inconnu : ${name}`), isError: true }
