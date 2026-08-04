@@ -32,6 +32,11 @@ const configSchema = z.object({
   retention: z
     .object({
       archivedEventsDays: z.number().int().min(1).default(90),
+      /**
+       * Jours d'inactivité au bout desquels une conversation lue et au repos est
+       * rangée. Zéro coupe le rangement automatique, l'action manuelle restant là.
+       */
+      autoArchiveDays: z.number().int().min(0).default(14),
     })
     .default({}),
   mcp: z

@@ -16,6 +16,8 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
+  Archive,
+  ArchiveRestore,
   ChevronRight,
   FolderPlus,
   LogOut,
@@ -46,6 +48,7 @@ import { Outlet } from 'react-router-dom'
 import type { ConversationDto, ProjectDto } from '@sillage/protocol'
 import {
   useAllConversations,
+  useArchiveConversation,
   useDeleteConversation,
   useRenameConversation,
   useReorderConversations,
@@ -501,6 +504,7 @@ function Sidebar({
 
 interface ProjectGroupProps {
   project: ProjectDto
+  /** Actives et rangées mêlées : le groupe fait lui-même la coupure. */
   conversations: ConversationDto[]
   open: boolean
   /** Replié par l'utilisateur, indépendamment de la fermeture forcée par un glissement. */
@@ -521,6 +525,9 @@ function ProjectGroup({
   const navigate = useNavigate()
   const updateProject = useUpdateProject()
   const reorder = useReorderConversations(project.id)
+  const active = useMemo(() => conversations.filter((c) => !c.archivedAt), [conversations])
+  const archived = useMemo(() => conversations.filter((c) => c.archivedAt), [conversations])
+  const [archiveOpen, setArchiveOpen] = useState(false)
   // Actif sur les deux écrans « niveau projet » : la nouvelle conversation, qui est
   // désormais la destination du clic, et les réglages atteints par le menu.
   const isSettings = useMatch(`/p/${project.id}`) !== null
@@ -531,7 +538,7 @@ function ProjectGroup({
   // comme il l'est de sa propre ligne, sinon replier le projet qu'on lit l'allumerait
   // à chaque fin de tour, le temps que le curseur reparte.
   const openConversationId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
-  const hasUnread = useHasUnread(conversations, openConversationId)
+  const hasUnread = useHasUnread(active, openConversationId)
 
   const [editing, setEditing] = useState(false)
 
@@ -565,11 +572,11 @@ function ProjectGroup({
     // un clic juste après : sans l'avaler, réordonner ouvrirait la conversation.
     swallowNextClick()
 
-    const { active, over } = event
-    if (!over || active.id === over.id) return
+    const { active: dragged, over } = event
+    if (!over || dragged.id === over.id) return
 
-    const ids = conversations.map((entry) => entry.id)
-    const from = ids.indexOf(String(active.id))
+    const ids = active.map((entry) => entry.id)
+    const from = ids.indexOf(String(dragged.id))
     const to = ids.indexOf(String(over.id))
     if (from === -1 || to === -1) return
 
@@ -703,7 +710,7 @@ function ProjectGroup({
 
       {open ? (
         <ul className="mt-px mb-1 ml-3 flex flex-col gap-px border-l border-line pl-1.5">
-          {conversations.length > 0 ? (
+          {active.length > 0 ? (
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -714,10 +721,10 @@ function ProjectGroup({
               onDragCancel={swallowNextClick}
             >
               <SortableContext
-                items={conversations.map((entry) => entry.id)}
+                items={active.map((entry) => entry.id)}
                 strategy={verticalListSortingStrategy}
               >
-                {conversations.map((conversation) => (
+                {active.map((conversation) => (
                   <ConversationRow
                     key={conversation.id}
                     conversation={conversation}
@@ -729,6 +736,37 @@ function ProjectGroup({
           ) : (
             <li className="px-2 py-1.5 text-xs text-ink-faint">{t('shell.conversations.empty')}</li>
           )}
+
+          {/* Repliée et en fin de liste : ce qui est rangé doit rester atteignable sans
+              revenir peser sur ce qu'on a sous les yeux. Hors des contextes de
+              glissement au-dessus, les archivées n'ayant pas d'ordre à défendre. */}
+          {archived.length > 0 ? (
+            <li>
+              <button
+                type="button"
+                onClick={() => setArchiveOpen((current) => !current)}
+                aria-expanded={archiveOpen}
+                className="flex h-7 w-full items-center gap-1 rounded px-1 text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink-soft"
+              >
+                <ChevronRight
+                  size={11}
+                  className={cx('shrink-0 transition-transform', archiveOpen && 'rotate-90')}
+                />
+                {t('shell.conversations.archived', { count: String(archived.length) })}
+              </button>
+              {archiveOpen ? (
+                <ul className="flex flex-col gap-px">
+                  {archived.map((conversation) => (
+                    <ConversationRow
+                      key={conversation.id}
+                      conversation={conversation}
+                      onNavigate={onNavigate}
+                    />
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </li>
@@ -745,6 +783,8 @@ function ConversationRow({
   const t = useTranslate()
   const rename = useRenameConversation()
   const remove = useDeleteConversation()
+  const setArchived = useArchiveConversation()
+  const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
   const openMatch = useMatch('/p/:projectId/c/:conversationId')
   const [editing, setEditing] = useState(false)
@@ -763,8 +803,9 @@ function ConversationRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: conversation.id,
     // Renommer place un champ de saisie dans la ligne : la rendre déplaçable
-    // pendant ce temps rendrait la sélection de texte impossible.
-    disabled: editing,
+    // pendant ce temps rendrait la sélection de texte impossible. Rangée, la ligne
+    // vit hors de tout contexte de glissement et n'a rien à y inscrire.
+    disabled: editing || isArchived,
   })
 
   const commit = (draft: string) => {
@@ -866,6 +907,12 @@ function ConversationRow({
         >
           <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
             {t('shell.rename')}
+          </MenuItem>
+          <MenuItem
+            icon={isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+            onSelect={() => setArchived.mutate({ id: conversation.id, archived: !isArchived })}
+          >
+            {isArchived ? t('shell.conversation.unarchive') : t('shell.conversation.archive')}
           </MenuItem>
           <MenuSeparator />
           <MenuItem

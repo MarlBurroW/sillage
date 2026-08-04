@@ -171,12 +171,10 @@ export function registerConversationRoutes(
           eq(conversationReads.userId, user.id),
         ),
       )
-      .where(
-        and(
-          isNull(conversations.archivedAt),
-          or(eq(projects.ownerId, user.id), eq(projects.visibility, 'shared')),
-        ),
-      )
+      // Les archivées comprises, la sidebar les rangeant elle-même dans sa section
+      // repliée. Deux requêtes séparées coûteraient un aller-retour à chaque dépliage,
+      // et un désarchivage ne pourrait plus se voir sans recharger les deux.
+      .where(or(eq(projects.ownerId, user.id), eq(projects.visibility, 'shared')))
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
 
@@ -522,7 +520,13 @@ export function registerConversationRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = sendMessageBodySchema.parse(request.body)
-    await loadWritable(id, user.id)
+    const conversation = await loadWritable(id, user.id)
+
+    // Écrire dans un fil rangé le ressort de l'archive : sinon il repart au travail
+    // tout en restant invisible, et son activité ne se signale nulle part.
+    if (conversation.archivedAt !== null) {
+      ctx.db.update(conversations).set({ archivedAt: null }).where(eq(conversations.id, id)).run()
+    }
 
     const files = resolveAttachments(user.id, body.attachmentIds)
     await sessions.sendMessage(id, body.clientMessageId, body.text, files, body.mentions)

@@ -77,6 +77,18 @@ export function useRenameConversation() {
   })
 }
 
+export function useArchiveConversation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
+      api.patch<{ ok: true }>(`/api/conversations/${id}`, { archived }),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      void queryClient.invalidateQueries({ queryKey: ['conversation', id] })
+    },
+  })
+}
+
 export function useConversations(projectId: string | undefined) {
   return useQuery({
     queryKey: conversationsKey(projectId ?? ''),
