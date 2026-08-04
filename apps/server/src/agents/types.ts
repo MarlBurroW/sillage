@@ -57,14 +57,19 @@ export interface RunnerContext {
   /** Racine de stockage des pièces jointes, à autoriser en lecture pour l'agent. */
   attachmentsRoot: string
   /**
-   * Résout des identifiants du registre MCP en serveurs, en écartant les désactivés et
-   * les disparus.
+   * Résout la configuration d'une conversation en serveurs MCP : les identifiants du
+   * registre qu'elle active, moins les désactivés et les disparus, plus le serveur que
+   * Sillage monte lui-même.
+   *
+   * Prend la configuration entière et non la seule liste d'identifiants, parce que le
+   * serveur de Sillage n'en a pas : il dépend de `sillageMcp` et de `strictMcp`, qui
+   * changent à chaud comme le reste.
    *
    * Fonction et non tableau figé : Codex doit rejouer la liste à chaque reprise de
    * thread, et Claude peut la remplacer à chaud. Un instantané pris au lancement
    * mentirait dans les deux cas.
    */
-  resolveMcpServers(ids: string[]): ResolvedMcpServers
+  resolveMcpServers(config: AgentConfig): ResolvedMcpServers
   /** Identifiant de session natif à reprendre, null pour une nouvelle session. */
   resumeSessionId: string | null
   /** Écrit dans le journal puis diffuse. `raw` conserve le message natif du CLI. */
