@@ -67,7 +67,7 @@ async function main(): Promise<void> {
 
   // Après buildApp, pour prendre le logger de l'application plutôt qu'en poser un second.
   const scheduler = new Scheduler(app.log)
-  registerMaintenanceJobs(scheduler, { db, attachments, log: app.log })
+  registerMaintenanceJobs(scheduler, { db, attachments, log: app.log, config })
   scheduler.start()
 
   await app.listen({ host: config.server.host, port: config.server.port })

@@ -3,6 +3,8 @@ import type { FastifyBaseLogger } from 'fastify'
 import type { AttachmentStore } from '../attachments/store.js'
 import { purgeIdempotencyKeys } from '../auth/api-tokens.js'
 import { purgeExpiredSessions } from '../auth/sessions.js'
+import type { Config } from '../config.js'
+import { archiveStaleConversations } from '../conversations/auto-archive.js'
 import type { Scheduler } from './scheduler.js'
 
 /**
@@ -14,7 +16,7 @@ import type { Scheduler } from './scheduler.js'
  */
 export function registerMaintenanceJobs(
   scheduler: Scheduler,
-  deps: { db: Db; attachments: AttachmentStore; log: FastifyBaseLogger },
+  deps: { db: Db; attachments: AttachmentStore; log: FastifyBaseLogger; config: Config },
 ): void {
   scheduler.register({
     name: 'purge-expired-sessions',
@@ -36,4 +38,16 @@ export function registerMaintenanceJobs(
       if (orphans > 0) deps.log.info({ orphans }, 'pieces jointes orphelines supprimees')
     },
   })
+
+  const { autoArchiveDays } = deps.config.retention
+  if (autoArchiveDays > 0) {
+    scheduler.register({
+      name: 'archive-stale-conversations',
+      schedule: '45 4 * * *',
+      run: () => {
+        const archived = archiveStaleConversations(deps.db, autoArchiveDays)
+        if (archived > 0) deps.log.info({ archived }, 'conversations rangees pour inactivite')
+      },
+    })
+  }
 }
