@@ -27,6 +27,16 @@ const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
 const MAX_THREAD_CHARS = 20000
 const MAX_MESSAGE_CHARS = 2000
 
+/**
+ * Fenêtre par défaut de `list_sessions`.
+ *
+ * Quinze minutes répond à « qui travaille en ce moment », qui est la question posée dans
+ * la plupart des cas. Un défaut plus large inviterait à tout ramener à chaque appel ;
+ * un modèle qui veut savoir sur quoi on a travaillé aujourd'hui demande vingt-quatre
+ * heures de lui-même.
+ */
+const RECENT_MINUTES = 15
+
 const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
 
@@ -73,6 +83,27 @@ const TOOLS = [
       },
       required: ['id'],
     },
+  },
+  {
+    name: 'list_sessions',
+    description:
+      "Liste les conversations de ce projet qui travaillent en ce moment, et celles qui ont travaillé récemment, avec leur worktree et leur branche. Appelle cet outil avant d'ouvrir un chantier, pour vérifier qu'une autre session n'est pas déjà dessus, et avant toute manipulation de l'arbre de travail git : une autre conversation peut l'avoir laissé sur sa propre branche.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        within_minutes: {
+          type: 'integer',
+          description:
+            "Fenêtre de « récemment », en minutes. 15 par défaut. Élargir à 1440 pour voir le travail de la journée. Les conversations qui travaillent en ce moment sont rendues quelle que soit la fenêtre.",
+        },
+      },
+    },
+  },
+  {
+    name: 'count_active_sessions',
+    description:
+      "Compte, sur toute l'instance et non plus sur le seul projet, les conversations en train de travailler. Sert à décider s'il est sûr de redémarrer le service Sillage, ce qui tue tous les process CLI en cours, y compris celui de cette conversation. Ne rend que des nombres : ni titres, ni projets, ni contenu.",
+    inputSchema: { type: 'object', properties: {} },
   },
 ]
 
@@ -173,7 +204,140 @@ function readConversation(id) {
   return { conversation, messages }
 }
 
+/**
+ * Une conversation travaille si un tour est en cours, ou si un travail détaché continue
+ * après lui.
+ *
+ * Les deux compteurs sont sur la ligne de conversation et non déduits du journal : le
+ * statut retombe à `idle` à la fin du tour, pas à la fin du travail, et le déduire
+ * demanderait de replier le journal de chaque ligne énumérée. Ils sont remis à zéro au
+ * démarrage du daemon, donc une valeur non nulle décrit bien un process vivant.
+ */
+const WORKING = `(c.status = 'running' OR c.background_count > 0 OR c.loop_count > 0)`
+
+/**
+ * Conversations du projet qui travaillent, plus celles vues récemment.
+ *
+ * Celles qui travaillent sortent quelle que soit la fenêtre : une session lancée il y a
+ * trois heures et toujours en train de tourner est exactement ce qu'on cherche à ne pas
+ * manquer. La fenêtre ne gouverne que les autres.
+ */
+function listSessions(withinMinutes) {
+  return db
+    .prepare(
+      `SELECT c.id AS id,
+              c.title AS title,
+              c.agent AS agent,
+              c.status AS status,
+              c.background_count AS background,
+              c.loop_count AS loops,
+              c.updated_at AS updatedAt,
+              w.name AS worktree
+       FROM conversations AS c
+       LEFT JOIN worktrees AS w ON w.id = c.worktree_id
+       WHERE c.project_id = ?
+         AND c.id != ?
+         AND c.archived_at IS NULL
+         AND (${WORKING} OR c.updated_at >= ?)
+       ORDER BY c.updated_at DESC
+       LIMIT 50`,
+    )
+    .all(PROJECT_ID, CURRENT_CONVERSATION, Date.now() - withinMinutes * 60_000)
+}
+
+/**
+ * Décompte sur toute l'instance, pour la seule question qui justifie d'en sortir :
+ * peut-on redémarrer le service.
+ *
+ * Des nombres et rien d'autre. Le besoin est de savoir si on va couper quelqu'un, pas
+ * de savoir qui ni sur quoi, et rendre des titres ferait de cet outil une fenêtre sur
+ * les projets auxquels la conversation n'a pas affaire.
+ */
+function countActiveSessions() {
+  const row = db
+    .prepare(
+      `SELECT
+         sum(CASE WHEN ${WORKING} THEN 1 ELSE 0 END) AS working,
+         sum(CASE WHEN ${WORKING} AND c.project_id = ? THEN 1 ELSE 0 END) AS here,
+         sum(CASE WHEN c.status = 'awaiting_input' THEN 1 ELSE 0 END) AS awaiting,
+         min(CASE WHEN ${WORKING} THEN c.updated_at END) AS oldest
+       FROM conversations AS c
+       WHERE c.archived_at IS NULL`,
+    )
+    .get(PROJECT_ID)
+
+  const self = db
+    .prepare(`SELECT 1 AS yes FROM conversations AS c WHERE c.id = ? AND ${WORKING}`)
+    .get(CURRENT_CONVERSATION)
+
+  return {
+    working: row?.working ?? 0,
+    here: row?.here ?? 0,
+    awaiting: row?.awaiting ?? 0,
+    oldest: row?.oldest ?? null,
+    includesSelf: Boolean(self),
+  }
+}
+
 const asDate = (ts) => new Date(ts).toISOString().slice(0, 10)
+
+/** Ancienneté en clair : un horodatage absolu obligerait le modèle à faire la soustraction. */
+function ago(ts) {
+  const minutes = Math.max(0, Math.round((Date.now() - ts) / 60_000))
+  if (minutes < 1) return "à l'instant"
+  if (minutes < 60) return `il y a ${minutes} min`
+  const hours = Math.round(minutes / 60)
+  return hours < 24 ? `il y a ${hours} h` : `il y a ${Math.round(hours / 24)} j`
+}
+
+const STATUS_LABELS = {
+  running: 'en cours',
+  idle: 'au repos',
+  awaiting_input: 'attend une réponse',
+  interrupted: 'interrompue',
+  error: 'en erreur',
+}
+
+/** Ce que fait une conversation, statut et travail détaché réunis en une clause. */
+function describeActivity(row) {
+  const parts = [STATUS_LABELS[row.status] ?? row.status]
+  if (row.background > 0) parts.push(`${row.background} travail(aux) de fond`)
+  if (row.loops > 0) parts.push(`${row.loops} boucle(s)`)
+  return parts.join(', ')
+}
+
+function renderSessions(rows, withinMinutes) {
+  if (rows.length === 0) {
+    return `Aucune autre conversation de ce projet n'a travaillé dans les ${withinMinutes} dernières minutes.`
+  }
+
+  const lines = rows.map((row) => {
+    const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
+    return `- ${row.id} | ${row.agent} | ${describeActivity(row)} | ${where} | ${ago(row.updatedAt)}\n  ${row.title}`
+  })
+  return `${rows.length} conversation(s), fenêtre de ${withinMinutes} min :\n${lines.join('\n')}`
+}
+
+function renderCount(state) {
+  if (state.working === 0) {
+    const suffix =
+      state.awaiting > 0
+        ? ` ${state.awaiting} attend(ent) une réponse : un redémarrage expirera ces sollicitations.`
+        : ''
+    return `Aucune conversation ne travaille sur l'instance.${suffix}`
+  }
+
+  const parts = [`${state.working} conversation(s) travaillent sur l'instance`]
+  if (state.here > 0) parts.push(`dont ${state.here} dans ce projet`)
+  if (state.includesSelf) parts.push('dont celle-ci')
+  if (state.oldest !== null) parts.push(`la plus ancienne active depuis ${ago(state.oldest)}`)
+
+  const awaiting =
+    state.awaiting > 0
+      ? ` ${state.awaiting} autre(s) attend(ent) une réponse : un redémarrage expirera ces sollicitations.`
+      : ''
+  return `${parts.join(', ')}. Un redémarrage du service les coupe toutes.${awaiting}`
+}
 
 function clip(text, max) {
   return text.length > max ? `${text.slice(0, max)}\n[...]` : text
@@ -274,6 +438,16 @@ function callTool(name, args) {
     }
     const before = Number.isInteger(args?.before) ? args.before : null
     return text(renderThread(found, before))
+  }
+
+  if (name === 'list_sessions') {
+    const asked = Number.isInteger(args?.within_minutes) ? args.within_minutes : RECENT_MINUTES
+    const within = Math.min(Math.max(asked, 1), 60 * 24 * 7)
+    return text(renderSessions(listSessions(within), within))
+  }
+
+  if (name === 'count_active_sessions') {
+    return text(renderCount(countActiveSessions()))
   }
 
   return { ...text(`Outil inconnu : ${name}`), isError: true }
