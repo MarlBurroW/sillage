@@ -209,6 +209,7 @@ export const en = {
   'shell.project.collapse': 'Collapse {name}',
   'shell.project.expand': 'Expand {name}',
   'shell.project.shared': 'Shared project',
+  'shell.project.unread': 'New activity in this project',
   'shell.project.actions': 'Actions for project {name}',
   'shell.rename': 'Rename',
   'shell.project.settings': 'Project settings',

@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, isNull, min, or } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, min, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations, projects, type ConversationRow } from '@sillage/db'
+import { conversationReads, conversations, projects, type ConversationRow } from '@sillage/db'
 import {
   createConversationBodySchema,
   editDiffQuerySchema,
   elicitationAnswerBodySchema,
   forkConversationBodySchema,
+  markReadBodySchema,
   permissionDecisionBodySchema,
   planDecisionBodySchema,
   questionAnswerBodySchema,
@@ -37,7 +38,15 @@ import { requireUser } from '../require-user.js'
 
 const PAGE_SIZE = 500
 
-export function conversationToDto(row: ConversationRow, userId: string): ConversationDto {
+/**
+ * `lastReadSeq` est passé plutôt que relu ici : les routes de liste le ramènent en une
+ * jointure, et une lecture par ligne rendrait la sidebar quadratique.
+ */
+export function conversationToDto(
+  row: ConversationRow,
+  userId: string,
+  lastReadSeq: number,
+): ConversationDto {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -50,6 +59,7 @@ export function conversationToDto(row: ConversationRow, userId: string): Convers
     config: parseAgentConfig(row.config),
     status: row.status,
     lastSeq: row.lastSeq,
+    lastReadSeq,
     costUsd: row.costUsd,
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
@@ -104,6 +114,21 @@ export function registerConversationRoutes(
       }
     })
   }
+  /** Curseur de lecture d'un compte. 0 quand il n'a jamais ouvert le fil. */
+  const readCursor = (conversationId: string, userId: string): number => {
+    const row = ctx.db
+      .select({ lastReadSeq: conversationReads.lastReadSeq })
+      .from(conversationReads)
+      .where(
+        and(
+          eq(conversationReads.conversationId, conversationId),
+          eq(conversationReads.userId, userId),
+        ),
+      )
+      .get()
+    return row?.lastReadSeq ?? 0
+  }
+
   /** Lecture : propriétaire du projet ou projet partagé. Écriture : propriétaire du fil. */
   const loadReadable = async (conversationId: string, userId: string) => {
     const row = ctx.db
@@ -136,9 +161,16 @@ export function registerConversationRoutes(
     const user = requireUser(request)
 
     const rows = ctx.db
-      .select({ conversation: conversations })
+      .select({ conversation: conversations, lastReadSeq: conversationReads.lastReadSeq })
       .from(conversations)
       .innerJoin(projects, eq(projects.id, conversations.projectId))
+      .leftJoin(
+        conversationReads,
+        and(
+          eq(conversationReads.conversationId, conversations.id),
+          eq(conversationReads.userId, user.id),
+        ),
+      )
       .where(
         and(
           isNull(conversations.archivedAt),
@@ -148,7 +180,7 @@ export function registerConversationRoutes(
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
 
-    return rows.map((row) => conversationToDto(row.conversation, user.id))
+    return rows.map((row) => conversationToDto(row.conversation, user.id, row.lastReadSeq ?? 0))
   })
 
   app.get('/api/projects/:id/conversations', async (request) => {
@@ -163,8 +195,15 @@ export function registerConversationRoutes(
     }
 
     const rows = ctx.db
-      .select()
+      .select({ conversation: conversations, lastReadSeq: conversationReads.lastReadSeq })
       .from(conversations)
+      .leftJoin(
+        conversationReads,
+        and(
+          eq(conversationReads.conversationId, conversations.id),
+          eq(conversationReads.userId, user.id),
+        ),
+      )
       .where(
         includeArchived
           ? eq(conversations.projectId, id)
@@ -173,7 +212,7 @@ export function registerConversationRoutes(
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
 
-    return rows.map((row) => conversationToDto(row, user.id))
+    return rows.map((row) => conversationToDto(row.conversation, user.id, row.lastReadSeq ?? 0))
   })
 
   app.post('/api/projects/:id/conversations', async (request, reply) => {
@@ -218,7 +257,9 @@ export function registerConversationRoutes(
     // a été supprimée et les fichiers restent réutilisables pour une nouvelle tentative.
     if (firstMessage) attachments.claim(firstMessage.attachmentIds, row.id)
 
-    return reply.status(201).send(conversationToDto(row, user.id))
+    // Curseur à zéro : le client marque la conversation lue en s'y installant, comme
+    // pour n'importe quelle autre. La devancer ici mentirait sur ce qui est en base.
+    return reply.status(201).send(conversationToDto(row, user.id, 0))
   })
 
   /**
@@ -328,13 +369,43 @@ export function registerConversationRoutes(
     // souvient de tout l'historique conservé (invariant I2).
     const copied = log.copyThrough(id, row.id, body.throughSeq)
 
-    return reply.status(201).send(conversationToDto({ ...row, lastSeq: copied }, user.id))
+    return reply.status(201).send(conversationToDto({ ...row, lastSeq: copied }, user.id, 0))
   })
 
   app.get('/api/conversations/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    return conversationToDto(await loadReadable(id, user.id), user.id)
+    const conversation = await loadReadable(id, user.id)
+    return conversationToDto(conversation, user.id, readCursor(id, user.id))
+  })
+
+  /**
+   * Avance le curseur de lecture. Ouvert à tout lecteur, y compris sur un fil qu'il ne
+   * peut pas écrire : savoir ce qu'on a lu n'est pas une modification de la conversation.
+   */
+  app.post('/api/conversations/:id/read', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = markReadBodySchema.parse(request.body)
+    await loadReadable(id, user.id)
+
+    const now = Date.now()
+    ctx.db
+      .insert(conversationReads)
+      .values({ conversationId: id, userId: user.id, lastReadSeq: body.seq, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [conversationReads.conversationId, conversationReads.userId],
+        // Le `max` est porté par la base et non par une lecture préalable : deux onglets
+        // qui marquent en même temps ne peuvent alors pas se faire reculer l'un l'autre,
+        // quel que soit l'ordre d'arrivée.
+        set: {
+          lastReadSeq: sql`max(excluded.last_read_seq, ${conversationReads.lastReadSeq})`,
+          updatedAt: now,
+        },
+      })
+      .run()
+
+    return { lastReadSeq: readCursor(id, user.id) }
   })
 
   app.get('/api/conversations/:id/events', async (request): Promise<JournalPageDto> => {
@@ -632,17 +703,18 @@ export function registerConversationRoutes(
   })
 }
 
-/** Statut courant, pour l'instantané envoyé à l'abonnement WebSocket. */
-export function readConversationStatus(
+/** Statut et avancement courants, pour l'instantané envoyé à l'abonnement WebSocket. */
+export function readConversationState(
   ctx: AppContext,
   conversationId: string,
-): ConversationStatus | null {
-  const row = ctx.db
-    .select({ status: conversations.status })
-    .from(conversations)
-    .where(eq(conversations.id, conversationId))
-    .get()
-  return row?.status ?? null
+): { status: ConversationStatus; lastSeq: number } | null {
+  return (
+    ctx.db
+      .select({ status: conversations.status, lastSeq: conversations.lastSeq })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .get() ?? null
+  )
 }
 
 /** Conversations visibles par un utilisateur, pour l'abonnement WebSocket. */

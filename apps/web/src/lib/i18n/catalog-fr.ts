@@ -194,6 +194,7 @@ export const fr: Catalog = {
   'shell.project.collapse': 'Replier {name}',
   'shell.project.expand': 'Déplier {name}',
   'shell.project.shared': 'Projet partagé',
+  'shell.project.unread': 'Du nouveau dans ce projet',
   'shell.project.actions': 'Actions du projet {name}',
   'shell.rename': 'Renommer',
   'shell.project.settings': 'Réglages du projet',

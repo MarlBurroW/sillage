@@ -175,6 +175,37 @@ export const conversations = sqliteTable(
 )
 
 /**
+ * Jusqu'où chaque lecteur est allé dans chaque conversation.
+ *
+ * Le journal avance tout seul : un agent qui travaille pendant qu'on regarde ailleurs
+ * produit des événements que personne ne voit passer, et la ligne de sidebar reste
+ * identique à celle d'un fil mort depuis trois semaines. Comparer ce curseur à
+ * `conversations.lastSeq` est ce qui distingue les deux.
+ *
+ * Par lecteur et non par conversation : dans un projet partagé, deux comptes n'ont pas
+ * lu la même chose. Le propriétaire du fil n'a aucun statut particulier ici.
+ *
+ * Ligne absente = jamais ouvert, donc tout est non lu. La migration qui crée la table
+ * pose une ligne à jour pour chaque couple existant, faute de quoi la fonctionnalité
+ * s'allumerait partout à la première mise à jour.
+ */
+export const conversationReads = sqliteTable(
+  'conversation_reads',
+  {
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Ne recule jamais : l'écriture prend le maximum avec la valeur déjà en base. */
+    lastReadSeq: integer('last_read_seq').notNull().default(0),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.conversationId, t.userId] })],
+)
+
+/**
  * Le journal (invariant I2). `seq` est strictement croissant et sans trou par
  * conversation. WITHOUT ROWID parce que la clé primaire composite est déjà l'ordre
  * de lecture naturel.
@@ -438,6 +469,7 @@ export type UserRow = typeof users.$inferSelect
 export type ApiTokenRow = typeof apiTokens.$inferSelect
 export type ProjectRow = typeof projects.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
+export type ConversationReadRow = typeof conversationReads.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect

@@ -106,6 +106,13 @@
       "when": 1785866455370,
       "tag": "0014_conscious_power_man",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1785867046634,
+      "tag": "0015_misty_agent_brand",
+      "breakpoints": true
     }
   ]
 }
