@@ -4,14 +4,13 @@ import {
   CATCHUP_THRESHOLD,
   HEARTBEAT_INTERVAL_MS,
   clientMessageSchema,
-  type ConversationStatus,
   type ServerMessage,
 } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
 import type { PushService } from '../push/push-service.js'
-import type { SessionManager } from '../sessions/session-manager.js'
+import type { SessionManager, StatusBroadcast } from '../sessions/session-manager.js'
 import type { AppContext } from '../http/context.js'
-import { canReadConversation, readConversationStatus } from '../http/routes/conversations.js'
+import { canReadConversation, readConversationState } from '../http/routes/conversations.js'
 
 /**
  * Un socket par onglet, multiplexé sur plusieurs conversations : la sidebar suit les
@@ -72,15 +71,16 @@ class Connection {
     // Instantané de statut : sans lui, un client qui s'abonne après le dernier
     // changement resterait sur l'état qu'il avait au chargement. La sidebar n'a pas
     // de journal à replier, elle ne peut pas le déduire elle-même.
-    const status = readConversationStatus(this.ctx, conversationId)
-    if (status) {
+    const state = readConversationState(this.ctx, conversationId)
+    if (state) {
       this.send({
         t: 'status',
         conversationId,
-        status,
+        status: state.status,
         warm: this.sessions.isWarm(conversationId),
         background: this.sessions.backgroundCount(conversationId),
         loops: this.sessions.loopCount(conversationId),
+        lastSeq: state.lastSeq,
       })
     }
 
@@ -115,20 +115,14 @@ class Connection {
    * les changements de statut se comptent en quelques-uns par tour, la lecture est
    * locale, et rien ne peut alors dériver d'un partage révoqué entre-temps.
    */
-  notifyStatus(
-    conversationId: string,
-    status: ConversationStatus,
-    warm: boolean,
-    background: number,
-    loops: number,
-  ): void {
+  notifyStatus(update: StatusBroadcast): void {
     if (
-      !this.subscriptions.has(conversationId) &&
-      !canReadConversation(this.ctx, conversationId, this.userId)
+      !this.subscriptions.has(update.conversationId) &&
+      !canReadConversation(this.ctx, update.conversationId, this.userId)
     ) {
       return
     }
-    this.send({ t: 'status', conversationId, status, warm, background, loops })
+    this.send({ t: 'status', ...update })
   }
 
   notifyTitle(conversationId: string, title: string): void {
@@ -183,26 +177,9 @@ export async function registerWebSocketHub(
     notify: (userId, payload) => push.notify(userId, payload),
   })
 
-  sessions.statusBus.on(
-    'status',
-    ({
-      conversationId,
-      status,
-      warm,
-      background,
-      loops,
-    }: {
-      conversationId: string
-      status: ConversationStatus
-      warm: boolean
-      background: number
-      loops: number
-    }) => {
-      for (const connection of connections) {
-        connection.notifyStatus(conversationId, status, warm, background, loops)
-      }
-    },
-  )
+  sessions.statusBus.on('status', (update: StatusBroadcast) => {
+    for (const connection of connections) connection.notifyStatus(update)
+  })
 
   sessions.statusBus.on(
     'title',

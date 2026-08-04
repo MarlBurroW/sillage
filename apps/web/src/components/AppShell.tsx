@@ -53,9 +53,11 @@ import {
 import {
   useLiveBackground,
   useLiveLoops,
+  useLiveSeq,
   useLiveStatus,
   useStatusFeed,
 } from '../lib/conversation-status'
+import { isUnread, useHasUnread } from '../lib/reads'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { SignalDot } from './chat/Signals'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
@@ -460,6 +462,10 @@ function Sidebar({
                     project={project}
                     conversations={(conversations ?? []).filter((c) => c.projectId === project.id)}
                     open={!dragging && !collapsed.has(project.id)}
+                    // Le repli voulu par l'utilisateur, que `open` ne dit pas : un
+                    // glissement ferme tous les projets, et le report du non-lu
+                    // s'allumerait partout le temps du déplacement.
+                    collapsed={collapsed.has(project.id)}
                     onToggle={() => toggle(project.id)}
                     onNavigate={onNavigate}
                   />
@@ -497,6 +503,8 @@ interface ProjectGroupProps {
   project: ProjectDto
   conversations: ConversationDto[]
   open: boolean
+  /** Replié par l'utilisateur, indépendamment de la fermeture forcée par un glissement. */
+  collapsed: boolean
   onToggle: () => void
   onNavigate: () => void
 }
@@ -505,6 +513,7 @@ function ProjectGroup({
   project,
   conversations,
   open,
+  collapsed,
   onToggle,
   onNavigate,
 }: ProjectGroupProps) {
@@ -517,6 +526,12 @@ function ProjectGroup({
   const isSettings = useMatch(`/p/${project.id}`) !== null
   const isDraft = useMatch(`/p/${project.id}/c/new`) !== null
   const isActive = isSettings || isDraft
+  // Replié, le projet répond pour ses lignes : sans ce report, un agent qui finit son
+  // tour dans un projet fermé ne se signalerait nulle part. Le fil ouvert en est exclu
+  // comme il l'est de sa propre ligne, sinon replier le projet qu'on lit l'allumerait
+  // à chaque fin de tour, le temps que le curseur reparte.
+  const openConversationId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
+  const hasUnread = useHasUnread(conversations, openConversationId)
 
   const [editing, setEditing] = useState(false)
 
@@ -621,6 +636,14 @@ function ProjectGroup({
               style={{ background: project.color ?? 'var(--sg-accent)' }}
             />
             <span className="truncate">{project.name}</span>
+            {/* Uniquement replié : déplié, ce sont les lignes elles-mêmes qui le disent,
+                et le point ferait doublon avec ce qu'on a déjà sous les yeux. */}
+            {collapsed && hasUnread ? (
+              <span
+                title={t('shell.project.unread')}
+                className="size-1.5 shrink-0 rounded-full bg-ink"
+              />
+            ) : null}
             {/* Seul le partage est signalé : le privé est le cas normal, et le marquer
                 mettrait un cadenas sur presque toutes les lignes. */}
             {project.visibility === 'shared' ? (
@@ -729,6 +752,7 @@ function ConversationRow({
   const status = useLiveStatus(conversation.id) ?? conversation.status
   const background = useLiveBackground(conversation.id)
   const loops = useLiveLoops(conversation.id)
+  const pushedSeq = useLiveSeq(conversation.id)
   const signals = useMemo(
     () => buildSidebarSignals({ status, background, loops }),
     [status, background, loops],
@@ -767,6 +791,16 @@ function ConversationRow({
   }
 
   const isActive = openMatch?.params.conversationId === conversation.id
+  /*
+    Le non-lu se dit par l'encre et la graisse, pas par un troisième point : la ligne en
+    tient deux au plus, et une pastille de plus ferait concurrence à des signaux qui,
+    eux, parlent de l'instant. Un fil qui a du nouveau remonte simplement de l'encre
+    atténuée à l'encre pleine.
+
+    Le fil ouvert en est exclu sans attendre le serveur : on est dedans, et le curseur
+    ne part qu'à la seconde suivante.
+  */
+  const unread = !isActive && isUnread(conversation, pushedSeq)
 
   return (
     <li
@@ -777,7 +811,8 @@ function ConversationRow({
       className={cx(
         'group/row flex h-9 items-center rounded-md pr-1 transition-colors',
         isDragging ? 'shadow-float z-10 bg-surface-high opacity-90' : '',
-        isActive ? 'bg-accent-wash text-ink' : 'text-ink-faint hover:bg-surface-high hover:text-ink',
+        isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
+        isActive || unread ? 'text-ink' : 'text-ink-faint',
       )}
     >
       <NavLink
@@ -792,7 +827,7 @@ function ConversationRow({
         <span className="shrink-0 text-ink-faint">
           <AgentIcon agent={conversation.agent} size={13} />
         </span>
-        <span className="truncate">{conversation.title}</span>
+        <span className={cx('truncate', unread && 'font-medium')}>{conversation.title}</span>
         {/*
           Deux points au plus, et jamais davantage : l'état présent, et la boucle.
           Le premier est le plus grave de ce qui se passe maintenant ; la seconde parle

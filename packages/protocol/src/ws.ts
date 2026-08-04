@@ -56,6 +56,15 @@ export type ServerMessage =
        * seule, sans avoir son journal à replier.
        */
       loops: number
+      /**
+       * Dernier `seq` écrit au journal, pour la même raison que les trois précédents.
+       *
+       * Porté par le statut plutôt que par un flux propre : le moment qui intéresse la
+       * sidebar est la fin du tour, pas chaque jeton. Un fil qui repasse au repos a fini
+       * de produire, et c'est là que le point de non-lu doit apparaître. Le suivre
+       * événement par événement le ferait clignoter pendant toute la réponse.
+       */
+      lastSeq: number
     }
   /**
    * Le CLI a proposé un titre pour la conversation. Poussé plutôt que redécouvert par

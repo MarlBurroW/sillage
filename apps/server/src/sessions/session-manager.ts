@@ -85,6 +85,19 @@ const NOTIFIABLE: Partial<Record<SillageEvent['type'], string>> = {
   'turn.completed': "L'agent a terminé",
 }
 
+/**
+ * Ce que porte l'événement `status` du bus. Repris tel quel par le message WebSocket du
+ * même nom : le hub ne fait que rediffuser, il n'a rien à recomposer.
+ */
+export interface StatusBroadcast {
+  conversationId: string
+  status: ConversationStatus
+  warm: boolean
+  background: number
+  loops: number
+  lastSeq: number
+}
+
 /** Ce que le gestionnaire attend de la couche de notification, sans la connaître. */
 export interface ConversationNotifier {
   /** Vrai si ce compte a un onglet ouvert sur cette conversation, à l'instant. */
@@ -267,13 +280,24 @@ export class SessionManager {
     status: ConversationStatus,
     warm: boolean,
   ): void {
-    this.statusBus.emit('status', {
+    // `lastSeq` est relu en base à chaque diffusion : le journal est écrit avant le
+    // changement de statut, donc la valeur est fraîche, et une transition de statut se
+    // compte en quelques-unes par tour. Aucun compteur en mémoire à tenir en plus.
+    const row = this.db
+      .select({ lastSeq: conversations.lastSeq })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .get()
+
+    const update: StatusBroadcast = {
       conversationId,
       status,
       warm,
       background: warm ? this.backgroundCount(conversationId) : 0,
       loops: warm ? this.loopCount(conversationId) : 0,
-    })
+      lastSeq: row?.lastSeq ?? 0,
+    }
+    this.statusBus.emit('status', update)
   }
 
   /**
