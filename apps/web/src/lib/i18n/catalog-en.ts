@@ -103,7 +103,8 @@ export const en = {
   'composer.permission.dontAsk': "Don't ask",
   'composer.permission.dontAsk.hint': 'No prompts, refusals are silent',
   'composer.permission.bypass': 'Allow everything',
-  'composer.permission.bypass.hint': 'No safeguards, reserve for risk-free folders',
+  'composer.permission.bypass.hint':
+    'No safeguards, reserve for risk-free folders. Restarts the session',
   'composer.approval.cliDefault': 'CLI default',
   'composer.approval.cliDefault.hint': 'The policy configured in Codex applies',
   'composer.approval.untrusted': 'Untrusted',
@@ -755,6 +756,7 @@ export const en = {
   'activity.toolRunning': '{name} running',
   'activity.turn.noMessage': 'No message',
   'activity.modelChanged': 'Model switched to {model}',
+  'activity.configRestartDeferred': 'Setting applied at the end of the turn',
 
   // Projets (réglages)
   'projects.title': 'Projects',

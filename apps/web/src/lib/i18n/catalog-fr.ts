@@ -88,7 +88,8 @@ export const fr: Catalog = {
   'composer.permission.dontAsk': 'Ne pas demander',
   'composer.permission.dontAsk.hint': 'Aucune demande, les refus sont muets',
   'composer.permission.bypass': 'Tout autoriser',
-  'composer.permission.bypass.hint': 'Aucun garde-fou, à réserver aux dossiers sans risque',
+  'composer.permission.bypass.hint':
+    'Aucun garde-fou, à réserver aux dossiers sans risque. Relance la session',
   'composer.approval.cliDefault': 'Défaut du CLI',
   'composer.approval.cliDefault.hint': "La politique configurée dans Codex s'applique",
   'composer.approval.untrusted': 'Non fiable',
@@ -741,6 +742,7 @@ export const fr: Catalog = {
   'activity.toolRunning': '{name} en cours',
   'activity.turn.noMessage': 'Sans message',
   'activity.modelChanged': 'Modèle passé à {model}',
+  'activity.configRestartDeferred': 'Réglage appliqué à la fin du tour',
 
   // Projets (réglages)
   'projects.title': 'Projets',
