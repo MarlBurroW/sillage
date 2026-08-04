@@ -15,6 +15,7 @@ import {
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
+import { builtinMcpServer } from '../agents/mcp-builtin.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type {
@@ -509,7 +510,20 @@ export class SessionManager {
       // les installations faites depuis l'interface.
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
-      resolveMcpServers: (ids) => resolveMcpServers(this.db, this.secrets, ids),
+      // Le serveur de Sillage passe en dernier : l'ordre départage deux serveurs qui
+      // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
+      // l'emporter sur celui que la plateforme ajoute d'elle-même.
+      resolveMcpServers: (current) => {
+        const resolved = resolveMcpServers(this.db, this.secrets, current.mcpServers)
+        const builtin = builtinMcpServer({
+          enabled: this.config.mcp.sillageServer,
+          config: current,
+          databasePath: this.config.paths.database,
+          projectId: conversation.projectId,
+          conversationId,
+        })
+        return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
+      },
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SillageEvent, raw?: unknown) => {

@@ -772,6 +772,15 @@ export const updateMcpServerBodySchema = z
 
 export interface McpServerListDto {
   servers: McpServer[]
+  /**
+   * L'instance monte le serveur MCP de Sillage dans les conversations.
+   *
+   * Porté par cette liste plutôt que par un point d'entrée de capacités : c'est la même
+   * question que celle des serveurs déclarés, posée au même moment, et le composeur a
+   * besoin des deux réponses pour dessiner un seul contrôle. À faux, l'entrée disparaît
+   * de l'interface au lieu d'y rester grisée.
+   */
+  sillageServer: boolean
 }
 
 // Erreurs

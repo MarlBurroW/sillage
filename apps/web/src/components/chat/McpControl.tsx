@@ -33,6 +33,15 @@ interface McpControlProps {
   inventory: McpServerStatus[]
   selected: string[]
   onSelectedChange: (ids: string[]) => void
+  /**
+   * Serveur MCP de Sillage, ou null quand l'instance ne le monte pas du tout.
+   *
+   * Null fait disparaître la ligne au lieu de la griser : un réglage visible mais
+   * inopérant pousse à chercher pourquoi il ne fait rien, là où son absence se lit
+   * comme une instance qui n'a pas cette fonction.
+   */
+  sillage: boolean | null
+  onSillageChange: (enabled: boolean) => void
   /** Null pour Codex, qui n'a pas d'isolation à régler. */
   strict: boolean | null
   onStrictChange: (strict: boolean) => void
@@ -44,6 +53,8 @@ export function McpControl({
   inventory,
   selected,
   onSelectedChange,
+  sillage,
+  onSillageChange,
   strict,
   onStrictChange,
   disabled = false,
@@ -63,8 +74,31 @@ export function McpControl({
     onSelectedChange(servers.filter((server) => next.has(server.id)).map((server) => server.id))
   }
 
+  // `strictMcp` l'emporte sur l'activation : le drapeau annonce « rien d'autre que ce
+  // que j'ai déclaré », et le serveur de Sillage tombe avec les autres. La case reste
+  // affichée pour que son état se lise, mais devient inerte tant que l'isolation dure.
+  const sillageActive = sillage === true && strict !== true
+
   const items = (
     <>
+      {sillage === null ? null : (
+        <>
+          <MenuCheckboxItem
+            checked={sillage}
+            onCheckedChange={onSillageChange}
+            disabled={disabled || strict === true}
+          >
+            <span className="flex flex-col">
+              <span>{t('composer.mcp.builtin')}</span>
+              <span className="text-[0.6875rem] text-ink-faint">
+                {t('composer.mcp.builtin.hint')}
+              </span>
+            </span>
+          </MenuCheckboxItem>
+          <MenuSeparator />
+        </>
+      )}
+
       {servers.length === 0 ? (
         <p className="px-2.5 py-2 text-xs text-ink-faint">{t('composer.mcp.empty')}</p>
       ) : (
@@ -135,8 +169,12 @@ export function McpControl({
   // Une pastille d'icône et de compte plutôt qu'un sélecteur nommé : la question
   // « avec quels outils » se lit d'un coup d'œil et ne mérite pas d'occuper la barre
   // à hauteur des réglages qu'on change à chaque tour.
-  const summary = mcpSummary(selected.length, inventory.length)
-  const count = inventory.length > 0 ? inventory.length : selected.length
+  // Le serveur de Sillage compte comme les autres tant que le CLI n'a pas répondu :
+  // c'en est un, il expose des outils, et l'omettre ferait afficher « aucun » à une
+  // conversation qui démarrera pourtant avec une mémoire du projet.
+  const configured = selected.length + (sillageActive ? 1 : 0)
+  const summary = mcpSummary(configured, inventory.length)
+  const count = inventory.length > 0 ? inventory.length : configured
 
   return (
     <Menu

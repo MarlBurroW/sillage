@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/main.ts",
-    "build": "tsup && mkdir -p dist/migrations && cp -r ../../packages/db/migrations/. dist/migrations/",
+    "build": "tsup && mkdir -p dist/migrations dist/mcp && cp -r ../../packages/db/migrations/. dist/migrations/ && cp src/mcp/*.mjs dist/mcp/",
     "start": "node --max-old-space-size=256 dist/main.js",
     "migrate": "tsx src/cli/migrate.ts",
     "user:create": "tsx src/cli/user-create.ts",
