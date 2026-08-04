@@ -307,6 +307,22 @@ export const pushSubscriptions = sqliteTable(
   (t) => [index('idx_push_user').on(t.userId)],
 )
 
+/**
+ * Réglages d'instance : ce qui vaut pour tout le monde et que l'administrateur doit
+ * pouvoir changer sans éditer `config.toml` ni redémarrer le service, un redémarrage
+ * tuant les process CLI enfants.
+ *
+ * Clé-valeur plutôt que colonnes typées, sinon chaque réglage suivant traînerait sa
+ * migration. La valeur est du JSON, et seule la couche d'accès a besoin de le savoir.
+ * Une clé absente vaut « pas encore réglé » et laisse le défaut du `config.toml`
+ * s'appliquer, qui reste le point d'entrée d'une instance qu'on provisionne.
+ */
+export const appSettings = sqliteTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+})
+
 export const userSettings = sqliteTable('user_settings', {
   userId: text('user_id')
     .primaryKey()

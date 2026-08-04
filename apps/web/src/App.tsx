@@ -10,6 +10,7 @@ import { ProjectPage } from './routes/ProjectPage'
 import { ProjectsSettingsPage } from './routes/ProjectsSettingsPage'
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
+import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
 import { AppearanceSection } from './routes/AppearanceSection'
 import { McpSettingsPage } from './routes/McpSettingsPage'
 import { NotificationsSection } from './routes/NotificationsSection'
@@ -54,6 +55,7 @@ export function App() {
             <Route path="mcp" element={<McpSettingsPage />} />
             <Route path="api" element={<ApiTokensSettingsPage />} />
             <Route path="secrets" element={<SecretsSettingsPage />} />
+            <Route path="archivage" element={<ArchivingSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />
             <Route path="a-propos" element={<AboutSection />} />
           </Route>
