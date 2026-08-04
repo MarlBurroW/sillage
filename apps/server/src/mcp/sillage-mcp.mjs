@@ -38,11 +38,14 @@ const MAX_MESSAGE_CHARS = 2000
 const RECENT_MINUTES = 15
 
 /**
- * Fenêtre par défaut de `find_file_edits` sans chemin.
+ * Fenêtre par défaut de `find_file_edits`.
  *
  * Plus large que celle des sessions : une modification non commitée reste dans l'arbre
- * longtemps après la fin de la session qui l'a faite, et c'est justement à ce
- * moment-là, quand plus rien ne tourne, qu'on cherche d'où elle vient.
+ * après la fin de la session qui l'a faite, et c'est justement quand plus rien ne tourne
+ * qu'on cherche d'où elle vient. Bornée quand même, et c'est le point : le journal garde
+ * les éditions indéfiniment, y compris celles commitées depuis des jours, qui
+ * n'expliquent plus rien de l'état de l'arbre et feraient passer une session close pour
+ * une session en train d'écrire.
  */
 const EDIT_MINUTES = 120
 
@@ -118,12 +121,12 @@ const TOOLS = [
         path: {
           type: 'string',
           description:
-            "Chemin du fichier, relatif au répertoire de travail. Cherche dans tout l'historique, sans fenêtre de temps. À défaut de correspondance exacte, un fichier de même nom ailleurs est rendu, avec son chemin réel.",
+            "Chemin du fichier, relatif au répertoire de travail. À défaut de correspondance exacte, un fichier de même nom ailleurs est rendu, avec son chemin réel. Omettre pour voir tous les fichiers récemment modifiés.",
         },
         within_minutes: {
           type: 'integer',
           description:
-            'Fenêtre pour la liste sans `path`, en minutes. 120 par défaut, une modification non commitée restant dans l\'arbre longtemps après la fin de la session qui l\'a faite.',
+            "Fenêtre de recherche, en minutes. 120 par défaut. Élargir si la réponse est vide alors qu'une modification inexpliquée est bien là : les éditions restent dans le journal indéfiniment, mais celles d'hier n'expliquent en général plus l'état de l'arbre.",
         },
       },
     },
@@ -304,6 +307,45 @@ function currentWorktree() {
  * lignes, pour un outil appelé quand un doute survient et non en boucle. Un index
  * partiel serait la sortie si ça devenait chaud.
  */
+/**
+ * La modification la plus récente hors fenêtre, pour que la réponse vide dise s'il y a
+ * quelque chose à aller chercher.
+ *
+ * Sans ça, « rien dans les 120 dernières minutes » se lit comme « personne n'y a
+ * touché », et l'appelant conclut à tort plutôt que d'élargir. Une requête de plus,
+ * seulement quand la réponse est vide.
+ */
+function oldestOutsideWindow({ path, byName, withinMinutes }) {
+  const worktree = currentWorktree()
+  const filters = [
+    `e.type = 'file.edited'`,
+    `c.project_id = ?`,
+    `c.id != ?`,
+    worktree === undefined ? null : `c.worktree_id IS ?`,
+    `e.ts < ?`,
+    path === null
+      ? null
+      : byName
+        ? `e.payload ->> '$.path' LIKE '%/' || ?`
+        : `e.payload ->> '$.path' = ?`,
+  ].filter(Boolean)
+
+  const params = [PROJECT_ID, CURRENT_CONVERSATION]
+  if (worktree !== undefined) params.push(worktree)
+  params.push(Date.now() - withinMinutes * 60_000)
+  if (path !== null) params.push(path)
+
+  const row = db
+    .prepare(
+      `SELECT max(e.ts) AS ts
+       FROM events AS e
+       JOIN conversations AS c ON c.id = e.conversation_id
+       WHERE ${filters.join(' AND ')}`,
+    )
+    .get(...params)
+  return row?.ts ?? null
+}
+
 function findFileEdits({ path, withinMinutes }) {
   const exact = path ? path.replace(/^\.\//, '') : null
   const rows = queryEdits({ path: exact, byName: false, withinMinutes })
@@ -325,8 +367,13 @@ function queryEdits({ path, byName, withinMinutes }) {
     // `IS` et non `=` : le worktree nul, qui vaut « racine du projet », est le cas le
     // plus courant et une égalité SQL ne le rapproche de rien.
     worktree === undefined ? null : `c.worktree_id IS ?`,
+    // La fenêtre vaut aussi pour une recherche par chemin. Le journal garde les
+    // éditions indéfiniment, y compris celles commitées depuis longtemps : sans borne,
+    // la réponse mêle des modifications qui n'expliquent plus rien de l'état de l'arbre
+    // à celles qu'on cherche, et laisse croire qu'une session travaille encore dessus.
+    `e.ts >= ?`,
     path === null
-      ? `e.ts >= ?`
+      ? null
       : byName
         ? `e.payload ->> '$.path' LIKE '%/' || ?`
         : `e.payload ->> '$.path' = ?`,
@@ -334,7 +381,8 @@ function queryEdits({ path, byName, withinMinutes }) {
 
   const params = [PROJECT_ID, CURRENT_CONVERSATION]
   if (worktree !== undefined) params.push(worktree)
-  params.push(path === null ? Date.now() - withinMinutes * 60_000 : path)
+  params.push(Date.now() - withinMinutes * 60_000)
+  if (path !== null) params.push(path)
 
   return db
     .prepare(
@@ -446,11 +494,13 @@ const ACTION_LABELS = { created: 'créé', modified: 'modifié', deleted: 'suppr
  * d'attendre ou de passer. La réponse le dit donc explicitement quand une des sessions
  * travaille encore, au lieu de laisser déduire d'un statut noyé dans une liste.
  */
-function renderFileEdits(rows, { path, withinMinutes }) {
+function renderFileEdits(rows, { path, withinMinutes, older }) {
   if (rows.length === 0) {
-    return path
-      ? `Aucune autre session de cet arbre de travail n'a touché à « ${path} ».`
-      : `Aucune autre session de cet arbre de travail n'a modifié de fichier dans les ${withinMinutes} dernières minutes.`
+    const scope = path ? `n'a touché à « ${path} »` : `n'a modifié de fichier`
+    const head = `Aucune autre session de cet arbre de travail ${scope} dans les ${withinMinutes} dernières minutes.`
+    return older === null
+      ? `${head} Rien de plus ancien non plus.`
+      : `${head} La dernière fois remonte à ${ago(older)} : rappeler avec une fenêtre plus large pour la voir.`
   }
 
   const busy = rows.filter((row) => row.status === 'running' || row.background > 0 || row.loops > 0)
@@ -599,7 +649,18 @@ function callTool(name, args) {
     const path = typeof args?.path === 'string' && args.path.trim() ? args.path.trim() : null
     const asked = Number.isInteger(args?.within_minutes) ? args.within_minutes : EDIT_MINUTES
     const withinMinutes = Math.min(Math.max(asked, 1), 60 * 24 * 7)
-    return text(renderFileEdits(findFileEdits({ path, withinMinutes }), { path, withinMinutes }))
+    const rows = findFileEdits({ path, withinMinutes })
+    // Sondé seulement quand la fenêtre ne rend rien : c'est le seul cas où la réponse
+    // risque de se lire comme « personne n'y a touché ».
+    const older =
+      rows.length === 0
+        ? oldestOutsideWindow({
+            path: path ? path.replace(/^\.\//, '') : null,
+            byName: false,
+            withinMinutes,
+          })
+        : null
+    return text(renderFileEdits(rows, { path, withinMinutes, older }))
   }
 
   if (name === 'count_active_sessions') {
