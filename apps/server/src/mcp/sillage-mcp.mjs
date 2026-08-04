@@ -49,6 +49,9 @@ const RECENT_MINUTES = 15
  */
 const EDIT_MINUTES = 120
 
+/** Plafond de couples session-fichier rendus, annoncé quand il mord. */
+const EDIT_ROW_LIMIT = 40
+
 const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
 
@@ -407,7 +410,7 @@ function queryEdits({ path, byName, withinMinutes }) {
        -- comptes cumulés sur tous les fichiers et un chemin pris au hasard dans le lot.
        GROUP BY e.conversation_id, e.payload ->> '$.path'
        ORDER BY max(e.ts) DESC
-       LIMIT 40`,
+       LIMIT ${EDIT_ROW_LIMIT}`,
     )
     .all(...params)
 }
@@ -508,13 +511,51 @@ function renderFileEdits(rows, { path, withinMinutes, older }) {
     ? `Attention, ${busy.length} de ces sessions travaillent encore : attendre peut valoir mieux qu'annuler leurs modifications.`
     : "Aucune de ces sessions ne travaille plus : leurs modifications sont figées."
 
-  const lines = rows.map((row) => {
+  // Deux regroupements pour deux questions. Sur un chemin, le sujet est le fichier et
+  // chaque ligne dit une session qui y a touché. Sans chemin, le sujet est la session :
+  // regrouper par fichier y répétait son titre et son état à chaque ligne, quinze fois
+  // à l'identique sur un cas réel, pour un outil censé économiser du contexte.
+  const lines = path ? renderByFile(rows) : renderBySession(rows)
+  const capped =
+    rows.length >= EDIT_ROW_LIMIT
+      ? `\n\n[Liste plafonnée à ${EDIT_ROW_LIMIT} couples session-fichier : il peut en manquer.]`
+      : ''
+
+  return `${lead}\n\n${lines.join('\n')}${capped}`
+}
+
+function renderByFile(rows) {
+  return rows.map((row) => {
     const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
     const times = row.edits > 1 ? ` (${row.edits} fois)` : ''
     return `- ${row.path} | ${ACTION_LABELS[row.action] ?? row.action}${times} | ${ago(row.ts)}\n  par ${row.id} (${row.agent}, ${describeActivity(row)}, ${where})\n  ${row.title}`
   })
+}
 
-  return `${lead}\n\n${lines.join('\n')}`
+/** Au-delà, la liste de fichiers d'une seule session noie les autres. */
+const FILES_PER_SESSION = 8
+
+function renderBySession(rows) {
+  const sessions = new Map()
+  for (const row of rows) {
+    const found = sessions.get(row.id)
+    if (found) found.files.push(row)
+    else sessions.set(row.id, { head: row, files: [row] })
+  }
+
+  return [...sessions.values()].map(({ head, files }) => {
+    const where = head.worktree ? `worktree ${head.worktree}` : 'racine du projet'
+    // Par nombre d'éditions et non par date : le fichier le plus remué est celui sur
+    // lequel une collision est la plus probable, et c'est ce qu'on cherche à voir en tête.
+    const sorted = [...files].sort((a, b) => b.edits - a.edits)
+    const shown = sorted
+      .slice(0, FILES_PER_SESSION)
+      .map((file) => `${file.path}${file.edits > 1 ? ` (${file.edits}×)` : ''}`)
+    const rest = sorted.length - shown.length
+    const tail = rest > 0 ? `, et ${rest} autre(s)` : ''
+
+    return `- ${head.id} (${head.agent}, ${describeActivity(head)}, ${where}), ${ago(head.ts)}\n  ${head.title}\n  ${files.length} fichier(s) : ${shown.join(', ')}${tail}`
+  })
 }
 
 function renderCount(state) {
