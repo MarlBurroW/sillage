@@ -48,6 +48,7 @@ import { useFileDrop } from '../lib/file-drop'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
 import { clearSubAgent, setPanelOpen, usePanelPresence } from '../lib/panel'
+import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
 import { useSidebarHidden } from '../lib/sidebar'
 import { describeActivity, type MessageItem } from '../lib/chat-fold'
@@ -141,6 +142,8 @@ export function ConversationPage() {
   const { data: user } = useCurrentUser()
   const { data: conversation } = useConversation(conversationId)
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
+  // Être sur la page vaut lecture : la sidebar n'a plus à signaler ce qu'on regarde.
+  useTrackRead(conversationId, stream.state.lastSeq)
   // Le catalogue porte la nature du compte : elle décide si un montant a un sens.
   // Comme tous les hooks, il doit rester avant le premier retour anticipé. La sonde
   // démarre le CLI côté serveur : elle ne part que pour l'agent de la conversation.

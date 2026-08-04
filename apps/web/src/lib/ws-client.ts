@@ -23,14 +23,18 @@ export interface StreamListener {
  * reçoit sans avoir à s'abonner au journal de chacune, ce qui coûterait un rejeu
  * d'événements pour une seule pastille.
  */
+export interface StatusUpdate {
+  conversationId: string
+  status: ConversationStatus
+  warm: boolean
+  background: number
+  loops: number
+  /** Dernier `seq` du journal, d'où se déduit ce qui reste à lire. */
+  lastSeq: number
+}
+
 export interface StatusWatcher {
-  onStatus(
-    conversationId: string,
-    status: ConversationStatus,
-    warm: boolean,
-    background: number,
-    loops: number,
-  ): void
+  onStatus(update: StatusUpdate): void
   /**
    * Socket rétabli après une coupure. Les transitions survenues pendant celle-ci n'ont
    * été poussées à personne : ce qui est affiché doit être relu à la source.
@@ -176,15 +180,15 @@ class WsClient {
     }
 
     if (message.t === 'status') {
-      for (const watcher of this.statusWatchers) {
-        watcher.onStatus(
-          message.conversationId,
-          message.status,
-          message.warm,
-          message.background,
-          message.loops,
-        )
+      const update: StatusUpdate = {
+        conversationId: message.conversationId,
+        status: message.status,
+        warm: message.warm,
+        background: message.background,
+        loops: message.loops,
+        lastSeq: message.lastSeq,
       }
+      for (const watcher of this.statusWatchers) watcher.onStatus(update)
     }
 
     const listeners = this.listeners.get(message.conversationId)

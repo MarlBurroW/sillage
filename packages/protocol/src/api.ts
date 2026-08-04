@@ -266,6 +266,13 @@ export const planDecisionBodySchema = z.object({
   followUpMode: z.string().nullable().default(null),
 })
 
+/**
+ * Le client annonce jusqu'où il a lu. Le serveur ne fait jamais reculer le curseur :
+ * deux onglets ouverts sur le même fil arrivent avec des seq différents, et le plus
+ * lent ne doit pas rallumer ce que l'autre vient d'éteindre.
+ */
+export const markReadBodySchema = z.object({ seq: z.number().int().min(0) })
+
 export interface ConversationDto {
   id: string
   projectId: string
@@ -280,6 +287,12 @@ export interface ConversationDto {
   config: unknown
   status: ConversationStatus
   lastSeq: number
+  /**
+   * Jusqu'où le compte appelant a lu, comme `isOwner` : dérivé du demandeur, pas de la
+   * conversation. En dessous de `lastSeq`, il s'est passé quelque chose depuis sa
+   * dernière visite.
+   */
+  lastReadSeq: number
   costUsd: number
   inputTokens: number
   outputTokens: number

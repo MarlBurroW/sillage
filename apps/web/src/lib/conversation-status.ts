@@ -24,9 +24,15 @@ const statuses = new Map<string, ConversationStatus>()
 const backgrounds = new Map<string, number>()
 /** Boucles armées par conversation. Table à part pour la même raison. */
 const loops = new Map<string, number>()
+/** Dernier `seq` connu par conversation, pour le non-lu. Table à part, même raison. */
+const seqs = new Map<string, number>()
 const listeners = new Set<() => void>()
 
-function subscribe(listener: () => void): () => void {
+/**
+ * Exporté pour les vues qui agrègent plusieurs conversations : elles ne peuvent pas
+ * s'abonner ligne par ligne et composent leur propre instantané à partir de `liveSeq`.
+ */
+export function subscribeStatus(listener: () => void): () => void {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
@@ -40,7 +46,7 @@ function emit(): void {
 /** Statut temps réel, ou undefined tant qu'aucun n'a été poussé pour ce fil. */
 export function useLiveStatus(conversationId: string): ConversationStatus | undefined {
   return useSyncExternalStore(
-    subscribe,
+    subscribeStatus,
     () => statuses.get(conversationId),
     () => undefined,
   )
@@ -53,7 +59,7 @@ export function useLiveStatus(conversationId: string): ConversationStatus | unde
  */
 export function useLiveBackground(conversationId: string): number {
   return useSyncExternalStore(
-    subscribe,
+    subscribeStatus,
     () => backgrounds.get(conversationId) ?? 0,
     () => 0,
   )
@@ -67,10 +73,29 @@ export function useLiveBackground(conversationId: string): number {
  */
 export function useLiveLoops(conversationId: string): number {
   return useSyncExternalStore(
-    subscribe,
+    subscribeStatus,
     () => loops.get(conversationId) ?? 0,
     () => 0,
   )
+}
+
+/**
+ * Dernier `seq` poussé pour ce fil, 0 tant qu'on n'a rien reçu.
+ *
+ * Le 0 se lit « rien à dire », pas « journal vide » : l'appelant compare avec le
+ * `lastSeq` de la liste REST et garde le plus grand des deux.
+ */
+export function useLiveSeq(conversationId: string): number {
+  return useSyncExternalStore(
+    subscribeStatus,
+    () => seqs.get(conversationId) ?? 0,
+    () => 0,
+  )
+}
+
+/** Lecture directe, pour les instantanés composés par les abonnés de `subscribeStatus`. */
+export function liveSeq(conversationId: string): number {
+  return seqs.get(conversationId) ?? 0
 }
 
 /**
@@ -82,15 +107,17 @@ export function useStatusFeed(): void {
 
   useEffect(() => {
     return wsClient.watchStatuses({
-      onStatus: (conversationId, status, _warm, background, loopCount) => {
+      onStatus: ({ conversationId, status, background, loops: loopCount, lastSeq }) => {
         const changed =
           statuses.get(conversationId) !== status ||
           (backgrounds.get(conversationId) ?? 0) !== background ||
-          (loops.get(conversationId) ?? 0) !== loopCount
+          (loops.get(conversationId) ?? 0) !== loopCount ||
+          (seqs.get(conversationId) ?? 0) !== lastSeq
         if (!changed) return
         statuses.set(conversationId, status)
         backgrounds.set(conversationId, background)
         loops.set(conversationId, loopCount)
+        seqs.set(conversationId, lastSeq)
         emit()
       },
       onResync: () => {
@@ -99,6 +126,7 @@ export function useStatusFeed(): void {
         statuses.clear()
         backgrounds.clear()
         loops.clear()
+        seqs.clear()
         emit()
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       },
