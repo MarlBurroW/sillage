@@ -70,6 +70,14 @@ export interface RunnerContext {
    * mentirait dans les deux cas.
    */
   resolveMcpServers(config: AgentConfig): ResolvedMcpServers
+  /**
+   * Ce qui se passe sur le projet, à injecter au démarrage de la session. Null quand il
+   * n'y a rien à dire, ou que l'utilisateur a coupé les apports de Sillage.
+   *
+   * Le seul élément de contexte qui arrive sans que l'agent l'ait demandé : les outils
+   * du serveur MCP répondent quand on les interroge, encore faut-il y penser.
+   */
+  projectOverview(config: AgentConfig): string | null
   /** Identifiant de session natif à reprendre, null pour une nouvelle session. */
   resumeSessionId: string | null
   /** Écrit dans le journal puis diffuse. `raw` conserve le message natif du CLI. */

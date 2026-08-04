@@ -15,7 +15,8 @@ import {
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
-import { builtinMcpServer } from '../agents/mcp-builtin.js'
+import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
+import { projectOverview } from '../agents/overview.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type {
@@ -602,6 +603,18 @@ export class SessionManager {
         })
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },
+
+      // Suit les mêmes interrupteurs que le serveur MCP, sauf `strictMcp` : celui-ci
+      // dit « pas d'autre serveur que ceux que j'ai déclarés », ce qui parle des outils
+      // et non de ce que Sillage raconte de son propre état.
+      projectOverview: (current) =>
+        this.config.mcp.sillageServer && current.sillageMcp
+          ? projectOverview(this.db, {
+              projectId: conversation.projectId,
+              conversationId,
+              sillageMcp: builtinMcpEnabled(this.config.mcp.sillageServer, current),
+            })
+          : null,
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SillageEvent, raw?: unknown) => {

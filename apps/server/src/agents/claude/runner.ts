@@ -206,7 +206,10 @@ export class ClaudeRunner implements AgentRunner {
         // le flux ni le canal de contrôle n'en portent l'état : `CronList` n'existe
         // que comme outil du modèle, et aucun message ne joue pour les boucles le rôle
         // que `background_tasks_changed` joue pour le travail de fond.
-        hooks: { Stop: [{ hooks: [this.handleStop] }] },
+        hooks: {
+          Stop: [{ hooks: [this.handleStop] }],
+          SessionStart: [{ hooks: [this.handleSessionStart] }],
+        },
         stderr: (data) => {
           // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
           // perdre rend tout diagnostic impossible.
@@ -811,6 +814,29 @@ export class ClaudeRunner implements AgentRunner {
       void this.publishMcpStatus()
     }
     return { continue: true }
+  }
+
+  /**
+   * Injecte au démarrage ce qui se passe ailleurs sur le projet.
+   *
+   * Sur toutes les origines et pas seulement `startup` : une reprise ou un compactage
+   * ouvrent un process qui ne sait rien de ce qui a bougé pendant ce temps, et c'est
+   * justement là que l'agent risque de retomber sur le travail d'un autre sans le
+   * reconnaître. Le coût est d'une cinquantaine de jetons, contre un tour perdu à
+   * défaire une modification qu'il fallait attendre.
+   *
+   * Champ défini plutôt que méthode : le SDK appelle la référence telle quelle.
+   */
+  private readonly handleSessionStart: HookCallback = async (input) => {
+    if (input.hook_event_name !== 'SessionStart') return { continue: true }
+
+    const overview = this.ctx.projectOverview(this.config)
+    if (!overview) return { continue: true }
+
+    return {
+      continue: true,
+      hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: overview },
+    }
   }
 
   /**

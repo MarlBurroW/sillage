@@ -58,6 +58,7 @@ function buildProbe(config: AgentConfig, binary: string, resumeSessionId: string
     binary,
     attachmentsRoot: tmpdir(),
     resumeSessionId,
+    projectOverview: () => null,
     resolveMcpServers: () => ({ servers: [probeServer], failures: [] }),
     emit: (event: SillageEvent) => {
       if (event.type === 'mcp.updated') {
