@@ -171,9 +171,19 @@ export class ClaudeRunner implements AgentRunner {
     this.appliedMcpServers = toSdkMcpServers(resolved.servers)
     this.mcpFailures = failedStatuses(resolved.failures)
 
+    // Par le prompt système et non par le hook `SessionStart`, essayé d'abord : les
+    // hooks s'enregistrent dans la requête d'initialisation, et `SessionStart` est le
+    // premier événement de la session. Le rappel n'a produit aucun effet, vérifié sur
+    // une session neuve qui n'a rien reçu. Le mode `preset` conserve le prompt par
+    // défaut de Claude Code et n'y ajoute que cet appendice.
+    const overview = this.ctx.projectOverview(config)
+
     this.session = query({
       prompt: this.input,
       options: {
+        ...(overview
+          ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: overview } }
+          : {}),
         cwd: this.ctx.cwd,
         model: config.model,
         effort: config.effort,
@@ -206,10 +216,7 @@ export class ClaudeRunner implements AgentRunner {
         // le flux ni le canal de contrôle n'en portent l'état : `CronList` n'existe
         // que comme outil du modèle, et aucun message ne joue pour les boucles le rôle
         // que `background_tasks_changed` joue pour le travail de fond.
-        hooks: {
-          Stop: [{ hooks: [this.handleStop] }],
-          SessionStart: [{ hooks: [this.handleSessionStart] }],
-        },
+        hooks: { Stop: [{ hooks: [this.handleStop] }] },
         stderr: (data) => {
           // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
           // perdre rend tout diagnostic impossible.
@@ -814,29 +821,6 @@ export class ClaudeRunner implements AgentRunner {
       void this.publishMcpStatus()
     }
     return { continue: true }
-  }
-
-  /**
-   * Injecte au démarrage ce qui se passe ailleurs sur le projet.
-   *
-   * Sur toutes les origines et pas seulement `startup` : une reprise ou un compactage
-   * ouvrent un process qui ne sait rien de ce qui a bougé pendant ce temps, et c'est
-   * justement là que l'agent risque de retomber sur le travail d'un autre sans le
-   * reconnaître. Le coût est d'une cinquantaine de jetons, contre un tour perdu à
-   * défaire une modification qu'il fallait attendre.
-   *
-   * Champ défini plutôt que méthode : le SDK appelle la référence telle quelle.
-   */
-  private readonly handleSessionStart: HookCallback = async (input) => {
-    if (input.hook_event_name !== 'SessionStart') return { continue: true }
-
-    const overview = this.ctx.projectOverview(this.config)
-    if (!overview) return { continue: true }
-
-    return {
-      continue: true,
-      hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: overview },
-    }
   }
 
   /**
