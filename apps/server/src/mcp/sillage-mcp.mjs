@@ -25,7 +25,16 @@ const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
 
 /** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
 const MAX_THREAD_CHARS = 20000
-const MAX_MESSAGE_CHARS = 2000
+
+/**
+ * Part du budget qu'un seul message peut prendre.
+ *
+ * Un quart et non une valeur fixe basse : une session de vérification tient parfois
+ * toute entière dans son dernier message, et un plafond serré coupait exactement la
+ * conclusion qu'on venait chercher. Un quart laisse passer un rapport de plusieurs
+ * milliers de caractères sans qu'un seul message puisse monopoliser un long fil.
+ */
+const MAX_MESSAGE_CHARS = Math.floor(MAX_THREAD_CHARS / 4)
 
 /**
  * Fenêtre par défaut de `list_sessions`.
@@ -589,7 +598,8 @@ function renderSearch(query, results) {
   }
 
   const lines = results.map(
-    (row) => `- ${row.id} | ${asDate(row.ts)} | ${row.agent} | ${row.title}\n  ${row.excerpt}`,
+    (row) =>
+      `- ${row.id} | ${row.agent} | échange du ${asDate(row.ts)} | ${row.title}\n  ${row.excerpt}`,
   )
   return `${results.length} conversation(s) pour « ${query} » :\n${lines.join('\n')}`
 }
@@ -629,7 +639,10 @@ function fillFromEnd(messages, budget) {
  */
 function renderThread(found, before) {
   const { conversation, messages } = found
-  const header = `${conversation.title} (${conversation.agent}, ${asDate(conversation.createdAt)})`
+  // « ouverte le » et non une date nue : search_history date le message qui correspond,
+  // celle-ci date la création du fil. Deux dates justes pour un même objet se lisent
+  // comme une contradiction tant qu'aucune des deux ne dit ce qu'elle mesure.
+  const header = `${conversation.title} (${conversation.agent}, ouverte le ${asDate(conversation.createdAt)})`
   if (messages.length === 0) return `${header}\n\nAucun message dans ce fil.`
 
   const scoped = before === null ? messages : messages.filter((message) => message.seq < before)
