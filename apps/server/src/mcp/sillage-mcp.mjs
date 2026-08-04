@@ -37,6 +37,15 @@ const MAX_MESSAGE_CHARS = 2000
  */
 const RECENT_MINUTES = 15
 
+/**
+ * Fenêtre par défaut de `find_file_edits` sans chemin.
+ *
+ * Plus large que celle des sessions : une modification non commitée reste dans l'arbre
+ * longtemps après la fin de la session qui l'a faite, et c'est justement à ce
+ * moment-là, quand plus rien ne tourne, qu'on cherche d'où elle vient.
+ */
+const EDIT_MINUTES = 120
+
 const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
 
@@ -95,6 +104,26 @@ const TOOLS = [
           type: 'integer',
           description:
             "Fenêtre de « récemment », en minutes. 15 par défaut. Élargir à 1440 pour voir le travail de la journée. Les conversations qui travaillent en ce moment sont rendues quelle que soit la fenêtre.",
+        },
+      },
+    },
+  },
+  {
+    name: 'find_file_edits',
+    description:
+      "Dit quelle autre session a modifié un fichier, et ce qu'elle fait maintenant. Appelle cet outil quand tu trouves dans l'arbre de travail des modifications que tu n'as pas faites, avant de les annuler, de les contourner ou d'abandonner le tour : elles viennent souvent d'une session qui travaille en ce moment sur le même arbre, et la réponse dit si elle est encore active. Sans `path`, rend les fichiers récemment modifiés par les autres sessions du même arbre.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description:
+            "Chemin du fichier, relatif au répertoire de travail. Cherche dans tout l'historique, sans fenêtre de temps. À défaut de correspondance exacte, un fichier de même nom ailleurs est rendu, avec son chemin réel.",
+        },
+        within_minutes: {
+          type: 'integer',
+          description:
+            'Fenêtre pour la liste sans `path`, en minutes. 120 par défaut, une modification non commitée restant dans l\'arbre longtemps après la fin de la session qui l\'a faite.',
         },
       },
     },
@@ -246,6 +275,96 @@ function listSessions(withinMinutes) {
 }
 
 /**
+ * Le worktree de la conversation courante, `undefined` si on ne sait pas qui elle est.
+ *
+ * Sert à ne comparer que ce qui est comparable : deux conversations dans deux worktrees
+ * différents éditent le même chemin relatif sans jamais se marcher dessus, ce sont deux
+ * fichiers distincts sur le disque. Ne restent donc que celles qui partagent l'arbre.
+ */
+function currentWorktree() {
+  const row = db
+    .prepare(`SELECT worktree_id AS worktreeId FROM conversations WHERE id = ?`)
+    .get(CURRENT_CONVERSATION)
+  return row ? row.worktreeId : undefined
+}
+
+/**
+ * Qui d'autre a touché à ce fichier, et où en est cette session.
+ *
+ * L'activité de la conversation voyage avec la modification plutôt que d'être à
+ * rechercher ensuite : la question n'est jamais « qui a édité » seule, elle est « qui a
+ * édité, et est-ce que ça bouge encore », dont dépend le fait d'attendre ou de passer.
+ *
+ * Un chemin donné cherche sans fenêtre de temps : une modification non commitée reste
+ * dans l'arbre longtemps après la session qui l'a faite, et la borner ferait répondre
+ * « personne » au moment où la question se pose. La fenêtre ne sert qu'à la liste
+ * générale, qui n'aurait sinon pas de fin.
+ *
+ * Balayage de la table d'événements, sans index sur le type : mesuré à 30 ms sur 115 000
+ * lignes, pour un outil appelé quand un doute survient et non en boucle. Un index
+ * partiel serait la sortie si ça devenait chaud.
+ */
+function findFileEdits({ path, withinMinutes }) {
+  const exact = path ? path.replace(/^\.\//, '') : null
+  const rows = queryEdits({ path: exact, byName: false, withinMinutes })
+  if (rows.length > 0 || !exact) return rows
+
+  // Repli et non cumul : tant qu'un chemin exact répond, un homonyme ailleurs dans
+  // l'arbre n'est que du bruit. Il ne sert qu'au cas où l'appelant ne connaît que le
+  // nom du fichier, ou l'a écrit depuis un autre répertoire que celui du journal.
+  return queryEdits({ path: exact.split('/').pop(), byName: true, withinMinutes })
+}
+
+function queryEdits({ path, byName, withinMinutes }) {
+  const worktree = currentWorktree()
+
+  const filters = [
+    `e.type = 'file.edited'`,
+    `c.project_id = ?`,
+    `c.id != ?`,
+    // `IS` et non `=` : le worktree nul, qui vaut « racine du projet », est le cas le
+    // plus courant et une égalité SQL ne le rapproche de rien.
+    worktree === undefined ? null : `c.worktree_id IS ?`,
+    path === null
+      ? `e.ts >= ?`
+      : byName
+        ? `e.payload ->> '$.path' LIKE '%/' || ?`
+        : `e.payload ->> '$.path' = ?`,
+  ].filter(Boolean)
+
+  const params = [PROJECT_ID, CURRENT_CONVERSATION]
+  if (worktree !== undefined) params.push(worktree)
+  params.push(path === null ? Date.now() - withinMinutes * 60_000 : path)
+
+  return db
+    .prepare(
+      `SELECT e.conversation_id AS id,
+              c.title AS title,
+              c.agent AS agent,
+              c.status AS status,
+              c.background_count AS background,
+              c.loop_count AS loops,
+              w.name AS worktree,
+              e.payload ->> '$.path' AS path,
+              e.payload ->> '$.action' AS action,
+              max(e.ts) AS ts,
+              count(*) AS edits
+       FROM events AS e
+       JOIN conversations AS c ON c.id = e.conversation_id
+       LEFT JOIN worktrees AS w ON w.id = c.worktree_id
+       WHERE ${filters.join(' AND ')}
+       -- Sur les expressions et non sur les alias : la table worktrees a une colonne
+       -- path et la table events une colonne ts, que SQLite préfère aux alias de
+       -- sortie. Le regroupement se faisait alors par conversation seulement, avec des
+       -- comptes cumulés sur tous les fichiers et un chemin pris au hasard dans le lot.
+       GROUP BY e.conversation_id, e.payload ->> '$.path'
+       ORDER BY max(e.ts) DESC
+       LIMIT 40`,
+    )
+    .all(...params)
+}
+
+/**
  * Décompte sur toute l'instance, pour la seule question qui justifie d'en sortir :
  * peut-on redémarrer le service.
  *
@@ -316,6 +435,36 @@ function renderSessions(rows, withinMinutes) {
     return `- ${row.id} | ${row.agent} | ${describeActivity(row)} | ${where} | ${ago(row.updatedAt)}\n  ${row.title}`
   })
   return `${rows.length} conversation(s), fenêtre de ${withinMinutes} min :\n${lines.join('\n')}`
+}
+
+const ACTION_LABELS = { created: 'créé', modified: 'modifié', deleted: 'supprimé' }
+
+/**
+ * Une conclusion en tête plutôt qu'une table à interpréter.
+ *
+ * L'outil est appelé au moment d'un doute, et ce que l'appelant doit décider est
+ * d'attendre ou de passer. La réponse le dit donc explicitement quand une des sessions
+ * travaille encore, au lieu de laisser déduire d'un statut noyé dans une liste.
+ */
+function renderFileEdits(rows, { path, withinMinutes }) {
+  if (rows.length === 0) {
+    return path
+      ? `Aucune autre session de cet arbre de travail n'a touché à « ${path} ».`
+      : `Aucune autre session de cet arbre de travail n'a modifié de fichier dans les ${withinMinutes} dernières minutes.`
+  }
+
+  const busy = rows.filter((row) => row.status === 'running' || row.background > 0 || row.loops > 0)
+  const lead = busy.length > 0
+    ? `Attention, ${busy.length} de ces sessions travaillent encore : attendre peut valoir mieux qu'annuler leurs modifications.`
+    : "Aucune de ces sessions ne travaille plus : leurs modifications sont figées."
+
+  const lines = rows.map((row) => {
+    const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
+    const times = row.edits > 1 ? ` (${row.edits} fois)` : ''
+    return `- ${row.path} | ${ACTION_LABELS[row.action] ?? row.action}${times} | ${ago(row.ts)}\n  par ${row.id} (${row.agent}, ${describeActivity(row)}, ${where})\n  ${row.title}`
+  })
+
+  return `${lead}\n\n${lines.join('\n')}`
 }
 
 function renderCount(state) {
@@ -444,6 +593,13 @@ function callTool(name, args) {
     const asked = Number.isInteger(args?.within_minutes) ? args.within_minutes : RECENT_MINUTES
     const within = Math.min(Math.max(asked, 1), 60 * 24 * 7)
     return text(renderSessions(listSessions(within), within))
+  }
+
+  if (name === 'find_file_edits') {
+    const path = typeof args?.path === 'string' && args.path.trim() ? args.path.trim() : null
+    const asked = Number.isInteger(args?.within_minutes) ? args.within_minutes : EDIT_MINUTES
+    const withinMinutes = Math.min(Math.max(asked, 1), 60 * 24 * 7)
+    return text(renderFileEdits(findFileEdits({ path, withinMinutes }), { path, withinMinutes }))
   }
 
   if (name === 'count_active_sessions') {
