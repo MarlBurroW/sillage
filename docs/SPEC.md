@@ -1867,6 +1867,9 @@ pty_idle_timeout_min = 60
 
 [retention]
 archived_events_days = 90
+# Jours d'inactivité avant qu'une conversation lue et au repos soit archivée.
+# Zéro coupe l'archivage automatique, l'action manuelle restant disponible.
+auto_archive_days = 14
 
 [agents.claude]
 binary = "claude"
