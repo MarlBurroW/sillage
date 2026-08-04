@@ -48,6 +48,9 @@ export function ConversationMinimap({
     if (!node) return
 
     const observer = new ResizeObserver(([entry]) => {
+      // Le tableau d'entrées est typé comme pouvant être vide : on n'observe qu'un
+      // noeud, mais rien dans le type ne le dit, et un accès nu ne compile pas.
+      if (!entry) return
       setCapacity(Math.max(MIN_WINDOW, Math.floor(entry.contentRect.height / TICK_PITCH_PX)))
     })
     observer.observe(node)
