@@ -58,6 +58,12 @@ interface ManagedRunner {
    * la même raison que `background` : elles ne survivent pas au process CLI.
    */
   loops: number
+  /**
+   * Pourquoi ce runner doit être relancé, quand un réglage n'a pas pu être appliqué à
+   * chaud pendant un tour. Le redémarrage attend la fin du tour ; `null` le reste du
+   * temps. Voir `reloadConfig`.
+   */
+  pendingRestart: string | null
 }
 
 /** Fenêtre de déduplication des envois (invariant I5). Voir sendMessage(). */
@@ -232,8 +238,9 @@ export class SessionManager {
     this.broadcastStatus(conversationId, status, this.isWarm(conversationId))
 
     // Le tour vient de se terminer : c'est le seul moment où un message en attente
-    // peut partir sans se mêler au contexte du tour précédent.
-    if (status === 'idle') void this.flushQueue(conversationId)
+    // peut partir sans se mêler au contexte du tour précédent, et le seul où un
+    // redémarrage promis peut avoir lieu sans rien couper.
+    if (status === 'idle') void this.settleIdle(conversationId)
 
     // Un runner en erreur est mort pour de bon : le garder en mémoire renverrait
     // les messages suivants vers un process hors d'état. L'arrêter libère la place,
@@ -356,6 +363,26 @@ export class SessionManager {
   private isBusy(conversationId: string): boolean {
     const status = this.runners.get(conversationId)?.status
     return status === 'running' || status === 'awaiting_input'
+  }
+
+  /**
+   * Ce qui se joue au retour au repos : d'abord le redémarrage qu'un réglage attendait,
+   * ensuite seulement la file.
+   *
+   * Le redémarrage repasse par `setStatus('idle')`, qui rappelle cette méthode ; le
+   * drapeau est effacé avant, donc le second passage tombe directement sur la file, et
+   * le message en attente part vers un runner déjà reconfiguré.
+   */
+  private async settleIdle(conversationId: string): Promise<void> {
+    const managed = this.runners.get(conversationId)
+    if (managed?.pendingRestart) {
+      const reason = managed.pendingRestart
+      managed.pendingRestart = null
+      await this.restartForConfig(conversationId, reason)
+      return
+    }
+
+    await this.flushQueue(conversationId)
   }
 
   /**
@@ -641,6 +668,7 @@ export class SessionManager {
       idleTimer: null,
       background: 0,
       loops: 0,
+      pendingRestart: null,
     })
 
     try {
@@ -941,6 +969,11 @@ export class SessionManager {
    * Applique la configuration relue en base. Le SDK sait changer modèle, effort et
    * mode de permission à chaud, donc la session garde son contexte ; on ne retombe
    * sur l'arrêt du runner (et la reprise au message suivant) que si le CLI refuse.
+   *
+   * Le cas connu est `bypassPermissions`, que Claude Code n'accepte qu'au lancement :
+   * `set_permission_mode` répond « the session was not launched with
+   * --dangerously-skip-permissions ». Le redémarrage attend alors la fin du tour, parce
+   * que couper là perd le travail en cours pour un réglage qui vaut pour la suite.
    */
   async reloadConfig(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
@@ -957,11 +990,38 @@ export class SessionManager {
     } catch (err) {
       reason = err instanceof Error ? err.message : String(err)
     }
-    if (applied) return
+    if (applied) {
+      // Un réglage revenu à une valeur applicable à chaud annule le redémarrage promis :
+      // le laisser armé relancerait la session en fin de tour pour rien.
+      managed.pendingRestart = null
+      return
+    }
 
-    // Le repli est visible dans le fil plutôt qu'avalé : redémarrer la session a un
-    // coût réel (contexte rechargé) et l'utilisateur doit savoir pourquoi.
-    await this.stopRunner(conversationId)
+    if (this.isBusy(conversationId)) {
+      managed.pendingRestart = reason
+      this.log.append(conversationId, {
+        type: 'error',
+        code: 'config_restart_deferred',
+        message: 'Ce réglage demande de relancer la session : il prendra effet à la fin du tour.',
+        recoverable: true,
+      })
+      return
+    }
+
+    await this.restartForConfig(conversationId, reason)
+  }
+
+  /**
+   * Arrête le runner pour qu'il reparte avec la configuration à jour.
+   *
+   * Le repli est visible dans le fil plutôt qu'avalé : redémarrer la session a un coût
+   * réel (contexte rechargé) et l'utilisateur doit savoir pourquoi.
+   */
+  private async restartForConfig(conversationId: string, reason: string | null): Promise<void> {
+    // La file survit : le prochain envoi la trouvera, et `deliver` démarrera un runner
+    // neuf qui lira la configuration à jour. Expirer les messages ici les perdrait pour
+    // un redémarrage qui, lui, ne perd rien.
+    await this.stopRunner(conversationId, { keepQueue: true })
     this.log.append(conversationId, {
       type: 'error',
       code: 'config_applied_by_restart',
@@ -990,20 +1050,29 @@ export class SessionManager {
     return true
   }
 
-  private async stopRunner(conversationId: string): Promise<void> {
+  /**
+   * `keepQueue` sert au redémarrage volontaire, où un runner neuf reprend juste après :
+   * la file y garde un sens. Partout ailleurs l'arrêt est un point final.
+   */
+  private async stopRunner(
+    conversationId: string,
+    { keepQueue = false }: { keepQueue?: boolean } = {},
+  ): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (!managed) return
 
     // Les messages en attente ne partiront pas : le runner s'arrête. Les laisser en
     // file les rendrait invisiblement perdus au prochain message.
-    for (const entry of this.queues.get(conversationId) ?? []) {
-      this.log.append(conversationId, {
-        type: 'message.dequeued',
-        queueId: entry.queueId,
-        reason: 'expired',
-      })
+    if (!keepQueue) {
+      for (const entry of this.queues.get(conversationId) ?? []) {
+        this.log.append(conversationId, {
+          type: 'message.dequeued',
+          queueId: entry.queueId,
+          reason: 'expired',
+        })
+      }
+      this.queues.delete(conversationId)
     }
-    this.queues.delete(conversationId)
 
     this.runners.delete(conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)

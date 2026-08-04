@@ -927,6 +927,16 @@ export function applyEvent(
 
     case 'error': {
       state.compacting = false
+      // Un réglage qui attend la fin du tour n'est pas une panne : le tour continue et
+      // le choix est déjà enregistré. Un bandeau d'alerte le ferait passer pour un échec.
+      if (event.code === 'config_restart_deferred') {
+        appendItem(state, {
+          kind: 'notice',
+          id: `config-deferred-${seq}`,
+          text: translate('activity.configRestartDeferred'),
+        })
+        break
+      }
       appendItem(state, {
         kind: 'error',
         id: `error-${seq}`,
