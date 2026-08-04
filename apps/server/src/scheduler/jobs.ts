@@ -5,6 +5,7 @@ import { purgeIdempotencyKeys } from '../auth/api-tokens.js'
 import { purgeExpiredSessions } from '../auth/sessions.js'
 import type { Config } from '../config.js'
 import { archiveStaleConversations } from '../conversations/auto-archive.js'
+import { readAppSettings } from '../settings/app-settings.js'
 import type { Scheduler } from './scheduler.js'
 
 /**
@@ -39,15 +40,18 @@ export function registerMaintenanceJobs(
     },
   })
 
-  const { autoArchiveDays } = deps.config.retention
-  if (autoArchiveDays > 0) {
-    scheduler.register({
-      name: 'archive-stale-conversations',
-      schedule: '45 4 * * *',
-      run: () => {
-        const archived = archiveStaleConversations(deps.db, autoArchiveDays)
-        if (archived > 0) deps.log.info({ archived }, 'conversations rangees pour inactivite')
-      },
-    })
-  }
+  scheduler.register({
+    name: 'archive-stale-conversations',
+    schedule: '45 4 * * *',
+    run: () => {
+      // Le délai est relu à chaque passage, et non figé à l'enregistrement : il se
+      // règle dans l'interface, et attendre le prochain redémarrage pour en tenir
+      // compte annulerait l'intérêt de l'y avoir mis.
+      const { autoArchiveDays } = readAppSettings(deps.db, deps.config)
+      if (autoArchiveDays === 0) return
+
+      const archived = archiveStaleConversations(deps.db, autoArchiveDays)
+      if (archived > 0) deps.log.info({ archived }, 'conversations rangees pour inactivite')
+    },
+  })
 }

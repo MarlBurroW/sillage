@@ -1,4 +1,5 @@
 import {
+  Archive,
   Bell,
   ChevronRight,
   FolderOpen,
@@ -81,6 +82,13 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.secrets',
     descriptionKey: 'settings.section.secrets.description',
     icon: <KeyRound size={16} />,
+    adminOnly: true,
+  },
+  {
+    to: 'archivage',
+    labelKey: 'settings.section.archiving',
+    descriptionKey: 'settings.section.archiving.description',
+    icon: <Archive size={16} />,
     adminOnly: true,
   },
   {
