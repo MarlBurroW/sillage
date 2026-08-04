@@ -10,6 +10,8 @@ import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
+import { registerMaintenanceJobs } from './scheduler/jobs.js'
+import { Scheduler } from './scheduler/scheduler.js'
 import { SecretStore, loadOrCreateKey } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
 import { TerminalManager } from './terminals/terminal-manager.js'
@@ -62,6 +64,12 @@ async function main(): Promise<void> {
   // chaque tâche d'API tuée par le redémarrage doit le dire à son appelant.
   webhooks.start()
   webhooks.sessionEnded(recovered)
+
+  // Après buildApp, pour prendre le logger de l'application plutôt qu'en poser un second.
+  const scheduler = new Scheduler(app.log)
+  registerMaintenanceJobs(scheduler, { db, attachments, log: app.log })
+  scheduler.start()
+
   await app.listen({ host: config.server.host, port: config.server.port })
 
   const shutdown = async (signal: string) => {
@@ -70,6 +78,7 @@ async function main(): Promise<void> {
     // était en vol, et les livraisons persistées partiront au prochain démarrage.
     webhooks.shutdownFlush()
     webhooks.stop()
+    scheduler.stop()
     await sessions.stopAll()
     terminals.closeAll()
     await app.close()
