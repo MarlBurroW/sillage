@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Bot,
   Hand,
+  Hourglass,
   Layers,
   Pause,
   Repeat,
@@ -28,6 +29,7 @@ const ICONS: Record<SignalKind, LucideIcon> = {
   queued: Layers,
   awaiting: Hand,
   interrupted: Pause,
+  pending: Hourglass,
   offline: WifiOff,
   error: AlertTriangle,
 }

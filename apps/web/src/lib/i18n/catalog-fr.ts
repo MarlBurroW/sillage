@@ -64,6 +64,9 @@ export const fr: Catalog = {
   'signal.queued.one': '{count} message en file',
   'signal.queued.many': '{count} messages en file',
   'signal.awaiting': 'Attente de réponse',
+  'signal.pending': 'Réglage en attente',
+  'signal.pending.detail':
+    'Le tour en cours suit encore « {value} ». Le réglage choisi demande de relancer la session, ce qui se fera à la fin du tour.',
   'signal.interrupted': 'Interrompu',
   'signal.error': 'Erreur',
   'signal.offline': 'Liaison coupée',
@@ -113,6 +116,7 @@ export const fr: Catalog = {
   'composer.setting.model': 'Modèle',
   'composer.setting.effort': 'Effort de réflexion',
   'composer.setting.permission': 'Permissions',
+  'composer.setting.pending': 'En vigueur : {value}',
   'composer.setting.mode': 'Mode',
   'composer.setting.approval': 'Approbations',
   'composer.setting.sandbox': 'Bac à sable',

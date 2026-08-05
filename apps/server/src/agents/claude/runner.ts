@@ -165,6 +165,11 @@ export class ClaudeRunner implements AgentRunner {
   /** Serveurs qu'on n'a pas pu lancer, à joindre à l'inventaire que le CLI rapporte. */
   private mcpFailures: McpServerStatus[] = []
 
+  /** Voir `AgentRunner`. `this.config` n'avance qu'après une application réussie. */
+  get appliedConfig(): AgentConfig {
+    return this.config
+  }
+
   constructor(private readonly ctx: RunnerContext) {
     this.conversationId = ctx.conversationId
     this.config = ctx.config as ClaudeConfig

@@ -19,6 +19,7 @@ import {
   setting,
   type SettingChoice,
   type SettingGroup,
+  type SettingOption,
   type SummarySegment,
 } from './ComposerSettings'
 import { McpControl } from './McpControl'
@@ -139,6 +140,39 @@ function defaultModelLabel(
   return alias ? t('composer.model.defaultNamed', { model: alias.displayName }) : null
 }
 
+/**
+ * Le libellé de la valeur que la session applique encore, quand ce n'est pas celle
+ * qui est choisie. Null quand les deux coïncident, donc partout sauf entre un réglage
+ * que le CLI refuse de changer en vol et le redémarrage qui le prend en compte.
+ *
+ * Un libellé et non un drapeau : « en attente » ne dit pas sous quel régime le tour se
+ * déroule, ce qu'on cherche justement à savoir quand on vient de poser ou de lever un
+ * garde-fou.
+ */
+function appliedLabel(
+  applied: string | undefined,
+  chosen: string,
+  options: SettingOption[],
+): string | null {
+  if (applied === undefined || applied === chosen) return null
+  return options.find((option) => option.value === applied)?.label ?? applied
+}
+
+/** La mention posée sur la ligne du réglage, absente quand rien n'attend. */
+function notice(applied: string | null, t: Translate): string | undefined {
+  return applied === null ? undefined : t('composer.setting.pending', { value: applied })
+}
+
+/** Voir `appliedLabel` : la même comparaison, pour la rangée de signaux. */
+export function appliedPermissionLabel(
+  config: AgentConfig,
+  applied: AgentConfig | null,
+  t: Translate,
+): string | null {
+  if (config.agent !== 'claude' || applied?.agent !== 'claude') return null
+  return appliedLabel(applied.permissionMode, config.permissionMode, permissionOptions(t))
+}
+
 export interface AgentSettings {
   /** Les catégories, dans l'ordre où on les change. */
   groups: SettingGroup[]
@@ -154,6 +188,12 @@ interface AgentSettingsParams {
   config: AgentConfig
   onConfigChange: (config: AgentConfig) => void
   /**
+   * Configuration sous laquelle le CLI tourne réellement, `null` à froid ou hors d'une
+   * conversation lancée. Ce qui y diffère de `config` est un réglage choisi que la
+   * session n'a pas pu adopter en vol et qui attend son redémarrage.
+   */
+  appliedConfig?: AgentConfig | null
+  /**
    * Inventaire MCP rapporté par la session en cours. Absent hors d'une conversation
    * lancée : le contrôle retombe alors sur ce que la configuration décrit.
    */
@@ -167,6 +207,7 @@ const NO_INVENTORY: McpServerStatus[] = []
 export function useAgentSettings({
   config,
   onConfigChange,
+  appliedConfig = null,
   mcpInventory = NO_INVENTORY,
   disabled = false,
 }: AgentSettingsParams): AgentSettings {
@@ -377,6 +418,18 @@ export function useAgentSettings({
         options: permissionOptionList,
         value: claude.permissionMode,
         onChange: (permissionMode) => onConfigChange({ ...claude, permissionMode }),
+        // Le seul réglage du panneau que Claude Code refuse de changer en vol : entrer
+        // dans « Tout autoriser » comme en sortir demande de relancer la session. Le
+        // CLI est comparé aussi : un `appliedConfig` reçu à l'instant où l'on bascule
+        // de CLI décrirait encore la session de l'autre.
+        notice: notice(
+          appliedLabel(
+            appliedConfig?.agent === 'claude' ? appliedConfig.permissionMode : undefined,
+            claude.permissionMode,
+            permissionOptionList,
+          ),
+          t,
+        ),
       }),
     ]
 

@@ -79,6 +79,9 @@ export const en = {
   'signal.queued.one': '{count} queued message',
   'signal.queued.many': '{count} queued messages',
   'signal.awaiting': 'Waiting for you',
+  'signal.pending': 'Setting not in force yet',
+  'signal.pending.detail':
+    'The current turn still runs under "{value}". The setting you chose needs the session to restart, which happens when the turn ends.',
   'signal.interrupted': 'Interrupted',
   'signal.error': 'Error',
   'signal.offline': 'Connection lost',
@@ -128,6 +131,7 @@ export const en = {
   'composer.setting.model': 'Model',
   'composer.setting.effort': 'Thinking effort',
   'composer.setting.permission': 'Permissions',
+  'composer.setting.pending': 'In force: {value}',
   'composer.setting.mode': 'Mode',
   'composer.setting.approval': 'Approvals',
   'composer.setting.sandbox': 'Sandbox',

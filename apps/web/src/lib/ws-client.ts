@@ -1,5 +1,6 @@
 import {
   HEARTBEAT_INTERVAL_MS,
+  type AgentConfig,
   type ClientMessage,
   type ConversationStatus,
   type ServerMessage,
@@ -8,7 +9,12 @@ import {
 
 export interface StreamListener {
   onEvent(seq: number, ts: number, event: SillageEvent): void
-  onStatus(status: ConversationStatus, warm: boolean): void
+  /**
+   * `appliedConfig` est la configuration sous laquelle le CLI tourne, `null` à froid.
+   * Elle diverge de celle enregistrée tant qu'un réglage inapplicable en vol attend son
+   * redémarrage. Voir le message `status` du protocole.
+   */
+  onStatus(status: ConversationStatus, warm: boolean, appliedConfig: AgentConfig | null): void
   /** Titre proposé par le CLI après le premier tour. */
   onTitle(title: string): void
   /** Retard trop important pour le socket : recharger par la route REST. */
@@ -203,7 +209,11 @@ class WsClient {
         return
       }
       case 'status': {
-        for (const listener of listeners) listener.onStatus(message.status, message.warm)
+        // `?? null` et non le champ brut : un serveur d'avant ce champ ne l'envoie pas,
+        // et le web se déploie sans redémarrage, donc devant lui pendant un moment.
+        for (const listener of listeners) {
+          listener.onStatus(message.status, message.warm, message.appliedConfig ?? null)
+        }
         return
       }
       case 'title': {

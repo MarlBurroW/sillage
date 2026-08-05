@@ -64,6 +64,11 @@ interface ComposerProps {
   disabled: boolean
   /** Inventaire MCP de la session, pour dire ce qui est réellement chargé. */
   mcpInventory: McpServerStatus[]
+  /**
+   * Configuration sous laquelle le CLI tourne, `null` à froid. Ce qui y diffère de
+   * `config` est un réglage choisi qui attend le redémarrage de la session.
+   */
+  appliedConfig?: AgentConfig | null
   onSend(text: string, attachmentIds: string[], mentions: string[]): Promise<void>
   onInterrupt(): void
   onConfigChange(config: AgentConfig): void
@@ -109,6 +114,7 @@ export function Composer({
   status,
   disabled,
   mcpInventory,
+  appliedConfig = null,
   onSend,
   onInterrupt,
   onConfigChange,
@@ -147,6 +153,7 @@ export function Composer({
   const { groups, summary, mcp, catalogError } = useAgentSettings({
     config,
     onConfigChange,
+    appliedConfig,
     mcpInventory,
     disabled,
   })

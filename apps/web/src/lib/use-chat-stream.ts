@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { ConversationStatus, SillageEvent } from '@sillage/protocol'
+import type { AgentConfig, ConversationStatus, SillageEvent } from '@sillage/protocol'
 import { applyEvent, emptyChatState, isAwaitingUser, type ChatState } from './chat-fold'
 import { fetchJournal } from './conversations'
 import { wsClient } from './ws-client'
@@ -14,6 +14,12 @@ export interface ChatStream {
   connected: boolean
   /** Un process CLI tourne encore pour cette conversation. Null tant qu'on l'ignore. */
   warm: boolean | null
+  /**
+   * Configuration sous laquelle le CLI tourne vraiment, `null` à froid ou avant le
+   * premier statut poussé. Elle diverge de celle enregistrée tant qu'un réglage que le
+   * CLI ne sait pas changer en vol attend son redémarrage.
+   */
+  appliedConfig: AgentConfig | null
   /**
    * Le journal n'a pas fini d'être rejoué. Vrai jusqu'à la dernière page, et non
    * jusqu'à la première : c'est ce qui permet à la page de garder le fil masqué le
@@ -31,6 +37,7 @@ export function useChatStream(
   const [status, setStatus] = useState<ConversationStatus>(initialStatus)
   const [connected, setConnected] = useState(false)
   const [warm, setWarm] = useState<boolean | null>(null)
+  const [appliedConfig, setAppliedConfig] = useState<AgentConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
@@ -110,9 +117,10 @@ export function useChatStream(
 
       unsubscribe = wsClient.subscribe(conversationId, stateRef.current.lastSeq, {
         onEvent: (seq, ts, event) => enqueue(seq, ts, event),
-        onStatus: (next, isWarm) => {
+        onStatus: (next, isWarm, applied) => {
           setStatus(next)
           setWarm(isWarm)
+          setAppliedConfig(applied)
         },
         onTitle: () => {
           // Le titre vit dans la ligne de conversation, pas dans le journal : il faut
@@ -139,7 +147,15 @@ export function useChatStream(
     }
   }, [conversationId, queryClient])
 
-  return { state, status: reconcileStatus(status, state), connected, warm, loading, error }
+  return {
+    state,
+    status: reconcileStatus(status, state),
+    connected,
+    warm,
+    appliedConfig,
+    loading,
+    error,
+  }
 }
 
 /**
