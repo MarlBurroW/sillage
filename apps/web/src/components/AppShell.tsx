@@ -880,7 +880,14 @@ function ConversationRow({
         detailed ? 'min-h-9 items-start' : 'h-9 items-center',
         isDragging ? 'shadow-float z-10 bg-surface-high opacity-90' : '',
         isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
-        isActive || unread ? 'text-ink' : 'text-ink-faint',
+        /*
+          Le titre monte d'un cran quand la ligne porte son relevé, qui reste à l'encre
+          atténuée : sans cela les deux se lisaient à la même encre et la ligne n'avait
+          plus de tête. C'est le titre qu'on remonte plutôt que le relevé qu'on enfonce,
+          l'encre atténuée étant le plancher de l'échelle. Le non-lu garde l'encre pleine
+          et la graisse, donc son écart au lu ne se referme pas.
+        */
+        isActive || unread ? 'text-ink' : detailed ? 'text-ink-soft' : 'text-ink-faint',
       )}
     >
       <NavLink
