@@ -1,21 +1,26 @@
 import { randomUUID } from 'node:crypto'
-import { stat } from 'node:fs/promises'
-import { isAbsolute, resolve } from 'node:path'
+import { readdir, stat } from 'node:fs/promises'
+import { isAbsolute, join, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, max, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { conversations, projects, users, worktrees } from '@sillage/db'
 import {
   createProjectBodySchema,
+  parseRemoteUrl,
   reorderProjectsBodySchema,
+  startCloneBodySchema,
   updateProjectBodySchema,
+  type CloneJobDto,
   type ProjectDto,
 } from '@sillage/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
+import type { CloneJobs } from '../../clone-jobs.js'
 import { searchFiles } from '../../files.js'
+import { credentialEnv, credentialHelperCommand } from '../../git-credential/helper.js'
 import { listBranches, readGitStatus } from '../../git.js'
 import { dropConversation } from '../../search/search-index.js'
 import type { AppContext } from '../context.js'
-import { badRequest, forbidden, notFound } from '../errors.js'
+import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
@@ -46,11 +51,79 @@ async function assertUsableWorkspace(path: string): Promise<string> {
   return resolved
 }
 
+/**
+ * Le dossier que le clone va remplir.
+ *
+ * Symétrique de `assertUsableWorkspace` : là où un projet ordinaire exige un dossier qui
+ * existe, un clone exige un emplacement libre. Un dossier existant mais vide est accepté,
+ * parce que c'est ce que produit un `mkdir` fait d'avance par l'utilisateur.
+ */
+async function assertFreeDestination(parentDir: string, directory: string): Promise<string> {
+  if (!isAbsolute(parentDir)) {
+    throw badRequest('workspace_not_absolute', 'The workspace path must be absolute.')
+  }
+  // Le nom de dossier vient d'une URL de dépôt : sans cette garde, `..` ferait écrire
+  // le clone n'importe où sur le disque.
+  if (directory.includes('/') || directory.includes('\\') || directory.startsWith('.')) {
+    throw badRequest('clone_directory_invalid', 'The directory name must be a plain folder name.')
+  }
+
+  const parent = resolve(parentDir)
+  const info = await stat(parent).catch(() => null)
+  if (!info) {
+    throw badRequest('workspace_missing', 'Directory {path} does not exist.', { path: parent })
+  }
+  if (!info.isDirectory()) {
+    throw badRequest('workspace_not_a_directory', '{path} is not a directory.', { path: parent })
+  }
+
+  const destination = join(parent, directory)
+  const existing = await readdir(destination).catch(() => null)
+  if (existing && existing.length > 0) {
+    throw conflict(
+      'clone_destination_not_empty',
+      'Directory {path} already exists and is not empty.',
+      { path: destination },
+    )
+  }
+
+  return destination
+}
+
 export function registerProjectRoutes(
   app: FastifyInstance,
   ctx: AppContext,
   attachments: AttachmentStore,
+  cloneJobs: CloneJobs,
 ): void {
+  /**
+   * En fin de liste : s'insérer au milieu déplacerait visuellement des projets que
+   * l'utilisateur avait rangés lui-même.
+   */
+  const insertProject = async (
+    ownerId: string,
+    fields: {
+      name: string
+      workspacePath: string
+      visibility: 'private' | 'shared'
+      color: string | null
+    },
+  ) => {
+    const [highest] = await ctx.db.select({ max: max(projects.position) }).from(projects)
+
+    const row = {
+      id: randomUUID(),
+      ...fields,
+      ownerId,
+      defaultConfig: null,
+      position: (highest?.max ?? 0) + 1,
+      archivedAt: null,
+      createdAt: Date.now(),
+    }
+    await ctx.db.insert(projects).values(row)
+    return row
+  }
+
   const loadVisibleProject = async (projectId: string, userId: string) => {
     const row = (
       await ctx.db
@@ -116,23 +189,12 @@ export function registerProjectRoutes(
     const body = createProjectBodySchema.parse(request.body)
     const workspacePath = await assertUsableWorkspace(body.workspacePath)
 
-    // En fin de liste : s'insérer au milieu déplacerait visuellement des projets que
-    // l'utilisateur avait rangés lui-même.
-    const [highest] = await ctx.db.select({ max: max(projects.position) }).from(projects)
-
-    const row = {
-      id: randomUUID(),
+    const row = await insertProject(user.id, {
       name: body.name,
       workspacePath,
-      ownerId: user.id,
       visibility: body.visibility,
       color: body.color,
-      defaultConfig: null,
-      position: (highest?.max ?? 0) + 1,
-      archivedAt: null,
-      createdAt: Date.now(),
-    }
-    await ctx.db.insert(projects).values(row)
+    })
 
     const dto: ProjectDto = {
       ...row,
@@ -142,6 +204,65 @@ export function registerProjectRoutes(
       git: await readGitStatus(workspacePath),
     }
     return reply.status(201).send(dto)
+  })
+
+  /**
+   * Lance un clone et rend son identifiant de suivi.
+   *
+   * Le projet n'est créé qu'à la réussite : une ligne pointant sur un dossier à demi
+   * cloné n'aurait rien à offrir, et il faudrait la supprimer à la main.
+   *
+   * 202 et non 201 : un gros dépôt met plusieurs minutes, bien au-delà de ce qu'une
+   * requête HTTP peut tenir ouvert.
+   */
+  app.post('/api/projects/clone', async (request, reply): Promise<CloneJobDto> => {
+    const user = requireUser(request)
+    const body = startCloneBodySchema.parse(request.body)
+
+    const remote = parseRemoteUrl(body.url)
+    if (!remote) {
+      throw badRequest(
+        'clone_url_invalid',
+        'Expected a repository URL such as https://github.com/owner/repo.git.',
+      )
+    }
+    const destination = await assertFreeDestination(body.parentDir, body.directory)
+
+    const job = cloneJobs.start({
+      ownerId: user.id,
+      // La forme normalisée, pas la saisie : git échouerait sur la requête d'une adresse
+      // copiée depuis un navigateur.
+      url: remote.url,
+      destination,
+      env: credentialEnv(ctx.config.paths, user.id),
+      helper: credentialHelperCommand(ctx.config.paths, user.id),
+      createProject: async () => {
+        const row = await insertProject(user.id, {
+          name: body.name,
+          workspacePath: destination,
+          visibility: body.visibility,
+          color: body.color,
+        })
+        return row.id
+      },
+    })
+
+    return reply.status(202).send(job)
+  })
+
+  /**
+   * État d'un clone, interrogé par le client jusqu'à ce qu'il aboutisse.
+   *
+   * Les états ne survivent pas au redémarrage du serveur, qui aurait de toute façon tué
+   * le process git : un identifiant inconnu vaut donc « clone perdu ».
+   */
+  app.get('/api/projects/clone/:id', async (request): Promise<CloneJobDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+
+    const job = cloneJobs.get(id, user.id)
+    if (!job) throw notFound('clone_not_found', 'Unknown or expired clone.')
+    return job
   })
 
   /**

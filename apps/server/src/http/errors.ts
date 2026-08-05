@@ -84,9 +84,11 @@ export function registerErrorHandler(app: FastifyInstance): void {
         'requête rejetée par la validation',
       )
 
+      // `detail` part aussi en paramètre : la traduction de `validation_failed`
+      // l'interpole, et sans lui l'utilisateur lit « Requête invalide : {detail} ».
       return reply
         .status(400)
-        .send({ error: { code: 'validation_failed', message: detail } })
+        .send({ error: { code: 'validation_failed', message: detail, params: { detail } } })
     }
 
     if (err.statusCode && err.statusCode < 500) {

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ProjectDto } from '@sillage/protocol'
+import type { CloneJobDto, ProjectDto } from '@sillage/protocol'
 import { api } from './api'
 
 const PROJECTS_KEY = ['projects']
@@ -23,6 +23,44 @@ export function useCreateProject() {
   return useMutation({
     mutationFn: (input: CreateProjectInput) => api.post<ProjectDto>('/api/projects', input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: PROJECTS_KEY }),
+  })
+}
+
+export interface StartCloneInput {
+  url: string
+  name: string
+  parentDir: string
+  directory: string
+  visibility: 'private' | 'shared'
+}
+
+export function useStartClone() {
+  return useMutation({
+    mutationFn: (input: StartCloneInput) => api.post<CloneJobDto>('/api/projects/clone', input),
+  })
+}
+
+/**
+ * Avancement d'un clone.
+ *
+ * Interrogé à la seconde plutôt que reçu par le WebSocket : le hub est indexé par
+ * conversation, et un flux qui dure une minute à la création d'un projet ne justifie pas
+ * d'y ouvrir une famille d'événements.
+ */
+export function useCloneJob(id: string | null) {
+  const queryClient = useQueryClient()
+
+  return useQuery({
+    queryKey: ['clone', id],
+    queryFn: async () => {
+      const job = await api.get<CloneJobDto>(`/api/projects/clone/${id}`)
+      // Le projet n'existe qu'à la fin du clone : c'est le moment, et le seul, où la
+      // liste affichée est périmée.
+      if (job.status === 'done') void queryClient.invalidateQueries({ queryKey: PROJECTS_KEY })
+      return job
+    },
+    enabled: id !== null,
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 1000 : false),
   })
 }
 

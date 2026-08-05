@@ -26,6 +26,10 @@ import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
 import { registerSecretRoutes } from './routes/secrets.js'
 import type { SecretStore } from '../secrets/store.js'
+import { registerGitCredentialRoutes } from './routes/git-credentials.js'
+import { CloneJobs } from '../clone-jobs.js'
+import { GitHubRepoCatalog } from '../git-credentials/github.js'
+import type { GitCredentialStore } from '../git-credentials/store.js'
 import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
@@ -66,6 +70,7 @@ export async function buildApp(
   terminals: TerminalManager,
   push: PushService,
   secrets: SecretStore,
+  gitCredentials: GitCredentialStore,
   webhooks: WebhookService,
   scheduler: Scheduler,
 ): Promise<FastifyInstance> {
@@ -130,13 +135,14 @@ export async function buildApp(
 
   registerHealthRoutes(app)
   registerAuthRoutes(app, ctx)
-  registerProjectRoutes(app, ctx, attachments)
+  registerProjectRoutes(app, ctx, attachments, new CloneJobs())
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)
   registerAgentRoutes(app, registry, new CliInstaller(ctx.config.paths.agents))
   registerMcpRoutes(app, ctx)
   registerSecretRoutes(app, ctx, secrets)
+  registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
   registerWorktreeRoutes(app, ctx)
   registerUserRoutes(app, ctx)
   registerApiTokenRoutes(app, ctx, registry)

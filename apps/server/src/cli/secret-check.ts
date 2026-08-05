@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto'
 import { mcpServers, openDatabase } from '@sillage/db'
 import { resolveMcpServers, secretsUsedBy } from '../agents/mcp-registry.js'
 import { migrationsFolder, runPendingMigrations } from '../migrations.js'
-import { SecretStore, loadOrCreateKey } from '../secrets/store.js'
+import { loadOrCreateKey } from '../secrets/cipher.js'
+import { SecretStore } from '../secrets/store.js'
 
 /**
  * Contrôle du chemin des secrets, sur une base jetable.
