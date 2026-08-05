@@ -151,6 +151,12 @@ export class ClaudeRunner implements AgentRunner {
   /** Suit les changements appliqués à chaud, contrairement à `ctx.config` qui est figé. */
   private config: ClaudeConfig
   /**
+   * La session a été lancée en `bypassPermissions`, donc avec le drapeau qui coupe les
+   * demandes. Retenu à part : `this.config` le perd au premier changement appliqué à
+   * chaud, or c'est le lancement qui décide, pas le réglage courant.
+   */
+  private readonly launchedWithBypass: boolean
+  /**
    * Ce que la session a réellement reçu, pour ne renvoyer `setMcpServers` que sur un
    * vrai changement. Le SDK relance chaque serveur à l'appel, donc un appel inutile
    * coupe des connexions qui marchaient.
@@ -162,6 +168,7 @@ export class ClaudeRunner implements AgentRunner {
   constructor(private readonly ctx: RunnerContext) {
     this.conversationId = ctx.conversationId
     this.config = ctx.config as ClaudeConfig
+    this.launchedWithBypass = this.config.permissionMode === 'bypassPermissions'
     this.interactions = new PendingInteractions(ctx)
   }
 
@@ -1026,6 +1033,14 @@ export class ClaudeRunner implements AgentRunner {
     // requête de contrôle pour l'inverser. Refuser ici fait redémarrer le runner, qui
     // repartira en reprise avec la bonne valeur.
     if (config.strictMcp !== this.config.strictMcp) return false
+
+    // Sortir de `bypassPermissions` demande de relancer, au même titre qu'y entrer. Le
+    // contournement est donné au lancement, et `set_permission_mode` ne le reprend pas :
+    // il accepte le nouveau mode sans rien changer, `canUseTool` n'est plus jamais
+    // rappelé, et la conversation continue à tout autoriser sous un réglage qui affiche
+    // le contraire. Contrairement au sens inverse, qui échoue franchement, celui-ci
+    // passait pour appliqué et n'a donc jamais fait repartir le runner.
+    if (this.launchedWithBypass && config.permissionMode !== 'bypassPermissions') return false
 
     await this.session.setModel(config.model)
     await this.session.applyFlagSettings({ effortLevel: config.effort })
