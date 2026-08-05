@@ -71,6 +71,28 @@ const TURN_COUNT = sql<number>`(
 )`
 
 /**
+ * Les événements qui valent qu'on signale la conversation à son lecteur.
+ *
+ * Même doctrine que `NOTIFIABLE` du gestionnaire de sessions, et presque la même liste :
+ * les moments où l'agent réclame une décision, et la fin d'un tour. `error` s'y ajoute,
+ * qu'une notification n'annonce pas mais qui compte quand on retrouve le fil plus tard.
+ *
+ * Liste nommée plutôt qu'une exclusion des événements de service : le journal avance
+ * aussi tout seul, et compter `session.ended` ou `usage.updated`, écrits une fois tout
+ * le monde parti, allumait 57 conversations sur 80 sans que personne n'ait rien à y
+ * lire. Une liste fermée se relit ; une règle par la négative se serait retrouvée
+ * fausse au premier type d'événement ajouté.
+ */
+const NOTABLE = new Set<SillageEvent['type']>([
+  'turn.completed',
+  'error',
+  'permission.requested',
+  'question.requested',
+  'elicitation.requested',
+  'plan.review_requested',
+])
+
+/**
  * Poids d'une entrée sur disque, en octets et non en caractères : un fil accentué ou
  * riche en emoji pèse davantage que ce que `String.length` en dit.
  */
@@ -127,6 +149,7 @@ export class EventLog {
       tx.update(conversations)
         .set({
           lastSeq: seq,
+          ...(NOTABLE.has(event.type) ? { lastNotableSeq: seq } : {}),
           updatedAt: ts,
           journalBytes: sql`${conversations.journalBytes} + ${byteSize(payload, storedRaw)}`,
         })
@@ -172,8 +195,10 @@ export class EventLog {
       if (!row) throw new Error(`Conversation inconnue : ${conversationId}`)
 
       let bytes = 0
+      let notableSeq = 0
       const appended = batch.map((item, index): JournalEntry => {
         const seq = row.lastSeq + index + 1
+        if (NOTABLE.has(item.event.type)) notableSeq = seq
         const payload = JSON.stringify(item.event)
         const storedRaw = item.raw === undefined ? null : JSON.stringify(item.raw)
         bytes += byteSize(payload, storedRaw)
@@ -198,6 +223,7 @@ export class EventLog {
       tx.update(conversations)
         .set({
           lastSeq: row.lastSeq + batch.length,
+          ...(notableSeq > 0 ? { lastNotableSeq: notableSeq } : {}),
           updatedAt: Date.now(),
           journalBytes: sql`${conversations.journalBytes} + ${bytes}`,
           turnCount: TURN_COUNT,

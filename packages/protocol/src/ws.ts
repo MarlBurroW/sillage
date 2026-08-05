@@ -70,18 +70,22 @@ export type ServerMessage =
        */
       appliedConfig: AgentConfig | null
       /**
-       * Dernier `seq` écrit au journal, pour la même raison que les trois précédents.
+       * Dernier `seq` qui valait qu'on prévienne le lecteur, pour la même raison que les
+       * trois précédents.
        *
        * Porté par le statut plutôt que par un flux propre : le moment qui intéresse la
        * sidebar est la fin du tour, pas chaque jeton. Un fil qui repasse au repos a fini
        * de produire, et c'est là que le point de non-lu doit apparaître. Le suivre
        * événement par événement le ferait clignoter pendant toute la réponse.
+       *
+       * Le `seq` brut du journal ne conviendrait pas : il avance encore après le départ
+       * de tout le monde, quand la session se refroidit ou qu'un relevé d'usage tombe.
        */
-      lastSeq: number
+      lastNotableSeq: number
       /**
        * Métriques de volume, relues en base à chaque diffusion.
        *
-       * Portées par le statut pour la même raison que `lastSeq`, et pour le même prix :
+       * Portées par le statut pour la même raison que `lastNotableSeq`, et pour le même prix :
        * la ligne de conversation est déjà lue pour lui. Ce qui les fait bouger arrive en
        * fin de tour, moment où le statut change de toute façon.
        */

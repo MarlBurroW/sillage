@@ -36,8 +36,8 @@ export interface StatusUpdate {
   warm: boolean
   background: number
   loops: number
-  /** Dernier `seq` du journal, d'où se déduit ce qui reste à lire. */
-  lastSeq: number
+  /** Dernier `seq` qui valait qu'on prévienne, d'où se déduit ce qui reste à lire. */
+  lastNotableSeq: number
   /** Relevés de volume, pour le mode détaillé de la sidebar. */
   metrics: ConversationMetrics
 }
@@ -195,7 +195,7 @@ class WsClient {
         warm: message.warm,
         background: message.background,
         loops: message.loops,
-        lastSeq: message.lastSeq,
+        lastNotableSeq: message.lastNotableSeq,
         metrics: message.metrics,
       }
       for (const watcher of this.statusWatchers) watcher.onStatus(update)
