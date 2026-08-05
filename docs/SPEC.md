@@ -1870,6 +1870,9 @@ archived_events_days = 90
 # Jours d'inactivité avant qu'une conversation lue et au repos soit archivée.
 # Zéro coupe l'archivage automatique, l'action manuelle restant disponible.
 auto_archive_days = 14
+# Motif cron du passage d'archivage. Les deux réglages ci-dessus se changent aussi
+# dans Réglages > Archivage, et la valeur de l'interface l'emporte sur celle-ci.
+auto_archive_schedule = "45 4 * * *"
 
 [agents.claude]
 binary = "claude"

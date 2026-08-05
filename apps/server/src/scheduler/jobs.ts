@@ -8,6 +8,9 @@ import { archiveStaleConversations } from '../conversations/auto-archive.js'
 import { readAppSettings } from '../settings/app-settings.js'
 import type { Scheduler } from './scheduler.js'
 
+/** Nommée : la route de réglages a besoin de la désigner pour la reprogrammer. */
+export const ARCHIVE_JOB = 'archive-stale-conversations'
+
 /**
  * Les ménages que `main` fait aussi au démarrage, ici pour qu'ils repassent ensuite.
  *
@@ -41,8 +44,10 @@ export function registerMaintenanceJobs(
   })
 
   scheduler.register({
-    name: 'archive-stale-conversations',
-    schedule: '45 4 * * *',
+    name: ARCHIVE_JOB,
+    // Seul motif qui ne soit pas une constante : celui-ci se règle dans l'interface,
+    // et la route de réglages réarme la tâche sur la nouvelle valeur.
+    schedule: readAppSettings(deps.db, deps.config).autoArchiveSchedule,
     run: () => {
       // Le délai est relu à chaque passage, et non figé à l'enregistrement : il se
       // règle dans l'interface, et attendre le prochain redémarrage pour en tenir

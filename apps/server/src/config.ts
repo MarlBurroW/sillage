@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parse as parseToml } from 'smol-toml'
 import { z } from 'zod'
+import { cronScheduleSchema } from '@sillage/protocol'
 
 const configSchema = z.object({
   server: z
@@ -37,6 +38,11 @@ const configSchema = z.object({
        * rangée. Zéro coupe le rangement automatique, l'action manuelle restant là.
        */
       autoArchiveDays: z.number().int().min(0).default(14),
+      /**
+       * Motif cron du passage d'archivage. Au petit matin par défaut, et décalé des
+       * autres ménages pour ne pas se retrouver à quatre sur l'unique rédacteur SQLite.
+       */
+      autoArchiveSchedule: cronScheduleSchema.default('45 4 * * *'),
     })
     .default({}),
   mcp: z

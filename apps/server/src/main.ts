@@ -44,6 +44,9 @@ async function main(): Promise<void> {
   const orphans = await attachments.purgeOrphans()
 
   const push = new PushService(db, config.paths.data)
+  // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
+  // démarré après elle, faute de logger avant.
+  const scheduler = new Scheduler()
   const app = await buildApp(
     { db, config },
     log,
@@ -54,6 +57,7 @@ async function main(): Promise<void> {
     push,
     secrets,
     webhooks,
+    scheduler,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
@@ -65,10 +69,8 @@ async function main(): Promise<void> {
   webhooks.start()
   webhooks.sessionEnded(recovered)
 
-  // Après buildApp, pour prendre le logger de l'application plutôt qu'en poser un second.
-  const scheduler = new Scheduler(app.log)
   registerMaintenanceJobs(scheduler, { db, attachments, log: app.log, config })
-  scheduler.start()
+  scheduler.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
 
