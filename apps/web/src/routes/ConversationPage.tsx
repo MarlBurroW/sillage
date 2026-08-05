@@ -156,6 +156,18 @@ export function ConversationPage() {
   const scroller = useRef<HTMLDivElement>(null)
   const [stuckToBottom, setStuckToBottom] = useState(true)
   /**
+   * Position lue au dernier événement de défilement, pour reconnaître un geste de lecture.
+   *
+   * Le suivi du bas ne peut pas se déduire de la seule distance au bas du fil : le
+   * contenu s'agrandit encore après avoir été collé, un bloc de code se colorant ou une
+   * image se posant, et l'événement du collage est alors traité contre une hauteur qui a
+   * déjà bougé. Le fil passait pour quitté, le suivi se coupait, et le direct continuait
+   * sans le lecteur, plusieurs écrans plus bas. Une hauteur qui grandit ne fait jamais
+   * baisser `scrollTop`, et un collage ne fait que l'augmenter : seul un geste vers le
+   * haut décolle désormais le fil.
+   */
+  const lastTop = useRef(0)
+  /**
    * Le fil est en place et peut se montrer.
    *
    * Faux pendant tout le rejeu du journal : le fil s'y construit par paquets, à une
@@ -362,8 +374,16 @@ export function ConversationPage() {
     // fil de son bas avant même qu'il ne s'affiche.
     if (!node || !placed) return
 
-    const distance = node.scrollHeight - node.scrollTop - node.clientHeight
-    setStuckToBottom(distance < STICKY_THRESHOLD_PX)
+    // Une marge d'un pixel : le défilement est fractionnaire sur mobile, et le bruit
+    // d'arrondi d'une inertie qui descend passerait sinon pour une remontée.
+    const top = node.scrollTop
+    const wentUp = top < lastTop.current - 1
+    lastTop.current = top
+
+    // Le bas l'emporte : il vaut aussi quand le contenu rétrécit et que le navigateur
+    // rogne `scrollTop`, ce qui fait bien remonter la position sans qu'on ait défilé.
+    if (node.scrollHeight - top - node.clientHeight < STICKY_THRESHOLD_PX) setStuckToBottom(true)
+    else if (wentUp) setStuckToBottom(false)
 
     if (visibilityFrame.current !== null) return
     visibilityFrame.current = requestAnimationFrame(() => {
@@ -554,6 +574,10 @@ export function ConversationPage() {
     const settle = (top: number | null) => {
       if (top === null) scrollToBottom(node)
       else node.scrollTop = top
+      // `onScroll` ne tient pas la position tant que le fil n'est pas placé : sans ce
+      // report, le premier geste de lecture serait comparé à celle d'une autre
+      // conversation et ne décollerait pas le fil.
+      lastTop.current = node.scrollTop
       setStuckToBottom(node.scrollHeight - node.scrollTop - node.clientHeight < STICKY_THRESHOLD_PX)
       setPlaced(true)
     }
