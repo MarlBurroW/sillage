@@ -91,13 +91,13 @@ async function main(): Promise<void> {
 
   const runner = new ClaudeRunner(ctx)
   await runner.start()
-  await runner.send(TASK, [], [])
+  await runner.send(TASK, [], [], [])
 
   // Assez tard pour que le tour soit ouvert et le premier outil lancé, assez tôt pour
   // qu'il reste deux commandes, donc deux frontières où le repli peut avoir lieu.
   await settle(8000)
 
-  const steered = await runner.steer(STEER, [], [])
+  const steered = await runner.steer(STEER, [], [], [])
   console.log(`steer accepté : ${steered}`)
 
   const finished = await waitForIdle(() => status === 'idle', 120_000)

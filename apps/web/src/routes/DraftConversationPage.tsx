@@ -8,7 +8,7 @@ import {
   type AgentConfig,
   type AgentKind,
 } from '@sillage/protocol'
-import type { McpServerStatus, SlashCommandDto } from '@sillage/protocol'
+import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { Banner, Button, cx } from '../components/ui'
@@ -50,6 +50,7 @@ function formatDay(ts: number): string {
  */
 const NO_MCP_INVENTORY: McpServerStatus[] = []
 const NO_COMMANDS: SlashCommandDto[] = []
+const NO_SKILLS: AgentSkillDto[] = []
 
 export function DraftConversationPage() {
   const { projectId } = useParams()
@@ -118,14 +119,19 @@ export function DraftConversationPage() {
     navigate(`/p/${projectId}/c/${created.id}`, { replace: true })
   }
 
-  const send = async (text: string, attachmentIds: string[], mentions: string[]) => {
+  const send = async (
+    text: string,
+    attachmentIds: string[],
+    mentions: string[],
+    skills: string[],
+  ) => {
     if (!projectId) return
 
     const created = await createConversation.mutateAsync({
       agent,
       config: effective,
       worktreeId,
-      firstMessage: { clientMessageId: uuidv4(), text, attachmentIds, mentions },
+      firstMessage: { clientMessageId: uuidv4(), text, attachmentIds, mentions, skills },
     })
 
     // `replace` : revenir en arrière ne doit pas ramener sur un brouillon qui n'a
@@ -330,6 +336,7 @@ export function DraftConversationPage() {
         // rapporter. La liste en `/` s'ouvrira au premier tour.
         mcpInventory={NO_MCP_INVENTORY}
         commands={NO_COMMANDS}
+        skills={NO_SKILLS}
         status="idle"
         // Un CLI absent ne se rattrape pas côté serveur : le tour échouerait après
         // création de la conversation, laissant un fil vide et un message perdu.

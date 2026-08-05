@@ -1,5 +1,6 @@
 import type {
   AgentQuestion,
+  AgentSkillDto,
   BackgroundTask,
   ContentBlock,
   ElicitationField,
@@ -278,6 +279,13 @@ export interface ChatState {
    */
   commands: SlashCommandDto[]
   /**
+   * Les compétences que le CLI met à disposition, référencées en `$`.
+   *
+   * Remplacée et jamais complétée, comme `commands`. Publiée par Codex seul : Claude
+   * expose les siennes parmi ses commandes.
+   */
+  skills: AgentSkillDto[]
+  /**
    * Les réveils observés, par consigne réinjectée : combien, et le dernier quand.
    *
    * Tenue à part de `loops` parce qu'elle doit survivre au remplacement de la liste.
@@ -344,6 +352,7 @@ export function emptyChatState(): ChatState {
     loops: [],
     mcp: [],
     commands: [],
+    skills: [],
     loopFires: new Map(),
     tasks: new Map(),
   }
@@ -1042,6 +1051,11 @@ export function applyEvent(
 
     case 'commands.updated': {
       state.commands = event.commands
+      break
+    }
+
+    case 'skills.updated': {
+      state.skills = event.skills
       break
     }
 

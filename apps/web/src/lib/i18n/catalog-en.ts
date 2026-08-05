@@ -995,6 +995,8 @@ export const en = {
   'mention.picker.aria': 'Files to mention',
   'command.picker.aria': 'Commands',
   'command.picker.empty': 'No matching command.',
+  'skill.picker.aria': 'Skills',
+  'skill.picker.empty': 'No matching skill.',
   'queued.remove': 'Remove this message from the queue',
   'queued.remove.failed': 'This message could not be removed from the queue.',
   'queued.attachments.one': '{count} attachment',

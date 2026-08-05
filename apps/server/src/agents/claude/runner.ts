@@ -996,11 +996,15 @@ export class ClaudeRunner implements AgentRunner {
    * comportement a été vérifié sur le CLI installé, en posant une question sur un
    * fichier mentionné avec tous les outils refusés : la réponse est arrivée sans
    * qu'aucun outil ne soit appelé, donc le contenu était déjà dans le contexte.
+   *
+   * Les compétences non plus : Claude expose les siennes parmi ses commandes en `/`,
+   * qui partent dans le texte. Rien ne les publie ici, donc la liste arrive vide.
    */
   async send(
     text: string,
     attachments: OutgoingAttachment[],
     _mentions: OutgoingMention[],
+    _skills: string[],
   ): Promise<void> {
     const { blocks, prompt } = await buildUserMessage(text, attachments)
 
@@ -1044,6 +1048,7 @@ export class ClaudeRunner implements AgentRunner {
     text: string,
     attachments: OutgoingAttachment[],
     _mentions: OutgoingMention[],
+    _skills: string[],
   ): Promise<boolean> {
     if (!this.session || !this.turnOpen) return false
 

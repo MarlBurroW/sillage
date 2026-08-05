@@ -14,6 +14,7 @@ import {
   parseSlashCommand,
   type AgentConfig,
   type AttachmentDto,
+  type AgentSkillDto,
   type ConversationStatus,
   type McpServerStatus,
   type SlashCommandDto,
@@ -25,11 +26,11 @@ import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
 import { useTranslate } from '../../lib/i18n'
-import { matchCommands, type CommandMatch } from '../../lib/commands'
+import { matchCommands, matchSkills, type PickerEntry } from '../../lib/composer-tokens'
 import { IconButton, cx } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
 import { useAgentSettings } from './agent-settings'
-import { CommandPicker } from './CommandPicker'
+import { TokenPicker } from './TokenPicker'
 import { ComposerSettings } from './ComposerSettings'
 import { MentionPicker } from './MentionPicker'
 
@@ -54,16 +55,35 @@ function mentionAt(value: string, caret: number): MentionToken | null {
   return { query, start: caret - query.length - 1, end: caret }
 }
 
+/** Le `/commande` ou le `$compétence` en cours de saisie, repéré autour du curseur. */
+interface SigilToken {
+  sigil: '/' | '$'
+  query: string
+  /** Position du sigle lui-même, pour remplacer le jeton entier à la sélection. */
+  start: number
+  end: number
+}
+
 /**
- * La commande en cours de saisie, ou null.
+ * Jeton dans lequel se trouve le curseur, ou null.
  *
- * Uniquement en tête de champ : c'est la seule position où les CLI reconnaissent une
- * commande, et un `/` accepté ailleurs ouvrirait la liste au milieu d'un chemin. Le
- * jeton se referme dès la première espace, qui commence les arguments.
+ * Les deux sigles n'ont pas la même portée, parce que ce qu'ils désignent ne se place
+ * pas au même endroit. Une commande occupe le message entier et n'est reconnue qu'en
+ * tête de champ, sinon un `/` ouvrirait la liste au milieu d'un chemin. Une compétence
+ * se cite dans une phrase, comme une mention, et s'accepte donc à tout début de mot.
  */
-function commandAt(value: string, caret: number): { query: string; end: number } | null {
-  const match = /^\/([a-zA-Z0-9_:-]*)$/.exec(value.slice(0, caret))
-  return match ? { query: match[1] ?? '', end: caret } : null
+function sigilAt(value: string, caret: number): SigilToken | null {
+  const before = value.slice(0, caret)
+
+  const command = /^\/([a-zA-Z0-9_:-]*)$/.exec(before)
+  if (command) return { sigil: '/', query: command[1] ?? '', start: 0, end: caret }
+
+  const skill = /(?:^|\s)\$([a-zA-Z0-9_:-]*)$/.exec(before)
+  if (skill) {
+    const query = skill[1] ?? ''
+    return { sigil: '$', query, start: caret - query.length - 1, end: caret }
+  }
+  return null
 }
 
 /** Nom de repli pour un fichier collé qui n'en porte pas. */
@@ -91,7 +111,17 @@ interface ComposerProps {
    * publié. La liste ne s'ouvre pas dans ce cas, plutôt que d'annoncer un vide.
    */
   commands: SlashCommandDto[]
-  onSend(text: string, attachmentIds: string[], mentions: string[]): Promise<void>
+  /**
+   * Les compétences en `$` que le CLI met à disposition, vide quand il n'en publie pas.
+   * Codex seul en publie : Claude expose les siennes parmi ses commandes.
+   */
+  skills: AgentSkillDto[]
+  onSend(
+    text: string,
+    attachmentIds: string[],
+    mentions: string[],
+    skills: string[],
+  ): Promise<void>
   /**
    * Exécute une commande que Sillage traite lui-même plutôt que de la transmettre au
    * CLI comme du texte (`NATIVE_SLASH_COMMANDS`).
@@ -109,7 +139,12 @@ interface ComposerProps {
    *
    * Absent sinon : le bouton ne s'affiche pas plutôt que d'être proposé puis refusé.
    */
-  onSteer?(text: string, attachmentIds: string[], mentions: string[]): Promise<void>
+  onSteer?(
+    text: string,
+    attachmentIds: string[],
+    mentions: string[],
+    skills: string[],
+  ): Promise<void>
   /**
    * Contenu de départ du champ.
    *
@@ -146,6 +181,7 @@ export function Composer({
   mcpInventory,
   appliedConfig = null,
   commands,
+  skills,
   onSend,
   onCommand,
   onInterrupt,
@@ -170,9 +206,9 @@ export function Composer({
   const [attachments, setAttachments] = useState<AttachmentDto[]>(restored.attachments)
   const [uploading, setUploading] = useState(0)
   const [token, setToken] = useState<MentionToken | null>(null)
-  const [command, setCommand] = useState<{ query: string; end: number } | null>(null)
-  // Partagé par les deux listes : leurs jetons s'excluent, une commande ne pouvant
-  // s'écrire qu'en tête de champ et une mention qu'après un début de mot.
+  const [sigil, setSigil] = useState<SigilToken | null>(null)
+  // Partagé par les listes : leurs jetons s'excluent, aucune position du curseur ne
+  // pouvant ouvrir un `@`, un `/` et un `$` à la fois.
   const [active, setActive] = useState(0)
   /**
    * Chemins réellement choisis dans la liste. Un `@quelquechose` tapé à la main n'en
@@ -181,6 +217,14 @@ export function Composer({
    * du texte tout seul.
    */
   const [mentioned, setMentioned] = useState<Set<string>>(() => new Set(restored.mentions))
+  /**
+   * Compétences réellement choisies dans la liste, par leur nom.
+   *
+   * Même distinction que pour les mentions : un `$quelquechose` tapé à la main n'en
+   * fait pas partie, rien ne garantissant qu'il désigne une compétence publiée. Le
+   * runner écarte de toute façon un nom qu'il ne reconnaît pas.
+   */
+  const [invoked, setInvoked] = useState<Set<string>>(() => new Set(restored.skills))
   const textarea = useRef<HTMLTextAreaElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
 
@@ -205,8 +249,13 @@ export function Composer({
   // Le brouillon suit la saisie plutôt que le démontage : un composant démonté par un
   // changement de route ne peut plus lire son état au moment où il disparaît.
   useEffect(() => {
-    saveDraft(draftKey, { text, attachments, mentions: [...mentioned] })
-  }, [draftKey, text, attachments, mentioned])
+    saveDraft(draftKey, {
+      text,
+      attachments,
+      mentions: [...mentioned],
+      skills: [...invoked],
+    })
+  }, [draftKey, text, attachments, mentioned, invoked])
 
   const { data: files, isFetching: searching } = useFileSuggestions(
     projectId,
@@ -270,22 +319,33 @@ export function Composer({
   const syncToken = (value: string, caret: number | null) => {
     const position = caret ?? value.length
     setToken(mentionAt(value, position))
-    setCommand(commands.length > 0 ? commandAt(value, position) : null)
+    // Un sigle dont le CLI n'a rien publié n'ouvre pas de liste : mieux vaut ne rien
+    // proposer que d'annoncer un vide à chaque `$` d'une commande shell citée.
+    const found = sigilAt(value, position)
+    const available = found?.sigil === '/' ? commands.length > 0 : skills.length > 0
+    setSigil(found && available ? found : null)
     setActive(0)
   }
 
-  const matches = command ? matchCommands(commands, command.query) : []
+  const entries = !sigil
+    ? []
+    : sigil.sigil === '/'
+      ? matchCommands(commands, sigil.query)
+      : matchSkills(skills, sigil.query)
 
-  /** Remplace le jeton en cours par la commande choisie, prête à recevoir ses arguments. */
-  const pickCommand = ({ name }: CommandMatch) => {
+  /** Remplace le jeton en cours par l'entrée choisie, prête à recevoir sa suite. */
+  const pickEntry = ({ name }: PickerEntry) => {
     const node = textarea.current
-    if (!command || !node) return
+    if (!sigil || !node) return
 
-    const next = `/${name} ${text.slice(command.end)}`
-    const caret = name.length + 2
+    const next = `${text.slice(0, sigil.start)}${sigil.sigil}${name} ${text.slice(sigil.end)}`
+    const caret = sigil.start + name.length + 2
 
     setText(next)
-    setCommand(null)
+    if (sigil.sigil === '$') setInvoked((current) => new Set(current).add(name))
+    setSigil(null)
+    // Après le rendu : replacer le curseur avant que React ait réécrit la valeur le
+    // ferait sauter en fin de champ.
     requestAnimationFrame(() => {
       node.focus()
       node.setSelectionRange(caret, caret)
@@ -304,27 +364,36 @@ export function Composer({
    * pièces jointes et mentions comprises, avec la cause affichée.
    */
   const submit = async (
-    action: (text: string, attachmentIds: string[], mentions: string[]) => Promise<void>,
+    action: (
+      text: string,
+      attachmentIds: string[],
+      mentions: string[],
+      skills: string[],
+    ) => Promise<void>,
   ) => {
     if (!canSend) return
 
     const value = text.trim()
     const sent = attachments
-    // Une mention effacée du texte depuis sa sélection ne doit plus partir.
+    // Une mention ou une compétence effacée du texte depuis sa sélection ne doit plus
+    // partir : c'est le texte qui fait foi, pas ce qui a été cliqué.
     const paths = [...mentioned].filter((path) => value.includes(`@${path}`))
+    const invocations = [...invoked].filter((name) => value.includes(`$${name}`))
 
     setSending(true)
     setError(null)
     setText('')
     setAttachments([])
     setMentioned(new Set())
+    setInvoked(new Set())
     setToken(null)
-    setCommand(null)
+    setSigil(null)
     try {
       await action(
         value,
         sent.map((attachment) => attachment.id),
         paths,
+        invocations,
       )
     } catch (err) {
       // Un envoi qui échoue en silence donne un bouton mort : le contenu est rendu et
@@ -332,6 +401,7 @@ export function Composer({
       setText(value)
       setAttachments(sent)
       setMentioned(new Set(paths))
+      setInvoked(new Set(invocations))
       setError(err instanceof Error ? err.message : t('composer.send.failed'))
     } finally {
       setSending(false)
@@ -351,7 +421,10 @@ export function Composer({
   const send = () => {
     const parsed = parseSlashCommand(text)
     const native =
-      parsed && parsed.args.length === 0 && attachments.length === 0 && NATIVE_SLASH_COMMANDS.has(parsed.name)
+      parsed &&
+      parsed.args.length === 0 &&
+      attachments.length === 0 &&
+      NATIVE_SLASH_COMMANDS.has(parsed.name)
     if (native && onCommand) return submit(() => onCommand(parsed.name))
     return submit(onSend)
   }
@@ -416,7 +489,7 @@ export function Composer({
     // La liste ouverte capte d'abord les touches de navigation et de validation :
     // sinon Entrée enverrait le message au lieu d'insérer l'entrée sélectionnée. Les
     // deux jetons s'excluant, une seule liste est ouverte à la fois.
-    const listed = command ? matches.length : suggestions.length
+    const listed = sigil ? entries.length : suggestions.length
     if (listed > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
@@ -429,13 +502,13 @@ export function Composer({
         return
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
-        const chosenCommand = command ? matches[active] : undefined
-        if (chosenCommand) {
+        const entry = sigil ? entries[active] : undefined
+        if (entry) {
           event.preventDefault()
-          pickCommand(chosenCommand)
+          pickEntry(entry)
           return
         }
-        const file = command ? undefined : suggestions[active]
+        const file = sigil ? undefined : suggestions[active]
         if (file) {
           event.preventDefault()
           pickMention(file)
@@ -445,7 +518,7 @@ export function Composer({
       if (event.key === 'Escape') {
         event.preventDefault()
         setToken(null)
-        setCommand(null)
+        setSigil(null)
         return
       }
     }
@@ -490,11 +563,16 @@ export function Composer({
             onRemove={removeAttachment}
           />
 
-          {command ? (
-            <CommandPicker
-              matches={matches}
+          {sigil ? (
+            <TokenPicker
+              sigil={sigil.sigil}
+              entries={entries}
               active={active}
-              onPick={pickCommand}
+              label={sigil.sigil === '/' ? t('command.picker.aria') : t('skill.picker.aria')}
+              emptyLabel={
+                sigil.sigil === '/' ? t('command.picker.empty') : t('skill.picker.empty')
+              }
+              onPick={pickEntry}
               onHover={setActive}
             />
           ) : null}
@@ -523,7 +601,7 @@ export function Composer({
             }
             onBlur={() => {
               setToken(null)
-              setCommand(null)
+              setSigil(null)
             }}
             onKeyDown={onKeyDown}
             onPaste={onPaste}

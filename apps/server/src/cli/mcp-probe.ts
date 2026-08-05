@@ -106,7 +106,7 @@ async function main(): Promise<void> {
   report('codex, au lancement', codex.seen())
 
   // Un thread sans tour n'a pas de rollout sur disque, et `thread/resume` le refuse.
-  await codex.runner.send('Reply with exactly: ok', [], [])
+  await codex.runner.send('Reply with exactly: ok', [], [], [])
   await settle(15_000)
   const threadId = codex.sessionId()
   await codex.runner.stop()

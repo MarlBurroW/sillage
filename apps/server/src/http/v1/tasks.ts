@@ -173,6 +173,7 @@ export function registerTaskRoutes(
           text: body.prompt,
           attachments: [],
           mentions: [],
+          skills: [],
         },
       })
 

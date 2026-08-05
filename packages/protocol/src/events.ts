@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { elicitationContentSchema, elicitationFieldSchema } from './elicitation.js'
 import { mcpServerStatusSchema } from './mcp.js'
 import { slashCommandSchema } from './commands.js'
+import { agentSkillSchema } from './skills.js'
 
 /**
  * Schéma d'événements normalisé (invariant I3 de la spec).
@@ -467,6 +468,18 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('commands.updated'),
     commands: z.array(slashCommandSchema),
+  }),
+
+  /**
+   * Les compétences que le CLI met à disposition de la session, référencées en `$`.
+   *
+   * Même sémantique de remplacement que `commands.updated`, et même volatilité : le
+   * CLI surveille les fichiers de compétences et signale qu'ils ont bougé. Publié par
+   * Codex seul, Claude exposant les siennes parmi ses commandes en `/`.
+   */
+  z.object({
+    type: z.literal('skills.updated'),
+    skills: z.array(agentSkillSchema),
   }),
 
   /**
