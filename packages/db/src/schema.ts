@@ -154,6 +154,31 @@ export const conversations = sqliteTable(
     backgroundCount: integer('background_count').notNull().default(0),
     loopCount: integer('loop_count').notNull().default(0),
     lastSeq: integer('last_seq').notNull().default(0),
+    /**
+     * Métriques de volume, tenues à jour à l'écriture du journal.
+     *
+     * Persistées pour la même raison que `backgroundCount` : la sidebar en affiche pour
+     * des conversations qu'elle n'a pas ouvertes, et les recalculer demanderait de
+     * replier le journal de chacune, ce qui est ruineux dès qu'on en énumère plus d'une.
+     *
+     * `messageCount` compte les messages du fil principal, pas les événements : un
+     * message arrive en plusieurs `message.completed` (réflexion, puis appels d'outils),
+     * et ceux d'un sous-agent appartiennent à son fil à lui.
+     */
+    messageCount: integer('message_count').notNull().default(0),
+    /** Poids du journal sur disque, payloads et `raw` compris. */
+    journalBytes: integer('journal_bytes').notNull().default(0),
+    /**
+     * Dernière occupation de la fenêtre de contexte annoncée par le CLI, et modèle de la
+     * dernière session ouverte. NULL tant que le CLI n'en a rien dit.
+     *
+     * Distincts de `inputTokens`/`outputTokens`, qui cumulent la facturation depuis le
+     * début : le contexte se vide à chaque compaction, et c'est lui qui dit quand la
+     * prochaine arrivera.
+     */
+    contextUsedTokens: integer('context_used_tokens'),
+    contextMaxTokens: integer('context_max_tokens'),
+    model: text('model'),
     costUsd: real('cost_usd').notNull().default(0),
     inputTokens: integer('input_tokens').notNull().default(0),
     outputTokens: integer('output_tokens').notNull().default(0),

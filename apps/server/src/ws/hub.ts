@@ -82,6 +82,7 @@ class Connection {
         loops: this.sessions.loopCount(conversationId),
         appliedConfig: this.sessions.appliedConfig(conversationId),
         lastSeq: state.lastSeq,
+        metrics: state.metrics,
       })
     }
 

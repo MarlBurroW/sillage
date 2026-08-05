@@ -11,6 +11,7 @@ import { useSyncExternalStore } from 'react'
 
 const HIDDEN_KEY = 'sillage.sidebarHidden'
 const WIDTH_KEY = 'sillage.sidebarWidth'
+const DETAILED_KEY = 'sillage.sidebarDetailed'
 
 /**
  * En deçà, un titre de conversation ne tient plus sur une ligne utile ; au-delà, la
@@ -20,6 +21,7 @@ const MIN_WIDTH = 200
 const MAX_WIDTH = 480
 
 let hidden = localStorage.getItem(HIDDEN_KEY) === '1'
+let detailed = localStorage.getItem(DETAILED_KEY) === '1'
 const listeners = new Set<() => void>()
 
 function subscribe(listener: () => void): () => void {
@@ -39,6 +41,29 @@ export function setSidebarHidden(next: boolean): void {
   if (next === hidden) return
   hidden = next
   localStorage.setItem(HIDDEN_KEY, next ? '1' : '0')
+  for (const listener of listeners) listener()
+}
+
+/**
+ * Détail des lignes de conversation : compté, pesé, contexte et modèle sous le titre.
+ *
+ * Un seul interrupteur pour toute la liste, et non un repli par ligne : ce mode sert à
+ * comparer des conversations entre elles, ce qu'un dépliage à la ligne interdit. Il vit
+ * dans ce magasin plutôt qu'en état de la sidebar parce que la coque et le tiroir mobile
+ * rendent la liste depuis deux branches différentes.
+ */
+export function useSidebarDetailed(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => detailed,
+    () => false,
+  )
+}
+
+export function setSidebarDetailed(next: boolean): void {
+  if (next === detailed) return
+  detailed = next
+  localStorage.setItem(DETAILED_KEY, next ? '1' : '0')
   for (const listener of listeners) listener()
 }
 

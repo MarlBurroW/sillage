@@ -212,6 +212,13 @@ export const fr: Catalog = {
   'shell.conversation.api': 'API',
   'shell.delete': 'Supprimer',
   'shell.conversation.deleteConfirm': 'Supprimer "{title}" ?',
+  'shell.conversations.detail.show': 'Afficher le détail des conversations',
+  'shell.conversations.detail.hide': 'Masquer le détail des conversations',
+  'shell.conversation.messages': '{count} messages',
+  'shell.conversation.messagesTitle': 'Messages échangés',
+  'shell.conversation.sizeTitle': 'Poids du journal',
+  'shell.conversation.contextTitle': 'Contexte : {used} sur {max} tokens',
+  'shell.conversation.modelTitle': 'Modèle',
 
   // Réglages
   'settings.section.account': 'Compte',

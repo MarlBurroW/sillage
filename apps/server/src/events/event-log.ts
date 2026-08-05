@@ -33,6 +33,34 @@ const RESOLUTIONS: Record<PromptKind, string> = {
 
 export type PromptKind = 'permission' | 'question' | 'plan' | 'elicitation'
 
+/**
+ * Messages du fil principal, comptés depuis le journal.
+ *
+ * Sur `messageId` distinct et non sur les événements : un message assistant arrive en
+ * plusieurs `message.completed` (réflexion, puis appels d'outils), et les compter tous
+ * annoncerait trois fois trop. Les messages d'un sous-agent portent un
+ * `parentToolCallId` et appartiennent à son fil, pas à celui-ci.
+ *
+ * Recompté plutôt qu'incrémenté : reconnaître le premier `message.completed` d'un
+ * message demanderait de retenir le précédent, état de plus pour un compte qu'une
+ * requête rend en une fois, et seulement en fin de tour.
+ */
+const MESSAGE_COUNT = sql<number>`(
+  select count(distinct ${events.payload} ->> '$.messageId')
+  from ${events}
+  where ${events.conversationId} = ${conversations.id}
+    and ${events.type} = 'message.completed'
+    and coalesce(${events.payload} ->> '$.parentToolCallId', '') = ''
+)`
+
+/**
+ * Poids d'une entrée sur disque, en octets et non en caractères : un fil accentué ou
+ * riche en emoji pèse davantage que ce que `String.length` en dit.
+ */
+function byteSize(payload: string, raw: string | null): number {
+  return Buffer.byteLength(payload) + (raw === null ? 0 : Buffer.byteLength(raw))
+}
+
 export class EventLog {
   private readonly bus = new EventEmitter()
 
@@ -64,20 +92,27 @@ export class EventLog {
       if (!row) throw new Error(`Conversation inconnue : ${conversationId}`)
       const seq = row.lastSeq + 1
 
+      const payload = JSON.stringify(event)
+      const storedRaw = raw === undefined ? null : JSON.stringify(raw)
+
       tx.insert(events)
         .values({
           conversationId,
           seq,
           ts,
           type: event.type,
-          payload: JSON.stringify(event),
-          raw: raw === undefined ? null : JSON.stringify(raw),
+          payload,
+          raw: storedRaw,
           rawFormat: raw === undefined ? null : (rawFormat ?? null),
         })
         .run()
 
       tx.update(conversations)
-        .set({ lastSeq: seq, updatedAt: ts })
+        .set({
+          lastSeq: seq,
+          updatedAt: ts,
+          journalBytes: sql`${conversations.journalBytes} + ${byteSize(payload, storedRaw)}`,
+        })
         .where(eq(conversations.id, conversationId))
         .run()
 
@@ -119,16 +154,21 @@ export class EventLog {
         .get()
       if (!row) throw new Error(`Conversation inconnue : ${conversationId}`)
 
+      let bytes = 0
       const appended = batch.map((item, index): JournalEntry => {
         const seq = row.lastSeq + index + 1
+        const payload = JSON.stringify(item.event)
+        const storedRaw = item.raw === undefined ? null : JSON.stringify(item.raw)
+        bytes += byteSize(payload, storedRaw)
+
         tx.insert(events)
           .values({
             conversationId,
             seq,
             ts: item.ts,
             type: item.event.type,
-            payload: JSON.stringify(item.event),
-            raw: item.raw === undefined ? null : JSON.stringify(item.raw),
+            payload,
+            raw: storedRaw,
             rawFormat: item.raw === undefined ? null : (rawFormat ?? null),
           })
           .run()
@@ -136,8 +176,15 @@ export class EventLog {
         return { conversationId, seq, ts: item.ts, event: item.event }
       })
 
+      // Le compte de messages est repris ici et pas au fil des insertions : un import
+      // amène des messages entiers d'un coup, et une seule requête les couvre tous.
       tx.update(conversations)
-        .set({ lastSeq: row.lastSeq + batch.length, updatedAt: Date.now() })
+        .set({
+          lastSeq: row.lastSeq + batch.length,
+          updatedAt: Date.now(),
+          journalBytes: sql`${conversations.journalBytes} + ${bytes}`,
+          messageCount: MESSAGE_COUNT,
+        })
         .where(eq(conversations.id, conversationId))
         .run()
 
@@ -236,6 +283,20 @@ export class EventLog {
     }))
   }
 
+  /**
+   * Remet le compte de messages d'aplomb sur ce que contient le journal.
+   *
+   * Appelée en fin de tour : c'est le moment où les messages du tour sont tous écrits,
+   * et une fois par tour suffit pour une ligne de sidebar.
+   */
+  refreshMessageCount(conversationId: string): void {
+    this.db
+      .update(conversations)
+      .set({ messageCount: MESSAGE_COUNT })
+      .where(eq(conversations.id, conversationId))
+      .run()
+  }
+
   /** Nombre d'événements d'un type, sans les charger. */
   count(conversationId: string, type: string): number {
     const row = this.db
@@ -301,7 +362,9 @@ export class EventLog {
       .all()
 
     this.db.transaction((tx) => {
+      let bytes = 0
       rows.forEach((row, index) => {
+        bytes += byteSize(row.payload, row.raw)
         tx.insert(events)
           .values({
             conversationId: toConversationId,
@@ -316,7 +379,7 @@ export class EventLog {
       })
 
       tx.update(conversations)
-        .set({ lastSeq: rows.length })
+        .set({ lastSeq: rows.length, journalBytes: bytes, messageCount: MESSAGE_COUNT })
         .where(eq(conversations.id, toConversationId))
         .run()
 

@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { ConversationStatus } from '@sillage/protocol'
+import type { ConversationMetrics, ConversationStatus } from '@sillage/protocol'
 import { wsClient } from './ws-client'
 
 /**
@@ -26,6 +26,14 @@ const backgrounds = new Map<string, number>()
 const loops = new Map<string, number>()
 /** Dernier `seq` connu par conversation, pour le non-lu. Table à part, même raison. */
 const seqs = new Map<string, number>()
+/**
+ * Relevés de volume par conversation, pour le mode détaillé de la sidebar.
+ *
+ * Seule table à porter un objet, ce que la comparaison par identité de
+ * `useSyncExternalStore` interdit de recomposer à la lecture : l'objet reçu est rangé
+ * tel quel, et n'est remplacé que lorsqu'un de ses champs a bougé.
+ */
+const metrics = new Map<string, ConversationMetrics>()
 const listeners = new Set<() => void>()
 
 /**
@@ -41,6 +49,17 @@ export function subscribeStatus(listener: () => void): () => void {
 
 function emit(): void {
   for (const listener of listeners) listener()
+}
+
+function sameMetrics(a: ConversationMetrics | undefined, b: ConversationMetrics): boolean {
+  return (
+    a !== undefined &&
+    a.messageCount === b.messageCount &&
+    a.journalBytes === b.journalBytes &&
+    a.model === b.model &&
+    a.context?.usedTokens === b.context?.usedTokens &&
+    a.context?.maxTokens === b.context?.maxTokens
+  )
 }
 
 /** Statut temps réel, ou undefined tant qu'aucun n'a été poussé pour ce fil. */
@@ -93,6 +112,20 @@ export function useLiveSeq(conversationId: string): number {
   )
 }
 
+/**
+ * Derniers relevés poussés, `undefined` tant que rien n'est arrivé pour ce fil.
+ *
+ * L'appelant garde alors ceux de la liste REST : le socket ne pousse que ce qui change,
+ * il n'a pas de valeur de départ à donner.
+ */
+export function useLiveMetrics(conversationId: string): ConversationMetrics | undefined {
+  return useSyncExternalStore(
+    subscribeStatus,
+    () => metrics.get(conversationId),
+    () => undefined,
+  )
+}
+
 /** Lecture directe, pour les instantanés composés par les abonnés de `subscribeStatus`. */
 export function liveSeq(conversationId: string): number {
   return seqs.get(conversationId) ?? 0
@@ -107,8 +140,17 @@ export function useStatusFeed(): void {
 
   useEffect(() => {
     return wsClient.watchStatuses({
-      onStatus: ({ conversationId, status, background, loops: loopCount, lastSeq }) => {
+      onStatus: ({
+        conversationId,
+        status,
+        background,
+        loops: loopCount,
+        lastSeq,
+        metrics: pushed,
+      }) => {
+        const metricsChanged = !sameMetrics(metrics.get(conversationId), pushed)
         const changed =
+          metricsChanged ||
           statuses.get(conversationId) !== status ||
           (backgrounds.get(conversationId) ?? 0) !== background ||
           (loops.get(conversationId) ?? 0) !== loopCount ||
@@ -118,6 +160,9 @@ export function useStatusFeed(): void {
         backgrounds.set(conversationId, background)
         loops.set(conversationId, loopCount)
         seqs.set(conversationId, lastSeq)
+        // Seulement si le contenu a bougé : ranger l'objet reçu à chaque poussée
+        // rerendrait toute ligne détaillée pour des chiffres identiques.
+        if (metricsChanged) metrics.set(conversationId, pushed)
         emit()
       },
       onResync: () => {
@@ -127,6 +172,7 @@ export function useStatusFeed(): void {
         backgrounds.clear()
         loops.clear()
         seqs.clear()
+        metrics.clear()
         emit()
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       },

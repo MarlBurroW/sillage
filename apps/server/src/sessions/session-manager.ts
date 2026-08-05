@@ -10,6 +10,7 @@ import {
 import {
   parseAgentConfig,
   type AgentConfig,
+  type ConversationMetrics,
   type ConversationStatus,
   type PushPayload,
   type SillageEvent,
@@ -32,6 +33,7 @@ import type {
 } from '../agents/types.js'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
+import { conversationMetrics } from '../conversations/metrics.js'
 import { resolveConversationCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
 
@@ -100,6 +102,7 @@ export interface StatusBroadcast {
   /** Voir le message `status` du protocole : la config en vigueur, `null` à froid. */
   appliedConfig: AgentConfig | null
   lastSeq: number
+  metrics: ConversationMetrics
 }
 
 /** Ce que le gestionnaire attend de la couche de notification, sans la connaître. */
@@ -284,11 +287,19 @@ export class SessionManager {
     status: ConversationStatus,
     warm: boolean,
   ): void {
-    // `lastSeq` est relu en base à chaque diffusion : le journal est écrit avant le
-    // changement de statut, donc la valeur est fraîche, et une transition de statut se
-    // compte en quelques-unes par tour. Aucun compteur en mémoire à tenir en plus.
+    // `lastSeq` et les métriques sont relus en base à chaque diffusion : le journal est
+    // écrit avant le changement de statut, donc les valeurs sont fraîches, et une
+    // transition de statut se compte en quelques-unes par tour. Aucun compteur en
+    // mémoire à tenir en plus.
     const row = this.db
-      .select({ lastSeq: conversations.lastSeq })
+      .select({
+        lastSeq: conversations.lastSeq,
+        messageCount: conversations.messageCount,
+        journalBytes: conversations.journalBytes,
+        contextUsedTokens: conversations.contextUsedTokens,
+        contextMaxTokens: conversations.contextMaxTokens,
+        model: conversations.model,
+      })
       .from(conversations)
       .where(eq(conversations.id, conversationId))
       .get()
@@ -301,6 +312,15 @@ export class SessionManager {
       loops: warm ? this.loopCount(conversationId) : 0,
       appliedConfig: warm ? this.appliedConfig(conversationId) : null,
       lastSeq: row?.lastSeq ?? 0,
+      metrics: conversationMetrics(
+        row ?? {
+          messageCount: 0,
+          journalBytes: 0,
+          contextUsedTokens: null,
+          contextMaxTokens: null,
+          model: null,
+        },
+      ),
     }
     this.statusBus.emit('status', update)
   }
@@ -643,7 +663,29 @@ export class SessionManager {
         if (event.type === 'loops.updated') {
           this.setActivity(conversationId, { loops: event.loops.length })
         }
+        // Le CLI ré-émet son init quand le modèle change en cours de session : la
+        // dernière valeur reçue est celle qui répondra encore une fois le fil refroidi.
+        if (event.type === 'session.started') {
+          this.db
+            .update(conversations)
+            .set({ model: event.model })
+            .where(eq(conversations.id, conversationId))
+            .run()
+        }
+        // Le contexte n'accompagne pas tous les relevés d'usage : sans cette garde, le
+        // premier qui en est dépourvu effacerait le seul chiffre connu.
+        if (event.type === 'usage.updated' && event.context) {
+          this.db
+            .update(conversations)
+            .set({
+              contextUsedTokens: event.context.usedTokens,
+              contextMaxTokens: event.context.maxTokens,
+            })
+            .where(eq(conversations.id, conversationId))
+            .run()
+        }
         if (event.type === 'turn.completed') {
+          this.log.refreshMessageCount(conversationId)
           // Le CLI ne résume la session qu'une fois le tour fini : c'est le premier
           // moment où un titre utile existe.
           void this.adoptSuggestedTitle(conversationId)

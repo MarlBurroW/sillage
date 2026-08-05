@@ -273,6 +273,28 @@ export const planDecisionBodySchema = z.object({
  */
 export const markReadBodySchema = z.object({ seq: z.number().int().min(0) })
 
+/**
+ * De quoi juger le poids d'une conversation sans l'ouvrir.
+ *
+ * Relevées en base et non repliées depuis le journal : la sidebar en affiche pour toutes
+ * les conversations à la fois, et replier chaque journal pour les obtenir coûterait le
+ * prix de tout l'historique. Partagées entre la liste REST et la poussée de statut, qui
+ * doivent dire la même chose.
+ */
+export interface ConversationMetrics {
+  /** Messages du fil principal, sous-agents exclus. */
+  messageCount: number
+  /** Poids du journal sur disque, en octets. */
+  journalBytes: number
+  /**
+   * Occupation de la fenêtre de contexte au dernier relevé du CLI, null tant qu'il n'en
+   * a rien dit. Distincte des jetons cumulés : elle se vide à chaque compaction.
+   */
+  context: { usedTokens: number; maxTokens: number } | null
+  /** Modèle de la dernière session ouverte, null avant le premier lancement. */
+  model: string | null
+}
+
 export interface ConversationDto {
   id: string
   projectId: string
@@ -296,6 +318,7 @@ export interface ConversationDto {
   costUsd: number
   inputTokens: number
   outputTokens: number
+  metrics: ConversationMetrics
   pinned: boolean
   position: number
   archivedAt: number | null
