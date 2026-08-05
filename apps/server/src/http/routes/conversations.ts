@@ -390,12 +390,16 @@ export function registerConversationRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = markReadBodySchema.parse(request.body)
-    await loadReadable(id, user.id)
+    const conversation = await loadReadable(id, user.id)
 
+    // Borné au journal de cette conversation-là : un client qui suit plusieurs fils
+    // envoie forcément un jour le `seq` du précédent, et un curseur au-delà de ce qui
+    // existe déclarerait lu d'avance tout ce que la conversation produira ensuite.
+    const seq = Math.min(body.seq, conversation.lastSeq)
     const now = Date.now()
     ctx.db
       .insert(conversationReads)
-      .values({ conversationId: id, userId: user.id, lastReadSeq: body.seq, updatedAt: now })
+      .values({ conversationId: id, userId: user.id, lastReadSeq: seq, updatedAt: now })
       .onConflictDoUpdate({
         target: [conversationReads.conversationId, conversationReads.userId],
         // Le `max` est porté par la base et non par une lecture préalable : deux onglets
