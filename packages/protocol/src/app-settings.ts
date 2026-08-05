@@ -31,6 +31,11 @@ export interface AppSettingsDto {
   autoArchiveSchedule: string
 }
 
+/** Résultat d'un passage d'archivage lancé à la main. */
+export interface ArchiveRunDto {
+  archived: number
+}
+
 export const updateAppSettingsBodySchema = z.object({
   /**
    * Zéro coupe l'archivage automatique. La borne haute n'a rien de sacré, elle écarte

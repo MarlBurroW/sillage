@@ -1,7 +1,24 @@
 import { and, eq, exists, gte, isNull, lt, or, sql } from 'drizzle-orm'
 import { conversationReads, conversations, type Db } from '@sillage/db'
+import type { Config } from '../config.js'
+import { readAppSettings } from '../settings/app-settings.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Un passage complet, tel que la tâche planifiée et le bouton « lancer maintenant » le
+ * font tous les deux. Renvoie le nombre de conversations rangées, ou `null` quand
+ * l'archivage automatique est coupé.
+ *
+ * Le délai à zéro bloque aussi le déclenchement manuel : il vaudrait sinon « range tout
+ * ce qui est lu et au repos, à l'instant », ce que personne ne demande en cliquant.
+ */
+export function runArchivePass(db: Db, config: Config): number | null {
+  const { autoArchiveDays } = readAppSettings(db, config)
+  if (autoArchiveDays === 0) return null
+
+  return archiveStaleConversations(db, autoArchiveDays)
+}
 
 /**
  * Range les fils qu'on a fini de lire et qu'on ne rouvre plus.

@@ -249,6 +249,9 @@ export const en = {
   'archiving.preset.earlyMorning': 'Early morning',
   'archiving.preset.midday': 'Midday',
   'archiving.preset.weekly': 'Monday morning',
+  'archiving.run.button': 'Run now',
+  'archiving.run.done': '{count} conversations filed.',
+  'archiving.run.none': 'Nothing to file.',
   'archiving.delay.invalid': 'Enter a whole number of days between 0 and 3650.',
   'archiving.delay.save': 'Save',
   'archiving.criteria':
