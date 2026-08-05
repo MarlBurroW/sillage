@@ -144,7 +144,13 @@ export function ConversationPage() {
   const { data: conversation } = useConversation(conversationId)
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
   // Être sur la page vaut lecture : la sidebar n'a plus à signaler ce qu'on regarde.
-  useTrackRead(conversationId, stream.state.lastSeq)
+  //
+  // Le `seq` de la ligne prime sur celui du fil replié : ouvrir une conversation, c'est
+  // en prendre acte entièrement, et non à hauteur de ce qui a fini d'arriver. Le journal
+  // se charge par pages, et s'en remettre à lui laissait une visite courte sur un long
+  // fil marquée à sa première page seulement, donc toujours signalée en non lu. Le fil
+  // reprend la main dès qu'il dépasse : c'est lui qui avance pendant un tour.
+  useTrackRead(conversationId, Math.max(conversation?.lastSeq ?? 0, stream.state.lastSeq))
   // Le catalogue porte la nature du compte : elle décide si un montant a un sens.
   // Comme tous les hooks, il doit rester avant le premier retour anticipé. La sonde
   // démarre le CLI côté serveur : elle ne part que pour l'agent de la conversation.
