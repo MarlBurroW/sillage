@@ -53,11 +53,21 @@ import {
 
 /**
  * Messages natifs volontairement ignorés : ils décrivent une progression interne
- * (compteurs de tokens de réflexion, changements d'état de session) sans rien
- * apporter au fil de conversation. Liste nommée plutôt qu'un `default:` muet, pour
- * qu'un nouveau type de message inconnu soit visible et non avalé.
+ * (changements d'état de session) sans rien apporter au fil de conversation. Liste
+ * nommée plutôt qu'un `default:` muet, pour qu'un nouveau type de message inconnu
+ * soit visible et non avalé.
  */
-const IGNORED_SUBTYPES = new Set(['thinking_tokens', 'session_state_changed'])
+const IGNORED_SUBTYPES = new Set(['session_state_changed'])
+
+/**
+ * Pas du compteur de réflexion, en tokens estimés.
+ *
+ * Le CLI en publie un par fragment reçu, soit plusieurs par seconde. Chaque événement
+ * étant journalisé, les relayer tous ferait grossir le journal pour une valeur que
+ * l'œil ne distingue pas. Ce pas laisse l'indicateur bouger plusieurs fois par seconde
+ * sur une réflexion soutenue, et n'écrit qu'une poignée de lignes sur une courte.
+ */
+const THINKING_TOKENS_STEP = 100
 
 /**
  * Délai laissé au CLI pour refermer lui-même un tour dont on soupçonne qu'il ne
@@ -143,6 +153,8 @@ export class ClaudeRunner implements AgentRunner {
   private session: Query | null = null
   /** Message en cours de réception, par auteur : l'agent principal (null) et chaque sous-agent. */
   private readonly streamingMessageIds = new Map<string | null, string>()
+  /** Dernier compteur de réflexion relayé, pour n'en relayer qu'un par `THINKING_TOKENS_STEP`. */
+  private thinkingTokensSent = 0
   /** Identifiant natif, requis pour relire le résumé de session. */
   private sessionId: string | null = null
   private stopped = false
@@ -367,6 +379,16 @@ export class ClaudeRunner implements AgentRunner {
 
     switch (message.type) {
       case 'system': {
+        if (message.subtype === 'thinking_tokens') {
+          // Le compteur repart à zéro à chaque bloc de réflexion : une valeur plus
+          // basse que la précédente annonce un nouveau bloc, pas un recul.
+          const estimated = message.estimated_tokens
+          if (estimated < this.thinkingTokensSent) this.thinkingTokensSent = 0
+          if (estimated - this.thinkingTokensSent < THINKING_TOKENS_STEP) return
+          this.thinkingTokensSent = estimated
+          this.ctx.emit({ type: 'thinking.progress', estimatedTokens: estimated })
+          return
+        }
         if (message.subtype === 'compact_boundary') {
           const meta = message.compact_metadata
           this.ctx.emit(
