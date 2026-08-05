@@ -9,6 +9,7 @@ import type {
   PermissionOption,
   PlanFollowUpOption,
   SillageEvent,
+  SlashCommandDto,
 } from '@sillage/protocol'
 import { translate } from './i18n'
 
@@ -261,6 +262,14 @@ export interface ChatState {
    */
   mcp: McpServerStatus[]
   /**
+   * Les commandes en `/` reconnues par la session, déjà réduites par le serveur à ce
+   * qui est proposable ici.
+   *
+   * Remplacée et jamais complétée, comme `mcp` : le CLI republie la liste entière.
+   * Vide tant qu'aucune session n'a démarré, et pour un CLI qui ne les publie pas.
+   */
+  commands: SlashCommandDto[]
+  /**
    * Les réveils observés, par consigne réinjectée : combien, et le dernier quand.
    *
    * Tenue à part de `loops` parce qu'elle doit survivre au remplacement de la liste.
@@ -325,6 +334,7 @@ export function emptyChatState(): ChatState {
     background: [],
     loops: [],
     mcp: [],
+    commands: [],
     loopFires: new Map(),
     tasks: new Map(),
   }
@@ -978,6 +988,11 @@ export function applyEvent(
 
     case 'mcp.updated': {
       state.mcp = event.servers
+      break
+    }
+
+    case 'commands.updated': {
+      state.commands = event.commands
       break
     }
 

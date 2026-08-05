@@ -12,10 +12,12 @@ import {
   type Query,
   type SDKMessage,
   type SDKUserMessage,
+  type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk'
 import {
   claudePermissionModeSchema,
   parseElicitationFields,
+  usableSlashCommands,
   type AgentConfig,
   type ClaudeConfig,
   type ContentBlock,
@@ -55,7 +57,7 @@ import {
  * apporter au fil de conversation. Liste nommée plutôt qu'un `default:` muet, pour
  * qu'un nouveau type de message inconnu soit visible et non avalé.
  */
-const IGNORED_SUBTYPES = new Set(['thinking_tokens', 'session_state_changed', 'commands_changed'])
+const IGNORED_SUBTYPES = new Set(['thinking_tokens', 'session_state_changed'])
 
 /**
  * Délai laissé au CLI pour refermer lui-même un tour dont on soupçonne qu'il ne
@@ -463,9 +465,17 @@ export class ClaudeRunner implements AgentRunner {
           )
           return
         }
+        if (message.subtype === 'commands_changed') {
+          this.publishCommands(message.commands)
+          return
+        }
         if (message.subtype === 'init') {
           this.sessionId = message.session_id
           this.ctx.setAgentSessionId(message.session_id)
+          // `slash_commands` de l'init ne porte que des noms. La liste proposée à la
+          // saisie a besoin des descriptions et de la forme des arguments, que seule
+          // cette requête donne.
+          void this.publishSupportedCommands()
           this.ctx.emit(
             {
               type: 'session.started',
@@ -861,6 +871,41 @@ export class ClaudeRunner implements AgentRunner {
         `[claude ${this.conversationId}] inventaire MCP indisponible : ${err instanceof Error ? err.message : String(err)}\n`,
       )
     }
+  }
+
+  /**
+   * Publie les commandes en `/` reconnues par la session.
+   *
+   * Le CLI en pousse lui-même la liste dès qu'elle bouge ; celle-ci n'est demandée
+   * qu'au démarrage, où rien n'a encore été poussé.
+   */
+  private async publishSupportedCommands(): Promise<void> {
+    const session = this.session
+    if (!session) return
+
+    try {
+      this.publishCommands(await session.supportedCommands())
+    } catch (err) {
+      // Une liste manquante ne coûte que l'aide à la saisie : une commande tapée en
+      // entier part quand même. Rien qui justifie de faire tomber la session.
+      process.stderr.write(
+        `[claude ${this.conversationId}] commandes indisponibles : ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+    }
+  }
+
+  private publishCommands(commands: SlashCommand[]): void {
+    this.ctx.emit({
+      type: 'commands.updated',
+      commands: usableSlashCommands(
+        commands.map((command) => ({
+          name: command.name,
+          description: command.description,
+          argumentHint: command.argumentHint,
+          aliases: command.aliases ?? [],
+        })),
+      ),
+    })
   }
 
   /**

@@ -10,10 +10,13 @@ import {
 } from 'react'
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
+  NATIVE_SLASH_COMMANDS,
+  parseSlashCommand,
   type AgentConfig,
   type AttachmentDto,
   type ConversationStatus,
   type McpServerStatus,
+  type SlashCommandDto,
 } from '@sillage/protocol'
 import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
@@ -22,9 +25,11 @@ import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
 import { useTranslate } from '../../lib/i18n'
+import { matchCommands, type CommandMatch } from '../../lib/commands'
 import { IconButton, cx } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
 import { useAgentSettings } from './agent-settings'
+import { CommandPicker } from './CommandPicker'
 import { ComposerSettings } from './ComposerSettings'
 import { MentionPicker } from './MentionPicker'
 
@@ -49,6 +54,18 @@ function mentionAt(value: string, caret: number): MentionToken | null {
   return { query, start: caret - query.length - 1, end: caret }
 }
 
+/**
+ * La commande en cours de saisie, ou null.
+ *
+ * Uniquement en tête de champ : c'est la seule position où les CLI reconnaissent une
+ * commande, et un `/` accepté ailleurs ouvrirait la liste au milieu d'un chemin. Le
+ * jeton se referme dès la première espace, qui commence les arguments.
+ */
+function commandAt(value: string, caret: number): { query: string; end: number } | null {
+  const match = /^\/([a-zA-Z0-9_:-]*)$/.exec(value.slice(0, caret))
+  return match ? { query: match[1] ?? '', end: caret } : null
+}
+
 /** Nom de repli pour un fichier collé qui n'en porte pas. */
 function defaultPastedName(mimeType: string): string {
   const extension = mimeType.split('/')[1]?.split('+')[0] ?? 'bin'
@@ -69,7 +86,20 @@ interface ComposerProps {
    * `config` est un réglage choisi qui attend le redémarrage de la session.
    */
   appliedConfig?: AgentConfig | null
+  /**
+   * Les commandes en `/` que le CLI de la session reconnaît, vide tant qu'il n'a rien
+   * publié. La liste ne s'ouvre pas dans ce cas, plutôt que d'annoncer un vide.
+   */
+  commands: SlashCommandDto[]
   onSend(text: string, attachmentIds: string[], mentions: string[]): Promise<void>
+  /**
+   * Exécute une commande que Sillage traite lui-même plutôt que de la transmettre au
+   * CLI comme du texte (`NATIVE_SLASH_COMMANDS`).
+   *
+   * Absent quand l'appelant n'a pas cette plomberie, un fil pas encore créé par
+   * exemple : la commande part alors au CLI comme n'importe quel message.
+   */
+  onCommand?(name: string): Promise<void>
   onInterrupt(): void
   onConfigChange(config: AgentConfig): void
   /** Occupation de la fenêtre de contexte, absente tant qu'aucun tour n'a eu lieu. */
@@ -115,7 +145,9 @@ export function Composer({
   disabled,
   mcpInventory,
   appliedConfig = null,
+  commands,
   onSend,
+  onCommand,
   onInterrupt,
   onConfigChange,
   context,
@@ -138,6 +170,9 @@ export function Composer({
   const [attachments, setAttachments] = useState<AttachmentDto[]>(restored.attachments)
   const [uploading, setUploading] = useState(0)
   const [token, setToken] = useState<MentionToken | null>(null)
+  const [command, setCommand] = useState<{ query: string; end: number } | null>(null)
+  // Partagé par les deux listes : leurs jetons s'excluent, une commande ne pouvant
+  // s'écrire qu'en tête de champ et une mention qu'après un début de mot.
   const [active, setActive] = useState(0)
   /**
    * Chemins réellement choisis dans la liste. Un `@quelquechose` tapé à la main n'en
@@ -233,8 +268,28 @@ export function Composer({
   })
 
   const syncToken = (value: string, caret: number | null) => {
-    setToken(mentionAt(value, caret ?? value.length))
+    const position = caret ?? value.length
+    setToken(mentionAt(value, position))
+    setCommand(commands.length > 0 ? commandAt(value, position) : null)
     setActive(0)
+  }
+
+  const matches = command ? matchCommands(commands, command.query) : []
+
+  /** Remplace le jeton en cours par la commande choisie, prête à recevoir ses arguments. */
+  const pickCommand = ({ name }: CommandMatch) => {
+    const node = textarea.current
+    if (!command || !node) return
+
+    const next = `/${name} ${text.slice(command.end)}`
+    const caret = name.length + 2
+
+    setText(next)
+    setCommand(null)
+    requestAnimationFrame(() => {
+      node.focus()
+      node.setSelectionRange(caret, caret)
+    })
   }
 
   // Envoyer reste possible pendant un tour : le serveur met alors le message en file
@@ -264,6 +319,7 @@ export function Composer({
     setAttachments([])
     setMentioned(new Set())
     setToken(null)
+    setCommand(null)
     try {
       await action(
         value,
@@ -280,6 +336,24 @@ export function Composer({
     } finally {
       setSending(false)
     }
+  }
+
+  /**
+   * Envoi ordinaire, ou exécution par Sillage quand le message se réduit à l'une des
+   * commandes dont il possède déjà la plomberie.
+   *
+   * Deux cas repassent la main au CLI, qui sait de toute façon lire ses propres
+   * commandes. Des arguments, que la plomberie maison ne transporte pas : `/compact`
+   * accepte des consignes de résumé dont la route de Sillage n'a que faire, et les
+   * perdre en silence serait pire que de laisser passer la ligne entière. Une pièce
+   * jointe, qui n'aurait nulle part où aller.
+   */
+  const send = () => {
+    const parsed = parseSlashCommand(text)
+    const native =
+      parsed && parsed.args.length === 0 && attachments.length === 0 && NATIVE_SLASH_COMMANDS.has(parsed.name)
+    if (native && onCommand) return submit(() => onCommand(parsed.name))
+    return submit(onSend)
   }
 
   const addFiles = async (chosen: File[]) => {
@@ -339,21 +413,29 @@ export function Composer({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    // La liste des mentions capte d'abord les touches de navigation et de validation :
-    // sinon Entrée enverrait le message au lieu d'insérer le fichier sélectionné.
-    if (suggestions.length > 0) {
+    // La liste ouverte capte d'abord les touches de navigation et de validation :
+    // sinon Entrée enverrait le message au lieu d'insérer l'entrée sélectionnée. Les
+    // deux jetons s'excluant, une seule liste est ouverte à la fois.
+    const listed = command ? matches.length : suggestions.length
+    if (listed > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
-        setActive((index) => (index + 1) % suggestions.length)
+        setActive((index) => (index + 1) % listed)
         return
       }
       if (event.key === 'ArrowUp') {
         event.preventDefault()
-        setActive((index) => (index - 1 + suggestions.length) % suggestions.length)
+        setActive((index) => (index - 1 + listed) % listed)
         return
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
-        const file = suggestions[active]
+        const chosenCommand = command ? matches[active] : undefined
+        if (chosenCommand) {
+          event.preventDefault()
+          pickCommand(chosenCommand)
+          return
+        }
+        const file = command ? undefined : suggestions[active]
         if (file) {
           event.preventDefault()
           pickMention(file)
@@ -363,6 +445,7 @@ export function Composer({
       if (event.key === 'Escape') {
         event.preventDefault()
         setToken(null)
+        setCommand(null)
         return
       }
     }
@@ -371,7 +454,7 @@ export function Composer({
     // envoie un retour à la ligne classique, donc la saisie multiligne reste possible.
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
-      void submit(onSend)
+      void send()
     }
   }
 
@@ -382,7 +465,7 @@ export function Composer({
       <form
         onSubmit={(event) => {
           event.preventDefault()
-          void submit(onSend)
+          void send()
         }}
         // `@container` : les réglages se replient selon la largeur du composer, pas
         // celle de la fenêtre, qui ignore la sidebar.
@@ -407,6 +490,15 @@ export function Composer({
             onRemove={removeAttachment}
           />
 
+          {command ? (
+            <CommandPicker
+              matches={matches}
+              active={active}
+              onPick={pickCommand}
+              onHover={setActive}
+            />
+          ) : null}
+
           {token ? (
             <MentionPicker
               files={suggestions}
@@ -429,7 +521,10 @@ export function Composer({
             onSelect={(event) =>
               syncToken(event.currentTarget.value, event.currentTarget.selectionStart)
             }
-            onBlur={() => setToken(null)}
+            onBlur={() => {
+              setToken(null)
+              setCommand(null)
+            }}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             rows={1}
