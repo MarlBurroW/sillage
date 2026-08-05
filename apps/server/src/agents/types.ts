@@ -131,6 +131,15 @@ export interface OutgoingMention {
  */
 export interface AgentRunner {
   readonly conversationId: string
+  /**
+   * La configuration sous laquelle la session tourne réellement, qui n'est pas toujours
+   * celle enregistrée en base.
+   *
+   * Un réglage que le CLI refuse de changer à chaud reste celui du lancement jusqu'au
+   * redémarrage, alors que la valeur demandée est déjà persistée et affichée. Sans cet
+   * accès, rien ne permet de dire à l'utilisateur sous quel régime son tour se déroule.
+   */
+  readonly appliedConfig: AgentConfig
   /** Démarre le process et commence à traduire son flux vers le journal. */
   start(): Promise<void>
   send(

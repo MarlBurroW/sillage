@@ -134,7 +134,14 @@ export const SettingsPanel = forwardRef<SettingsPanelHandle, SettingsPanelProps>
               )}
             >
               {group.icon ? <span className="shrink-0 text-ink-faint">{group.icon}</span> : null}
-              <span className="shrink-0">{group.label}</span>
+              <span className="flex min-w-0 flex-col items-start">
+                <span className="shrink-0">{group.label}</span>
+                {group.notice ? (
+                  <span className="max-w-full truncate text-[0.6875rem] text-caution">
+                    {group.notice}
+                  </span>
+                ) : null}
+              </span>
               <ValueLabel group={group} />
               <ChevronRight size={14} className="shrink-0 text-ink-faint" />
             </button>

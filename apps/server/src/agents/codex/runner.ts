@@ -190,6 +190,11 @@ export class CodexRunner implements AgentRunner {
   /** Modèle réellement retenu par le CLI, seul connu quand la conversation dit « défaut ». */
   private threadModel: string | null = null
 
+  /** Voir `AgentRunner`. `this.config` n'avance qu'après une application réussie. */
+  get appliedConfig(): AgentConfig {
+    return this.config
+  }
+
   constructor(private readonly ctx: RunnerContext) {
     this.conversationId = ctx.conversationId
     this.config = ctx.config as CodexConfig

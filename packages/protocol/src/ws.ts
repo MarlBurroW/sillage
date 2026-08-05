@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { conversationStatusSchema } from './api.js'
+import type { AgentConfig } from './agent-config.js'
 import type { SillageEvent } from './events.js'
 
 /**
@@ -56,6 +57,18 @@ export type ServerMessage =
        * seule, sans avoir son journal à replier.
        */
       loops: number
+      /**
+       * Configuration sous laquelle la session tourne réellement, `null` à froid.
+       *
+       * Un réglage que le CLI ne sait pas changer en vol reste celui du lancement
+       * jusqu'au redémarrage, alors que la valeur demandée est déjà enregistrée et
+       * affichée : c'est le seul moyen de savoir que le tour en cours n'obéit pas encore
+       * à ce qui est à l'écran. Envoyée entière plutôt que réduite au réglage qui pose
+       * problème, les deux CLI n'ayant pas les mêmes ; le client compare et n'annonce
+       * que ce qui diffère. À froid il n'y a rien à comparer : le prochain lancement
+       * prendra la configuration enregistrée.
+       */
+      appliedConfig: AgentConfig | null
       /**
        * Dernier `seq` écrit au journal, pour la même raison que les trois précédents.
        *

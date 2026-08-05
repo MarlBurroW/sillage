@@ -38,6 +38,11 @@ export interface SettingGroup {
   options: SettingOption[]
   value: string
   onChange: (value: string) => void
+  /**
+   * Ce qui sépare la valeur choisie de celle qui s'applique, quand le CLI ne sait pas
+   * la changer sans repartir. Absent le reste du temps, c'est-à-dire presque toujours.
+   */
+  notice?: string
 }
 
 /**
@@ -55,6 +60,7 @@ export function setting<V extends string>(group: {
   options: SettingChoice<V>[]
   value: V
   onChange: (value: V) => void
+  notice?: string
 }): SettingGroup {
   return {
     ...group,

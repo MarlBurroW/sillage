@@ -9,6 +9,7 @@ import {
 } from '@sillage/db'
 import {
   parseAgentConfig,
+  type AgentConfig,
   type ConversationStatus,
   type PushPayload,
   type SillageEvent,
@@ -96,6 +97,8 @@ export interface StatusBroadcast {
   warm: boolean
   background: number
   loops: number
+  /** Voir le message `status` du protocole : la config en vigueur, `null` à froid. */
+  appliedConfig: AgentConfig | null
   lastSeq: number
 }
 
@@ -296,6 +299,7 @@ export class SessionManager {
       warm,
       background: warm ? this.backgroundCount(conversationId) : 0,
       loops: warm ? this.loopCount(conversationId) : 0,
+      appliedConfig: warm ? this.appliedConfig(conversationId) : null,
       lastSeq: row?.lastSeq ?? 0,
     }
     this.statusBus.emit('status', update)
@@ -354,6 +358,16 @@ export class SessionManager {
   /** Combien de boucles sont armées pour cette conversation, à l'instant. */
   loopCount(conversationId: string): number {
     return this.runners.get(conversationId)?.loops ?? 0
+  }
+
+  /**
+   * La configuration sous laquelle le CLI tourne, `null` si aucun ne tourne.
+   *
+   * Elle diverge de celle enregistrée entre le moment où un réglage inapplicable à chaud
+   * est demandé et le redémarrage qui le prend en compte, en fin de tour.
+   */
+  appliedConfig(conversationId: string): AgentConfig | null {
+    return this.runners.get(conversationId)?.runner.appliedConfig ?? null
   }
 
   /**

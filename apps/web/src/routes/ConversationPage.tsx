@@ -21,6 +21,7 @@ import {
 } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
+import { appliedPermissionLabel } from '../components/chat/agent-settings'
 import { Composer } from '../components/chat/Composer'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
@@ -214,6 +215,22 @@ export function ConversationPage() {
    * tourne pas.
    */
   const now = useTicker(loops.length > 0)
+  // Relu par le schéma plutôt que casté : une configuration enregistrée avant un
+  // nouveau champ récupère ainsi ses valeurs par défaut au lieu d'arriver trouée.
+  // Déclaré ici et non après les retours anticipés, où il vivait : la rangée de signaux
+  // en a besoin, et un hook ne peut pas se déclarer plus bas.
+  const config = useMemo(
+    () => (conversation ? agentConfigSchema.parse(conversation.config) : null),
+    [conversation],
+  )
+  /**
+   * Le mode de permission que le CLI applique encore, quand ce n'est pas celui choisi.
+   * Null le reste du temps, donc aucun signal à afficher.
+   */
+  const pendingPermission = useMemo(
+    () => (config ? appliedPermissionLabel(config, stream.appliedConfig, t) : null),
+    [config, stream.appliedConfig, t],
+  )
   const signals = useMemo(
     () =>
       buildSignals({
@@ -223,9 +240,19 @@ export function ConversationPage() {
         background,
         loops,
         queued: stream.state.queued,
+        pending: pendingPermission,
         now,
       }),
-    [stream.status, stream.connected, runningSubAgents, background, loops, stream.state.queued, now],
+    [
+      stream.status,
+      stream.connected,
+      runningSubAgents,
+      background,
+      loops,
+      stream.state.queued,
+      pendingPermission,
+      now,
+    ],
   )
   const [usageOpen, setUsageOpen] = useState(false)
   const [forking, setForking] = useState(false)
@@ -725,7 +752,9 @@ export function ConversationPage() {
     [conversationId, navigate, queryClient, t],
   )
 
-  if (!conversationId || !conversation) return null
+  // `config` est nul exactement quand la conversation l'est, mais le typage ne le sait
+  // pas : il rejoint la garde plutôt que d'être forcé plus bas.
+  if (!conversationId || !conversation || !config) return null
 
   const isOwner = conversation.userId === user?.id
   // Infléchir suppose un tour ouvert et un CLI qui sait le faire : proposer le geste
@@ -734,9 +763,6 @@ export function ConversationPage() {
     isOwner &&
     AGENT_CAPABILITIES[conversation.agent].steer &&
     (stream.status === 'running' || stream.status === 'awaiting_input')
-  // Relu par le schéma plutôt que casté : une configuration enregistrée avant un
-  // nouveau champ récupère ainsi ses valeurs par défaut au lieu d'arriver trouée.
-  const config = agentConfigSchema.parse(conversation.config)
   const worktree = worktrees?.find((entry) => entry.id === conversation.worktreeId)
   const origin = conversation.forkedFromId
     ? allConversations?.find((entry) => entry.id === conversation.forkedFromId)
@@ -1168,6 +1194,7 @@ export function ConversationPage() {
             onInterrupt={() => void interruptConversation(conversationId)}
             onConfigChange={(next) => void updateConfig(next)}
             mcpInventory={stream.state.mcp}
+            appliedConfig={stream.appliedConfig}
             projectId={conversation.projectId}
             worktreeId={conversation.worktreeId}
             footer={

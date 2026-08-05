@@ -38,6 +38,7 @@ export type SignalKind =
   | 'interrupted'
   | 'offline'
   | 'error'
+  | 'pending'
 
 export const SIGNAL_FAMILY: Record<SignalKind, SignalFamily> = {
   subagents: 'working',
@@ -48,6 +49,7 @@ export const SIGNAL_FAMILY: Record<SignalKind, SignalFamily> = {
   queued: 'awaiting',
   interrupted: 'awaiting',
   offline: 'awaiting',
+  pending: 'awaiting',
   error: 'broken',
 }
 
@@ -72,6 +74,7 @@ const ORDER: SignalKind[] = [
   'loop',
   'queued',
   'awaiting',
+  'pending',
   'interrupted',
   'offline',
   'error',
@@ -84,6 +87,11 @@ export interface SignalInput {
   background: BackgroundWork[]
   loops: ArmedLoop[]
   queued: QueuedMessage[]
+  /**
+   * Ce que le CLI applique encore, alors qu'un autre réglage est enregistré et affiché.
+   * Vide quand les deux coïncident, c'est-à-dire hors de l'attente d'un redémarrage.
+   */
+  pending: string | null
   /**
    * Horodatage de rendu, pour l'ancienneté des réveils. Passé plutôt que lu ici : une
    * dérivation qui lit l'heure ne redonne pas le même résultat deux fois de suite, et
@@ -132,6 +140,11 @@ export function buildSignals(input: SignalInput): Signal[] {
       plural('signal.queued', input.queued.length),
       input.queued.map((message) => message.text).join('\n'),
     )
+  }
+
+  // Avant les états de statut : ce qui gouverne le tour prime sur ce que le tour fait.
+  if (input.pending) {
+    add('pending', translate('signal.pending'), translate('signal.pending.detail', { value: input.pending }))
   }
 
   if (input.status === 'awaiting_input') add('awaiting', translate('signal.awaiting'))

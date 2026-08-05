@@ -80,6 +80,7 @@ class Connection {
         warm: this.sessions.isWarm(conversationId),
         background: this.sessions.backgroundCount(conversationId),
         loops: this.sessions.loopCount(conversationId),
+        appliedConfig: this.sessions.appliedConfig(conversationId),
         lastSeq: state.lastSeq,
       })
     }
