@@ -1067,10 +1067,12 @@ export class SessionManager {
    * mode de permission à chaud, donc la session garde son contexte ; on ne retombe
    * sur l'arrêt du runner (et la reprise au message suivant) que si le CLI refuse.
    *
-   * Le cas connu est `bypassPermissions`, que Claude Code n'accepte qu'au lancement :
-   * `set_permission_mode` répond « the session was not launched with
-   * --dangerously-skip-permissions ». Le redémarrage attend alors la fin du tour, parce
-   * que couper là perd le travail en cours pour un réglage qui vaut pour la suite.
+   * Le cas connu est `bypassPermissions`, que Claude Code ne règle qu'au lancement, dans
+   * les deux sens. Y entrer échoue franchement : `set_permission_mode` répond « the
+   * session was not launched with --dangerously-skip-permissions ». En sortir est tout
+   * aussi impossible mais réussit en apparence, d'où le refus explicite du runner. Le
+   * redémarrage attend la fin du tour, parce que couper là perd le travail en cours pour
+   * un réglage qui vaut pour la suite.
    */
   async reloadConfig(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
