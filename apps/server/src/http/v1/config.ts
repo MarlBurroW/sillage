@@ -1,9 +1,9 @@
 import type { ApiTokenRow, ProjectRow } from '@sillage/db'
 import {
-  defaultConfigFor,
   isPermissiveConfig,
   mergeAgentConfig,
   type AgentConfig,
+  type AgentDefaults,
   type AgentKind,
   type CreateTaskBody,
 } from '@sillage/protocol'
@@ -14,18 +14,19 @@ import { badRequest } from '../errors.js'
  * Avec quoi une tâche va tourner.
  *
  * Quatre niveaux, du plus précis au plus général : ce que la requête dit, les réglages
- * du jeton, ceux du projet, puis les défauts du CLI. Un appelant machine n'a ainsi
- * qu'un prompt à fournir, et le choix du modèle a été fait une fois, dans un
- * formulaire, par quelqu'un qui savait ce qu'il faisait.
+ * du jeton, ceux du projet, puis les défauts du compte qui possède le jeton. Un
+ * appelant machine n'a ainsi qu'un prompt à fournir, et le choix du modèle a été fait
+ * une fois, dans un formulaire, par quelqu'un qui savait ce qu'il faisait.
  */
 export async function resolveTaskConfig(
   registry: AgentRegistry,
   token: ApiTokenRow,
   project: ProjectRow,
   body: CreateTaskBody,
+  defaults: AgentDefaults,
 ): Promise<{ agent: AgentKind; config: AgentConfig }> {
   const agent = body.agent ?? token.agent
-  const base = baseConfigFor(agent, token, project)
+  const base = baseConfigFor(agent, token, project, defaults)
 
   let merged: AgentConfig
   let rejected: string[]
@@ -72,14 +73,19 @@ export async function resolveTaskConfig(
  * le premier qui parle du bon CLI l'emporte. Empiler un réglage Claude sur un réglage
  * Codex ne voudrait rien dire.
  */
-function baseConfigFor(agent: AgentKind, token: ApiTokenRow, project: ProjectRow): AgentConfig {
+function baseConfigFor(
+  agent: AgentKind,
+  token: ApiTokenRow,
+  project: ProjectRow,
+  defaults: AgentDefaults,
+): AgentConfig {
   if (agent === token.agent) return JSON.parse(token.config) as AgentConfig
 
   if (project.defaultConfig) {
     const preset = JSON.parse(project.defaultConfig) as AgentConfig
     if (preset.agent === agent) return preset
   }
-  return defaultConfigFor(agent)
+  return defaults[agent]
 }
 
 /**

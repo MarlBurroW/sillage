@@ -4,11 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { getSessionInfo, listSessions } from '@anthropic-ai/claude-agent-sdk'
 import { conversations, projects, type ConversationRow } from '@sillage/db'
-import {
-  DEFAULT_CLAUDE_CONFIG,
-  type ClaudeSessionsDto,
-  type ClaudeSyncDto,
-} from '@sillage/protocol'
+import type { ClaudeSessionsDto, ClaudeSyncDto } from '@sillage/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
 import {
   TRANSCRIPT_RAW_FORMAT,
@@ -19,6 +15,7 @@ import {
 } from '../../agents/claude/transcript.js'
 import type { EventLog } from '../../events/event-log.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
+import { readUserSettings } from '../../settings/user-settings.js'
 import { resolveConversationCwd } from '../../workspace.js'
 import { badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -146,7 +143,11 @@ export function registerClaudeSessionRoutes(
         ? (firstPrompt.event.blocks.find((block) => block.type === 'text')?.text ?? null)
         : null
 
-    const config = await registry.adapter('claude').resolveDefaults(DEFAULT_CLAUDE_CONFIG)
+    // Les défauts du compte, comme pour une conversation ouverte depuis l'interface :
+    // adopter une session du CLI n'est pas une raison de repartir des défauts du
+    // protocole, que la personne a peut-être justement changés.
+    const defaults = readUserSettings(ctx.db, user.id).agentDefaults.claude
+    const config = await registry.adapter('claude').resolveDefaults(defaults)
 
     const [lowest] = ctx.db
       .select({ min: min(conversations.position) })
