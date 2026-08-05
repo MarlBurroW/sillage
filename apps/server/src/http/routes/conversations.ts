@@ -17,6 +17,7 @@ import {
   steerBodySchema,
   updateConversationBodySchema,
   type ConversationDto,
+  type ConversationMetrics,
   type ConversationStatus,
   type EditDiffDto,
   type JournalPageDto,
@@ -26,6 +27,7 @@ import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { createConversation } from '../../conversations/create.js'
+import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
 import { readGitStatus, readHeadCommit, readWorkingDiff } from '../../git.js'
@@ -63,6 +65,7 @@ export function conversationToDto(
     costUsd: row.costUsd,
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
+    metrics: conversationMetrics(row),
     pinned: row.pinned,
     position: row.position,
     archivedAt: row.archivedAt,
@@ -711,14 +714,23 @@ export function registerConversationRoutes(
 export function readConversationState(
   ctx: AppContext,
   conversationId: string,
-): { status: ConversationStatus; lastSeq: number } | null {
-  return (
-    ctx.db
-      .select({ status: conversations.status, lastSeq: conversations.lastSeq })
-      .from(conversations)
-      .where(eq(conversations.id, conversationId))
-      .get() ?? null
-  )
+): { status: ConversationStatus; lastSeq: number; metrics: ConversationMetrics } | null {
+  const row = ctx.db
+    .select({
+      status: conversations.status,
+      lastSeq: conversations.lastSeq,
+      messageCount: conversations.messageCount,
+      journalBytes: conversations.journalBytes,
+      contextUsedTokens: conversations.contextUsedTokens,
+      contextMaxTokens: conversations.contextMaxTokens,
+      model: conversations.model,
+    })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .get()
+
+  if (!row) return null
+  return { status: row.status, lastSeq: row.lastSeq, metrics: conversationMetrics(row) }
 }
 
 /** Conversations visibles par un utilisateur, pour l'abonnement WebSocket. */

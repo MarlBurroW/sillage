@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { conversationStatusSchema } from './api.js'
+import { conversationStatusSchema, type ConversationMetrics } from './api.js'
 import type { AgentConfig } from './agent-config.js'
 import type { SillageEvent } from './events.js'
 
@@ -78,6 +78,14 @@ export type ServerMessage =
        * événement par événement le ferait clignoter pendant toute la réponse.
        */
       lastSeq: number
+      /**
+       * Métriques de volume, relues en base à chaque diffusion.
+       *
+       * Portées par le statut pour la même raison que `lastSeq`, et pour le même prix :
+       * la ligne de conversation est déjà lue pour lui. Ce qui les fait bouger arrive en
+       * fin de tour, moment où le statut change de toute façon.
+       */
+      metrics: ConversationMetrics
     }
   /**
    * Le CLI a proposé un titre pour la conversation. Poussé plutôt que redécouvert par

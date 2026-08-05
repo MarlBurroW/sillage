@@ -2,6 +2,7 @@ import {
   HEARTBEAT_INTERVAL_MS,
   type AgentConfig,
   type ClientMessage,
+  type ConversationMetrics,
   type ConversationStatus,
   type ServerMessage,
   type SillageEvent,
@@ -37,6 +38,8 @@ export interface StatusUpdate {
   loops: number
   /** Dernier `seq` du journal, d'où se déduit ce qui reste à lire. */
   lastSeq: number
+  /** Relevés de volume, pour le mode détaillé de la sidebar. */
+  metrics: ConversationMetrics
 }
 
 export interface StatusWatcher {
@@ -193,6 +196,7 @@ class WsClient {
         background: message.background,
         loops: message.loops,
         lastSeq: message.lastSeq,
+        metrics: message.metrics,
       }
       for (const watcher of this.statusWatchers) watcher.onStatus(update)
     }

@@ -227,6 +227,13 @@ export const en = {
   'shell.conversation.api': 'API',
   'shell.delete': 'Delete',
   'shell.conversation.deleteConfirm': 'Delete "{title}"?',
+  'shell.conversations.detail.show': 'Show conversation details',
+  'shell.conversations.detail.hide': 'Hide conversation details',
+  'shell.conversation.messages': '{count} messages',
+  'shell.conversation.messagesTitle': 'Messages exchanged',
+  'shell.conversation.sizeTitle': 'Journal size',
+  'shell.conversation.contextTitle': 'Context: {used} of {max} tokens',
+  'shell.conversation.modelTitle': 'Model',
 
   // Réglages
   'settings.section.account': 'Account',

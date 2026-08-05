@@ -20,6 +20,7 @@ import {
   ArchiveRestore,
   ChevronRight,
   FolderPlus,
+  ListTree,
   LogOut,
   Menu as MenuIcon,
   MoreHorizontal,
@@ -45,7 +46,7 @@ import {
 } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
-import type { ConversationDto, ProjectDto } from '@sillage/protocol'
+import type { ConversationDto, ConversationMetrics, ProjectDto } from '@sillage/protocol'
 import {
   useAllConversations,
   useArchiveConversation,
@@ -56,6 +57,7 @@ import {
 import {
   useLiveBackground,
   useLiveLoops,
+  useLiveMetrics,
   useLiveSeq,
   useLiveStatus,
   useStatusFeed,
@@ -66,10 +68,14 @@ import { SignalDot } from './chat/Signals'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
 import {
   restoreSidebarWidth,
+  setSidebarDetailed,
   setSidebarHidden,
   setSidebarWidth,
+  useSidebarDetailed,
   useSidebarHidden,
 } from '../lib/sidebar'
+import { formatBytes } from '../lib/attachments'
+import { formatTokens } from '../lib/tokens'
 import { useFileDropGuard } from '../lib/file-drop'
 import { useTranslate } from '../lib/i18n'
 import { useVisualViewport } from '../lib/viewport'
@@ -353,6 +359,7 @@ function Sidebar({
   const logout = useLogout()
   const reorder = useReorderProjects()
   const sensors = useDragSensors()
+  const detailed = useSidebarDetailed()
   useStatusFeed()
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -435,11 +442,23 @@ function Sidebar({
           <span className="text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
             {t('shell.projects.heading')}
           </span>
-          <NavLink to="/settings/projets" onClick={onNavigate} aria-label={t('shell.projects.add')}>
-            <IconButton label={t('shell.projects.add')} size="sm">
-              <FolderPlus size={15} />
+          <span className="flex items-center">
+            {/* Un seul interrupteur pour toute la liste : le mode sert à comparer des
+                conversations entre elles, ce qu'un dépliage ligne à ligne interdit. */}
+            <IconButton
+              label={detailed ? t('shell.conversations.detail.hide') : t('shell.conversations.detail.show')}
+              size="sm"
+              onClick={() => setSidebarDetailed(!detailed)}
+              className={detailed ? 'text-accent' : undefined}
+            >
+              <ListTree size={15} />
             </IconButton>
-          </NavLink>
+            <NavLink to="/settings/projets" onClick={onNavigate} aria-label={t('shell.projects.add')}>
+              <IconButton label={t('shell.projects.add')} size="sm">
+                <FolderPlus size={15} />
+              </IconButton>
+            </NavLink>
+          </span>
         </div>
 
         {projects && projects.length > 0 ? (
@@ -793,6 +812,11 @@ function ConversationRow({
   const background = useLiveBackground(conversation.id)
   const loops = useLiveLoops(conversation.id)
   const pushedSeq = useLiveSeq(conversation.id)
+  const detailed = useSidebarDetailed()
+  // Même arbitrage que le statut : ce que le socket a poussé prime sur la liste, qui
+  // date de son chargement. Rien n'a encore été poussé pour un fil froid, et les
+  // chiffres de la liste sont alors les bons.
+  const metrics = useLiveMetrics(conversation.id) ?? conversation.metrics
   const signals = useMemo(
     () => buildSidebarSignals({ status, background, loops }),
     [status, background, loops],
@@ -850,7 +874,10 @@ function ConversationRow({
       {...attributes}
       {...listeners}
       className={cx(
-        'group/row flex h-9 items-center rounded-md pr-1 transition-colors',
+        'group/row flex rounded-md pr-1 transition-colors',
+        // Le détail fait grandir la ligne vers le bas : le menu et les signaux restent
+        // sur le titre, à la hauteur qu'ils avaient sans lui.
+        detailed ? 'min-h-9 items-start' : 'h-9 items-center',
         isDragging ? 'shadow-float z-10 bg-surface-high opacity-90' : '',
         isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
         isActive || unread ? 'text-ink' : 'text-ink-faint',
@@ -863,34 +890,40 @@ function ConversationRow({
           event.preventDefault()
           if (conversation.isOwner) setEditing(true)
         }}
-        className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-[0.8125rem]"
+        className={cx(
+          'flex min-w-0 flex-1 flex-col justify-center px-2 text-[0.8125rem]',
+          detailed ? 'py-1.5' : 'h-full',
+        )}
       >
-        <span className="shrink-0 text-ink-faint">
-          <AgentIcon agent={conversation.agent} size={13} />
-        </span>
-        <span className={cx('truncate', unread && 'font-medium')}>{conversation.title}</span>
-        {/*
-          Deux points au plus, et jamais davantage : l'état présent, et la boucle.
-          Le premier est le plus grave de ce qui se passe maintenant ; la seconde parle
-          de ce qui arrivera, donc elle ne lui fait pas concurrence et s'affiche à côté,
-          y compris pendant un tour.
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 text-ink-faint">
+            <AgentIcon agent={conversation.agent} size={13} />
+          </span>
+          <span className={cx('truncate', unread && 'font-medium')}>{conversation.title}</span>
+          {/*
+            Deux points au plus, et jamais davantage : l'état présent, et la boucle.
+            Le premier est le plus grave de ce qui se passe maintenant ; la seconde parle
+            de ce qui arrivera, donc elle ne lui fait pas concurrence et s'affiche à côté,
+            y compris pendant un tour.
 
-          La pastille d'origine les précède sans leur faire concurrence : elle ne dit pas
-          un état mais une provenance, elle ne change jamais, et elle s'efface au survol
-          pour rendre la place aux actions de la ligne.
-        */}
-        <span className="ml-auto flex shrink-0 items-center gap-1">
-          {conversation.origin ? (
-            <span
-              title={t('shell.conversation.origin', { label: conversation.origin.label })}
-              className="rounded-full bg-accent-wash px-1 py-px text-[0.5625rem] font-semibold uppercase tracking-wide text-accent"
-            >
-              {t('shell.conversation.api')}
-            </span>
-          ) : null}
-          {present ? <SignalDot signal={present} /> : null}
-          {loop ? <SignalDot signal={loop} /> : null}
+            La pastille d'origine les précède sans leur faire concurrence : elle ne dit pas
+            un état mais une provenance, elle ne change jamais, et elle s'efface au survol
+            pour rendre la place aux actions de la ligne.
+          */}
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            {conversation.origin ? (
+              <span
+                title={t('shell.conversation.origin', { label: conversation.origin.label })}
+                className="rounded-full bg-accent-wash px-1 py-px text-[0.5625rem] font-semibold uppercase tracking-wide text-accent"
+              >
+                {t('shell.conversation.api')}
+              </span>
+            ) : null}
+            {present ? <SignalDot signal={present} /> : null}
+            {loop ? <SignalDot signal={loop} /> : null}
+          </span>
         </span>
+        {detailed ? <ConversationMetricsLine metrics={metrics} /> : null}
       </NavLink>
 
       {conversation.isOwner ? (
@@ -935,6 +968,42 @@ function ConversationRow({
         </Menu>
       ) : null}
     </li>
+  )
+}
+
+/**
+ * Le relevé de volume, sous le titre.
+ *
+ * Ni bordure ni fond : c'est un prolongement de la ligne, pas un panneau posé dedans.
+ * Les chiffres restent sur une seule ligne et disparaissent par la droite plutôt que de
+ * passer à la suivante, l'ordre allant du plus parlant au plus accessoire.
+ */
+function ConversationMetricsLine({ metrics }: { metrics: ConversationMetrics }) {
+  const t = useTranslate()
+  const { context } = metrics
+
+  return (
+    <span className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden pl-[21px] text-[0.6875rem] whitespace-nowrap text-ink-faint tabular-nums">
+      <span title={t('shell.conversation.messagesTitle')}>
+        {t('shell.conversation.messages', { count: metrics.messageCount })}
+      </span>
+      <span title={t('shell.conversation.sizeTitle')}>{formatBytes(metrics.journalBytes)}</span>
+      {context && context.maxTokens > 0 ? (
+        <span
+          title={t('shell.conversation.contextTitle', {
+            used: formatTokens(context.usedTokens),
+            max: formatTokens(context.maxTokens),
+          })}
+        >
+          {Math.round((context.usedTokens / context.maxTokens) * 100)} %
+        </span>
+      ) : null}
+      {metrics.model ? (
+        <span className="truncate" title={t('shell.conversation.modelTitle')}>
+          {metrics.model}
+        </span>
+      ) : null}
+    </span>
   )
 }
 
