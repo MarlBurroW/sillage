@@ -1,8 +1,9 @@
-import { ChevronRight, FolderOpen, Globe, Lock, MessagesSquare } from 'lucide-react'
+import { ChevronRight, FolderOpen, GitBranch, Globe, Lock, MessagesSquare } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiRequestError } from '../lib/api'
 import { useCreateProject, useProjects, type CreateProjectInput } from '../lib/projects'
+import { CloneForm } from '../components/CloneForm'
 import { PathField } from '../components/PathField'
 import { SectionHeader } from './SettingsPage'
 import { useTranslate } from '../lib/i18n'
@@ -13,11 +14,15 @@ import {
   Card,
   CardBody,
   CardHeader,
+  ChoiceList,
   EmptyState,
   Field,
   Select,
+  type Choice,
   type SelectOption,
 } from '../components/ui'
+
+type CreateMode = 'existing' | 'clone'
 
 const EMPTY_FORM: CreateProjectInput = {
   name: '',
@@ -30,6 +35,22 @@ export function ProjectsSettingsPage() {
   const { data: projects } = useProjects()
   const createProject = useCreateProject()
   const [form, setForm] = useState<CreateProjectInput>(EMPTY_FORM)
+  const [mode, setMode] = useState<CreateMode>('existing')
+
+  const MODE_OPTIONS: Choice<CreateMode>[] = [
+    {
+      value: 'existing',
+      label: t('projects.create.mode.existing'),
+      hint: t('projects.create.mode.existing.hint'),
+      icon: <FolderOpen size={15} />,
+    },
+    {
+      value: 'clone',
+      label: t('projects.create.mode.clone'),
+      hint: t('projects.create.mode.clone.hint'),
+      icon: <GitBranch size={15} />,
+    },
+  ]
 
   const VISIBILITY_OPTIONS: SelectOption<CreateProjectInput['visibility']>[] = [
     {
@@ -64,33 +85,47 @@ export function ProjectsSettingsPage() {
           description={t('projects.create.description')}
           icon={<FolderOpen size={16} />}
         />
-        <CardBody>
-          <form onSubmit={submit} className="flex flex-col gap-4">
-            <Field
-              label={t('projects.create.name')}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder={t('projects.create.name.placeholder')}
-              required
-            />
-            <PathField
-              label={t('projects.create.workspacePath')}
-              value={form.workspacePath}
-              onChange={(workspacePath) => setForm({ ...form, workspacePath })}
-              placeholder="/home/marlburrow/projects/mon-projet"
-              hint={t('projects.create.workspacePath.hint')}
-            />
-            <Select
-              label={t('project.settings.visibility')}
-              value={form.visibility}
-              onChange={(visibility) => setForm({ ...form, visibility })}
-              options={VISIBILITY_OPTIONS}
-            />
-            {createError ? <Banner>{createError}</Banner> : null}
-            <Button type="submit" disabled={createProject.isPending} className="self-start">
-              {createProject.isPending ? t('projects.create.pending') : t('projects.create.submit')}
-            </Button>
-          </form>
+        <CardBody className="flex flex-col gap-4">
+          <ChoiceList
+            label={t('projects.create.mode')}
+            value={mode}
+            options={MODE_OPTIONS}
+            onChange={setMode}
+          />
+
+          {mode === 'clone' ? (
+            <CloneForm />
+          ) : (
+            <form onSubmit={submit} className="flex flex-col gap-4">
+              <Field
+                label={t('projects.create.name')}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder={t('projects.create.name.placeholder')}
+                required
+              />
+              <PathField
+                label={t('projects.create.workspacePath')}
+                value={form.workspacePath}
+                onChange={(workspacePath) => setForm({ ...form, workspacePath })}
+                placeholder={t('projects.create.workspacePath.placeholder')}
+                hint={t('projects.create.workspacePath.hint')}
+                required
+              />
+              <Select
+                label={t('project.settings.visibility')}
+                value={form.visibility}
+                onChange={(visibility) => setForm({ ...form, visibility })}
+                options={VISIBILITY_OPTIONS}
+              />
+              {createError ? <Banner>{createError}</Banner> : null}
+              <Button type="submit" disabled={createProject.isPending} className="self-start">
+                {createProject.isPending
+                  ? t('projects.create.pending')
+                  : t('projects.create.submit')}
+              </Button>
+            </form>
+          )}
         </CardBody>
       </Card>
 

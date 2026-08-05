@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
+import { subsequenceGaps } from './subsequence.js'
 
 const exec = promisify(execFile)
 
@@ -83,30 +84,15 @@ async function walk(cwd: string): Promise<string[]> {
   return found
 }
 
-/**
- * Score d'une correspondance par sous-séquence, à la façon des palettes de commandes :
- * `wsx` retrouve `web/src/index.tsx`.
- *
- * Renvoie null si les lettres de la requête n'apparaissent pas dans l'ordre. Plus le
- * score est bas, meilleure est la correspondance.
- */
+/** Plus le score est bas, meilleure est la correspondance. */
 function score(path: string, query: string): number | null {
+  const gaps = subsequenceGaps(path, query)
+  if (gaps === null) return null
+
   const haystack = path.toLowerCase()
-  const needle = query.toLowerCase()
-
-  let at = -1
-  let gaps = 0
-  for (const char of needle) {
-    const next = haystack.indexOf(char, at + 1)
-    if (next === -1) return null
-    // Les lettres consécutives ne coûtent rien : une correspondance compacte prime.
-    if (at !== -1) gaps += next - at - 1
-    at = next
-  }
-
   // À correspondance égale, le chemin le plus court et le nom de fichier atteint le
   // plus tôt passent devant.
-  const inName = haystack.lastIndexOf(sep) < haystack.indexOf(needle[0] ?? '') ? 0 : 40
+  const inName = haystack.lastIndexOf(sep) < haystack.indexOf(query[0]?.toLowerCase() ?? '') ? 0 : 40
   return gaps * 4 + path.length + inName
 }
 

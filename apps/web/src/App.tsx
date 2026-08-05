@@ -16,6 +16,7 @@ import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
 import { McpSettingsPage } from './routes/McpSettingsPage'
 import { NotificationsSection } from './routes/NotificationsSection'
 import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
+import { GitCredentialsSettingsPage } from './routes/GitCredentialsSettingsPage'
 import { SecretsSettingsPage } from './routes/SecretsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
 import { UsersSettingsPage } from './routes/UsersSettingsPage'
@@ -56,6 +57,7 @@ export function App() {
             <Route path="projets" element={<ProjectsSettingsPage />} />
             <Route path="mcp" element={<McpSettingsPage />} />
             <Route path="api" element={<ApiTokensSettingsPage />} />
+            <Route path="git" element={<GitCredentialsSettingsPage />} />
             <Route path="secrets" element={<SecretsSettingsPage />} />
             <Route path="archivage" element={<ArchivingSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />

@@ -401,6 +401,40 @@ export const secrets = sqliteTable('secrets', {
 })
 
 /**
+ * Credentials git par utilisateur et par hôte, chiffrées comme les secrets.
+ *
+ * Table distincte de `secrets`, et non une convention de nommage dedans : les secrets
+ * sont réservés aux administrateurs et alimentent le namespace `{{secret.NOM}}` des
+ * serveurs MCP. Les fusionner ferait apparaître un jeton GitHub dans le sélecteur de
+ * secrets MCP et interdirait à un compte non administrateur de cloner un dépôt privé.
+ *
+ * `username` existe parce que les forges n'attendent pas la même chose : GitHub ignore
+ * la valeur pour un jeton personnel mais impose `x-access-token` pour un jeton
+ * d'installation, GitLab veut `oauth2`. Le stocker évite de coder en dur une table de
+ * correspondance par forge.
+ */
+export const gitCredentials = sqliteTable(
+  'git_credentials',
+  {
+    id: text('id').primaryKey(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Hôte seul, sans schéma ni port : `github.com`, `gitlab.example.org`. */
+    host: text('host').notNull(),
+    username: text('username').notNull(),
+    ciphertext: text('ciphertext').notNull(),
+    iv: text('iv').notNull(),
+    authTag: text('auth_tag').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  // Une seule credential par hôte et par compte : deux jetons pour github.com n'auraient
+  // aucun moyen d'être départagés au moment où git en réclame un.
+  (t) => [uniqueIndex('idx_git_credentials_owner_host').on(t.ownerId, t.host)],
+)
+
+/**
  * Jetons d'API, porteurs d'identité des clients machine.
  *
  * Même stockage que les sessions : seul le SHA-256 du secret est retenu, le jeton en
@@ -520,4 +554,5 @@ export type WorktreeRow = typeof worktrees.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect
 export type McpServerRow = typeof mcpServers.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect
+export type GitCredentialRow = typeof gitCredentials.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect

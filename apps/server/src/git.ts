@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { copyFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -105,6 +105,141 @@ export async function removeWorktree(repo: string, path: string, force: boolean)
   } catch (err) {
     throw new GitError(gitMessage(err))
   }
+}
+
+/**
+ * Un clone qui n'a plus rien dit depuis ce délai est considéré perdu.
+ *
+ * Une inactivité plutôt qu'une durée totale : un dépôt de plusieurs gigaoctets sur une
+ * ligne lente met légitimement une heure, alors qu'un clone qui ne produit plus une
+ * ligne pendant cinq minutes ne reviendra pas.
+ */
+const CLONE_IDLE_TIMEOUT_MS = 5 * 60 * 1000
+
+export interface CloneProgress {
+  /** La phase telle que git la nomme : « Receiving objects », « Resolving deltas ». */
+  phase: string
+  /** Null tant que la phase en cours n'est pas chiffrée. */
+  percent: number | null
+}
+
+/**
+ * Erreur de clone, sous la forme que le client sait traduire.
+ *
+ * Le message reste en anglais, comme celui des erreurs d'API : c'est le code que
+ * l'interface affiche, et le message ne sert que de repli lisible dans les logs.
+ */
+export class CloneError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'CloneError'
+  }
+}
+
+/**
+ * Reconnaît dans la sortie de git les deux échecs qui ont une cause actionnable : un
+ * dépôt privé sans jeton valide, et une URL qui ne mène à rien. Le reste part avec le
+ * texte brut de git, plus précis que ne le serait une reformulation.
+ */
+function cloneFailure(stderr: string): CloneError {
+  const text = stderr.trim()
+
+  if (/could not read Username|terminal prompts disabled|Authentication failed/i.test(text)) {
+    return new CloneError('clone_auth_failed', 'Authentication failed for this repository.')
+  }
+  if (/Repository not found|repository '[^']*' does not exist/i.test(text)) {
+    return new CloneError('clone_repo_not_found', 'Repository not found.')
+  }
+
+  const detail = text.split('\n').filter(Boolean).slice(-3).join(' ').trim()
+  return new CloneError('clone_failed', detail || 'git failed without a message.')
+}
+
+/**
+ * Clone un dépôt distant.
+ *
+ * Ne passe pas par le helper `git()`, dont le timeout de cinq secondes est dimensionné
+ * pour des lectures d'état. La progression est lue sur la sortie d'erreur, où git écrit
+ * quand `--progress` est demandé, ce qu'il ne fait pas de lui-même hors terminal.
+ */
+export async function cloneRepository(
+  url: string,
+  destination: string,
+  env: NodeJS.ProcessEnv,
+  onProgress: (progress: CloneProgress) => void,
+): Promise<void> {
+  const child = spawn('git', ['clone', '--progress', '--', url, destination], {
+    env: { ...process.env, ...env },
+  })
+
+  // Seules les dernières lignes servent au diagnostic, mais git en produit des milliers
+  // pendant un gros clone : les garder toutes ferait grossir la mémoire pour rien.
+  const tail: string[] = []
+  let buffer = ''
+
+  return new Promise<void>((resolve, reject) => {
+    let idleTimer: NodeJS.Timeout
+
+    const fail = (error: CloneError) => {
+      clearTimeout(idleTimer)
+      child.kill('SIGKILL')
+      reject(error)
+    }
+
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(
+        () => fail(new CloneError('clone_stalled', 'The clone stopped making progress.')),
+        CLONE_IDLE_TIMEOUT_MS,
+      )
+    }
+    resetIdleTimer()
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      resetIdleTimer()
+      // git sépare les mises à jour d'une même phase par des retours chariot pour
+      // réécrire la ligne en place : les traiter comme des fins de ligne.
+      buffer += chunk.toString()
+      const lines = buffer.split(/[\r\n]/)
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        const text = line.trim()
+        if (!text) continue
+        tail.push(text)
+        if (tail.length > 20) tail.shift()
+
+        const match = /^(.+?):\s+(\d+)%/.exec(text)
+        if (match) onProgress({ phase: match[1] ?? '', percent: Number(match[2]) })
+        else onProgress({ phase: text, percent: null })
+      }
+    })
+
+    child.on('error', (err) =>
+      fail(new CloneError('clone_failed', `git could not be started: ${err.message}`)),
+    )
+
+    child.on('close', (code) => {
+      clearTimeout(idleTimer)
+      if (code === 0) resolve()
+      // Déjà rejeté par `fail` si c'est nous qui l'avons tué ; un second reject est ignoré.
+      else reject(cloneFailure(tail.join('\n')))
+    })
+  })
+}
+
+/**
+ * Inscrit le helper de credentials de Sillage dans la configuration locale du dépôt.
+ *
+ * Local et non global : deux comptes de la même instance clonent chacun avec leur
+ * propre identifiant de propriétaire, et une configuration globale n'en porterait qu'un.
+ * Les worktrees héritent de cette configuration, qui vit dans le dépôt principal.
+ */
+export async function setCredentialHelper(cwd: string, helper: string): Promise<void> {
+  await git(cwd, ['config', '--local', 'credential.helper', helper])
 }
 
 /**

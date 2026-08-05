@@ -12,7 +12,9 @@ import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
 import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
-import { SecretStore, loadOrCreateKey } from './secrets/store.js'
+import { GitCredentialStore } from './git-credentials/store.js'
+import { loadOrCreateKey } from './secrets/cipher.js'
+import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
 import { TerminalManager } from './terminals/terminal-manager.js'
 
@@ -33,7 +35,9 @@ async function main(): Promise<void> {
   const registry = createAgentRegistry(config)
   // La clé vit à côté de la base, pas dedans : c'est ce qui fait qu'une base copiée
   // seule ne livre pas les secrets qu'elle contient.
-  const secrets = new SecretStore(db, loadOrCreateKey(config.paths.data))
+  const encryptionKey = loadOrCreateKey(config.paths.data)
+  const secrets = new SecretStore(db, encryptionKey)
+  const gitCredentials = new GitCredentialStore(db, encryptionKey)
   const sessions = new SessionManager(db, log, config, registry, secrets)
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
@@ -56,6 +60,7 @@ async function main(): Promise<void> {
     terminals,
     push,
     secrets,
+    gitCredentials,
     webhooks,
     scheduler,
   )

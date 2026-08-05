@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FolderOpen,
   Info,
+  GitBranch,
   KeyRound,
   Palette,
   Plug,
@@ -83,6 +84,12 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.api',
     descriptionKey: 'settings.section.api.description',
     icon: <Terminal size={16} />,
+  },
+  {
+    to: 'git',
+    labelKey: 'settings.section.git',
+    descriptionKey: 'settings.section.git.description',
+    icon: <GitBranch size={16} />,
   },
   {
     to: 'secrets',

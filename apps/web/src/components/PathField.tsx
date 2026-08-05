@@ -10,13 +10,24 @@ interface PathFieldProps {
   hint?: string
   error?: string
   placeholder?: string
+  /** Le chemin est exigé côté serveur : sans ça, un champ vide part et revient en
+   * erreur de validation, dans une phrase qui nomme un champ de l'API. */
+  required?: boolean
 }
 
 /**
  * Saisie d'un chemin : champ texte pour ceux qui tapent vite, explorateur pour le
  * reste. Les deux écrivent la même valeur, aucun des deux n'est un mode dégradé.
  */
-export function PathField({ label, value, onChange, hint, error, placeholder }: PathFieldProps) {
+export function PathField({
+  label,
+  value,
+  onChange,
+  hint,
+  error,
+  placeholder,
+  required,
+}: PathFieldProps) {
   const id = useId()
   const [pickerOpen, setPickerOpen] = useState(false)
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined
@@ -42,6 +53,7 @@ export function PathField({ label, value, onChange, hint, error, placeholder }: 
             placeholder={placeholder}
             aria-describedby={describedBy}
             aria-invalid={error ? true : undefined}
+            required={required}
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
