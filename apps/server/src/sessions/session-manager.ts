@@ -294,7 +294,7 @@ export class SessionManager {
     const row = this.db
       .select({
         lastSeq: conversations.lastSeq,
-        exchangeCount: conversations.exchangeCount,
+        turnCount: conversations.turnCount,
         journalBytes: conversations.journalBytes,
         contextUsedTokens: conversations.contextUsedTokens,
         contextMaxTokens: conversations.contextMaxTokens,
@@ -314,7 +314,7 @@ export class SessionManager {
       lastSeq: row?.lastSeq ?? 0,
       metrics: conversationMetrics(
         row ?? {
-          exchangeCount: 0,
+          turnCount: 0,
           journalBytes: 0,
           contextUsedTokens: null,
           contextMaxTokens: null,
@@ -685,7 +685,7 @@ export class SessionManager {
             .run()
         }
         if (event.type === 'turn.completed') {
-          this.log.refreshExchangeCount(conversationId)
+          this.log.refreshTurnCount(conversationId)
           // Le CLI ne résume la session qu'une fois le tour fini : c'est le premier
           // moment où un titre utile existe.
           void this.adoptSuggestedTitle(conversationId)
