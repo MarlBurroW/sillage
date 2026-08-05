@@ -12,6 +12,7 @@ import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
 import { AppearanceSection } from './routes/AppearanceSection'
+import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
 import { McpSettingsPage } from './routes/McpSettingsPage'
 import { NotificationsSection } from './routes/NotificationsSection'
 import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
@@ -51,6 +52,7 @@ export function App() {
             <Route path="compte" element={<AccountSection />} />
             <Route path="apparence" element={<AppearanceSection />} />
             <Route path="notifications" element={<NotificationsSection />} />
+            <Route path="cli" element={<CliDefaultsSettingsPage />} />
             <Route path="projets" element={<ProjectsSettingsPage />} />
             <Route path="mcp" element={<McpSettingsPage />} />
             <Route path="api" element={<ApiTokensSettingsPage />} />

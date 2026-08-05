@@ -7,6 +7,7 @@ import {
   KeyRound,
   Palette,
   Plug,
+  SlidersHorizontal,
   Terminal,
   UserRound,
   Users,
@@ -58,6 +59,12 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.notifications',
     descriptionKey: 'settings.section.notifications.description',
     icon: <Bell size={16} />,
+  },
+  {
+    to: 'cli',
+    labelKey: 'settings.section.cli',
+    descriptionKey: 'settings.section.cli.description',
+    icon: <SlidersHorizontal size={16} />,
   },
   {
     to: 'projets',

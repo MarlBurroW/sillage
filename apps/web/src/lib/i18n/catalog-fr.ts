@@ -216,6 +216,17 @@ export const fr: Catalog = {
   'settings.section.appearance.description': 'Thème, couleurs, confort de lecture, coloration du code',
   'settings.section.notifications': 'Notifications',
   'settings.section.notifications.description': 'Alertes de fin de tour, propres à cet appareil',
+  'settings.section.cli': 'Défauts des CLI',
+  'settings.section.cli.description': 'Avec quoi les nouvelles conversations démarrent',
+  'cliDefaults.section.title': 'Défauts des CLI',
+  'cliDefaults.section.description': "Les réglages avec lesquels une conversation s'ouvre",
+  'cliDefaults.agent.title': 'Quel CLI régler',
+  'cliDefaults.agent.description':
+    "Chaque CLI garde ses propres défauts : leurs garde-fous ne sont pas le même réglage sous deux noms.",
+  'cliDefaults.mcp.label': 'Serveurs MCP',
+  'cliDefaults.mcp.hint':
+    'Les serveurs activés ici le sont dans chaque nouvelle conversation. Ils restent modifiables conversation par conversation.',
+  'cliDefaults.save.error': "Ces défauts n'ont pas pu être enregistrés. Réessayez.",
   'settings.section.projects': 'Projets',
   'settings.section.projects.description': 'Créer un projet et régler sa visibilité',
   'settings.section.archiving': 'Archivage',

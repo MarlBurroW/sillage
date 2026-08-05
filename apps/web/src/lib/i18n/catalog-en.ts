@@ -231,6 +231,17 @@ export const en = {
   'settings.section.appearance.description': 'Theme, colors, reading comfort, code highlighting',
   'settings.section.notifications': 'Notifications',
   'settings.section.notifications.description': 'Turn-end alerts, specific to this device',
+  'settings.section.cli': 'CLI defaults',
+  'settings.section.cli.description': 'What new conversations start with',
+  'cliDefaults.section.title': 'CLI defaults',
+  'cliDefaults.section.description': 'The settings a new conversation opens with',
+  'cliDefaults.agent.title': 'Which CLI to set up',
+  'cliDefaults.agent.description':
+    'Each CLI keeps its own defaults: their guardrails are not the same setting under two names.',
+  'cliDefaults.mcp.label': 'MCP servers',
+  'cliDefaults.mcp.hint':
+    'Servers switched on here are switched on in every new conversation. They stay changeable one conversation at a time.',
+  'cliDefaults.save.error': 'These defaults could not be saved. Try again.',
   'settings.section.projects': 'Projects',
   'settings.section.projects.description': 'Create a project and set its visibility',
   'settings.section.archiving': 'Archiving',

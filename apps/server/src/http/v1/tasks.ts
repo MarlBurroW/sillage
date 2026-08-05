@@ -25,6 +25,7 @@ import type { AgentRegistry } from '../../agents/registry.js'
 import { createConversation } from '../../conversations/create.js'
 import type { EventLog } from '../../events/event-log.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
+import { readUserSettings } from '../../settings/user-settings.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, notFound } from '../errors.js'
 import { requireScope } from '../require-user.js'
@@ -150,7 +151,13 @@ export function registerTaskRoutes(
     let row
     try {
       if (body.worktreeId) assertWorktreeBelongs(ctx, id, body.worktreeId)
-      const { agent, config } = await resolveTaskConfig(registry, token, project, body)
+      const { agent, config } = await resolveTaskConfig(
+        registry,
+        token,
+        project,
+        body,
+        readUserSettings(ctx.db, user.id).agentDefaults,
+      )
 
       const clientMessageId = randomUUID()
       row = await createConversation(ctx.db, sessions, {

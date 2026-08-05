@@ -302,7 +302,7 @@ CREATE TABLE attachments (
   created_at      INTEGER NOT NULL
 );
 
--- Préférences par utilisateur (thème, densité, etc.)
+-- Préférences par utilisateur (défauts des CLI, etc.)
 
 CREATE TABLE user_settings (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -1358,6 +1358,28 @@ choisie ailleurs.
 L'aperçu est une fausse conversation qui réutilise les vrais composants du fil, bulle
 comprise, plutôt qu'une imitation qui finirait par diverger. Rien ne lui est transmis :
 les réglages étant sur `<html>`, il suit comme le reste.
+
+**Défauts des CLI.** Avec quoi une nouvelle conversation s'ouvre : modèle, effort, mode
+de permission pour Claude, mode de collaboration, approbation et bac à sable pour Codex,
+et les serveurs MCP actifs. Un jeu complet par CLI, jamais un réglage commun : leurs
+garde-fous ne sont pas le même concept sous deux noms.
+
+Réglage de compte et non d'instance, à la différence de l'archivage : le mode de
+permission engage celui qui lit les réponses, et deux personnes d'un même projet n'ont
+pas à travailler avec les mêmes garde-fous. Stocké dans `user_settings`, lu par
+`GET /api/me/settings`, remplacé un CLI à la fois par `PATCH`. Rien n'est appliqué aux
+conversations existantes, qui portent chacune sa configuration : changer un défaut ne
+doit pas modifier sous les doigts un fil déjà ouvert.
+
+L'écran affiche les mêmes catégories que le panneau du composeur, à la même source
+(`useAgentSettings`) : ce qu'on règle ici est exactement ce qu'on y retrouvera, déplié
+en listes déroulantes plutôt que rangé derrière un déclencheur qui doit tenir sur une
+ligne. Les répertoires supplémentaires en sont exclus, désignant des dossiers d'un
+projet précis.
+
+Côté serveur, ces défauts servent partout où une conversation naît sans configuration
+explicite : import d'une session du CLI Claude, et dernier étage de la cascade de
+`/api/v1` (requête, jeton, préréglage du projet, puis défauts du compte propriétaire).
 
 ### 12.9 PWA
 

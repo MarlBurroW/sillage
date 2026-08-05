@@ -24,6 +24,7 @@ import { useAllConversations, useCreateConversation } from '../lib/conversations
 import { useProjects } from '../lib/projects'
 import { locale, useTranslate } from '../lib/i18n'
 import { useSidebarHidden } from '../lib/sidebar'
+import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 
 /** Les cartes de choix suivent l'enum du protocole : un CLI ajouté apparaît seul. */
@@ -90,7 +91,11 @@ export function DraftConversationPage() {
   const { data: projects } = useProjects()
   const project = projects?.find((p) => p.id === projectId)
 
-  const defaults = defaultConfigFor(agent)
+  // Les défauts du compte tant qu'ils ne sont pas chargés : ceux du protocole ne sont
+  // qu'un point de départ le temps d'un aller-retour, et rien n'est envoyé avant le
+  // premier message.
+  const { data: userSettings } = useUserSettings()
+  const defaults = userSettings?.agentDefaults[agent] ?? defaultConfigFor(agent)
   // Une configuration Claude n'a aucun sens pour Codex : elle est abandonnée dès que
   // le CLI change, plutôt que conservée et rejetée par le serveur.
   const effective = useMemo(

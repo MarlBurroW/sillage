@@ -40,6 +40,7 @@ import { registerSettingsRoutes } from './routes/settings.js'
 import { registerSystemRoutes } from './routes/system.js'
 import { registerTerminalRoutes } from './routes/terminals.js'
 import { registerTreeRoutes } from './routes/tree.js'
+import { registerUserSettingsRoutes } from './routes/user-settings.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
 
@@ -144,6 +145,7 @@ export async function buildApp(
   registerPushRoutes(app, push)
   registerSearchRoutes(app, ctx)
   registerSettingsRoutes(app, ctx, scheduler)
+  registerUserSettingsRoutes(app, ctx)
   registerSystemRoutes(app)
   registerTreeRoutes(app, ctx)
   registerFileRoutes(app, ctx)
