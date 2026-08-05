@@ -980,6 +980,8 @@ export const fr: Catalog = {
   'common.failed': 'Échec',
   'markdown.table.downloadCsv': 'Télécharger en CSV',
   'mention.picker.aria': 'Fichiers à mentionner',
+  'command.picker.aria': 'Commandes',
+  'command.picker.empty': 'Aucune commande ne correspond.',
   'queued.remove': 'Retirer ce message de la file',
   'queued.remove.failed': "Ce message n'a pas pu être retiré de la file.",
   'queued.attachments.one': '{count} pièce jointe',

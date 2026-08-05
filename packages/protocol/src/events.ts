@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { elicitationContentSchema, elicitationFieldSchema } from './elicitation.js'
 import { mcpServerStatusSchema } from './mcp.js'
+import { slashCommandSchema } from './commands.js'
 
 /**
  * Schéma d'événements normalisé (invariant I3 de la spec).
@@ -433,6 +434,21 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('mcp.updated'),
     servers: z.array(mcpServerStatusSchema),
+  }),
+
+  /**
+   * Les commandes en `/` que le CLI reconnaît pour cette session.
+   *
+   * Même sémantique de remplacement que `mcp.updated` : le CLI republie la liste
+   * entière dès qu'elle bouge, et elle bouge en cours de session, une compétence
+   * pouvant être découverte quand l'agent descend dans un sous-répertoire.
+   *
+   * Déjà réduite à ce que Sillage sait proposer : le filtrage se fait à la source, où
+   * l'on sait de quel CLI vient la liste.
+   */
+  z.object({
+    type: z.literal('commands.updated'),
+    commands: z.array(slashCommandSchema),
   }),
 
   /**

@@ -786,6 +786,16 @@ export function ConversationPage() {
     }
   }
 
+  /**
+   * Commandes que Sillage exécute lui-même, lancées depuis le composer.
+   *
+   * L'erreur remonte au champ de saisie, qui rend la commande telle quelle, plutôt qu'à
+   * la bannière de la page : le geste part du champ, et c'est là qu'on la relance.
+   */
+  const runCommand = async (name: string) => {
+    if (name === 'compact') await compactConversation(conversationId)
+  }
+
   const send = async (text: string, attachmentIds: string[], mentions: string[]) => {
     await sendMessage(conversationId, text, attachmentIds, mentions)
     void queryClient.invalidateQueries({ queryKey: conversationsKey(conversation.projectId) })
@@ -1191,9 +1201,11 @@ export function ConversationPage() {
             context={stream.state.context}
             onSteer={canSteer ? steer : undefined}
             onSend={send}
+            onCommand={runCommand}
             onInterrupt={() => void interruptConversation(conversationId)}
             onConfigChange={(next) => void updateConfig(next)}
             mcpInventory={stream.state.mcp}
+            commands={stream.state.commands}
             appliedConfig={stream.appliedConfig}
             projectId={conversation.projectId}
             worktreeId={conversation.worktreeId}

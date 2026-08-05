@@ -992,6 +992,8 @@ export const en = {
   'common.failed': 'Failed',
   'markdown.table.downloadCsv': 'Download as CSV',
   'mention.picker.aria': 'Files to mention',
+  'command.picker.aria': 'Commands',
+  'command.picker.empty': 'No matching command.',
   'queued.remove': 'Remove this message from the queue',
   'queued.remove.failed': 'This message could not be removed from the queue.',
   'queued.attachments.one': '{count} attachment',
