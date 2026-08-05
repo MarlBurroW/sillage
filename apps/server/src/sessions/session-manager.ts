@@ -102,7 +102,7 @@ export interface StatusBroadcast {
   loops: number
   /** Voir le message `status` du protocole : la config en vigueur, `null` à froid. */
   appliedConfig: AgentConfig | null
-  lastSeq: number
+  lastNotableSeq: number
   metrics: ConversationMetrics
 }
 
@@ -308,13 +308,13 @@ export class SessionManager {
     status: ConversationStatus,
     warm: boolean,
   ): void {
-    // `lastSeq` et les métriques sont relus en base à chaque diffusion : le journal est
-    // écrit avant le changement de statut, donc les valeurs sont fraîches, et une
-    // transition de statut se compte en quelques-unes par tour. Aucun compteur en
-    // mémoire à tenir en plus.
+    // `lastNotableSeq` et les métriques sont relus en base à chaque diffusion : le
+    // journal est écrit avant le changement de statut, donc les valeurs sont fraîches,
+    // et une transition de statut se compte en quelques-unes par tour. Aucun compteur
+    // en mémoire à tenir en plus.
     const row = this.db
       .select({
-        lastSeq: conversations.lastSeq,
+        lastNotableSeq: conversations.lastNotableSeq,
         turnCount: conversations.turnCount,
         journalBytes: conversations.journalBytes,
         contextUsedTokens: conversations.contextUsedTokens,
@@ -332,7 +332,7 @@ export class SessionManager {
       background: warm ? this.backgroundCount(conversationId) : 0,
       loops: warm ? this.loopCount(conversationId) : 0,
       appliedConfig: warm ? this.appliedConfig(conversationId) : null,
-      lastSeq: row?.lastSeq ?? 0,
+      lastNotableSeq: row?.lastNotableSeq ?? 0,
       metrics: conversationMetrics(
         row ?? {
           turnCount: 0,

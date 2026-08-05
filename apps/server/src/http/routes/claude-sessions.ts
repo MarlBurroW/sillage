@@ -173,6 +173,7 @@ export function registerClaudeSessionRoutes(
       backgroundCount: 0,
       loopCount: 0,
       lastSeq: 0,
+      lastNotableSeq: 0,
       costUsd: 0,
       inputTokens: 0,
       outputTokens: 0,

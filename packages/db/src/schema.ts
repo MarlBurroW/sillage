@@ -155,6 +155,15 @@ export const conversations = sqliteTable(
     loopCount: integer('loop_count').notNull().default(0),
     lastSeq: integer('last_seq').notNull().default(0),
     /**
+     * Dernier `seq` qui valait qu'on prévienne le lecteur, d'où se déduit le non-lu.
+     *
+     * Distinct de `lastSeq` parce que le journal avance aussi tout seul : une session
+     * qui se refroidit ou un relevé d'usage sont écrits après le départ de tout le
+     * monde, et les compter allumait 57 conversations sur 80 sans que personne n'ait
+     * rien à y lire. Voir `NOTABLE` dans l'`EventLog` pour la liste retenue.
+     */
+    lastNotableSeq: integer('last_notable_seq').notNull().default(0),
+    /**
      * Métriques de volume, tenues à jour à l'écriture du journal.
      *
      * Persistées pour la même raison que `backgroundCount` : la sidebar en affiche pour

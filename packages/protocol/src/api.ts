@@ -325,9 +325,15 @@ export interface ConversationDto {
   status: ConversationStatus
   lastSeq: number
   /**
+   * Dernier `seq` qui valait qu'on prévienne le lecteur. Toujours inférieur ou égal à
+   * `lastSeq` : le journal avance aussi pour des écritures de service, qui ne signalent
+   * rien à personne.
+   */
+  lastNotableSeq: number
+  /**
    * Jusqu'où le compte appelant a lu, comme `isOwner` : dérivé du demandeur, pas de la
-   * conversation. En dessous de `lastSeq`, il s'est passé quelque chose depuis sa
-   * dernière visite.
+   * conversation. En dessous de `lastNotableSeq`, il s'est passé quelque chose qui le
+   * concerne depuis sa dernière visite.
    */
   lastReadSeq: number
   costUsd: number

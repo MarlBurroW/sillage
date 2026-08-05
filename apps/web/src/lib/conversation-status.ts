@@ -99,10 +99,10 @@ export function useLiveLoops(conversationId: string): number {
 }
 
 /**
- * Dernier `seq` poussé pour ce fil, 0 tant qu'on n'a rien reçu.
+ * Dernier `seq` notable poussé pour ce fil, 0 tant qu'on n'a rien reçu.
  *
  * Le 0 se lit « rien à dire », pas « journal vide » : l'appelant compare avec le
- * `lastSeq` de la liste REST et garde le plus grand des deux.
+ * `lastNotableSeq` de la liste REST et garde le plus grand des deux.
  */
 export function useLiveSeq(conversationId: string): number {
   return useSyncExternalStore(
@@ -145,7 +145,7 @@ export function useStatusFeed(): void {
         status,
         background,
         loops: loopCount,
-        lastSeq,
+        lastNotableSeq,
         metrics: pushed,
       }) => {
         const metricsChanged = !sameMetrics(metrics.get(conversationId), pushed)
@@ -154,12 +154,12 @@ export function useStatusFeed(): void {
           statuses.get(conversationId) !== status ||
           (backgrounds.get(conversationId) ?? 0) !== background ||
           (loops.get(conversationId) ?? 0) !== loopCount ||
-          (seqs.get(conversationId) ?? 0) !== lastSeq
+          (seqs.get(conversationId) ?? 0) !== lastNotableSeq
         if (!changed) return
         statuses.set(conversationId, status)
         backgrounds.set(conversationId, background)
         loops.set(conversationId, loopCount)
-        seqs.set(conversationId, lastSeq)
+        seqs.set(conversationId, lastNotableSeq)
         // Seulement si le contenu a bougé : ranger l'objet reçu à chaque poussée
         // rerendrait toute ligne détaillée pour des chiffres identiques.
         if (metricsChanged) metrics.set(conversationId, pushed)

@@ -61,6 +61,7 @@ export function conversationToDto(
     config: parseAgentConfig(row.config),
     status: row.status,
     lastSeq: row.lastSeq,
+    lastNotableSeq: row.lastNotableSeq,
     lastReadSeq,
     costUsd: row.costUsd,
     inputTokens: row.inputTokens,
@@ -716,11 +717,11 @@ export function registerConversationRoutes(
 export function readConversationState(
   ctx: AppContext,
   conversationId: string,
-): { status: ConversationStatus; lastSeq: number; metrics: ConversationMetrics } | null {
+): { status: ConversationStatus; lastNotableSeq: number; metrics: ConversationMetrics } | null {
   const row = ctx.db
     .select({
       status: conversations.status,
-      lastSeq: conversations.lastSeq,
+      lastNotableSeq: conversations.lastNotableSeq,
       turnCount: conversations.turnCount,
       journalBytes: conversations.journalBytes,
       contextUsedTokens: conversations.contextUsedTokens,
@@ -732,7 +733,11 @@ export function readConversationState(
     .get()
 
   if (!row) return null
-  return { status: row.status, lastSeq: row.lastSeq, metrics: conversationMetrics(row) }
+  return {
+    status: row.status,
+    lastNotableSeq: row.lastNotableSeq,
+    metrics: conversationMetrics(row),
+  }
 }
 
 /** Conversations visibles par un utilisateur, pour l'abonnement WebSocket. */

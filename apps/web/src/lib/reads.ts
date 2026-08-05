@@ -12,7 +12,7 @@ import { liveSeq, subscribeStatus } from './conversation-status'
  * n'est complet à lui seul.
  */
 export function isUnread(conversation: ConversationDto, pushedSeq: number): boolean {
-  return Math.max(conversation.lastSeq, pushedSeq) > conversation.lastReadSeq
+  return Math.max(conversation.lastNotableSeq, pushedSeq) > conversation.lastReadSeq
 }
 
 /**
@@ -73,11 +73,16 @@ export function useTrackRead(conversationId: string | undefined, lastSeq: number
   const seqRef = useRef(lastSeq)
   seqRef.current = lastSeq
 
+  // L'envoi aussi, pour que l'effet qui suit l'avancement du fil déclenche celui que la
+  // conversation courante a installé, sans être remonté à chaque `seq`.
+  const sendRef = useRef<() => void>(() => {})
+
   useEffect(() => {
     if (!conversationId) return
 
     let confirmed = 0
     let inFlight = false
+    let attemptedAt = 0
 
     const send = async () => {
       // Un onglet en arrière-plan continue de battre. Sans ce test, laisser Sillage
@@ -87,7 +92,12 @@ export function useTrackRead(conversationId: string | undefined, lastSeq: number
 
       const seq = seqRef.current
       if (inFlight || seq <= confirmed) return
+      // Le premier envoi part sans attendre, les suivants s'espacent : un tour en cours
+      // pousse un `seq` toutes les quelques dizaines de millisecondes.
+      if (attemptedAt > 0 && Date.now() - attemptedAt < MARK_INTERVAL_MS) return
+
       inFlight = true
+      attemptedAt = Date.now()
       try {
         const result = await api.post<{ lastReadSeq: number }>(
           `/api/conversations/${conversationId}/read`,
@@ -104,7 +114,15 @@ export function useTrackRead(conversationId: string | undefined, lastSeq: number
       }
     }
 
+    sendRef.current = () => void send()
     const timer = window.setInterval(() => void send(), MARK_INTERVAL_MS)
     return () => clearInterval(timer)
   }, [conversationId, queryClient])
+
+  // Ouvrir un fil doit l'éteindre tout de suite, pas au prochain battement : le journal
+  // d'une longue conversation met plusieurs pages à arriver, et attendre en plus deux
+  // secondes après la dernière donnait une ligne qui reste en gras sans raison visible.
+  useEffect(() => {
+    sendRef.current()
+  }, [lastSeq])
 }

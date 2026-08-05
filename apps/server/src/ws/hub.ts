@@ -81,7 +81,7 @@ class Connection {
         background: this.sessions.backgroundCount(conversationId),
         loops: this.sessions.loopCount(conversationId),
         appliedConfig: this.sessions.appliedConfig(conversationId),
-        lastSeq: state.lastSeq,
+        lastNotableSeq: state.lastNotableSeq,
         metrics: state.metrics,
       })
     }
