@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { updateAppSettingsBodySchema, type AppSettingsDto } from '@sillage/protocol'
+import { ARCHIVE_JOB } from '../../scheduler/jobs.js'
+import type { Scheduler } from '../../scheduler/scheduler.js'
 import { readAppSettings, writeAppSettings } from '../../settings/app-settings.js'
 import type { AppContext } from '../context.js'
 import { requireAdmin, requireUser } from '../require-user.js'
@@ -11,7 +13,11 @@ import { requireAdmin, requireUser } from '../require-user.js'
  * d'archivage décrit un comportement que chacun subit sur ses propres fils, et le
  * cacher à qui n'administre pas ne protégerait rien.
  */
-export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function registerSettingsRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  scheduler: Scheduler,
+): void {
   app.get('/api/settings', async (request): Promise<AppSettingsDto> => {
     requireUser(request)
     return readAppSettings(ctx.db, ctx.config)
@@ -24,6 +30,12 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
     writeAppSettings(ctx.db, body)
     // Rendu relu plutôt que reconstruit depuis le corps : un champ absent garde sa
     // valeur, et l'écran a besoin de l'état complet, pas de ce qu'il vient d'envoyer.
-    return readAppSettings(ctx.db, ctx.config)
+    const settings = readAppSettings(ctx.db, ctx.config)
+
+    // Le délai se relit à chaque passage, mais le motif décide de quand ce passage a
+    // lieu : sans réarmement, la nouvelle valeur attendrait le prochain redémarrage.
+    scheduler.reschedule(ARCHIVE_JOB, settings.autoArchiveSchedule)
+
+    return settings
   })
 }

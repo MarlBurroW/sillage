@@ -20,6 +20,7 @@ import type { AppContext } from './context.js'
 import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
 import { registerApiTokenRoutes } from './routes/api-tokens.js'
 import { registerV1Routes } from './v1/index.js'
+import type { Scheduler } from '../scheduler/scheduler.js'
 import type { WebhookService } from '../webhooks/service.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
@@ -65,6 +66,7 @@ export async function buildApp(
   push: PushService,
   secrets: SecretStore,
   webhooks: WebhookService,
+  scheduler: Scheduler,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -141,7 +143,7 @@ export async function buildApp(
   registerAttachmentRoutes(app, attachments)
   registerPushRoutes(app, push)
   registerSearchRoutes(app, ctx)
-  registerSettingsRoutes(app, ctx)
+  registerSettingsRoutes(app, ctx, scheduler)
   registerSystemRoutes(app)
   registerTreeRoutes(app, ctx)
   registerFileRoutes(app, ctx)

@@ -226,9 +226,15 @@ export const fr: Catalog = {
   'archiving.adminOnly.description': "Ce délai vaut pour tous les comptes de l'instance.",
   'archiving.delay.title': 'Archivage automatique',
   'archiving.delay.label': "Jours d'inactivité avant rangement",
-  'archiving.delay.hint': 'Appliqué une fois par jour, à 4h45.',
   'archiving.delay.disabled':
     "L'archivage automatique est coupé. L'archivage à la main reste disponible.",
+  'archiving.schedule.label': 'Heure de passage',
+  'archiving.schedule.invalid': 'Ce motif cron ne tombe jamais.',
+  'archiving.schedule.nextRuns': "Prochains passages : {runs}, à l'heure de cet appareil.",
+  'archiving.preset.hourly': 'Toutes les heures',
+  'archiving.preset.earlyMorning': 'Au petit matin',
+  'archiving.preset.midday': 'À midi',
+  'archiving.preset.weekly': 'Le lundi matin',
   'archiving.delay.invalid': 'Saisir un nombre entier de jours entre 0 et 3650.',
   'archiving.delay.save': 'Enregistrer',
   'archiving.criteria':

@@ -189,6 +189,12 @@ importers:
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
+      croner:
+        specifier: ^10.0.1
+        version: 10.0.1
+      cronstrue:
+        specifier: ^3.24.0
+        version: 3.24.0
       highlight.js:
         specifier: ^11.11.1
         version: 11.11.1
@@ -274,6 +280,9 @@ importers:
       '@sillage/codex-bindings':
         specifier: workspace:*
         version: link:../codex-bindings
+      croner:
+        specifier: ^10.0.1
+        version: 10.0.1
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -3013,6 +3022,10 @@ packages:
   croner@10.0.1:
     resolution: {integrity: sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g==}
     engines: {node: '>=18.0'}
+
+  cronstrue@3.24.0:
+    resolution: {integrity: sha512-t/Ji3Ur2c/pzhIAWNwC0ftl3JAE4dLfCjAdZoTZXmPDZwcispnS1PaMcMS4OmIIXyIVouAz+yw+mfQiE3hz5OQ==}
+    hasBin: true
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -7630,6 +7643,8 @@ snapshots:
   crelt@1.0.7: {}
 
   croner@10.0.1: {}
+
+  cronstrue@3.24.0: {}
 
   cross-spawn@7.0.6:
     dependencies:
