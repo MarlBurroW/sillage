@@ -210,11 +210,12 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     parentToolCallId: parentToolCallIdSchema,
   }),
   /**
-   * Progression d'une réflexion dont le texte n'est pas révélé.
+   * Taille de la réflexion en cours, en tokens estimés.
    *
-   * Les modèles récents ne rendent pas leur chaîne de pensée : le flux ne porte alors
-   * aucun `thinking.delta`, et rien ne distingue un agent qui réfléchit d'un agent
-   * bloqué. Le compteur est la seule preuve de vie de cette phase.
+   * Accompagne `thinking.delta` frame par frame quand la pensée est révélée, et le
+   * remplace entièrement quand le modèle la cache : le flux ne porte alors plus rien
+   * qui distingue un agent qui réfléchit d'un agent bloqué, et ce compteur est sa
+   * seule preuve de vie.
    *
    * `estimatedTokens` est une estimation du CLI, remise à zéro à chaque bloc de
    * réflexion : elle sert à faire bouger un indicateur, pas à compter la facture, que
