@@ -208,6 +208,24 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     text: z.string(),
     parentToolCallId: parentToolCallIdSchema,
   }),
+  /**
+   * Progression d'une réflexion dont le texte n'est pas révélé.
+   *
+   * Les modèles récents ne rendent pas leur chaîne de pensée : le flux ne porte alors
+   * aucun `thinking.delta`, et rien ne distingue un agent qui réfléchit d'un agent
+   * bloqué. Le compteur est la seule preuve de vie de cette phase.
+   *
+   * `estimatedTokens` est une estimation du CLI, remise à zéro à chaque bloc de
+   * réflexion : elle sert à faire bouger un indicateur, pas à compter la facture, que
+   * `turn.completed` seul arrête.
+   *
+   * Sans identifiant de message ni de fil : le CLI n'en attache pas, cette progression
+   * appartient au tour et non à une bulle.
+   */
+  z.object({
+    type: z.literal('thinking.progress'),
+    estimatedTokens: z.number(),
+  }),
 
   // Outils
   z.object({

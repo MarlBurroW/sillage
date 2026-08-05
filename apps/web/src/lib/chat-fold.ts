@@ -225,6 +225,14 @@ export interface ChatState {
   context: ContextState | null
   /** Les tours terminés, pour afficher un indicateur d'activité fiable. */
   turnRunning: boolean
+  /**
+   * Taille de la réflexion en cours, quand le modèle ne révèle pas son texte.
+   *
+   * Non nulle veut dire « l'agent réfléchit en ce moment » : tout autre signe de
+   * progrès la remet à null, de sorte que l'indicateur n'annonce jamais une réflexion
+   * pendant que du texte s'écrit ou qu'un outil tourne.
+   */
+  thinkingTokens: number | null
   /** Historique des modifications, tour par tour, dérivé de `file.edited`. */
   editTurns: EditTurn[]
   /**
@@ -330,6 +338,7 @@ export function emptyChatState(): ChatState {
     context: null,
     editTurns: [],
     turnRunning: false,
+    thinkingTokens: null,
     compacting: false,
     background: [],
     loops: [],
@@ -400,6 +409,13 @@ export function describeActivity(state: ChatState): string | null {
       : translate('activity.compacting')
   }
   if (!state.turnRunning) return null
+
+  // Le compteur prime sur le dernier élément du fil : il n'est renseigné que pendant
+  // une réflexion en cours, et il en dit plus que le « Réflexion » nu déduit d'un outil
+  // déjà rendu. C'est aussi le seul signe de vie quand le modèle cache son texte.
+  if (state.thinkingTokens !== null) {
+    return translate('activity.thinking.tokens', { tokens: thousands(state.thinkingTokens) })
+  }
 
   return activityOf(state.items, null)
 }
@@ -619,6 +635,26 @@ function closeRunningTools(state: ChatState): void {
 }
 
 /**
+ * Ce qui prouve qu'une réflexion muette est finie.
+ *
+ * Liste explicite plutôt que « tout sauf `thinking.progress` » : un relevé d'usage ou
+ * un rapport de sous-agent arrive au milieu d'une réflexion sans rien y mettre fin, et
+ * éteindrait le compteur le temps d'un battement.
+ */
+const THINKING_ENDED_BY = new Set<SillageEvent['type']>([
+  'message.started',
+  'message.delta',
+  'message.completed',
+  'thinking.delta',
+  'tool.started',
+  'tool.completed',
+  'turn.started',
+  'turn.completed',
+  'session.ended',
+  'context.compaction_started',
+])
+
+/**
  * Applique un événement. L'état est muté puis renvoyé dans un nouvel objet : les
  * conversations longues rendent une copie profonde par événement trop coûteuse sur
  * un téléphone, et seule la référence racine sert à déclencher le rendu React.
@@ -644,6 +680,11 @@ export function applyEvent(
   if (event.type === 'message.delta' || event.type === 'tool.started') {
     state.turnRunning = true
   }
+
+  // La réflexion muette n'a pas de fin annoncée : c'est ce qui la suit qui la referme.
+  // Sans cette remise à zéro, le compteur resterait affiché pendant la rédaction ou
+  // l'exécution d'un outil, et annoncerait une réflexion déjà terminée.
+  if (THINKING_ENDED_BY.has(event.type)) state.thinkingTokens = null
 
   switch (event.type) {
     case 'session.started': {
@@ -697,6 +738,14 @@ export function applyEvent(
         ...message,
         streamingText: message.streamingText + event.text,
       }))
+      break
+    }
+
+    case 'thinking.progress': {
+      // Un tour reprise de session n'a pas de `turn.started` : réfléchir suffit à
+      // prouver qu'il tourne, comme le fait déjà un delta de texte plus haut.
+      state.turnRunning = true
+      state.thinkingTokens = event.estimatedTokens
       break
     }
 

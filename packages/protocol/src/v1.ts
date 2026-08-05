@@ -109,6 +109,7 @@ export const taskEventsQuerySchema = z.object({
 export const V1_NOISY_EVENT_TYPES = [
   'message.delta',
   'thinking.delta',
+  'thinking.progress',
   'tool.output_delta',
 ] as const
 

@@ -791,6 +791,7 @@ export const fr: Catalog = {
   'activity.compacting': 'Compaction du contexte',
   'activity.compacting.tokens': 'Compaction du contexte, {tokens} tokens',
   'activity.writing': 'Rédaction',
+  'activity.thinking.tokens': 'Réflexion, {tokens} tokens',
   'activity.toolRunning': '{name} en cours',
   'activity.turn.noMessage': 'Sans message',
   'activity.modelChanged': 'Modèle passé à {model}',

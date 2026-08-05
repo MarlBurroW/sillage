@@ -804,6 +804,7 @@ export const en = {
   'activity.compacting': 'Compacting context',
   'activity.compacting.tokens': 'Compacting context, {tokens} tokens',
   'activity.writing': 'Writing',
+  'activity.thinking.tokens': 'Thinking, {tokens} tokens',
   'activity.toolRunning': '{name} running',
   'activity.turn.noMessage': 'No message',
   'activity.modelChanged': 'Model switched to {model}',
