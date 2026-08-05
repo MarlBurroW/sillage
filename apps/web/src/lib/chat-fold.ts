@@ -12,7 +12,7 @@ import type {
   SillageEvent,
   SlashCommandDto,
 } from '@sillage/protocol'
-import { translate } from './i18n'
+import { locale, translate } from './i18n'
 
 /**
  * Fold du journal vers le modèle d'affichage (invariant I2 : le rendu est une
@@ -394,6 +394,18 @@ function thousands(tokens: number): string {
 }
 
 /**
+ * Tokens au token près, groupés selon la langue.
+ *
+ * Distinct de `thousands` : celui-ci mesure une taille qu'on lit d'un coup d'œil, alors
+ * qu'un compteur qui avance est lu deux fois de suite, et c'est l'écart entre les deux
+ * lectures qui l'anime. Arrondi au millier, il affiche « 0 k » un long moment puis saute
+ * à « 1 k » : le chiffre est juste, mais il ne bouge plus, donc il ne prouve plus rien.
+ */
+function exactTokens(tokens: number): string {
+  return tokens.toLocaleString(locale())
+}
+
+/**
  * Ce que la compaction a réellement libéré, dans la limite de ce que le CLI en dit :
  * Claude donne les deux tailles, Codex n'en donne aucune.
  */
@@ -431,7 +443,7 @@ export function describeActivity(state: ChatState): string | null {
   // une réflexion en cours, et il en dit plus que le « Réflexion » nu déduit d'un outil
   // déjà rendu. C'est aussi le seul signe de vie quand le modèle cache son texte.
   if (state.thinkingTokens !== null) {
-    return translate('activity.thinking.tokens', { tokens: thousands(state.thinkingTokens) })
+    return translate('activity.thinking.tokens', { tokens: exactTokens(state.thinkingTokens) })
   }
 
   return activityOf(state.items, null)
