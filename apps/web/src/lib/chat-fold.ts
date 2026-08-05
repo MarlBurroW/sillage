@@ -227,7 +227,7 @@ export interface ChatState {
   /** Les tours terminés, pour afficher un indicateur d'activité fiable. */
   turnRunning: boolean
   /**
-   * Taille de la réflexion en cours, quand le modèle ne révèle pas son texte.
+   * Taille de la réflexion en cours, révélée ou non.
    *
    * Non nulle veut dire « l'agent réfléchit en ce moment » : tout autre signe de
    * progrès la remet à null, de sorte que l'indicateur n'annonce jamais une réflexion
@@ -668,17 +668,20 @@ function closePendingTasks(state: ChatState): void {
 }
 
 /**
- * Ce qui prouve qu'une réflexion muette est finie.
+ * Ce qui prouve qu'une réflexion est finie.
  *
  * Liste explicite plutôt que « tout sauf `thinking.progress` » : un relevé d'usage ou
  * un rapport de sous-agent arrive au milieu d'une réflexion sans rien y mettre fin, et
  * éteindrait le compteur le temps d'un battement.
+ *
+ * `thinking.delta` en est absent, et c'est tout l'enjeu : les deux alternent frame par
+ * frame quand la pensée est révélée. L'y mettre effaçait chaque valeur avant qu'elle
+ * soit rendue, et le compteur ne s'affichait jamais.
  */
 const THINKING_ENDED_BY = new Set<SillageEvent['type']>([
   'message.started',
   'message.delta',
   'message.completed',
-  'thinking.delta',
   'tool.started',
   'tool.completed',
   'turn.started',
