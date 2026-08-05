@@ -251,6 +251,7 @@ export function registerConversationRoutes(
         text: firstMessage.text,
         attachments: resolveAttachments(user.id, firstMessage.attachmentIds),
         mentions: firstMessage.mentions,
+        skills: firstMessage.skills,
       },
     })
 
@@ -532,7 +533,7 @@ export function registerConversationRoutes(
     }
 
     const files = resolveAttachments(user.id, body.attachmentIds)
-    await sessions.sendMessage(id, body.clientMessageId, body.text, files, body.mentions)
+    await sessions.sendMessage(id, body.clientMessageId, body.text, files, body.mentions, body.skills)
     attachments.claim(body.attachmentIds, id)
 
     return reply.status(202).send({ accepted: true })
@@ -558,6 +559,7 @@ export function registerConversationRoutes(
       body.text,
       files,
       body.mentions,
+      body.skills,
     )
     if (!steered) {
       throw badRequest(

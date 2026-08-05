@@ -983,6 +983,8 @@ export const fr: Catalog = {
   'mention.picker.aria': 'Fichiers à mentionner',
   'command.picker.aria': 'Commandes',
   'command.picker.empty': 'Aucune commande ne correspond.',
+  'skill.picker.aria': 'Compétences',
+  'skill.picker.empty': 'Aucune compétence ne correspond.',
   'queued.remove': 'Retirer ce message de la file',
   'queued.remove.failed': "Ce message n'a pas pu être retiré de la file.",
   'queued.attachments.one': '{count} pièce jointe',

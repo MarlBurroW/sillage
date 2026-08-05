@@ -796,13 +796,23 @@ export function ConversationPage() {
     if (name === 'compact') await compactConversation(conversationId)
   }
 
-  const send = async (text: string, attachmentIds: string[], mentions: string[]) => {
-    await sendMessage(conversationId, text, attachmentIds, mentions)
+  const send = async (
+    text: string,
+    attachmentIds: string[],
+    mentions: string[],
+    skills: string[],
+  ) => {
+    await sendMessage(conversationId, text, attachmentIds, mentions, skills)
     void queryClient.invalidateQueries({ queryKey: conversationsKey(conversation.projectId) })
   }
 
-  const steer = (text: string, attachmentIds: string[], mentions: string[]) =>
-    steerConversation(conversationId, text, attachmentIds, mentions).then(() => undefined)
+  const steer = (
+    text: string,
+    attachmentIds: string[],
+    mentions: string[],
+    skills: string[],
+  ) =>
+    steerConversation(conversationId, text, attachmentIds, mentions, skills).then(() => undefined)
 
   // `relative` porte le bouton de retour en bas, et la hauteur retire l'en-tête
   // mobile de la coque, absent en desktop.
@@ -1206,6 +1216,7 @@ export function ConversationPage() {
             onConfigChange={(next) => void updateConfig(next)}
             mcpInventory={stream.state.mcp}
             commands={stream.state.commands}
+            skills={stream.state.skills}
             appliedConfig={stream.appliedConfig}
             projectId={conversation.projectId}
             worktreeId={conversation.worktreeId}

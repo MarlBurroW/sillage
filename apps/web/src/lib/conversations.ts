@@ -121,6 +121,7 @@ export function useCreateConversation(projectId: string) {
         text: string
         attachmentIds: string[]
         mentions: string[]
+        skills: string[]
       }
     }) =>
       api.post<ConversationDto>(`/api/projects/${projectId}/conversations`, {
@@ -150,6 +151,7 @@ export function sendMessage(
   text: string,
   attachmentIds: string[] = [],
   mentions: string[] = [],
+  skills: string[] = [],
 ): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/messages`, {
     // Identifiant stable côté client : un renvoi après timeout réseau est ignoré
@@ -158,6 +160,7 @@ export function sendMessage(
     text,
     attachmentIds,
     mentions,
+    skills,
   })
 }
 
@@ -172,12 +175,14 @@ export function steerConversation(
   text: string,
   attachmentIds: string[] = [],
   mentions: string[] = [],
+  skills: string[] = [],
 ): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/steer`, {
     clientMessageId: uuidv4(),
     text,
     attachmentIds,
     mentions,
+    skills,
   })
 }
 

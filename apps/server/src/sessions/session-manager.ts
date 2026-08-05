@@ -44,6 +44,7 @@ interface QueuedMessage {
   text: string
   attachments: OutgoingAttachment[]
   mentions: string[]
+  skills: string[]
 }
 
 interface ManagedRunner {
@@ -523,7 +524,7 @@ export class SessionManager {
     })
 
     try {
-      await this.deliver(conversationId, next.text, next.attachments, next.mentions)
+      await this.deliver(conversationId, next.text, next.attachments, next.mentions, next.skills)
     } catch (err) {
       this.log.append(conversationId, {
         type: 'error',
@@ -564,7 +565,7 @@ export class SessionManager {
 
     let steered = false
     try {
-      steered = await managed.runner.steer(entry.text, entry.attachments, resolved)
+      steered = await managed.runner.steer(entry.text, entry.attachments, resolved, entry.skills)
     } finally {
       if (!steered) {
         const restored = this.queues.get(conversationId) ?? []
@@ -931,6 +932,7 @@ export class SessionManager {
     text: string,
     attachments: OutgoingAttachment[] = [],
     mentions: string[] = [],
+    skills: string[] = [],
   ): Promise<boolean> {
     // Un renvoi réseau ne doit pas infléchir deux fois : le premier a déjà porté.
     if (!this.claimClientMessage(conversationId, clientMessageId)) return true
@@ -945,7 +947,7 @@ export class SessionManager {
       const conversation = this.loadConversation(conversationId)
       const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
 
-      steered = await managed.runner.steer(text, attachments, resolved)
+      steered = await managed.runner.steer(text, attachments, resolved, skills)
       if (steered) this.touch(conversationId)
       return steered
     } finally {
@@ -959,6 +961,7 @@ export class SessionManager {
     text: string,
     attachments: OutgoingAttachment[] = [],
     mentions: string[] = [],
+    skills: string[] = [],
   ): Promise<void> {
     if (!this.claimClientMessage(conversationId, clientMessageId)) return
 
@@ -967,7 +970,7 @@ export class SessionManager {
     if (this.isBusy(conversationId)) {
       const queueId = randomUUID()
       const queue = this.queues.get(conversationId) ?? []
-      queue.push({ queueId, clientMessageId, text, attachments, mentions })
+      queue.push({ queueId, clientMessageId, text, attachments, mentions, skills })
       this.queues.set(conversationId, queue)
 
       this.log.append(conversationId, {
@@ -981,7 +984,7 @@ export class SessionManager {
     }
 
     try {
-      await this.deliver(conversationId, text, attachments, mentions)
+      await this.deliver(conversationId, text, attachments, mentions, skills)
     } catch (err) {
       // L'envoi n'a pas atteint le CLI : rendre l'identifiant permet au client de
       // renvoyer le même message sans qu'il soit avalé par la déduplication.
@@ -996,6 +999,7 @@ export class SessionManager {
     text: string,
     attachments: OutgoingAttachment[],
     mentions: string[],
+    skills: string[],
   ): Promise<void> {
     const conversation = this.loadConversation(conversationId)
     // Résolu avant de démarrer le runner : une mention invalide doit faire échouer
@@ -1003,7 +1007,7 @@ export class SessionManager {
     const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
 
     const runner = await this.ensureRunner(conversation)
-    await runner.send(text, attachments, resolved)
+    await runner.send(text, attachments, resolved, skills)
     this.touch(conversationId)
   }
 

@@ -19,9 +19,11 @@ export interface ComposerDraft {
   attachments: AttachmentDto[]
   /** Chemins choisis dans la liste des mentions, à distinguer des `@` tapés à la main. */
   mentions: string[]
+  /** Compétences choisies dans la liste, par leur nom. */
+  skills: string[]
 }
 
-const EMPTY: ComposerDraft = { text: '', attachments: [], mentions: [] }
+const EMPTY: ComposerDraft = { text: '', attachments: [], mentions: [], skills: [] }
 
 const drafts = new Map<string, ComposerDraft>()
 

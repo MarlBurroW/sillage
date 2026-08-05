@@ -35,6 +35,7 @@ export interface CreateConversationInput {
     text: string
     attachments: OutgoingAttachment[]
     mentions: string[]
+    skills: string[]
   }
 }
 
@@ -101,6 +102,7 @@ export async function createConversation(
         input.firstMessage.text,
         input.firstMessage.attachments,
         input.firstMessage.mentions,
+        input.firstMessage.skills,
       )
     } catch (err) {
       db.delete(conversations).where(eq(conversations.id, row.id)).run()

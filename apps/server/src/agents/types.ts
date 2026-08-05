@@ -142,10 +142,17 @@ export interface AgentRunner {
   readonly appliedConfig: AgentConfig
   /** Démarre le process et commence à traduire son flux vers le journal. */
   start(): Promise<void>
+  /**
+   * Les compétences arrivent par leur nom seul, là où les mentions arrivent résolues.
+   * L'asymétrie est voulue : une mention se résout sur le disque, qu'on connaît ici,
+   * une compétence sur l'inventaire que le CLI a publié, que lui seul connaît. Un nom
+   * qu'il ne reconnaît pas est ignoré.
+   */
   send(
     text: string,
     attachments: OutgoingAttachment[],
     mentions: OutgoingMention[],
+    skills: string[],
   ): Promise<void>
   /**
    * Applique une nouvelle configuration à la session en cours, sans la redémarrer.
@@ -171,7 +178,12 @@ export interface AgentRunner {
    *
    * Retourne false quand le CLI ne sait pas le faire, ou qu'aucun tour n'est en cours.
    */
-  steer(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): Promise<boolean>
+  steer(
+    text: string,
+    attachments: OutgoingAttachment[],
+    mentions: OutgoingMention[],
+    skills: string[],
+  ): Promise<boolean>
   /**
    * Compacte le contexte : l'agent résume la conversation pour libérer de la place.
    *

@@ -4,6 +4,7 @@ import {
   parseElicitationFields,
   type AgentConfig,
   type AgentQuestion,
+  type AgentSkillDto,
   type CodexConfig,
   type ContentBlock,
   type McpServer,
@@ -28,6 +29,7 @@ import type {
   PermissionsRequestApprovalResponse,
   ReasoningTextDeltaNotification,
   SandboxPolicy,
+  SkillsListResponse,
   ThreadItem,
   ThreadNameUpdatedNotification,
   ThreadStartResponse,
@@ -116,9 +118,16 @@ function buildUserInput(
   text: string,
   attachments: OutgoingAttachment[],
   mentions: OutgoingMention[],
+  skills: Map<string, string>,
 ): { blocks: ContentBlock[]; input: UserInput[] } {
   const { blocks, promptText } = describeOutgoingMessage(text, attachments)
   const input: UserInput[] = []
+
+  // Devant le texte, comme le fait le TUI : la compétence est le cadre dans lequel la
+  // consigne se lit, pas une précision qu'on ajoute après coup.
+  for (const [name, path] of skills) {
+    input.push({ type: 'skill', name, path })
+  }
 
   if (promptText) {
     input.push({ type: 'text', text: promptText, text_elements: [] })
@@ -178,6 +187,8 @@ export class CodexRunner implements AgentRunner {
   private readonly mcpStartup = new Map<string, CodexMcpStartup>()
   /** Dernier inventaire publié, pour n'écrire au journal que ce qui change. */
   private lastMcpPayload: string | null = null
+  /** Chemin de chaque compétence publiée, seule façon de rouvrir un nom à l'envoi. */
+  private skillPaths = new Map<string, string>()
   private config: CodexConfig
   private readonly interactions: PendingInteractions
   private readonly durations = new ToolDurations()
@@ -284,6 +295,64 @@ export class CodexRunner implements AgentRunner {
       started,
     )
     void this.publishMcpStatus()
+    void this.publishSkills()
+  }
+
+  /**
+   * Publie les compétences que le CLI met à disposition, et retient leurs chemins.
+   *
+   * Le chemin ne quitte jamais le serveur : le composer choisit un nom, et c'est cette
+   * table qui le rouvre à l'envoi. Sans elle, il faudrait faire confiance au client sur
+   * le fichier que le CLI ira lire.
+   *
+   * Interrogé sur le répertoire de travail du thread : les compétences d'un dépôt sont
+   * portées par le dépôt, et une réponse sans `cwds` ne rendrait que celles du poste.
+   */
+  private async publishSkills(): Promise<void> {
+    const client = this.client
+    if (!client) return
+
+    try {
+      const listed = await client.call<SkillsListResponse, 'skills/list'>('skills/list', {
+        cwds: [this.ctx.cwd],
+      })
+
+      this.skillPaths = new Map()
+      const skills: AgentSkillDto[] = []
+      for (const entry of listed.data) {
+        for (const skill of entry.skills) {
+          // Une compétence désactivée reste dans l'inventaire, mais l'invoquer n'aurait
+          // aucun effet : la proposer serait promettre ce que le CLI ne fera pas.
+          if (!skill.enabled) continue
+          this.skillPaths.set(skill.name, skill.path)
+          skills.push({
+            name: skill.name,
+            // La description longue commence par les conditions d'emploi destinées au
+            // modèle (« Use when... ») : le résumé de l'interface est écrit pour être lu.
+            description:
+              skill.interface?.shortDescription ?? skill.shortDescription ?? skill.description,
+          })
+        }
+      }
+
+      this.ctx.emit({ type: 'skills.updated', skills })
+    } catch (err) {
+      // Sans inventaire, le composer ne propose rien et le reste de la conversation
+      // fonctionne : rien qui justifie de faire tomber la session.
+      process.stderr.write(
+        `[codex ${this.conversationId}] compétences indisponibles : ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+    }
+  }
+
+  /** Ne garde que les noms que le CLI a réellement publiés, avec leur chemin. */
+  private resolveSkills(names: string[]): Map<string, string> {
+    const resolved = new Map<string, string>()
+    for (const name of names) {
+      const path = this.skillPaths.get(name)
+      if (path) resolved.set(name, path)
+    }
+    return resolved
   }
 
   /**
@@ -382,6 +451,13 @@ export class CodexRunner implements AgentRunner {
         const p = params as McpServerStatusUpdatedNotification
         this.mcpStartup.set(p.name, { status: p.status, error: p.error })
         void this.publishMcpStatus()
+        return
+      }
+
+      // Signal d'invalidation, sans contenu : la notification dit que les fichiers de
+      // compétences ont bougé, c'est `skills/list` qui dit en quoi.
+      case 'skills/changed': {
+        void this.publishSkills()
         return
       }
 
@@ -853,10 +929,11 @@ export class CodexRunner implements AgentRunner {
     text: string,
     attachments: OutgoingAttachment[],
     mentions: OutgoingMention[],
+    skills: string[],
   ): Promise<void> {
     if (!this.client || !this.threadId) throw new Error('La session Codex n\'est pas démarrée.')
 
-    const { blocks, input } = buildUserInput(text, attachments, mentions)
+    const { blocks, input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills))
     this.ctx.emit({
       type: 'message.completed',
       messageId: randomUUID(),
@@ -921,10 +998,11 @@ export class CodexRunner implements AgentRunner {
     text: string,
     attachments: OutgoingAttachment[],
     mentions: OutgoingMention[],
+    skills: string[],
   ): Promise<boolean> {
     if (!this.client || !this.threadId || !this.turnId) return false
 
-    const { blocks, input } = buildUserInput(text, attachments, mentions)
+    const { blocks, input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills))
     await this.client.call('turn/steer', {
       threadId: this.threadId,
       expectedTurnId: this.turnId,

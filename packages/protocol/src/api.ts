@@ -3,6 +3,7 @@ import { agentConfigSchema, type CodexMode } from './agent-config.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
+import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
 
 export const conversationStatusSchema = z.enum([
   'idle',
@@ -171,6 +172,13 @@ const messagePayloadSchema = z
      * CLI les transmet à sa façon.
      */
     mentions: z.array(z.string().min(1)).max(MAX_MENTIONS_PER_MESSAGE).default([]),
+    /**
+     * Compétences invoquées avec `$`, par leur nom seul. Le chemin ne vient pas du
+     * client : le runner résout le nom sur l'inventaire qu'il a lui-même publié, et
+     * ignore ce qu'il ne reconnaît pas, plutôt que de laisser désigner un fichier
+     * arbitraire à faire lire au CLI.
+     */
+    skills: z.array(z.string().min(1)).max(MAX_SKILLS_PER_MESSAGE).default([]),
   })
   .refine(
     (body) => body.text.trim().length > 0 || body.attachmentIds.length > 0,

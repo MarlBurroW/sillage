@@ -1,37 +1,44 @@
 import { Terminal } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import { commandSummary, type CommandMatch } from '../../lib/commands'
-import { useTranslate } from '../../lib/i18n'
+import type { PickerEntry } from '../../lib/composer-tokens'
 import { cx } from '../ui'
 
 /**
- * Liste des commandes proposées après un `/`.
+ * Liste proposée sous le sigle en cours de saisie, `/` pour les commandes du CLI et
+ * `$` pour ses compétences.
  *
  * Posée au-dessus de la zone de saisie pour la même raison que `MentionPicker` : sur
  * téléphone, le clavier virtuel occupe le bas de l'écran.
  */
-export function CommandPicker({
-  matches,
+export function TokenPicker({
+  sigil,
+  entries,
   active,
+  label,
+  emptyLabel,
   onPick,
   onHover,
 }: {
-  matches: CommandMatch[]
+  sigil: string
+  entries: PickerEntry[]
   active: number
-  onPick: (match: CommandMatch) => void
+  label: string
+  emptyLabel: string
+  onPick: (entry: PickerEntry) => void
   onHover: (index: number) => void
 }) {
-  const t = useTranslate()
   const list = useRef<HTMLUListElement>(null)
 
+  // La navigation au clavier peut sortir de la zone visible : l'élément actif est
+  // ramené dans le cadre, sans faire défiler la conversation derrière.
   useEffect(() => {
     list.current?.children[active]?.scrollIntoView({ block: 'nearest' })
   }, [active])
 
-  if (matches.length === 0) {
+  if (entries.length === 0) {
     return (
       <div className="surface mb-1.5 rounded-lg border border-line p-2.5 text-xs text-ink-faint shadow-float">
-        {t('command.picker.empty')}
+        {emptyLabel}
       </div>
     )
   }
@@ -40,11 +47,11 @@ export function CommandPicker({
     <ul
       ref={list}
       role="listbox"
-      aria-label={t('command.picker.aria')}
+      aria-label={label}
       className="surface mb-1.5 max-h-56 overflow-y-auto rounded-lg border border-line p-1 shadow-float"
     >
-      {matches.map(({ command, name }, index) => (
-        <li key={name}>
+      {entries.map((entry, index) => (
+        <li key={entry.name}>
           <button
             type="button"
             role="option"
@@ -53,7 +60,7 @@ export function CommandPicker({
             // ce qui referme la liste avant que la sélection soit prise en compte.
             onMouseDown={(event) => {
               event.preventDefault()
-              onPick({ command, name })
+              onPick(entry)
             }}
             onMouseEnter={() => onHover(index)}
             className={cx(
@@ -62,14 +69,15 @@ export function CommandPicker({
             )}
           >
             <Terminal size={13} className="shrink-0 text-ink-faint" />
-            <span className="shrink-0 font-mono">/{name}</span>
-            {command.argumentHint ? (
-              <span className="shrink-0 font-mono text-[0.6875rem] text-ink-faint">
-                {command.argumentHint}
-              </span>
+            <span className="shrink-0 font-mono">
+              {sigil}
+              {entry.name}
+            </span>
+            {entry.hint ? (
+              <span className="shrink-0 font-mono text-[0.6875rem] text-ink-faint">{entry.hint}</span>
             ) : null}
             <span className="min-w-0 flex-1 truncate text-right text-[0.6875rem] text-ink-faint">
-              {commandSummary(command)}
+              {entry.summary}
             </span>
           </button>
         </li>
