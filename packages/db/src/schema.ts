@@ -161,12 +161,15 @@ export const conversations = sqliteTable(
      * des conversations qu'elle n'a pas ouvertes, et les recalculer demanderait de
      * replier le journal de chacune, ce qui est ruineux dès qu'on en énumère plus d'une.
      *
-     * `exchangeCount` compte les échanges, un par message de l'utilisateur, réponse
-     * rattachée : exactement les traits de la réglette de repères, pour que les deux
-     * surfaces ne donnent pas deux nombres différents du même fil. Compter les messages
-     * de l'agent reviendrait à compter ses étapes, chaque appel d'outil en produisant un.
+     * `turnCount` compte les tours, un par message de l'utilisateur : les traits de la
+     * réglette de repères. Compter les messages de l'agent reviendrait à compter ses
+     * étapes, chaque appel d'outil en produisant un.
+     *
+     * Le découpage du fil, pas le cycle de vie du runner : le compte s'écarte des
+     * `turn.started` dans les deux sens, un tour pouvant s'ouvrir sans message et un
+     * steer ajoutant un message sans ouvrir de tour.
      */
-    exchangeCount: integer('exchange_count').notNull().default(0),
+    turnCount: integer('turn_count').notNull().default(0),
     /** Poids du journal sur disque, payloads et `raw` compris. */
     journalBytes: integer('journal_bytes').notNull().default(0),
     /**

@@ -283,11 +283,14 @@ export const markReadBodySchema = z.object({ seq: z.number().int().min(0) })
  */
 export interface ConversationMetrics {
   /**
-   * Échanges du fil principal, un par message de l'utilisateur, réponse rattachée :
-   * les traits de la réglette de repères. Les messages de l'agent en sont exclus, il en
-   * produit un par appel d'outil et le compte décrirait ses étapes.
+   * Tours du fil principal, un par message de l'utilisateur : les traits de la réglette
+   * de repères. Les messages de l'agent en sont exclus, il en produit un par appel
+   * d'outil et le compte décrirait ses étapes.
+   *
+   * Le tour au sens du découpage du fil, distinct de l'événement `turn.started` : les
+   * deux ne coïncident pas toujours.
    */
-  exchangeCount: number
+  turnCount: number
   /** Poids du journal sur disque, en octets. */
   journalBytes: number
   /**

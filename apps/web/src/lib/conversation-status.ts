@@ -54,7 +54,7 @@ function emit(): void {
 function sameMetrics(a: ConversationMetrics | undefined, b: ConversationMetrics): boolean {
   return (
     a !== undefined &&
-    a.exchangeCount === b.exchangeCount &&
+    a.turnCount === b.turnCount &&
     a.journalBytes === b.journalBytes &&
     a.model === b.model &&
     a.context?.usedTokens === b.context?.usedTokens &&

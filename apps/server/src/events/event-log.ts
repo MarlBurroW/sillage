@@ -34,12 +34,19 @@ const RESOLUTIONS: Record<PromptKind, string> = {
 export type PromptKind = 'permission' | 'question' | 'plan' | 'elicitation'
 
 /**
- * Échanges du fil principal, comptés depuis le journal.
+ * Tours du fil principal, comptés depuis le journal.
  *
- * Un par message de l'utilisateur, la réponse lui étant rattachée : c'est le découpage
- * de la réglette de repères (`buildTurns` côté web), et les deux surfaces doivent
- * s'accorder sur le même fil. Compter aussi les messages de l'agent reviendrait à
- * compter ses étapes, chacun de ses appels d'outil en produisant un.
+ * Un par message de l'utilisateur : c'est le découpage de la réglette de repères
+ * (`buildTurns` côté web), et les deux surfaces doivent s'accorder sur le même fil.
+ * Compter aussi les messages de l'agent reviendrait à compter ses étapes, chacun de ses
+ * appels d'outil en produisant un.
+ *
+ * Dérivé des messages et non des `turn.started`, dont il diffère dans les deux sens :
+ * un tour s'ouvre aussi sans que personne n'écrive (reprise de session, réveil de
+ * boucle, suite de plan), et un steer ajoute un message au tour en cours sans en ouvrir
+ * un. Sur les conversations mesurées, un peu moins de la moitié s'écartent. C'est le
+ * découpage du fil qui fait foi ici, pas le cycle de vie du runner : le nombre affiché
+ * doit être celui des repères qu'on peut réellement atteindre.
  *
  * Sur `messageId` distinct et non sur les événements : un message arrive en plusieurs
  * `message.completed` (réflexion, puis appels d'outils). Les messages d'un sous-agent
@@ -49,7 +56,7 @@ export type PromptKind = 'permission' | 'question' | 'plan' | 'elicitation'
  * message demanderait de retenir le précédent, état de plus pour un compte qu'une
  * requête rend en une fois, et seulement en fin de tour.
  */
-const EXCHANGE_COUNT = sql<number>`(
+const TURN_COUNT = sql<number>`(
   select count(distinct ${events.payload} ->> '$.messageId')
   from ${events}
   where ${events.conversationId} = ${conversations.id}
@@ -181,14 +188,14 @@ export class EventLog {
         return { conversationId, seq, ts: item.ts, event: item.event }
       })
 
-      // Le compte d'échanges est repris ici et pas au fil des insertions : un import
+      // Le compte de tours est repris ici et pas au fil des insertions : un import
       // amène des messages entiers d'un coup, et une seule requête les couvre tous.
       tx.update(conversations)
         .set({
           lastSeq: row.lastSeq + batch.length,
           updatedAt: Date.now(),
           journalBytes: sql`${conversations.journalBytes} + ${bytes}`,
-          exchangeCount: EXCHANGE_COUNT,
+          turnCount: TURN_COUNT,
         })
         .where(eq(conversations.id, conversationId))
         .run()
@@ -289,15 +296,15 @@ export class EventLog {
   }
 
   /**
-   * Remet le compte d'échanges d'aplomb sur ce que contient le journal.
+   * Remet le compte de tours d'aplomb sur ce que contient le journal.
    *
    * Appelée en fin de tour : c'est le moment où les messages du tour sont tous écrits,
    * et une fois par tour suffit pour une ligne de sidebar.
    */
-  refreshExchangeCount(conversationId: string): void {
+  refreshTurnCount(conversationId: string): void {
     this.db
       .update(conversations)
-      .set({ exchangeCount: EXCHANGE_COUNT })
+      .set({ turnCount: TURN_COUNT })
       .where(eq(conversations.id, conversationId))
       .run()
   }
@@ -384,7 +391,7 @@ export class EventLog {
       })
 
       tx.update(conversations)
-        .set({ lastSeq: rows.length, journalBytes: bytes, exchangeCount: EXCHANGE_COUNT })
+        .set({ lastSeq: rows.length, journalBytes: bytes, turnCount: TURN_COUNT })
         .where(eq(conversations.id, toConversationId))
         .run()
 

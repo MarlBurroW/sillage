@@ -177,7 +177,7 @@ export function registerClaudeSessionRoutes(
       inputTokens: 0,
       outputTokens: 0,
       // Repris par `appendBatch` avec les événements de la session adoptée.
-      exchangeCount: 0,
+      turnCount: 0,
       journalBytes: 0,
       contextUsedTokens: null,
       contextMaxTokens: null,
