@@ -329,6 +329,14 @@ export interface TaskState {
   unattended: boolean
   /** Vrai une fois son compte rendu reçu. Le travail peut alors être cru sur parole. */
   done: boolean
+  /**
+   * Comment il s'est terminé, nul tant qu'il tourne.
+   *
+   * Tenu à part de `done` parce qu'un travail détaché ne finit pas toujours de lui-même :
+   * arrêté avec sa session, il est fini sans avoir abouti, et la ligne du sous-agent doit
+   * le dire plutôt que d'afficher la fin normale de l'appel qui l'a lancé.
+   */
+  outcome: 'completed' | 'failed' | 'stopped' | null
 }
 
 export function emptyChatState(): ChatState {
@@ -644,6 +652,22 @@ function closeRunningTools(state: ChatState): void {
 }
 
 /**
+ * Le pendant de `closeRunningTools` pour les travaux, à la fin d'une session.
+ *
+ * Un sous-agent passé en arrière-plan a son appel d'outil déjà rendu : `closeRunningTools`
+ * ne le voit donc pas, et c'est son travail, resté sans compte rendu, qui le maintenait
+ * affiché comme actif. Sans cette clôture il l'était pour toujours, y compris au
+ * rechargement, puisque plus rien n'allait être écrit à son sujet.
+ */
+function closePendingTasks(state: ChatState): void {
+  const tasks = new Map(state.tasks)
+  for (const [id, task] of tasks) {
+    if (!task.done) tasks.set(id, { ...task, activity: null, done: true, outcome: 'stopped' })
+  }
+  state.tasks = tasks
+}
+
+/**
  * Ce qui prouve qu'une réflexion muette est finie.
  *
  * Liste explicite plutôt que « tout sauf `thinking.progress` » : un relevé d'usage ou
@@ -739,6 +763,7 @@ export function applyEvent(
       state.background = []
       state.loops = []
       closeRunningTools(state)
+      closePendingTasks(state)
       break
     }
 
@@ -1079,6 +1104,7 @@ export function applyEvent(
         durationMs: 0,
         unattended: false,
         done: false,
+        outcome: null,
       })
       break
     }
@@ -1108,8 +1134,13 @@ export function applyEvent(
           activity: null,
           durationMs: event.durationMs ?? known.durationMs,
           done: true,
+          outcome: event.status,
         })
       }
+      // La liste de niveau est remplacée, jamais amendée, et le CLI la republie en
+      // effet juste après. Mais s'il meurt entre les deux, sa dernière liste garde le
+      // travail allumé pour toujours : une fin annoncée vaut retrait.
+      state.background = state.background.filter((live) => live.id !== event.taskId)
       if (known?.unattended && !event.ambient) {
         appendItem(state, {
           kind: 'task',

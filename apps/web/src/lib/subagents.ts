@@ -68,11 +68,17 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
      * vingt secondes, et le bandeau cessait de le compter parmi les agents actifs.
      */
     const backgrounded = task !== undefined && !task.done && item.status === 'done'
+    /*
+     * Et l'inverse : un agent arrêté avec sa session a lui aussi rendu son appel, mais
+     * son travail n'a pas abouti. Sans ce redressement, la ligne annonçait « terminé »
+     * un agent dont plus personne n'a jamais eu de nouvelles.
+     */
+    const cutShort = task?.outcome === 'stopped' && item.status === 'done'
     byId.set(item.id, {
       id: item.id,
       type: field(item.input, 'subagent_type') || item.name,
       description: field(item.input, 'description'),
-      status: backgrounded ? 'running' : item.status,
+      status: backgrounded ? 'running' : cutShort ? 'interrupted' : item.status,
       startedAt: item.ts,
       // La durée de l'appel n'est celle du travail que tant qu'il l'attend.
       durationMs: task && task.durationMs > 0 ? task.durationMs : item.durationMs,

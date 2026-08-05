@@ -1,7 +1,12 @@
 import { EventEmitter } from 'node:events'
 import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm'
 import { conversations, events, type Db } from '@sillage/db'
-import { sillageEventSchema, type JournalEntry, type SillageEvent } from '@sillage/protocol'
+import {
+  sillageEventSchema,
+  type BackgroundTask,
+  type JournalEntry,
+  type SillageEvent,
+} from '@sillage/protocol'
 import { indexConversation, indexMessage } from '../search/search-index.js'
 
 /**
@@ -352,6 +357,48 @@ export class EventLog {
     }
 
     return [...open].map(([requestId, kind]) => ({ kind, requestId }))
+  }
+
+  /**
+   * Les travaux de fond que le journal donne encore pour vivants.
+   *
+   * Même service que `openPrompts`, pour la liste de niveau. Le CLI publie l'ensemble
+   * de ses travaux à chaque changement et ne publie rien en mourant : sa dernière liste
+   * reste donc le dernier mot du journal, dont tout l'affichage est dérivé. C'est ce
+   * relevé qui dit ce qu'il reste à clore quand le process s'en va.
+   *
+   * Rejoué dans l'ordre, avec la même sémantique que le fold côté web : la liste de
+   * niveau remplace, une fin de travail retire, une fin de session vide tout.
+   */
+  openBackgroundTasks(conversationId: string): BackgroundTask[] {
+    const rows = this.db
+      .select({ type: events.type, payload: events.payload })
+      .from(events)
+      .where(
+        and(
+          eq(events.conversationId, conversationId),
+          inArray(events.type, ['background.updated', 'task.completed', 'session.ended']),
+        ),
+      )
+      .orderBy(asc(events.seq))
+      .all()
+
+    let live = new Map<string, BackgroundTask>()
+    for (const row of rows) {
+      if (row.type === 'session.ended') {
+        live.clear()
+        continue
+      }
+
+      const payload = JSON.parse(row.payload) as { tasks?: BackgroundTask[]; taskId?: string }
+      if (row.type === 'background.updated') {
+        live = new Map((payload.tasks ?? []).map((task) => [task.id, task]))
+      } else if (typeof payload.taskId === 'string') {
+        live.delete(payload.taskId)
+      }
+    }
+
+    return [...live.values()]
   }
 
   /**
