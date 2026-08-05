@@ -282,8 +282,12 @@ export const markReadBodySchema = z.object({ seq: z.number().int().min(0) })
  * doivent dire la même chose.
  */
 export interface ConversationMetrics {
-  /** Messages du fil principal, sous-agents exclus. */
-  messageCount: number
+  /**
+   * Échanges du fil principal, un par message de l'utilisateur, réponse rattachée :
+   * les traits de la réglette de repères. Les messages de l'agent en sont exclus, il en
+   * produit un par appel d'outil et le compte décrirait ses étapes.
+   */
+  exchangeCount: number
   /** Poids du journal sur disque, en octets. */
   journalBytes: number
   /**

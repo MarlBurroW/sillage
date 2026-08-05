@@ -719,7 +719,7 @@ export function readConversationState(
     .select({
       status: conversations.status,
       lastSeq: conversations.lastSeq,
-      messageCount: conversations.messageCount,
+      exchangeCount: conversations.exchangeCount,
       journalBytes: conversations.journalBytes,
       contextUsedTokens: conversations.contextUsedTokens,
       contextMaxTokens: conversations.contextMaxTokens,
