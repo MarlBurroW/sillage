@@ -1,9 +1,9 @@
-import { Archive, ShieldCheck } from 'lucide-react'
+import { Archive, Play, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, cx } from '../components/ui'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
-import { useAppSettings, useUpdateAppSettings } from '../lib/app-settings'
+import { useAppSettings, useRunArchivePass, useUpdateAppSettings } from '../lib/app-settings'
 import { cronNextRuns, cronToHuman } from '../lib/cron'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
@@ -29,6 +29,7 @@ export function ArchivingSettingsPage() {
   const isAdmin = me?.isAdmin === true
   const { data: settings } = useAppSettings()
   const update = useUpdateAppSettings()
+  const run = useRunArchivePass()
 
   const [days, setDays] = useState('')
   const [schedule, setSchedule] = useState('')
@@ -58,6 +59,7 @@ export function ArchivingSettingsPage() {
   const dirty =
     settings !== undefined &&
     (parsed !== settings.autoArchiveDays || schedule !== settings.autoArchiveSchedule)
+  const archiveOff = settings === undefined || settings.autoArchiveDays === 0
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -143,10 +145,29 @@ export function ArchivingSettingsPage() {
               <Banner tone="critical">{update.error.message}</Banner>
             ) : null}
 
-            <div>
+            <div className="flex flex-wrap items-center gap-2">
               <Button type="submit" disabled={!daysValid || !human || !dirty || update.isPending}>
                 {t('archiving.delay.save')}
               </Button>
+              {/* Sur les réglages enregistrés et non sur le formulaire : lancer un
+                  passage sur un délai qu'on vient de taper sans l'enregistrer
+                  rangerait selon une règle que le serveur ne connaît pas. */}
+              <Button
+                type="button"
+                variant="ghost"
+                icon={<Play size={14} />}
+                disabled={archiveOff || dirty || run.isPending}
+                onClick={() => run.mutate()}
+              >
+                {t('archiving.run.button')}
+              </Button>
+              {run.data ? (
+                <span className="text-xs text-ink-faint">
+                  {run.data.archived > 0
+                    ? t('archiving.run.done', { count: String(run.data.archived) })
+                    : t('archiving.run.none')}
+                </span>
+              ) : null}
             </div>
           </form>
         </CardBody>

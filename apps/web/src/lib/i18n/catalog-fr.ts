@@ -235,6 +235,9 @@ export const fr: Catalog = {
   'archiving.preset.earlyMorning': 'Au petit matin',
   'archiving.preset.midday': 'À midi',
   'archiving.preset.weekly': 'Le lundi matin',
+  'archiving.run.button': 'Lancer maintenant',
+  'archiving.run.done': '{count} conversations rangées.',
+  'archiving.run.none': 'Rien à ranger.',
   'archiving.delay.invalid': 'Saisir un nombre entier de jours entre 0 et 3650.',
   'archiving.delay.save': 'Enregistrer',
   'archiving.criteria':

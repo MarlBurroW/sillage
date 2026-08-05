@@ -1,9 +1,15 @@
 import type { FastifyInstance } from 'fastify'
-import { updateAppSettingsBodySchema, type AppSettingsDto } from '@sillage/protocol'
+import {
+  updateAppSettingsBodySchema,
+  type AppSettingsDto,
+  type ArchiveRunDto,
+} from '@sillage/protocol'
+import { runArchivePass } from '../../conversations/auto-archive.js'
 import { ARCHIVE_JOB } from '../../scheduler/jobs.js'
 import type { Scheduler } from '../../scheduler/scheduler.js'
 import { readAppSettings, writeAppSettings } from '../../settings/app-settings.js'
 import type { AppContext } from '../context.js'
+import { badRequest } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
 
 /**
@@ -37,5 +43,22 @@ export function registerSettingsRoutes(
     scheduler.reschedule(ARCHIVE_JOB, settings.autoArchiveSchedule)
 
     return settings
+  })
+
+  /**
+   * Le passage d'archivage, tout de suite.
+   *
+   * Un réglage dont l'effet n'arrive que le lendemain se règle à l'aveugle : lancer le
+   * passage est le seul moyen de voir ce que le délai retenu range vraiment.
+   */
+  app.post('/api/settings/archiving/run', async (request): Promise<ArchiveRunDto> => {
+    requireAdmin(request)
+
+    const archived = runArchivePass(ctx.db, ctx.config)
+    if (archived === null) {
+      throw badRequest('auto_archive_disabled', 'Automatic archiving is off.')
+    }
+
+    return { archived }
   })
 }
