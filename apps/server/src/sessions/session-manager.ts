@@ -161,6 +161,17 @@ export class SessionManager {
       .where(eq(conversations.status, 'awaiting_input'))
       .all()
 
+    // Relevé avant toute écriture : la remise à zéro plus bas efface ce qui permet de
+    // retrouver les conversations qui portaient du travail détaché.
+    const detached = new Map(
+      this.db
+        .select({ id: conversations.id, loops: conversations.loopCount })
+        .from(conversations)
+        .where(or(gt(conversations.backgroundCount, 0), gt(conversations.loopCount, 0)))
+        .all()
+        .map((row) => [row.id, row.loops > 0]),
+    )
+
     for (const row of [...stale, ...awaiting]) {
       this.log.append(row.id, {
         type: 'error',
@@ -170,6 +181,8 @@ export class SessionManager {
       })
       this.expireOpenPrompts(row.id)
       this.expireQueuedMessages(row.id)
+      this.closeDetachedWork(row.id, detached.get(row.id) ?? false)
+      detached.delete(row.id)
       this.log.append(row.id, { type: 'session.ended', reason: 'interrupted' })
       this.db
         .update(conversations)
@@ -178,15 +191,22 @@ export class SessionManager {
         .run()
     }
 
+    // Le travail de fond survit à la fin de son tour : une conversation au repos peut en
+    // porter, et son process est mort avec le daemon comme les autres. Elle n'a pas été
+    // interrompue en plein tour pour autant, donc pas d'erreur ni de changement de
+    // statut, seulement la clôture de ce qui ne tourne plus.
+    for (const [conversationId, hadLoops] of detached) {
+      this.closeDetachedWork(conversationId, hadLoops)
+    }
+
     this.db
       .update(permissionRequests)
       .set({ status: 'expired', decidedAt: Date.now() })
       .where(eq(permissionRequests.status, 'pending'))
       .run()
 
-    // Sur toutes les conversations et pas seulement celles qu'on vient d'interrompre :
-    // un travail de fond survit à la fin de son tour, donc une conversation `idle` peut
-    // en porter, et son process est mort avec le daemon comme les autres.
+    // Le pendant en base de la clôture écrite plus haut : la sidebar lit cette ligne,
+    // la page lit le journal, et les deux doivent dire la même chose.
     this.db
       .update(conversations)
       .set({ backgroundCount: 0, loopCount: 0 })
@@ -369,6 +389,42 @@ export class SessionManager {
       .set({ backgroundCount: 0, loopCount: 0 })
       .where(eq(conversations.id, conversationId))
       .run()
+  }
+
+  /**
+   * Clôt au journal le travail détaché d'une conversation dont le process s'en va.
+   *
+   * Le pendant de `clearActivity` pour le fil : la remise à zéro de la ligne suffit à la
+   * sidebar, qui lit la base, mais pas à la page, qui ne connaît que le journal
+   * (invariant I2). Sans cette clôture, la dernière liste publiée par le CLI reste le
+   * dernier mot : un serveur de dev lancé en fond s'affichait vivant indéfiniment alors
+   * qu'il était mort avec le process qui le portait.
+   *
+   * Écrite ici plutôt que laissée à `session.ended`, que la boucle de lecture n'émet
+   * qu'en réagissant à l'abort, plus tard et sans que personne ne l'attende : un arrêt
+   * du daemon peut couper avant.
+   *
+   * Chaque travail est clos nommément, et non effacé par une liste vide silencieuse. Un
+   * shell peut avoir survécu au CLI (kill dur du seul daemon, sans le groupe de
+   * contrôle), et le fil doit alors dire qu'il a été arrêté avec la session plutôt que
+   * de laisser croire à une fin normale.
+   */
+  private closeDetachedWork(conversationId: string, hadLoops: boolean): void {
+    const live = this.log.openBackgroundTasks(conversationId)
+    for (const task of live) {
+      this.log.append(conversationId, {
+        type: 'task.completed',
+        taskId: task.id,
+        status: 'stopped',
+        summary: "Arrêté avec la session : le process CLI qui le portait s'est terminé.",
+        durationMs: null,
+        ambient: false,
+      })
+    }
+    if (live.length > 0) this.log.append(conversationId, { type: 'background.updated', tasks: [] })
+    // Les boucles meurent avec le process comme le reste, et le CLI ne les inventorie
+    // qu'à la demande : rien d'autre ne viendrait éteindre la dernière liste connue.
+    if (hadLoops) this.log.append(conversationId, { type: 'loops.updated', loops: [] })
   }
 
   /** Combien de travaux de fond tournent pour cette conversation, à l'instant. */
@@ -869,12 +925,18 @@ export class SessionManager {
    * depuis la dernière action de l'utilisateur, donc le travail de l'agent avant sa
    * question en mangeait la moitié sans que rien ne l'annonce. Une demande attend une
    * intervention humaine, aussi longtemps qu'il le faut.
+   *
+   * Le travail détaché non plus : un serveur de dev lancé en fond tourne dans le process
+   * du CLI, et le récolter le tuait sans que rien ne le demande, une demi-heure après le
+   * dernier message. Vérifié à part de `isBusy`, qui garde son sens de « le CLI a la
+   * main » pour la file d'attente et le pilotage : une conversation qui porte un serveur
+   * de dev reste parfaitement disponible pour recevoir un message.
    */
   private reapIfIdle(conversationId: string): void {
     const managed = this.runners.get(conversationId)
     if (!managed) return
 
-    if (this.isBusy(conversationId)) {
+    if (this.isBusy(conversationId) || managed.background > 0 || managed.loops > 0) {
       this.armIdleTimer(conversationId, managed)
       return
     }
@@ -1237,6 +1299,10 @@ export class SessionManager {
     this.clearActivity(conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
     await managed.runner.stop()
+    // Après l'arrêt : le CLI ne publiera plus de liste par-dessus celle qu'on écrit, et
+    // l'écriture est synchrone, donc elle tient même quand le daemon s'arrête juste
+    // derrière.
+    this.closeDetachedWork(conversationId, managed.loops > 0)
 
     // Le statut ne bouge pas quand un runner expire : sans cette diffusion, l'UI
     // continuerait d'annoncer une session chaude qui n'existe plus.
