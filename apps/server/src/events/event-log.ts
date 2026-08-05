@@ -34,22 +34,27 @@ const RESOLUTIONS: Record<PromptKind, string> = {
 export type PromptKind = 'permission' | 'question' | 'plan' | 'elicitation'
 
 /**
- * Messages du fil principal, comptés depuis le journal.
+ * Échanges du fil principal, comptés depuis le journal.
  *
- * Sur `messageId` distinct et non sur les événements : un message assistant arrive en
- * plusieurs `message.completed` (réflexion, puis appels d'outils), et les compter tous
- * annoncerait trois fois trop. Les messages d'un sous-agent portent un
- * `parentToolCallId` et appartiennent à son fil, pas à celui-ci.
+ * Un par message de l'utilisateur, la réponse lui étant rattachée : c'est le découpage
+ * de la réglette de repères (`buildTurns` côté web), et les deux surfaces doivent
+ * s'accorder sur le même fil. Compter aussi les messages de l'agent reviendrait à
+ * compter ses étapes, chacun de ses appels d'outil en produisant un.
+ *
+ * Sur `messageId` distinct et non sur les événements : un message arrive en plusieurs
+ * `message.completed` (réflexion, puis appels d'outils). Les messages d'un sous-agent
+ * portent un `parentToolCallId` et appartiennent à son fil, pas à celui-ci.
  *
  * Recompté plutôt qu'incrémenté : reconnaître le premier `message.completed` d'un
  * message demanderait de retenir le précédent, état de plus pour un compte qu'une
  * requête rend en une fois, et seulement en fin de tour.
  */
-const MESSAGE_COUNT = sql<number>`(
+const EXCHANGE_COUNT = sql<number>`(
   select count(distinct ${events.payload} ->> '$.messageId')
   from ${events}
   where ${events.conversationId} = ${conversations.id}
     and ${events.type} = 'message.completed'
+    and ${events.payload} ->> '$.role' = 'user'
     and coalesce(${events.payload} ->> '$.parentToolCallId', '') = ''
 )`
 
@@ -176,14 +181,14 @@ export class EventLog {
         return { conversationId, seq, ts: item.ts, event: item.event }
       })
 
-      // Le compte de messages est repris ici et pas au fil des insertions : un import
+      // Le compte d'échanges est repris ici et pas au fil des insertions : un import
       // amène des messages entiers d'un coup, et une seule requête les couvre tous.
       tx.update(conversations)
         .set({
           lastSeq: row.lastSeq + batch.length,
           updatedAt: Date.now(),
           journalBytes: sql`${conversations.journalBytes} + ${bytes}`,
-          messageCount: MESSAGE_COUNT,
+          exchangeCount: EXCHANGE_COUNT,
         })
         .where(eq(conversations.id, conversationId))
         .run()
@@ -284,15 +289,15 @@ export class EventLog {
   }
 
   /**
-   * Remet le compte de messages d'aplomb sur ce que contient le journal.
+   * Remet le compte d'échanges d'aplomb sur ce que contient le journal.
    *
    * Appelée en fin de tour : c'est le moment où les messages du tour sont tous écrits,
    * et une fois par tour suffit pour une ligne de sidebar.
    */
-  refreshMessageCount(conversationId: string): void {
+  refreshExchangeCount(conversationId: string): void {
     this.db
       .update(conversations)
-      .set({ messageCount: MESSAGE_COUNT })
+      .set({ exchangeCount: EXCHANGE_COUNT })
       .where(eq(conversations.id, conversationId))
       .run()
   }
@@ -379,7 +384,7 @@ export class EventLog {
       })
 
       tx.update(conversations)
-        .set({ lastSeq: rows.length, journalBytes: bytes, messageCount: MESSAGE_COUNT })
+        .set({ lastSeq: rows.length, journalBytes: bytes, exchangeCount: EXCHANGE_COUNT })
         .where(eq(conversations.id, toConversationId))
         .run()
 

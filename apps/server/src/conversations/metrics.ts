@@ -7,7 +7,7 @@ import type { ConversationMetrics } from '@sillage/protocol'
  */
 export type MetricColumns = Pick<
   ConversationRow,
-  'messageCount' | 'journalBytes' | 'contextUsedTokens' | 'contextMaxTokens' | 'model'
+  'exchangeCount' | 'journalBytes' | 'contextUsedTokens' | 'contextMaxTokens' | 'model'
 >
 
 /**
@@ -17,7 +17,7 @@ export type MetricColumns = Pick<
  */
 export function conversationMetrics(row: MetricColumns): ConversationMetrics {
   return {
-    messageCount: row.messageCount,
+    exchangeCount: row.exchangeCount,
     journalBytes: row.journalBytes,
     context:
       row.contextUsedTokens === null || row.contextMaxTokens === null

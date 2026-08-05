@@ -78,7 +78,7 @@ export async function createConversation(
     costUsd: 0,
     inputTokens: 0,
     outputTokens: 0,
-    messageCount: 0,
+    exchangeCount: 0,
     journalBytes: 0,
     contextUsedTokens: null,
     contextMaxTokens: null,

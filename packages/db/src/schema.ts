@@ -161,11 +161,12 @@ export const conversations = sqliteTable(
      * des conversations qu'elle n'a pas ouvertes, et les recalculer demanderait de
      * replier le journal de chacune, ce qui est ruineux dès qu'on en énumère plus d'une.
      *
-     * `messageCount` compte les messages du fil principal, pas les événements : un
-     * message arrive en plusieurs `message.completed` (réflexion, puis appels d'outils),
-     * et ceux d'un sous-agent appartiennent à son fil à lui.
+     * `exchangeCount` compte les échanges, un par message de l'utilisateur, réponse
+     * rattachée : exactement les traits de la réglette de repères, pour que les deux
+     * surfaces ne donnent pas deux nombres différents du même fil. Compter les messages
+     * de l'agent reviendrait à compter ses étapes, chaque appel d'outil en produisant un.
      */
-    messageCount: integer('message_count').notNull().default(0),
+    exchangeCount: integer('exchange_count').notNull().default(0),
     /** Poids du journal sur disque, payloads et `raw` compris. */
     journalBytes: integer('journal_bytes').notNull().default(0),
     /**

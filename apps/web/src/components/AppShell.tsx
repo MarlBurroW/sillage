@@ -984,8 +984,8 @@ function ConversationMetricsLine({ metrics }: { metrics: ConversationMetrics }) 
 
   return (
     <span className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden pl-[21px] text-[0.6875rem] whitespace-nowrap text-ink-faint tabular-nums">
-      <span title={t('shell.conversation.messagesTitle')}>
-        {t('shell.conversation.messages', { count: metrics.messageCount })}
+      <span title={t('shell.conversation.exchangesTitle')}>
+        {t('shell.conversation.exchanges', { count: metrics.exchangeCount })}
       </span>
       <span title={t('shell.conversation.sizeTitle')}>{formatBytes(metrics.journalBytes)}</span>
       {context && context.maxTokens > 0 ? (
