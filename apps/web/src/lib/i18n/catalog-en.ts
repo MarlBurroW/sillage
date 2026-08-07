@@ -738,6 +738,8 @@ export const en = {
   'editor.conflict.reload': 'Reload',
   'editor.conflict.overwrite': 'Overwrite',
   'editor.save': 'Save',
+  'editor.markdown.preview': 'Preview',
+  'editor.markdown.source': 'Source',
 
   // Minimap
   'minimap.nav.label': 'Conversation turns',
