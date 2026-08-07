@@ -43,6 +43,7 @@ export const en = {
   'conversation.usage.title': 'Account usage',
   'conversation.usage.label': 'Usage',
   'conversation.search': 'Search the conversation',
+  'conversation.instructions': 'Open {file}',
   'conversation.compact.running': 'Compacting...',
   'conversation.compact.action': 'Compact the context',
   'conversation.actions': 'Conversation actions',

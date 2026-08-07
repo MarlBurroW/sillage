@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ChevronDown,
+  FileText,
   FolderTree,
   GaugeCircle,
   GitBranch,
@@ -48,6 +49,7 @@ import {
 import { useFileDrop } from '../lib/file-drop'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
+import { openInstructions, useInstructionsFile } from '../lib/instructions'
 import { clearSubAgent, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
@@ -156,6 +158,7 @@ export function ConversationPage() {
   // démarre le CLI côté serveur : elle ne part que pour l'agent de la conversation.
   const { data: catalog } = useAgentModels(conversation?.agent ?? 'claude', Boolean(conversation))
   const { data: worktrees } = useWorktrees(conversation?.projectId)
+  const instructionsFile = useInstructionsFile(conversationId, conversation?.agent)
   // Déjà chargée pour la sidebar : la provenance d'une branche s'y trouve sans requête
   // supplémentaire.
   const { data: allConversations } = useAllConversations()
@@ -984,6 +987,16 @@ export function ConversationPage() {
               Lire une conversation partagée donne le droit d'y chercher : seule la
               compaction touche à l'état du fil, et elle reste au propriétaire. */}
           <span className="hidden md:contents">
+            {/* Les consignes du projet se relisent souvent, et les retrouver passait
+                par l'explorateur : un geste pour un fichier dont on connaît le chemin. */}
+            {instructionsFile ? (
+              <IconButton
+                label={t('conversation.instructions', { file: instructionsFile })}
+                onClick={() => openInstructions(conversationId, instructionsFile)}
+              >
+                <FileText size={18} />
+              </IconButton>
+            ) : null}
             <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
               <Search size={18} />
             </IconButton>
@@ -1012,6 +1025,14 @@ export function ConversationPage() {
                 </IconButton>
               }
             >
+              {instructionsFile ? (
+                <MenuItem
+                  icon={<FileText size={14} />}
+                  onSelect={() => openInstructions(conversationId, instructionsFile)}
+                >
+                  {t('conversation.instructions', { file: instructionsFile })}
+                </MenuItem>
+              ) : null}
               <MenuItem icon={<Search size={14} />} onSelect={() => setFindOpen(true)}>
                 {t('conversation.search')}
               </MenuItem>

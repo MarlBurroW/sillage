@@ -29,6 +29,7 @@ export const fr: Catalog = {
   'conversation.usage.title': 'Consommation du compte',
   'conversation.usage.label': 'Utilisation',
   'conversation.search': 'Rechercher dans la conversation',
+  'conversation.instructions': 'Ouvrir {file}',
   'conversation.compact.running': 'Compaction en cours...',
   'conversation.compact.action': 'Compacter le contexte',
   'conversation.actions': 'Actions de la conversation',
