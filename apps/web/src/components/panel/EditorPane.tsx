@@ -1,6 +1,10 @@
-import { Loader, MoreHorizontal, Save, X } from 'lucide-react'
+import { Code2, Eye, Loader, MoreHorizontal, Save, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { VIEWABLE_IMAGE_TYPES, type FileContentDto } from '@sillage/protocol'
+import {
+  VIEWABLE_DOCUMENT_TYPES,
+  VIEWABLE_IMAGE_TYPES,
+  type FileContentDto,
+} from '@sillage/protocol'
 import { ApiRequestError } from '../../lib/api'
 import {
   activateTab,
@@ -13,6 +17,8 @@ import { fileIconUrl } from '../../lib/file-icons'
 import { languageFromPath } from '../../lib/highlight'
 import { rawFileUrl, readFile, writeFile } from '../../lib/files-io'
 import { useTranslate } from '../../lib/i18n'
+import { isMarkdownPath, setMarkdownView, useMarkdownView } from '../../lib/markdown-view'
+import { Markdown } from '../chat/Markdown'
 import { Banner, Menu, MenuItem, cx } from '../ui'
 import { CodeEditor } from './CodeEditor'
 
@@ -207,6 +213,9 @@ function FileView({
   const draft = useRef('')
   const extension = languageFromPath(path)
   const isImage = extension in VIEWABLE_IMAGE_TYPES
+  const isDocument = extension in VIEWABLE_DOCUMENT_TYPES
+  const isMarkdown = isMarkdownPath(path)
+  const view = useMarkdownView()
   const t = useTranslate()
 
   const load = useCallback(async () => {
@@ -223,9 +232,11 @@ function FileView({
     }
   }, [conversationId, path, markDirty, t])
 
+  /** Servi tel quel par l'API, sans passer par la lecture texte. */
+  const rawView = isImage || isDocument
   useEffect(() => {
-    if (!isImage) void load()
-  }, [isImage, load])
+    if (!rawView) void load()
+  }, [rawView, load])
 
   /** `force` écrase sciemment ce qui est sur le disque, après un conflit affiché. */
   const save = useCallback(
@@ -268,6 +279,18 @@ function FileView({
     )
   }
 
+  // La visionneuse du navigateur plutôt qu'un moteur de rendu embarqué : elle sait
+  // déjà paginer, chercher et imprimer, pour rien de plus à charger.
+  if (isDocument) {
+    return (
+      <iframe
+        src={rawFileUrl(conversationId, path)}
+        title={path}
+        className="min-h-0 min-w-0 flex-1 border-0 bg-canvas"
+      />
+    )
+  }
+
   if (error) {
     return (
       <div className="min-h-0 flex-1 overflow-auto p-3">
@@ -298,31 +321,55 @@ function FileView({
         </div>
       ) : null}
 
-      <div className="min-h-0 min-w-0 flex-1">
-        <CodeEditor
-          initial={file.content}
-          path={file.path}
-          onChange={(value) => {
-            draft.current = value
-            markDirty(path, value !== file.content)
-          }}
-          onSave={() => void save(false)}
-        />
-      </div>
+      {/* Le rendu remplace l'éditeur au lieu de s'afficher à côté : le panneau fait
+          quelques centaines de pixels de large, deux colonnes n'y tiennent pas. C'est
+          `draft` et non le contenu chargé qui est rendu, pour relire ce qu'on vient
+          d'écrire sans avoir à enregistrer d'abord. */}
+      {isMarkdown && view === 'preview' ? (
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3">
+          <Markdown text={draft.current} />
+        </div>
+      ) : (
+        <div className="min-h-0 min-w-0 flex-1">
+          <CodeEditor
+            initial={draft.current}
+            path={file.path}
+            onChange={(value) => {
+              draft.current = value
+              markDirty(path, value !== file.content)
+            }}
+            onSave={() => void save(false)}
+          />
+        </div>
+      )}
 
       <div className="flex shrink-0 items-center gap-2 border-t border-line px-2.5 py-1 text-[0.6875rem] text-ink-faint">
         <span className="min-w-0 flex-1 truncate" title={path}>
           {path}
         </span>
-        <button
-          type="button"
-          onClick={() => void save(false)}
-          disabled={saving}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:text-ink disabled:opacity-45"
-        >
-          {saving ? <Loader size={11} className="animate-spin" /> : <Save size={11} />}
-          {t('editor.save')}
-        </button>
+        {isMarkdown ? (
+          <button
+            type="button"
+            onClick={() => setMarkdownView(view === 'preview' ? 'source' : 'preview')}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:text-ink"
+          >
+            {view === 'preview' ? <Code2 size={11} /> : <Eye size={11} />}
+            {view === 'preview' ? t('editor.markdown.source') : t('editor.markdown.preview')}
+          </button>
+        ) : null}
+        {/* Rien à enregistrer depuis le rendu : il n'a pas de curseur, et le brouillon
+            attend intact le retour à la source. */}
+        {isMarkdown && view === 'preview' ? null : (
+          <button
+            type="button"
+            onClick={() => void save(false)}
+            disabled={saving}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:text-ink disabled:opacity-45"
+          >
+            {saving ? <Loader size={11} className="animate-spin" /> : <Save size={11} />}
+            {t('editor.save')}
+          </button>
+        )}
       </div>
     </div>
   )

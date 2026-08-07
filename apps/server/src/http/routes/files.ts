@@ -1,8 +1,9 @@
 import { readFile, stat, writeFile } from 'node:fs/promises'
-import { extname } from 'node:path'
+import { basename, extname } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import {
   MAX_EDITABLE_BYTES,
+  VIEWABLE_DOCUMENT_TYPES,
   VIEWABLE_IMAGE_TYPES,
   filePathQuerySchema,
   fileWriteBodySchema,
@@ -82,11 +83,6 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
   })
 
   /**
-   * Contenu brut, pour afficher une image dans un onglet. Restreint à une liste fermée
-   * d'extensions : servir n'importe quel binaire avec un type deviné inviterait le
-   * navigateur à l'interpréter.
-   */
-  /**
    * Parmi les chemins proposés, ceux qui désignent un fichier de ce workspace.
    *
    * Le fil s'en sert pour ne rendre cliquable que ce qui s'ouvrira vraiment. Une forme
@@ -120,13 +116,19 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     return { files: checked.filter((path): path is string => path !== null) }
   })
 
+  /**
+   * Contenu brut, pour afficher une image ou un document dans un onglet. Restreint à une
+   * liste fermée d'extensions : servir n'importe quel binaire avec un type deviné
+   * inviterait le navigateur à l'interpréter.
+   */
   app.get('/api/conversations/:id/file/raw', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const { path } = filePathQuerySchema.parse(request.query)
 
     const extension = extensionOf(path)
-    const type = VIEWABLE_IMAGE_TYPES[extension]
+    const imageType = VIEWABLE_IMAGE_TYPES[extension]
+    const type = imageType ?? VIEWABLE_DOCUMENT_TYPES[extension]
     if (!type) throw new HttpError(415, 'not_viewable', 'This file type cannot be displayed.')
 
     const absolute = resolveInside(workspaceOf(id, user.id), path)
@@ -134,10 +136,19 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     if (!info?.isFile()) throw notFound('file_not_found', 'File not found.')
 
     // `Content-Security-Policy` : un SVG est un document, donc capable de porter du
-    // script. Servi comme image inerte plutôt que comme page.
+    // script. Servi comme image inerte plutôt que comme page. Un PDF n'y passe pas :
+    // c'est la visionneuse du navigateur qui l'affiche, et la même politique la prive
+    // de ses propres ressources, donc de tout affichage. `nosniff` reste la garantie
+    // que le type annoncé est celui qui sera appliqué.
+    if (imageType) {
+      reply.header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'")
+    }
+
     return reply
       .header('content-type', type)
-      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'")
+      .header('x-content-type-options', 'nosniff')
+      // Sans nom, la visionneuse PDF intitule son onglet d'après l'URL de l'API.
+      .header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(basename(path))}`)
       .header('cache-control', 'no-store')
       .send(await readFile(absolute))
   })

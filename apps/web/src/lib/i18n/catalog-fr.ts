@@ -725,6 +725,8 @@ export const fr: Catalog = {
   'editor.conflict.reload': 'Recharger',
   'editor.conflict.overwrite': 'Écraser',
   'editor.save': 'Enregistrer',
+  'editor.markdown.preview': 'Rendu',
+  'editor.markdown.source': 'Source',
 
   // Minimap
   'minimap.nav.label': 'Tours de la conversation',

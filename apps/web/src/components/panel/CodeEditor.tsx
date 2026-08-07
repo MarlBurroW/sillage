@@ -54,7 +54,7 @@ function searchPhrases(): Record<string, string> {
  * le linting, qui n'ont rien à faire dans un éditeur sans serveur de langage.
  */
 export function CodeEditor({
-  /** Contenu initial. Un changement de fichier remonte l'éditeur par sa clé. */
+  /** Contenu de départ, lu au montage seulement. */
   initial,
   path,
   onChange,
@@ -72,6 +72,13 @@ export function CodeEditor({
    */
   const handlers = useRef({ onChange, onSave })
   handlers.current = { onChange, onSave }
+  /**
+   * Le contenu ne se pousse pas dans un éditeur vivant : le reconstruire pour suivre la
+   * prop effacerait le curseur et l'historique de qui est en train de taper. Il n'est lu
+   * qu'au montage, ce qui laisse l'appelant décider par quoi repartir en le remontant.
+   */
+  const content = useRef(initial)
+  content.current = initial
 
   useEffect(() => {
     const parent = host.current
@@ -80,7 +87,7 @@ export function CodeEditor({
     const language = new Compartment()
 
     const state = EditorState.create({
-      doc: initial,
+      doc: content.current,
       extensions: [
         lineNumbers(),
         highlightActiveLine(),
@@ -134,7 +141,7 @@ export function CodeEditor({
       cancelled = true
       editor.destroy()
     }
-  }, [initial, path])
+  }, [path])
 
   return <div ref={host} className="h-full overflow-hidden" />
 }

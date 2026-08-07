@@ -719,6 +719,17 @@ export const VIEWABLE_IMAGE_TYPES: Record<string, string> = {
   avif: 'image/avif',
 }
 
+/**
+ * Documents binaires affichés par le navigateur lui-même, dans un cadre.
+ *
+ * Séparés des images parce qu'ils ne se servent pas pareil : une image est rendue
+ * inerte par une politique de sécurité stricte, alors qu'un PDF est confié à la visionneuse
+ * intégrée, qui a besoin de ses propres ressources pour s'afficher.
+ */
+export const VIEWABLE_DOCUMENT_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+}
+
 export const filePathQuerySchema = z.object({ path: z.string().min(1).max(1024) })
 
 /**
