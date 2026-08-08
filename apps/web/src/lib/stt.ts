@@ -146,6 +146,10 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
     const meter = context.createAnalyser()
     meter.fftSize = 1024
     context.createMediaStreamSource(stream).connect(meter)
+    // Créé après l'attente de getUserMedia, donc hors du geste utilisateur : le
+    // navigateur peut le poser `suspended`, et l'analyseur sortirait des zéros plats
+    // pendant que l'enregistreur capte normalement.
+    if (context.state !== 'running') void context.resume().catch(() => {})
     audio.current = context
     setAnalyser(meter)
 
