@@ -120,6 +120,12 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
   const audio = useRef<AudioContext | null>(null)
   /** Clone du flux micro réservé au vumètre, à éteindre avec le reste. */
   const monitor = useRef<MediaStream | null>(null)
+  /**
+   * Référence vivante sur le nœud source du vumètre. Sans elle, Chrome le considère
+   * comme orphelin et le ramasse-miettes le détruit en pleine dictée : l'analyseur
+   * sort une première barre puis des zéros plats, dès que le GC passe.
+   */
+  const meterSource = useRef<MediaStreamAudioSourceNode | null>(null)
   // Les callbacks se relisent au moment où la transcription aboutit, pas à celui où
   // l'enregistrement démarre : sans ces refs, `onText` insérerait dans un texte périmé.
   const callbacks = useRef({ onText, onError })
@@ -161,7 +167,9 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
     monitor.current = meterStream
     const meter = context.createAnalyser()
     meter.fftSize = 1024
-    context.createMediaStreamSource(meterStream).connect(meter)
+    const source = context.createMediaStreamSource(meterStream)
+    source.connect(meter)
+    meterSource.current = source
     if (context.state !== 'running') void context.resume().catch(() => {})
     audio.current = context
     setAnalyser(meter)
@@ -178,6 +186,7 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
       recorder.current = null
       meterStream.getTracks().forEach((track) => track.stop())
       monitor.current = null
+      meterSource.current = null
       void context.close().catch(() => {})
       audio.current = null
       setAnalyser(null)
