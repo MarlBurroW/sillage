@@ -1,4 +1,5 @@
-import { KeyRound, Mic, ShieldCheck, Sparkles } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import { KeyRound, Mic, RadioTower, ShieldCheck, Sparkles } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, Select, cx } from '../components/ui'
@@ -8,6 +9,7 @@ import { useAppSettings, useUpdateAppSettings } from '../lib/app-settings'
 import { useTranslate } from '../lib/i18n'
 import { useSecrets } from '../lib/secrets'
 import { useCurrentUser } from '../lib/session'
+import { testDictation } from '../lib/stt'
 
 /**
  * Dictée vocale, branchée sur n'importe quelle API au format OpenAI.
@@ -52,6 +54,7 @@ export function DictationSettingsPage() {
   const { data: settings } = useAppSettings()
   const { data: secretList } = useSecrets(isAdmin)
   const update = useUpdateAppSettings()
+  const test = useMutation({ mutationFn: testDictation })
 
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
@@ -89,6 +92,8 @@ export function DictationSettingsPage() {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (!urlValid || !dirty) return
+    // Un verdict de test affiché ne vaut que pour les réglages qu'il a testés.
+    test.reset()
     update.mutate({
       sttBaseUrl: baseUrl,
       sttModel: model,
@@ -180,9 +185,36 @@ export function DictationSettingsPage() {
               <Banner tone="critical">{update.error.message}</Banner>
             ) : null}
 
-            <div className="flex items-center gap-2">
+            {test.error instanceof Error ? (
+              <Banner tone="critical">{test.error.message}</Banner>
+            ) : null}
+            {test.data ? (
+              <Banner tone="positive">
+                {test.data.cleanupTested ? t('stt.test.okCleanup') : t('stt.test.ok')}
+              </Banner>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2">
               <Button type="submit" disabled={!urlValid || !dirty || update.isPending}>
                 {t('stt.save')}
+              </Button>
+              {/* Sur les réglages enregistrés et non sur le formulaire : tester des
+                  valeurs que le serveur ne connaît pas encore validerait autre chose
+                  que ce que la dictée utilisera. */}
+              <Button
+                type="button"
+                variant="ghost"
+                icon={<RadioTower size={14} />}
+                disabled={
+                  !settings?.sttBaseUrl ||
+                  !settings.sttModel ||
+                  !settings.sttSecret ||
+                  dirty ||
+                  test.isPending
+                }
+                onClick={() => test.mutate()}
+              >
+                {t('stt.test.button')}
               </Button>
             </div>
           </form>

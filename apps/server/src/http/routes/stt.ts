@@ -11,7 +11,7 @@ import { projectLexicon, type ChatCall, type Lexicon } from '../../stt/lexicon.j
 import { complete, transcribe, type SttProvider } from '../../stt/provider.js'
 import type { AppContext } from '../context.js'
 import { badRequest, notFound } from '../errors.js'
-import { requireUser } from '../require-user.js'
+import { requireAdmin, requireUser } from '../require-user.js'
 
 /**
  * Dictée vocale : l'audio du navigateur part chez le fournisseur configuré, au format
@@ -39,25 +39,9 @@ export function registerSttRoutes(
       throw badRequest('audio_too_large', 'Recording is empty or too large.')
     }
 
-    const settings = readAppSettings(ctx.db, ctx.config)
-    if (!settings.sttBaseUrl || !settings.sttModel || !settings.sttSecret) {
-      throw badRequest('stt_not_configured', 'Dictation is not configured on this instance.')
-    }
-    const apiKey = secrets.resolve(settings.sttSecret)
-    if (!apiKey) {
-      throw badRequest('stt_secret_missing', 'Secret {name} does not exist.', {
-        name: settings.sttSecret,
-      })
-    }
-
-    const provider: SttProvider = {
-      baseUrl: settings.sttBaseUrl.replace(/\/+$/, ''),
-      model: settings.sttModel,
-      apiKey,
-    }
-    const chat: ChatCall | null = settings.sttCleanupModel
-      ? (system, prompt) =>
-          complete({ ...provider, model: settings.sttCleanupModel }, system, prompt)
+    const { provider, cleanupModel } = resolveProvider(ctx, secrets)
+    const chat: ChatCall | null = cleanupModel
+      ? (system, prompt) => complete({ ...provider, model: cleanupModel }, system, prompt)
       : null
 
     const workspace = workspaceOf(ctx, textField(file.fields, 'projectId'), user.id)
@@ -79,6 +63,62 @@ export function registerSttRoutes(
     const cleaned = await cleanup(chat, trimmed, lexicon, branch).catch(() => null)
     return { text: cleaned ?? trimmed }
   })
+
+  /**
+   * Vérification de la configuration depuis l'écran de réglages : le même chemin
+   * qu'une vraie dictée, sur un court échantillon généré par le navigateur, plus un
+   * appel au modèle de nettoyage, que la transcription d'un audio muet n'exerce pas.
+   * Toute défaillance sort en erreur traduite, comme pour une dictée.
+   */
+  app.post('/api/stt/test', async (request): Promise<{ cleanupTested: boolean }> => {
+    requireAdmin(request)
+
+    const file = await request.file()
+    const content = file ? await file.toBuffer().catch(() => null) : null
+    if (!file || !content || content.byteLength === 0) {
+      throw badRequest('no_audio', 'No audio received.')
+    }
+
+    const { provider, cleanupModel } = resolveProvider(ctx, secrets)
+    await transcribe(
+      provider,
+      { content, filename: file.filename || 'test.webm', mimeType: file.mimetype },
+      undefined,
+    )
+    if (cleanupModel) {
+      await complete(
+        { ...provider, model: cleanupModel },
+        'You are a connectivity check.',
+        'Reply with the single word OK.',
+      )
+    }
+    return { cleanupTested: Boolean(cleanupModel) }
+  })
+}
+
+/** Réglages résolus en client prêt à appeler, avec les refus qui vont avec. */
+function resolveProvider(
+  ctx: AppContext,
+  secrets: SecretStore,
+): { provider: SttProvider; cleanupModel: string } {
+  const settings = readAppSettings(ctx.db, ctx.config)
+  if (!settings.sttBaseUrl || !settings.sttModel || !settings.sttSecret) {
+    throw badRequest('stt_not_configured', 'Dictation is not configured on this instance.')
+  }
+  const apiKey = secrets.resolve(settings.sttSecret)
+  if (!apiKey) {
+    throw badRequest('stt_secret_missing', 'Secret {name} does not exist.', {
+      name: settings.sttSecret,
+    })
+  }
+  return {
+    provider: {
+      baseUrl: settings.sttBaseUrl.replace(/\/+$/, ''),
+      model: settings.sttModel,
+      apiKey,
+    },
+    cleanupModel: settings.sttCleanupModel,
+  }
 }
 
 function textField(fields: Record<string, Multipart | Multipart[] | undefined>, name: string): string | null {
