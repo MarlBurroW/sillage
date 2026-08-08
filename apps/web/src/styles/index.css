@@ -47,8 +47,8 @@
   --sidebar-width: 16.5rem;
   /*
    * Largeur sur grand écran, ajustable par la poignée et réécrite en place par le
-   * script. Le tiroir mobile garde la largeur de base : il se recouvre à l'écran, une
-   * poignée n'y aurait aucun sens, et une largeur choisie au clavier peut dépasser
+   * script. Le tiroir mobile ne la lit pas : il prend toute la largeur de l'écran, une
+   * poignée n'y aurait aucun sens, et une largeur choisie au clavier pourrait dépasser
    * celle du téléphone.
    */
   --sidebar-desktop-width: var(--sidebar-width);
