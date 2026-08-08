@@ -45,7 +45,7 @@ export function Markdown({ text }: { text: string }) {
 
     event.preventDefault()
     openTab(conversationId, path)
-    setPanelTab('editor')
+    setPanelTab('files')
     setPanelOpen(true)
   }
 

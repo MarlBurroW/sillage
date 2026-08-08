@@ -9,11 +9,35 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
  */
 
 const OPEN_KEY = 'sillage.panelOpen'
-const WIDTH_KEY = 'sillage.panelWidth'
+/**
+ * Clé distincte de l'ancienne `sillage.panelWidth` : la largeur ne veut plus dire la
+ * même chose. Elle réglait une colonne prise au fil, où l'on avait intérêt à être
+ * étroit ; elle règle maintenant une feuille posée dessus, qui ne lui coûte rien.
+ * Reprendre l'ancienne valeur aurait rouvert le panneau aussi étroit qu'avant.
+ */
+const WIDTH_KEY = 'sillage.sheetWidth'
+const TREE_KEY = 'sillage.panelTree'
 
-/** En deçà, un chemin de fichier ne tient plus ; au-delà, le fil devient illisible. */
-const MIN_WIDTH = 240
-const MAX_WIDTH = 720
+/** En deçà, l'arborescence et l'éditeur ne tiennent plus côte à côte. */
+const MIN_WIDTH = 280
+
+/** Ce qui reste du fil derrière le panneau, pour qu'il garde une prise. */
+const MIN_THREAD = 160
+
+function maxWidth(): number {
+  return Math.max(MIN_WIDTH, window.innerWidth - MIN_THREAD)
+}
+
+/**
+ * Largeur d'ouverture, faute de préférence enregistrée.
+ *
+ * Large d'emblée : le panneau se pose au-dessus du fil au lieu de lui prendre sa
+ * colonne, donc l'étroitesse ne rend plus rien au fil. Il lui faut la place d'un
+ * explorateur et d'un éditeur à côté, sinon l'onglet Fichiers n'a pas de sens.
+ */
+function defaultWidth(): number {
+  return Math.min(1040, Math.round(window.innerWidth * 0.72))
+}
 
 let open = localStorage.getItem(OPEN_KEY) === '1'
 const listeners = new Set<() => void>()
@@ -70,23 +94,23 @@ export function setPanelOpen(next: boolean): void {
   for (const listener of listeners) listener()
 }
 
-export type PanelTab = 'explorer' | 'editor' | 'changes' | 'terminals' | 'agents' | 'mcp'
+export type PanelTab = 'files' | 'git' | 'history' | 'terminals' | 'agents' | 'mcp'
 
 /**
  * Onglet affiché et sous-agent consulté.
  *
  * Ici plutôt que dans le panneau, parce que le fil les pilote : ouvrir un fichier
- * depuis un diff bascule sur l'éditeur, et cliquer un sous-agent dans le bandeau doit
+ * depuis un diff bascule sur les fichiers, et cliquer un sous-agent dans le bandeau doit
  * ouvrir le panneau, choisir l'onglet et désigner lequel, en un seul geste.
  */
-let tab: PanelTab = 'explorer'
+let tab: PanelTab = 'files'
 let subAgentId: string | null = null
 
 export function usePanelTab(): PanelTab {
   return useSyncExternalStore(
     subscribe,
     () => tab,
-    () => 'explorer' as const,
+    () => 'files' as const,
   )
 }
 
@@ -137,7 +161,7 @@ export function clearSubAgent(): void {
  * qu'au relâchement.
  */
 export function setPanelWidth(px: number, persist: boolean): number {
-  const width = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, px)))
+  const width = Math.round(Math.min(maxWidth(), Math.max(MIN_WIDTH, px)))
   document.documentElement.style.setProperty('--panel-width', `${width}px`)
   if (persist) localStorage.setItem(WIDTH_KEY, String(width))
   return width
@@ -145,5 +169,34 @@ export function setPanelWidth(px: number, persist: boolean): number {
 
 export function restorePanelWidth(): void {
   const stored = Number(localStorage.getItem(WIDTH_KEY))
-  if (Number.isFinite(stored) && stored > 0) setPanelWidth(stored, false)
+  setPanelWidth(Number.isFinite(stored) && stored > 0 ? stored : defaultWidth(), false)
+}
+
+/**
+ * Colonne de l'arborescence, dans l'onglet Fichiers.
+ *
+ * Un réglage et non un onglet : l'arbre et l'éditeur sont la même vue, et la replier
+ * rend sa largeur à l'éditeur sans changer de contexte. Sur un panneau étroit, la
+ * colonne passe par-dessus l'éditeur et se referme dès qu'un fichier est choisi.
+ */
+let treeOpen = localStorage.getItem(TREE_KEY) !== '0'
+
+export function usePanelTree(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => treeOpen,
+    () => true,
+  )
+}
+
+/**
+ * `persist` à faux pour la fermeture automatique d'un panneau étroit : c'est la place
+ * disponible qui l'impose, pas un choix, et l'enregistrer laisserait l'arborescence
+ * repliée au retour sur un écran large.
+ */
+export function setPanelTree(next: boolean, persist = true): void {
+  if (next === treeOpen) return
+  treeOpen = next
+  if (persist) localStorage.setItem(TREE_KEY, next ? '1' : '0')
+  for (const listener of listeners) listener()
 }

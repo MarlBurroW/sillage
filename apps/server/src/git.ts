@@ -322,6 +322,63 @@ export async function readHeadCommit(cwd: string): Promise<HeadCommit | null> {
   }
 }
 
+export interface Commit {
+  hash: string
+  shortHash: string
+  subject: string
+  author: string
+  ts: number
+}
+
+/**
+ * Commits de la branche courante, du plus récent au plus ancien.
+ *
+ * Un commit de plus que demandé est lu, et non renvoyé : c'est ce qui dit s'il reste
+ * quelque chose derrière, sans avoir à compter l'historique entier.
+ *
+ * Retourne null hors dépôt git. Un dépôt sans aucun commit rend une liste vide : `git
+ * log` y échoue faute de HEAD, ce qui est un état normal et non une panne.
+ */
+export async function readCommits(
+  cwd: string,
+  limit: number,
+  skip: number,
+): Promise<{ commits: Commit[]; hasMore: boolean } | null> {
+  const status = await readGitStatus(cwd)
+  if (!status) return null
+
+  let raw: string
+  try {
+    raw = await git(cwd, [
+      'log',
+      `--max-count=${limit + 1}`,
+      `--skip=${skip}`,
+      // Octet nul entre les champs, saut de ligne entre les commits : un sujet peut
+      // contenir n'importe quel caractère imprimable, y compris une tabulation.
+      '--format=%H%x00%h%x00%s%x00%an%x00%ct',
+    ])
+  } catch {
+    return { commits: [], hasMore: false }
+  }
+
+  const commits = raw
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const [hash, shortHash, subject, author, ts] = line.split('\0')
+      return {
+        hash: hash ?? '',
+        shortHash: shortHash ?? '',
+        subject: subject ?? '',
+        author: author ?? '',
+        ts: Number(ts) * 1000 || 0,
+      }
+    })
+    .filter((commit) => commit.hash.length > 0)
+
+  return { commits: commits.slice(0, limit), hasMore: commits.length > limit }
+}
+
 export interface DiffFile {
   path: string
   added: number
@@ -337,6 +394,43 @@ export interface WorkingDiff {
 
 /** Un diff de plusieurs mégaoctets ne s'affiche pas et ne se transporte pas utilement. */
 const MAX_DIFF_BYTES = 512 * 1024
+
+/** Découpe la sortie de `--numstat` en fichiers. Un binaire y donne « - » au lieu d'un nombre. */
+function parseNumstat(numstat: string): DiffFile[] {
+  return numstat
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [added, removed, path] = line.split('\t')
+      return { path: path ?? '', added: Number(added) || 0, removed: Number(removed) || 0 }
+    })
+    .filter((file) => file.path.length > 0)
+}
+
+/**
+ * Ce qu'un commit a changé, contre son premier parent.
+ *
+ * `-m --first-parent` pour qu'une fusion montre ce qu'elle apporte à la branche plutôt
+ * que rien du tout, qui est ce que `git show` en dit par défaut.
+ */
+export async function readCommitDiff(cwd: string, hash: string): Promise<WorkingDiff> {
+  try {
+    const [numstat, patch] = await Promise.all([
+      git(cwd, ['show', '--format=', '--numstat', '-m', '--first-parent', hash]),
+      git(cwd, ['show', '--format=', '--patch', '-m', '--first-parent', hash]),
+    ])
+
+    const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
+    return {
+      files: parseNumstat(numstat),
+      patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch,
+      truncated,
+    }
+  } catch (err) {
+    throw new GitError(gitMessage(err))
+  }
+}
 
 /**
  * Modifications non commitées du répertoire de travail, fichiers non suivis compris :
@@ -367,24 +461,9 @@ export async function readWorkingDiff(cwd: string): Promise<WorkingDiff | null> 
       git(cwd, ['diff', 'HEAD'], env),
     ])
 
-    const files = numstat
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [added, removed, path] = line.split('\t')
-        return {
-          path: path ?? '',
-          // Un fichier binaire donne « - » plutôt qu'un nombre.
-          added: Number(added) || 0,
-          removed: Number(removed) || 0,
-        }
-      })
-      .filter((file) => file.path.length > 0)
-
     const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
     return {
-      files,
+      files: parseNumstat(numstat),
       patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch,
       truncated,
     }

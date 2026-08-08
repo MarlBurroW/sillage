@@ -1,4 +1,14 @@
-import { Bot, FileCode, FolderTree, GitCompare, PlugZap, RefreshCw, SquareTerminal, X } from 'lucide-react'
+import {
+  Bot,
+  FileCode,
+  GitCompare,
+  History,
+  PanelLeft,
+  PlugZap,
+  RefreshCw,
+  SquareTerminal,
+  X,
+} from 'lucide-react'
 import {
   useEffect,
   useRef,
@@ -16,25 +26,33 @@ import {
   restorePanelWidth,
   setPanelOpen,
   setPanelTab,
+  setPanelTree,
   setPanelWidth,
   usePanelTab,
+  usePanelTree,
   useSelectedSubAgent,
 } from '../../lib/panel'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { IconButton, cx } from '../ui'
 import { AgentsPane } from './AgentsPane'
-import { ChangesPane } from './ChangesPane'
-import { EditorPane } from './EditorPane'
-import { FileTree } from './FileTree'
+import { FilesPane } from './FilesPane'
+import { GitPane } from './GitPane'
+import { HistoryPane } from './HistoryPane'
 import { McpPane } from './McpPane'
 import { TerminalsPane } from './TerminalsPane'
 
 /**
  * Panneau latéral droit.
  *
- * Troisième colonne sur grand écran, vue plein écran au doigt : il ne peut pas
- * coexister avec le fil dans 390 px.
+ * Posé au-dessus du fil et non à côté, sur grand écran comme au doigt. Il s'ouvre
+ * large, parce que ce qu'on y fait tient mal dans une colonne : une arborescence et
+ * un éditeur côte à côte, un diff, un terminal. Prendre cette place à même la mise en
+ * page réduisait le fil à rien ; l'en recouvrir la lui rend dès qu'on referme.
+ *
+ * Ni voile ni fermeture au clic extérieur : ce n'est pas une boîte de dialogue, il
+ * tient des terminaux vivants et un contenu en cours d'édition, et un clic mal placé
+ * ne doit pas les emporter.
  *
  * Il suit le répertoire de travail de la **conversation** ouverte, worktree compris,
  * et non la racine du projet : c'est là que l'agent écrit.
@@ -61,6 +79,7 @@ export function SidePanel({
   // diff comme en désignant un sous-agent depuis le bandeau.
   const t = useTranslate()
   const tab = usePanelTab()
+  const treeOpen = usePanelTree()
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -71,6 +90,12 @@ export function SidePanel({
   const aside = useRef<HTMLElement>(null)
   const refresh = useRefreshTree(conversationId)
   const wasRunning = useRef(turnRunning)
+
+  /** Ouvrir un fichier depuis un diff : l'onglet naît sous les yeux de qui l'a demandé. */
+  const openInFiles = (path: string) => {
+    openTab(conversationId, path)
+    setPanelTab('files')
+  }
 
   useEffect(restorePanelWidth, [])
 
@@ -134,23 +159,18 @@ export function SidePanel({
       className={cx(
         // Pas d'`overflow-hidden` ici : il rognerait la poignée, posée en débord sur
         // le bord gauche. C'est la zone de défilement interne qui borne le contenu.
-        'surface z-20 flex shrink-0 flex-col border-l border-line',
-        // Plein écran au doigt, colonne au-delà. `absolute` et non `fixed` : le repère
-        // est le calque de la coque, donc le panneau suit le viewport visuel.
-        // `md:relative` et non `md:static` : la poignée se positionne par rapport au
-        // panneau, et un panneau statique la renverrait sur un ancêtre. Deux
-        // utilitaires de position sur le même élément se départagent par l'ordre du
-        // CSS généré, jamais par celui de la chaîne de classes.
-        'absolute inset-0 md:relative md:inset-auto md:w-[var(--panel-width,20rem)]',
-        // Au doigt le panneau se pose par-dessus le fil : une translation suffit. Sur
-        // grand écran il occupe une colonne, donc c'est aussi la marge qui doit se
-        // refermer, sinon glisser ne ferait que laisser un vide de sa largeur.
+        // L'ombre porte le décollement : sans elle, un panneau posé sur le fil se lit
+        // comme une colonne de plus, et on cherche pourquoi le fil est coupé.
+        'surface z-20 flex flex-col border-l border-line shadow-pop',
+        // Plein écran au doigt, largeur réglable au-delà. `absolute` et non `fixed` :
+        // le repère est le calque de la coque, donc le panneau suit le viewport visuel.
+        // La largeur est bornée en CSS et pas seulement à l'enregistrement : une
+        // fenêtre rétrécie après coup laisserait sinon un panneau plus large qu'elle.
+        'absolute inset-0 md:left-auto md:w-[min(var(--panel-width,45rem),calc(100vw-10rem))]',
         // `translate` et non `transform` : Tailwind v4 pose les utilitaires de
         // translation sur cette propriété CSS, distincte de `transform`.
-        'transition-[translate,margin] duration-200 ease-out',
-        entered && open
-          ? 'translate-x-0 md:mr-0'
-          : 'translate-x-full md:-mr-[var(--panel-width,20rem)]',
+        'transition-[translate] duration-200 ease-out',
+        entered && open ? 'translate-x-0' : 'translate-x-full',
       )}
     >
       {/* Pas d'encoche haute ici : même en plein écran, le panneau se pose sous
@@ -164,22 +184,22 @@ export function SidePanel({
             qui devenait alors impossible à refermer. */}
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
           <Tab
-            icon={<FolderTree size={14} />}
-            label={t('panel.tab.explorer')}
-            active={tab === 'explorer'}
-            onSelect={() => setPanelTab('explorer')}
-          />
-          <Tab
             icon={<FileCode size={14} />}
-            label={t('panel.tab.editor')}
-            active={tab === 'editor'}
-            onSelect={() => setPanelTab('editor')}
+            label={t('panel.tab.files')}
+            active={tab === 'files'}
+            onSelect={() => setPanelTab('files')}
           />
           <Tab
             icon={<GitCompare size={14} />}
-            label={t('panel.tab.changes')}
-            active={tab === 'changes'}
-            onSelect={() => setPanelTab('changes')}
+            label={t('panel.tab.git')}
+            active={tab === 'git'}
+            onSelect={() => setPanelTab('git')}
+          />
+          <Tab
+            icon={<History size={14} />}
+            label={t('panel.tab.history')}
+            active={tab === 'history'}
+            onSelect={() => setPanelTab('history')}
           />
           <Tab
             icon={<SquareTerminal size={14} />}
@@ -206,10 +226,19 @@ export function SidePanel({
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5 pl-1">
-          {tab === 'explorer' ? (
-            <IconButton label={t('panel.tree.refresh')} size="sm" onClick={refresh}>
-              <RefreshCw size={15} />
-            </IconButton>
+          {tab === 'files' ? (
+            <>
+              <IconButton
+                label={treeOpen ? t('panel.tree.hide') : t('panel.tree.show')}
+                size="sm"
+                onClick={() => setPanelTree(!treeOpen)}
+              >
+                <PanelLeft size={16} className={cx(treeOpen && 'text-accent')} />
+              </IconButton>
+              <IconButton label={t('panel.tree.refresh')} size="sm" onClick={refresh}>
+                <RefreshCw size={15} />
+              </IconButton>
+            </>
           ) : null}
           <IconButton label={t('panel.close')} size="sm" onClick={() => setPanelOpen(false)}>
             <X size={17} />
@@ -217,49 +246,35 @@ export function SidePanel({
         </div>
       </header>
 
-      {/* Les deux vues restent montées : basculer sur l'éditeur ne doit pas replier
-          l'arborescence ni perdre la position de défilement, et l'éditeur ne doit pas
-          relire son fichier à chaque aller-retour. */}
-      <div
-        className={cx(
-          'min-h-0 flex-1 overflow-auto py-1 pb-safe',
-          tab === 'explorer' ? 'block' : 'hidden',
-        )}
-      >
-        <FileTree conversationId={conversationId} onOpenFile={() => setPanelTab('editor')} />
-      </div>
-
-      {/* `min-w-0` : sans lui, un enfant flex se dimensionne sur son contenu, et
-          l'éditeur imposait sa largeur au panneau au lieu de défiler dedans. */}
+      {/* Monté même quand un autre onglet est devant : revenir aux fichiers ne doit
+          replier ni l'arborescence, ni perdre sa position de défilement, ni faire
+          relire son fichier à l'éditeur. */}
       <div
         className={cx(
           'min-h-0 min-w-0 flex-1 overflow-hidden pb-safe',
-          tab === 'editor' ? 'flex' : 'hidden',
+          tab === 'files' ? 'flex' : 'hidden',
         )}
       >
-        <div className="min-h-0 min-w-0 flex-1">
-          <EditorPane conversationId={conversationId} />
-        </div>
+        <FilesPane conversationId={conversationId} />
       </div>
 
-      <div
-        className={cx(
-          'min-h-0 min-w-0 flex-1 overflow-hidden',
-          tab === 'changes' ? 'flex' : 'hidden',
-        )}
-      >
-        <div className="min-h-0 min-w-0 flex-1">
-          <ChangesPane
-            conversationId={conversationId}
-            editTurns={editTurns}
-            turnRunning={turnRunning}
-            onOpenFile={(path) => {
-              openTab(conversationId, path)
-              setPanelTab('editor')
-            }}
-          />
-        </div>
-      </div>
+      {/* Deux vues montées seulement quand on les regarde : leur contenu vient du
+          journal ou d'une lecture git relancée à l'affichage, rien ne s'y perd. */}
+      {tab === 'git' ? (
+        <GitPane
+          conversationId={conversationId}
+          turnRunning={turnRunning}
+          onOpenFile={openInFiles}
+        />
+      ) : null}
+
+      {tab === 'history' ? (
+        <HistoryPane
+          conversationId={conversationId}
+          turns={editTurns}
+          onOpenFile={openInFiles}
+        />
+      ) : null}
 
       {/* Monté dès que le panneau existe, et non seulement quand l'onglet est actif :
           un shell qui compile ne doit pas être coupé parce qu'on regarde le diff. */}

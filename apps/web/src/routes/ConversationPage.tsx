@@ -830,15 +830,14 @@ export function ConversationPage() {
     // fil : c'est lui, et pas le projet, qui décide de ce qu'un chemin relatif désigne
     // quand la conversation tourne dans un worktree.
     <FileLinkContext.Provider value={conversationId}>
-    {/* Deux colonnes : le fil, et le panneau latéral quand il est ouvert. `relative`
-        sert d'ancrage au panneau, qui se met en surimpression au doigt. */}
+    {/* `relative` sert d'ancrage au panneau latéral, qui se pose au-dessus du fil
+        plutôt que de lui prendre une colonne. */}
     <div className="relative flex h-full">
       <div
         className={cx(
           // `@container` : la réglette et les réglages du composer se replient selon la
           // largeur réellement disponible pour le fil, pas celle de la fenêtre, qui
-          // ignore la sidebar comme le panneau. Ouvrir le panneau replie donc les
-          // réglages tout seul, sans une ligne de plus.
+          // ignore la sidebar.
           // `h-full` : la hauteur vient du calque racine, qui suit déjà le viewport
           // visuel. Un calcul local reproduirait ce que la coque sait déjà.
           '@container relative flex h-full min-w-0 flex-1 flex-col pb-safe',
