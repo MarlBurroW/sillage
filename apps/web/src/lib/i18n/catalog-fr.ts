@@ -156,6 +156,10 @@ export const fr: Catalog = {
   'composer.dictate.stop': 'Arrêter la dictée',
   'composer.dictate.denied': "L'accès au micro a été refusé par le navigateur.",
   'composer.dictate.failed': 'La transcription a échoué.',
+  'composer.dictate.unconfigured.title': "La dictée n'est pas configurée",
+  'composer.dictate.unconfigured.body':
+    "Cette instance n'a pas encore de fournisseur de transcription. Un administrateur peut en brancher un depuis les réglages de dictée.",
+  'composer.dictate.unconfigured.action': 'Ouvrir les réglages',
 
   // Panneau du workspace
   'panel.aria': 'Panneau du workspace',
@@ -303,6 +307,9 @@ export const fr: Catalog = {
   'stt.cleanupModel.hint':
     'Modèle de chat du même fournisseur qui corrige les termes techniques et la ponctuation, et construit le lexique par projet. Vide pour couper la passe.',
   'stt.save': 'Enregistrer',
+  'stt.test.button': 'Tester la connexion',
+  'stt.test.ok': 'Fournisseur joint, modèle de transcription opérationnel.',
+  'stt.test.okCleanup': 'Fournisseur joint, modèles de transcription et de nettoyage opérationnels.',
   'stt.how':
     "L'audio part du navigateur au serveur Sillage, qui le relaie au fournisseur avec un court lexique du projet pour que les noms propres et les termes techniques sortent justes.",
   'error.stt_not_configured': "La dictée n'est pas configurée sur cette instance.",

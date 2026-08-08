@@ -171,6 +171,10 @@ export const en = {
   'composer.dictate.stop': 'Stop dictation',
   'composer.dictate.denied': 'Microphone access was denied by the browser.',
   'composer.dictate.failed': 'Transcription failed.',
+  'composer.dictate.unconfigured.title': 'Dictation is not set up',
+  'composer.dictate.unconfigured.body':
+    'This instance has no transcription provider yet. An administrator can plug one in from the dictation settings.',
+  'composer.dictate.unconfigured.action': 'Open the settings',
 
   // Panneau du workspace
   'panel.aria': 'Workspace panel',
@@ -316,6 +320,9 @@ export const en = {
   'stt.cleanupModel.hint':
     'Chat model from the same provider that fixes technical terms and punctuation, and builds the per-project glossary. Empty turns the pass off.',
   'stt.save': 'Save',
+  'stt.test.button': 'Test the connection',
+  'stt.test.ok': 'Provider reached, transcription model working.',
+  'stt.test.okCleanup': 'Provider reached, transcription and cleanup models working.',
   'stt.how':
     'Recordings go from the browser to the Sillage server, which forwards them to the provider along with a short glossary of the project so names and technical terms come out right.',
   'error.stt_not_configured': 'Dictation is not configured on this instance.',

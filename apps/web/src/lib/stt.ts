@@ -20,14 +20,14 @@ export function useSttEnabled(): boolean {
  * L'envoi passe par `fetch` directement, comme les pièces jointes : un multipart
  * laisse le navigateur composer son en-tête `content-type`, frontière comprise.
  */
-async function requestTranscription(audio: Blob, projectId?: string): Promise<string> {
+async function postAudio(path: string, audio: Blob, projectId?: string): Promise<unknown> {
   const extension = audio.type.includes('mp4') ? 'mp4' : 'webm'
   const body = new FormData()
   if (projectId) body.append('projectId', projectId)
   // Le fichier en dernier : @fastify/multipart ne lit que les champs qui précèdent.
   body.append('file', audio, `dictation.${extension}`)
 
-  const response = await fetch('/api/stt/transcribe', {
+  const response = await fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
     body,
@@ -49,7 +49,50 @@ async function requestTranscription(audio: Blob, projectId?: string): Promise<st
         : translate('error.http', { status: response.status }),
     )
   }
+  return parsed
+}
+
+async function requestTranscription(audio: Blob, projectId?: string): Promise<string> {
+  const parsed = await postAudio('/api/stt/transcribe', audio, projectId)
   return (parsed as TranscriptionDto).text
+}
+
+/**
+ * Vérifie la configuration en parcourant le chemin d'une vraie dictée, sur un court
+ * échantillon sonore. Il est synthétisé par WebAudio plutôt qu'enregistré : le test ne
+ * doit pas demander l'accès au micro, ni dépendre de ce qu'il capte.
+ */
+export async function testDictation(): Promise<{ cleanupTested: boolean }> {
+  const audio = await recordTestTone()
+  return (await postAudio('/api/stt/test', audio)) as { cleanupTested: boolean }
+}
+
+async function recordTestTone(): Promise<Blob> {
+  const context = new AudioContext()
+  const destination = context.createMediaStreamDestination()
+  const oscillator = context.createOscillator()
+  const gain = context.createGain()
+  gain.gain.value = 0.05
+  oscillator.connect(gain).connect(destination)
+
+  const recorder = new MediaRecorder(destination.stream, { mimeType: recordingMimeType() })
+  const chunks: Blob[] = []
+  recorder.ondataavailable = (event) => {
+    if (event.data.size > 0) chunks.push(event.data)
+  }
+  const stopped = new Promise<void>((resolve) => {
+    recorder.onstop = () => resolve()
+  })
+
+  oscillator.start()
+  recorder.start()
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  recorder.stop()
+  oscillator.stop()
+  await stopped
+  await context.close()
+
+  return new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
 }
 
 export type DictationState = 'idle' | 'recording' | 'transcribing'

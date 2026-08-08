@@ -19,6 +19,7 @@ import {
   type McpServerStatus,
   type SlashCommandDto,
 } from '@sillage/protocol'
+import { useNavigate } from 'react-router-dom'
 import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
 import { useComposerDrops, useComposerReferences } from '../../lib/composer-ref'
@@ -28,7 +29,7 @@ import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
 import { useDictation, useSttEnabled } from '../../lib/stt'
 import { useTranslate } from '../../lib/i18n'
 import { matchCommands, matchSkills, type PickerEntry } from '../../lib/composer-tokens'
-import { IconButton, cx } from '../ui'
+import { ConfirmDialog, IconButton, cx } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
 import { useAgentSettings } from './agent-settings'
 import { TokenPicker } from './TokenPicker'
@@ -336,6 +337,10 @@ export function Composer({
     onText: insertDictation,
     onError: setError,
   })
+  // Le micro reste visible quand rien n'est configuré : un bouton absent ne dit pas
+  // que la fonction existe, la dialog explique et mène aux réglages.
+  const [sttNotice, setSttNotice] = useState(false)
+  const navigate = useNavigate()
 
   // Le dépôt vise le fil, pas le champ : c'est ici que les fichiers atterrissent, avec
   // les mêmes bornes et les mêmes erreurs qu'un collage ou qu'un choix au sélecteur.
@@ -668,28 +673,39 @@ export function Composer({
               <Paperclip size={16} />
             </IconButton>
 
-            {sttEnabled ? (
-              <IconButton
-                label={
-                  dictation.state === 'recording'
-                    ? t('composer.dictate.stop')
-                    : t('composer.dictate.start')
-                }
-                size="sm"
-                disabled={disabled || dictation.state === 'transcribing'}
-                onClick={() => void dictation.toggle()}
-                className={cx(
-                  dictation.state === 'recording' &&
-                    'animate-pulse bg-critical/12 text-critical hover:bg-critical/20 hover:text-critical',
-                )}
-              >
-                {dictation.state === 'transcribing' ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Mic size={16} />
-                )}
-              </IconButton>
-            ) : null}
+            <IconButton
+              label={
+                dictation.state === 'recording'
+                  ? t('composer.dictate.stop')
+                  : t('composer.dictate.start')
+              }
+              size="sm"
+              disabled={disabled || dictation.state === 'transcribing'}
+              onClick={() => {
+                if (sttEnabled) void dictation.toggle()
+                else setSttNotice(true)
+              }}
+              className={cx(
+                dictation.state === 'recording' &&
+                  'animate-pulse bg-critical/12 text-critical hover:bg-critical/20 hover:text-critical',
+              )}
+            >
+              {dictation.state === 'transcribing' ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Mic size={16} />
+              )}
+            </IconButton>
+
+            <ConfirmDialog
+              open={sttNotice}
+              onOpenChange={setSttNotice}
+              title={t('composer.dictate.unconfigured.title')}
+              confirmLabel={t('composer.dictate.unconfigured.action')}
+              onConfirm={() => navigate('/settings/dictee')}
+            >
+              <p>{t('composer.dictate.unconfigured.body')}</p>
+            </ConfirmDialog>
 
             <ComposerSettings
               groups={groups}
