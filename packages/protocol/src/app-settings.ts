@@ -29,6 +29,17 @@ export const cronScheduleSchema = z.string().refine(
 export interface AppSettingsDto {
   autoArchiveDays: number
   autoArchiveSchedule: string
+  /**
+   * Dictée vocale, sur toute API au format OpenAI (`/audio/transcriptions`).
+   *
+   * `sttSecret` est le nom d'un secret du dépôt, jamais la clé elle-même : la valeur
+   * ne circule pas hors du serveur. Les trois premiers champs vides coupent la dictée,
+   * `sttCleanupModel` vide coupe seulement la passe de nettoyage.
+   */
+  sttBaseUrl: string
+  sttModel: string
+  sttSecret: string
+  sttCleanupModel: string
 }
 
 /** Résultat d'un passage d'archivage lancé à la main. */
@@ -43,4 +54,20 @@ export const updateAppSettingsBodySchema = z.object({
    */
   autoArchiveDays: z.number().int().min(0).max(3650).optional(),
   autoArchiveSchedule: cronScheduleSchema.optional(),
+  // La chaîne vide est une valeur légitime partout : elle désactive.
+  sttBaseUrl: z
+    .string()
+    .trim()
+    .refine((value) => value === '' || /^https?:\/\//.test(value), {
+      message: 'Base URL must start with http:// or https://.',
+    })
+    .optional(),
+  sttModel: z.string().trim().max(200).optional(),
+  sttSecret: z.string().trim().max(200).optional(),
+  sttCleanupModel: z.string().trim().max(200).optional(),
 })
+
+/** Résultat d'une dictée transcrite. */
+export interface TranscriptionDto {
+  text: string
+}

@@ -6,6 +6,7 @@ import {
   Info,
   GitBranch,
   KeyRound,
+  Mic,
   Palette,
   Plug,
   SlidersHorizontal,
@@ -96,6 +97,13 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.secrets',
     descriptionKey: 'settings.section.secrets.description',
     icon: <KeyRound size={16} />,
+    adminOnly: true,
+  },
+  {
+    to: 'dictee',
+    labelKey: 'settings.section.stt',
+    descriptionKey: 'settings.section.stt.description',
+    icon: <Mic size={16} />,
     adminOnly: true,
   },
   {

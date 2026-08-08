@@ -41,6 +41,7 @@ import { registerProjectRoutes } from './routes/projects.js'
 import { registerPushRoutes } from './routes/push.js'
 import { registerSearchRoutes } from './routes/search.js'
 import { registerSettingsRoutes } from './routes/settings.js'
+import { registerSttRoutes } from './routes/stt.js'
 import { registerSystemRoutes } from './routes/system.js'
 import { registerTerminalRoutes } from './routes/terminals.js'
 import { registerTreeRoutes } from './routes/tree.js'
@@ -151,6 +152,7 @@ export async function buildApp(
   registerPushRoutes(app, push)
   registerSearchRoutes(app, ctx)
   registerSettingsRoutes(app, ctx, scheduler)
+  registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx)
   registerSystemRoutes(app)
   registerTreeRoutes(app, ctx)

@@ -13,6 +13,7 @@ import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
 import { AppearanceSection } from './routes/AppearanceSection'
 import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
+import { DictationSettingsPage } from './routes/DictationSettingsPage'
 import { McpSettingsPage } from './routes/McpSettingsPage'
 import { NotificationsSection } from './routes/NotificationsSection'
 import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
@@ -59,6 +60,7 @@ export function App() {
             <Route path="api" element={<ApiTokensSettingsPage />} />
             <Route path="git" element={<GitCredentialsSettingsPage />} />
             <Route path="secrets" element={<SecretsSettingsPage />} />
+            <Route path="dictee" element={<DictationSettingsPage />} />
             <Route path="archivage" element={<ArchivingSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />
             <Route path="a-propos" element={<AboutSection />} />
