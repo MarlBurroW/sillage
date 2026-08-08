@@ -22,18 +22,29 @@ interface AudioPayload {
  * `POST /audio/transcriptions`, avec le biais de vocabulaire en paramètre `prompt` :
  * Whisper le lit comme du texte qui précéderait la dictée et cale son lexique dessus.
  */
+export interface TranscriptionHints {
+  /** Biais de vocabulaire, lu par Whisper comme du texte qui précéderait la dictée. */
+  prompt?: string
+  /**
+   * Langue imposée, en ISO 639-1. Sans elle, la détection automatique part en vrille
+   * sur les énoncés courts : un « test » isolé revient en allemand ou en cyrillique.
+   */
+  language?: string
+}
+
 export async function transcribe(
   provider: SttProvider,
   audio: AudioPayload,
-  prompt: string | undefined,
+  hints: TranscriptionHints,
 ): Promise<string> {
   try {
-    return await requestTranscription(provider, audio, prompt)
+    return await requestTranscription(provider, audio, hints)
   } catch (err) {
-    // Tous les fournisseurs n'acceptent pas `prompt` : plutôt que de casser la dictée
-    // sur ce raffinement, on retente une fois sans biais.
-    if (prompt && err instanceof HttpError && err.code === 'stt_provider_error') {
-      return requestTranscription(provider, audio, undefined)
+    // Tous les fournisseurs n'acceptent pas `prompt` ou `language` : plutôt que de
+    // casser la dictée sur un raffinement, on retente une fois à nu.
+    const hinted = hints.prompt || hints.language
+    if (hinted && err instanceof HttpError && err.code === 'stt_provider_error') {
+      return requestTranscription(provider, audio, {})
     }
     throw err
   }
@@ -42,12 +53,13 @@ export async function transcribe(
 async function requestTranscription(
   provider: SttProvider,
   audio: AudioPayload,
-  prompt: string | undefined,
+  hints: TranscriptionHints,
 ): Promise<string> {
   const body = new FormData()
   body.append('model', provider.model)
   body.append('file', new Blob([audio.content], { type: audio.mimeType }), audio.filename)
-  if (prompt) body.append('prompt', prompt)
+  if (hints.prompt) body.append('prompt', hints.prompt)
+  if (hints.language) body.append('language', hints.language)
 
   const payload = await call(provider, '/audio/transcriptions', {
     body,
