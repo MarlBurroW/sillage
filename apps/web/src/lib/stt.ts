@@ -135,23 +135,27 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
   const start = async () => {
     if (state !== 'idle') return
 
+    // Créé et réveillé dans le geste de toucher lui-même, avant toute attente : une
+    // fois l'`await` du micro passé, le geste est consommé et mobile Safari comme
+    // Chrome Android refusent de sortir le contexte de l'état `suspended`. L'analyseur
+    // sortirait alors des zéros plats pendant que l'enregistreur capte normalement.
+    const context = new AudioContext()
+    void context.resume().catch(() => {})
+
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch {
+      void context.close().catch(() => {})
       callbacks.current.onError(translate('composer.dictate.denied'))
       return
     }
 
     // L'analyseur écoute le même flux que l'enregistreur : ce que le vumètre montre
     // est ce qui part réellement, un mauvais micro sélectionné se voit tout de suite.
-    const context = new AudioContext()
     const meter = context.createAnalyser()
     meter.fftSize = 1024
     context.createMediaStreamSource(stream).connect(meter)
-    // Créé après l'attente de getUserMedia, donc hors du geste utilisateur : le
-    // navigateur peut le poser `suspended`, et l'analyseur sortirait des zéros plats
-    // pendant que l'enregistreur capte normalement.
     if (context.state !== 'running') void context.resume().catch(() => {})
     audio.current = context
     setAnalyser(meter)
