@@ -51,10 +51,15 @@ export function registerSttRoutes(
         ? await projectLexicon(workspace.projectId, workspace.path, chat)
         : null
 
+    const language = textField(file.fields, 'language')
     const raw = await transcribe(
       provider,
       { content, filename: file.filename || 'dictation.webm', mimeType: file.mimetype },
-      spokenBias(lexicon, branch),
+      {
+        prompt: spokenBias(lexicon, branch),
+        // Deux lettres ou rien : la valeur vient du client et part chez le fournisseur.
+        language: language && /^[a-z]{2}$/.test(language) ? language : undefined,
+      },
     )
 
     const trimmed = raw.trim()
@@ -83,7 +88,7 @@ export function registerSttRoutes(
     await transcribe(
       provider,
       { content, filename: file.filename || 'test.webm', mimeType: file.mimetype },
-      undefined,
+      {},
     )
     if (cleanupModel) {
       await complete(

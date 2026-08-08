@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { TranscriptionDto } from '@sillage/protocol'
 import { ApiRequestError } from './api'
 import { useAppSettings } from './app-settings'
-import { translate, translateError } from './i18n'
+import { locale, translate, translateError } from './i18n'
 
 /**
  * Dictée vocale du composer : enregistrement dans le navigateur, transcription par le
@@ -24,6 +24,9 @@ async function postAudio(path: string, audio: Blob, projectId?: string): Promise
   const extension = audio.type.includes('mp4') ? 'mp4' : 'webm'
   const body = new FormData()
   if (projectId) body.append('projectId', projectId)
+  // La langue de l'interface est celle qu'on dicte : l'imposer évite à la détection
+  // automatique de basculer sur un « test » isolé qui sonne allemand.
+  body.append('language', locale())
   // Le fichier en dernier : @fastify/multipart ne lit que les champs qui précèdent.
   body.append('file', audio, `dictation.${extension}`)
 
