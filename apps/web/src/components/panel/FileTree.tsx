@@ -66,7 +66,7 @@ export function FileTree({
   onOpenFile,
 }: {
   conversationId: string
-  /** Bascule sur l'éditeur : ouvrir un fichier sans le montrer ne servirait à rien. */
+  /** Referme la colonne quand elle recouvre l'éditeur : sinon le fichier ouvert reste caché. */
   onOpenFile: () => void
 }) {
   const t = useTranslate()
@@ -458,6 +458,10 @@ function EntryRow({
       trigger={
         <button
           type="button"
+          onClick={() => {
+            openTab(actions.conversationId, entry.path, { preview: true })
+            actions.onOpenFile()
+          }}
           onDoubleClick={() => {
             openTab(actions.conversationId, entry.path)
             actions.onOpenFile()
@@ -571,13 +575,22 @@ function Entry({
             <button
               type="button"
               /*
-               * Un dossier se déplie au clic simple, c'est le geste qu'on attend de lui.
-               * Un fichier, non : le clic simple ne fait que le désigner, et c'est le
-               * double clic qui l'ouvre. Ouvrir au premier clic remplissait la barre
-               * d'onglets en parcourant l'arborescence, et empêchait de viser une ligne
-               * pour la renommer ou la déplacer sans en subir l'ouverture.
+               * Un dossier se déplie au clic simple, un fichier s'ouvre. C'est le geste
+               * attendu de part et d'autre, et l'arborescence reste visible à côté de
+               * l'éditeur, donc ouvrir ne coûte plus de quitter ce qu'on parcourt.
+               *
+               * Le clic simple ouvre un aperçu, remplacé par le fichier suivant : sans
+               * ça, parcourir l'arborescence remplit la barre d'onglets. Le double clic
+               * ouvre pour de bon, comme dans un éditeur.
                */
-              onClick={entry.isDirectory ? () => setOpen((value) => !value) : undefined}
+              onClick={
+                entry.isDirectory
+                  ? () => setOpen((value) => !value)
+                  : () => {
+                      openTab(actions.conversationId, entry.path, { preview: true })
+                      actions.onOpenFile()
+                    }
+              }
               onDoubleClick={
                 entry.isDirectory
                   ? undefined

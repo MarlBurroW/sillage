@@ -155,13 +155,15 @@ export const fr: Catalog = {
 
   // Panneau du workspace
   'panel.aria': 'Panneau du workspace',
-  'panel.tab.explorer': 'Explorateur',
-  'panel.tab.editor': 'Éditeur',
-  'panel.tab.changes': 'Modifications',
+  'panel.tab.files': 'Fichiers',
+  'panel.tab.git': 'Git',
+  'panel.tab.history': 'Historique',
   'panel.tab.terminals': 'Terminaux',
   'panel.tab.agents': 'Sous-agents',
   'panel.tab.mcp': 'MCP',
   'panel.tree.refresh': "Rafraîchir l'arborescence",
+  'panel.tree.hide': "Masquer l'arborescence",
+  'panel.tree.show': "Afficher l'arborescence",
   'panel.close': 'Fermer le panneau',
   'panel.resize.aria': 'Largeur du panneau',
   'panel.tab.badge': '{label}, {count} en cours',
@@ -577,7 +579,15 @@ export const fr: Catalog = {
 
   // Modifications (diff et historique)
   'changes.diff.recalculate': 'Recalculer le diff',
-  'changes.diff.current': 'État courant',
+  'changes.diff.current': 'Non commité',
+  'changes.commits.title': 'Commits',
+  'changes.commits.loading': 'Lecture des commits',
+  'changes.commits.error': 'Lecture des commits impossible.',
+  'changes.commits.empty': 'Aucun commit sur cette branche.',
+  'changes.commits.more': 'Charger des commits plus anciens',
+  'changes.commits.head': 'courant',
+  'changes.commits.diffLoading': 'Lecture du commit',
+  'changes.commits.diffEmpty': 'Ce commit ne touche aucun fichier.',
   'changes.diff.loading': 'Lecture du dépôt...',
   'changes.diff.error': 'Diff illisible.',
   'changes.diff.notGitRepo': "Ce répertoire de travail n'est pas un dépôt git.",
@@ -713,7 +723,7 @@ export const fr: Catalog = {
   'composer.status.shortcut': 'Entrée pour envoyer, Maj+Entrée pour un retour à la ligne',
 
   // Éditeur
-  'editor.empty': "Aucun fichier ouvert. Clique sur un fichier dans l'explorateur.",
+  'editor.empty': "Aucun fichier ouvert. Clique sur un fichier dans l'arborescence.",
   'editor.tabs.actions': 'Actions des onglets',
   'editor.tabs.closeOthers': 'Fermer les autres',
   'editor.tabs.closeAll': 'Fermer tout',

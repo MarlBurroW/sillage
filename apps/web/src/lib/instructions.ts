@@ -53,6 +53,6 @@ export function useInstructionsFile(
 export function openInstructions(conversationId: string, path: string): void {
   setMarkdownView('preview')
   openTab(conversationId, path)
-  setPanelTab('editor')
+  setPanelTab('files')
   setPanelOpen(true)
 }

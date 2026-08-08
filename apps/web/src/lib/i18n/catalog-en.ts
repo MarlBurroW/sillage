@@ -170,13 +170,15 @@ export const en = {
 
   // Panneau du workspace
   'panel.aria': 'Workspace panel',
-  'panel.tab.explorer': 'Explorer',
-  'panel.tab.editor': 'Editor',
-  'panel.tab.changes': 'Changes',
+  'panel.tab.files': 'Files',
+  'panel.tab.git': 'Git',
+  'panel.tab.history': 'History',
   'panel.tab.terminals': 'Terminals',
   'panel.tab.agents': 'Sub-agents',
   'panel.tab.mcp': 'MCP',
   'panel.tree.refresh': 'Refresh the file tree',
+  'panel.tree.hide': 'Hide the file tree',
+  'panel.tree.show': 'Show the file tree',
   'panel.close': 'Close the panel',
   'panel.resize.aria': 'Panel width',
   'panel.tab.badge': '{label}, {count} running',
@@ -590,7 +592,15 @@ export const en = {
 
   // Modifications (diff et historique)
   'changes.diff.recalculate': 'Recalculate diff',
-  'changes.diff.current': 'Current state',
+  'changes.diff.current': 'Uncommitted',
+  'changes.commits.title': 'Commits',
+  'changes.commits.loading': 'Reading commits',
+  'changes.commits.error': 'Could not read commits.',
+  'changes.commits.empty': 'No commit on this branch.',
+  'changes.commits.more': 'Load older commits',
+  'changes.commits.head': 'current',
+  'changes.commits.diffLoading': 'Reading the commit',
+  'changes.commits.diffEmpty': 'This commit touches no file.',
   'changes.diff.loading': 'Reading the repository...',
   'changes.diff.error': 'Diff unreadable.',
   'changes.diff.notGitRepo': "This working directory isn't a git repository.",
@@ -726,7 +736,7 @@ export const en = {
   'composer.status.shortcut': 'Enter to send, Shift+Enter for a new line',
 
   // Éditeur
-  'editor.empty': 'No file open. Click a file in the explorer.',
+  'editor.empty': 'No file open. Click a file in the tree.',
   'editor.tabs.actions': 'Tab actions',
   'editor.tabs.closeOthers': 'Close others',
   'editor.tabs.closeAll': 'Close all',

@@ -15,7 +15,11 @@ import {
   reorderConversationsBodySchema,
   sendMessageBodySchema,
   steerBodySchema,
+  commitHashSchema,
+  commitListQuerySchema,
   updateConversationBodySchema,
+  type CommitDiffDto,
+  type CommitListDto,
   type ConversationDto,
   type ConversationMetrics,
   type ConversationStatus,
@@ -30,7 +34,7 @@ import { createConversation } from '../../conversations/create.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
-import { readGitStatus, readHeadCommit, readWorkingDiff } from '../../git.js'
+import { readCommitDiff, readCommits, readGitStatus, readHeadCommit, readWorkingDiff } from '../../git.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
@@ -454,6 +458,42 @@ export function registerConversationRoutes(
         branch: status?.branch ?? null,
         head,
       }
+    } catch (err) {
+      throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  /**
+   * Commits de la branche sur laquelle travaille la conversation.
+   *
+   * Paginé plutôt que plafonné : un dépôt a des milliers de commits, et l'onglet en
+   * montre les derniers, avec de quoi remonter plus loin à la demande.
+   */
+  app.get('/api/conversations/:id/commits', async (request): Promise<CommitListDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { limit, skip } = commitListQuerySchema.parse(request.query)
+    await loadReadable(id, user.id)
+
+    try {
+      const result = await readCommits(sessions.workingDirectory(id), limit, skip)
+      return { commits: result?.commits ?? null, hasMore: result?.hasMore ?? false }
+    } catch (err) {
+      throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  /** Ce qu'un commit a changé. Lu à la demande : un diff par commit coûte un process git. */
+  app.get('/api/conversations/:id/commits/:hash/diff', async (request): Promise<CommitDiffDto> => {
+    const user = requireUser(request)
+    const { id, hash } = request.params as { id: string; hash: string }
+    await loadReadable(id, user.id)
+
+    const parsed = commitHashSchema.safeParse(hash)
+    if (!parsed.success) throw badRequest('bad_commit', 'This is not a commit hash.')
+
+    try {
+      return await readCommitDiff(sessions.workingDirectory(id), parsed.data)
     } catch (err) {
       throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
     }

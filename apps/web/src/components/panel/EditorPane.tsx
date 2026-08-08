@@ -10,6 +10,7 @@ import {
   activateTab,
   closeOtherTabs,
   closeTab,
+  pinTab,
   reorderTabs,
   useEditorTabs,
 } from '../../lib/editor-tabs'
@@ -27,7 +28,7 @@ const TAB_DRAG_TYPE = 'application/x-sillage-tab'
 
 /** Onglets ouverts, et le fichier actif en dessous. */
 export function EditorPane({ conversationId }: { conversationId: string }) {
-  const { paths, active } = useEditorTabs(conversationId)
+  const { paths, active, preview } = useEditorTabs(conversationId)
   /** Onglets dont le contenu diverge du disque, pour la pastille de la barre. */
   const [dirty, setDirty] = useState<Set<string>>(() => new Set())
   const t = useTranslate()
@@ -63,8 +64,10 @@ export function EditorPane({ conversationId }: { conversationId: string }) {
               path={path}
               index={index}
               active={path === active}
+              preview={path === preview}
               dirty={dirty.has(path)}
               onActivate={() => activateTab(conversationId, path)}
+              onPin={() => pinTab(conversationId, path)}
               onClose={() => close(path)}
               onDropAt={(from) => reorderTabs(conversationId, from, index)}
             />
@@ -121,16 +124,21 @@ function Tab({
   path,
   index,
   active,
+  preview,
   dirty,
   onActivate,
+  onPin,
   onClose,
   onDropAt,
 }: {
   path: string
   index: number
   active: boolean
+  /** Onglet de parcours, que le prochain clic simple dans l'arborescence remplacera. */
+  preview: boolean
   dirty: boolean
   onActivate: () => void
+  onPin: () => void
   onClose: () => void
   onDropAt: (from: string) => void
 }) {
@@ -168,14 +176,24 @@ function Tab({
       title={path}
       data-index={index}
     >
-      <button type="button" onClick={onActivate} className="flex min-w-0 items-center gap-1.5">
+      {/* Le double clic garde l'onglet, comme dans un éditeur : c'est le même geste que
+          celui qui l'ouvre pour de bon depuis l'arborescence. */}
+      <button
+        type="button"
+        onClick={onActivate}
+        onDoubleClick={onPin}
+        className="flex min-w-0 items-center gap-1.5"
+      >
         <img
           src={fileIconUrl(path.split('/').pop() ?? path, false)}
           alt=""
           aria-hidden
           className="size-4 shrink-0"
         />
-        <span className="max-w-40 truncate text-xs">{path.split('/').pop()}</span>
+        {/* L'italique dit que l'onglet ne survivra pas au fichier suivant. */}
+        <span className={cx('max-w-40 truncate text-xs', preview && 'italic')}>
+          {path.split('/').pop()}
+        </span>
       </button>
 
       {dirty ? (
@@ -337,6 +355,9 @@ function FileView({
             onChange={(value) => {
               draft.current = value
               markDirty(path, value !== file.content)
+              // Écrire dans un fichier, c'est le garder : un aperçu qui disparaîtrait
+              // au fichier suivant emporterait la saisie avec lui.
+              pinTab(conversationId, path)
             }}
             onSave={() => void save(false)}
           />
