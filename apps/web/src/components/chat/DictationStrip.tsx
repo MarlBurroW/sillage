@@ -59,7 +59,10 @@ export function DictationStrip({
         if (peak >= HEARD_RMS) heard.current = true
         // Racine carrée et non linéaire : une voix normale plafonne vers un RMS de
         // 0,1, en linéaire les barres resteraient couchées même en parlant fort.
-        setBars((current) => [...current.slice(1), Math.min(1, Math.sqrt(peak) * 2.2)])
+        // Figé avant l'appel : l'updater s'exécute au rendu, après le `peak = 0`
+        // ci-dessous, et lirait un pic déjà remis à zéro.
+        const level = Math.min(1, Math.sqrt(peak) * 2.2)
+        setBars((current) => [...current.slice(1), level])
         setSilent(!heard.current && now - started >= SILENCE_WARNING_MS)
         peak = 0
       }
