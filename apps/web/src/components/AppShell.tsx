@@ -240,7 +240,10 @@ export function AppShell() {
         className={cx(
           // `absolute` et non `fixed` : le repère est le calque ci-dessus, donc le
           // tiroir suit le viewport visuel au lieu de passer sous le clavier.
-          'absolute inset-y-0 left-0 z-30 w-[var(--sidebar-width)] shrink-0',
+          // Pleine largeur sur mobile : à 16.5rem, un titre de conversation était coupé
+          // au bout de quelques mots. Le tiroir se recouvre de toute façon, rien ne
+          // reste à voir derrière lui.
+          'absolute inset-y-0 left-0 z-30 w-full shrink-0',
           'md:w-[var(--sidebar-desktop-width)]',
           'surface border-r border-line pt-safe',
           // Sur mobile, la sidebar est en surimpression : une translation suffit à la
@@ -303,15 +306,6 @@ export function AppShell() {
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <UpdatePrompt />
-
-      {navOpen ? (
-        <button
-          type="button"
-          aria-label={t('shell.nav.close')}
-          onClick={() => setNavOpen(false)}
-          className="absolute inset-0 z-20 bg-black/50 backdrop-blur-[2px] md:hidden"
-        />
-      ) : null}
 
       {/* Aucune gouttière : le bouton de réaffichage se pose dans le coin haut-gauche,
           et ce sont les vues qui ont un en-tête qui lui réservent sa place
