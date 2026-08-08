@@ -1,4 +1,4 @@
-import { ArrowUp, FastForward, Paperclip, Square } from 'lucide-react'
+import { ArrowUp, FastForward, Loader2, Mic, Paperclip, Square } from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -25,6 +25,7 @@ import { useComposerDrops, useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
+import { useDictation, useSttEnabled } from '../../lib/stt'
 import { useTranslate } from '../../lib/i18n'
 import { matchCommands, matchSkills, type PickerEntry } from '../../lib/composer-tokens'
 import { IconButton, cx } from '../ui'
@@ -307,6 +308,34 @@ export function Composer({
   }, [])
 
   useComposerReferences(referenceFile)
+
+  /**
+   * Texte dicté, posé au curseur avec l'espacement d'une frappe : la dictée arrive
+   * pendant que le champ a pu être réédité, c'est donc l'état courant qui fait foi.
+   */
+  const insertDictation = useCallback((spoken: string) => {
+    const node = textarea.current
+    setText((current) => {
+      const caret = node && document.activeElement === node ? node.selectionStart : current.length
+      const before = current.slice(0, caret)
+      const after = current.slice(caret)
+      const lead = before.length === 0 || /\s$/.test(before) ? '' : ' '
+      const trail = after.length === 0 || /^\s/.test(after) ? '' : ' '
+      const position = caret + lead.length + spoken.length + trail.length
+      requestAnimationFrame(() => {
+        node?.focus()
+        node?.setSelectionRange(position, position)
+      })
+      return `${before}${lead}${spoken}${trail}${after}`
+    })
+  }, [])
+
+  const sttEnabled = useSttEnabled()
+  const dictation = useDictation({
+    projectId,
+    onText: insertDictation,
+    onError: setError,
+  })
 
   // Le dépôt vise le fil, pas le champ : c'est ici que les fichiers atterrissent, avec
   // les mêmes bornes et les mêmes erreurs qu'un collage ou qu'un choix au sélecteur.
@@ -638,6 +667,29 @@ export function Composer({
             >
               <Paperclip size={16} />
             </IconButton>
+
+            {sttEnabled ? (
+              <IconButton
+                label={
+                  dictation.state === 'recording'
+                    ? t('composer.dictate.stop')
+                    : t('composer.dictate.start')
+                }
+                size="sm"
+                disabled={disabled || dictation.state === 'transcribing'}
+                onClick={() => void dictation.toggle()}
+                className={cx(
+                  dictation.state === 'recording' &&
+                    'animate-pulse bg-critical/12 text-critical hover:bg-critical/20 hover:text-critical',
+                )}
+              >
+                {dictation.state === 'transcribing' ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Mic size={16} />
+                )}
+              </IconButton>
+            ) : null}
 
             <ComposerSettings
               groups={groups}

@@ -32,6 +32,10 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
       typeof schedule === 'string' && cronScheduleSchema.safeParse(schedule).success
         ? schedule
         : config.retention.autoArchiveSchedule,
+    sttBaseUrl: readString(db, 'sttBaseUrl'),
+    sttModel: readString(db, 'sttModel'),
+    sttSecret: readString(db, 'sttSecret'),
+    sttCleanupModel: readString(db, 'sttCleanupModel'),
   }
 }
 
@@ -46,6 +50,12 @@ export function writeAppSettings(db: Db, patch: Partial<AppSettings>): void {
       .onConflictDoUpdate({ target: appSettings.key, set: { value: serialized, updatedAt: now } })
       .run()
   }
+}
+
+/** La chaîne vide comme défaut : ces réglages n'ont pas de valeur de provisionnement. */
+function readString(db: Db, key: string): string {
+  const value = readValue(db, key)
+  return typeof value === 'string' ? value : ''
 }
 
 function readValue(db: Db, key: string): unknown {

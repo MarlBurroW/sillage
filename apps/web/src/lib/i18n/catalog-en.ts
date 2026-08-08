@@ -167,6 +167,10 @@ export const en = {
   'composer.send.queue': 'Queue the message',
   'composer.send.aria': 'Send the message',
   'composer.send.queue.hint': 'Will be sent at the end of the current turn',
+  'composer.dictate.start': 'Dictate a message',
+  'composer.dictate.stop': 'Stop dictation',
+  'composer.dictate.denied': 'Microphone access was denied by the browser.',
+  'composer.dictate.failed': 'Transcription failed.',
 
   // Panneau du workspace
   'panel.aria': 'Workspace panel',
@@ -291,6 +295,35 @@ export const en = {
   'settings.section.secrets.description': 'Tokens and keys used by MCP servers',
   'settings.section.api': 'API',
   'settings.section.api.description': 'Tokens that let other tools launch tasks',
+  'settings.section.stt': 'Dictation',
+  'settings.section.stt.description': 'Voice input through an AI transcription provider',
+
+  // Dictée
+  'stt.section.title': 'Dictation',
+  'stt.section.description': 'Dictate prompts through an OpenAI-compatible transcription API',
+  'stt.adminOnly.title': 'Administrators only',
+  'stt.adminOnly.description': 'Dictation settings apply to every account on the instance.',
+  'stt.provider.title': 'Provider',
+  'stt.baseUrl.label': 'API base URL',
+  'stt.baseUrl.hint': 'Any OpenAI-compatible API works. Leave empty to turn dictation off.',
+  'stt.baseUrl.invalid': 'The URL must start with http:// or https://.',
+  'stt.model.label': 'Transcription model',
+  'stt.secret.label': 'API key',
+  'stt.secret.placeholder': 'Pick a secret',
+  'stt.secret.none': 'No secret saved yet. Add the API key to the secret store first.',
+  'stt.secret.manage': 'Open secrets',
+  'stt.cleanupModel.label': 'Cleanup model',
+  'stt.cleanupModel.hint':
+    'Chat model from the same provider that fixes technical terms and punctuation, and builds the per-project glossary. Empty turns the pass off.',
+  'stt.save': 'Save',
+  'stt.how':
+    'Recordings go from the browser to the Sillage server, which forwards them to the provider along with a short glossary of the project so names and technical terms come out right.',
+  'error.stt_not_configured': 'Dictation is not configured on this instance.',
+  'error.stt_secret_missing': 'Secret {name} does not exist.',
+  'error.stt_provider_unreachable': 'Could not reach {baseUrl}: {reason}.',
+  'error.stt_provider_error': 'The provider refused the request: {detail}',
+  'error.no_audio': 'No audio received.',
+  'error.audio_too_large': 'The recording is empty or too large.',
 
   // Jetons d'API
   'apiTokens.section.title': 'API tokens',

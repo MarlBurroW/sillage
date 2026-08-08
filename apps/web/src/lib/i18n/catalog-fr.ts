@@ -152,6 +152,10 @@ export const fr: Catalog = {
   'composer.send.queue': 'Mettre le message en file',
   'composer.send.aria': 'Envoyer le message',
   'composer.send.queue.hint': 'Sera envoyé à la fin du tour en cours',
+  'composer.dictate.start': 'Dicter un message',
+  'composer.dictate.stop': 'Arrêter la dictée',
+  'composer.dictate.denied': "L'accès au micro a été refusé par le navigateur.",
+  'composer.dictate.failed': 'La transcription a échoué.',
 
   // Panneau du workspace
   'panel.aria': 'Panneau du workspace',
@@ -277,6 +281,36 @@ export const fr: Catalog = {
   'settings.section.secrets.description': 'Jetons et clés employés par les serveurs MCP',
   'settings.section.api': 'API',
   'settings.section.api.description': 'Jetons permettant à un autre outil de lancer des tâches',
+  'settings.section.stt': 'Dictée',
+  'settings.section.stt.description': 'Saisie vocale par un fournisseur de transcription IA',
+
+  // Dictée
+  'stt.section.title': 'Dictée',
+  'stt.section.description': 'Dicter les prompts par une API de transcription au format OpenAI',
+  'stt.adminOnly.title': 'Administrateurs uniquement',
+  'stt.adminOnly.description': "Les réglages de dictée valent pour tous les comptes de l'instance.",
+  'stt.provider.title': 'Fournisseur',
+  'stt.baseUrl.label': "URL de base de l'API",
+  'stt.baseUrl.hint':
+    'Toute API au format OpenAI convient. Laisser vide pour couper la dictée.',
+  'stt.baseUrl.invalid': "L'URL doit commencer par http:// ou https://.",
+  'stt.model.label': 'Modèle de transcription',
+  'stt.secret.label': "Clé d'API",
+  'stt.secret.placeholder': 'Choisir un secret',
+  'stt.secret.none': "Aucun secret enregistré. Ajouter d'abord la clé d'API au dépôt de secrets.",
+  'stt.secret.manage': 'Ouvrir les secrets',
+  'stt.cleanupModel.label': 'Modèle de nettoyage',
+  'stt.cleanupModel.hint':
+    'Modèle de chat du même fournisseur qui corrige les termes techniques et la ponctuation, et construit le lexique par projet. Vide pour couper la passe.',
+  'stt.save': 'Enregistrer',
+  'stt.how':
+    "L'audio part du navigateur au serveur Sillage, qui le relaie au fournisseur avec un court lexique du projet pour que les noms propres et les termes techniques sortent justes.",
+  'error.stt_not_configured': "La dictée n'est pas configurée sur cette instance.",
+  'error.stt_secret_missing': "Le secret {name} n'existe pas.",
+  'error.stt_provider_unreachable': 'Impossible de joindre {baseUrl} : {reason}.',
+  'error.stt_provider_error': 'Le fournisseur a refusé la requête : {detail}',
+  'error.no_audio': 'Aucun audio reçu.',
+  'error.audio_too_large': "L'enregistrement est vide ou trop volumineux.",
 
   // Jetons d'API
   'apiTokens.section.title': "Jetons d'API",
