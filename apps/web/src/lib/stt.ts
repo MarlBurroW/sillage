@@ -118,6 +118,8 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
   const audio = useRef<AudioContext | null>(null)
+  /** Clone du flux micro réservé au vumètre, à éteindre avec le reste. */
+  const monitor = useRef<MediaStream | null>(null)
   // Les callbacks se relisent au moment où la transcription aboutit, pas à celui où
   // l'enregistrement démarre : sans ces refs, `onText` insérerait dans un texte périmé.
   const callbacks = useRef({ onText, onError })
@@ -127,6 +129,7 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
   useEffect(
     () => () => {
       stopTracks(recorder.current)
+      monitor.current?.getTracks().forEach((track) => track.stop())
       void audio.current?.close().catch(() => {})
     },
     [],
@@ -151,11 +154,14 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
       return
     }
 
-    // L'analyseur écoute le même flux que l'enregistreur : ce que le vumètre montre
-    // est ce qui part réellement, un mauvais micro sélectionné se voit tout de suite.
+    // L'analyseur écoute un clone du flux, même micro donc même signal : Safari iOS
+    // affame l'une des deux sorties quand l'enregistreur et WebAudio lisent le même
+    // MediaStream, et le vumètre tombait à plat dès le premier échantillon enregistré.
+    const meterStream = stream.clone()
+    monitor.current = meterStream
     const meter = context.createAnalyser()
     meter.fftSize = 1024
-    context.createMediaStreamSource(stream).connect(meter)
+    context.createMediaStreamSource(meterStream).connect(meter)
     if (context.state !== 'running') void context.resume().catch(() => {})
     audio.current = context
     setAnalyser(meter)
@@ -170,6 +176,8 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
     media.onstop = () => {
       stopTracks(media)
       recorder.current = null
+      meterStream.getTracks().forEach((track) => track.stop())
+      monitor.current = null
       void context.close().catch(() => {})
       audio.current = null
       setAnalyser(null)
