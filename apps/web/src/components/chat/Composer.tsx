@@ -31,6 +31,7 @@ import { useTranslate } from '../../lib/i18n'
 import { matchCommands, matchSkills, type PickerEntry } from '../../lib/composer-tokens'
 import { ConfirmDialog, IconButton, cx } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
+import { DictationStrip } from './DictationStrip'
 import { useAgentSettings } from './agent-settings'
 import { TokenPicker } from './TokenPicker'
 import { ComposerSettings } from './ComposerSettings'
@@ -621,6 +622,12 @@ export function Composer({
             />
           ) : null}
 
+          {dictation.state === 'recording' && dictation.analyser ? (
+            <DictationStrip analyser={dictation.analyser} onStop={() => void dictation.toggle()} />
+          ) : null}
+
+          {/* Masqué et non démonté pendant la dictée : le nœud garde la position du
+              curseur, là où le texte transcrit viendra s'insérer. */}
           <textarea
             ref={textarea}
             value={text}
@@ -646,6 +653,7 @@ export function Composer({
               'max-h-[200px] w-full resize-none bg-transparent px-2 py-2',
               'text-[0.9375rem] leading-relaxed text-ink outline-none',
               'placeholder:text-ink-faint disabled:opacity-60',
+              dictation.state === 'recording' && 'hidden',
             )}
           />
 

@@ -160,6 +160,8 @@ export const fr: Catalog = {
   'composer.dictate.unconfigured.body':
     "Cette instance n'a pas encore de fournisseur de transcription. Un administrateur peut en brancher un depuis les réglages de dictée.",
   'composer.dictate.unconfigured.action': 'Ouvrir les réglages',
+  'composer.dictate.recording': 'Enregistrement en cours',
+  'composer.dictate.silent': 'Aucun son capté. Vérifie le micro sélectionné.',
 
   // Panneau du workspace
   'panel.aria': 'Panneau du workspace',

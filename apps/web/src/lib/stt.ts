@@ -111,14 +111,23 @@ function recordingMimeType(): string | undefined {
 
 export function useDictation({ projectId, onText, onError }: DictationOptions) {
   const [state, setState] = useState<DictationState>('idle')
+  /** Branché sur le flux du micro pendant l'enregistrement, pour le vumètre. */
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
+  const audio = useRef<AudioContext | null>(null)
   // Les callbacks se relisent au moment où la transcription aboutit, pas à celui où
   // l'enregistrement démarre : sans ces refs, `onText` insérerait dans un texte périmé.
   const callbacks = useRef({ onText, onError })
   callbacks.current = { onText, onError }
 
   // Un composer démonté en cours d'enregistrement doit rendre le micro au système.
-  useEffect(() => () => stopTracks(recorder.current), [])
+  useEffect(
+    () => () => {
+      stopTracks(recorder.current)
+      void audio.current?.close().catch(() => {})
+    },
+    [],
+  )
 
   const start = async () => {
     if (state !== 'idle') return
@@ -131,6 +140,15 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
       return
     }
 
+    // L'analyseur écoute le même flux que l'enregistreur : ce que le vumètre montre
+    // est ce qui part réellement, un mauvais micro sélectionné se voit tout de suite.
+    const context = new AudioContext()
+    const meter = context.createAnalyser()
+    meter.fftSize = 1024
+    context.createMediaStreamSource(stream).connect(meter)
+    audio.current = context
+    setAnalyser(meter)
+
     const chunks: Blob[] = []
     const media = new MediaRecorder(stream, { mimeType: recordingMimeType() })
     recorder.current = media
@@ -141,13 +159,17 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
     media.onstop = () => {
       stopTracks(media)
       recorder.current = null
-      const audio = new Blob(chunks, { type: media.mimeType || 'audio/webm' })
-      if (audio.size === 0) {
+      void context.close().catch(() => {})
+      audio.current = null
+      setAnalyser(null)
+
+      const recording = new Blob(chunks, { type: media.mimeType || 'audio/webm' })
+      if (recording.size === 0) {
         setState('idle')
         return
       }
       setState('transcribing')
-      requestTranscription(audio, projectId)
+      requestTranscription(recording, projectId)
         .then((text) => {
           if (text) callbacks.current.onText(text)
         })
@@ -167,7 +189,7 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
     if (recorder.current?.state === 'recording') recorder.current.stop()
   }
 
-  return { state, toggle: state === 'recording' ? stop : start }
+  return { state, analyser, toggle: state === 'recording' ? stop : start }
 }
 
 function stopTracks(media: MediaRecorder | null): void {
