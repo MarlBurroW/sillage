@@ -175,6 +175,8 @@ export const en = {
   'composer.dictate.unconfigured.body':
     'This instance has no transcription provider yet. An administrator can plug one in from the dictation settings.',
   'composer.dictate.unconfigured.action': 'Open the settings',
+  'composer.dictate.recording': 'Recording in progress',
+  'composer.dictate.silent': 'No sound picked up. Check the selected microphone.',
 
   // Panneau du workspace
   'panel.aria': 'Workspace panel',
