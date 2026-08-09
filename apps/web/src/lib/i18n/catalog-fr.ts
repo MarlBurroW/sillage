@@ -174,6 +174,7 @@ export const fr: Catalog = {
   'panel.tree.refresh': "Rafraîchir l'arborescence",
   'panel.tree.hide': "Masquer l'arborescence",
   'panel.tree.show': "Afficher l'arborescence",
+  'panel.tree.resize.aria': "Largeur de l'arborescence",
   'panel.close': 'Fermer le panneau',
   'panel.resize.aria': 'Largeur du panneau',
   'panel.tab.badge': '{label}, {count} en cours',

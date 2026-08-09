@@ -17,6 +17,7 @@ const OPEN_KEY = 'sillage.panelOpen'
  */
 const WIDTH_KEY = 'sillage.sheetWidth'
 const TREE_KEY = 'sillage.panelTree'
+const TREE_WIDTH_KEY = 'sillage.treeWidth'
 
 /** En deçà, l'arborescence et l'éditeur ne tiennent plus côte à côte. */
 const MIN_WIDTH = 280
@@ -199,4 +200,53 @@ export function setPanelTree(next: boolean, persist = true): void {
   treeOpen = next
   if (persist) localStorage.setItem(TREE_KEY, next ? '1' : '0')
   for (const listener of listeners) listener()
+}
+
+/** En deçà, il ne reste plus de place pour un nom de fichier à côté de son icône. */
+const MIN_TREE_WIDTH = 150
+
+/** Ce qui reste à l'éditeur : moins, et une ligne de code ne se lit plus. */
+const MIN_EDITOR_WIDTH = 220
+
+/** Largeur d'origine de la colonne, celle qu'elle avait avant d'être réglable. */
+const DEFAULT_TREE_WIDTH = 240
+
+/**
+ * Part maximale du cadre que la colonne peut prendre.
+ *
+ * À tenir en accord avec le `min(var(--tree-width,15rem),60%)` de `FilesPane`. Les deux
+ * bornes doivent dire la même chose : la classe CSS protège l'éditeur quand le panneau
+ * a été rétréci après coup, celle-ci empêche d'enregistrer une largeur plus grande que
+ * ce qui est affiché, qui ferait sauter la colonne au prochain élargissement.
+ */
+const MAX_TREE_SHARE = 0.6
+
+/**
+ * Largeur de la colonne de l'arborescence, publiée en variable CSS.
+ *
+ * `available` est la largeur du cadre qui porte la colonne et l'éditeur, et non celle
+ * de la fenêtre : le panneau qui les contient se redimensionne lui-même, donc la place
+ * à partager n'est connue que de lui.
+ */
+export function setTreeWidth(px: number, available: number, persist: boolean): number {
+  const max = Math.max(
+    MIN_TREE_WIDTH,
+    Math.min(available * MAX_TREE_SHARE, available - MIN_EDITOR_WIDTH),
+  )
+  const width = Math.round(Math.min(max, Math.max(MIN_TREE_WIDTH, px)))
+  document.documentElement.style.setProperty('--tree-width', `${width}px`)
+  if (persist) localStorage.setItem(TREE_WIDTH_KEY, String(width))
+  return width
+}
+
+export function restoreTreeWidth(): void {
+  const stored = Number(localStorage.getItem(TREE_WIDTH_KEY))
+  const width = Number.isFinite(stored) && stored > 0 ? stored : DEFAULT_TREE_WIDTH
+  // Sans borne haute, contrairement au glissement : la place disponible est celle du
+  // panneau, qui n'est pas encore posé. C'est la classe CSS de la colonne qui empêche
+  // une largeur enregistrée au large d'écraser l'éditeur sur un panneau étroit.
+  document.documentElement.style.setProperty(
+    '--tree-width',
+    `${Math.max(MIN_TREE_WIDTH, width)}px`,
+  )
 }
