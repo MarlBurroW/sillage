@@ -16,3 +16,16 @@ const LABELS: Record<CardColumn, MessageKey> = {
 export function columnLabel(column: CardColumn): string {
   return translate(LABELS[column])
 }
+
+/**
+ * Teinte de la colonne. `review` est en caution parce que c'est la file d'attente
+ * humaine, celle qui bloque réellement, et `abandoned` reste neutre : un renoncement
+ * assumé n'est pas une alerte.
+ */
+export const COLUMN_TONES: Record<CardColumn, 'neutral' | 'accent' | 'caution' | 'positive'> = {
+  todo: 'neutral',
+  in_progress: 'accent',
+  review: 'caution',
+  done: 'positive',
+  abandoned: 'neutral',
+}

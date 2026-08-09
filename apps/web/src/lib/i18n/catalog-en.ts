@@ -924,11 +924,7 @@ export const en = {
   'activity.configRestartDeferred': 'Setting applied at the end of the turn',
 
   // Board et cartes
-  'board.title': 'Board of {project}',
-  'board.empty': 'No card yet. Add one to the backlog to describe what is left to do.',
   'board.newConversation': 'New conversation',
-  'board.closed.show': 'Show closed',
-  'board.closed.hide': 'Hide closed',
   'board.column.todo': 'To do',
   'board.column.inProgress': 'In progress',
   'board.column.review': 'To review',
@@ -960,6 +956,12 @@ export const en = {
   'card.picker.aria': 'Cards matching the reference',
   'card.picker.empty': 'No card matches.',
   'conversation.meta.card': 'Card: {title}',
+  'board.cardCount': '{count} cards',
+  'board.closed': 'Closed',
+  'board.column.empty': 'Nothing here.',
+  'board.card.new.placeholder': 'What has to be done?',
+  'draft.board': 'Board',
+  'board.card.drag': 'Move card #{number}',
   'board.panel.close': 'Close',
   'draft.card.detach': 'Detach this card',
 
