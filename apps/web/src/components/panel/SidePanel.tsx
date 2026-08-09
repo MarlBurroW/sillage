@@ -17,7 +17,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react'
-import type { McpServerStatus } from '@sillage/protocol'
+import type { AgentKind, McpServerStatus } from '@sillage/protocol'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn } from '../../lib/chat-fold'
 import { openTab } from '../../lib/editor-tabs'
@@ -59,6 +59,7 @@ import { TerminalsPane } from './TerminalsPane'
  */
 export function SidePanel({
   conversationId,
+  agent,
   editTurns,
   turnRunning,
   subAgents,
@@ -67,6 +68,8 @@ export function SidePanel({
   open,
 }: {
   conversationId: string
+  /** CLI de la conversation, pour les gestes que seuls certains CLI savent faire. */
+  agent: AgentKind
   editTurns: EditTurn[]
   turnRunning: boolean
   subAgents: SubAgent[]
@@ -295,6 +298,7 @@ export function SidePanel({
       {tab === 'agents' ? (
         <AgentsPane
           conversationId={conversationId}
+          agent={agent}
           agents={subAgents}
           background={background}
           selectedId={selectedSubAgent}

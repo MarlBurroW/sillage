@@ -196,5 +196,13 @@ export interface AgentRunner {
    * ou si le CLI ne connaît pas cette étape.
    */
   reviewPlan(requestId: string, review: PlanReview): boolean
+  /**
+   * Arrête un travail de fond par l'identifiant que `background.updated` a annoncé.
+   *
+   * Retourne false si le CLI ne sait pas le faire (capacité `stopBackgroundTask`),
+   * ou si la session n'est pas chargée. La clôture n'est pas confirmée ici : elle
+   * revient par le flux, dans le `background.updated` suivant.
+   */
+  stopBackgroundTask(taskId: string): Promise<boolean>
   stop(): Promise<void>
 }

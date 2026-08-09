@@ -199,6 +199,7 @@ export const en = {
   'panel.background.kind.monitor': 'Monitor',
   'panel.background.tools.one': '{count} tool',
   'panel.background.tools.many': '{count} tools',
+  'panel.background.stop': 'Stop this background task',
   'subagent.tokens': '{count} tokens',
   'panel.mcp.state.pending': 'Starting',
   'panel.mcp.state.connected': 'Connected',

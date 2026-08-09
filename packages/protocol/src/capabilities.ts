@@ -20,9 +20,15 @@ export interface AgentCapabilities {
    * passage par lui.
    */
   cliSessions: boolean
+  /**
+   * Le CLI sait arrêter un travail de fond (`background.updated`) sur demande, par
+   * l'identifiant que la liste porte. La clôture revient par le flux ordinaire, en
+   * `background.updated` sans la tâche arrêtée.
+   */
+  stopBackgroundTask: boolean
 }
 
 export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
-  claude: { steer: true, planReview: true, cliSessions: true },
-  codex: { steer: true, planReview: false, cliSessions: false },
+  claude: { steer: true, planReview: true, cliSessions: true, stopBackgroundTask: true },
+  codex: { steer: true, planReview: false, cliSessions: false, stopBackgroundTask: false },
 }

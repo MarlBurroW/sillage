@@ -184,6 +184,7 @@ export const fr: Catalog = {
   'panel.background.kind.monitor': 'Surveillance',
   'panel.background.tools.one': '{count} outil',
   'panel.background.tools.many': '{count} outils',
+  'panel.background.stop': 'Arrêter ce travail de fond',
   'subagent.tokens': '{count} tokens',
   'panel.mcp.state.pending': 'Démarrage',
   'panel.mcp.state.connected': 'Connecté',
