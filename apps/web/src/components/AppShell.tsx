@@ -36,15 +36,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
-} from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
 import type { ConversationDto, ConversationMetrics, ProjectDto } from '@sillage/protocol'
@@ -80,6 +72,7 @@ import { formatBytes } from '../lib/attachments'
 import { formatTokens } from '../lib/tokens'
 import { useFileDropGuard } from '../lib/file-drop'
 import { useTranslate } from '../lib/i18n'
+import { resizeHandle } from '../lib/resize-handle'
 import { useVisualViewport } from '../lib/viewport'
 import { PROJECT_COLORS } from '../lib/project-colors'
 import { useCurrentUser, useLogout } from '../lib/session'
@@ -197,36 +190,11 @@ export function AppShell() {
    * La sidebar commence au bord gauche de la fenêtre : l'abscisse du pointeur est donc
    * la largeur voulue, sans décalage à mémoriser au début du geste.
    */
-  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault()
-
-    const move = (moved: PointerEvent) => setSidebarWidth(moved.clientX, false)
-    const stop = (released: PointerEvent) => {
-      setSidebarWidth(released.clientX, true)
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', stop)
-      document.body.style.removeProperty('cursor')
-      document.body.style.removeProperty('user-select')
-    }
-
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', stop)
-    // Sans ça, le glissement sélectionne les noms de conversations au passage et le
-    // curseur redevient une flèche dès qu'on quitte la poignée.
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }
-
-  const resizeByKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const step = event.key === 'ArrowLeft' ? -16 : event.key === 'ArrowRight' ? 16 : 0
-    if (step === 0) return
-
-    const current = aside.current?.getBoundingClientRect().width
-    if (current === undefined) return
-
-    event.preventDefault()
-    setSidebarWidth(current + step, true)
-  }
+  const handle = resizeHandle({
+    widthAt: (clientX) => clientX,
+    current: () => aside.current?.getBoundingClientRect().width ?? null,
+    apply: setSidebarWidth,
+  })
 
   return (
     /**
@@ -284,8 +252,8 @@ export function AppShell() {
             aria-orientation="vertical"
             aria-label={t('shell.nav.resize.aria')}
             tabIndex={0}
-            onPointerDown={startResize}
-            onKeyDown={resizeByKey}
+            onPointerDown={handle.onPointerDown}
+            onKeyDown={handle.onKeyDown}
             className={cx(
               'absolute inset-y-0 -right-1 z-10 hidden w-2 cursor-col-resize md:block',
               // Le trait n'apparaît qu'au survol : au repos, la bordure de la sidebar

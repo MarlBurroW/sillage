@@ -189,6 +189,7 @@ export const en = {
   'panel.tree.refresh': 'Refresh the file tree',
   'panel.tree.hide': 'Hide the file tree',
   'panel.tree.show': 'Show the file tree',
+  'panel.tree.resize.aria': 'File tree width',
   'panel.close': 'Close the panel',
   'panel.resize.aria': 'Panel width',
   'panel.tab.badge': '{label}, {count} running',

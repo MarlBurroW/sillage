@@ -1,16 +1,11 @@
 import { GitBranch, Play, Trash2, X } from 'lucide-react'
-import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-} from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
 import { restoreCardPanelWidth, setCardPanelWidth } from '../../lib/board-panel'
 import { useDeleteCard, useUpdateCard } from '../../lib/cards'
 import { translate, useTranslate } from '../../lib/i18n'
+import { resizeHandle } from '../../lib/resize-handle'
 import { AgentIcon } from '../AgentIcon'
 import { Badge, Button, IconButton, cx } from '../ui'
 import { CardNotes } from './CardNotes'
@@ -51,36 +46,11 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
    * Le tiroir est collé au bord droit de la fenêtre : sa largeur vaut donc la distance
    * du pointeur à ce bord, sans décalage à mémoriser au début du geste.
    */
-  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault()
-
-    const move = (moved: globalThis.PointerEvent) =>
-      setCardPanelWidth(window.innerWidth - moved.clientX, false)
-    const stop = (released: globalThis.PointerEvent) => {
-      setCardPanelWidth(window.innerWidth - released.clientX, true)
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', stop)
-      document.body.style.removeProperty('cursor')
-      document.body.style.removeProperty('user-select')
-    }
-
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', stop)
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }
-
-  const resizeByKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    // Comme le panneau d'outils : collé à droite, aller vers la gauche élargit.
-    const step = event.key === 'ArrowLeft' ? 16 : event.key === 'ArrowRight' ? -16 : 0
-    if (step === 0) return
-
-    const current = aside.current?.getBoundingClientRect().width
-    if (current === undefined) return
-
-    event.preventDefault()
-    setCardPanelWidth(current + step, true)
-  }
+  const handle = resizeHandle({
+    widthAt: (clientX) => window.innerWidth - clientX,
+    current: () => aside.current?.getBoundingClientRect().width ?? null,
+    apply: setCardPanelWidth,
+  })
 
   const navigate = useNavigate()
   const updateCard = useUpdateCard(projectId)
@@ -271,8 +241,8 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
         aria-orientation="vertical"
         aria-label={t('board.panel.resize')}
         tabIndex={0}
-        onPointerDown={startResize}
-        onKeyDown={resizeByKey}
+        onPointerDown={handle.onPointerDown}
+        onKeyDown={handle.onKeyDown}
         className={cx(
           'absolute inset-y-0 -left-1 hidden w-2 cursor-col-resize md:block',
           'after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2',
