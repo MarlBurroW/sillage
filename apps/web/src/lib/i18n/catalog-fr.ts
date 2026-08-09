@@ -912,11 +912,7 @@ export const fr: Catalog = {
   'activity.configRestartDeferred': 'Réglage appliqué à la fin du tour',
 
   // Board et cartes
-  'board.title': 'Board de {project}',
-  'board.empty': "Aucune carte pour l'instant. Ajoute-en une au backlog pour décrire ce qu'il reste à faire.",
   'board.newConversation': 'Nouvelle conversation',
-  'board.closed.show': 'Voir les terminées',
-  'board.closed.hide': 'Masquer les terminées',
   'board.column.todo': 'À faire',
   'board.column.inProgress': 'En cours',
   'board.column.review': 'À vérifier',
@@ -948,6 +944,12 @@ export const fr: Catalog = {
   'card.picker.aria': 'Cartes correspondant à la référence',
   'card.picker.empty': 'Aucune carte ne correspond.',
   'conversation.meta.card': 'Carte : {title}',
+  'board.cardCount': '{count} cartes',
+  'board.closed': 'Terminées',
+  'board.column.empty': 'Rien ici.',
+  'board.card.new.placeholder': "Qu'y a-t-il à faire ?",
+  'draft.board': 'Board',
+  'board.card.drag': 'Déplacer la carte #{number}',
   'board.panel.close': 'Fermer',
   'draft.card.detach': 'Détacher cette carte',
 

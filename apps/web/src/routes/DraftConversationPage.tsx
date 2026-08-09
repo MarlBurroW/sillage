@@ -1,4 +1,4 @@
-import { Check, History, X } from 'lucide-react'
+import { Check, History, SquareKanban, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -183,6 +183,19 @@ export function DraftConversationPage() {
             <span>{AGENT_LABELS[agent]}</span>
           </div>
         </div>
+        {/* Le board depuis le brouillon : c'est ici qu'on se demande sur quoi partir,
+            et la liste des cartes est la réponse. Le lien manque à cet endroit précis
+            quand on ouvre une conversation avant d'avoir choisi son chantier. */}
+        {projectId ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<SquareKanban size={15} />}
+            onClick={() => navigate(`/p/${projectId}/board`)}
+          >
+            {t('draft.board')}
+          </Button>
+        ) : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
