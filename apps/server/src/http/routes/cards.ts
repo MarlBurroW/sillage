@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray, max, sql } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, max, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
+  cardNotes,
   cardRefs,
   cards,
   conversations,
@@ -13,12 +14,14 @@ import {
 } from '@sillage/db'
 import {
   createCardBodySchema,
+  createCardNoteBodySchema,
   parseCardReferences,
   reorderCardsBodySchema,
   updateCardBodySchema,
   type CardConversationDto,
   type CardDto,
   type CardLinkDto,
+  type CardNoteDto,
 } from '@sillage/protocol'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
@@ -146,6 +149,16 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
     const outgoing = group(links, (row) => row.sourceId)
     const incoming = group(backlinks, (row) => row.targetId)
 
+    const notes = new Map(
+      ctx.db
+        .select({ cardId: cardNotes.cardId, total: count() })
+        .from(cardNotes)
+        .where(inArray(cardNotes.cardId, ids))
+        .groupBy(cardNotes.cardId)
+        .all()
+        .map((row) => [row.cardId, row.total]),
+    )
+
     const authors = new Map(
       ctx.db
         .select({ id: users.id, displayName: users.displayName })
@@ -173,6 +186,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       conversations: sessions.get(row.id) ?? [],
+      noteCount: notes.get(row.id) ?? 0,
       references: outgoing.get(row.id) ?? [],
       referencedBy: incoming.get(row.id) ?? [],
     }))
@@ -366,6 +380,49 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
     return reply.status(204).send()
   })
 
+  app.get('/api/cards/:id/notes', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    loadCard(id, user.id)
+    return readNotes(ctx, id)
+  })
+
+  app.post('/api/cards/:id/notes', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = createCardNoteBodySchema.parse(request.body)
+    loadCard(id, user.id)
+
+    ctx.db
+      .insert(cardNotes)
+      .values({
+        id: randomUUID(),
+        cardId: id,
+        conversationId: null,
+        userId: user.id,
+        body: body.body,
+        createdAt: Date.now(),
+      })
+      .run()
+
+    return reply.status(201).send(readNotes(ctx, id))
+  })
+
+  app.delete('/api/card-notes/:id', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+
+    const note = ctx.db.select().from(cardNotes).where(eq(cardNotes.id, id)).get()
+    if (!note) throw notFound('card_note_not_found', 'Note not found.')
+    // La lecture du projet suffit à supprimer : les notes d'agent n'ont pas d'auteur
+    // humain à protéger, et une note fausse doit pouvoir partir sans passer par son
+    // propriétaire, qui est parfois un process mort depuis des jours.
+    loadCard(note.cardId, user.id)
+
+    ctx.db.delete(cardNotes).where(eq(cardNotes.id, id)).run()
+    return reply.status(204).send()
+  })
+
   app.post('/api/projects/:id/cards/order', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -429,6 +486,48 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
 
     return { ok: true }
   })
+}
+
+/**
+ * Le fil d'une carte, du plus ancien au plus récent.
+ *
+ * Le titre de la conversation auteure est joint plutôt que son seul identifiant : une
+ * note dit ce qu'une session a fait, et « quelle session » se lit par son titre. La
+ * jointure est gauche parce que la note lui survit.
+ */
+export function readNotes(ctx: AppContext, cardId: string): CardNoteDto[] {
+  const rows = ctx.db
+    .select({
+      id: cardNotes.id,
+      body: cardNotes.body,
+      createdAt: cardNotes.createdAt,
+      conversationId: cardNotes.conversationId,
+      conversationTitle: conversations.title,
+      agent: conversations.agent,
+      userName: users.displayName,
+    })
+    .from(cardNotes)
+    .leftJoin(conversations, eq(conversations.id, cardNotes.conversationId))
+    .leftJoin(users, eq(users.id, cardNotes.userId))
+    .where(eq(cardNotes.cardId, cardId))
+    .orderBy(asc(cardNotes.createdAt))
+    .all()
+
+  return rows.map((row) => ({
+    id: row.id,
+    body: row.body,
+    createdAt: row.createdAt,
+    author:
+      row.userName !== null
+        ? { kind: 'user' as const, name: row.userName }
+        : {
+            kind: 'agent' as const,
+            agent: row.agent ?? 'claude',
+            // Null quand la conversation a été supprimée : la note reste, son lien non.
+            conversationId: row.conversationTitle === null ? null : row.conversationId,
+            conversationTitle: row.conversationTitle ?? '',
+          },
+  }))
 }
 
 /**

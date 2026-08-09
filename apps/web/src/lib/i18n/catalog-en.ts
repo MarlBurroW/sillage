@@ -963,6 +963,13 @@ export const en = {
   'draft.board': 'Board',
   'board.card.drag': 'Move card #{number}',
   'board.panel.resize': 'Resize the panel',
+  'board.card.notes.title': 'Notes',
+  'board.card.notes.none': 'No note yet. Sessions leave here what the next one cannot rediscover on its own.',
+  'board.card.notes.add': 'Add a note',
+  'board.card.notes.placeholder': 'A decision, a constraint, a dead end worth remembering.',
+  'board.card.notes.remove': 'Delete this note',
+  'board.card.notes.removeConfirm': 'Delete this note?',
+  'board.card.notes.goneSession': 'deleted session',
   'board.panel.close': 'Close',
   'draft.card.detach': 'Detach this card',
 

@@ -951,6 +951,13 @@ export const fr: Catalog = {
   'draft.board': 'Board',
   'board.card.drag': 'Déplacer la carte #{number}',
   'board.panel.resize': 'Redimensionner le panneau',
+  'board.card.notes.title': 'Notes',
+  'board.card.notes.none': "Aucune note. Les sessions laissent ici ce que la suivante ne pourra pas redécouvrir seule.",
+  'board.card.notes.add': 'Ajouter une note',
+  'board.card.notes.placeholder': 'Une décision, une contrainte, une impasse qui vaut la peine.',
+  'board.card.notes.remove': 'Supprimer cette note',
+  'board.card.notes.removeConfirm': 'Supprimer cette note ?',
+  'board.card.notes.goneSession': 'session supprimée',
   'board.panel.close': 'Fermer',
   'draft.card.detach': 'Détacher cette carte',
 
