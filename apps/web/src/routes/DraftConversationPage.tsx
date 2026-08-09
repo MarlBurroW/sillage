@@ -1,6 +1,6 @@
 import { Check, History, SquareKanban, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
   agentKindSchema,
@@ -24,6 +24,7 @@ import {
 import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
+import { useRememberProjectView } from '../lib/project-view'
 import { locale, useTranslate } from '../lib/i18n'
 import { useSidebarHidden } from '../lib/sidebar'
 import { useUserSettings } from '../lib/user-settings'
@@ -89,6 +90,13 @@ export function DraftConversationPage() {
     chosenAgent ?? (requested.success || installed(suggested) ? suggested : (fallback ?? suggested))
 
   const blocked = unavailableReason(availability?.agents.find((a) => a.agent === agent))
+
+  // Une arrivée depuis le board ne compte pas : ni le lancement d'une carte, qui porte
+  // sa référence, ni le bouton de conversation neuve du board, qui le dit.
+  const location = useLocation()
+  const fromBoard =
+    params.get('card') !== null || (location.state as { from?: string } | null)?.from === 'board'
+  useRememberProjectView(projectId, fromBoard ? null : 'draft')
 
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const { data: projects } = useProjects()
