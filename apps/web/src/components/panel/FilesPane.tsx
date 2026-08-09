@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { setPanelTree, usePanelTree } from '../../lib/panel'
+import { useTreeSync } from '../../lib/tree'
 import { cx } from '../ui'
 import { EditorPane } from './EditorPane'
 import { FileTree } from './FileTree'
@@ -21,6 +22,8 @@ const NARROW_PX = 560
 export function FilesPane({ conversationId }: { conversationId: string }) {
   const treeOpen = usePanelTree()
   const host = useRef<HTMLDivElement>(null)
+
+  useTreeSync(conversationId)
 
   /**
    * Mesuré au moment du clic plutôt que suivi en état : la largeur ne sert qu'à

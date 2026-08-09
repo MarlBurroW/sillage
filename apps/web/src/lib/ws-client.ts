@@ -1,5 +1,6 @@
 import {
   HEARTBEAT_INTERVAL_MS,
+  MAX_WATCHED_PATHS,
   type AgentConfig,
   type ClientMessage,
   type ConversationMetrics,
@@ -54,6 +55,12 @@ export interface StatusWatcher {
 const MAX_BACKOFF_MS = 15_000
 
 /**
+ * Les niveaux de l'arborescence se montent en cascade au dépliage. Ce délai laisse la
+ * cascade retomber avant de déclarer l'ensemble, plutôt qu'un message par niveau.
+ */
+const TREE_WATCH_FLUSH_MS = 50
+
+/**
  * Client WebSocket unique de l'onglet.
  *
  * Il ne porte aucun état métier : le journal reste la source de vérité (invariant I2).
@@ -66,6 +73,16 @@ class WsClient {
   private readonly listeners = new Map<string, Set<StreamListener>>()
   private readonly cursors = new Map<string, number>()
   private readonly statusWatchers = new Set<StatusWatcher>()
+  /**
+   * Dossiers suivis sur le disque, comptés par conversation.
+   *
+   * Comptés et non listés : le même chemin peut être demandé deux fois, par deux
+   * panneaux ouverts sur la même conversation comme par le double montage du mode
+   * strict de React, et le premier départ ne doit pas emporter la veille de l'autre.
+   */
+  private readonly treePaths = new Map<string, Map<string, number>>()
+  private readonly treeListeners = new Set<(conversationId: string, path: string) => void>()
+  private treeFlushTimer: number | null = null
   private reconnectAttempts = 0
   private reconnectTimer: number | null = null
   private heartbeatTimer: number | null = null
@@ -88,7 +105,7 @@ class WsClient {
 
   /** Plus personne n'attend rien : inutile de tenir ou de rétablir le socket. */
   private get idle(): boolean {
-    return this.listeners.size === 0 && this.statusWatchers.size === 0
+    return this.listeners.size === 0 && this.statusWatchers.size === 0 && this.treePaths.size === 0
   }
 
   private send(message: ClientMessage): void {
@@ -136,6 +153,61 @@ class WsClient {
     }
   }
 
+  /**
+   * Demande que ce dossier soit suivi sur le disque tant que l'appelant l'affiche.
+   *
+   * Le serveur ne suit que ce qui est déclaré ici : une veille par dossier déplié, et
+   * rien de récursif. Voir `tree-watch.ts` côté serveur.
+   */
+  watchTree(conversationId: string, path: string): () => void {
+    const paths = this.treePaths.get(conversationId) ?? new Map<string, number>()
+    if (!this.treePaths.has(conversationId)) this.treePaths.set(conversationId, paths)
+    paths.set(path, (paths.get(path) ?? 0) + 1)
+
+    this.connect()
+    this.scheduleTreeFlush()
+
+    return () => {
+      const held = this.treePaths.get(conversationId)
+      const count = held?.get(path)
+      if (!held || count === undefined) return
+
+      if (count > 1) held.set(path, count - 1)
+      else held.delete(path)
+      // La conversation reste inscrite avec un ensemble vide : c'est ce qui fait partir
+      // le message qui libère les dernières veilles du serveur.
+      this.scheduleTreeFlush()
+    }
+  }
+
+  /** Prévenu quand un dossier suivi a bougé sur le disque. */
+  onTreeChanged(listener: (conversationId: string, path: string) => void): () => void {
+    this.treeListeners.add(listener)
+    return () => {
+      this.treeListeners.delete(listener)
+    }
+  }
+
+  private scheduleTreeFlush(): void {
+    if (this.treeFlushTimer !== null) return
+    this.treeFlushTimer = window.setTimeout(() => {
+      this.treeFlushTimer = null
+      this.sendTreeWatches()
+    }, TREE_WATCH_FLUSH_MS)
+  }
+
+  private sendTreeWatches(): void {
+    for (const [conversationId, paths] of this.treePaths) {
+      // Tronqué ici et pas seulement borné côté serveur : au-delà de la limite, le
+      // message entier serait refusé et l'arborescence perdrait toutes ses veilles au
+      // lieu des seules surnuméraires. Un explorateur déplié à ce point retombe sur ce
+      // qu'il avait avant : la fin de tour et le bouton de rafraîchissement.
+      const watched = [...paths.keys()].slice(0, MAX_WATCHED_PATHS)
+      this.send({ t: 'watch-tree', conversationId, paths: watched })
+      if (paths.size === 0) this.treePaths.delete(conversationId)
+    }
+  }
+
   /** Curseur courant, utilisé après un rechargement REST pour se réaligner. */
   setCursor(conversationId: string, seq: number): void {
     const current = this.cursors.get(conversationId) ?? -1
@@ -154,6 +226,9 @@ class WsClient {
       for (const [conversationId, afterSeq] of this.cursors) {
         this.send({ t: 'subscribe', conversationId, afterSeq })
       }
+      // Le serveur a libéré les veilles de la connexion tombée : elles sont redéclarées
+      // en entier, l'ensemble vivant côté client étant la référence.
+      this.sendTreeWatches()
       // Les fils rattrapent leur retard par leur curseur ; les statuts n'ont pas de
       // journal derrière eux et doivent être relus autrement.
       if (this.opened) {
@@ -185,6 +260,13 @@ class WsClient {
 
     if (message.t === 'error') {
       console.warn('[sillage] websocket:', message.code, message.message)
+      return
+    }
+
+    // Avant le filtre par abonné : l'explorateur suit une conversation dont le fil n'a
+    // pas d'abonnement au journal, le panneau se lisant sans session démarrée.
+    if (message.t === 'tree-changed') {
+      for (const listener of this.treeListeners) listener(message.conversationId, message.path)
       return
     }
 

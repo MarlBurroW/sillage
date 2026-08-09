@@ -11,6 +11,8 @@ import type { PushService } from '../push/push-service.js'
 import type { SessionManager, StatusBroadcast } from '../sessions/session-manager.js'
 import type { AppContext } from '../http/context.js'
 import { canReadConversation, readConversationState } from '../http/routes/conversations.js'
+import { watchDirectory } from '../tree-watch.js'
+import { conversationWorkspace, resolveInside } from '../workspace.js'
 
 /**
  * Un socket par onglet, multiplexé sur plusieurs conversations : la sidebar suit les
@@ -21,6 +23,8 @@ import { canReadConversation, readConversationState } from '../http/routes/conve
  */
 class Connection {
   private readonly subscriptions = new Map<string, () => void>()
+  /** Par conversation, la veille disque de chaque dossier déplié chez ce client. */
+  private readonly treeWatches = new Map<string, Map<string, () => void>>()
   private alive = true
 
   constructor(
@@ -109,6 +113,61 @@ class Connection {
   }
 
   /**
+   * Aligne les veilles disque de cette conversation sur les dossiers déclarés.
+   *
+   * Indépendant de l'abonnement au journal : le panneau latéral lit l'arborescence
+   * d'une conversation dont aucune session ne tourne. Le droit de lecture est revérifié
+   * à chaque déclaration, comme pour le statut, plutôt que retenu du premier appel.
+   */
+  watchTree(conversationId: string, paths: string[]): void {
+    const current = this.treeWatches.get(conversationId) ?? new Map<string, () => void>()
+
+    let cwd: string | null = null
+    if (paths.length > 0) {
+      try {
+        cwd = conversationWorkspace(this.ctx.db, conversationId, this.userId)
+      } catch {
+        this.send({
+          t: 'error',
+          code: 'conversation_not_found',
+          message: 'Conversation not found.',
+        })
+      }
+    }
+
+    const wanted = new Set(cwd === null ? [] : paths)
+
+    for (const [path, stop] of current) {
+      if (wanted.has(path)) continue
+      stop()
+      current.delete(path)
+    }
+
+    try {
+      for (const path of wanted) {
+        if (current.has(path) || cwd === null) continue
+        const absolute = resolveInside(cwd, path)
+        current.set(
+          path,
+          watchDirectory(absolute, () => this.send({ t: 'tree-changed', conversationId, path })),
+        )
+      }
+    } catch {
+      // `resolveInside` refuse un chemin qui sort du répertoire de travail. Le client ne
+      // propose que des chemins qu'il tient du serveur : arriver ici est un défaut, et
+      // les veilles déjà posées restent valides.
+      this.send({
+        t: 'error',
+        code: 'path_outside_workspace',
+        message: 'Path is outside the working directory.',
+      })
+    }
+
+    if (current.size > 0) this.treeWatches.set(conversationId, current)
+    else this.treeWatches.delete(conversationId)
+  }
+
+  /**
    * Le statut part pour toute conversation lisible, pas seulement pour le fil abonné :
    * la sidebar suit des lignes qu'elle n'a pas ouvertes, et sans ça leur point « en
    * cours » ne bougeait qu'au rechargement de la page.
@@ -150,6 +209,10 @@ class Connection {
   close(): void {
     for (const unsubscribe of this.subscriptions.values()) unsubscribe()
     this.subscriptions.clear()
+    for (const watches of this.treeWatches.values()) {
+      for (const stop of watches.values()) stop()
+    }
+    this.treeWatches.clear()
   }
 
   /** Socket mort et non refermé (mise en veille mobile) : on coupe sans attendre. */
@@ -217,6 +280,9 @@ export async function registerWebSocketHub(
           return
         case 'unsubscribe':
           connection.unsubscribe(parsed.conversationId)
+          return
+        case 'watch-tree':
+          connection.watchTree(parsed.conversationId, parsed.paths)
           return
         case 'ping':
           connection.send({ t: 'pong' })

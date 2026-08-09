@@ -8,6 +8,9 @@ import type { SillageEvent } from './events.js'
  * (la sidebar suit les statuts pendant que la vue principale suit un fil).
  */
 
+/** Au-delà, l'explorateur déplié coûte plus de veilles que la machine n'en accorde. */
+export const MAX_WATCHED_PATHS = 200
+
 export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({
     t: z.literal('subscribe'),
@@ -15,6 +18,19 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     afterSeq: z.number().int().min(0),
   }),
   z.object({ t: z.literal('unsubscribe'), conversationId: z.string() }),
+  /**
+   * Dossiers dont le client affiche le contenu, et qu'il veut donc voir suivis sur le
+   * disque. L'ensemble est déclaré entier à chaque fois plutôt que par ajouts et
+   * retraits : le client connaît ses niveaux dépliés, et un delta perdu laisserait un
+   * dossier suivi pour toujours ou plus du tout.
+   */
+  z.object({
+    t: z.literal('watch-tree'),
+    conversationId: z.string(),
+    // Borné parce que chaque dossier coûte une veille inotify, ressource comptée par
+    // utilisateur sur la machine hôte.
+    paths: z.array(z.string()).max(MAX_WATCHED_PATHS),
+  }),
   z.object({ t: z.literal('ping') }),
 ])
 export type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -97,6 +113,17 @@ export type ServerMessage =
    * déclenchée sur ce même signal courrait après lui.
    */
   | { t: 'title'; conversationId: string; title: string }
+  /**
+   * Le contenu d'un dossier suivi a bougé sur le disque : le client relit ce niveau.
+   *
+   * Un chemin par message, la veille étant déjà amortie côté serveur : regrouper
+   * demanderait de retarder les dossiers calmes derrière celui qui s'agite.
+   *
+   * Ce que le rafraîchissement de fin de tour ne voit pas passe par ici : un terminal
+   * du panneau, un éditeur hors de Sillage, une autre conversation sur le même
+   * worktree.
+   */
+  | { t: 'tree-changed'; conversationId: string; path: string }
   /**
    * Le retard dépasse CATCHUP_THRESHOLD : le client doit recharger par la route REST
    * paginée plutôt que de recevoir le delta sur le socket.
