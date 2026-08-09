@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, isNull, min, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversationReads, conversations, projects, type ConversationRow } from '@sillage/db'
+import { cards, conversationReads, conversations, projects, type ConversationRow } from '@sillage/db'
 import {
   createConversationBodySchema,
   editDiffQuerySchema,
@@ -18,6 +18,7 @@ import {
   commitHashSchema,
   commitListQuerySchema,
   updateConversationBodySchema,
+  type CardLinkDto,
   type CommitDiffDto,
   type CommitListDto,
   type ConversationDto,
@@ -34,6 +35,7 @@ import { createConversation } from '../../conversations/create.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
+import { advanceCardOnLaunch, assertCardInProject, readCardLink } from './cards.js'
 import { readCommitDiff, readCommits, readGitStatus, readHeadCommit, readWorkingDiff } from '../../git.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
@@ -45,18 +47,20 @@ import { requireUser } from '../require-user.js'
 const PAGE_SIZE = 500
 
 /**
- * `lastReadSeq` est passé plutôt que relu ici : les routes de liste le ramènent en une
- * jointure, et une lecture par ligne rendrait la sidebar quadratique.
+ * `lastReadSeq` et `card` sont passés plutôt que relus ici : les routes de liste les
+ * ramènent en une jointure, et une lecture par ligne rendrait la sidebar quadratique.
  */
 export function conversationToDto(
   row: ConversationRow,
   userId: string,
   lastReadSeq: number,
+  card: CardLinkDto | null,
 ): ConversationDto {
   return {
     id: row.id,
     projectId: row.projectId,
     worktreeId: row.worktreeId,
+    card,
     userId: row.userId,
     title: row.title,
     titleSetByUser: row.titleSetByUser,
@@ -169,8 +173,18 @@ export function registerConversationRoutes(
     const user = requireUser(request)
 
     const rows = ctx.db
-      .select({ conversation: conversations, lastReadSeq: conversationReads.lastReadSeq })
+      .select({
+        conversation: conversations,
+        lastReadSeq: conversationReads.lastReadSeq,
+        card: {
+          id: cards.id,
+          number: cards.number,
+          title: cards.title,
+          column: cards.column,
+        },
+      })
       .from(conversations)
+      .leftJoin(cards, eq(cards.id, conversations.cardId))
       .innerJoin(projects, eq(projects.id, conversations.projectId))
       .leftJoin(
         conversationReads,
@@ -186,7 +200,9 @@ export function registerConversationRoutes(
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
 
-    return rows.map((row) => conversationToDto(row.conversation, user.id, row.lastReadSeq ?? 0))
+    return rows.map((row) =>
+      conversationToDto(row.conversation, user.id, row.lastReadSeq ?? 0, row.card),
+    )
   })
 
   app.get('/api/projects/:id/conversations', async (request) => {
@@ -201,8 +217,18 @@ export function registerConversationRoutes(
     }
 
     const rows = ctx.db
-      .select({ conversation: conversations, lastReadSeq: conversationReads.lastReadSeq })
+      .select({
+        conversation: conversations,
+        lastReadSeq: conversationReads.lastReadSeq,
+        card: {
+          id: cards.id,
+          number: cards.number,
+          title: cards.title,
+          column: cards.column,
+        },
+      })
       .from(conversations)
+      .leftJoin(cards, eq(cards.id, conversations.cardId))
       .leftJoin(
         conversationReads,
         and(
@@ -218,7 +244,9 @@ export function registerConversationRoutes(
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
 
-    return rows.map((row) => conversationToDto(row.conversation, user.id, row.lastReadSeq ?? 0))
+    return rows.map((row) =>
+      conversationToDto(row.conversation, user.id, row.lastReadSeq ?? 0, row.card),
+    )
   })
 
   app.post('/api/projects/:id/conversations', async (request, reply) => {
@@ -237,6 +265,7 @@ export function registerConversationRoutes(
     }
 
     if (body.worktreeId) assertWorktreeBelongs(ctx, id, body.worktreeId)
+    if (body.cardId) assertCardInProject(ctx, body.cardId, id)
 
     // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
     // base : la conversation garde ensuite une configuration explicite et stable.
@@ -249,6 +278,7 @@ export function registerConversationRoutes(
       agent: body.agent,
       config,
       worktreeId: body.worktreeId,
+      cardId: body.cardId,
       title: body.title,
       origin: null,
       firstMessage: firstMessage && {
@@ -264,9 +294,14 @@ export function registerConversationRoutes(
     // a été supprimée et les fichiers restent réutilisables pour une nouvelle tentative.
     if (firstMessage) attachments.claim(firstMessage.attachmentIds, row.id)
 
+    // La seule transition automatique du board, et elle tient à ce qu'elle suit un
+    // geste : c'est l'envoi qui vient de réussir, pas la découverte d'une session en
+    // train de tourner. Une carte plus avancée que `todo` ne recule pas.
+    if (body.cardId) advanceCardOnLaunch(ctx, body.cardId)
+
     // Curseur à zéro : le client marque la conversation lue en s'y installant, comme
     // pour n'importe quelle autre. La devancer ici mentirait sur ce qui est en base.
-    return reply.status(201).send(conversationToDto(row, user.id, 0))
+    return reply.status(201).send(conversationToDto(row, user.id, 0, readCardLink(ctx, body.cardId)))
   })
 
   /**
@@ -376,14 +411,22 @@ export function registerConversationRoutes(
     // souvient de tout l'historique conservé (invariant I2).
     const copied = log.copyThrough(id, row.id, body.throughSeq)
 
-    return reply.status(201).send(conversationToDto({ ...row, lastSeq: copied }, user.id, 0))
+    // Le fork hérite du rattachement : c'est le même travail exploré autrement.
+    return reply
+      .status(201)
+      .send(conversationToDto({ ...row, lastSeq: copied }, user.id, 0, readCardLink(ctx, row.cardId)))
   })
 
   app.get('/api/conversations/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const conversation = await loadReadable(id, user.id)
-    return conversationToDto(conversation, user.id, readCursor(id, user.id))
+    return conversationToDto(
+      conversation,
+      user.id,
+      readCursor(id, user.id),
+      readCardLink(ctx, conversation.cardId),
+    )
   })
 
   /**
@@ -534,6 +577,13 @@ export function registerConversationRoutes(
     }
     if (body.pinned !== undefined) patch.pinned = body.pinned
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
+
+    if (body.cardId !== undefined) {
+      if (body.cardId) assertCardInProject(ctx, body.cardId, conversation.projectId)
+      patch.cardId = body.cardId
+      // Rattacher après coup ne fait pas avancer la carte : le geste dit « cette
+      // session traitait déjà ce travail », il ne lance rien.
+    }
 
     if (body.config !== undefined) {
       if (body.config.agent !== conversation.agent) {

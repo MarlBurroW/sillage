@@ -1,5 +1,5 @@
-import { and, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
-import { conversations, worktrees, type Db } from '@sillage/db'
+import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
+import { cards, conversations, worktrees, type Db } from '@sillage/db'
 
 /**
  * Ce qui se passe sur le projet, injecté au démarrage d'une session.
@@ -85,12 +85,64 @@ function describe(row: Row, now: number): string {
 }
 
 /**
+ * La carte que cette conversation traite, et ce qui l'a précédée dessus.
+ *
+ * C'est la partie de l'aperçu qui parle du travail demandé plutôt que de son voisinage,
+ * et la seule qui manquait vraiment : un agent qui reprend un chantier à la quatrième
+ * session repartait de zéro sans savoir qu'il y en avait eu trois.
+ */
+function cardBriefing(db: Db, input: OverviewInput): string | null {
+  const card = db
+    .select({ number: cards.number, title: cards.title, column: cards.column, id: cards.id })
+    .from(cards)
+    .innerJoin(conversations, eq(conversations.cardId, cards.id))
+    .where(eq(conversations.id, input.conversationId))
+    .get()
+  if (!card) return null
+
+  const [before] = db
+    .select({ total: count() })
+    .from(conversations)
+    .where(and(eq(conversations.cardId, card.id), ne(conversations.id, input.conversationId)))
+    .all()
+
+  const previous = before?.total ?? 0
+  const lines = [
+    `Cette conversation traite la carte #${card.number} « ${card.title} », ${COLUMN_WORDS[card.column]}.`,
+  ]
+
+  if (previous > 0) {
+    lines.push(
+      `${previous} autre(s) session(s) ont déjà travaillé dessus : ce n'est pas un sujet neuf.`,
+    )
+  }
+
+  if (input.sillageMcp) {
+    lines.push(
+      `\`read_card\` avec le numéro ${card.number} rend sa description entière, les notes des sessions précédentes et les cartes qui la citent ; \`add_card_note\` laisse à la suivante ce qu'elle ne pourra pas redécouvrir seule, et c'est à faire avant de terminer. La colonne d'une carte, elle, se change dans l'interface et jamais par toi.`,
+    )
+  }
+
+  return lines.join(' ')
+}
+
+/** Les colonnes en toutes lettres : les valeurs stockées sont des identifiants. */
+const COLUMN_WORDS: Record<string, string> = {
+  todo: 'à faire',
+  in_progress: 'en cours',
+  review: 'à vérifier',
+  done: 'marquée terminée',
+  abandoned: 'marquée abandonnée',
+}
+
+/**
  * Null quand il n'y a rien à dire, et c'est important : un aperçu vide répété à chaque
  * démarrage apprend au modèle à ne plus le lire, et le jour où il porte quelque chose
  * il passe inaperçu.
  */
 export function projectOverview(db: Db, input: OverviewInput): string | null {
   const now = Date.now()
+  const briefing = cardBriefing(db, input)
 
   const rows = db
     .select({
@@ -124,16 +176,19 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
     .limit(MAX_SESSIONS)
     .all() as Row[]
 
-  if (rows.length === 0) return null
+  // La carte parle même quand le projet est calme : elle dit ce qui est demandé, ce que
+  // le voisinage ne dit pas.
+  if (rows.length === 0) return briefing
 
   const working = rows.filter(
     (row) => row.status === 'running' || row.background > 0 || row.loops > 0,
   )
 
-  const parts = [
+  const parts = briefing ? [briefing] : []
+  parts.push(
     `Autres sessions Sillage sur ce projet, ${working.length > 0 ? `dont ${working.length} en cours` : 'aucune en cours'} :`,
     rows.map((row) => describe(row, now)).join('\n'),
-  ]
+  )
 
   if (working.length > 0) {
     parts.push(
@@ -143,7 +198,7 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
 
   if (input.sillageMcp) {
     parts.push(
-      'Les outils du serveur `sillage` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment.',
+      'Les outils du serveur `sillage` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment, `list_cards` et `read_card` pour le travail que ce projet s\'est donné.',
     )
   }
 
