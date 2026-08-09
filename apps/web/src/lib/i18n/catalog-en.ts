@@ -962,6 +962,7 @@ export const en = {
   'board.card.new.placeholder': 'What has to be done?',
   'draft.board': 'Board',
   'board.card.drag': 'Move card #{number}',
+  'board.panel.resize': 'Resize the panel',
   'board.panel.close': 'Close',
   'draft.card.detach': 'Detach this card',
 

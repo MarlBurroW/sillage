@@ -21,7 +21,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { ChevronDown, ChevronRight, Plus, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
 import { CardPanel } from '../components/board/CardPanel'
@@ -30,6 +30,7 @@ import { columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, cx } from '../components/ui'
 import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
+import { PANEL_TRANSITION_MS } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useSidebarHidden } from '../lib/sidebar'
 import { useMediaQuery } from '../lib/viewport'
@@ -86,7 +87,12 @@ export function BoardPage() {
   const reorder = useReorderCards(projectId ?? '')
 
   const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
-  const [showClosed, setShowClosed] = useState(false)
+  /**
+   * Visibles d'emblée : le board dit où en est le projet, et masquer ce qui est fini
+   * en cache la moitié. Le repli reste offert pour retrouver de la place quand le
+   * cimetière devient long.
+   */
+  const [showClosed, setShowClosed] = useState(true)
   /**
    * Disposition pendant le geste, nulle au repos.
    *
@@ -114,6 +120,21 @@ export function BoardPage() {
 
   const openNumber = Number(params.get('carte'))
   const openCard = (cards ?? []).find((card) => card.number === openNumber) ?? null
+  /**
+   * Le tiroir reste monté le temps de sortir de l'écran, comme le panneau d'outils
+   * d'une conversation : le démonter à la fermeture le ferait disparaître d'un coup,
+   * sans que l'animation ait pu se jouer.
+   */
+  const [lingering, setLingering] = useState<CardDto | null>(openCard)
+  useEffect(() => {
+    if (openCard) {
+      setLingering(openCard)
+      return
+    }
+    const timer = setTimeout(() => setLingering(null), PANEL_TRANSITION_MS)
+    return () => clearTimeout(timer)
+  }, [openCard])
+
   const showCard = (number: number | null) => {
     const next = new URLSearchParams(params)
     if (number === null) next.delete('carte')
@@ -191,9 +212,11 @@ export function BoardPage() {
   const shown = wide ? [...open, ...(showClosed ? CARD_CLOSED_COLUMNS : [])] : [visibleColumn]
 
   return (
-    // `relative` : au doigt, le panneau de détail se pose en absolu par-dessus le board.
-    <div className="relative flex min-h-0 flex-1 flex-col md:flex-row">
-      <div className="flex min-w-0 flex-1 flex-col">
+    // `h-full` et non `flex-1` : le conteneur de la coque défile, donc il n'impose
+    // aucune hauteur à ses enfants, et les colonnes s'arrêtaient à leur contenu au
+    // lieu de descendre jusqu'en bas. `relative` porte le tiroir, posé en absolu.
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
           className={cx(
             'flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2',
@@ -281,10 +304,11 @@ export function BoardPage() {
         </DndContext>
       </div>
 
-      {openCard ? (
+      {lingering ? (
         <CardPanel
-          card={openCard}
+          card={lingering}
           projectId={projectId}
+          open={openCard !== null}
           onClose={() => showCard(null)}
           onSelectCard={showCard}
         />

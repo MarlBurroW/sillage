@@ -1,7 +1,14 @@
 import { GitBranch, Play, Trash2, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
+import { restoreCardPanelWidth, setCardPanelWidth } from '../../lib/board-panel'
 import { useDeleteCard, useUpdateCard } from '../../lib/cards'
 import { translate, useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
@@ -11,6 +18,8 @@ import { COLUMN_TONES, columnLabel } from './columns'
 interface CardPanelProps {
   card: CardDto
   projectId: string
+  /** État visé, distinct de la présence : le panneau reste monté le temps de sortir. */
+  open: boolean
   onClose: () => void
   onSelectCard: (number: number) => void
 }
@@ -18,11 +27,60 @@ interface CardPanelProps {
 /**
  * Le détail d'une carte, à côté du board plutôt qu'à sa place.
  *
- * Garder les colonnes visibles derrière compte pour l'usage réel, qui est de parcourir,
- * ouvrir, refermer. Au doigt la place manque, et le panneau recouvre alors le board.
+ * Il se pose par-dessus plutôt que de pousser les colonnes, et glisse depuis le bord
+ * droit comme le panneau d'outils d'une conversation : c'est le même geste sur le même
+ * bord, et deux animations différentes pour deux tiroirs voisins se remarquent.
  */
-export function CardPanel({ card, projectId, onClose, onSelectCard }: CardPanelProps) {
+export function CardPanel({ card, projectId, open, onClose, onSelectCard }: CardPanelProps) {
   const t = useTranslate()
+  /**
+   * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
+   * rendu suivant : un élément qui naît déjà en place n'a aucune transition à jouer.
+   */
+  const [entered, setEntered] = useState(false)
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setEntered(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  const aside = useRef<HTMLElement>(null)
+  useEffect(restoreCardPanelWidth, [])
+
+  /**
+   * Le tiroir est collé au bord droit de la fenêtre : sa largeur vaut donc la distance
+   * du pointeur à ce bord, sans décalage à mémoriser au début du geste.
+   */
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+
+    const move = (moved: globalThis.PointerEvent) =>
+      setCardPanelWidth(window.innerWidth - moved.clientX, false)
+    const stop = (released: globalThis.PointerEvent) => {
+      setCardPanelWidth(window.innerWidth - released.clientX, true)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      document.body.style.removeProperty('cursor')
+      document.body.style.removeProperty('user-select')
+    }
+
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
+
+  const resizeByKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // Comme le panneau d'outils : collé à droite, aller vers la gauche élargit.
+    const step = event.key === 'ArrowLeft' ? 16 : event.key === 'ArrowRight' ? -16 : 0
+    if (step === 0) return
+
+    const current = aside.current?.getBoundingClientRect().width
+    if (current === undefined) return
+
+    event.preventDefault()
+    setCardPanelWidth(current + step, true)
+  }
+
   const navigate = useNavigate()
   const updateCard = useUpdateCard(projectId)
   const deleteCard = useDeleteCard(projectId)
@@ -44,13 +102,23 @@ export function CardPanel({ card, projectId, onClose, onSelectCard }: CardPanelP
 
   return (
     <aside
+      ref={aside}
       className={cx(
-        'surface flex flex-col overflow-y-auto border-line',
-        // Au doigt : par-dessus le board, qui n'a pas la place de tenir à côté.
-        'absolute inset-0 z-20 md:static md:z-auto md:w-96 md:shrink-0 md:border-l',
+        // Pas d'`overflow` ici : il rognerait la poignée, posée en débord sur le bord
+        // gauche. C'est la zone de défilement interne qui borne le contenu.
+        'surface z-20 flex flex-col border-l border-line shadow-pop',
+        // `absolute` et non `fixed` : le repère est le calque de la coque, donc le
+        // panneau suit le viewport visuel quand le clavier s'ouvre.
+        // La largeur est bornée en CSS et pas seulement à l'enregistrement : une
+        // fenêtre rétrécie après coup laisserait sinon un tiroir plus large qu'elle.
+        'absolute inset-0 md:left-auto md:w-[min(var(--card-panel-width,26rem),calc(100vw-10rem))]',
+        // `translate` et non `transform` : Tailwind v4 pose les utilitaires de
+        // translation sur cette propriété CSS, distincte de `transform`.
+        'transition-[translate] duration-200 ease-out',
+        entered && open ? 'translate-x-0' : 'translate-x-full',
       )}
     >
-      <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-surface px-3 py-2">
+      <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
         <span className="text-xs font-medium text-ink-faint">#{card.number}</span>
         <Badge tone={COLUMN_TONES[card.column]}>{columnLabel(card.column)}</Badge>
         <div className="flex-1" />
@@ -59,7 +127,7 @@ export function CardPanel({ card, projectId, onClose, onSelectCard }: CardPanelP
         </IconButton>
       </header>
 
-      <div className="flex flex-col gap-4 p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
         <div className="flex flex-col gap-2">
           <textarea
             value={title}
@@ -174,7 +242,7 @@ export function CardPanel({ card, projectId, onClose, onSelectCard }: CardPanelP
         />
       </div>
 
-      <div className="mt-auto flex items-center gap-3 border-t border-line px-3 py-2.5">
+      <div className="flex shrink-0 items-center gap-3 border-t border-line px-3 py-2.5">
         <p className="min-w-0 flex-1 text-[0.6875rem] text-ink-faint">
           {t('board.card.author', { name: card.createdByName })}
           {' · '}
@@ -192,6 +260,23 @@ export function CardPanel({ card, projectId, onClose, onSelectCard }: CardPanelP
           <Trash2 size={15} />
         </IconButton>
       </div>
+
+      {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
+          tiroir occupe tout l'écran, il n'y a rien à ajuster. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('board.panel.resize')}
+        tabIndex={0}
+        onPointerDown={startResize}
+        onKeyDown={resizeByKey}
+        className={cx(
+          'absolute inset-y-0 -left-1 hidden w-2 cursor-col-resize md:block',
+          'after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2',
+          'after:transition-colors hover:after:bg-accent focus-visible:after:bg-accent',
+          'outline-none',
+        )}
+      />
     </aside>
   )
 }
