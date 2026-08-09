@@ -1264,6 +1264,7 @@ export function ConversationPage() {
         <Suspense fallback={null}>
           <SidePanel
             conversationId={conversationId}
+            agent={conversation.agent}
             editTurns={stream.state.editTurns}
             turnRunning={stream.state.turnRunning}
             subAgents={subAgents}

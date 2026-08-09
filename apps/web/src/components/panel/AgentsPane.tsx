@@ -1,6 +1,8 @@
-import { ArrowLeft, Bot, Radio, SquareTerminal, Waves } from 'lucide-react'
-import { useMemo, type ReactNode } from 'react'
+import { AGENT_CAPABILITIES, type AgentKind } from '@sillage/protocol'
+import { ArrowLeft, Bot, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
 import type { BackgroundWork } from '../../lib/background'
+import { stopBackgroundTask } from '../../lib/conversations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { clearSubAgent, showSubAgent } from '../../lib/panel'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
@@ -19,11 +21,14 @@ import { EmptyState, cx } from '../ui'
  */
 export function AgentsPane({
   conversationId,
+  agent,
   agents,
   background,
   selectedId,
 }: {
   conversationId: string
+  /** CLI de la conversation : c'est lui qui dit si un travail de fond s'arrête. */
+  agent: AgentKind
   agents: SubAgent[]
   /** Travaux poursuivis hors du tour, sans fil à ouvrir : le CLI n'en transmet rien. */
   background: BackgroundWork[]
@@ -51,7 +56,7 @@ export function AgentsPane({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
-      <BackgroundList tasks={background} />
+      <BackgroundList conversationId={conversationId} agent={agent} tasks={background} />
       {agents.map((agent) => (
         <div key={agent.id} className={cx(agent.parentId && 'pl-3')}>
           <SubAgentRow agent={agent} onSelect={() => showSubAgent(agent.id)} />
@@ -102,9 +107,39 @@ const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
  * qu'ils écrivent. Une ligne sans clic est donc honnête, là où une ligne cliquable
  * promettrait un détail qui n'existe pas.
  */
-function BackgroundList({ tasks }: { tasks: BackgroundWork[] }) {
+function BackgroundList({
+  conversationId,
+  agent,
+  tasks,
+}: {
+  conversationId: string
+  agent: AgentKind
+  tasks: BackgroundWork[]
+}) {
   const t = useTranslate()
+  const canStop = AGENT_CAPABILITIES[agent].stopBackgroundTask
+  /**
+   * L'arrêt n'est pas confirmé par la réponse : la tâche disparaît au prochain
+   * `background.updated`. Entre les deux, le bouton reste marqué, sans quoi il
+   * inviterait à recliquer sur un arrêt déjà demandé.
+   */
+  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set())
   if (tasks.length === 0) return null
+
+  const stop = async (taskId: string) => {
+    setStopping((prev) => new Set(prev).add(taskId))
+    try {
+      await stopBackgroundTask(conversationId, taskId)
+    } catch {
+      // Refus du serveur (session arrêtée entre-temps, tâche déjà close) : le bouton
+      // redevient cliquable, et la liste, elle, dit toujours vrai via le journal.
+      setStopping((prev) => {
+        const next = new Set(prev)
+        next.delete(taskId)
+        return next
+      })
+    }
+  }
 
   return (
     <section className="mb-1 flex flex-col gap-1">
@@ -142,6 +177,19 @@ function BackgroundList({ tasks }: { tasks: BackgroundWork[] }) {
                   count: task.toolUses,
                 })}
               </span>
+            ) : null}
+
+            {canStop ? (
+              <button
+                type="button"
+                onClick={() => void stop(task.id)}
+                disabled={stopping.has(task.id)}
+                title={t('panel.background.stop')}
+                aria-label={t('panel.background.stop')}
+                className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface hover:text-critical disabled:cursor-default disabled:opacity-40"
+              >
+                <Square size={11} fill="currentColor" />
+              </button>
             ) : null}
           </div>
         )

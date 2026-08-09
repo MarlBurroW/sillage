@@ -195,6 +195,10 @@ export function interruptConversation(conversationId: string): Promise<unknown> 
   return api.post(`/api/conversations/${conversationId}/interrupt`)
 }
 
+export function stopBackgroundTask(conversationId: string, taskId: string): Promise<unknown> {
+  return api.post(`/api/conversations/${conversationId}/background/${encodeURIComponent(taskId)}/stop`)
+}
+
 export function decidePermission(
   conversationId: string,
   requestId: string,

@@ -1095,6 +1095,19 @@ export class SessionManager {
     return compacted
   }
 
+  /**
+   * Arrête un travail de fond de la conversation.
+   *
+   * Contrairement à `compact`, un runner arrêté n'est pas relancé : les travaux de
+   * fond meurent avec le process CLI, donc sans runner il n'y a rien à arrêter et
+   * relancer la session n'y changerait rien.
+   */
+  async stopBackgroundTask(conversationId: string, taskId: string): Promise<boolean> {
+    const managed = this.runners.get(conversationId)
+    if (!managed) return false
+    return managed.runner.stopBackgroundTask(taskId)
+  }
+
   async interrupt(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (!managed) {

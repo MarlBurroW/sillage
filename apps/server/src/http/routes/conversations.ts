@@ -629,6 +629,25 @@ export function registerConversationRoutes(
     return reply.status(202).send({ accepted: true })
   })
 
+  /**
+   * Arrête un travail de fond (commande, workflow, surveillance) sans toucher au tour.
+   * La clôture n'est pas dans la réponse : elle revient par le journal, dans le
+   * `background.updated` suivant.
+   */
+  app.post('/api/conversations/:id/background/:taskId/stop', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, taskId } = request.params as { id: string; taskId: string }
+    await loadWritable(id, user.id)
+
+    if (!(await sessions.stopBackgroundTask(id, taskId))) {
+      throw badRequest(
+        'background_stop_unavailable',
+        'No running session holds this task, or this CLI cannot stop background work.',
+      )
+    }
+    return reply.status(202).send({ accepted: true })
+  })
+
   app.post('/api/conversations/:id/interrupt', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

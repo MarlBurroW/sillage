@@ -1100,6 +1100,23 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
+   * Requête de contrôle `stopTask` du SDK. Le CLI clôt la tâche puis publie la liste
+   * restante en `background_tasks_changed` : rien à émettre ici, le journal apprend
+   * l'arrêt par le chemin qui lui a appris le lancement.
+   */
+  async stopBackgroundTask(taskId: string): Promise<boolean> {
+    if (!this.session) return false
+    try {
+      await this.session.stopTask(taskId)
+    } catch {
+      // Course ordinaire : la tâche s'est terminée entre le clic et la requête, le CLI
+      // ne la connaît plus. Même réponse qu'une session absente, pas une erreur.
+      return false
+    }
+    return true
+  }
+
+  /**
    * Le SDK expose des requêtes de contrôle pour ces réglages : les changer ne demande
    * pas de relancer le CLI, donc la session garde son contexte chargé.
    */

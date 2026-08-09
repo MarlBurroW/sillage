@@ -1032,6 +1032,11 @@ export class CodexRunner implements AgentRunner {
     return true
   }
 
+  /** Codex ne journalise pas de travail de fond, il n'y a donc rien à arrêter. */
+  async stopBackgroundTask(): Promise<boolean> {
+    return false
+  }
+
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'codex') return false
     this.config = config
