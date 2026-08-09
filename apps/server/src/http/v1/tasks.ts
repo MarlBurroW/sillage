@@ -166,6 +166,8 @@ export function registerTaskRoutes(
         agent,
         config,
         worktreeId: body.worktreeId,
+        // Le board appartient à l'interface : l'API machine ne rattache pas de carte.
+        cardId: null,
         title: body.title,
         origin: { tokenId: token.id, label: token.label },
         firstMessage: {
