@@ -1,4 +1,13 @@
-import { FolderOpen, GitBranch, Globe, Lock, Save, Trash2, TriangleAlert } from 'lucide-react'
+import {
+  FolderOpen,
+  GitBranch,
+  Globe,
+  Lock,
+  Save,
+  SquareKanban,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { ProjectVisibility } from '@sillage/protocol'
@@ -78,6 +87,19 @@ export function ProjectPage() {
           )}
         </div>
       </header>
+
+      <Card>
+        <CardHeader
+          title={t('project.board.title')}
+          description={t('project.board.description')}
+          icon={<SquareKanban size={16} />}
+        />
+        <CardBody>
+          <Button variant="ghost" onClick={() => navigate(`/p/${project.id}/board`)}>
+            {t('project.board.open')}
+          </Button>
+        </CardBody>
+      </Card>
 
       <WorktreeList projectId={project.id} isRepository={project.git !== null} />
 
