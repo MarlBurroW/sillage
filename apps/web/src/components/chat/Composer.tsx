@@ -15,6 +15,7 @@ import {
   type AgentConfig,
   type AttachmentDto,
   type AgentSkillDto,
+  type CardLinkDto,
   type ConversationStatus,
   type McpServerStatus,
   type SlashCommandDto,
@@ -25,6 +26,7 @@ import { readDraft, saveDraft } from '../../lib/composer-drafts'
 import { useComposerDrops, useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
+import { useCardSuggestions } from '../../lib/cards'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
 import { useDictation, useSttEnabled } from '../../lib/stt'
 import { useTranslate } from '../../lib/i18n'
@@ -35,6 +37,7 @@ import { DictationStrip } from './DictationStrip'
 import { useAgentSettings } from './agent-settings'
 import { TokenPicker } from './TokenPicker'
 import { ComposerSettings } from './ComposerSettings'
+import { CardPicker } from './CardPicker'
 import { MentionPicker } from './MentionPicker'
 
 /** Le `@...` en cours de saisie, repéré autour du curseur. */
@@ -53,6 +56,20 @@ interface MentionToken {
  */
 function mentionAt(value: string, caret: number): MentionToken | null {
   const match = /(?:^|\s)@([^\s@]*)$/.exec(value.slice(0, caret))
+  if (!match) return null
+  const query = match[1] ?? ''
+  return { query, start: caret - query.length - 1, end: caret }
+}
+
+/**
+ * La carte `#...` en cours de saisie, ou null.
+ *
+ * Même contrainte de début de mot que le `@` : sans elle, une couleur hexadécimale ou
+ * une ancre d'URL collée ouvrirait la liste des cartes en plein milieu d'un mot. La
+ * requête accepte autre chose que des chiffres, le serveur cherchant aussi par titre.
+ */
+function cardAt(value: string, caret: number): MentionToken | null {
+  const match = /(?:^|\s)#([^\s#]*)$/.exec(value.slice(0, caret))
   if (!match) return null
   const query = match[1] ?? ''
   return { query, start: caret - query.length - 1, end: caret }
@@ -209,6 +226,7 @@ export function Composer({
   const [attachments, setAttachments] = useState<AttachmentDto[]>(restored.attachments)
   const [uploading, setUploading] = useState(0)
   const [token, setToken] = useState<MentionToken | null>(null)
+  const [cardToken, setCardToken] = useState<MentionToken | null>(null)
   const [sigil, setSigil] = useState<SigilToken | null>(null)
   // Partagé par les listes : leurs jetons s'excluent, aucune position du curseur ne
   // pouvant ouvrir un `@`, un `/` et un `$` à la fois.
@@ -267,6 +285,12 @@ export function Composer({
   )
   const suggestions = token ? (files ?? []) : []
 
+  const { data: cardMatches, isFetching: searchingCards } = useCardSuggestions(
+    projectId,
+    cardToken?.query ?? null,
+  )
+  const cardSuggestions = cardToken ? (cardMatches ?? []) : []
+
   /** Remplace le jeton en cours par le chemin choisi, puis rend la main au champ. */
   const pickMention = (file: FileMatchDto) => {
     const node = textarea.current
@@ -280,6 +304,28 @@ export function Composer({
     setToken(null)
     // Après le rendu : replacer le curseur avant que React ait réécrit la valeur le
     // ferait sauter en fin de champ.
+    requestAnimationFrame(() => {
+      node.focus()
+      node.setSelectionRange(caret, caret)
+    })
+  }
+
+  /**
+   * Remplace le jeton en cours par la carte choisie.
+   *
+   * Seul le numéro est écrit : c'est lui que le serveur sait relire, et coller le titre
+   * dans le message figerait un libellé que la carte peut encore corriger.
+   */
+  const pickCard = (card: CardLinkDto) => {
+    const node = textarea.current
+    if (!cardToken || !node) return
+
+    const reference = `#${card.number}`
+    const next = `${text.slice(0, cardToken.start)}${reference} ${text.slice(cardToken.end)}`
+    const caret = cardToken.start + reference.length + 1
+
+    setText(next)
+    setCardToken(null)
     requestAnimationFrame(() => {
       node.focus()
       node.setSelectionRange(caret, caret)
@@ -354,6 +400,7 @@ export function Composer({
   const syncToken = (value: string, caret: number | null) => {
     const position = caret ?? value.length
     setToken(mentionAt(value, position))
+    setCardToken(cardAt(value, position))
     // Un sigle dont le CLI n'a rien publié n'ouvre pas de liste : mieux vaut ne rien
     // proposer que d'annoncer un vide à chaque `$` d'une commande shell citée.
     const found = sigilAt(value, position)
@@ -524,7 +571,11 @@ export function Composer({
     // La liste ouverte capte d'abord les touches de navigation et de validation :
     // sinon Entrée enverrait le message au lieu d'insérer l'entrée sélectionnée. Les
     // deux jetons s'excluant, une seule liste est ouverte à la fois.
-    const listed = sigil ? entries.length : suggestions.length
+    const listed = sigil
+      ? entries.length
+      : cardToken
+        ? cardSuggestions.length
+        : suggestions.length
     if (listed > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
@@ -543,7 +594,13 @@ export function Composer({
           pickEntry(entry)
           return
         }
-        const file = sigil ? undefined : suggestions[active]
+        const card = sigil ? undefined : cardSuggestions[active]
+        if (cardToken && card) {
+          event.preventDefault()
+          pickCard(card)
+          return
+        }
+        const file = sigil || cardToken ? undefined : suggestions[active]
         if (file) {
           event.preventDefault()
           pickMention(file)
@@ -553,6 +610,7 @@ export function Composer({
       if (event.key === 'Escape') {
         event.preventDefault()
         setToken(null)
+        setCardToken(null)
         setSigil(null)
         return
       }
@@ -608,6 +666,16 @@ export function Composer({
                 sigil.sigil === '/' ? t('command.picker.empty') : t('skill.picker.empty')
               }
               onPick={pickEntry}
+              onHover={setActive}
+            />
+          ) : null}
+
+          {cardToken ? (
+            <CardPicker
+              cards={cardSuggestions}
+              active={active}
+              loading={searchingCards}
+              onPick={pickCard}
               onHover={setActive}
             />
           ) : null}

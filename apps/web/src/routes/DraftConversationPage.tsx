@@ -1,9 +1,10 @@
-import { Check, History } from 'lucide-react'
+import { Check, History, SquareKanban, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
   agentKindSchema,
+  cardBranchName,
   defaultConfigFor,
   type AgentConfig,
   type AgentKind,
@@ -11,8 +12,9 @@ import {
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
-import { Banner, Button, cx } from '../components/ui'
+import { Banner, Button, IconButton, cx } from '../components/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
+import { useCards } from '../lib/cards'
 import {
   useAgentAvailability,
   useInstallAgent,
@@ -22,6 +24,7 @@ import {
 import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
+import { useRememberProjectView } from '../lib/project-view'
 import { locale, useTranslate } from '../lib/i18n'
 import { useSidebarHidden } from '../lib/sidebar'
 import { useUserSettings } from '../lib/user-settings'
@@ -88,10 +91,38 @@ export function DraftConversationPage() {
 
   const blocked = unavailableReason(availability?.agents.find((a) => a.agent === agent))
 
+  // Une arrivée depuis le board ne compte pas : ni le lancement d'une carte, qui porte
+  // sa référence, ni le bouton de conversation neuve du board, qui le dit.
+  const location = useLocation()
+  const fromBoard =
+    params.get('card') !== null || (location.state as { from?: string } | null)?.from === 'board'
+  useRememberProjectView(projectId, fromBoard ? null : 'draft')
+
   const [config, setConfig] = useState<AgentConfig | null>(null)
-  const [worktreeId, setWorktreeId] = useState<string | null>(null)
   const { data: projects } = useProjects()
   const project = projects?.find((p) => p.id === projectId)
+
+  // Le board ouvre ce brouillon avec sa carte. Rien n'est rattaché tant que rien n'est
+  // envoyé : c'est une valeur de départ, comme le CLI, et la puce se retire.
+  const [detached, setDetached] = useState(false)
+  const { data: cards } = useCards(projectId)
+  const requestedCard = params.get('card')
+  const card = detached ? undefined : cards?.find((entry) => entry.id === requestedCard)
+  /**
+   * Le composer lit son texte initial une seule fois, au montage. Le rendre avant que
+   * la carte soit connue le figerait sans sa mention, et la poser après n'y changerait
+   * plus rien : on attend donc la réponse plutôt que de remonter le composant, ce qui
+   * effacerait ce qui aurait été tapé entre-temps.
+   */
+  const cardPending = Boolean(requestedCard) && !detached && cards === undefined
+
+  // Le worktree déjà rattaché à la carte, s'il y en a un : reprendre un chantier doit
+  // retomber dans le bon arbre sans y penser. Le plus récent l'emporte, une carte ayant
+  // pu changer de branche en route.
+  const cardWorktree = card?.conversations.findLast((session) => session.worktreeId)?.worktreeId
+  const [worktreeId, setWorktreeId] = useState<string | null>(null)
+  const [worktreeTouched, setWorktreeTouched] = useState(false)
+  const effectiveWorktreeId = worktreeTouched ? worktreeId : (cardWorktree ?? worktreeId)
 
   // Les défauts du compte tant qu'ils ne sont pas chargés : ceux du protocole ne sont
   // qu'un point de départ le temps d'un aller-retour, et rien n'est envoyé avant le
@@ -109,9 +140,9 @@ export function DraftConversationPage() {
   // Un worktree écarte la liste : ces sessions vivent dans le dossier racine du projet.
   const { data: cliSessions } = useClaudeSessions(
     projectId,
-    AGENT_CAPABILITIES[agent].cliSessions && !worktreeId,
+    AGENT_CAPABILITIES[agent].cliSessions && !effectiveWorktreeId,
   )
-  const cliSessionList = worktreeId ? [] : (cliSessions?.sessions ?? [])
+  const cliSessionList = effectiveWorktreeId ? [] : (cliSessions?.sessions ?? [])
   const importSession = useImportClaudeSession(projectId ?? '')
 
   const importAndOpen = async (sessionId: string) => {
@@ -130,7 +161,11 @@ export function DraftConversationPage() {
     const created = await createConversation.mutateAsync({
       agent,
       config: effective,
-      worktreeId,
+      worktreeId: effectiveWorktreeId,
+      cardId: card?.id ?? null,
+      // Le titre de la carte plutôt que l'extrait du message : la conversation traite
+      // un travail nommé, et le CLI n'a plus à en proposer un.
+      title: card?.title,
       firstMessage: { clientMessageId: uuidv4(), text, attachmentIds, mentions, skills },
     })
 
@@ -156,6 +191,19 @@ export function DraftConversationPage() {
             <span>{AGENT_LABELS[agent]}</span>
           </div>
         </div>
+        {/* Le board depuis le brouillon : c'est ici qu'on se demande sur quoi partir,
+            et la liste des cartes est la réponse. Le lien manque à cet endroit précis
+            quand on ouvre une conversation avant d'avoir choisi son chantier. */}
+        {projectId ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<SquareKanban size={15} />}
+            onClick={() => navigate(`/p/${projectId}/board`)}
+          >
+            {t('draft.board')}
+          </Button>
+        ) : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -265,13 +313,27 @@ export function DraftConversationPage() {
               ))}
           </fieldset>
 
+          {card ? (
+            <div className="flex items-center gap-2 rounded-md border border-line bg-sunken px-3 py-2">
+              <span className="text-xs font-medium text-ink-faint">#{card.number}</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-ink-soft">{card.title}</span>
+              <IconButton label={t('draft.card.detach')} onClick={() => setDetached(true)}>
+                <X size={14} />
+              </IconButton>
+            </div>
+          ) : null}
+
           {projectId ? (
             <WorktreeSelect
               projectId={projectId}
-              value={worktreeId}
-              onChange={setWorktreeId}
+              value={effectiveWorktreeId}
+              onChange={(next) => {
+                setWorktreeTouched(true)
+                setWorktreeId(next)
+              }}
               isRepository={project?.git !== null && project !== undefined}
               layout="list"
+              suggestedName={card ? cardBranchName(card.number, card.title) : undefined}
             />
           ) : null}
 
@@ -327,26 +389,30 @@ export function DraftConversationPage() {
         </div>
       </div>
 
-      <Composer
-        // Le brouillon d'une conversation pas encore créée appartient à son projet :
-        // c'est le seul fil qu'on puisse en désigner avant qu'il existe.
-        draftKey={`new:${projectId ?? ''}`}
-        config={effective}
-        // Rien n'est encore lancé : aucun CLI n'a d'inventaire ni de commandes à
-        // rapporter. La liste en `/` s'ouvrira au premier tour.
-        mcpInventory={NO_MCP_INVENTORY}
-        commands={NO_COMMANDS}
-        skills={NO_SKILLS}
-        status="idle"
-        // Un CLI absent ne se rattrape pas côté serveur : le tour échouerait après
-        // création de la conversation, laissant un fil vide et un message perdu.
-        disabled={createConversation.isPending || blocked !== null}
-        onSend={send}
-        onInterrupt={() => {}}
-        onConfigChange={setConfig}
-        projectId={projectId}
-        worktreeId={worktreeId}
-      />
+      {cardPending ? null : (
+        <Composer
+          // Le brouillon d'une conversation pas encore créée appartient à son projet :
+          // c'est le seul fil qu'on puisse en désigner avant qu'il existe. Un brouillon
+          // par carte, sinon celui de la création libre écraserait la mention posée ici.
+          draftKey={card ? `new:${projectId ?? ''}:card:${card.id}` : `new:${projectId ?? ''}`}
+          initialText={card ? `#${card.number} ` : ''}
+          config={effective}
+          // Rien n'est encore lancé : aucun CLI n'a d'inventaire ni de commandes à
+          // rapporter. La liste en `/` s'ouvrira au premier tour.
+          mcpInventory={NO_MCP_INVENTORY}
+          commands={NO_COMMANDS}
+          skills={NO_SKILLS}
+          status="idle"
+          // Un CLI absent ne se rattrape pas côté serveur : le tour échouerait après
+          // création de la conversation, laissant un fil vide et un message perdu.
+          disabled={createConversation.isPending || blocked !== null}
+          onSend={send}
+          onInterrupt={() => {}}
+          onConfigChange={setConfig}
+          projectId={projectId}
+          worktreeId={effectiveWorktreeId}
+        />
+      )}
     </div>
   )
 }

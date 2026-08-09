@@ -2,8 +2,15 @@
  * Serveur MCP de Sillage : rend au CLI ce que la plateforme sait et qu'il ignore.
  *
  * Un CLI redémarre amnésique à chaque conversation, alors que Sillage garde le journal
- * de toutes les précédentes. Les deux outils exposés ici ouvrent cette mémoire, cadrée
- * au projet courant.
+ * de toutes les précédentes et le board du projet. Les outils exposés ici ouvrent cette
+ * mémoire et cet état, cadrés au projet courant.
+ *
+ * Un seul outil écrit, `add_card_note`, et il n'écrit que dans un flux ajouté. La
+ * frontière est là et pas ailleurs : un agent peut raconter ce qu'il a fait, il ne peut
+ * ni déplacer une carte ni réécrire sa description. Déplacer serait se donner un
+ * satisfecit, et la colonne cesserait d'être la position choisie qu'elle est censée
+ * rester ; réécrire la description ferait qu'un compte rendu de session efface la
+ * consigne qu'il était censé suivre.
  *
  * En `.mjs` plutôt qu'en TypeScript compilé, comme la sonde : le process est lancé par
  * le CLI, pas par Sillage, et le garder hors du graphe de modules du serveur évite
@@ -16,6 +23,7 @@
  * déjà un shell et le fichier sur le disque ; c'est le même accès, en plus commode.
  */
 import { createInterface } from 'node:readline'
+import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SILLAGE_MCP_DB
@@ -61,6 +69,27 @@ const EDIT_MINUTES = 120
 /** Plafond de couples session-fichier rendus, annoncé quand il mord. */
 const EDIT_ROW_LIMIT = 40
 
+/**
+ * Libellés des colonnes du board, en clair.
+ *
+ * Les valeurs stockées (`todo`, `in_progress`) sont des identifiants, pas de la langue :
+ * les rendre telles quelles obligerait le modèle à deviner que `review` veut dire « à
+ * relire par un humain » et non « en cours de relecture par un agent ».
+ */
+const COLUMN_LABELS = {
+  todo: 'à faire',
+  in_progress: 'en cours',
+  review: 'à vérifier',
+  done: 'terminé',
+  abandoned: 'abandonné',
+}
+
+/** Au-delà, le board pèse plus qu'il n'oriente. Annoncé quand il mord. */
+const CARD_LIMIT = 40
+
+/** Une description entière peut faire des pages ; le board n'en rend qu'un aperçu. */
+const CARD_EXCERPT_CHARS = 160
+
 const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
 
@@ -70,6 +99,19 @@ if (!DB_PATH || !PROJECT_ID) {
 }
 
 const db = new Database(DB_PATH, { readonly: true, fileMustExist: true })
+
+/**
+ * Connexion d'écriture, ouverte au premier besoin et gardée ensuite.
+ *
+ * Séparée de la connexion de lecture, qui reste en lecture seule : la quasi-totalité de
+ * ce serveur observe, et un seul outil écrit. Deux handles rendent cette asymétrie
+ * visible et empêchent qu'une requête de lecture mal écrite touche quoi que ce soit.
+ */
+let writable = null
+function writeDb() {
+  writable ??= new Database(DB_PATH, { fileMustExist: true })
+  return writable
+}
 
 const TOOLS = [
   {
@@ -141,6 +183,53 @@ const TOOLS = [
             "Fenêtre de recherche, en minutes. 120 par défaut. Élargir si la réponse est vide alors qu'une modification inexpliquée est bien là : les éditions restent dans le journal indéfiniment, mais celles d'hier n'expliquent en général plus l'état de l'arbre.",
         },
       },
+    },
+  },
+  {
+    name: 'list_cards',
+    description:
+      "Liste le board de ce projet : les cartes, c'est-à-dire le travail à faire, en cours, à vérifier ou terminé. Une carte est un chantier, distinct des conversations qui l'exécutent : elle leur survit et en porte plusieurs. Appelle cet outil avant d'ouvrir un sujet neuf, pour vérifier que ce qu'on te demande n'est pas déjà décrit dans une carte, et quand l'utilisateur cite une carte par son numéro (`#12`). Rend un résumé par carte, pas les descriptions entières : utiliser read_card ensuite pour en lire une.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        column: {
+          type: 'string',
+          enum: ['todo', 'in_progress', 'review', 'done', 'abandoned'],
+          description:
+            "Ne rendre que cette colonne. Omettre pour tout le board, terminé et abandonné compris.",
+        },
+      },
+    },
+  },
+  {
+    name: 'read_card',
+    description:
+      "Lit une carte de ce projet en entier : sa description, la colonne où elle est posée, les sessions qui l'ont déjà traitée et les cartes qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, et les sessions passées disent ce qui a déjà été tenté. La colonne d'une carte se change dans l'interface, par une personne, jamais par toi.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        number: {
+          type: 'integer',
+          description: "Numéro de la carte, tel qu'il s'écrit après le `#`.",
+        },
+      },
+      required: ['number'],
+    },
+  },
+  {
+    name: 'add_card_note',
+    description:
+      "Ajoute une note au fil de la carte que traite cette conversation. Sert à laisser aux sessions suivantes ce qu'elles ne pourront pas redécouvrir seules : ce qui a été fait et où en est le travail, ce qui a été essayé sans marcher et pourquoi, une décision prise en route, une contrainte trouvée dans le code. Appelle cet outil en fin de travail, et avant toute interruption longue. N'y recopie pas ce que le dépôt dit déjà, ni ce que `git log` raconte : une note utile est celle qui aurait fait gagner du temps si on l'avait lue au début. Les notes s'ajoutent et ne s'effacent pas ; elles ne remplacent pas la description de la carte, qui appartient à la personne qui l'a écrite.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        body: {
+          type: 'string',
+          description:
+            "Texte de la note, en markdown. Quelques phrases ou une courte liste, pas un rapport : elle sera relue en entier au début de chaque session suivante.",
+        },
+      },
+      required: ['body'],
     },
   },
   {
@@ -567,6 +656,184 @@ function renderBySession(rows) {
   })
 }
 
+/**
+ * Le board du projet, une ligne par carte.
+ *
+ * Le compte de sessions vient d'une sous-requête et non d'une jointure : joindre
+ * `conversations` dupliquerait la carte autant de fois qu'elle a de sessions, et le
+ * `GROUP BY` qu'il faudrait ensuite masquerait les cartes qui n'en ont aucune.
+ */
+function listCards(column) {
+  return db
+    .prepare(
+      `SELECT c.number   AS number,
+              c.title    AS title,
+              c.column   AS column,
+              c.description AS description,
+              c.updated_at  AS updatedAt,
+              (SELECT COUNT(*) FROM conversations AS v WHERE v.card_id = c.id) AS sessions
+       FROM cards AS c
+       WHERE c.project_id = ?
+         AND (? IS NULL OR c.column = ?)
+       ORDER BY CASE c.column
+                  WHEN 'todo' THEN 0
+                  WHEN 'in_progress' THEN 1
+                  WHEN 'review' THEN 2
+                  WHEN 'done' THEN 3
+                  ELSE 4
+                END,
+                c.position
+       LIMIT ?`,
+    )
+    .all(PROJECT_ID, column, column, CARD_LIMIT + 1)
+}
+
+function readCard(number) {
+  const card = db
+    .prepare(
+      `SELECT id, number, title, column, description, created_at AS createdAt
+       FROM cards WHERE project_id = ? AND number = ?`,
+    )
+    .get(PROJECT_ID, number)
+  if (!card) return null
+
+  card.sessions = db
+    .prepare(
+      `SELECT v.id AS id, v.title AS title, v.agent AS agent, v.status AS status,
+              v.background_count AS background, v.loop_count AS loops,
+              v.updated_at AS updatedAt, w.name AS worktree
+       FROM conversations AS v
+       LEFT JOIN worktrees AS w ON w.id = v.worktree_id
+       WHERE v.card_id = ?
+       ORDER BY v.created_at`,
+    )
+    .all(card.id)
+
+  card.references = db
+    .prepare(
+      `SELECT t.number AS number, t.title AS title, t.column AS column
+       FROM card_refs AS r JOIN cards AS t ON t.id = r.target_id
+       WHERE r.source_id = ? ORDER BY t.number`,
+    )
+    .all(card.id)
+
+  card.referencedBy = db
+    .prepare(
+      `SELECT sc.number AS number, sc.title AS title, sc.column AS column
+       FROM card_refs AS r JOIN cards AS sc ON sc.id = r.source_id
+       WHERE r.target_id = ? ORDER BY sc.number`,
+    )
+    .all(card.id)
+
+  return card
+}
+
+/** La carte que traite la conversation courante, s'il y en a une. */
+function currentCard() {
+  return (
+    db
+      .prepare(
+        `SELECT c.id AS id, c.number AS number, c.title AS title
+         FROM conversations AS v JOIN cards AS c ON c.id = v.card_id
+         WHERE v.id = ?`,
+      )
+      .get(CURRENT_CONVERSATION) ?? null
+  )
+}
+
+/** Les notes d'une carte, du plus ancien au plus récent, avec leur auteur. */
+function cardNotes(cardId) {
+  return db
+    .prepare(
+      `SELECT n.body AS body, n.created_at AS createdAt,
+              n.conversation_id AS conversationId,
+              v.title AS conversationTitle, v.agent AS agent,
+              u.display_name AS userName
+       FROM card_notes AS n
+       LEFT JOIN conversations AS v ON v.id = n.conversation_id
+       LEFT JOIN users AS u ON u.id = n.user_id
+       WHERE n.card_id = ?
+       ORDER BY n.created_at`,
+    )
+    .all(cardId)
+}
+
+function addCardNote(cardId, body) {
+  writeDb()
+    .prepare(
+      `INSERT INTO card_notes (id, card_id, conversation_id, user_id, body, created_at)
+       VALUES (?, ?, ?, NULL, ?, ?)`,
+    )
+    .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, body, Date.now())
+}
+
+function renderCards(rows, column) {
+  const truncated = rows.length > CARD_LIMIT
+  const shown = truncated ? rows.slice(0, CARD_LIMIT) : rows
+
+  if (shown.length === 0) {
+    return column
+      ? `Aucune carte dans la colonne « ${COLUMN_LABELS[column]} » de ce projet.`
+      : "Ce projet n'a aucune carte. Le board est vide, ce qui ne veut pas dire qu'il n'y a rien à faire : tout n'y est pas forcément décrit."
+  }
+
+  const mine = currentCard()?.number ?? null
+  const lines = shown.map((row) => {
+    const excerpt = (row.description ?? '').trim().replace(/\s+/g, ' ')
+    const summary = excerpt
+      ? `\n  ${excerpt.length > CARD_EXCERPT_CHARS ? `${excerpt.slice(0, CARD_EXCERPT_CHARS)}...` : excerpt}`
+      : ''
+    const sessions = row.sessions > 0 ? `, ${row.sessions} session(s)` : ''
+    const self = row.number === mine ? ' <- celle de cette conversation' : ''
+    return `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}${sessions}${self}${summary}`
+  })
+
+  const head = `${shown.length} carte(s)${column ? ` en « ${COLUMN_LABELS[column]} »` : ''} :`
+  const tail = truncated
+    ? `\n\n${rows.length - CARD_LIMIT} carte(s) de plus ne sont pas rendues. Filtrer par colonne pour voir le reste.`
+    : ''
+  return `${head}\n${lines.join('\n')}${tail}`
+}
+
+function renderCard(card) {
+  const parts = [
+    `#${card.number} [${COLUMN_LABELS[card.column] ?? card.column}] ${card.title}`,
+  ]
+
+  parts.push(card.description.trim() || '(aucune description)')
+
+  if (card.sessions.length > 0) {
+    const lines = card.sessions.map((session) => {
+      const where = session.worktree ? `worktree ${session.worktree}` : 'racine du projet'
+      const self = session.id === CURRENT_CONVERSATION ? ' <- celle-ci' : ''
+      return `- ${session.agent} | ${describeActivity(session)} | ${where} | ${ago(session.updatedAt)}${self}\n  ${session.title}`
+    })
+    parts.push(`${card.sessions.length} session(s) sur cette carte :\n${lines.join('\n')}`)
+  } else {
+    parts.push("Aucune session n'a encore travaillé sur cette carte.")
+  }
+
+  const notes = cardNotes(card.id)
+  if (notes.length > 0) {
+    const lines = notes.map((note) => {
+      const who = note.userName
+        ? note.userName
+        : note.conversationId === CURRENT_CONVERSATION
+          ? 'cette conversation'
+          : `session ${note.agent ?? '?'}${note.conversationTitle ? ` « ${note.conversationTitle} »` : ''}`
+      return `[${who}, ${ago(note.createdAt)}]\n${note.body}`
+    })
+    parts.push(`${notes.length} note(s) laissée(s) sur cette carte :\n\n${lines.join('\n\n')}`)
+  }
+
+  const link = (rows) =>
+    rows.map((row) => `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}`).join('\n')
+  if (card.references.length > 0) parts.push(`Cette carte cite :\n${link(card.references)}`)
+  if (card.referencedBy.length > 0) parts.push(`Citée par :\n${link(card.referencedBy)}`)
+
+  return parts.join('\n\n')
+}
+
 function renderCount(state) {
   if (state.working === 0) {
     const suffix =
@@ -715,6 +982,44 @@ function callTool(name, args) {
           })
         : null
     return text(renderFileEdits(rows, { path, withinMinutes, older }))
+  }
+
+  if (name === 'list_cards') {
+    const column = typeof args?.column === 'string' && COLUMN_LABELS[args.column] ? args.column : null
+    return text(renderCards(listCards(column), column))
+  }
+
+  if (name === 'read_card') {
+    const number = Number.isInteger(args?.number) ? args.number : null
+    if (number === null) {
+      return { ...text('Le paramètre `number` est requis, et doit être un entier.'), isError: true }
+    }
+    const card = readCard(number)
+    if (!card) {
+      return {
+        ...text(`Aucune carte #${number} dans ce projet. Appeler list_cards pour voir celles qui existent.`),
+        isError: true,
+      }
+    }
+    return text(renderCard(card))
+  }
+
+  if (name === 'add_card_note') {
+    const body = typeof args?.body === 'string' ? args.body.trim() : ''
+    if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
+
+    const card = currentCard()
+    if (!card) {
+      return {
+        ...text(
+          "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Sillage, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même.",
+        ),
+        isError: true,
+      }
+    }
+
+    addCardNote(card.id, body)
+    return text(`Note ajoutée à la carte #${card.number} « ${card.title} ».`)
   }
 
   if (name === 'count_active_sessions') {

@@ -160,6 +160,8 @@ export function registerClaudeSessionRoutes(
       id: randomUUID(),
       projectId: project.id,
       worktreeId: null,
+      // Une session importée depuis le CLI ne vient d'aucune carte.
+      cardId: null,
       userId: user.id,
       title: importTitle(info, firstText),
       titleSetByUser: false,
@@ -206,7 +208,7 @@ export function registerClaudeSessionRoutes(
     }
     const lastSeq = log.appendBatch(row.id, [opening, ...translated.events], TRANSCRIPT_RAW_FORMAT)
 
-    return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0))
+    return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, null))
   })
 
   /**

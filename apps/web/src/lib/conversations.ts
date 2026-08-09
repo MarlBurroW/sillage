@@ -115,6 +115,8 @@ export function useCreateConversation(projectId: string) {
       title?: string
       /** null signifie « dossier du projet », sans worktree. */
       worktreeId?: string | null
+      /** Carte traitée, quand le brouillon a été ouvert depuis le board. */
+      cardId?: string | null
       /** Envoyé avec la création : sans message, aucune conversation n'est écrite. */
       firstMessage?: {
         clientMessageId: string
@@ -126,11 +128,15 @@ export function useCreateConversation(projectId: string) {
     }) =>
       api.post<ConversationDto>(`/api/projects/${projectId}/conversations`, {
         worktreeId: null,
+        cardId: null,
         ...input,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       void queryClient.invalidateQueries({ queryKey: ['projects'] })
+      // Lancer depuis une carte lui ajoute une session et peut la faire changer de
+      // colonne : le board affiché derrière serait faux sans cette relecture.
+      void queryClient.invalidateQueries({ queryKey: ['cards'] })
     },
   })
 }

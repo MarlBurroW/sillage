@@ -21,6 +21,11 @@ interface WorktreeSelectProps {
    * mérite d'être vu ; ailleurs la place manque.
    */
   layout?: 'select' | 'list'
+  /**
+   * Nom de branche proposé quand la création s'ouvre, sans le figer : lancer une carte
+   * suggère `feat/12-slug`, que rien n'empêche de réécrire avant de valider.
+   */
+  suggestedName?: string
 }
 
 /**
@@ -33,6 +38,7 @@ export function WorktreeSelect({
   onChange,
   isRepository,
   layout = 'select',
+  suggestedName,
 }: WorktreeSelectProps) {
   const { data: worktrees } = useWorktrees(isRepository ? projectId : undefined)
   const { data: branchInfo } = useBranches(isRepository ? projectId : undefined)
@@ -82,6 +88,9 @@ export function WorktreeSelect({
 
   const pick = (choice: string) => {
     if (choice === NEW) {
+      // La proposition ne s'applique qu'à l'ouverture : réécrire un nom déjà saisi
+      // parce qu'on est repassé par la liste effacerait le travail de l'utilisateur.
+      if (!creating && !name) setName(suggestedName ?? '')
       setCreating(true)
       return
     }
