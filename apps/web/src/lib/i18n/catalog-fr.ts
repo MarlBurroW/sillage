@@ -950,6 +950,7 @@ export const fr: Catalog = {
   'board.card.new.placeholder': "Qu'y a-t-il à faire ?",
   'draft.board': 'Board',
   'board.card.drag': 'Déplacer la carte #{number}',
+  'board.panel.resize': 'Redimensionner le panneau',
   'board.panel.close': 'Fermer',
   'draft.card.detach': 'Détacher cette carte',
 
