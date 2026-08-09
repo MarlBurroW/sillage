@@ -32,6 +32,7 @@ import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '
 import { useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS } from '../lib/panel'
 import { useProjects } from '../lib/projects'
+import { useRememberProjectView } from '../lib/project-view'
 import { useSidebarHidden } from '../lib/sidebar'
 import { useMediaQuery } from '../lib/viewport'
 
@@ -85,6 +86,8 @@ export function BoardPage() {
   const { data: projects } = useProjects()
   const { data: cards, isPending } = useCards(projectId)
   const reorder = useReorderCards(projectId ?? '')
+
+  useRememberProjectView(projectId, 'board')
 
   const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
   /**
@@ -238,7 +241,13 @@ export function BoardPage() {
               {t('board.closed')}
             </Button>
           ) : null}
-          <Button variant="ghost" size="sm" onClick={() => navigate(`/p/${projectId}/c/new`)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            // `from` : partir d'ici vers une conversation ne doit pas faire du brouillon
+            // la page d'accueil du projet, alors qu'on venait justement du board.
+            onClick={() => navigate(`/p/${projectId}/c/new`, { state: { from: 'board' } })}
+          >
             {t('board.newConversation')}
           </Button>
         </header>

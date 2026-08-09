@@ -67,6 +67,7 @@ import { isUnread, useHasUnread } from '../lib/reads'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { SignalDot } from './chat/Signals'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
+import { projectViewPath, useProjectView } from '../lib/project-view'
 import {
   restoreSidebarWidth,
   setSidebarDetailed,
@@ -546,7 +547,11 @@ function ProjectGroup({
   // désormais la destination du clic, et les réglages atteints par le menu.
   const isSettings = useMatch(`/p/${project.id}`) !== null
   const isDraft = useMatch(`/p/${project.id}/c/new`) !== null
-  const isActive = isSettings || isDraft
+  const isBoard = useMatch(`/p/${project.id}/board`) !== null
+  const isActive = isSettings || isDraft || isBoard
+  // Le clic rouvre le projet là où on l'a laissé : au board pour ceux qui s'y pilotent,
+  // sur une conversation neuve pour les autres.
+  const view = useProjectView(project.id)
   // Replié, le projet répond pour ses lignes : sans ce report, un agent qui finit son
   // tour dans un projet fermé ne se signalerait nulle part. Le fil ouvert en est exclu
   // comme il l'est de sa propre ligne, sinon replier le projet qu'on lit l'allumerait
@@ -640,7 +645,7 @@ function ProjectGroup({
           />
         ) : (
           <NavLink
-            to={`/p/${project.id}/c/new`}
+            to={projectViewPath(project.id, view)}
             onClick={onNavigate}
             // Renommer au double-clic, comme dans un explorateur de fichiers. Le premier
             // clic navigue quand même : c'est le prix d'un lien, et ouvrir le projet
@@ -810,6 +815,7 @@ function ConversationRow({
   const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
   const openMatch = useMatch('/p/:projectId/c/:conversationId')
+  const projectView = useProjectView(conversation.projectId)
   const [editing, setEditing] = useState(false)
   // Le statut du socket prime sur celui de la liste, qui date de son chargement.
   const status = useLiveStatus(conversation.id) ?? conversation.status
@@ -967,9 +973,11 @@ function ConversationRow({
                 return
               const wasOpen = openMatch?.params.conversationId === conversation.id
               remove.mutate(conversation.id, {
-                // Ne quitter la vue que si c'est bien celle qu'on vient de supprimer.
+                // Ne quitter la vue que si c'est bien celle qu'on vient de supprimer,
+                // et retomber là où ce projet s'ouvre d'habitude : un repli de secours
+                // n'a pas à décider de sa page d'accueil.
                 onSuccess: () => {
-                  if (wasOpen) navigate(`/p/${conversation.projectId}/c/new`)
+                  if (wasOpen) navigate(projectViewPath(conversation.projectId, projectView))
                 },
               })
             }}
