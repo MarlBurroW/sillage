@@ -27,6 +27,8 @@ export interface CreateConversationInput {
   /** Déjà résolue : les `CLI_DEFAULT` sont remplacés avant l'écriture. */
   config: AgentConfig
   worktreeId: string | null
+  /** Carte traitée, quand la conversation est lancée depuis le board. */
+  cardId: string | null
   title?: string
   /** Jeton d'API à l'origine de la conversation ; null quand elle vient de l'interface. */
   origin: { tokenId: string; label: string } | null
@@ -63,6 +65,7 @@ export async function createConversation(
     id: randomUUID(),
     projectId: input.projectId,
     worktreeId: input.worktreeId,
+    cardId: input.cardId,
     userId: input.userId,
     title: input.title ?? provisionalTitle(input.firstMessage?.text),
     titleSetByUser: input.title !== undefined,

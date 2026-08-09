@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import { agentConfigSchema, type CodexMode } from './agent-config.js'
+// Import de type seulement, dans les deux sens : `cards.ts` a besoin du statut de
+// conversation et ce fichier de la puce de carte. Rien n'en subsiste à l'exécution,
+// donc aucun cycle de module.
+import type { CardLinkDto } from './cards.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
@@ -191,6 +195,13 @@ export const createConversationBodySchema = z.object({
   agent: agentKindSchema,
   config: agentConfigSchema,
   worktreeId: z.string().nullable().default(null),
+  /**
+   * Carte que la conversation traite, quand elle est lancée depuis le board.
+   *
+   * Le rattachement se pose ici, à l'envoi, et non à l'ouverture du brouillon : tant
+   * que rien n'est envoyé, il n'y a pas de conversation à rattacher.
+   */
+  cardId: z.string().uuid().nullable().default(null),
   title: z.string().min(1).max(200).optional(),
   /**
    * Premier message, envoyé dans la foulée de la création.
@@ -215,6 +226,8 @@ export const updateConversationBodySchema = z
     archived: z.boolean(),
     /** Prend effet au message suivant : le runner est relancé en reprise. */
     config: agentConfigSchema,
+    /** Rattache la conversation à une carte du même projet, ou l'en détache avec `null`. */
+    cardId: z.string().uuid().nullable(),
   })
   .partial()
 
@@ -314,6 +327,13 @@ export interface ConversationDto {
   id: string
   projectId: string
   worktreeId: string | null
+  /**
+   * Carte que cette conversation traite, null quand elle n'en traite aucune.
+   *
+   * Résolue à la lecture plutôt que figée comme l'origine : le titre d'une carte se
+   * corrige, et le fil doit en montrer la version courante.
+   */
+  card: CardLinkDto | null
   userId: string
   title: string
   /** Vrai si l'utilisateur a renommé : le CLI ne proposera plus de titre. */

@@ -1,4 +1,4 @@
-import type { AgentKind } from '@sillage/protocol'
+import type { AgentKind, CardColumn } from '@sillage/protocol'
 import { sql } from 'drizzle-orm'
 import {
   index,
@@ -89,6 +89,75 @@ export const worktrees = sqliteTable(
   (t) => [uniqueIndex('idx_worktrees_project_name').on(t.projectId, t.name)],
 )
 
+/**
+ * Cartes du board : le travail à faire, distinct de la conversation qui l'exécute.
+ *
+ * Une carte survit à ses sessions et en porte plusieurs ; c'est ce qui la sépare d'une
+ * conversation, laquelle est une tentative d'exécution qui se termine et s'archive. Le
+ * rattachement vit sur `conversations.card_id`, une conversation ne traitant qu'une
+ * carte à la fois.
+ */
+export const cards = sqliteTable(
+  'cards',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * Numéro court affiché et cité (`#12`), attribué à la création et jamais réutilisé.
+     *
+     * Un UUID ne se tape pas dans un message et ne se lit pas dans un nom de branche.
+     * La séquence est par projet, comme les issues d'une forge.
+     */
+    number: integer('number').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull().default(''),
+    /**
+     * Position choisie dans le workflow. Jamais nommée `status` : ce mot désigne l'état
+     * d'exécution d'une conversation, et les deux ne doivent pas se confondre.
+     * L'activité et l'état de merge sont dérivés et n'ont donc pas de colonne ici.
+     */
+    column: text('column').$type<CardColumn>().notNull(),
+    /** Ordre manuel dans sa colonne, croissant. Réécrit en bloc par le glisser-déposer. */
+    position: integer('position').notNull().default(0),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('idx_cards_project_number').on(t.projectId, t.number),
+    index('idx_cards_project_column').on(t.projectId, t.column, t.position),
+  ],
+)
+
+/**
+ * Références `#12` trouvées dans la description d'une carte, réécrites à chaque
+ * enregistrement.
+ *
+ * Table dérivée du texte, comme l'index de recherche l'est du journal : elle ne porte
+ * rien que la description n'ait déjà, et sert à répondre « qui me référence » sans
+ * balayer toutes les descriptions du projet.
+ *
+ * La cible cascade comme la source : une carte supprimée ne doit pas laisser de
+ * backlink vers le vide. Le texte, lui, garde son `#12`, qui s'affichera comme une
+ * référence morte plutôt que de disparaître de la prose.
+ */
+export const cardRefs = sqliteTable(
+  'card_refs',
+  {
+    sourceId: text('source_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    targetId: text('target_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.sourceId, t.targetId] }), index('idx_card_refs_target').on(t.targetId)],
+)
+
 export const conversations = sqliteTable(
   'conversations',
   {
@@ -98,6 +167,18 @@ export const conversations = sqliteTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     /** NULL signifie que l'agent travaille à la racine du projet. */
     worktreeId: text('worktree_id').references(() => worktrees.id),
+    /**
+     * Carte que cette conversation traite, si elle en traite une.
+     *
+     * Rattachement, et non simple mention : citer `#12` dans un message donne du
+     * contexte au modèle sans engager la conversation, alors que cette colonne est ce
+     * dont l'activité d'une carte se déduit. Poser l'un pour l'autre ferait compter une
+     * session au chantier voisin dont elle a seulement parlé.
+     *
+     * Sans cascade : supprimer une carte n'efface pas les conversations qui l'ont
+     * traitée, elles redeviennent des conversations ordinaires.
+     */
+    cardId: text('card_id'),
     userId: text('user_id')
       .notNull()
       .references(() => users.id),
@@ -560,6 +641,7 @@ export type ConversationRow = typeof conversations.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
+export type CardRow = typeof cards.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect
 export type McpServerRow = typeof mcpServers.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect
