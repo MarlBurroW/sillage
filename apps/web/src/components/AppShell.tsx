@@ -31,6 +31,7 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
+  SquareKanban,
   Trash2,
   Users,
   X,
@@ -690,6 +691,15 @@ function ProjectGroup({
           >
             <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
               {t('shell.rename')}
+            </MenuItem>
+            <MenuItem
+              icon={<SquareKanban size={14} />}
+              onSelect={() => {
+                onNavigate()
+                navigate(`/p/${project.id}/board`)
+              }}
+            >
+              {t('shell.project.board')}
             </MenuItem>
             <MenuItem
               icon={<SlidersHorizontal size={14} />}

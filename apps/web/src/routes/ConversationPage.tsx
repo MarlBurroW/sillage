@@ -5,6 +5,7 @@ import {
   FolderTree,
   GaugeCircle,
   GitBranch,
+  SquareKanban,
   Loader,
   MoreHorizontal,
   PanelRight,
@@ -914,6 +915,20 @@ export function ConversationPage() {
                 >
                   <GitBranch size={10} />
                   <span className="max-w-32 truncate">{origin.title}</span>
+                </Link>
+              ) : null}
+
+              {/* Le chemin de retour vers le chantier : depuis une session, on remonte
+                  au travail qu'elle traite. Le titre est celui de la carte au moment du
+                  chargement, pas une copie figée à la création. */}
+              {conversation.card ? (
+                <Link
+                  to={`/p/${conversation.projectId}/board?carte=${conversation.card.number}`}
+                  className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
+                  title={t('conversation.meta.card', { title: conversation.card.title })}
+                >
+                  <SquareKanban size={10} />
+                  <span>#{conversation.card.number}</span>
                 </Link>
               ) : null}
 

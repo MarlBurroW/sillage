@@ -6,6 +6,7 @@ import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
 import { HomePage } from './routes/HomePage'
 import { LoginPage } from './routes/LoginPage'
+import { BoardPage } from './routes/BoardPage'
 import { ProjectPage } from './routes/ProjectPage'
 import { ProjectsSettingsPage } from './routes/ProjectsSettingsPage'
 import { AboutSection } from './routes/AboutSection'
@@ -47,6 +48,7 @@ export function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/p/:projectId" element={<ProjectPage />} />
+          <Route path="/p/:projectId/board" element={<BoardPage />} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />
