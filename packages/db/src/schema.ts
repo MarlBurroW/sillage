@@ -158,6 +158,38 @@ export const cardRefs = sqliteTable(
   (t) => [primaryKey({ columns: [t.sourceId, t.targetId] }), index('idx_card_refs_target').on(t.targetId)],
 )
 
+/**
+ * Ce qu'une session a appris ou fait sur une carte, et que la suivante doit savoir.
+ *
+ * Un flux ajouté, jamais réécrit, et c'est ce qui le distingue de la description : la
+ * description est l'énoncé du travail, tenu par une personne ; les notes sont son
+ * historique, écrit surtout par les agents. Les fondre ferait qu'un compte rendu de
+ * session efface la consigne qu'il était censé suivre.
+ *
+ * Chaque note dit qui l'a écrite et quand. C'est ce qui répond à l'objection faite au
+ * magasin de mémoire dans cette roadmap : une note anonyme et sans date vieillit en
+ * silence et finit par tromper, une note signée d'une session datée se relativise seule.
+ */
+export const cardNotes = sqliteTable(
+  'card_notes',
+  {
+    id: text('id').primaryKey(),
+    cardId: text('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    /**
+     * Session auteure, null quand la note est écrite à la main. Sans cascade : le compte
+     * rendu d'un travail survit à la suppression de la conversation qui l'a produit,
+     * c'est même à ce moment-là qu'il devient la seule trace.
+     */
+    conversationId: text('conversation_id'),
+    userId: text('user_id').references(() => users.id),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (t) => [index('idx_card_notes_card').on(t.cardId, t.createdAt)],
+)
+
 export const conversations = sqliteTable(
   'conversations',
   {
@@ -642,6 +674,7 @@ export type ConversationReadRow = typeof conversationReads.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect
+export type CardNoteRow = typeof cardNotes.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect
 export type McpServerRow = typeof mcpServers.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect

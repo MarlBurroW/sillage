@@ -162,6 +162,13 @@
       "when": 1786285800738,
       "tag": "0022_quick_zzzax",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1786300228370,
+      "tag": "0023_rare_captain_america",
+      "breakpoints": true
     }
   ]
 }

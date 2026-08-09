@@ -5,9 +5,12 @@
  * de toutes les précédentes et le board du projet. Les outils exposés ici ouvrent cette
  * mémoire et cet état, cadrés au projet courant.
  *
- * Tous lisent, aucun ne pilote. Une carte se déplace dans l'interface, par une personne :
- * l'agent qui déciderait lui-même qu'un travail est terminé se donnerait un satisfecit,
- * et la colonne cesserait d'être la position choisie qu'elle est censée rester.
+ * Un seul outil écrit, `add_card_note`, et il n'écrit que dans un flux ajouté. La
+ * frontière est là et pas ailleurs : un agent peut raconter ce qu'il a fait, il ne peut
+ * ni déplacer une carte ni réécrire sa description. Déplacer serait se donner un
+ * satisfecit, et la colonne cesserait d'être la position choisie qu'elle est censée
+ * rester ; réécrire la description ferait qu'un compte rendu de session efface la
+ * consigne qu'il était censé suivre.
  *
  * En `.mjs` plutôt qu'en TypeScript compilé, comme la sonde : le process est lancé par
  * le CLI, pas par Sillage, et le garder hors du graphe de modules du serveur évite
@@ -20,6 +23,7 @@
  * déjà un shell et le fichier sur le disque ; c'est le même accès, en plus commode.
  */
 import { createInterface } from 'node:readline'
+import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SILLAGE_MCP_DB
@@ -95,6 +99,19 @@ if (!DB_PATH || !PROJECT_ID) {
 }
 
 const db = new Database(DB_PATH, { readonly: true, fileMustExist: true })
+
+/**
+ * Connexion d'écriture, ouverte au premier besoin et gardée ensuite.
+ *
+ * Séparée de la connexion de lecture, qui reste en lecture seule : la quasi-totalité de
+ * ce serveur observe, et un seul outil écrit. Deux handles rendent cette asymétrie
+ * visible et empêchent qu'une requête de lecture mal écrite touche quoi que ce soit.
+ */
+let writable = null
+function writeDb() {
+  writable ??= new Database(DB_PATH, { fileMustExist: true })
+  return writable
+}
 
 const TOOLS = [
   {
@@ -197,6 +214,22 @@ const TOOLS = [
         },
       },
       required: ['number'],
+    },
+  },
+  {
+    name: 'add_card_note',
+    description:
+      "Ajoute une note au fil de la carte que traite cette conversation. Sert à laisser aux sessions suivantes ce qu'elles ne pourront pas redécouvrir seules : ce qui a été fait et où en est le travail, ce qui a été essayé sans marcher et pourquoi, une décision prise en route, une contrainte trouvée dans le code. Appelle cet outil en fin de travail, et avant toute interruption longue. N'y recopie pas ce que le dépôt dit déjà, ni ce que `git log` raconte : une note utile est celle qui aurait fait gagner du temps si on l'avait lue au début. Les notes s'ajoutent et ne s'effacent pas ; elles ne remplacent pas la description de la carte, qui appartient à la personne qui l'a écrite.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        body: {
+          type: 'string',
+          description:
+            "Texte de la note, en markdown. Quelques phrases ou une courte liste, pas un rapport : elle sera relue en entier au début de chaque session suivante.",
+        },
+      },
+      required: ['body'],
     },
   },
   {
@@ -696,15 +729,42 @@ function readCard(number) {
 }
 
 /** La carte que traite la conversation courante, s'il y en a une. */
-function currentCardNumber() {
-  const row = db
+function currentCard() {
+  return (
+    db
+      .prepare(
+        `SELECT c.id AS id, c.number AS number, c.title AS title
+         FROM conversations AS v JOIN cards AS c ON c.id = v.card_id
+         WHERE v.id = ?`,
+      )
+      .get(CURRENT_CONVERSATION) ?? null
+  )
+}
+
+/** Les notes d'une carte, du plus ancien au plus récent, avec leur auteur. */
+function cardNotes(cardId) {
+  return db
     .prepare(
-      `SELECT c.number AS number
-       FROM conversations AS v JOIN cards AS c ON c.id = v.card_id
-       WHERE v.id = ?`,
+      `SELECT n.body AS body, n.created_at AS createdAt,
+              n.conversation_id AS conversationId,
+              v.title AS conversationTitle, v.agent AS agent,
+              u.display_name AS userName
+       FROM card_notes AS n
+       LEFT JOIN conversations AS v ON v.id = n.conversation_id
+       LEFT JOIN users AS u ON u.id = n.user_id
+       WHERE n.card_id = ?
+       ORDER BY n.created_at`,
     )
-    .get(CURRENT_CONVERSATION)
-  return row?.number ?? null
+    .all(cardId)
+}
+
+function addCardNote(cardId, body) {
+  writeDb()
+    .prepare(
+      `INSERT INTO card_notes (id, card_id, conversation_id, user_id, body, created_at)
+       VALUES (?, ?, ?, NULL, ?, ?)`,
+    )
+    .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, body, Date.now())
 }
 
 function renderCards(rows, column) {
@@ -717,7 +777,7 @@ function renderCards(rows, column) {
       : "Ce projet n'a aucune carte. Le board est vide, ce qui ne veut pas dire qu'il n'y a rien à faire : tout n'y est pas forcément décrit."
   }
 
-  const mine = currentCardNumber()
+  const mine = currentCard()?.number ?? null
   const lines = shown.map((row) => {
     const excerpt = (row.description ?? '').trim().replace(/\s+/g, ' ')
     const summary = excerpt
@@ -751,6 +811,19 @@ function renderCard(card) {
     parts.push(`${card.sessions.length} session(s) sur cette carte :\n${lines.join('\n')}`)
   } else {
     parts.push("Aucune session n'a encore travaillé sur cette carte.")
+  }
+
+  const notes = cardNotes(card.id)
+  if (notes.length > 0) {
+    const lines = notes.map((note) => {
+      const who = note.userName
+        ? note.userName
+        : note.conversationId === CURRENT_CONVERSATION
+          ? 'cette conversation'
+          : `session ${note.agent ?? '?'}${note.conversationTitle ? ` « ${note.conversationTitle} »` : ''}`
+      return `[${who}, ${ago(note.createdAt)}]\n${note.body}`
+    })
+    parts.push(`${notes.length} note(s) laissée(s) sur cette carte :\n\n${lines.join('\n\n')}`)
   }
 
   const link = (rows) =>
@@ -929,6 +1002,24 @@ function callTool(name, args) {
       }
     }
     return text(renderCard(card))
+  }
+
+  if (name === 'add_card_note') {
+    const body = typeof args?.body === 'string' ? args.body.trim() : ''
+    if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
+
+    const card = currentCard()
+    if (!card) {
+      return {
+        ...text(
+          "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Sillage, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même.",
+        ),
+        isError: true,
+      }
+    }
+
+    addCardNote(card.id, body)
+    return text(`Note ajoutée à la carte #${card.number} « ${card.title} ».`)
   }
 
   if (name === 'count_active_sessions') {

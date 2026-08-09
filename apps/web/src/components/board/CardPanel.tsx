@@ -13,6 +13,7 @@ import { useDeleteCard, useUpdateCard } from '../../lib/cards'
 import { translate, useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { Badge, Button, IconButton, cx } from '../ui'
+import { CardNotes } from './CardNotes'
 import { COLUMN_TONES, columnLabel } from './columns'
 
 interface CardPanelProps {
@@ -229,6 +230,8 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
             {t('board.card.launch')}
           </Button>
         </div>
+
+        <CardNotes projectId={projectId} cardId={card.id} />
 
         <CardLinkList
           title={t('board.card.references')}

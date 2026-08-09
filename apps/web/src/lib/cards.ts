@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CardColumn, CardDto, CardLinkDto } from '@sillage/protocol'
+import type { CardColumn, CardDto, CardLinkDto, CardNoteDto } from '@sillage/protocol'
 import { api } from './api'
 
 const cardsKey = (projectId: string) => ['cards', projectId]
@@ -110,5 +110,46 @@ export function useCardSuggestions(projectId: string | undefined, query: string 
     },
     enabled: Boolean(projectId) && query !== null,
     staleTime: 15_000,
+  })
+}
+
+const notesKey = (cardId: string) => ['card-notes', cardId]
+
+/**
+ * Le fil d'une carte, chargé à part du board.
+ *
+ * Les notes s'accumulent au fil des sessions et ne servent qu'au panneau ouvert : les
+ * embarquer dans la liste ferait payer à chaque affichage du board des textes que
+ * personne ne regarde.
+ */
+export function useCardNotes(cardId: string | undefined) {
+  return useQuery({
+    queryKey: notesKey(cardId ?? ''),
+    queryFn: () => api.get<CardNoteDto[]>(`/api/cards/${cardId}/notes`),
+    enabled: Boolean(cardId),
+    staleTime: 15_000,
+  })
+}
+
+export function useAddCardNote(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: string) => api.post<CardNoteDto[]>(`/api/cards/${cardId}/notes`, { body }),
+    onSuccess: (notes) => {
+      queryClient.setQueryData(notesKey(cardId), notes)
+      // Le compte affiché sur la tuile vient du board, qui ne sait rien de cet ajout.
+      void queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
+    },
+  })
+}
+
+export function useDeleteCardNote(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (noteId: string) => api.delete<void>(`/api/card-notes/${noteId}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: notesKey(cardId) })
+      void queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
+    },
   })
 }

@@ -94,6 +94,33 @@ export interface CardConversationDto {
   createdAt: number
 }
 
+const NOTE_MAX = 8_000
+
+export const createCardNoteBodySchema = z.object({
+  body: z.string().min(1).max(NOTE_MAX),
+})
+
+/**
+ * Une note du fil d'une carte : ce qu'une session a fait, trouvé ou décidé.
+ *
+ * Ajoutée, jamais réécrite, et distincte de la description : celle-ci est l'énoncé du
+ * travail, tenu par une personne ; les notes en sont l'historique, écrit surtout par
+ * les agents.
+ */
+export interface CardNoteDto {
+  id: string
+  body: string
+  createdAt: number
+  /**
+   * Qui l'a écrite. Une note d'agent porte sa conversation, pour qu'on puisse aller
+   * lire le travail dont elle rend compte ; `null` quand la conversation a été
+   * supprimée depuis, la note lui survivant.
+   */
+  author:
+    | { kind: 'agent'; agent: AgentKind; conversationId: string | null; conversationTitle: string }
+    | { kind: 'user'; name: string }
+}
+
 export interface CardDto {
   id: string
   projectId: string
@@ -108,6 +135,8 @@ export interface CardDto {
   createdAt: number
   updatedAt: number
   conversations: CardConversationDto[]
+  /** Les notes ne voyagent pas avec la liste : le board n'en affiche que le compte. */
+  noteCount: number
   /** Cartes que la description de celle-ci mentionne. */
   references: CardLinkDto[]
   /** Cartes dont la description mentionne celle-ci. */
