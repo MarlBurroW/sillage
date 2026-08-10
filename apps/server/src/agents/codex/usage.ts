@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
 import type { GetAccountRateLimitsResponse, RateLimitSnapshot } from '@sillage/codex-bindings/v2'
 import { CachedProbe } from '../cached-probe.js'
+import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
 import { describeWindow } from './quota.js'
@@ -12,8 +13,6 @@ import { describeWindow } from './quota.js'
  * L'app-server est nettement plus léger qu'une session Claude, mais la lecture reste
  * mise en cache : elle démarre quand même un process.
  */
-
-const CACHE_TTL_MS = 60_000
 
 function toWindow(
   id: string,
@@ -74,7 +73,7 @@ function normalize(response: GetAccountRateLimitsResponse): Omit<AgentUsage, 'fe
 }
 
 export class CodexUsageReader {
-  private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
+  private readonly cached = new CachedProbe(USAGE_CACHE_TTL_MS, () => this.probe())
 
   constructor(private readonly executable: () => Promise<string>) {}
 

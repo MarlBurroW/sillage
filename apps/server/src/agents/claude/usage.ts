@@ -3,6 +3,7 @@ import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
 import { AsyncQueue } from '../async-queue.js'
 import { CachedProbe } from '../cached-probe.js'
+import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 
 /**
  * Consommation du compte Claude, lue par la requête de contrôle qui alimente `/usage`.
@@ -14,8 +15,6 @@ import { CachedProbe } from '../cached-probe.js'
  * ne doit priver l'UI que de la consommation, pas d'autre chose.
  */
 
-/** Une lecture démarre un CLI (~400 Mo) : on ne la refait pas à chaque ouverture. */
-const CACHE_TTL_MS = 60_000
 const PROBE_TIMEOUT_MS = 25_000
 
 /**
@@ -122,7 +121,7 @@ function normalize(payload: unknown): Omit<AgentUsage, 'fetchedAt'> {
 }
 
 export class ClaudeUsageReader {
-  private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
+  private readonly cached = new CachedProbe(USAGE_CACHE_TTL_MS, () => this.probe())
 
   read(force = false): Promise<AgentUsage> {
     return this.cached.read(force)
