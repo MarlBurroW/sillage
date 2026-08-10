@@ -62,18 +62,32 @@
     </section>
 
     <section class="why">
-      <h2>Keep the harness. Drop the terminal.</h2>
+      <h2>Why Sillage</h2>
       <div>
         <p>
-          Coding agents work best inside the harness their vendor ships: its prompts, its
-          tools, its permission flow. Reimplementing that is how you end up with a worse
-          agent. So Sillage does not reimplement it. It supervises the real CLI processes
-          and streams what they emit.
+          I wanted one place, on a server I own, that I can open from my phone. That is the
+          whole starting point: vibe-code from wherever I happen to be, without hauling a
+          laptop and a terminal around to do it.
         </p>
         <p>
-          What it does replace is the terminal, which is a miserable place to be on a phone,
-          and a poor fit for the half of your ideas that show up away from a keyboard. Open
-          the tab on any device, answer the permission prompt, read the diff, keep going.
+          What I did not want was another agent. Claude Code and Codex ship a harness their
+          makers put real work into tuning: the prompts, the tools, the permission flow.
+          Rewriting that inside a web app gets you a worse agent behind a nicer interface.
+          So Sillage drives the native CLIs and stays out of their way.
+        </p>
+        <p>
+          It speaks Claude Code and Codex because those are the two I use. That is my own
+          need, not a final list: adding a CLI means writing an adapter for it, and I expect
+          to add more.
+        </p>
+        <p>
+          The last piece is the one a terminal cannot give me. I wanted a thin layer above
+          the CLIs so that a session knows the others exist: what is running right now, what
+          an earlier session decided and why, what it left for whoever picks the work up
+          next. Whichever harness happened to run it.
+        </p>
+        <p class="signature">
+          <a href="https://github.com/MarlBurroW">MarlBurroW</a>, who wrote it
         </p>
       </div>
     </section>

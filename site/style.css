@@ -191,6 +191,8 @@ main > section + section { border-top: 1px solid var(--line); }
 
 .why { display: grid; grid-template-columns: 1fr 1.6fr; gap: clamp(2rem, 6vw, 5rem); }
 .why div { display: grid; gap: 1.2rem; color: var(--muted); }
+.signature { margin-top: .6rem; color: var(--faint); font-size: .88rem; }
+.signature a { color: var(--ink); font-weight: 550; text-decoration-color: var(--line); text-underline-offset: 3px; }
 
 /* Tour */
 
