@@ -10,6 +10,7 @@ import {
   worktrees,
   cards,
   cardNotes,
+  cardRefs,
   conversations,
   conversationReads,
   events,
@@ -274,6 +275,83 @@ export async function searchPlaces(query: string): Promise<Place[]> {
   git(root, 'commit', '-m', 'Bootstrap Atlas API')
 }
 
+/** Le site de documentation, troisième projet de la sidebar. */
+function createDocsRepo(root: string): void {
+  if (existsSync(root)) return
+  mkdirSync(root, { recursive: true })
+  writeTree(root, {
+    'package.json': `${JSON.stringify(
+      {
+        name: 'nimbus-docs',
+        private: true,
+        version: '0.3.0',
+        type: 'module',
+        scripts: { dev: 'astro dev', build: 'astro build' },
+        dependencies: { astro: '^5.7.0' },
+      },
+      null,
+      2,
+    )}\n`,
+    'README.md': '# Nimbus docs\n\nUser guide and API reference, built with Astro.\n',
+    'astro.config.mjs': `import { defineConfig } from 'astro/config'
+
+export default defineConfig({
+  site: 'https://docs.nimbus.example',
+})
+`,
+    'src/pages/index.md': `---
+title: Nimbus
+---
+
+Nimbus is a small offline-first weather PWA. Start with the quickstart, then the
+city configuration guide.
+`,
+    'src/pages/quickstart.md': `---
+title: Quickstart
+---
+
+## Install
+
+\`\`\`sh
+pnpm install
+pnpm dev
+\`\`\`
+
+Open http://localhost:4321 and add your first city.
+`,
+  })
+  git(root, 'init', '-b', 'main')
+  git(root, 'add', '-A')
+  git(root, 'commit', '-m', 'Bootstrap the docs site')
+}
+
+/**
+ * Une branche de plus dans un vrai worktree : celle de la carte « à vérifier », avec
+ * un commit non mergé pour que le board affiche un état de merge parlant.
+ */
+function createRadarWorktree(repoRoot: string, worktreePath: string): void {
+  if (existsSync(worktreePath)) return
+  mkdirSync(join(worktreePath, '..'), { recursive: true })
+  git(repoRoot, 'worktree', 'add', '-b', 'feat/radar-prefetch', worktreePath, 'main')
+  writeTree(worktreePath, {
+    'src/lib/radar-prefetch.ts': `const PREFETCH_RING = 1
+
+/** Prefetch the tiles around the viewport so panning never shows a blank. */
+export function tilesToPrefetch(center: { x: number; y: number }, zoom: number) {
+  const tiles: Array<{ x: number; y: number; z: number }> = []
+  for (let dx = -PREFETCH_RING; dx <= PREFETCH_RING; dx++) {
+    for (let dy = -PREFETCH_RING; dy <= PREFETCH_RING; dy++) {
+      tiles.push({ x: center.x + dx, y: center.y + dy, z: zoom })
+    }
+  }
+  return tiles
+}
+`,
+  })
+  git(worktreePath, 'add', '-A')
+  git(worktreePath, 'commit', '-m', 'Prefetch radar tiles around the viewport')
+}
+
 /**
  * La branche du chantier « offline cache », dans un vrai worktree git : le board en
  * dérive l'état de merge, donc la branche doit exister et porter un commit non mergé.
@@ -308,6 +386,61 @@ function readAll(): Record<string, Forecast> {
   })
   git(worktreePath, 'add', '-A')
   git(worktreePath, 'commit', '-m', 'Cache the last forecast per city')
+  // Le reste du chantier reste non commité : la vue git du panneau montre ainsi un
+  // vrai diff de travail, cohérent avec ce que la conversation du hero raconte.
+  writeTree(worktreePath, {
+    'src/lib/forecast.ts': `import { lastKnownForecast } from './forecast-cache'
+
+export interface Forecast {
+  city: string
+  temperatureC: number
+  summary: string
+  fetchedAt: number
+  fromCache?: boolean
+}
+
+const API_BASE = 'https://api.open-meteo.com/v1'
+
+export async function fetchForecast(city: string): Promise<Forecast> {
+  let response: Response
+  try {
+    response = await fetch(\`\${API_BASE}/forecast?city=\${encodeURIComponent(city)}\`)
+  } catch (error) {
+    const cached = lastKnownForecast(city)
+    if (cached) return { ...cached, fromCache: true }
+    throw error
+  }
+  if (!response.ok) throw new Error(\`Forecast request failed: \${response.status}\`)
+  const data = await response.json()
+  return {
+    city,
+    temperatureC: data.current.temperature_2m,
+    summary: data.current.summary,
+    fetchedAt: Date.now(),
+  }
+}
+`,
+    'src/components/ForecastCard.tsx': `import type { Forecast } from '../lib/forecast'
+
+function age(fetchedAt: number): string {
+  const minutes = Math.round((Date.now() - fetchedAt) / 60000)
+  return minutes < 1 ? 'just now' : \`\${minutes} min ago\`
+}
+
+export function ForecastCard({ forecast, showAge }: { forecast: Forecast; showAge?: boolean }) {
+  return (
+    <article className="forecast-card">
+      <h2>{forecast.city}</h2>
+      <p className="temperature">{Math.round(forecast.temperatureC)}°</p>
+      <p className="summary">{forecast.summary}</p>
+      {forecast.fromCache && showAge ? (
+        <p className="cached-badge">cached · {age(forecast.fetchedAt)}</p>
+      ) : null}
+    </article>
+  )
+}
+`,
+  })
 }
 
 interface SeededEvent {
@@ -328,10 +461,14 @@ async function main(): Promise<void> {
   const demoRoot = join(dataDir, 'demo')
   const nimbusRoot = join(demoRoot, 'nimbus')
   const atlasRoot = join(demoRoot, 'atlas-api')
+  const docsRoot = join(demoRoot, 'nimbus-docs')
   const offlineCachePath = join(dataDir, 'worktrees', 'nimbus', 'feat-offline-cache')
+  const radarPath = join(dataDir, 'worktrees', 'nimbus', 'feat-radar-prefetch')
   createNimbusRepo(nimbusRoot)
   createAtlasRepo(atlasRoot)
+  createDocsRepo(docsRoot)
   createOfflineCacheWorktree(nimbusRoot, offlineCachePath)
+  createRadarWorktree(nimbusRoot, radarPath)
 
   const { db, sqlite } = openDatabase(config.paths.database)
   runPendingMigrations(db, migrationsFolder())
@@ -341,6 +478,7 @@ async function main(): Promise<void> {
   await db.delete(permissionRequests)
   await db.delete(conversationReads)
   await db.delete(cardNotes)
+  await db.delete(cardRefs)
   await db.delete(conversations)
   await db.delete(cards)
   await db.delete(worktrees)
@@ -361,6 +499,7 @@ async function main(): Promise<void> {
 
   const nimbusId = randomUUID()
   const atlasId = randomUUID()
+  const docsId = randomUUID()
   await db.insert(projects).values([
     {
       id: nimbusId,
@@ -382,18 +521,40 @@ async function main(): Promise<void> {
       position: 1,
       createdAt: now - 32 * 86400e3,
     },
+    {
+      id: docsId,
+      name: 'Docs',
+      workspacePath: docsRoot,
+      ownerId: userId,
+      visibility: 'private',
+      color: '#f472b6',
+      position: 2,
+      createdAt: now - 25 * 86400e3,
+    },
   ])
 
   const offlineWorktreeId = randomUUID()
-  await db.insert(worktrees).values({
-    id: offlineWorktreeId,
-    projectId: nimbusId,
-    name: 'feat/offline-cache',
-    path: offlineCachePath,
-    baseRef: 'main',
-    createdBy: userId,
-    createdAt: now - 3 * 86400e3,
-  })
+  const radarWorktreeId = randomUUID()
+  await db.insert(worktrees).values([
+    {
+      id: offlineWorktreeId,
+      projectId: nimbusId,
+      name: 'feat/offline-cache',
+      path: offlineCachePath,
+      baseRef: 'main',
+      createdBy: userId,
+      createdAt: now - 3 * 86400e3,
+    },
+    {
+      id: radarWorktreeId,
+      projectId: nimbusId,
+      name: 'feat/radar-prefetch',
+      path: radarPath,
+      baseRef: 'main',
+      createdBy: userId,
+      createdAt: now - 8 * 86400e3,
+    },
+  ])
 
   await db.insert(mcpServers).values([
     {
@@ -430,9 +591,13 @@ async function main(): Promise<void> {
     { number: 1, title: 'Severe weather alerts', column: 'todo', position: 0, description: 'Push a notification when Open-Meteo flags a warning for a saved city. Needs a settings toggle per city.' },
     { number: 6, title: 'Dark mode for the map layer', column: 'todo', position: 1, description: 'The radar tiles stay light in dark mode and glow. Swap to the dark tile set when the theme changes.' },
     { number: 3, title: 'Hourly forecast chart', column: 'todo', position: 2, description: 'A 24h temperature and precipitation chart on the city detail view.' },
+    { number: 7, title: 'Wind direction arrows on the map', column: 'todo', position: 3, description: 'Overlay animated arrows from the wind field. Same tile grid as the radar layer.' },
+    { number: 10, title: 'City list virtualization', column: 'todo', position: 4, description: 'The city list re-renders every card on refresh. Follow-up of #2: reuse the cache timestamps to skip untouched rows.' },
     { number: 2, title: 'Offline caching for forecasts', column: 'in_progress', position: 0, description: 'The app goes blank without a connection. Cache the last forecast per city and show how old the data is.' },
     { number: 4, title: 'Radar map performance', column: 'review', position: 0, description: 'Tile prefetching landed on feat/radar-prefetch, needs a review pass on mobile.' },
     { number: 5, title: 'Onboarding flow', column: 'done', position: 0, description: 'First-run screen: pick a city, choose units, done.' },
+    { number: 8, title: 'Switch to Vite 6', column: 'done', position: 1, description: 'Migration went through with no config change beyond the plugin bump.' },
+    { number: 9, title: 'Android home-screen widget', column: 'abandoned', position: 0, description: 'Superseded by the PWA shortcut work; keeping the notes for reference.' },
   ] as const
 
   const cardIds = new Map<number, string>()
@@ -448,8 +613,30 @@ async function main(): Promise<void> {
       column: row.column,
       position: row.position,
       createdBy: userId,
-      createdAt: now - (10 - row.number) * 86400e3,
+      createdAt: now - (14 - row.number) * 86400e3,
       updatedAt: now - 86400e3,
+    })
+  }
+  // Le backlink de la description de la carte 10, qui cite #2.
+  await db.insert(cardRefs).values({ sourceId: cardIds.get(10)!, targetId: cardIds.get(2)! })
+
+  const atlasCardRows = [
+    { number: 1, title: 'OpenAPI spec for /places', column: 'todo', position: 0, description: 'Publish the schema so Nimbus can generate its client.' },
+    { number: 2, title: 'Nightly geonames refresh', column: 'todo', position: 1, description: 'The dump is loaded once at boot; refresh it on a schedule instead.' },
+    { number: 3, title: 'Rate limiting', column: 'done', position: 0, description: '60 requests per minute per API key, 429 with Retry-After beyond.' },
+  ] as const
+  for (const row of atlasCardRows) {
+    await db.insert(cards).values({
+      id: randomUUID(),
+      projectId: atlasId,
+      number: row.number,
+      title: row.title,
+      description: row.description,
+      column: row.column,
+      position: row.position,
+      createdBy: userId,
+      createdAt: now - (8 - row.number) * 86400e3,
+      updatedAt: now - 2 * 86400e3,
     })
   }
 
@@ -463,7 +650,7 @@ async function main(): Promise<void> {
     agent: 'claude' | 'codex'
     model: string
     config: Record<string, unknown>
-    status: 'idle' | 'running' | 'awaiting_input'
+    status: 'idle' | 'running' | 'awaiting_input' | 'interrupted'
     ageDays: number
     /** Durée totale du fil en secondes, pour étaler les horodatages. */
     spanSec: number
@@ -970,6 +1157,106 @@ All 6 forecast tests pass, including the two new offline cases.`,
     { at: 16, event: { type: 'turn.completed', stopReason: 'success', costUsd: 0.0632, inputTokens: 9, outputTokens: 720, cacheCreationTokens: 3600, cacheReadTokens: 18400 } },
   ]
 
+  /**
+   * Journal minimal mais rejouable : un tour complet avec au plus un appel d'outil.
+   * Suffisant pour les fils que les captures ne font qu'apercevoir dans la sidebar.
+   */
+  function simpleThread(input: {
+    agent: 'claude' | 'codex'
+    model: string
+    cwd: string
+    user: string
+    tool?: {
+      name: string
+      input: unknown
+      output: string
+      durationMs: number
+      file?: { path: string; action: 'created' | 'modified' | 'deleted' }
+    }
+    assistant: string
+    costUsd: number
+    outputTokens: number
+  }): SeededEvent[] {
+    const toolCallId = `toolu_demo_${randomUUID().slice(0, 8)}`
+    const thread: SeededEvent[] = [
+      {
+        at: 0,
+        event: {
+          type: 'session.started',
+          agent: input.agent,
+          agentSessionId: randomUUID(),
+          model: input.model,
+          cwd: input.cwd,
+          tools: input.agent === 'claude' ? CLAUDE_TOOLS : [],
+        },
+      },
+      {
+        at: 1,
+        event: {
+          type: 'message.completed',
+          messageId: 'msg_user_1',
+          role: 'user',
+          blocks: [{ type: 'text', text: input.user }],
+          parentToolCallId: null,
+        },
+      },
+      { at: 2, event: { type: 'turn.started' } },
+    ]
+    if (input.tool) {
+      thread.push({
+        at: 5,
+        event: {
+          type: 'tool.started',
+          toolCallId,
+          name: input.tool.name,
+          input: input.tool.input,
+          parentToolCallId: null,
+        },
+      })
+      if (input.tool.file) {
+        thread.push({
+          at: 6,
+          event: { type: 'file.edited', toolCallId, path: input.tool.file.path, action: input.tool.file.action },
+        })
+      }
+      thread.push({
+        at: 6,
+        event: {
+          type: 'tool.completed',
+          toolCallId,
+          output: input.tool.output,
+          isError: false,
+          durationMs: input.tool.durationMs,
+        },
+      })
+    }
+    thread.push(
+      {
+        at: 12,
+        event: {
+          type: 'message.completed',
+          messageId: 'msg_a1',
+          role: 'assistant',
+          blocks: [{ type: 'text', text: input.assistant }],
+          parentToolCallId: null,
+        },
+      },
+      {
+        at: 13,
+        event: {
+          type: 'turn.completed',
+          stopReason: 'success',
+          costUsd: input.costUsd,
+          inputTokens: 10,
+          outputTokens: input.outputTokens,
+          cacheCreationTokens: 3000,
+          cacheReadTokens: 15000,
+        },
+      },
+    )
+    return thread
+  }
+
   const seeds: ConversationSeed[] = [
     {
       projectId: nimbusId,
@@ -1047,6 +1334,222 @@ All 6 forecast tests pass, including the two new offline cases.`,
       inputTokens: 9,
       outputTokens: 720,
       events: rateLimitEvents,
+    },
+    {
+      projectId: nimbusId,
+      worktreeId: radarWorktreeId,
+      cardId: cardIds.get(4),
+      title: 'Radar tile prefetching',
+      agent: 'claude',
+      model: 'claude-sonnet-5',
+      config: claudeConfig,
+      status: 'idle',
+      ageDays: 6,
+      spanSec: 13,
+      costUsd: 0.3418,
+      inputTokens: 18,
+      outputTokens: 2450,
+      events: simpleThread({
+        agent: 'claude',
+        model: 'claude-sonnet-5',
+        cwd: radarPath,
+        user: 'Panning the radar map shows blank tiles for a second. Prefetch the ring of tiles around the viewport.',
+        tool: {
+          name: 'Write',
+          input: { file_path: 'src/lib/radar-prefetch.ts', content: '// ring prefetch…' },
+          output: 'File created successfully at src/lib/radar-prefetch.ts',
+          durationMs: 280,
+          file: { path: 'src/lib/radar-prefetch.ts', action: 'created' },
+        },
+        assistant:
+          'Prefetching is in: `tilesToPrefetch` computes the ring around the viewport and the map layer warms those tiles on idle. Panning one screen in any direction no longer shows blanks. Worth a review pass on mobile, where the tile budget is tighter.',
+        costUsd: 0.3418,
+        outputTokens: 2450,
+      }),
+    },
+    {
+      projectId: nimbusId,
+      title: 'Migrate icons to Lucide',
+      agent: 'claude',
+      model: 'claude-sonnet-5',
+      config: claudeConfig,
+      status: 'idle',
+      ageDays: 3,
+      spanSec: 13,
+      costUsd: 0.2216,
+      inputTokens: 16,
+      outputTokens: 1830,
+      events: simpleThread({
+        agent: 'claude',
+        model: 'claude-sonnet-5',
+        cwd: nimbusRoot,
+        user: 'Replace the hand-rolled SVG icons with lucide-react, keeping the same sizes.',
+        tool: {
+          name: 'Bash',
+          input: { command: 'pnpm add lucide-react', description: 'Install lucide-react' },
+          output: 'dependencies:\n+ lucide-react 0.488.0\n\nDone in 2.1s',
+          durationMs: 2140,
+        },
+        assistant:
+          'All 14 icons now come from `lucide-react` at the same 16/20px sizes, and the `icons/` folder is gone. Bundle is 3.2 kB lighter after tree-shaking.',
+        costUsd: 0.2216,
+        outputTokens: 1830,
+      }),
+    },
+    {
+      projectId: nimbusId,
+      title: 'Investigate slow first paint',
+      agent: 'claude',
+      model: 'claude-sonnet-5',
+      config: claudeConfig,
+      status: 'interrupted',
+      ageDays: 5,
+      spanSec: 13,
+      costUsd: 0.1573,
+      inputTokens: 11,
+      outputTokens: 1220,
+      unread: true,
+      events: simpleThread({
+        agent: 'claude',
+        model: 'claude-sonnet-5',
+        cwd: nimbusRoot,
+        user: 'Lighthouse gives us 2.8s first contentful paint on mobile. Find out where it goes.',
+        tool: {
+          name: 'Bash',
+          input: { command: 'pnpm build && du -sh dist/assets/*', description: 'Build and measure bundles' },
+          output: 'dist/assets/index-C3k9d2.js  412K\ndist/assets/map-vendor-8fkq1.js  926K',
+          durationMs: 14200,
+        },
+        assistant:
+          'The map vendor chunk is 926 kB and loads before anything renders. Splitting it behind the first map interaction should cut FCP roughly in half; I was starting on the dynamic import when we stopped.',
+        costUsd: 0.1573,
+        outputTokens: 1220,
+      }),
+    },
+    {
+      projectId: nimbusId,
+      title: 'Playwright smoke tests',
+      agent: 'codex',
+      model: 'gpt-5.2-codex',
+      config: codexConfig,
+      status: 'idle',
+      ageDays: 9,
+      spanSec: 13,
+      costUsd: 0.0914,
+      inputTokens: 8,
+      outputTokens: 860,
+      events: simpleThread({
+        agent: 'codex',
+        model: 'gpt-5.2-codex',
+        cwd: nimbusRoot,
+        user: 'Add a Playwright smoke test: app boots, three cities render, detail view opens.',
+        tool: {
+          name: 'Write',
+          input: { file_path: 'e2e/smoke.spec.ts', content: '// boot + city list + detail…' },
+          output: 'File created successfully at e2e/smoke.spec.ts',
+          durationMs: 320,
+          file: { path: 'e2e/smoke.spec.ts', action: 'created' },
+        },
+        assistant:
+          'Smoke suite added with three scenarios, wired into CI as a required check. It waits on the forecast cards themselves, not on network idle, so it stays stable offline.',
+        costUsd: 0.0914,
+        outputTokens: 860,
+      }),
+    },
+    {
+      projectId: atlasId,
+      title: 'Add /health and request metrics',
+      agent: 'claude',
+      model: 'claude-sonnet-5',
+      config: claudeConfig,
+      status: 'idle',
+      ageDays: 7,
+      spanSec: 13,
+      costUsd: 0.1187,
+      inputTokens: 9,
+      outputTokens: 1040,
+      events: simpleThread({
+        agent: 'claude',
+        model: 'claude-sonnet-5',
+        cwd: atlasRoot,
+        user: 'Add a /health endpoint and basic request metrics we can scrape.',
+        tool: {
+          name: 'Write',
+          input: { file_path: 'src/routes/health.ts', content: '// health + metrics…' },
+          output: 'File created successfully at src/routes/health.ts',
+          durationMs: 240,
+          file: { path: 'src/routes/health.ts', action: 'created' },
+        },
+        assistant:
+          '`/health` reports uptime and the geonames dump age; `/metrics` exposes request counts and p95 latency per route in Prometheus format.',
+        costUsd: 0.1187,
+        outputTokens: 1040,
+      }),
+    },
+    {
+      projectId: docsId,
+      title: 'Write the quickstart guide',
+      agent: 'claude',
+      model: 'claude-sonnet-5',
+      config: claudeConfig,
+      status: 'idle',
+      ageDays: 1,
+      spanSec: 13,
+      costUsd: 0.1349,
+      inputTokens: 12,
+      outputTokens: 1160,
+      unread: true,
+      events: simpleThread({
+        agent: 'claude',
+        model: 'claude-sonnet-5',
+        cwd: docsRoot,
+        user: 'Write a quickstart page: install, first run, adding a city. Short, with copy-pasteable commands.',
+        tool: {
+          name: 'Write',
+          input: { file_path: 'src/pages/quickstart.md', content: '---\ntitle: Quickstart\n---\n…' },
+          output: 'File created successfully at src/pages/quickstart.md',
+          durationMs: 260,
+          file: { path: 'src/pages/quickstart.md', action: 'created' },
+        },
+        assistant:
+          'Quickstart is up: install, dev server, adding your first city, each with a copy-pasteable block. It links to the units guide rather than repeating it.',
+        costUsd: 0.1349,
+        outputTokens: 1160,
+      }),
+    },
+    {
+      projectId: docsId,
+      title: 'Dark mode for code blocks',
+      agent: 'codex',
+      model: 'gpt-5.2-codex',
+      config: codexConfig,
+      status: 'idle',
+      ageDays: 3,
+      spanSec: 13,
+      costUsd: 0.0568,
+      inputTokens: 7,
+      outputTokens: 610,
+      events: simpleThread({
+        agent: 'codex',
+        model: 'gpt-5.2-codex',
+        cwd: docsRoot,
+        user: 'Code blocks stay light in dark mode. Wire the syntax theme to the site theme.',
+        tool: {
+          name: 'Edit',
+          input: {
+            file_path: 'astro.config.mjs',
+            old_string: "site: 'https://docs.nimbus.example',",
+            new_string: "site: 'https://docs.nimbus.example',\n  markdown: { shikiConfig: { themes: { light: 'github-light', dark: 'github-dark' } } },",
+          },
+          output: 'The file astro.config.mjs has been updated.',
+          durationMs: 150,
+          file: { path: 'astro.config.mjs', action: 'modified' },
+        },
+        assistant:
+          'Shiki now emits both palettes and the site theme toggles them with a CSS variable, so code blocks follow dark mode with no flash on load.',
+        costUsd: 0.0568,
+        outputTokens: 610,
+      }),
     },
   ]
 

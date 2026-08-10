@@ -111,12 +111,53 @@ function buildShots(t) {
     },
     { name: 'settings-mcp', path: '/settings/mcp', waitFor: 'text=playwright' },
     { name: 'settings-appearance', path: '/settings/apparence', waitFor: 'text=Shared with the accent color' },
+    // Les vues du panneau latéral ferment la liste : leur `storage` (panneau ouvert)
+    // reste posé dans le contexte, et rien ne doit se capturer après elles.
+    {
+      name: 'panel-files',
+      path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
+      waitFor: 'text=Offline fallback is in place',
+      storage: { 'sillage.panelOpen': '1' },
+      viewport: BOARD_VIEWPORT,
+      interact: async (page) => {
+        const panel = page.locator('[data-panel="workspace"]')
+        await panel.waitFor({ timeout: 10000 })
+        // Déplier jusqu'au fichier, puis attendre que l'éditeur montre son contenu.
+        await panel.locator('text=src').first().click()
+        await panel.locator('text=lib').first().click()
+        await panel.locator('text=forecast.ts').first().click()
+        await panel.locator('text=API_BASE').first().waitFor({ timeout: 10000 })
+      },
+    },
+    {
+      name: 'panel-git',
+      path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
+      waitFor: 'text=Offline fallback is in place',
+      storage: { 'sillage.panelOpen': '1' },
+      viewport: BOARD_VIEWPORT,
+      interact: async (page) => {
+        const panel = page.locator('[data-panel="workspace"]')
+        await panel.waitFor({ timeout: 10000 })
+        await panel.locator('text=Git').first().click()
+        await panel.locator('text=Cache the last forecast per city').first().waitFor({ timeout: 10000 })
+        // Déplier le diff du fichier principal, pour montrer de vrais hunks.
+        await panel.locator('text=src/lib/forecast.ts').first().click()
+        await panel.locator('text=fromCache').first().waitFor({ timeout: 10000 })
+      },
+    },
   ]
 }
 
 async function shoot(page, shot, file) {
   await page.setViewportSize(shot.viewport ?? VIEWPORT)
   await page.goto(`${BASE_URL}${shot.path}`)
+  if (shot.storage) {
+    // Les clés lues au chargement du module (panneau ouvert…) demandent un reload.
+    await page.evaluate((entries) => {
+      for (const [key, value] of entries) localStorage.setItem(key, value)
+    }, Object.entries(shot.storage))
+    await page.reload()
+  }
   if (shot.waitFor) await page.waitForSelector(shot.waitFor, { timeout: 15000 })
   if (shot.interact) await shot.interact(page)
   // Les transitions d'entrée et le stream WebSocket se posent en un instant.
