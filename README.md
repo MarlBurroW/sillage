@@ -10,15 +10,46 @@ without the terminal.
 
 Website: [marlburrow.github.io/sillage](https://marlburrow.github.io/sillage)
 
+<picture>
+  <source srcset="site/screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
+  <img src="site/screenshots/hero-light.png" alt="A Claude Code conversation running in Sillage, with tool call groups and a reply being written">
+</picture>
+
 ## Why
 
-Coding agents work best inside their official harness: the prompts, tools and
-permission flows their vendors ship with the CLI. But a terminal is a poor fit for
-a phone. Sillage keeps the CLIs and replaces the terminal with a web UI: streaming
-chat, tool calls, interactive permissions, full-text search, an IDE panel (file
-explorer, editor, diffs, terminals) and an installable PWA with push notifications.
+Coding agents work best inside the harness their vendor ships: its prompts, its
+tools, its permission flow. Rewriting that inside a web app gets you a worse agent
+behind a nicer interface. So Sillage drives the native CLIs and replaces the one
+part that does not travel, the terminal.
+
+Sillage is built with AI, heavily. Claude Code and Codex wrote most of the code,
+and most of that happened from inside Sillage itself.
 
 The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
+
+## What it adds on top of the CLIs
+
+- **Sessions that outlive the client.** The event journal on the server is the
+  source of truth, not the browser: close the laptop mid-turn and reopen on a
+  phone, the agent kept working and the thread replays as it happened.
+- **A queue, and steering.** Write while a turn runs. The message waits on the
+  server and can be withdrawn, or goes straight into the turn already in flight.
+- **One grammar for both CLIs.** Claude Code and Codex are translated into a
+  single event schema, so history, search, the board and the panel behave the
+  same way whichever one ran the conversation.
+- **The repository, one panel away.** File explorer, editor, diffs, commit
+  history and terminals, beside the conversation that changed them.
+- **Worktrees.** Start a conversation on the project root, on an existing
+  worktree, or on a branch Sillage creates for it.
+- **Full-text search** across every conversation in every project.
+- **A board the agents can read.** Cards per project, handed to the agent through
+  a built-in MCP server: a session can read its card, look up what an earlier one
+  decided, see which sessions are running, and leave a note for the next.
+- **Installable PWA with push notifications**, silent while you already have the
+  conversation open.
+- **Dictation** biased with a lexicon read from the project itself plus the
+  current branch, then an optional cleanup pass. Any OpenAI-format endpoint.
+- **MCP servers** declared once and handed to the agents that should get them.
 
 ## Install
 
@@ -40,8 +71,9 @@ and what changed.
 
 ### One-line script (Linux, no Docker)
 
-Requires Linux x64/arm64, systemd and Node.js 22+, with `claude` and `codex`
-installed and authenticated on the host:
+Requires Linux x64/arm64, systemd and Node.js 22+. The agent CLIs are optional
+here too: Sillage installs the ones you want from the UI, you authenticate them
+yourself.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash
@@ -54,7 +86,8 @@ service survives logout.
 
 ### From source (development)
 
-Requires Node 22+, pnpm 9, and the `claude` / `codex` CLIs on the host:
+Requires Node 22+ and pnpm 9, plus at least one agent CLI, from the host or
+installed from the UI:
 
 ```bash
 pnpm install
@@ -93,7 +126,8 @@ apps/web          React UI, PWA
 packages/protocol shared event schema and types
 packages/db       Drizzle schema and migrations
 deploy/           systemd unit template, config example, docker-compose example
-site/             one-page website (GitHub Pages)
+site/             one-page website (GitHub Pages) and its screenshots
+scripts/          screenshot runner, runtime staging, Codex type generation
 docs/brand/       the brand and the files derived from it
 ```
 
