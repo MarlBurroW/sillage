@@ -964,6 +964,7 @@ export const fr: Catalog = {
   'board.card.notes.goneSession': 'session supprimée',
   'board.panel.close': 'Fermer',
   'draft.card.detach': 'Détacher cette carte',
+  'draft.card.prompt': 'Prends en charge la carte #{number} de ce projet.',
 
   // Projets (réglages)
   'projects.title': 'Projets',

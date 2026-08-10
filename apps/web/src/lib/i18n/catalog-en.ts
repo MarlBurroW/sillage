@@ -976,6 +976,7 @@ export const en = {
   'board.card.notes.goneSession': 'deleted session',
   'board.panel.close': 'Close',
   'draft.card.detach': 'Detach this card',
+  'draft.card.prompt': "Take on this project's card #{number}.",
 
   // Projets (réglages)
   'projects.title': 'Projects',

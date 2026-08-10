@@ -262,6 +262,13 @@ export class CodexRunner implements AgentRunner {
     // perd entièrement, sans erreur ni trace. Ne pas simplifier.
     const threadConfig = toCodexThreadConfig(this.mcpServers)
 
+    // L'équivalent de l'appendice au prompt système côté Claude. Sondé sur le CLI
+    // installé : la consigne tient sur toute la durée du thread, et le
+    // `developer_instructions` nul que le mode de collaboration porte à chaque tour ne
+    // l'efface pas. Repassé au `thread/resume` par le même raisonnement que la
+    // configuration MCP.
+    const developerInstructions = this.ctx.projectOverview(this.config)
+
     const started = this.ctx.resumeSessionId
       ? await this.client.call<ThreadStartResponse, 'thread/resume'>('thread/resume', {
           threadId: this.ctx.resumeSessionId,
@@ -270,6 +277,7 @@ export class CodexRunner implements AgentRunner {
           sandbox: this.config.sandbox,
           model: this.config.model,
           config: threadConfig,
+          developerInstructions,
         })
       : await this.client.call<ThreadStartResponse, 'thread/start'>('thread/start', {
           cwd: this.ctx.cwd,
@@ -277,6 +285,7 @@ export class CodexRunner implements AgentRunner {
           sandbox: this.config.sandbox,
           model: this.config.model,
           config: threadConfig,
+          developerInstructions,
         })
 
     this.threadId = started.thread.id
