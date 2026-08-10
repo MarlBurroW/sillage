@@ -267,14 +267,32 @@ export function registerClaudeSessionRoutes(
     }
 
     const events = translateTranscript(after, cwd, sidechains).events.filter((item) => {
-      // Un tour interrompu peut laisser son résultat d'outil après le point commun
-      // alors que le flux vivant l'a déjà journalisé.
+      // Un tour interrompu peut laisser son appel d'outil après le point commun alors
+      // que le flux vivant l'a déjà journalisé. Le début compte autant que le résultat :
+      // un `tool.started` en double rouvre le tour dans le fil replié.
+      if (item.event.type === 'tool.started') {
+        return !anchors.startedToolCallIds.has(item.event.toolCallId)
+      }
       if (item.event.type === 'tool.completed' || item.event.type === 'file.edited') {
         return !anchors.completedToolCallIds.has(item.event.toolCallId)
       }
       return true
     })
     if (events.length === 0) return { imported: 0 }
+    const imported = events.length
+
+    // Rien ne tournera plus après ce rattrapage : `releaseRunner` juste en dessous en
+    // fait la garantie. Le lot doit donc laisser le fil au repos, sinon un tour ouvert
+    // en son milieu resterait affiché « en cours » à chaque rechargement. Le
+    // traducteur ne pose sa propre clôture que pour un tour qu'il a vu s'ouvrir, ce
+    // qu'une reprise en plein tour ne lui montre jamais.
+    const last = events.at(-1)?.event.type
+    if (last !== 'turn.completed' && last !== 'session.ended') {
+      events.push({
+        ts: events.at(-1)?.ts ?? Date.now(),
+        event: { type: 'session.ended', reason: 'interrupted' },
+      })
+    }
 
     // Un runner encore chaud garde un contexte qui ignore ces tours : on l'arrête,
     // la reprise au prochain message repartira du fichier, qui a tout. Un tour a pu
@@ -284,6 +302,6 @@ export function registerClaudeSessionRoutes(
     if (!(await sessions.releaseRunner(id))) return { imported: 0 }
 
     log.appendBatch(id, events, TRANSCRIPT_RAW_FORMAT)
-    return { imported: events.length }
+    return { imported }
   })
 }

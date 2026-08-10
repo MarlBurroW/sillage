@@ -55,6 +55,7 @@ import type {
 import { PendingInteractions } from '../interactions.js'
 import { describeOutgoingMessage } from '../outgoing.js'
 import { toWorkspacePath } from '../paths.js'
+import { journalDeath } from '../session-close.js'
 import { ToolDurations } from '../tool-durations.js'
 import { failedStatuses } from '../mcp-registry.js'
 import { CodexAppServerClient } from './app-server-client.js'
@@ -416,14 +417,15 @@ export class CodexRunner implements AgentRunner {
     if (!this.threadId) return
 
     this.interactions.expireAll()
-    this.ctx.emit({
+    // Le statut avant le journal : une écriture refusée ne doit pas laisser la
+    // conversation en `running` alors que le process est déjà mort.
+    this.ctx.setStatus('error')
+    journalDeath(this.ctx, {
       type: 'error',
       code: 'runner_failed',
       message: `codex app-server s'est arrêté de façon inattendue (code ${code ?? 'inconnu'}).`,
       recoverable: true,
     })
-    this.ctx.emit({ type: 'session.ended', reason: 'interrupted' })
-    this.ctx.setStatus('error')
   }
 
   private translate(method: string, params: unknown): void {

@@ -3,7 +3,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, max, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations, projects, users, worktrees } from '@sillage/db'
+import { conversations, projects, users, worktrees, writeTransaction } from '@sillage/db'
 import {
   createProjectBodySchema,
   parseRemoteUrl,
@@ -290,7 +290,7 @@ export function registerProjectRoutes(
     const intruder = body.ids.find((id) => !visible.has(id))
     if (intruder) throw notFound('project_not_found', 'Project not found.')
 
-    ctx.db.transaction((tx) => {
+    writeTransaction(ctx.db, (tx) => {
       body.ids.forEach((id, index) => {
         tx.update(projects).set({ position: index }).where(eq(projects.id, id)).run()
       })
