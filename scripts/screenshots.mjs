@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
  * Capture les écrans du site depuis une instance de démo déjà lancée et seedée
- * (voir `apps/server/src/cli/demo-seed.ts`).
+ * (voir `apps/server/src/cli/demo-seed.ts`, puis `pnpm --filter @sillage/server
+ * search:reindex` pour que la palette de recherche ait des résultats).
  *
  *   SILLAGE_URL=http://127.0.0.1:7517 node scripts/screenshots.mjs
  *
- * Les captures sortent dans `site/screenshots/`, en clair et en sombre pour le hero,
- * en sombre seul pour le reste. Locale forcée en anglais : le site est en anglais.
+ * Chaque vue sort en deux versions, `<nom>-dark.png` et `<nom>-light.png`, dans
+ * `site/screenshots/`. Locale forcée en anglais : le site est en anglais.
  */
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
@@ -22,7 +23,109 @@ const VIEWPORT = { width: 1600, height: 1000 }
 /** Plus large pour le board : les cinq colonnes tiennent sans coupe. */
 const BOARD_VIEWPORT = { width: 1840, height: 1100 }
 
-async function newContext(browser, theme) {
+async function fetchJson(context, path) {
+  const response = await context.request.get(`${BASE_URL}${path}`)
+  if (!response.ok()) throw new Error(`GET ${path} failed: ${response.status()}`)
+  return response.json()
+}
+
+/** Retrouve les identifiants seedés, pour construire la liste des vues. */
+async function resolveTargets(context) {
+  const projects = await fetchJson(context, '/api/projects')
+  const project = (name) => {
+    const found = projects.find((p) => p.name === name)
+    if (!found) throw new Error(`Project "${name}" not found — run the demo seed first.`)
+    return found
+  }
+  const nimbus = project('Nimbus')
+  const atlas = project('Atlas API')
+  const conversationsOf = async (projectId) =>
+    fetchJson(context, `/api/projects/${projectId}/conversations`)
+  const byTitle = (list, title) => {
+    const found = list.find((c) => c.title === title)
+    if (!found) throw new Error(`Conversation "${title}" not found — reseed the demo data.`)
+    return found
+  }
+  const nimbusThreads = await conversationsOf(nimbus.id)
+  const atlasThreads = await conversationsOf(atlas.id)
+  return {
+    nimbus,
+    hero: byTitle(nimbusThreads, 'Add offline caching for forecasts'),
+    permission: byTitle(nimbusThreads, 'Refactor settings storage'),
+    release: byTitle(nimbusThreads, 'Release notes for v0.9'),
+    atlas,
+    codex: byTitle(atlasThreads, 'Fix the flaky retry test'),
+  }
+}
+
+/**
+ * Les vues à capturer. `interact` joue un geste après le chargement (ouvrir un
+ * tiroir, la palette…) ; `viewport` remplace le format par défaut pour la vue.
+ */
+function buildShots(t) {
+  return [
+    { name: 'login', path: '/login', waitFor: 'input[autocomplete="username"]', anonymous: true },
+    {
+      name: 'hero',
+      path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
+      waitFor: 'text=Offline fallback is in place',
+    },
+    {
+      name: 'permission',
+      path: `/p/${t.nimbus.id}/c/${t.permission.id}`,
+      waitFor: 'text=migrate-settings',
+    },
+    {
+      name: 'codex',
+      path: `/p/${t.atlas.id}/c/${t.codex.id}`,
+      waitFor: 'text=advances the fake timer',
+    },
+    {
+      name: 'release',
+      path: `/p/${t.nimbus.id}/c/${t.release.id}`,
+      waitFor: 'text=Vector radar tiles',
+    },
+    {
+      name: 'board',
+      path: `/p/${t.nimbus.id}/board`,
+      waitFor: 'text=Offline caching for forecasts',
+      viewport: BOARD_VIEWPORT,
+    },
+    {
+      name: 'card',
+      path: `/p/${t.nimbus.id}/board?carte=2`,
+      waitFor: 'text=Cache layer and offline fallback',
+      viewport: BOARD_VIEWPORT,
+    },
+    {
+      name: 'search',
+      path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
+      waitFor: 'text=Offline fallback is in place',
+      interact: async (page) => {
+        await page.keyboard.press('Control+k')
+        const input = await page.waitForSelector('div[role="dialog"] input', { timeout: 10000 })
+        await input.type('offline', { delay: 40 })
+        // Les résultats arrivent en une requête, sans marqueur de fin : petite marge.
+        await page.waitForTimeout(1200)
+      },
+    },
+    { name: 'settings-mcp', path: '/settings/mcp', waitFor: 'text=playwright' },
+    { name: 'settings-appearance', path: '/settings/apparence', waitFor: 'text=Shared with the accent color' },
+  ]
+}
+
+async function shoot(page, shot, file) {
+  await page.setViewportSize(shot.viewport ?? VIEWPORT)
+  await page.goto(`${BASE_URL}${shot.path}`)
+  if (shot.waitFor) await page.waitForSelector(shot.waitFor, { timeout: 15000 })
+  if (shot.interact) await shot.interact(page)
+  // Les transitions d'entrée et le stream WebSocket se posent en un instant.
+  await page.waitForTimeout(900)
+  await page.screenshot({ path: join(OUT_DIR, file) })
+  console.log(`✓ ${file}`)
+}
+
+async function captureTheme(browser, theme, shots) {
   const context = await browser.newContext({
     viewport: VIEWPORT,
     deviceScaleFactor: 2,
@@ -34,79 +137,38 @@ async function newContext(browser, theme) {
     localStorage.setItem('sillage.theme', value)
     document.documentElement.dataset.theme = value
   }, theme)
+
+  const page = await context.newPage()
+  // La page de connexion se capture avant de poser le cookie de session.
+  for (const shot of shots.filter((s) => s.anonymous)) {
+    await shoot(page, shot, `${shot.name}-${theme}.png`)
+  }
   const login = await context.request.post(`${BASE_URL}/api/auth/login`, {
     data: { username: USERNAME, password: PASSWORD },
   })
   if (!login.ok()) throw new Error(`Login failed: ${login.status()} ${await login.text()}`)
-  return context
-}
-
-async function fetchJson(context, path) {
-  const response = await context.request.get(`${BASE_URL}${path}`)
-  if (!response.ok()) throw new Error(`GET ${path} failed: ${response.status()}`)
-  return response.json()
-}
-
-async function shoot(page, path, file, { waitFor, settle = 900 } = {}) {
-  await page.goto(`${BASE_URL}${path}`)
-  if (waitFor) await page.waitForSelector(waitFor, { timeout: 15000 })
-  // Les transitions d'entrée et le stream WebSocket se posent en un instant.
-  await page.waitForTimeout(settle)
-  await page.screenshot({ path: join(OUT_DIR, file) })
-  console.log(`✓ ${file}`)
+  for (const shot of shots.filter((s) => !s.anonymous)) {
+    await shoot(page, shot, `${shot.name}-${theme}.png`)
+  }
+  await context.close()
 }
 
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true })
   const browser = await chromium.launch()
 
-  const dark = await newContext(browser, 'dark')
-  const page = await dark.newPage()
+  // Un contexte éphémère résout les identifiants, valables pour les deux thèmes.
+  const probe = await browser.newContext()
+  const login = await probe.request.post(`${BASE_URL}/api/auth/login`, {
+    data: { username: USERNAME, password: PASSWORD },
+  })
+  if (!login.ok()) throw new Error(`Login failed: ${login.status()} ${await login.text()}`)
+  const shots = buildShots(await resolveTargets(probe))
+  await probe.close()
 
-  const projects = await fetchJson(dark, '/api/projects')
-  const nimbus = projects.find((p) => p.name === 'Nimbus')
-  if (!nimbus) throw new Error('Nimbus project not found — run the demo seed first.')
-  const conversations = await fetchJson(dark, `/api/projects/${nimbus.id}/conversations`)
-  const byTitle = (title) => {
-    const found = conversations.find((c) => c.title === title)
-    if (!found) throw new Error(`Conversation "${title}" not found — reseed the demo data.`)
-    return found
+  for (const theme of ['dark', 'light']) {
+    await captureTheme(browser, theme, shots)
   }
-  const hero = byTitle('Add offline caching for forecasts')
-  const permission = byTitle('Refactor settings storage')
-
-  const atlas = projects.find((p) => p.name === 'Atlas API')
-  if (!atlas) throw new Error('Atlas API project not found — run the demo seed first.')
-  const atlasConversations = await fetchJson(dark, `/api/projects/${atlas.id}/conversations`)
-  const codexThread = atlasConversations.find((c) => c.title === 'Fix the flaky retry test')
-  if (!codexThread) throw new Error('Codex conversation not found — reseed the demo data.')
-
-  await shoot(page, `/p/${nimbus.id}/c/${hero.id}`, 'hero-dark.png', {
-    waitFor: 'text=Offline fallback is in place',
-  })
-  await shoot(page, `/p/${nimbus.id}/c/${permission.id}`, 'permission-dark.png', {
-    waitFor: 'text=migrate-settings',
-  })
-  await shoot(page, `/p/${atlas.id}/c/${codexThread.id}`, 'codex-dark.png', {
-    waitFor: 'text=advances the fake timer',
-  })
-  await shoot(page, '/settings/mcp', 'settings-mcp-dark.png', { waitFor: 'text=playwright' })
-  await page.setViewportSize(BOARD_VIEWPORT)
-  await shoot(page, `/p/${nimbus.id}/board`, 'board-dark.png', {
-    waitFor: 'text=Offline caching for forecasts',
-  })
-  await page.close()
-
-  const light = await newContext(browser, 'light')
-  const lightPage = await light.newPage()
-  await shoot(lightPage, `/p/${nimbus.id}/c/${hero.id}`, 'hero-light.png', {
-    waitFor: 'text=Offline fallback is in place',
-  })
-  await lightPage.setViewportSize(BOARD_VIEWPORT)
-  await shoot(lightPage, `/p/${nimbus.id}/board`, 'board-light.png', {
-    waitFor: 'text=Offline caching for forecasts',
-  })
-  await lightPage.close()
 
   await browser.close()
   console.log(`\nScreenshots written to ${OUT_DIR}`)
