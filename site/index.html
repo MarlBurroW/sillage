@@ -2,98 +2,241 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <title>Sillage · Claude Code and Codex, from a browser</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sillage: a self-hosted web UI for Claude Code and Codex</title>
-  <meta name="description" content="Vibe-code from anywhere. A self-hosted, mobile-first web UI that drives the native Claude Code and Codex CLIs on your own machine.">
+  <meta name="description" content="A self-hosted, mobile-first web UI that drives the native Claude Code and Codex CLIs on your own machine.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#f3f6ff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0d24" media="(prefers-color-scheme: dark)">
   <meta property="og:title" content="Sillage">
-  <meta property="og:description" content="A self-hosted, mobile-first web UI for the native Claude Code and Codex CLIs.">
+  <meta property="og:description" content="A self-hosted web UI for the native Claude Code and Codex CLIs.">
   <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
   <meta property="og:type" content="website">
 </head>
 <body>
-  <header class="hero">
-    <div class="mark" aria-hidden="true">
-      <svg viewBox="0 0 32 32" width="56" height="56">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <a class="brand" href="#top">
+      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
         <circle cx="16" cy="6.4" r="3.4" fill="currentColor"/>
         <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
           <path d="M10.8 13.8Q16 17.4 21.2 13.8"/>
-          <path d="M7.4 19.2Q16 24.6 24.6 19.2" opacity="0.7"/>
-          <path d="M4 24.6Q16 31.4 28 24.6" opacity="0.45"/>
+          <path d="M7.4 19.2Q16 24.6 24.6 19.2" opacity=".7"/>
+          <path d="M4 24.6Q16 31.4 28 24.6" opacity=".45"/>
         </g>
       </svg>
-    </div>
-    <h1>Sillage</h1>
-    <p class="tagline">Vibe-code from anywhere.</p>
-    <p class="sub">
-      A self-hosted, mobile-first web UI that drives the native Claude Code and Codex
-      CLIs on your own machine. The official agent harnesses, without the terminal.
-    </p>
-    <p class="hero-actions">
-      <a class="button" href="#install">Install</a>
-      <a class="button ghost" href="https://github.com/MarlBurroW/sillage">GitHub</a>
-      <a id="version-badge" class="version" href="https://github.com/MarlBurroW/sillage/releases/latest" hidden>
-        <span data-version></span>
-      </a>
-    </p>
+      <span>Sillage</span>
+    </a>
+    <nav aria-label="Sections">
+      <a href="#tour">Tour</a>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a class="repo" href="https://github.com/MarlBurroW/sillage">GitHub</a>
+    </nav>
   </header>
 
-  <main>
-    <section class="why">
-      <h2>Why it exists</h2>
-      <p>
-        Coding agents work best inside their official harness: the prompts, tools and
-        permission flows their vendors ship with the CLI. But a terminal is a poor fit
-        for a phone, and half the ideas worth trying show up away from a keyboard.
-        Sillage keeps the CLIs and replaces the terminal with a web UI you can open
-        from anywhere. Built for personal use first, shared because it holds up.
+  <main id="main">
+    <section class="hero" id="top">
+      <p class="kicker">Self-hosted · MIT licensed</p>
+      <h1>Vibe-code from anywhere.</h1>
+      <p class="lede">
+        A web UI for the native Claude Code and Codex CLIs. They keep running on your own
+        machine, under your account, with your subscriptions. You stop needing a terminal
+        to reach them.
       </p>
+      <p class="actions">
+        <a class="btn primary" href="#install">Install</a>
+        <a class="btn" href="https://github.com/MarlBurroW/sillage">Source on GitHub</a>
+        <a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest" hidden></a>
+      </p>
+
+      <figure class="hero-shot">
+        <picture>
+          <source srcset="screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
+          <img src="screenshots/hero-light.png" width="3200" height="2000" fetchpriority="high"
+               alt="A Claude Code conversation running in Sillage, with tool call groups and a reply being written">
+        </picture>
+      </figure>
     </section>
 
-    <section class="features">
-      <h2>What you get</h2>
+    <section class="why">
+      <h2>Keep the harness. Drop the terminal.</h2>
+      <div>
+        <p>
+          Coding agents work best inside the harness their vendor ships: its prompts, its
+          tools, its permission flow. Reimplementing that is how you end up with a worse
+          agent. So Sillage does not reimplement it. It supervises the real CLI processes
+          and streams what they emit.
+        </p>
+        <p>
+          What it does replace is the terminal, which is a miserable place to be on a phone,
+          and a poor fit for the half of your ideas that show up away from a keyboard. Open
+          the tab on any device, answer the permission prompt, read the diff, keep going.
+        </p>
+      </div>
+    </section>
+
+    <section class="tour" id="tour" aria-labelledby="tour-title">
+      <div class="tour-head">
+        <h2 id="tour-title">Around the conversation</h2>
+        <p>Chat is the middle of it. The repository, the history and the work in flight stay one panel away.</p>
+      </div>
+
+      <div class="shots-nav">
+        <div role="tablist" aria-label="Screenshots">
+          <button role="tab" aria-selected="true" aria-controls="shot-0" id="tab-0">Diffs</button>
+          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-1" id="tab-1">Files</button>
+          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-2" id="tab-2">Board</button>
+          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-3" id="tab-3">Cards</button>
+          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-4" id="tab-4">Search</button>
+          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-5" id="tab-5">Permissions</button>
+          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-6" id="tab-6">Codex</button>
+          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-7" id="tab-7">MCP</button>
+        </div>
+        <div class="shots-arrows">
+          <button type="button" data-shot-prev aria-label="Previous screenshot">
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M10 2 4 8l6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button type="button" data-shot-next aria-label="Next screenshot">
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="m6 2 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="shots-panels">
+        <figure id="shot-0" role="tabpanel" aria-labelledby="tab-0">
+          <button type="button" data-zoom>
+            <picture>
+              <source srcset="screenshots/panel-git-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="screenshots/panel-git-light.png" width="3680" height="2200" loading="lazy"
+                   alt="The Git panel open beside a conversation, showing uncommitted changes and an expanded diff">
+            </picture>
+          </button>
+          <figcaption>Uncommitted changes, expanded hunks and the commit log, beside the agent that produced them.</figcaption>
+        </figure>
+        <figure id="shot-1" role="tabpanel" aria-labelledby="tab-1" hidden>
+          <button type="button" data-zoom>
+            <picture>
+              <source srcset="screenshots/panel-files-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="screenshots/panel-files-light.png" width="3680" height="2200" loading="lazy"
+                   alt="The file explorer and editor open beside a conversation">
+            </picture>
+          </button>
+          <figcaption>A file explorer and an editor in the same panel, so reading the code never costs you the thread.</figcaption>
+        </figure>
+        <figure id="shot-2" role="tabpanel" aria-labelledby="tab-2" hidden>
+          <button type="button" data-zoom>
+            <picture>
+              <source srcset="screenshots/board-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="screenshots/board-light.png" width="3680" height="2200" loading="lazy"
+                   alt="A project board with cards spread across five columns">
+            </picture>
+          </button>
+          <figcaption>A board per project. Work that outlives a single conversation lives here rather than in your head.</figcaption>
+        </figure>
+        <figure id="shot-3" role="tabpanel" aria-labelledby="tab-3" hidden>
+          <button type="button" data-zoom>
+            <picture>
+              <source srcset="screenshots/card-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="screenshots/card-light.png" width="3680" height="2200" loading="lazy"
+                   alt="A card drawer showing its description, its branch and a note left by a previous session">
+            </picture>
+          </button>
+          <figcaption>Open a card and start a session on it. What that session learns is written back for the next one.</figcaption>
+        </figure>
+        <figure id="shot-4" role="tabpanel" aria-labelledby="tab-4" hidden>
+          <button type="button" data-zoom>
+            <picture>
+              <source srcset="screenshots/search-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="screenshots/search-light.png" width="3200" height="2000" loading="lazy"
+                   alt="The search palette with results from several projects">
+            </picture>
+          </button>
+          <figcaption>Full-text search over every conversation, in every project, whichever CLI ran it.</figcaption>
+        </figure>
+        <figure id="shot-5" role="tabpanel" aria-labelledby="tab-5" hidden>
+          <button type="button" data-zoom>
+            <picture>
+              <source srcset="screenshots/permission-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="screenshots/permission-light.png" width="3200" height="2000" loading="lazy"
+                   alt="A pending permission request with Allow and Deny buttons">
+            </picture>
+          </button>
+          <figcaption>The CLI's own permission requests, answered from wherever you happen to be.</figcaption>
+        </figure>
+        <figure id="shot-6" role="tabpanel" aria-labelledby="tab-6" hidden>
+          <button type="button" data-zoom>
+            <picture>
+              <source srcset="screenshots/codex-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="screenshots/codex-light.png" width="3200" height="2000" loading="lazy"
+                   alt="A Codex conversation in Sillage">
+            </picture>
+          </button>
+          <figcaption>Claude Code and Codex sit side by side in the sidebar. Same interface, same history, same board.</figcaption>
+        </figure>
+        <figure id="shot-7" role="tabpanel" aria-labelledby="tab-7" hidden>
+          <button type="button" data-zoom>
+            <picture>
+              <source srcset="screenshots/settings-mcp-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="screenshots/settings-mcp-light.png" width="3200" height="2000" loading="lazy"
+                   alt="The MCP settings screen listing configured servers">
+            </picture>
+          </button>
+          <figcaption>Declare your MCP servers once and hand them to the agents that should get them.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="features" id="features" aria-labelledby="features-title">
+      <h2 id="features-title">What you get</h2>
       <ul>
         <li>
           <h3>Native CLIs</h3>
-          <p>Claude Code and Codex run unmodified, with your existing subscriptions and credentials.</p>
-        </li>
-        <li>
-          <h3>Mobile-first PWA</h3>
-          <p>Installable, push notifications when a turn finishes, designed for one-hand use.</p>
+          <p>Claude Code and Codex run unmodified, with the subscriptions and credentials already on your machine.</p>
         </li>
         <li>
           <h3>Real conversations</h3>
-          <p>Streaming chat, tool calls, interactive permission prompts, full-text search across history.</p>
+          <p>Streaming replies, tool calls, reasoning, attachments and interactive permission prompts. Resume a session later, from another device.</p>
         </li>
         <li>
-          <h3>IDE panel</h3>
-          <p>File explorer, editor, diffs and terminals, next to the conversation that produced them.</p>
+          <h3>Workspace panel</h3>
+          <p>File explorer, editor, diffs, commit history and terminals, next to the conversation that touched them.</p>
         </li>
         <li>
           <h3>Projects and worktrees</h3>
-          <p>Point it at your repositories; isolate experiments in git worktrees.</p>
+          <p>Point it at your repositories. Isolate an experiment in a git worktree without losing the main branch.</p>
+        </li>
+        <li>
+          <h3>Mobile-first PWA</h3>
+          <p>Installable, one-handed, with a push notification when a turn finishes so you can put the phone down.</p>
         </li>
         <li>
           <h3>Built-in updates</h3>
-          <p>The UI shows the installed version, what changed since, and updates itself in one click.</p>
+          <p>The UI shows the installed version, what changed since, and updates the installation for you.</p>
         </li>
       </ul>
     </section>
 
-    <section class="install" id="install">
-      <h2>Install</h2>
-      <div class="tabs" role="tablist">
-        <button role="tab" aria-selected="true" data-tab="docker">Docker</button>
-        <button role="tab" aria-selected="false" data-tab="script">One-line script</button>
+    <section class="install" id="install" aria-labelledby="install-title">
+      <div class="install-intro">
+        <h2 id="install-title">Install</h2>
+        <p>Docker, or a systemd user service on Linux. Both bind to localhost by default.</p>
       </div>
 
-      <div class="tab-panel" data-panel="docker">
-        <pre><code># docker-compose.yml
+      <div class="install-box">
+        <div class="tabs" role="tablist" aria-label="Installation method">
+          <button id="tab-docker" role="tab" aria-selected="true" aria-controls="panel-docker" data-tab="docker">Docker</button>
+          <button id="tab-script" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-script" data-tab="script">One-line script</button>
+        </div>
+
+        <div id="panel-docker" class="tab-panel" role="tabpanel" aria-labelledby="tab-docker" data-panel="docker">
+<pre><code><span class="dim"># docker-compose.yml</span>
 services:
   sillage:
     image: ghcr.io/marlburrow/sillage:latest
-    ports: ["127.0.0.1:7317:7317"]
+    ports: [<span class="str">"127.0.0.1:7317:7317"</span>]
     volumes:
       - sillage-data:/home/node/.local/share/sillage
       - ~/.claude:/home/node/.claude
@@ -101,40 +244,52 @@ services:
       - ~/projects:/home/node/workspace
 volumes:
   sillage-data:</code></pre>
-        <p>
-          The image ships with the claude and codex CLIs preinstalled; mount your
-          credential directories and your projects. Then create the first account:
-        </p>
-        <pre><code>docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
-      </div>
+          <p>The image ships with both CLIs preinstalled. Mount your credential directories and your projects, then create the first account:</p>
+<pre class="one-line"><code>docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
+        </div>
 
-      <div class="tab-panel" data-panel="script" hidden>
-        <pre><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-        <p>
-          Linux x64/arm64 with systemd and Node 22+. Installs under
-          <code>~/.local/share/sillage</code>, runs as a systemd user service, and
-          updates from the web UI afterwards. No Docker required.
-        </p>
+        <div id="panel-script" class="tab-panel" role="tabpanel" aria-labelledby="tab-script" data-panel="script" hidden>
+<pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
+          <p>Linux x64 or arm64, systemd, Node 22+, with <code>claude</code> and <code>codex</code> already authenticated on the host. It installs under <code>~/.local/share/sillage</code>, sets up a user service and creates the first account. Later updates happen from the UI.</p>
+        </div>
       </div>
     </section>
 
     <section class="security">
       <h2>A word on security</h2>
       <p>
-        Sillage is built for a trusted circle, not for the open Internet. Agents run
-        under your system account with your credentials, and every account on the
-        instance shares them. It listens on localhost and does not terminate TLS:
-        reach it through a VPN, a tailnet or a reverse proxy you control.
+        Sillage is built for a trusted circle, not for the open Internet. Agents run under
+        your system account with your credentials, every account on the instance shares
+        them, and terminal mode is a full shell. The server listens on localhost and does
+        not terminate TLS: reach it through a VPN, a tailnet or a reverse proxy you control.
       </p>
     </section>
   </main>
 
   <footer>
-    <p>
-      MIT licensed.
-      <a href="https://github.com/MarlBurroW/sillage">Source on GitHub</a>
-    </p>
+    <a class="brand" href="#top">
+      <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+        <circle cx="16" cy="6.4" r="3.4" fill="currentColor"/>
+        <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+          <path d="M10.8 13.8Q16 17.4 21.2 13.8"/>
+          <path d="M7.4 19.2Q16 24.6 24.6 19.2" opacity=".7"/>
+          <path d="M4 24.6Q16 31.4 28 24.6" opacity=".45"/>
+        </g>
+      </svg>
+      <span>Sillage</span>
+    </a>
+    <p>MIT licensed.</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
+      <a href="https://github.com/MarlBurroW/sillage/releases">Releases</a>
+      <a href="#install">Install</a>
+    </nav>
   </footer>
+
+  <dialog class="zoom" data-zoom-dialog aria-label="Screenshot at full size">
+    <form method="dialog"><button aria-label="Close">&times;</button></form>
+    <img data-zoom-image alt="">
+  </dialog>
 
   <script src="main.js"></script>
 </body>
