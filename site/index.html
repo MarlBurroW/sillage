@@ -190,31 +190,47 @@
     </section>
 
     <section class="features" id="features" aria-labelledby="features-title">
-      <h2 id="features-title">What you get</h2>
+      <h2 id="features-title">What Sillage adds</h2>
+      <p class="features-intro">
+        The CLIs already know how to write code, and Sillage does not get in the way of
+        that. What follows is the part it builds around them.
+      </p>
       <ul>
         <li>
-          <h3>Native CLIs</h3>
-          <p>Claude Code and Codex run unmodified, with the subscriptions and credentials already on your machine.</p>
+          <h3>Sessions that outlive the client</h3>
+          <p>The event journal on the server is the source of truth, not your tab. Close the laptop in the middle of a turn and reopen on a phone: the agent kept working, and the thread replays exactly as it happened.</p>
         </li>
         <li>
-          <h3>Real conversations</h3>
-          <p>Streaming replies, tool calls, reasoning, attachments and interactive permission prompts. Resume a session later, from another device.</p>
+          <h3>A queue, and a way to cut in</h3>
+          <p>Write while a turn is running. The message waits on the server, leaves when the turn ends, and can be withdrawn before it does. When it cannot wait, push it into the turn already in flight instead.</p>
         </li>
         <li>
-          <h3>Workspace panel</h3>
-          <p>File explorer, editor, diffs, commit history and terminals, next to the conversation that touched them.</p>
+          <h3>Two CLIs, one grammar</h3>
+          <p>Claude Code and Codex are translated into a single event schema. History, search, the board and the workspace panel behave the same way whichever one you started with.</p>
         </li>
         <li>
-          <h3>Projects and worktrees</h3>
-          <p>Point it at your repositories. Isolate an experiment in a git worktree without losing the main branch.</p>
+          <h3>The repository, one panel away</h3>
+          <p>File explorer, editor, diffs, commit history and a real terminal, in the same screen as the conversation that changed them.</p>
         </li>
         <li>
-          <h3>Mobile-first PWA</h3>
-          <p>Installable, one-handed, with a push notification when a turn finishes so you can put the phone down.</p>
+          <h3>Worktrees without the ceremony</h3>
+          <p>Start a conversation on the project root, on an existing worktree, or on a branch Sillage creates for it. Removing one shows you the uncommitted work first, and the conversations attached to it turn read-only rather than vanish.</p>
         </li>
         <li>
-          <h3>Built-in updates</h3>
-          <p>The UI shows the installed version, what changed since, and updates the installation for you.</p>
+          <h3>Everything you ever asked, searchable</h3>
+          <p>Full-text search over every conversation in every project, from a palette that also filters titles as you type. A terminal scrollback ends with the window; this does not.</p>
+        </li>
+        <li>
+          <h3>A board the agents can read</h3>
+          <p>Cards live beside the code they describe, and Sillage hands them to the agent through its own MCP server. A session can read its card, look up what an earlier one decided, see which sessions are running right now, and leave a note for whoever picks the card up next.</p>
+        </li>
+        <li>
+          <h3>It comes to you</h3>
+          <p>An installable PWA that pushes a notification when a turn ends or the agent needs an answer, and keeps quiet when you already have the conversation open. Answer from the phone, then put the phone down.</p>
+        </li>
+        <li>
+          <h3>MCP servers, declared once</h3>
+          <p>Configure them in the settings and hand them to the agents that should get them, rather than keeping a config file per CLI in sync by hand.</p>
         </li>
       </ul>
     </section>

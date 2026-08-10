@@ -264,11 +264,12 @@ main > section + section { border-top: 1px solid var(--line); }
 
 /* Features */
 
+.features-intro { max-width: 34rem; margin-top: .9rem; color: var(--muted); }
 .features ul {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   gap: 2.5rem 3rem;
-  margin: 2.5rem 0 0;
+  margin: 3rem 0 0;
   padding: 0;
   list-style: none;
 }
