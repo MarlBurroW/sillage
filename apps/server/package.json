@@ -9,6 +9,7 @@
     "start": "node --max-old-space-size=256 dist/main.js",
     "migrate": "tsx src/cli/migrate.ts",
     "user:create": "tsx src/cli/user-create.ts",
+    "demo:seed": "tsx src/cli/demo-seed.ts",
     "search:reindex": "tsx src/cli/search-reindex.ts",
     "mcp:probe": "tsx src/cli/mcp-probe.ts",
     "steer:probe": "tsx src/cli/steer-probe.ts",
