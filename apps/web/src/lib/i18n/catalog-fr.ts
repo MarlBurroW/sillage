@@ -6,6 +6,9 @@ export const fr: Catalog = {
   'draft.subtitle':
     "Elle sera créée à l'envoi du premier message, et prendra le titre que le CLI lui donne.",
   'draft.cli.legend': 'CLI',
+  'draft.usage.title': 'Consommation du compte',
+  'draft.usage.titleWithPlan': 'Consommation du compte · {plan}',
+  'draft.usage.unavailable': "La consommation de ce CLI n'a pas pu être lue.",
 
   'agent.unavailable.disabled': 'Désactivé dans la configuration du serveur.',
   'agent.unavailable.notExecutable': 'Trouvé à {binary}, mais pas exécutable.',

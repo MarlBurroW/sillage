@@ -19,6 +19,9 @@ export const en = {
   'draft.subtitle':
     'It will be created when you send the first message, and will take the title the CLI gives it.',
   'draft.cli.legend': 'CLI',
+  'draft.usage.title': 'Account usage',
+  'draft.usage.titleWithPlan': 'Account usage · {plan}',
+  'draft.usage.unavailable': 'Usage could not be read for this CLI.',
 
   // Disponibilité des CLI agents
   'agent.unavailable.disabled': 'Disabled in the server configuration.',

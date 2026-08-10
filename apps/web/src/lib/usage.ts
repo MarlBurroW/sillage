@@ -14,11 +14,15 @@ const usageKey = (agent: AgentKind) => ['usage', agent]
  *
  * La valeur précédente reste en cache le temps de la relecture, donc rouvrir affiche
  * l'ancienne mesure immédiatement plutôt qu'un écran vide.
+ *
+ * `enabled` sert aux appelants qui affichent la consommation sans qu'on l'ait demandée,
+ * comme la page de brouillon : interroger un CLI absent ne rapporterait qu'une erreur.
  */
-export function useAgentUsage(agent: AgentKind) {
+export function useAgentUsage(agent: AgentKind, enabled = true) {
   return useQuery({
     queryKey: usageKey(agent),
     queryFn: () => api.get<AgentUsage>(`/api/agents/${agent}/usage`),
+    enabled,
     staleTime: 0,
     // La consommation d'un compte n'a pas d'à-coups : réessayer en boucle ne ferait
     // que relancer des CLI pour rien.

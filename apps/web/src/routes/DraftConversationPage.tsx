@@ -12,6 +12,7 @@ import {
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
+import { UsageBar, readAge } from '../components/chat/UsageBar'
 import { Banner, Button, IconButton, cx } from '../components/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
 import { useCards } from '../lib/cards'
@@ -27,6 +28,7 @@ import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import { locale, useTranslate } from '../lib/i18n'
 import { useSidebarHidden } from '../lib/sidebar'
+import { useAgentUsage } from '../lib/usage'
 import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 
@@ -41,6 +43,46 @@ function formatDay(ts: number): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+/**
+ * Consommation du CLI retenu, avant d'écrire quoi que ce soit.
+ *
+ * C'est le moment où le choix est encore ouvert : voir qu'une fenêtre est à 95 % ici
+ * évite de le découvrir au milieu d'un tour. La lecture est celle du panneau détaillé,
+ * et son cache de cinq minutes côté serveur fait qu'ouvrir un brouillon ne démarre pas
+ * un CLI à chaque fois.
+ *
+ * Rien ne s'affiche tant qu'il n'y a rien à montrer : pas de squelette, pas de cadre
+ * vide. La sonde met plusieurs secondes à froid, et le brouillon sert d'abord à taper
+ * un message, pas à regarder des jauges apparaître.
+ */
+function DraftUsage({ agent, enabled }: { agent: AgentKind; enabled: boolean }) {
+  const t = useTranslate()
+  const { data: usage, error } = useAgentUsage(agent, enabled)
+
+  // La consommation n'est pas ce qu'on est venu chercher : quand la sonde échoue, une
+  // ligne suffit, alors qu'un bandeau d'erreur crierait plus fort que le formulaire.
+  if (error) return <p className="text-xs text-ink-faint">{t('draft.usage.unavailable')}</p>
+  if (!usage || !usage.limitsAvailable || usage.windows.length === 0) return null
+
+  return (
+    <section className="flex flex-col gap-2.5 rounded-lg border border-line p-3">
+      <div className="flex items-baseline gap-2">
+        <h2 className="min-w-0 flex-1 truncate text-xs font-medium text-ink-soft">
+          {usage.plan
+            ? t('draft.usage.titleWithPlan', { plan: usage.plan })
+            : t('draft.usage.title')}
+        </h2>
+        <span className="shrink-0 text-[0.6875rem] text-ink-faint">
+          {t('usage.readAt', { age: readAge(usage.fetchedAt) })}
+        </span>
+      </div>
+      {usage.windows.map((window) => (
+        <UsageBar key={window.id} window={window} />
+      ))}
+    </section>
+  )
 }
 
 /**
@@ -312,6 +354,8 @@ export function DraftConversationPage() {
                 </div>
               ))}
           </fieldset>
+
+          <DraftUsage agent={agent} enabled={blocked === null} />
 
           {card ? (
             <div className="flex items-center gap-2 rounded-md border border-line bg-sunken px-3 py-2">
