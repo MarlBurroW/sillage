@@ -20,6 +20,7 @@
     "lint": "pnpm --filter @sillage/web lint"
   },
   "devDependencies": {
+    "playwright": "^1.62.1",
     "typescript": "^5.7.3"
   }
 }
