@@ -439,7 +439,9 @@ export function DraftConversationPage() {
           // c'est le seul fil qu'on puisse en désigner avant qu'il existe. Un brouillon
           // par carte, sinon celui de la création libre écraserait la mention posée ici.
           draftKey={card ? `new:${projectId ?? ''}:card:${card.id}` : `new:${projectId ?? ''}`}
-          initialText={card ? `#${card.number} ` : ''}
+          // Une phrase et pas le seul numéro : « #5 » tout seul a déjà été lu comme le
+          // cinquième élément d'une liste par un CLI qui ne connaissait pas la carte.
+          initialText={card ? `${t('draft.card.prompt', { number: card.number })} ` : ''}
           config={effective}
           // Rien n'est encore lancé : aucun CLI n'a d'inventaire ni de commandes à
           // rapporter. La liste en `/` s'ouvrira au premier tour.
