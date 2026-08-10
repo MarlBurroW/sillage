@@ -1052,6 +1052,18 @@ export function applyEvent(
         message: event.message,
         recoverable: event.recoverable,
       })
+      // Une panne sans retour possible a emporté la session, et avec elle les travaux
+      // de fond qui vivaient dans le process du CLI : même conclusion que `session.ended`,
+      // que le serveur journalise juste après. Mais cette fin passe par la même base que
+      // l'erreur et peut manquer à l'appel, et sans elle le tour resterait ouvert pour
+      // toujours. Refermer ici aussi.
+      if (!event.recoverable) {
+        state.turnRunning = false
+        state.background = []
+        state.loops = []
+        closeRunningTools(state)
+        closePendingTasks(state)
+      }
       break
     }
 

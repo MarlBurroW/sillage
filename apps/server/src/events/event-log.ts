@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm'
-import { conversations, events, type Db } from '@sillage/db'
+import { conversations, events, writeTransaction, type Db } from '@sillage/db'
 import {
   sillageEventSchema,
   type BackgroundTask,
@@ -121,7 +121,7 @@ export class EventLog {
   ): JournalEntry {
     const ts = Date.now()
 
-    const entry = this.db.transaction((tx): JournalEntry => {
+    const entry = writeTransaction(this.db, (tx): JournalEntry => {
       const row = tx
         .select({ lastSeq: conversations.lastSeq })
         .from(conversations)
@@ -186,7 +186,7 @@ export class EventLog {
   ): number {
     if (batch.length === 0) return 0
 
-    const entries = this.db.transaction((tx): JournalEntry[] => {
+    const entries = writeTransaction(this.db, (tx): JournalEntry[] => {
       const row = tx
         .select({ lastSeq: conversations.lastSeq })
         .from(conversations)
@@ -243,9 +243,9 @@ export class EventLog {
    *
    * `uuids` : identifiants de transcript déjà connus, portés par les `raw` (le flux
    * vivant comme l'import les conservent). Le dernier commun aux deux côtés donne le
-   * point de reprise. `completedToolCallIds` : les résultats d'outils déjà
-   * journalisés, dont l'entrée de transcript peut se trouver après ce point quand un
-   * tour a été interrompu, et qu'il ne faut pas réimporter en doublon.
+   * point de reprise. `startedToolCallIds` et `completedToolCallIds` : les appels
+   * d'outils déjà journalisés, dont l'entrée de transcript peut se trouver après ce
+   * point quand un tour a été interrompu, et qu'il ne faut pas réimporter en doublon.
    * `subAgentIds` : les appels dont le sous-agent a déjà laissé des traces au journal.
    * Un fil de sous-agent ne se découpe pas au point de reprise, il a sa propre
    * chronologie : c'est tout ou rien, et c'est cet ensemble qui le dit.
@@ -256,6 +256,7 @@ export class EventLog {
    */
   importAnchors(conversationId: string): {
     uuids: Set<string>
+    startedToolCallIds: Set<string>
     completedToolCallIds: Set<string>
     subAgentIds: Set<string>
   } {
@@ -266,6 +267,7 @@ export class EventLog {
       .all()
 
     const uuids = new Set<string>()
+    const startedToolCallIds = new Set<string>()
     const completedToolCallIds = new Set<string>()
     const subAgentIds = new Set<string>()
     for (const row of rows) {
@@ -277,12 +279,15 @@ export class EventLog {
         toolCallId?: unknown
         parentToolCallId?: unknown
       }
+      if (row.type === 'tool.started' && typeof payload.toolCallId === 'string') {
+        startedToolCallIds.add(payload.toolCallId)
+      }
       if (row.type === 'tool.completed' && typeof payload.toolCallId === 'string') {
         completedToolCallIds.add(payload.toolCallId)
       }
       if (typeof payload.parentToolCallId === 'string') subAgentIds.add(payload.parentToolCallId)
     }
-    return { uuids, completedToolCallIds, subAgentIds }
+    return { uuids, startedToolCallIds, completedToolCallIds, subAgentIds }
   }
 
   read(conversationId: string, afterSeq: number, limit: number): JournalEntry[] {
@@ -446,7 +451,7 @@ export class EventLog {
       .orderBy(asc(events.seq))
       .all()
 
-    this.db.transaction((tx) => {
+    writeTransaction(this.db, (tx) => {
       let bytes = 0
       rows.forEach((row, index) => {
         bytes += byteSize(row.payload, row.raw)

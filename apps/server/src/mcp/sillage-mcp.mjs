@@ -106,10 +106,18 @@ const db = new Database(DB_PATH, { readonly: true, fileMustExist: true })
  * Séparée de la connexion de lecture, qui reste en lecture seule : la quasi-totalité de
  * ce serveur observe, et un seul outil écrit. Deux handles rendent cette asymétrie
  * visible et empêchent qu'une requête de lecture mal écrite touche quoi que ce soit.
+ *
+ * Le `busy_timeout` compte : le daemon écrit son journal en continu pendant que l'agent
+ * travaille, et sans attente une note de carte échouerait au premier chevauchement.
+ * Même valeur que la connexion du serveur, dans `packages/db`.
  */
 let writable = null
 function writeDb() {
-  writable ??= new Database(DB_PATH, { fileMustExist: true })
+  if (!writable) {
+    writable = new Database(DB_PATH, { fileMustExist: true })
+    writable.pragma('busy_timeout = 5000')
+    writable.pragma('foreign_keys = ON')
+  }
   return writable
 }
 

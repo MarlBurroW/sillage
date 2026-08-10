@@ -9,6 +9,7 @@ import {
   projects,
   users,
   worktrees,
+  writeTransaction,
   type CardRow,
   type ProjectRow,
 } from '@sillage/db'
@@ -222,7 +223,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
             // Une carte qui se cite elle-même n'apprend rien à personne.
             .filter((id) => id !== card.id)
 
-    ctx.db.transaction((tx) => {
+    writeTransaction(ctx.db, (tx) => {
       tx.delete(cardRefs).where(eq(cardRefs.sourceId, card.id)).run()
       if (targets.length > 0) {
         tx.insert(cardRefs)
@@ -291,7 +292,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
     const now = Date.now()
     // Numéro et position se calculent dans la transaction qui insère : deux créations
     // simultanées y liraient sinon le même maximum et se disputeraient l'unicité.
-    const row = ctx.db.transaction((tx) => {
+    const row = writeTransaction(ctx.db, (tx) => {
       const [highest] = tx
         .select({ number: max(cards.number) })
         .from(cards)
@@ -370,7 +371,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
       )
     }
 
-    ctx.db.transaction((tx) => {
+    writeTransaction(ctx.db, (tx) => {
       // Les conversations survivent à leur carte et redeviennent ordinaires : elles
       // portent du travail réel, que le rangement du board n'a pas à emporter.
       tx.update(conversations).set({ cardId: null }).where(eq(conversations.cardId, id)).run()
@@ -468,7 +469,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
     }
 
     const now = Date.now()
-    ctx.db.transaction((tx) => {
+    writeTransaction(ctx.db, (tx) => {
       for (const group of body.columns) {
         group.ids.forEach((cardId, index) => {
           const patch: Partial<typeof cards.$inferInsert> = {

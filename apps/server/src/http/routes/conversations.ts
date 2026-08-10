@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, isNull, min, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { cards, conversationReads, conversations, projects, type ConversationRow } from '@sillage/db'
+import {
+  cards,
+  conversationReads,
+  conversations,
+  projects,
+  writeTransaction,
+  type ConversationRow,
+} from '@sillage/db'
 import {
   createConversationBodySchema,
   editDiffQuerySchema,
@@ -339,7 +346,7 @@ export function registerConversationRoutes(
       )
     }
 
-    ctx.db.transaction((tx) => {
+    writeTransaction(ctx.db, (tx) => {
       body.ids.forEach((conversationId, index) => {
         tx.update(conversations)
           .set({ position: index })

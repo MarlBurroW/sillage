@@ -28,6 +28,7 @@ import { failedStatuses } from '../mcp-registry.js'
 import { AsyncQueue } from '../async-queue.js'
 import { PendingInteractions } from '../interactions.js'
 import { describeOutgoingMessage } from '../outgoing.js'
+import { journalDeath } from '../session-close.js'
 import { toWorkspacePath } from '../paths.js'
 import { ToolDurations } from '../tool-durations.js'
 import type {
@@ -275,18 +276,21 @@ export class ClaudeRunner implements AgentRunner {
       this.ctx.emit({ type: 'session.ended', reason: this.stopped ? 'interrupted' : 'completed' })
       this.ctx.setStatus('idle')
     } catch (err) {
-      if (this.stopped) {
-        this.ctx.emit({ type: 'session.ended', reason: 'interrupted' })
-        this.ctx.setStatus('idle')
-      } else {
-        this.ctx.emit({
-          type: 'error',
-          code: 'runner_failed',
-          message: err instanceof Error ? err.message : String(err),
-          recoverable: false,
-        })
-        this.ctx.setStatus('error')
-      }
+      // Le statut avant le journal, contrairement au chemin nominal : ce qui vient de
+      // tuer le runner peut être l'écriture du journal elle-même, et une conversation
+      // laissée en `running` sans runner reste affichée « en cours » pour toujours.
+      this.ctx.setStatus(this.stopped ? 'idle' : 'error')
+      journalDeath(
+        this.ctx,
+        this.stopped
+          ? null
+          : {
+              type: 'error',
+              code: 'runner_failed',
+              message: err instanceof Error ? err.message : String(err),
+              recoverable: false,
+            },
+      )
     } finally {
       this.clearTurnWatchdog()
       this.turnOpen = false
