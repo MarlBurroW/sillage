@@ -1,3 +1,50 @@
+// Theme switch. The button stays hidden until this runs: without JavaScript the
+// page still follows the system preference, and a dead control would be worse
+// than none. The head applies the stored choice earlier, to avoid a flash.
+const THEME_KEY = 'sillage-site-theme'
+const root = document.documentElement
+const systemDark = matchMedia('(prefers-color-scheme: dark)')
+const themeToggle = document.querySelector('[data-theme-toggle]')
+// A <picture> resolves its variant against the system preference alone, so the
+// switch has to move the media conditions out of the way itself. Same for the
+// colour the mobile browser paints its chrome with.
+const darkSources = [...document.querySelectorAll('picture source')]
+const darkMeta = document.querySelector('meta[name="theme-color"][media*="dark"]')
+const lightMeta = document.querySelector('meta[name="theme-color"][media*="light"]')
+
+const storedTheme = () => {
+  try {
+    return localStorage.getItem(THEME_KEY)
+  } catch {
+    return null
+  }
+}
+
+function applyTheme(theme) {
+  const dark = theme === 'dark'
+  root.dataset.theme = theme
+  darkSources.forEach((source) => { source.media = dark ? 'all' : 'not all' })
+  darkMeta.media = dark ? 'all' : 'not all'
+  lightMeta.media = dark ? 'not all' : 'all'
+  themeToggle.setAttribute('aria-label', dark ? 'Switch to the light theme' : 'Switch to the dark theme')
+}
+
+applyTheme(root.dataset.theme || (systemDark.matches ? 'dark' : 'light'))
+themeToggle.hidden = false
+
+themeToggle.addEventListener('click', () => {
+  const next = root.dataset.theme === 'dark' ? 'light' : 'dark'
+  applyTheme(next)
+  try {
+    localStorage.setItem(THEME_KEY, next)
+  } catch { /* the choice just does not survive the tab */ }
+})
+
+// Someone who never touched the switch keeps following their system.
+systemDark.addEventListener('change', (event) => {
+  if (!storedTheme()) applyTheme(event.matches ? 'dark' : 'light')
+})
+
 // Latest release from GitHub. The page stays complete without it: the
 // unauthenticated API is capped at 60 requests per hour and per IP.
 fetch('https://api.github.com/repos/MarlBurroW/sillage/releases/latest')
