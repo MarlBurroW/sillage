@@ -13,6 +13,14 @@
   <meta property="og:description" content="A self-hosted web UI for the native Claude Code and Codex CLIs.">
   <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
   <meta property="og:type" content="website">
+  <script>
+    // Read before first paint: main.js loads too late to avoid a flash of the
+    // system theme for someone who picked the other one.
+    try {
+      const saved = localStorage.getItem('sillage-site-theme')
+      if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved
+    } catch { /* private mode denies storage; the system theme is a fine answer */ }
+  </script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -34,6 +42,15 @@
       <a href="#features">Features</a>
       <a href="#install">Install</a>
       <a class="repo" href="https://github.com/MarlBurroW/sillage">GitHub</a>
+      <button class="theme-toggle" type="button" data-theme-toggle hidden>
+        <svg data-icon="moon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/>
+        </svg>
+        <svg data-icon="sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2"/>
+          <path d="M12 2.4v2.2M12 19.4v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.4 12h2.2M19.4 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>
+        </svg>
+      </button>
     </nav>
   </header>
 
@@ -274,7 +291,7 @@ services:
       - ~/projects:/home/node/workspace
 volumes:
   sillage-data:</code></pre>
-          <p>The image ships with both CLIs preinstalled. Mount your credential directories and your projects, then create the first account:</p>
+          <p>The CLIs are not in the image: install the ones you actually use from the UI, and they land in the data volume. Mount your credential directories to share the authentication you already did on the host, then create the first account:</p>
 <pre class="one-line"><code>docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
         </div>
 

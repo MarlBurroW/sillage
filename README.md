@@ -24,8 +24,9 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 
 ### Docker
 
-The image ships with the `claude` and `codex` CLIs preinstalled. Mount your
-credential directories and your projects:
+The agent CLIs are not in the image: install the ones you use from the UI and
+they land in the data volume. Mount your credential directories to reuse the
+authentication done on the host, and your projects:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/MarlBurroW/sillage/main/deploy/docker-compose.example.yml

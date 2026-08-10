@@ -21,8 +21,34 @@
   --glow: radial-gradient(60% 60% at 50% 0%, rgb(104 117 246 / .16), transparent 70%);
 }
 
+/*
+ * The dark values are written twice on purpose. The switch has to win over the
+ * system preference, and a media query cannot be part of the same selector list
+ * as the attribute the switch sets. Keep the two blocks in sync.
+ */
+:root[data-theme="light"] { color-scheme: light; }
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a0d24;
+  --raised: #121637;
+  --sunken: #161b42;
+  --ink: #eceffc;
+  --muted: #9aa2c8;
+  --faint: #6e769c;
+  --line: #232a55;
+  --accent: #949bff;
+  --accent-ink: #0a0d24;
+  --shot-edge: #262e5c;
+  --shot-shadow: 0 1.5rem 3.5rem rgb(0 0 0 / .5);
+  --code-bg: #060917;
+  --code-ink: #e7e9fb;
+  --glow: radial-gradient(60% 60% at 50% 0%, rgb(104 117 246 / .22), transparent 70%);
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #0a0d24;
     --raised: #121637;
     --sunken: #161b42;
@@ -116,6 +142,25 @@ p { margin: 0; text-wrap: pretty; }
 .topbar nav a { color: var(--muted); text-decoration: none; }
 .topbar nav a:hover { color: var(--ink); }
 .topbar nav .repo { color: var(--ink); font-weight: 550; }
+
+.theme-toggle {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  margin-left: -.6rem;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--muted);
+  cursor: pointer;
+}
+.theme-toggle:hover { color: var(--ink); border-color: var(--faint); }
+/* The button only appears once main.js has set data-theme, so exactly one of the
+   two icons resolves. `hidden` is no help here: it does not apply to SVG. */
+.theme-toggle svg { grid-area: 1 / 1; }
+:root[data-theme="dark"] .theme-toggle [data-icon="moon"],
+:root:not([data-theme="dark"]) .theme-toggle [data-icon="sun"] { display: none; }
 
 /* Layout */
 
