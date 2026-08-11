@@ -274,6 +274,10 @@
           <h3>MCP servers, declared once</h3>
           <p>Configure them in the settings and hand them to the agents that should get them, rather than keeping a config file per CLI in sync by hand.</p>
         </li>
+        <li>
+          <h3>A task API for machines</h3>
+          <p>Another machine, or another agent, can drive Sillage without a browser. <code>/api/v1</code> speaks tasks rather than screens: open one in a project, follow its events, answer what it asks, steer or interrupt it, and take a webhook when it lands. Bearer tokens carry their own scopes and an optional list of allowed projects, and never borrow the door the browser session uses.</p>
+        </li>
       </ul>
     </section>
 

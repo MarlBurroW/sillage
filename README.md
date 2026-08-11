@@ -50,6 +50,10 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 - **Dictation** biased with a lexicon read from the project itself plus the
   current branch, then an optional cleanup pass. Any OpenAI-format endpoint.
 - **MCP servers** declared once and handed to the agents that should get them.
+- **A task API for machines.** `/api/v1` speaks tasks rather than screens: open
+  one in a project, follow its events, answer what it asks, steer or interrupt
+  it, and take a webhook when it lands. Bearer tokens carry their own scopes and
+  an optional list of allowed projects, separate from the browser session.
 
 ## Install
 
