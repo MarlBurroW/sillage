@@ -899,7 +899,7 @@ export const en = {
   'terminal.new': 'New terminal',
   'terminal.max': 'Maximum {max} terminals per conversation',
   'terminal.unavailable': 'Terminal unavailable.',
-  'terminal.shortcuts': 'Ctrl+Shift+C copy · Ctrl+Shift+V or right-click paste · Ctrl+C interrupt',
+  'terminal.shortcuts': 'Select to copy · Ctrl+V or right-click to paste · Ctrl+C interrupt',
   'terminal.loading': 'Loading terminals...',
   'terminal.empty.title': 'No terminal open',
   'terminal.empty.description': "A shell in this conversation's working directory, worktree included. It stays open as long as the panel is.",
