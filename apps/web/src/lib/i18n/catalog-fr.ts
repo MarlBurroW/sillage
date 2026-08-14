@@ -887,7 +887,7 @@ export const fr: Catalog = {
   'terminal.new': 'Nouveau terminal',
   'terminal.max': 'Maximum {max} terminaux par conversation',
   'terminal.unavailable': 'Terminal indisponible.',
-  'terminal.shortcuts': 'Ctrl+Maj+C copier · Ctrl+Maj+V ou clic droit coller · Ctrl+C interrompt',
+  'terminal.shortcuts': 'Sélectionner copie · Ctrl+V ou clic droit colle · Ctrl+C interrompt',
   'terminal.loading': 'Lecture des terminaux...',
   'terminal.empty.title': 'Aucun terminal ouvert',
   'terminal.empty.description': "Un shell dans le répertoire de travail de cette conversation, worktree compris. Il reste ouvert tant que le panneau l'est.",

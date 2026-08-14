@@ -12,8 +12,12 @@ import { translate, useTranslate } from '../../lib/i18n'
  * **Le copier/coller est le point qui décide si un shell web est utilisable**, et c'est
  * précisément ce qui ne marche pas ailleurs. `Ctrl+C` doit rester `SIGINT` : c'est la
  * seule façon d'arrêter une commande, et la remplacer par « copier » rendrait le
- * terminal inutilisable. La copie passe donc par `Ctrl+Shift+C`, le collage par
- * `Ctrl+Shift+V` et par le clic droit, qui reste le geste que tout le monde essaie.
+ * terminal inutilisable. La copie se fait donc à la sélection, comme dans PuTTY, avec
+ * `Ctrl+Shift+C` en geste explicite ; le collage par `Ctrl+V` et par le clic droit.
+ *
+ * La contrainte qui a tout dicté : l'instance s'ouvre aussi par son adresse LAN en
+ * HTTP, où `navigator.clipboard` n'existe pas (contexte non sécurisé). Chaque geste a
+ * donc un chemin qui ne dépend pas de cette API.
  */
 
 /** Le pty vit côté serveur : sa taille suit la vue, mais pas à chaque pixel du geste. */
@@ -27,6 +31,29 @@ const RESIZE_DEBOUNCE_MS = 120
  * échoue alors en silence, `FitAddon` refuse de proposer des dimensions, et le
  * terminal reste figé à sa taille de départ quelle que soit la largeur disponible.
  */
+/**
+ * Écrit dans le presse-papiers, y compris hors contexte sécurisé.
+ *
+ * Le repli passe par un textarea hors écran et `execCommand('copy')`, qui reste le
+ * seul chemin en HTTP et fonctionne tant qu'on est dans un geste utilisateur. Il vole
+ * le focus le temps de la copie : l'appelant doit le rendre au terminal.
+ */
+function copyText(text: string) {
+  if (navigator.clipboard) {
+    void navigator.clipboard.writeText(text)
+    return
+  }
+  const scratch = document.createElement('textarea')
+  scratch.value = text
+  scratch.setAttribute('readonly', '')
+  scratch.style.position = 'fixed'
+  scratch.style.opacity = '0'
+  document.body.append(scratch)
+  scratch.select()
+  document.execCommand('copy')
+  scratch.remove()
+}
+
 function readTokens(root: HTMLElement) {
   const styles = getComputedStyle(root)
   const token = (name: string) => styles.getPropertyValue(name).trim()
@@ -129,30 +156,47 @@ export function TerminalView({
 
     const typed = terminal.onData((data) => send({ t: 'input', data }))
 
-    /**
-     * Renvoie faux pour que xterm n'envoie pas la touche au pty.
-     *
-     * Le presse-papiers du navigateur est asynchrone : `void` sur la promesse plutôt
-     * qu'un `await`, un gestionnaire de touche ne pouvant pas être asynchrone.
-     */
+    /** Renvoie faux pour que xterm n'envoie pas la touche au pty. */
     terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type !== 'keydown' || !event.ctrlKey || !event.shiftKey) return true
+      if (event.type !== 'keydown' || !event.ctrlKey) return true
 
       const key = event.key.toLowerCase()
-      if (key === 'c') {
+      if (event.shiftKey && key === 'c') {
         const selection = terminal.getSelection()
-        if (selection) void navigator.clipboard.writeText(selection)
+        if (selection) {
+          copyText(selection)
+          terminal.focus()
+        }
         return false
       }
-      if (key === 'v') {
-        void navigator.clipboard.readText().then((text) => send({ t: 'input', data: text }))
-        return false
-      }
+      /**
+       * `Ctrl+V` (et `Ctrl+Shift+V`) : rendre la main au navigateur sans
+       * `preventDefault`. Son collage natif atteint le textarea de xterm, qui
+       * transmet au pty ; c'est le seul chemin qui marche aussi en HTTP, où
+       * `readText` n'existe pas. Le `Ctrl+V` littéral (0x16) des shells se perd,
+       * compromis assumé pour que le geste universel colle.
+       */
+      if (key === 'v') return false
       return true
     })
 
-    /** Le clic droit colle, comme dans un terminal Windows ou un PuTTY. */
+    /** La sélection copie d'elle-même, comme dans PuTTY. */
+    const onMouseUp = () => {
+      const selection = terminal.getSelection()
+      if (selection) {
+        copyText(selection)
+        terminal.focus()
+      }
+    }
+    parent.addEventListener('mouseup', onMouseUp)
+
+    /**
+     * Le clic droit colle, comme dans un terminal Windows ou un PuTTY. Sans
+     * `navigator.clipboard`, on laisse venir le menu du navigateur plutôt que
+     * d'avaler le clic sans rien faire.
+     */
     const onContextMenu = (event: MouseEvent) => {
+      if (!navigator.clipboard) return
       event.preventDefault()
       void navigator.clipboard.readText().then((text) => send({ t: 'input', data: text }))
     }
@@ -168,6 +212,7 @@ export function TerminalView({
     return () => {
       if (timer !== null) window.clearTimeout(timer)
       observer.disconnect()
+      parent.removeEventListener('mouseup', onMouseUp)
       parent.removeEventListener('contextmenu', onContextMenu)
       typed.dispose()
       socket.close()
