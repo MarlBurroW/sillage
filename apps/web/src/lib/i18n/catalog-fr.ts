@@ -217,6 +217,7 @@ export const fr: Catalog = {
   'shell.project.expand': 'Déplier {name}',
   'shell.project.shared': 'Projet partagé',
   'shell.project.unread': 'Du nouveau dans ce projet',
+  'shell.project.terminals': 'Un terminal tourne dans ce projet',
   'shell.project.actions': 'Actions du projet {name}',
   'shell.rename': 'Renommer',
   'shell.project.settings': 'Réglages du projet',
@@ -885,12 +886,15 @@ export const fr: Catalog = {
   'terminal.tab.shellDone': 'Shell terminé',
   'terminal.tab.close': 'Fermer {title}',
   'terminal.new': 'Nouveau terminal',
-  'terminal.max': 'Maximum {max} terminaux par conversation',
+  'terminal.max': 'Maximum {max} terminaux par projet',
   'terminal.unavailable': 'Terminal indisponible.',
   'terminal.shortcuts': 'Sélectionner copie · Ctrl+V ou clic droit colle · Ctrl+C interrompt',
   'terminal.loading': 'Lecture des terminaux...',
   'terminal.empty.title': 'Aucun terminal ouvert',
-  'terminal.empty.description': "Un shell dans le répertoire de travail de cette conversation, worktree compris. Il reste ouvert tant que le panneau l'est.",
+  'terminal.empty.description': "Un shell dans le répertoire de travail courant : celui de la session, worktree compris, ou le workspace du projet. Il continue de tourner panneau fermé.",
+  'terminal.dir.workspace': 'workspace',
+  'terminal.interrupted': 'Shell interrompu par un redémarrage du serveur. Son dernier écran est affiché.',
+  'terminal.relaunch': 'Relancer ici',
 
   // Sous-agents
 

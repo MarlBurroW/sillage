@@ -26,7 +26,12 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
    */
   z.object({
     t: z.literal('watch-tree'),
-    conversationId: z.string(),
+    /**
+     * L'explorateur vit aussi en vue projet, où aucune conversation n'existe : le
+     * répertoire suivi est alors le workspace du projet plutôt que celui d'un fil.
+     */
+    scope: z.enum(['conversation', 'project']),
+    id: z.string(),
     // Borné parce que chaque dossier coûte une veille inotify, ressource comptée par
     // utilisateur sur la machine hôte.
     paths: z.array(z.string()).max(MAX_WATCHED_PATHS),
@@ -123,7 +128,7 @@ export type ServerMessage =
    * du panneau, un éditeur hors de Sillage, une autre conversation sur le même
    * worktree.
    */
-  | { t: 'tree-changed'; conversationId: string; path: string }
+  | { t: 'tree-changed'; scope: 'conversation' | 'project'; id: string; path: string }
   /**
    * Le retard dépasse CATCHUP_THRESHOLD : le client doit recharger par la route REST
    * paginée plutôt que de recevoir le delta sur le socket.

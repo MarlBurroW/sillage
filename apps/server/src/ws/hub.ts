@@ -12,7 +12,7 @@ import type { SessionManager, StatusBroadcast } from '../sessions/session-manage
 import type { AppContext } from '../http/context.js'
 import { canReadConversation, readConversationState } from '../http/routes/conversations.js'
 import { watchDirectory } from '../tree-watch.js'
-import { conversationWorkspace, resolveInside } from '../workspace.js'
+import { conversationWorkspace, projectWorkspace, resolveInside } from '../workspace.js'
 
 /**
  * Un socket par onglet, multiplexé sur plusieurs conversations : la sidebar suit les
@@ -119,18 +119,24 @@ class Connection {
    * d'une conversation dont aucune session ne tourne. Le droit de lecture est revérifié
    * à chaque déclaration, comme pour le statut, plutôt que retenu du premier appel.
    */
-  watchTree(conversationId: string, paths: string[]): void {
-    const current = this.treeWatches.get(conversationId) ?? new Map<string, () => void>()
+  watchTree(scope: 'conversation' | 'project', id: string, paths: string[]): void {
+    // Les deux portées partagent la même table : un identifiant de conversation et un
+    // identifiant de projet ne peuvent pas se confondre, mais la clé le dit quand même.
+    const key = `${scope}:${id}`
+    const current = this.treeWatches.get(key) ?? new Map<string, () => void>()
 
     let cwd: string | null = null
     if (paths.length > 0) {
       try {
-        cwd = conversationWorkspace(this.ctx.db, conversationId, this.userId)
+        cwd =
+          scope === 'conversation'
+            ? conversationWorkspace(this.ctx.db, id, this.userId)
+            : projectWorkspace(this.ctx.db, id, this.userId)
       } catch {
         this.send({
           t: 'error',
-          code: 'conversation_not_found',
-          message: 'Conversation not found.',
+          code: scope === 'conversation' ? 'conversation_not_found' : 'project_not_found',
+          message: scope === 'conversation' ? 'Conversation not found.' : 'Project not found.',
         })
       }
     }
@@ -149,7 +155,7 @@ class Connection {
         const absolute = resolveInside(cwd, path)
         current.set(
           path,
-          watchDirectory(absolute, () => this.send({ t: 'tree-changed', conversationId, path })),
+          watchDirectory(absolute, () => this.send({ t: 'tree-changed', scope, id, path })),
         )
       }
     } catch {
@@ -163,8 +169,8 @@ class Connection {
       })
     }
 
-    if (current.size > 0) this.treeWatches.set(conversationId, current)
-    else this.treeWatches.delete(conversationId)
+    if (current.size > 0) this.treeWatches.set(key, current)
+    else this.treeWatches.delete(key)
   }
 
   /**
@@ -282,7 +288,7 @@ export async function registerWebSocketHub(
           connection.unsubscribe(parsed.conversationId)
           return
         case 'watch-tree':
-          connection.watchTree(parsed.conversationId, parsed.paths)
+          connection.watchTree(parsed.scope, parsed.id, parsed.paths)
           return
         case 'ping':
           connection.send({ t: 'pong' })

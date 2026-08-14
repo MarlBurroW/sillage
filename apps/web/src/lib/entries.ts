@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
+import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
 /**
  * Manipulations de fichiers et de dossiers depuis l'explorateur.
@@ -9,31 +10,31 @@ import { api } from './api'
  * ancêtre, et recalculer ces dépendances côté client reproduirait ce que le serveur
  * sait déjà.
  */
-function useEntryMutation<T>(conversationId: string, run: (input: T) => Promise<unknown>) {
+function useEntryMutation<T>(scope: WorkspaceScope, run: (input: T) => Promise<unknown>) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: run,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tree', conversationId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tree', scope] }),
   })
 }
 
-export function useCreateEntry(conversationId: string) {
+export function useCreateEntry(scope: WorkspaceScope) {
   return useEntryMutation<{ parent: string; name: string; kind: 'file' | 'directory' }>(
-    conversationId,
-    (body) => api.post(`/api/conversations/${conversationId}/entries`, body),
+    scope,
+    (body) => api.post(`${workspaceApiBase(scope)}/entries`, body),
   )
 }
 
 /** Renommer et déplacer sont la même opération : seul le chemin de destination change. */
-export function useMoveEntry(conversationId: string) {
-  return useEntryMutation<{ from: string; to: string }>(conversationId, (body) =>
-    api.post(`/api/conversations/${conversationId}/entries/move`, body),
+export function useMoveEntry(scope: WorkspaceScope) {
+  return useEntryMutation<{ from: string; to: string }>(scope, (body) =>
+    api.post(`${workspaceApiBase(scope)}/entries/move`, body),
   )
 }
 
-export function useDeleteEntry(conversationId: string) {
-  return useEntryMutation<{ path: string }>(conversationId, (body) =>
-    api.delete(`/api/conversations/${conversationId}/entries`, body),
+export function useDeleteEntry(scope: WorkspaceScope) {
+  return useEntryMutation<{ path: string }>(scope, (body) =>
+    api.delete(`${workspaceApiBase(scope)}/entries`, body),
   )
 }
 

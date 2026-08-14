@@ -127,6 +127,8 @@ export interface ProjectDto {
   archivedAt: number | null
   createdAt: number
   conversationCount: number
+  /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
+  activeTerminals: number
   /** État du dépôt git, null si le workspace n'est pas un dépôt. */
   git: { branch: string; isDirty: boolean } | null
 }

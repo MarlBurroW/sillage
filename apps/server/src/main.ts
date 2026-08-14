@@ -87,7 +87,7 @@ async function main(): Promise<void> {
     webhooks.stop()
     scheduler.stop()
     await sessions.stopAll()
-    terminals.closeAll()
+    terminals.shutdown()
     await app.close()
     sqlite.close()
     process.exit(0)

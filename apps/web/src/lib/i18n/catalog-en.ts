@@ -232,6 +232,7 @@ export const en = {
   'shell.project.expand': 'Expand {name}',
   'shell.project.shared': 'Shared project',
   'shell.project.unread': 'New activity in this project',
+  'shell.project.terminals': 'A terminal is running in this project',
   'shell.project.actions': 'Actions for project {name}',
   'shell.rename': 'Rename',
   'shell.project.settings': 'Project settings',
@@ -897,12 +898,15 @@ export const en = {
   'terminal.tab.shellDone': 'Shell finished',
   'terminal.tab.close': 'Close {title}',
   'terminal.new': 'New terminal',
-  'terminal.max': 'Maximum {max} terminals per conversation',
+  'terminal.max': 'Maximum {max} terminals per project',
   'terminal.unavailable': 'Terminal unavailable.',
   'terminal.shortcuts': 'Select to copy · Ctrl+V or right-click to paste · Ctrl+C interrupt',
   'terminal.loading': 'Loading terminals...',
   'terminal.empty.title': 'No terminal open',
-  'terminal.empty.description': "A shell in this conversation's working directory, worktree included. It stays open as long as the panel is.",
+  'terminal.empty.description': "A shell in the current working directory: the session's, worktree included, or the project workspace. It keeps running with the panel closed.",
+  'terminal.dir.workspace': 'workspace',
+  'terminal.interrupted': 'Shell interrupted by a server restart. Its last screen is shown.',
+  'terminal.relaunch': 'Relaunch here',
 
   // Sous-agents
 

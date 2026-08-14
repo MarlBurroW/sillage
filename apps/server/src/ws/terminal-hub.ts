@@ -6,7 +6,7 @@ import {
 } from '@sillage/protocol'
 import { TerminalError, type TerminalManager } from '../terminals/terminal-manager.js'
 import type { AppContext } from '../http/context.js'
-import { canReadConversation } from '../http/routes/conversations.js'
+import { visibleProject } from '../http/routes/projects.js'
 
 /**
  * Socket du terminal, séparée de celle du journal.
@@ -21,7 +21,7 @@ export function registerTerminalHub(
   terminals: TerminalManager,
 ): void {
   app.get<{ Params: { id: string }; Querystring: { terminalId?: string } }>(
-    '/api/conversations/:id/terminal',
+    '/api/projects/:id/terminal',
     { websocket: true },
     (socket: WebSocket, request) => {
       const user = request.user
@@ -30,8 +30,8 @@ export function registerTerminalHub(
         return
       }
 
-      const conversationId = request.params.id
-      if (!canReadConversation(ctx, conversationId, user.id)) {
+      const projectId = request.params.id
+      if (!visibleProject(ctx, projectId, user.id)) {
         socket.close(4404, 'not_found')
         return
       }
@@ -47,7 +47,7 @@ export function registerTerminalHub(
 
       let attached
       try {
-        attached = terminals.attach(conversationId, terminalId, {
+        attached = terminals.attach(projectId, terminalId, {
           onOutput: (data) => send({ t: 'output', data }),
           // La socket reste ouverte : le client garde l'écran final à l'écran, et
           // c'est la fermeture de l'onglet qui décide de s'en défaire.
@@ -77,8 +77,8 @@ export function registerTerminalHub(
           return
         }
 
-        if (parsed.t === 'input') terminals.write(conversationId, terminalId, parsed.data)
-        else terminals.resize(conversationId, terminalId, parsed.cols, parsed.rows)
+        if (parsed.t === 'input') terminals.write(projectId, terminalId, parsed.data)
+        else terminals.resize(projectId, terminalId, parsed.cols, parsed.rows)
       })
 
       // Le terminal continue de tourner : fermer l'onglet ne doit pas interrompre une

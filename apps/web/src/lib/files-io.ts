@@ -1,5 +1,6 @@
 import type { FileContentDto } from '@sillage/protocol'
 import { api } from './api'
+import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
 /**
  * Lecture et écriture d'un fichier du workspace.
@@ -9,26 +10,26 @@ import { api } from './api'
  * l'onglet qui décide quand relire.
  */
 
-export function readFile(conversationId: string, path: string): Promise<FileContentDto> {
+export function readFile(scope: WorkspaceScope, path: string): Promise<FileContentDto> {
   return api.get<FileContentDto>(
-    `/api/conversations/${conversationId}/file?path=${encodeURIComponent(path)}`,
+    `${workspaceApiBase(scope)}/file?path=${encodeURIComponent(path)}`,
   )
 }
 
 /** Renvoie la nouvelle empreinte. `fingerprint: null` écrase sciemment. */
 export function writeFile(
-  conversationId: string,
+  scope: WorkspaceScope,
   path: string,
   content: string,
   fingerprint: string | null,
 ): Promise<{ fingerprint: string }> {
-  return api.put<{ fingerprint: string }>(`/api/conversations/${conversationId}/file`, {
+  return api.put<{ fingerprint: string }>(`${workspaceApiBase(scope)}/file`, {
     path,
     content,
     fingerprint,
   })
 }
 
-export function rawFileUrl(conversationId: string, path: string): string {
-  return `/api/conversations/${conversationId}/file/raw?path=${encodeURIComponent(path)}`
+export function rawFileUrl(scope: WorkspaceScope, path: string): string {
+  return `${workspaceApiBase(scope)}/file/raw?path=${encodeURIComponent(path)}`
 }

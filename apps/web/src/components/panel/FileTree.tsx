@@ -62,10 +62,10 @@ type Draft =
   | { mode: 'rename'; path: string; name: string }
 
 export function FileTree({
-  conversationId,
+  scope,
   onOpenFile,
 }: {
-  conversationId: string
+  scope: string
   /** Referme la colonne quand elle recouvre l'éditeur : sinon le fichier ouvert reste caché. */
   onOpenFile: () => void
 }) {
@@ -74,14 +74,14 @@ export function FileTree({
   const [query, setQuery] = useState('')
   /** Entrée dont la suppression est proposée : le geste est sans retour possible. */
   const [pendingDelete, setPendingDelete] = useState<TreeEntryDto | null>(null)
-  const create = useCreateEntry(conversationId)
-  const move = useMoveEntry(conversationId)
-  const remove = useDeleteEntry(conversationId)
+  const create = useCreateEntry(scope)
+  const move = useMoveEntry(scope)
+  const remove = useDeleteEntry(scope)
 
   const error = create.error ?? move.error ?? remove.error
 
   const actions: Actions = {
-    conversationId,
+    scope,
     draft,
     setDraft,
     onOpenFile,
@@ -161,7 +161,7 @@ export function FileTree({
           et déplier des dossiers pour suivre un résultat ferait perdre le fil, et les
           niveaux dépliés doivent être retrouvés intacts en effaçant la recherche. */}
       {searching ? (
-        <SearchResults conversationId={conversationId} query={query} actions={actions} />
+        <SearchResults scope={scope} query={query} actions={actions} />
       ) : (
         <Level path="" depth={0} expanded actions={actions} />
       )}
@@ -197,16 +197,16 @@ export function FileTree({
 
 /** Résultats plats : un chemin complet dit mieux d'où vient un fichier qu'une indentation. */
 function SearchResults({
-  conversationId,
+  scope,
   query,
   actions,
 }: {
-  conversationId: string
+  scope: string
   query: string
   actions: Actions
 }) {
   const t = useTranslate()
-  const { data, isPending, error } = useFileSearch(conversationId, query)
+  const { data, isPending, error } = useFileSearch(scope, query)
 
   if (error) {
     return (
@@ -280,7 +280,7 @@ function RootAction({
  * sept props traverseraient chaque niveau sans que celui-ci les regarde.
  */
 interface Actions {
-  conversationId: string
+  scope: string
   draft: Draft | null
   setDraft: (draft: Draft | null) => void
   onOpenFile: () => void
@@ -302,7 +302,7 @@ function Level({
   actions: Actions
 }) {
   const t = useTranslate()
-  const { data, isPending, error } = useTreeLevel(actions.conversationId, path, expanded)
+  const { data, isPending, error } = useTreeLevel(actions.scope, path, expanded)
   const draft = actions.draft
   const creatingHere = draft?.mode === 'create' && draft.parent === path
 
@@ -377,7 +377,7 @@ interface EntryAction {
  */
 function entryActions(entry: TreeEntryDto, actions: Actions, expand: () => void): EntryAction[] {
   const open = () => {
-    openTab(actions.conversationId, entry.path)
+    openTab(actions.scope, entry.path)
     actions.onOpenFile()
   }
 
@@ -459,11 +459,11 @@ function EntryRow({
         <button
           type="button"
           onClick={() => {
-            openTab(actions.conversationId, entry.path, { preview: true })
+            openTab(actions.scope, entry.path, { preview: true })
             actions.onOpenFile()
           }}
           onDoubleClick={() => {
-            openTab(actions.conversationId, entry.path)
+            openTab(actions.scope, entry.path)
             actions.onOpenFile()
           }}
           className={cx(
@@ -587,7 +587,7 @@ function Entry({
                 entry.isDirectory
                   ? () => setOpen((value) => !value)
                   : () => {
-                      openTab(actions.conversationId, entry.path, { preview: true })
+                      openTab(actions.scope, entry.path, { preview: true })
                       actions.onOpenFile()
                     }
               }
@@ -595,7 +595,7 @@ function Entry({
                 entry.isDirectory
                   ? undefined
                   : () => {
-                      openTab(actions.conversationId, entry.path)
+                      openTab(actions.scope, entry.path)
                       actions.onOpenFile()
                     }
               }

@@ -36,6 +36,7 @@ import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerCardRoutes } from './routes/cards.js'
 import { registerConversationRoutes } from './routes/conversations.js'
 import { registerFileRoutes } from './routes/files.js'
+import { registerGitViewRoutes } from './routes/git-views.js'
 import { registerFsRoutes } from './routes/fs.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerProjectRoutes } from './routes/projects.js'
@@ -137,7 +138,7 @@ export async function buildApp(
 
   registerHealthRoutes(app)
   registerAuthRoutes(app, ctx)
-  registerProjectRoutes(app, ctx, attachments, new CloneJobs())
+  registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals)
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)
@@ -145,7 +146,7 @@ export async function buildApp(
   registerMcpRoutes(app, ctx)
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
-  registerWorktreeRoutes(app, ctx)
+  registerWorktreeRoutes(app, ctx, terminals)
   registerCardRoutes(app, ctx)
   registerUserRoutes(app, ctx)
   registerApiTokenRoutes(app, ctx, registry)
@@ -159,6 +160,7 @@ export async function buildApp(
   registerSystemRoutes(app)
   registerTreeRoutes(app, ctx)
   registerFileRoutes(app, ctx)
+  registerGitViewRoutes(app, ctx)
   registerTerminalRoutes(app, ctx, sessions, terminals)
   await registerWebSocketHub(app, ctx, log, sessions, push)
   // Après le hub : c'est lui qui enregistre le plugin websocket dont dépend le terminal.

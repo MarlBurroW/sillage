@@ -1,5 +1,5 @@
-import { Check, History, SquareKanban, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Check, History, PanelRight, SquareKanban, X } from 'lucide-react'
+import { Suspense, lazy, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
@@ -27,10 +27,15 @@ import { useAllConversations, useCreateConversation } from '../lib/conversations
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import { locale, useTranslate } from '../lib/i18n'
+import { setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useSidebarHidden } from '../lib/sidebar'
 import { useAgentUsage } from '../lib/usage'
 import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
+
+const SidePanel = lazy(() =>
+  import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
+)
 
 /** Les cartes de choix suivent l'enum du protocole : un CLI ajouté apparaît seul. */
 const AGENTS = agentKindSchema.options.map((value) => ({ value, ...AGENT_META[value] }))
@@ -104,6 +109,7 @@ export function DraftConversationPage() {
   const { data: conversations } = useAllConversations()
   const createConversation = useCreateConversation(projectId ?? '')
   const sidebarHidden = useSidebarHidden()
+  const panel = usePanelPresence()
 
   // Valeur de départ seulement : le CLI reste modifiable tant que rien n'est envoyé.
   // Sans ça, le « + » de la sidebar enfermerait sur le CLI du dernier fil.
@@ -217,7 +223,8 @@ export function DraftConversationPage() {
   }
 
   return (
-    <div className="flex h-full flex-col pb-safe">
+    // `relative` : c'est ce conteneur qui ancre le panneau latéral, posé en absolu.
+    <div className="relative flex h-full flex-col pb-safe">
       <header
         className={cx(
           'flex shrink-0 items-center gap-2 border-b border-line px-2 py-2',
@@ -245,6 +252,17 @@ export function DraftConversationPage() {
           >
             {t('draft.board')}
           </Button>
+        ) : null}
+        {/* Le panneau opère ici sur le workspace du projet : un terminal, les fichiers
+            ou le diff s'ouvrent avant même qu'une session existe. */}
+        {projectId ? (
+          <IconButton
+            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
+            size="sm"
+            onClick={() => setPanelOpen(!panel.open)}
+          >
+            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
+          </IconButton>
         ) : null}
       </header>
 
@@ -459,6 +477,12 @@ export function DraftConversationPage() {
           worktreeId={effectiveWorktreeId}
         />
       )}
+
+      {projectId && panel.mounted ? (
+        <Suspense fallback={null}>
+          <SidePanel projectId={projectId} open={panel.open} />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

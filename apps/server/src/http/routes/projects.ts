@@ -14,6 +14,7 @@ import {
   type ProjectDto,
 } from '@sillage/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
+import type { TerminalManager } from '../../terminals/terminal-manager.js'
 import type { CloneJobs } from '../../clone-jobs.js'
 import { searchFiles } from '../../files.js'
 import { credentialEnv, credentialHelperCommand } from '../../git-credential/helper.js'
@@ -29,6 +30,15 @@ import { requireUser } from '../require-user.js'
  */
 function visibilityFilter(userId: string) {
   return or(eq(projects.ownerId, userId), eq(projects.visibility, 'shared'))
+}
+
+/** Le projet, s'il est visible par cet utilisateur. Pour les routes hébergées ailleurs. */
+export function visibleProject(ctx: AppContext, projectId: string, userId: string) {
+  return ctx.db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, projectId), visibilityFilter(userId)))
+    .get()
 }
 
 async function assertUsableWorkspace(path: string): Promise<string> {
@@ -95,6 +105,7 @@ export function registerProjectRoutes(
   ctx: AppContext,
   attachments: AttachmentStore,
   cloneJobs: CloneJobs,
+  terminals: TerminalManager,
 ): void {
   /**
    * En fin de liste : s'insérer au milieu déplacerait visuellement des projets que
@@ -178,6 +189,7 @@ export function registerProjectRoutes(
           archivedAt: project.archivedAt,
           createdAt: project.createdAt,
           conversationCount,
+          activeTerminals: terminals.aliveCount(project.id),
           git: await readGitStatus(project.workspacePath),
         }
       }),
@@ -201,6 +213,7 @@ export function registerProjectRoutes(
       ownerName: user.displayName,
       isOwner: true,
       conversationCount: 0,
+      activeTerminals: 0,
       git: await readGitStatus(workspacePath),
     }
     return reply.status(201).send(dto)
@@ -349,7 +362,9 @@ export function registerProjectRoutes(
     // Même raison pour l'index de recherche, que la cascade SQL n'atteint pas.
     for (const row of owned) dropConversation(ctx.db, row.id)
 
-    // Le workspace sur disque n'est jamais touché : Sillage pointe dessus, ne le possède pas.
+    // Le workspace sur disque n'est jamais touché : Sillage pointe dessus, ne le possède
+    // pas. Les shells du projet, en revanche, tournent en son nom : on les ferme.
+    terminals.closeForProject(id)
     await ctx.db.delete(projects).where(eq(projects.id, id))
     return reply.status(204).send()
   })

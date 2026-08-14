@@ -3,6 +3,7 @@ import { ChevronRight, GitBranch, GitCommitHorizontal, Loader, RefreshCw } from 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CommitDto, WorkingDiffDto } from '@sillage/protocol'
 import { api } from '../../lib/api'
+import { workspaceApiBase } from '../../lib/workspace-scope'
 import { COMMIT_PAGE, useCommitDiff, useCommits } from '../../lib/commits'
 import { parseUnifiedDiff } from '../../lib/diff'
 import { relativeDate } from '../../lib/dates'
@@ -20,17 +21,17 @@ import { FileDiff, SectionTitle } from './diff-parts'
  * que le disque a pu recouvrir depuis.
  */
 export function GitPane({
-  conversationId,
+  scope,
   turnRunning,
   onOpenFile,
 }: {
-  conversationId: string
+  scope: string
   turnRunning: boolean
   onOpenFile: (path: string) => void
 }) {
   const [limit, setLimit] = useState(COMMIT_PAGE)
-  const working = useWorkingDiff(conversationId)
-  const commits = useCommits(conversationId, limit)
+  const working = useWorkingDiff(scope)
+  const commits = useCommits(scope, limit)
 
   // Un tour qui se termine a pu commiter : les deux listes se relisent ensemble.
   const wasRunning = useRef(turnRunning)
@@ -55,7 +56,7 @@ export function GitPane({
         }}
       />
       <Commits
-        conversationId={conversationId}
+        scope={scope}
         query={commits}
         headHash={working.data?.head?.hash ?? null}
         onMore={() => setLimit((value) => value + COMMIT_PAGE)}
@@ -64,10 +65,10 @@ export function GitPane({
   )
 }
 
-function useWorkingDiff(conversationId: string) {
+function useWorkingDiff(scope: string) {
   return useQuery({
-    queryKey: ['diff', conversationId],
-    queryFn: () => api.get<WorkingDiffDto>(`/api/conversations/${conversationId}/diff`),
+    queryKey: ['diff', scope],
+    queryFn: () => api.get<WorkingDiffDto>(`${workspaceApiBase(scope)}/diff`),
     // Relu à la fin d'un tour, à chaque ouverture du panneau, et à la demande. Jamais
     // en boucle : un diff se calcule en lançant git, ce n'est pas gratuit.
     //
@@ -163,12 +164,12 @@ function WorkingDiff({
 }
 
 function Commits({
-  conversationId,
+  scope,
   query,
   headHash,
   onMore,
 }: {
-  conversationId: string
+  scope: string
   query: ReturnType<typeof useCommits>
   /** Hash court du commit courant, pour le signaler dans la liste. */
   headHash: string | null
@@ -201,7 +202,7 @@ function Commits({
       {(data?.commits ?? []).map((commit) => (
         <Commit
           key={commit.hash}
-          conversationId={conversationId}
+          scope={scope}
           commit={commit}
           isHead={commit.shortHash === headHash}
         />
@@ -222,11 +223,11 @@ function Commits({
 }
 
 function Commit({
-  conversationId,
+  scope,
   commit,
   isHead,
 }: {
-  conversationId: string
+  scope: string
   commit: CommitDto
   isHead: boolean
 }) {
@@ -266,14 +267,14 @@ function Commit({
         <span className="shrink-0 text-[0.625rem] text-ink-faint">{relativeDate(commit.ts)}</span>
       </button>
 
-      {open ? <CommitDiff conversationId={conversationId} hash={commit.hash} /> : null}
+      {open ? <CommitDiff scope={scope} hash={commit.hash} /> : null}
     </div>
   )
 }
 
-function CommitDiff({ conversationId, hash }: { conversationId: string; hash: string }) {
+function CommitDiff({ scope, hash }: { scope: string; hash: string }) {
   const t = useTranslate()
-  const { data, error, isPending } = useCommitDiff(conversationId, hash, true)
+  const { data, error, isPending } = useCommitDiff(scope, hash, true)
   const files = useMemo(() => (data ? parseUnifiedDiff(data.patch) : []), [data])
 
   if (isPending) {

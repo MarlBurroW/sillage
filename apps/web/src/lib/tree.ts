@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect } from 'react'
 import type { TreeListingDto, TreeSearchDto } from '@sillage/protocol'
 import { api } from './api'
+import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 import { wsClient } from './ws-client'
 
 /**
@@ -14,21 +15,19 @@ import { wsClient } from './ws-client'
  * `enabled` plutôt qu'un appel conditionnel : le nombre de hooks doit rester constant
  * d'un rendu à l'autre.
  */
-export function useTreeLevel(conversationId: string, path: string, enabled: boolean) {
+export function useTreeLevel(scope: WorkspaceScope, path: string, enabled: boolean) {
   // Suivi sur le disque tant que ce niveau est affiché : c'est ce qui rattrape les
   // écritures que Sillage ne fait pas lui-même, celles d'un terminal du panneau comme
   // celles d'un éditeur ouvert à côté. Voir `useTreeSync` pour la relecture.
   useEffect(() => {
     if (!enabled) return
-    return wsClient.watchTree(conversationId, path)
-  }, [conversationId, path, enabled])
+    return wsClient.watchTree(scope, path)
+  }, [scope, path, enabled])
 
   return useQuery({
-    queryKey: ['tree', conversationId, path],
+    queryKey: ['tree', scope, path],
     queryFn: () =>
-      api.get<TreeListingDto>(
-        `/api/conversations/${conversationId}/tree?path=${encodeURIComponent(path)}`,
-      ),
+      api.get<TreeListingDto>(`${workspaceApiBase(scope)}/tree?path=${encodeURIComponent(path)}`),
     enabled,
     // Court plutôt qu'infini : la veille disque ne tient que pendant que le panneau est
     // ouvert, et un niveau remonté après un moment doit repartir du disque plutôt que
@@ -43,15 +42,15 @@ export function useTreeLevel(conversationId: string, path: string, enabled: bool
  * Posé une fois pour tout l'explorateur plutôt que par niveau : un abonné par dossier
  * déplié referait le travail que la clé de cache fait déjà.
  */
-export function useTreeSync(conversationId: string): void {
+export function useTreeSync(scope: WorkspaceScope): void {
   const queryClient = useQueryClient()
   useEffect(
     () =>
-      wsClient.onTreeChanged((id, path) => {
-        if (id !== conversationId) return
-        void queryClient.invalidateQueries({ queryKey: ['tree', conversationId, path] })
+      wsClient.onTreeChanged((changed, path) => {
+        if (changed !== scope) return
+        void queryClient.invalidateQueries({ queryKey: ['tree', scope, path] })
       }),
-    [queryClient, conversationId],
+    [queryClient, scope],
   )
 }
 
@@ -62,26 +61,26 @@ export function useTreeSync(conversationId: string): void {
  * demande de traverser. Désactivée sous deux caractères, où la liste ne discrimine
  * rien et où la marche coûte le plus cher.
  */
-export function useFileSearch(conversationId: string, query: string) {
+export function useFileSearch(scope: WorkspaceScope, query: string) {
   const trimmed = query.trim()
   return useQuery({
-    queryKey: ['tree-search', conversationId, trimmed],
+    queryKey: ['tree-search', scope, trimmed],
     queryFn: () =>
       api.get<TreeSearchDto>(
-        `/api/conversations/${conversationId}/tree/search?q=${encodeURIComponent(trimmed)}`,
+        `${workspaceApiBase(scope)}/tree/search?q=${encodeURIComponent(trimmed)}`,
       ),
     enabled: trimmed.length >= 2,
     staleTime: 30_000,
   })
 }
 
-/** Invalide tous les niveaux ouverts d'une conversation, et sa recherche, d'un coup. */
-export function useRefreshTree(conversationId: string): () => void {
+/** Invalide tous les niveaux ouverts d'une portée, et sa recherche, d'un coup. */
+export function useRefreshTree(scope: WorkspaceScope): () => void {
   const queryClient = useQueryClient()
   return useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['tree', conversationId] })
+    void queryClient.invalidateQueries({ queryKey: ['tree', scope] })
     // La recherche est une requête à part, avec sa propre péremption : sans ça, une
     // liste de résultats gardait des fichiers déjà supprimés après le rafraîchissement.
-    void queryClient.invalidateQueries({ queryKey: ['tree-search', conversationId] })
-  }, [queryClient, conversationId])
+    void queryClient.invalidateQueries({ queryKey: ['tree-search', scope] })
+  }, [queryClient, scope])
 }

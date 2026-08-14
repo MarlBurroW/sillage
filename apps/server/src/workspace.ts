@@ -42,6 +42,18 @@ export function conversationWorkspace(db: Db, conversationId: string, userId: st
   return resolveConversationCwd(db, row.conversation)
 }
 
+/**
+ * Workspace d'un projet que ce compte a le droit de voir. Pendant de
+ * `conversationWorkspace` pour le panneau en vue projet, où aucun fil n'existe.
+ */
+export function projectWorkspace(db: Db, projectId: string, userId: string): string {
+  const row = db.select().from(projects).where(eq(projects.id, projectId)).get()
+  if (!row || (row.ownerId !== userId && row.visibility !== 'shared')) {
+    throw notFound('project_not_found', 'Project not found.')
+  }
+  return row.workspacePath
+}
+
 export function resolveConversationCwd(db: Db, conversation: ConversationRow): string {
   if (conversation.worktreeId) {
     const worktree = db
