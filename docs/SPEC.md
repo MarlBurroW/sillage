@@ -662,25 +662,35 @@ POST   /api/push/unsubscribe                { endpoint }
 
 GET    /api/search?q=                       messages contenant la requête, visibilité appliquée
 
-GET    /api/conversations/:id/tree?path=    un niveau du workspace, avec l'état git par entrée
+Les routes du panneau existent en deux portées : `/api/conversations/:id/...` opère sur
+le répertoire du fil, worktree compris, et `/api/projects/:id/...` sur le workspace du
+projet, pour le panneau des vues Board et brouillon. Mêmes chemins, même contrôle
+d'accès, seul le répertoire résolu change.
+
+GET    .../tree?path=                       un niveau du workspace, avec l'état git par entrée
 GET    /api/conversations/:id/edits/:toolCallId?path=   ce qu'un appel a fait d'un fichier
-POST   /api/conversations/:id/entries        { parent, name, kind } -> crée un fichier ou un dossier
-POST   /api/conversations/:id/entries/move   { from, to } -> renomme ou déplace
-DELETE /api/conversations/:id/entries        { path }
-GET    /api/conversations/:id/file?path=    contenu texte d'un fichier, avec son empreinte disque
-GET    /api/conversations/:id/file/raw       contenu brut, images seulement
-PUT    /api/conversations/:id/file           { path, content, fingerprint } -> 409 si le disque a bougé
+POST   .../entries                          { parent, name, kind } -> crée un fichier ou un dossier
+POST   .../entries/move                     { from, to } -> renomme ou déplace
+DELETE .../entries                          { path }
+GET    .../file?path=                       contenu texte d'un fichier, avec son empreinte disque
+GET    .../file/raw                         contenu brut, images seulement
+PUT    .../file                             { path, content, fingerprint } -> 409 si le disque a bougé
+GET    .../diff                             diff de travail du répertoire
+GET    .../commits?limit=                   derniers commits de la branche
+GET    .../commits/:hash/diff               ce qu'un commit a changé
 
 GET    /api/agents                          capacités et modèles disponibles par CLI
 GET    /api/health                          état du daemon, sessions actives, RSS
 
 WS     /api/ws                              journal et statuts, multiplexé
-GET    /api/conversations/:id/terminals     terminaux ouverts
-POST   /api/conversations/:id/terminals     en ouvre un dans le cwd de la conversation
-PATCH  /api/conversations/:id/terminals/:tid  { title }
-DELETE /api/conversations/:id/terminals/:tid
+GET    /api/projects/:id/terminals          terminaux ouverts du projet
+POST   /api/projects/:id/terminals          { conversationId? | cwd? } -> ouvre un shell ; le cwd
+                                            vient de la session (worktree compris), d'un worktree
+                                            du projet, ou du workspace par défaut
+PATCH  /api/projects/:id/terminals/:tid     { title }
+DELETE /api/projects/:id/terminals/:tid
 
-WS     /api/conversations/:id/terminal?terminalId=   pty, socket dédiée (section 10)
+WS     /api/projects/:id/terminal?terminalId=   pty, socket dédiée (section 10)
 ```
 
 `GET /api/conversations/:id/events` est la route de rattrapage. Elle est paginée et
@@ -766,15 +776,25 @@ n'est pas montée : la bascule sous la barre de saisie laissait croire à ce swi
 terminal réapparaîtra dans le panneau latéral d'outils, avec l'explorateur de fichiers
 colorés par état git, l'édition à onglets et l'historique des modifications de l'agent.
 
-- Le PTY démarre dans le répertoire de travail de la conversation (worktree compris).
+- Les terminaux appartiennent au **projet**, pas à la conversation : un pty est un
+  process qui vit dans un répertoire, et l'indexer par session rendait introuvable un
+  serveur lancé dans le shell d'une conversation archivée. Ouvert depuis une session,
+  le shell prend son répertoire (worktree compris) ; depuis la vue projet, le workspace.
+  La liste est unique par projet, chaque onglet dit où son shell tourne, et la sidebar
+  marque les projets où un shell est vivant.
 - Un PTY survit à la déconnexion du client (même invariant I1), avec un tampon des
   128 derniers Ko rejoué à la reconnexion : fermer un onglet n'interrompt pas une
   commande en cours.
-- Fermeture automatique après `limits.ptyIdleTimeoutMin` sans activité (60 min par défaut).
-- Socket dédiée (`/api/conversations/:id/terminal`), distincte de celle du journal : la
-  sortie d'un shell n'est pas du contenu de conversation, elle n'est jamais persistée, et
-  son débit ferait passer les événements du fil derrière des kilo-octets de sortie de
-  compilation.
+- Fermeture automatique après `limits.ptyIdleTimeoutMin` sans activité (60 min par
+  défaut), mais seulement au prompt : un shell qui a un process enfant en cours (un
+  serveur de dev, un build) n'est pas inactif, et l'échéance se remet.
+- Les process ne survivent pas au redémarrage du daemon, choix assumé contre la pente
+  tmux. Les métadonnées et le dernier écran, si (`<data>/terminals/`) : l'entrée
+  réapparaît marquée « interrompue », lisible, avec une relance dans le même cwd.
+- Socket dédiée (`/api/projects/:id/terminal`), distincte de celle du journal : la
+  sortie d'un shell n'est pas du contenu de conversation, elle n'est jamais persistée
+  en base, et son débit ferait passer les événements du fil derrière des kilo-octets de
+  sortie de compilation.
 - Sur mobile, une barre de touches auxiliaires : `Échap`, `Tab`, `Ctrl+C`, `Ctrl+D` et
   les flèches. Sans ça, impossible de compléter un chemin ou d'interrompre une commande.
 
@@ -788,13 +808,17 @@ cumulées, toutes deux vérifiées dans un vrai navigateur en `http://` sur le r
 - xterm pose `user-select: none` sur ses lignes et gère la sélection lui-même, ce qui rend
   l'appui long sans effet sur téléphone.
 
-D'où le traitement retenu :
+D'où le traitement retenu, chaque geste ayant un chemin qui ne dépend pas de
+`navigator.clipboard` :
 
 - une règle CSS rend les lignes de xterm sélectionnables nativement (`.sg-terminal`), donc
   le geste du système redevient disponible ;
-- un bouton **Copier** explicite prend la sélection, ou tout le tampon à défaut ;
-- un bouton **Coller** ouvre une zone de texte dans laquelle l'utilisateur colle avec son
-  geste natif, seule façon fiable de récupérer le presse-papiers sans contexte sécurisé.
+- **sélectionner copie**, comme dans PuTTY, avec `Ctrl+Shift+C` en geste explicite ; le
+  repli hors contexte sécurisé est un textarea hors écran et `execCommand('copy')` ;
+- **`Ctrl+V` colle** en rendant la main au collage natif du navigateur, que xterm reçoit
+  par son textarea, seule voie qui marche partout ; le `Ctrl+V` littéral (0x16) est
+  sacrifié. Le clic droit colle via `readText` quand l'API existe, sinon il laisse venir
+  le menu du navigateur.
 
 Le terminal donne un shell complet sous ton compte utilisateur. C'est assumé et cohérent
 avec le modèle « cercle de confiance », et écrit tel quel dans le README.
@@ -1757,17 +1781,18 @@ passage par les outils, et la limite mesurée : un `rm` lancé par Claude n'appa
 l'historique, alors que l'état courant, lui, le voit. C'est précisément pourquoi les deux
 sections coexistent.
 
-**Terminaux.** Plusieurs sessions par conversation, ouvertes et fermées à la demande,
-numérotées d'après ce qui est ouvert plutôt qu'un compteur : fermer la première puis en
-rouvrir une ne doit pas donner deux « shell 2 ». Le gestionnaire est indexé par terminal et
-non plus par conversation, pour qu'un serveur de développement puisse tourner dans l'un
-pendant qu'on lance des commandes dans l'autre. Plafond de 6 par conversation, partagé par
-le protocole pour que l'interface grise le bouton au lieu d'attendre un refus.
+**Terminaux.** Plusieurs shells par projet, ouverts et fermés à la demande, numérotés
+d'après ce qui est ouvert plutôt qu'un compteur : fermer le premier puis en rouvrir un ne
+doit pas donner deux « shell 2 ». Le gestionnaire est indexé par terminal, pour qu'un
+serveur de développement puisse tourner dans l'un pendant qu'on lance des commandes dans
+l'autre. Plafond de 6 par projet, partagé par le protocole pour que l'interface grise le
+bouton au lieu d'attendre un refus.
 
-Le répertoire de travail est celui de la conversation, worktree compris. Le cycle de vie
-passe par REST, la sortie par la socket dédiée : c'est la route qui applique le plafond et
-rend l'identifiant, alors qu'une socket qui créerait à l'attachement ouvrirait un terminal
-de plus à chaque reconnexion.
+Le répertoire de travail vient de la session qui ouvre (worktree compris), du workspace
+sinon. Supprimer le projet ferme ses shells ; supprimer un worktree ferme ceux dont c'est
+le cwd. Le cycle de vie passe par REST, la sortie par la socket dédiée : c'est la route
+qui applique le plafond et rend l'identifiant, alors qu'une socket qui créerait à
+l'attachement ouvrirait un terminal de plus à chaque reconnexion.
 
 Un terminal survit au départ de son dernier client, et son entrée survit à son process avec
 son dernier écran : un `exit` accidentel ou une commande qui plante ne doivent pas faire

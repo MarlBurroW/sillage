@@ -20,8 +20,8 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ChevronDown, ChevronRight, Plus, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight, PanelRight, Plus, X } from 'lucide-react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
 import { CardPanel } from '../components/board/CardPanel'
@@ -30,7 +30,7 @@ import { columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, cx } from '../components/ui'
 import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
-import { PANEL_TRANSITION_MS } from '../lib/panel'
+import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import { useSidebarHidden } from '../lib/sidebar'
@@ -38,6 +38,10 @@ import { useMediaQuery } from '../lib/viewport'
 
 /** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
 const WIDE = '(min-width: 768px)'
+
+const SidePanel = lazy(() =>
+  import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
+)
 
 /** Ordre des cartes par colonne, la forme sur laquelle le glissement travaille. */
 type Layout = Map<CardColumn, string[]>
@@ -82,6 +86,7 @@ export function BoardPage() {
   const t = useTranslate()
   const wide = useMediaQuery(WIDE)
   const sidebarHidden = useSidebarHidden()
+  const panel = usePanelPresence()
 
   const { data: projects } = useProjects()
   const { data: cards, isPending } = useCards(projectId)
@@ -250,6 +255,15 @@ export function BoardPage() {
           >
             {t('board.newConversation')}
           </Button>
+          {/* Le panneau opère ici sur le workspace du projet : un terminal, les
+              fichiers ou le diff s'ouvrent sans avoir à entrer dans une session. */}
+          <IconButton
+            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
+            size="sm"
+            onClick={() => setPanelOpen(!panel.open)}
+          >
+            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
+          </IconButton>
         </header>
 
         {!wide ? (
@@ -321,6 +335,12 @@ export function BoardPage() {
           onClose={() => showCard(null)}
           onSelectCard={showCard}
         />
+      ) : null}
+
+      {panel.mounted ? (
+        <Suspense fallback={null}>
+          <SidePanel projectId={projectId} open={panel.open} />
+        </Suspense>
       ) : null}
     </div>
   )

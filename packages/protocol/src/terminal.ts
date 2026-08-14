@@ -13,23 +13,38 @@ import { z } from 'zod'
 export const MAX_TERMINAL_INPUT = 64 * 1024
 
 /**
- * Terminaux ouverts simultanément par conversation.
+ * Terminaux ouverts simultanément par projet.
  *
- * Un shell est un process qui vit : sans plafond, une conversation laissée ouverte en
+ * Un shell est un process qui vit : sans plafond, un projet laissé ouvert en
  * accumulerait autant qu'on a cliqué sur « + ». Partagé plutôt que côté serveur seul,
  * pour que l'interface sache griser le bouton au lieu d'attendre un refus.
  */
-export const MAX_TERMINALS_PER_CONVERSATION = 6
+export const MAX_TERMINALS_PER_PROJECT = 6
 
 export interface TerminalDto {
   id: string
   title: string
   /** Faux quand le shell s'est terminé mais que son onglet est encore affiché. */
   alive: boolean
+  /** Le process a été emporté par un redémarrage du daemon ; l'écran, lui, est resté. */
+  interrupted: boolean
+  /** Répertoire du shell : le workspace du projet, ou un worktree. */
+  cwd: string
   createdAt: number
 }
 
 export const renameTerminalBodySchema = z.object({ title: z.string().min(1).max(60) })
+
+/**
+ * Ouvert depuis une session, le terminal prend son répertoire (worktree compris) ;
+ * sans rien, celui du workspace du projet. `cwd` sert à relancer un shell interrompu
+ * là où il tournait : le serveur ne l'accepte que s'il désigne le workspace ou un
+ * worktree encore vivant du projet.
+ */
+export const openTerminalBodySchema = z.object({
+  conversationId: z.string().min(1).optional(),
+  cwd: z.string().min(1).optional(),
+})
 
 export const terminalClientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('input'), data: z.string().max(MAX_TERMINAL_INPUT) }),

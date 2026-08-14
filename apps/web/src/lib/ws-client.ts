@@ -8,6 +8,7 @@ import {
   type ServerMessage,
   type SillageEvent,
 } from '@sillage/protocol'
+import { decodeScope, projectScope, type WorkspaceScope } from './workspace-scope'
 
 export interface StreamListener {
   onEvent(seq: number, ts: number, event: SillageEvent): void
@@ -80,8 +81,8 @@ class WsClient {
    * panneaux ouverts sur la même conversation comme par le double montage du mode
    * strict de React, et le premier départ ne doit pas emporter la veille de l'autre.
    */
-  private readonly treePaths = new Map<string, Map<string, number>>()
-  private readonly treeListeners = new Set<(conversationId: string, path: string) => void>()
+  private readonly treePaths = new Map<WorkspaceScope, Map<string, number>>()
+  private readonly treeListeners = new Set<(scope: WorkspaceScope, path: string) => void>()
   private treeFlushTimer: number | null = null
   private reconnectAttempts = 0
   private reconnectTimer: number | null = null
@@ -159,29 +160,29 @@ class WsClient {
    * Le serveur ne suit que ce qui est déclaré ici : une veille par dossier déplié, et
    * rien de récursif. Voir `tree-watch.ts` côté serveur.
    */
-  watchTree(conversationId: string, path: string): () => void {
-    const paths = this.treePaths.get(conversationId) ?? new Map<string, number>()
-    if (!this.treePaths.has(conversationId)) this.treePaths.set(conversationId, paths)
+  watchTree(scope: WorkspaceScope, path: string): () => void {
+    const paths = this.treePaths.get(scope) ?? new Map<string, number>()
+    if (!this.treePaths.has(scope)) this.treePaths.set(scope, paths)
     paths.set(path, (paths.get(path) ?? 0) + 1)
 
     this.connect()
     this.scheduleTreeFlush()
 
     return () => {
-      const held = this.treePaths.get(conversationId)
+      const held = this.treePaths.get(scope)
       const count = held?.get(path)
       if (!held || count === undefined) return
 
       if (count > 1) held.set(path, count - 1)
       else held.delete(path)
-      // La conversation reste inscrite avec un ensemble vide : c'est ce qui fait partir
+      // La portée reste inscrite avec un ensemble vide : c'est ce qui fait partir
       // le message qui libère les dernières veilles du serveur.
       this.scheduleTreeFlush()
     }
   }
 
   /** Prévenu quand un dossier suivi a bougé sur le disque. */
-  onTreeChanged(listener: (conversationId: string, path: string) => void): () => void {
+  onTreeChanged(listener: (scope: WorkspaceScope, path: string) => void): () => void {
     this.treeListeners.add(listener)
     return () => {
       this.treeListeners.delete(listener)
@@ -197,14 +198,15 @@ class WsClient {
   }
 
   private sendTreeWatches(): void {
-    for (const [conversationId, paths] of this.treePaths) {
+    for (const [scope, paths] of this.treePaths) {
       // Tronqué ici et pas seulement borné côté serveur : au-delà de la limite, le
       // message entier serait refusé et l'arborescence perdrait toutes ses veilles au
       // lieu des seules surnuméraires. Un explorateur déplié à ce point retombe sur ce
       // qu'il avait avant : la fin de tour et le bouton de rafraîchissement.
       const watched = [...paths.keys()].slice(0, MAX_WATCHED_PATHS)
-      this.send({ t: 'watch-tree', conversationId, paths: watched })
-      if (paths.size === 0) this.treePaths.delete(conversationId)
+      const { kind, id } = decodeScope(scope)
+      this.send({ t: 'watch-tree', scope: kind, id, paths: watched })
+      if (paths.size === 0) this.treePaths.delete(scope)
     }
   }
 
@@ -266,7 +268,8 @@ class WsClient {
     // Avant le filtre par abonné : l'explorateur suit une conversation dont le fil n'a
     // pas d'abonnement au journal, le panneau se lisant sans session démarrée.
     if (message.t === 'tree-changed') {
-      for (const listener of this.treeListeners) listener(message.conversationId, message.path)
+      const scope = message.scope === 'project' ? projectScope(message.id) : message.id
+      for (const listener of this.treeListeners) listener(scope, message.path)
       return
     }
 

@@ -32,6 +32,7 @@ import {
   Settings,
   SlidersHorizontal,
   SquareKanban,
+  SquareTerminal,
   Trash2,
   Users,
   X,
@@ -636,6 +637,15 @@ function ProjectGroup({
               <span
                 title={t('shell.project.unread')}
                 className="size-1.5 shrink-0 rounded-full bg-ink"
+              />
+            ) : null}
+            {/* Un shell tourne quelque part dans le projet : c'est le repère qui évite
+                d'oublier un serveur de dev lancé depuis une session refermée depuis. */}
+            {project.activeTerminals > 0 ? (
+              <SquareTerminal
+                size={12}
+                className="shrink-0 text-positive"
+                aria-label={t('shell.project.terminals')}
               />
             ) : null}
             {/* Seul le partage est signalé : le privé est le cas normal, et le marquer

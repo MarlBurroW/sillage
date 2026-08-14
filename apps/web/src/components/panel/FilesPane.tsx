@@ -21,13 +21,13 @@ import { FileTree } from './FileTree'
 /** À tenir en accord avec les seuils `@min-[35rem]` et `@max-[35rem]` ci-dessous. */
 const NARROW_PX = 560
 
-export function FilesPane({ conversationId }: { conversationId: string }) {
+export function FilesPane({ scope }: { scope: string }) {
   const t = useTranslate()
   const treeOpen = usePanelTree()
   const host = useRef<HTMLDivElement>(null)
   const column = useRef<HTMLDivElement>(null)
 
-  useTreeSync(conversationId)
+  useTreeSync(scope)
   useEffect(restoreTreeWidth, [])
 
   /**
@@ -73,7 +73,7 @@ export function FilesPane({ conversationId }: { conversationId: string }) {
             '@max-[35rem]:w-full @max-[35rem]:bg-surface @max-[35rem]:shadow-card',
           )}
         >
-          <FileTree conversationId={conversationId} onOpenFile={closeIfOverlaid} />
+          <FileTree scope={scope} onOpenFile={closeIfOverlaid} />
         </div>
       ) : null}
 
@@ -100,7 +100,7 @@ export function FilesPane({ conversationId }: { conversationId: string }) {
       {/* `min-w-0` : sans lui, un enfant flex se dimensionne sur son contenu, et
           l'éditeur imposait sa largeur au panneau au lieu de défiler dedans. */}
       <div className="min-h-0 min-w-0 flex-1">
-        <EditorPane conversationId={conversationId} />
+        <EditorPane scope={scope} />
       </div>
     </div>
   )

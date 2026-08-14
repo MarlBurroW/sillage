@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { conversations, projects, worktrees, type ProjectRow } from '@sillage/db'
 import { createWorktreeBodySchema, type WorktreeDto } from '@sillage/protocol'
 import { GitError, addWorktree, readGitStatus, removeWorktree } from '../../git.js'
+import type { TerminalManager } from '../../terminals/terminal-manager.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -15,7 +16,11 @@ import { requireUser } from '../require-user.js'
  * Codex n'a pas d'équivalent, et il faut de toute façon savoir où ils sont pour les
  * lister et les nettoyer. La gestion est donc identique pour les deux CLI.
  */
-export function registerWorktreeRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function registerWorktreeRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  terminals: TerminalManager,
+): void {
   const loadProject = (projectId: string, userId: string): ProjectRow => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
     if (!project) throw notFound('project_not_found', 'Project not found.')
@@ -131,6 +136,10 @@ export function registerWorktreeRoutes(app: FastifyInstance, ctx: AppContext): v
         { name: row.name },
       )
     }
+
+    // Un shell dont le répertoire va disparaître n'a plus d'objet : on le ferme avant
+    // que le dossier parte, plutôt que de le laisser tourner dans un cwd supprimé.
+    terminals.closeForCwd(row.path)
 
     try {
       await removeWorktree(project.workspacePath, row.path, force)

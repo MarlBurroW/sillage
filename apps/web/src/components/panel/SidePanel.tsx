@@ -24,7 +24,9 @@ import {
   usePanelTab,
   usePanelTree,
   useSelectedSubAgent,
+  type PanelTab,
 } from '../../lib/panel'
+import { projectScope } from '../../lib/workspace-scope'
 import { resizeHandle } from '../../lib/resize-handle'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
@@ -48,34 +50,44 @@ import { TerminalsPane } from './TerminalsPane'
  * tient des terminaux vivants et un contenu en cours d'édition, et un clic mal placé
  * ne doit pas les emporter.
  *
- * Il suit le répertoire de travail de la **conversation** ouverte, worktree compris,
- * et non la racine du projet : c'est là que l'agent écrit.
+ * En vue conversation, il suit le répertoire de travail du fil, worktree compris :
+ * c'est là que l'agent écrit. En vue projet (Board, brouillon), aucune conversation
+ * n'existe : Fichiers, Git et Terminaux opèrent sur le workspace du projet, et les
+ * onglets propres à une session (Historique, Agents, MCP) ne sont pas proposés.
  */
 export function SidePanel({
+  projectId,
   conversationId,
   agent,
-  editTurns,
-  turnRunning,
-  subAgents,
-  background,
-  mcpServers,
+  editTurns = [],
+  turnRunning = false,
+  subAgents = [],
+  background = [],
+  mcpServers = [],
   open,
 }: {
-  conversationId: string
+  projectId: string
+  /** Absente en vue projet : le panneau se réduit alors aux onglets de répertoire. */
+  conversationId?: string
   /** CLI de la conversation, pour les gestes que seuls certains CLI savent faire. */
-  agent: AgentKind
-  editTurns: EditTurn[]
-  turnRunning: boolean
-  subAgents: SubAgent[]
-  background: BackgroundWork[]
-  mcpServers: McpServerStatus[]
+  agent?: AgentKind
+  editTurns?: EditTurn[]
+  turnRunning?: boolean
+  subAgents?: SubAgent[]
+  background?: BackgroundWork[]
+  mcpServers?: McpServerStatus[]
   /** Faux pendant la sortie : le panneau est encore monté, mais s'en va. */
   open: boolean
 }) {
   // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
   // diff comme en désignant un sous-agent depuis le bandeau.
   const t = useTranslate()
-  const tab = usePanelTab()
+  const scope = conversationId ?? projectScope(projectId)
+  const chosenTab = usePanelTab()
+  // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
+  // retombe sur les fichiers plutôt que d'afficher un panneau vide.
+  const tab: PanelTab =
+    conversationId || !['history', 'agents', 'mcp'].includes(chosenTab) ? chosenTab : 'files'
   const treeOpen = usePanelTree()
   const selectedSubAgent = useSelectedSubAgent()
   /**
@@ -85,12 +97,12 @@ export function SidePanel({
    */
   const [entered, setEntered] = useState(false)
   const aside = useRef<HTMLElement>(null)
-  const refresh = useRefreshTree(conversationId)
+  const refresh = useRefreshTree(scope)
   const wasRunning = useRef(turnRunning)
 
   /** Ouvrir un fichier depuis un diff : l'onglet naît sous les yeux de qui l'a demandé. */
   const openInFiles = (path: string) => {
-    openTab(conversationId, path)
+    openTab(scope, path)
     setPanelTab('files')
   }
 
@@ -167,34 +179,44 @@ export function SidePanel({
             active={tab === 'git'}
             onSelect={() => setPanelTab('git')}
           />
-          <Tab
-            icon={<History size={14} />}
-            label={t('panel.tab.history')}
-            active={tab === 'history'}
-            onSelect={() => setPanelTab('history')}
-          />
+          {conversationId ? (
+            <Tab
+              icon={<History size={14} />}
+              label={t('panel.tab.history')}
+              active={tab === 'history'}
+              onSelect={() => setPanelTab('history')}
+            />
+          ) : null}
           <Tab
             icon={<SquareTerminal size={14} />}
             label={t('panel.tab.terminals')}
             active={tab === 'terminals'}
             onSelect={() => setPanelTab('terminals')}
           />
-          <Tab
-            icon={<Bot size={14} />}
-            label={t('panel.tab.agents')}
-            badge={subAgents.filter((agent) => agent.status === 'running').length + background.length}
-            active={tab === 'agents'}
-            onSelect={() => setPanelTab('agents')}
-          />
-          <Tab
-            icon={<PlugZap size={14} />}
-            label={t('panel.tab.mcp')}
-            // Seuls les serveurs en défaut se comptent : une pastille sur un
-            // inventaire sain crierait en permanence pour ne rien dire.
-            badge={mcpServers.filter((s) => s.state === 'failed' || s.state === 'needs-auth').length}
-            active={tab === 'mcp'}
-            onSelect={() => setPanelTab('mcp')}
-          />
+          {conversationId ? (
+            <>
+              <Tab
+                icon={<Bot size={14} />}
+                label={t('panel.tab.agents')}
+                badge={
+                  subAgents.filter((agent) => agent.status === 'running').length + background.length
+                }
+                active={tab === 'agents'}
+                onSelect={() => setPanelTab('agents')}
+              />
+              <Tab
+                icon={<PlugZap size={14} />}
+                label={t('panel.tab.mcp')}
+                // Seuls les serveurs en défaut se comptent : une pastille sur un
+                // inventaire sain crierait en permanence pour ne rien dire.
+                badge={
+                  mcpServers.filter((s) => s.state === 'failed' || s.state === 'needs-auth').length
+                }
+                active={tab === 'mcp'}
+                onSelect={() => setPanelTab('mcp')}
+              />
+            </>
+          ) : null}
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5 pl-1">
@@ -227,20 +249,16 @@ export function SidePanel({
           tab === 'files' ? 'flex' : 'hidden',
         )}
       >
-        <FilesPane conversationId={conversationId} />
+        <FilesPane scope={scope} />
       </div>
 
       {/* Deux vues montées seulement quand on les regarde : leur contenu vient du
           journal ou d'une lecture git relancée à l'affichage, rien ne s'y perd. */}
       {tab === 'git' ? (
-        <GitPane
-          conversationId={conversationId}
-          turnRunning={turnRunning}
-          onOpenFile={openInFiles}
-        />
+        <GitPane scope={scope} turnRunning={turnRunning} onOpenFile={openInFiles} />
       ) : null}
 
-      {tab === 'history' ? (
+      {tab === 'history' && conversationId ? (
         <HistoryPane
           conversationId={conversationId}
           turns={editTurns}
@@ -257,14 +275,18 @@ export function SidePanel({
         )}
       >
         <div className="min-h-0 min-w-0 flex-1">
-          <TerminalsPane conversationId={conversationId} visible={tab === 'terminals'} />
+          <TerminalsPane
+            projectId={projectId}
+            conversationId={conversationId}
+            visible={tab === 'terminals'}
+          />
         </div>
       </div>
 
       {/* Monté seulement quand on le regarde, contrairement aux autres : il ne tient
           rien de vivant, tout son contenu vient du journal, et ses chronomètres n'ont
           rien à compter derrière un onglet fermé. */}
-      {tab === 'agents' ? (
+      {tab === 'agents' && conversationId && agent ? (
         <AgentsPane
           conversationId={conversationId}
           agent={agent}

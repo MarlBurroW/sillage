@@ -71,12 +71,12 @@ function readTokens(root: HTMLElement) {
 }
 
 export function TerminalView({
-  conversationId,
+  projectId,
   terminalId,
   /** Change quand l'onglet devient visible : xterm ne peut pas se dimensionner caché. */
   visible,
 }: {
-  conversationId: string
+  projectId: string
   terminalId: string
   visible: boolean
 }) {
@@ -119,7 +119,7 @@ export function TerminalView({
 
     const socket = new WebSocket(
       `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}` +
-        `/api/conversations/${conversationId}/terminal?terminalId=${encodeURIComponent(terminalId)}`,
+        `/api/projects/${projectId}/terminal?terminalId=${encodeURIComponent(terminalId)}`,
     )
 
     const send = (payload: TerminalClientMessage) => {
@@ -222,7 +222,7 @@ export function TerminalView({
     // `visible` est délibérément hors des dépendances : le mettre reconstruirait le
     // terminal à chaque bascule d'onglet, et le shell repartirait d'un écran vide.
     // C'est `shown` qui en porte la valeur courante.
-  }, [conversationId, terminalId])
+  }, [projectId, terminalId])
 
   /**
    * Devenir visible est le seul moment où la taille peut enfin être mesurée : dans un

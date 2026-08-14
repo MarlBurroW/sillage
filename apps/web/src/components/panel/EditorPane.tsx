@@ -27,8 +27,8 @@ import { CodeEditor } from './CodeEditor'
 const TAB_DRAG_TYPE = 'application/x-sillage-tab'
 
 /** Onglets ouverts, et le fichier actif en dessous. */
-export function EditorPane({ conversationId }: { conversationId: string }) {
-  const { paths, active, preview } = useEditorTabs(conversationId)
+export function EditorPane({ scope }: { scope: string }) {
+  const { paths, active, preview } = useEditorTabs(scope)
   /** Onglets dont le contenu diverge du disque, pour la pastille de la barre. */
   const [dirty, setDirty] = useState<Set<string>>(() => new Set())
   const t = useTranslate()
@@ -50,7 +50,7 @@ export function EditorPane({ conversationId }: { conversationId: string }) {
   }
 
   const close = (path: string) => {
-    closeTab(conversationId, path)
+    closeTab(scope, path)
     markDirty(path, false)
   }
 
@@ -66,10 +66,10 @@ export function EditorPane({ conversationId }: { conversationId: string }) {
               active={path === active}
               preview={path === preview}
               dirty={dirty.has(path)}
-              onActivate={() => activateTab(conversationId, path)}
-              onPin={() => pinTab(conversationId, path)}
+              onActivate={() => activateTab(scope, path)}
+              onPin={() => pinTab(scope, path)}
               onClose={() => close(path)}
-              onDropAt={(from) => reorderTabs(conversationId, from, index)}
+              onDropAt={(from) => reorderTabs(scope, from, index)}
             />
           ))}
         </div>
@@ -88,11 +88,11 @@ export function EditorPane({ conversationId }: { conversationId: string }) {
           <MenuItem
             icon={<X size={14} />}
             disabled={active === null || paths.length < 2}
-            onSelect={() => closeOtherTabs(conversationId, active)}
+            onSelect={() => closeOtherTabs(scope, active)}
           >
             {t('editor.tabs.closeOthers')}
           </MenuItem>
-          <MenuItem icon={<X size={14} />} onSelect={() => closeOtherTabs(conversationId, null)}>
+          <MenuItem icon={<X size={14} />} onSelect={() => closeOtherTabs(scope, null)}>
             {t('editor.tabs.closeAll')}
           </MenuItem>
         </Menu>
@@ -105,7 +105,7 @@ export function EditorPane({ conversationId }: { conversationId: string }) {
       {active ? (
         <FileView
           key={active}
-          conversationId={conversationId}
+          scope={scope}
           path={active}
           markDirty={markDirty}
         />
@@ -213,11 +213,11 @@ function Tab({
 }
 
 function FileView({
-  conversationId,
+  scope,
   path,
   markDirty,
 }: {
-  conversationId: string
+  scope: string
   path: string
   /** Stable d'un rendu à l'autre : une fonction recréée relancerait la lecture en boucle. */
   markDirty: (path: string, dirty: boolean) => void
@@ -240,7 +240,7 @@ function FileView({
     setError(null)
     setConflict(false)
     try {
-      const loaded = await readFile(conversationId, path)
+      const loaded = await readFile(scope, path)
       draft.current = loaded.content
       setFile(loaded)
       markDirty(path, false)
@@ -248,7 +248,7 @@ function FileView({
       setFile(null)
       setError(err instanceof Error ? err.message : t('editor.error.read'))
     }
-  }, [conversationId, path, markDirty, t])
+  }, [scope, path, markDirty, t])
 
   /** Servi tel quel par l'API, sans passer par la lecture texte. */
   const rawView = isImage || isDocument
@@ -264,7 +264,7 @@ function FileView({
       setError(null)
       try {
         const { fingerprint } = await writeFile(
-          conversationId,
+          scope,
           path,
           draft.current,
           force ? null : file.fingerprint,
@@ -282,14 +282,14 @@ function FileView({
         setSaving(false)
       }
     },
-    [conversationId, path, file, markDirty, t],
+    [scope, path, file, markDirty, t],
   )
 
   if (isImage) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
         <img
-          src={rawFileUrl(conversationId, path)}
+          src={rawFileUrl(scope, path)}
           alt={path}
           className="max-h-full max-w-full object-contain"
         />
@@ -302,7 +302,7 @@ function FileView({
   if (isDocument) {
     return (
       <iframe
-        src={rawFileUrl(conversationId, path)}
+        src={rawFileUrl(scope, path)}
         title={path}
         className="min-h-0 min-w-0 flex-1 border-0 bg-canvas"
       />
@@ -357,7 +357,7 @@ function FileView({
               markDirty(path, value !== file.content)
               // Écrire dans un fichier, c'est le garder : un aperçu qui disparaîtrait
               // au fichier suivant emporterait la saisie avec lui.
-              pinTab(conversationId, path)
+              pinTab(scope, path)
             }}
             onSave={() => void save(false)}
           />
