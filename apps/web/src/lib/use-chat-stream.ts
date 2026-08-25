@@ -47,6 +47,16 @@ export function useChatStream(
   const stateRef = useRef<ChatState>(emptyChatState())
   const pending = useRef<{ seq: number; ts: number; event: SillageEvent }[]>([])
   const flushTimer = useRef<number | null>(null)
+  /**
+   * Dernier `seq` reçu, qui n'est pas `state.lastSeq`.
+   *
+   * Le serveur fusionne les deltas d'une page sous le `seq` du premier fragment de
+   * chaque message, donc l'état s'arrête au dernier `seq` *rendu*, en deçà du dernier
+   * lu. Reprendre sur l'état ferait redemander les fragments déjà fusionnés, que le
+   * garde d'idempotence ne rattraperait pas puisque leur `seq` est plus grand : leur
+   * texte s'ajouterait une seconde fois au message en cours.
+   */
+  const cursor = useRef(0)
 
   useEffect(() => {
     setStatus(initialStatus)
@@ -58,6 +68,7 @@ export function useChatStream(
     let cancelled = false
     stateRef.current = emptyChatState()
     pending.current = []
+    cursor.current = 0
     setState(stateRef.current)
     setLoading(true)
     setError(null)
@@ -84,13 +95,14 @@ export function useChatStream(
     }
 
     const enqueue = (seq: number, ts: number, event: SillageEvent) => {
+      cursor.current = Math.max(cursor.current, seq)
       pending.current.push({ seq, ts, event })
       scheduleFlush()
     }
 
     const loadFromRest = async () => {
       try {
-        await fetchJournal(conversationId, stateRef.current.lastSeq, (entries) => {
+        const read = await fetchJournal(conversationId, cursor.current, (entries) => {
           if (cancelled) return
 
           for (const entry of entries) enqueue(entry.seq, entry.ts, entry.event)
@@ -101,7 +113,8 @@ export function useChatStream(
         })
         if (cancelled) return
 
-        wsClient.setCursor(conversationId, stateRef.current.lastSeq)
+        cursor.current = Math.max(cursor.current, read)
+        wsClient.setCursor(conversationId, cursor.current)
         setLoading(false)
       } catch (err) {
         if (cancelled) return
@@ -115,7 +128,7 @@ export function useChatStream(
     void loadFromRest().then(() => {
       if (cancelled) return
 
-      unsubscribe = wsClient.subscribe(conversationId, stateRef.current.lastSeq, {
+      unsubscribe = wsClient.subscribe(conversationId, cursor.current, {
         onEvent: (seq, ts, event) => enqueue(seq, ts, event),
         onStatus: (next, isWarm, applied) => {
           setStatus(next)

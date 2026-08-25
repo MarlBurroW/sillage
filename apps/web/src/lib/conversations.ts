@@ -290,14 +290,17 @@ export type JournalPage = { seq: number; ts: number; event: SillageEvent }[]
  * s'affiche maintenant dès la première et grandit jusqu'à sa fin.
  *
  * Les pages ne peuvent pas être demandées en parallèle : le curseur d'une page est le
- * dernier `seq` de la précédente, et `seq` comporte des trous après compaction des
- * deltas, donc il n'y a pas de découpage calculable à l'avance.
+ * dernier `seq` lu par la précédente, et rien ne permet de le prévoir, une page rendant
+ * moins d'entrées qu'elle n'en lit depuis que ses deltas y sont fusionnés.
+ *
+ * Rend le dernier `seq` lu, qui n'est pas celui de la dernière entrée rendue et devient
+ * le curseur d'abonnement du WebSocket.
  */
 export async function fetchJournal(
   conversationId: string,
   afterSeq: number,
   onPage: (entries: JournalPage) => void,
-): Promise<void> {
+): Promise<number> {
   let cursor = afterSeq
 
   for (;;) {
@@ -315,8 +318,11 @@ export async function fetchJournal(
       )
     }
 
-    const last = page.entries.at(-1)
-    if (!last || last.seq >= page.lastSeq) return
-    cursor = last.seq
+    // Une page qui n'avance pas arrête la boucle : sans ce garde, un serveur qui rendrait
+    // un curseur immobile la ferait tourner sur la même page indéfiniment.
+    if (page.nextAfter <= cursor || page.nextAfter >= page.lastSeq) {
+      return Math.max(cursor, page.nextAfter)
+    }
+    cursor = page.nextAfter
   }
 }
