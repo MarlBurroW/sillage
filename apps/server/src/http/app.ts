@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join, sep } from 'node:path'
+import compress from '@fastify/compress'
 import cookie from '@fastify/cookie'
 import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
@@ -90,6 +91,18 @@ export async function buildApp(
   })
 
   registerErrorHandler(app)
+
+  /**
+   * Rien ne compressait sur le chemin : ni Sillage, ni le nginx qui le précède, dont le
+   * `gzip_types` par défaut ne couvre que `text/html`. Une conversation longue relit son
+   * journal en clair, 32 Mo pour la plus lourde, ce qui se voit surtout depuis
+   * l'extérieur où la montante de la maison est le facteur limitant.
+   *
+   * Le niveau reste bas : le journal passe de 32 à 14 Mo dès le niveau 1, et monter à 6
+   * ne gagne que 0,6 Mo pour le double de temps processeur, payé par le daemon qui porte
+   * déjà les CLI.
+   */
+  await app.register(compress, { global: true, zlibOptions: { level: 1 }, threshold: 1024 })
   await app.register(cookie)
   await app.register(multipart, {
     limits: { files: 1, fileSize: MAX_ATTACHMENT_BYTES },

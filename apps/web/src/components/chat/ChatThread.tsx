@@ -45,8 +45,12 @@ export function ChatThread({
   return (
     <>
       {rows.map((row) => {
-        if (row.kind === 'tool-group') return <ToolCallGroup key={row.key} tools={row.tools} />
-        if (row.kind === 'tool') return <ToolCall key={row.key} tool={row.tool} />
+        if (row.kind === 'tool-group') {
+          return <ToolCallGroup key={row.key} tools={row.tools} conversationId={conversationId} />
+        }
+        if (row.kind === 'tool') {
+          return <ToolCall key={row.key} tool={row.tool} conversationId={conversationId} />
+        }
 
         const item = row.item
         switch (item.kind) {

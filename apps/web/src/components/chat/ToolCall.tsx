@@ -17,11 +17,12 @@ import {
   Wrench,
 } from 'lucide-react'
 import { memo, useState, type ReactNode } from 'react'
-import { isSpawnTool } from '@sillage/protocol'
+import { isSpawnTool, type ToolOutputDto } from '@sillage/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
 import { useTranslate } from '../../lib/i18n'
 import { showSubAgent } from '../../lib/panel'
+import { useToolOutput } from '../../lib/tool-output'
 import { readableView } from '../tools/registry'
 import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
@@ -140,12 +141,71 @@ function asPayload(value: unknown, fallback = ''): { content: string; language: 
   return { content: JSON.stringify(value, null, 2), language: 'json' }
 }
 
-export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolItem }) {
+/**
+ * La sortie à afficher : celle du journal, ou le corps complet une fois arrivé.
+ *
+ * `undefined` tant que la requête n'a pas répondu, ce que `OutputSlot` distingue d'une
+ * sortie réellement vide.
+ */
+function outputOf(tool: ToolItem, full: ToolOutputDto | undefined): unknown {
+  if (tool.outputBytes === null) return tool.output
+  return full ? full.output : undefined
+}
+
+/** La sortie, son chargement, ou l'échec de celui-ci. */
+function OutputSlot({
+  ready,
+  error,
+  output,
+  language,
+}: {
+  ready: boolean
+  error: Error | null
+  output: unknown
+  language?: string
+}) {
+  const t = useTranslate()
+
+  if (error) {
+    return (
+      <p className="text-[0.6875rem] text-critical">{error.message || t('toolcall.output.error')}</p>
+    )
+  }
+
+  if (!ready) {
+    return (
+      <p className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
+        <Loader size={11} className="animate-spin" />
+        {t('toolcall.output.loading')}
+      </p>
+    )
+  }
+
+  return <Payload label={t('toolcall.payload.output')} {...asPayload(output, language)} />
+}
+
+export const ToolCall = memo(function ToolCall({
+  tool,
+  conversationId,
+}: {
+  tool: ToolItem
+  conversationId: string
+}) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const [raw, setRaw] = useState(false)
   const summary = summarize(tool.name, tool.input)
-  const readable = open ? readableView(tool) : null
+
+  // Une sortie volumineuse n'est pas transférée avec le fil : la relecture n'en rend
+  // qu'un aperçu, et le corps complet se demande ici, à l'ouverture de la carte.
+  const previewed = tool.outputBytes !== null
+  const full = useToolOutput(conversationId, tool.id, open && previewed)
+  const ready = !previewed || full.data !== undefined
+  const output = outputOf(tool, full.data)
+  // Les vues lisibles lisent `tool.output` et distinguent une chaîne d'un tableau de
+  // blocs : les nourrir avec l'aperçu ferait clignoter une image cassée avant le vrai
+  // contenu, d'où l'attente du corps complet plutôt qu'un rendu intermédiaire.
+  const readable = open && ready ? readableView({ ...tool, output }) : null
 
   return (
     <div
@@ -197,9 +257,11 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolItem }) {
             <>
               <Payload label={t('toolcall.payload.input')} {...asPayload(tool.input)} />
               {tool.status !== 'running' ? (
-                <Payload
-                  label={t('toolcall.payload.output')}
-                  {...asPayload(tool.output, languageOfInput(tool.input))}
+                <OutputSlot
+                  ready={ready}
+                  error={full.error}
+                  output={output}
+                  language={languageOfInput(tool.input)}
                 />
               ) : null}
             </>
@@ -309,7 +371,13 @@ function summarizeNames(tools: ToolItem[]): string {
  * des appels inchangés. Comparé par référence, le `memo` ratait toujours et chaque
  * groupe du fil se redessinait seize fois par seconde pendant un tour.
  */
-const ToolCallGroupInner = function ToolCallGroup({ tools }: { tools: ToolItem[] }) {
+const ToolCallGroupInner = function ToolCallGroup({
+  tools,
+  conversationId,
+}: {
+  tools: ToolItem[]
+  conversationId: string
+}) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
 
@@ -355,7 +423,7 @@ const ToolCallGroupInner = function ToolCallGroup({ tools }: { tools: ToolItem[]
       {open ? (
         <div className="flex flex-col gap-1.5 border-t border-line p-1.5">
           {tools.map((tool) => (
-            <ToolCall key={tool.id} tool={tool} />
+            <ToolCall key={tool.id} tool={tool} conversationId={conversationId} />
           ))}
         </div>
       ) : null}
@@ -366,6 +434,7 @@ const ToolCallGroupInner = function ToolCallGroup({ tools }: { tools: ToolItem[]
 export const ToolCallGroup = memo(
   ToolCallGroupInner,
   (prev, next) =>
+    prev.conversationId === next.conversationId &&
     prev.tools.length === next.tools.length &&
     // Le fold remplace l'objet d'un appel qui change : la comparaison par référence
     // sur chaque élément est donc exacte, sans avoir à comparer champ par champ.

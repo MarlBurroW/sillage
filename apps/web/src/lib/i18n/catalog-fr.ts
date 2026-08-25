@@ -1118,6 +1118,8 @@ export const fr: Catalog = {
   // Rendu des appels d'outils (payload et groupes)
   'toolcall.payload.input': 'Entrée',
   'toolcall.payload.output': 'Sortie',
+  'toolcall.output.loading': 'Chargement de la sortie complète...',
+  'toolcall.output.error': 'Chargement de la sortie impossible.',
   'toolcall.payload.empty': '(vide)',
   'toolcall.subagent.view': 'Voir le fil du sous-agent',
   'toolcall.view.readable': 'Lisible',
