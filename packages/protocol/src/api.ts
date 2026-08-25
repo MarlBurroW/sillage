@@ -379,6 +379,13 @@ export interface ConversationDto {
 
 export interface JournalPageDto {
   entries: { seq: number; ts: number; event: unknown }[]
+  /**
+   * Curseur de la page suivante : dernier `seq` **lu**, que son événement ait été rendu
+   * ou fusionné dans un autre. Les deltas d'une page sont regroupés par message, donc la
+   * dernière entrée rendue porte le `seq` du premier fragment de son groupe et non celui
+   * du dernier lu : s'en servir comme curseur ferait relire la page indéfiniment.
+   */
+  nextAfter: number
   /** Dernier seq connu du serveur : sert de curseur d'abonnement au WebSocket. */
   lastSeq: number
 }

@@ -38,6 +38,7 @@ import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
 import { advanceCardOnLaunch, assertCardInProject, readCardLink } from './cards.js'
+import { coalesceDeltas } from '../../events/coalesce.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
@@ -466,12 +467,18 @@ export function registerConversationRoutes(
   app.get('/api/conversations/:id/events', async (request): Promise<JournalPageDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const after = Number((request.query as { after?: string }).after ?? 0)
+    const asked = Number((request.query as { after?: string }).after ?? 0)
+    const after = Number.isFinite(asked) ? asked : 0
     const conversation = await loadReadable(id, user.id)
 
-    const entries = log.read(id, Number.isFinite(after) ? after : 0, PAGE_SIZE)
+    const read = log.read(id, after, PAGE_SIZE)
     return {
-      entries: entries.map((entry) => ({ seq: entry.seq, ts: entry.ts, event: entry.event })),
+      entries: coalesceDeltas(read).map((entry) => ({
+        seq: entry.seq,
+        ts: entry.ts,
+        event: entry.event,
+      })),
+      nextAfter: read.at(-1)?.seq ?? after,
       lastSeq: conversation.lastSeq,
     }
   })
