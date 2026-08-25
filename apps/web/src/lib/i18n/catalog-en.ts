@@ -1129,6 +1129,8 @@ export const en = {
   // Rendu des appels d'outils (payload et groupes)
   'toolcall.payload.input': 'Input',
   'toolcall.payload.output': 'Output',
+  'toolcall.output.loading': 'Loading the full output...',
+  'toolcall.output.error': 'Could not load the output.',
   'toolcall.payload.empty': '(empty)',
   'toolcall.subagent.view': "View the sub-agent's thread",
   'toolcall.view.readable': 'Readable',

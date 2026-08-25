@@ -519,6 +519,33 @@ export class EventLog {
   }
 
   /**
+   * Sortie complète d'un appel d'outil, que la relecture d'historique ne rend qu'en
+   * aperçu au-delà d'une certaine taille.
+   *
+   * Le filtre sur `toolCallId` est fait par SQLite plutôt qu'en JS : `rawOfTool` juste
+   * en dessous charge tous les appels de la conversation et les parse un par un pour en
+   * retenir un seul, ce qui se paie sur un fil qui en porte des milliers.
+   */
+  toolOutput(conversationId: string, toolCallId: string): { output: unknown } | null {
+    const row = this.db
+      .select({ payload: events.payload })
+      .from(events)
+      .where(
+        and(
+          eq(events.conversationId, conversationId),
+          eq(events.type, 'tool.completed'),
+          sql`${events.payload} ->> '$.toolCallId' = ${toolCallId}`,
+        ),
+      )
+      .orderBy(desc(events.seq))
+      .limit(1)
+      .get()
+
+    if (!row) return null
+    return { output: (JSON.parse(row.payload) as { output?: unknown }).output ?? null }
+  }
+
+  /**
    * Payloads natifs d'un appel d'outil : celui de son démarrage et celui de sa fin.
    *
    * C'est là que vit le détail d'une modification de fichier, que le schéma normalisé

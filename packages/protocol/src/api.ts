@@ -856,6 +856,16 @@ export const editDiffQuerySchema = z.object({ path: z.string().min(1).max(1024) 
  *   côté Claude ne dit pas ce qu'il y avait avant, et l'inventer serait pire ;
  * - `unavailable` : rien d'exploitable, avec la raison affichée plutôt qu'un vide.
  */
+/**
+ * Sortie complète d'un appel d'outil, demandée quand la relecture n'en a rendu qu'un
+ * aperçu. `output` garde la forme exacte du journal, chaîne ou blocs de contenu, sans
+ * quoi les vues lisibles et l'affichage des images ne sauraient plus la lire.
+ */
+export interface ToolOutputDto {
+  toolCallId: string
+  output: unknown
+}
+
 export interface EditDiffDto {
   path: string
   kind: 'patch' | 'content' | 'unavailable'

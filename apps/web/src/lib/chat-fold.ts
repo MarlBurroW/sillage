@@ -47,6 +47,12 @@ export interface ToolItem {
   name: string
   input: unknown
   output: unknown
+  /**
+   * Taille réelle de la sortie quand `output` n'en est qu'un aperçu, sinon null. Une
+   * relecture d'historique réduit les sorties volumineuses ; la carte demande le corps
+   * complet à l'ouverture.
+   */
+  outputBytes: number | null
   status: 'running' | 'done' | 'failed' | 'interrupted'
   durationMs: number | null
   parentToolCallId: string | null
@@ -856,6 +862,7 @@ export function applyEvent(
         name: event.name,
         input: event.input,
         output: null,
+        outputBytes: null,
         status: 'running',
         durationMs: null,
         parentToolCallId: event.parentToolCallId,
@@ -872,6 +879,7 @@ export function applyEvent(
         replaceItem(state, index, {
           ...(state.items[index] as ToolItem),
           output: event.output,
+          outputBytes: event.outputBytes ?? null,
           status: event.isError ? 'failed' : 'done',
           durationMs: event.durationMs,
         })

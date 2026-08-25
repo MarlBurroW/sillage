@@ -29,6 +29,7 @@ import {
   type ConversationStatus,
   type EditDiffDto,
   type JournalPageDto,
+  type ToolOutputDto,
 } from '@sillage/protocol'
 import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
@@ -39,6 +40,7 @@ import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
 import { advanceCardOnLaunch, assertCardInProject, readCardLink } from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
+import { previewToolOutputs } from '../../events/tool-output.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
@@ -473,7 +475,7 @@ export function registerConversationRoutes(
 
     const read = log.read(id, after, PAGE_SIZE)
     return {
-      entries: coalesceDeltas(read).map((entry) => ({
+      entries: previewToolOutputs(coalesceDeltas(read)).map((entry) => ({
         seq: entry.seq,
         ts: entry.ts,
         event: entry.event,
@@ -481,6 +483,23 @@ export function registerConversationRoutes(
       nextAfter: read.at(-1)?.seq ?? after,
       lastSeq: conversation.lastSeq,
     }
+  })
+
+  /**
+   * Sortie complète d'un appel d'outil.
+   *
+   * La relecture d'historique ne rend qu'un aperçu des sorties volumineuses, pour ne pas
+   * transférer des mégaoctets que personne n'ouvre. La carte de l'appel demande ici le
+   * corps entier, et seulement quand on la déplie.
+   */
+  app.get('/api/conversations/:id/tools/:toolCallId/output', async (request): Promise<ToolOutputDto> => {
+    const user = requireUser(request)
+    const { id, toolCallId } = request.params as { id: string; toolCallId: string }
+    await loadReadable(id, user.id)
+
+    const found = log.toolOutput(id, toolCallId)
+    if (!found) throw notFound('tool_call_not_found', 'No such tool call in this conversation.')
+    return { toolCallId, output: found.output }
   })
 
   /**
