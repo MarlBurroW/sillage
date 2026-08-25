@@ -384,8 +384,12 @@ export interface JournalPageDto {
    * ou fusionné dans un autre. Les deltas d'une page sont regroupés par message, donc la
    * dernière entrée rendue porte le `seq` du premier fragment de son groupe et non celui
    * du dernier lu : s'en servir comme curseur ferait relire la page indéfiniment.
+   *
+   * Facultatif parce que le web s'échange sans redémarrage et le serveur non : le temps
+   * d'un déploiement, ce client parle à un serveur qui l'ignore. Le serveur le renvoie
+   * toujours.
    */
-  nextAfter: number
+  nextAfter?: number
   /** Dernier seq connu du serveur : sert de curseur d'abonnement au WebSocket. */
   lastSeq: number
 }

@@ -318,11 +318,15 @@ export async function fetchJournal(
       )
     }
 
+    // Le web s'échange sans redémarrage, le serveur non : entre les deux, ce client
+    // parle à un serveur qui ignore `nextAfter`. On retombe alors sur la dernière entrée
+    // rendue, ce qu'il faisait avant, plutôt que d'avancer sur un `undefined` qui
+    // relirait la première page sans fin.
+    const next = page.nextAfter ?? page.entries.at(-1)?.seq ?? cursor
+
     // Une page qui n'avance pas arrête la boucle : sans ce garde, un serveur qui rendrait
     // un curseur immobile la ferait tourner sur la même page indéfiniment.
-    if (page.nextAfter <= cursor || page.nextAfter >= page.lastSeq) {
-      return Math.max(cursor, page.nextAfter)
-    }
-    cursor = page.nextAfter
+    if (next <= cursor || next >= page.lastSeq) return Math.max(cursor, next)
+    cursor = next
   }
 }
