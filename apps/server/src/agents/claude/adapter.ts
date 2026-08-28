@@ -52,13 +52,18 @@ export class ClaudeAdapter implements AgentAdapter {
    * chaque requête. Deux caches distincts : les modèles ne bougent qu'entre deux
    * versions de CLI, la consommation change en permanence.
    */
-  private readonly catalog = new ClaudeModelCatalog()
-  private readonly usageReader = new ClaudeUsageReader()
+  private readonly catalog: ClaudeModelCatalog
+  private readonly usageReader: ClaudeUsageReader
   readonly cli: CliBinary
 
   constructor(config: Config) {
     this.binary = config.agents.claude.binary
     this.cli = new CliBinary('claude', this.binary, config.agents.claude.enabled, config.paths.agents)
+    // Les deux sondes lancent le CLI via le SDK : elles ont besoin du même chemin absolu
+    // que les conversations, sans quoi le réglage `agents.claude.binary` resterait sans
+    // effet ici et le SDK retomberait sur un binaire que la release ne livre pas.
+    this.catalog = new ClaudeModelCatalog(() => this.cli.executable())
+    this.usageReader = new ClaudeUsageReader(() => this.cli.executable())
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
