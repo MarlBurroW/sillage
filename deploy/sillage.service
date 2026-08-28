@@ -23,8 +23,11 @@ RestartSec=5
 # et comptent dans ce total. A relever si max_concurrent_sessions est augmente.
 MemoryHigh=2G
 
-StandardOutput=append:%h/.local/share/sillage/logs/sillage.log
-StandardError=append:%h/.local/share/sillage/logs/sillage.log
+# Le journal, et non un fichier : `journalctl --user -u sillage` doit suffire au
+# diagnostic, et systemd gere deja rotation et retention.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sillage
 
 [Install]
 WantedBy=default.target

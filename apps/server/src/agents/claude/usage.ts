@@ -123,6 +123,9 @@ function normalize(payload: unknown): Omit<AgentUsage, 'fetchedAt'> {
 export class ClaudeUsageReader {
   private readonly cached = new CachedProbe(USAGE_CACHE_TTL_MS, () => this.probe())
 
+  /** Résolu à chaque sonde, comme pour le catalogue : voir `ClaudeModelCatalog`. */
+  constructor(private readonly executable: () => Promise<string>) {}
+
   read(force = false): Promise<AgentUsage> {
     return this.cached.read(force)
   }
@@ -135,7 +138,14 @@ export class ClaudeUsageReader {
 
     const session = query({
       prompt: input,
-      options: { cwd: homedir(), abortController: abort, stderr: () => {} },
+      options: {
+        cwd: homedir(),
+        abortController: abort,
+        // Le SDK ne doit jamais chercher son propre binaire : la release ne transporte
+        // plus le paquet plateforme. Voir `ClaudeModelCatalog`.
+        pathToClaudeCodeExecutable: await this.executable(),
+        stderr: (data) => process.stderr.write(`[claude usage] ${data}`),
+      },
     })
 
     const timer = setTimeout(() => abort.abort(), PROBE_TIMEOUT_MS)
