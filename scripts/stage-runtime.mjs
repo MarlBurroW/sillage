@@ -55,7 +55,21 @@ const version = (process.env.SILLAGE_VERSION ?? 'dev').replace(/^v/, '')
 writeFileSync(join(out, 'VERSION'), `${version}\n`)
 writeFileSync(
   join(out, 'package.json'),
-  `${JSON.stringify({ name: 'sillage-runtime', version, private: true, type: 'module', dependencies }, null, 2)}\n`,
+  `${JSON.stringify(
+    {
+      name: 'sillage-runtime',
+      version,
+      private: true,
+      type: 'module',
+      // Reprend l'exigence de la racine dans l'arbre distribue : un `npm rebuild` ou un
+      // `npm install` lance sous un Node trop vieux doit le dire, plutot que de laisser
+      // decouvrir l'incompatibilite au premier crash.
+      engines: { node: '>=22' },
+      dependencies,
+    },
+    null,
+    2,
+  )}\n`,
 )
 
 console.log(`arbre d'exécution assemblé dans ${out} (version ${version})`)
