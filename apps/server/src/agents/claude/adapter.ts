@@ -8,12 +8,14 @@ import {
   type AgentUsage,
   type ClaudeAccountDto,
   type EditDiffDto,
+  type ProjectCommandsDto,
 } from '@sillage/protocol'
 import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { CliBinary } from '../cli-binary.js'
+import { ClaudeCommandCatalog } from './command-catalog.js'
 import { describeEdit } from './file-edits.js'
 import { ClaudeModelCatalog } from './model-catalog.js'
 import { ClaudeRunner } from './runner.js'
@@ -53,6 +55,7 @@ export class ClaudeAdapter implements AgentAdapter {
    * versions de CLI, la consommation change en permanence.
    */
   private readonly catalog: ClaudeModelCatalog
+  private readonly commandCatalog: ClaudeCommandCatalog
   private readonly usageReader: ClaudeUsageReader
   readonly cli: CliBinary
 
@@ -63,6 +66,7 @@ export class ClaudeAdapter implements AgentAdapter {
     // que les conversations, sans quoi le réglage `agents.claude.binary` resterait sans
     // effet ici et le SDK retomberait sur un binaire que la release ne livre pas.
     this.catalog = new ClaudeModelCatalog(() => this.cli.executable())
+    this.commandCatalog = new ClaudeCommandCatalog(() => this.cli.executable())
     this.usageReader = new ClaudeUsageReader(() => this.cli.executable())
   }
 
@@ -140,6 +144,10 @@ export class ClaudeAdapter implements AgentAdapter {
 
   usage(force: boolean): Promise<AgentUsage> {
     return this.usageReader.read(force)
+  }
+
+  commands(cwd: string, force: boolean): Promise<ProjectCommandsDto> {
+    return this.commandCatalog.list(cwd, force)
   }
 
   async resolveDefaults(config: AgentConfig): Promise<AgentConfig> {

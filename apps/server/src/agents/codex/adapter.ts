@@ -8,6 +8,7 @@ import {
   type CodexMode,
   type CodexModeDto,
   type EditDiffDto,
+  type ProjectCommandsDto,
 } from '@sillage/protocol'
 import type { CollaborationModeMask, ThreadForkResponse } from '@sillage/codex-bindings/v2'
 import type { Config } from '../../config.js'
@@ -127,6 +128,12 @@ export class CodexAdapter implements AgentAdapter {
       .map((mask) => ({ mode: mask.mode, label: mask.name }))
 
     return { models, modes, account: null, fetchedAt: listing.fetchedAt }
+  }
+
+  /** Codex n'expose pas de commandes en `/` : ses compétences passent par `$`, publiées
+   *  par le runner une fois la session ouverte. */
+  async commands(): Promise<ProjectCommandsDto> {
+    return { commands: [], fetchedAt: Date.now() }
   }
 
   usage(force: boolean): Promise<AgentUsage> {

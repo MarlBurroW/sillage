@@ -2,6 +2,7 @@ import { ArrowUp, FastForward, Loader2, Mic, Paperclip, Square } from 'lucide-re
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ClipboardEvent,
@@ -397,6 +398,14 @@ export function Composer({
     textarea.current?.focus()
   })
 
+  // Sans `onCommand`, une commande native partirait au CLI comme du texte : autant ne
+  // pas la proposer. C'est ici et non chez chaque appelant que la règle vit, pour
+  // qu'un prochain composer sans plomberie n'ait pas à la recopier.
+  const offered = useMemo(
+    () => (onCommand ? commands : commands.filter((c) => !NATIVE_SLASH_COMMANDS.has(c.name))),
+    [commands, onCommand],
+  )
+
   const syncToken = (value: string, caret: number | null) => {
     const position = caret ?? value.length
     setToken(mentionAt(value, position))
@@ -404,7 +413,7 @@ export function Composer({
     // Un sigle dont le CLI n'a rien publié n'ouvre pas de liste : mieux vaut ne rien
     // proposer que d'annoncer un vide à chaque `$` d'une commande shell citée.
     const found = sigilAt(value, position)
-    const available = found?.sigil === '/' ? commands.length > 0 : skills.length > 0
+    const available = found?.sigil === '/' ? offered.length > 0 : skills.length > 0
     setSigil(found && available ? found : null)
     setActive(0)
   }
@@ -412,7 +421,7 @@ export function Composer({
   const entries = !sigil
     ? []
     : sigil.sigil === '/'
-      ? matchCommands(commands, sigil.query)
+      ? matchCommands(offered, sigil.query)
       : matchSkills(skills, sigil.query)
 
   /** Remplace le jeton en cours par l'entrée choisie, prête à recevoir sa suite. */

@@ -3,7 +3,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, max, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations, projects, users, worktrees, writeTransaction } from '@sillage/db'
+import { conversations, projects, users, writeTransaction } from '@sillage/db'
 import {
   createProjectBodySchema,
   parseRemoteUrl,
@@ -23,6 +23,7 @@ import { dropConversation } from '../../search/search-index.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { projectCwd } from '../../workspace.js'
 
 /**
  * Un utilisateur voit un projet s'il en est propriétaire ou si le projet est partagé.
@@ -380,14 +381,7 @@ export function registerProjectRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const { q, worktreeId } = request.query as { q?: string; worktreeId?: string }
-    const project = await loadVisibleProject(id, user.id)
-
-    let cwd = project.workspacePath
-    if (worktreeId) {
-      const worktree = ctx.db.select().from(worktrees).where(eq(worktrees.id, worktreeId)).get()
-      if (!worktree || worktree.projectId !== id) throw notFound('worktree_not_found', 'Worktree not found.')
-      if (!worktree.removedAt) cwd = worktree.path
-    }
+    const cwd = projectCwd(ctx.db, id, user.id, worktreeId)
 
     return { files: await searchFiles(cwd, q ?? '') }
   })

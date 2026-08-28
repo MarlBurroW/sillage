@@ -1,9 +1,8 @@
 import { homedir } from 'node:os'
-import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
-import { AsyncQueue } from '../async-queue.js'
 import { CachedProbe } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
+import { withControlSession } from './control-session.js'
 
 /**
  * Consommation du compte Claude, lue par la requête de contrôle qui alimente `/usage`.
@@ -130,31 +129,12 @@ export class ClaudeUsageReader {
     return this.cached.read(force)
   }
 
-  private async probe(): Promise<Omit<AgentUsage, 'fetchedAt'>> {
-    // La file reste vide : le CLI démarre, répond à la requête de contrôle et s'arrête.
-    // Aucun tour n'a lieu, donc la lecture ne consomme ni tokens ni quota.
-    const input = new AsyncQueue<SDKUserMessage>()
-    const abort = new AbortController()
-
-    const session = query({
-      prompt: input,
-      options: {
-        cwd: homedir(),
-        abortController: abort,
-        // Le SDK ne doit jamais chercher son propre binaire : la release ne transporte
-        // plus le paquet plateforme. Voir `ClaudeModelCatalog`.
-        pathToClaudeCodeExecutable: await this.executable(),
-        stderr: (data) => process.stderr.write(`[claude usage] ${data}`),
-      },
-    })
-
-    const timer = setTimeout(() => abort.abort(), PROBE_TIMEOUT_MS)
-    try {
-      return normalize(await session.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET())
-    } finally {
-      clearTimeout(timer)
-      input.close()
-      abort.abort()
-    }
+  private probe(): Promise<Omit<AgentUsage, 'fetchedAt'>> {
+    // Requête de contrôle, sans tour : la lecture ne consomme ni tokens ni quota.
+    return withControlSession(
+      { executable: this.executable, cwd: homedir(), tag: 'usage', timeoutMs: PROBE_TIMEOUT_MS },
+      async (session) =>
+        normalize(await session.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()),
+    )
   }
 }

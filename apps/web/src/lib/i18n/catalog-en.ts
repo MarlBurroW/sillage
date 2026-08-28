@@ -22,6 +22,7 @@ export const en = {
   'draft.usage.title': 'Account usage',
   'draft.usage.titleWithPlan': 'Account usage · {plan}',
   'draft.usage.unavailable': 'Usage could not be read for this CLI.',
+  'draft.commands.unavailable': 'Slash commands could not be read for this CLI.',
 
   // Disponibilité des CLI agents
   'agent.unavailable.disabled': 'Disabled in the server configuration.',
@@ -1264,6 +1265,7 @@ export const en = {
   'error.invalid_credentials': "Incorrect username or password.",
   'error.invalid_name': "{name} is not a valid folder name.",
   'error.last_admin': "This is the last administrator: the instance would become unmanageable.",
+  'error.command_list_unavailable': "Could not read commands from {label}: {error}.",
   'error.model_list_unavailable': "Could not read models from {label}: {error}.",
   'error.move_failed': "Could not move {from} to {to}: {reason}.",
   'error.move_into_self': "A folder cannot be moved into itself.",
