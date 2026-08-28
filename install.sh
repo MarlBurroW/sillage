@@ -87,24 +87,24 @@ fi
 
 # --- native modules ----------------------------------------------------------
 
-# Releases ship `better-sqlite3` compiled for the Node ABI of the build runner (Node
-# 22). It is the only module affected: node-pty and @node-rs/argon2 use N-API, which is
-# stable across versions. On any other Node the service starts, loads the module, dies,
-# and systemd restarts it forever. Catching it here costs a second; discovering it
-# afterwards costs a debugging session.
+# Every native module in the tree is N-API — stable across Node versions — so the
+# shipped binaries should load anywhere. Should: a truncated download or a platform the
+# prebuild does not cover still yields a module that will not load, and the failure mode
+# is a service that starts, dies, and gets restarted forever. Catching it here costs a
+# second; discovering it afterwards costs a debugging session.
 sqlite_loads() {
   (cd "$APP_DIR/current" && node -e 'require("better-sqlite3")') 2>&1
 }
 
 if ! ERR="$(sqlite_loads)"; then
-  say "better-sqlite3 was built for another Node ABI; rebuilding for $(node -v)…"
+  say "better-sqlite3 does not load under $(node -v); rebuilding from source…"
   command -v npm >/dev/null || fail "npm is required to rebuild better-sqlite3. Detail: $ERR"
   # Sources travel inside the archive (binding.gyp, deps/, src/): the rebuild downloads
   # nothing, but it does need a toolchain.
   if ! (cd "$APP_DIR/current" && npm rebuild better-sqlite3 >/dev/null 2>&1); then
     fail "could not rebuild better-sqlite3.
   Install a toolchain (Debian/Ubuntu: sudo apt install build-essential python3) and run
-  this script again, or use Node 22, the ABI the shipped binaries were built for.
+  this script again.
   Original error: $ERR"
   fi
   ERR="$(sqlite_loads)" || fail "better-sqlite3 still unusable after the rebuild: $ERR"
