@@ -1896,7 +1896,6 @@ permission sont réservées au propriétaire de la conversation, et l'événemen
   sillage.db
   attachments/
   worktrees/
-  logs/
 ~/.config/sillage/config.toml
 ```
 

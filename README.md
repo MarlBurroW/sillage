@@ -83,10 +83,16 @@ yourself.
 curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash
 ```
 
-This installs under `~/.local/share/sillage`, sets up a systemd user service and
-creates the first account. Later updates happen from the web UI (Settings > About)
-or by re-running the script. Remember `loginctl enable-linger $USER` so the
-service survives logout.
+This installs under `~/.local/share/sillage`, sets up a systemd user service,
+enables lingering (so the service survives logout) and creates the first account.
+It then checks that the server actually answers before reporting success. Later
+updates happen from the web UI (Settings > About) or by re-running the script.
+
+Logs go to the journal: `journalctl --user -u sillage -f`.
+
+Node.js other than 22 is fine: the installer rebuilds `better-sqlite3` — the one
+native module tied to the Node ABI — for the version it finds, which needs a
+compiler (`build-essential` and `python3` on Debian/Ubuntu).
 
 ### From source (development)
 
