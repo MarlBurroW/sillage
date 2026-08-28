@@ -26,9 +26,27 @@ export interface AgentCapabilities {
    * `background.updated` sans la tâche arrêtée.
    */
   stopBackgroundTask: boolean
+  /**
+   * Le CLI sait lister ses commandes en `/` pour un dossier sans qu'une session
+   * tourne : le brouillon d'une conversation les propose avant le premier tour.
+   * Codex n'a pas de commandes en `/` ; ses compétences en `$` arrivent au premier tour.
+   */
+  draftCommands: boolean
 }
 
 export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
-  claude: { steer: true, planReview: true, cliSessions: true, stopBackgroundTask: true },
-  codex: { steer: true, planReview: false, cliSessions: false, stopBackgroundTask: false },
+  claude: {
+    steer: true,
+    planReview: true,
+    cliSessions: true,
+    stopBackgroundTask: true,
+    draftCommands: true,
+  },
+  codex: {
+    steer: true,
+    planReview: false,
+    cliSessions: false,
+    stopBackgroundTask: false,
+    draftCommands: false,
+  },
 }

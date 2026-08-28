@@ -23,6 +23,7 @@ import {
   versionMismatch,
 } from '../lib/agents'
 import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
+import { useProjectCommands } from '../lib/commands'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
@@ -192,6 +193,23 @@ export function DraftConversationPage() {
   )
   const cliSessionList = effectiveWorktreeId ? [] : (cliSessions?.sessions ?? [])
   const importSession = useImportClaudeSession(projectId ?? '')
+
+  // Les commandes en `/` du CLI retenu, lues dans le dossier visé : sans elles, taper
+  // `/` ici n'ouvrait rien, et il fallait un premier tour pour en voir la liste.
+  //
+  // Pas avant de savoir que le CLI est installé (`blocked` vaut aussi null tant que la
+  // disponibilité n'est pas chargée), ni avant de connaître le dossier : une carte
+  // peut désigner un worktree, et sonder la racine en attendant serait un CLI lancé
+  // pour rien. Le composer, de toute façon, n'est pas encore rendu à ce moment-là.
+  const { data: projectCommands, error: commandsError } = useProjectCommands(
+    projectId,
+    agent,
+    effectiveWorktreeId,
+    AGENT_CAPABILITIES[agent].draftCommands &&
+      availability !== undefined &&
+      blocked === null &&
+      !cardPending,
+  )
 
   const importAndOpen = async (sessionId: string) => {
     const created = await importSession.mutateAsync(sessionId)
@@ -374,6 +392,11 @@ export function DraftConversationPage() {
           </fieldset>
 
           <DraftUsage agent={agent} enabled={blocked === null} />
+          {/* Le 502 de la sonde dit que le CLI n'a pas répondu ; le taire laisserait
+              croire qu'il n'y a simplement aucune commande dans ce dossier. */}
+          {commandsError ? (
+            <p className="text-xs text-ink-faint">{t('draft.commands.unavailable')}</p>
+          ) : null}
 
           {card ? (
             <div className="flex items-center gap-2 rounded-md border border-line bg-sunken px-3 py-2">
@@ -461,10 +484,13 @@ export function DraftConversationPage() {
           // cinquième élément d'une liste par un CLI qui ne connaissait pas la carte.
           initialText={card ? `${t('draft.card.prompt', { number: card.number })} ` : ''}
           config={effective}
-          // Rien n'est encore lancé : aucun CLI n'a d'inventaire ni de commandes à
-          // rapporter. La liste en `/` s'ouvrira au premier tour.
+          // Rien n'est encore lancé : aucun CLI n'a d'inventaire MCP ni de compétences à
+          // rapporter ; ils arriveront au premier tour. Les commandes en `/`, elles, se
+          // lisent sans session là où le CLI le permet (`draftCommands`). Le composer
+          // écarte lui-même celles que Sillage exécute (`/compact`) : sans fil, pas de
+          // plomberie pour les porter.
           mcpInventory={NO_MCP_INVENTORY}
-          commands={NO_COMMANDS}
+          commands={projectCommands?.commands ?? NO_COMMANDS}
           skills={NO_SKILLS}
           status="idle"
           // Un CLI absent ne se rattrape pas côté serveur : le tour échouerait après
