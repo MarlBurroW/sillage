@@ -85,6 +85,32 @@ else
   ls -1d "$APP_DIR"/releases/v* 2>/dev/null | sort -V | head -n -3 | xargs -r rm -rf
 fi
 
+# --- native modules ----------------------------------------------------------
+
+# Releases ship `better-sqlite3` compiled for the Node ABI of the build runner (Node
+# 22). It is the only module affected: node-pty and @node-rs/argon2 use N-API, which is
+# stable across versions. On any other Node the service starts, loads the module, dies,
+# and systemd restarts it forever. Catching it here costs a second; discovering it
+# afterwards costs a debugging session.
+sqlite_loads() {
+  (cd "$APP_DIR/current" && node -e 'require("better-sqlite3")') 2>&1
+}
+
+if ! ERR="$(sqlite_loads)"; then
+  say "better-sqlite3 was built for another Node ABI; rebuilding for $(node -v)…"
+  command -v npm >/dev/null || fail "npm is required to rebuild better-sqlite3. Detail: $ERR"
+  # Sources travel inside the archive (binding.gyp, deps/, src/): the rebuild downloads
+  # nothing, but it does need a toolchain.
+  if ! (cd "$APP_DIR/current" && npm rebuild better-sqlite3 >/dev/null 2>&1); then
+    fail "could not rebuild better-sqlite3.
+  Install a toolchain (Debian/Ubuntu: sudo apt install build-essential python3) and run
+  this script again, or use Node 22, the ABI the shipped binaries were built for.
+  Original error: $ERR"
+  fi
+  ERR="$(sqlite_loads)" || fail "better-sqlite3 still unusable after the rebuild: $ERR"
+  say "better-sqlite3 rebuilt."
+fi
+
 # --- systemd unit ------------------------------------------------------------
 
 # Sampled before the service boots and creates the database itself.
@@ -92,7 +118,7 @@ FRESH_INSTALL="no"
 [ -f "$DATA_DIR/sillage.db" ] || FRESH_INSTALL="yes"
 
 NODE_BIN="$(command -v node)"
-mkdir -p "$UNIT_DIR" "$DATA_DIR/logs"
+mkdir -p "$UNIT_DIR"
 sed -e "s|__NODE__|$NODE_BIN|g" \
     -e "s|__NODE_DIR__|$(dirname "$NODE_BIN")|g" \
     -e "s|__INSTALL_DIR__|$APP_DIR|g" \
@@ -105,22 +131,83 @@ systemctl --user enable --now sillage.service
 # enable --now is a no-op when already running: restart to pick up the new version.
 systemctl --user restart sillage.service
 
+# Without lingering, systemd stops user services when the last session closes: on a
+# remote box Sillage would go down on every SSH logout. Enable it rather than suggest
+# it — one more line in the installer output protects nobody. Recent systemd lets a user
+# enable it for their own account without root.
 if ! loginctl show-user "$USER" 2>/dev/null | grep -q '^Linger=yes'; then
-  say "Enable lingering so Sillage survives logout:  loginctl enable-linger $USER"
+  say "Enabling lingering so Sillage survives logout…"
+  loginctl enable-linger "$USER" 2>/dev/null \
+    || sudo -n loginctl enable-linger "$USER" 2>/dev/null \
+    || say "warning: could not enable lingering. Sillage will stop when you log out.
+    Run it yourself:  sudo loginctl enable-linger $USER"
 fi
 
 # --- first account -----------------------------------------------------------
+
+# Without this account the instance is unreachable: no default password, no signup
+# route. A failure here must be visible, never swallowed by a `|| true`.
+ACCOUNT_HINT="node $APP_DIR/current/server/cli/user-create.js"
 
 if [ "$FRESH_INSTALL" = "yes" ]; then
   # curl | bash leaves no stdin: the account prompt needs a real terminal.
   if [ -e /dev/tty ]; then
     say "Create the first account (it gets admin rights):"
-    node "$APP_DIR/current/server/cli/user-create.js" < /dev/tty || true
+    node "$APP_DIR/current/server/cli/user-create.js" < /dev/tty \
+      || say "warning: account creation failed. Retry with:  $ACCOUNT_HINT"
   else
     say "No terminal available. Create the first account with:"
-    say "  node $APP_DIR/current/server/cli/user-create.js"
+    say "  $ACCOUNT_HINT"
   fi
 fi
 
-say "Done. Sillage is listening on http://127.0.0.1:7317"
+# --- final checks ------------------------------------------------------------
+
+# `Done.` only means something once checked. The installer used to announce success
+# while the service was crash-looping and no account existed: two failures, no signal.
+
+# Follow the configured port when there is one; 7317 otherwise.
+PORT=7317
+CONFIG_FILE="${SILLAGE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/sillage/config.toml}"
+if [ -f "$CONFIG_FILE" ]; then
+  CONFIGURED_PORT="$(sed -nE 's/^[[:space:]]*port[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' "$CONFIG_FILE" | head -1)"
+  if [ -n "$CONFIGURED_PORT" ]; then PORT="$CONFIGURED_PORT"; fi
+fi
+
+# Startup opens the database and replays migrations: give it a few seconds before
+# calling it a failure, or a slow machine reports a false negative.
+say "Checking that Sillage answers on port $PORT…"
+HEALTHY="no"
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if curl -fsS -m 2 -o /dev/null "http://127.0.0.1:$PORT/api/health"; then
+    HEALTHY="yes"
+    break
+  fi
+  sleep 1
+done
+
+if [ "$HEALTHY" != "yes" ]; then
+  printf '\033[1;31merror:\033[0m %s\n' "Sillage does not answer on http://127.0.0.1:$PORT." >&2
+  say "Service state:"
+  systemctl --user --no-pager --lines=0 status sillage.service || true
+  say "Application log:  journalctl --user -u sillage -n 50 --no-pager"
+  exit 1
+fi
+
+# A missing account breaks nothing visible: the server answers, but nobody can get in.
+# Read the database rather than assume the CLI succeeded. `require` resolves from the
+# current directory: run elsewhere it fails, and the check would report "unknown" on a
+# perfectly readable database.
+USER_COUNT="$(cd "$APP_DIR/current" && node -e 'try {
+  const db = require("better-sqlite3")(process.argv[1], { readonly: true, fileMustExist: true })
+  process.stdout.write(String(db.prepare("select count(*) as c from users").get().c))
+} catch { process.stdout.write("?") }' "$DATA_DIR/sillage.db" 2>/dev/null || echo '?')"
+
+if [ "$USER_COUNT" = "0" ]; then
+  say "warning: no account exists — the UI will refuse every login."
+  say "  Create one with:  $ACCOUNT_HINT"
+fi
+
+say "Done. Sillage is listening on http://127.0.0.1:$PORT"
+say "Logs:  journalctl --user -u sillage -f"
 say "Update later by re-running this script, or from the web UI (Settings > About)."

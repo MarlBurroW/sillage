@@ -6,6 +6,14 @@
 [Unit]
 Description=Sillage, plateforme de developpement agentique
 After=network.target
+# Un demarrage qui echoue tout de suite echouera aussi la fois suivante : cinq essais
+# suffisent a le montrer. Sans cette limite, `Restart=always` boucle indefiniment et
+# noie le journal sous des dizaines de cycles identiques, ce qui masque la vraie erreur
+# au lieu de la signaler. Au-dela, l'unite passe `failed` avec « start request repeated
+# too quickly », qui est justement le diagnostic. La fenetre est large devant RestartSec
+# pour ne pas compter un redemarrage de mise a jour comme un echec.
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -28,8 +36,13 @@ RestartSec=2
 # et comptent dans ce total. A relever si max_concurrent_sessions est augmente.
 MemoryHigh=2G
 
-StandardOutput=append:__HOME__/.local/share/sillage/logs/sillage.log
-StandardError=append:__HOME__/.local/share/sillage/logs/sillage.log
+# Le journal, et non un fichier. Devant un service qui ne démarre pas, le premier
+# réflexe est `journalctl --user -u sillage` : y trouver les messages de systemd sans
+# la moindre trace applicative fait chercher la panne au mauvais endroit. systemd gère
+# déjà rotation et rétention, ce qu'un `append:` ne fait pas.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sillage
 
 [Install]
 WantedBy=default.target

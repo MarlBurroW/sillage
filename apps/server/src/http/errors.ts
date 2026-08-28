@@ -62,6 +62,13 @@ function redactBody(url: string, body: unknown): unknown {
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((err: FastifyError, request, reply) => {
     if (err instanceof HttpError) {
+      // Un 5xx décrit une panne, pas une faute du client : sans cette ligne, l'échec
+      // d'une sonde d'agent ne laissait aucune trace côté serveur. Le message porte
+      // l'explication du CLI (binaire absent, non authentifié, trop lent) ; le 502 seul
+      // ne dit rien. Les 4xx restent silencieux : ils sont attendus et fréquents.
+      if (err.statusCode >= 500) {
+        request.log.error({ err, code: err.code, params: err.params }, err.message)
+      }
       return reply.status(err.statusCode).send({
         error: {
           code: err.code,

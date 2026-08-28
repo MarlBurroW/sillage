@@ -29,6 +29,13 @@ interface Listing {
 export class ClaudeModelCatalog {
   private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
 
+  /**
+   * Le binaire est résolu à chaque sonde, jamais retenu à la construction : c'est ce qui
+   * fait honorer le préfixe des CLI que Sillage installe lui-même, et le réglage
+   * `agents.claude.binary`, y compris pour un CLI installé pendant que le daemon tourne.
+   */
+  constructor(private readonly executable: () => Promise<string>) {}
+
   list(): Promise<Listing & { fetchedAt: number }> {
     return this.cached.read()
   }
@@ -41,7 +48,19 @@ export class ClaudeModelCatalog {
 
     const session = query({
       prompt: input,
-      options: { cwd: homedir(), abortController: abort, stderr: () => {} },
+      options: {
+        cwd: homedir(),
+        abortController: abort,
+        // Toujours renseigné, jamais laissé au SDK : sa résolution interne cherche le
+        // binaire du paquet plateforme `@anthropic-ai/claude-agent-sdk-<os>-<arch>`, que
+        // la release ne transporte plus. Sans ce chemin la sonde échoue en quelques
+        // millisecondes sur « Native CLI binary not found », et l'agent paraît absent
+        // alors que son CLI est installé.
+        pathToClaudeCodeExecutable: await this.executable(),
+        // La sortie d'erreur du CLI est la seule explication d'une sonde ratée : la
+        // jeter ne laisse au serveur qu'un 502 sans motif.
+        stderr: (data) => process.stderr.write(`[claude catalog] ${data}`),
+      },
     })
 
     const timer = setTimeout(() => abort.abort(), PROBE_TIMEOUT_MS)

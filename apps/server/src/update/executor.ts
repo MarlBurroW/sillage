@@ -107,6 +107,7 @@ export class UpdateExecutor {
       // L'archive a un dossier racine `sillage/` : on l'aplatit dans le dossier
       // de transit, renommé en dossier de release seulement une fois complet.
       await execFileAsync('tar', ['-xzf', archive, '--strip-components=1', '-C', stagingDir])
+      await this.ensureNativeModules(stagingDir)
       await rm(releaseDir, { recursive: true, force: true })
       await rename(stagingDir, releaseDir)
       await rm(archive, { force: true })
@@ -130,6 +131,44 @@ export class UpdateExecutor {
       await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
       throw err
     }
+  }
+
+  /**
+   * Vérifie que le module natif de la nouvelle version se charge, et le recompile
+   * sinon — avant la bascule, jamais après.
+   *
+   * `better-sqlite3` est le seul module lié à l'ABI de Node (`node-pty` et
+   * `@node-rs/argon2` passent par N-API) et les archives sont compilées sous le Node du
+   * runner de release. Sur un autre Node, la version installée démarre, charge le
+   * module, meurt, et systemd la relance sans fin : l'interface qui aurait permis de
+   * revenir en arrière est justement celle qui ne remonte plus. Échouer ici laisse
+   * `current` sur la version qui marche.
+   */
+  private async ensureNativeModules(dir: string): Promise<void> {
+    const loads = () =>
+      execFileAsync(process.execPath, ['-e', 'require("better-sqlite3")'], { cwd: dir })
+
+    try {
+      await loads()
+      return
+    } catch (err) {
+      this.append(
+        `Module natif incompatible avec ${process.version}, recompilation… (${err instanceof Error ? err.message.split('\n')[0] : String(err)})`,
+      )
+    }
+
+    try {
+      // Les sources voyagent dans l'archive : la recompilation ne télécharge rien, mais
+      // demande une chaîne de compilation sur la machine.
+      await execFileAsync('npm', ['rebuild', 'better-sqlite3'], { cwd: dir })
+      await loads()
+    } catch (err) {
+      throw new Error(
+        `better-sqlite3 ne peut pas être recompilé pour ${process.version} : ${err instanceof Error ? err.message.split('\n')[0] : String(err)}. ` +
+          'Installez de quoi compiler (build-essential, python3) ou mettez à jour depuis install.sh. La version en place est conservée.',
+      )
+    }
+    this.append('Module natif recompilé.')
   }
 
   /** Garde la version courante et les deux précédentes, supprime le reste. */
