@@ -137,12 +137,12 @@ export class UpdateExecutor {
    * Vérifie que le module natif de la nouvelle version se charge, et le recompile
    * sinon — avant la bascule, jamais après.
    *
-   * `better-sqlite3` est le seul module lié à l'ABI de Node (`node-pty` et
-   * `@node-rs/argon2` passent par N-API) et les archives sont compilées sous le Node du
-   * runner de release. Sur un autre Node, la version installée démarre, charge le
-   * module, meurt, et systemd la relance sans fin : l'interface qui aurait permis de
-   * revenir en arrière est justement celle qui ne remonte plus. Échouer ici laisse
-   * `current` sur la version qui marche.
+   * Tous les modules natifs de l'arbre passent par N-API : leurs binaires ne sont plus
+   * liés à l'ABI de Node, donc ils devraient se charger partout. Devraient — une archive
+   * tronquée ou une plateforme que les prebuilds ne couvrent pas donne encore un module
+   * qui refuse de se charger, et la version installée démarre, meurt, et systemd la
+   * relance sans fin : l'interface qui aurait permis de revenir en arrière est justement
+   * celle qui ne remonte plus. Échouer ici laisse `current` sur la version qui marche.
    */
   private async ensureNativeModules(dir: string): Promise<void> {
     const loads = () =>
@@ -153,7 +153,7 @@ export class UpdateExecutor {
       return
     } catch (err) {
       this.append(
-        `Module natif incompatible avec ${process.version}, recompilation… (${err instanceof Error ? err.message.split('\n')[0] : String(err)})`,
+        `Module natif illisible sous ${process.version}, recompilation… (${err instanceof Error ? err.message.split('\n')[0] : String(err)})`,
       )
     }
 
@@ -165,7 +165,7 @@ export class UpdateExecutor {
     } catch (err) {
       throw new Error(
         `better-sqlite3 ne peut pas être recompilé pour ${process.version} : ${err instanceof Error ? err.message.split('\n')[0] : String(err)}. ` +
-          'Installez de quoi compiler (build-essential, python3) ou mettez à jour depuis install.sh. La version en place est conservée.',
+          'Installez de quoi compiler (build-essential, python3). La version en place est conservée.',
       )
     }
     this.append('Module natif recompilé.')
