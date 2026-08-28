@@ -155,7 +155,7 @@ export async function buildApp(
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)
-  registerAgentRoutes(app, registry, new CliInstaller(ctx.config.paths.agents))
+  registerAgentRoutes(app, ctx, registry, new CliInstaller(ctx.config.paths.agents))
   registerMcpRoutes(app, ctx)
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())

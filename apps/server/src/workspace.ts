@@ -54,6 +54,32 @@ export function projectWorkspace(db: Db, projectId: string, userId: string): str
   return row.workspacePath
 }
 
+/**
+ * Dossier visé par le brouillon d'une conversation : le worktree s'il en désigne un,
+ * le workspace du projet sinon.
+ *
+ * Même politique qu'une conversation existante (`resolveConversationCwd`) : un
+ * worktree retiré retombe sur le workspace au lieu d'échouer, pour que les mentions
+ * `@`, les commandes `/` et la création du fil répondent tous depuis le même dossier.
+ * Un worktree d'un autre projet, lui, est introuvable : l'identifiant ne doit pas
+ * servir à lire ailleurs.
+ */
+export function projectCwd(
+  db: Db,
+  projectId: string,
+  userId: string,
+  worktreeId: string | null | undefined,
+): string {
+  const workspace = projectWorkspace(db, projectId, userId)
+  if (!worktreeId) return workspace
+
+  const worktree = db.select().from(worktrees).where(eq(worktrees.id, worktreeId)).get()
+  if (!worktree || worktree.projectId !== projectId) {
+    throw notFound('worktree_not_found', 'Worktree not found.')
+  }
+  return worktree.removedAt ? workspace : worktree.path
+}
+
 export function resolveConversationCwd(db: Db, conversation: ConversationRow): string {
   if (conversation.worktreeId) {
     const worktree = db
