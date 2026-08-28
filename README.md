@@ -90,9 +90,10 @@ updates happen from the web UI (Settings > About) or by re-running the script.
 
 Logs go to the journal: `journalctl --user -u sillage -f`.
 
-Node.js other than 22 is fine: the installer rebuilds `better-sqlite3` — the one
-native module tied to the Node ABI — for the version it finds, which needs a
-compiler (`build-essential` and `python3` on Debian/Ubuntu).
+Any Node from 22 up works: every native module ships as an N-API prebuild, which
+does not depend on the Node ABI. The installer checks they load and rebuilds them
+if they do not, which then needs a compiler (`build-essential` and `python3` on
+Debian/Ubuntu).
 
 ### From source (development)
 
