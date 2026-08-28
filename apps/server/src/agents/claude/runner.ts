@@ -17,7 +17,6 @@ import {
 import {
   claudePermissionModeSchema,
   parseElicitationFields,
-  usableSlashCommands,
   type AgentConfig,
   type ClaudeConfig,
   type ContentBlock,
@@ -41,6 +40,7 @@ import type {
   QuestionAnswer,
   RunnerContext,
 } from '../types.js'
+import { toDto as toCommandDtos } from './command-catalog.js'
 import { editedPath, fileExists } from './file-edits.js'
 import { fromSdkMcpStatus, toSdkMcpServers } from './mcp.js'
 import { toPermissionMode } from './permission-mode.js'
@@ -921,17 +921,7 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   private publishCommands(commands: SlashCommand[]): void {
-    this.ctx.emit({
-      type: 'commands.updated',
-      commands: usableSlashCommands(
-        commands.map((command) => ({
-          name: command.name,
-          description: command.description,
-          argumentHint: command.argumentHint,
-          aliases: command.aliases ?? [],
-        })),
-      ),
-    })
+    this.ctx.emit({ type: 'commands.updated', commands: toCommandDtos(commands) })
   }
 
   /**

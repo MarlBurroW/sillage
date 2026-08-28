@@ -1,22 +1,49 @@
 import type { FastifyInstance } from 'fastify'
-import { PREFERRED_CLI_RELEASES } from '@sillage/protocol'
+import { z } from 'zod'
+import { agentKindSchema, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@sillage/protocol'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
+import { projectCwd } from '../../workspace.js'
+import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
+const commandsQuerySchema = z.object({
+  agent: agentKindSchema,
+  worktreeId: z.string().optional(),
+  refresh: z.string().optional(),
+})
+
+/**
+ * Une sonde CLI qui échoue vaut 502, jamais une liste vide : renvoyer un catalogue
+ * en dur ou un tableau nu mentirait sur ce qui est réellement disponible. Absent, non
+ * authentifié ou trop lent, le CLI échoue toujours de la même façon.
+ */
+function cliUnavailable(
+  adapter: AgentAdapter,
+  code: string,
+  message: string,
+  err: unknown,
+): HttpError {
+  return new HttpError(502, code, message, {
+    label: adapter.label,
+    error: err instanceof Error ? err.message : String(err),
+  })
+}
+
 export function registerAgentRoutes(
   app: FastifyInstance,
+  ctx: AppContext,
   registry: AgentRegistry,
   installer: CliInstaller,
 ): void {
-  /** Le nom du CLI vient de l'URL : un inconnu vaut 404, pas un défaut silencieux. */
-  const resolveAdapter = (params: unknown): AgentAdapter => {
-    const { agent } = params as { agent: string }
+  /** Le nom du CLI vient de la requête : un inconnu vaut 404, pas un défaut silencieux. */
+  const resolveAdapter = (agent: string): AgentAdapter => {
     const adapter = registry.find(agent)
     if (!adapter) throw new HttpError(404, 'unknown_agent', 'Unknown CLI: {agent}.', { agent })
     return adapter
   }
+  const paramsAgent = (params: unknown) => (params as { agent: string }).agent
 
   /**
    * Présence et version des CLI, tous agents confondus.
@@ -52,7 +79,7 @@ export function registerAgentRoutes(
    */
   app.post('/api/agents/:agent/install', async (request, reply) => {
     requireUser(request)
-    const adapter = resolveAdapter(request.params)
+    const adapter = resolveAdapter(paramsAgent(request.params))
 
     if (!installer.start(adapter.kind)) {
       throw new HttpError(
@@ -72,35 +99,60 @@ export function registerAgentRoutes(
    */
   app.get('/api/agents/:agent/usage', async (request) => {
     requireUser(request)
-    const adapter = resolveAdapter(request.params)
+    const adapter = resolveAdapter(paramsAgent(request.params))
     const force = (request.query as { refresh?: string }).refresh === '1'
 
     try {
       return await adapter.usage(force)
     } catch (err) {
-      throw new HttpError(
-        502,
+      throw cliUnavailable(
+        adapter,
         'usage_unavailable',
         'Could not read usage from {label}: {error}.',
-        { label: adapter.label, error: err instanceof Error ? err.message : String(err) },
+        err,
       )
     }
   })
 
   app.get('/api/agents/:agent/models', async (request) => {
     requireUser(request)
-    const adapter = resolveAdapter(request.params)
+    const adapter = resolveAdapter(paramsAgent(request.params))
 
     try {
       return await adapter.models()
     } catch (err) {
-      // Renvoyer une liste en dur mentirait sur ce qui est réellement disponible.
-      // Absent, non authentifié ou trop lent : le CLI échoue toujours de la même façon.
-      throw new HttpError(
-        502,
+      throw cliUnavailable(
+        adapter,
         'model_list_unavailable',
         'Could not read models from {label}: {error}.',
-        { label: adapter.label, error: err instanceof Error ? err.message : String(err) },
+        err,
+      )
+    }
+  })
+
+  /**
+   * Commandes en `/` proposables depuis le brouillon d'une conversation.
+   *
+   * Le fil reçoit sa liste du runner au premier tour ; avant ce tour il n'y a ni session
+   * ni journal, seulement un dossier et un CLI choisi. Portée par le projet comme
+   * `/files`, et lue dans le même dossier que lui : les commandes de projet vivent dans
+   * l'arbre. `?refresh=1` court-circuite le cache, comme pour `/usage`.
+   */
+  app.get('/api/projects/:id/commands', async (request): Promise<ProjectCommandsDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { agent, worktreeId, refresh } = commandsQuerySchema.parse(request.query)
+    const cwd = projectCwd(ctx.db, id, user.id, worktreeId)
+    const adapter = resolveAdapter(agent)
+
+    try {
+      return await adapter.commands(cwd, refresh === '1')
+    } catch (err) {
+      throw cliUnavailable(
+        adapter,
+        'command_list_unavailable',
+        'Could not read commands from {label}: {error}.',
+        err,
       )
     }
   })

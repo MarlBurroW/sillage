@@ -5,6 +5,7 @@ import type {
   AgentModelsDto,
   AgentUsage,
   EditDiffDto,
+  ProjectCommandsDto,
 } from '@sillage/protocol'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
@@ -81,6 +82,12 @@ export interface AgentAdapter {
   /** Payload de la route `/api/agents/:agent/models`, lu sur le CLI installé. */
   models(): Promise<AgentModelsDto>
   usage(force: boolean): Promise<AgentUsage>
+  /**
+   * Commandes en `/` que le CLI reconnaît dans ce dossier, sans qu'une session tourne.
+   * Sert le brouillon, où rien n'est encore lancé ; un CLI sans commandes en `/`
+   * répond vide. `force` court-circuite le cache, pour un bouton de rafraîchissement.
+   */
+  commands(cwd: string, force: boolean): Promise<ProjectCommandsDto>
   /**
    * Remplace les `CLI_DEFAULT` d'une configuration par ce que le CLI annonce
    * réellement. Si le catalogue est injoignable, la sentinelle reste : le CLI

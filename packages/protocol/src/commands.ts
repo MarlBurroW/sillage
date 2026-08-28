@@ -21,6 +21,16 @@ export const slashCommandSchema = z.object({
 export type SlashCommandDto = z.infer<typeof slashCommandSchema>
 
 /**
+ * Commandes reconnues dans le dossier d'un projet, lues avant qu'une conversation
+ * existe. C'est ce que le brouillon propose en `/` ; le fil, lui, reçoit la liste par
+ * `commands.updated` dès que sa session tourne.
+ */
+export interface ProjectCommandsDto {
+  commands: SlashCommandDto[]
+  fetchedAt: number
+}
+
+/**
  * Commandes que Sillage exécute lui-même au lieu de les transmettre comme du texte.
  *
  * Le CLI sait déjà les faire, mais par un chemin que Sillage a dû doubler pour ses

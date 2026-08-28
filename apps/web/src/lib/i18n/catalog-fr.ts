@@ -9,6 +9,7 @@ export const fr: Catalog = {
   'draft.usage.title': 'Consommation du compte',
   'draft.usage.titleWithPlan': 'Consommation du compte · {plan}',
   'draft.usage.unavailable': "La consommation de ce CLI n'a pas pu être lue.",
+  'draft.commands.unavailable': "Les commandes en / de ce CLI n'ont pas pu être lues.",
 
   'agent.unavailable.disabled': 'Désactivé dans la configuration du serveur.',
   'agent.unavailable.notExecutable': 'Trouvé à {binary}, mais pas exécutable.',
@@ -1252,6 +1253,7 @@ export const fr: Catalog = {
   'error.invalid_credentials': "Identifiant ou mot de passe incorrect.",
   'error.invalid_name': "{name} n'est pas un nom de dossier valide.",
   'error.last_admin': "C'est le dernier administrateur : l'instance deviendrait ingérable.",
+  'error.command_list_unavailable': "Impossible de lire les commandes depuis {label} : {error}.",
   'error.model_list_unavailable': "Impossible de lire les modèles depuis {label} : {error}.",
   'error.move_failed': "Déplacement de {from} vers {to} impossible : {reason}.",
   'error.move_into_self': "Un dossier ne peut pas être déplacé dans lui-même.",
