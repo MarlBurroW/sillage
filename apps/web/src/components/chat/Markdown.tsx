@@ -18,7 +18,10 @@ export function Markdown({ text }: { text: string }) {
 
   // Première passe : ce que le texte cite. Elle ne produit aucun lien, mais son HTML
   // est celui affiché tant que la réponse du serveur n'est pas là.
-  const found = useMemo(() => parseMarkdown(text), [text])
+  const found = useMemo(() => parseMarkdown(text, { scope: conversationId ?? undefined }), [
+    text,
+    conversationId,
+  ])
   const known = useKnownFiles(found.candidates)
 
   // Seconde passe, une fois les fichiers connus. Sautée quand aucun candidat du texte
@@ -28,8 +31,11 @@ export function Markdown({ text }: { text: string }) {
     [found.candidates, known],
   )
   const segments = useMemo(
-    () => (linkable ? parseMarkdown(text, known).segments : found.segments),
-    [linkable, text, known, found.segments],
+    () =>
+      linkable
+        ? parseMarkdown(text, { knownFiles: known, scope: conversationId ?? undefined }).segments
+        : found.segments,
+    [linkable, text, known, conversationId, found.segments],
   )
 
   /**

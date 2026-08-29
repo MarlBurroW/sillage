@@ -1,5 +1,8 @@
 import MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
+import { VIEWABLE_IMAGE_TYPES } from '@sillage/protocol'
+import { rawFileUrl } from './files-io'
+import type { WorkspaceScope } from './workspace-scope'
 
 /**
  * Rendu markdown : markdown-it produit la structure, mais les blocs de code et les
@@ -30,13 +33,6 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
  * de fichier qui emmène ailleurs.
  */
 md.linkify.set({ fuzzyLink: false })
-
-// Les liens sortants ne doivent pas pouvoir manipuler l'onglet de Sillage.
-md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
-  tokens[idx]?.attrSet('target', '_blank')
-  tokens[idx]?.attrSet('rel', 'noopener noreferrer')
-  return self.renderToken(tokens, idx, options)
-}
 
 /** Marqueur de case à cocher en tête d'élément de liste, à la façon de GitHub. */
 const TASK_MARKER = /^\[([ xX])\]\s+/
@@ -105,7 +101,38 @@ function pathCandidate(content: string): string | null {
 }
 
 /**
- * Rend cliquables les `code spans` qui désignent un fichier du workspace.
+ * Cible d'un lien ou d'une image qui ne peut pas désigner un fichier : elle porte un
+ * schéma (`https:`, `mailto:`), elle est protocole-relative, ou c'est une ancre.
+ */
+const NON_PATH_TARGET = /^(\w+:|\/\/|#)/
+
+/**
+ * Chemin porté par la cible d'un lien ou d'une image, ou null si elle mène ailleurs.
+ *
+ * markdown-it encode la cible en pourcent (un espace devient `%20`) : elle est décodée
+ * avant d'être jugée, sinon un chemin avec espace serait recalé par `PATH_CANDIDATE`,
+ * et le chemin transmis à l'éditeur ne serait pas celui du disque.
+ */
+function pathTarget(target: string | null): string | null {
+  if (!target || NON_PATH_TARGET.test(target)) return null
+  let decoded = target
+  try {
+    decoded = decodeURI(target)
+  } catch {
+    // Séquence d'échappement invalide : la cible est prise telle qu'écrite.
+  }
+  return pathCandidate(decoded)
+}
+
+/** Un type que `file/raw` sert comme image : les autres n'ont rien à afficher. */
+function isViewableImage(path: string): boolean {
+  const extension = path.split('.').pop()?.toLowerCase() ?? ''
+  return extension in VIEWABLE_IMAGE_TYPES
+}
+
+/**
+ * Rend cliquables les `code spans`, liens et images qui désignent un fichier du
+ * workspace.
  *
  * Seuls les chemins de `known` sont transformés : le rendu ne décide de rien, il
  * applique une réponse déjà obtenue. Sans `known`, la passe ne fait que collecter les
@@ -113,24 +140,140 @@ function pathCandidate(content: string): string | null {
  *
  * L'attribut porte le chemin, et c'est un écouteur délégué qui ouvre l'onglet : le HTML
  * est injecté tel quel, il n'y a pas de composant React où accrocher un `onClick`.
+ *
+ * Un lien ou une image dont la cible est un chemin non confirmé est marqué `data-sg-drop` :
+ * il sera rendu en texte. Un `<a href="/home/…">` est lu par le navigateur comme un
+ * chemin du site : le clic sortirait de Sillage vers une page qui n'existe pas. Du texte
+ * inerte vaut mieux qu'un lien qui emmène ailleurs — c'est la même règle que
+ * `fuzzyLink: false`.
  */
 function markFilePaths(md: MarkdownIt): void {
   md.core.ruler.push('sg_file_paths', (state) => {
     const env = state.env as MarkdownEnv
+
+    /** Marque un token porteur d'un chemin, et dit s'il a été confirmé. */
+    const mark = (token: Token, path: string): boolean => {
+      env.candidates?.add(path)
+      if (env.knownFiles?.has(path)) {
+        token.attrSet('data-sg-path', path)
+        return true
+      }
+      token.attrSet('data-sg-drop', '')
+      return false
+    }
+
     for (const token of state.tokens) {
       if (token.type !== 'inline') continue
-      for (const child of token.children ?? []) {
-        if (child.type !== 'code_inline') continue
 
-        const path = pathCandidate(child.content)
-        if (!path) continue
+      const children = token.children ?? []
+      for (let i = 0; i < children.length; i += 1) {
+        const child = children[i]
+        if (!child) continue
 
-        env.candidates?.add(path)
-        if (env.knownFiles?.has(path)) child.attrSet('data-sg-path', path)
+        if (child.type === 'code_inline') {
+          const path = pathCandidate(child.content)
+          // Un `code span` non confirmé reste un `code span` : il n'a jamais été
+          // cliquable, il n'y a rien à retirer.
+          if (path) {
+            env.candidates?.add(path)
+            if (env.knownFiles?.has(path)) child.attrSet('data-sg-path', path)
+          }
+          continue
+        }
+
+        if (child.type === 'image') {
+          const path = pathTarget(child.attrGet('src'))
+          if (!path) continue
+          if (!mark(child, path)) continue
+
+          // La source devient l'URL de lecture du workspace : le chemin du disque n'est
+          // pas une adresse que le navigateur sait atteindre. Sans portée pour la
+          // construire, ou pour un type que la route de lecture refuse, l'image se rend
+          // en chemin cliquable plutôt qu'en icône cassée : `![x](notes.md)` s'écrit.
+          if (env.scope && isViewableImage(path)) {
+            child.attrSet('src', rawFileUrl(env.scope, path))
+          } else {
+            child.attrSet('data-sg-flat', '')
+          }
+          continue
+        }
+
+        if (child.type === 'link_open') {
+          const path = pathTarget(child.attrGet('href'))
+          if (!path) continue
+          const known = mark(child, path)
+          // Les liens ne s'imbriquent pas : la première fermeture est la sienne. Elle
+          // porte la même marque, faute de quoi le rendu ne saurait pas quelle balise
+          // refermer.
+          const close = children.slice(i + 1).find((next) => next.type === 'link_close')
+          close?.attrSet(known ? 'data-sg-path' : 'data-sg-drop', '')
+        }
       }
     }
     return true
   })
+
+  /**
+   * Les liens sortants ne doivent pas pouvoir manipuler l'onglet de Sillage. Ceux qui
+   * désignent un fichier deviennent des boutons, comme les chemins cités.
+   */
+  md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
+    const token = tokens[idx]
+    if (!token) return ''
+
+    const path = token.attrGet('data-sg-path')
+    // Un bouton plutôt qu'un `<a>` réécrit : il est atteignable au clavier et annoncé
+    // comme une action, et il n'a pas de `href` que le navigateur pourrait suivre.
+    if (path !== null) {
+      return `<button type="button" class="sg-file" data-sg-path="${md.utils.escapeHtml(path)}">`
+    }
+    if (token.attrGet('data-sg-drop') !== null) return ''
+
+    token.attrSet('target', '_blank')
+    token.attrSet('rel', 'noopener noreferrer')
+    return self.renderToken(tokens, idx, options)
+  }
+
+  md.renderer.rules.link_close = (tokens, idx, options, _env, self) => {
+    const token = tokens[idx]
+    if (!token) return ''
+    if (token.attrGet('data-sg-path') !== null) return '</button>'
+    if (token.attrGet('data-sg-drop') !== null) return ''
+    return self.renderToken(tokens, idx, options)
+  }
+
+  /**
+   * Une image du workspace est montrée dans le fil, et non pas seulement liée : c'est
+   * une capture d'écran neuf fois sur dix, et l'ouvrir en un clic reste possible par le
+   * bouton qui l'enveloppe. Une source non confirmée n'affiche pas d'image cassée : il
+   * reste le texte alternatif.
+   */
+  md.renderer.rules.image = (tokens, idx, options, env, self) => {
+    const token = tokens[idx]
+    if (!token) return ''
+
+    const alt = self.renderInlineAsText(token.children ?? [], options, env)
+    if (token.attrGet('data-sg-drop') !== null) return md.utils.escapeHtml(alt)
+
+    const path = token.attrGet('data-sg-path')
+    if (path === null) return self.renderToken(tokens, idx, options)
+
+    // Fichier confirmé mais pas affichable : le même bouton que pour un chemin cité,
+    // portant le texte alternatif quand il y en a un, le chemin sinon.
+    if (token.attrGet('data-sg-flat') !== null) {
+      const label = md.utils.escapeHtml(alt || path)
+      return `<button type="button" class="sg-file" data-sg-path="${md.utils.escapeHtml(path)}">${label}</button>`
+    }
+
+    token.attrSet('alt', alt)
+    // La marque vit sur le bouton qui enveloppe l'image, pas sur l'image elle-même.
+    token.attrs = (token.attrs ?? []).filter(([name]) => name !== 'data-sg-path')
+    return (
+      `<button type="button" class="sg-file-image" data-sg-path="${md.utils.escapeHtml(path)}">` +
+      `<img${self.renderAttrs(token)}>` +
+      '</button>'
+    )
+  }
 
   /**
    * Un chemin confirmé se rend en bouton, pas en `<code>` cliquable : il est alors
@@ -154,6 +297,11 @@ interface MarkdownEnv {
   candidates?: Set<string>
   /** Chemins dont le serveur a confirmé qu'ils sont des fichiers. */
   knownFiles?: Set<string>
+  /**
+   * Portée dont les chemins relèvent, pour construire l'URL de lecture des images.
+   * Absente hors conversation : une image du disque reste alors son texte alternatif.
+   */
+  scope?: WorkspaceScope
 }
 
 /** Un segment de contenu, tel que le composant React doit le rendre. */
@@ -205,9 +353,12 @@ function tableRows(tokens: Token[], start: number, end: number): string[][] {
  * d'un tableau sont rendus en bloc par markdown-it, plutôt qu'un par un : c'est le
  * seul moyen de garder son HTML exactement tel qu'il le produit.
  */
-export function parseMarkdown(text: string, knownFiles?: Set<string>): MarkdownDocument {
+export function parseMarkdown(
+  text: string,
+  options: { knownFiles?: Set<string>; scope?: WorkspaceScope } = {},
+): MarkdownDocument {
   const candidates = new Set<string>()
-  const env: MarkdownEnv = { candidates, knownFiles }
+  const env: MarkdownEnv = { candidates, ...options }
   const tokens = md.parse(text, env)
   const segments: MarkdownSegment[] = []
 

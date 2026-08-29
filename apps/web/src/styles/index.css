@@ -331,6 +331,34 @@
   }
 
   /*
+   * Image du workspace montrée dans le fil. Le bouton est le cadre : il n'apporte ni
+   * fond ni police, seulement la bordure, le coin arrondi et le clic qui ouvre le
+   * fichier en grand dans le panneau.
+   *
+   * `max-width` sur l'image et non sur le bouton : une capture d'écran fait deux mille
+   * pixels de large et étirerait la colonne du fil.
+   */
+  .sg-markdown .sg-file-image {
+    display: block;
+    max-width: 100%;
+    padding: 0;
+    border: 1px solid var(--sg-line);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    cursor: zoom-in;
+  }
+
+  .sg-markdown .sg-file-image:hover {
+    border-color: var(--sg-accent);
+  }
+
+  .sg-markdown .sg-file-image img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+
+  /*
    * Blocs indentés de quatre espaces. Les blocs délimités par des accents graves ne
    * passent plus par ici : ils sont rendus par CodeBlock, avec leur barre d'outils.
    */
