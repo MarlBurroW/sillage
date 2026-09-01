@@ -1,0 +1,20 @@
+apiVersion: v2
+name: sillage
+description: Sillage, plateforme de développement agentique (Fastify + SQLite + CLI agents)
+type: application
+
+# Version du chart : à incrémenter à chaque changement des templates.
+version: 0.1.0
+# Version applicative par défaut, sert de tag d'image quand image.tag est vide.
+appVersion: "0.6.0"
+
+home: https://github.com/MarlBurroW/sillage
+sources:
+  - https://github.com/MarlBurroW/sillage
+keywords:
+  - sillage
+  - agents
+  - claude
+  - codex
+maintainers:
+  - name: MarlBurroW

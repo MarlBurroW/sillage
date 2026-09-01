@@ -1,0 +1,26 @@
+{{- range $vol := list "data" "home" "workspace" }}
+{{- $cfg := index $.Values.storage $vol }}
+{{- if and $cfg.enabled (not $cfg.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-%s" (include "sillage.fullname" $) $vol }}
+  labels:
+    {{- include "sillage.labels" $ | nindent 4 }}
+    sillage.dev/volume: {{ $vol }}
+  annotations:
+    # Le PVC survit à un `helm uninstall` : ces données ne se régénèrent pas.
+    # Suppression explicite : kubectl delete pvc <nom>
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ $cfg.accessMode }}
+  {{- if $cfg.storageClass }}
+  storageClassName: {{ $cfg.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $cfg.size }}
+{{- end }}
+{{- end }}

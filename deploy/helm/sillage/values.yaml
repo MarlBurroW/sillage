@@ -1,0 +1,151 @@
+# Valeurs par défaut du chart Sillage.
+# Sillage garde tout son état dans une base SQLite : il tourne en un seul
+# exemplaire, jamais deux. Les réglages qui le garantissent (replicas figé à 1,
+# stratégie Recreate) ne sont volontairement pas exposés ici.
+
+image:
+  repository: ghcr.io/marlburrow/sillage
+  # Vide = le appVersion du Chart (0.6.0). Préfère un tag précis à `latest` :
+  # avec `latest` et pullPolicy IfNotPresent, un pod recréé peut repartir sur
+  # l'image déjà en cache du nœud, donc sur une version plus ancienne.
+  tag: ""
+  pullPolicy: IfNotPresent
+# Pour une image privée : [{ name: ghcr-creds }]
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 7317
+
+ingress:
+  enabled: false
+  # Ce cluster expose deux contrôleurs (`nginx` et `traefik`) et aucun n'est
+  # marqué par défaut : sans className explicite, l'Ingress ne serait pris en
+  # charge par personne.
+  className: nginx
+  annotations: {}
+    # Sillage garde des WebSockets ouverts (flux des sessions, terminaux PTY).
+    # Le timeout par défaut d'ingress-nginx est de 60 s et coupe les sessions
+    # inactives : décommente si tu vois des reconnexions intempestives.
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    # nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  host: sillage.example.com
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: false
+    # Nom du Secret de type kubernetes.io/tls. Ce cluster n'a pas cert-manager :
+    # crée-le à la main (`kubectl create secret tls ...`) ou installe cert-manager.
+    secretName: sillage-tls
+
+# --- Stockage -----------------------------------------------------------------
+# Renseigne storageClass, surtout pour le volume `data`, et choisis du stockage
+# bloc plutôt que du NFS : SQLite tourne en mode WAL et compte sur des verrous
+# fichier que NFS n'honore pas de façon fiable, ce qui corrompt la base.
+#
+# Laisser le champ vide n'est pas neutre. Quand plusieurs StorageClass sont
+# marquées par défaut, Kubernetes n'émet aucune erreur : il retient la plus
+# récemment créée. Sur ce cluster (local-path et nfs-client toutes deux par
+# défaut) un PVC sans classe atterrit sur `nfs-client` — précisément le cas à
+# éviter. Vérifié par `kubectl apply --dry-run=server`.
+#
+# Ici, la bonne valeur est `longhorn` (bloc, répliqué).
+storage:
+  data:
+    # Base SQLite, pièces jointes, worktrees, et les CLI agents installés depuis
+    # l'interface. Volume obligatoire : sans lui tout est perdu au redémarrage.
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 20Gi
+    # Réutiliser un PVC existant au lieu d'en créer un (migration, restauration).
+    existingClaim: ""
+
+  # $HOME du conteneur, où les CLI agents écrivent leurs credentials
+  # (~/.claude, ~/.codex). Un Secret ne convient pas : ces fichiers sont
+  # réécrits par les CLI au rafraîchissement des jetons, il leur faut un
+  # volume inscriptible. Voir le README pour l'amorçage.
+  home:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 2Gi
+    existingClaim: ""
+
+  # Tes dépôts git, sur lesquels pointent les projets Sillage.
+  workspace:
+    enabled: false
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 20Gi
+    existingClaim: ""
+
+# --- Configuration applicative -------------------------------------------------
+# Rendu dans un ConfigMap et passé via SILLAGE_CONFIG. Laisse vide pour t'en
+# remettre aux valeurs par défaut du serveur.
+# Un fichier présent mais invalide fait échouer le démarrage, volontairement.
+config: ""
+  # Exemple :
+  # config: |
+  #   [limits]
+  #   max_concurrent_sessions = 3
+  #   session_idle_timeout_min = 30
+  #
+  #   [retention]
+  #   archived_events_days = 90
+
+# debug | info | warn | error
+logLevel: info
+
+# Variables d'environnement supplémentaires (liste de {name, value} ou valueFrom).
+extraEnv: []
+
+# --- Ressources ----------------------------------------------------------------
+# Une session Claude coûte 400 à 500 Mo de RSS et les process agents sont des
+# enfants du serveur : ils comptent dans la limite du conteneur. La limite doit
+# donc couvrir le daemon (~110 Mo) plus max_concurrent_sessions sessions.
+# Dépasser la limite mémoire d'un conteneur, c'est un OOMKill sans préavis.
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    memory: 3Gi
+
+# L'image tourne en tant qu'utilisateur `node` (uid 1000), déjà pourvu d'un HOME
+# inscriptible. fsGroup aligne la propriété des volumes montés sur ce compte.
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  # Pas de readOnlyRootFilesystem : npm installe les CLI agents à la demande et
+  # les PTY écrivent dans /tmp.
+  readOnlyRootFilesystem: false
+
+# Les migrations tournent au démarrage du serveur, avant l'écoute HTTP. Sur une
+# base volumineuse cela prend du temps : la startupProbe laisse jusqu'à
+# 30 × 10 s = 5 min avant de déclarer l'échec, au lieu de boucler en CrashLoop.
+probes:
+  startup:
+    periodSeconds: 10
+    failureThreshold: 30
+  readiness:
+    periodSeconds: 10
+    failureThreshold: 3
+  liveness:
+    periodSeconds: 20
+    failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}
