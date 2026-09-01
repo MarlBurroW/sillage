@@ -73,6 +73,29 @@ docker compose exec -it sillage node /app/server/cli/user-create.js   # first ac
 Update by pulling a newer image tag. The UI tells you when a release is available
 and what changed.
 
+### Kubernetes (Helm)
+
+A chart lives in [`deploy/helm/sillage`](deploy/helm/sillage), built on the same
+image and the same volumes as the Compose setup.
+
+```bash
+helm install sillage ./deploy/helm/sillage \
+  --namespace sillage --create-namespace \
+  --set storage.data.storageClass=<a-block-storage-class> \
+  --set ingress.enabled=true --set ingress.host=sillage.example.com
+kubectl -n sillage exec -it deploy/sillage -- node /app/server/cli/user-create.js
+```
+
+Sillage runs as a single replica with a `Recreate` strategy: the state is a SQLite
+database in WAL mode on a `ReadWriteOnce` volume, and two pods writing to it means
+corruption. Give the data volume a block storage class rather than NFS, whose file
+locks SQLite cannot rely on. Leaving the class empty is not neutral either: when a
+cluster has several default StorageClasses, Kubernetes picks the most recent one
+without a word.
+
+The [chart README](deploy/helm/sillage/README.md) covers the rest: ingress and
+WebSocket timeouts, egress the pod needs, and what to back up.
+
 ### One-line script (Linux, no Docker)
 
 Requires Linux x64/arm64, systemd and Node.js 22+. The agent CLIs are optional
@@ -136,7 +159,7 @@ apps/server       Fastify daemon: API, WebSocket, CLI supervision
 apps/web          React UI, PWA
 packages/protocol shared event schema and types
 packages/db       Drizzle schema and migrations
-deploy/           systemd unit template, config example, docker-compose example
+deploy/           systemd unit template, config example, docker-compose example, Helm chart
 site/             one-page website (GitHub Pages) and its screenshots
 scripts/          screenshot runner, runtime staging, Codex type generation
 docs/brand/       the brand and the files derived from it
