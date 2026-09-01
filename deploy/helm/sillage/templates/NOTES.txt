@@ -1,0 +1,42 @@
+Sillage {{ .Chart.AppVersion }} est déployé — release « {{ .Release.Name }} » dans {{ .Release.Namespace }}.
+
+Suivre le démarrage (les migrations tournent avant l'ouverture du port) :
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "sillage.fullname" . }}
+
+1. CRÉER LE PREMIER COMPTE
+   Aucun compte n'existe au premier démarrage, et il n'y a pas de variable
+   d'environnement pour en créer un : le premier créé est administrateur.
+   La commande est interactive, d'où le -it :
+
+     kubectl -n {{ .Release.Namespace }} exec -it deploy/{{ include "sillage.fullname" . }} \
+       -- node /app/server/cli/user-create.js
+
+2. ACCÉDER À L'INTERFACE
+{{- if .Values.ingress.enabled }}
+     http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "sillage.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+   puis http://127.0.0.1:{{ .Values.service.port }}
+{{- end }}
+
+3. INSTALLER ET AUTHENTIFIER LES CLI AGENTS
+   Les CLI (claude, codex) ne sont pas dans l'image : installe-les depuis
+   l'interface, au premier écran de nouvelle conversation. Ils atterrissent dans
+   le volume de données et survivent au remplacement du pod.
+   Il reste à les authentifier, dans le pod :
+
+     kubectl -n {{ .Release.Namespace }} exec -it deploy/{{ include "sillage.fullname" . }} -- bash
+
+À SAUVEGARDER : le fichier <data>/secret.key chiffre tous les secrets et
+credentials git enregistrés. Le perdre les rend définitivement illisibles, même
+avec la base intacte.
+{{- if and .Values.storage.data.enabled (not .Values.storage.data.storageClass) }}
+
+AVERTISSEMENT : storage.data.storageClass n'est pas renseigné, le PVC a donc
+pris la StorageClass par défaut du cluster, sans le signaler. Si c'est du NFS,
+la base SQLite finira par se corrompre : ses verrous WAL n'y sont pas fiables.
+Vérifie la classe retenue, et nomme du stockage bloc si besoin :
+
+  kubectl -n {{ .Release.Namespace }} get pvc {{ include "sillage.fullname" . }}-data \
+    -o jsonpath='{.spec.storageClassName}{"\n"}'
+{{- end }}

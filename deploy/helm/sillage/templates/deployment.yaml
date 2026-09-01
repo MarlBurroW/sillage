@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sillage.fullname" . }}
+  labels:
+    {{- include "sillage.labels" . | nindent 4 }}
+spec:
+  # Un seul exemplaire, et pas de valeur exposée pour en demander plus : l'état
+  # vit dans une base SQLite sur un volume ReadWriteOnce. Deux pods qui l'ouvrent
+  # en écriture, c'est la corruption.
+  replicas: 1
+  # Recreate, et non RollingUpdate : une mise à jour progressive démarrerait le
+  # nouveau pod avant d'arrêter l'ancien, or les deux voudraient le même PVC
+  # RWO. Le nouveau resterait bloqué en Pending et la migration n'aurait jamais
+  # lieu. On accepte une courte coupure.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "sillage.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sillage.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        {{- if .Values.config }}
+        # Modifier la config seule ne changerait pas le pod : ce condensé force
+        # le redémarrage quand config.toml bouge.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Le serveur pilote des PTY et des CLI agents : à l'arrêt, il faut leur
+      # laisser le temps de se terminer proprement plutôt que les tuer à 30 s.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: sillage
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            # Sans bind sur 0.0.0.0, le Service ne joindrait jamais le conteneur.
+            - name: SILLAGE_HOST
+              value: "0.0.0.0"
+            - name: SILLAGE_PORT
+              value: "7317"
+            - name: SILLAGE_DATA_DIR
+              value: /home/node/.local/share/sillage
+            - name: SILLAGE_LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            {{- if .Values.config }}
+            - name: SILLAGE_CONFIG
+              value: /etc/sillage/config.toml
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 7317
+              protocol: TCP
+          # /api/health et non /health : toute route inconnue retombe sur le
+          # SPA, qui répond 200 avec du HTML. Une sonde sur /health passerait
+          # donc même serveur applicatif en vrac. /api/health renvoie du JSON
+          # et ne demande pas d'authentification.
+          startupProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.storage.data.enabled }}
+            - name: data
+              mountPath: /home/node/.local/share/sillage
+            {{- end }}
+            {{- if .Values.storage.home.enabled }}
+            # Montés en sous-chemins d'un même volume plutôt que sur /home/node
+            # entier : un PVC posé sur le HOME masquerait les répertoires que
+            # l'image y prépare.
+            - name: home
+              mountPath: /home/node/.claude
+              subPath: claude
+            - name: home
+              mountPath: /home/node/.codex
+              subPath: codex
+            {{- end }}
+            {{- if .Values.storage.workspace.enabled }}
+            - name: workspace
+              mountPath: /home/node/workspace
+            {{- end }}
+            {{- if .Values.config }}
+            - name: config
+              mountPath: /etc/sillage
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- if .Values.storage.data.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "sillage.claimName" (dict "ctx" . "vol" "data") }}
+        {{- end }}
+        {{- if .Values.storage.home.enabled }}
+        - name: home
+          persistentVolumeClaim:
+            claimName: {{ include "sillage.claimName" (dict "ctx" . "vol" "home") }}
+        {{- end }}
+        {{- if .Values.storage.workspace.enabled }}
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: {{ include "sillage.claimName" (dict "ctx" . "vol" "workspace") }}
+        {{- end }}
+        {{- if .Values.config }}
+        - name: config
+          configMap:
+            name: {{ include "sillage.fullname" . }}-config
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

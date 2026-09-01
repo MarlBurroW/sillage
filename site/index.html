@@ -284,13 +284,14 @@
     <section class="install" id="install" aria-labelledby="install-title">
       <div class="install-intro">
         <h2 id="install-title">Install</h2>
-        <p>Docker, or a systemd user service on Linux. Both bind to localhost by default.</p>
+        <p>Docker, a systemd user service on Linux, or a Helm chart. All bind to localhost or stay inside the cluster by default.</p>
       </div>
 
       <div class="install-box">
         <div class="tabs" role="tablist" aria-label="Installation method">
           <button id="tab-docker" role="tab" aria-selected="true" aria-controls="panel-docker" data-tab="docker">Docker</button>
           <button id="tab-script" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-script" data-tab="script">One-line script</button>
+          <button id="tab-helm" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-helm" data-tab="helm">Kubernetes</button>
         </div>
 
         <div id="panel-docker" class="tab-panel" role="tabpanel" aria-labelledby="tab-docker" data-panel="docker">
@@ -313,6 +314,16 @@ volumes:
         <div id="panel-script" class="tab-panel" role="tabpanel" aria-labelledby="tab-script" data-panel="script" hidden>
 <pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
           <p>Linux x64 or arm64, systemd, Node 22+, with <code>claude</code> and <code>codex</code> already authenticated on the host. It installs under <code>~/.local/share/sillage</code>, sets up a user service and creates the first account. Later updates happen from the UI.</p>
+        </div>
+
+        <div id="panel-helm" class="tab-panel" role="tabpanel" aria-labelledby="tab-helm" data-panel="helm" hidden>
+<pre><code>helm install sillage ./deploy/helm/sillage \
+  <span class="dim">--namespace</span> sillage <span class="dim">--create-namespace</span> \
+  <span class="dim">--set</span> storage.data.storageClass=<span class="str">&lt;block-storage-class&gt;</span> \
+  <span class="dim">--set</span> ingress.enabled=<span class="str">true</span> <span class="dim">--set</span> ingress.host=<span class="str">sillage.example.com</span></code></pre>
+          <p>One replica, <code>Recreate</code> strategy: the state is a SQLite database on a <code>ReadWriteOnce</code> volume, and two pods writing to it means corruption. Give the data volume a block storage class rather than NFS, whose file locks SQLite cannot rely on. Then create the first account:</p>
+<pre><code>kubectl <span class="dim">-n</span> sillage exec <span class="dim">-it</span> deploy/sillage \
+  -- node /app/server/cli/user-create.js</code></pre>
         </div>
       </div>
     </section>
