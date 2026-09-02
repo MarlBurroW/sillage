@@ -60,6 +60,7 @@ import { isUnread, useHasUnread } from '../lib/reads'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { SignalDot } from './chat/Signals'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
+import { toggleProjectCollapsed, useCollapsedProjects } from '../lib/project-collapse'
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import {
   restoreSidebarWidth,
@@ -327,13 +328,7 @@ function Sidebar({
   const detailed = useSidebarDetailed()
   useStatusFeed()
 
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const toggle = (projectId: string) =>
-    setCollapsed((current) => {
-      const next = new Set(current)
-      if (!next.delete(projectId)) next.add(projectId)
-      return next
-    })
+  const collapsed = useCollapsedProjects()
 
   /**
    * Pendant qu'on déplace un projet, toutes les conversations sont repliées.
@@ -453,7 +448,7 @@ function Sidebar({
                     // glissement ferme tous les projets, et le report du non-lu
                     // s'allumerait partout le temps du déplacement.
                     collapsed={collapsed.has(project.id)}
-                    onToggle={() => toggle(project.id)}
+                    onToggle={() => toggleProjectCollapsed(project.id)}
                     onNavigate={onNavigate}
                   />
                 ))}
