@@ -1,8 +1,11 @@
-import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { createWriteStream } from 'node:fs'
+import { mkdir, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import type { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { eq } from 'drizzle-orm'
 import { conversations, projects, worktrees, type ConversationRow, type Db } from '@sillage/db'
-import type { TreeEntryDto } from '@sillage/protocol'
+import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@sillage/protocol'
 import { HttpError, notFound } from './http/errors.js'
 
 /**
@@ -172,6 +175,64 @@ export async function createEntry(
   }
 
   return relativePath
+}
+
+/**
+ * Écrit un fichier déposé dans l'explorateur, en flux.
+ *
+ * Le contenu n'est jamais assemblé en mémoire : un dépôt de cent mégaoctets tiendrait
+ * dans le tas du serveur, dix simultanés non. Les dossiers manquants sont créés, pour
+ * qu'un dossier entier lâché sur l'arborescence arrive avec sa structure.
+ *
+ * `wx` refuse un fichier déjà là : écraser silencieusement le travail en cours de
+ * l'agent parce qu'un glissement a raté sa cible est une perte qu'on ne remarque pas.
+ * La vérification est laissée au système de fichiers plutôt qu'à un `stat` préalable,
+ * qui laisserait une fenêtre entre le contrôle et l'écriture.
+ */
+export async function writeUpload(
+  root: string,
+  relativePath: string,
+  content: Readable,
+  onTooLarge: () => boolean,
+): Promise<void> {
+  refuseGitInternals(relativePath)
+
+  const absolute = resolveInside(root, relativePath)
+  await mkdir(dirname(absolute), { recursive: true })
+
+  const tooLarge = (): never => {
+    throw new HttpError(413, 'file_too_large', 'File is too large (maximum {maxMb} MB).', {
+      maxMb: Math.round(MAX_UPLOAD_BYTES / 1024 / 1024),
+    })
+  }
+
+  try {
+    await pipeline(content, createWriteStream(absolute, { flags: 'wx' }))
+
+    // Le flux multipart s'arrête net à la limite sans toujours signaler d'erreur : sans
+    // ce contrôle, un fichier trop gros était écrit tronqué et annoncé comme reçu.
+    if (onTooLarge()) {
+      await unlink(absolute).catch(() => {})
+      tooLarge()
+    }
+  } catch (err) {
+    if (err instanceof HttpError) throw err
+
+    // Un fichier partiel est pire que pas de fichier : l'arborescence en montrerait un
+    // d'apparence normale, tronqué au milieu. Sauf si c'est l'ouverture qui a échoué,
+    // auquel cas il appartient à quelqu'un d'autre et ne doit surtout pas être retiré.
+    const existed = (err as NodeJS.ErrnoException).code === 'EEXIST'
+    if (!existed) await unlink(absolute).catch(() => {})
+
+    if (existed) {
+      throw new HttpError(409, 'entry_exists', '{name} already exists.', { name: relativePath })
+    }
+    if (onTooLarge()) tooLarge()
+    throw new HttpError(400, 'upload_failed', 'Could not write {path}: {reason}.', {
+      path: relativePath,
+      reason: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 /**
