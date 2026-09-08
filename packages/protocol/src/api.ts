@@ -772,6 +772,26 @@ export const moveEntryBodySchema = z.object({
 
 export const deleteEntryBodySchema = z.object({ path: z.string().min(1).max(1024) })
 
+/**
+ * Plafond d'un fichier déposé dans l'explorateur.
+ *
+ * Plus haut que celui d'une pièce jointe : celle-ci part dans le contexte du modèle, un
+ * fichier déposé ne fait qu'atterrir sur le disque du workspace, où une archive ou un
+ * jeu de données a sa place. La limite reste là pour qu'un dépôt malheureux ne remplisse
+ * pas le disque du serveur.
+ */
+export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+/**
+ * Fichiers retenus d'un même dépôt. Un dossier lâché sur l'arborescence peut en
+ * contenir des dizaines de milliers (un `node_modules` déposé par mégarde) : au-delà de
+ * ce seuil, l'envoi est refusé en bloc plutôt qu'entamé puis abandonné.
+ */
+export const MAX_UPLOAD_FILES = 200
+
+/** Chemin de destination d'un fichier déposé, relatif au répertoire de travail. */
+export const uploadQuerySchema = z.object({ path: z.string().min(1).max(1024) })
+
 // Fichiers du panneau
 
 /** Au-delà, l'éditeur rame et le contenu ne se lit plus : refus explicite. */
