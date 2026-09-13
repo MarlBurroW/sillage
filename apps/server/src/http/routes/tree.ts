@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify'
 import {
+  MAX_UPLOAD_BYTES,
   createEntryBodySchema,
   deleteEntryBodySchema,
   moveEntryBodySchema,
   treeQuerySchema,
   treeSearchQuerySchema,
+  uploadQuerySchema,
   type FileState,
   type TreeListingDto,
   type TreeSearchDto,
@@ -16,8 +18,10 @@ import {
   listDirectory,
   moveEntry,
   searchEntries,
+  writeUpload,
 } from '../../workspace.js'
 import type { AppContext } from '../context.js'
+import { badRequest } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { workspaceScopes } from './workspace-scopes.js'
 
@@ -117,6 +121,34 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const cwd = cwdOf(ctx.db, id, user.id)
       const path = await createEntry(cwd, body.parent, body.name, body.kind)
+      return reply.status(201).send({ path })
+    })
+
+    /**
+     * Fichier déposé dans l'explorateur.
+     *
+     * Un fichier par requête, et le chemin de destination en paramètre d'URL plutôt
+     * qu'en champ du formulaire : les champs d'un envoi multipart n'arrivent qu'à leur
+     * tour dans le flux, donc lire la destination avant le contenu obligerait à espérer
+     * un ordre que le navigateur ne garantit pas. Le découpage par fichier est aussi ce
+     * qui donne une progression fiable côté interface, et ce qui permet qu'un fichier
+     * refusé n'emporte pas les autres.
+     */
+    app.post(`${base}/entries/upload`, async (request, reply) => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const { path } = uploadQuerySchema.parse(request.query)
+
+      const cwd = cwdOf(ctx.db, id, user.id)
+
+      // La limite du greffon vaut pour les pièces jointes ; un fichier posé sur le
+      // disque du workspace a droit à la sienne, plus haute.
+      const part = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } })
+      if (!part) throw badRequest('no_file', 'No file received.')
+
+      // `truncated` n'est lisible qu'une fois le flux consommé : l'écriture le consulte
+      // après coup pour distinguer un dépassement de taille d'une panne disque.
+      await writeUpload(cwd, path, part.file, () => part.file.truncated)
       return reply.status(201).send({ path })
     })
 

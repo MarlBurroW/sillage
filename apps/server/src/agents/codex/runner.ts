@@ -18,6 +18,7 @@ import type {
   CommandExecutionOutputDeltaNotification,
   CommandExecutionRequestApprovalParams,
   CommandExecutionRequestApprovalResponse,
+  ErrorNotification,
   FileChangeRequestApprovalParams,
   FileChangeRequestApprovalResponse,
   ListMcpServerStatusResponse,
@@ -60,6 +61,7 @@ import { ToolDurations } from '../tool-durations.js'
 import { failedStatuses } from '../mcp-registry.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
+import { describeTurnError } from './errors.js'
 import { fromCodexMcpStatus, toCodexThreadConfig, type CodexMcpStartup } from './mcp.js'
 import { describeWindow } from './quota.js'
 
@@ -199,6 +201,11 @@ export class CodexRunner implements AgentRunner {
   private turnId: string | null = null
   /** Garde-fou d'interruption : force `idle` si le CLI ne clôt jamais le tour. */
   private interruptWatchdog: NodeJS.Timeout | null = null
+  /**
+   * Tour dont la panne est déjà au journal. Le CLI l'annonce deux fois : par une
+   * notification `error`, puis dans le `turn/completed` qui la clôt. Un seul bandeau.
+   */
+  private reportedErrorTurn: string | null = null
   /** Modèle réellement retenu par le CLI, seul connu quand la conversation dit « défaut ». */
   private threadModel: string | null = null
 
@@ -493,10 +500,36 @@ export class CodexRunner implements AgentRunner {
         return
       }
 
+      /**
+       * Panne en cours de tour. Quand le CLI compte réessayer lui-même (flux coupé,
+       * serveur momentanément saturé), rien n'est journalisé : le tour continue et un
+       * bandeau annoncerait un échec qui n'a pas eu lieu. Sinon, c'est la panne qui
+       * explique le silence du fil, et elle doit s'y lire.
+       */
+      case 'error': {
+        const p = params as ErrorNotification
+        if (p.willRetry) {
+          process.stderr.write(
+            `[codex ${this.conversationId}] nouvelle tentative après : ${p.error.message}\n`,
+          )
+          return
+        }
+        this.reportedErrorTurn = p.turnId
+        this.ctx.emit(describeTurnError(p.error), p)
+        return
+      }
+
       case 'turn/completed': {
         const p = params as TurnCompletedNotification
         this.turnId = null
         this.clearInterruptWatchdog()
+        // Un tour échoué porte sa cause. C'est ce qui manquait quand un quota épuisé
+        // laissait la conversation s'arrêter sans un mot : le `turn.completed` seul
+        // ne dit rien de plus qu'un tour réussi.
+        if (p.turn.status === 'failed' && p.turn.error && this.reportedErrorTurn !== p.turn.id) {
+          this.ctx.emit(describeTurnError(p.turn.error), p)
+        }
+        this.reportedErrorTurn = null
         // Le tour fini, plus personne n'attend de réponse : une sollicitation encore
         // ouverte est morte avec lui. La laisser vivante est ce qui bloquait les
         // conversations interrompues sur une demande d'approbation : le clic

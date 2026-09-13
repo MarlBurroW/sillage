@@ -23,8 +23,13 @@ const configSchema = z.object({
     .default({}),
   limits: z
     .object({
-      /** Une session Claude coûte 400 à 500 Mo. C'est le seul plafond qui compte. */
-      maxConcurrentSessions: z.number().int().min(1).default(3),
+      /**
+       * Une session Claude coûte 400 à 500 Mo. C'est le seul plafond qui compte.
+       *
+       * Défaut de provisionnement seulement : l'interface écrit la valeur en base, et
+       * celle-ci l'emporte (voir `readAppSettings`).
+       */
+      maxConcurrentSessions: z.number().int().min(1).default(10),
       sessionIdleTimeoutMin: z.number().int().min(1).default(30),
       ptyIdleTimeoutMin: z.number().int().min(1).default(60),
       maxAttachmentBytes: z.number().int().default(20 * 1024 * 1024),

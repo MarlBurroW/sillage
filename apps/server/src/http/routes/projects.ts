@@ -6,8 +6,11 @@ import type { FastifyInstance } from 'fastify'
 import { conversations, projects, users, writeTransaction } from '@sillage/db'
 import {
   createProjectBodySchema,
+  NO_PROJECT_DEFAULTS,
   parseRemoteUrl,
+  readProjectDefaults,
   reorderProjectsBodySchema,
+  serializeProjectDefaults,
   startCloneBodySchema,
   updateProjectBodySchema,
   type CloneJobDto,
@@ -190,6 +193,7 @@ export function registerProjectRoutes(
           archivedAt: project.archivedAt,
           createdAt: project.createdAt,
           conversationCount,
+          defaultConfig: readProjectDefaults(project.defaultConfig),
           activeTerminals: terminals.aliveCount(project.id),
           git: await readGitStatus(project.workspacePath),
         }
@@ -214,6 +218,7 @@ export function registerProjectRoutes(
       ownerName: user.displayName,
       isOwner: true,
       conversationCount: 0,
+      defaultConfig: NO_PROJECT_DEFAULTS,
       activeTerminals: 0,
       git: await readGitStatus(workspacePath),
     }
@@ -333,7 +338,13 @@ export function registerProjectRoutes(
     if (body.visibility !== undefined) patch.visibility = body.visibility
     if (body.color !== undefined) patch.color = body.color
     if (body.defaultConfig !== undefined) {
-      patch.defaultConfig = body.defaultConfig ? JSON.stringify(body.defaultConfig) : null
+      // Relu puis réécrit en entier : l'écran n'édite qu'un CLI à la fois, et écrire
+      // les deux écraserait le préréglage que l'autre onglet vient peut-être de poser.
+      const current = readProjectDefaults(project.defaultConfig)
+      patch.defaultConfig = serializeProjectDefaults({
+        ...current,
+        [body.defaultConfig.agent]: body.defaultConfig.config,
+      })
     }
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
 

@@ -40,6 +40,14 @@ export interface AppSettingsDto {
   sttModel: string
   sttSecret: string
   sttCleanupModel: string
+  /**
+   * Runners CLI vivants en même temps, tous comptes confondus.
+   *
+   * Ce que ça plafonne est la mémoire de la machine, pas le nombre de conversations
+   * ouvertes : au-delà, le serveur arrête le runner au repos le plus ancien, qui
+   * repart en reprise au message suivant.
+   */
+  maxConcurrentSessions: number
 }
 
 /** Résultat d'un passage d'archivage lancé à la main. */
@@ -65,6 +73,12 @@ export const updateAppSettingsBodySchema = z.object({
   sttModel: z.string().trim().max(200).optional(),
   sttSecret: z.string().trim().max(200).optional(),
   sttCleanupModel: z.string().trim().max(200).optional(),
+  /**
+   * Au moins une session, sinon plus rien ne peut démarrer. La borne haute écarte les
+   * valeurs qui feraient tomber la machine avant d'être atteintes : à 400-500 Mo la
+   * session, cent runners demanderaient 50 Go.
+   */
+  maxConcurrentSessions: z.number().int().min(1).max(100).optional(),
 })
 
 /** Résultat d'une dictée transcrite. */
