@@ -390,6 +390,20 @@ export class EventLog {
     return [...open].map(([requestId, kind]) => ({ kind, requestId }))
   }
 
+  /** Une question asynchrone peut rester ouverte sur une conversation au repos. */
+  openAsyncQuestionConversationIds(): string[] {
+    return this.db.selectDistinct({ id: events.conversationId }).from(events).where(sql`
+      ${events.type} = 'question.requested' AND ${events.payload} ->> '$.blocking' = 0
+      AND NOT EXISTS (
+        SELECT 1 FROM events AS resolved
+        WHERE resolved.conversation_id = ${events.conversationId}
+          AND resolved.type = 'question.resolved'
+          AND resolved.seq > ${events.seq}
+          AND resolved.payload ->> '$.requestId' = ${events.payload} ->> '$.requestId'
+      )
+    `).all().map((row) => row.id)
+  }
+
   /**
    * Les travaux de fond que le journal donne encore pour vivants.
    *

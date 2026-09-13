@@ -6,3 +6,5 @@ vis-à-vis des CLI, un dump de 500 fichiers d'un fournisseur n'y avait pas sa pl
 
 Seuls l'adaptateur Codex du serveur et les assertions de dérive du protocole en
 dépendent. `pnpm codex:types:check` échoue si le contenu committé a dérivé du binaire.
+
+Couverture et vérifications : [intégration Codex](../../docs/CODEX.md).

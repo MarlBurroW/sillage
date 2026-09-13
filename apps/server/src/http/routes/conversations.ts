@@ -799,7 +799,7 @@ export function registerConversationRoutes(
     const body = questionAnswerBodySchema.parse(request.body)
     await loadWritable(id, user.id)
 
-    const answered = sessions.answerQuestion(id, requestId, {
+    const answered = await sessions.answerQuestion(id, requestId, {
       status: body.status,
       answers: body.answers,
       decidedBy: user.id,
