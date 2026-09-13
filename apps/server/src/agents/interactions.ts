@@ -48,9 +48,9 @@ export interface ElicitationDetails {
  * Les demandes en attente d'une réponse de l'utilisateur, et leur chorégraphie.
  *
  * Chaque canal (permission, question, élicitation, plan) suit le même cycle :
- * émettre `*.requested` et passer la conversation en `awaiting_input`, retenir la
+ * émettre `*.requested` et passer en `awaiting_input` si la demande bloque, retenir la
  * façon de répondre au CLI, puis à la décision émettre `*.resolved`, répondre et
- * repasser en `running`. À l'arrêt du runner, tout ce qui attend encore est clos en
+ * repasser en `running` quand aucune demande bloquante ne reste. À l'arrêt du runner, tout ce qui attend encore est clos en
  * `expired` : un CLI ne doit jamais rester suspendu à une réponse qui ne viendra pas.
  *
  * Cette chorégraphie était recopiée dans chaque runner, à l'identique au payload de
@@ -61,16 +61,28 @@ export interface ElicitationDetails {
 export class PendingInteractions {
   private readonly permissions = new Map<string, (decision: PermissionDecision | null) => void>()
   private readonly questions = new Map<string, (answer: QuestionAnswer | null) => void>()
+  private readonly nonBlocking = new Set<string>()
+  private readonly questionDefinitions = new Map<string, AgentQuestion[]>()
   private readonly elicitations = new Map<string, (answer: ElicitationAnswer | null) => void>()
   private readonly plans = new Map<string, (review: PlanReview | null) => void>()
 
   constructor(private readonly ctx: RunnerContext) {}
+
+  get hasBlocking(): boolean {
+    return this.permissions.size > 0 || this.elicitations.size > 0 || this.plans.size > 0 ||
+      [...this.questions.keys()].some((id) => !this.nonBlocking.has(id))
+  }
+
+  private refreshStatus(): void {
+    this.ctx.setStatus(this.hasBlocking ? 'awaiting_input' : 'running')
+  }
 
   requestPermission(
     details: PermissionDetails,
     respond: (decision: PermissionDecision | null) => void,
   ): string {
     const requestId = this.ctx.openPermissionRequest(details.toolName, details.input)
+    this.permissions.set(requestId, respond)
     this.ctx.setStatus('awaiting_input')
     this.ctx.emit({
       type: 'permission.requested',
@@ -82,7 +94,6 @@ export class PendingInteractions {
       displayName: details.displayName ?? null,
       suggestions: PERMISSION_SUGGESTIONS,
     })
-    this.permissions.set(requestId, respond)
     return requestId
   }
 
@@ -100,25 +111,35 @@ export class PendingInteractions {
       decidedBy: decision.decidedBy,
     })
     respond(decision)
-    this.ctx.setStatus('running')
+    this.refreshStatus()
     return true
   }
 
   requestQuestion(
     questions: AgentQuestion[],
     respond: (answer: QuestionAnswer | null) => void,
+    blocking = true,
   ): string {
     const requestId = randomUUID()
-    this.ctx.setStatus('awaiting_input')
-    this.ctx.emit({ type: 'question.requested', requestId, questions })
     this.questions.set(requestId, respond)
+    this.questionDefinitions.set(requestId, questions)
+    if (!blocking) this.nonBlocking.add(requestId)
+    else this.ctx.setStatus('awaiting_input')
+    this.ctx.emit({ type: 'question.requested', requestId, questions, blocking })
     return requestId
   }
 
   resolveQuestion(requestId: string, answer: QuestionAnswer): boolean {
     const respond = this.questions.get(requestId)
     if (!respond) return false
+    const definitions = this.questionDefinitions.get(requestId) ?? []
+    if (answer.status === 'answered' && (
+      definitions.some((question) => !answer.answers[question.id]?.some((value) => value.trim())) ||
+      Object.keys(answer.answers).some((id) => !definitions.some((question) => question.id === id))
+    )) return false
     this.questions.delete(requestId)
+    this.questionDefinitions.delete(requestId)
+    const blocking = !this.nonBlocking.delete(requestId)
 
     this.ctx.emit({
       type: 'question.resolved',
@@ -128,7 +149,7 @@ export class PendingInteractions {
       decidedBy: answer.decidedBy,
     })
     respond(answer)
-    this.ctx.setStatus('running')
+    if (blocking) this.refreshStatus()
     return true
   }
 
@@ -137,6 +158,7 @@ export class PendingInteractions {
     respond: (answer: ElicitationAnswer | null) => void,
   ): string {
     const requestId = randomUUID()
+    this.elicitations.set(requestId, respond)
     this.ctx.setStatus('awaiting_input')
     this.ctx.emit({
       type: 'elicitation.requested',
@@ -148,7 +170,6 @@ export class PendingInteractions {
       fields: details.fields,
       title: details.title,
     })
-    this.elicitations.set(requestId, respond)
     return requestId
   }
 
@@ -165,7 +186,7 @@ export class PendingInteractions {
       decidedBy: answer.decidedBy,
     })
     respond(answer)
-    this.ctx.setStatus('running')
+    this.refreshStatus()
     return true
   }
 
@@ -174,6 +195,7 @@ export class PendingInteractions {
     respond: (review: PlanReview | null) => void,
   ): string {
     const requestId = randomUUID()
+    this.plans.set(requestId, respond)
     this.ctx.setStatus('awaiting_input')
     this.ctx.emit({
       type: 'plan.review_requested',
@@ -181,7 +203,6 @@ export class PendingInteractions {
       plan: details.plan,
       followUpOptions: details.followUpOptions,
     })
-    this.plans.set(requestId, respond)
     return requestId
   }
 
@@ -198,63 +219,50 @@ export class PendingInteractions {
       decidedBy: review.decidedBy,
     })
     respond(review)
-    this.ctx.setStatus('running')
+    this.refreshStatus()
     return true
   }
 
   /** Un runner qui s'arrête ne doit pas laisser le CLI attendre une réponse à jamais. */
   expireAll(): void {
-    for (const [requestId, respond] of this.questions) {
-      this.ctx.emit({
-        type: 'question.resolved',
-        requestId,
-        status: 'expired',
-        answers: {},
-        decidedBy: null,
-      })
-      respond(null)
+    for (const id of [...this.questions.keys(), ...this.elicitations.keys(), ...this.plans.keys(), ...this.permissions.keys()]) {
+      this.expire(id)
     }
-    this.questions.clear()
+  }
 
-    for (const [requestId, respond] of this.elicitations) {
-      this.ctx.emit({
-        type: 'elicitation.resolved',
-        requestId,
-        status: 'expired',
-        content: {},
-        decidedBy: null,
-      })
-      respond(null)
+  /** Une annulation native ne clôt que la demande concernée, jamais ses voisines. */
+  expire(requestId: string): boolean {
+    const question = this.questions.get(requestId)
+    if (question) {
+      this.questions.delete(requestId)
+      this.questionDefinitions.delete(requestId)
+      this.nonBlocking.delete(requestId)
+      this.ctx.emit({ type: 'question.resolved', requestId, status: 'expired', answers: {}, decidedBy: null })
+      question(null)
+      return true
     }
-    this.elicitations.clear()
-
-    for (const [requestId, respond] of this.plans) {
-      this.ctx.emit({
-        type: 'plan.review_resolved',
-        requestId,
-        decision: 'expired',
-        followUpMode: null,
-        decidedBy: null,
-      })
-      respond(null)
+    const elicitation = this.elicitations.get(requestId)
+    if (elicitation) {
+      this.elicitations.delete(requestId)
+      this.ctx.emit({ type: 'elicitation.resolved', requestId, status: 'expired', content: {}, decidedBy: null })
+      elicitation(null)
+      return true
     }
-    this.plans.clear()
-
-    for (const [requestId, respond] of this.permissions) {
-      this.ctx.closePermissionRequest(requestId, {
-        decision: 'denied',
-        scope: 'once',
-        decidedBy: null,
-      })
-      this.ctx.emit({
-        type: 'permission.resolved',
-        requestId,
-        decision: 'expired',
-        scope: 'once',
-        decidedBy: null,
-      })
-      respond(null)
+    const plan = this.plans.get(requestId)
+    if (plan) {
+      this.plans.delete(requestId)
+      this.ctx.emit({ type: 'plan.review_resolved', requestId, decision: 'expired', followUpMode: null, decidedBy: null })
+      plan(null)
+      return true
     }
-    this.permissions.clear()
+    const permission = this.permissions.get(requestId)
+    if (permission) {
+      this.permissions.delete(requestId)
+      this.ctx.closePermissionRequest(requestId, { decision: 'denied', scope: 'once', decidedBy: null })
+      this.ctx.emit({ type: 'permission.resolved', requestId, decision: 'expired', scope: 'once', decidedBy: null })
+      permission(null)
+      return true
+    }
+    return false
   }
 }

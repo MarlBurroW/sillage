@@ -4,9 +4,9 @@ description: Sillage, plateforme de développement agentique (Fastify + SQLite +
 type: application
 
 # Version du chart : à incrémenter à chaque changement des templates.
-version: 0.1.0
+version: 0.2.0
 # Version applicative par défaut, sert de tag d'image quand image.tag est vide.
-appVersion: "0.6.0"
+appVersion: "0.7.0"
 
 home: https://github.com/MarlBurroW/sillage
 sources:

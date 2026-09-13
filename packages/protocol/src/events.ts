@@ -243,6 +243,11 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     chunk: z.string(),
   }),
   z.object({
+    type: z.literal('tool.input_updated'),
+    toolCallId: z.string(),
+    input: z.unknown(),
+  }),
+  z.object({
     type: z.literal('tool.completed'),
     toolCallId: z.string(),
     output: z.unknown(),
@@ -289,6 +294,8 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     type: z.literal('question.requested'),
     requestId: z.string(),
     questions: z.array(agentQuestionSchema),
+    /** Absent dans les anciens journaux : la question bloque alors le tour. */
+    blocking: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('question.resolved'),
@@ -577,6 +584,16 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
 
   // Métadonnées
   z.object({
+    type: z.literal('agent.notice'),
+    /** Identifiant stable pour remplacer un état répété dans le rendu. */
+    id: z.string().optional(),
+    code: z.string(),
+    message: z.string(),
+    level: z.enum(['info', 'warning']),
+    /** Détails repliables, utiles aussi pour les événements d'un CLI plus récent. */
+    details: z.unknown().optional(),
+  }),
+  z.object({
     type: z.literal('plan.updated'),
     items: z.array(z.object({ text: z.string(), status: planStatusSchema })),
   }),
@@ -631,6 +648,8 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('diff.updated'),
+    /** Diff unifié natif, lorsqu'il est fourni. */
+    patch: z.string().optional(),
     files: z.array(
       z.object({ path: z.string(), added: z.number(), removed: z.number() }),
     ),

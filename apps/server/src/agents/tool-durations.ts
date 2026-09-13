@@ -1,7 +1,7 @@
 /**
  * Durée des appels d'outils, mesurée entre leur annonce et leur résultat.
  *
- * Aucun des deux CLI ne la transmet : c'est une mesure de Sillage, et elle vaut zéro
+ * Mesure de repli quand le CLI ne transmet pas sa durée ; elle vaut zéro
  * quand l'ouverture n'a pas été vue (reprise de session, résultat orphelin).
  */
 export class ToolDurations {

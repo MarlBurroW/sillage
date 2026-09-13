@@ -2,6 +2,7 @@ import type { ApiTokenRow, ProjectRow } from '@sillage/db'
 import {
   isPermissiveConfig,
   mergeAgentConfig,
+  readProjectDefaults,
   type AgentConfig,
   type AgentDefaults,
   type AgentKind,
@@ -81,11 +82,7 @@ function baseConfigFor(
 ): AgentConfig {
   if (agent === token.agent) return JSON.parse(token.config) as AgentConfig
 
-  if (project.defaultConfig) {
-    const preset = JSON.parse(project.defaultConfig) as AgentConfig
-    if (preset.agent === agent) return preset
-  }
-  return defaults[agent]
+  return readProjectDefaults(project.defaultConfig)[agent] ?? defaults[agent]
 }
 
 /**

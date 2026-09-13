@@ -20,6 +20,7 @@ import { NotificationsSection } from './routes/NotificationsSection'
 import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
 import { GitCredentialsSettingsPage } from './routes/GitCredentialsSettingsPage'
 import { SecretsSettingsPage } from './routes/SecretsSettingsPage'
+import { SessionsSettingsPage } from './routes/SessionsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
 import { UsersSettingsPage } from './routes/UsersSettingsPage'
 
@@ -64,6 +65,7 @@ export function App() {
             <Route path="secrets" element={<SecretsSettingsPage />} />
             <Route path="dictee" element={<DictationSettingsPage />} />
             <Route path="archivage" element={<ArchivingSettingsPage />} />
+            <Route path="sessions" element={<SessionsSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />
             <Route path="a-propos" element={<AboutSection />} />
           </Route>

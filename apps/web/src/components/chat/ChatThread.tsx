@@ -1,11 +1,13 @@
 import type { RefObject } from 'react'
 import type { MessageItem } from '../../lib/chat-fold'
 import type { ChatRow } from '../../lib/tool-rows'
+import { translateError, useTranslate } from '../../lib/i18n'
 import { Banner, cx } from '../ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
 import { MessageBubble } from './MessageBubble'
 import { PermissionPrompt } from './PermissionPrompt'
 import { PlanReview } from './PlanReview'
+import { PlanProgress } from './PlanProgress'
 import { QuestionPrompt } from './QuestionPrompt'
 import { TaskResult } from './TaskResult'
 import { ToolCall, ToolCallGroup } from './ToolCall'
@@ -42,6 +44,7 @@ export function ChatThread({
   /** Position des messages utilisateur, tenue à jour pour la réglette des tours. */
   anchors?: RefObject<Map<string, HTMLElement>>
 }) {
+  const t = useTranslate()
   return (
     <>
       {rows.map((row) => {
@@ -119,15 +122,49 @@ export function ChatThread({
                 canDecide={canDecide}
               />
             )
-          case 'error':
+          case 'error': {
+            // Le code seul est traduit : le message du CLI porte le détail que le
+            // catalogue ne peut pas connaître, comme l'heure de retour d'un quota.
+            // Un code sans clé n'a pas de titre, et le message se suffit.
+            const title = translateError(item.code, '')
             return (
               <Banner key={item.id} tone={item.recoverable ? 'caution' : 'critical'}>
-                {item.message}
+                {title ? <span className="font-medium">{title}</span> : null}
+                {title ? <br /> : null}
+                <span className="whitespace-pre-wrap break-words">{item.message}</span>
               </Banner>
             )
+          }
           case 'task':
             return <TaskResult key={item.id} item={item} />
+          case 'plan_progress':
+            return <PlanProgress key={item.id} item={item} />
+          case 'diff':
+            return (
+              <details key={item.id} className="rounded-lg border border-line bg-surface/60 p-3 text-xs">
+                <summary className="cursor-pointer font-medium">{t('diff.turn.title')}</summary>
+                {item.files.length > 0 ? <ul className="mt-2 space-y-1">
+                  {item.files.map((file) => <li key={file.path} className="break-words">{file.path} <span className="text-positive">+{file.added}</span> <span className="text-critical">−{file.removed}</span></li>)}
+                </ul> : null}
+                {item.patch ? <pre className="mt-2 max-h-96 overflow-auto whitespace-pre">{item.patch}</pre> : null}
+              </details>
+            )
           case 'notice':
+            if (item.level) {
+              return (
+                <Banner key={item.id} tone={item.level === 'warning' ? 'caution' : 'info'}>
+                  <span className="whitespace-pre-wrap break-words">{item.text}</span>
+                  {item.details != null ? (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer">{t('notice.details')}</summary>
+                      <pre className="mt-2 max-h-80 overflow-auto text-xs whitespace-pre-wrap break-words">
+                        {typeof item.details === 'string' ? item.details : JSON.stringify(item.details, null, 2)}
+                      </pre>
+                    </details>
+                  ) : null}
+                </Banner>
+              )
+            }
             return (
               <div key={item.id} className="flex items-center gap-3 py-1">
                 <span className="h-px flex-1 bg-line" />

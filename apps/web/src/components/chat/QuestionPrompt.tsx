@@ -91,10 +91,12 @@ export function QuestionPrompt({
       <div className="flex items-start gap-2.5">
         <MessageCircleQuestion size={16} className="mt-0.5 shrink-0 text-accent" />
         <p className="min-w-0 flex-1 text-sm font-medium">
-          {pending ? t('question.prompt.title') : t('question.prompt.pastTitle')}
+          {pending ? t(item.blocking ? 'question.prompt.title' : 'question.prompt.asyncTitle') : t('question.prompt.pastTitle')}
         </p>
         {item.status !== 'pending' ? <Badge>{STATUS_LABEL[item.status]}</Badge> : null}
       </div>
+
+      {pending && !item.blocking ? <p className="mt-2 text-xs text-ink-faint">{t('question.prompt.asyncHint')}</p> : null}
 
       <div className="mt-3 flex flex-col gap-4">
         {item.questions.map((question) => (
@@ -148,6 +150,7 @@ export function QuestionPrompt({
                 <input
                   type={question.secret ? 'password' : 'text'}
                   value={other[question.id] ?? ''}
+                  aria-label={question.question}
                   onChange={(event) =>
                     setOther((current) => ({ ...current, [question.id]: event.target.value }))
                   }
@@ -162,6 +165,11 @@ export function QuestionPrompt({
                     'text-ink outline-none placeholder:text-ink-faint focus:border-accent',
                   )}
                 />
+              ) : null}
+              {!pending && (item.answers[question.id]?.length ?? 0) > 0 ? (
+                <p className="text-sm whitespace-pre-wrap break-words">
+                  {question.secret ? '••••••••' : item.answers[question.id]!.join(' · ')}
+                </p>
               ) : null}
             </div>
           </fieldset>
