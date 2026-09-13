@@ -384,7 +384,7 @@ export function registerTaskRoutes(
         })
         break
       case 'question':
-        resolved = sessions.answerQuestion(id, requestId, {
+        resolved = await sessions.answerQuestion(id, requestId, {
           status: body.status,
           answers: body.answers,
           decidedBy,

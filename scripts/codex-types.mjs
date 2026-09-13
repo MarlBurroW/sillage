@@ -63,7 +63,7 @@ if (!check) {
     const readme = readFileSync(join(target, 'README.md'), 'utf8')
     rmSync(target, { recursive: true, force: true })
     cpSync(staging, target, { recursive: true })
-    writeFileSync(join(target, 'README.md'), readme)
+    writeFileSync(join(target, 'README.md'), readme.replace(/Généré avec \*\*codex-cli [^*]+\*\*/, `Généré avec **${version}**`))
     console.log(`Bindings régénérés depuis ${version} dans ${relative(root, target)}`)
   } finally {
     rmSync(staging, { recursive: true, force: true })

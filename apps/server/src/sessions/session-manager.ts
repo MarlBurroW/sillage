@@ -200,6 +200,12 @@ export class SessionManager {
       this.closeDetachedWork(conversationId, hadLoops)
     }
 
+    // Ces conversations peuvent déjà être idle : leurs formulaires ont pourtant
+    // perdu le runner qui savait transmettre la réponse.
+    for (const conversationId of this.log.openAsyncQuestionConversationIds()) {
+      this.expireOpenPrompts(conversationId)
+    }
+
     this.db
       .update(permissionRequests)
       .set({ status: 'expired', decidedAt: Date.now() })
@@ -1132,10 +1138,10 @@ export class SessionManager {
     return resolved
   }
 
-  answerQuestion(conversationId: string, requestId: string, answer: QuestionAnswer): boolean {
+  async answerQuestion(conversationId: string, requestId: string, answer: QuestionAnswer): Promise<boolean> {
     const managed = this.runners.get(conversationId)
     if (!managed) return false
-    const answered = managed.runner.answerQuestion(requestId, answer)
+    const answered = await managed.runner.answerQuestion(requestId, answer)
     if (answered) this.touch(conversationId)
     return answered
   }

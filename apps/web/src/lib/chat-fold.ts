@@ -78,6 +78,7 @@ export interface QuestionItem {
   status: 'pending' | 'answered' | 'cancelled' | 'expired'
   /** Réponses retenues, par identifiant de question. Vide tant qu'on n'a pas répondu. */
   answers: Record<string, string[]>
+  blocking: boolean
 }
 
 /** Une saisie réclamée par un serveur MCP. */
@@ -119,6 +120,21 @@ export interface NoticeItem {
   kind: 'notice'
   id: string
   text: string
+  level?: 'info' | 'warning'
+  details?: unknown
+}
+
+export interface PlanProgressItem {
+  kind: 'plan_progress'
+  id: string
+  items: Extract<SillageEvent, { type: 'plan.updated' }>['items']
+}
+
+export interface DiffItem {
+  kind: 'diff'
+  id: string
+  files: Extract<SillageEvent, { type: 'diff.updated' }>['files']
+  patch?: string
 }
 
 /**
@@ -147,9 +163,12 @@ export type ChatItem =
   | ErrorItem
   | NoticeItem
   | TaskItem
+  | PlanProgressItem
+  | DiffItem
 
 /** Vrai si un élément attend une décision de l'utilisateur pour que le tour reprenne. */
 export function isAwaitingUser(item: ChatItem): boolean {
+  if (item.kind === 'question' && !item.blocking) return false
   return (
     (item.kind === 'permission' ||
       item.kind === 'question' ||
@@ -218,6 +237,8 @@ export interface ContextState {
 }
 
 export interface ChatState {
+  planId: string | null
+  diffId: string | null
   items: ChatItem[]
   queued: QueuedMessage[]
   lastSeq: number
@@ -347,6 +368,8 @@ export interface TaskState {
 
 export function emptyChatState(): ChatState {
   return {
+    planId: null,
+    diffId: null,
     items: [],
     queued: [],
     lastSeq: 0,
@@ -757,11 +780,15 @@ export function applyEvent(
 
     case 'turn.started': {
       state.turnRunning = true
+      state.planId = null
+      state.diffId = null
       break
     }
 
     case 'turn.completed': {
       state.turnRunning = false
+      state.planId = null
+      state.diffId = null
       closeRunningTools(state)
       // Filet : une compaction qui se termine sans frontière ni erreur laisserait
       // sinon l'indicateur allumé jusqu'au rechargement.
@@ -870,6 +897,24 @@ export function applyEvent(
       break
     }
 
+    case 'tool.input_updated': {
+      const index = findLastIndex(state.items, (item) => item.kind === 'tool' && item.id === event.toolCallId)
+      if (index !== -1) replaceItem(state, index, { ...(state.items[index] as ToolItem), input: event.input })
+      break
+    }
+
+    case 'tool.output_delta': {
+      const index = findLastIndex(state.items, (item) => item.kind === 'tool' && item.id === event.toolCallId)
+      if (index !== -1) {
+        const tool = state.items[index] as ToolItem
+        if (tool.status !== 'running') break
+        const output = (typeof tool.output === 'string' ? tool.output : '') + event.chunk
+        // La sortie définitive reste dans le journal ; le tampon live reste borné.
+        replaceItem(state, index, { ...tool, output: output.length > 100_000 ? `…\n${output.slice(-100_000)}` : output })
+      }
+      break
+    }
+
     case 'tool.completed': {
       const index = findLastIndex(
         state.items,
@@ -929,6 +974,7 @@ export function applyEvent(
         kind: 'question',
         id: event.requestId,
         questions: event.questions,
+        blocking: event.blocking !== false,
         status: 'pending',
         answers: {},
       })
@@ -1038,6 +1084,18 @@ export function applyEvent(
           followUpMode: event.followUpMode,
         })
       }
+      break
+    }
+
+    case 'agent.notice': {
+      const id = event.id ?? `notice-${seq}`
+      const index = findLastIndex(state.items, (item) => item.kind === 'notice' && item.id === id)
+      const item: NoticeItem = {
+        kind: 'notice', id, text: event.message,
+        level: event.level, details: event.details,
+      }
+      if (index === -1) appendItem(state, item)
+      else replaceItem(state, index, item)
       break
     }
 
@@ -1189,10 +1247,24 @@ export function applyEvent(
       break
     }
 
-    // Métadonnées sans rendu propre pour l'instant. Elles restent dans le journal et
-    // deviendront des affichages dédiés (plan, diff) aux lots suivants.
-    case 'plan.updated':
-    case 'diff.updated':
+    case 'plan.updated': {
+      const id = state.planId ?? `plan-progress-${seq}`
+      const index = findLastIndex(state.items, (item) => item.id === id)
+      const item: PlanProgressItem = { kind: 'plan_progress', id, items: event.items }
+      if (index === -1) appendItem(state, item)
+      else replaceItem(state, index, item)
+      state.planId = id
+      break
+    }
+    case 'diff.updated': {
+      const id = state.diffId ?? `diff-${seq}`
+      const index = findLastIndex(state.items, (item) => item.id === id)
+      const item: DiffItem = { kind: 'diff', id, files: event.files, patch: event.patch }
+      if (index === -1) appendItem(state, item)
+      else replaceItem(state, index, item)
+      state.diffId = id
+      break
+    }
     case 'message.started':
       break
   }
