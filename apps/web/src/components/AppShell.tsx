@@ -33,6 +33,7 @@ import {
   SlidersHorizontal,
   SquareKanban,
   SquareTerminal,
+  Star,
   Trash2,
   Users,
   X,
@@ -47,6 +48,7 @@ import {
   useDeleteConversation,
   useRenameConversation,
   useReorderConversations,
+  useToggleFavorite,
 } from '../lib/conversations'
 import {
   useLiveBackground,
@@ -57,6 +59,7 @@ import {
   useStatusFeed,
 } from '../lib/conversation-status'
 import { isUnread, useHasUnread } from '../lib/reads'
+import { useUpdateCollapsedProjects, useUserSettings } from '../lib/user-settings'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { SignalDot } from './chat/Signals'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
@@ -327,13 +330,23 @@ function Sidebar({
   const detailed = useSidebarDetailed()
   useStatusFeed()
 
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const toggle = (projectId: string) =>
-    setCollapsed((current) => {
-      const next = new Set(current)
-      if (!next.delete(projectId)) next.add(projectId)
-      return next
-    })
+  /**
+   * Le repli vient du compte, pas du navigateur : on referme un projet parce qu'on n'y
+   * travaille pas en ce moment, ce qui reste vrai d'un poste à l'autre. Tout est
+   * déplié tant que les réglages n'ont pas répondu — l'inverse ferait clignoter la
+   * liste fermée à chaque chargement.
+   */
+  const { data: settings } = useUserSettings()
+  const setCollapsedProjects = useUpdateCollapsedProjects()
+  const collapsed = useMemo(
+    () => new Set(settings?.collapsedProjects ?? []),
+    [settings?.collapsedProjects],
+  )
+  const toggle = (projectId: string) => {
+    const next = new Set(collapsed)
+    if (!next.delete(projectId)) next.add(projectId)
+    setCollapsedProjects.mutate([...next])
+  }
 
   /**
    * Pendant qu'on déplace un projet, toutes les conversations sont repliées.
@@ -343,6 +356,17 @@ function Sidebar({
    * projets que l'utilisateur avait lui-même repliés.
    */
   const [dragging, setDragging] = useState(false)
+
+  /**
+   * Les signets du compte, tous projets confondus. Les archivés compris : mettre un fil
+   * de côté puis le laisser se ranger n'est pas une raison de le perdre de vue, et
+   * c'est justement là qu'un raccourci sert.
+   */
+  const favorites = useMemo(
+    () => (conversations ?? []).filter((entry) => entry.favorite),
+    [conversations],
+  )
+  const [favoritesOpen, setFavoritesOpen] = useState(true)
 
   const onDragEnd = (event: DragEndEvent) => {
     setDragging(false)
@@ -403,6 +427,39 @@ function Sidebar({
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+        {/* Au-dessus des projets et transverse : c'est ce qui fait l'intérêt d'un
+            signet, atteindre un fil sans se rappeler d'où il vient. La conversation
+            reste listée dans son projet, elle n'est pas déplacée ici. */}
+        {favorites.length > 0 ? (
+          <div className="mb-1">
+            <button
+              type="button"
+              onClick={() => setFavoritesOpen((current) => !current)}
+              aria-expanded={favoritesOpen}
+              className="flex w-full items-center gap-1 py-1 pr-1 pl-1.5 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft"
+            >
+              <ChevronRight
+                size={11}
+                className={cx('shrink-0 transition-transform', favoritesOpen && 'rotate-90')}
+              />
+              <span className="flex-1 text-left">{t('shell.favorites.heading')}</span>
+              <span className="tabular-nums">{favorites.length}</span>
+            </button>
+            {favoritesOpen ? (
+              <ul className="flex flex-col gap-px">
+                {favorites.map((conversation) => (
+                  <ConversationRow
+                    key={conversation.id}
+                    conversation={conversation}
+                    draggable={false}
+                    onNavigate={onNavigate}
+                  />
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="flex items-center justify-between py-1 pr-1 pl-2.5">
           <span className="text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
             {t('shell.projects.heading')}
@@ -782,14 +839,22 @@ function ProjectGroup({
 function ConversationRow({
   conversation,
   onNavigate,
+  draggable = true,
 }: {
   conversation: ConversationDto
   onNavigate: () => void
+  /**
+   * Faux dans la section des favoris, qui vit hors de tout contexte de glissement :
+   * l'ordre y est celui de la liste, et une ligne déplaçable sans conteneur pour la
+   * recevoir n'aurait nulle part où tomber.
+   */
+  draggable?: boolean
 }) {
   const t = useTranslate()
   const rename = useRenameConversation()
   const remove = useDeleteConversation()
   const setArchived = useArchiveConversation()
+  const toggleFavorite = useToggleFavorite()
   const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
   const openMatch = useMatch('/p/:projectId/c/:conversationId')
@@ -815,9 +880,10 @@ function ConversationRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: conversation.id,
     // Renommer place un champ de saisie dans la ligne : la rendre déplaçable
-    // pendant ce temps rendrait la sélection de texte impossible. Rangée, la ligne
-    // vit hors de tout contexte de glissement et n'a rien à y inscrire.
-    disabled: editing || isArchived,
+    // pendant ce temps rendrait la sélection de texte impossible. Rangée ou en
+    // favori, la ligne vit hors de tout contexte de glissement et n'a rien à y
+    // inscrire.
+    disabled: !draggable || editing || isArchived,
   })
 
   const commit = (draft: string) => {
@@ -920,6 +986,30 @@ function ConversationRow({
         </span>
         {detailed ? <ConversationMetricsLine metrics={metrics} /> : null}
       </NavLink>
+
+      {/* Hors du menu, et hors de la condition de propriété : un signet n'appartient
+          qu'à celui qui le pose, y compris sur le fil de quelqu'un d'autre dans un
+          projet partagé. Un seul clic, comme le geste qu'il remplace. */}
+      <IconButton
+        label={
+          conversation.favorite
+            ? t('shell.conversation.unfavorite')
+            : t('shell.conversation.favorite')
+        }
+        size="sm"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={() =>
+          toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })
+        }
+        className={cx(
+          'self-center',
+          conversation.favorite
+            ? 'text-accent hover:text-accent'
+            : 'opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100',
+        )}
+      >
+        <Star size={14} className={conversation.favorite ? 'fill-current' : undefined} />
+      </IconButton>
 
       {conversation.isOwner ? (
         <Menu

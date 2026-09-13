@@ -9,7 +9,8 @@ port = 7317
 
 [limits]
 # Une session Claude coûte 400 à 500 Mo de RSS. C'est le plafond qui compte vraiment.
-max_concurrent_sessions = 3
+# Valeur de départ : une fois réglée depuis l'écran Sessions, c'est la base qui décide.
+max_concurrent_sessions = 10
 # Un runner inactif est arrêté puis relancé en reprise au message suivant.
 session_idle_timeout_min = 30
 pty_idle_timeout_min = 60

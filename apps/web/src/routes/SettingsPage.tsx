@@ -2,6 +2,7 @@ import {
   Archive,
   Bell,
   ChevronRight,
+  Cpu,
   FolderOpen,
   Info,
   GitBranch,
@@ -111,6 +112,13 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.archiving',
     descriptionKey: 'settings.section.archiving.description',
     icon: <Archive size={16} />,
+    adminOnly: true,
+  },
+  {
+    to: 'sessions',
+    labelKey: 'settings.section.sessions',
+    descriptionKey: 'settings.section.sessions.description',
+    icon: <Cpu size={16} />,
     adminOnly: true,
   },
   {

@@ -1,6 +1,7 @@
 import {
   AtSign,
   ChevronRight,
+  CircleAlert,
   FilePlus2,
   FileSymlink,
   FolderPlus,
@@ -9,10 +10,12 @@ import {
   Pencil,
   Search,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react'
-import { Fragment, useState, type DragEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import type { FileState, TreeEntryDto } from '@sillage/protocol'
+import { formatBytes } from '../../lib/attachments'
 import { referenceInComposer } from '../../lib/composer-ref'
 import { openTab } from '../../lib/editor-tabs'
 import {
@@ -24,7 +27,16 @@ import {
 } from '../../lib/entries'
 import { fileIconUrl } from '../../lib/file-icons'
 import { translate, useTranslate } from '../../lib/i18n'
-import { useFileSearch, useTreeLevel } from '../../lib/tree'
+import { useFileSearch, useRefreshTree, useTreeLevel } from '../../lib/tree'
+import {
+  carriesExternalFiles,
+  dismissUpload,
+  enqueueUploads,
+  filesFromDrop,
+  registerTreeRefresh,
+  useUploads,
+  type Upload as UploadItem,
+} from '../../lib/uploads'
 import {
   ConfirmDialog,
   ContextMenu,
@@ -77,8 +89,23 @@ export function FileTree({
   const create = useCreateEntry(scope)
   const move = useMoveEntry(scope)
   const remove = useDeleteEntry(scope)
+  /** Dossier visé par le sélecteur de fichiers, quand il est ouvert depuis un menu. */
+  const [uploadInto, setUploadInto] = useState('')
+  const picker = useRef<HTMLInputElement>(null)
+  /** Profondeur de survol d'un glissement de fichiers, pour cadrer toute la colonne. */
+  const [dragDepth, setDragDepth] = useState(0)
 
   const error = create.error ?? move.error ?? remove.error
+
+  // Un fichier arrivé dans un dossier replié n'est signalé par aucune veille : c'est ce
+  // rafraîchissement qui le fait apparaître à son ouverture.
+  const refresh = useRefreshTree(scope)
+  useEffect(() => registerTreeRefresh(scope, refresh), [scope, refresh])
+
+  const openPicker = (parent: string) => {
+    setUploadInto(parent)
+    picker.current?.click()
+  }
 
   const actions: Actions = {
     scope,
@@ -99,12 +126,70 @@ export function FileTree({
       if (to !== from) move.mutate({ from, to })
     },
     onDelete: setPendingDelete,
+    onDrop: (parent, transfer) => {
+      // Le cadre de dépôt se retire ici et pas seulement à la racine : une ligne qui
+      // reçoit le dépôt l'arrête avant elle, et aucun `dragleave` ne suit un `drop`.
+      setDragDepth(0)
+      // Le dépliage des dossiers déposés est asynchrone : la mise en file attend, pas le
+      // gestionnaire d'événement, qui doit rendre la main pour que le navigateur libère
+      // le glissement.
+      void filesFromDrop(transfer).then((files) => enqueueUploads(scope, parent, files))
+    },
+    onPickFiles: openPicker,
   }
 
   const searching = query.trim().length >= 2
 
   return (
-    <div>
+    // Toute la colonne accepte les fichiers : viser une ligne de 28 pixels à la souris
+    // est déjà difficile, au doigt c'est perdu d'avance. Ce qui ne tombe sur aucun
+    // dossier va à la racine du répertoire de travail.
+    <div
+      className={cx(
+        // Colonne pleine hauteur : c'est ce qui permet aux envois de se poser en pied
+        // plutôt qu'à la suite des fichiers, et au dépôt d'être accepté partout, y
+        // compris sous la dernière ligne.
+        'relative flex min-h-full flex-col',
+        dragDepth > 0 && 'outline-2 -outline-offset-2 outline-dashed outline-accent',
+      )}
+      onDragEnter={(event) => {
+        if (!carriesExternalFiles(event.dataTransfer)) return
+        event.preventDefault()
+        setDragDepth((depth) => depth + 1)
+      }}
+      onDragLeave={(event) => {
+        if (!carriesExternalFiles(event.dataTransfer)) return
+        setDragDepth((depth) => Math.max(0, depth - 1))
+      }}
+      onDragOver={(event) => {
+        if (!carriesExternalFiles(event.dataTransfer)) return
+        // Sans ce `preventDefault`, le navigateur refuse le dépôt et retombe sur son
+        // comportement par défaut : ouvrir le fichier à la place de la page.
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(event) => {
+        setDragDepth(0)
+        if (!carriesExternalFiles(event.dataTransfer)) return
+        event.preventDefault()
+        actions.onDrop('', event.dataTransfer)
+      }}
+    >
+      {/* Sélecteur de fichiers pour le doigt et le clavier : le glisser-déposer n'existe
+          pas sur mobile, et le dépôt ne doit pas être la seule voie. */}
+      <input
+        ref={picker}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? [])
+          enqueueUploads(scope, uploadInto, files.map((file) => ({ file, relativePath: file.name })))
+          // Remis à zéro : sans ça, redéposer le même fichier n'émet pas d'événement.
+          event.target.value = ''
+        }}
+      />
+
       <div className="flex items-center gap-1 px-2 pb-1.5">
         <div className="relative min-w-0 flex-1">
           <Search
@@ -149,6 +234,11 @@ export function FileTree({
           icon={<FolderPlus size={13} />}
           onClick={() => setDraft({ mode: 'create', parent: '', kind: 'directory' })}
         />
+        <RootAction
+          label={t('filetree.root.upload')}
+          icon={<Upload size={13} />}
+          onClick={() => openPicker('')}
+        />
       </div>
 
       {error ? (
@@ -165,6 +255,8 @@ export function FileTree({
       ) : (
         <Level path="" depth={0} expanded actions={actions} />
       )}
+
+      <UploadQueue scope={scope} />
 
       <ConfirmDialog
         open={pendingDelete !== null}
@@ -193,6 +285,86 @@ export function FileTree({
       </ConfirmDialog>
     </div>
   )
+}
+
+/**
+ * Envois en cours, en pied de colonne.
+ *
+ * Collé au bas plutôt qu'en tête : l'arborescence reste au même endroit pendant qu'un
+ * dossier monte, et le fichier qu'on vient de déposer apparaît à sa place sans que la
+ * liste ne saute. Un envoi réussi s'efface tout seul ; une erreur attend d'être lue.
+ */
+function UploadQueue({ scope }: { scope: string }) {
+  const t = useTranslate()
+  const uploads = useUploads(scope)
+  if (uploads.length === 0) return null
+
+  return (
+    <ul className="sticky bottom-0 z-10 mt-auto border-t border-line bg-surface px-2 py-1.5">
+      {uploads.map((upload) => (
+        <li key={upload.id} className="flex flex-col gap-0.5 py-0.5">
+          <div className="flex items-baseline gap-1.5 text-[0.6875rem]">
+            <span
+              className={cx(
+                'min-w-0 flex-1 truncate',
+                upload.status === 'error' ? 'text-critical' : 'text-ink-soft',
+              )}
+              title={upload.path}
+            >
+              {upload.label}
+            </span>
+            <span className="shrink-0 text-ink-faint">{statusOf(upload)}</span>
+            <button
+              type="button"
+              onClick={() => dismissUpload(upload.id)}
+              aria-label={
+                upload.status === 'sending' || upload.status === 'pending'
+                  ? t('uploads.cancel')
+                  : t('uploads.dismiss')
+              }
+              className="shrink-0 rounded p-0.5 text-ink-faint hover:text-ink"
+            >
+              <X size={11} />
+            </button>
+          </div>
+
+          {upload.status === 'error' ? (
+            <p className="flex items-start gap-1 text-[0.6875rem] text-critical">
+              <CircleAlert size={11} className="mt-0.5 shrink-0" />
+              <span className="min-w-0">{upload.error}</span>
+            </p>
+          ) : (
+            // Une taille nulle n'a pas de fraction : la barre reste pleine plutôt que de
+            // diviser par zéro, le fichier étant de toute façon déjà écrit.
+            <div className="h-1 overflow-hidden rounded-full bg-surface-high">
+              <div
+                className={cx(
+                  'h-full rounded-full transition-[width]',
+                  upload.status === 'done' ? 'bg-positive' : 'bg-accent',
+                )}
+                style={{ width: `${percentOf(upload)}%` }}
+              />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function percentOf(upload: UploadItem): number {
+  if (upload.status === 'done' || upload.sizeBytes === 0) return 100
+  return Math.min(100, Math.round((upload.sentBytes / upload.sizeBytes) * 100))
+}
+
+function statusOf(upload: UploadItem): string {
+  if (upload.status === 'error') return translate('uploads.status.error')
+  if (upload.status === 'done') return translate('uploads.status.done')
+  if (upload.status === 'pending') return translate('uploads.status.pending')
+  return translate('uploads.status.sending', {
+    sent: formatBytes(upload.sentBytes),
+    total: formatBytes(upload.sizeBytes),
+  })
 }
 
 /** Résultats plats : un chemin complet dit mieux d'où vient un fichier qu'une indentation. */
@@ -288,6 +460,10 @@ interface Actions {
   onRename: (path: string, name: string) => void
   onMove: (from: string, toParent: string) => void
   onDelete: (entry: TreeEntryDto) => void
+  /** Fichiers lâchés depuis le système sur `parent`, dossiers compris. */
+  onDrop: (parent: string, transfer: DataTransfer) => void
+  /** Ouvre le sélecteur de fichiers, à destination de `parent`. */
+  onPickFiles: (parent: string) => void
 }
 
 function Level({
@@ -402,6 +578,15 @@ function entryActions(entry: TreeEntryDto, actions: Actions, expand: () => void)
               actions.setDraft({ mode: 'create', parent: entry.path, kind: 'directory' })
             },
           },
+          {
+            key: 'upload',
+            icon: <Upload size={14} />,
+            label: translate('filetree.entry.upload'),
+            run: () => {
+              expand()
+              actions.onPickFiles(entry.path)
+            },
+          },
         ]
       : [
           {
@@ -435,7 +620,7 @@ function entryActions(entry: TreeEntryDto, actions: Actions, expand: () => void)
 
 /** La séparation isole les créations du reste : elles n'agissent pas sur l'entrée visée. */
 function separatorAfter(entry: TreeEntryDto): string {
-  return entry.isDirectory ? 'new-dir' : 'reference'
+  return entry.isDirectory ? 'upload' : 'reference'
 }
 
 /**
@@ -539,8 +724,17 @@ function Entry({
 
   const onDrop = (event: DragEvent) => {
     event.preventDefault()
+    // Le dépôt s'arrête ici : sans quoi la colonne, qui accepte aussi les fichiers,
+    // les enverrait une seconde fois à la racine.
     event.stopPropagation()
     setDropping(false)
+
+    // Des fichiers venus du système, et non une entrée déplacée dans l'arborescence :
+    // un dossier les reçoit, un fichier les envoie à son dossier parent.
+    if (carriesExternalFiles(event.dataTransfer)) {
+      actions.onDrop(dropTarget, event.dataTransfer)
+      return
+    }
 
     const from = event.dataTransfer.getData(DRAG_TYPE)
     // Déposer un dossier sur lui-même ou dans sa propre descendance n'a pas de sens :
@@ -563,10 +757,11 @@ function Entry({
               event.dataTransfer.effectAllowed = 'move'
             }}
             onDragOver={(event) => {
+              const external = carriesExternalFiles(event.dataTransfer)
               // Sans `preventDefault`, le navigateur refuse le dépôt sans rien dire.
-              if (!event.dataTransfer.types.includes(DRAG_TYPE)) return
+              if (!external && !event.dataTransfer.types.includes(DRAG_TYPE)) return
               event.preventDefault()
-              event.dataTransfer.dropEffect = 'move'
+              event.dataTransfer.dropEffect = external ? 'copy' : 'move'
               setDropping(true)
             }}
             onDragLeave={() => setDropping(false)}

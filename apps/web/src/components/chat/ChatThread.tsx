@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
 import type { MessageItem } from '../../lib/chat-fold'
 import type { ChatRow } from '../../lib/tool-rows'
+import { translateError } from '../../lib/i18n'
 import { Banner, cx } from '../ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
 import { MessageBubble } from './MessageBubble'
@@ -119,12 +120,19 @@ export function ChatThread({
                 canDecide={canDecide}
               />
             )
-          case 'error':
+          case 'error': {
+            // Le code seul est traduit : le message du CLI porte le détail que le
+            // catalogue ne peut pas connaître, comme l'heure de retour d'un quota.
+            // Un code sans clé n'a pas de titre, et le message se suffit.
+            const title = translateError(item.code, '')
             return (
               <Banner key={item.id} tone={item.recoverable ? 'caution' : 'critical'}>
-                {item.message}
+                {title ? <span className="font-medium">{title}</span> : null}
+                {title ? <br /> : null}
+                <span className="whitespace-pre-wrap break-words">{item.message}</span>
               </Banner>
             )
+          }
           case 'task':
             return <TaskResult key={item.id} item={item} />
           case 'notice':

@@ -4,7 +4,11 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { getSessionInfo, listSessions } from '@anthropic-ai/claude-agent-sdk'
 import { conversations, projects, type ConversationRow } from '@sillage/db'
-import type { ClaudeSessionsDto, ClaudeSyncDto } from '@sillage/protocol'
+import {
+  readProjectDefaults,
+  type ClaudeSessionsDto,
+  type ClaudeSyncDto,
+} from '@sillage/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
 import {
   TRANSCRIPT_RAW_FORMAT,
@@ -143,10 +147,12 @@ export function registerClaudeSessionRoutes(
         ? (firstPrompt.event.blocks.find((block) => block.type === 'text')?.text ?? null)
         : null
 
-    // Les défauts du compte, comme pour une conversation ouverte depuis l'interface :
-    // adopter une session du CLI n'est pas une raison de repartir des défauts du
-    // protocole, que la personne a peut-être justement changés.
-    const defaults = readUserSettings(ctx.db, user.id).agentDefaults.claude
+    // Le préréglage du projet puis les défauts du compte, comme pour une conversation
+    // ouverte depuis l'interface : adopter une session du CLI n'est pas une raison de
+    // repartir des défauts du protocole, que la personne a peut-être justement changés.
+    const defaults =
+      readProjectDefaults(project.defaultConfig).claude ??
+      readUserSettings(ctx.db, user.id).agentDefaults.claude
     const config = await registry.adapter('claude').resolveDefaults(defaults)
 
     const [lowest] = ctx.db
@@ -208,7 +214,7 @@ export function registerClaudeSessionRoutes(
     }
     const lastSeq = log.appendBatch(row.id, [opening, ...translated.events], TRANSCRIPT_RAW_FORMAT)
 
-    return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, null))
+    return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, null, false))
   })
 
   /**

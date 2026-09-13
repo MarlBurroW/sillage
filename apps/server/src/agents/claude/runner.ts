@@ -638,6 +638,31 @@ export class ClaudeRunner implements AgentRunner {
       }
 
       case 'result': {
+        // Un tour en échec dit pourquoi avant de se clore. Le CLI a deux façons de le
+        // dire : un sous-type d'erreur avec sa liste de causes, ou un « succès » marqué
+        // `is_error` dont le texte est le message d'erreur lui-même, cas du quota
+        // épuisé. Sans ce relais, le fil s'arrêtait sans un mot dans les deux cas.
+        if (message.subtype !== 'success') {
+          this.ctx.emit(
+            {
+              type: 'error',
+              code: message.subtype,
+              message: message.errors.join('\n') || `Le tour s'est arrêté : ${message.subtype}.`,
+              recoverable: true,
+            },
+            message,
+          )
+        } else if (message.is_error) {
+          this.ctx.emit(
+            {
+              type: 'error',
+              code: 'turn_failed',
+              message: message.result || 'Le tour a échoué sans explication du CLI.',
+              recoverable: true,
+            },
+            message,
+          )
+        }
         this.ctx.emit(
           {
             type: 'turn.completed',

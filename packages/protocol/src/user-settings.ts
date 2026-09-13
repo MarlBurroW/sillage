@@ -19,6 +19,18 @@ import {
  */
 export interface UserSettingsDto {
   agentDefaults: AgentDefaults
+  /**
+   * Projets repliés dans la sidebar.
+   *
+   * Les repliés et non les dépliés : un projet qui vient d'être créé doit s'ouvrir
+   * déplié, comme tous les autres, sans que personne ait à l'ajouter à une liste.
+   *
+   * Au compte plutôt qu'au navigateur, à la différence de la largeur ou de l'écran
+   * d'accueil d'un projet : on referme un projet parce qu'on n'y travaille pas en ce
+   * moment, ce qui reste vrai en changeant de poste ou en ouvrant l'application sur
+   * son téléphone.
+   */
+  collapsedProjects: string[]
 }
 
 /**
@@ -52,8 +64,14 @@ export const agentDefaultsSchema = z.object({
 })
 
 export const storedUserSettingsSchema = z
-  .object({ agentDefaults: agentDefaultsSchema.catch(DEFAULT_AGENT_DEFAULTS) })
-  .catch({ agentDefaults: DEFAULT_AGENT_DEFAULTS })
+  .object({
+    agentDefaults: agentDefaultsSchema.catch(DEFAULT_AGENT_DEFAULTS),
+    // Jamais purgée des projets supprimés : une liste d'identifiants inconnus ne coûte
+    // rien à qui la lit, et la nettoyer demanderait de toucher ce réglage à chaque
+    // suppression, y compris pour les comptes qui ne se connectent plus.
+    collapsedProjects: z.array(z.string()).default([]).catch([]),
+  })
+  .catch({ agentDefaults: DEFAULT_AGENT_DEFAULTS, collapsedProjects: [] })
 
 export const updateUserSettingsBodySchema = z.object({
   /**
@@ -61,5 +79,7 @@ export const updateUserSettingsBodySchema = z.object({
    * de l'autre CLI garde sa valeur : l'écran n'édite qu'un CLI à la fois, et envoyer
    * les deux écraserait celui qu'un autre onglet vient peut-être de changer.
    */
-  agentDefault: agentConfigSchema,
+  agentDefault: agentConfigSchema.optional(),
+  /** La liste entière : c'est un état d'affichage, pas un journal d'ouvertures. */
+  collapsedProjects: z.array(z.string().uuid()).optional(),
 })

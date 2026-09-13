@@ -48,6 +48,23 @@ export function writeUserAgentDefault(db: Db, userId: string, config: AgentConfi
     .run()
 }
 
+/**
+ * Les projets repliés dans la sidebar, remplacés en bloc.
+ *
+ * La liste entière et non un identifiant à basculer : c'est un état d'affichage que le
+ * client connaît déjà en entier, et une bascule côté serveur ferait dépendre le résultat
+ * de l'ordre d'arrivée de deux onglets ouverts sur la même sidebar.
+ */
+export function writeCollapsedProjects(db: Db, userId: string, projectIds: string[]): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, collapsedProjects: [...new Set(projectIds)] })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
 function parseData(data: string | undefined): unknown {
   if (!data) return {}
 

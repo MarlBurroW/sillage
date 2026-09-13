@@ -7,6 +7,7 @@ import type { CardLinkDto } from './cards.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
+import type { ProjectAgentDefaults } from './project-defaults.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
 
 export const conversationStatusSchema = z.enum([
@@ -104,7 +105,16 @@ export const updateProjectBodySchema = z
     workspacePath: z.string().min(1),
     visibility: projectVisibilitySchema,
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
-    defaultConfig: agentConfigSchema.nullable(),
+    /**
+     * Le préréglage d'un seul CLI, nommé explicitement plutôt que déduit du
+     * discriminant : `config` à `null` retire le préréglage, et il faut bien dire
+     * lequel. Celui de l'autre CLI garde sa valeur, comme pour les défauts de compte.
+     */
+    defaultConfig: z
+      .object({ agent: agentKindSchema, config: agentConfigSchema.nullable() })
+      .refine((value) => value.config === null || value.config.agent === value.agent, {
+        message: 'The configuration must belong to the named agent.',
+      }),
     archived: z.boolean(),
   })
   .partial()
@@ -127,6 +137,8 @@ export interface ProjectDto {
   archivedAt: number | null
   createdAt: number
   conversationCount: number
+  /** Préréglages du projet, socle des conversations qui s'y ouvrent. */
+  defaultConfig: ProjectAgentDefaults
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
   /** État du dépôt git, null si le workspace n'est pas un dépôt. */
@@ -363,6 +375,12 @@ export interface ConversationDto {
   outputTokens: number
   metrics: ConversationMetrics
   pinned: boolean
+  /**
+   * Signet du compte appelant, comme `lastReadSeq` et `isOwner` : dérivé du demandeur,
+   * pas de la conversation. Deux comptes qui voient le même fil partagé n'ont pas les
+   * mêmes favoris.
+   */
+  favorite: boolean
   position: number
   archivedAt: number | null
   createdAt: number
@@ -771,6 +789,27 @@ export const moveEntryBodySchema = z.object({
 })
 
 export const deleteEntryBodySchema = z.object({ path: z.string().min(1).max(1024) })
+
+/**
+ * Plafond d'un fichier déposé dans l'explorateur.
+ *
+ * Sans commune mesure avec celui d'une pièce jointe : celle-ci part dans le contexte du
+ * modèle, un fichier déposé ne fait qu'atterrir sur le disque du workspace, où un pack
+ * d'assets ou une archive de projet a sa place. Le contenu est écrit en flux, donc la
+ * taille ne coûte rien en mémoire — ce plafond n'est qu'un garde-fou pour qu'un dossier
+ * lâché par mégarde ne puisse pas remplir le disque du serveur.
+ */
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024
+
+/**
+ * Fichiers retenus d'un même dépôt. Un dossier lâché sur l'arborescence peut en
+ * contenir des dizaines de milliers (un `node_modules` déposé par mégarde) : au-delà de
+ * ce seuil, l'envoi est refusé en bloc plutôt qu'entamé puis abandonné.
+ */
+export const MAX_UPLOAD_FILES = 200
+
+/** Chemin de destination d'un fichier déposé, relatif au répertoire de travail. */
+export const uploadQuerySchema = z.object({ path: z.string().min(1).max(1024) })
 
 // Fichiers du panneau
 

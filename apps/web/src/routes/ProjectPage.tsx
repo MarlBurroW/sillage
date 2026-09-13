@@ -4,13 +4,26 @@ import {
   Globe,
   Lock,
   Save,
+  ShieldAlert,
+  SlidersHorizontal,
   SquareKanban,
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import type { ProjectVisibility } from '@sillage/protocol'
+import {
+  agentKindSchema,
+  defaultConfigFor,
+  type AgentConfig,
+  type AgentKind,
+  type ProjectAgentDefaults,
+  type ProjectVisibility,
+} from '@sillage/protocol'
+import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
+import { useAgentSettings } from '../components/chat/agent-settings'
+import type { SettingGroup } from '../components/chat/ComposerSettings'
+import { useUserSettings } from '../lib/user-settings'
 import { PathField } from '../components/PathField'
 import {
   Badge,
@@ -19,9 +32,11 @@ import {
   Card,
   CardBody,
   CardHeader,
+  ChoiceList,
   EmptyState,
   Field,
   Select,
+  type Choice,
   type SelectOption,
 } from '../components/ui'
 import { ApiRequestError } from '../lib/api'
@@ -104,14 +119,17 @@ export function ProjectPage() {
       <WorktreeList projectId={project.id} isRepository={project.git !== null} />
 
       {project.isOwner ? (
-        <ProjectSettings
-          projectId={project.id}
-          initialName={project.name}
-          initialPath={project.workspacePath}
-          initialVisibility={project.visibility}
-          hasConversations={projectConversations.length > 0}
-          onDeleted={() => navigate('/')}
-        />
+        <>
+          <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} />
+          <ProjectSettings
+            projectId={project.id}
+            initialName={project.name}
+            initialPath={project.workspacePath}
+            initialVisibility={project.visibility}
+            hasConversations={projectConversations.length > 0}
+            onDeleted={() => navigate('/')}
+          />
+        </>
       ) : (
         <Card>
           <CardBody className="text-sm text-ink-faint">
@@ -184,6 +202,148 @@ function WorktreeList({ projectId, isRepository }: { projectId: string; isReposi
         ))}
       </CardBody>
     </Card>
+  )
+}
+
+/**
+ * Les préréglages du projet : le socle des conversations qui s'y ouvrent.
+ *
+ * Partagé, à la différence des défauts de compte, et pour ce que le projet a de propre :
+ * les serveurs MCP utiles à ce dépôt le sont pour tout le monde, et les répertoires
+ * supplémentaires ne veulent rien dire ailleurs. D'où l'écriture réservée au
+ * propriétaire, comme le reste des réglages du projet.
+ *
+ * Chaque CLI est indépendant, et peut ne rien dire : « les défauts de compte » n'est pas
+ * un préréglage vide mais une absence, qui laisse chacun démarrer avec les siens. Rien
+ * n'est appliqué aux conversations déjà ouvertes, qui portent chacune sa configuration.
+ */
+function ProjectDefaults({
+  projectId,
+  defaults,
+}: {
+  projectId: string
+  defaults: ProjectAgentDefaults
+}) {
+  const t = useTranslate()
+  const update = useUpdateProject()
+  const { data: settings } = useUserSettings()
+
+  const [agent, setAgent] = useState<AgentKind>('claude')
+  /**
+   * Ce qui vient d'être choisi, tant que la liste des projets n'a pas été relue. Sans
+   * lui, chaque réglage reviendrait à sa valeur d'avant le temps de l'aller-retour, et
+   * couper le préréglage le ferait réapparaître sous le curseur.
+   */
+  const [pending, setPending] = useState<{ [K in AgentKind]?: AgentConfig | null }>({})
+
+  const stored = agent in pending ? (pending[agent] ?? null) : defaults[agent]
+  // Le CLI de la valeur retenue fait foi : une configuration Claude n'a rien à régler
+  // pour Codex, et l'écran en montrerait les mauvaises options.
+  const preset = stored?.agent === agent ? stored : null
+  const account = settings?.agentDefaults[agent] ?? defaultConfigFor(agent)
+
+  const write = (config: AgentConfig | null) => {
+    setPending((current) => ({ ...current, [agent]: config }))
+    update.mutate({ id: projectId, defaultConfig: { agent, config } })
+  }
+
+  const { groups, mcp, catalogError } = useAgentSettings({
+    config: preset ?? account,
+    onConfigChange: write,
+  })
+
+  const agents: Choice<AgentKind>[] = agentKindSchema.options.map((value) => ({
+    value,
+    label: AGENT_LABELS[value],
+    hint: AGENT_META[value].vendor,
+    icon: <AgentIcon agent={value} size={16} />,
+  }))
+
+  const sources: Choice<'account' | 'project'>[] = [
+    {
+      value: 'account',
+      label: t('project.defaults.source.account'),
+      hint: t('project.defaults.source.account.hint'),
+    },
+    {
+      value: 'project',
+      label: t('project.defaults.source.project'),
+      hint: t('project.defaults.source.project.hint'),
+    },
+  ]
+
+  return (
+    <Card>
+      <CardHeader
+        title={t('project.defaults.title')}
+        description={t('project.defaults.description')}
+        icon={<SlidersHorizontal size={16} />}
+      />
+      <CardBody className="flex flex-col gap-4">
+        <ChoiceList label={t('draft.cli.legend')} value={agent} options={agents} onChange={setAgent} />
+
+        <ChoiceList
+          label={t('project.defaults.source')}
+          value={preset ? 'project' : 'account'}
+          options={sources}
+          // Le préréglage part de ce qui était montré, c'est-à-dire des défauts du
+          // compte : accepter le socle proposé ne doit pas demander de le ressaisir.
+          onChange={(source) => write(source === 'project' ? (preset ?? account) : null)}
+        />
+
+        {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
+        {update.isError ? <Banner>{t('project.defaults.save.error')}</Banner> : null}
+
+        {/* Rien à déplier tant que le projet ne dit rien de ce CLI : les réglages
+            affichés seraient ceux du compte, et un clic les figerait pour tout le
+            monde sans que personne l'ait demandé. */}
+        {preset ? (
+          <>
+            {groups.map((group) => (
+              <GroupField key={group.key} group={group} />
+            ))}
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-ink-soft">
+                {t('project.defaults.mcp.label')}
+              </span>
+              {/* Le contrôle porte déjà son icône et son décompte : l'encadrer d'un
+                  second repère ferait deux prises pour un seul réglage. */}
+              <div className="flex">{mcp}</div>
+              <p className="text-xs text-ink-faint">{t('project.defaults.mcp.hint')}</p>
+            </div>
+
+            <p className="text-xs text-ink-faint">{t('project.defaults.applies')}</p>
+          </>
+        ) : null}
+      </CardBody>
+    </Card>
+  )
+}
+
+/**
+ * Une catégorie de réglage, en liste déroulante, comme sur l'écran des défauts de CLI :
+ * celle des modèles est trop longue pour être dépliée, et aligner les autres dessus vaut
+ * mieux qu'un écran où chaque réglage a sa forme propre.
+ */
+function GroupField({ group }: { group: SettingGroup }) {
+  const selected = group.options.find((option) => option.value === group.value)
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Select
+        label={group.label}
+        value={group.value}
+        options={group.options}
+        onChange={group.onChange}
+      />
+      {selected?.tone === 'caution' ? (
+        <p className="flex items-start gap-1.5 text-xs text-caution">
+          <ShieldAlert size={13} className="mt-0.5 shrink-0" />
+          <span>{selected.hint}</span>
+        </p>
+      ) : null}
+    </div>
   )
 }
 

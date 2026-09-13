@@ -22,6 +22,7 @@ export type AppSettings = AppSettingsDto
 export function readAppSettings(db: Db, config: Config): AppSettings {
   const days = readValue(db, 'autoArchiveDays')
   const schedule = readValue(db, 'autoArchiveSchedule')
+  const maxSessions = readValue(db, 'maxConcurrentSessions')
 
   return {
     autoArchiveDays:
@@ -36,6 +37,10 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
     sttModel: readString(db, 'sttModel'),
     sttSecret: readString(db, 'sttSecret'),
     sttCleanupModel: readString(db, 'sttCleanupModel'),
+    maxConcurrentSessions:
+      typeof maxSessions === 'number' && Number.isInteger(maxSessions) && maxSessions >= 1
+        ? maxSessions
+        : config.limits.maxConcurrentSessions,
   }
 }
 

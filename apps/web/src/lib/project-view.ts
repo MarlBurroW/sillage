@@ -7,9 +7,10 @@ import { useEffect, useSyncExternalStore } from 'react'
  * conversation neuve. Une préférence globale trancherait mal pour la moitié d'entre eux,
  * et rouvrir le board à chaque fois d'un menu use vite.
  *
- * La mémoire est locale au navigateur, comme le repli de la sidebar : c'est une
- * habitude de poste de travail, pas une propriété du projet que les autres comptes
- * auraient à subir.
+ * La mémoire est locale au navigateur, à la différence du repli de la sidebar : sur
+ * quoi s'ouvre un projet tient à l'écran qu'on a devant soi — le board sur grand écran,
+ * une conversation neuve sur téléphone — alors qu'un projet replié l'est parce qu'on
+ * n'y travaille pas en ce moment, ce qui suit le compte d'un poste à l'autre.
  */
 
 const KEY = 'sillage.projectView'
