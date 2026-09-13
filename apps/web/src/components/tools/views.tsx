@@ -29,9 +29,9 @@ function pending(tool: ToolItem): boolean {
   return tool.status === 'running'
 }
 
-/** La sortie telle quelle, en texte. Rien à afficher tant que l'appel tourne. */
+/** La sortie définitive ou le tampon que le CLI transmet pendant l'exécution. */
 function TextOutput({ tool, label = translate('tool.output.label') }: { tool: ToolItem; label?: string }) {
-  if (pending(tool)) return null
+  if (pending(tool) && tool.output == null) return null
 
   const content = outputText(tool.output)
   if (content === null || content.length === 0) {

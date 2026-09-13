@@ -174,7 +174,8 @@ export class WebhookService {
       const requested = entry.event as { requestId: string }
       // L'échéance s'arme même sans URL de webhook : elle protège les places de
       // session, pas la notification.
-      this.armDeadline(entry.conversationId, requested.requestId)
+      const blocking = !(entry.event.type === 'question.requested' && entry.event.blocking === false)
+      if (blocking) this.armDeadline(entry.conversationId, requested.requestId)
       if (target) {
         const deadline = this.deadlineFor(entry.conversationId)
         this.enqueue(target, {
@@ -185,7 +186,7 @@ export class WebhookService {
             requestId: requested.requestId,
             event: entry.event,
           },
-          ...(deadline > 0 ? { replyDeadlineAt: entry.ts + deadline * 1000 } : {}),
+          ...(blocking && deadline > 0 ? { replyDeadlineAt: entry.ts + deadline * 1000 } : {}),
         })
       }
       return

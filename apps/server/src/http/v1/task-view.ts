@@ -166,6 +166,6 @@ export function taskToDto(log: EventLog, row: ConversationRow, baseUrl: string):
     turns: log.count(row.id, 'turn.completed'),
     activity: row.status === 'running' ? activity : null,
     lastMessage,
-    pending: row.status === 'awaiting_input' ? pending : null,
+    pending,
   }
 }

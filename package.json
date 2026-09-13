@@ -12,6 +12,8 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" build",
     "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @sillage/server test",
+    "test:codex-ui": "node scripts/codex-ui-check.mjs",
     "db:generate": "pnpm --filter @sillage/db generate",
     "db:migrate": "pnpm --filter @sillage/server migrate",
     "user:create": "pnpm --filter @sillage/server user:create",

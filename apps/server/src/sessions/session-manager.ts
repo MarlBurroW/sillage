@@ -34,6 +34,7 @@ import type {
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
 import { conversationMetrics } from '../conversations/metrics.js'
+import { readAppSettings } from '../settings/app-settings.js'
 import { resolveConversationCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
 
@@ -197,6 +198,12 @@ export class SessionManager {
     // statut, seulement la clôture de ce qui ne tourne plus.
     for (const [conversationId, hadLoops] of detached) {
       this.closeDetachedWork(conversationId, hadLoops)
+    }
+
+    // Ces conversations peuvent déjà être idle : leurs formulaires ont pourtant
+    // perdu le runner qui savait transmettre la réponse.
+    for (const conversationId of this.log.openAsyncQuestionConversationIds()) {
+      this.expireOpenPrompts(conversationId)
     }
 
     this.db
@@ -826,23 +833,29 @@ export class SessionManager {
    * plutôt que de dépasser le budget mémoire de la machine.
    */
   private async makeRoom(): Promise<void> {
-    if (this.runners.size < this.config.limits.maxConcurrentSessions) return
+    // Relu à chaque démarrage plutôt que gardé : le plafond se change depuis l'écran
+    // des réglages, et une valeur capturée à la construction attendrait un redémarrage.
+    const limit = readAppSettings(this.db, this.config).maxConcurrentSessions
 
-    const idle = [...this.runners.entries()]
-      .filter(([, managed]) => managed.status === 'idle' || managed.status === 'interrupted')
-      .sort((a, b) => a[1].lastActivity - b[1].lastActivity)
+    // Une boucle et non un seul arrêt : le plafond se baisse depuis l'interface, et
+    // les runners déjà vivants peuvent alors être plus nombreux que la place restante.
+    while (this.runners.size >= limit) {
+      const idle = [...this.runners.entries()]
+        .filter(([, managed]) => managed.status === 'idle' || managed.status === 'interrupted')
+        .sort((a, b) => a[1].lastActivity - b[1].lastActivity)
 
-    const oldest = idle[0]
-    if (!oldest) {
-      throw new HttpError(
-        503,
-        'session_limit_reached',
-        'All {limit} concurrent sessions are busy. Wait for a conversation to finish.',
-        { limit: this.config.limits.maxConcurrentSessions },
-      )
+      const oldest = idle[0]
+      if (!oldest) {
+        throw new HttpError(
+          503,
+          'session_limit_reached',
+          'All {limit} concurrent sessions are busy. Wait for a conversation to finish.',
+          { limit },
+        )
+      }
+
+      await this.stopRunner(oldest[0])
     }
-
-    await this.stopRunner(oldest[0])
   }
 
   private async ensureRunner(conversation: ConversationRow): Promise<AgentRunner> {
@@ -1125,10 +1138,10 @@ export class SessionManager {
     return resolved
   }
 
-  answerQuestion(conversationId: string, requestId: string, answer: QuestionAnswer): boolean {
+  async answerQuestion(conversationId: string, requestId: string, answer: QuestionAnswer): Promise<boolean> {
     const managed = this.runners.get(conversationId)
     if (!managed) return false
-    const answered = managed.runner.answerQuestion(requestId, answer)
+    const answered = await managed.runner.answerQuestion(requestId, answer)
     if (answered) this.touch(conversationId)
     return answered
   }

@@ -52,5 +52,8 @@ export function discardAttachment(id: string): Promise<void> {
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} o`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} ko`
-  return `${(bytes / 1024 / 1024).toFixed(1)} Mo`
+  // Les gigaoctets ne servent pas aux pièces jointes, plafonnées à 20 Mo, mais aux
+  // fichiers déposés dans l'explorateur : « 4300.5 Mo » ne se lit pas.
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} Mo`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} Go`
 }

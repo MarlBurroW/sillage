@@ -3,6 +3,7 @@ import { and, asc, desc, eq, isNull, min, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   cards,
+  conversationFavorites,
   conversationReads,
   conversations,
   projects,
@@ -51,14 +52,16 @@ import { requireUser } from '../require-user.js'
 const PAGE_SIZE = 500
 
 /**
- * `lastReadSeq` et `card` sont passés plutôt que relus ici : les routes de liste les
- * ramènent en une jointure, et une lecture par ligne rendrait la sidebar quadratique.
+ * `lastReadSeq`, `card` et `favorite` sont passés plutôt que relus ici : les routes de
+ * liste les ramènent en une jointure, et une lecture par ligne rendrait la sidebar
+ * quadratique.
  */
 export function conversationToDto(
   row: ConversationRow,
   userId: string,
   lastReadSeq: number,
   card: CardLinkDto | null,
+  favorite: boolean,
 ): ConversationDto {
   return {
     id: row.id,
@@ -80,6 +83,7 @@ export function conversationToDto(
     outputTokens: row.outputTokens,
     metrics: conversationMetrics(row),
     pinned: row.pinned,
+    favorite,
     position: row.position,
     archivedAt: row.archivedAt,
     createdAt: row.createdAt,
@@ -145,6 +149,19 @@ export function registerConversationRoutes(
     return row?.lastReadSeq ?? 0
   }
 
+  /** Ce fil est-il un favori de ce compte. Pour les lectures unitaires seulement. */
+  const isFavorite = (conversationId: string, userId: string): boolean =>
+    ctx.db
+      .select({ conversationId: conversationFavorites.conversationId })
+      .from(conversationFavorites)
+      .where(
+        and(
+          eq(conversationFavorites.conversationId, conversationId),
+          eq(conversationFavorites.userId, userId),
+        ),
+      )
+      .get() !== undefined
+
   /** Lecture : propriétaire du projet ou projet partagé. Écriture : propriétaire du fil. */
   const loadReadable = async (conversationId: string, userId: string) => {
     const row = ctx.db
@@ -180,6 +197,7 @@ export function registerConversationRoutes(
       .select({
         conversation: conversations,
         lastReadSeq: conversationReads.lastReadSeq,
+        favoritedAt: conversationFavorites.createdAt,
         card: {
           id: cards.id,
           number: cards.number,
@@ -197,6 +215,13 @@ export function registerConversationRoutes(
           eq(conversationReads.userId, user.id),
         ),
       )
+      .leftJoin(
+        conversationFavorites,
+        and(
+          eq(conversationFavorites.conversationId, conversations.id),
+          eq(conversationFavorites.userId, user.id),
+        ),
+      )
       // Les archivées comprises, la sidebar les rangeant elle-même dans sa section
       // repliée. Deux requêtes séparées coûteraient un aller-retour à chaque dépliage,
       // et un désarchivage ne pourrait plus se voir sans recharger les deux.
@@ -205,7 +230,13 @@ export function registerConversationRoutes(
       .all()
 
     return rows.map((row) =>
-      conversationToDto(row.conversation, user.id, row.lastReadSeq ?? 0, row.card),
+      conversationToDto(
+        row.conversation,
+        user.id,
+        row.lastReadSeq ?? 0,
+        row.card,
+        row.favoritedAt !== null,
+      ),
     )
   })
 
@@ -224,6 +255,7 @@ export function registerConversationRoutes(
       .select({
         conversation: conversations,
         lastReadSeq: conversationReads.lastReadSeq,
+        favoritedAt: conversationFavorites.createdAt,
         card: {
           id: cards.id,
           number: cards.number,
@@ -240,6 +272,13 @@ export function registerConversationRoutes(
           eq(conversationReads.userId, user.id),
         ),
       )
+      .leftJoin(
+        conversationFavorites,
+        and(
+          eq(conversationFavorites.conversationId, conversations.id),
+          eq(conversationFavorites.userId, user.id),
+        ),
+      )
       .where(
         includeArchived
           ? eq(conversations.projectId, id)
@@ -249,7 +288,13 @@ export function registerConversationRoutes(
       .all()
 
     return rows.map((row) =>
-      conversationToDto(row.conversation, user.id, row.lastReadSeq ?? 0, row.card),
+      conversationToDto(
+        row.conversation,
+        user.id,
+        row.lastReadSeq ?? 0,
+        row.card,
+        row.favoritedAt !== null,
+      ),
     )
   })
 
@@ -305,7 +350,9 @@ export function registerConversationRoutes(
 
     // Curseur à zéro : le client marque la conversation lue en s'y installant, comme
     // pour n'importe quelle autre. La devancer ici mentirait sur ce qui est en base.
-    return reply.status(201).send(conversationToDto(row, user.id, 0, readCardLink(ctx, body.cardId)))
+    return reply
+      .status(201)
+      .send(conversationToDto(row, user.id, 0, readCardLink(ctx, body.cardId), false))
   })
 
   /**
@@ -418,7 +465,15 @@ export function registerConversationRoutes(
     // Le fork hérite du rattachement : c'est le même travail exploré autrement.
     return reply
       .status(201)
-      .send(conversationToDto({ ...row, lastSeq: copied }, user.id, 0, readCardLink(ctx, row.cardId)))
+      .send(
+        conversationToDto(
+          { ...row, lastSeq: copied },
+          user.id,
+          0,
+          readCardLink(ctx, row.cardId),
+          false,
+        ),
+      )
   })
 
   app.get('/api/conversations/:id', async (request) => {
@@ -430,6 +485,7 @@ export function registerConversationRoutes(
       user.id,
       readCursor(id, user.id),
       readCardLink(ctx, conversation.cardId),
+      isFavorite(id, user.id),
     )
   })
 
@@ -464,6 +520,46 @@ export function registerConversationRoutes(
       .run()
 
     return { lastReadSeq: readCursor(id, user.id) }
+  })
+
+  /**
+   * Pose ou retire le signet du compte appelant.
+   *
+   * Ouvert à tout lecteur, comme le curseur de lecture et pour la même raison : marquer
+   * un fil qu'on ne peut pas écrire n'est pas une modification de la conversation.
+   * Idempotent des deux côtés — marquer deux fois vaut marquer, et le client n'a pas à
+   * connaître l'état d'avant pour envoyer son geste.
+   */
+  app.put('/api/conversations/:id/favorite', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadReadable(id, user.id)
+
+    ctx.db
+      .insert(conversationFavorites)
+      .values({ conversationId: id, userId: user.id, createdAt: Date.now() })
+      .onConflictDoNothing()
+      .run()
+
+    return { favorite: true }
+  })
+
+  app.delete('/api/conversations/:id/favorite', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadReadable(id, user.id)
+
+    ctx.db
+      .delete(conversationFavorites)
+      .where(
+        and(
+          eq(conversationFavorites.conversationId, id),
+          eq(conversationFavorites.userId, user.id),
+        ),
+      )
+      .run()
+
+    return { favorite: false }
   })
 
   app.get('/api/conversations/:id/events', async (request): Promise<JournalPageDto> => {
@@ -703,7 +799,7 @@ export function registerConversationRoutes(
     const body = questionAnswerBodySchema.parse(request.body)
     await loadWritable(id, user.id)
 
-    const answered = sessions.answerQuestion(id, requestId, {
+    const answered = await sessions.answerQuestion(id, requestId, {
       status: body.status,
       answers: body.answers,
       decidedBy: user.id,

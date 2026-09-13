@@ -53,9 +53,12 @@ export const projects = sqliteTable(
     visibility: text('visibility').$type<'private' | 'shared'>().notNull(),
     color: text('color'),
     /**
-     * JSON AgentConfig, préréglages de la barre de saisie. Le CLI lui-même n'est pas
-     * une propriété du projet : il est choisi par conversation (colonne
-     * `conversations.agent`), pour qu'un même projet porte du Claude et du Codex.
+     * JSON `ProjectAgentDefaults` : un préréglage de la barre de saisie par CLI, socle
+     * des conversations du projet sous les défauts du compte. Le CLI lui-même n'est
+     * pas une propriété du projet : il est choisi par conversation (colonne
+     * `conversations.agent`), pour qu'un même projet porte du Claude et du Codex — d'où
+     * un préréglage par CLI plutôt qu'un seul. La forme d'avant, une configuration
+     * seule, se relit encore (`readProjectDefaults`).
      */
     defaultConfig: text('default_config'),
     /**
@@ -352,6 +355,33 @@ export const conversationReads = sqliteTable(
     /** Ne recule jamais : l'écriture prend le maximum avec la valeur déjà en base. */
     lastReadSeq: integer('last_read_seq').notNull().default(0),
     updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.conversationId, t.userId] })],
+)
+
+/**
+ * Les fils qu'un compte a mis en favori.
+ *
+ * Une table plutôt qu'une colonne, comme `conversation_reads` et pour la même raison :
+ * un favori appartient à celui qui l'a posé, pas à la conversation. Sur un projet
+ * partagé, la sidebar de chacun doit pouvoir garder ses propres signets sans imposer
+ * les siens aux autres — ce que fait déjà `conversations.pinned`, qui est un épinglage
+ * du fil et reste distinct.
+ *
+ * Purement une aide à la navigation : l'archivage automatique n'en tient pas compte,
+ * un fil marqué puis terminé se range comme les autres.
+ */
+export const conversationFavorites = sqliteTable(
+  'conversation_favorites',
+  {
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Ordre de la section « Favoris », du plus récemment marqué au plus ancien. */
+    createdAt: timestamp('created_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.conversationId, t.userId] })],
 )
@@ -671,6 +701,7 @@ export type ApiTokenRow = typeof apiTokens.$inferSelect
 export type ProjectRow = typeof projects.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
+export type ConversationFavoriteRow = typeof conversationFavorites.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect

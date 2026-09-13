@@ -169,7 +169,7 @@ export interface AgentRunner {
   /** Répond à une demande de permission en attente. false si elle n'existe plus. */
   resolvePermission(requestId: string, decision: PermissionDecision): boolean
   /** Répond à une question posée par l'agent. false si elle n'est plus en attente. */
-  answerQuestion(requestId: string, answer: QuestionAnswer): boolean
+  answerQuestion(requestId: string, answer: QuestionAnswer): boolean | Promise<boolean>
   /** Répond à une élicitation MCP. false si elle n'est plus en attente. */
   resolveElicitation(requestId: string, answer: ElicitationAnswer): boolean
   /**
