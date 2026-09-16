@@ -1,4 +1,4 @@
-import { Check, History, PanelRight, SquareKanban, X } from 'lucide-react'
+import { History, PanelRight, SquareKanban, X } from 'lucide-react'
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -12,6 +12,7 @@ import {
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
+import { MobileNavigationButton } from '../components/MobileNavigation'
 import { UsageBar, readAge } from '../components/chat/UsageBar'
 import { Banner, Button, IconButton, cx } from '../components/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
@@ -73,21 +74,34 @@ function DraftUsage({ agent, enabled }: { agent: AgentKind; enabled: boolean }) 
   if (!usage || !usage.limitsAvailable || usage.windows.length === 0) return null
 
   return (
-    <section className="flex flex-col gap-2.5 rounded-lg border border-line p-3">
-      <div className="flex items-baseline gap-2">
-        <h2 className="min-w-0 flex-1 truncate text-xs font-medium text-ink-soft">
+    <details className="rounded-lg border border-line px-3 text-xs text-ink-soft">
+      <summary className="cursor-pointer py-3 marker:text-ink-faint">
+        <span className="font-medium">
           {usage.plan
             ? t('draft.usage.titleWithPlan', { plan: usage.plan })
             : t('draft.usage.title')}
-        </h2>
-        <span className="shrink-0 text-[0.6875rem] text-ink-faint">
+        </span>
+        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-3.5">
+          {usage.windows.map((window) => (
+            <span key={window.id} className={cx(
+              'tabular-nums',
+              window.utilization !== null && window.utilization >= 0.9 ? 'font-medium text-critical'
+                : window.utilization !== null && window.utilization >= 0.75 ? 'text-caution' : 'text-ink-faint',
+            )}>
+              {window.label} · {window.utilization === null ? '?' : `${Math.round(window.utilization * 100)} %`}
+            </span>
+          ))}
+        </span>
+      </summary>
+      <div className="flex flex-col gap-2.5 border-t border-line py-3">
+        <span className="text-[0.6875rem] text-ink-faint">
           {t('usage.readAt', { age: readAge(usage.fetchedAt) })}
         </span>
+        {usage.windows.map((window) => (
+          <UsageBar key={window.id} window={window} />
+        ))}
       </div>
-      {usage.windows.map((window) => (
-        <UsageBar key={window.id} window={window} />
-      ))}
-    </section>
+    </details>
   )
 }
 
@@ -138,7 +152,9 @@ export function DraftConversationPage() {
   const agent =
     chosenAgent ?? (requested.success || installed(suggested) ? suggested : (fallback ?? suggested))
 
-  const blocked = unavailableReason(availability?.agents.find((a) => a.agent === agent))
+  const selectedAvailability = availability?.agents.find((a) => a.agent === agent)
+  const blocked = unavailableReason(selectedAvailability)
+  const selectedVersionNotice = versionMismatch(selectedAvailability)
 
   // Une arrivée depuis le board ne compte pas : ni le lancement d'une carte, qui porte
   // sa référence, ni le bouton de conversation neuve du board, qui le dit.
@@ -254,11 +270,12 @@ export function DraftConversationPage() {
           sidebarHidden && 'md:pl-14',
         )}
       >
+        <MobileNavigationButton />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{t('draft.title')}</p>
           <div className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
             <AgentIcon agent={agent} size={11} />
-            <span>{AGENT_LABELS[agent]}</span>
+            <span>{project?.name ?? AGENT_LABELS[agent]}</span>
           </div>
         </div>
         {/* Le board depuis le brouillon : c'est ici qu'on se demande sur quoi partir,
@@ -288,17 +305,16 @@ export function DraftConversationPage() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-md flex-col gap-6 px-4 py-8">
-          <div className="flex flex-col gap-1 text-center">
+        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:py-10">
+          <div className="mb-2 flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">{t('draft.title')}</h1>
             <p className="text-sm text-ink-faint">{t('draft.subtitle')}</p>
           </div>
 
-          {/* Deux cartes plutôt qu'une liste déroulante : le CLI est le choix qui engage
-              le plus, il n'y en a que deux, et chacun mérite sa phrase. */}
+          {/* Radios natifs : choix compact, avec navigation au clavier par flèches. */}
           <fieldset className="flex flex-col gap-1.5">
             <legend className="mb-1.5 text-xs font-medium text-ink-soft">{t('draft.cli.legend')}</legend>
-            <div role="radiogroup" aria-label="CLI" className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               {AGENTS.map((option) => {
                 const selected = option.value === agent
                 const entry = availability?.agents.find((a) => a.agent === option.value)
@@ -307,17 +323,12 @@ export function DraftConversationPage() {
                 // le formulaire à chaque ouverture, et bloquerait un choix valide si la
                 // route échouait.
                 const unavailable = unavailableReason(entry)
-                const mismatch = versionMismatch(entry)
                 return (
-                  <button
+                  <label
                     key={option.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    disabled={unavailable !== null}
-                    onClick={() => setChosenAgent(option.value)}
+                    title={unavailable ?? option.blurb}
                     className={cx(
-                      'flex flex-col gap-2 rounded-lg border p-3 text-left transition-colors',
+                      'flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors has-focus-visible:ring-2 has-focus-visible:ring-accent',
                       unavailable
                         ? 'cursor-not-allowed border-line bg-surface-high opacity-60'
                         : selected
@@ -325,44 +336,28 @@ export function DraftConversationPage() {
                           : 'border-line hover:border-line-strong hover:bg-surface-high',
                     )}
                   >
-                    <span className="flex items-center gap-2">
-                      <AgentIcon agent={option.value} size={18} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-ink">
-                          {AGENT_LABELS[option.value]}
-                        </span>
-                        <span className="block truncate text-[0.6875rem] text-ink-faint">
-                          {option.vendor}
-                        </span>
-                      </span>
-                      {/* Place réservée : la coche apparaissant au choix décalerait le
-                          libellé au moment du clic. */}
-                      <span className="w-4 shrink-0 text-accent">
-                        {selected ? <Check size={16} /> : null}
-                      </span>
+                    <input type="radio" name="draft-agent" value={option.value}
+                      aria-label={AGENT_LABELS[option.value]}
+                      checked={selected} disabled={unavailable !== null}
+                      onChange={() => setChosenAgent(option.value)}
+                      className="size-3.5 shrink-0 accent-[var(--sg-accent)]" />
+                    <AgentIcon agent={option.value} size={16} />
+                    <span className="min-w-0 text-sm font-medium text-ink">
+                      {AGENT_LABELS[option.value]}
+                      {unavailable ? <span className="mt-0.5 block text-xs font-normal text-ink-faint">{unavailable}</span> : null}
                     </span>
-                    {/* La raison remplace l'accroche : sur une carte qu'on ne peut pas
-                        choisir, vanter le CLI passe après le fait de dire pourquoi. */}
-                    <span className="text-xs leading-snug text-ink-faint">
-                      {unavailable ?? option.blurb}
-                    </span>
-                    {/* L'écart de version n'empêche rien : il s'ajoute, il ne remplace
-                        pas, et ne grise pas la carte. */}
-                    {mismatch ? (
-                      <span className="text-xs leading-snug text-caution">{mismatch}</span>
-                    ) : null}
-                  </button>
+                  </label>
                 )
               })}
             </div>
+            {selectedVersionNotice ? <p className="text-xs text-caution">{selectedVersionNotice}</p> : null}
             {/* Le cas où aucun CLI n'est installé, et celui d'un `?agent=` qui en désigne
-                un absent : les cartes seules laisseraient l'écran sans explication de ce
+                un absent : les options seules laisseraient l'écran sans explication de ce
                 que la barre de saisie refuse. */}
             {blocked ? <Banner>{blocked}</Banner> : null}
 
-            {/* Hors des cartes : chacune est déjà un bouton, et en imbriquer un second
-                donnerait du HTML invalide. Un rang par CLI manquant, désactivé exclu :
-                l'écarter est un choix de configuration, pas un manque à combler. */}
+            {/* Un rang par CLI manquant. Un CLI désactivé relève de la configuration,
+                son installation ne résoudrait pas son indisponibilité. */}
             {availability?.agents
               .filter((entry) => !entry.installed && entry.reason !== 'disabled')
               .map((entry) => (
@@ -394,7 +389,6 @@ export function DraftConversationPage() {
               ))}
           </fieldset>
 
-          <DraftUsage agent={agent} enabled={blocked === null} />
           {/* Le 502 de la sonde dit que le CLI n'a pas répondu ; le taire laisserait
               croire qu'il n'y a simplement aucune commande dans ce dossier. */}
           {commandsError ? (
@@ -420,20 +414,52 @@ export function DraftConversationPage() {
                 setWorktreeId(next)
               }}
               isRepository={project?.git !== null && project !== undefined}
-              layout="list"
               suggestedName={card ? cardBranchName(card.number, card.title) : undefined}
             />
           ) : null}
+
+          {cardPending ? null : (
+            <Composer
+              variant="draft"
+              // Le brouillon d'une conversation pas encore créée appartient à son projet :
+              // c'est le seul fil qu'on puisse en désigner avant qu'il existe. Un brouillon
+              // par carte, sinon celui de la création libre écraserait la mention posée ici.
+              draftKey={card ? `new:${projectId ?? ''}:card:${card.id}` : `new:${projectId ?? ''}`}
+              // Une phrase et pas le seul numéro : « #5 » tout seul a déjà été lu comme le
+              // cinquième élément d'une liste par un CLI qui ne connaissait pas la carte.
+              initialText={card ? `${t('draft.card.prompt', { number: card.number })} ` : ''}
+              config={effective}
+              // Rien n'est encore lancé : aucun CLI n'a d'inventaire MCP ni de compétences à
+              // rapporter ; ils arriveront au premier tour. Les commandes en `/`, elles, se
+              // lisent sans session là où le CLI le permet (`draftCommands`). Le composer
+              // écarte lui-même celles que Sillage exécute (`/compact`) : sans fil, pas de
+              // plomberie pour les porter.
+              mcpInventory={NO_MCP_INVENTORY}
+              commands={projectCommands?.commands ?? NO_COMMANDS}
+              skills={NO_SKILLS}
+              status="idle"
+              // Un CLI absent ne se rattrape pas côté serveur : le tour échouerait après
+              // création de la conversation, laissant un fil vide et un message perdu.
+              disabled={createConversation.isPending || blocked !== null}
+              onSend={send}
+              onInterrupt={() => {}}
+              onConfigChange={setConfig}
+              projectId={projectId}
+              worktreeId={effectiveWorktreeId}
+            />
+          )}
+
+          <DraftUsage agent={agent} enabled={blocked === null} />
 
           {/* Sessions commencées au CLI dans ce dossier : plutôt qu'une nouvelle
               conversation, on peut adopter l'une d'elles. Importer ne copie rien,
               c'est la même session, qui reste reprenable avec `claude --resume`. */}
           {AGENT_CAPABILITIES[agent].cliSessions && cliSessionList.length > 0 ? (
-            <section className="flex flex-col gap-1.5">
-              <h2 className="text-xs font-medium text-ink-soft">
+            <details className="rounded-lg border border-line px-3 pb-2">
+              <summary className="cursor-pointer py-3 text-xs font-medium text-ink-soft">
                 {t('draft.cliSessions.title', { label: AGENT_LABELS[agent] })}
-              </h2>
-              <p className="text-xs leading-snug text-ink-faint">
+              </summary>
+              <p className="mb-2 text-xs leading-snug text-ink-faint">
                 {t('draft.cliSessions.description')}
               </p>
               <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto">
@@ -472,40 +498,10 @@ export function DraftConversationPage() {
                     : t('draft.import.error')}
                 </Banner>
               ) : null}
-            </section>
+            </details>
           ) : null}
         </div>
       </div>
-
-      {cardPending ? null : (
-        <Composer
-          // Le brouillon d'une conversation pas encore créée appartient à son projet :
-          // c'est le seul fil qu'on puisse en désigner avant qu'il existe. Un brouillon
-          // par carte, sinon celui de la création libre écraserait la mention posée ici.
-          draftKey={card ? `new:${projectId ?? ''}:card:${card.id}` : `new:${projectId ?? ''}`}
-          // Une phrase et pas le seul numéro : « #5 » tout seul a déjà été lu comme le
-          // cinquième élément d'une liste par un CLI qui ne connaissait pas la carte.
-          initialText={card ? `${t('draft.card.prompt', { number: card.number })} ` : ''}
-          config={effective}
-          // Rien n'est encore lancé : aucun CLI n'a d'inventaire MCP ni de compétences à
-          // rapporter ; ils arriveront au premier tour. Les commandes en `/`, elles, se
-          // lisent sans session là où le CLI le permet (`draftCommands`). Le composer
-          // écarte lui-même celles que Sillage exécute (`/compact`) : sans fil, pas de
-          // plomberie pour les porter.
-          mcpInventory={NO_MCP_INVENTORY}
-          commands={projectCommands?.commands ?? NO_COMMANDS}
-          skills={NO_SKILLS}
-          status="idle"
-          // Un CLI absent ne se rattrape pas côté serveur : le tour échouerait après
-          // création de la conversation, laissant un fil vide et un message perdu.
-          disabled={createConversation.isPending || blocked !== null}
-          onSend={send}
-          onInterrupt={() => {}}
-          onConfigChange={setConfig}
-          projectId={projectId}
-          worktreeId={effectiveWorktreeId}
-        />
-      )}
 
       {projectId && panel.mounted ? (
         <Suspense fallback={null}>

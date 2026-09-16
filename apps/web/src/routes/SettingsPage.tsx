@@ -38,6 +38,7 @@ import { cx } from '../components/ui'
  */
 interface Section {
   to: string
+  group: 'personal' | 'workspace' | 'administration' | 'about'
   labelKey: MessageKey
   descriptionKey: MessageKey
   icon: ReactNode
@@ -47,54 +48,63 @@ interface Section {
 const SECTIONS: Section[] = [
   {
     to: 'compte',
+    group: 'personal',
     labelKey: 'settings.section.account',
     descriptionKey: 'settings.section.account.description',
     icon: <UserRound size={16} />,
   },
   {
     to: 'apparence',
+    group: 'personal',
     labelKey: 'settings.section.appearance',
     descriptionKey: 'settings.section.appearance.description',
     icon: <Palette size={16} />,
   },
   {
     to: 'notifications',
+    group: 'personal',
     labelKey: 'settings.section.notifications',
     descriptionKey: 'settings.section.notifications.description',
     icon: <Bell size={16} />,
   },
   {
     to: 'cli',
+    group: 'workspace',
     labelKey: 'settings.section.cli',
     descriptionKey: 'settings.section.cli.description',
     icon: <SlidersHorizontal size={16} />,
   },
   {
     to: 'projets',
+    group: 'workspace',
     labelKey: 'settings.section.projects',
     descriptionKey: 'settings.section.projects.description',
     icon: <FolderOpen size={16} />,
   },
   {
     to: 'mcp',
+    group: 'workspace',
     labelKey: 'settings.section.mcp',
     descriptionKey: 'settings.section.mcp.description',
     icon: <Plug size={16} />,
   },
   {
     to: 'api',
+    group: 'workspace',
     labelKey: 'settings.section.api',
     descriptionKey: 'settings.section.api.description',
     icon: <Terminal size={16} />,
   },
   {
     to: 'git',
+    group: 'workspace',
     labelKey: 'settings.section.git',
     descriptionKey: 'settings.section.git.description',
     icon: <GitBranch size={16} />,
   },
   {
     to: 'secrets',
+    group: 'administration',
     labelKey: 'settings.section.secrets',
     descriptionKey: 'settings.section.secrets.description',
     icon: <KeyRound size={16} />,
@@ -102,6 +112,7 @@ const SECTIONS: Section[] = [
   },
   {
     to: 'dictee',
+    group: 'administration',
     labelKey: 'settings.section.stt',
     descriptionKey: 'settings.section.stt.description',
     icon: <Mic size={16} />,
@@ -109,6 +120,7 @@ const SECTIONS: Section[] = [
   },
   {
     to: 'archivage',
+    group: 'administration',
     labelKey: 'settings.section.archiving',
     descriptionKey: 'settings.section.archiving.description',
     icon: <Archive size={16} />,
@@ -116,6 +128,7 @@ const SECTIONS: Section[] = [
   },
   {
     to: 'sessions',
+    group: 'administration',
     labelKey: 'settings.section.sessions',
     descriptionKey: 'settings.section.sessions.description',
     icon: <Cpu size={16} />,
@@ -123,6 +136,7 @@ const SECTIONS: Section[] = [
   },
   {
     to: 'comptes',
+    group: 'administration',
     labelKey: 'settings.section.accounts',
     descriptionKey: 'settings.section.accounts.description',
     icon: <Users size={16} />,
@@ -130,11 +144,14 @@ const SECTIONS: Section[] = [
   },
   {
     to: 'a-propos',
+    group: 'about',
     labelKey: 'settings.section.about',
     descriptionKey: 'settings.section.about.description',
     icon: <Info size={16} />,
   },
 ]
+
+const GROUPS = ['personal', 'workspace', 'administration', 'about'] as const
 
 export function SettingsLayout() {
   const t = useTranslate()
@@ -152,40 +169,49 @@ export function SettingsLayout() {
           ensemble ne tiennent pas dans la largeur d'un téléphone. */}
       <nav className={cx('shrink-0 md:w-56', !onIndex && 'hidden md:block')}>
         <h1 className="mb-3 px-1 text-lg font-semibold tracking-tight">{t('settings.title')}</h1>
-        <ul className="flex flex-col gap-1">
-          {sections.map((section) => (
-            <li key={section.to}>
-              <NavLink
-                to={section.to}
-                className={({ isActive }) =>
-                  cx(
-                    'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
-                    isActive
-                      ? 'bg-accent-wash font-medium text-ink'
-                      : 'text-ink-soft hover:bg-surface-high hover:text-ink',
-                  )
-                }
-              >
-                <span className="relative shrink-0 text-ink-faint">
-                  {section.icon}
-                  {/* Une pastille, pas un toast : la mise à jour attend sans presser. */}
-                  {section.to === 'a-propos' && versionInfo?.updateAvailable ? (
-                    <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-accent" />
-                  ) : null}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{t(section.labelKey)}</span>
-                  {/* La description n'aide qu'au doigt, où la liste est la page entière
-                      et où rien d'autre ne dit ce qu'une catégorie contient. */}
-                  <span className="block truncate text-xs text-ink-faint md:hidden">
-                    {t(section.descriptionKey)}
-                  </span>
-                </span>
-                <ChevronRight size={14} className="shrink-0 text-ink-faint md:hidden" />
-              </NavLink>
-            </li>
-          ))}
-        </ul>
+        {GROUPS.map((group) => {
+          const entries = sections.filter((section) => section.group === group)
+          if (entries.length === 0) return null
+          return (
+            <div key={group} className="mb-5">
+              {group !== 'about' ? <h2 className="mb-1.5 px-2.5 text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">{t(`settings.group.${group}`)}</h2> : null}
+              <ul className="flex flex-col gap-1">
+                {entries.map((section) => (
+                  <li key={section.to}>
+                    <NavLink
+                      to={section.to}
+                      className={({ isActive }) =>
+                        cx(
+                          'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
+                          isActive
+                            ? 'bg-accent-wash font-medium text-ink'
+                            : 'text-ink-soft hover:bg-surface-high hover:text-ink',
+                        )
+                      }
+                    >
+                      <span className="relative shrink-0 text-ink-faint">
+                        {section.icon}
+                        {/* Une pastille, pas un toast : la mise à jour attend sans presser. */}
+                        {section.to === 'a-propos' && versionInfo?.updateAvailable ? (
+                          <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-accent" />
+                        ) : null}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{t(section.labelKey)}</span>
+                        {/* La description n'aide qu'au doigt, où la liste est la page entière
+                            et où rien d'autre ne dit ce qu'une catégorie contient. */}
+                        <span className="block text-xs text-ink-faint md:hidden">
+                          {t(section.descriptionKey)}
+                        </span>
+                      </span>
+                      <ChevronRight size={14} className="shrink-0 text-ink-faint md:hidden" />
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        })}
 
         {/* Sans repère de version, « je ne vois pas la correction » ne se tranche pas :
             rien à l'écran ne dit quelle version tourne réellement. */}

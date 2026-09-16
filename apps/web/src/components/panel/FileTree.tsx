@@ -2,6 +2,7 @@ import {
   AtSign,
   ChevronRight,
   CircleAlert,
+  Download,
   FilePlus2,
   FileSymlink,
   FolderPlus,
@@ -17,7 +18,7 @@ import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode }
 import type { FileState, TreeEntryDto } from '@sillage/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { referenceInComposer } from '../../lib/composer-ref'
-import { openTab } from '../../lib/editor-tabs'
+import { openTab, useEditorTabs } from '../../lib/editor-tabs'
 import {
   parentOf,
   siblingPath,
@@ -26,6 +27,7 @@ import {
   useMoveEntry,
 } from '../../lib/entries'
 import { fileIconUrl } from '../../lib/file-icons'
+import { downloadFile } from '../../lib/files-io'
 import { translate, useTranslate } from '../../lib/i18n'
 import { useFileSearch, useRefreshTree, useTreeLevel } from '../../lib/tree'
 import {
@@ -82,6 +84,7 @@ export function FileTree({
   onOpenFile: () => void
 }) {
   const t = useTranslate()
+  const { active: activePath } = useEditorTabs(scope)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [query, setQuery] = useState('')
   /** Entrée dont la suppression est proposée : le geste est sans retour possible. */
@@ -109,6 +112,7 @@ export function FileTree({
 
   const actions: Actions = {
     scope,
+    activePath,
     draft,
     setDraft,
     onOpenFile,
@@ -190,39 +194,8 @@ export function FileTree({
         }}
       />
 
-      <div className="flex items-center gap-1 px-2 pb-1.5">
-        <div className="relative min-w-0 flex-1">
-          <Search
-            size={13}
-            className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-ink-faint"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') setQuery('')
-            }}
-            placeholder={t('filetree.search.placeholder')}
-            aria-label={t('filetree.search.label')}
-            className={cx(
-              'h-7 w-full rounded-md border border-line bg-sunken pr-6 pl-7',
-              'text-[0.8125rem] text-ink placeholder:text-ink-faint',
-              'outline-none focus:border-accent',
-            )}
-          />
-          {query ? (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              aria-label={t('filetree.search.clear')}
-              className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 text-ink-faint hover:text-ink"
-            >
-              <X size={12} />
-            </button>
-          ) : null}
-        </div>
-
+      <div className="flex items-center gap-1 px-2 pb-1">
+        <span className="min-w-0 flex-1 text-xs font-medium text-ink-soft">{t('filetree.title')}</span>
         {/* Le dossier racine n'a pas de ligne à survoler : ses actions vivent ici. */}
         <RootAction
           label={t('filetree.root.newFile')}
@@ -239,6 +212,41 @@ export function FileTree({
           icon={<Upload size={13} />}
           onClick={() => openPicker('')}
         />
+      </div>
+      <div className="flex items-center gap-1 px-2 pb-1.5">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            size={13}
+            className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-ink-faint"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setQuery('')
+            }}
+            placeholder={t('filetree.search.placeholder')}
+            aria-label={t('filetree.search.label')}
+            className={cx(
+              'h-9 w-full rounded-md border border-line bg-sunken pr-6 pl-7',
+              'text-[0.8125rem] text-ink placeholder:text-ink-faint',
+              'outline-none focus:border-accent',
+            )}
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label={t('filetree.search.clear')}
+              className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 text-ink-faint hover:text-ink"
+            >
+              <X size={12} />
+            </button>
+          ) : null}
+        </div>
+
+
       </div>
 
       {error ? (
@@ -438,7 +446,7 @@ function RootAction({
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="flex size-6 items-center justify-center rounded text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
+      className="flex size-11 md:size-7 pointer-coarse:size-11 items-center justify-center rounded text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
     >
       {icon}
     </button>
@@ -453,6 +461,7 @@ function RootAction({
  */
 interface Actions {
   scope: string
+  activePath: string | null
   draft: Draft | null
   setDraft: (draft: Draft | null) => void
   onOpenFile: () => void
@@ -596,6 +605,12 @@ function entryActions(entry: TreeEntryDto, actions: Actions, expand: () => void)
             run: open,
           },
           {
+            key: 'download',
+            icon: <Download size={14} />,
+            label: translate('filetree.entry.download'),
+            run: () => downloadFile(actions.scope, entry.path),
+          },
+          {
             key: 'reference',
             icon: <AtSign size={14} />,
             label: translate('filetree.entry.reference'),
@@ -643,6 +658,7 @@ function EntryRow({
       trigger={
         <button
           type="button"
+          aria-current={actions.activePath === entry.path ? true : undefined}
           onClick={() => {
             openTab(actions.scope, entry.path, { preview: true })
             actions.onOpenFile()
@@ -654,6 +670,7 @@ function EntryRow({
           className={cx(
             'flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left',
             'transition-colors hover:bg-surface-high',
+            actions.activePath === entry.path && 'bg-accent-wash',
           )}
         >
           <img src={fileIconUrl(entry.name, false)} alt="" aria-hidden className="size-4 shrink-0" />
@@ -700,7 +717,11 @@ function Entry({
   actions: Actions
 }) {
   const t = useTranslate()
-  const [open, setOpen] = useState(false)
+  const insideActive = entry.isDirectory && Boolean(actions.activePath?.startsWith(entry.path + '/'))
+  const [open, setOpen] = useState(insideActive)
+  useEffect(() => {
+    if (insideActive) setOpen(true)
+  }, [insideActive, actions.activePath])
   const [dropping, setDropping] = useState(false)
   const state = entry.state ? STATES[entry.state] : null
   const draft = actions.draft
@@ -795,9 +816,11 @@ function Entry({
                     }
               }
               aria-expanded={entry.isDirectory ? open : undefined}
+              aria-current={actions.activePath === entry.path ? true : undefined}
               className={cx(
                 'flex h-7 min-w-0 flex-1 items-center gap-1.5 text-left text-[0.8125rem]',
                 'transition-colors group-hover/entry:bg-surface-high',
+                actions.activePath === entry.path && 'bg-accent-wash',
                 entry.state === 'ignored' ? 'text-ink-faint/60' : 'text-ink-soft',
               )}
               style={{ paddingLeft: depth * INDENT_PX + 6 }}
@@ -844,7 +867,7 @@ function Entry({
                   <button
                     type="button"
                     aria-label={t('filetree.entry.actions', { name: entry.name })}
-                    className="flex size-6 items-center justify-center rounded text-ink-faint hover:text-ink"
+                    className="flex size-11 md:size-7 pointer-coarse:size-11 items-center justify-center rounded text-ink-faint hover:text-ink"
                   >
                     <MoreHorizontal size={14} />
                   </button>

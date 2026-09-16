@@ -131,6 +131,14 @@ export function liveSeq(conversationId: string): number {
   return seqs.get(conversationId) ?? 0
 }
 
+export function liveStatus(conversationId: string): ConversationStatus | undefined {
+  return statuses.get(conversationId)
+}
+
+export function liveBackground(conversationId: string): number {
+  return backgrounds.get(conversationId) ?? 0
+}
+
 /**
  * Branche l'onglet sur le flux de statuts. Monté par la sidebar, qui est la seule vue
  * à afficher des conversations qu'elle n'a pas ouvertes.

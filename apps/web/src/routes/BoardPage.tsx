@@ -25,6 +25,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
 import { CardPanel } from '../components/board/CardPanel'
+import { MobileNavigationButton } from '../components/MobileNavigation'
 import { CardTile } from '../components/board/CardTile'
 import { columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, cx } from '../components/ui'
@@ -231,6 +232,7 @@ export function BoardPage() {
             sidebarHidden && 'md:pl-14',
           )}
         >
+          <MobileNavigationButton />
           <h1 className="truncate text-sm font-semibold tracking-tight">{project.name}</h1>
           <span className="rounded-full bg-surface-high px-1.5 py-0.5 text-[0.6875rem] text-ink-faint">
             {t('board.cardCount', { count: (cards ?? []).length })}
@@ -253,7 +255,8 @@ export function BoardPage() {
             // la page d'accueil du projet, alors qu'on venait justement du board.
             onClick={() => navigate(`/p/${projectId}/c/new`, { state: { from: 'board' } })}
           >
-            {t('board.newConversation')}
+            <span className="hidden sm:inline">{t('board.newConversation')}</span>
+            <span className="sm:hidden">{t('board.newConversation.short')}</span>
           </Button>
           {/* Le panneau opère ici sur le workspace du projet : un terminal, les
               fichiers ou le diff s'ouvrent sans avoir à entrer dans une session. */}
@@ -278,8 +281,9 @@ export function BoardPage() {
                   key={column}
                   type="button"
                   onClick={() => setVisibleColumn(column)}
+                  aria-pressed={column === visibleColumn}
                   className={cx(
-                    'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                    'flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                     column === visibleColumn
                       ? 'bg-accent-wash text-accent'
                       : 'text-ink-faint hover:text-ink',
@@ -375,7 +379,7 @@ function BoardColumn({
 
   return (
     <section
-      className="flex h-full max-h-full w-[17rem] shrink-0 flex-col rounded-lg bg-sunken md:w-72"
+      className="flex h-full max-h-full w-full shrink-0 flex-col rounded-lg bg-sunken md:w-72"
       aria-label={columnLabel(column)}
     >
       <header className="flex shrink-0 items-center gap-2 px-2.5 pt-2.5 pb-1.5">

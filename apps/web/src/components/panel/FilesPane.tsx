@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useTranslate } from '../../lib/i18n'
+import { useEditorDraftPaths } from '../../lib/editor-documents'
+import { useCurrentUser } from '../../lib/session'
 import { restoreTreeWidth, setPanelTree, setTreeWidth, usePanelTree } from '../../lib/panel'
 import { resizeHandle } from '../../lib/resize-handle'
 import { useTreeSync } from '../../lib/tree'
-import { cx } from '../ui'
+import { Button, cx } from '../ui'
 import { EditorPane } from './EditorPane'
 import { FileTree } from './FileTree'
 
@@ -24,6 +26,8 @@ const NARROW_PX = 560
 export function FilesPane({ scope }: { scope: string }) {
   const t = useTranslate()
   const treeOpen = usePanelTree()
+  const { data: user } = useCurrentUser()
+  const drafts = useEditorDraftPaths(user?.id ?? '', scope)
   const host = useRef<HTMLDivElement>(null)
   const column = useRef<HTMLDivElement>(null)
 
@@ -73,6 +77,11 @@ export function FilesPane({ scope }: { scope: string }) {
             '@max-[35rem]:w-full @max-[35rem]:bg-surface @max-[35rem]:shadow-card',
           )}
         >
+          {drafts.length > 0 ? <div className="px-2 py-1 @min-[35rem]:hidden">
+            <Button size="sm" variant="secondary" className="w-full" onClick={() => setPanelTree(false, false)}>
+              {t('editor.drafts.recover', { count: drafts.length })}
+            </Button>
+          </div> : null}
           <FileTree scope={scope} onOpenFile={closeIfOverlaid} />
         </div>
       ) : null}
@@ -99,7 +108,7 @@ export function FilesPane({ scope }: { scope: string }) {
 
       {/* `min-w-0` : sans lui, un enfant flex se dimensionne sur son contenu, et
           l'éditeur imposait sa largeur au panneau au lieu de défiler dedans. */}
-      <div className="min-h-0 min-w-0 flex-1">
+      <div className={cx('min-h-0 min-w-0 flex-1', treeOpen && '@max-[35rem]:invisible')}>
         <EditorPane scope={scope} />
       </div>
     </div>

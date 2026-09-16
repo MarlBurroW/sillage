@@ -121,14 +121,22 @@ export function useToggleFavorite() {
       return { previous }
     },
 
-    onError: (_error, _variables, context) => {
-      for (const [key, list] of context?.previous ?? []) queryClient.setQueryData(key, list)
+    onError: (_error, { id }, context) => {
+      // Une lecture ou un changement de statut peut arriver pendant la requête.
+      // Revenir sur le signet ne doit pas remettre toute la liste à son ancien état.
+      for (const [key, list] of context?.previous ?? []) {
+        const previous = list?.find((entry) => entry.id === id)
+        if (!previous) continue
+        queryClient.setQueryData<ConversationDto[]>(key, (current) =>
+          current?.map((entry) => entry.id === id ? { ...entry, favorite: previous.favorite } : entry),
+        )
+      }
     },
 
-    onSettled: (_result, _error, { id }) => {
-      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
-      void queryClient.invalidateQueries({ queryKey: ['conversation', id] })
-    },
+    onSettled: (_result, _error, { id }) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+      queryClient.invalidateQueries({ queryKey: ['conversation', id] }),
+    ]),
   })
 }
 

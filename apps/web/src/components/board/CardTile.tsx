@@ -41,7 +41,7 @@ export function CardTile({ card, selected = false, overlay = false, onOpen }: Ca
 
   const body = (
     <>
-      <div className="flex items-baseline gap-1.5 pr-5">
+      <div className="flex items-baseline gap-1.5 pr-9 md:pr-5">
         <span className="shrink-0 text-[0.6875rem] font-medium text-ink-faint">#{card.number}</span>
         <p className="min-w-0 flex-1 text-sm leading-snug text-ink">{card.title}</p>
       </div>
@@ -106,7 +106,7 @@ export function CardTile({ card, selected = false, overlay = false, onOpen }: Ca
         isDragging ? 'opacity-40' : 'hover:border-line-strong',
       )}
     >
-      <button type="button" onClick={onOpen} className="w-full p-2.5 text-left">
+      <button data-card-open={card.id} type="button" onClick={onOpen} className="w-full p-2.5 text-left">
         {body}
       </button>
 
@@ -117,7 +117,7 @@ export function CardTile({ card, selected = false, overlay = false, onOpen }: Ca
         {...listeners}
         aria-label={t('board.card.drag', { number: card.number })}
         className={cx(
-          'absolute top-1.5 right-1 cursor-grab touch-none rounded p-0.5 text-ink-faint',
+          'absolute top-0 right-0 flex size-11 items-center justify-center cursor-grab touch-none rounded text-ink-faint md:top-1.5 md:right-1 md:size-6',
           'opacity-0 transition-opacity group-hover/card:opacity-100 focus-visible:opacity-100',
           // Sans survol au doigt, la poignée doit rester visible ou elle n'existe pas.
           '[@media(hover:none)]:opacity-60',

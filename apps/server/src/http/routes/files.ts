@@ -1,4 +1,5 @@
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { open, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import {
@@ -153,6 +154,39 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         .header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(basename(path))}`)
         .header('cache-control', 'no-store')
         .send(await readFile(absolute))
+    })
+
+    /** Tous les formats se téléchargent, sans charger le fichier entier en mémoire. */
+    app.get(`${base}/file/download`, async (request, reply) => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const { path } = filePathQuerySchema.parse(request.query)
+      const workspace = workspaceOf(id, user.id)
+      const candidate = resolveInside(workspace, path)
+      const resolved = await Promise.all([realpath(workspace), realpath(candidate)]).catch(() => null)
+      if (!resolved) throw notFound('file_not_found', 'File not found.')
+
+      // Vérifier aussi la cible réelle : un lien symbolique ne donne pas accès au dehors.
+      const absolute = resolveInside(resolved[0], resolved[1])
+      // Un tube nommé doit pouvoir être refusé sans attendre qu'un producteur l'ouvre.
+      const file = await open(absolute, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW).catch(() => null)
+      if (!file) throw notFound('file_not_found', 'File not found.')
+      const info = await file.stat().catch(() => null)
+      if (!info?.isFile()) {
+        await file.close()
+        throw notFound('file_not_found', 'File not found.')
+      }
+
+      const filename = encodeURIComponent(basename(path)).replace(/['()*]/g, (char) =>
+        `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+      )
+      return reply
+        .header('content-type', 'application/octet-stream')
+        .header('content-disposition', `attachment; filename*=UTF-8''${filename}`)
+        .header('content-length', info.size)
+        .header('x-content-type-options', 'nosniff')
+        .header('cache-control', 'no-store')
+        .send(file.createReadStream())
     })
 
     app.put(`${base}/file`, async (request) => {

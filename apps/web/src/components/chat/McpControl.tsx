@@ -186,7 +186,7 @@ export function McpControl({
           aria-label={t('composer.mcp.label', { summary })}
           title={summary}
           className={cx(
-            'flex h-8 shrink-0 items-center gap-1 rounded-full px-2 text-xs tabular-nums',
+            'flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md px-2 text-xs tabular-nums md:min-h-8 pointer-coarse:min-h-11',
             'border border-transparent bg-transparent text-ink-faint transition-colors',
             'hover:bg-surface-high hover:text-ink',
             'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',

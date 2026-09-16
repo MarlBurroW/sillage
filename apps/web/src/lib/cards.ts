@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CardColumn, CardDto, CardLinkDto, CardNoteDto } from '@sillage/protocol'
 import { api } from './api'
 
@@ -25,6 +25,7 @@ export function useCreateCard(projectId: string) {
 export function useUpdateCard(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: ['update-card', projectId],
     mutationFn: ({
       id,
       ...patch
@@ -36,6 +37,14 @@ export function useUpdateCard(projectId: string) {
     }) => api.patch<CardDto>(`/api/cards/${id}`, patch),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
   })
+}
+
+/** Une carte rouverte attend sa sauvegarde en vol avant d'en lancer une autre. */
+export function useCardSaving(cardId: string) {
+  return useIsMutating({
+    mutationKey: ['update-card'],
+    predicate: (mutation) => (mutation.state.variables as { id?: string } | undefined)?.id === cardId,
+  }) > 0
 }
 
 export function useDeleteCard(projectId: string) {
@@ -134,6 +143,7 @@ export function useCardNotes(cardId: string | undefined) {
 export function useAddCardNote(projectId: string, cardId: string) {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: ['add-card-note', cardId],
     mutationFn: (body: string) => api.post<CardNoteDto[]>(`/api/cards/${cardId}/notes`, { body }),
     onSuccess: (notes) => {
       queryClient.setQueryData(notesKey(cardId), notes)
@@ -141,6 +151,10 @@ export function useAddCardNote(projectId: string, cardId: string) {
       void queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
     },
   })
+}
+
+export function useCardNoteSaving(cardId: string) {
+  return useIsMutating({ mutationKey: ['add-card-note', cardId] }) > 0
 }
 
 export function useDeleteCardNote(projectId: string, cardId: string) {

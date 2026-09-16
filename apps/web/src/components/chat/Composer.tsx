@@ -174,6 +174,8 @@ interface ComposerProps {
    * quand la conversation change.
    */
   initialText?: string
+  /** Zone de saisie plus haute, intégrée à l'écran de démarrage. */
+  variant?: 'thread' | 'draft'
   /**
    * Identité du brouillon conservé entre deux montages.
    *
@@ -210,6 +212,7 @@ export function Composer({
   context,
   onSteer,
   initialText = '',
+  variant = 'thread',
   draftKey,
   projectId,
   worktreeId = null,
@@ -636,7 +639,7 @@ export function Composer({
   return (
     // L'encoche est portée par la page (`pb-safe`), pas ici : deux `env()` empilés
     // creuseraient un vide de deux encoches.
-    <div className="shrink-0 px-3 pt-1 pb-6">
+    <div className={cx('shrink-0', variant === 'thread' && 'px-3 pt-1 pb-6')}>
       <form
         onSubmit={(event) => {
           event.preventDefault()
@@ -730,11 +733,21 @@ export function Composer({
               'max-h-[200px] w-full resize-none bg-transparent px-2 py-2',
               'text-[0.9375rem] leading-relaxed text-ink outline-none',
               'placeholder:text-ink-faint disabled:opacity-60',
+              variant === 'draft' && 'min-h-28',
               dictation.state === 'recording' && 'hidden',
             )}
           />
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex min-w-0 basis-full items-center border-b border-line pb-1 @min-[34rem]:basis-0 @min-[34rem]:flex-1 @min-[34rem]:border-0 @min-[34rem]:pb-0">
+              <ComposerSettings
+                groups={groups}
+                summary={summary}
+                aside={mcp}
+                disabled={disabled}
+                onDone={() => textarea.current?.focus()}
+              />
+            </div>
             {/* Pas de `capture` : iOS propose alors lui-même l'appareil photo, la
                 photothèque et les fichiers, ce qu'un `capture` forcé interdirait. */}
             <input
@@ -792,15 +805,9 @@ export function Composer({
               <p>{t('composer.dictate.unconfigured.body')}</p>
             </ConfirmDialog>
 
-            <ComposerSettings
-              groups={groups}
-              summary={summary}
-              aside={mcp}
-              disabled={disabled}
-              onDone={() => textarea.current?.focus()}
-            />
-
-            {context ? <ContextMeter context={context} /> : null}
+            <span className="ml-auto flex items-center @min-[34rem]:ml-0">
+              {context ? <ContextMeter context={context} /> : null}
+            </span>
 
             {/* Les deux boutons coexistent pendant un tour : on doit pouvoir arrêter
                 l'agent sans perdre le message qu'on vient de taper, et l'envoyer sans
@@ -815,7 +822,7 @@ export function Composer({
                 aria-label={t('composer.steer.aria')}
                 title={t('composer.steer.hint')}
                 className={cx(
-                  'flex size-9 shrink-0 items-center justify-center rounded-full',
+                  'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
                   'border border-accent text-accent transition-colors hover:bg-accent-wash',
                 )}
               >
@@ -830,7 +837,7 @@ export function Composer({
                 aria-label={t('composer.interrupt')}
                 title={t('composer.interrupt')}
                 className={cx(
-                  'flex size-9 shrink-0 items-center justify-center rounded-full',
+                  'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
                   'border border-line bg-surface-high text-ink transition-colors hover:border-line-strong',
                 )}
               >
@@ -844,7 +851,7 @@ export function Composer({
               aria-label={running ? t('composer.send.queue') : t('composer.send.aria')}
               title={running ? t('composer.send.queue.hint') : t('composer.send.aria')}
               className={cx(
-                'flex size-9 shrink-0 items-center justify-center rounded-full',
+                'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
                 'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',
                 'disabled:pointer-events-none disabled:opacity-35',
                 // Pendant un tour, le bouton d'arrêt reste l'action principale : celui-ci

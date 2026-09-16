@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 
 /**
  * État du panneau latéral droit, partagé hors de React.
@@ -16,6 +16,8 @@ const OPEN_KEY = 'sillage.panelOpen'
  * Reprendre l'ancienne valeur aurait rouvert le panneau aussi étroit qu'avant.
  */
 const WIDTH_KEY = 'sillage.sheetWidth'
+const DOCKED_WIDTH_KEY = 'sillage.panelDockedWidth'
+const EXPANDED_KEY = 'sillage.panelExpanded'
 const TREE_KEY = 'sillage.panelTree'
 const TREE_WIDTH_KEY = 'sillage.treeWidth'
 
@@ -41,11 +43,35 @@ function defaultWidth(): number {
 }
 
 let open = localStorage.getItem(OPEN_KEY) === '1'
+let expanded = localStorage.getItem(EXPANDED_KEY) === '1'
 const listeners = new Set<() => void>()
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
+}
+
+export function setPanelExpanded(next: boolean): void {
+  expanded = next
+  localStorage.setItem(EXPANDED_KEY, next ? '1' : '0')
+  for (const notify of listeners) notify()
+}
+
+/** La place réelle après la sidebar décide si le fil et les changements tiennent. */
+export function usePanelLayout() {
+  const [width, setWidth] = useState(0)
+  const isExpanded = useSyncExternalStore(subscribe, () => expanded, () => false)
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return
+    setWidth(node.clientWidth)
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(entry.contentRect.width)
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  const canDock = width >= 960
+  return { containerRef, canDock, docked: canDock && !isExpanded }
 }
 
 export function usePanelOpen(): boolean {
@@ -171,6 +197,15 @@ export function setPanelWidth(px: number, persist: boolean): number {
 export function restorePanelWidth(): void {
   const stored = Number(localStorage.getItem(WIDTH_KEY))
   setPanelWidth(Number.isFinite(stored) && stored > 0 ? stored : defaultWidth(), false)
+  const docked = Number(localStorage.getItem(DOCKED_WIDTH_KEY))
+  if (Number.isFinite(docked) && docked > 0) setDockedPanelWidth(docked, false)
+}
+
+export function setDockedPanelWidth(px: number, persist: boolean): number {
+  const width = Math.round(Math.max(320, Math.min(window.innerWidth - 416, px)))
+  document.documentElement.style.setProperty('--panel-docked-width', `${width}px`)
+  if (persist) localStorage.setItem(DOCKED_WIDTH_KEY, String(width))
+  return width
 }
 
 /**

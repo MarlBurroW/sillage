@@ -1,13 +1,18 @@
-import { GitBranch, Play, Trash2, X } from 'lucide-react'
+import { ChevronDown, GitBranch, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
 import { restoreCardPanelWidth, setCardPanelWidth } from '../../lib/board-panel'
-import { useDeleteCard, useUpdateCard } from '../../lib/cards'
+import { useCardSaving, useDeleteCard, useUpdateCard } from '../../lib/cards'
+import { useCardDraft } from '../../lib/card-drafts'
+import { useCurrentUser } from '../../lib/session'
 import { translate, useTranslate } from '../../lib/i18n'
 import { resizeHandle } from '../../lib/resize-handle'
+import { useMediaQuery } from '../../lib/viewport'
+import { PanelFocus } from '../PanelFocus'
+import { Markdown } from '../chat/Markdown'
 import { AgentIcon } from '../AgentIcon'
-import { Badge, Button, IconButton, cx } from '../ui'
+import { Badge, Button, IconButton, Menu, MenuItem, cx } from '../ui'
 import { CardNotes } from './CardNotes'
 import { COLUMN_TONES, columnLabel } from './columns'
 
@@ -55,25 +60,50 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
   const navigate = useNavigate()
   const updateCard = useUpdateCard(projectId)
   const deleteCard = useDeleteCard(projectId)
+  const saving = useCardSaving(card.id)
+  const latestSession = card.conversations.filter((session) => !session.archivedAt)
+    .sort((a, b) => b.createdAt - a.createdAt)[0]
 
-  const [title, setTitle] = useState(card.title)
-  const [description, setDescription] = useState(card.description)
-
-  // Le serveur fait foi dès qu'on change de carte ou qu'il renvoie la sienne.
+  const { data: user } = useCurrentUser()
+  const { draft, setDraft, acknowledge } = useCardDraft(user?.id ?? '', card.id)
+  const title = draft?.title ?? card.title
+  const description = draft?.description ?? card.description
+  const descriptionField = useRef<HTMLTextAreaElement>(null)
+  const [editing, setEditing] = useState(false)
+  const modal = !useMediaQuery('(min-width: 48rem)')
+  const editVisible = editing || draft !== null
   useEffect(() => {
-    setTitle(card.title)
-    setDescription(card.description)
-  }, [card.id, card.title, card.description])
+    const field = descriptionField.current
+    if (!field) return
+    field.style.height = 'auto'
+    field.style.height = `${field.scrollHeight}px`
+  }, [description, card.id, editVisible])
 
   const dirty = title !== card.title || description !== card.description
+  // Après un rechargement pendant la requête, le serveur peut déjà avoir reçu
+  // le texte. Ne pas laisser ce brouillon masquer ses futures mises à jour.
+  useEffect(() => {
+    if (draft && !dirty) acknowledge(draft)
+  }, [draft, dirty, acknowledge])
+
   const save = () => {
-    if (!title.trim() || !dirty) return
-    updateCard.mutate({ id: card.id, title: title.trim(), description })
+    if (!title.trim() || !dirty || saving) return
+    if (!draft) return
+    // La promesse continue même si le panneau est fermé pendant l'enregistrement.
+    void updateCard.mutateAsync({ id: card.id, title: title.trim(), description })
+      .then(() => { acknowledge(draft); setEditing(false) })
+      .catch(() => { /* L'erreur est affichée et le brouillon reste intact. */ })
   }
 
   return (
+    <PanelFocus open={open} modal={modal} onClose={onClose} fallbackFocus={`[data-card-open="${card.id}"], [data-navigation-trigger]`}>
     <aside
       ref={aside}
+      inert={!open}
+      aria-hidden={!open}
+      role={modal ? 'dialog' : 'complementary'}
+      aria-modal={modal && open ? true : undefined}
+      aria-label={t('board.card.panelLabel', { number: card.number })}
       className={cx(
         // Pas d'`overflow` ici : il rognerait la poignée, posée en débord sur le bord
         // gauche. C'est la zone de défilement interne qui borne le contenu.
@@ -91,71 +121,68 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
     >
       <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
         <span className="text-xs font-medium text-ink-faint">#{card.number}</span>
-        <Badge tone={COLUMN_TONES[card.column]}>{columnLabel(card.column)}</Badge>
+        <Menu align="start" trigger={
+          <button type="button" disabled={saving} aria-label={t('board.card.changeColumn', { column: columnLabel(card.column) })}
+            className="flex min-h-11 items-center gap-1 rounded-md px-1 text-ink-faint hover:bg-surface-high md:min-h-9 pointer-coarse:min-h-11">
+            <Badge tone={COLUMN_TONES[card.column]}>{columnLabel(card.column)}</Badge>
+            <ChevronDown size={13} />
+          </button>
+        }>
+          {CARD_COLUMNS.map((column) => (
+            <MenuItem key={column} icon={<span aria-hidden><ColumnDot column={column} /></span>} disabled={column === card.column}
+              onSelect={() => updateCard.mutate({ id: card.id, column })}>
+              {columnLabel(column)}
+            </MenuItem>
+          ))}
+        </Menu>
         <div className="flex-1" />
-        <IconButton label={t('board.panel.close')} size="sm" onClick={onClose}>
+        <IconButton data-panel-initial-focus label={t('board.panel.close')} size="sm" onClick={onClose}>
           <X size={15} />
         </IconButton>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
         <div className="flex flex-col gap-2">
+          {editVisible ? <>
           <textarea
+            autoFocus={editing}
             value={title}
             rows={2}
             aria-label={t('board.card.title')}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => setDraft({ title: event.target.value, description })}
             className="w-full resize-none rounded-md border border-transparent bg-transparent px-2 py-1 text-base leading-snug font-semibold text-ink outline-none hover:border-line focus:border-line-strong"
           />
           <textarea
+            ref={descriptionField}
             value={description}
-            rows={10}
+            rows={3}
             aria-label={t('board.card.description')}
             placeholder={t('board.card.description.placeholder')}
-            onChange={(event) => setDescription(event.target.value)}
-            className="w-full resize-y rounded-md border border-line bg-sunken px-2.5 py-2 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-faint focus:border-line-strong"
+            onChange={(event) => setDraft({ title, description: event.target.value })}
+            className="max-h-[40vh] min-h-24 w-full resize-y rounded-md border border-line bg-sunken px-2.5 py-2 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-faint focus:border-line-strong"
           />
-          {dirty ? (
-            <div className="flex items-center gap-2">
-              <Button size="sm" disabled={!title.trim() || updateCard.isPending} onClick={save}>
-                {t('board.card.save')}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" disabled={!dirty || !title.trim() || saving} onClick={save}>
+                {t(saving ? 'board.card.saving' : 'board.card.save')}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  setTitle(card.title)
-                  setDescription(card.description)
-                }}
+                disabled={saving}
+                onClick={() => { setDraft(null); setEditing(false) }}
               >
                 {t('board.card.cancel')}
               </Button>
+              {dirty ? <p className="w-full text-xs text-ink-soft" role="status">{t('board.card.draft')}</p> : null}
             </div>
-          ) : null}
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <h3 className="text-xs font-medium tracking-wide text-ink-faint uppercase">
-            {t('board.card.column')}
-          </h3>
-          <div className="flex flex-wrap gap-1">
-            {CARD_COLUMNS.map((column) => (
-              <button
-                key={column}
-                type="button"
-                disabled={column === card.column}
-                onClick={() => updateCard.mutate({ id: card.id, column })}
-                className={cx(
-                  'rounded-md px-2 py-1 text-xs font-medium transition-colors',
-                  column === card.column
-                    ? 'bg-accent-wash text-accent'
-                    : 'text-ink-faint hover:bg-surface-high hover:text-ink',
-                )}
-              >
-                {columnLabel(column)}
-              </button>
-            ))}
-          </div>
+          </> : <>
+            <h2 className="break-words text-lg font-semibold leading-snug text-ink">{card.title}</h2>
+            {card.description ? <div className="min-w-0 break-words text-sm text-ink-soft"><Markdown text={card.description} /></div> : null}
+            <Button variant="ghost" size="sm" className="self-start" icon={<Pencil size={14} />} onClick={() => setEditing(true)}>
+              {t('board.card.edit')}
+            </Button>
+          </>}
+          {updateCard.isError ? <p role="alert" className="text-sm text-critical">{t('board.card.saveError')}</p> : null}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -192,13 +219,20 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
               ))}
             </ul>
           )}
-          <Button
-            className="mt-1 self-start"
-            icon={<Play size={15} />}
-            onClick={() => navigate(`/p/${projectId}/c/new?card=${card.id}`)}
-          >
-            {t('board.card.launch')}
-          </Button>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {latestSession ? (
+              <Button icon={<Play size={15} />} onClick={() => navigate(`/p/${projectId}/c/${latestSession.id}`)}>
+                {t('board.card.resume')}
+              </Button>
+            ) : null}
+            <Button
+              variant={latestSession ? 'secondary' : 'primary'}
+              icon={latestSession ? <Plus size={15} /> : <Play size={15} />}
+              onClick={() => navigate(`/p/${projectId}/c/new?card=${card.id}`)}
+            >
+              {t(latestSession ? 'board.card.newSession' : 'board.card.launch')}
+            </Button>
+          </div>
         </div>
 
         <CardNotes projectId={projectId} cardId={card.id} />
@@ -251,6 +285,7 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
         )}
       />
     </aside>
+    </PanelFocus>
   )
 }
 

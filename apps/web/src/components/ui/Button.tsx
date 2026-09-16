@@ -12,7 +12,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
 }
 
 const SIZES: Record<ButtonSize, string> = {
-  sm: 'h-9 px-3 text-sm gap-1.5',
+  sm: 'h-11 px-3 text-sm gap-1.5 md:h-9 pointer-coarse:h-11',
   md: 'tap-target px-4 text-sm gap-2',
 }
 
@@ -58,7 +58,7 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 // Une classe de taille passée par className ne l'emporterait pas : Tailwind ordonne
 // ses utilitaires lui-même, l'ordre dans la chaîne ne décide de rien.
-const ICON_SIZES = { sm: 'size-7', md: 'size-11' } as const
+const ICON_SIZES = { sm: 'size-11 md:size-7 pointer-coarse:size-11', md: 'size-11' } as const
 
 export function IconButton({ label, size = 'md', children, className, ...props }: IconButtonProps) {
   return (
