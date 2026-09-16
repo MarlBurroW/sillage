@@ -29,7 +29,9 @@ export function useInstructionsFile(
   const candidates = agent ? INSTRUCTION_FILES[agent] : []
 
   const { data } = useQuery({
-    queryKey: ['conversations', conversationId ?? '', 'instructions', agent ?? ''],
+    // Le préfixe « conversations » est réservé aux listes : favoris et curseurs de
+    // lecture les mettent à jour ensemble. Cette réponse est un objet { files }.
+    queryKey: ['conversation-instructions', conversationId ?? '', agent ?? ''],
     queryFn: () =>
       api.post<{ files: string[] }>(`/api/conversations/${conversationId}/files/exist`, {
         paths: [...candidates],

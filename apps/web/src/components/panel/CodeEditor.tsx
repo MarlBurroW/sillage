@@ -1,6 +1,6 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { Compartment, EditorState } from '@codemirror/state'
-import { search, searchKeymap } from '@codemirror/search'
+import { Compartment, EditorState, StateEffect } from '@codemirror/state'
+import { gotoLine, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import {
   EditorView,
   drawSelection,
@@ -15,9 +15,19 @@ import {
   indentOnInput,
   indentUnit,
 } from '@codemirror/language'
-import { useEffect, useRef } from 'react'
+import { useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react'
 import { translate } from '../../lib/i18n'
 import { editorHighlight, editorTheme, loadLanguage } from './editor-setup'
+
+export interface CodeEditorHandle {
+  find: () => void
+  goToLine: () => void
+}
+
+// En mémoire seulement, par compte/workspace/fichier. Un seul DOM CodeMirror reste
+// monté, mais revenir au document retrouve sa sélection, son défilement et Annuler.
+const sessions = new Map<string, { state: EditorState; scroll: ReturnType<EditorView['scrollSnapshot']>; revision: number }>()
+const MAX_SESSIONS = 40
 
 /**
  * Intitulés du panneau de recherche.
@@ -42,6 +52,8 @@ function searchPhrases(): Record<string, string> {
     'replaced $ matches': translate('editor.search.replacedMatches'),
     'replaced match on line $': translate('editor.search.replacedMatchOnLine'),
     'on line': translate('editor.search.onLine'),
+    'Go to line': translate('editor.goToLine'),
+    go: translate('editor.go'),
   }
 }
 
@@ -59,19 +71,32 @@ export function CodeEditor({
   path,
   onChange,
   onSave,
+  sessionKey,
+  revision,
+  onPosition,
+  ref,
 }: {
   initial: string
   path: string
   onChange: (value: string) => void
   onSave: () => void
+  sessionKey: string
+  revision: number
+  onPosition: (line: number, column: number) => void
+  ref?: Ref<CodeEditorHandle>
 }) {
   const host = useRef<HTMLDivElement>(null)
+  const current = useRef<EditorView | null>(null)
+  useImperativeHandle(ref, () => ({
+    find: () => { if (current.current) openSearchPanel(current.current) },
+    goToLine: () => { if (current.current) gotoLine(current.current) },
+  }), [])
   /**
    * Les rappels sont lus au moment de l'événement, jamais capturés dans les extensions :
    * les recréer reconstruirait l'état de l'éditeur et perdrait le curseur à chaque frappe.
    */
-  const handlers = useRef({ onChange, onSave })
-  handlers.current = { onChange, onSave }
+  const handlers = useRef({ onChange, onSave, onPosition })
+  handlers.current = { onChange, onSave, onPosition }
   /**
    * Le contenu ne se pousse pas dans un éditeur vivant : le reconstruire pour suivre la
    * prop effacerait le curseur et l'historique de qui est en train de taper. Il n'est lu
@@ -80,15 +105,19 @@ export function CodeEditor({
   const content = useRef(initial)
   content.current = initial
 
-  useEffect(() => {
+  // Capturer le défilement avant que React ne détache le DOM du fichier précédent.
+  useLayoutEffect(() => {
     const parent = host.current
     if (!parent) return
 
     const language = new Compartment()
 
-    const state = EditorState.create({
-      doc: content.current,
-      extensions: [
+    const position = (state: EditorState) => {
+      const head = state.selection.main.head
+      const line = state.doc.lineAt(head)
+      handlers.current.onPosition(line.number, head - line.from + 1)
+    }
+    const extensions = [
         lineNumbers(),
         highlightActiveLine(),
         highlightActiveLineGutter(),
@@ -123,11 +152,19 @@ export function CodeEditor({
         ]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) handlers.current.onChange(update.state.doc.toString())
+          if (update.docChanged || update.selectionSet) position(update.state)
         }),
-      ],
-    })
+      ]
+    const cached = sessions.get(sessionKey)
+    const reusable = cached?.revision === revision && cached.state.doc.toString() === content.current
+    // Rebrancher les callbacks sur le composant actuel sans vider historyField.
+    const state = reusable
+      ? cached.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state
+      : EditorState.create({ doc: content.current, extensions })
 
-    const editor = new EditorView({ state, parent })
+    const editor = new EditorView({ state, parent, scrollTo: reusable ? cached.scroll : undefined })
+    current.current = editor
+    position(state)
 
     // Le mode arrive après coup : l'attendre laisserait un éditeur vide le temps du
     // chargement, alors que le texte est déjà là.
@@ -139,9 +176,13 @@ export function CodeEditor({
 
     return () => {
       cancelled = true
+      sessions.delete(sessionKey)
+      sessions.set(sessionKey, { state: editor.state, scroll: editor.scrollSnapshot(), revision })
+      if (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value!)
+      current.current = null
       editor.destroy()
     }
-  }, [path])
+  }, [path, sessionKey, revision])
 
   return <div ref={host} className="h-full overflow-hidden" />
 }

@@ -1,0 +1,42 @@
+{
+  "light": {
+    "Sillage": {
+      "canvas": 5.15,
+      "surface": 5.47,
+      "sunken": 4.73,
+      "surface-high": 4.86
+    },
+    "Discret": {
+      "canvas": 5.12,
+      "surface": 5.4,
+      "sunken": 4.65,
+      "surface-high": 4.82
+    },
+    "Neutre": {
+      "canvas": 5.12,
+      "surface": 5.4,
+      "sunken": 4.69,
+      "surface-high": 4.82
+    }
+  },
+  "dark": {
+    "Sillage": {
+      "canvas": 6.65,
+      "surface": 6.1,
+      "sunken": 6.93,
+      "surface-high": 5.38
+    },
+    "Discret": {
+      "canvas": 6.64,
+      "surface": 6.08,
+      "sunken": 6.94,
+      "surface-high": 5.36
+    },
+    "Neutre": {
+      "canvas": 6.64,
+      "surface": 6.09,
+      "sunken": 6.94,
+      "surface-high": 5.38
+    }
+  }
+}

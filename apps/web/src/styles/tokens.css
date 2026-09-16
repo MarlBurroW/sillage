@@ -47,7 +47,8 @@
 
   --sg-ink: oklch(0.24 calc(0.05 * var(--sg-tint)) var(--sg-hue));
   --sg-ink-soft: oklch(0.46 calc(0.045 * var(--sg-tint)) var(--sg-hue));
-  --sg-ink-faint: oklch(0.6 calc(0.04 * var(--sg-tint)) var(--sg-hue));
+  /* Les descriptions restent du texte à lire, même lorsqu'elles sont secondaires. */
+  --sg-ink-faint: oklch(0.52 calc(0.04 * var(--sg-tint)) var(--sg-hue));
 
   --sg-accent: oklch(0.54 0.19 var(--sg-hue));
   --sg-accent-hover: oklch(0.48 0.2 var(--sg-hue));
@@ -106,7 +107,7 @@
 
   --sg-ink: oklch(0.96 calc(0.02 * var(--sg-tint)) var(--sg-hue));
   --sg-ink-soft: oklch(0.78 calc(0.045 * var(--sg-tint)) var(--sg-hue));
-  --sg-ink-faint: oklch(0.63 calc(0.055 * var(--sg-tint)) var(--sg-hue));
+  --sg-ink-faint: oklch(0.68 calc(0.055 * var(--sg-tint)) var(--sg-hue));
 
   --sg-accent: oklch(0.71 0.17 var(--sg-hue));
   --sg-accent-hover: oklch(0.78 0.16 var(--sg-hue));

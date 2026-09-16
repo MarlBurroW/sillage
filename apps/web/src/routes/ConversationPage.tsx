@@ -25,6 +25,7 @@ import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
 import { Composer } from '../components/chat/Composer'
+import { MobileNavigationButton } from '../components/MobileNavigation'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
 import { QueuedMessages } from '../components/chat/QueuedMessages'
@@ -51,7 +52,8 @@ import { useFileDrop } from '../lib/file-drop'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
 import { openInstructions, useInstructionsFile } from '../lib/instructions'
-import { clearSubAgent, setPanelOpen, usePanelPresence } from '../lib/panel'
+import { clearSubAgent, setPanelOpen, usePanelLayout, usePanelPresence } from '../lib/panel'
+import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
 import { useSidebarHidden } from '../lib/sidebar'
@@ -337,6 +339,8 @@ export function ConversationPage() {
   const activity = describeActivity(stream.state)
   const sidebarHidden = useSidebarHidden()
   const panel = usePanelPresence()
+  const panelLayout = usePanelLayout()
+  const { data: projects } = useProjects()
   // Le fil entier accepte les fichiers, pas seulement la barre de saisie : c'est sur la
   // conversation qu'on lâche une capture d'écran, et viser un champ de 40 pixels de haut
   // au doigt ou à la souris n'a rien d'évident.
@@ -831,9 +835,7 @@ export function ConversationPage() {
     // fil : c'est lui, et pas le projet, qui décide de ce qu'un chemin relatif désigne
     // quand la conversation tourne dans un worktree.
     <FileLinkContext.Provider value={conversationId}>
-    {/* `relative` sert d'ancrage au panneau latéral, qui se pose au-dessus du fil
-        plutôt que de lui prendre une colonne. */}
-    <div className="relative flex h-full">
+    <div ref={panelLayout.containerRef} className="relative flex h-full overflow-hidden">
       <div
         className={cx(
           // `@container` : la réglette et les réglages du composer se replient selon la
@@ -841,7 +843,7 @@ export function ConversationPage() {
           // ignore la sidebar.
           // `h-full` : la hauteur vient du calque racine, qui suit déjà le viewport
           // visuel. Un calcul local reproduirait ce que la coque sait déjà.
-          '@container relative flex h-full min-w-0 flex-1 flex-col pb-safe',
+          '@container/thread relative flex h-full min-w-0 flex-1 flex-col pb-safe',
         )}
         {...drop.handlers}
       >
@@ -860,22 +862,26 @@ export function ConversationPage() {
 
         <header
           className={cx(
-            'surface sticky top-0 z-10 flex shrink-0 items-center gap-3',
-            'border-b border-line px-2 py-2 md:px-4 md:py-2.5',
+            'surface sticky top-0 z-10 flex shrink-0 items-center gap-1.5',
+            'border-b border-line px-2 py-2 @min-[44rem]/thread:gap-3 @min-[44rem]/thread:px-4',
             // Le bouton de réaffichage de la navigation se pose dans ce coin : sans place
             // réservée, il recouvre l'icône du CLI.
             sidebarHidden && 'md:pl-14',
           )}
         >
+          <MobileNavigationButton />
           <span
             aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-high"
+            className="hidden size-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-high @min-[44rem]/thread:flex"
           >
             <AgentIcon agent={conversation.agent} size={17} />
           </span>
 
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{conversation.title}</p>
+            <p className="truncate text-xs text-ink-soft @min-[44rem]/thread:hidden">
+              {projects?.find((project) => project.id === conversation.projectId)?.name}
+            </p>
+            <p className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</p>
 
             {/* Métadonnées en pastilles plutôt qu'en texte courant : elles restent
                 lisibles une fois tronquées sur un écran étroit.
@@ -886,7 +892,7 @@ export function ConversationPage() {
             <div
               className={cx(
                 'mt-0.5 items-center gap-1.5 overflow-x-auto text-[0.6875rem] text-ink-faint',
-                metaOpen ? 'flex' : 'hidden md:flex',
+                metaOpen ? 'flex' : 'hidden @min-[44rem]/thread:flex',
               )}
             >
               <Meta title={AGENT_LABELS[conversation.agent]}>
@@ -959,16 +965,6 @@ export function ConversationPage() {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setMetaOpen((value) => !value)}
-            aria-expanded={metaOpen}
-            aria-label={metaOpen ? t('conversation.meta.hide') : t('conversation.meta.show')}
-            className="flex size-9 shrink-0 items-center justify-center rounded-md text-ink-faint md:hidden"
-          >
-            <ChevronDown size={16} className={cx('transition-transform', metaOpen && 'rotate-180')} />
-          </button>
-
           {/*
             L'en-tête ne garde que ce qui invalide la lecture en cours : une erreur, un
             tour interrompu, une liaison coupée. Le reste vit au-dessus du composer, qui
@@ -983,7 +979,7 @@ export function ConversationPage() {
             onClick={() => setUsageOpen(true)}
             title={t('conversation.usage.title')}
             className={cx(
-              'flex shrink-0 items-center gap-1.5 rounded-full border border-line',
+              'hidden shrink-0 items-center gap-1.5 rounded-full border border-line @min-[44rem]/thread:flex',
               'bg-surface-high px-2 py-1 text-[0.6875rem] font-medium text-ink-soft',
               'transition-colors hover:border-line-strong hover:text-ink',
             )}
@@ -1000,7 +996,7 @@ export function ConversationPage() {
 
               Lire une conversation partagée donne le droit d'y chercher : seule la
               compaction touche à l'état du fil, et elle reste au propriétaire. */}
-          <span className="hidden md:contents">
+          <span className="hidden @min-[44rem]/thread:contents">
             {/* Les consignes du projet se relisent souvent, et les retrouver passait
                 par l'explorateur : un geste pour un fichier dont on connaît le chemin. */}
             {instructionsFile ? (
@@ -1031,7 +1027,7 @@ export function ConversationPage() {
             ) : null}
           </span>
 
-          <span className="md:hidden">
+          <span className="@min-[44rem]/thread:hidden">
             <Menu
               trigger={
                 <IconButton label={t('conversation.actions')}>
@@ -1039,6 +1035,12 @@ export function ConversationPage() {
                 </IconButton>
               }
             >
+              <MenuItem icon={<ChevronDown size={14} />} onSelect={() => setMetaOpen((value) => !value)}>
+                {t(metaOpen ? 'conversation.meta.hide' : 'conversation.meta.show')}
+              </MenuItem>
+              <MenuItem icon={<GaugeCircle size={14} />} onSelect={() => setUsageOpen(true)}>
+                {t('conversation.usage.label')}
+              </MenuItem>
               {instructionsFile ? (
                 <MenuItem
                   icon={<FileText size={14} />}
@@ -1280,6 +1282,7 @@ export function ConversationPage() {
           <SidePanel
             projectId={conversation.projectId}
             conversationId={conversationId}
+            workspaceName={conversation.worktreeId ? (worktree?.name ?? '…') : undefined}
             agent={conversation.agent}
             editTurns={stream.state.editTurns}
             turnRunning={stream.state.turnRunning}
@@ -1287,6 +1290,8 @@ export function ConversationPage() {
             background={background}
             mcpServers={stream.state.mcp}
             open={panel.open}
+            docked={panelLayout.docked}
+            canDock={panelLayout.canDock}
           />
         </Suspense>
       ) : null}

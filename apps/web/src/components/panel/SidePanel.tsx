@@ -3,6 +3,11 @@ import {
   FileCode,
   GitCompare,
   History,
+  Maximize2,
+  Expand,
+  Minimize2,
+  Search,
+  Columns2,
   PanelLeft,
   PlugZap,
   RefreshCw,
@@ -17,6 +22,8 @@ import { openTab } from '../../lib/editor-tabs'
 import { useTranslate } from '../../lib/i18n'
 import {
   restorePanelWidth,
+  setDockedPanelWidth,
+  setPanelExpanded,
   setPanelOpen,
   setPanelTab,
   setPanelTree,
@@ -28,8 +35,11 @@ import {
 } from '../../lib/panel'
 import { projectScope } from '../../lib/workspace-scope'
 import { resizeHandle } from '../../lib/resize-handle'
+import { useMediaQuery } from '../../lib/viewport'
+import { PanelFocus } from '../PanelFocus'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
+import { useProjects } from '../../lib/projects'
 import { IconButton, cx } from '../ui'
 import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
@@ -37,14 +47,13 @@ import { GitPane } from './GitPane'
 import { HistoryPane } from './HistoryPane'
 import { McpPane } from './McpPane'
 import { TerminalsPane } from './TerminalsPane'
+import { QuickOpen } from './QuickOpen'
 
 /**
  * Panneau latéral droit.
  *
- * Posé au-dessus du fil et non à côté, sur grand écran comme au doigt. Il s'ouvre
- * large, parce que ce qu'on y fait tient mal dans une colonne : une arborescence et
- * un éditeur côte à côte, un diff, un terminal. Prendre cette place à même la mise en
- * page réduisait le fil à rien ; l'en recouvrir la lui rend dès qu'on referme.
+ * À côté du fil lorsque la largeur le permet, avec une vue agrandie pour l'éditeur.
+ * Sur téléphone et depuis le board, le panneau recouvre le contenu.
  *
  * Ni voile ni fermeture au clic extérieur : ce n'est pas une boîte de dialogue, il
  * tient des terminaux vivants et un contenu en cours d'édition, et un clic mal placé
@@ -65,6 +74,9 @@ export function SidePanel({
   background = [],
   mcpServers = [],
   open,
+  docked = false,
+  canDock = false,
+  workspaceName,
 }: {
   projectId: string
   /** Absente en vue projet : le panneau se réduit alors aux onglets de répertoire. */
@@ -78,11 +90,17 @@ export function SidePanel({
   mcpServers?: McpServerStatus[]
   /** Faux pendant la sortie : le panneau est encore monté, mais s'en va. */
   open: boolean
+  docked?: boolean
+  canDock?: boolean
+  workspaceName?: string
 }) {
   // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
   // diff comme en désignant un sous-agent depuis le bandeau.
   const t = useTranslate()
   const scope = conversationId ?? projectScope(projectId)
+  const { data: projects } = useProjects()
+  const projectName = projects?.find((project) => project.id === projectId)?.name
+  const workspaceLabel = [projectName, workspaceName ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
   const chosenTab = usePanelTab()
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
   // retombe sur les fichiers plutôt que d'afficher un panneau vide.
@@ -96,14 +114,20 @@ export function SidePanel({
    * et le panneau apparaîtrait d'un coup.
    */
   const [entered, setEntered] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [quickOpen, setQuickOpen] = useState(false)
   const aside = useRef<HTMLElement>(null)
   const refresh = useRefreshTree(scope)
   const wasRunning = useRef(turnRunning)
+  const wide = useMediaQuery('(min-width: 48rem)')
+  const modal = !wide || fullscreen
 
   /** Ouvrir un fichier depuis un diff : l'onglet naît sous les yeux de qui l'a demandé. */
   const openInFiles = (path: string) => {
     openTab(scope, path)
     setPanelTab('files')
+    // Ouvrir depuis une palette ou un diff doit montrer le fichier sur téléphone.
+    if ((aside.current?.clientWidth ?? 0) < 560) setPanelTree(false, false)
   }
 
   useEffect(restorePanelWidth, [])
@@ -130,27 +154,43 @@ export function SidePanel({
   const handle = resizeHandle({
     widthAt: (clientX) => window.innerWidth - clientX,
     current: () => aside.current?.getBoundingClientRect().width ?? null,
-    apply: setPanelWidth,
+    apply: docked ? setDockedPanelWidth : setPanelWidth,
   })
 
   return (
+    <PanelFocus open={open} modal={modal} onClose={() => fullscreen ? setFullscreen(false) : setPanelOpen(false)} protectEditor>
     <aside
       ref={aside}
+      inert={!open}
+      aria-hidden={!open}
       aria-label={t('panel.aria')}
+      role={modal ? 'dialog' : undefined}
+      aria-modal={modal && open ? true : undefined}
       // Repère stable pour le raccourci de recherche du fil, qui doit savoir si
       // l'événement vient d'ici : l'`aria-label` ci-dessus, lui, change de langue.
       data-panel="workspace"
+      data-fullscreen={fullscreen || undefined}
+      onKeyDownCapture={(event) => {
+        if (!open || quickOpen || tab !== 'files' || event.defaultPrevented || event.altKey || event.shiftKey) return
+        if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'p') return
+        if (!aside.current?.contains(event.target as Node)) return
+        event.preventDefault()
+        event.stopPropagation()
+        setQuickOpen(true)
+      }}
       className={cx(
         // Pas d'`overflow-hidden` ici : il rognerait la poignée, posée en débord sur
         // le bord gauche. C'est la zone de défilement interne qui borne le contenu.
         // L'ombre porte le décollement : sans elle, un panneau posé sur le fil se lit
         // comme une colonne de plus, et on cherche pourquoi le fil est coupé.
-        'surface z-20 flex flex-col border-l border-line shadow-pop',
+        'surface flex flex-col border-l border-line shadow-pop',
         // Plein écran au doigt, largeur réglable au-delà. `absolute` et non `fixed` :
         // le repère est le calque de la coque, donc le panneau suit le viewport visuel.
         // La largeur est bornée en CSS et pas seulement à l'enregistrement : une
         // fenêtre rétrécie après coup laisserait sinon un panneau plus large qu'elle.
-        'absolute inset-0 md:left-auto md:w-[min(var(--panel-width,45rem),calc(100vw-10rem))]',
+        fullscreen ? 'app-layer z-40 pt-safe' : docked
+          ? 'relative z-20 h-full w-[clamp(20rem,var(--panel-docked-width,48%),calc(100%-26rem))] shrink-0'
+          : 'absolute inset-0 z-20 md:left-auto md:w-[min(var(--panel-width,45rem),calc(100vw-10rem))]',
         // `translate` et non `transform` : Tailwind v4 pose les utilitaires de
         // translation sur cette propriété CSS, distincte de `transform`.
         'transition-[translate] duration-200 ease-out',
@@ -163,6 +203,7 @@ export function SidePanel({
       {/* `@container` : les onglets se réduisent à leurs icônes selon la largeur du
           panneau, et non celle de la fenêtre, puisqu'il se redimensionne. */}
       <header className="@container flex h-[var(--header-height)] shrink-0 items-center border-b border-line px-1.5">
+        {fullscreen ? <span title={workspaceLabel} className="mr-2 hidden max-w-60 truncate border-r border-line pr-3 pl-2 text-xs font-medium text-ink-soft md:block">{workspaceLabel}</span> : null}
         {/* La liste défile plutôt que de pousser les actions hors de l'écran : au
             doigt, les onglets nommés chassaient la croix de fermeture du panneau,
             qui devenait alors impossible à refermer. */}
@@ -220,8 +261,21 @@ export function SidePanel({
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5 pl-1">
+          {canDock && !fullscreen ? (
+            <IconButton
+              label={t(docked ? 'panel.expand' : 'panel.dock')}
+              size="sm"
+              onClick={() => setPanelExpanded(docked)}
+            >
+              {docked ? <Maximize2 size={16} /> : <Columns2 size={16} />}
+            </IconButton>
+          ) : null}
+          {wide || fullscreen ? <IconButton size="sm" label={t(fullscreen ? 'panel.fullscreen.exit' : 'panel.fullscreen.enter')} onClick={() => setFullscreen((value) => !value)}>
+            {fullscreen ? <Minimize2 size={16} /> : <Expand size={16} />}
+          </IconButton> : null}
           {tab === 'files' ? (
             <>
+              <IconButton size="sm" label={t('editor.quickOpen.title')} aria-keyshortcuts="Control+P Meta+P" onClick={() => setQuickOpen(true)}><Search size={16} /></IconButton>
               <IconButton
                 label={treeOpen ? t('panel.tree.hide') : t('panel.tree.show')}
                 size="sm"
@@ -234,7 +288,7 @@ export function SidePanel({
               </IconButton>
             </>
           ) : null}
-          <IconButton label={t('panel.close')} size="sm" onClick={() => setPanelOpen(false)}>
+          <IconButton data-panel-initial-focus label={t('panel.close')} size="sm" onClick={() => setPanelOpen(false)}>
             <X size={17} />
           </IconButton>
         </div>
@@ -310,13 +364,16 @@ export function SidePanel({
         onPointerDown={handle.onPointerDown}
         onKeyDown={handle.onKeyDown}
         className={cx(
-          'absolute inset-y-0 -left-1 hidden w-2 cursor-col-resize md:block',
+          'absolute inset-y-0 -left-1 hidden w-2 cursor-col-resize',
+          !fullscreen && 'md:block',
           'after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2',
           'after:transition-colors hover:after:bg-accent focus-visible:after:bg-accent',
           'outline-none',
         )}
       />
+      <QuickOpen scope={scope} workspaceLabel={workspaceLabel} open={open && quickOpen} onOpenChange={setQuickOpen} onSelect={openInFiles} />
     </aside>
+    </PanelFocus>
   )
 }
 
@@ -345,7 +402,7 @@ function Tab({
       aria-label={badge > 0 ? t('panel.tab.badge', { label, count: badge }) : label}
       title={label}
       className={cx(
-        'flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors',
+        'flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors md:h-8 md:min-w-0 pointer-coarse:h-11 pointer-coarse:min-w-11',
         active ? 'bg-accent-wash text-ink' : 'text-ink-faint hover:text-ink',
       )}
     >

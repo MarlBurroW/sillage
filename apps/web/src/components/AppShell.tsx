@@ -22,12 +22,12 @@ import {
   FolderPlus,
   ListTree,
   LogOut,
-  Menu as MenuIcon,
   MoreHorizontal,
   Palette,
   PanelLeft,
   PanelLeftClose,
   Pencil,
+  Plus,
   Search,
   Settings,
   SlidersHorizontal,
@@ -64,6 +64,8 @@ import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { SignalDot } from './chat/Signals'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
 import { projectViewPath, useProjectView } from '../lib/project-view'
+import { useRememberContext } from '../lib/last-context'
+import { SidebarActivity } from './SidebarActivity'
 import {
   restoreSidebarWidth,
   setSidebarDetailed,
@@ -77,14 +79,17 @@ import { formatTokens } from '../lib/tokens'
 import { useFileDropGuard } from '../lib/file-drop'
 import { useTranslate } from '../lib/i18n'
 import { resizeHandle } from '../lib/resize-handle'
-import { useVisualViewport } from '../lib/viewport'
+import { useMediaQuery, useVisualViewport } from '../lib/viewport'
 import { PROJECT_COLORS } from '../lib/project-colors'
 import { useCurrentUser, useLogout } from '../lib/session'
 import { AgentIcon } from './AgentIcon'
 import { CommandPalette } from './CommandPalette'
 import { Logo } from './Logo'
 import { UpdatePrompt } from './UpdatePrompt'
+import { MobileNavigationButton, MobileNavigationContext } from './MobileNavigation'
 import {
+  Banner,
+  Button,
   IconButton,
   Menu,
   MenuItem,
@@ -172,10 +177,34 @@ export function AppShell() {
   const [searchOpen, setSearchOpen] = useState(false)
   const hidden = useSidebarHidden()
   const aside = useRef<HTMLElement>(null)
+  const wide = useMediaQuery('(min-width: 48rem)')
+  const conversationRoute = useMatch('/p/:projectId/c/:conversationId')
+  const boardRoute = useMatch('/p/:projectId/board')
+  const contextualHeader = Boolean(conversationRoute || boardRoute)
+  const navInactive = wide ? hidden : !navOpen
   useVisualViewport()
   useFileDropGuard()
+  useRememberContext()
 
   useEffect(restoreSidebarWidth, [])
+
+  useEffect(() => {
+    if (wide || !navOpen) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    aside.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    return () => {
+      const target = previous?.isConnected && !previous.closest('[inert]')
+        ? previous
+        : document.querySelector<HTMLElement>('[data-navigation-trigger]')
+      target?.focus()
+    }
+  }, [wide, navOpen])
+
+  useEffect(() => {
+    if (wide && hidden && aside.current?.contains(document.activeElement)) {
+      document.querySelector<HTMLElement>('[data-sidebar-restore]')?.focus()
+    }
+  }, [wide, hidden])
 
   // Raccourci global : la palette doit s'ouvrir depuis n'importe quelle vue, y compris
   // avec le curseur dans la barre de saisie.
@@ -208,9 +237,36 @@ export function AppShell() {
      * `--sg-viewport-top` : le clavier pousse tout vers le haut au lieu de recouvrir la
      * barre de saisie.
      */
+    <MobileNavigationContext.Provider value={() => setNavOpen(true)}>
     <div className="app-layer flex overflow-hidden text-ink">
       <aside
         ref={aside}
+        inert={navInactive}
+        aria-hidden={navInactive}
+        role={!wide && navOpen ? 'dialog' : undefined}
+        aria-modal={!wide && navOpen ? true : undefined}
+        aria-label={t('shell.nav.label')}
+        onKeyDown={(event) => {
+          const node = aside.current
+          if (wide || !navOpen || event.defaultPrevented || !node?.contains(event.target as Node)) return
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            setNavOpen(false)
+          }
+          if (event.key !== 'Tab') return
+          const targets = Array.from(node.querySelectorAll<HTMLElement>(
+            'button, a[href], input, select, textarea, [tabindex]',
+          )).filter((item) => item.tabIndex >= 0 && !item.matches(':disabled') && item.getClientRects().length > 0)
+          const first = targets[0]
+          const last = targets.at(-1)
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault()
+            last?.focus()
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault()
+            first?.focus()
+          }
+        }}
         className={cx(
           // `absolute` et non `fixed` : le repère est le calque ci-dessus, donc le
           // tiroir suit le viewport visuel au lieu de passer sous le clavier.
@@ -272,7 +328,7 @@ export function AppShell() {
 
       {hidden ? (
         <div className="absolute top-2 left-2 z-30 hidden md:block">
-          <IconButton label={t('shell.nav.show')} onClick={() => setSidebarHidden(false)}>
+          <IconButton data-sidebar-restore label={t('shell.nav.show')} onClick={() => setSidebarHidden(false)}>
             <PanelLeft size={18} />
           </IconButton>
         </div>
@@ -285,19 +341,22 @@ export function AppShell() {
           et ce sont les vues qui ont un en-tête qui lui réservent sa place
           (`useSidebarHidden`). Une colonne décalée de sa largeur laissait une bande vide
           sur toute la hauteur de l'écran. */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div
+        inert={!wide && navOpen}
+        className={cx('flex min-w-0 flex-1 flex-col', contextualHeader && 'pt-safe md:pt-0')}
+      >
+        {!contextualHeader ? (
         <header
           className={cx(
             'header-bar flex shrink-0 items-center gap-1 px-2',
             'border-b border-line bg-canvas/85 backdrop-blur-md md:hidden',
           )}
         >
-          <IconButton label={t('shell.nav.open')} onClick={() => setNavOpen(true)}>
-            <MenuIcon size={20} />
-          </IconButton>
+          <MobileNavigationButton />
           <Logo size={18} className="text-accent" />
           <span className="font-medium">Sillage</span>
         </header>
+        ) : null}
 
         {/* Le calque racine ne défile plus : chaque vue porte son propre défilement.
             Les pages de réglages n'en gèrent aucun, il leur est donné ici. */}
@@ -306,8 +365,11 @@ export function AppShell() {
         </main>
       </div>
     </div>
+    </MobileNavigationContext.Provider>
   )
 }
+
+type FavoriteMutation = ReturnType<typeof useToggleFavorite>
 
 function Sidebar({
   onNavigate,
@@ -324,6 +386,9 @@ function Sidebar({
   const { data: user } = useCurrentUser()
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
+  // Une seule mutation pour les deux apparitions d'un favori. Son erreur reste
+  // visible même si le retrait optimiste fait disparaître la ligne des favoris.
+  const toggleFavorite = useToggleFavorite()
   const logout = useLogout()
   const reorder = useReorderProjects()
   const sensors = useDragSensors()
@@ -426,7 +491,21 @@ function Sidebar({
         </button>
       </div>
 
+      {toggleFavorite.isError ? <div className="shrink-0 px-2 pb-2">
+        <Banner>
+          <span className="block">{t('shell.favorites.error')}</span>
+          <span className="mt-1 block text-xs">{toggleFavorite.error.message}</span>
+          <span className="mt-1 flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={() => {
+              if (toggleFavorite.variables) toggleFavorite.mutate(toggleFavorite.variables)
+            }}>{t('editor.retry')}</Button>
+            <IconButton size="sm" label={t('common.close')} onClick={() => toggleFavorite.reset()}><X size={14} /></IconButton>
+          </span>
+        </Banner>
+      </div> : null}
+
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+        <SidebarActivity conversations={conversations} projects={projects} onNavigate={onNavigate}>
         {/* Au-dessus des projets et transverse : c'est ce qui fait l'intérêt d'un
             signet, atteindre un fil sans se rappeler d'où il vient. La conversation
             reste listée dans son projet, elle n'est pas déplacée ici. */}
@@ -451,6 +530,7 @@ function Sidebar({
                   <ConversationRow
                     key={conversation.id}
                     conversation={conversation}
+                    toggleFavorite={toggleFavorite}
                     draggable={false}
                     onNavigate={onNavigate}
                   />
@@ -475,10 +555,9 @@ function Sidebar({
             >
               <ListTree size={15} />
             </IconButton>
-            <NavLink to="/settings/projets" onClick={onNavigate} aria-label={t('shell.projects.add')}>
-              <IconButton label={t('shell.projects.add')} size="sm">
+            <NavLink to="/settings/projets" onClick={onNavigate} aria-label={t('shell.projects.add')}
+              className="inline-flex size-11 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink md:size-7 pointer-coarse:size-11">
                 <FolderPlus size={15} />
-              </IconButton>
             </NavLink>
           </span>
         </div>
@@ -499,11 +578,12 @@ function Sidebar({
               items={projects.map((project) => project.id)}
               strategy={verticalListSortingStrategy}
             >
-              <ul className="flex flex-col gap-px">
+              <ul className="flex flex-col gap-2">
                 {projects.map((project) => (
                   <ProjectGroup
                     key={project.id}
                     project={project}
+                    toggleFavorite={toggleFavorite}
                     conversations={(conversations ?? []).filter((c) => c.projectId === project.id)}
                     open={!dragging && !collapsed.has(project.id)}
                     // Le repli voulu par l'utilisateur, que `open` ne dit pas : un
@@ -520,6 +600,7 @@ function Sidebar({
         ) : (
           <p className="px-2.5 py-1 text-sm text-ink-faint">{t('shell.projects.empty')}</p>
         )}
+        </SidebarActivity>
       </nav>
 
       <div className="shrink-0 border-t border-line p-2 pb-safe">
@@ -545,6 +626,7 @@ function Sidebar({
 
 interface ProjectGroupProps {
   project: ProjectDto
+  toggleFavorite: FavoriteMutation
   /** Actives et rangées mêlées : le groupe fait lui-même la coupure. */
   conversations: ConversationDto[]
   open: boolean
@@ -556,6 +638,7 @@ interface ProjectGroupProps {
 
 function ProjectGroup({
   project,
+  toggleFavorite,
   conversations,
   open,
   collapsed,
@@ -569,12 +652,6 @@ function ProjectGroup({
   const active = useMemo(() => conversations.filter((c) => !c.archivedAt), [conversations])
   const archived = useMemo(() => conversations.filter((c) => c.archivedAt), [conversations])
   const [archiveOpen, setArchiveOpen] = useState(false)
-  // Actif sur les deux écrans « niveau projet » : la nouvelle conversation, qui est
-  // désormais la destination du clic, et les réglages atteints par le menu.
-  const isSettings = useMatch(`/p/${project.id}`) !== null
-  const isDraft = useMatch(`/p/${project.id}/c/new`) !== null
-  const isBoard = useMatch(`/p/${project.id}/board`) !== null
-  const isActive = isSettings || isDraft || isBoard
   // Le clic rouvre le projet là où on l'a laissé : au board pour ceux qui s'y pilotent,
   // sur une conversation neuve pour les autres.
   const view = useProjectView(project.id)
@@ -643,10 +720,7 @@ function ProjectGroup({
         // Le projet porte le nom en gras et à pleine encre, la conversation en plus
         // petit et en encre atténuée : sans cet écart, les deux niveaux de la
         // navigation se lisaient comme une seule liste plate.
-        className={cx(
-          'group flex h-9 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors',
-          isActive ? 'bg-accent-wash' : 'hover:bg-surface-high',
-        )}
+        className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11"
       >
         <button
           type="button"
@@ -657,7 +731,7 @@ function ProjectGroup({
               : t('shell.project.expand', { name: project.name })
           }
           aria-expanded={open}
-          className="flex size-6 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink"
+          className="flex size-11 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink md:size-6 pointer-coarse:size-11"
         >
           <ChevronRight size={13} className={cx('transition-transform', open && 'rotate-90')} />
         </button>
@@ -681,6 +755,7 @@ function ProjectGroup({
               if (project.isOwner) setEditing(true)
             }}
             className="flex h-full min-w-0 flex-1 items-center gap-2 px-1.5 text-sm font-semibold"
+            title={project.name}
           >
             <span
               aria-hidden
@@ -717,13 +792,26 @@ function ProjectGroup({
           </NavLink>
         )}
 
+        <NavLink
+          to={`/p/${project.id}/c/new`}
+          onClick={onNavigate}
+          aria-label={t('shell.project.newConversation', { name: project.name })}
+          title={t('shell.project.newConversation', { name: project.name })}
+          className={({ isActive }) => cx(
+            'inline-flex size-11 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-surface-high hover:text-ink md:size-7 pointer-coarse:size-11',
+            isActive ? 'bg-surface-high text-ink' : 'text-ink-faint',
+          )}
+        >
+          <Plus size={15} />
+        </NavLink>
+
         {project.isOwner ? (
           <Menu
             trigger={
               <IconButton
                 label={t('shell.project.actions', { name: project.name })}
                 size="sm"
-                className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
               >
                 <MoreHorizontal size={15} />
               </IconButton>
@@ -772,7 +860,19 @@ function ProjectGroup({
       </div>
 
       {open ? (
-        <ul className="mt-px mb-1 ml-3 flex flex-col gap-px border-l border-line pl-1.5">
+        <ul className="mt-1 mb-2 ml-3 flex flex-col gap-px border-l border-line pl-1.5">
+          <li className="mb-2">
+            <NavLink
+              to={`/p/${project.id}/board`}
+              onClick={onNavigate}
+              className={({ isActive }) => cx(
+                'flex min-h-11 items-center gap-2 rounded-md px-2.5 text-xs transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11',
+                isActive ? 'bg-surface-high font-medium text-ink' : 'text-ink-soft',
+              )}
+            >
+              <SquareKanban size={13} />{t('shell.project.board')}
+            </NavLink>
+          </li>
           {active.length > 0 ? (
             <DndContext
               sensors={sensors}
@@ -791,6 +891,7 @@ function ProjectGroup({
                   <ConversationRow
                     key={conversation.id}
                     conversation={conversation}
+                    toggleFavorite={toggleFavorite}
                     onNavigate={onNavigate}
                   />
                 ))}
@@ -823,6 +924,7 @@ function ProjectGroup({
                     <ConversationRow
                       key={conversation.id}
                       conversation={conversation}
+                      toggleFavorite={toggleFavorite}
                       onNavigate={onNavigate}
                     />
                   ))}
@@ -838,10 +940,12 @@ function ProjectGroup({
 
 function ConversationRow({
   conversation,
+  toggleFavorite,
   onNavigate,
   draggable = true,
 }: {
   conversation: ConversationDto
+  toggleFavorite: FavoriteMutation
   onNavigate: () => void
   /**
    * Faux dans la section des favoris, qui vit hors de tout contexte de glissement :
@@ -854,7 +958,6 @@ function ConversationRow({
   const rename = useRenameConversation()
   const remove = useDeleteConversation()
   const setArchived = useArchiveConversation()
-  const toggleFavorite = useToggleFavorite()
   const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
   const openMatch = useMatch('/p/:projectId/c/:conversationId')
@@ -876,6 +979,7 @@ function ConversationRow({
   )
   const present = presentSignal(signals)
   const loop = signals.find((signal) => signal.kind === 'loop') ?? null
+  const sortable = draggable && !isArchived
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: conversation.id,
@@ -883,7 +987,7 @@ function ConversationRow({
     // pendant ce temps rendrait la sélection de texte impossible. Rangée ou en
     // favori, la ligne vit hors de tout contexte de glissement et n'a rien à y
     // inscrire.
-    disabled: !draggable || editing || isArchived,
+    disabled: !sortable || editing,
   })
 
   const commit = (draft: string) => {
@@ -925,13 +1029,13 @@ function ConversationRow({
     <li
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
+      // Une ligne non déplaçable reste navigable : les attributs du hook désactivé
+      // porteraient aria-disabled sur tous ses liens et boutons, favoris compris.
+      {...(sortable ? attributes : {})}
+      {...(sortable ? listeners : {})}
       className={cx(
         'group/row flex rounded-md pr-1 transition-colors',
-        // Le détail fait grandir la ligne vers le bas : le menu et les signaux restent
-        // sur le titre, à la hauteur qu'ils avaient sans lui.
-        detailed ? 'min-h-9 items-start' : 'h-9 items-center',
+        'min-h-11 items-center',
         isDragging ? 'shadow-float z-10 bg-surface-high opacity-90' : '',
         isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
         /*
@@ -946,6 +1050,7 @@ function ConversationRow({
     >
       <NavLink
         to={`/p/${conversation.projectId}/c/${conversation.id}`}
+        title={conversation.title}
         onClick={onNavigate}
         onDoubleClick={(event) => {
           event.preventDefault()
@@ -953,14 +1058,14 @@ function ConversationRow({
         }}
         className={cx(
           'flex min-w-0 flex-1 flex-col justify-center px-2 text-[0.8125rem]',
-          detailed ? 'py-1.5' : 'h-full',
+          'py-2',
         )}
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="shrink-0 text-ink-faint">
             <AgentIcon agent={conversation.agent} size={13} />
           </span>
-          <span className={cx('truncate', unread && 'font-medium')}>{conversation.title}</span>
+          <span className={cx('line-clamp-2 break-words', unread && 'font-medium')}>{conversation.title}</span>
           {/*
             Deux points au plus, et jamais davantage : l'état présent, et la boucle.
             Le premier est le plus grave de ce qui se passe maintenant ; la seconde parle
@@ -987,42 +1092,40 @@ function ConversationRow({
         {detailed ? <ConversationMetricsLine metrics={metrics} /> : null}
       </NavLink>
 
-      {/* Hors du menu, et hors de la condition de propriété : un signet n'appartient
-          qu'à celui qui le pose, y compris sur le fil de quelqu'un d'autre dans un
-          projet partagé. Un seul clic, comme le geste qu'il remplace. */}
+      {/* Le signet posé reste visible. L'ajout passe par le menu pour rendre au titre
+          la place d'un bouton auparavant invisible. Disponible sur les fils partagés. */}
+      {conversation.favorite ? (
       <IconButton
-        label={
-          conversation.favorite
-            ? t('shell.conversation.unfavorite')
-            : t('shell.conversation.favorite')
-        }
+        label={t('shell.conversation.unfavorite')}
+        disabled={toggleFavorite.isPending}
         size="sm"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={() =>
           toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })
         }
-        className={cx(
-          'self-center',
-          conversation.favorite
-            ? 'text-accent hover:text-accent'
-            : 'opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100',
-        )}
+        className="self-center text-accent hover:text-accent"
       >
         <Star size={14} className={conversation.favorite ? 'fill-current' : undefined} />
       </IconButton>
+      ) : null}
 
-      {conversation.isOwner ? (
         <Menu
           trigger={
             <IconButton
               label={t('shell.conversation.actions')}
               size="sm"
-              className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
+              className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
             >
               <MoreHorizontal size={15} />
             </IconButton>
           }
         >
+          <MenuItem icon={<Star size={14} />} disabled={toggleFavorite.isPending} onSelect={() => toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })}>
+            {conversation.favorite ? t('shell.conversation.unfavorite') : t('shell.conversation.favorite')}
+          </MenuItem>
+          {conversation.isOwner ? (
+          <>
+          <MenuSeparator />
           <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
             {t('shell.rename')}
           </MenuItem>
@@ -1052,8 +1155,9 @@ function ConversationRow({
           >
             {t('shell.delete')}
           </MenuItem>
+          </>
+          ) : null}
         </Menu>
-      ) : null}
     </li>
   )
 }

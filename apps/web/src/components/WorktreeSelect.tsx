@@ -17,8 +17,7 @@ interface WorktreeSelectProps {
   isRepository: boolean
   /**
    * `list` déplie les options au lieu de les cacher derrière une liste déroulante.
-   * Réservé à l'écran de création, où il n'y a rien d'autre à regarder et où le choix
-   * mérite d'être vu ; ailleurs la place manque.
+   * Permet aux écrans qui ont assez de place de montrer les répertoires côte à côte.
    */
   layout?: 'select' | 'list'
   /**

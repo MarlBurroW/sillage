@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { ChevronDown, ShieldAlert, X } from 'lucide-react'
-import { Fragment, useRef, useState, type ReactNode } from 'react'
+import { ChevronDown, ShieldAlert, SlidersHorizontal, X } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { useMediaQuery } from '../../lib/viewport'
 import { Popover, cx } from '../ui'
@@ -139,17 +139,24 @@ export function ComposerSettings({
         summary: summary.map((segment) => segment.label).join(' · '),
       })}
       className={cx(
-        'group flex h-8 min-w-0 items-center gap-1 rounded-full px-2 text-xs',
-        // Fondu dans le composer au repos : il n'est pas un contrôle posé sur la
-        // barre, il est la barre. L'affordance vient du survol et du focus.
+        'group flex min-h-11 min-w-0 items-center gap-1.5 rounded-md px-2 text-xs md:min-h-8 pointer-coarse:min-h-11',
         'border border-transparent bg-transparent transition-colors',
         'hover:bg-surface-high focus-visible:bg-surface-high',
         'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
         'data-[state=open]:bg-surface-high disabled:pointer-events-none disabled:opacity-45',
       )}
     >
+      <SlidersHorizontal size={14} className="shrink-0 text-ink-soft" />
+      <span className="shrink-0 font-medium text-ink @min-[34rem]:hidden">{t('composer.settings.short')}</span>
       {summary.map((segment, index) => (
-        <Fragment key={segment.key}>
+        <span
+          key={segment.key}
+          className={cx(
+            'min-w-0 items-center gap-1',
+            segment.tone === 'caution' ? 'flex' : 'hidden @min-[34rem]:flex',
+            segment.tone !== 'caution' && segment.drop === 2 && '@min-[34rem]:@max-[40rem]:hidden',
+          )}
+        >
           {index > 0 ? (
             <span aria-hidden className="shrink-0 text-ink-faint/60">
               ·
@@ -157,28 +164,22 @@ export function ComposerSettings({
           ) : null}
           <span
             className={cx(
-              'min-w-0 truncate',
-              segment.drop === 2 && '@max-[26rem]:hidden',
-              segment.drop === 1 && '@max-[20rem]:hidden',
+              'min-w-0',
               segment.tone === 'caution'
-                ? 'flex items-center gap-1 rounded-full bg-caution/12 px-1.5 font-medium text-caution'
+                ? 'flex items-center gap-1 rounded-md bg-caution/12 px-1.5 py-1 text-left font-medium text-caution'
                 : index === 0
-                  ? 'font-medium text-ink'
-                  : 'text-ink-faint',
+                  ? 'truncate font-medium text-ink'
+                  : 'truncate text-ink-soft',
             )}
           >
             {segment.tone === 'caution' ? <ShieldAlert size={12} className="shrink-0" /> : null}
             {segment.label}
           </span>
-        </Fragment>
+        </span>
       ))}
       <ChevronDown
         size={12}
-        className={cx(
-          'shrink-0 text-ink-faint opacity-0 transition-opacity',
-          'group-hover:opacity-100 group-focus-visible:opacity-100',
-          'group-data-[state=open]:opacity-100',
-        )}
+        className="shrink-0 text-ink-soft"
       />
     </button>
   )

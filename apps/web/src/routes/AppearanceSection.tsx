@@ -1,6 +1,7 @@
 import { Code, Contrast, Languages, Moon, Palette, Sun, TextQuote } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { AppearanceControls } from '../components/AppearanceControls'
+import { AppearancePresets } from '../components/AppearancePresets'
 import { ReadingPreview } from '../components/ReadingPreview'
 import { SyntaxThemeControls } from '../components/SyntaxThemeControls'
 import { useAppearance } from '../lib/appearance'
@@ -89,10 +90,15 @@ export function AppearanceSection() {
 
           {/* Le thème contrasté est neutre par construction : teinte et intensité
               n'y produiraient rien, seule la luminosité a un effet. */}
-          <AppearanceControls
-            appearance={appearance}
-            keys={theme === 'dark-contrast' ? ['lift'] : ['hue', 'tint', 'lift']}
-          />
+          {theme === 'dark-contrast' ? <AppearanceControls appearance={appearance} keys={['lift']} /> : (
+            <>
+              <AppearancePresets appearance={appearance} theme={theme} />
+              <details className="border-t border-line pt-2">
+                <summary className="cursor-pointer py-2 text-sm font-medium text-ink-soft">{t('appearance.advanced')}</summary>
+                <div className="pt-3"><AppearanceControls appearance={appearance} /></div>
+              </details>
+            </>
+          )}
         </CardBody>
       </Card>
 
@@ -100,7 +106,7 @@ export function AppearanceSection() {
           ne touchent qu'au texte des messages, jamais à l'interface autour. */}
       <Card>
         <CardHeader
-          title="Confort de lecture"
+          title={t('settings.reading.title')}
           description={t('settings.reading.description')}
           icon={<TextQuote size={16} />}
         />
@@ -118,7 +124,7 @@ export function AppearanceSection() {
           réglages de surfaces laisserait croire l'inverse. */}
       <Card>
         <CardHeader
-          title="Coloration syntaxique"
+          title={t('settings.syntax.title')}
           description={t('settings.syntax.description')}
           icon={<Code size={16} />}
         />

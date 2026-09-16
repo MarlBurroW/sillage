@@ -1,6 +1,6 @@
 import { RotateCcw } from 'lucide-react'
 import { APPEARANCE_SETTINGS, type AppearanceKey, type useAppearance } from '../lib/appearance'
-import { useTranslate, type MessageKey } from '../lib/i18n'
+import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { Button, cx } from './ui'
 
 const LABEL_KEYS: Record<AppearanceKey, { title: MessageKey; hint: MessageKey }> = {
@@ -104,12 +104,17 @@ function Slider({
   const title = t(LABEL_KEYS[name].title)
   const hint = t(LABEL_KEYS[name].hint)
   const spectrum = name === 'hue'
+  const number = (input: number) => input.toLocaleString(locale(), { maximumFractionDigits: 2 })
+  const display = spectrum ? `${number(value)}°`
+    : name === 'readingSize' ? `${number(value * 16)} px`
+    : name === 'readingLeading' ? `${number(value)} ×`
+    : `${value > 0 && name === 'lift' ? '+' : ''}${number(value * 100)} %`
 
   return (
     <label className="flex flex-col gap-1">
       <span className="flex items-baseline justify-between gap-3 text-sm font-medium text-ink-soft">
-        <span className="min-w-0 truncate">
-          {title} <span className="text-xs font-normal text-ink-faint">{hint}</span>
+        <span className="min-w-0">
+          {title} <span className="block text-xs font-normal text-ink-faint">{hint}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1.5 font-mono text-xs text-ink">
           {spectrum ? (
@@ -119,11 +124,13 @@ function Slider({
               style={{ background: `oklch(0.62 0.19 ${value})` }}
             />
           ) : null}
-          {spectrum ? `${value}°` : value}
+          {display}
         </span>
       </span>
       <input
         type="range"
+        aria-label={title}
+        aria-valuetext={display}
         min={setting.min}
         max={setting.max}
         step={setting.step}
