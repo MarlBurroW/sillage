@@ -1,4 +1,4 @@
-import { constants } from 'node:fs'
+import { constants, createReadStream } from 'node:fs'
 import { open, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -6,6 +6,8 @@ import {
   MAX_EDITABLE_BYTES,
   VIEWABLE_DOCUMENT_TYPES,
   VIEWABLE_IMAGE_TYPES,
+  VIEWABLE_MEDIA_TYPES,
+  VIEWABLE_MODEL_TYPES,
   filePathQuerySchema,
   fileWriteBodySchema,
   filesExistBodySchema,
@@ -37,6 +39,29 @@ function extensionOf(path: string): string {
  */
 function fingerprint(size: number, mtimeMs: number): string {
   return `${size}:${Math.round(mtimeMs)}`
+}
+
+/**
+ * Interprète un en-tête `Range` à une seule tranche, `bytes=start-end`, `bytes=start-`
+ * ou `bytes=-suffix`. Les formes à plusieurs tranches sont ignorées : le navigateur
+ * n'en émet pas pour lire un média, et y répondre demanderait un corps multipart.
+ */
+function parseRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
+  if (!header) return null
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!match || (match[1] === '' && match[2] === '')) return null
+  let start: number
+  let end: number
+  if (match[1] === '') {
+    const suffix = Number(match[2])
+    start = Math.max(0, size - suffix)
+    end = size - 1
+  } else {
+    start = Number(match[1])
+    end = match[2] === '' ? size - 1 : Math.min(Number(match[2]), size - 1)
+  }
+  if (start >= size || start > end) return 'unsatisfiable'
+  return { start, end }
 }
 
 /**
@@ -120,9 +145,13 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     })
 
     /**
-     * Contenu brut, pour afficher une image ou un document dans un onglet. Restreint à une
-     * liste fermée d'extensions : servir n'importe quel binaire avec un type deviné
-     * inviterait le navigateur à l'interpréter.
+     * Contenu brut, pour afficher une image, un document, un média ou un modèle 3D dans
+     * un onglet. Restreint à une liste fermée d'extensions : servir n'importe quel
+     * binaire avec un type deviné inviterait le navigateur à l'interpréter.
+     *
+     * Servi en flux, et par tranches quand le navigateur le demande (`Range`) : c'est
+     * ce qui permet de sauter dans une vidéo, et de ne pas charger en mémoire un
+     * fichier de plusieurs centaines de Mo.
      */
     app.get(`${base}/file/raw`, async (request, reply) => {
       const user = requireUser(request)
@@ -131,7 +160,10 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const extension = extensionOf(path)
       const imageType = VIEWABLE_IMAGE_TYPES[extension]
-      const type = imageType ?? VIEWABLE_DOCUMENT_TYPES[extension]
+      const type = imageType
+        ?? VIEWABLE_DOCUMENT_TYPES[extension]
+        ?? VIEWABLE_MEDIA_TYPES[extension]
+        ?? VIEWABLE_MODEL_TYPES[extension]
       if (!type) throw new HttpError(415, 'not_viewable', 'This file type cannot be displayed.')
 
       const absolute = resolveInside(workspaceOf(id, user.id), path)
@@ -147,13 +179,26 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         reply.header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'")
       }
 
-      return reply
+      reply
         .header('content-type', type)
+        .header('accept-ranges', 'bytes')
         .header('x-content-type-options', 'nosniff')
         // Sans nom, la visionneuse PDF intitule son onglet d'après l'URL de l'API.
         .header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(basename(path))}`)
         .header('cache-control', 'no-store')
-        .send(await readFile(absolute))
+
+      const range = parseRange(request.headers.range, info.size)
+      if (range === 'unsatisfiable') {
+        return reply.code(416).header('content-range', `bytes */${info.size}`).send()
+      }
+      if (range) {
+        return reply
+          .code(206)
+          .header('content-range', `bytes ${range.start}-${range.end}/${info.size}`)
+          .header('content-length', range.end - range.start + 1)
+          .send(createReadStream(absolute, { start: range.start, end: range.end }))
+      }
+      return reply.header('content-length', info.size).send(createReadStream(absolute))
     })
 
     /** Tous les formats se téléchargent, sans charger le fichier entier en mémoire. */

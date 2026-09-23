@@ -29,6 +29,35 @@ export function useComposerReferences(onReference: Listener): void {
 }
 
 /**
+ * Message proposé pour la barre de saisie : la suggestion que le CLI fait du tour
+ * suivant, acceptée d'un geste sous le fil.
+ *
+ * Même canal que les chemins, pour la même raison : la suggestion vit sous le fil, la
+ * saisie à côté, et rien n'est à conserver entre les deux.
+ */
+type TextListener = (text: string) => void
+
+const prefillListeners = new Set<TextListener>()
+
+export function prefillComposer(text: string): void {
+  for (const listener of prefillListeners) listener(text)
+}
+
+/** Même abonnement que les dépôts : posé une fois, appelle la dernière version reçue. */
+export function useComposerPrefill(onPrefill: TextListener): void {
+  const latest = useRef(onPrefill)
+  latest.current = onPrefill
+
+  useEffect(() => {
+    const listener: TextListener = (text) => latest.current(text)
+    prefillListeners.add(listener)
+    return () => {
+      prefillListeners.delete(listener)
+    }
+  }, [])
+}
+
+/**
  * Fichiers déposés sur la conversation.
  *
  * Même canal et mêmes raisons que les chemins : le geste part du fil, où la barre de

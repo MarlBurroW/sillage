@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GitBranch, GripVertical, Link2, MessageSquare } from 'lucide-react'
+import { GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
 import type { CardDto } from '@sillage/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
@@ -13,6 +13,7 @@ interface CardTileProps {
   card: CardDto
   selected?: boolean
   /** Rendu dans le calque de glissement : ni tri, ni clic, seulement l'apparence. */
+  disabled?: boolean
   overlay?: boolean
   onOpen?: () => void
 }
@@ -26,10 +27,10 @@ interface CardTileProps {
  * qu'on ne peut plus ouvrir sans souris est un recul que l'ergonomie du glissement ne
  * rachète pas.
  */
-export function CardTile({ card, selected = false, overlay = false, onOpen }: CardTileProps) {
+export function CardTile({ card, selected = false, overlay = false, disabled = false, onOpen }: CardTileProps) {
   const t = useTranslate()
   const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } =
-    useSortable({ id: card.id, disabled: overlay })
+    useSortable({ id: card.id, disabled: overlay || disabled })
 
   const excerpt = card.description.trim().replace(/\s+/g, ' ')
   const sessions = card.conversations.length
@@ -43,17 +44,17 @@ export function CardTile({ card, selected = false, overlay = false, onOpen }: Ca
     <>
       <div className="flex items-baseline gap-1.5 pr-9 md:pr-5">
         <span className="shrink-0 text-[0.6875rem] font-medium text-ink-faint">#{card.number}</span>
-        <p className="min-w-0 flex-1 text-sm leading-snug text-ink">{card.title}</p>
+        <p className="min-w-0 flex-1 text-sm font-semibold leading-relaxed text-ink">{card.title}</p>
       </div>
 
       {excerpt ? (
-        <p className="mt-1 line-clamp-2 text-xs leading-snug text-ink-faint">
+        <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-ink-faint">
           {excerpt.length > EXCERPT_MAX ? `${excerpt.slice(0, EXCERPT_MAX)}...` : excerpt}
         </p>
       ) : null}
 
-      {sessions > 0 || links > 0 || branch ? (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.6875rem] text-ink-faint">
+      {sessions > 0 || links > 0 || branch || card.attachmentCount > 0 ? (
+        <div className="mt-3 flex flex-wrap border-t border-line/60 pt-2.5 items-center gap-x-2.5 gap-y-1 text-[0.6875rem] text-ink-faint">
           {agents.map((agent) => (
             <AgentIcon key={agent} agent={agent} size={11} />
           ))}
@@ -66,6 +67,7 @@ export function CardTile({ card, selected = false, overlay = false, onOpen }: Ca
               {sessions}
             </span>
           ) : null}
+          {card.attachmentCount > 0 ? <span className="inline-flex items-center gap-1" title={t('board.files.title')}><Paperclip size={12} />{card.attachmentCount}</span> : null}
           {links > 0 ? (
             <span
               className="inline-flex items-center gap-1"
@@ -87,7 +89,7 @@ export function CardTile({ card, selected = false, overlay = false, onOpen }: Ca
   )
 
   const skin = cx(
-    'surface relative rounded-lg border',
+    'surface relative rounded-xl border shadow-sm',
     selected ? 'border-accent' : 'border-line',
   )
 
@@ -106,11 +108,11 @@ export function CardTile({ card, selected = false, overlay = false, onOpen }: Ca
         isDragging ? 'opacity-40' : 'hover:border-line-strong',
       )}
     >
-      <button data-card-open={card.id} type="button" onClick={onOpen} className="w-full p-2.5 text-left">
+      <button data-card-open={card.id} type="button" onClick={onOpen} className="w-full p-3.5 text-left">
         {body}
       </button>
 
-      <button
+      {!disabled ? <button
         type="button"
         ref={setActivatorNodeRef}
         {...attributes}
@@ -124,7 +126,7 @@ export function CardTile({ card, selected = false, overlay = false, onOpen }: Ca
         )}
       >
         <GripVertical size={14} />
-      </button>
+      </button> : null}
     </div>
   )
 }

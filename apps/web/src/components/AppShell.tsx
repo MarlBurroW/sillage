@@ -29,6 +29,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Server,
   Settings,
   SlidersHorizontal,
   SquareKanban,
@@ -66,6 +67,8 @@ import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projec
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import { useRememberContext } from '../lib/last-context'
 import { SidebarActivity } from './SidebarActivity'
+import { ProjectSwitcher } from './ProjectSwitcher'
+import { useProjectVisits } from '../lib/project-visits'
 import {
   restoreSidebarWidth,
   setSidebarDetailed,
@@ -180,7 +183,8 @@ export function AppShell() {
   const wide = useMediaQuery('(min-width: 48rem)')
   const conversationRoute = useMatch('/p/:projectId/c/:conversationId')
   const boardRoute = useMatch('/p/:projectId/board')
-  const contextualHeader = Boolean(conversationRoute || boardRoute)
+  const servicesRoute = useMatch('/services')
+  const contextualHeader = Boolean(conversationRoute || boardRoute || servicesRoute)
   const navInactive = wide ? hidden : !navOpen
   useVisualViewport()
   useFileDropGuard()
@@ -390,6 +394,14 @@ function Sidebar({
   // visible même si le retrait optimiste fait disparaître la ligne des favoris.
   const toggleFavorite = useToggleFavorite()
   const logout = useLogout()
+  const navigate = useNavigate()
+  const routeProjectId = useMatch('/p/:projectId/*')?.params.projectId
+  const visits = useProjectVisits(user?.id ?? '')
+  const [allProjects, setAllProjects] = useState(false)
+  const selectedProject = projects?.find((project) => project.id === routeProjectId)
+    ?? projects?.find((project) => project.id === visits[0]?.projectId)
+    ?? projects?.[0]
+  const visibleProjects = allProjects ? projects : projects?.filter((project) => project.id === selectedProject?.id)
   const reorder = useReorderProjects()
   const sensors = useDragSensors()
   const detailed = useSidebarDetailed()
@@ -504,7 +516,19 @@ function Sidebar({
         </Banner>
       </div> : null}
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+      <div className="shrink-0 px-2">
+        <ProjectSwitcher onNavigate={onNavigate} key={user?.id ?? ''} userId={user?.id ?? ''} projects={projects ?? []} selected={selectedProject}
+          all={allProjects} recent={visits.map((entry) => entry.projectId)} onAll={() => setAllProjects(true)}
+          onSelect={(project, fallback) => {
+            setAllProjects(false)
+            const visit = visits.find((entry) => entry.projectId === project.id)
+            const conversationId = visit?.path.match(/\/c\/([\w-]+)$/)?.[1]
+            const valid = !conversationId || conversationId === 'new' || conversations?.some((entry) => entry.id === conversationId && entry.projectId === project.id)
+            navigate(visit && valid ? visit.path : fallback)
+            onNavigate()
+          }} />
+      </div>
+      <nav className="min-h-0 flex flex-1 flex-col px-2">
         <SidebarActivity conversations={conversations} projects={projects} onNavigate={onNavigate}>
         {/* Au-dessus des projets et transverse : c'est ce qui fait l'intérêt d'un
             signet, atteindre un fil sans se rappeler d'où il vient. La conversation
@@ -542,7 +566,7 @@ function Sidebar({
 
         <div className="flex items-center justify-between py-1 pr-1 pl-2.5">
           <span className="text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
-            {t('shell.projects.heading')}
+            {t(allProjects ? 'shell.projects.heading' : 'shell.switcher.sessions')}
           </span>
           <span className="flex items-center">
             {/* Un seul interrupteur pour toute la liste : le mode sert à comparer des
@@ -579,17 +603,18 @@ function Sidebar({
               strategy={verticalListSortingStrategy}
             >
               <ul className="flex flex-col gap-2">
-                {projects.map((project) => (
+                {visibleProjects?.map((project) => (
                   <ProjectGroup
                     key={project.id}
                     project={project}
                     toggleFavorite={toggleFavorite}
                     conversations={(conversations ?? []).filter((c) => c.projectId === project.id)}
-                    open={!dragging && !collapsed.has(project.id)}
+                    focused={!allProjects}
+                    open={!allProjects || (!dragging && !collapsed.has(project.id))}
                     // Le repli voulu par l'utilisateur, que `open` ne dit pas : un
                     // glissement ferme tous les projets, et le report du non-lu
                     // s'allumerait partout le temps du déplacement.
-                    collapsed={collapsed.has(project.id)}
+                    collapsed={allProjects && collapsed.has(project.id)}
                     onToggle={() => toggle(project.id)}
                     onNavigate={onNavigate}
                   />
@@ -604,6 +629,10 @@ function Sidebar({
       </nav>
 
       <div className="shrink-0 border-t border-line p-2 pb-safe">
+        <SidebarRow to="/services" onClick={onNavigate}>
+          <Server size={16} className="shrink-0" />
+          <span>{t('services.title')}</span>
+        </SidebarRow>
         <SidebarRow to="/settings" onClick={onNavigate}>
           <Settings size={16} className="shrink-0" />
           <span className="truncate">{user?.displayName ?? t('shell.settings.fallback')}</span>
@@ -630,6 +659,7 @@ interface ProjectGroupProps {
   /** Actives et rangées mêlées : le groupe fait lui-même la coupure. */
   conversations: ConversationDto[]
   open: boolean
+  focused?: boolean
   /** Replié par l'utilisateur, indépendamment de la fermeture forcée par un glissement. */
   collapsed: boolean
   onToggle: () => void
@@ -641,6 +671,7 @@ function ProjectGroup({
   toggleFavorite,
   conversations,
   open,
+  focused = false,
   collapsed,
   onToggle,
   onNavigate,
@@ -662,6 +693,10 @@ function ProjectGroup({
   const openConversationId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
   const hasUnread = useHasUnread(active, openConversationId)
 
+  const [showAll, setShowAll] = useState(false)
+  const visibleActive = focused && !showAll
+    ? active.filter((entry, index) => index < 10 || entry.id === openConversationId || entry.favorite)
+    : active
   const [editing, setEditing] = useState(false)
 
   const sensors = useDragSensors()
@@ -681,7 +716,7 @@ function ProjectGroup({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: project.id, disabled: editing })
+  } = useSortable({ id: project.id, disabled: editing || focused })
 
   const commitRename = (draft: string) => {
     setEditing(false)
@@ -722,7 +757,7 @@ function ProjectGroup({
         // navigation se lisaient comme une seule liste plate.
         className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11"
       >
-        <button
+        {!focused && <button
           type="button"
           onClick={onToggle}
           aria-label={
@@ -734,7 +769,7 @@ function ProjectGroup({
           className="flex size-11 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink md:size-6 pointer-coarse:size-11"
         >
           <ChevronRight size={13} className={cx('transition-transform', open && 'rotate-90')} />
-        </button>
+        </button>}
 
         {editing ? (
           <RenameInput
@@ -884,10 +919,10 @@ function ProjectGroup({
               onDragCancel={swallowNextClick}
             >
               <SortableContext
-                items={active.map((entry) => entry.id)}
+                items={visibleActive.map((entry) => entry.id)}
                 strategy={verticalListSortingStrategy}
               >
-                {active.map((conversation) => (
+                {visibleActive.map((conversation) => (
                   <ConversationRow
                     key={conversation.id}
                     conversation={conversation}
@@ -900,6 +935,12 @@ function ProjectGroup({
           ) : (
             <li className="px-2 py-1.5 text-xs text-ink-faint">{t('shell.conversations.empty')}</li>
           )}
+
+          {focused && (active.length > visibleActive.length || showAll) && <li>
+            <button type="button" onClick={() => setShowAll((value) => !value)} className="min-h-9 w-full rounded px-2 text-left text-xs text-ink-soft hover:bg-surface-high">
+              {t(showAll ? 'shell.switcher.less' : 'shell.switcher.more', { count: active.length })}
+            </button>
+          </li>}
 
           {/* Repliée et en fin de liste : ce qui est rangé doit rester atteignable sans
               revenir peser sur ce qu'on a sous les yeux. Hors des contextes de

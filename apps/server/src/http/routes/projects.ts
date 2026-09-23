@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { readdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, max, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations, projects, users, writeTransaction } from '@sillage/db'
+import { cards, conversations, projects, users, writeTransaction } from '@sillage/db'
 import {
   createProjectBodySchema,
   NO_PROJECT_DEFAULTS,
@@ -27,6 +27,7 @@ import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { projectCwd } from '../../workspace.js'
+import { writeProjectsDir } from '../../settings/user-settings.js'
 
 /**
  * Un utilisateur voit un projet s'il en est propriétaire ou si le projet est partagé.
@@ -204,7 +205,19 @@ export function registerProjectRoutes(
   app.post('/api/projects', async (request, reply) => {
     const user = requireUser(request)
     const body = createProjectBodySchema.parse(request.body)
-    const workspacePath = await assertUsableWorkspace(body.workspacePath)
+
+    let workspacePath: string
+    if ('workspacePath' in body) {
+      workspacePath = await assertUsableWorkspace(body.workspacePath)
+    } else {
+      // Un projet qui part de zéro : le dossier est créé ici, dans le parent choisi.
+      // Un dossier déjà là mais vide passe aussi, comme pour un clone.
+      workspacePath = await assertFreeDestination(body.parentDir, body.directory)
+      await mkdir(workspacePath, { recursive: true })
+      // Le parent devient la proposition de la prochaine création : c'est là que
+      // cette personne range ses projets, inutile de le lui redemander.
+      writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
+    }
 
     const row = await insertProject(user.id, {
       name: body.name,
@@ -246,6 +259,8 @@ export function registerProjectRoutes(
       )
     }
     const destination = await assertFreeDestination(body.parentDir, body.directory)
+    // Même mémoire que pour un projet créé de zéro : le dossier où l'on range.
+    writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
 
     const job = cloneJobs.start({
       ownerId: user.id,
@@ -371,6 +386,8 @@ export function registerProjectRoutes(
       .where(eq(conversations.projectId, id))
       .all()
     await attachments.removeForConversations(owned.map((row) => row.id))
+    const tickets = ctx.db.select({ id: cards.id }).from(cards).where(eq(cards.projectId, id)).all()
+    await attachments.removeForCards(tickets.map((row) => row.id))
     // Même raison pour l'index de recherche, que la cascade SQL n'atteint pas.
     for (const row of owned) dropConversation(ctx.db, row.id)
 

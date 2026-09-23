@@ -5,6 +5,7 @@ import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 import { chromium } from 'playwright'
+import { checkJournalCache } from './checks/journal-cache.mjs'
 
 // Vérifie les vrais composants avec une API simulée ; aucune conversation réelle.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
@@ -98,6 +99,7 @@ try {
     await page.getByText('Lisible sur mobile', { exact: true }).waitFor()
     assert.deepEqual(errors, [])
     console.log(`OK : questions interactives, activité, réponse libre et détails (${viewport.width}px).`)
+    await checkJournalCache(page)
     await page.close()
   }
 } finally {

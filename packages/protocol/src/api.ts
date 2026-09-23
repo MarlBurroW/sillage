@@ -91,12 +91,43 @@ export interface UserDto {
 
 // Projets
 
-export const createProjectBodySchema = z.object({
+const projectCreationFields = {
   name: z.string().min(1).max(120),
-  workspacePath: z.string().min(1),
   visibility: projectVisibilitySchema.default('private'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null),
-})
+}
+
+/**
+ * Deux façons de désigner le workspace d'un projet.
+ *
+ * `workspacePath` pointe sur un dossier qui existe déjà, n'importe où sur la machine.
+ * `parentDir` + `directory` demandent au serveur de créer le dossier : c'est le cas
+ * courant d'un projet qui démarre de zéro, où l'on n'a rien d'autre qu'un nom.
+ */
+export const createProjectBodySchema = z.union([
+  z.object({ ...projectCreationFields, workspacePath: z.string().min(1) }),
+  z.object({
+    ...projectCreationFields,
+    parentDir: z.string().min(1),
+    directory: z.string().min(1).max(120),
+  }),
+])
+
+/**
+ * Nom de dossier tiré d'un nom de projet : `Mon Projet Été` devient `mon-projet-ete`.
+ *
+ * Minuscules, sans accent ni caractère qu'un shell voudrait échapper. Ce n'est qu'une
+ * proposition : le champ reste modifiable, et le serveur vérifie de son côté que le nom
+ * envoyé est un simple nom de dossier.
+ */
+export function slugifyProjectName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
 
 export const updateProjectBodySchema = z
   .object({
@@ -556,6 +587,28 @@ export interface AgentModelDto {
   efforts: AgentEffortDto[]
   /** Repli quand le niveau de la conversation n'existe pas sur ce modèle. */
   defaultEffort: string | null
+  /** Le modèle accepte le mode rapide de Claude Code. Toujours faux chez Codex. */
+  supportsFastMode: boolean
+}
+
+/**
+ * Un sous-agent que le CLI sait lancer, à citer en `@nom` dans un message. Les intégrés
+ * (`Explore`, `Plan`…) et ceux du projet (`.claude/agents/`) arrivent par le même canal.
+ */
+export interface AgentInfoDto {
+  name: string
+  description: string
+}
+
+/**
+ * Le mode rapide vu du compte, avant toute conversation : disponible ou non, et
+ * pourquoi pas. `sdk_opt_in_required` est l'état normal d'un compte qui y a droit,
+ * puisque c'est la session qui doit demander le mode ; il vaut donc « disponible ».
+ */
+export interface FastModeAvailabilityDto {
+  available: boolean
+  /** Motif d'indisponibilité tel que le CLI le nomme, null quand c'est disponible. */
+  reason: string | null
 }
 
 /**
@@ -589,6 +642,12 @@ export interface AgentModelsDto {
   modes: CodexModeDto[]
   /** Nature du compte quand le CLI la déclare (Claude) ; null sinon. */
   account: ClaudeAccountDto | null
+  /** Styles de sortie que le CLI propose (Claude) ; vide quand il n'en a pas. */
+  outputStyles: string[]
+  /** Disponibilité du mode rapide sur le compte (Claude) ; null pour un CLI sans cette notion. */
+  fastMode: FastModeAvailabilityDto | null
+  /** Sous-agents nommés que le CLI sait lancer ; vide quand il n'en annonce pas. */
+  agents: AgentInfoDto[]
   fetchedAt: number
 }
 
@@ -842,6 +901,57 @@ export const VIEWABLE_IMAGE_TYPES: Record<string, string> = {
 export const VIEWABLE_DOCUMENT_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
 }
+
+/**
+ * Sons et vidéos, joués par les balises natives du navigateur.
+ *
+ * Le serveur les sert en flux avec prise en charge des requêtes `Range` : sans elle,
+ * la barre de lecture ne permet pas de sauter, et une vidéo de plusieurs centaines de
+ * Mo serait lue entière avant le premier octet joué.
+ */
+export const VIEWABLE_MEDIA_TYPES: Record<string, string> = {
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
+  flac: 'audio/flac',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  opus: 'audio/ogg',
+  weba: 'audio/webm',
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  webm: 'video/webm',
+  ogv: 'video/ogg',
+  mov: 'video/quicktime',
+}
+
+export function isAudioType(type: string): boolean {
+  return type.startsWith('audio/')
+}
+
+/**
+ * Modèles 3D, rendus dans le navigateur par un visualiseur WebGL.
+ *
+ * Ces fichiers ne sont jamais interprétés par le navigateur lui-même : ils sont lus
+ * par script. Les formats sans type officiel sont servis en `octet-stream`, ce qui
+ * garantit qu'une navigation directe vers l'URL télécharge au lieu d'afficher.
+ *
+ * `bin` et `mtl` ne s'ouvrent pas seuls : ce sont les ressources annexes d'un `gltf`
+ * éclaté ou d'un `obj`, que le visualiseur va chercher à côté du fichier principal.
+ */
+export const VIEWABLE_MODEL_TYPES: Record<string, string> = {
+  glb: 'model/gltf-binary',
+  gltf: 'model/gltf+json',
+  obj: 'application/octet-stream',
+  mtl: 'application/octet-stream',
+  fbx: 'application/octet-stream',
+  stl: 'application/octet-stream',
+  bin: 'application/octet-stream',
+}
+
+/** Extensions que le visualiseur 3D sait ouvrir comme fichier principal. */
+export const OPENABLE_MODEL_EXTENSIONS = new Set(['glb', 'gltf', 'obj', 'fbx', 'stl'])
 
 export const filePathQuerySchema = z.object({ path: z.string().min(1).max(1024) })
 

@@ -1,8 +1,10 @@
 import { Check, Code2, Download, Eye, Loader, MoreHorizontal, Save, Search, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import {
+  OPENABLE_MODEL_EXTENSIONS,
   VIEWABLE_DOCUMENT_TYPES,
   VIEWABLE_IMAGE_TYPES,
+  VIEWABLE_MEDIA_TYPES,
 } from '@sillage/protocol'
 import { useEditorDocument, useEditorDraftPaths } from '../../lib/editor-documents'
 import { useCurrentUser } from '../../lib/session'
@@ -23,6 +25,10 @@ import { isMarkdownPath, setMarkdownView, useMarkdownView } from '../../lib/mark
 import { Markdown } from '../chat/Markdown'
 import { Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '../ui'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
+import { MediaView } from './MediaView'
+
+/** Chargé à la demande : le visualiseur entraîne `three`, plus lourd que tout le reste. */
+const ModelView = lazy(() => import('./ModelView').then((m) => ({ default: m.ModelView })))
 
 /** Type de transfert du glisser-déposer des onglets, distinct de celui de l'arborescence. */
 const TAB_DRAG_TYPE = 'application/x-sillage-tab'
@@ -249,10 +255,12 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
   const extension = languageFromPath(path)
   const isImage = extension in VIEWABLE_IMAGE_TYPES
   const isDocument = extension in VIEWABLE_DOCUMENT_TYPES
+  const mediaType = VIEWABLE_MEDIA_TYPES[extension]
+  const isModel = OPENABLE_MODEL_EXTENSIONS.has(extension)
   const isMarkdown = isMarkdownPath(path)
   const view = useMarkdownView()
   const t = useTranslate()
-  const rawView = isImage || isDocument
+  const rawView = isImage || isDocument || Boolean(mediaType) || isModel
   useEffect(() => {
     if (!rawView) void load()
   }, [rawView, load])
@@ -268,6 +276,14 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
     </div>
   }
   if (isDocument) return <iframe data-editor-file={path} src={rawFileUrl(scope, path)} title={path} className="min-h-0 min-w-0 flex-1 border-0 bg-canvas" />
+  if (mediaType) return <MediaView scope={scope} path={path} type={mediaType} />
+  if (isModel) {
+    return <Suspense fallback={<div className="flex min-h-0 flex-1 items-center justify-center text-ink-faint">
+      <Loader size={20} className="animate-spin" aria-label={t('editor.loading')} />
+    </div>}>
+      <ModelView scope={scope} path={path} />
+    </Suspense>
+  }
 
   if (!file) {
     return error ? <div data-editor-file={path} tabIndex={-1} className="min-h-0 flex-1 overflow-auto p-3 outline-none">

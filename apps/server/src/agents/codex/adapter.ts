@@ -119,6 +119,7 @@ export class CodexAdapter implements AgentAdapter {
         hint: effort.description,
       })),
       defaultEffort: model.defaultReasoningEffort,
+      supportsFastMode: false,
     }))
 
     // `mode` est nullable côté protocole : un préréglage qui ne désigne aucun mode ne
@@ -127,7 +128,17 @@ export class CodexAdapter implements AgentAdapter {
       .filter((mask): mask is CollaborationModeMask & { mode: CodexMode } => mask.mode !== null)
       .map((mask) => ({ mode: mask.mode, label: mask.name }))
 
-    return { models, modes, account: null, fetchedAt: listing.fetchedAt }
+    // Ni styles de sortie, ni mode rapide, ni sous-agents nommés : ce sont des notions
+    // de Claude Code, et les laisser vides est ce qui fait disparaître leurs réglages.
+    return {
+      models,
+      modes,
+      account: null,
+      outputStyles: [],
+      fastMode: null,
+      agents: [],
+      fetchedAt: listing.fetchedAt,
+    }
   }
 
   /** Codex n'expose pas de commandes en `/` : ses compétences passent par `$`, publiées

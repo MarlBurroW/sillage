@@ -1,5 +1,5 @@
-import { Box, Brain, Compass, ShieldCheck, Sparkles } from 'lucide-react'
-import { useMemo, type ReactNode } from 'react'
+import { Box, Brain, Compass, MessageSquareText, ShieldCheck, Sparkles, UserRoundSearch, Zap } from 'lucide-react'
+import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
   claudeEffortSchema,
@@ -12,7 +12,7 @@ import {
   type CodexMode,
   type McpServerStatus,
 } from '@sillage/protocol'
-import { effortsFor, useAgentModels } from '../../lib/agents'
+import { effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useMcpServers } from '../../lib/mcp'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
 import {
@@ -22,7 +22,7 @@ import {
   type SettingOption,
   type SummarySegment,
 } from './ComposerSettings'
-import { McpControl } from './McpControl'
+import { McpControl, type McpControlProps } from './McpControl'
 
 /**
  * Réglages d'une configuration d'agent, sous la forme de catégories d'options.
@@ -33,7 +33,7 @@ import { McpControl } from './McpControl'
  * gestion des sentinelles aurait garanti que les deux écrans divergent.
  *
  * Ce module produit des données, pas une disposition : le composer les empile dans un
- * panneau à deux étages, la page de réglages les déplie. Seul le contrôle MCP arrive
+ * panneau à plat, la page de réglages les déplie. Seul le contrôle MCP arrive
  * déjà rendu, n'étant pas un choix unique parmi une liste.
  */
 
@@ -101,6 +101,20 @@ function codexApprovalOptions(t: Translate): SettingChoice<ApprovalChoice>[] {
       hint: t('composer.approval.never.hint'),
       tone: 'caution',
     },
+  ]
+}
+
+/**
+ * Le mode rapide de Claude Code, en deux valeurs plutôt qu'une case à cocher : le
+ * panneau ne connaît que des listes, et « Standard » mérite d'être nommé autant que
+ * « Rapide », puisque c'est le tarif qui les sépare.
+ */
+type SpeedChoice = 'standard' | 'fast'
+
+function speedOptions(t: Translate): SettingChoice<SpeedChoice>[] {
+  return [
+    { value: 'standard', label: t('composer.speed.standard'), hint: t('composer.speed.standard.hint') },
+    { value: 'fast', label: t('composer.speed.fast'), hint: t('composer.speed.fast.hint') },
   ]
 }
 
@@ -176,10 +190,12 @@ export function appliedPermissionLabel(
 export interface AgentSettings {
   /** Les catégories, dans l'ordre où on les change. */
   groups: SettingGroup[]
-  /** Résumé compact des valeurs en cours, pour un déclencheur qui doit tenir sur une ligne. */
+  /** Valeurs annoncées par l'accès complet et états de permissions à garder visibles. */
   summary: SummarySegment[]
   /** Serveurs MCP et isolation stricte, déjà rendus. */
   mcp: ReactNode
+  /** Les mêmes contrôles MCP, dépliés dans la vue complète du composer. */
+  mcpPanel: ReactNode
   /** Le CLI n'a pas répondu : la liste des modèles se réduit à ce qui est enregistré. */
   catalogError: Error | null
 }
@@ -279,6 +295,61 @@ export function useAgentSettings({
   }, [catalog, config, resolvedModel, t])
 
   /**
+   * Le mode rapide n'est proposé que s'il peut servir : un compte qui y a droit, et un
+   * modèle qui le gère. Absent sinon, plutôt que grisé, comme l'effort ; et absent sur
+   * un CLI qui ne connaît pas la notion, dont le catalogue laisse `fastMode` null.
+   */
+  const speedOffered =
+    claude !== null &&
+    catalog?.fastMode?.available === true &&
+    supportsFastMode(catalog.models, resolvedModel)
+
+  /**
+   * Styles de réponse annoncés par le CLI, derrière une entrée « par défaut » : la
+   * configuration vide veut dire « laisser le style habituel », et Radix refuse une
+   * option de valeur vide, d'où la même sentinelle d'affichage que l'approbation.
+   */
+  const outputStyleOptions = useMemo((): SettingChoice<string>[] => {
+    const styles = catalog?.outputStyles ?? []
+    if (!claude || styles.length === 0) return []
+    const known: SettingChoice<string>[] = [
+      {
+        value: CLI_DEFAULT_CHOICE,
+        label: t('composer.outputStyle.default'),
+        hint: t('composer.outputStyle.default.hint'),
+      },
+      ...styles.map((style) => ({ value: style, label: style })),
+    ]
+    if (claude.outputStyle && !styles.includes(claude.outputStyle)) {
+      known.push({ value: claude.outputStyle, label: claude.outputStyle, hint: t('composer.select.saved') })
+    }
+    return known
+  }, [catalog, claude, t])
+
+  /**
+   * Modèles pouvant servir de conseiller : ceux du catalogue, moins la ligne « par
+   * défaut » qui ne nomme personne, derrière une entrée « aucun ».
+   */
+  const advisorOptions = useMemo((): SettingChoice<string>[] => {
+    const models = catalog?.models ?? []
+    if (!claude || models.length === 0) return []
+    const known: SettingChoice<string>[] = [
+      { value: CLI_DEFAULT_CHOICE, label: t('composer.advisor.none'), hint: t('composer.advisor.none.hint') },
+      ...models
+        .filter((model) => !model.isDefault)
+        .map((model) => ({
+          value: model.value,
+          label: model.displayName,
+          hint: [model.hint, t('composer.advisor.model.hint')].filter(Boolean).join(' · '),
+        })),
+    ]
+    if (claude.advisorModel && !known.some((option) => option.value === claude.advisorModel)) {
+      known.push({ value: claude.advisorModel, label: claude.advisorModel, hint: t('composer.select.saved') })
+    }
+    return known
+  }, [catalog, claude, t])
+
+  /**
    * Même sentinelle côté effort, que seul Codex laisse vide : le niveau montré est
    * celui que le modèle retenu annonce par défaut.
    */
@@ -352,17 +423,15 @@ export function useAgentSettings({
    * Un créneau du résumé.
    *
    * Le ton vient de l'option choisie, et non d'une seconde liste de valeurs
-   * dangereuses tenue en parallèle. Un garde-fou levé passe en tête d'ordre : aucune
-   * largeur ne doit pouvoir l'effacer.
+   * dangereuses tenue en parallèle. Un garde-fou levé reste visible à toute largeur.
    */
   const segment = <T extends string>(
     key: string,
     options: SettingChoice<T>[],
     value: T,
-    drop: 0 | 1 | 2,
   ): SummarySegment => {
     const tone = options.find((option) => option.value === value)?.tone
-    return { key, label: labelOf(options, value), tone, drop: tone === 'caution' ? 0 : drop }
+    return { key, label: labelOf(options, value), tone }
   }
 
   // Le registre est partagé par toute l'instance : la requête est mise en cache par
@@ -376,10 +445,11 @@ export function useAgentSettings({
 
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
+  const speedOptionList = speedOptions(t)
 
   let groups: SettingGroup[] = []
   let summary: SummarySegment[] = []
-  let mcp: ReactNode = null
+  let mcp: ReactElement<McpControlProps> | null = null
 
   if (claude) {
     groups = [
@@ -390,7 +460,14 @@ export function useAgentSettings({
         options: modelOptions,
         value: resolvedModel,
         onChange: (model) =>
-          onConfigChange({ ...claude, model, effort: clampClaudeEffort(model, claude.effort) }),
+          onConfigChange({
+            ...claude,
+            model,
+            effort: clampClaudeEffort(model, claude.effort),
+            // Garder le mode rapide sur un modèle qui ne le gère pas ferait basculer
+            // le CLI sur Opus sans prévenir : il retombe avec le modèle.
+            fastMode: claude.fastMode && supportsFastMode(catalog?.models, model),
+          }),
       }),
       // Absente plutôt que grisée quand le modèle n'a pas de niveaux d'effort : un
       // réglage sans effet n'a pas à occuper le panneau.
@@ -408,6 +485,18 @@ export function useAgentSettings({
                 const parsed = claudeEffortSchema.safeParse(effort)
                 if (parsed.success) onConfigChange({ ...claude, effort: parsed.data })
               },
+            }),
+          ]
+        : []),
+      ...(speedOffered
+        ? [
+            setting({
+              key: 'speed',
+              label: t('composer.setting.speed'),
+              icon: <Zap size={15} />,
+              options: speedOptionList,
+              value: claude.fastMode ? 'fast' : 'standard',
+              onChange: (speed) => onConfigChange({ ...claude, fastMode: speed === 'fast' }),
             }),
           ]
         : []),
@@ -431,12 +520,43 @@ export function useAgentSettings({
           t,
         ),
       }),
+      // Absents quand le catalogue n'en annonce pas, comme l'effort : un CLI sans
+      // styles ou sans modèles n'a pas à montrer un sélecteur vide.
+      ...(outputStyleOptions.length > 0
+        ? [
+            setting({
+              key: 'outputStyle',
+              label: t('composer.setting.outputStyle'),
+              icon: <MessageSquareText size={15} />,
+              options: outputStyleOptions,
+              value: claude.outputStyle || CLI_DEFAULT_CHOICE,
+              onChange: (style) =>
+                onConfigChange({ ...claude, outputStyle: style === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : style }),
+            }),
+          ]
+        : []),
+      ...(advisorOptions.length > 0
+        ? [
+            setting({
+              key: 'advisor',
+              label: t('composer.setting.advisor'),
+              icon: <UserRoundSearch size={15} />,
+              options: advisorOptions,
+              value: claude.advisorModel || CLI_DEFAULT_CHOICE,
+              onChange: (model) =>
+                onConfigChange({ ...claude, advisorModel: model === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : model }),
+            }),
+          ]
+        : []),
     ]
 
     summary = [
-      segment('model', modelOptions, resolvedModel, 0),
-      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, claude.effort, 2)] : []),
-      segment('permission', permissionOptionList, claude.permissionMode, 1),
+      segment('model', modelOptions, resolvedModel),
+      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, claude.effort)] : []),
+      // Le mode rapide coûte à chaque tour : tant qu'il est allumé, il se lit dans le
+      // résumé, comme un garde-fou levé se lit dans le sien.
+      ...(speedOffered && claude.fastMode ? [segment('speed', speedOptionList, 'fast')] : []),
+      segment('permission', permissionOptionList, claude.permissionMode),
     ]
 
     mcp = (
@@ -517,18 +637,15 @@ export function useAgentSettings({
       }),
     ]
 
-    // Le mode de collaboration reste dans le panneau : il décide des outils
-    // accessibles, pas de ce qui peut être détruit, et trois créneaux sont le maximum
-    // lisible. Le bac à sable tient celui de la sûreté, sauf quand c'est l'approbation
-    // qui est levée ; les deux levées, les deux s'affichent.
+    // Les levées d'approbation et de bac à sable restent visibles simultanément.
     const approvalOff = approvalValue === 'never'
     summary = [
-      segment('model', modelOptions, resolvedModel, 0),
-      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort, 2)] : []),
-      ...(approvalOff ? [segment('approval', approvalOptions, approvalValue, 1)] : []),
+      segment('model', modelOptions, resolvedModel),
+      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+      ...(approvalOff ? [segment('approval', approvalOptions, approvalValue)] : []),
       ...(approvalOff && codex.sandbox !== 'danger-full-access'
         ? []
-        : [segment('sandbox', sandboxOptionList, codex.sandbox, 1)]),
+        : [segment('sandbox', sandboxOptionList, codex.sandbox)]),
     ]
 
     mcp = (
@@ -546,5 +663,5 @@ export function useAgentSettings({
     )
   }
 
-  return { groups, summary, mcp, catalogError }
+  return { groups, summary, mcp, mcpPanel: mcp ? cloneElement(mcp, { presentation: 'panel' }) : null, catalogError }
 }

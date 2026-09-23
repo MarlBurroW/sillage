@@ -42,6 +42,9 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 - **Worktrees.** Start a conversation on the project root, on an existing
   worktree, or on a branch Sillage creates for it.
 - **Full-text search** across every conversation in every project.
+- **Processes launched by Sillage.** On Linux, see commands and services still
+  attached to Sillage, their parent, ports and originating conversation. Independent
+  systemd services and tmux sessions are excluded. [Detection and limits](docs/services.md).
 - **A board the agents can read.** Cards per project, handed to the agent through
   a built-in MCP server: a session can read its card, look up what an earlier one
   decided, see which sessions are running, and leave a note for the next.

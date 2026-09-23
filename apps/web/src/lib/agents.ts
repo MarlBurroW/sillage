@@ -99,3 +99,12 @@ export function useAgentModels(agent: AgentKind, enabled = true) {
 export function effortsFor(models: AgentModelDto[] | undefined, value: string): AgentEffortDto[] {
   return models?.find((model) => model.value === value)?.efforts ?? []
 }
+
+/**
+ * Le modèle sélectionné accepte-t-il le mode rapide ? Faux pour un modèle inconnu du
+ * catalogue : l'activer ferait basculer le CLI sur Opus sans prévenir, ce que le
+ * réglage doit empêcher plutôt que subir.
+ */
+export function supportsFastMode(models: AgentModelDto[] | undefined, value: string): boolean {
+  return models?.find((model) => model.value === value)?.supportsFastMode === true
+}

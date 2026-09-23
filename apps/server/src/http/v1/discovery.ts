@@ -87,6 +87,7 @@ export function registerDiscoveryRoutes(
           available: false,
           effortField: EFFORT_FIELD[adapter.kind],
           models: [],
+          outputStyles: [],
         }
 
         try {
@@ -100,6 +101,7 @@ export function registerDiscoveryRoutes(
               isDefault: model.isDefault,
               efforts: model.efforts.map((effort) => effort.value),
             })),
+            outputStyles: catalog.outputStyles,
           }
         } catch {
           return base

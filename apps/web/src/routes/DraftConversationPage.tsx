@@ -25,6 +25,7 @@ import {
 } from '../lib/agents'
 import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
 import { useProjectCommands } from '../lib/commands'
+import { useFileDrop } from '../lib/file-drop'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
@@ -235,6 +236,10 @@ export function DraftConversationPage() {
     navigate(`/p/${projectId}/c/${created.id}`, { replace: true })
   }
 
+  // Le dépôt suit l'état du composer : sans lui (carte en chargement) ou sans CLI,
+  // les fichiers n'auraient nulle part où aller.
+  const drop = useFileDrop(!cardPending && blocked === null)
+
   const send = async (
     text: string,
     attachmentIds: string[],
@@ -261,7 +266,19 @@ export function DraftConversationPage() {
 
   return (
     // `relative` : c'est ce conteneur qui ancre le panneau latéral, posé en absolu.
-    <div className="relative flex h-full flex-col pb-safe">
+    <div className="relative flex h-full flex-col pb-safe" {...drop.handlers}>
+      {/* Même voile que sur une conversation : le composer écoute déjà les dépôts, il
+          manquait seulement une zone qui les lui transmette. */}
+      {drop.dragging ? (
+        <div
+          className={cx(
+            'pointer-events-none absolute inset-2 z-30 flex items-center justify-center',
+            'rounded-xl border-2 border-dashed border-accent bg-canvas/80 text-sm text-accent',
+          )}
+        >
+          {t('conversation.drop.attach')}
+        </div>
+      ) : null}
       <header
         className={cx(
           'flex shrink-0 items-center gap-2 border-b border-line px-2 py-2',

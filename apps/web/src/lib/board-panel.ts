@@ -10,7 +10,7 @@
 const WIDTH_KEY = 'sillage.cardPanelWidth'
 
 /** En deçà, le titre d'une session et sa branche ne tiennent plus sur une ligne. */
-const MIN_WIDTH = 280
+const MIN_WIDTH = 480
 
 /** Ce qui reste du board derrière le tiroir, pour qu'une colonne garde une prise. */
 const MIN_BOARD = 200
@@ -19,9 +19,9 @@ function maxWidth(): number {
   return Math.max(MIN_WIDTH, window.innerWidth - MIN_BOARD)
 }
 
-/** Une colonne et demie : assez pour lire une description sans couvrir le board. */
+/** Une fiche assez large pour écrire, avec une partie du board toujours visible. */
 function defaultWidth(): number {
-  return Math.min(420, Math.round(window.innerWidth * 0.32))
+  return Math.min(680, Math.round(window.innerWidth * 0.52))
 }
 
 /**

@@ -56,6 +56,7 @@ export function Select<T extends string>({
         disabled={disabled}
       >
         <RadixSelect.Trigger
+          aria-label={label ?? placeholder}
           className={cx(
             'group flex min-w-0 items-center',
             'transition-colors data-[state=open]:border-accent',

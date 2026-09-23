@@ -65,6 +65,17 @@ export function writeCollapsedProjects(db: Db, userId: string, projectIds: strin
     .run()
 }
 
+/** Le dossier parent proposé à la prochaine création de projet, ou `null` pour l'oublier. */
+export function writeProjectsDir(db: Db, userId: string, projectsDir: string | null): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, projectsDir })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
 function parseData(data: string | undefined): unknown {
   if (!data) return {}
 

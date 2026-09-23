@@ -8,6 +8,7 @@ import {
   FileText,
   FolderSearch,
   Globe,
+  Image,
   ListChecks,
   ListTodo,
   Loader,
@@ -38,6 +39,7 @@ import { HighlightedCode } from './HighlightedCode'
 const TOOL_ICONS: Record<string, ReactNode> = {
   Bash: <SquareTerminal size={14} />,
   Read: <FileText size={14} />,
+  ViewImage: <Image size={14} />,
   Write: <Pencil size={14} />,
   Edit: <Pencil size={14} />,
   Glob: <FolderSearch size={14} />,

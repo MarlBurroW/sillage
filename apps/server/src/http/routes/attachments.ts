@@ -1,6 +1,9 @@
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
+import { eq } from 'drizzle-orm'
+import { cards, projects } from '@sillage/db'
+import type { AppContext } from '../context.js'
 import type { FastifyInstance } from 'fastify'
 import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@sillage/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
@@ -10,7 +13,7 @@ import { requireUser } from '../require-user.js'
 /** Types affichables directement par le navigateur, servis tels quels. */
 const INLINE_DISPOSITION = /^image\/|^text\/plain$|^application\/pdf$/
 
-export function registerAttachmentRoutes(app: FastifyInstance, store: AttachmentStore): void {
+export function registerAttachmentRoutes(app: FastifyInstance, store: AttachmentStore, ctx: AppContext): void {
   app.post('/api/attachments', async (request, reply) => {
     const user = requireUser(request)
 
@@ -43,9 +46,16 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
 
     const row = store.get(id)
     if (!row) throw notFound('attachment_not_found', 'Attachment not found.')
-    // Le partage se fait au niveau du projet, pas du fichier téléversé : seul son
-    // propriétaire le relit.
-    if (row.userId !== user.id) throw forbidden('attachment_forbidden', 'This attachment is not yours.')
+    // Les fichiers de ticket suivent la visibilité du projet ; les pièces de chat
+    // restent privées à leur auteur.
+    if (row.cardId) {
+      const project = ctx.db.select({ ownerId: projects.ownerId, visibility: projects.visibility })
+        .from(cards).innerJoin(projects, eq(cards.projectId, projects.id))
+        .where(eq(cards.id, row.cardId)).get()
+      if (!project || (project.ownerId !== user.id && project.visibility !== 'shared')) {
+        throw notFound('attachment_not_found', 'Attachment not found.')
+      }
+    } else if (row.userId !== user.id) throw forbidden('attachment_forbidden', 'This attachment is not yours.')
 
     const info = await stat(row.storagePath).catch(() => null)
     if (!info) throw notFound('attachment_file_missing', 'The file is gone from disk.')
@@ -58,7 +68,8 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
         'content-disposition',
         `${disposition}; filename*=UTF-8''${encodeURIComponent(row.filename)}`,
       )
-      .header('cache-control', 'private, max-age=31536000, immutable')
+      .header('x-content-type-options', 'nosniff')
+      .header('cache-control', row.cardId ? 'private, no-store' : 'private, max-age=31536000, immutable')
       .send(createReadStream(row.storagePath))
   })
 
@@ -71,7 +82,7 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
     if (row.userId !== user.id) throw forbidden('attachment_forbidden', 'This attachment is not yours.')
     // Retirer une pièce jointe déjà envoyée réécrirait l'historique du fil, que le
     // journal doit pouvoir rejouer à l'identique (invariant I2).
-    if (row.conversationId) {
+    if (row.conversationId || row.cardId) {
       throw badRequest('already_sent', 'This attachment is already part of the conversation.')
     }
 

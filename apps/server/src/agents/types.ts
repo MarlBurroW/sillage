@@ -56,6 +56,8 @@ export interface RunnerContext {
   binary: string
   /** Racine de stockage des pièces jointes, à autoriser en lecture pour l'agent. */
   attachmentsRoot: string
+  /** Origine héritée par les services lancés depuis cette conversation. */
+  processEnv?: Record<string, string>
   /**
    * Résout la configuration d'une conversation en serveurs MCP : les identifiants du
    * registre qu'elle active, moins les désactivés et les disparus, plus le serveur que

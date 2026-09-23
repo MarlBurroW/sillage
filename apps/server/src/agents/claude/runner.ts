@@ -6,12 +6,15 @@ import {
   type CanUseTool,
   type ElicitationRequest,
   type ElicitationResult,
+  type FastModeDisabledReason,
+  type FastModeState,
   type HookCallback,
   type McpServerConfig,
   type PermissionResult,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
+  type Settings,
   type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk'
 import {
@@ -51,14 +54,33 @@ import {
   toQuestions,
   toUpdatedInput,
 } from './prompts.js'
+import { describeFastMode, translateSignal } from './signals.js'
 
 /**
  * Messages natifs volontairement ignorés : ils décrivent une progression interne
  * (changements d'état de session) sans rien apporter au fil de conversation. Liste
  * nommée plutôt qu'un `default:` muet, pour qu'un nouveau type de message inconnu
- * soit visible et non avalé.
+ * soit visible et non avalé. Ce qui n'y figure pas passe par `translateSignal`.
  */
 const IGNORED_SUBTYPES = new Set(['session_state_changed'])
+
+/**
+ * La couche « flag » des réglages du CLI, celle de `--settings` au lancement et
+ * d'`applyFlagSettings` à chaud : ce que la conversation impose par-dessus les fichiers
+ * de réglages du poste.
+ *
+ * Le mode rapide y est toujours écrit, même à faux : c'est la conversation qui décide,
+ * pas le `settings.json` de l'utilisateur, et le CLI exige de toute façon que la
+ * session le demande (`sdk_opt_in_required`, relevé à la sonde). Les deux autres clés
+ * sont omises quand la configuration ne dit rien, pour laisser le CLI à son défaut.
+ */
+function flagSettings(config: ClaudeConfig): Settings {
+  return {
+    fastMode: config.fastMode,
+    ...(config.outputStyle ? { outputStyle: config.outputStyle } : {}),
+    ...(config.advisorModel ? { advisorModel: config.advisorModel } : {}),
+  }
+}
 
 /**
  * Pas du compteur de réflexion, en tokens estimés.
@@ -158,6 +180,10 @@ export class ClaudeRunner implements AgentRunner {
   private thinkingTokensSent = 0
   /** Identifiant natif, requis pour relire le résumé de session. */
   private sessionId: string | null = null
+  /** Session et modèle du dernier `session.started` journalisé, pour ne pas le répéter à chaque tour. */
+  private initSignature: string | null = null
+  /** Dernier état du mode rapide rapporté par le CLI, pour n'en journaliser que les changements. */
+  private fastMode: { state: FastModeState; reason: FastModeDisabledReason | null } | null = null
   private stopped = false
   /** Vrai entre l'ouverture d'un tour et le `result` qui le referme. */
   private turnOpen = false
@@ -212,6 +238,7 @@ export class ClaudeRunner implements AgentRunner {
           ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: overview } }
           : {}),
         cwd: this.ctx.cwd,
+        env: { ...process.env, ...this.ctx.processEnv },
         model: config.model,
         effort: config.effort,
         permissionMode: toPermissionMode(config.permissionMode),
@@ -224,6 +251,16 @@ export class ClaudeRunner implements AgentRunner {
         // l'utilisateur. Relevé par sonde, ce n'est pas déductible de la documentation.
         mcpServers: this.appliedMcpServers,
         strictMcpConfig: config.strictMcp,
+        settings: flagSettings(config),
+        // Plafonds pour une session que personne ne regarde. Options de lancement
+        // seulement : les changer relance le runner, voir `applyConfig`.
+        ...(config.maxBudgetUsd === null ? {} : { maxBudgetUsd: config.maxBudgetUsd }),
+        ...(config.maxTurns === null ? {} : { maxTurns: config.maxTurns }),
+        // Une suggestion de message suivant par tour, servie après le `result` et
+        // presque gratuite puisqu'elle repart du cache de la conversation. Sans l'option
+        // le CLI n'en émet aucune en mode SDK ; avec, `promptSuggestionEnabled: false`
+        // dans les réglages du poste suffit à les couper.
+        promptSuggestions: true,
         includePartialMessages: true,
         // Sans ça le SDK ne transmet des sous-agents que leurs appels d'outils, de
         // quoi faire battre un compteur mais pas de quoi rendre leur fil : ni
@@ -496,24 +533,38 @@ export class ClaudeRunner implements AgentRunner {
           return
         }
         if (message.subtype === 'init') {
+          const first = this.sessionId === null
           this.sessionId = message.session_id
           this.ctx.setAgentSessionId(message.session_id)
           // `slash_commands` de l'init ne porte que des noms. La liste proposée à la
           // saisie a besoin des descriptions et de la forme des arguments, que seule
           // cette requête donne.
-          void this.publishSupportedCommands()
-          this.ctx.emit(
-            {
-              type: 'session.started',
-              agent: 'claude',
-              agentSessionId: message.session_id,
-              model: message.model,
-              cwd: message.cwd,
-              tools: message.tools,
-            },
-            message,
-          )
+          if (first) void this.publishSupportedCommands()
+          // Le CLI ré-émet son init à chaque tour, pas seulement au lancement : compté
+          // en base, autant de `session.started` que de tours. Seul le premier vaut
+          // démarrage ; les suivants ne sont journalisés que si la session ou le modèle
+          // ont changé, ce qui est justement ce que le fil doit voir : un `/model`
+          // tapé, un repli, un `/clear` qui a ouvert une autre session.
+          const signature = `${message.session_id}\n${message.model}`
+          if (signature !== this.initSignature) {
+            this.initSignature = signature
+            this.ctx.emit(
+              {
+                type: 'session.started',
+                agent: 'claude',
+                agentSessionId: message.session_id,
+                model: message.model,
+                cwd: message.cwd,
+                tools: message.tools,
+              },
+              message,
+            )
+          }
+          this.publishFastMode(message.fast_mode_state, message.fast_mode_disabled_reason)
+          return
         }
+        // Le reste des messages système est un signal ou du bruit : `signals.ts` tranche.
+        this.emitSignal(message)
         return
       }
 
@@ -679,6 +730,9 @@ export class ClaudeRunner implements AgentRunner {
         )
         this.turnOpen = false
         this.ctx.setStatus('idle')
+        // Chaque `result` porte l'état du mode rapide, y compris la pause après une
+        // limite atteinte : c'est ici qu'on apprend qu'il a changé en cours de tour.
+        this.publishFastMode(message.fast_mode_state, message.fast_mode_disabled_reason)
         // Le contexte n'est connu qu'en interrogeant le CLI : le message `result`
         // n'en dit rien. Fait après coup pour ne pas retarder la fin du tour.
         void this.emitContextUsage()
@@ -713,10 +767,37 @@ export class ClaudeRunner implements AgentRunner {
         // Types non traduits, donc non journalisés : le journal est la source
         // d'affichage (I2), et y écrire un événement que rien ne sait rendre le
         // ferait grossir sans que personne le lise. Ce qui manquerait à l'écran
-        // devient un événement traduit, pas une ligne brute de plus.
+        // devient un événement traduit, dans `signals.ts`, pas une ligne brute de plus.
+        this.emitSignal(message)
         return
       }
     }
+  }
+
+  /** Relaie un signal du CLI (voir `signals.ts`) ; ce qui n'en est pas un reste ignoré. */
+  private emitSignal(message: SDKMessage): void {
+    const event = translateSignal(message)
+    if (event) this.ctx.emit(event, message)
+  }
+
+  /**
+   * Journalise l'état du mode rapide quand il change, et seulement alors.
+   *
+   * Le CLI le répète sur chaque `init` et chaque `result` ; un avis par tour dirait la
+   * même chose vingt fois. `undefined` vient d'un CLI qui ne connaît pas la notion.
+   */
+  private publishFastMode(
+    state: FastModeState | undefined,
+    reason: FastModeDisabledReason | undefined,
+  ): void {
+    if (state === undefined) return
+    const current = { state, reason: reason ?? null }
+    if (this.fastMode?.state === current.state && this.fastMode.reason === current.reason) return
+
+    const previous = this.fastMode?.state ?? null
+    this.fastMode = current
+    const event = describeFastMode(state, current.reason, this.config.fastMode, previous)
+    if (event) this.ctx.emit(event)
   }
 
   /**
@@ -1155,8 +1236,23 @@ export class ClaudeRunner implements AgentRunner {
     // passait pour appliqué et n'a donc jamais fait repartir le runner.
     if (this.launchedWithBypass && config.permissionMode !== 'bypassPermissions') return false
 
+    // Les plafonds de budget sont des options de lancement, sans requête de contrôle
+    // pour les changer : même sort que `strictMcp`.
+    if (config.maxBudgetUsd !== this.config.maxBudgetUsd || config.maxTurns !== this.config.maxTurns) {
+      return false
+    }
+
     await this.session.setModel(config.model)
-    await this.session.applyFlagSettings({ effortLevel: config.effort })
+    // La même couche que `settings` au lancement. `null` retire une clé, donc rend le
+    // CLI à son défaut, là où l'omettre laisserait la valeur précédente en place. Le
+    // mode rapide, lui, ne prend effet qu'au tour suivant, et son état revient par le
+    // `result` : sondé, `applyFlagSettings({ fastMode: true })` suffit, sans relancer.
+    await this.session.applyFlagSettings({
+      effortLevel: config.effort,
+      fastMode: config.fastMode,
+      outputStyle: config.outputStyle || null,
+      advisorModel: config.advisorModel || null,
+    })
     await this.session.setPermissionMode(toPermissionMode(config.permissionMode))
 
     // Comparé sur les serveurs résolus et non sur les identifiants : une entrée du

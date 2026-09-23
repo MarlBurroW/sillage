@@ -1,4 +1,5 @@
 import { PlugZap } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { McpServer, McpServerStatus } from '@sillage/protocol'
 import { translate, useTranslate } from '../../lib/i18n'
@@ -21,7 +22,8 @@ import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
  * bascule des deux côtés promettrait une isolation qu'un des deux ne tient pas.
  */
 
-interface McpControlProps {
+export interface McpControlProps {
+  presentation?: 'menu' | 'panel'
   /** Registre de Sillage : le seul que ce contrôle peut activer ou désactiver. */
   servers: McpServer[]
   /**
@@ -49,6 +51,7 @@ interface McpControlProps {
 }
 
 export function McpControl({
+  presentation = 'menu',
   servers,
   inventory,
   selected,
@@ -60,6 +63,8 @@ export function McpControl({
   disabled = false,
 }: McpControlProps) {
   const t = useTranslate()
+  const CheckboxItem = presentation === 'panel' ? McpSwitch : MenuCheckboxItem
+  const Separator = presentation === 'panel' ? McpDivider : MenuSeparator
   const active = new Set(selected)
   const external = inventory.filter((server) => server.external)
   const toolsByName = new Map(inventory.map((server) => [server.name, server.tools.length]))
@@ -83,7 +88,7 @@ export function McpControl({
     <>
       {sillage === null ? null : (
         <>
-          <MenuCheckboxItem
+          <CheckboxItem
             checked={sillage}
             onCheckedChange={onSillageChange}
             disabled={disabled || strict === true}
@@ -94,8 +99,8 @@ export function McpControl({
                 {t('composer.mcp.builtin.hint')}
               </span>
             </span>
-          </MenuCheckboxItem>
-          <MenuSeparator />
+          </CheckboxItem>
+          <Separator />
         </>
       )}
 
@@ -107,7 +112,7 @@ export function McpControl({
               sans serveur du CLI, une seule section n'a pas besoin d'être nommée. */}
           {external.length > 0 ? <MenuLabel>{t('composer.mcp.sillage')}</MenuLabel> : null}
           {servers.map((server) => (
-            <MenuCheckboxItem
+            <CheckboxItem
               key={server.id}
               checked={active.has(server.id)}
               onCheckedChange={(checked) => toggle(server.id, checked)}
@@ -117,14 +122,14 @@ export function McpControl({
                 <span className="min-w-0 truncate">{server.name}</span>
                 <ToolCount count={toolsByName.get(server.name)} />
               </span>
-            </MenuCheckboxItem>
+            </CheckboxItem>
           ))}
         </>
       )}
 
       {external.length > 0 ? (
         <>
-          <MenuSeparator />
+          <Separator />
           <MenuLabel>{t('composer.mcp.fromCli')}</MenuLabel>
           {external.map((server) => (
             // Une ligne inerte plutôt qu'une case grisée : une case, même désactivée,
@@ -146,20 +151,20 @@ export function McpControl({
 
       {strict === null ? null : (
         <>
-          <MenuSeparator />
-          <MenuCheckboxItem checked={strict} onCheckedChange={onStrictChange} disabled={disabled}>
+          <Separator />
+          <CheckboxItem checked={strict} onCheckedChange={onStrictChange} disabled={disabled}>
             <span className="flex flex-col">
               <span>{t('composer.mcp.strict')}</span>
               <span className="text-[0.6875rem] text-ink-faint">{t('composer.mcp.strict.hint')}</span>
             </span>
-          </MenuCheckboxItem>
+          </CheckboxItem>
         </>
       )}
 
-      <MenuSeparator />
+      <Separator />
       <Link
         to="/settings/mcp"
-        className="block rounded-md px-2.5 py-2 text-sm text-ink-soft hover:bg-accent-wash hover:text-ink"
+        className="flex min-h-11 items-center rounded-md px-2.5 py-2 text-sm text-ink-soft hover:bg-accent-wash hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
       >
         {t('composer.mcp.manage')}
       </Link>
@@ -175,6 +180,8 @@ export function McpControl({
   const configured = selected.length + (sillageActive ? 1 : 0)
   const summary = mcpSummary(configured, inventory.length)
   const count = inventory.length > 0 ? inventory.length : configured
+
+  if (presentation === 'panel') return <div>{items}</div>
 
   return (
     <Menu
@@ -205,6 +212,28 @@ export function McpControl({
     </Menu>
   )
 }
+
+/** Les mêmes choix que le menu, avec des contrôles ordinaires dans le panneau. */
+function McpSwitch({ checked, onCheckedChange, disabled, children }: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  disabled?: boolean
+  children: ReactNode
+}) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} disabled={disabled}
+      onClick={() => onCheckedChange(!checked)}
+      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left text-sm text-ink-soft hover:bg-accent-wash focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-45"
+    >
+      <span className="min-w-0 flex-1 wrap-anywhere">{children}</span>
+      <span aria-hidden className={cx('flex h-5 w-8 shrink-0 items-center rounded-full p-0.5', checked ? 'justify-end bg-accent' : 'bg-line-strong')}>
+        <span className="size-4 rounded-full bg-surface" />
+      </span>
+    </button>
+  )
+}
+
+function McpDivider() { return <div className="my-2 h-px bg-line" /> }
 
 /** Absent tant que le CLI n'a pas répondu : un « 0 outil » se lirait comme un échec. */
 function ToolCount({ count }: { count: number | undefined }) {

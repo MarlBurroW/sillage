@@ -31,6 +31,14 @@ export interface UserSettingsDto {
    * son téléphone.
    */
   collapsedProjects: string[]
+  /**
+   * Dossier parent proposé à la création d'un projet, `null` tant qu'aucun projet n'a
+   * été créé ainsi.
+   *
+   * Mémorisé à chaque création plutôt que réglé dans un écran à part : on range ses
+   * projets toujours au même endroit, et la première création suffit à le dire.
+   */
+  projectsDir: string | null
 }
 
 /**
@@ -70,8 +78,9 @@ export const storedUserSettingsSchema = z
     // rien à qui la lit, et la nettoyer demanderait de toucher ce réglage à chaque
     // suppression, y compris pour les comptes qui ne se connectent plus.
     collapsedProjects: z.array(z.string()).default([]).catch([]),
+    projectsDir: z.string().nullable().default(null).catch(null),
   })
-  .catch({ agentDefaults: DEFAULT_AGENT_DEFAULTS, collapsedProjects: [] })
+  .catch({ agentDefaults: DEFAULT_AGENT_DEFAULTS, collapsedProjects: [], projectsDir: null })
 
 export const updateUserSettingsBodySchema = z.object({
   /**
@@ -82,4 +91,6 @@ export const updateUserSettingsBodySchema = z.object({
   agentDefault: agentConfigSchema.optional(),
   /** La liste entière : c'est un état d'affichage, pas un journal d'ouvertures. */
   collapsedProjects: z.array(z.string().uuid()).optional(),
+  /** `null` retire le dossier mémorisé ; absent, il ne bouge pas. */
+  projectsDir: z.string().min(1).nullable().optional(),
 })

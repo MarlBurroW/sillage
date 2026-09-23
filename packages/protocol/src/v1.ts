@@ -137,6 +137,8 @@ export interface TaskAgentDto {
   available: boolean
   effortField: string
   models: { value: string; displayName: string; isDefault: boolean; efforts: string[] }[]
+  /** Valeurs acceptées pour `outputStyle` (Claude) ; vide quand le CLI n'en a pas. */
+  outputStyles: string[]
 }
 
 /** L'appel d'outil en cours, quand l'agent travaille. */
@@ -283,9 +285,14 @@ export const EFFORT_FIELD: Record<AgentKind, string> = {
  * du jeton, dans l'interface. Sans cette barrière, un appelant demanderait
  * `permissionMode: bypassPermissions` ou `sandbox: danger-full-access` dans son corps
  * de requête, et le jeton ne vaudrait plus qu'un accès shell.
+ *
+ * Même logique pour ce qui coûte : le mode rapide et le modèle conseiller dépensent
+ * sur le compte de la machine, pas sur celui de l'appelant, et restent donc au jeton.
+ * Les plafonds de budget vont dans l'autre sens, ils ne peuvent que réduire la dépense
+ * d'une tâche : un appelant a le droit de les poser.
  */
 export const OVERRIDABLE_CONFIG_FIELDS: Record<AgentKind, readonly string[]> = {
-  claude: ['model', 'effort'],
+  claude: ['model', 'effort', 'outputStyle', 'maxBudgetUsd', 'maxTurns'],
   codex: ['model', 'reasoningEffort', 'collaborationMode'],
 }
 

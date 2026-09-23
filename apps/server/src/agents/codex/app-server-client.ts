@@ -46,6 +46,7 @@ interface PendingCall {
 export interface CodexClientOptions {
   binary: string
   cwd?: string
+  env?: NodeJS.ProcessEnv
   /** Notifications serveur (`item/started`, `turn/completed`...). */
   onNotification?: (method: string, params: unknown) => void
   /** Requêtes serveur à répondre, dont les demandes d'approbation. */
@@ -69,6 +70,7 @@ export class CodexAppServerClient {
   constructor(private readonly options: CodexClientOptions) {
     this.child = spawn(options.binary, ['app-server'], {
       cwd: options.cwd,
+      env: options.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 

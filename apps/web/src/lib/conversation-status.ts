@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { ConversationMetrics, ConversationStatus } from '@sillage/protocol'
+import type { ConversationDto, ConversationMetrics, ConversationStatus } from '@sillage/protocol'
 import { wsClient } from './ws-client'
 
 /**
@@ -14,6 +14,11 @@ import { wsClient } from './ws-client'
  */
 
 const statuses = new Map<string, ConversationStatus>()
+// Les fins observées restent disponibles quand on change de projet dans la sidebar.
+const settledAt = new Map<string, number>()
+export function liveSettledAt(conversationId: string): number {
+  return settledAt.get(conversationId) ?? 0
+}
 /**
  * Travaux de fond par conversation, dans une table à part.
  *
@@ -156,6 +161,14 @@ export function useStatusFeed(): void {
         lastNotableSeq,
         metrics: pushed,
       }) => {
+        // Une session créée ailleurs doit rejoindre l'overview sans rechargement.
+        // Le premier statut suffit ; les jetons suivants ne relancent pas la requête.
+        if (!statuses.has(conversationId)) {
+          const known = queryClient.getQueryData<ConversationDto[]>(['conversations', 'all'])
+          if (known && !known.some((entry) => entry.id === conversationId)) {
+            void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+          }
+        }
         const metricsChanged = !sameMetrics(metrics.get(conversationId), pushed)
         const changed =
           metricsChanged ||
@@ -164,6 +177,11 @@ export function useStatusFeed(): void {
           (loops.get(conversationId) ?? 0) !== loopCount ||
           (seqs.get(conversationId) ?? 0) !== lastNotableSeq
         if (!changed) return
+        const previous = statuses.get(conversationId)
+        const wasBusy = previous === 'running' || previous === 'awaiting_input' || (backgrounds.get(conversationId) ?? 0) > 0
+        const busy = status === 'running' || status === 'awaiting_input' || background > 0
+        if (wasBusy && !busy) settledAt.set(conversationId, Date.now())
+        if (busy) settledAt.delete(conversationId)
         statuses.set(conversationId, status)
         backgrounds.set(conversationId, background)
         loops.set(conversationId, loopCount)
@@ -177,6 +195,7 @@ export function useStatusFeed(): void {
         // Ce qui a été poussé avant la coupure ne fait plus autorité : la liste relue
         // reprend la main, et les prochaines poussées repartent d'elle.
         statuses.clear()
+        settledAt.clear()
         backgrounds.clear()
         loops.clear()
         seqs.clear()

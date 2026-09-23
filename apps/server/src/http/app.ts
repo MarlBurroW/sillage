@@ -46,6 +46,7 @@ import { registerSearchRoutes } from './routes/search.js'
 import { registerSettingsRoutes } from './routes/settings.js'
 import { registerSttRoutes } from './routes/stt.js'
 import { registerSystemRoutes } from './routes/system.js'
+import { registerServiceRoutes } from './routes/services.js'
 import { registerTerminalRoutes } from './routes/terminals.js'
 import { registerTreeRoutes } from './routes/tree.js'
 import { registerUserSettingsRoutes } from './routes/user-settings.js'
@@ -160,17 +161,18 @@ export async function buildApp(
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
   registerWorktreeRoutes(app, ctx, terminals)
-  registerCardRoutes(app, ctx)
+  registerCardRoutes(app, ctx, attachments)
   registerUserRoutes(app, ctx)
   registerApiTokenRoutes(app, ctx, registry)
   registerV1Routes(app, ctx, log, sessions, registry, webhooks)
-  registerAttachmentRoutes(app, attachments)
+  registerAttachmentRoutes(app, attachments, ctx)
   registerPushRoutes(app, push)
   registerSearchRoutes(app, ctx)
   registerSettingsRoutes(app, ctx, scheduler)
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx)
   registerSystemRoutes(app)
+  registerServiceRoutes(app, ctx)
   registerTreeRoutes(app, ctx)
   registerFileRoutes(app, ctx)
   registerGitViewRoutes(app, ctx)

@@ -1,16 +1,23 @@
 import { homedir } from 'node:os'
-import type { AccountInfo, ModelInfo } from '@anthropic-ai/claude-agent-sdk'
+import type {
+  AccountInfo,
+  AgentInfo,
+  FastModeDisabledReason,
+  FastModeState,
+  ModelInfo,
+} from '@anthropic-ai/claude-agent-sdk'
 import { CachedProbe } from '../cached-probe.js'
 import { withControlSession } from './control-session.js'
 
 /**
- * Catalogue Claude : modèles et compte, lus depuis le CLI installé plutôt que codés
- * en dur.
+ * Catalogue Claude : modèles, compte, styles de sortie, sous-agents et disponibilité du
+ * mode rapide, lus depuis le CLI installé plutôt que codés en dur.
  *
  * `supportedModels()` et `accountInfo()` sont des requêtes de contrôle (voir
  * `withControlSession`) : aucun message n'est envoyé, donc ni tokens ni quota
- * consommés. Le process coûte en revanche ~400 Mo le temps de la sonde, d'où le cache
- * et le fait que les deux informations soient lues d'un coup.
+ * consommés. Le reste vient de la réponse d'initialisation, que le SDK a déjà reçue
+ * en ouvrant la session. Le process coûte ~400 Mo le temps de la sonde, d'où le cache
+ * et le fait que tout soit lu d'un coup.
  */
 
 const CACHE_TTL_MS = 60 * 60 * 1000
@@ -18,6 +25,14 @@ const CACHE_TTL_MS = 60 * 60 * 1000
 interface Listing {
   models: ModelInfo[]
   account: AccountInfo | null
+  /** Tels que le CLI les nomme, `default` compris. */
+  outputStyles: string[]
+  agents: AgentInfo[]
+  /**
+   * Le mode rapide vu du compte, avant qu'une session ne le demande. `state` reste null
+   * sur un CLI qui ne connaît pas la notion, ce qui est différent de « off ».
+   */
+  fastMode: { state: FastModeState | null; reason: FastModeDisabledReason | null }
 }
 
 export class ClaudeModelCatalog {
@@ -41,7 +56,19 @@ export class ClaudeModelCatalog {
         const models = await session.supportedModels()
         // Le compte est secondaire : son absence ne doit pas priver l'UI des modèles.
         const account = await session.accountInfo().catch(() => null)
-        return { models, account }
+        // Même statut pour le reste : un CLI qui ne sait pas répondre laisse des listes
+        // vides, et les réglages correspondants n'apparaissent simplement pas.
+        const init = await session.initializationResult().catch(() => null)
+        return {
+          models,
+          account,
+          outputStyles: init?.available_output_styles ?? [],
+          agents: init?.agents ?? [],
+          fastMode: {
+            state: init?.fast_mode_state ?? null,
+            reason: init?.fast_mode_disabled_reason ?? null,
+          },
+        }
       },
     )
   }

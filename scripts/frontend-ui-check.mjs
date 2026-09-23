@@ -12,6 +12,7 @@ import { checkEditor } from './checks/editor.mjs'
 import { checkIde } from './checks/ide.mjs'
 import { checkDownloads } from './checks/downloads.mjs'
 import { checkFavorites } from './checks/favorites.mjs'
+import { checkMedia } from './checks/media.mjs'
 
 // Vrais composants et vraie API, dans une base temporaire. Aucun CLI n'est activé.
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -168,12 +169,16 @@ try {
   const addNote = page.getByRole('button', { name: 'Ajouter une note', exact: true })
   const noteA = 'Une note à conserver après fermeture.'
   const noteB = 'Une deuxième note écrite pendant la publication.'
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
   await noteField.fill(noteA)
   await close.click()
   await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
   assert.equal(await noteField.inputValue(), noteA)
   await page.reload()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
   await noteField.waitFor()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
   assert.equal(await noteField.inputValue(), noteA)
   const noteEndpoint = `**/api/cards/${card.id}/notes`
   await page.route(noteEndpoint, (route) => route.request().method() === 'POST'
@@ -181,6 +186,7 @@ try {
     : route.continue())
   await addNote.click()
   await page.getByRole('alert').filter({ hasText: 'La note n’a pas été enregistrée.' }).waitFor()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
   assert.equal(await noteField.inputValue(), noteA)
   await page.unroute(noteEndpoint)
   let releaseNote, noteSent
@@ -195,6 +201,7 @@ try {
   await noteField.fill(noteB)
   await close.click()
   await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
   assert.equal(await page.getByRole('button', { name: 'Enregistrement…', exact: true }).isDisabled(), true)
   releaseNote()
   await page.getByText(noteA, { exact: true }).waitFor()
@@ -208,6 +215,7 @@ try {
   await page.getByText(noteA, { exact: true }).waitFor()
   assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('sillage.cardNoteDraft:')).length), 0)
   await page.reload()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
   await page.getByText(noteB, { exact: true }).waitFor()
   console.log('OK : lecture de carte, brouillons de notes, échec de publication et dernière note en premier.')
 
@@ -278,6 +286,9 @@ try {
 
   await checkEditor({ page, context, base, project })
   await checkIde({ page, context, base, project })
+  await checkMedia({ page, context, base, project })
+  // Le contrôle multimédia laisse le panneau ouvert ; repartir du board seul.
+  await page.locator('[data-panel="workspace"]').getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
   await checkDownloads({ page, context, base, project, hero, data })
   await checkFavorites({ page, context, base, project, hero })
 
@@ -325,10 +336,12 @@ try {
   const all = await (await context.request.get(`${base}/api/conversations`)).json()
   const candidate = all.find((entry) => !entry.archivedAt && entry.status === 'idle')
   assert.ok(candidate)
-  const awaiting = activity.getByRole('button', { name: /^À débloquer/ })
-  const before = Number((await awaiting.innerText()).match(/\d+$/)[0])
+  await activity.getByRole('button', { name: /Voir toute l’activité/ }).click()
+  const overview = page.getByRole('dialog', { name: 'Activité globale', exact: true })
+  const awaiting = overview.getByRole('button', { name: /à débloquer$/ })
+  const before = Number((await awaiting.innerText()).match(/\d+/)[0])
   await awaiting.click()
-  const result = page.locator('#sidebar-activity-results')
+  const result = overview
   const candidateLink = result.locator(`a[href="/p/${candidate.projectId}/c/${candidate.id}"]`)
   assert.equal(await candidateLink.count(), 0)
   const pushStatus = (status, background = 0) => activitySocket.send(JSON.stringify({
@@ -337,26 +350,26 @@ try {
   }))
   pushStatus('awaiting_input')
   await candidateLink.waitFor()
-  assert.equal(Number((await awaiting.innerText()).match(/\d+$/)[0]), before + 1)
+  assert.equal(Number((await awaiting.innerText()).match(/\d+/)[0]), before + 1)
   pushStatus('running')
   await candidateLink.waitFor({ state: 'hidden' })
-  await activity.getByRole('button', { name: /^En cours/ }).click()
+  await overview.getByRole('button', { name: /en cours$/ }).click()
   await candidateLink.waitFor()
   pushStatus('idle')
-  await candidateLink.waitFor({ state: 'hidden' })
+  await overview.getByRole('region', { name: 'Viennent de s’arrêter', exact: true }).locator(`a[href="/p/${candidate.projectId}/c/${candidate.id}"]`).waitFor()
   pushStatus('idle', 1)
   await candidateLink.waitFor()
   pushStatus('idle')
-  await candidateLink.waitFor({ state: 'hidden' })
+  await overview.getByRole('region', { name: 'Viennent de s’arrêter', exact: true }).locator(`a[href="/p/${candidate.projectId}/c/${candidate.id}"]`).waitFor()
 
   const unreadEntry = all.find((entry) => !entry.archivedAt && entry.lastNotableSeq > entry.lastReadSeq)
   assert.ok(unreadEntry)
-  await activity.getByRole('button', { name: /^Non lues/ }).click()
+  await overview.getByRole('button', { name: /non lues$/ }).click()
   const unreadLink = result.locator(`a[href="/p/${unreadEntry.projectId}/c/${unreadEntry.id}"]`)
   await unreadLink.click()
   await page.waitForURL(`**/c/${unreadEntry.id}`)
   await unreadLink.waitFor({ state: 'hidden' })
-  await page.getByRole('button', { name: 'Tous les projets', exact: true }).click()
+  await overview.waitFor({ state: 'hidden' })
   console.log('OK : filtres en direct, travaux de fond, lecture et retour aux projets.')
 
   // La reprise ne traverse ni un compte ni un projet devenu inaccessible.
