@@ -263,6 +263,7 @@ export class CodexRunner implements AgentRunner {
     this.client = new CodexAppServerClient({
       binary: this.ctx.binary,
       cwd: this.ctx.cwd,
+      env: { ...process.env, ...this.ctx.processEnv },
       onNotification: (method, params) => {
         try { this.translate(method, params) }
         catch (error) {

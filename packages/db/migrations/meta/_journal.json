@@ -176,6 +176,13 @@
       "when": 1788714642406,
       "tag": "0024_light_captain_britain",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1789839390094,
+      "tag": "0025_eager_zarek",
+      "breakpoints": true
     }
   ]
 }

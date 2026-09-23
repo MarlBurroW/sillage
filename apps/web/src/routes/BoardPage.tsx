@@ -20,14 +20,15 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ChevronDown, ChevronRight, PanelRight, Plus, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
+import { NewCardDialog } from '../components/board/NewCardDialog'
 import { CardPanel } from '../components/board/CardPanel'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { CardTile } from '../components/board/CardTile'
-import { columnLabel } from '../components/board/columns'
+import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, cx } from '../components/ui'
 import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
@@ -80,6 +81,11 @@ function targetColumn(layout: Layout, overId: string): CardColumn | undefined {
   return columnOf(layout, overId)
 }
 
+function matchesCard(card: CardDto, query: string): boolean {
+  if (query.startsWith('#')) return String(card.number).startsWith(query.slice(1))
+  return `${card.number} ${card.title} ${card.description}`.toLocaleLowerCase().includes(query)
+}
+
 export function BoardPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -90,11 +96,15 @@ export function BoardPage() {
   const panel = usePanelPresence()
 
   const { data: projects } = useProjects()
-  const { data: cards, isPending } = useCards(projectId)
+  const { data: cards, isPending, isError, refetch } = useCards(projectId)
   const reorder = useReorderCards(projectId ?? '')
 
   useRememberProjectView(projectId, 'board')
 
+  const [query, setQuery] = useState('')
+  const [creating, setCreating] = useState(false)
+  const search = query.trim().toLocaleLowerCase()
+  const matches = (card: CardDto) => matchesCard(card, search)
   const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
   /**
    * Visibles d'emblée : le board dit où en est le projet, et masquer ce qui est fini
@@ -213,12 +223,13 @@ export function BoardPage() {
   }
 
   if (!projectId) return null
-  if (isPending) return null
+  if (isPending) return <p className="p-6 text-sm text-ink-faint">{t('board.loading')}</p>
+  if (isError) return <div role="alert" className="p-6"><p>{t('board.loadError')}</p><Button onClick={() => void refetch()}>{t('agent.install.retry')}</Button></div>
   if (!project) return <EmptyState title={t('project.notFound')} />
 
   const open = CARD_COLUMNS.filter((column) => !CARD_CLOSED_COLUMNS.includes(column))
   const hasClosed = CARD_CLOSED_COLUMNS.some((column) => (layout.get(column) ?? []).length > 0)
-  const shown = wide ? [...open, ...(showClosed ? CARD_CLOSED_COLUMNS : [])] : [visibleColumn]
+  const shown = wide ? [...open, ...(showClosed || search ? CARD_CLOSED_COLUMNS.filter((column) => column !== 'abandoned' || (layout.get(column)?.length ?? 0) > 0) : [])] : [visibleColumn]
 
   return (
     // `h-full` et non `flex-1` : le conteneur de la coque défile, donc il n'impose
@@ -228,16 +239,17 @@ export function BoardPage() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
           className={cx(
-            'flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2',
+            'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-4',
             sidebarHidden && 'md:pl-14',
           )}
         >
           <MobileNavigationButton />
-          <h1 className="truncate text-sm font-semibold tracking-tight">{project.name}</h1>
+          <div className="min-w-0"><p className="truncate text-xs text-ink-faint">{project.name}</p><h1 className="text-xl font-semibold tracking-tight">{t('project.board.title')}</h1></div>
           <span className="rounded-full bg-surface-high px-1.5 py-0.5 text-[0.6875rem] text-ink-faint">
             {t('board.cardCount', { count: (cards ?? []).length })}
           </span>
           <div className="flex-1" />
+          <Button icon={<Plus size={16} />} onClick={() => setCreating(true)}>{t('board.create.title')}</Button>
           {wide && hasClosed ? (
             <Button
               variant="ghost"
@@ -269,10 +281,27 @@ export function BoardPage() {
           </IconButton>
         </header>
 
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-sunken px-3 sm:max-w-sm">
+            <Search size={15} className="shrink-0 text-ink-faint" />
+            <input type="search" value={query} onChange={(event) => {
+              const value = event.target.value
+              setQuery(value)
+              if (!wide && value.trim()) {
+                const matching = (cards ?? []).filter((card) => matchesCard(card, value.trim().toLocaleLowerCase()))
+                if (!matching.some((card) => card.column === visibleColumn) && matching[0]) setVisibleColumn(matching[0].column)
+              }
+            }} aria-label={t('board.search')}
+              placeholder={t('board.search')} className="min-h-10 min-w-0 w-full bg-transparent text-sm outline-none placeholder:text-ink-faint" />
+          </div>
+          <p className="hidden text-xs text-ink-faint lg:block">{t(search ? 'board.searchHint' : 'board.hint')}</p>
+          {reorder.isError ? <p role="alert" className="text-sm text-critical">{t('board.moveError')}</p> : null}
+        </div>
+        {search && !(cards ?? []).some(matches) ? <p role="status" className="px-5 pt-4 text-sm text-ink-faint">{t('board.noResults')}</p> : null}
         {!wide ? (
           <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-2 py-1.5">
             {CARD_COLUMNS.map((column) => {
-              const count = (layout.get(column) ?? []).length
+              const count = (layout.get(column) ?? []).filter((id) => { const card = byId.get(id); return card && matches(card) }).length
               // Les colonnes de sortie ne se proposent au doigt que si elles ont
               // quelque chose : trois onglets utiles valent mieux que cinq.
               if (count === 0 && CARD_CLOSED_COLUMNS.includes(column)) return null
@@ -308,14 +337,15 @@ export function BoardPage() {
           onDragEnd={onDragEnd}
           onDragCancel={() => setDragging(null)}
         >
-          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3">
+          <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto p-3 md:p-5">
             {shown.map((column) => (
               <BoardColumn
                 key={column}
                 column={column}
                 cards={(layout.get(column) ?? [])
                   .map((id) => byId.get(id))
-                  .filter((card) => card !== undefined)}
+                  .filter((card): card is CardDto => card !== undefined && matches(card))}
+                filtered={Boolean(search)}
                 projectId={projectId}
                 openNumber={openCard?.number ?? null}
                 onOpenCard={(card) => showCard(card.number)}
@@ -331,8 +361,12 @@ export function BoardPage() {
         </DndContext>
       </div>
 
+      <NewCardDialog projectId={projectId} open={creating} onClose={() => setCreating(false)} onCreated={(card) => {
+        setCreating(false); setQuery(''); setVisibleColumn(card.column); showCard(card.number)
+      }} />
       {lingering ? (
         <CardPanel
+          key={lingering.id}
           card={lingering}
           projectId={projectId}
           open={openCard !== null}
@@ -356,8 +390,10 @@ function BoardColumn({
   projectId,
   openNumber,
   onOpenCard,
+  filtered,
 }: {
   column: CardColumn
+  filtered: boolean
   cards: CardDto[]
   projectId: string
   openNumber: number | null
@@ -369,24 +405,25 @@ function BoardColumn({
   const [adding, setAdding] = useState(false)
   // La colonne est elle-même une cible : sans elle, une colonne vide n'aurait aucune
   // carte à survoler et ne pourrait plus rien recevoir.
-  const { setNodeRef, isOver } = useDroppable({ id: column })
+  const { setNodeRef, isOver } = useDroppable({ id: column, disabled: filtered })
 
   const submit = () => {
     const value = title.trim()
-    if (!value) return
-    createCard.mutate({ title: value, column }, { onSuccess: () => setTitle('') })
+    if (!value || createCard.isPending) return
+    createCard.mutate({ title: value, column }, { onSuccess: (card) => { setTitle(''); setAdding(false); onOpenCard(card) } })
   }
 
   return (
     <section
-      className="flex h-full max-h-full w-full shrink-0 flex-col rounded-lg bg-sunken md:w-72"
+      className="flex h-full max-h-full w-full shrink-0 flex-col rounded-2xl border border-line/60 bg-sunken/60 md:w-72 md:min-w-64 md:flex-1"
       aria-label={columnLabel(column)}
     >
-      <header className="flex shrink-0 items-center gap-2 px-2.5 pt-2.5 pb-1.5">
-        <h2 className="text-xs font-semibold tracking-wide text-ink-soft uppercase">
+      <header className="flex shrink-0 items-center gap-2.5 px-3.5 pt-3 pb-2.5">
+        <span className={cx('size-2 shrink-0 rounded-full', COLUMN_DOTS[column])} />
+        <h2 className="text-sm font-semibold text-ink-soft">
           {columnLabel(column)}
         </h2>
-        <span className="text-xs text-ink-faint">{cards.length}</span>
+        <span className="rounded-md bg-surface-high px-1.5 py-0.5 text-xs text-ink-faint">{cards.length}</span>
         <div className="flex-1" />
         <IconButton label={t('board.card.new')} size="sm" onClick={() => setAdding(true)}>
           <Plus size={14} />
@@ -408,6 +445,8 @@ function BoardColumn({
               value={title}
               autoFocus
               rows={2}
+              maxLength={200}
+              aria-label={t('board.card.title')}
               placeholder={t('board.card.new.placeholder')}
               onChange={(event) => setTitle(event.target.value)}
               onKeyDown={(event) => {
@@ -437,6 +476,7 @@ function BoardColumn({
           </div>
         ) : null}
 
+        {createCard.isError ? <p role="alert" className="px-2 text-xs text-critical">{t('board.card.saveError')}</p> : null}
         <SortableContext
           items={cards.map((card) => card.id)}
           strategy={verticalListSortingStrategy}
@@ -445,6 +485,7 @@ function BoardColumn({
             <CardTile
               key={card.id}
               card={card}
+              disabled={filtered}
               selected={card.number === openNumber}
               onOpen={() => onOpenCard(card)}
             />
@@ -452,7 +493,7 @@ function BoardColumn({
         </SortableContext>
 
         {cards.length === 0 && !adding ? (
-          <p className="px-1 py-3 text-center text-xs text-ink-faint">{t('board.column.empty')}</p>
+          <button type="button" onClick={() => setAdding(true)} className="mx-1 flex min-h-24 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line p-4 text-xs text-ink-faint hover:border-line-strong hover:text-ink"><Plus size={18} />{t('board.card.new')}</button>
         ) : null}
       </div>
     </section>

@@ -48,8 +48,8 @@ export const NATIVE_SLASH_COMMANDS = new Set(['compact'])
  * repeint une barre de saisie absente, `heapdump` écrit sur le bureau de la machine
  * serveur), ou elles déplacent sous Sillage un état dont il rend compte : `/clear`
  * échange la session du CLI sans que le journal en sache rien, et `/model`, `/effort`,
- * `/fast` et `/config` changent la configuration appliquée pendant que les réglages du
- * composer continuent d'afficher l'ancienne.
+ * `/fast`, `/output-style`, `/advisor` et `/config` changent la configuration appliquée
+ * pendant que les réglages du composer continuent d'afficher l'ancienne.
  *
  * Les commandes que Sillage double sans les contredire ne sont pas ici : `/usage` et
  * `/context` répondent par du texte, et rien ne se désynchronise à les lire deux fois.
@@ -64,6 +64,8 @@ const HIDDEN_SLASH_COMMANDS = new Set([
   'model',
   'effort',
   'fast',
+  'output-style',
+  'advisor',
 ])
 
 /**

@@ -8,6 +8,7 @@ import {
   type AgentUsage,
   type ClaudeAccountDto,
   type EditDiffDto,
+  type FastModeAvailabilityDto,
   type ProjectCommandsDto,
 } from '@sillage/protocol'
 import type { Config } from '../../config.js'
@@ -128,6 +129,7 @@ export class ClaudeAdapter implements AgentAdapter {
         // `medium` est le défaut historique du CLI ; un modèle qui ne le connaît pas
         // retombe sur son premier niveau plutôt que sur une valeur inventée.
         defaultEffort: efforts.includes('medium') ? 'medium' : (efforts[0] ?? null),
+        supportsFastMode: model.supportsFastMode === true,
       }
     })
 
@@ -139,7 +141,26 @@ export class ClaudeAdapter implements AgentAdapter {
         }
       : null
 
-    return { models, modes: [], account, fetchedAt: listing.fetchedAt }
+    // Disponible tant que le CLI ne nomme pas d'empêchement. `sdk_opt_in_required` n'en
+    // est pas un : c'est l'état normal d'un compte qui y a droit, relevé à la sonde,
+    // puisque c'est la session qui doit demander le mode. Null sur un CLI trop ancien
+    // pour en parler, ce qui cache le réglage plutôt que de l'offrir à l'aveugle.
+    const { state, reason } = listing.fastMode
+    const available = state !== 'off' || reason === null || reason === 'sdk_opt_in_required'
+    const fastMode: FastModeAvailabilityDto | null =
+      state === null ? null : { available, reason: available ? null : reason }
+
+    return {
+      models,
+      modes: [],
+      account,
+      // `default` est le style qu'on obtient en n'en demandant aucun : c'est la valeur
+      // vide de la configuration, pas une entrée de plus à choisir.
+      outputStyles: listing.outputStyles.filter((style) => style !== 'default'),
+      fastMode,
+      agents: listing.agents.map((agent) => ({ name: agent.name, description: agent.description })),
+      fetchedAt: listing.fetchedAt,
+    }
   }
 
   usage(force: boolean): Promise<AgentUsage> {

@@ -29,3 +29,7 @@ export const COLUMN_TONES: Record<CardColumn, 'neutral' | 'accent' | 'caution' |
   done: 'positive',
   abandoned: 'neutral',
 }
+
+export const COLUMN_DOTS: Record<CardColumn, string> = {
+  todo: 'bg-ink-faint', in_progress: 'bg-accent', review: 'bg-caution', done: 'bg-positive', abandoned: 'bg-line-strong',
+}

@@ -136,6 +136,7 @@ export interface CardDto {
   updatedAt: number
   conversations: CardConversationDto[]
   /** Les notes ne voyagent pas avec la liste : le board n'en affiche que le compte. */
+  attachmentCount: number
   noteCount: number
   /** Cartes que la description de celle-ci mentionne. */
   references: CardLinkDto[]

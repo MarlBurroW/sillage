@@ -1,4 +1,6 @@
-import type { SillageEvent } from '@sillage/protocol'
+import { readFileSync, statSync } from 'node:fs'
+import { extname, isAbsolute, resolve } from 'node:path'
+import { VIEWABLE_IMAGE_TYPES, type SillageEvent } from '@sillage/protocol'
 import type { ThreadItem } from '@sillage/codex-bindings/v2'
 import { toWorkspacePath } from '../paths.js'
 
@@ -40,6 +42,38 @@ function tool(item: ThreadItem): { name: string; input: unknown } | null {
   }
 }
 
+/**
+ * Au-delà, l'image reste un chemin. Le journal et le flux SSE portent le base64 en
+ * entier, et une capture d'écran de Codex tient très largement sous ce plafond.
+ */
+const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
+
+/**
+ * Sortie d'un `imageView`, dans la forme du `tool_result` que Claude Code rend pour
+ * un `Read` d'image : un bloc `image` en base64, puis le chemin en texte. La vue web
+ * lit déjà cette forme, et le fil affiche l'image au lieu d'un chemin en JSON.
+ *
+ * Synchrone à dessein : l'événement `tool.completed` doit partir dans l'ordre des
+ * items, et un fichier local de quelques Mo se lit sans latence sensible. Une image
+ * illisible (supprimée, trop lourde, format inconnu) rend le chemin seul, sans erreur :
+ * Codex, lui, l'a bien vue.
+ */
+function imageViewOutput(cwd: string, path: string): unknown {
+  const absolute = isAbsolute(path) ? path : resolve(cwd, path)
+  const mediaType = VIEWABLE_IMAGE_TYPES[extname(absolute).slice(1).toLowerCase()]
+  if (!mediaType) return { path }
+  try {
+    if (statSync(absolute).size > MAX_INLINE_IMAGE_BYTES) return { path }
+    const data = readFileSync(absolute).toString('base64')
+    return [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data } },
+      { type: 'text', text: path },
+    ]
+  } catch {
+    return { path }
+  }
+}
+
 export function startedItem(item: ThreadItem, parentToolCallId: string | null): SillageEvent[] {
   if (item.type === 'contextCompaction') return [{ type: 'context.compaction_started' }]
   const action = tool(item)
@@ -76,7 +110,7 @@ export function completedItem(
     case 'dynamicToolCall': return [finish(item.contentItems, item.status === 'failed' || item.success === false, item.durationMs ?? durationMs)]
     case 'collabAgentToolCall': return [finish(item.agentsStates, item.status === 'failed')]
     case 'webSearch': return [finish({ query: item.query, action: item.action, results: item.results })]
-    case 'imageView': return [finish({ path: item.path })]
+    case 'imageView': return [finish(imageViewOutput(cwd, item.path))]
     case 'imageGeneration': return [
       finish({ status: item.status, revisedPrompt: item.revisedPrompt, savedPath: item.savedPath, failure: item.failure }, item.failure != null || item.status === 'failed'),
       ...(item.result && !item.failure ? [{

@@ -71,7 +71,7 @@ export class AttachmentStore {
    * Écrit le fichier puis enregistre sa trace. Le contenu ne va jamais en base :
    * SQLite n'est pas un magasin de blobs, et le journal doit rester léger à relire.
    */
-  async save(input: { userId: string; filename: string; content: Buffer }): Promise<AttachmentDto> {
+  async save(input: { userId: string; filename: string; content: Buffer; cardId?: string }): Promise<AttachmentDto> {
     const now = new Date()
     const dir = join(
       this.root,
@@ -90,6 +90,7 @@ export class AttachmentStore {
     const row: AttachmentRow = {
       id,
       conversationId: null,
+      cardId: input.cardId ?? null,
       userId: input.userId,
       filename: input.filename,
       mimeType: sniffMimeType(input.content, input.filename),
@@ -97,7 +98,12 @@ export class AttachmentStore {
       storagePath,
       createdAt: now.getTime(),
     }
-    this.db.insert(attachments).values(row).run()
+    try {
+      this.db.insert(attachments).values(row).run()
+    } catch (error) {
+      await rm(storagePath, { force: true })
+      throw error
+    }
 
     return toAttachmentDto(row)
   }
@@ -113,6 +119,7 @@ export class AttachmentStore {
           inArray(attachments.id, ids),
           eq(attachments.userId, userId),
           isNull(attachments.conversationId),
+          isNull(attachments.cardId),
         ),
       )
       .all()
@@ -154,6 +161,13 @@ export class AttachmentStore {
     return rows.length
   }
 
+  /** Les fichiers des tickets suivent leur suppression et celle du projet. */
+  async removeForCards(cardIds: string[]): Promise<void> {
+    if (!cardIds.length) return
+    const rows = this.db.select().from(attachments).where(inArray(attachments.cardId, cardIds)).all()
+    for (const row of rows) await this.remove(row.id)
+  }
+
   /**
    * Fichiers téléversés puis abandonnés sans envoi. Sans ce ramassage, chaque
    * hésitation devant le composer laisserait un fichier sur le disque à vie.
@@ -165,6 +179,7 @@ export class AttachmentStore {
       .where(
         and(
           isNull(attachments.conversationId),
+          isNull(attachments.cardId),
           lt(attachments.createdAt, Date.now() - ORPHAN_TTL_MS),
         ),
       )

@@ -50,6 +50,37 @@ export const claudeConfigSchema = z.object({
    * d'équivalent : son `config.toml` et son `codex_apps` intégré restent de toute façon.
    */
   strictMcp: z.boolean().default(false),
+  /**
+   * Mode rapide de Claude Code : même modèle, réponses plus rapides, facturées à part.
+   *
+   * Sur un abonnement, l'usage part en crédits d'usage, hors quota du forfait, et le
+   * premier tour en mode rapide repaie le contexte entier à ce tarif, une fois par
+   * conversation : c'est un réglage à poser au départ plutôt qu'à bascule. Seuls
+   * certains modèles le gèrent (`supportsFastMode` dans le catalogue) ; l'activer sur
+   * un autre fait basculer le CLI sur Opus. C'est le SDK qui doit opter : un `/fast`
+   * tapé dans une session headless répond « non disponible », relevé à la sonde.
+   */
+  fastMode: z.boolean().default(false),
+  /**
+   * Style de sortie du CLI (`Concise`, `Explanatory`…), parmi ceux que le catalogue
+   * annonce. Vide pour laisser le style par défaut.
+   */
+  outputStyle: z.string().default(''),
+  /**
+   * Modèle conseiller (`/advisor`), que le modèle principal peut consulter en cours de
+   * tâche. Vide pour ne pas en donner : chaque consultation est un appel de plus.
+   */
+  advisorModel: z.string().default(''),
+  /**
+   * Garde-fous d'une session que personne ne regarde, pensés pour l'API de tâches :
+   * coût cumulé en dollars et nombre d'appels de modèle au-delà desquels le CLI
+   * referme le tour en erreur (`error_max_budget_usd`, `error_max_turns`). Comptés par
+   * process : une session relancée pour un réglage repart de zéro. `null` ne plafonne
+   * rien, ce qui est le défaut d'une conversation humaine ; le composer ne les montre
+   * pas.
+   */
+  maxBudgetUsd: z.number().positive().nullable().default(null),
+  maxTurns: z.number().int().positive().nullable().default(null),
 })
 export type ClaudeConfig = z.infer<typeof claudeConfigSchema>
 
@@ -167,6 +198,11 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   mcpServers: [],
   sillageMcp: true,
   strictMcp: false,
+  fastMode: false,
+  outputStyle: CLI_DEFAULT,
+  advisorModel: CLI_DEFAULT,
+  maxBudgetUsd: null,
+  maxTurns: null,
 }
 
 export const DEFAULT_CODEX_CONFIG: CodexConfig = {

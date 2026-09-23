@@ -9,7 +9,7 @@ import { translate } from './i18n'
  * doit laisser le navigateur composer lui-même son en-tête `content-type`, frontière
  * comprise.
  */
-export async function uploadAttachment(file: File): Promise<AttachmentDto> {
+export async function uploadAttachment(file: File, endpoint = '/api/attachments'): Promise<AttachmentDto> {
   if (file.size > MAX_ATTACHMENT_BYTES) {
     throw new ApiRequestError(
       413,
@@ -24,7 +24,7 @@ export async function uploadAttachment(file: File): Promise<AttachmentDto> {
   const body = new FormData()
   body.append('file', file, file.name)
 
-  const response = await fetch('/api/attachments', {
+  const response = await fetch(endpoint, {
     method: 'POST',
     credentials: 'same-origin',
     body,

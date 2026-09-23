@@ -474,6 +474,11 @@ Options passées :
 | Mode de permission | `--permission-mode` | `manual`, `auto`, `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions` |
 | Répertoire de travail | `cwd` | chemin du worktree, ou du projet |
 | Dossiers additionnels | `--add-dir` | multi |
+| Mode rapide | `settings: { fastMode }` puis `applyFlagSettings` à chaud | booléen ; proposé seulement sur les modèles `supportsFastMode` et si le compte y a droit |
+| Style de réponse | `settings: { outputStyle }` puis `applyFlagSettings` | un des `available_output_styles` de l'init, vide pour le défaut |
+| Conseiller | `settings: { advisorModel }` puis `applyFlagSettings` | un modèle du catalogue, vide pour aucun |
+| Plafonds | `maxBudgetUsd`, `maxTurns` | options de lancement, API de tâches seulement ; les changer relance le runner |
+| Suggestions | `promptSuggestions: true` | fixe ; `promptSuggestionEnabled: false` dans les réglages du poste les coupe |
 | Reprise | `--resume <uuid>` | via `agent_session_id` |
 | Id imposé | `--session-id <uuid>` | on impose le nôtre à la création |
 | Sortie | `--output-format stream-json --include-partial-messages` | fixe |
@@ -481,6 +486,23 @@ Options passées :
 
 `bypassPermissions` est marqué en rouge dans l'UI avec une confirmation explicite, et
 n'est pas mémorisable comme défaut de projet.
+
+Le mode rapide, sondé sur le CLI 2.1.263 : `initializationResult()` le rapporte `off`
+avec le motif `sdk_opt_in_required`, et `applyFlagSettings({ fastMode: true })` le passe
+à `on` sans relancer. C'est donc la session qui doit le demander, un `/fast` tapé
+répondant « non disponible » ; son état revient sur chaque `init` et chaque `result`
+(`fast_mode_state`, dont la pause `cooldown` après une limite), et le runner n'en
+journalise que les changements, en `agent.notice` à identifiant stable. Même sonde pour
+le style de réponse : `applyFlagSettings({ outputStyle: 'Concise' })` change
+`output_style` à chaud. Les deux passent par la couche « flag » des réglages, celle de
+`--settings`, que la conversation impose par-dessus les fichiers du poste.
+
+Ce que l'opt-in ne garantit pas : que l'API accepte la requête rapide. Sur un compte
+sans crédits d'usage, elle la refuse, le CLI repasse en vitesse normale pour ce tour
+et le dit dans une `notification` par tour (« Fast mode disabled · usage credits
+exhausted »), relayée en `agent.notice` ; l'état reste `on`. Vérifié par
+`pnpm --filter @sillage/server claude:probe`, qui rejoue toute la chaîne en trois
+tours et coûte deux vrais tours plus un au tarif rapide.
 
 ### Traduction des événements
 
@@ -495,7 +517,16 @@ n'est pas mémorisable comme défaut de projet.
 | appel de `canUseTool` | `permission.requested`, la promesse est résolue par la réponse HTTP de l'UI |
 | `result` | `turn.completed` + `usage.updated` |
 | `rate_limit_event` | `usage.updated` (champ `rateLimit`) |
-| `system/thinking_tokens` | ignoré (liste d'exclusion : bruit de progression) |
+| `system/thinking_tokens` | `thinking.progress`, un pas sur cent tokens |
+| `system/notification`, `api_retry`, `model_refusal_*`, `permission_denied`, `informational` | `agent.notice` (voir `signals.ts`) : avis du CLI, tentatives d'API, refus du modèle, refus automatiques, messages de hooks |
+| `prompt_suggestion` | `suggestion.updated`, le message suivant prédit |
+| `conversation_reset` | `agent.notice` ; le `session_id` suivant arrive par l'init du tour d'après |
+| `system/session_state_changed` | ignoré (liste d'exclusion : bruit de progression) |
+
+`system/init` arrive à chaque tour, pas seulement au lancement (compté en base : autant
+d'inits que de tours). Le runner n'en journalise un `session.started` que si la session
+ou le modèle ont changé, ce qui est justement ce que le fil doit voir : un `/model`
+tapé, un repli, un `/clear`. Les commandes ne sont demandées qu'au premier.
 
 Les sous-agents (`parent_tool_use_id` non nul) sont conservés et portent cet identifiant
 jusqu'au journal. L'option `forwardSubagentText` est activée : sans elle le SDK ne
@@ -621,7 +652,8 @@ POST   /api/auth/logout
 GET    /api/auth/me
 
 GET    /api/projects
-POST   /api/projects                { name, workspacePath, visibility }
+POST   /api/projects                { name, workspacePath, visibility }   dossier existant
+                                    { name, parentDir, directory, visibility }   dossier créé, parent mémorisé
 POST   /api/projects/order          { ids[] }   ordre manuel de la sidebar
 PATCH  /api/projects/:id
 DELETE /api/projects/:id
@@ -673,7 +705,7 @@ POST   .../entries                          { parent, name, kind } -> crée un f
 POST   .../entries/move                     { from, to } -> renomme ou déplace
 DELETE .../entries                          { path }
 GET    .../file?path=                       contenu texte d'un fichier, avec son empreinte disque
-GET    .../file/raw                         contenu brut, images seulement
+GET    .../file/raw                         contenu brut : images, PDF, audio/vidéo (Range), modèles 3D
 PUT    .../file                             { path, content, fingerprint } -> 409 si le disque a bougé
 GET    .../diff                             diff de travail du répertoire
 GET    .../commits?limit=                   derniers commits de la branche

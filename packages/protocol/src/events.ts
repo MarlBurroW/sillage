@@ -593,6 +593,16 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     /** Détails repliables, utiles aussi pour les événements d'un CLI plus récent. */
     details: z.unknown().optional(),
   }),
+  /**
+   * Le message suivant que le CLI prédit, un par tour, après le `result`.
+   *
+   * Remplacé et jamais complété : une suggestion ne vaut que pour le tour qui vient,
+   * et le rendu l'efface dès qu'un message part, quel qu'il soit.
+   */
+  z.object({
+    type: z.literal('suggestion.updated'),
+    text: z.string(),
+  }),
   z.object({
     type: z.literal('plan.updated'),
     items: z.array(z.object({ text: z.string(), status: planStatusSchema })),

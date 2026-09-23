@@ -94,7 +94,7 @@ function buildShots(t) {
     {
       name: 'card',
       path: `/p/${t.nimbus.id}/board?carte=2`,
-      waitFor: 'text=Cache layer and offline fallback',
+      waitFor: 'role=button[name="Edit card"]',
       viewport: BOARD_VIEWPORT,
     },
     {
@@ -110,7 +110,7 @@ function buildShots(t) {
       },
     },
     { name: 'settings-mcp', path: '/settings/mcp', waitFor: 'text=playwright' },
-    { name: 'settings-appearance', path: '/settings/apparence', waitFor: 'text=Shared with the accent color' },
+    { name: 'settings-appearance', path: '/settings/apparence', waitFor: 'role=heading[name="Appearance"]' },
     // Les vues du panneau latéral ferment la liste : leur `storage` (panneau ouvert)
     // reste posé dans le contexte, et rien ne doit se capturer après elles.
     {
@@ -196,7 +196,7 @@ async function captureTheme(browser, theme, shots) {
 
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true })
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
 
   // Un contexte éphémère résout les identifiants, valables pour les deux thèmes.
   const probe = await browser.newContext()

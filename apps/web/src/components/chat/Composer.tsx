@@ -24,7 +24,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
-import { useComposerDrops, useComposerReferences } from '../../lib/composer-ref'
+import { useComposerDrops, useComposerPrefill, useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useCardSuggestions } from '../../lib/cards'
@@ -153,6 +153,8 @@ interface ComposerProps {
   onCommand?(name: string): Promise<void>
   onInterrupt(): void
   onConfigChange(config: AgentConfig): void
+  configError?: string
+  onConfigRetry?: () => void
   /** Occupation de la fenêtre de contexte, absente tant qu'aucun tour n'a eu lieu. */
   context?: ContextState | null
   /**
@@ -209,6 +211,8 @@ export function Composer({
   onCommand,
   onInterrupt,
   onConfigChange,
+  configError,
+  onConfigRetry,
   context,
   onSteer,
   initialText = '',
@@ -254,7 +258,7 @@ export function Composer({
   const filePicker = useRef<HTMLInputElement>(null)
 
   const running = status === 'running' || status === 'awaiting_input'
-  const { groups, summary, mcp, catalogError } = useAgentSettings({
+  const { groups, summary, mcp, mcpPanel, catalogError } = useAgentSettings({
     config,
     onConfigChange,
     appliedConfig,
@@ -360,6 +364,25 @@ export function Composer({
   }, [])
 
   useComposerReferences(referenceFile)
+
+  /**
+   * Suggestion de message suivant, acceptée sous le fil.
+   *
+   * Posée à la place d'une saisie vide, à la suite d'une saisie commencée : un tap ne
+   * doit jamais effacer ce qu'on écrivait, et la suggestion est un message entier, pas
+   * un fragment à glisser au curseur.
+   */
+  useComposerPrefill((suggested) => {
+    setText((current) =>
+      current.trim().length === 0 ? suggested : `${current.replace(/\s+$/, '')}\n\n${suggested}`,
+    )
+    requestAnimationFrame(() => {
+      const node = textarea.current
+      if (!node) return
+      node.focus()
+      node.setSelectionRange(node.value.length, node.value.length)
+    })
+  })
 
   /**
    * Texte dicté, posé au curseur avec l'espacement d'une frappe : la dictée arrive
@@ -636,6 +659,13 @@ export function Composer({
     }
   }
 
+  const configFeedback = configError ? (
+    <div role="alert" className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs text-critical">
+      <span>{t('composer.settings.saveError')} {configError}</span>
+      <button type="button" onClick={onConfigRetry} className="min-h-11 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-accent">{t('composer.settings.retry')}</button>
+    </div>
+  ) : null
+
   return (
     // L'encoche est portée par la page (`pb-safe`), pas ici : deux `env()` empilés
     // creuseraient un vide de deux encoches.
@@ -658,6 +688,8 @@ export function Composer({
         {catalogError ? (
           <p className="mb-1.5 px-1 text-xs text-caution">{t('composer.catalog.unavailable')}</p>
         ) : null}
+
+        {configFeedback}
 
         {/* Un seul bloc porte le cadre : le champ et sa barre d'outils forment un
             objet unique, qui s'illumine quand la saisie a le focus. */}
@@ -739,13 +771,14 @@ export function Composer({
           />
 
           <div className="flex flex-wrap items-center gap-1.5">
-            <div className="flex min-w-0 basis-full items-center border-b border-line pb-1 @min-[34rem]:basis-0 @min-[34rem]:flex-1 @min-[34rem]:border-0 @min-[34rem]:pb-0">
+            <div className="flex min-w-0 basis-full items-center border-b border-line pb-1">
               <ComposerSettings
                 groups={groups}
                 summary={summary}
-                aside={mcp}
+                mcp={mcpPanel}
+                feedback={configFeedback}
                 disabled={disabled}
-                onDone={() => textarea.current?.focus()}
+                inputRef={textarea}
               />
             </div>
             {/* Pas de `capture` : iOS propose alors lui-même l'appareil photo, la
@@ -795,6 +828,8 @@ export function Composer({
               )}
             </IconButton>
 
+            {mcp}
+
             <ConfirmDialog
               open={sttNotice}
               onOpenChange={setSttNotice}
@@ -805,7 +840,7 @@ export function Composer({
               <p>{t('composer.dictate.unconfigured.body')}</p>
             </ConfirmDialog>
 
-            <span className="ml-auto flex items-center @min-[34rem]:ml-0">
+            <span className="ml-auto flex items-center">
               {context ? <ContextMeter context={context} /> : null}
             </span>
 

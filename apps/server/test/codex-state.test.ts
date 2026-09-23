@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { openDatabase } from '@sillage/db'
 import type { ThreadItem, ThreadTokenUsageUpdatedNotification } from '@sillage/codex-bindings/v2'
@@ -67,8 +70,22 @@ test('recherche, images, sommeil, compaction et revue ont un rendu normalisé', 
   assert.ok(started.some((event) => event.type === 'context.compaction_started'))
   assert.ok(completed.some((event) => event.type === 'tool.completed' && event.toolCallId === 'web' && JSON.stringify(event.output).includes('Result')))
   assert.ok(completed.some((event) => event.type === 'message.completed' && event.blocks.some((block) => block.type === 'image')))
+  // Image introuvable : le chemin seul, jamais une erreur.
+  assert.ok(completed.some((event) => event.type === 'tool.completed' && event.toolCallId === 'view' && JSON.stringify(event.output) === '{"path":"/tmp/image.png"}'))
   assert.ok(completed.some((event) => event.type === 'context.compacted'))
   assert.ok(completed.some((event) => event.type === 'agent.notice' && event.code === 'enteredReviewMode'))
+})
+
+test('une image vue par Codex est jointe en base64, dans la forme du Read de Claude', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-view-'))
+  const png = Buffer.from('89504e470d0a1a0a', 'hex')
+  writeFileSync(join(dir, 'shot.png'), png)
+  const [event] = completedItem({ type: 'imageView', id: 'view', path: 'shot.png' }, dir, 10, null)
+  assert.equal(event!.type, 'tool.completed')
+  assert.deepEqual((event as { output: unknown }).output, [
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png.toString('base64') } },
+    { type: 'text', text: 'shot.png' },
+  ])
 })
 
 test('retrouver les questions asynchrones ouvertes, y compris sur les conversations idle', () => {

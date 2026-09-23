@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
+import { processOrigins } from '../services/origins.js'
 import { and, eq, gt, or, sql } from 'drizzle-orm'
 import {
   conversations,
@@ -687,6 +688,7 @@ export class SessionManager {
       // les installations faites depuis l'interface.
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
+      processEnv: processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId),
       // Le serveur de Sillage passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
       // l'emporter sur celui que la plateforme ajoute d'elle-même.

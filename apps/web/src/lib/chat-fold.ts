@@ -313,6 +313,14 @@ export interface ChatState {
    */
   skills: AgentSkillDto[]
   /**
+   * Le message suivant que le CLI prédit, après le dernier tour.
+   *
+   * Remplacée et jamais complétée : une suggestion ne vaut que pour le tour qui vient.
+   * Effacée dès qu'un tour repart, quel que soit le message qui l'ouvre, y compris un
+   * autre que celui suggéré. Null aussi pour un CLI qui n'en propose pas.
+   */
+  suggestion: string | null
+  /**
    * Les réveils observés, par consigne réinjectée : combien, et le dernier quand.
    *
    * Tenue à part de `loops` parce qu'elle doit survivre au remplacement de la liste.
@@ -390,6 +398,7 @@ export function emptyChatState(): ChatState {
     mcp: [],
     commands: [],
     skills: [],
+    suggestion: null,
     loopFires: new Map(),
     tasks: new Map(),
   }
@@ -782,6 +791,9 @@ export function applyEvent(
       state.turnRunning = true
       state.planId = null
       state.diffId = null
+      // Le tour qui s'ouvre est la réponse à la suggestion, ou à autre chose : dans
+      // les deux cas elle ne vaut plus rien.
+      state.suggestion = null
       break
     }
 
@@ -1096,6 +1108,13 @@ export function applyEvent(
       }
       if (index === -1) appendItem(state, item)
       else replaceItem(state, index, item)
+      break
+    }
+
+    case 'suggestion.updated': {
+      // Arrive après le `result` du tour : seule la dernière compte, et elle ne vaut
+      // que tant qu'aucun tour n'a repris depuis.
+      state.suggestion = event.text
       break
     }
 

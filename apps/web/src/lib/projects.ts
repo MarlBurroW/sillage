@@ -12,17 +12,21 @@ export function useProjects() {
   })
 }
 
-export interface CreateProjectInput {
-  name: string
-  workspacePath: string
-  visibility: 'private' | 'shared'
-}
+/** Un dossier déjà là (`workspacePath`), ou un dossier à créer dans `parentDir`. */
+export type CreateProjectInput =
+  | { name: string; workspacePath: string; visibility: 'private' | 'shared' }
+  | { name: string; parentDir: string; directory: string; visibility: 'private' | 'shared' }
 
 export function useCreateProject() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: CreateProjectInput) => api.post<ProjectDto>('/api/projects', input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: PROJECTS_KEY }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: PROJECTS_KEY })
+      // Le serveur mémorise le dossier parent d'un projet créé de zéro : le formulaire
+      // suivant doit le proposer sans attendre un rechargement.
+      void queryClient.invalidateQueries({ queryKey: ['user-settings'] })
+    },
   })
 }
 

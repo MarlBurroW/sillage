@@ -1,7 +1,10 @@
+import { basename } from 'node:path'
+import { toAttachmentDto, type AttachmentStore } from '../../attachments/store.js'
 import { randomUUID } from 'node:crypto'
 import { and, asc, count, eq, inArray, max, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
+  attachments,
   cardNotes,
   cardRefs,
   cards,
@@ -14,6 +17,7 @@ import {
   type ProjectRow,
 } from '@sillage/db'
 import {
+  MAX_ATTACHMENT_BYTES,
   createCardBodySchema,
   createCardNoteBodySchema,
   parseCardReferences,
@@ -41,7 +45,7 @@ const MENTION_LIMIT = 20
  * d'une session, et elle vit dans la route de création de conversation parce que c'est
  * l'envoi du message qui la déclenche, pas l'observation d'une session active.
  */
-export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store: AttachmentStore): void {
   const loadProject = (projectId: string, userId: string): ProjectRow => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
     if (!project) throw notFound('project_not_found', 'Project not found.')
@@ -160,6 +164,10 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
         .map((row) => [row.cardId, row.total]),
     )
 
+    const files = new Map(ctx.db.select({ cardId: attachments.cardId, total: count() })
+      .from(attachments).where(inArray(attachments.cardId, ids)).groupBy(attachments.cardId)
+      .all().map((row) => [row.cardId, row.total]))
+
     const authors = new Map(
       ctx.db
         .select({ id: users.id, displayName: users.displayName })
@@ -188,6 +196,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
       updatedAt: row.updatedAt,
       conversations: sessions.get(row.id) ?? [],
       noteCount: notes.get(row.id) ?? 0,
+      attachmentCount: files.get(row.id) ?? 0,
       references: outgoing.get(row.id) ?? [],
       referencedBy: incoming.get(row.id) ?? [],
     }))
@@ -371,6 +380,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
       )
     }
 
+    await store.removeForCards([id])
     writeTransaction(ctx.db, (tx) => {
       // Les conversations survivent à leur carte et redeviennent ordinaires : elles
       // portent du travail réel, que le rangement du board n'a pas à emporter.
@@ -378,6 +388,40 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext): void 
       tx.delete(cards).where(eq(cards.id, id)).run()
     })
 
+    return reply.status(204).send()
+  })
+
+  app.get('/api/cards/:id/attachments', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    loadCard(id, user.id)
+    return ctx.db.select().from(attachments).where(eq(attachments.cardId, id))
+      .orderBy(attachments.createdAt).all().map(toAttachmentDto)
+  })
+
+  app.post('/api/cards/:id/attachments', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    loadCard(id, user.id)
+    const file = await request.file({ limits: { fileSize: MAX_ATTACHMENT_BYTES } })
+    if (!file) throw badRequest('no_file', 'No file received.')
+    const content = await file.toBuffer().catch(() => null)
+    if (!content || file.file.truncated) throw badRequest('file_too_large', 'File is too large.')
+    if (!content.byteLength) throw badRequest('empty_file', 'File is empty.')
+    // Recontrôler après la lecture : le ticket peut avoir disparu pendant l'envoi.
+    loadCard(id, user.id)
+    const dto = await store.save({ userId: user.id, cardId: id,
+      filename: basename(file.filename).slice(0, 200) || 'fichier', content })
+    return reply.status(201).send(dto)
+  })
+
+  app.delete('/api/cards/:id/attachments/:attachmentId', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, attachmentId } = request.params as { id: string; attachmentId: string }
+    loadCard(id, user.id)
+    const file = store.get(attachmentId)
+    if (!file || file.cardId !== id) throw notFound('attachment_not_found', 'Attachment not found.')
+    await store.remove(attachmentId)
     return reply.status(204).send()
   })
 

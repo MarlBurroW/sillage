@@ -3,6 +3,7 @@ import { updateUserSettingsBodySchema, type UserSettingsDto } from '@sillage/pro
 import {
   readUserSettings,
   writeCollapsedProjects,
+  writeProjectsDir,
   writeUserAgentDefault,
 } from '../../settings/user-settings.js'
 import type { AppContext } from '../context.js'
@@ -29,6 +30,7 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     // écrivent le même document sans jamais parler du réglage de l'autre.
     if (body.agentDefault) writeUserAgentDefault(ctx.db, user.id, body.agentDefault)
     if (body.collapsedProjects) writeCollapsedProjects(ctx.db, user.id, body.collapsedProjects)
+    if (body.projectsDir !== undefined) writeProjectsDir(ctx.db, user.id, body.projectsDir)
     // Relu plutôt que reconstruit depuis le corps : l'écran a besoin des deux CLI, et
     // le corps n'en porte qu'un.
     return readUserSettings(ctx.db, user.id)

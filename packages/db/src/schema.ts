@@ -451,7 +451,9 @@ export const attachments = sqliteTable(
     conversationId: text('conversation_id').references(() => conversations.id, {
       onDelete: 'cascade',
     }),
-    /** Propriétaire du fichier téléversé, seul habilité à le relire ou à l'envoyer. */
+    /** Une pièce appartient soit à une conversation, soit à un ticket. */
+    cardId: text('card_id').references(() => cards.id, { onDelete: 'set null' }),
+    /** Auteur du téléversement ; les fichiers de ticket se partagent avec le projet. */
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -462,7 +464,7 @@ export const attachments = sqliteTable(
     storagePath: text('storage_path').notNull(),
     createdAt: timestamp('created_at').notNull(),
   },
-  (t) => [index('idx_attachments_conversation').on(t.conversationId)],
+  (t) => [index('idx_attachments_conversation').on(t.conversationId), index('idx_attachments_card').on(t.cardId)],
 )
 
 /**

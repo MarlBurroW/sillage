@@ -13,6 +13,8 @@ import { PanelFocus } from '../PanelFocus'
 import { Markdown } from '../chat/Markdown'
 import { AgentIcon } from '../AgentIcon'
 import { Badge, Button, IconButton, Menu, MenuItem, cx } from '../ui'
+import { CardAttachments } from './CardAttachments'
+import { CardEditor } from './CardEditor'
 import { CardNotes } from './CardNotes'
 import { COLUMN_TONES, columnLabel } from './columns'
 
@@ -68,16 +70,10 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
   const { draft, setDraft, acknowledge } = useCardDraft(user?.id ?? '', card.id)
   const title = draft?.title ?? card.title
   const description = draft?.description ?? card.description
-  const descriptionField = useRef<HTMLTextAreaElement>(null)
   const [editing, setEditing] = useState(false)
+  const [tab, setTab] = useState<'details' | 'activity' | 'sessions'>('details')
   const modal = !useMediaQuery('(min-width: 48rem)')
   const editVisible = editing || draft !== null
-  useEffect(() => {
-    const field = descriptionField.current
-    if (!field) return
-    field.style.height = 'auto'
-    field.style.height = `${field.scrollHeight}px`
-  }, [description, card.id, editVisible])
 
   const dirty = title !== card.title || description !== card.description
   // Après un rechargement pendant la requête, le serveur peut déjà avoir reçu
@@ -99,6 +95,12 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
     <PanelFocus open={open} modal={modal} onClose={onClose} fallbackFocus={`[data-card-open="${card.id}"], [data-navigation-trigger]`}>
     <aside
       ref={aside}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && editVisible) {
+          event.preventDefault()
+          save()
+        }
+      }}
       inert={!open}
       aria-hidden={!open}
       role={modal ? 'dialog' : 'complementary'}
@@ -112,14 +114,14 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
         // panneau suit le viewport visuel quand le clavier s'ouvre.
         // La largeur est bornée en CSS et pas seulement à l'enregistrement : une
         // fenêtre rétrécie après coup laisserait sinon un tiroir plus large qu'elle.
-        'absolute inset-0 md:left-auto md:w-[min(var(--card-panel-width,26rem),calc(100vw-10rem))]',
+        'absolute inset-0 md:left-auto md:w-[min(var(--card-panel-width,40rem),calc(100vw-10rem))]',
         // `translate` et non `transform` : Tailwind v4 pose les utilitaires de
         // translation sur cette propriété CSS, distincte de `transform`.
         'transition-[translate] duration-200 ease-out',
         entered && open ? 'translate-x-0' : 'translate-x-full',
       )}
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+      <header className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-3">
         <span className="text-xs font-medium text-ink-faint">#{card.number}</span>
         <Menu align="start" trigger={
           <button type="button" disabled={saving} aria-label={t('board.card.changeColumn', { column: columnLabel(card.column) })}
@@ -141,50 +143,43 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
         </IconButton>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
-        <div className="flex flex-col gap-2">
-          {editVisible ? <>
-          <textarea
-            autoFocus={editing}
-            value={title}
-            rows={2}
-            aria-label={t('board.card.title')}
-            onChange={(event) => setDraft({ title: event.target.value, description })}
-            className="w-full resize-none rounded-md border border-transparent bg-transparent px-2 py-1 text-base leading-snug font-semibold text-ink outline-none hover:border-line focus:border-line-strong"
-          />
-          <textarea
-            ref={descriptionField}
-            value={description}
-            rows={3}
-            aria-label={t('board.card.description')}
-            placeholder={t('board.card.description.placeholder')}
-            onChange={(event) => setDraft({ title, description: event.target.value })}
-            className="max-h-[40vh] min-h-24 w-full resize-y rounded-md border border-line bg-sunken px-2.5 py-2 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-faint focus:border-line-strong"
-          />
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" disabled={!dirty || !title.trim() || saving} onClick={save}>
-                {t(saving ? 'board.card.saving' : 'board.card.save')}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={saving}
-                onClick={() => { setDraft(null); setEditing(false) }}
-              >
-                {t('board.card.cancel')}
-              </Button>
-              {dirty ? <p className="w-full text-xs text-ink-soft" role="status">{t('board.card.draft')}</p> : null}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-sunken/50 px-5 py-3">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{card.title}</span>
+        {latestSession ? <Button size="sm" variant="secondary" icon={<Play size={14} />} onClick={() => navigate(`/p/${projectId}/c/${latestSession.id}`)}>{t('board.card.resume')}</Button> : null}
+        <Button size="sm" disabled={dirty || saving} title={dirty ? t('board.editor.saveBeforeLaunch') : undefined} icon={<Plus size={14} />} onClick={() => navigate(`/p/${projectId}/c/new?card=${card.id}`)}>
+          {t(latestSession ? 'board.card.newSession' : 'board.card.launch')}
+        </Button>
+        {dirty ? <p className="w-full text-xs text-ink-faint">{t('board.editor.saveBeforeLaunch')}</p> : null}
+      </div>
+      <nav aria-label={t('board.card.sections')} className="flex shrink-0 gap-5 border-b border-line px-5">
+        {(['details', 'activity', 'sessions'] as const).map((value) => <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}
+          className={cx('flex min-h-12 items-center gap-2 border-b-2 text-sm font-medium transition-colors', tab === value ? 'border-accent text-accent' : 'border-transparent text-ink-faint hover:text-ink')}>
+          {t(value === 'details' ? 'board.card.details' : value === 'activity' ? 'board.card.activity' : 'board.card.sessions.title')}
+          {value !== 'details' ? <span className="rounded-md bg-sunken px-1.5 py-0.5 text-xs">{value === 'activity' ? card.noteCount : card.conversations.length}</span> : null}
+        </button>)}
+      </nav>
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5 sm:p-6">
+        {tab === 'details' ? <>
+        <div className="flex flex-col gap-4">
+          {editVisible ? <CardEditor title={title} description={description} onChange={setDraft} /> : <>
+            <div className="flex flex-col items-start gap-3 sm:flex-row">
+              <h2 className="min-w-0 flex-1 break-words text-2xl font-semibold leading-snug tracking-tight text-ink">{card.title}</h2>
+              <Button variant="secondary" size="sm" icon={<Pencil size={14} />} onClick={() => setEditing(true)}>{t('board.card.edit')}</Button>
             </div>
-          </> : <>
-            <h2 className="break-words text-lg font-semibold leading-snug text-ink">{card.title}</h2>
-            {card.description ? <div className="min-w-0 break-words text-sm text-ink-soft"><Markdown text={card.description} /></div> : null}
-            <Button variant="ghost" size="sm" className="self-start" icon={<Pencil size={14} />} onClick={() => setEditing(true)}>
-              {t('board.card.edit')}
-            </Button>
+            <div className="rounded-xl border border-line p-4">
+              <h3 className="mb-3 text-sm font-semibold text-ink-soft">{t('board.card.description')}</h3>
+              {card.description ? <div className="min-w-0 break-words text-sm leading-relaxed text-ink-soft"><Markdown text={card.description} /></div> :
+                <button type="button" onClick={() => setEditing(true)} className="w-full py-6 text-left text-sm text-ink-faint hover:text-accent">{t('board.editor.addDescription')}</button>}
+            </div>
           </>}
           {updateCard.isError ? <p role="alert" className="text-sm text-critical">{t('board.card.saveError')}</p> : null}
         </div>
-
+        <CardAttachments key={card.id} cardId={card.id} projectId={projectId} />
+        <CardLinkList title={t('board.card.references')} links={card.references} onSelect={onSelectCard} />
+        <CardLinkList title={t('board.card.referencedBy')} links={card.referencedBy} onSelect={onSelectCard} />
+        </> : null}
+        {tab === 'activity' ? <CardNotes projectId={projectId} cardId={card.id} /> : null}
+        {tab === 'sessions' ? (
         <div className="flex flex-col gap-1.5">
           <h3 className="text-xs font-medium tracking-wide text-ink-faint uppercase">
             {t('board.card.sessions.title')}
@@ -219,54 +214,24 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
               ))}
             </ul>
           )}
-          <div className="mt-1 flex flex-wrap gap-2">
-            {latestSession ? (
-              <Button icon={<Play size={15} />} onClick={() => navigate(`/p/${projectId}/c/${latestSession.id}`)}>
-                {t('board.card.resume')}
-              </Button>
-            ) : null}
-            <Button
-              variant={latestSession ? 'secondary' : 'primary'}
-              icon={latestSession ? <Plus size={15} /> : <Play size={15} />}
-              onClick={() => navigate(`/p/${projectId}/c/new?card=${card.id}`)}
-            >
-              {t(latestSession ? 'board.card.newSession' : 'board.card.launch')}
-            </Button>
-          </div>
         </div>
-
-        <CardNotes projectId={projectId} cardId={card.id} />
-
-        <CardLinkList
-          title={t('board.card.references')}
-          links={card.references}
-          onSelect={onSelectCard}
-        />
-        <CardLinkList
-          title={t('board.card.referencedBy')}
-          links={card.referencedBy}
-          onSelect={onSelectCard}
-        />
+        ) : null}
       </div>
 
-      <div className="flex shrink-0 items-center gap-3 border-t border-line px-3 py-2.5">
-        <p className="min-w-0 flex-1 text-[0.6875rem] text-ink-faint">
-          {t('board.card.author', { name: card.createdByName })}
-          {' · '}
-          {t('board.card.remove.notice')}
-        </p>
-        <IconButton
-          label={t('board.card.remove')}
-          size="sm"
-          disabled={deleteCard.isPending}
-          onClick={() => {
+      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-sunken/40 px-5 py-3">
+        {editVisible ? <>
+          <p className="min-w-0 flex-1 text-xs text-ink-faint" role="status">{t(dirty ? 'board.card.draft' : 'board.editor.saved')}</p>
+          <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setDraft(null); setEditing(false) }}>{t('board.card.cancel')}</Button>
+          <Button size="sm" disabled={!dirty || !title.trim() || saving} onClick={save}>{t(saving ? 'board.card.saving' : 'board.card.save')}</Button>
+        </> : <>
+          <p className="min-w-0 flex-1 text-xs text-ink-faint">{t('board.card.author', { name: card.createdByName })}</p>
+          <IconButton label={t('board.card.remove')} size="sm" disabled={deleteCard.isPending} onClick={() => {
             if (!confirm(translate('board.card.remove.confirm', { number: card.number }))) return
             deleteCard.mutate(card.id, { onSuccess: onClose })
-          }}
-        >
-          <Trash2 size={15} />
-        </IconButton>
-      </div>
+          }}><Trash2 size={15} /></IconButton>
+        </>}
+        {deleteCard.isError ? <p role="alert" className="w-full text-sm text-critical">{t('board.files.error')}</p> : null}
+      </footer>
 
       {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
           tiroir occupe tout l'écran, il n'y a rien à ajuster. */}

@@ -1,6 +1,8 @@
+import * as Dialog from '@radix-ui/react-dialog'
 import {
   ArrowDown,
-  ChevronDown,
+  Info,
+  X,
   FileText,
   FolderTree,
   GaugeCircle,
@@ -16,11 +18,7 @@ import {
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  AGENT_CAPABILITIES,
-  agentConfigSchema,
-  type AgentConfig,
-} from '@sillage/protocol'
+import { AGENT_CAPABILITIES } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
@@ -28,6 +26,7 @@ import { Composer } from '../components/chat/Composer'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
+import { PromptSuggestion } from '../components/chat/PromptSuggestion'
 import { QueuedMessages } from '../components/chat/QueuedMessages'
 import { ThreadSearch } from '../components/chat/ThreadSearch'
 import { TurnActivity } from '../components/chat/TurnActivity'
@@ -37,7 +36,6 @@ import { UsageSummary } from '../components/chat/UsageSummary'
 import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
 import { Banner, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, cx } from '../components/ui'
-import { api } from '../lib/api'
 import {
   compactConversation,
   conversationsKey,
@@ -49,6 +47,7 @@ import {
   useConversation,
 } from '../lib/conversations'
 import { useFileDrop } from '../lib/file-drop'
+import { useConversationConfig } from '../lib/conversation-config'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
 import { openInstructions, useInstructionsFile } from '../lib/instructions'
@@ -231,10 +230,7 @@ export function ConversationPage() {
   // nouveau champ récupère ainsi ses valeurs par défaut au lieu d'arriver trouée.
   // Déclaré ici et non après les retours anticipés, où il vivait : la rangée de signaux
   // en a besoin, et un hook ne peut pas se déclarer plus bas.
-  const config = useMemo(
-    () => (conversation ? agentConfigSchema.parse(conversation.config) : null),
-    [conversation],
-  )
+  const { config, error: configError, change: updateConfig, retry: retryConfig, flush: flushConfig } = useConversationConfig(conversation)
   /**
    * Le mode de permission que le CLI applique encore, quand ce n'est pas celui choisi.
    * Null le reste du temps, donc aucun signal à afficher.
@@ -782,12 +778,6 @@ export function ConversationPage() {
     ? allConversations?.find((entry) => entry.id === conversation.forkedFromId)
     : undefined
 
-  const updateConfig = async (next: AgentConfig) => {
-    await api.patch(`/api/conversations/${conversationId}`, { config: next })
-    void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
-  }
-
-
   const compact = async () => {
     setCompacting(true)
     setActionError(null)
@@ -807,6 +797,7 @@ export function ConversationPage() {
    * la bannière de la page : le geste part du champ, et c'est là qu'on la relance.
    */
   const runCommand = async (name: string) => {
+    await flushConfig()
     if (name === 'compact') await compactConversation(conversationId)
   }
 
@@ -816,17 +807,20 @@ export function ConversationPage() {
     mentions: string[],
     skills: string[],
   ) => {
+    await flushConfig()
     await sendMessage(conversationId, text, attachmentIds, mentions, skills)
     void queryClient.invalidateQueries({ queryKey: conversationsKey(conversation.projectId) })
   }
 
-  const steer = (
+  const steer = async (
     text: string,
     attachmentIds: string[],
     mentions: string[],
     skills: string[],
-  ) =>
-    steerConversation(conversationId, text, attachmentIds, mentions, skills).then(() => undefined)
+  ) => {
+    await flushConfig()
+    await steerConversation(conversationId, text, attachmentIds, mentions, skills)
+  }
 
   // `relative` porte le bouton de retour en bas, et la hauteur retire l'en-tête
   // mobile de la coque, absent en desktop.
@@ -871,98 +865,24 @@ export function ConversationPage() {
         >
           <MobileNavigationButton />
           <span
-            aria-hidden
-            className="hidden size-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-high @min-[44rem]/thread:flex"
+            role="img"
+            aria-label={AGENT_LABELS[conversation.agent]}
+            title={AGENT_LABELS[conversation.agent]}
+            className="flex size-8 shrink-0 items-center justify-center"
           >
-            <AgentIcon agent={conversation.agent} size={17} />
+            <AgentIcon agent={conversation.agent} size={20} />
           </span>
 
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs text-ink-soft @min-[44rem]/thread:hidden">
+            <Link
+              to={`/p/${conversation.projectId}`}
+              className="block w-fit max-w-full truncate rounded-sm text-xs text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+            >
               {projects?.find((project) => project.id === conversation.projectId)?.name}
-            </p>
+            </Link>
             <p className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</p>
 
-            {/* Métadonnées en pastilles plutôt qu'en texte courant : elles restent
-                lisibles une fois tronquées sur un écran étroit.
 
-                Repliées par défaut au doigt : quatre pastilles écrasées dans 390 px ne
-                se lisent plus, alors que ce sont des repères qu'on consulte de temps en
-                temps et non en permanence. Sur grand écran, la place existe. */}
-            <div
-              className={cx(
-                'mt-0.5 items-center gap-1.5 overflow-x-auto text-[0.6875rem] text-ink-faint',
-                metaOpen ? 'flex' : 'hidden @min-[44rem]/thread:flex',
-              )}
-            >
-              <Meta title={AGENT_LABELS[conversation.agent]}>
-                {stream.state.model ?? AGENT_LABELS[conversation.agent]}
-              </Meta>
-
-              <Meta
-                icon={worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
-                title={
-                  worktree
-                    ? t('conversation.meta.worktree', { name: worktree.name })
-                    : t('conversation.meta.projectFolder')
-                }
-              >
-                {worktree ? worktree.name : t('conversation.meta.project')}
-              </Meta>
-
-              {/* Une branche dit d'où elle vient : sans ça, deux fils presque identiques
-                  dans la sidebar sont impossibles à distinguer. Le lien disparaît si
-                  l'originale a été supprimée, la référence devenant orpheline. */}
-              {origin ? (
-                <Link
-                  to={`/p/${origin.projectId}/c/${origin.id}`}
-                  className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
-                  title={t('conversation.meta.branchOf', { title: origin.title })}
-                >
-                  <GitBranch size={10} />
-                  <span className="max-w-32 truncate">{origin.title}</span>
-                </Link>
-              ) : null}
-
-              {/* Le chemin de retour vers le chantier : depuis une session, on remonte
-                  au travail qu'elle traite. Le titre est celui de la carte au moment du
-                  chargement, pas une copie figée à la création. */}
-              {conversation.card ? (
-                <Link
-                  to={`/p/${conversation.projectId}/board?carte=${conversation.card.number}`}
-                  className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
-                  title={t('conversation.meta.card', { title: conversation.card.title })}
-                >
-                  <SquareKanban size={10} />
-                  <span>#{conversation.card.number}</span>
-                </Link>
-              ) : null}
-
-              {/* Une conversation lancée par l'API se dit en toutes lettres : on peut y
-                  écrire comme dans une autre, mais un agent distant la pilote aussi, et
-                  découvrir un tour qu'on n'a pas demandé sans savoir d'où il vient est
-                  la pire façon de l'apprendre. */}
-              {/* Pas un `Meta` : ceux-ci sont en chasse fixe et tronqués à 10rem, ce qui
-                  couperait la phrase au milieu. Elle se lit entière ou ne sert à rien. */}
-              {conversation.origin ? (
-                <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-wash px-1.5 py-0.5 text-accent">
-                  <Terminal size={10} />
-                  {t('conversation.meta.apiControlled', { label: conversation.origin.label })}
-                </span>
-              ) : null}
-
-              {/* Tout vient du fold : le journal est la seule source d'affichage (I2),
-                  et lui seul porte le détail des tokens de cache. */}
-              <UsageSummary
-                account={catalog?.account}
-                rateLimit={stream.state.rateLimit}
-                costUsd={stream.state.costUsd}
-                inputTokens={stream.state.inputTokens}
-                outputTokens={stream.state.outputTokens}
-                cacheCreationTokens={stream.state.cacheCreationTokens}
-                cacheReadTokens={stream.state.cacheReadTokens}
-              />
-            </div>
           </div>
 
           {/*
@@ -1027,7 +947,14 @@ export function ConversationPage() {
             ) : null}
           </span>
 
-          <span className="@min-[44rem]/thread:hidden">
+          <span className="hidden @min-[44rem]/thread:contents">
+            <Menu trigger={<IconButton label={t('conversation.actions')}><MoreHorizontal size={18} /></IconButton>}>
+              <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
+                {t('conversation.meta.details')}
+              </MenuItem>
+            </Menu>
+          </span>
+          <span className="shrink-0 @min-[44rem]/thread:hidden">
             <Menu
               trigger={
                 <IconButton label={t('conversation.actions')}>
@@ -1035,8 +962,8 @@ export function ConversationPage() {
                 </IconButton>
               }
             >
-              <MenuItem icon={<ChevronDown size={14} />} onSelect={() => setMetaOpen((value) => !value)}>
-                {t(metaOpen ? 'conversation.meta.hide' : 'conversation.meta.show')}
+              <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
+                {t('conversation.meta.details')}
               </MenuItem>
               <MenuItem icon={<GaugeCircle size={14} />} onSelect={() => setUsageOpen(true)}>
                 {t('conversation.usage.label')}
@@ -1077,6 +1004,93 @@ export function ConversationPage() {
             <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
           </IconButton>
         </header>
+
+        <Dialog.Root open={metaOpen} onOpenChange={setMetaOpen}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
+            <Dialog.Content
+              aria-describedby={undefined}
+              className="surface fixed top-1/2 left-1/2 z-50 max-h-[85dvh] w-[min(30rem,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-line p-4 shadow-pop"
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <Dialog.Title className="text-sm font-semibold">{t('conversation.meta.details')}</Dialog.Title>
+                <Dialog.Close asChild>
+                  <IconButton label={t('common.close')}><X size={18} /></IconButton>
+                </Dialog.Close>
+              </div>
+              <p className="mb-3 break-words text-sm text-ink-soft">{conversation.title}</p>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+                <Meta title={AGENT_LABELS[conversation.agent]}>
+                  {stream.state.model ?? AGENT_LABELS[conversation.agent]}
+                </Meta>
+
+                <Meta
+                  icon={worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
+                  title={
+                    worktree
+                      ? t('conversation.meta.worktree', { name: worktree.name })
+                      : t('conversation.meta.projectFolder')
+                  }
+                >
+                  {worktree ? worktree.name : t('conversation.meta.project')}
+                </Meta>
+
+                {/* Une branche dit d'où elle vient : sans ça, deux fils presque identiques
+                    dans la sidebar sont impossibles à distinguer. Le lien disparaît si
+                    l'originale a été supprimée, la référence devenant orpheline. */}
+                {origin ? (
+                  <Link
+                    to={`/p/${origin.projectId}/c/${origin.id}`}
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
+                    title={t('conversation.meta.branchOf', { title: origin.title })}
+                  >
+                    <GitBranch size={10} />
+                    <span className="max-w-32 truncate">{origin.title}</span>
+                  </Link>
+                ) : null}
+
+                {/* Le chemin de retour vers le chantier : depuis une session, on remonte
+                    au travail qu'elle traite. Le titre est celui de la carte au moment du
+                    chargement, pas une copie figée à la création. */}
+                {conversation.card ? (
+                  <Link
+                    to={`/p/${conversation.projectId}/board?carte=${conversation.card.number}`}
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
+                    title={t('conversation.meta.card', { title: conversation.card.title })}
+                  >
+                    <SquareKanban size={10} />
+                    <span>#{conversation.card.number}</span>
+                  </Link>
+                ) : null}
+
+                {/* Une conversation lancée par l'API se dit en toutes lettres : on peut y
+                    écrire comme dans une autre, mais un agent distant la pilote aussi, et
+                    découvrir un tour qu'on n'a pas demandé sans savoir d'où il vient est
+                    la pire façon de l'apprendre. */}
+                {/* Pas un `Meta` : ceux-ci sont en chasse fixe et tronqués à 10rem, ce qui
+                    couperait la phrase au milieu. Elle se lit entière ou ne sert à rien. */}
+                {conversation.origin ? (
+                  <span className="flex min-w-0 items-center gap-1 rounded-full bg-accent-wash px-1.5 py-0.5 text-accent">
+                    <Terminal size={10} />
+                    {t('conversation.meta.apiControlled', { label: conversation.origin.label })}
+                  </span>
+                ) : null}
+
+                {/* Tout vient du fold : le journal est la seule source d'affichage (I2),
+                    et lui seul porte le détail des tokens de cache. */}
+                <UsageSummary
+                  account={catalog?.account}
+                  rateLimit={stream.state.rateLimit}
+                  costUsd={stream.state.costUsd}
+                  inputTokens={stream.state.inputTokens}
+                  outputTokens={stream.state.outputTokens}
+                  cacheCreationTokens={stream.state.cacheCreationTokens}
+                  cacheReadTokens={stream.state.cacheReadTokens}
+                />
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
 
         <UsagePanel agent={conversation.agent} open={usageOpen} onOpenChange={setUsageOpen} />
 
@@ -1185,6 +1199,12 @@ export function ConversationPage() {
                 canCancel={isOwner}
                 canSteer={canSteer}
               />
+
+              {/* Le message suivant que le CLI prédit, tant que rien n'est parti ni en
+                  attente : un message en file est déjà la réponse au tour. */}
+              {stream.state.suggestion && !stream.state.turnRunning && stream.state.queued.length === 0 ? (
+                <PromptSuggestion text={stream.state.suggestion} disabled={!isOwner} />
+              ) : null}
             </div>
           </div>
 
@@ -1256,7 +1276,9 @@ export function ConversationPage() {
             onSend={send}
             onCommand={runCommand}
             onInterrupt={() => void interruptConversation(conversationId)}
-            onConfigChange={(next) => void updateConfig(next)}
+            onConfigChange={updateConfig}
+            configError={configError?.message}
+            onConfigRetry={retryConfig}
             mcpInventory={stream.state.mcp}
             commands={stream.state.commands}
             skills={stream.state.skills}

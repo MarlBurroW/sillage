@@ -4,6 +4,15 @@ import type { AgentConfig, ConversationStatus, SillageEvent } from '@sillage/pro
 import { applyEvent, emptyChatState, isAwaitingUser, type ChatState } from './chat-fold'
 import { fetchJournal } from './conversations'
 import { wsClient } from './ws-client'
+import { locale } from './i18n'
+
+interface JournalSnapshot {
+  state: ChatState
+  cursor: number
+}
+
+const SNAPSHOT_KEY = 'chat-journal-snapshot'
+const MAX_SNAPSHOTS = 4
 
 /** Les deltas sont appliqués par lots : un rendu par token effondre le framerate mobile. */
 const FLUSH_INTERVAL_MS = 60
@@ -66,9 +75,13 @@ export function useChatStream(
     if (!conversationId) return
 
     let cancelled = false
-    stateRef.current = emptyChatState()
+    // Cache de l'onglet, effacé avec les autres requêtes à la déconnexion.
+    // Le fold traduit certains événements : une autre langue repart du journal.
+    const snapshotKey = [SNAPSHOT_KEY, conversationId, locale()]
+    const snapshot = queryClient.getQueryData<JournalSnapshot>(snapshotKey)
+    stateRef.current = snapshot?.state ?? emptyChatState()
     pending.current = []
-    cursor.current = 0
+    cursor.current = snapshot?.cursor ?? 0
     setState(stateRef.current)
     setLoading(true)
     setError(null)
@@ -115,6 +128,18 @@ export function useChatStream(
 
         cursor.current = Math.max(cursor.current, read)
         wsClient.setCursor(conversationId, cursor.current)
+        // Un checkpoint seulement après un rattrapage complet : un curseur de
+        // page fusionnée ne doit jamais être associé à un état encore incomplet.
+        flush()
+        queryClient.setQueryData<JournalSnapshot>(snapshotKey, {
+          state: stateRef.current,
+          cursor: cursor.current,
+        })
+        const snapshots = queryClient.getQueryCache().findAll({ queryKey: [SNAPSHOT_KEY] })
+          .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
+        for (const old of snapshots.slice(MAX_SNAPSHOTS)) {
+          queryClient.removeQueries({ queryKey: old.queryKey, exact: true })
+        }
         setLoading(false)
       } catch (err) {
         if (cancelled) return

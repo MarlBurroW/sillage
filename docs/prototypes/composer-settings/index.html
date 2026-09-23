@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f6f5fb">
+    <title>Sillage · Proposition pour le composer</title>
+    <link rel="stylesheet" href="prototype.css">
+    <script src="prototype.js" defer></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="preview-bar">
+        <div class="preview-name"><span class="brand" aria-hidden="true">S</span><span>Sillage <span class="preview-label">/ Maquette</span></span></div>
+        <div class="preview-controls">
+          <label class="sr-only" for="agent">Agent de démonstration</label>
+          <select id="agent"><option value="codex">Codex</option><option value="claude">Claude Code</option></select>
+          <button class="icon-button" id="theme" aria-label="Passer au thème sombre" title="Changer de thème"></button>
+        </div>
+      </header>
+
+      <main class="conversation">
+        <header class="conversation-header">
+          <span class="eyebrow">PROJET SILLAGE</span>
+          <h1>Un composer plus direct</h1>
+          <p>Modèle et réflexion, à portée de doigt.</p>
+        </header>
+        <div class="thread">
+          <div class="user-message">Peux-tu améliorer le confort de lecture sur mobile ?</div>
+          <div class="assistant-message">
+            <span class="speaker"><span class="agent-mark" aria-hidden="true">✳</span> Sillage</span>
+            <p>Je peux ajuster les espacements et la taille du texte, puis vérifier le résultat sur les petits écrans.</p>
+          </div>
+          <aside class="try-card" aria-label="Comment essayer la maquette">
+            <span class="try-icon" aria-hidden="true">↙</span>
+            <div><strong>Essaie les deux boutons sous le message.</strong><p>Un toucher pour ouvrir les choix, un autre pour choisir. Le bouton de réglages ouvre une vue complète qui reste ouverte entre les modifications.</p></div>
+          </aside>
+        </div>
+      </main>
+
+      <footer class="compose-area">
+        <div class="composer">
+          <label class="sr-only" for="message">Ton message</label>
+          <textarea id="message" placeholder="Écris ton message…" rows="2"></textarea>
+          <div class="quick-settings" aria-label="Réglages rapides">
+            <button id="model-trigger" class="quick-button model-button" data-open="model" aria-haspopup="dialog" aria-controls="settings-dialog"><span data-icon="sparkles"></span><span id="model-label"></span><span data-icon="chevron"></span></button>
+            <button id="effort-trigger" class="quick-button effort-button" data-open="effort" aria-haspopup="dialog" aria-controls="settings-dialog"><span data-icon="brain"></span><span id="effort-label"></span><span data-icon="chevron"></span></button>
+            <button id="all-trigger" class="icon-button all-button" data-open="all" aria-label="Tous les réglages" title="Tous les réglages" aria-haspopup="dialog" aria-controls="settings-dialog"><span data-icon="sliders"></span></button>
+          </div>
+          <div class="composer-actions">
+            <button class="icon-button" disabled aria-label="Joindre un fichier (hors maquette)"><span data-icon="paperclip"></span></button>
+            <button class="icon-button" disabled aria-label="Dicter (hors maquette)"><span data-icon="mic"></span></button>
+            <button id="context-trigger" class="context-button" data-open="all" aria-haspopup="dialog" aria-controls="settings-dialog"></button>
+            <button class="icon-button send" disabled aria-label="Envoi désactivé dans la maquette"><span data-icon="arrow"></span></button>
+          </div>
+        </div>
+        <div class="preview-note">Maquette interactive · aucun message envoyé</div>
+      </footer>
+    </div>
+
+    <dialog id="settings-dialog" aria-labelledby="dialog-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <header class="dialog-header"><div><h2 id="dialog-title"></h2><p id="dialog-description"></p></div><button class="icon-button" id="close-dialog" aria-label="Fermer les réglages"><span data-icon="close"></span></button></header>
+      <div id="dialog-body" class="dialog-body"></div>
+      <footer id="dialog-footer" class="dialog-footer" hidden><span>Les choix s’appliquent au fur et à mesure.</span><button class="done-button" id="done">Terminé</button></footer>
+    </dialog>
+    <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
+  </body>
+</html>

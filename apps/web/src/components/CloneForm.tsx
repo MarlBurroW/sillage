@@ -1,11 +1,12 @@
 import { GitBranch, Globe, Lock } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { parseRemoteUrl, type GitRepoDto } from '@sillage/protocol'
 import { Link } from 'react-router-dom'
 import { ApiRequestError } from '../lib/api'
 import { GITHUB_HOST, useGitCredentials } from '../lib/git-credentials'
 import { translateError, useTranslate } from '../lib/i18n'
 import { useCloneJob, useStartClone } from '../lib/projects'
+import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
 import { RepoCombobox } from './RepoCombobox'
 import { Banner, Button, Field, Select, type SelectOption } from './ui'
@@ -36,6 +37,13 @@ export function CloneForm() {
 
   const startClone = useStartClone()
   const { data: job } = useCloneJob(jobId)
+  const { data: settings } = useUserSettings()
+
+  // Même dossier de rangement que pour un projet créé de zéro, proposé sans écraser
+  // une saisie déjà faite.
+  useEffect(() => {
+    if (settings?.projectsDir) setParentDir((current) => current || settings.projectsDir!)
+  }, [settings?.projectsDir])
 
   const VISIBILITY_OPTIONS: SelectOption<'private' | 'shared'>[] = [
     {

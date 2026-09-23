@@ -212,7 +212,7 @@ const TOOLS = [
   {
     name: 'read_card',
     description:
-      "Lit une carte de ce projet en entier : sa description, la colonne où elle est posée, les sessions qui l'ont déjà traitée et les cartes qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, et les sessions passées disent ce qui a déjà été tenté. La colonne d'une carte se change dans l'interface, par une personne, jamais par toi.",
+      "Lit une carte de ce projet en entier : sa description, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée et les cartes qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, et les sessions passées disent ce qui a déjà été tenté. La colonne d'une carte se change dans l'interface, par une personne, jamais par toi.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -733,6 +733,9 @@ function readCard(number) {
     )
     .all(card.id)
 
+  card.attachments = db.prepare(
+    'SELECT filename, mime_type AS mimeType, size_bytes AS sizeBytes, storage_path AS path FROM attachments WHERE card_id = ? ORDER BY created_at'
+  ).all(card.id)
   return card
 }
 
@@ -809,6 +812,10 @@ function renderCard(card) {
   ]
 
   parts.push(card.description.trim() || '(aucune description)')
+  if (card.attachments.length) {
+    parts.push('Pièces jointes — fichiers locaux consultables avec tes outils de lecture :\n' +
+      card.attachments.map((file) => JSON.stringify(file)).join('\n'))
+  }
 
   if (card.sessions.length > 0) {
     const lines = card.sessions.map((session) => {

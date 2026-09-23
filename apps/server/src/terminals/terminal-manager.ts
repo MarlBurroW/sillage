@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@sillage/protocol'
 import type { Config } from '../config.js'
+import { processOrigins } from '../services/origins.js'
 
 /**
  * Terminaux attachés aux projets.
@@ -168,7 +169,7 @@ export class TerminalManager {
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       cwd,
-      env: { ...process.env, TERM: 'xterm-256color' },
+      env: { ...process.env, ...processOrigins(this.config.paths.data).environment(projectId, null), TERM: 'xterm-256color' },
     })
 
     const managed: ManagedTerminal = {

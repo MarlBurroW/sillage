@@ -113,6 +113,33 @@ const read: ToolView = (tool) => {
   )
 }
 
+/**
+ * `view_image` de Codex. Le runner joint l'image en base64 à la sortie, dans la forme
+ * du `Read` d'image de Claude Code ; quand il n'a pas pu la lire, seul le chemin reste
+ * et la vue le dit plutôt que de laisser un JSON nu.
+ */
+const viewImage: ToolView = (tool) => {
+  const path = text(tool.input, 'path')
+  if (path === null) return null
+
+  const image = pending(tool) ? null : imageBlock(tool.output)
+  return (
+    <Section label={translate('tool.viewImage.label')} hint={path}>
+      {pending(tool) ? (
+        <Empty>{translate('tool.read.loading')}</Empty>
+      ) : image === null ? (
+        <Empty>{translate('tool.viewImage.unavailable')}</Empty>
+      ) : (
+        <img
+          src={`data:${image.mediaType};base64,${image.data}`}
+          alt={path}
+          className="max-h-80 rounded-md border border-line object-contain"
+        />
+      )}
+    </Section>
+  )
+}
+
 const write: ToolView = (tool) => {
   const path = text(tool.input, 'file_path')
   const content = text(tool.input, 'content')
@@ -420,6 +447,7 @@ function isShort(value: unknown): boolean {
 export const VIEWS: Record<string, ToolView> = {
   Bash: bash,
   Read: read,
+  ViewImage: viewImage,
   Write: write,
   Edit: edit,
   Glob: matchesView('tool.search.patternLabel', ['pattern']),
