@@ -79,6 +79,8 @@ export class CodexAdapter implements AgentAdapter {
 
       const forked = await client.call<ThreadForkResponse, 'thread/fork'>('thread/fork', {
         threadId: target.agentSessionId,
+        // Seul l'identifiant sert : l'historique complet peut peser des dizaines de Mo.
+        excludeTurns: true,
       })
       const branchId = forked.thread.id
 
