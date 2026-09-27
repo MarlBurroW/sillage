@@ -308,6 +308,10 @@ export class CodexRunner implements AgentRunner {
           model: this.config.model,
           config: threadConfig,
           developerInstructions,
+          // Sans lui, la réponse embarque tout l'historique du fil, images en base64
+          // comprises : 48 Mo constatés le 2026-09-27, de quoi faire tomber le daemon en
+          // OOM à chaque reprise. Sillage tient déjà son propre journal et n'en lit rien.
+          excludeTurns: true,
         })
       : await this.client.call<ThreadStartResponse, 'thread/start'>('thread/start', {
           cwd: this.ctx.cwd,
