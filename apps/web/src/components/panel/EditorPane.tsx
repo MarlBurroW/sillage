@@ -23,6 +23,7 @@ import { downloadFile, rawFileUrl } from '../../lib/files-io'
 import { useTranslate } from '../../lib/i18n'
 import { isMarkdownPath, setMarkdownView, useMarkdownView } from '../../lib/markdown-view'
 import { Markdown } from '../chat/Markdown'
+import { FileLinkContext } from '../../lib/file-links'
 import { Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '../ui'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import { MediaView } from './MediaView'
@@ -309,7 +310,13 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
       </div> : null}
 
       {isMarkdown && view === 'preview' ? (
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3"><Markdown text={content} /></div>
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3">
+          {/* La portée de l'éditeur, et non celle du fil : l'aperçu s'ouvre aussi depuis
+              le panneau d'un projet, hors de toute conversation. */}
+          <FileLinkContext.Provider value={scope}>
+            <Markdown text={content} base={path.slice(0, path.lastIndexOf('/') + 1)} />
+          </FileLinkContext.Provider>
+        </div>
       ) : (
         <div className="min-h-0 min-w-0 flex-1">
           <CodeEditor
