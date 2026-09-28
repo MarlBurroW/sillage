@@ -112,8 +112,12 @@ const NON_PATH_TARGET = /^(\w+:|\/\/|#)/
  * markdown-it encode la cible en pourcent (un espace devient `%20`) : elle est décodée
  * avant d'être jugée, sinon un chemin avec espace serait recalé par `PATH_CANDIDATE`,
  * et le chemin transmis à l'éditeur ne serait pas celui du disque.
+ *
+ * `base` est le dossier du document quand il en a un : dans un fichier ouvert dans
+ * l'éditeur, `[avant](capture.png)` désigne la capture voisine, pas une capture à la
+ * racine du workspace. C'est la règle de GitHub, et celle qu'applique l'agent qui écrit.
  */
-function pathTarget(target: string | null): string | null {
+function pathTarget(target: string | null, base?: string): string | null {
   if (!target || NON_PATH_TARGET.test(target)) return null
   let decoded = target
   try {
@@ -121,7 +125,29 @@ function pathTarget(target: string | null): string | null {
   } catch {
     // Séquence d'échappement invalide : la cible est prise telle qu'écrite.
   }
+  if (base !== undefined && !decoded.startsWith('/')) {
+    const joined = joinPath(base, decoded)
+    if (joined === null) return null
+    decoded = joined
+  }
   return pathCandidate(decoded)
+}
+
+/**
+ * `target` résolu depuis le dossier `base`, `.` et `..` compris.
+ *
+ * null si la cible remonte au-dessus d'une base relative : elle sortirait du workspace,
+ * que le serveur refuserait de toute façon.
+ */
+function joinPath(base: string, target: string): string | null {
+  const absolute = base.startsWith('/')
+  const segments = base.split('/').filter(Boolean)
+  for (const segment of target.split('/')) {
+    if (segment === '' || segment === '.') continue
+    if (segment !== '..') segments.push(segment)
+    else if (segments.pop() === undefined && !absolute) return null
+  }
+  return `${absolute ? '/' : ''}${segments.join('/')}`
 }
 
 /** Un type que `file/raw` sert comme image : les autres n'ont rien à afficher. */
@@ -182,7 +208,7 @@ function markFilePaths(md: MarkdownIt): void {
         }
 
         if (child.type === 'image') {
-          const path = pathTarget(child.attrGet('src'))
+          const path = pathTarget(child.attrGet('src'), env.base)
           if (!path) continue
           if (!mark(child, path)) continue
 
@@ -199,7 +225,7 @@ function markFilePaths(md: MarkdownIt): void {
         }
 
         if (child.type === 'link_open') {
-          const path = pathTarget(child.attrGet('href'))
+          const path = pathTarget(child.attrGet('href'), env.base)
           if (!path) continue
           const known = mark(child, path)
           // Les liens ne s'imbriquent pas : la première fermeture est la sienne. Elle
@@ -302,6 +328,8 @@ interface MarkdownEnv {
    * Absente hors conversation : une image du disque reste alors son texte alternatif.
    */
   scope?: WorkspaceScope
+  /** Dossier du document rendu, d'où partent ses liens relatifs. Voir `pathTarget`. */
+  base?: string
 }
 
 /** Un segment de contenu, tel que le composant React doit le rendre. */
@@ -355,7 +383,7 @@ function tableRows(tokens: Token[], start: number, end: number): string[][] {
  */
 export function parseMarkdown(
   text: string,
-  options: { knownFiles?: Set<string>; scope?: WorkspaceScope } = {},
+  options: { knownFiles?: Set<string>; scope?: WorkspaceScope; base?: string } = {},
 ): MarkdownDocument {
   const candidates = new Set<string>()
   const env: MarkdownEnv = { candidates, ...options }

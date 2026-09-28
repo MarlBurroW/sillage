@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useSyncExternalStore } from 'react'
 import { api } from './api'
+import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
 /**
  * Chemins cités dans le fil dont on sait qu'ils désignent un fichier du workspace.
@@ -24,17 +25,17 @@ interface Resolution {
   readonly asked: Set<string>
 }
 
-const byConversation = new Map<string, Resolution>()
+const byScope = new Map<string, Resolution>()
 const pending = new Map<string, Set<string>>()
 const listeners = new Set<() => void>()
 
 const EMPTY: Set<string> = new Set()
 
-function resolutionOf(conversationId: string): Resolution {
-  const current = byConversation.get(conversationId)
+function resolutionOf(scope: WorkspaceScope): Resolution {
+  const current = byScope.get(scope)
   if (current) return current
   const created: Resolution = { files: new Set(), asked: new Set() }
-  byConversation.set(conversationId, created)
+  byScope.set(scope, created)
   return created
 }
 
@@ -42,17 +43,17 @@ function emit(): void {
   for (const listener of listeners) listener()
 }
 
-async function flush(conversationId: string): Promise<void> {
-  const queued = pending.get(conversationId)
-  pending.delete(conversationId)
+async function flush(scope: WorkspaceScope): Promise<void> {
+  const queued = pending.get(scope)
+  pending.delete(scope)
   if (!queued || queued.size === 0) return
 
-  const resolution = resolutionOf(conversationId)
+  const resolution = resolutionOf(scope)
   const paths = [...queued].slice(0, BATCH_LIMIT)
   for (const path of paths) resolution.asked.add(path)
 
   const answer = await api
-    .post<{ files: string[] }>(`/api/conversations/${conversationId}/files/exist`, { paths })
+    .post<{ files: string[] }>(`${workspaceApiBase(scope)}/files/exist`, { paths })
     // Un lien manquant n'est pas une panne à signaler : le chemin reste du texte, ce
     // qu'il était avant. Les chemins restent marqués comme demandés, sinon chaque
     // rendu relancerait la requête qui vient d'échouer.
@@ -64,10 +65,10 @@ async function flush(conversationId: string): Promise<void> {
     // peuvent être en vol pour la même conversation, puisque `flush` libère la file dès
     // son entrée. Repartir de l'instantané ferait perdre au second les fichiers que le
     // premier vient d'ajouter, définitivement : ils sont déjà marqués comme demandés.
-    const current = resolutionOf(conversationId)
+    const current = resolutionOf(scope)
     // Un ensemble neuf, et non muté : `useSyncExternalStore` compare les identités, et
     // un ajout en place ne déclencherait aucun rendu.
-    byConversation.set(conversationId, {
+    byScope.set(scope, {
       files: new Set([...current.files, ...answer.files]),
       asked: current.asked,
     })
@@ -77,26 +78,26 @@ async function flush(conversationId: string): Promise<void> {
   // Le lot était plafonné : ce qui n'est pas passé repart au tour suivant.
   const overflow = [...queued].slice(BATCH_LIMIT)
   if (overflow.length > 0) {
-    request(conversationId, overflow)
+    request(scope, overflow)
   }
 }
 
 /** Met des chemins en file, et déclenche un lot si aucun n'attend déjà. */
-function request(conversationId: string, paths: string[]): void {
-  const resolution = resolutionOf(conversationId)
+function request(scope: WorkspaceScope, paths: string[]): void {
+  const resolution = resolutionOf(scope)
   const fresh = paths.filter((path) => !resolution.asked.has(path))
   if (fresh.length === 0) return
 
-  const queued = pending.get(conversationId)
+  const queued = pending.get(scope)
   if (queued) {
     for (const path of fresh) queued.add(path)
     return
   }
 
-  pending.set(conversationId, new Set(fresh))
+  pending.set(scope, new Set(fresh))
   // Une micro-tâche suffit : tous les messages d'un même rendu déposent leurs candidats
   // avant qu'elle ne s'exécute.
-  void Promise.resolve().then(() => flush(conversationId))
+  void Promise.resolve().then(() => flush(scope))
 }
 
 function subscribe(listener: () => void): () => void {
@@ -107,13 +108,14 @@ function subscribe(listener: () => void): () => void {
 }
 
 /**
- * Conversation dont le workspace sert de référence aux chemins du fil.
+ * Portée dont le workspace sert de référence aux chemins du fil : la conversation, ou
+ * le projet pour l'aperçu d'un fichier ouvert depuis son panneau.
  *
  * Un contexte plutôt qu'une prop : `Markdown` est rendu depuis une dizaine d'endroits,
  * dont les notes de version et l'aperçu des réglages, où aucune conversation n'existe.
  * Ceux-là n'ont rien à passer et n'obtiennent pas de liens, ce qui est correct.
  */
-export const FileLinkContext = createContext<string | null>(null)
+export const FileLinkContext = createContext<WorkspaceScope | null>(null)
 
 /**
  * Fichiers connus pour cette conversation, et soumission des candidats manquants.
@@ -121,11 +123,11 @@ export const FileLinkContext = createContext<string | null>(null)
  * Renvoie un ensemble vide hors conversation : le rendu ne produit alors aucun lien.
  */
 export function useKnownFiles(candidates: Set<string>): Set<string> {
-  const conversationId = useContext(FileLinkContext)
+  const scope = useContext(FileLinkContext)
 
   const files = useSyncExternalStore(
     subscribe,
-    () => (conversationId ? byConversation.get(conversationId)?.files : undefined) ?? EMPTY,
+    () => (scope ? byScope.get(scope)?.files : undefined) ?? EMPTY,
     () => EMPTY,
   )
 
@@ -133,9 +135,9 @@ export function useKnownFiles(candidates: Set<string>): Set<string> {
   // contenu, sinon l'effet repartirait à chaque rendu.
   const key = [...candidates].sort().join('\n')
   useEffect(() => {
-    if (!conversationId || key.length === 0) return
-    request(conversationId, key.split('\n'))
-  }, [conversationId, key])
+    if (!scope || key.length === 0) return
+    request(scope, key.split('\n'))
+  }, [scope, key])
 
   return files
 }

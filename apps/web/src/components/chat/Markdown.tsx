@@ -13,15 +13,19 @@ import { MarkdownTable } from './MarkdownTable'
  * composants React, qui portent leur barre d'outils, et tout le reste est le HTML de
  * markdown-it, stylé par les règles `.sg-markdown`.
  */
-export function Markdown({ text }: { text: string }) {
+/**
+ * `base` : dossier du fichier rendu, quand le texte en est un. Ses liens relatifs en
+ * partent, au lieu de partir de la racine du workspace.
+ */
+export function Markdown({ text, base }: { text: string; base?: string }) {
   const conversationId = useContext(FileLinkContext)
 
   // Première passe : ce que le texte cite. Elle ne produit aucun lien, mais son HTML
   // est celui affiché tant que la réponse du serveur n'est pas là.
-  const found = useMemo(() => parseMarkdown(text, { scope: conversationId ?? undefined }), [
-    text,
-    conversationId,
-  ])
+  const found = useMemo(
+    () => parseMarkdown(text, { scope: conversationId ?? undefined, base }),
+    [text, conversationId, base],
+  )
   const known = useKnownFiles(found.candidates)
 
   // Seconde passe, une fois les fichiers connus. Sautée quand aucun candidat du texte
@@ -33,9 +37,10 @@ export function Markdown({ text }: { text: string }) {
   const segments = useMemo(
     () =>
       linkable
-        ? parseMarkdown(text, { knownFiles: known, scope: conversationId ?? undefined }).segments
+        ? parseMarkdown(text, { knownFiles: known, scope: conversationId ?? undefined, base })
+            .segments
         : found.segments,
-    [linkable, text, known, conversationId, found.segments],
+    [linkable, text, known, conversationId, base, found.segments],
   )
 
   /**
