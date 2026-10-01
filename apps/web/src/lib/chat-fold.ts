@@ -191,6 +191,18 @@ export interface QueuedMessage {
   attachmentCount: number
 }
 
+/**
+ * Message d'une autre session que Sillage a retenu au lieu de relancer celle-ci.
+ *
+ * Hors de `items` pour la même raison que la file : l'agent ne l'a pas lu. `text` est
+ * l'enveloppe complète, à lire avec `parseSessionMessage`.
+ */
+export interface HeldSessionMessage {
+  messageId: string
+  text: string
+  reason: 'loop' | 'rate'
+}
+
 /** Un fichier touché par l'agent pendant un tour. */
 export interface EditedFile {
   path: string
@@ -241,6 +253,7 @@ export interface ChatState {
   diffId: string | null
   items: ChatItem[]
   queued: QueuedMessage[]
+  heldSessionMessages: HeldSessionMessage[]
   lastSeq: number
   /** Coût API équivalent. Sur un compte par abonnement, il n'est pas facturé. */
   costUsd: number
@@ -380,6 +393,7 @@ export function emptyChatState(): ChatState {
     diffId: null,
     items: [],
     queued: [],
+    heldSessionMessages: [],
     lastSeq: 0,
     costUsd: 0,
     inputTokens: 0,
@@ -1038,6 +1052,21 @@ export function applyEvent(
 
     case 'message.dequeued': {
       state.queued = state.queued.filter((entry) => entry.queueId !== event.queueId)
+      break
+    }
+
+    case 'session_message.held': {
+      state.heldSessionMessages = [
+        ...state.heldSessionMessages,
+        { messageId: event.messageId, text: event.text, reason: event.reason },
+      ]
+      break
+    }
+
+    case 'session_message.released': {
+      state.heldSessionMessages = state.heldSessionMessages.filter(
+        (entry) => entry.messageId !== event.messageId,
+      )
       break
     }
 

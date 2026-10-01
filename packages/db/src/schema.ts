@@ -193,6 +193,80 @@ export const cardNotes = sqliteTable(
   (t) => [index('idx_card_notes_card').on(t.cardId, t.createdAt)],
 )
 
+/**
+ * Un message d'une session à une autre du même projet.
+ *
+ * Déposé par le serveur MCP, qui n'a qu'un accès à la base, et remis par le daemon, qui
+ * seul tient les runners : la table est la boîte aux lettres entre les deux process.
+ * `deliveredAt` nul veut dire « pas encore remis », et c'est ce que le relais balaie.
+ *
+ * Sans clé étrangère vers `conversations` : un échange reste lisible par celle qui
+ * reste quand l'autre est supprimée, comme une note de carte survit à son auteure.
+ */
+export const sessionMessages = sqliteTable(
+  'session_messages',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fromConversationId: text('from_conversation_id').notNull(),
+    toConversationId: text('to_conversation_id').notNull(),
+    /**
+     * `message` d'une session à une autre ; `broadcast` annoncé à toutes celles qui
+     * travaillent ; `done`, écrit par le relais, prévient qu'une session surveillée a fini.
+     */
+    kind: text('kind', { enum: ['message', 'broadcast', 'done'] }).notNull().default('message'),
+    body: text('body').notNull(),
+    /** Message auquel celui-ci répond, pour compter la profondeur d'un échange. */
+    replyTo: text('reply_to'),
+    createdAt: timestamp('created_at').notNull(),
+    /**
+     * Posé quand le relais retient le message au lieu de relancer le destinataire. Sert
+     * à n'annoncer la retenue qu'une fois dans son fil, redémarrage du daemon compris.
+     */
+    heldAt: timestamp('held_at'),
+    deliveredAt: timestamp('delivered_at'),
+    /**
+     * `steer` injecté dans un tour ouvert, `queue` mis en file derrière lui, `wake` en
+     * ouvrant un tour, `read` lu par l'outil avant d'avoir été remis, `failed` quand la
+     * remise a échoué : il n'est pas retenté, pour ne pas relancer en boucle un CLI qui
+     * refuse de démarrer, mais reste lisible par l'outil. Les trois derniers ne sont pas
+     * des remises : `discarded` écarté par une personne, `expired` retenu trop
+     * longtemps, `skipped` une annonce arrivée quand le destinataire ne travaillait plus.
+     */
+    deliveredVia: text('delivered_via', {
+      enum: ['steer', 'queue', 'wake', 'read', 'failed', 'discarded', 'expired', 'skipped'],
+    }),
+  },
+  (t) => [
+    index('idx_session_messages_to').on(t.toConversationId, t.createdAt),
+    index('idx_session_messages_pending').on(t.deliveredAt),
+  ],
+)
+
+/**
+ * Une session qui a demandé à être prévenue de la fin du travail d'une autre.
+ *
+ * Plutôt que de relancer `list_sessions` en boucle, ce qui coûte un tour à chaque
+ * coup d'œil : le relais surveille, et dépose un message `done` au moment voulu.
+ */
+export const sessionWatches = sqliteTable(
+  'session_watches',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    watcherConversationId: text('watcher_conversation_id').notNull(),
+    targetConversationId: text('target_conversation_id').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    /** Posé quand le message `done` est déposé, ou quand la surveillance expire. */
+    firedAt: timestamp('fired_at'),
+  },
+  (t) => [index('idx_session_watches_open').on(t.firedAt)],
+)
+
 export const conversations = sqliteTable(
   'conversations',
   {
@@ -708,6 +782,8 @@ export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect
 export type CardNoteRow = typeof cardNotes.$inferSelect
+export type SessionMessageRow = typeof sessionMessages.$inferSelect
+export type SessionWatchRow = typeof sessionWatches.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect
 export type McpServerRow = typeof mcpServers.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect

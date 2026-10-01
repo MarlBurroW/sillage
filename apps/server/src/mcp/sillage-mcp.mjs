@@ -5,12 +5,17 @@
  * de toutes les précédentes et le board du projet. Les outils exposés ici ouvrent cette
  * mémoire et cet état, cadrés au projet courant.
  *
- * Un seul outil écrit, `add_card_note`, et il n'écrit que dans un flux ajouté. La
- * frontière est là et pas ailleurs : un agent peut raconter ce qu'il a fait, il ne peut
- * ni déplacer une carte ni réécrire sa description. Déplacer serait se donner un
- * satisfecit, et la colonne cesserait d'être la position choisie qu'elle est censée
- * rester ; réécrire la description ferait qu'un compte rendu de session efface la
- * consigne qu'il était censé suivre.
+ * Les outils qui écrivent le font tous dans un flux ajouté : notes de carte, messages
+ * entre sessions, surveillances. La frontière est là et pas ailleurs : un agent peut
+ * raconter ce qu'il a fait ou prévenir une autre session, il ne peut ni déplacer une
+ * carte ni réécrire sa description. Déplacer serait se donner un satisfecit, et la
+ * colonne cesserait d'être la position choisie qu'elle est censée rester ; réécrire la
+ * description ferait qu'un compte rendu de session efface la consigne qu'il était censé
+ * suivre.
+ *
+ * Un message entre sessions n'est que déposé ici. Ce process n'a que la base, il ne
+ * tient aucun runner : c'est le daemon qui le remet, en l'injectant dans le tour en
+ * cours du destinataire ou en le réveillant (`apps/server/src/sessions/session-relay.ts`).
  *
  * En `.mjs` plutôt qu'en TypeScript compilé, comme la sonde : le process est lancé par
  * le CLI, pas par Sillage, et le garder hors du graphe de modules du serveur évite
@@ -24,6 +29,7 @@
  */
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SILLAGE_MCP_DB
@@ -89,6 +95,28 @@ const CARD_LIMIT = 40
 
 /** Une description entière peut faire des pages ; le board n'en rend qu'un aperçu. */
 const CARD_EXCERPT_CHARS = 160
+
+/**
+ * Taille maximale d'un message entre sessions.
+ *
+ * Il arrive dans le contexte du destinataire sans qu'il l'ait demandé, au milieu de son
+ * propre travail : c'est un mot glissé à un collègue, pas un rapport. Ce qui demande plus
+ * se met dans un fichier, ou se lit par read_conversation.
+ */
+const MAX_PEER_MESSAGE_CHARS = 4000
+
+/** Messages rendus par read_session_messages, les plus récents. */
+const PEER_HISTORY_LIMIT = 20
+
+/**
+ * Garde-fous du relais, pour prévenir l'expéditeur dès l'envoi qu'un message sera
+ * retenu plutôt que de le lui laisser découvrir.
+ *
+ * Doivent rester d'accord avec `apps/server/src/sessions/session-relay.ts`, qui seul
+ * décide ; ce module ne peut pas l'importer, étant hors du graphe de modules du serveur.
+ */
+const MAX_HOPS = 6
+const WAKES_PER_HOUR = 6
 
 const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
@@ -161,7 +189,7 @@ const TOOLS = [
   {
     name: 'list_sessions',
     description:
-      "Liste les conversations de ce projet qui travaillent en ce moment, et celles qui ont travaillé récemment, avec leur worktree et leur branche. Appelle cet outil avant d'ouvrir un chantier, pour vérifier qu'une autre session n'est pas déjà dessus, et avant toute manipulation de l'arbre de travail git : une autre conversation peut l'avoir laissé sur sa propre branche.",
+      "Liste les conversations de ce projet qui travaillent en ce moment, et celles qui ont travaillé récemment, avec leur worktree, la branche où il se trouve et son nombre de fichiers modifiés. Appelle cet outil avant d'ouvrir un chantier, pour vérifier qu'une autre session n'est pas déjà dessus, et avant toute manipulation de l'arbre de travail git : une autre conversation peut l'avoir laissé sur sa propre branche.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -238,6 +266,74 @@ const TOOLS = [
         },
       },
       required: ['body'],
+    },
+  },
+  {
+    name: 'send_session_message',
+    description:
+      "Envoie un message à une autre conversation de ce projet, identifiée par le `id` rendu par list_sessions ou find_file_edits. Sillage le lui remet dans quelques secondes : injecté dans son tour si elle travaille, sinon en la relançant pour qu'elle le lise. Sa réponse, si elle en fait une, te parvient de la même façon. Sert quand la coordination ne peut pas attendre l'utilisateur : prévenir qu'on va toucher à un fichier qu'elle modifie, lui demander de libérer l'arbre ou une branche, lui signaler qu'un travail dont elle dépend est fini, lui poser une question sur un choix qu'elle a fait. Pas pour bavarder ni pour rendre compte : chaque message coûte un tour à son destinataire. Si tu attends une réponse pour continuer, termine ton tour après l'envoi plutôt que d'attendre en boucle ; la réponse te relancera.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: {
+          type: 'string',
+          description: 'Identifiant de la conversation destinataire, tel que rendu par list_sessions.',
+        },
+        body: {
+          type: 'string',
+          description: `Texte du message, en markdown, ${MAX_PEER_MESSAGE_CHARS} caractères au plus. Il doit se comprendre seul : le destinataire ne connaît ni ton fil ni ce que l'utilisateur t'a demandé.`,
+        },
+        reply_to: {
+          type: 'string',
+          description:
+            "Identifiant du message auquel tu réponds, quand c'en est une. Il figure dans le message reçu. Permet à Sillage de borner un échange qui tournerait en rond.",
+        },
+      },
+      required: ['to', 'body'],
+    },
+  },
+  {
+    name: 'broadcast_session_message',
+    description:
+      "Annonce un message à toutes les autres conversations de ce projet qui travaillent en ce moment, et à elles seules : celles au repos ne sont pas relancées. Sert aux gestes qui touchent tout le monde : redémarrer le service Sillage ou un serveur de dev partagé, changer de branche ou faire un rebase sur l'arbre commun, régénérer des fichiers que d'autres lisent. Les destinataires n'y répondent pas. Pour une question à une session précise, utiliser send_session_message.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        body: {
+          type: 'string',
+          description: `Texte de l'annonce, ${MAX_PEER_MESSAGE_CHARS} caractères au plus : ce que tu vas faire, quand, et ce que les autres doivent éviter d'ici là.`,
+        },
+      },
+      required: ['body'],
+    },
+  },
+  {
+    name: 'notify_when_done',
+    description:
+      "Demande à être prévenu quand une autre conversation de ce projet aura fini de travailler : plus de tour en cours, ni de travail de fond, ni de boucle. Sillage te relance alors avec son état et son dernier message. Sert quand tu dépends de son travail, ou qu'elle occupe un fichier ou l'arbre dont tu as besoin : appelle cet outil puis termine ton tour, au lieu de rappeler list_sessions en boucle. La surveillance expire au bout de 24 heures.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session: {
+          type: 'string',
+          description: 'Identifiant de la conversation à surveiller, tel que rendu par list_sessions.',
+        },
+      },
+      required: ['session'],
+    },
+  },
+  {
+    name: 'read_session_messages',
+    description:
+      "Relit les messages échangés entre cette conversation et les autres sessions du projet, reçus comme envoyés, avec leur état de remise. Les messages reçus arrivent d'eux-mêmes dans le fil : cet outil sert à les retrouver après une compaction, à voir si un message envoyé a été remis, ou à lire un message que Sillage a retenu sans réveiller la session.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        with: {
+          type: 'string',
+          description: "Ne rendre que l'échange avec cette conversation. Omettre pour tous.",
+        },
+      },
     },
   },
   {
@@ -373,8 +469,10 @@ function listSessions(withinMinutes) {
               c.background_count AS background,
               c.loop_count AS loops,
               c.updated_at AS updatedAt,
-              w.name AS worktree
+              w.name AS worktree,
+              coalesce(w.path, p.workspace_path) AS path
        FROM conversations AS c
+       JOIN projects AS p ON p.id = c.project_id
        LEFT JOIN worktrees AS w ON w.id = c.worktree_id
        WHERE c.project_id = ?
          AND c.id != ?
@@ -384,6 +482,104 @@ function listSessions(withinMinutes) {
        LIMIT 50`,
     )
     .all(PROJECT_ID, CURRENT_CONVERSATION, Date.now() - withinMinutes * 60_000)
+}
+
+/**
+ * Branche et nombre de fichiers modifiés d'un arbre de travail, ou null si git ne
+ * répond pas.
+ *
+ * Lu sur le disque à l'appel et non tiré du journal : la question est « où en est
+ * l'arbre maintenant », et c'est justement quand une session a changé de branche sous
+ * une autre que le journal ne le dit pas. Un appel par arbre distinct, pas par session :
+ * dix sessions à la racine du projet ne coûtent qu'un `git status`.
+ */
+function gitState(path, cache) {
+  if (cache.has(path)) return cache.get(path)
+  let state = null
+  try {
+    const out = execFileSync('git', ['-C', path, 'status', '--porcelain=v1', '--branch'], {
+      encoding: 'utf8',
+      timeout: 3000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    const [head = '', ...files] = out.split('\n').filter(Boolean)
+    const branch = head.startsWith('## HEAD (no branch)')
+      ? 'HEAD détachée'
+      : head.replace(/^## (No commits yet on )?/, '').split('...')[0].split(' ')[0]
+    state = { branch, dirty: files.length }
+  } catch {
+    // Pas un dépôt, dossier disparu, git absent : l'information manque, rien de plus.
+  }
+  cache.set(path, state)
+  return state
+}
+
+/** Une conversation travaille-t-elle, d'après une ligne qui porte statut et compteurs. */
+const isWorking = (row) => row.status === 'running' || row.background > 0 || row.loops > 0
+
+/**
+ * Le message serait-il retenu plutôt que de relancer son destinataire au repos.
+ *
+ * Même règle que le relais, évaluée à l'envoi : l'expéditeur qui attend une réponse
+ * doit savoir tout de suite qu'elle ne viendra pas sans une personne.
+ */
+function predictHold(to, replyTo) {
+  let depth = 0
+  let parent = replyTo
+  const up = db.prepare(`SELECT reply_to AS replyTo FROM session_messages WHERE id = ?`)
+  while (parent && depth < MAX_HOPS) {
+    depth++
+    parent = up.get(parent)?.replyTo ?? null
+  }
+  if (depth >= MAX_HOPS) return 'loop'
+
+  const row = db
+    .prepare(
+      `SELECT count(*) AS total FROM session_messages
+       WHERE to_conversation_id = ? AND kind = 'message' AND delivered_via = 'wake'
+         AND delivered_at > ?`,
+    )
+    .get(to, Date.now() - 60 * 60 * 1000)
+  return row.total >= WAKES_PER_HOUR ? 'rate' : null
+}
+
+function broadcast(body) {
+  const targets = db
+    .prepare(
+      `SELECT c.id AS id FROM conversations AS c
+       WHERE c.project_id = ? AND c.id != ? AND c.archived_at IS NULL AND ${WORKING}`,
+    )
+    .all(PROJECT_ID, CURRENT_CONVERSATION)
+  if (targets.length === 0) return 0
+
+  const insert = writeDb().prepare(
+    `INSERT INTO session_messages
+       (id, project_id, from_conversation_id, to_conversation_id, kind, body, created_at)
+     VALUES (?, ?, ?, ?, 'broadcast', ?, ?)`,
+  )
+  const now = Date.now()
+  writeDb().transaction(() => {
+    for (const target of targets) insert.run(randomUUID(), PROJECT_ID, CURRENT_CONVERSATION, target.id, body, now)
+  })()
+  return targets.length
+}
+
+/** Pose une surveillance, sauf s'il en existe déjà une ouverte sur la même cible. */
+function watch(target) {
+  const open = db
+    .prepare(
+      `SELECT 1 AS yes FROM session_watches
+       WHERE watcher_conversation_id = ? AND target_conversation_id = ? AND fired_at IS NULL`,
+    )
+    .get(CURRENT_CONVERSATION, target)
+  if (open) return false
+  writeDb()
+    .prepare(
+      `INSERT INTO session_watches (id, project_id, watcher_conversation_id, target_conversation_id, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(randomUUID(), PROJECT_ID, CURRENT_CONVERSATION, target, Date.now())
+  return true
 }
 
 /**
@@ -587,9 +783,14 @@ function renderSessions(rows, withinMinutes) {
     return `Aucune autre conversation de ce projet n'a travaillé dans les ${withinMinutes} dernières minutes.`
   }
 
+  const cache = new Map()
   const lines = rows.map((row) => {
     const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
-    return `- ${row.id} | ${row.agent} | ${describeActivity(row)} | ${where} | ${ago(row.updatedAt)}\n  ${row.title}`
+    const git = row.path ? gitState(row.path, cache) : null
+    const tree = git
+      ? `, branche ${git.branch}${git.dirty > 0 ? `, ${git.dirty} fichier(s) modifié(s)` : ''}`
+      : ''
+    return `- ${row.id} | ${row.agent} | ${describeActivity(row)} | ${where}${tree} | ${ago(row.updatedAt)}\n  ${row.title}`
   })
   return `${rows.length} conversation(s), fenêtre de ${withinMinutes} min :\n${lines.join('\n')}`
 }
@@ -778,6 +979,72 @@ function addCardNote(cardId, body) {
     .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, body, Date.now())
 }
 
+/** Une conversation du projet que cette session peut joindre, ou null. */
+function peerConversation(id) {
+  return (
+    db
+      .prepare(
+        `SELECT c.id AS id, c.title AS title, c.agent AS agent, c.status AS status,
+                c.background_count AS background, c.loop_count AS loops,
+                c.archived_at AS archivedAt
+         FROM conversations AS c
+         WHERE c.id = ? AND c.project_id = ?`,
+      )
+      .get(id, PROJECT_ID) ?? null
+  )
+}
+
+function sendSessionMessage({ to, body, replyTo }) {
+  const id = randomUUID()
+  writeDb()
+    .prepare(
+      `INSERT INTO session_messages
+         (id, project_id, from_conversation_id, to_conversation_id, body, reply_to, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, PROJECT_ID, CURRENT_CONVERSATION, to, body, replyTo, Date.now())
+  return id
+}
+
+/**
+ * L'échange de cette conversation avec les autres, du plus ancien au plus récent.
+ *
+ * Les messages reçus et pas encore remis sont marqués lus au passage : les avoir sous
+ * les yeux ici rend leur injection ultérieure redondante, et elle tomberait en plein
+ * travail pour redire ce qui vient d'être lu.
+ */
+function readSessionMessages(withId) {
+  const rows = db
+    .prepare(
+      `SELECT m.id AS id, m.from_conversation_id AS fromId, m.to_conversation_id AS toId,
+              m.body AS body, m.kind AS kind, m.reply_to AS replyTo, m.created_at AS createdAt,
+              m.delivered_at AS deliveredAt, m.delivered_via AS via,
+              o.title AS otherTitle, o.agent AS otherAgent
+       FROM session_messages AS m
+       LEFT JOIN conversations AS o
+         ON o.id = CASE WHEN m.from_conversation_id = @me THEN m.to_conversation_id
+                        ELSE m.from_conversation_id END
+       WHERE m.project_id = @project
+         AND (m.from_conversation_id = @me OR m.to_conversation_id = @me)
+         AND (@with IS NULL OR m.from_conversation_id = @with OR m.to_conversation_id = @with)
+       ORDER BY m.created_at DESC
+       LIMIT ${PEER_HISTORY_LIMIT}`,
+    )
+    .all({ me: CURRENT_CONVERSATION, project: PROJECT_ID, with: withId })
+    .reverse()
+
+  const unread = rows.filter((row) => row.toId === CURRENT_CONVERSATION && row.deliveredAt === null)
+  if (unread.length > 0) {
+    const mark = writeDb().prepare(
+      `UPDATE session_messages SET delivered_at = ?, delivered_via = 'read'
+       WHERE id = ? AND delivered_at IS NULL`,
+    )
+    const now = Date.now()
+    for (const row of unread) mark.run(now, row.id)
+  }
+  return rows
+}
+
 function renderCards(rows, column) {
   const truncated = rows.length > CARD_LIMIT
   const shown = truncated ? rows.slice(0, CARD_LIMIT) : rows
@@ -847,6 +1114,40 @@ function renderCard(card) {
   if (card.referencedBy.length > 0) parts.push(`Citée par :\n${link(card.referencedBy)}`)
 
   return parts.join('\n\n')
+}
+
+const DELIVERY_LABELS = {
+  steer: 'remis dans son tour en cours',
+  queue: 'remis à la fin de son tour',
+  wake: 'remis en la relançant',
+  read: 'lu par read_session_messages',
+  failed: 'remise échouée',
+  discarded: 'écarté par une personne',
+  expired: 'expiré sans être remis',
+  skipped: "pas remis, elle ne travaillait plus",
+}
+
+const KIND_LABELS = { message: '', broadcast: 'annonce ', done: 'fin de travail ' }
+
+function renderPeerMessages(rows) {
+  if (rows.length === 0) {
+    return "Aucun message échangé avec les autres sessions de ce projet."
+  }
+
+  const lines = rows.map((row) => {
+    const outgoing = row.fromId === CURRENT_CONVERSATION
+    const other = outgoing ? row.toId : row.fromId
+    const who = `${other}${row.otherTitle ? ` « ${row.otherTitle} »` : ''}`
+    const state = row.deliveredAt === null
+      ? outgoing
+        ? 'pas encore remis'
+        : 'retenu, lu à l\'instant'
+      : DELIVERY_LABELS[row.via] ?? row.via
+    const reply = row.replyTo ? `, en réponse à ${row.replyTo}` : ''
+    const kind = KIND_LABELS[row.kind] ?? ''
+    return `[${kind}${outgoing ? 'envoyé à' : 'reçu de'} ${who}, ${ago(row.createdAt)}, ${state}${reply}] id ${row.id}\n${row.body}`
+  })
+  return lines.join('\n\n')
 }
 
 function renderCount(state) {
@@ -1035,6 +1336,111 @@ function callTool(name, args) {
 
     addCardNote(card.id, body)
     return text(`Note ajoutée à la carte #${card.number} « ${card.title} ».`)
+  }
+
+  if (name === 'send_session_message') {
+    const to = typeof args?.to === 'string' ? args.to.trim() : ''
+    const body = typeof args?.body === 'string' ? args.body.trim() : ''
+    const replyTo = typeof args?.reply_to === 'string' && args.reply_to.trim() ? args.reply_to.trim() : null
+    if (!to || !body) return { ...text('Les paramètres `to` et `body` sont requis.'), isError: true }
+    if (body.length > MAX_PEER_MESSAGE_CHARS) {
+      return {
+        ...text(`Message trop long (${body.length} caractères, ${MAX_PEER_MESSAGE_CHARS} au plus). Résume, ou mets le détail dans un fichier et donne son chemin.`),
+        isError: true,
+      }
+    }
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : elle ne peut pas signer un message."), isError: true }
+    }
+    if (to === CURRENT_CONVERSATION) {
+      return { ...text("C'est l'identifiant de cette conversation-ci."), isError: true }
+    }
+
+    const peer = peerConversation(to)
+    if (!peer) {
+      return {
+        ...text(`Aucune conversation « ${to} » dans ce projet. Appeler list_sessions pour voir celles qui existent.`),
+        isError: true,
+      }
+    }
+    if (peer.archivedAt !== null) {
+      return { ...text(`La conversation « ${peer.title} » est archivée : personne ne lira ce message.`), isError: true }
+    }
+
+    const id = sendSessionMessage({ to, body, replyTo })
+    if (peer.status === 'running' || peer.status === 'awaiting_input') {
+      return text(
+        `Message ${id} déposé pour « ${peer.title} » (${peer.agent}). Elle travaille en ce moment : il lui sera remis dans son tour, ou juste après. Si tu attends sa réponse, termine ton tour : elle te relancera.`,
+      )
+    }
+
+    const held = predictHold(to, replyTo)
+    if (held) {
+      const why = held === 'loop'
+        ? `votre échange compte déjà ${MAX_HOPS} allers-retours`
+        : `elle a déjà été relancée ${WAKES_PER_HOUR} fois dans l'heure par d'autres sessions`
+      return text(
+        `Message ${id} déposé pour « ${peer.title} », mais il ne la relancera pas : ${why}. Il est retenu, et son fil le montre jusqu'à ce qu'une personne le remette ou l'écarte ; il lui sera aussi remis si elle se remet à travailler. Ne compte pas sur une réponse rapide, et ne renvoie pas le message.`,
+      )
+    }
+    return text(
+      `Message ${id} déposé pour « ${peer.title} » (${peer.agent}). Elle est ${STATUS_LABELS[peer.status] ?? peer.status} : Sillage va la relancer pour qu'elle le lise. Si tu attends sa réponse, termine ton tour : elle te relancera.`,
+    )
+  }
+
+  if (name === 'broadcast_session_message') {
+    const body = typeof args?.body === 'string' ? args.body.trim() : ''
+    if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
+    if (body.length > MAX_PEER_MESSAGE_CHARS) {
+      return {
+        ...text(`Annonce trop longue (${body.length} caractères, ${MAX_PEER_MESSAGE_CHARS} au plus).`),
+        isError: true,
+      }
+    }
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : elle ne peut pas signer une annonce."), isError: true }
+    }
+    const sent = broadcast(body)
+    return text(
+      sent === 0
+        ? "Aucune autre session de ce projet ne travaille en ce moment : l'annonce n'a été envoyée à personne."
+        : `Annonce déposée pour ${sent} session(s) en train de travailler. Elle leur sera remise dans leur tour ; celles qui auront fini d'ici là ne la recevront pas.`,
+    )
+  }
+
+  if (name === 'notify_when_done') {
+    const target = typeof args?.session === 'string' ? args.session.trim() : ''
+    if (!target) return { ...text('Le paramètre `session` est requis.'), isError: true }
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas qui prévenir."), isError: true }
+    }
+    if (target === CURRENT_CONVERSATION) {
+      return { ...text("C'est l'identifiant de cette conversation-ci."), isError: true }
+    }
+    const peer = peerConversation(target)
+    if (!peer) {
+      return {
+        ...text(`Aucune conversation « ${target} » dans ce projet. Appeler list_sessions pour voir celles qui existent.`),
+        isError: true,
+      }
+    }
+    if (!isWorking(peer) && peer.status !== 'awaiting_input') {
+      return text(
+        `« ${peer.title} » ne travaille pas : elle est ${STATUS_LABELS[peer.status] ?? peer.status}. Il n'y a rien à attendre ; read_conversation dit où elle s'est arrêtée.`,
+      )
+    }
+    const created = watch(target)
+    const pause = peer.status === 'awaiting_input'
+      ? " Elle attend en ce moment une réponse de l'utilisateur : la surveillance ne se déclenchera qu'après."
+      : ''
+    return text(
+      `${created ? 'Surveillance posée' : 'Une surveillance était déjà posée'} sur « ${peer.title} ». Tu seras relancé quand elle aura fini.${pause} Termine ton tour maintenant si tu n'as rien d'autre à faire en attendant.`,
+    )
+  }
+
+  if (name === 'read_session_messages') {
+    const withId = typeof args?.with === 'string' && args.with.trim() ? args.with.trim() : null
+    return text(renderPeerMessages(readSessionMessages(withId)))
   }
 
   if (name === 'count_active_sessions') {

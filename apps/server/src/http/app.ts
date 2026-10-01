@@ -5,6 +5,7 @@ import cookie from '@fastify/cookie'
 import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyInstance } from 'fastify'
+import type { SessionRelay } from '../sessions/session-relay.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { CliInstaller } from '../agents/cli-install.js'
 import type { AttachmentStore } from '../attachments/store.js'
@@ -36,6 +37,7 @@ import { registerAuthRoutes } from './routes/auth.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerCardRoutes } from './routes/cards.js'
 import { registerConversationRoutes } from './routes/conversations.js'
+import { registerSessionMessageRoutes } from './routes/session-messages.js'
 import { registerFileRoutes } from './routes/files.js'
 import { registerGitViewRoutes } from './routes/git-views.js'
 import { registerFsRoutes } from './routes/fs.js'
@@ -78,6 +80,7 @@ export async function buildApp(
   gitCredentials: GitCredentialStore,
   webhooks: WebhookService,
   scheduler: Scheduler,
+  relay: SessionRelay,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -154,6 +157,7 @@ export async function buildApp(
   registerAuthRoutes(app, ctx)
   registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals)
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks)
+  registerSessionMessageRoutes(app, ctx, relay)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)
   registerAgentRoutes(app, ctx, registry, new CliInstaller(ctx.config.paths.agents))

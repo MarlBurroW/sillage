@@ -1,3 +1,4 @@
+import { parseSessionMessage } from '@sillage/protocol'
 import type { ChatItem, MessageItem } from './chat-fold'
 
 /** Un tour de conversation, tel que la réglette de repères le représente. */
@@ -12,10 +13,14 @@ export interface TurnMarker {
 const EXCERPT_LENGTH = 140
 
 function excerpt(message: MessageItem): string {
-  const text = message.blocks
+  const raw = message.blocks
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join(' ')
+  // Un message d'une autre session se résume par son expéditeur et son corps, pas par
+  // ses balises ni par la note adressée au modèle.
+  const peer = message.role === 'user' ? parseSessionMessage(raw) : null
+  const text = (peer ? `[${peer.title || peer.from}] ${peer.body}` : raw)
     // Le tampon de streaming complète le texte tant que le message n'est pas fini,
     // sinon le tour en cours apparaîtrait vide dans la réglette.
     .concat(message.streamingText)

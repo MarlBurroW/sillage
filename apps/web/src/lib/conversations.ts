@@ -303,6 +303,15 @@ export function steerQueuedMessage(conversationId: string, queueId: string): Pro
   return api.post(`/api/conversations/${conversationId}/queue/${queueId}/steer`)
 }
 
+/** Remet un message de session retenu, malgré les garde-fous qui l'ont arrêté. */
+export function releaseSessionMessage(conversationId: string, messageId: string): Promise<unknown> {
+  return api.post(`/api/conversations/${conversationId}/session-messages/${messageId}/release`)
+}
+
+export function discardSessionMessage(conversationId: string, messageId: string): Promise<unknown> {
+  return api.delete(`/api/conversations/${conversationId}/session-messages/${messageId}`)
+}
+
 export function answerElicitation(
   conversationId: string,
   requestId: string,

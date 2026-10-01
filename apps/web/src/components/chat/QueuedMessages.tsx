@@ -1,5 +1,6 @@
 import { Clock, FastForward, Paperclip, X } from 'lucide-react'
 import { useState } from 'react'
+import { parseSessionMessage } from '@sillage/protocol'
 import type { QueuedMessage } from '../../lib/chat-fold'
 import { cancelQueuedMessage, steerQueuedMessage } from '../../lib/conversations'
 import { IconButton, cx } from '../ui'
@@ -68,7 +69,7 @@ export function QueuedMessages({
           )}
         >
           <div className="min-w-0">
-            <p className="text-sm whitespace-pre-wrap text-ink-soft">{message.text}</p>
+            <QueuedText text={message.text} />
             {message.attachmentCount > 0 ? (
               <p className="mt-1 flex items-center gap-1 text-[0.6875rem] text-ink-faint">
                 <Paperclip size={11} />
@@ -128,5 +129,24 @@ export function QueuedMessages({
         </p>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * Le texte d'un message en file, ou, pour un message d'une autre session, son
+ * expéditeur et son corps : l'enveloppe brute ferait passer ses balises pour du texte.
+ */
+function QueuedText({ text }: { text: string }) {
+  const t = useTranslate()
+  const envelope = parseSessionMessage(text)
+  if (!envelope) return <p className="text-sm whitespace-pre-wrap text-ink-soft">{text}</p>
+
+  return (
+    <>
+      <p className="text-[0.6875rem] text-ink-faint">
+        {t('sessionMessage.queued.from', { title: envelope.title || envelope.from })}
+      </p>
+      <p className="text-sm whitespace-pre-wrap text-ink-soft">{envelope.body}</p>
+    </>
   )
 }

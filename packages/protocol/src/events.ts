@@ -331,6 +331,28 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     reason: z.enum(['sent', 'steered', 'cancelled', 'expired']),
   }),
 
+  /**
+   * Message d'une autre session que Sillage n'a pas remis.
+   *
+   * Le relais relance une session au repos pour lui remettre un message, sauf quand un
+   * échange tourne en rond ou qu'elle a déjà été trop relancée sans personne : il le
+   * retient alors, et ces deux événements le rendent visible, pour qu'une personne le
+   * remette ou l'écarte au lieu qu'il attende en silence. `text` est l'enveloppe
+   * complète, voir `parseSessionMessage`.
+   */
+  z.object({
+    type: z.literal('session_message.held'),
+    messageId: z.string(),
+    text: z.string(),
+    reason: z.enum(['loop', 'rate']),
+  }),
+  z.object({
+    type: z.literal('session_message.released'),
+    messageId: z.string(),
+    /** `delivered` remis au CLI, `read` lu par l'outil, `discarded` écarté, `expired` trop vieux. */
+    reason: z.enum(['delivered', 'read', 'discarded', 'expired']),
+  }),
+
   // Saisie réclamée par un serveur MCP (elicitation/create)
   z.object({
     type: z.literal('elicitation.requested'),

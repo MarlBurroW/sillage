@@ -198,7 +198,7 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
 
   if (input.sillageMcp) {
     parts.push(
-      'Les outils du serveur `sillage` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment, `list_cards` et `read_card` pour le travail que ce projet s\'est donné.',
+      'Les outils du serveur `sillage` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment, `send_session_message` pour prévenir l\'une d\'elles ou lui poser une question quand ça ne peut pas attendre l\'utilisateur, `notify_when_done` pour être relancé quand elle aura fini plutôt que de la surveiller, `broadcast_session_message` avant un geste qui touche toutes celles qui travaillent, `list_cards` et `read_card` pour le travail que ce projet s\'est donné.',
     )
   }
 
