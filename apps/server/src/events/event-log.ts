@@ -90,6 +90,8 @@ const NOTABLE = new Set<SillageEvent['type']>([
   'question.requested',
   'elicitation.requested',
   'plan.review_requested',
+  // Un message de session retenu attend qu'une personne le remette ou l'écarte.
+  'session_message.held',
 ])
 
 /**

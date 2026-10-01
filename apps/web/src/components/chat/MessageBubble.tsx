@@ -1,6 +1,7 @@
-import { Brain, ChevronRight, FileText, GitBranch } from 'lucide-react'
+import { Brain, ChevronRight, FileText, GitBranch, MessagesSquare } from 'lucide-react'
 import { memo, useState } from 'react'
-import type { ContentBlock } from '@sillage/protocol'
+import { Link, useParams } from 'react-router-dom'
+import { parseSessionMessage, type ContentBlock, type SessionMessageEnvelope } from '@sillage/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
 import { locale, useTranslate } from '../../lib/i18n'
@@ -110,6 +111,19 @@ export const MessageBubble = memo(function MessageBubble({
   const hasAttachments = images.length > 0 || files.length > 0
   if (!shown && !thinking && !liveThinking && !hasAttachments) return null
 
+  // Un message d'une autre session arrive par le canal des messages utilisateur, le seul
+  // qu'aient les CLI : sans ce rendu, il passerait pour une consigne tapée au clavier.
+  const peer = message.role === 'user' && text ? parseSessionMessage(text) : null
+  if (peer) {
+    return (
+      <PeerMessage
+        envelope={peer}
+        ts={message.ts}
+        onFork={onFork ? () => onFork(message) : undefined}
+      />
+    )
+  }
+
   if (message.role === 'user') {
     return (
       <div className="group flex flex-col items-end gap-0.5">
@@ -147,6 +161,65 @@ export const MessageBubble = memo(function MessageBubble({
     </div>
   )
 })
+
+const PEER_LABELS = {
+  message: 'message.peer.from',
+  broadcast: 'message.peer.broadcast',
+  done: 'message.peer.done',
+} as const
+
+/**
+ * Message reçu d'une autre session du projet.
+ *
+ * À gauche et non à droite comme une bulle de l'utilisateur, puisque ce n'est pas lui
+ * qui parle, et bordé en pointillé pour ne pas se confondre non plus avec une réponse
+ * de l'agent. L'en-tête mène à la session expéditrice ; la note adressée au modèle, qui
+ * suit l'enveloppe, n'est pas affichée.
+ */
+function PeerMessage({
+  envelope,
+  ts,
+  onFork,
+}: {
+  envelope: SessionMessageEnvelope
+  ts: number
+  onFork?: () => void
+}) {
+  const t = useTranslate()
+  const { projectId } = useParams()
+  const sender = envelope.title || envelope.from
+
+  return (
+    <div className="group flex flex-col items-start gap-0.5">
+      <div className="sg-bubble flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-bl-sm border border-dashed border-accent/50 bg-accent-wash/40 px-3.5 py-2.5">
+        <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
+          <MessagesSquare size={13} className="shrink-0 text-accent" />
+          <span className="shrink-0">{t(PEER_LABELS[envelope.kind])}</span>
+          {projectId ? (
+            <Link
+              to={`/p/${projectId}/c/${envelope.from}`}
+              title={t('message.peer.open')}
+              className="min-w-0 truncate font-medium text-ink hover:text-accent hover:underline"
+            >
+              {sender}
+            </Link>
+          ) : (
+            <span className="min-w-0 truncate font-medium text-ink">{sender}</span>
+          )}
+          {envelope.agent ? <span className="shrink-0 text-ink-faint">· {envelope.agent}</span> : null}
+        </div>
+        <Markdown text={envelope.body} />
+      </div>
+      <MessageFooter
+        ts={ts}
+        text={envelope.body}
+        label={t('message.copy.peer')}
+        align="start"
+        onFork={onFork}
+      />
+    </div>
+  )
+}
 
 /**
  * Pièces jointes d'un message. Les images sont montrées, le reste devient un lien de

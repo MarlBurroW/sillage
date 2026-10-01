@@ -28,6 +28,7 @@ import { ComposerStatus } from '../components/chat/ComposerStatus'
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
 import { PromptSuggestion } from '../components/chat/PromptSuggestion'
 import { QueuedMessages } from '../components/chat/QueuedMessages'
+import { HeldSessionMessages } from '../components/chat/HeldSessionMessages'
 import { ThreadSearch } from '../components/chat/ThreadSearch'
 import { TurnActivity } from '../components/chat/TurnActivity'
 import { TurnNav } from '../components/chat/TurnNav'
@@ -1198,6 +1199,12 @@ export function ConversationPage() {
                 messages={stream.state.queued}
                 canCancel={isOwner}
                 canSteer={canSteer}
+              />
+
+              <HeldSessionMessages
+                conversationId={conversationId}
+                messages={stream.state.heldSessionMessages}
+                canDecide={isOwner}
               />
 
               {/* Le message suivant que le CLI prédit, tant que rien n'est parti ni en

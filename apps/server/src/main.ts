@@ -12,6 +12,7 @@ import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
 import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
+import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
 import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
@@ -43,6 +44,9 @@ async function main(): Promise<void> {
   const terminals = new TerminalManager(config)
   const recovered = sessions.recoverInterrupted()
   const webhooks = new WebhookService(db, log, sessions, config.server.publicUrl)
+  // Construit avant l'application, dont les routes remettent ou écartent un message
+  // retenu, mais démarré après elle, faute de logger avant.
+  const relay = new SessionRelay(db, sessions, log)
 
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
   const orphans = await attachments.purgeOrphans()
@@ -63,6 +67,7 @@ async function main(): Promise<void> {
     gitCredentials,
     webhooks,
     scheduler,
+    relay,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
@@ -76,6 +81,9 @@ async function main(): Promise<void> {
 
   registerMaintenanceJobs(scheduler, { db, attachments, log: app.log, config })
   scheduler.start(app.log)
+  // Après `recoverInterrupted` : les statuts lus pour choisir entre inflexion et relance
+  // doivent décrire les runners de ce process, pas ceux du précédent.
+  relay.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
 
@@ -86,6 +94,7 @@ async function main(): Promise<void> {
     webhooks.shutdownFlush()
     webhooks.stop()
     scheduler.stop()
+    relay.stop()
     await sessions.stopAll()
     terminals.shutdown()
     await app.close()
