@@ -344,6 +344,7 @@ main > section + section { border-top: 1px solid var(--line); }
 
 .tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: .2rem;
   margin-bottom: 1rem;
   padding: .22rem;
@@ -447,6 +448,7 @@ footer nav a:hover { color: var(--ink); }
 @media (max-width: 760px) {
   .topbar nav a:not(.repo) { display: none; }
   .why, .install, .security { grid-template-columns: 1fr; gap: 1.5rem; }
+  .tabs button { padding-inline: .65rem; }
   .shots-arrows { display: none; }
   footer { justify-content: flex-start; }
   footer p { order: 3; flex-basis: 100%; }

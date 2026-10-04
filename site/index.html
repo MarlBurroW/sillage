@@ -56,7 +56,7 @@
 
   <main id="main">
     <section class="hero" id="top">
-      <p class="kicker">Self-hosted · MIT licensed</p>
+      <p class="kicker">Self-hosted · Linux and Windows (WSL2) · MIT licensed</p>
       <h1>Vibe-code from anywhere.</h1>
       <p class="lede">
         A web UI for the native Claude Code and Codex CLIs. They keep running on your own
@@ -284,13 +284,14 @@
     <section class="install" id="install" aria-labelledby="install-title">
       <div class="install-intro">
         <h2 id="install-title">Install</h2>
-        <p>Docker, a systemd user service on Linux, or a Helm chart. All bind to localhost or stay inside the cluster by default.</p>
+        <p>Docker, a systemd user service on Linux, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default.</p>
       </div>
 
       <div class="install-box">
         <div class="tabs" role="tablist" aria-label="Installation method">
           <button id="tab-docker" role="tab" aria-selected="true" aria-controls="panel-docker" data-tab="docker">Docker</button>
-          <button id="tab-script" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-script" data-tab="script">One-line script</button>
+          <button id="tab-script" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-script" data-tab="script">Linux</button>
+          <button id="tab-windows" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-windows" data-tab="windows">Windows</button>
           <button id="tab-helm" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-helm" data-tab="helm">Kubernetes</button>
         </div>
 
@@ -313,7 +314,16 @@ volumes:
 
         <div id="panel-script" class="tab-panel" role="tabpanel" aria-labelledby="tab-script" data-panel="script" hidden>
 <pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Linux x64 or arm64, systemd, Node 22+, with <code>claude</code> and <code>codex</code> already authenticated on the host. It installs under <code>~/.local/share/sillage</code>, sets up a user service and creates the first account. Later updates happen from the UI.</p>
+          <p>Linux x64 or arm64 with systemd, with <code>claude</code> and <code>codex</code> already authenticated on the host. It installs under <code>~/.local/share/sillage</code>, fetches Node if the system has none recent enough, sets up a user service and creates the first account. Later updates happen from the UI.</p>
+        </div>
+
+        <div id="panel-windows" class="tab-panel" role="tabpanel" aria-labelledby="tab-windows" data-panel="windows" hidden>
+<pre><code><span class="dim"># 1. PowerShell, as administrator, then restart</span>
+wsl --install
+<span class="dim"># 2. In the Ubuntu terminal</span>
+curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
+          <p>Sillage runs inside WSL2, the Linux built into Windows 10 and 11, and you use it from your Windows browser at <code>http://localhost:7317</code>. The same installer as on Linux enables systemd if the distribution lacks it, fetches Node, creates the first account and adds a <strong>Sillage</strong> entry to the Start menu. That entry keeps WSL running once the terminal is closed, and can start with Windows.</p>
+          <p>The agents are the Linux <code>claude</code> and <code>codex</code> of the distribution, not the Windows ones. Keep projects in the Linux file system, not under <code>/mnt/c</code>. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md">WSL2 guide</a> covers signing in to the agents, troubleshooting and uninstalling.</p>
         </div>
 
         <div id="panel-helm" class="tab-panel" role="tabpanel" aria-labelledby="tab-helm" data-panel="helm" hidden>
