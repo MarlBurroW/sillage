@@ -1,59 +1,17 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { test, type TestContext } from 'node:test'
-import { fileURLToPath } from 'node:url'
-import Fastify from 'fastify'
+import { test } from 'node:test'
 import { eq } from 'drizzle-orm'
-import { librarySkills, openDatabase, projects, runMigrations, skillSources, users } from '@sillage/db'
+import { librarySkills, projects, skillSources } from '@sillage/db'
 import type { LibrarySkillDto } from '@sillage/protocol'
 import { skillLibraryLaunchOptions } from '../src/agents/claude/skill-library.js'
-import type { Config } from '../src/config.js'
-import { registerErrorHandler } from '../src/http/errors.js'
-import { registerSkillLibraryRoutes } from '../src/http/routes/skill-library.js'
 import { compatNotes } from '../src/skill-library/compat.js'
 import { parseSkillMarkdown, updateSkillMarkdown } from '../src/skill-library/frontmatter.js'
-import { SkillLibrary, contentHash, listFiles } from '../src/skill-library/store.js'
+import { contentHash, listFiles } from '../src/skill-library/store.js'
+import { createSkill, harness, http } from './skill-library-support.js'
 
-function harness(t: TestContext) {
-  const dir = mkdtempSync(join(tmpdir(), 'sillage-skills-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
-  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
-  t.after(() => sqlite.close())
-
-  const user = (id: string, isAdmin: boolean) => ({ id, username: id, displayName: id, passwordHash: '', isAdmin, createdAt: 1 })
-  db.insert(users).values([user('admin', true), user('owner', false), user('member', false), user('stranger', false)]).run()
-  const project = (id: string, visibility: 'private' | 'shared') =>
-    ({ id, name: id, workspacePath: dir, ownerId: 'owner', visibility, createdAt: 1 })
-  db.insert(projects).values([project('p1', 'shared'), project('p2', 'shared'), project('secret', 'private')]).run()
-
-  const root = join(dir, 'library')
-  const changes: (string | null)[] = []
-  const library = new SkillLibrary(db, root, (projectId) => changes.push(projectId))
-  return { dir, db, root, library, changes }
-}
-
-/** La même bibliothèque derrière les routes, l'utilisateur choisi par en-tête. */
-async function http(t: TestContext) {
-  const h = harness(t)
-  const app = Fastify()
-  app.addHook('preHandler', async (request) => {
-    const id = (request.headers['x-user'] as string | undefined) ?? 'admin'
-    request.user = h.db.select().from(users).where(eq(users.id, id)).get()
-  })
-  registerErrorHandler(app)
-  const config = { skills: { library: true }, paths: { skillLibrary: h.root } } as Config
-  registerSkillLibraryRoutes(app, { db: h.db, config }, h.library)
-  t.after(() => app.close())
-  const call = (user: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown) =>
-    app.inject({ method, url, payload: payload as object, headers: { 'x-user': user } })
-  return { ...h, call }
-}
-
-const create = (library: SkillLibrary, overrides: Partial<Parameters<SkillLibrary['create']>[0]> = {}) =>
-  library.create({ scope: 'global', projectId: null, name: 'deploy', description: 'Use when deploying.', body: 'Run it.', ...overrides }, 'admin')
+const create = createSkill
 
 test('un skill créé est un plugin Claude et une racine Codex, sans rien à moitié écrit', (t) => {
   const { library, root, changes } = harness(t)

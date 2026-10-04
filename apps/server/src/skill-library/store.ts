@@ -7,20 +7,28 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  rmdirSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { and, asc, eq, or } from 'drizzle-orm'
 import { librarySkills, type Db, type LibrarySkillRow } from '@sillage/db'
-import type {
-  CreateLibrarySkillBody,
-  LibrarySkillDetailDto,
-  LibrarySkillDto,
-  LibrarySkillProblem,
-  LibrarySkillScope,
-  UpdateLibrarySkillBody,
+import {
+  SKILL_MAIN_FILE,
+  SKILL_TEXT_FILE_MAX_BYTES,
+  skillDescriptionSchema,
+  skillNameSchema,
+  type CreateLibrarySkillBody,
+  type LibrarySkillDetailDto,
+  type LibrarySkillDto,
+  type LibrarySkillFileDto,
+  type LibrarySkillProblem,
+  type LibrarySkillScope,
+  type UpdateLibrarySkillBody,
 } from '@sillage/protocol'
-import { conflict, notFound } from '../http/errors.js'
+import { badRequest, conflict, notFound } from '../http/errors.js'
+import { writeSkillArchive } from './archive.js'
 import { compatNotes } from './compat.js'
 import {
   newSkillMarkdown,
@@ -29,6 +37,7 @@ import {
   type SkillMarkdown,
 } from './frontmatter.js'
 import { SkillLibraryLayout } from './layout.js'
+import { assertSkillFilePath } from './validate.js'
 
 /**
  * La bibliothèque de skills : la base dit ce qui existe et où, le disque porte le
@@ -46,6 +55,13 @@ import { SkillLibraryLayout } from './layout.js'
 
 /** Plafond de l'inventaire d'un dossier, contre un skill qui embarquerait un dépôt entier. */
 const MAX_LISTED_FILES = 2000
+
+/** Où un skill entre dans la bibliothèque. `name` remplace celui du frontmatter. */
+export interface SkillTarget {
+  scope: LibrarySkillScope
+  projectId: string | null
+  name?: string
+}
 
 interface Inspection {
   dir: string
@@ -100,15 +116,51 @@ export class SkillLibrary {
   }
 
   create(input: CreateLibrarySkillBody, userId: string): LibrarySkillDto {
-    const { scope, projectId, name } = input
-    this.assertFreeName(name, scope, projectId)
-    const target = this.layout.skillDir(scope, projectId, name)
-    this.assertFreeDirectory(target, name)
+    const markdown = newSkillMarkdown(input.name, input.description, input.body)
+    return this.install(new Map([[SKILL_MAIN_FILE, Buffer.from(markdown)]]), input, userId)
+  }
 
-    this.layout.ensureScope(scope, projectId)
+  /**
+   * Fait entrer un skill dans la bibliothèque à partir de ses fichiers : création, import
+   * d'une archive, reprise d'un skill de la machine, duplication.
+   *
+   * Le dossier est écrit entier dans la zone de transit, puis déplacé d'un geste : Codex
+   * surveille la racine, et ne doit pas voir un `SKILL.md` sans ses fichiers annexes.
+   * Quand `target.name` remplace le nom du frontmatter, celui-ci est réécrit : le nom du
+   * dossier et celui du fichier doivent rester le même.
+   */
+  install(files: Map<string, Uint8Array>, target: SkillTarget, userId: string): LibrarySkillDto {
+    const main = files.get(SKILL_MAIN_FILE)
+    if (!main) throw badRequest('skill_main_missing', 'The skill has no SKILL.md.')
+    const text = Buffer.from(main).toString('utf8')
+    let data: Record<string, unknown>
+    try {
+      data = parseSkillMarkdown(text).data
+    } catch {
+      throw badRequest('skill_main_unreadable', 'The SKILL.md of this skill cannot be read.')
+    }
+    const name = target.name ?? data.name
+    if (typeof name !== 'string' || !skillNameSchema.safeParse(name).success) {
+      throw badRequest('skill_name_invalid', 'Invalid skill name: {name}.', { name: String(name ?? '') })
+    }
+    if (!skillDescriptionSchema.safeParse(data.description).success) {
+      throw badRequest('skill_description_missing', 'The SKILL.md of this skill has no description.')
+    }
+
+    const { scope, projectId } = target
+    this.assertFreeName(name, scope, projectId)
+    const dir = this.layout.skillDir(scope, projectId, name)
+    this.assertFreeDirectory(dir, name)
+
     const staging = this.stage()
-    writeFileSync(join(staging, 'SKILL.md'), newSkillMarkdown(name, input.description, input.body))
-    renameSync(staging, target)
+    for (const [path, content] of files) {
+      const destination = join(staging, assertSkillFilePath(path, { allowMain: true }))
+      mkdirSync(dirname(destination), { recursive: true })
+      const renamed = path === SKILL_MAIN_FILE && name !== data.name
+      writeFileSync(destination, renamed ? updateSkillMarkdown(text, { name }) : content)
+    }
+    this.layout.ensureScope(scope, projectId)
+    renameSync(staging, dir)
 
     const now = Date.now()
     const row: LibrarySkillRow = {
@@ -128,6 +180,56 @@ export class SkillLibrary {
     this.db.insert(librarySkills).values(row).run()
     this.onChange(projectId)
     return this.toDto(row, this.inspect(row))
+  }
+
+  /** Une copie sous un autre nom, ou dans une autre portée. La provenance ne suit pas. */
+  duplicate(row: LibrarySkillRow, target: SkillTarget, userId: string): LibrarySkillDto {
+    return this.install(this.readAll(row), target, userId)
+  }
+
+  /** Copie un skill trouvé sur la machine. L'original reste en place, intact. */
+  adopt(dir: string, target: SkillTarget, userId: string): LibrarySkillDto {
+    return this.install(readDirectory(dir), target, userId)
+  }
+
+  exportArchive(row: LibrarySkillRow): Uint8Array {
+    return writeSkillArchive(row.name, this.readAll(row))
+  }
+
+  /**
+   * Un fichier annexe, en texte quand il s'édite. Binaire ou trop lourd pour l'éditeur,
+   * il est décrit sans son contenu.
+   */
+  readFile(row: LibrarySkillRow, path: string): LibrarySkillFileDto {
+    const file = join(this.existingDir(row), assertSkillFilePath(path, { allowMain: true }))
+    if (!existsSync(file) || !lstatSync(file).isFile()) {
+      throw notFound('skill_file_not_found', 'Unknown file in this skill: {path}.', { path })
+    }
+    const size = statSync(file).size
+    if (size > SKILL_TEXT_FILE_MAX_BYTES) return { path, size, content: null }
+    const buffer = readFileSync(file)
+    return { path, size, content: isText(buffer) ? buffer.toString('utf8') : null }
+  }
+
+  writeFile(row: LibrarySkillRow, path: string, content: string | Uint8Array): void {
+    const file = join(this.existingDir(row), assertSkillFilePath(path))
+    mkdirSync(dirname(file), { recursive: true })
+    this.writeAtomic(file, content)
+    this.touch(row)
+  }
+
+  /** Supprime un fichier, puis les dossiers que son départ laisse vides. */
+  deleteFile(row: LibrarySkillRow, path: string): void {
+    const dir = this.existingDir(row)
+    const file = join(dir, assertSkillFilePath(path))
+    if (!existsSync(file) || !lstatSync(file).isFile()) {
+      throw notFound('skill_file_not_found', 'Unknown file in this skill: {path}.', { path })
+    }
+    rmSync(file)
+    for (let parent = dirname(file); parent !== dir && readdirSync(parent).length === 0; parent = dirname(parent)) {
+      rmdirSync(parent)
+    }
+    this.touch(row)
   }
 
   /**
@@ -200,6 +302,24 @@ export class SkillLibrary {
     this.layout.removeProject(projectId)
   }
 
+  private existingDir(row: LibrarySkillRow): string {
+    const dir = this.dirOf(row)
+    if (!existsSync(dir)) {
+      throw conflict('skill_missing', 'The folder of this skill is missing from the library.')
+    }
+    return dir
+  }
+
+  private readAll(row: LibrarySkillRow): Map<string, Uint8Array> {
+    return readDirectory(this.existingDir(row))
+  }
+
+  /** Une écriture de fichier vaut modification du skill, pour la liste comme pour les sessions. */
+  private touch(row: LibrarySkillRow): void {
+    this.db.update(librarySkills).set({ updatedAt: Date.now() }).where(eq(librarySkills.id, row.id)).run()
+    this.onChange(row.projectId)
+  }
+
   private dirOf(row: Pick<LibrarySkillRow, 'id' | 'enabled' | 'scope' | 'projectId' | 'name'>): string {
     return row.enabled
       ? this.layout.skillDir(row.scope, row.projectId, row.name)
@@ -256,7 +376,7 @@ export class SkillLibrary {
     return dir
   }
 
-  private writeAtomic(path: string, content: string): void {
+  private writeAtomic(path: string, content: string | Uint8Array): void {
     const staging = this.stage()
     const temporary = join(staging, 'file')
     writeFileSync(temporary, content)
@@ -323,6 +443,16 @@ export function listFiles(dir: string): string[] {
   }
   walk('')
   return files.sort()
+}
+
+/** Les fichiers d'un dossier de skill, liens symboliques exclus comme dans `listFiles`. */
+function readDirectory(dir: string): Map<string, Uint8Array> {
+  return new Map(listFiles(dir).map((path) => [path, readFileSync(join(dir, path))]))
+}
+
+/** Le test de Git : un octet nul dans les premiers kilo-octets signe un binaire. */
+function isText(buffer: Buffer): boolean {
+  return !buffer.subarray(0, 8000).includes(0)
 }
 
 /**

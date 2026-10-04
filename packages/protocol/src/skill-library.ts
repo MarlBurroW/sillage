@@ -150,3 +150,113 @@ export const updateLibrarySkillBodySchema = z
     { message: 'projectId is required for a project skill, and forbidden for a global one', path: ['projectId'] },
   )
 export type UpdateLibrarySkillBody = z.infer<typeof updateLibrarySkillBodySchema>
+
+/** Portée de destination, commune à tout ce qui fait entrer un skill dans la bibliothèque. */
+const targetFields = {
+  scope: librarySkillScopeSchema,
+  projectId: z.string().nullable().default(null),
+}
+const targetIsConsistent = (body: { scope: LibrarySkillScope; projectId: string | null }) =>
+  (body.scope === 'project') === (body.projectId !== null)
+const targetMessage = {
+  message: 'projectId is required for a project skill, and forbidden for a global one',
+  path: ['projectId'],
+}
+
+// Fichiers annexes
+
+/**
+ * Chemin d'un fichier dans le dossier d'un skill, à séparateur `/`.
+ *
+ * Le serveur le revérifie de toute façon : c'est lui qui écrit sur le disque. Ce schéma
+ * sert à refuser tôt, et à dire pourquoi.
+ */
+export const skillFilePathSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine(
+    (path) =>
+      !path.startsWith('/') &&
+      !path.includes('\\') &&
+      !path.includes('\0') &&
+      path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..'),
+    { message: 'relative path expected, without empty, "." or ".." segments' },
+  )
+
+/**
+ * `SKILL.md` ne passe pas par ici : son frontmatter porte le nom, qui doit rester
+ * celui du dossier. Il s'édite par les champs du skill.
+ */
+export const SKILL_MAIN_FILE = 'SKILL.md'
+
+/** Au-delà, un fichier annexe se télécharge mais ne s'édite pas dans l'interface. */
+export const SKILL_TEXT_FILE_MAX_BYTES = 1_000_000
+
+export interface LibrarySkillFileDto {
+  path: string
+  size: number
+  /** Null pour un fichier binaire ou trop lourd pour l'éditeur. */
+  content: string | null
+}
+
+export const writeSkillFileBodySchema = z.object({
+  content: z.string().max(SKILL_TEXT_FILE_MAX_BYTES),
+})
+
+// Entrées dans la bibliothèque
+
+/**
+ * Import d'une archive `.zip` ou `.skill`, portée et nom en paramètres d'URL : les
+ * champs d'un envoi multipart n'arrivent qu'à leur tour dans le flux, comme pour le
+ * dépôt d'un fichier dans l'explorateur.
+ *
+ * `name` remplace celui du frontmatter, pour importer un skill dont le nom est déjà
+ * pris sans avoir à retoucher l'archive.
+ */
+export const importLibrarySkillQuerySchema = z
+  .object({
+    ...targetFields,
+    projectId: z.string().min(1).optional().transform((value) => value ?? null),
+    name: skillNameSchema.optional(),
+  })
+  .refine(targetIsConsistent, targetMessage)
+export type ImportLibrarySkillQuery = z.infer<typeof importLibrarySkillQuerySchema>
+
+export const duplicateLibrarySkillBodySchema = z
+  .object({ ...targetFields, name: skillNameSchema })
+  .refine(targetIsConsistent, targetMessage)
+export type DuplicateLibrarySkillBody = z.infer<typeof duplicateLibrarySkillBodySchema>
+
+/**
+ * Où un skill déjà présent sur la machine a été trouvé, donc quel CLI le voit déjà :
+ * `claude-*` pour Claude seul, `agents-*` et `codex-*` pour Codex seul.
+ */
+export const localSkillOriginSchema = z.enum([
+  'claude-user',
+  'agents-user',
+  'codex-user',
+  'claude-repo',
+  'agents-repo',
+])
+export type LocalSkillOrigin = z.infer<typeof localSkillOriginSchema>
+
+export interface LocalSkillDto {
+  origin: LocalSkillOrigin
+  /** Chemin absolu du dossier, clé de la reprise. */
+  path: string
+  name: string
+  description: string
+  /** Illisible ou nom invalide : listé pour qu'on le sache, mais pas reprenable. */
+  problem: 'skill_unreadable' | 'skill_name_invalid' | null
+}
+
+export interface LocalSkillListDto {
+  skills: LocalSkillDto[]
+}
+
+/** Reprendre un skill trouvé sur la machine : il est copié, l'original reste en place. */
+export const adoptLibrarySkillBodySchema = z
+  .object({ ...targetFields, path: z.string().min(1), name: skillNameSchema.optional() })
+  .refine(targetIsConsistent, targetMessage)
+export type AdoptLibrarySkillBody = z.infer<typeof adoptLibrarySkillBodySchema>

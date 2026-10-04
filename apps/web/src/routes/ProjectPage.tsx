@@ -24,6 +24,7 @@ import {
 } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { useAgentSettings } from '../components/chat/agent-settings'
+import { ProjectSkills } from '../components/skills/ProjectSkills'
 import type { SettingGroup } from '../components/chat/ComposerSettings'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from '../components/PathField'
@@ -129,6 +130,8 @@ export function ProjectPage() {
       </Card>
 
       <WorktreeList projectId={project.id} isRepository={project.git !== null} />
+
+      <ProjectSkills projectId={project.id} isOwner={project.isOwner} />
 
       {project.isOwner ? (
         <>

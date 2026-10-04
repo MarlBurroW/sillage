@@ -17,6 +17,8 @@ import { AppearanceSection } from './routes/AppearanceSection'
 import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
 import { DictationSettingsPage } from './routes/DictationSettingsPage'
 import { McpSettingsPage } from './routes/McpSettingsPage'
+import { SkillEditorPage } from './routes/SkillEditorPage'
+import { SkillLibrarySettingsPage } from './routes/SkillLibrarySettingsPage'
 import { NotificationsSection } from './routes/NotificationsSection'
 import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
 import { GitCredentialsSettingsPage } from './routes/GitCredentialsSettingsPage'
@@ -62,6 +64,7 @@ export function App() {
             <Route path="cli" element={<CliDefaultsSettingsPage />} />
             <Route path="projets" element={<ProjectsSettingsPage />} />
             <Route path="mcp" element={<McpSettingsPage />} />
+            <Route path="skills" element={<SkillLibrarySettingsPage />} />
             <Route path="api" element={<ApiTokensSettingsPage />} />
             <Route path="git" element={<GitCredentialsSettingsPage />} />
             <Route path="secrets" element={<SecretsSettingsPage />} />
@@ -71,6 +74,7 @@ export function App() {
             <Route path="comptes" element={<UsersSettingsPage />} />
             <Route path="a-propos" element={<AboutSection />} />
           </Route>
+          <Route path="/skills/:skillId" element={<SkillEditorPage />} />
           <Route path="/design" element={<DesignPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

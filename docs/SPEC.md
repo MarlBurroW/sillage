@@ -1474,6 +1474,20 @@ Côté serveur, ces défauts servent partout où une conversation naît sans con
 explicite : import d'une session du CLI Claude, et dernier étage de la cascade de
 `/api/v1` (requête, jeton, préréglage du projet, puis défauts du compte propriétaire).
 
+**Skills.** La bibliothèque de skills globale (`/settings/skills`), livrée à toutes les
+conversations comme des skills natifs des deux CLI. Visible de tous, parce que chacun
+doit savoir ce que ses agents reçoivent ; modifiable par les administrateurs, comme le
+registre MCP. Les skills d'un projet vivent sur la page du projet, modifiables par son
+propriétaire, avec en lecture ceux que le dépôt porte déjà (`.claude/skills`,
+`.agents/skills`) et le CLI qui les voit.
+
+Un skill s'ouvre dans une page en pleine largeur (`/skills/:id`), commune aux deux
+portées : la colonne des réglages est trop étroite pour ses instructions et ses fichiers
+annexes. On y édite le nom, la description et le corps de `SKILL.md`, les fichiers
+annexes, et l'on y lit ce que le skill fera différemment chez Claude et chez Codex. Une
+écriture vaut tout de suite pour les sessions ouvertes. Le fonctionnement et ses raisons
+sont dans `docs/skill-library.md`.
+
 ### 12.9 PWA
 
 - `manifest.webmanifest` : `display: standalone`, icônes 192/512 et maskable, `theme_color`
