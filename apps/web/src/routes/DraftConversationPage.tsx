@@ -253,7 +253,7 @@ export function DraftConversationPage() {
 
   return (
     // `relative` : c'est ce conteneur qui ancre le panneau latéral, posé en absolu.
-    <div className="relative flex h-full flex-col pb-safe" {...drop.handlers}>
+    <div className="relative flex h-full flex-col overflow-clip pb-safe" {...drop.handlers}>
       {/* Même voile que sur une conversation : le composer écoute déjà les dépôts, il
           manquait seulement une zone qui les lui transmette. */}
       {drop.dragging ? (
