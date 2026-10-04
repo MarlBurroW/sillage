@@ -46,6 +46,7 @@ import type {
 import { toDto as toCommandDtos } from './command-catalog.js'
 import { editedPath, fileExists } from './file-edits.js'
 import { fromSdkMcpStatus, toSdkMcpServers } from './mcp.js'
+import { skillLibraryLaunchOptions } from './skill-library.js'
 import { toPermissionMode } from './permission-mode.js'
 import {
   ASK_USER_QUESTION,
@@ -74,13 +75,18 @@ const IGNORED_SUBTYPES = new Set(['session_state_changed'])
  * session le demande (`sdk_opt_in_required`, relevé à la sonde). Ultracode n'est écrit
  * qu'allumé : éteint, il n'a rien à annoncer. Les deux autres clés sont omises quand la
  * configuration ne dit rien, pour laisser le CLI à son défaut.
+ *
+ * Les règles `deny` de la bibliothèque de skills n'y sont posées qu'au lancement.
+ * `applyFlagSettings` ne retire que les clés qu'on lui passe à `null` : ne jamais
+ * nommer `permissions` à chaud suffit à les garder.
  */
-function flagSettings(config: ClaudeConfig): Settings {
+function flagSettings(config: ClaudeConfig, deny: string[] = []): Settings {
   return {
     fastMode: config.fastMode,
     ...(config.ultracode ? { ultracode: true } : {}),
     ...(config.outputStyle ? { outputStyle: config.outputStyle } : {}),
     ...(config.advisorModel ? { advisorModel: config.advisorModel } : {}),
+    ...(deny.length > 0 ? { permissions: { deny } } : {}),
   }
 }
 
@@ -207,6 +213,11 @@ export class ClaudeRunner implements AgentRunner {
   private appliedMcpServers: Record<string, McpServerConfig> = {}
   /** Serveurs qu'on n'a pas pu lancer, à joindre à l'inventaire que le CLI rapporte. */
   private mcpFailures: McpServerStatus[] = []
+  /**
+   * Racines de la bibliothèque de skills reçues au lancement. Les plugins ne sont que des
+   * options de lancement : une autre liste demande de relancer, voir `applyConfig`.
+   */
+  private skillRoots: string[] = []
 
   /** Voir `AgentRunner`. `this.config` n'avance qu'après une application réussie. */
   get appliedConfig(): AgentConfig {
@@ -232,6 +243,8 @@ export class ClaudeRunner implements AgentRunner {
     // une session neuve qui n'a rien reçu. Le mode `preset` conserve le prompt par
     // défaut de Claude Code et n'y ajoute que cet appendice.
     const overview = this.ctx.projectOverview(config)
+    this.skillRoots = this.ctx.skillRoots(config)
+    const library = skillLibraryLaunchOptions(this.skillRoots)
 
     this.session = query({
       prompt: this.input,
@@ -246,14 +259,20 @@ export class ClaudeRunner implements AgentRunner {
         permissionMode: toPermissionMode(config.permissionMode),
         // Les pièces jointes sont stockées hors du workspace : sans ce dossier
         // autorisé, l'agent se verrait refuser la lecture des fichiers qu'on lui joint.
-        additionalDirectories: [...config.additionalDirectories, this.ctx.attachmentsRoot],
+        // Même raison pour les fichiers annexes des skills de la bibliothèque.
+        additionalDirectories: [
+          ...config.additionalDirectories,
+          this.ctx.attachmentsRoot,
+          ...library.additionalDirectories,
+        ],
+        plugins: library.plugins,
         // Transmis en mémoire, à chaque lancement. Rien n'en est écrit dans
         // `~/.claude.json` : une conversation reprise dans le CLI natif n'aura donc pas
         // ces serveurs, ce qui est le prix de ne pas toucher aux fichiers de
         // l'utilisateur. Relevé par sonde, ce n'est pas déductible de la documentation.
         mcpServers: this.appliedMcpServers,
         strictMcpConfig: config.strictMcp,
-        settings: flagSettings(config),
+        settings: flagSettings(config, library.deny),
         // Plafonds pour une session que personne ne regarde. Options de lancement
         // seulement : les changer relance le runner, voir `applyConfig`.
         ...(config.maxBudgetUsd === null ? {} : { maxBudgetUsd: config.maxBudgetUsd }),
@@ -1244,6 +1263,10 @@ export class ClaudeRunner implements AgentRunner {
       return false
     }
 
+    // Les plugins de la bibliothèque aussi. Comparé sur les racines et non sur le seul
+    // interrupteur : c'est ce que le CLI a reçu qui compte.
+    if (JSON.stringify(this.ctx.skillRoots(config)) !== JSON.stringify(this.skillRoots)) return false
+
     await this.session.setModel(config.model)
     // La même couche que `settings` au lancement. `null` retire une clé, donc rend le
     // CLI à son défaut, là où l'omettre laisserait la valeur précédente en place. Le
@@ -1275,6 +1298,16 @@ export class ClaudeRunner implements AgentRunner {
 
     this.config = config
     return true
+  }
+
+  /**
+   * Sondé : un skill ajouté à un plugin en cours de session n'est pas vu tant qu'on ne le
+   * demande pas, et `reloadSkills()` suffit, sans toucher au cache de prompt. Le CLI
+   * pousse ensuite `commands_changed`, qui met à jour la liste du composer.
+   */
+  async reloadSkillLibrary(): Promise<void> {
+    if (!this.session || this.skillRoots.length === 0) return
+    await this.session.reloadSkills()
   }
 
   /**

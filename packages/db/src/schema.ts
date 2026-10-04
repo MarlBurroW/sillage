@@ -637,6 +637,66 @@ export const mcpServers = sqliteTable('mcp_servers', {
 })
 
 /**
+ * Dépôts git d'où la bibliothèque de skills s'installe.
+ *
+ * Une installation copie le skill et retient le commit : rien de ce qui arrive ensuite
+ * dans le dépôt n'entre dans le contexte des agents sans qu'un admin l'ait relu. Les
+ * sources préconfigurées sont insérées par la migration qui crée la table, et non au
+ * démarrage, pour qu'une source supprimée ne revienne pas.
+ */
+export const skillSources = sqliteTable('skill_sources', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  /** Tout ce que `git clone` accepte, dépôts privés compris. */
+  url: text('url').notNull(),
+  /** Branche ou tag. Null : la branche par défaut du dépôt. */
+  ref: text('ref'),
+  /** Dossier du dépôt où chercher les skills. Null : tout le dépôt. */
+  subpath: text('subpath'),
+  builtin: integer('builtin', { mode: 'boolean' }).notNull().default(false),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  lastCommit: text('last_commit'),
+  lastFetchedAt: timestamp('last_fetched_at'),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+})
+
+/**
+ * Bibliothèque de skills : ce que Sillage livre aux CLI comme des skills natifs.
+ *
+ * Le contenu vit sur le disque, sous `<data>/skill-library`, et c'est lui qui fait foi :
+ * description et corps se relisent dans le `SKILL.md`. Cette table porte ce que le disque
+ * ne dit pas, à savoir la portée, l'activation et la provenance. Le dossier se déduit
+ * de la ligne, voir `skill-library/layout.ts`.
+ */
+export const librarySkills = sqliteTable(
+  'library_skills',
+  {
+    id: text('id').primaryKey(),
+    scope: text('scope', { enum: ['global', 'project'] }).notNull(),
+    /** Null en portée globale. La cascade ne touche pas le disque, la route s'en charge. */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * Nom du dossier, et `name` du frontmatter. Unique sur l'ensemble « global + un
+     * projet », ce qu'aucun index ne sait dire puisque SQLite tient les `NULL` pour
+     * distincts : le contrôle est dans le service.
+     */
+    name: text('name').notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    sourceId: text('source_id').references(() => skillSources.id, { onDelete: 'set null' }),
+    sourcePath: text('source_path'),
+    sourceCommit: text('source_commit'),
+    /** Empreinte du contenu à l'installation, pour reconnaître une modification locale. */
+    installedHash: text('installed_hash'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [index('idx_library_skills_project').on(t.projectId)],
+)
+
+/**
  * Dépôt de secrets de l'instance, chiffré au repos.
  *
  * Le nom est la clé primaire : c'est lui qu'on écrit dans `{{secret.NOM}}`, et deux
@@ -811,6 +871,8 @@ export type SessionMessageRow = typeof sessionMessages.$inferSelect
 export type SessionWatchRow = typeof sessionWatches.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect
 export type McpServerRow = typeof mcpServers.$inferSelect
+export type SkillSourceRow = typeof skillSources.$inferSelect
+export type LibrarySkillRow = typeof librarySkills.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect
 export type GitCredentialRow = typeof gitCredentials.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect

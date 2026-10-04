@@ -26,6 +26,8 @@ import type { Scheduler } from '../scheduler/scheduler.js'
 import type { WebhookService } from '../webhooks/service.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
+import { registerSkillLibraryRoutes } from './routes/skill-library.js'
+import { SkillLibrary } from '../skill-library/store.js'
 import { registerSecretRoutes } from './routes/secrets.js'
 import type { SecretStore } from '../secrets/store.js'
 import { registerGitCredentialRoutes } from './routes/git-credentials.js'
@@ -162,6 +164,13 @@ export async function buildApp(
   registerFsRoutes(app)
   registerAgentRoutes(app, ctx, registry, new CliInstaller(ctx.config.paths.agents))
   registerMcpRoutes(app, ctx)
+  registerSkillLibraryRoutes(
+    app,
+    ctx,
+    new SkillLibrary(ctx.db, ctx.config.paths.skillLibrary, (projectId) =>
+      sessions.reloadSkillLibrary(projectId),
+    ),
+  )
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
   registerWorktreeRoutes(app, ctx, terminals)

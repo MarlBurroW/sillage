@@ -32,6 +32,16 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  */
 const sillageMcpSchema = z.boolean().default(true)
 
+/**
+ * Livre la bibliothèque de skills de Sillage, globale et du projet, à la session.
+ *
+ * Un seul interrupteur, pas un par skill : un skill qu'on n'invoque pas ne coûte que sa
+ * description dans le contexte. Coupable pour l'instance dans `config.toml`. Côté
+ * Claude, le changer relance la session, les plugins n'étant que des options de
+ * lancement ; Codex l'applique à chaud.
+ */
+const skillLibrarySchema = z.boolean().default(true)
+
 export const claudeConfigSchema = z.object({
   agent: z.literal('claude'),
   model: z.string(),
@@ -41,6 +51,7 @@ export const claudeConfigSchema = z.object({
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
   sillageMcp: sillageMcpSchema,
+  skillLibrary: skillLibrarySchema,
   /**
    * Ignore les serveurs déclarés sur le disque du CLI (`~/.claude.json`, `.mcp.json`,
    * connecteurs claude.ai) pour ne garder que ceux de Sillage.
@@ -179,6 +190,7 @@ export const codexConfigSchema = z.object({
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
   sillageMcp: sillageMcpSchema,
+  skillLibrary: skillLibrarySchema,
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
 
@@ -205,6 +217,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   additionalDirectories: [],
   mcpServers: [],
   sillageMcp: true,
+  skillLibrary: true,
   strictMcp: false,
   fastMode: false,
   ultracode: false,
@@ -226,6 +239,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   additionalDirectories: [],
   mcpServers: [],
   sillageMcp: true,
+  skillLibrary: true,
 }
 
 /**

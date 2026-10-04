@@ -64,6 +64,15 @@ const configSchema = z.object({
       sillageServer: z.boolean().default(true),
     })
     .default({}),
+  skills: z
+    .object({
+      /**
+       * Livre la bibliothèque de skills de Sillage aux sessions. Coupable ici pour toute
+       * l'instance, par le même raisonnement que `mcp.sillageServer`.
+       */
+      library: z.boolean().default(true),
+    })
+    .default({}),
   agents: z
     .object({
       claude: z
@@ -92,6 +101,8 @@ export interface Paths {
   agents: string
   worktrees: string
   logs: string
+  /** Bibliothèque de skills, voir `skill-library/layout.ts`. */
+  skillLibrary: string
   webRoot: string
 }
 
@@ -126,6 +137,7 @@ function resolvePaths(): Paths {
     agents: join(data, 'agents'),
     worktrees: join(data, 'worktrees'),
     logs: join(data, 'logs'),
+    skillLibrary: join(data, 'skill-library'),
     webRoot: process.env.SILLAGE_WEB_ROOT ?? join(import.meta.dirname, '../../web/dist'),
   }
 }

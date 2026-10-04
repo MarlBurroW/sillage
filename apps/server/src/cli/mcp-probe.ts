@@ -60,6 +60,7 @@ function buildProbe(config: AgentConfig, binary: string, resumeSessionId: string
     resumeSessionId,
     projectOverview: () => null,
     resolveMcpServers: () => ({ servers: [probeServer], failures: [] }),
+    skillRoots: () => [],
     emit: (event: SillageEvent) => {
       if (event.type === 'mcp.updated') {
         for (const server of event.servers) {

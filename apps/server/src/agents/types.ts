@@ -80,6 +80,16 @@ export interface RunnerContext {
    * du serveur MCP répondent quand on les interroge, encore faut-il y penser.
    */
   projectOverview(config: AgentConfig): string | null
+  /**
+   * Racines de plugin de la bibliothèque de skills à livrer : la globale, puis celle du
+   * projet. Vide quand la bibliothèque est coupée pour l'instance ou pour la
+   * conversation.
+   *
+   * Les dossiers existent au retour, même vides : un plugin lancé sans eux ne verrait
+   * jamais un skill ajouté ensuite. Fonction pour la même raison que `resolveMcpServers` :
+   * l'interrupteur change à chaud.
+   */
+  skillRoots(config: AgentConfig): string[]
   /** Identifiant de session natif à reprendre, null pour une nouvelle session. */
   resumeSessionId: string | null
   /** Écrit dans le journal puis diffuse. `raw` conserve le message natif du CLI. */
@@ -162,6 +172,14 @@ export interface AgentRunner {
    * alors arrêter le runner, qui repartira en reprise avec la nouvelle valeur.
    */
   applyConfig(config: AgentConfig): Promise<boolean>
+  /**
+   * Fait relire la bibliothèque de skills après une écriture, sans relancer la session.
+   *
+   * Claude relit ses skills sur demande ; Codex relit quand on lui repose ses racines.
+   * D'où une méthode, plutôt qu'un appel que le gestionnaire ferait sans savoir à quel
+   * CLI il parle.
+   */
+  reloadSkillLibrary(): Promise<void>
   /**
    * Titre que le CLI a dérivé de la conversation, ou null s'il n'en propose pas.
    * Sert de titre par défaut à la place d'un « Nouvelle conversation » sans valeur.
