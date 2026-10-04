@@ -3,6 +3,7 @@ import { userSettings, type Db } from '@sillage/db'
 import {
   storedUserSettingsSchema,
   type AgentConfig,
+  type AppearancePrefs,
   type UserSettingsDto,
 } from '@sillage/protocol'
 
@@ -69,6 +70,17 @@ export function writeCollapsedProjects(db: Db, userId: string, projectIds: strin
 export function writeProjectsDir(db: Db, userId: string, projectsDir: string | null): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, projectsDir })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** Thème et curseurs, remplacés en bloc : l'interface envoie toujours l'état complet. */
+export function writeAppearance(db: Db, userId: string, appearance: AppearancePrefs): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, appearance })
 
   db.insert(userSettings)
     .values({ userId, data })

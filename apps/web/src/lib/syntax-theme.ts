@@ -1,5 +1,5 @@
 import type { MessageKey } from './i18n'
-import { useCallback, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
 
 /**
  * Palette de coloration syntaxique, indépendante du thème de l'interface.
@@ -42,28 +42,31 @@ export const SYNTAX_THEME_LABELS: Record<SyntaxTheme, MessageKey> = {
 const STORAGE_KEY = 'sillage.syntax'
 const listeners = new Set<() => void>()
 
-function current(): SyntaxTheme {
+export function currentSyntaxTheme(): SyntaxTheme {
   const value = document.documentElement.dataset.syntax
   return SYNTAX_THEMES.includes(value as SyntaxTheme) ? (value as SyntaxTheme) : 'sillage'
 }
 
-function subscribe(listener: () => void): () => void {
+export function subscribeSyntaxTheme(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
 
+export function applySyntaxTheme(next: SyntaxTheme): void {
+  // La palette par défaut est celle qui vit dans `:root[data-theme=...]` : elle
+  // s'obtient en retirant l'attribut, pas en dupliquant ses valeurs.
+  if (next === 'sillage') delete document.documentElement.dataset.syntax
+  else document.documentElement.dataset.syntax = next
+
+  localStorage.setItem(STORAGE_KEY, next)
+  for (const listener of listeners) listener()
+}
+
 export function useSyntaxTheme(): [SyntaxTheme, (theme: SyntaxTheme) => void] {
-  const theme = useSyncExternalStore(subscribe, current, () => 'sillage' as SyntaxTheme)
-
-  const setTheme = useCallback((next: SyntaxTheme) => {
-    // La palette par défaut est celle qui vit dans `:root[data-theme=...]` : elle
-    // s'obtient en retirant l'attribut, pas en dupliquant ses valeurs.
-    if (next === 'sillage') delete document.documentElement.dataset.syntax
-    else document.documentElement.dataset.syntax = next
-
-    localStorage.setItem(STORAGE_KEY, next)
-    for (const listener of listeners) listener()
-  }, [])
-
-  return [theme, setTheme]
+  const theme = useSyncExternalStore(
+    subscribeSyntaxTheme,
+    currentSyntaxTheme,
+    () => 'sillage' as SyntaxTheme,
+  )
+  return [theme, applySyntaxTheme]
 }

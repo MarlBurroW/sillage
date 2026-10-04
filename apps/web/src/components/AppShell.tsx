@@ -61,6 +61,7 @@ import {
 } from '../lib/conversation-status'
 import { isUnread, useHasUnread } from '../lib/reads'
 import { useUpdateCollapsedProjects, useUserSettings } from '../lib/user-settings'
+import { useAppearanceSync } from '../lib/appearance-sync'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { SignalDot } from './chat/Signals'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
@@ -176,6 +177,7 @@ function useDragSensors() {
  */
 export function AppShell() {
   const t = useTranslate()
+  useAppearanceSync()
   const [navOpen, setNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const hidden = useSidebarHidden()
