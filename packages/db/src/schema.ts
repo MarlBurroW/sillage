@@ -687,6 +687,12 @@ export const librarySkills = sqliteTable(
     sourceId: text('source_id').references(() => skillSources.id, { onDelete: 'set null' }),
     sourcePath: text('source_path'),
     sourceCommit: text('source_commit'),
+    /**
+     * Empreinte du skill tel que la source le portait à l'installation. Comparée au
+     * catalogue, elle dit si une mise à jour existe ; elle diffère de `installedHash`
+     * quand le skill a été renommé en entrant, son frontmatter réécrit.
+     */
+    sourceHash: text('source_hash'),
     /** Empreinte du contenu à l'installation, pour reconnaître une modification locale. */
     installedHash: text('installed_hash'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),

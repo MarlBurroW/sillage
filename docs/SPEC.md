@@ -322,6 +322,7 @@ CREATE TABLE library_skills (
   source_id      TEXT REFERENCES skill_sources(id) ON DELETE SET NULL,
   source_path    TEXT,
   source_commit  TEXT,
+  source_hash    TEXT,                     -- empreinte dans la source, avant renommage
   installed_hash TEXT,                     -- empreinte à l'installation
   created_by     TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at     INTEGER NOT NULL,
@@ -1487,6 +1488,12 @@ annexes. On y édite le nom, la description et le corps de `SKILL.md`, les fichi
 annexes, et l'on y lit ce que le skill fera différemment chez Claude et chez Codex. Une
 écriture vaut tout de suite pour les sessions ouvertes. Le fonctionnement et ses raisons
 sont dans `docs/skill-library.md`.
+
+Sous la bibliothèque, ses sources : des dépôts git (anthropics/skills et openai/skills
+préconfigurés, tout autre ajouté par un admin, ou trouvé sur skills.sh). Un catalogue se
+parcourt et chaque skill se relit, `SKILL.md` brut et fichiers, avant d'être installé
+dans une portée. L'installation est une copie figée sur un commit ; quand la source
+avance, le skill l'annonce, et la mise à jour se lit en diff avant de s'appliquer.
 
 ### 12.9 PWA
 

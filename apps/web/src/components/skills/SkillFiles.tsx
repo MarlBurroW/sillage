@@ -8,6 +8,7 @@ import { useDeleteSkillFile, useSkillFile, useUploadSkillFile, useWriteSkillFile
 import { CodeEditor } from '../panel/CodeEditor'
 import { Banner, Button, Card, CardBody, CardHeader, ConfirmDialog, Field, IconButton, cx } from '../ui'
 import { SkillDialog } from './SkillDialog'
+import { useEditorRevision } from './use-editor-revision'
 
 const validPath = (path: string) => skillFilePathSchema.safeParse(path).success && path !== SKILL_MAIN_FILE
 
@@ -184,6 +185,7 @@ function SkillFileEditor({
   /** Null tant que rien n'a été tapé : le fichier relu fait alors foi. */
   const [draft, setDraft] = useState<string | null>(null)
   const dirty = draft !== null && draft !== file?.content
+  const editor = useEditorRevision(file?.content ?? null, draft !== null)
 
   const save = () => {
     if (!canWrite || draft === null || !dirty) return
@@ -213,12 +215,16 @@ function SkillFileEditor({
       ) : (
         <div className="h-80">
           <CodeEditor
+            key={editor.revision}
             initial={file.content}
             path={path}
-            onChange={setDraft}
+            onChange={(text) => {
+              editor.track(text)
+              setDraft(text)
+            }}
             onSave={save}
             sessionKey={`skill:${skillId}:${path}`}
-            revision={0}
+            revision={editor.revision}
             onPosition={() => {}}
             readOnly={!canWrite}
           />

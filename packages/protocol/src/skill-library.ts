@@ -81,13 +81,17 @@ export const librarySkillSchema = z.object({
   /** Provenance d'un skill installé depuis une source, null pour un skill créé ici. */
   origin: z
     .object({
+      /** Null quand la source a été supprimée depuis : la provenance reste lisible. */
       sourceId: z.string().nullable(),
+      sourceName: z.string().nullable(),
       path: z.string(),
       commit: z.string(),
     })
     .nullable(),
   /** Contenu différent de celui installé. Toujours faux sans provenance. */
   locallyModified: z.boolean(),
+  /** La source porte une autre version que celle installée, au dernier rafraîchissement. */
+  updateAvailable: z.boolean(),
   compat: z.array(skillCompatNoteSchema),
   problem: librarySkillProblemSchema.nullable(),
   createdAt: z.number(),

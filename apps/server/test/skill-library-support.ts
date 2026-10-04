@@ -11,6 +11,8 @@ import { openDatabase, projects, runMigrations, users } from '@sillage/db'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerSkillLibraryRoutes } from '../src/http/routes/skill-library.js'
+import { registerSkillSourceRoutes } from '../src/http/routes/skill-sources.js'
+import { SkillSources } from '../src/skill-library/sources.js'
 import { SkillLibrary } from '../src/skill-library/store.js'
 
 /**
@@ -32,8 +34,9 @@ export function harness(t: TestContext) {
 
   const root = join(dir, 'library')
   const changes: (string | null)[] = []
-  const library = new SkillLibrary(db, root, (projectId) => changes.push(projectId))
-  return { dir, db, root, library, changes }
+  const sources = new SkillSources(db, join(dir, 'sources'))
+  const library = new SkillLibrary(db, root, (projectId) => changes.push(projectId), sources)
+  return { dir, db, root, library, sources, changes }
 }
 
 /** La même bibliothèque derrière les routes, l'utilisateur choisi par en-tête. */
@@ -46,8 +49,12 @@ export async function http(t: TestContext) {
     request.user = h.db.select().from(users).where(eq(users.id, id)).get()
   })
   registerErrorHandler(app)
-  const config = { skills: { library: true }, paths: { skillLibrary: h.root } } as Config
+  const config = {
+    skills: { library: true },
+    paths: { skillLibrary: h.root, skillSourcesCache: join(h.dir, 'sources'), data: h.dir, database: join(h.dir, 'test.sqlite') },
+  } as Config
   registerSkillLibraryRoutes(app, { db: h.db, config }, h.library)
+  registerSkillSourceRoutes(app, { db: h.db, config }, h.library, h.sources)
   t.after(() => app.close())
 
   type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'

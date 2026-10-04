@@ -118,7 +118,7 @@ test('un skill installé se sait modifié localement', (t) => {
     .run()
 
   let listed = library.list(null)[0]!
-  assert.deepEqual(listed.origin, { sourceId: 'src', path: 'skills/deploy', commit: 'abc' })
+  assert.deepEqual(listed.origin, { sourceId: 'src', sourceName: 'src', path: 'skills/deploy', commit: 'abc' })
   assert.equal(listed.locallyModified, false)
   writeFileSync(join(dir, 'notes.md'), 'ajout')
   listed = library.list(null)[0]!
