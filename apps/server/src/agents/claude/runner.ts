@@ -71,12 +71,14 @@ const IGNORED_SUBTYPES = new Set(['session_state_changed'])
  *
  * Le mode rapide y est toujours écrit, même à faux : c'est la conversation qui décide,
  * pas le `settings.json` de l'utilisateur, et le CLI exige de toute façon que la
- * session le demande (`sdk_opt_in_required`, relevé à la sonde). Les deux autres clés
- * sont omises quand la configuration ne dit rien, pour laisser le CLI à son défaut.
+ * session le demande (`sdk_opt_in_required`, relevé à la sonde). Ultracode n'est écrit
+ * qu'allumé : éteint, il n'a rien à annoncer. Les deux autres clés sont omises quand la
+ * configuration ne dit rien, pour laisser le CLI à son défaut.
  */
 function flagSettings(config: ClaudeConfig): Settings {
   return {
     fastMode: config.fastMode,
+    ...(config.ultracode ? { ultracode: true } : {}),
     ...(config.outputStyle ? { outputStyle: config.outputStyle } : {}),
     ...(config.advisorModel ? { advisorModel: config.advisorModel } : {}),
   }
@@ -1252,6 +1254,10 @@ export class ClaudeRunner implements AgentRunner {
       fastMode: config.fastMode,
       outputStyle: config.outputStyle || null,
       advisorModel: config.advisorModel || null,
+      // Seulement quand il change : chaque bascule glisse au modèle un avis « Ultracode
+      // is on/off », relevé à la sonde, qu'un autre réglage n'a pas à répéter. `null`
+      // l'éteint en gardant l'effort courant, que la configuration porte de toute façon.
+      ...(config.ultracode !== this.config.ultracode ? { ultracode: config.ultracode ? true : null } : {}),
     })
     await this.session.setPermissionMode(toPermissionMode(config.permissionMode))
 
