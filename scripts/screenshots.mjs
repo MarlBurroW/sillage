@@ -19,6 +19,10 @@ const USERNAME = process.env.SILLAGE_DEMO_USER ?? 'alex'
 const PASSWORD = process.env.SILLAGE_DEMO_PASSWORD ?? 'sillage-demo'
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'site', 'screenshots')
 
+// Palette du site : réglages natifs relevés sur la capture de référence.
+// Aucun filtre ni retouche des images ; l'interface rend ces couleurs elle-même.
+const APPEARANCE = { hue: 318, tint: 0.25, lift: -0.01 }
+
 const VIEWPORT = { width: 1600, height: 1000 }
 /** Plus large pour le board : les cinq colonnes tiennent sans coupe. */
 const BOARD_VIEWPORT = { width: 1840, height: 1100 }
@@ -174,10 +178,13 @@ async function captureTheme(browser, theme, shots) {
     colorScheme: theme === 'light' ? 'light' : 'dark',
     serviceWorkers: 'block',
   })
-  await context.addInitScript((value) => {
-    localStorage.setItem('sillage.theme', value)
-    document.documentElement.dataset.theme = value
-  }, theme)
+  await context.addInitScript(({ theme, values }) => {
+    localStorage.setItem('sillage.theme', theme)
+    document.documentElement.dataset.theme = theme
+    for (const [key, value] of Object.entries(values)) {
+      localStorage.setItem(`sillage.${key}`, String(value))
+    }
+  }, { theme, values: APPEARANCE })
 
   const page = await context.newPage()
   // La page de connexion se capture avant de poser le cookie de session.
@@ -188,6 +195,11 @@ async function captureTheme(browser, theme, shots) {
     data: { username: USERNAME, password: PASSWORD },
   })
   if (!login.ok()) throw new Error(`Login failed: ${login.status()} ${await login.text()}`)
+  // Le compte fait foi après connexion : garder sa copie et le cache synchrones.
+  const settings = await context.request.patch(`${BASE_URL}/api/me/settings`, {
+    data: { appearance: { theme, syntax: 'sillage', values: APPEARANCE } },
+  })
+  if (!settings.ok()) throw new Error(`Appearance update failed: ${settings.status()}`)
   for (const shot of shots.filter((s) => !s.anonymous)) {
     await shoot(page, shot, `${shot.name}-${theme}.png`)
   }
