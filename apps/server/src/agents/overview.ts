@@ -1,5 +1,5 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
-import { cards, conversations, worktrees, type Db } from '@sillage/db'
+import { cards, conversations, projectImages, worktrees, type Db } from '@sillage/db'
 
 /**
  * Ce qui se passe sur le projet, injecté au démarrage d'une session.
@@ -136,13 +136,46 @@ const COLUMN_WORDS: Record<string, string> = {
 }
 
 /**
+ * Le rappel de l'image du projet, tant qu'elle manque ou n'est que provisoire.
+ *
+ * L'image est ce qui fait reconnaître un projet dans la navigation, et personne ne pense
+ * à en mettre une : l'agent, lui, a le dépôt sous les yeux et sait y trouver un logo.
+ * Deux temps, parce qu'un projet qui démarre n'a souvent pas encore de logo : l'agent en
+ * pose alors une d'attente, déclarée provisoire, et c'est ce drapeau qui garde le rappel
+ * en vie jusqu'à ce qu'un vrai logo la remplace. Une image définitive ne fait plus rien
+ * dire, pas plus qu'un agent sans l'outil pour agir.
+ */
+function imageReminder(db: Db, input: OverviewInput): string | null {
+  if (!input.sillageMcp) return null
+
+  const image = db
+    .select({ provisional: projectImages.provisional })
+    .from(projectImages)
+    .where(eq(projectImages.projectId, input.projectId))
+    .get()
+
+  if (!image) {
+    return "Ce projet n'a pas d'image dans Sillage, alors que c'est elle qui permet à l'utilisateur de le reconnaître d'un coup d'œil parmi les autres. Sans détourner le travail demandé, par exemple une fois qu'il est fini, donne-lui en une avec `set_project_image`. Cherche d'abord un logo ou une icône dans le dépôt : favicon, `logo.*`, `icon.*`, dossiers `public`, `assets` ou `static`, image en tête du README. S'il n'y en a pas, dessine un SVG simple qui évoque le projet, ou génère une image si tu as un outil pour ça, et pose-la avec `provisional: true` : les sessions suivantes sauront qu'elle attend un vrai logo."
+  }
+
+  if (image.provisional) {
+    return "L'image de ce projet dans Sillage est provisoire : elle a été posée faute de logo. Dès que le projet en a un vrai, et en particulier si c'est toi qui le crées ou l'ajoutes, remplace-la avec `set_project_image`."
+  }
+
+  return null
+}
+
+/**
  * Null quand il n'y a rien à dire, et c'est important : un aperçu vide répété à chaque
  * démarrage apprend au modèle à ne plus le lire, et le jour où il porte quelque chose
  * il passe inaperçu.
  */
 export function projectOverview(db: Db, input: OverviewInput): string | null {
   const now = Date.now()
-  const briefing = cardBriefing(db, input)
+  // La carte d'abord, puis l'image : ce qui est demandé passe avant ce qui est suggéré.
+  const briefing = [cardBriefing(db, input), imageReminder(db, input)]
+    .filter((part) => part !== null)
+    .join('\n\n') || null
 
   const rows = db
     .select({

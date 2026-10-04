@@ -71,6 +71,7 @@ import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projec
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import { useRememberContext } from '../lib/last-context'
 import { SidebarActivity } from './SidebarActivity'
+import { ProjectAvatar } from './ProjectAvatar'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { useProjectVisits } from '../lib/project-visits'
 import {
@@ -811,11 +812,7 @@ function ProjectGroup({
             className="flex h-full min-w-0 flex-1 items-center gap-2 px-1.5 text-sm font-semibold"
             title={project.name}
           >
-            <span
-              aria-hidden
-              className="size-2 shrink-0 rounded-full"
-              style={{ background: project.color ?? 'var(--sg-accent)' }}
-            />
+            <ProjectAvatar project={project} />
             <span className="truncate">{project.name}</span>
             {/* Uniquement replié : déplié, ce sont les lignes elles-mêmes qui le disent,
                 et le point ferait doublon avec ce qu'on a déjà sous les yeux. */}

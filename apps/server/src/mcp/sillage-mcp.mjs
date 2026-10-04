@@ -6,7 +6,9 @@
  * mémoire et cet état, cadrés au projet courant.
  *
  * Les outils qui écrivent le font tous dans un flux ajouté : notes de carte, messages
- * entre sessions, surveillances. La frontière est là et pas ailleurs : un agent peut
+ * entre sessions, surveillances. Seule exception, l'image du projet, qu'un agent pose ou
+ * remplace : elle n'est la consigne ni le jugement de personne, et l'utilisateur la
+ * reprend d'un clic. La frontière est là et pas ailleurs : un agent peut
  * raconter ce qu'il a fait ou prévenir une autre session, il ne peut ni déplacer une
  * carte ni réécrire sa description. Déplacer serait se donner un satisfecit, et la
  * colonne cesserait d'être la position choisie qu'elle est censée rester ; réécrire la
@@ -30,6 +32,8 @@
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
+import { readFileSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SILLAGE_MCP_DB
@@ -117,6 +121,26 @@ const PEER_HISTORY_LIMIT = 20
  */
 const MAX_HOPS = 6
 const WAKES_PER_HOUR = 6
+
+/**
+ * Plafond d'une image de projet, et tri de ce qui en est une.
+ *
+ * Doivent rester d'accord avec `MAX_PROJECT_IMAGE_BYTES` du protocole et avec
+ * `apps/server/src/projects/image.ts`, que ce module ne peut pas importer.
+ */
+const MAX_PROJECT_IMAGE_BYTES = 1024 * 1024
+
+function sniffProjectImage(buffer) {
+  const head = buffer.subarray(0, 4).toString('latin1')
+  if (head === '\x89PNG') return 'image/png'
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg'
+  if (head === 'GIF8') return 'image/gif'
+  if (head === 'RIFF' && buffer.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp'
+  if (!buffer.includes(0) && /<svg[\s>]/i.test(buffer.subarray(0, 4096).toString('utf8'))) {
+    return 'image/svg+xml'
+  }
+  return null
+}
 
 const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
@@ -266,6 +290,27 @@ const TOOLS = [
         },
       },
       required: ['body'],
+    },
+  },
+  {
+    name: 'set_project_image',
+    description:
+      "Pose ou remplace l'image de ce projet dans Sillage, celle qui le fait reconnaître d'un coup d'œil dans la navigation. Elle s'affiche en tout petit, dans un carré : préfère une icône ou un logo sans texte à une bannière. Sources, dans l'ordre : un logo ou une icône déjà dans le dépôt ; à défaut un SVG simple que tu dessines pour évoquer le projet, ou une image générée si tu as un outil pour ça, et dans ces deux cas passe `provisional: true`. Appelle aussi cet outil quand le projet gagne un vrai logo ou en change, pour que l'image suive.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description:
+            "Chemin absolu du fichier image : PNG, JPEG, GIF, WebP ou SVG, carré de préférence, 1 Mo au plus. Le fichier est copié, il peut être supprimé ensuite.",
+        },
+        provisional: {
+          type: 'boolean',
+          description:
+            "Vrai quand l'image est une solution d'attente, dessinée ou générée faute de logo dans le projet : les sessions suivantes se verront rappeler de la remplacer dès qu'un vrai logo existe. Faux, par défaut, quand c'est le logo du projet.",
+        },
+      },
+      required: ['path'],
     },
   },
   {
@@ -979,6 +1024,18 @@ function addCardNote(cardId, body) {
     .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, body, Date.now())
 }
 
+function setProjectImage(mimeType, data, provisional) {
+  writeDb()
+    .prepare(
+      `INSERT INTO project_images (project_id, mime_type, data, provisional, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (project_id) DO UPDATE SET
+         mime_type = excluded.mime_type, data = excluded.data,
+         provisional = excluded.provisional, updated_at = excluded.updated_at`,
+    )
+    .run(PROJECT_ID, mimeType, data, provisional ? 1 : 0, Date.now())
+}
+
 /** Une conversation du projet que cette session peut joindre, ou null. */
 function peerConversation(id) {
   return (
@@ -1336,6 +1393,47 @@ function callTool(name, args) {
 
     addCardNote(card.id, body)
     return text(`Note ajoutée à la carte #${card.number} « ${card.title} ».`)
+  }
+
+  if (name === 'set_project_image') {
+    const path = typeof args?.path === 'string' ? args.path.trim() : ''
+    if (!path) return { ...text('Le paramètre `path` est requis.'), isError: true }
+    const provisional = args?.provisional === true
+
+    const file = resolve(path)
+    let data
+    try {
+      // La taille avant la lecture : un chemin qui désigne par erreur une vidéo ou une
+      // archive ne doit pas passer par la mémoire pour être refusé.
+      const info = statSync(file)
+      if (!info.isFile()) return { ...text(`${file} n'est pas un fichier.`), isError: true }
+      if (info.size > MAX_PROJECT_IMAGE_BYTES) {
+        return {
+          ...text(
+            `Image trop lourde (${Math.round(info.size / 1024)} Ko, ${MAX_PROJECT_IMAGE_BYTES / 1024} Ko au plus). Elle s'affiche en quelques dizaines de pixels : réduis-la à 256 pixels de côté et recommence.`,
+          ),
+          isError: true,
+        }
+      }
+      data = readFileSync(file)
+    } catch (error) {
+      return { ...text(`Lecture de ${file} impossible : ${error.message}`), isError: true }
+    }
+
+    const mimeType = sniffProjectImage(data)
+    if (!mimeType) {
+      return {
+        ...text(`${file} n'est pas une image reconnue. Formats acceptés : PNG, JPEG, GIF, WebP, SVG.`),
+        isError: true,
+      }
+    }
+
+    setProjectImage(mimeType, data, provisional)
+    return text(
+      provisional
+        ? "Image du projet posée, marquée provisoire : les sessions suivantes se verront rappeler de la remplacer quand le projet aura un vrai logo."
+        : 'Image du projet mise à jour.',
+    )
   }
 
   if (name === 'send_session_message') {

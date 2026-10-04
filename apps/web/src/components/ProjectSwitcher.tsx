@@ -6,6 +6,7 @@ import type { ProjectDto } from '@sillage/protocol'
 import { useTranslate } from '../lib/i18n'
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import { scoreMatch } from '../lib/search'
+import { ProjectAvatar } from './ProjectAvatar'
 import { cx, IconButton } from './ui'
 
 export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, recent, userId, onNavigate }: {
@@ -45,7 +46,7 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
     <Dialog.Root open={open} onOpenChange={(value) => { setOpen(value); if (!value) setQuery('') }}>
       <Dialog.Trigger asChild>
         <button type="button" aria-label={t('shell.switcher.choose')} className="mb-2 flex min-h-12 w-full items-center gap-2.5 rounded-lg border border-line bg-surface-high px-3 text-left hover:border-ink-faint">
-          {all ? <Layers size={16} /> : <span className="size-2.5 shrink-0 rounded-full" style={{ background: selected?.color ?? 'var(--sg-accent)' }} />}
+          {all ? <Layers size={16} /> : <ProjectAvatar project={selected} className="size-5" />}
           <span className="min-w-0 flex-1"><span className="block text-[0.625rem] text-ink-faint">{t('shell.switcher.workspace')}</span><span className="block truncate text-sm font-semibold">{all ? t('shell.switcher.all') : selected?.name ?? t('shell.switcher.choose')}</span></span>
           <ChevronsUpDown size={14} className="shrink-0 text-ink-faint" />
         </button>
@@ -85,7 +86,7 @@ function ProjectChoice({ project, selected, pinned, onPin, onSelect }: { project
   const t = useTranslate()
   const view = useProjectView(project.id)
   return <div className={cx('flex items-center rounded-md', selected && 'bg-accent-wash')}>
-    <button type="button" data-project-choice onClick={() => onSelect(projectViewPath(project.id, view))} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high"><span className="size-2 shrink-0 rounded-full" style={{ background: project.color ?? 'var(--sg-accent)' }} /><span className="flex-1 truncate">{project.name}</span>{selected && <Check size={14} className="shrink-0 text-accent" />}</button>
+    <button type="button" data-project-choice onClick={() => onSelect(projectViewPath(project.id, view))} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high"><ProjectAvatar project={project} /><span className="flex-1 truncate">{project.name}</span>{selected && <Check size={14} className="shrink-0 text-accent" />}</button>
     <IconButton label={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} onClick={onPin}><Star size={14} className={pinned ? 'fill-accent text-accent' : 'text-ink-faint'} /></IconButton>
   </div>
 }

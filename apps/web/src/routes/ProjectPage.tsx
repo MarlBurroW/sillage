@@ -1,6 +1,7 @@
 import {
   FolderOpen,
   GitBranch,
+  ImagePlus,
   Globe,
   Lock,
   Save,
@@ -10,7 +11,7 @@ import {
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   agentKindSchema,
@@ -18,6 +19,7 @@ import {
   type AgentConfig,
   type AgentKind,
   type ProjectAgentDefaults,
+  type ProjectDto,
   type ProjectVisibility,
 } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
@@ -25,6 +27,7 @@ import { useAgentSettings } from '../components/chat/agent-settings'
 import type { SettingGroup } from '../components/chat/ComposerSettings'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from '../components/PathField'
+import { ProjectAvatar } from '../components/ProjectAvatar'
 import {
   Badge,
   Banner,
@@ -43,7 +46,13 @@ import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
 import { useDeleteWorktree, useWorktrees } from '../lib/worktrees'
 import { translate, useTranslate } from '../lib/i18n'
-import { useDeleteProject, useProjects, useUpdateProject } from '../lib/projects'
+import {
+  useDeleteProject,
+  useProjects,
+  useRemoveProjectImage,
+  useSetProjectImage,
+  useUpdateProject,
+} from '../lib/projects'
 
 /** Recalculée à chaque rendu plutôt que figée au chargement du module : sinon un
  *  changement de langue laisserait ces deux options dans l'ancienne. */
@@ -81,7 +90,10 @@ export function ProjectPage() {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 md:p-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-lg font-semibold tracking-tight">{project.name}</h1>
+        <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+          <ProjectAvatar project={project} className="size-7" />
+          {project.name}
+        </h1>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
             {project.visibility === 'shared'
@@ -120,6 +132,7 @@ export function ProjectPage() {
 
       {project.isOwner ? (
         <>
+          <ProjectImage project={project} />
           <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} />
           <ProjectSettings
             projectId={project.id}
@@ -138,6 +151,75 @@ export function ProjectPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+/**
+ * L'image du projet : l'envoyer, la remplacer, la retirer.
+ *
+ * Les agents en posent une d'eux-mêmes quand elle manque ; cette carte est là pour
+ * choisir la sienne, ou corriger la leur.
+ */
+function ProjectImage({ project }: { project: ProjectDto }) {
+  const t = useTranslate()
+  const input = useRef<HTMLInputElement>(null)
+  const setImage = useSetProjectImage()
+  const removeImage = useRemoveProjectImage()
+  const failure = setImage.error ?? removeImage.error
+  const error = failure instanceof ApiRequestError ? failure.message : null
+
+  return (
+    <Card>
+      <CardHeader
+        title={t('project.image.title')}
+        description={t('project.image.description')}
+        icon={<ImagePlus size={16} />}
+      />
+      <CardBody className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <ProjectAvatar project={project} className="size-14" />
+          <input
+            ref={input}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              // Vidé pour que choisir deux fois le même fichier redéclenche l'envoi.
+              event.target.value = ''
+              if (!file) return
+              removeImage.reset()
+              setImage.mutate({ id: project.id, file })
+            }}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={setImage.isPending}
+            onClick={() => input.current?.click()}
+          >
+            {project.image ? t('project.image.replace') : t('project.image.choose')}
+          </Button>
+          {project.image ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={removeImage.isPending}
+              onClick={() => {
+                setImage.reset()
+                removeImage.mutate(project.id)
+              }}
+            >
+              {t('project.image.remove')}
+            </Button>
+          ) : null}
+        </div>
+        {project.image?.provisional ? (
+          <p className="text-xs text-ink-faint">{t('project.image.provisional')}</p>
+        ) : null}
+        {error ? <Banner>{error}</Banner> : null}
+      </CardBody>
+    </Card>
   )
 }
 

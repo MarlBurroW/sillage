@@ -7,6 +7,7 @@ import { liveBackground, liveSeq, liveSettledAt, liveStatus, subscribeStatus } f
 import { isUnread } from '../lib/reads'
 import { useTranslate } from '../lib/i18n'
 import { AgentIcon } from './AgentIcon'
+import { ProjectAvatar } from './ProjectAvatar'
 import { cx, IconButton } from './ui'
 
 type ActivityEntry = {
@@ -69,7 +70,7 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   const grouped = (items: ActivityEntry[]) => [...new Set(items.map((entry) => entry.conversation.projectId))].map((id) => (
     <section key={id} className="mb-4">
       <h3 className="mb-1 flex items-center gap-2 px-2 text-xs font-semibold text-ink-soft">
-        <span className="size-2 shrink-0 rounded-full" style={{ background: projects.find((project) => project.id === id)?.color ?? 'var(--sg-accent)' }} />
+        <ProjectAvatar project={projects.find((project) => project.id === id)} />
         <span className="truncate">{projectName(id)}</span>
         <span className="ml-auto tabular-nums text-ink-faint">{items.filter((entry) => entry.conversation.projectId === id).length}</span>
       </h3>
