@@ -41,31 +41,7 @@ export function registerSkillLibraryRoutes(
   ctx: AppContext,
   library: SkillLibrary,
 ): void {
-  const requireVisibleProject = (projectId: string, user: UserRow) => {
-    const project = visibleProject(ctx, projectId, user.id)
-    if (!project) throw notFound('project_not_found', 'Project not found.')
-    return project
-  }
-
-  const assertCanWrite = (user: UserRow, scope: LibrarySkillScope, projectId: string | null): void => {
-    if (scope === 'global') {
-      if (!user.isAdmin) throw forbidden('admin_only', 'Administrators only.')
-      return
-    }
-    const project = requireVisibleProject(projectId ?? '', user)
-    if (project.ownerId !== user.id) {
-      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
-    }
-  }
-
-  /** Un skill de projet invisible pour l'appelant n'existe pas, plutôt qu'interdit. */
-  const requireSkill = (params: unknown, user: UserRow): LibrarySkillRow => {
-    const row = library.row((params as { id: string }).id)
-    if (row.scope === 'project' && !visibleProject(ctx, row.projectId ?? '', user.id)) {
-      throw notFound('skill_not_found', 'Unknown skill.')
-    }
-    return row
-  }
+  const { requireVisibleProject, assertCanWrite, requireSkill } = skillAccess(ctx, library)
 
   app.get('/api/skill-library', async (request): Promise<LibrarySkillListDto> => {
     const user = requireUser(request)
@@ -208,6 +184,40 @@ export function registerSkillLibraryRoutes(
     reply.status(201)
     return created
   })
+}
+
+/**
+ * Les droits sur la bibliothèque, partagés avec les routes des sources : qui voit un
+ * projet, qui écrit dans une portée, qui voit un skill.
+ */
+export function skillAccess(ctx: AppContext, library: SkillLibrary) {
+  const requireVisibleProject = (projectId: string, user: UserRow) => {
+    const project = visibleProject(ctx, projectId, user.id)
+    if (!project) throw notFound('project_not_found', 'Project not found.')
+    return project
+  }
+
+  const assertCanWrite = (user: UserRow, scope: LibrarySkillScope, projectId: string | null): void => {
+    if (scope === 'global') {
+      if (!user.isAdmin) throw forbidden('admin_only', 'Administrators only.')
+      return
+    }
+    const project = requireVisibleProject(projectId ?? '', user)
+    if (project.ownerId !== user.id) {
+      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
+    }
+  }
+
+  /** Un skill de projet invisible pour l'appelant n'existe pas, plutôt qu'interdit. */
+  const requireSkill = (params: unknown, user: UserRow): LibrarySkillRow => {
+    const row = library.row((params as { id: string }).id)
+    if (row.scope === 'project' && !visibleProject(ctx, row.projectId ?? '', user.id)) {
+      throw notFound('skill_not_found', 'Unknown skill.')
+    }
+    return row
+  }
+
+  return { requireVisibleProject, assertCanWrite, requireSkill }
 }
 
 /**

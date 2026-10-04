@@ -1,4 +1,4 @@
-import { FileArchive, FilePlus2, FolderInput, HardDrive, Plus } from 'lucide-react'
+import { FileArchive, FilePlus2, FolderInput, HardDrive, Library, Plus } from 'lucide-react'
 import { useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { skillDescriptionSchema, skillNameSchema, type LibrarySkillScope } from '@sillage/protocol'
@@ -6,6 +6,7 @@ import { ApiRequestError } from '../../lib/api'
 import { useTranslate } from '../../lib/i18n'
 import { useCreateLibrarySkill, useImportLibrarySkill } from '../../lib/skill-library'
 import { Banner, Button, Menu, MenuItem } from '../ui'
+import { CatalogDialog } from './CatalogDialog'
 import { LocalSkillsDialog } from './LocalSkillsDialog'
 import { DescriptionField, NameField, SkillDialog } from './SkillDialog'
 
@@ -26,6 +27,7 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
   const folderInput = useRef<HTMLInputElement>(null)
   const [creating, setCreating] = useState(false)
   const [browsing, setBrowsing] = useState(false)
+  const [cataloging, setCataloging] = useState(false)
   /** Fichiers d'un import refusé pour son nom, gardés pour réessayer sous un autre. */
   const [renaming, setRenaming] = useState<File[] | null>(null)
   const [name, setName] = useState('')
@@ -69,6 +71,9 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
         <MenuItem icon={<FolderInput size={15} />} onSelect={() => folderInput.current?.click()}>
           {t('skills.add.folder')}
         </MenuItem>
+        <MenuItem icon={<Library size={15} />} onSelect={() => setCataloging(true)}>
+          {t('skills.add.catalog')}
+        </MenuItem>
         <MenuItem icon={<HardDrive size={15} />} onSelect={() => setBrowsing(true)}>
           {t('skills.add.local')}
         </MenuItem>
@@ -82,6 +87,7 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
 
       <NewSkillDialog open={creating} onClose={() => setCreating(false)} scope={scope} projectId={projectId} />
       <LocalSkillsDialog open={browsing} onClose={() => setBrowsing(false)} scope={scope} projectId={projectId} />
+      <CatalogDialog open={cataloging} onClose={() => setCataloging(false)} scope={scope} projectId={projectId} />
 
       <SkillDialog
         open={renaming !== null}

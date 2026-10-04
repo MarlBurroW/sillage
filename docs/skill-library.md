@@ -13,11 +13,11 @@ Décisions validées le 2026-10-04 :
 - pas de masquage d'un skill global dans un seul projet (voir « Limites ») ;
 - côté Claude, plugins nommés `sillage` (global) et `projet` (projet).
 
-**Lots 1 et 2 implémentés** sur la branche `feat/bibliotheque-skills` le 2026-10-04, pas
-encore fusionnés. La recette du lot 1 a tourné sur un serveur jetable avec de vraies
+**Lots 1, 2 et 3 livrés** le 2026-10-04, fusionnés dans `main` après le travail des
+autres sessions qui y attendait. La recette du lot 1 a tourné sur un serveur jetable avec de vraies
 sessions Claude et Codex : 13 vérifications sur 13, plus le cas `bypassPermissions`.
-L'interface du lot 2 a été parcourue dans un navigateur sur le même serveur (voir « Lots »
-plus bas).
+Les interfaces des lots 2 et 3 ont été parcourues dans un navigateur sur le même
+serveur, le lot 3 contre les vrais dépôts GitHub et skills.sh (voir « Lots » plus bas).
 
 ## Ce que les sondes ont établi
 
@@ -107,6 +107,7 @@ library_skills
   source_id        → skill_sources.id, on delete set null
   source_path      text null  chemin du skill dans la source
   source_commit    text null  commit installé
+  source_hash      text null  empreinte du skill dans la source, avant renommage
   installed_hash   text null  empreinte du contenu à l'installation
   created_by       → users.id
   created_at, updated_at
@@ -323,13 +324,11 @@ Fichiers web : `lib/skill-library.ts` (hooks, sur le modèle de `lib/mcp.ts`),
 
 ## Lots
 
-### Fusion dans `main`
+### Migration
 
-La branche part de `main` à `4fba41e`, et sa migration porte le numéro `0027`. Or l'arbre
-de `main` contient une autre `0027` non commitée (`project_images`). Une fois celle-ci
-commitée, il faudra rebaser la branche, supprimer `0027_skill_library.sql` et son
-instantané, relancer `pnpm db:generate --name skill_library`, puis remettre à la fin du
-fichier généré l'insertion des deux sources préconfigurées.
+`0028_skill_library.sql`, derrière la `0027` des images de projet. Les deux sources
+préconfigurées y sont insérées à la main, à la fin du fichier généré : une
+régénération par `pnpm db:generate` doit les y remettre.
 
 ### Lot 1 : bibliothèque et livraison (implémenté)
 
@@ -401,7 +400,42 @@ Recette : créer, éditer, ajouter un script, renommer, déplacer vers un projet
 réimporter, supprimer. Le tout depuis l'interface, et visible dans une session ouverte à
 chaque étape.
 
-### Lot 3 : sources
+### Lot 3 : sources (implémenté)
+
+Ce qui a été fait, et ce qui diffère du découpage ci-dessous :
+
+- `source_hash` rejoint `library_skills` : une mise à jour se détecte en comparant le
+  catalogue à la version de la source installée, et non au contenu écrit. Sans elle, un
+  skill renommé à l'installation (frontmatter réécrit) aurait une mise à jour fantôme.
+  La migration a été régénérée plutôt que doublée, la branche n'étant alors fusionnée
+  nulle part ;
+- clones de profondeur 1 sous `$XDG_CACHE_HOME/sillage/<empreinte du dossier de
+  données>/skill-sources` : deux instances sur une machine (un serveur de test à côté du
+  daemon) ont les mêmes identifiants de sources préconfigurées et ne doivent pas
+  rafraîchir le même clone ;
+- le clone se fait avec les identifiants git de l'admin qui rafraîchit, par
+  l'environnement et sans rien écrire dans le dépôt cloné ;
+- un dépôt peut être lui-même un skill (chemin vide) ; `.git` n'est jamais copié ;
+- la mise à jour garde le nom de la bibliothèque, remplace le dossier d'un geste, et son
+  diff se calcule par `git diff --no-index` entre l'installé et la source, chemins
+  ramenés au skill ;
+- la recherche skills.sh est réservée aux admins, seuls à pouvoir ajouter la source
+  qu'un résultat désigne ; parcourir un catalogue et installer dans ses projets est
+  ouvert à tous ;
+- l'éditeur se remonte quand le texte change côté serveur sans brouillon en cours
+  (`use-editor-revision.ts`) : après une mise à jour appliquée, il montrait l'ancienne
+  version, qu'un Ctrl+S aurait réécrite par-dessus la nouvelle. Trouvé par la recette.
+
+Vérifié : `skill-sources.test.ts` sur des dépôts git locaux (catalogue, aperçu,
+installation et droits, mise à jour signalée puis appliquée, renommage, modification
+locale écrasée, dépôt-skill, échec de récupération, changement de dossier). Dans le
+navigateur, contre GitHub : anthropics/skills (19 skills) et openai/skills (39)
+récupérées, `pdf` relu puis installé, mise à jour simulée en base, revue en diff avec
+l'avertissement d'écrasement puis appliquée, recherche skills.sh (20 résultats),
+catalogue au doigt. Non vérifié : un dépôt privé réel, faute d'en avoir un sous la main ;
+le chemin des identifiants est celui du clone de projet, déjà en service.
+
+Découpage prévu :
 
 1. `sources.ts` : clone, rafraîchissement, catalogue, installation avec provenance,
    détection des mises à jour, diff, application.
@@ -443,6 +477,7 @@ Codex. Installer un skill d'un dépôt privé avec les identifiants git d'un adm
 
 ## Documentation
 
-Le modèle de données a rejoint la section 4 de `SPEC.md` avec le lot 1, et l'écran la
-section 12.8 avec le lot 2. Ce fichier sera réduit à ce qui reste à faire une fois le
-lot 3 livré.
+Le modèle de données a rejoint la section 4 de `SPEC.md`, et l'écran la section 12.8.
+Ce fichier reste la référence des sondes et des raisons de conception : à relire avant
+de toucher à la livraison, et à rejouer (`/tmp/skill-probe`) quand une version de CLI
+change le comportement d'un des points relevés.

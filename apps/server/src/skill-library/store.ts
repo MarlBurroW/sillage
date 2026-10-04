@@ -13,7 +13,7 @@ import {
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { and, asc, eq, or } from 'drizzle-orm'
-import { librarySkills, type Db, type LibrarySkillRow } from '@sillage/db'
+import { librarySkills, skillSources, type Db, type LibrarySkillRow } from '@sillage/db'
 import {
   SKILL_MAIN_FILE,
   SKILL_TEXT_FILE_MAX_BYTES,
@@ -63,6 +63,25 @@ export interface SkillTarget {
   name?: string
 }
 
+/** D'où vient un skill installé depuis une source, et dans quelle version. */
+export interface SkillOrigin {
+  sourceId: string
+  path: string
+  commit: string
+  /** Empreinte du skill dans la source, avant tout renommage à l'installation. */
+  hash: string
+}
+
+/**
+ * Le catalogue des sources, vu de la bibliothèque : ce qu'il faut pour dire qu'une
+ * mise à jour existe. Une interface plutôt que le service des sources lui-même, qui a
+ * besoin de la bibliothèque pour installer.
+ */
+export interface SourceCatalogReader {
+  /** Empreinte actuelle d'un skill dans sa source, null si le catalogue ne le connaît pas. */
+  hashOf(sourceId: string, path: string): string | null
+}
+
 interface Inspection {
   dir: string
   markdown: SkillMarkdown | null
@@ -81,6 +100,7 @@ export class SkillLibrary {
     private readonly db: Db,
     root: string,
     private readonly onChange: (projectId: string | null) => void = () => {},
+    private readonly catalog: SourceCatalogReader | null = null,
   ) {
     this.layout = new SkillLibraryLayout(root)
   }
@@ -97,6 +117,18 @@ export class SkillLibrary {
       .orderBy(asc(librarySkills.name))
       .all()
       .map((row) => this.toDto(row, this.inspect(row)))
+  }
+
+  /** Les skills installés depuis une source, pour son catalogue. */
+  installedFrom(sourceId: string): LibrarySkillRow[] {
+    return this.db.select().from(librarySkills).where(eq(librarySkills.sourceId, sourceId)).all()
+  }
+
+  /** Voir `SourceCatalogReader` : la source a-t-elle changé depuis l'installation ? */
+  updateAvailable(row: LibrarySkillRow): boolean {
+    if (!this.catalog || row.sourceId === null || row.sourcePath === null || row.sourceHash === null) return false
+    const current = this.catalog.hashOf(row.sourceId, row.sourcePath)
+    return current !== null && current !== row.sourceHash
   }
 
   row(id: string): LibrarySkillRow {
@@ -129,22 +161,16 @@ export class SkillLibrary {
    * Quand `target.name` remplace le nom du frontmatter, celui-ci est réécrit : le nom du
    * dossier et celui du fichier doivent rester le même.
    */
-  install(files: Map<string, Uint8Array>, target: SkillTarget, userId: string): LibrarySkillDto {
-    const main = files.get(SKILL_MAIN_FILE)
-    if (!main) throw badRequest('skill_main_missing', 'The skill has no SKILL.md.')
-    const text = Buffer.from(main).toString('utf8')
-    let data: Record<string, unknown>
-    try {
-      data = parseSkillMarkdown(text).data
-    } catch {
-      throw badRequest('skill_main_unreadable', 'The SKILL.md of this skill cannot be read.')
-    }
+  install(
+    files: Map<string, Uint8Array>,
+    target: SkillTarget,
+    userId: string,
+    origin: SkillOrigin | null = null,
+  ): LibrarySkillDto {
+    const { text, data } = readMain(files)
     const name = target.name ?? data.name
     if (typeof name !== 'string' || !skillNameSchema.safeParse(name).success) {
       throw badRequest('skill_name_invalid', 'Invalid skill name: {name}.', { name: String(name ?? '') })
-    }
-    if (!skillDescriptionSchema.safeParse(data.description).success) {
-      throw badRequest('skill_description_missing', 'The SKILL.md of this skill has no description.')
     }
 
     const { scope, projectId } = target
@@ -152,13 +178,7 @@ export class SkillLibrary {
     const dir = this.layout.skillDir(scope, projectId, name)
     this.assertFreeDirectory(dir, name)
 
-    const staging = this.stage()
-    for (const [path, content] of files) {
-      const destination = join(staging, assertSkillFilePath(path, { allowMain: true }))
-      mkdirSync(dirname(destination), { recursive: true })
-      const renamed = path === SKILL_MAIN_FILE && name !== data.name
-      writeFileSync(destination, renamed ? updateSkillMarkdown(text, { name }) : content)
-    }
+    const staging = this.stageFiles(files, name, text, data)
     this.layout.ensureScope(scope, projectId)
     renameSync(staging, dir)
 
@@ -169,10 +189,12 @@ export class SkillLibrary {
       projectId,
       name,
       enabled: true,
-      sourceId: null,
-      sourcePath: null,
-      sourceCommit: null,
-      installedHash: null,
+      sourceId: origin?.sourceId ?? null,
+      sourcePath: origin?.path ?? null,
+      sourceCommit: origin?.commit ?? null,
+      sourceHash: origin?.hash ?? null,
+      // Ce qui a été écrit, renommage compris : c'est la référence d'une modification locale.
+      installedHash: origin ? contentHash(dir, listFiles(dir)) : null,
       createdBy: userId,
       createdAt: now,
       updatedAt: now,
@@ -180,6 +202,76 @@ export class SkillLibrary {
     this.db.insert(librarySkills).values(row).run()
     this.onChange(projectId)
     return this.toDto(row, this.inspect(row))
+  }
+
+  /**
+   * Remplace le contenu d'un skill installé par la version de sa source. Le nom reste
+   * celui de la bibliothèque : un skill renommé à l'installation le reste.
+   *
+   * Le dossier est remplacé d'un geste, comme à l'installation. Une modification locale
+   * est écrasée : c'est à l'interface de l'annoncer avant.
+   */
+  applyUpdate(row: LibrarySkillRow, files: Map<string, Uint8Array>, origin: SkillOrigin): LibrarySkillDto {
+    const dir = this.existingDir(row)
+    const { text, data } = readMain(files)
+    const staging = this.stageFiles(files, row.name, text, data)
+    const trash = join(this.layout.stagingDir(), randomUUID())
+    renameSync(dir, trash)
+    renameSync(staging, dir)
+    rmSync(trash, { recursive: true, force: true })
+
+    const next: LibrarySkillRow = {
+      ...row,
+      sourceId: origin.sourceId,
+      sourcePath: origin.path,
+      sourceCommit: origin.commit,
+      sourceHash: origin.hash,
+      installedHash: contentHash(dir, listFiles(dir)),
+      updatedAt: Date.now(),
+    }
+    this.db.update(librarySkills).set(next).where(eq(librarySkills.id, row.id)).run()
+    this.onChange(row.projectId)
+    return this.toDto(next, this.inspect(next))
+  }
+
+  /**
+   * Ce que deviendrait le dossier d'un skill avec ces fichiers, écrit à part : de quoi
+   * montrer le diff d'une mise à jour sans rien toucher. À effacer par l'appelant.
+   */
+  stageUpdate(row: LibrarySkillRow, files: Map<string, Uint8Array>): string {
+    const { text, data } = readMain(files)
+    return this.stageFiles(files, row.name, text, data)
+  }
+
+  /** Le dossier actuel d'un skill, pour le comparer à une version de sa source. */
+  directoryOf(row: LibrarySkillRow): string {
+    return this.existingDir(row)
+  }
+
+  /** Une zone de transit vide, à effacer par l'appelant. */
+  scratch(): string {
+    return this.stage()
+  }
+
+  /**
+   * Écrit les fichiers dans la zone de transit. Quand le nom du skill diffère de celui
+   * du frontmatter, celui-ci est réécrit : le nom du dossier et celui du fichier doivent
+   * rester le même.
+   */
+  private stageFiles(
+    files: Map<string, Uint8Array>,
+    name: string,
+    text: string,
+    data: Record<string, unknown>,
+  ): string {
+    const staging = this.stage()
+    for (const [path, content] of files) {
+      const destination = join(staging, assertSkillFilePath(path, { allowMain: true }))
+      mkdirSync(dirname(destination), { recursive: true })
+      const renamed = path === SKILL_MAIN_FILE && name !== data.name
+      writeFileSync(destination, renamed ? updateSkillMarkdown(text, { name }) : content)
+    }
+    return staging
   }
 
   /** Une copie sous un autre nom, ou dans une autre portée. La provenance ne suit pas. */
@@ -399,6 +491,11 @@ export class SkillLibrary {
     return { dir, markdown, files, problem }
   }
 
+  private sourceName(sourceId: string | null): string | null {
+    if (sourceId === null) return null
+    return this.db.select({ name: skillSources.name }).from(skillSources).where(eq(skillSources.id, sourceId)).get()?.name ?? null
+  }
+
   private toDto(row: LibrarySkillRow, inspection: Inspection): LibrarySkillDto {
     const { markdown, files, problem } = inspection
     const description = markdown?.data.description
@@ -411,7 +508,12 @@ export class SkillLibrary {
       enabled: row.enabled,
       origin:
         row.sourcePath !== null && row.sourceCommit !== null
-          ? { sourceId: row.sourceId, path: row.sourcePath, commit: row.sourceCommit }
+          ? {
+              sourceId: row.sourceId,
+              sourceName: this.sourceName(row.sourceId),
+              path: row.sourcePath,
+              commit: row.sourceCommit,
+            }
           : null,
       // Calculée seulement pour un skill installé : sans empreinte de référence, il n'y a
       // rien à comparer, et lire tous les fichiers à chaque liste serait pour rien.
@@ -419,6 +521,7 @@ export class SkillLibrary {
         row.installedHash !== null && problem !== 'skill_missing'
           ? contentHash(inspection.dir, files) !== row.installedHash
           : false,
+      updateAvailable: this.updateAvailable(row),
       compat: markdown ? compatNotes(markdown.data, markdown.body, files) : [],
       problem,
       createdAt: row.createdAt,
@@ -430,6 +533,8 @@ export class SkillLibrary {
 /**
  * Fichiers d'un skill, en chemins relatifs à séparateur `/`, triés. Les liens
  * symboliques sont ignorés : un skill ne doit rien faire lire hors de son dossier.
+ * `.git` aussi : un dépôt dont la racine est un skill ne doit pas apporter son
+ * historique dans la bibliothèque.
  */
 export function listFiles(dir: string): string[] {
   const files: string[] = []
@@ -437,7 +542,9 @@ export function listFiles(dir: string): string[] {
     for (const entry of readdirSync(join(dir, relative), { withFileTypes: true })) {
       if (files.length >= MAX_LISTED_FILES) return
       const path = relative ? `${relative}/${entry.name}` : entry.name
-      if (entry.isDirectory()) walk(path)
+      if (entry.isDirectory()) {
+        if (entry.name !== '.git') walk(path)
+      }
       else if (entry.isFile()) files.push(path)
     }
   }
@@ -445,8 +552,28 @@ export function listFiles(dir: string): string[] {
   return files.sort()
 }
 
+/**
+ * Le `SKILL.md` d'un jeu de fichiers, lu et vérifié : un skill qui entre dans la
+ * bibliothèque doit au moins avoir une description, qui est ce que les CLI listent.
+ */
+function readMain(files: Map<string, Uint8Array>): { text: string; data: Record<string, unknown> } {
+  const main = files.get(SKILL_MAIN_FILE)
+  if (!main) throw badRequest('skill_main_missing', 'The skill has no SKILL.md.')
+  const text = Buffer.from(main).toString('utf8')
+  let data: Record<string, unknown>
+  try {
+    data = parseSkillMarkdown(text).data
+  } catch {
+    throw badRequest('skill_main_unreadable', 'The SKILL.md of this skill cannot be read.')
+  }
+  if (!skillDescriptionSchema.safeParse(data.description).success) {
+    throw badRequest('skill_description_missing', 'The SKILL.md of this skill has no description.')
+  }
+  return { text, data }
+}
+
 /** Les fichiers d'un dossier de skill, liens symboliques exclus comme dans `listFiles`. */
-function readDirectory(dir: string): Map<string, Uint8Array> {
+export function readDirectory(dir: string): Map<string, Uint8Array> {
   return new Map(listFiles(dir).map((path) => [path, readFileSync(join(dir, path))]))
 }
 

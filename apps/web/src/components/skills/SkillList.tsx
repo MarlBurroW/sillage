@@ -52,6 +52,8 @@ export function SkillBadges({ skill, showScope }: { skill: LibrarySkillDto; show
       {showScope ? (
         <Badge tone="accent">{t(skill.scope === 'global' ? 'skills.scope.global' : 'skills.scope.project')}</Badge>
       ) : null}
+      {skill.origin?.sourceName ? <Badge>{skill.origin.sourceName}</Badge> : null}
+      {skill.updateAvailable ? <Badge tone="accent">{t('skills.badge.update')}</Badge> : null}
       {!skill.enabled ? <Badge>{t('skills.state.disabled')}</Badge> : null}
       {skill.problem ? <Badge tone="critical">{t(`skills.problem.${skill.problem}`)}</Badge> : null}
       {skill.compat.some((note) => note.code === 'runs_scripts') ? (

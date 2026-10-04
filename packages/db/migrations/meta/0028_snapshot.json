@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f3c489de-9de6-417d-a89d-47e0af36a62c",
+  "id": "879a0840-b9b3-435f-a3e5-24e16f798c15",
   "prevId": "3a209841-a558-48c2-b9db-c4083e7d4629",
   "tables": {
     "api_idempotency": {
@@ -1428,6 +1428,13 @@
         },
         "source_commit": {
           "name": "source_commit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_hash": {
+          "name": "source_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -1,6 +1,7 @@
 import { BookOpen } from 'lucide-react'
 import { AddSkillMenu } from '../components/skills/AddSkillMenu'
 import { SkillList } from '../components/skills/SkillList'
+import { SkillSourcesSection } from '../components/skills/SkillSourcesSection'
 import { Banner, EmptyState } from '../components/ui'
 import { useTranslate } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
@@ -40,6 +41,8 @@ export function SkillLibrarySettingsPage() {
           <SkillList skills={skills} />
         )}
       </section>
+
+      <SkillSourcesSection isAdmin={isAdmin} />
     </div>
   )
 }

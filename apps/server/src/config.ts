@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -103,6 +104,11 @@ export interface Paths {
   logs: string
   /** Bibliothèque de skills, voir `skill-library/layout.ts`. */
   skillLibrary: string
+  /**
+   * Clones des sources de skills, dans le cache et non dans les données : ils se
+   * refont d'un rafraîchissement, et la sauvegarde n'a pas à les transporter.
+   */
+  skillSourcesCache: string
   webRoot: string
 }
 
@@ -138,6 +144,15 @@ function resolvePaths(): Paths {
     worktrees: join(data, 'worktrees'),
     logs: join(data, 'logs'),
     skillLibrary: join(data, 'skill-library'),
+    // Propre à chaque répertoire de données : deux instances sur une machine (un serveur
+    // de test à côté du daemon) ont les mêmes identifiants de sources préconfigurées, et
+    // ne doivent pas rafraîchir le même clone en même temps.
+    skillSourcesCache: join(
+      xdg('XDG_CACHE_HOME', '.cache'),
+      'sillage',
+      createHash('sha256').update(data).digest('hex').slice(0, 12),
+      'skill-sources',
+    ),
     webRoot: process.env.SILLAGE_WEB_ROOT ?? join(import.meta.dirname, '../../web/dist'),
   }
 }

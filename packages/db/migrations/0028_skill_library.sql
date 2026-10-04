@@ -7,6 +7,7 @@ CREATE TABLE `library_skills` (
 	`source_id` text,
 	`source_path` text,
 	`source_commit` text,
+	`source_hash` text,
 	`installed_hash` text,
 	`created_by` text,
 	`created_at` integer NOT NULL,

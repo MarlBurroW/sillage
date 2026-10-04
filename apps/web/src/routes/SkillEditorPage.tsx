@@ -24,6 +24,8 @@ import { useSkillPermissions, type SkillDestination } from '../components/skills
 import { DescriptionField, NameField, SkillDialog } from '../components/skills/SkillDialog'
 import { SkillFiles } from '../components/skills/SkillFiles'
 import { SkillBadges } from '../components/skills/SkillList'
+import { UpdateDialog } from '../components/skills/UpdateDialog'
+import { useEditorRevision } from '../components/skills/use-editor-revision'
 import {
   Banner,
   Button,
@@ -47,6 +49,7 @@ import {
   useLibrarySkill,
   useUpdateLibrarySkill,
 } from '../lib/skill-library'
+import { shortCommit } from '../lib/skill-sources'
 
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)
 
@@ -97,8 +100,8 @@ function SkillEditor({
   const canWrite = permissions.canWrite(skill.scope, skill.projectId)
   /** Les champs touchés seulement : ce qui n'a pas été modifié suit l'enregistrement. */
   const [draft, setDraft] = useState<Partial<Draft>>({})
-  const [revision, setRevision] = useState(0)
-  const [dialog, setDialog] = useState<'duplicate' | 'move' | 'delete' | null>(null)
+  const editor = useEditorRevision(skill.body, draft.body !== undefined)
+  const [dialog, setDialog] = useState<'duplicate' | 'move' | 'delete' | 'update' | null>(null)
 
   const current: Draft = {
     name: draft.name ?? skill.name,
@@ -121,7 +124,7 @@ function SkillEditor({
   /** Abandonne les brouillons ; l'éditeur, qui ne lit son texte qu'au montage, repart. */
   const discard = () => {
     setDraft({})
-    setRevision((value) => value + 1)
+    editor.reset()
   }
 
   const back = skill.scope === 'global' ? '/settings/skills' : `/p/${skill.projectId}`
@@ -151,6 +154,15 @@ function SkillEditor({
           <p className="text-sm text-ink-faint">
             {t('skills.editor.invocation', { name: skill.name })}
           </p>
+          {skill.origin ? (
+            <p className="font-mono text-xs text-ink-faint">
+              {t('skills.editor.origin', {
+                source: skill.origin.sourceName ?? t('skills.editor.origin.removed'),
+                path: skill.origin.path || '/',
+                commit: shortCommit(skill.origin.commit),
+              })}
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           {canWrite ? (
@@ -192,6 +204,14 @@ function SkillEditor({
         </div>
       </header>
 
+      {skill.updateAvailable ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-accent/40 bg-accent-wash px-3 py-2 text-sm">
+          <span className="min-w-0 flex-1">{t('skills.update.available', { source: skill.origin?.sourceName ?? '' })}</span>
+          <Button size="sm" variant="secondary" onClick={() => setDialog('update')}>
+            {t('skills.update.review')}
+          </Button>
+        </div>
+      ) : null}
       {skill.problem ? <Banner>{t(`skills.problem.${skill.problem}.detail`)}</Banner> : null}
       {!skill.enabled ? <Banner tone="info">{t('skills.editor.disabled')}</Banner> : null}
       {!canWrite ? <Banner tone="info">{t('skills.editor.readonly')}</Banner> : null}
@@ -215,13 +235,16 @@ function SkillEditor({
         <CardHeader title={t('skills.editor.body')} description={t('skills.editor.body.description')} icon={<ScrollText size={16} />} />
         <div className="h-[28rem] border-t border-line">
           <CodeEditor
-            key={revision}
+            key={editor.revision}
             initial={skill.body}
             path="SKILL.md"
-            onChange={(body) => setDraft((previous) => ({ ...previous, body }))}
+            onChange={(body) => {
+              editor.track(body)
+              setDraft((previous) => ({ ...previous, body }))
+            }}
             onSave={save}
             sessionKey={`skill:${skill.id}:SKILL.md`}
-            revision={revision}
+            revision={editor.revision}
             onPosition={() => {}}
             readOnly={!canWrite}
           />
@@ -244,6 +267,7 @@ function SkillEditor({
         skill={skill}
         destinations={elsewhere}
       />
+      <UpdateDialog open={dialog === 'update'} onClose={() => setDialog(null)} skill={skill} canWrite={canWrite} />
       <ConfirmDialog
         open={dialog === 'delete'}
         onOpenChange={(open) => { if (!open) setDialog(null) }}
