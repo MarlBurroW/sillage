@@ -3,7 +3,7 @@ import type { ToolOutputDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
- * Sortie complète d'un appel d'outil, quand la relecture n'en a rendu qu'un aperçu.
+ * Sortie complète d'un appel d'outil, quand la relecture ne l'a pas transmise.
  *
  * Le journal ne bouge plus une fois le tour passé, donc le cache n'a aucune raison
  * d'expirer. La requête n'est armée qu'à l'ouverture de la carte : une conversation

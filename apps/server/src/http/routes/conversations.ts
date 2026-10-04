@@ -41,7 +41,6 @@ import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
 import { advanceCardOnLaunch, assertCardInProject, readCardLink } from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
-import { previewToolOutputs } from '../../events/tool-output.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
@@ -49,7 +48,21 @@ import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-const PAGE_SIZE = 500
+/**
+ * Bornes d'une page de relecture (`EventLog.readForReplay`).
+ *
+ * Une page coûte un aller-retour, et le client les enchaîne l'une après l'autre : à 500
+ * événements, la conversation la plus lourde en demandait 147. La borne en octets porte
+ * sur les payloads lus en base, et c'est elle qui tient la mémoire du daemon ; celle en
+ * lignes borne le listage qui la précède.
+ *
+ * 16 Mo et pas davantage : rejouées dans un tas contraint, les conversations les plus
+ * lourdes de la base passent sous 96 Mo avec cette borne, quand les anciennes pages de 500
+ * événements en demandaient plus de 128. Une page plus grande gagnerait quelques
+ * allers-retours sur cette marge, et le daemon porte aussi les sessions en cours.
+ */
+const PAGE_ROWS = 5000
+const PAGE_BYTES = 16_000_000
 
 /**
  * `lastReadSeq`, `card` et `favorite` sont passés plutôt que relus ici : les routes de
@@ -569,14 +582,14 @@ export function registerConversationRoutes(
     const after = Number.isFinite(asked) ? asked : 0
     const conversation = await loadReadable(id, user.id)
 
-    const read = log.read(id, after, PAGE_SIZE)
+    const page = log.readForReplay(id, after, { rows: PAGE_ROWS, bytes: PAGE_BYTES })
     return {
-      entries: previewToolOutputs(coalesceDeltas(read)).map((entry) => ({
+      entries: coalesceDeltas(page.entries).map((entry) => ({
         seq: entry.seq,
         ts: entry.ts,
         event: entry.event,
       })),
-      nextAfter: read.at(-1)?.seq ?? after,
+      nextAfter: page.nextAfter,
       lastSeq: conversation.lastSeq,
     }
   })

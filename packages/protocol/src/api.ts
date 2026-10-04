@@ -429,10 +429,12 @@ export interface ConversationDto {
 export interface JournalPageDto {
   entries: { seq: number; ts: number; event: unknown }[]
   /**
-   * Curseur de la page suivante : dernier `seq` **lu**, que son événement ait été rendu
-   * ou fusionné dans un autre. Les deltas d'une page sont regroupés par message, donc la
-   * dernière entrée rendue porte le `seq` du premier fragment de son groupe et non celui
-   * du dernier lu : s'en servir comme curseur ferait relire la page indéfiniment.
+   * Curseur de la page suivante : dernier `seq` **lu**, que son événement ait été rendu,
+   * fusionné dans un autre ou écarté parce que la suite du journal le rend caduc. Les
+   * deltas d'une page sont regroupés par message, donc la dernière entrée rendue porte le
+   * `seq` du premier fragment de son groupe et non celui du dernier lu : s'en servir comme
+   * curseur ferait relire la page indéfiniment. Une page peut aussi n'avoir aucune entrée
+   * et faire avancer le curseur.
    *
    * Facultatif parce que le web s'échange sans redémarrage et le serveur non : le temps
    * d'un déploiement, ce client parle à un serveur qui l'ignore. Le serveur le renvoie
