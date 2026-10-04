@@ -134,6 +134,14 @@ export type ServerMessage =
    * paginée plutôt que de recevoir le delta sur le socket.
    */
   | { t: 'catchup'; conversationId: string; fromSeq: number; toSeq: number }
+  /**
+   * La liste des projets ou des conversations a changé : le client la relit.
+   *
+   * Le signal ne décrit pas le changement. Suppressions, renommages, rangements et
+   * réordonnancements se comptent en quelques-uns par minute, et la liste relue fait
+   * foi sans qu'il faille tenir un delta par geste.
+   */
+  | { t: 'lists-changed' }
   | { t: 'pong' }
   | { t: 'error'; code: string; message: string; params?: Record<string, string | number> }
 

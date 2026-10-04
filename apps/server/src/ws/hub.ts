@@ -15,6 +15,37 @@ import { watchDirectory } from '../tree-watch.js'
 import { conversationWorkspace, projectWorkspace, resolveInside } from '../workspace.js'
 
 /**
+ * Routes dont le succès change ce que la sidebar des autres onglets affiche.
+ *
+ * Le socket ne poussait que des statuts : une session supprimée, renommée ou rangée
+ * depuis un onglet restait affichée dans les autres jusqu'au rechargement. Une session
+ * créée ailleurs, elle, finissait par apparaître, mais seulement parce que son premier
+ * statut trahissait un identifiant inconnu.
+ *
+ * `personal` ne prévient que les onglets du compte appelant : un signet ne regarde
+ * personne d'autre. Le curseur de lecture n'y figure pas : il avance toutes les deux
+ * secondes pendant un tour, et chaque onglet relirait la liste à ce rythme.
+ *
+ * Le planificateur et les webhooks créent sans passer par une route : le premier statut
+ * de la session suffit alors à la révéler.
+ */
+export const LIST_ROUTES: Record<string, 'shared' | 'personal'> = {
+  'POST /api/projects/:id/conversations': 'shared',
+  'POST /api/v1/projects/:id/tasks': 'shared',
+  'POST /api/projects/:id/conversations/order': 'shared',
+  'POST /api/projects/:id/claude-sessions/:sessionId/import': 'shared',
+  'POST /api/conversations/:id/fork': 'shared',
+  'PATCH /api/conversations/:id': 'shared',
+  'DELETE /api/conversations/:id': 'shared',
+  'PUT /api/conversations/:id/favorite': 'personal',
+  'DELETE /api/conversations/:id/favorite': 'personal',
+  'POST /api/projects': 'shared',
+  'POST /api/projects/order': 'shared',
+  'PATCH /api/projects/:id': 'shared',
+  'DELETE /api/projects/:id': 'shared',
+}
+
+/**
  * Un socket par onglet, multiplexé sur plusieurs conversations : la sidebar suit les
  * statuts pendant que la vue principale suit un fil.
  *
@@ -75,20 +106,7 @@ class Connection {
     // Instantané de statut : sans lui, un client qui s'abonne après le dernier
     // changement resterait sur l'état qu'il avait au chargement. La sidebar n'a pas
     // de journal à replier, elle ne peut pas le déduire elle-même.
-    const state = readConversationState(this.ctx, conversationId)
-    if (state) {
-      this.send({
-        t: 'status',
-        conversationId,
-        status: state.status,
-        warm: this.sessions.isWarm(conversationId),
-        background: this.sessions.backgroundCount(conversationId),
-        loops: this.sessions.loopCount(conversationId),
-        appliedConfig: this.sessions.appliedConfig(conversationId),
-        lastNotableSeq: state.lastNotableSeq,
-        metrics: state.metrics,
-      })
-    }
+    this.sendStatus(conversationId)
 
     const unsubscribe = this.log.subscribe(conversationId, (entry) => {
       this.send({
@@ -100,6 +118,37 @@ class Connection {
       })
     })
     this.subscriptions.set(conversationId, unsubscribe)
+  }
+
+  sendStatus(conversationId: string): void {
+    const state = readConversationState(this.ctx, conversationId)
+    if (!state) return
+    this.send({
+      t: 'status',
+      conversationId,
+      status: state.status,
+      warm: this.sessions.isWarm(conversationId),
+      background: this.sessions.backgroundCount(conversationId),
+      loops: this.sessions.loopCount(conversationId),
+      appliedConfig: this.sessions.appliedConfig(conversationId),
+      lastNotableSeq: state.lastNotableSeq,
+      metrics: state.metrics,
+    })
+  }
+
+  /**
+   * Statut de chaque session vivante que ce compte peut lire, à l'ouverture du socket.
+   *
+   * Le client vide ses statuts à chaque reconnexion, ce qui a été poussé avant la
+   * coupure ne faisant plus foi, et retombe sur la liste REST. Celle-ci ne connaît ni
+   * les travaux de fond ni les boucles, qui n'existent que dans le process : sans cet
+   * instantané, leurs pastilles disparaissaient jusqu'au prochain changement de statut.
+   * Les conversations froides n'ont rien de plus que ce que la liste dit déjà.
+   */
+  sendLiveStatuses(): void {
+    for (const conversationId of this.sessions.warmConversationIds()) {
+      if (canReadConversation(this.ctx, conversationId, this.userId)) this.sendStatus(conversationId)
+    }
   }
 
   /** Vrai si cette connexion appartient au compte et suit cette conversation. */
@@ -193,8 +242,21 @@ class Connection {
   }
 
   notifyTitle(conversationId: string, title: string): void {
-    if (!this.subscriptions.has(conversationId)) return
-    this.send({ t: 'title', conversationId, title })
+    if (this.subscriptions.has(conversationId)) {
+      this.send({ t: 'title', conversationId, title })
+      return
+    }
+    // Les autres onglets n'ont que la ligne de la sidebar, restée sur le titre
+    // provisoire : c'est la liste qu'ils doivent relire.
+    if (canReadConversation(this.ctx, conversationId, this.userId)) this.notifyListsChanged()
+  }
+
+  notifyListsChanged(): void {
+    this.send({ t: 'lists-changed' })
+  }
+
+  belongsTo(userId: string): boolean {
+    return this.userId === userId
   }
 
   markAlive(): void {
@@ -269,6 +331,7 @@ export async function registerWebSocketHub(
 
     const connection = new Connection(socket, user.id, ctx, log, sessions)
     connections.add(connection)
+    connection.sendLiveStatuses()
 
     socket.on('message', (raw: Buffer) => {
       let parsed
@@ -302,6 +365,20 @@ export async function registerWebSocketHub(
       connection.close()
       connections.delete(connection)
     })
+  })
+
+  // Posé après les routes et pourtant appliqué à toutes : Fastify assemble les hooks
+  // d'une route au démarrage, pas à sa déclaration.
+  app.addHook('onResponse', async (request, reply) => {
+    if (reply.statusCode >= 400) return
+    const reach = LIST_ROUTES[`${request.method} ${request.routeOptions.url}`]
+    if (!reach) return
+    const userId = request.user?.id
+    for (const connection of connections) {
+      if (reach === 'shared' || (userId !== undefined && connection.belongsTo(userId))) {
+        connection.notifyListsChanged()
+      }
+    }
   })
 
   // Sur mobile, un socket tué par la mise en veille reste ouvert côté serveur sans

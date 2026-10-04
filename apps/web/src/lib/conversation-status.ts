@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { ConversationDto, ConversationMetrics, ConversationStatus } from '@sillage/protocol'
 import { wsClient } from './ws-client'
@@ -145,6 +145,16 @@ export function liveBackground(conversationId: string): number {
 }
 
 /**
+ * Fenêtre où les signaux de liste se regroupent. Un même geste en produit parfois
+ * plusieurs : un glissement réécrit l'ordre, l'onglet qui l'a fait relit déjà de son
+ * côté. Une seule relecture suffit pour la rafale.
+ */
+const LISTS_REFRESH_DELAY_MS = 150
+
+/** L'indicateur tourne au moins ce temps : plus bref, il clignote sans qu'on le lise. */
+const MIN_REFRESH_MS = 500
+
+/**
  * Branche l'onglet sur le flux de statuts. Monté par la sidebar, qui est la seule vue
  * à afficher des conversations qu'elle n'a pas ouvertes.
  */
@@ -152,7 +162,9 @@ export function useStatusFeed(): void {
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    return wsClient.watchStatuses({
+    let listsTimer: number | null = null
+
+    const stop = wsClient.watchStatuses({
       onStatus: ({
         conversationId,
         status,
@@ -203,6 +215,74 @@ export function useStatusFeed(): void {
         emit()
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       },
+      onListsChanged: () => {
+        if (listsTimer !== null) return
+        listsTimer = window.setTimeout(() => {
+          listsTimer = null
+          void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+          void queryClient.invalidateQueries({ queryKey: ['projects'] })
+          // L'en-tête du fil ouvert aussi : renommé ou supprimé ailleurs, il doit le
+          // montrer sans attendre qu'on en sorte.
+          void queryClient.invalidateQueries({ queryKey: ['conversation'] })
+        }, LISTS_REFRESH_DELAY_MS)
+      },
+    })
+
+    return () => {
+      stop()
+      if (listsTimer !== null) clearTimeout(listsTimer)
+    }
+  }, [queryClient])
+}
+
+/**
+ * Relit ce qui a vieilli, sans rien vider, aux moments où l'on va regarder la liste
+ * sans que rien ne l'ait signalé : l'ouverture du tiroir sur téléphone, qui reste monté
+ * hors de l'écran et ne se relit donc jamais de lui-même.
+ */
+export function useRevalidateLists(): () => void {
+  const queryClient = useQueryClient()
+  return useCallback(() => {
+    wsClient.check()
+    void queryClient.refetchQueries({ queryKey: ['conversations'], type: 'active', stale: true })
+  }, [queryClient])
+}
+
+/**
+ * Rafraîchissement demandé à la main, par le bouton ou le geste de la sidebar.
+ *
+ * Rien de ce qui est affiché n'est cru sur parole : le socket est remplacé par un neuf,
+ * ce qui vide les statuts poussés et réabonne le fil ouvert depuis son curseur, puis
+ * les listes sont relues. C'est le chemin d'une reconnexion, pris sans attendre d'avoir
+ * constaté la coupure.
+ */
+export function useRefreshLists(): { refreshing: boolean; refresh: () => void } {
+  const queryClient = useQueryClient()
+  const [refreshing, setRefreshing] = useState(false)
+  // Une ref et non l'état : deux gestes dans le même rendu verraient tous deux `false`.
+  const running = useRef(false)
+
+  const refresh = useCallback(() => {
+    if (running.current) return
+    running.current = true
+    setRefreshing(true)
+
+    const work = async () => {
+      await wsClient.resync()
+      // `cancelRefetch: false` : la reconnexion vient de relancer la liste, cette
+      // lecture-là est rejointe plutôt qu'interrompue pour une autre identique.
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['conversations'], type: 'active' }, { cancelRefetch: false }),
+        queryClient.refetchQueries({ queryKey: ['projects'], type: 'active' }, { cancelRefetch: false }),
+      ])
+    }
+
+    const minimum = new Promise((resolve) => setTimeout(resolve, MIN_REFRESH_MS))
+    void Promise.all([work(), minimum]).finally(() => {
+      running.current = false
+      setRefreshing(false)
     })
   }, [queryClient])
+
+  return { refreshing, refresh }
 }

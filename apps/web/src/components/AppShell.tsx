@@ -28,6 +28,7 @@ import {
   PanelLeftClose,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Server,
   Settings,
@@ -57,6 +58,8 @@ import {
   useLiveMetrics,
   useLiveSeq,
   useLiveStatus,
+  useRefreshLists,
+  useRevalidateLists,
   useStatusFeed,
 } from '../lib/conversation-status'
 import { isUnread, useHasUnread } from '../lib/reads'
@@ -91,6 +94,7 @@ import { CommandPalette } from './CommandPalette'
 import { Logo } from './Logo'
 import { UpdatePrompt } from './UpdatePrompt'
 import { MobileNavigationButton, MobileNavigationContext } from './MobileNavigation'
+import { PullToRefresh } from './PullToRefresh'
 import {
   Banner,
   Button,
@@ -191,8 +195,13 @@ export function AppShell() {
   useVisualViewport()
   useFileDropGuard()
   useRememberContext()
+  const revalidateLists = useRevalidateLists()
 
   useEffect(restoreSidebarWidth, [])
+
+  useEffect(() => {
+    if (!wide && navOpen) revalidateLists()
+  }, [wide, navOpen, revalidateLists])
 
   useEffect(() => {
     if (wide || !navOpen) return
@@ -408,6 +417,8 @@ function Sidebar({
   const sensors = useDragSensors()
   const detailed = useSidebarDetailed()
   useStatusFeed()
+  const { refreshing, refresh } = useRefreshLists()
+  const nav = useRef<HTMLElement>(null)
 
   /**
    * Le repli vient du compte, pas du navigateur : on referme un projet parce qu'on n'y
@@ -530,7 +541,8 @@ function Sidebar({
             onNavigate()
           }} />
       </div>
-      <nav className="min-h-0 flex flex-1 flex-col px-2">
+      <nav ref={nav} className="relative min-h-0 flex flex-1 flex-col px-2">
+        <PullToRefresh target={nav} refreshing={refreshing} onRefresh={refresh} />
         <SidebarActivity conversations={conversations} projects={projects} onNavigate={onNavigate}>
         {/* Au-dessus des projets et transverse : c'est ce qui fait l'intérêt d'un
             signet, atteindre un fil sans se rappeler d'où il vient. La conversation
@@ -571,6 +583,11 @@ function Sidebar({
             {t(allProjects ? 'shell.projects.heading' : 'shell.switcher.sessions')}
           </span>
           <span className="flex items-center">
+            {/* Le geste existe aussi au doigt, en tirant la liste vers le bas. Le bouton
+                reste pour la souris, et pour qui ignore le geste. */}
+            <IconButton label={t('shell.refresh')} size="sm" onClick={refresh} aria-busy={refreshing}>
+              <RefreshCw size={15} className={cx(refreshing && 'animate-spin')} />
+            </IconButton>
             {/* Un seul interrupteur pour toute la liste : le mode sert à comparer des
                 conversations entre elles, ce qu'un dépliage ligne à ligne interdit. */}
             <IconButton

@@ -538,6 +538,11 @@ export class SessionManager {
     return this.runners.has(conversationId)
   }
 
+  /** Conversations dont un process CLI tourne, pour l'instantané d'un socket qui arrive. */
+  warmConversationIds(): string[] {
+    return [...this.runners.keys()]
+  }
+
   /** Vrai si un message envoyé maintenant n'atteindrait pas le CLI immédiatement. */
   private isBusy(conversationId: string): boolean {
     const status = this.runners.get(conversationId)?.status

@@ -390,6 +390,7 @@ export const fr: Catalog = {
   'shell.conversation.api': 'API',
   'shell.delete': 'Supprimer',
   'shell.conversation.deleteConfirm': 'Supprimer "{title}" ?',
+  'shell.refresh': 'Rafraîchir la liste',
   'shell.conversations.detail.show': 'Afficher le détail des conversations',
   'shell.conversations.detail.hide': 'Masquer le détail des conversations',
   'shell.conversation.turns': '{count} tours',
