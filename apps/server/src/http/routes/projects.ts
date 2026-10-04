@@ -3,9 +3,10 @@ import { mkdir, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, max, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { cards, conversations, projects, users, writeTransaction } from '@sillage/db'
+import { cards, conversations, projectImages, projects, users, writeTransaction } from '@sillage/db'
 import {
   createProjectBodySchema,
+  MAX_PROJECT_IMAGE_BYTES,
   NO_PROJECT_DEFAULTS,
   parseRemoteUrl,
   readProjectDefaults,
@@ -28,6 +29,12 @@ import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { projectCwd } from '../../workspace.js'
 import { writeProjectsDir } from '../../settings/user-settings.js'
+import {
+  projectImageDto,
+  readProjectImage,
+  sniffProjectImage,
+  writeProjectImage,
+} from '../../projects/image.js'
 
 /**
  * Un utilisateur voit un projet s'il en est propriétaire ou si le projet est partagé.
@@ -161,9 +168,13 @@ export function registerProjectRoutes(
         project: projects,
         ownerName: users.displayName,
         conversationCount: count(conversations.id),
+        // Sa date et son statut seulement : le blob ne sort que par sa propre route.
+        imageUpdatedAt: projectImages.updatedAt,
+        imageProvisional: projectImages.provisional,
       })
       .from(projects)
       .innerJoin(users, eq(users.id, projects.ownerId))
+      .leftJoin(projectImages, eq(projectImages.projectId, projects.id))
       .leftJoin(
         conversations,
         and(eq(conversations.projectId, projects.id), isNull(conversations.archivedAt)),
@@ -180,10 +191,16 @@ export function registerProjectRoutes(
 
     // Les statuts git sont lus en parallèle : un dépôt lent ne doit pas sérialiser la liste.
     return Promise.all(
-      rows.map(async ({ project, ownerName, conversationCount }): Promise<ProjectDto> => {
+      rows.map(async ({ project, ownerName, conversationCount, ...row }): Promise<ProjectDto> => {
         return {
           id: project.id,
           name: project.name,
+          image: projectImageDto(
+            project.id,
+            row.imageUpdatedAt === null
+              ? null
+              : { updatedAt: row.imageUpdatedAt, provisional: row.imageProvisional ?? false },
+          ),
           workspacePath: project.workspacePath,
           ownerId: project.ownerId,
           ownerName,
@@ -228,6 +245,7 @@ export function registerProjectRoutes(
 
     const dto: ProjectDto = {
       ...row,
+      image: null,
       ownerName: user.displayName,
       isOwner: true,
       conversationCount: 0,
@@ -395,6 +413,75 @@ export function registerProjectRoutes(
     // pas. Les shells du projet, en revanche, tournent en son nom : on les ferme.
     terminals.closeForProject(id)
     await ctx.db.delete(projects).where(eq(projects.id, id))
+    return reply.status(204).send()
+  })
+
+  /**
+   * L'image du projet. Lisible par quiconque voit le projet, comme son nom.
+   *
+   * L'URL donnée au client porte la date de l'image : chaque version a la sienne, d'où
+   * le cache immuable.
+   */
+  app.get('/api/projects/:id/image', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadVisibleProject(id, user.id)
+
+    const image = readProjectImage(ctx.db, id)
+    if (!image) throw notFound('project_image_not_found', 'This project has no image.')
+
+    return (
+      reply
+        .type(image.mimeType)
+        .header('x-content-type-options', 'nosniff')
+        // Un SVG ouvert dans son propre onglet est un document, scripts compris, et il
+        // vient parfois d'un dépôt cloné : le bac à sable le réduit à une image.
+        .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+        .header('cache-control', 'private, max-age=31536000, immutable')
+        .send(image.data)
+    )
+  })
+
+  /** Une image choisie par une personne : elle n'est jamais provisoire. */
+  app.put('/api/projects/:id/image', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = await loadVisibleProject(id, user.id)
+    if (project.ownerId !== user.id) {
+      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
+    }
+
+    const file = await request.file({ limits: { fileSize: MAX_PROJECT_IMAGE_BYTES } })
+    if (!file) throw badRequest('no_file', 'No file received.')
+    // `toBuffer` échoue quand la limite est franchie, comme pour les pièces jointes.
+    const data = await file.toBuffer().catch(() => null)
+    if (!data) {
+      throw badRequest('project_image_too_large', 'Image is too large (maximum {maxKb} KB).', {
+        maxKb: Math.round(MAX_PROJECT_IMAGE_BYTES / 1024),
+      })
+    }
+
+    const mimeType = sniffProjectImage(data)
+    if (!mimeType) {
+      throw badRequest(
+        'project_image_invalid',
+        'Expected a PNG, JPEG, GIF, WebP or SVG image.',
+      )
+    }
+
+    const image = writeProjectImage(ctx.db, id, { mimeType, data, provisional: false })
+    return { image: projectImageDto(id, image) }
+  })
+
+  app.delete('/api/projects/:id/image', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = await loadVisibleProject(id, user.id)
+    if (project.ownerId !== user.id) {
+      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
+    }
+
+    await ctx.db.delete(projectImages).where(eq(projectImages.projectId, id))
     return reply.status(204).send()
   })
 

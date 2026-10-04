@@ -1,6 +1,7 @@
 import type { AgentKind, CardColumn } from '@sillage/protocol'
 import { sql } from 'drizzle-orm'
 import {
+  blob,
   index,
   integer,
   primaryKey,
@@ -72,6 +73,30 @@ export const projects = sqliteTable(
   },
   (t) => [index('idx_projects_owner').on(t.ownerId)],
 )
+
+/**
+ * L'image d'un projet, ce qui le fait reconnaître d'un coup d'œil dans la navigation.
+ *
+ * Dans sa propre table et non en colonne de `projects` : chaque lecture d'un projet
+ * ramènerait sinon le blob, alors qu'il ne sert qu'à la route qui le sert. En base
+ * plutôt que sur disque parce que le serveur MCP, qui la pose au nom d'un agent, n'a
+ * que la base ; et la cascade retire l'image avec le projet sans fichier à ramasser.
+ */
+export const projectImages = sqliteTable('project_images', {
+  projectId: text('project_id')
+    .primaryKey()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  mimeType: text('mime_type').notNull(),
+  data: blob('data', { mode: 'buffer' }).notNull(),
+  /**
+   * Posée par un agent faute de logo dans le projet. Tant que c'est vrai, les sessions
+   * se voient rappeler de la remplacer dès qu'un vrai logo existe ; une image choisie
+   * par une personne n'est jamais provisoire.
+   */
+  provisional: integer('provisional', { mode: 'boolean' }).notNull().default(false),
+  /** Sert aussi de version dans l'URL, pour que le cache du navigateur suive. */
+  updatedAt: timestamp('updated_at').notNull(),
+})
 
 export const worktrees = sqliteTable(
   'worktrees',

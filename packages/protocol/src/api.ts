@@ -155,9 +155,34 @@ export const reorderProjectsBodySchema = z.object({
   ids: z.array(z.string().uuid()).min(1),
 })
 
+/**
+ * Plafond d'une image de projet. Elle s'affiche en quelques dizaines de pixels et vit en
+ * base : le navigateur réduit ce qu'il envoie, et un agent qui en pose une plus lourde
+ * se voit demander de la réduire.
+ */
+export const MAX_PROJECT_IMAGE_BYTES = 1024 * 1024
+
+/** Reconnus au contenu, jamais à l'extension. */
+export const PROJECT_IMAGE_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+] as const
+
+export interface ProjectImageDto {
+  /** Versionnée : une image remplacée change d'URL, le cache n'a rien à invalider. */
+  url: string
+  /** Posée par un agent en attendant un vrai logo. */
+  provisional: boolean
+}
+
 export interface ProjectDto {
   id: string
   name: string
+  /** Null tant que personne, ni un agent, n'en a posé une : la couleur reste le repère. */
+  image: ProjectImageDto | null
   workspacePath: string
   ownerId: string
   ownerName: string
