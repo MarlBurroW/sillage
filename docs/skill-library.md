@@ -13,9 +13,11 @@ Décisions validées le 2026-10-04 :
 - pas de masquage d'un skill global dans un seul projet (voir « Limites ») ;
 - côté Claude, plugins nommés `sillage` (global) et `projet` (projet).
 
-**Lot 1 implémenté** sur la branche `feat/bibliotheque-skills` le 2026-10-04, pas encore fusionné. La recette a
-tourné sur un serveur jetable avec de vraies sessions Claude et Codex : 13 vérifications
-sur 13, plus le cas `bypassPermissions` (voir « Lot 1 » plus bas).
+**Lots 1 et 2 implémentés** sur la branche `feat/bibliotheque-skills` le 2026-10-04, pas
+encore fusionnés. La recette du lot 1 a tourné sur un serveur jetable avec de vraies
+sessions Claude et Codex : 13 vérifications sur 13, plus le cas `bypassPermissions`.
+L'interface du lot 2 a été parcourue dans un navigateur sur le même serveur (voir « Lots »
+plus bas).
 
 ## Ce que les sondes ont établi
 
@@ -180,7 +182,7 @@ Nouveau dossier `apps/server/src/skill-library/` :
 |---|---|
 | `layout.ts` | chemins des racines, création idempotente des deux plugins |
 | `frontmatter.ts` | lecture et écriture du frontmatter (dépendance `yaml`) |
-| `validate.ts` | chemins de fichiers relatifs sans `..` (lot 2). Le nom et la description sont validés par les schémas de `packages/protocol/src/skill-library.ts` |
+| `validate.ts` | chemins de fichiers relatifs, sans segment vide, `.` ou `..`, `SKILL.md` réservé hors import. Le nom et la description sont validés par les schémas de `packages/protocol/src/skill-library.ts` |
 | `compat.ts` | avertissements : `$ARGUMENTS`/`argument-hint` (Codex ne substitue pas), `allowed-tools`, `disable-model-invocation`, `context: fork` (ignorés par Codex), présence de scripts |
 | `store.ts` | création, édition, renommage, déplacement de portée, activation, suppression, empreintes, écritures atomiques |
 | `archive.ts` | import et export zip/`.skill` (dépendance `fflate`, déjà présente en transitif) |
@@ -274,20 +276,27 @@ GET    /api/skill-sources/search?q=            skills.sh
 
 **Page projet** (`/p/:projectId`) :
 
-- section `ProjectSkills` dans `routes/ProjectPage.tsx`, après `ProjectDefaults` ;
+- section `ProjectSkills` dans `routes/ProjectPage.tsx`, après les worktrees, hors du bloc
+  réservé au propriétaire puisque les membres la lisent ;
 - visible des membres, éditable par le propriétaire ;
 - contenu : les skills du projet, un rappel des skills globaux en lecture, et les skills
   du dépôt en lecture, avec le CLI qui les voit (`.claude/skills` pour Claude,
   `.agents/skills` pour Codex).
 
-**Éditeur** (`/settings/skills/:id` et `/p/:projectId/skills/:id`, un seul composant) :
+**Éditeur** (`/skills/:skillId`, page en pleine largeur) :
 
+- une seule route pour les deux portées, hors des réglages : la colonne des réglages est
+  trop étroite pour les instructions et les fichiers. Le lien de retour mène à la
+  bibliothèque ou au projet ;
 - champs nom et description, validés en direct. La description porte l'indication « dis
   quand l'utiliser » : c'est elle qui déclenche le skill ;
-- corps du `SKILL.md` dans `panel/CodeEditor.tsx` (CodeMirror markdown déjà installé),
-  frontmatter avancé en YAML dans un repli ;
-- onglet Fichiers : `panel/FileTree.tsx`, `CodeEditor` pour les fichiers texte, upload,
-  renommage, suppression ;
+- corps du `SKILL.md` dans `panel/CodeEditor.tsx`, qui gagne un mode lecture seule pour
+  qui ne peut pas écrire ; un seul bouton Enregistrer, et Ctrl+S ;
+- fichiers : une liste simple plutôt que `panel/FileTree.tsx`, lié au workspace ;
+  création, envoi et suppression, chaque fichier texte ouvert dans un `CodeEditor`. Pas
+  de renommage : supprimer et recréer suffit pour l'instant. Le frontmatter avancé en
+  YAML n'est pas éditable non plus, les champs propres à un CLI restent intacts à la
+  réécriture ;
 - panneau de compatibilité alimenté par `compat.ts` ;
 - actions : exporter, dupliquer, déplacer entre global et projet, désactiver, supprimer
   (`ConfirmDialog`).
@@ -358,7 +367,26 @@ Treize vérifications sur treize :
 
 La même écriture est aussi refusée en `bypassPermissions`.
 
-### Lot 2 : interface de gestion
+### Lot 2 : interface de gestion (implémenté)
+
+Ce qui a été fait, et ce qui diffère du découpage ci-dessous :
+
+- serveur : fichiers annexes (lecture, écriture, envoi, suppression), export et import
+  d'archives, reprise des skills de la machine, duplication. Un dossier choisi dans le
+  navigateur est zippé côté client (`fflate`) : un seul chemin d'import. La reprise ne
+  copie qu'un chemin que le scan vient de proposer à l'appelant, et un skill de dépôt se
+  reprend dans son projet ;
+- interface : section des réglages, section du projet, éditeur, menu d'ajout (nouveau,
+  archive, dossier, depuis cette machine), interrupteur par conversation, libellés fr et
+  en, codes d'erreur traduits ;
+- tests : `skill-library-import.test.ts` (archives et évasion par `..`, fichiers annexes,
+  export puis import, duplication, scan et reprise avec leurs droits) ;
+- parcours dans Chromium sur un serveur jetable : création, fichier annexe, Ctrl+S, page
+  projet, reprise d'un skill de dépôt, réglage dans le composer des deux CLI, export,
+  duplication, déplacement, désactivation, suppression, affichage au doigt. Aucune
+  erreur dans la console.
+
+Découpage prévu :
 
 1. Routes des fichiers annexes, import et export d'archives, `local-scan` et adoption.
 2. Section Réglages, section projet, éditeur, fichiers, compatibilité.
@@ -415,6 +443,6 @@ Codex. Installer un skill d'un dépôt privé avec les identifiants git d'un adm
 
 ## Documentation
 
-Le modèle de données a rejoint la section 4 de `SPEC.md` avec le lot 1. À la fin du
-lot 2, l'écran rejoindra la section 12, et ce fichier sera réduit à ce qui reste à
-faire.
+Le modèle de données a rejoint la section 4 de `SPEC.md` avec le lot 1, et l'écran la
+section 12.8 avec le lot 2. Ce fichier sera réduit à ce qui reste à faire une fois le
+lot 3 livré.

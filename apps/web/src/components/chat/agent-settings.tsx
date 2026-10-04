@@ -1,4 +1,4 @@
-import { Box, Brain, Compass, MessageSquareText, ShieldCheck, Sparkles, UserRoundSearch, Workflow, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Compass, MessageSquareText, ShieldCheck, Sparkles, UserRoundSearch, Workflow, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -14,6 +14,7 @@ import {
 } from '@sillage/protocol'
 import { effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useMcpServers } from '../../lib/mcp'
+import { useSkillLibrary } from '../../lib/skill-library'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
 import {
   setting,
@@ -131,6 +132,21 @@ function ultracodeOptions(t: Translate): SettingChoice<UltracodeChoice>[] {
     { value: 'on', label: t('composer.ultracode.on'), hint: t('composer.ultracode.on.hint'), tone: 'caution' },
   ]
 }
+
+/**
+ * La bibliothèque de skills de Sillage, livrée ou non à la session. Un choix à deux
+ * valeurs plutôt qu'une case, pour se ranger avec les autres réglages du panneau.
+ */
+type LibraryChoice = 'on' | 'off'
+
+function skillLibraryOptions(t: Translate): SettingChoice<LibraryChoice>[] {
+  return [
+    { value: 'on', label: t('composer.skillLibrary.on'), hint: t('composer.skillLibrary.on.hint') },
+    { value: 'off', label: t('composer.skillLibrary.off'), hint: t('composer.skillLibrary.off.hint') },
+  ]
+}
+
+const libraryChoice = (enabled: boolean): LibraryChoice => (enabled ? 'on' : 'off')
 
 function codexSandboxOptions(t: Translate): SettingChoice<CodexConfig['sandbox']>[] {
   return [
@@ -459,6 +475,10 @@ export function useAgentSettings({
   // Le registre est partagé par toute l'instance : la requête est mise en cache par
   // React Query et ne repart pas à chaque conversation ouverte.
   const mcpRegistry = useMcpServers().data
+  // Absent quand l'instance a coupé la bibliothèque : un réglage sans effet n'a pas à
+  // occuper le panneau, comme le serveur MCP de Sillage.
+  const libraryAvailable = useSkillLibrary(null).data?.enabled === true
+  const libraryOptionList = skillLibraryOptions(t)
   const mcpServers = mcpRegistry?.servers ?? []
   // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
   // le serveur : la ligne apparaît alors au chargement du registre, plutôt que de
@@ -589,6 +609,28 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      ...(libraryAvailable
+        ? [
+            setting({
+              key: 'skillLibrary',
+              label: t('composer.setting.skillLibrary'),
+              icon: <BookOpen size={15} />,
+              options: libraryOptionList,
+              value: libraryChoice(claude.skillLibrary),
+              onChange: (choice) => onConfigChange({ ...claude, skillLibrary: choice === 'on' }),
+              // Comme le mode de permission : Claude ne reçoit ses plugins qu'au
+              // lancement, le changement attend la relance de la session.
+              notice: notice(
+                appliedLabel(
+                  appliedConfig?.agent === 'claude' ? libraryChoice(appliedConfig.skillLibrary) : undefined,
+                  libraryChoice(claude.skillLibrary),
+                  libraryOptionList,
+                ),
+                t,
+              ),
+            }),
+          ]
+        : []),
     ]
 
     summary = [
@@ -677,6 +719,19 @@ export function useAgentSettings({
         value: codex.sandbox,
         onChange: (sandbox) => onConfigChange({ ...codex, sandbox }),
       }),
+      // Appliqué à chaud par Codex, d'où l'absence de mention d'attente.
+      ...(libraryAvailable
+        ? [
+            setting({
+              key: 'skillLibrary',
+              label: t('composer.setting.skillLibrary'),
+              icon: <BookOpen size={15} />,
+              options: libraryOptionList,
+              value: libraryChoice(codex.skillLibrary),
+              onChange: (choice) => onConfigChange({ ...codex, skillLibrary: choice === 'on' }),
+            }),
+          ]
+        : []),
     ]
 
     // Les levées d'approbation et de bac à sable restent visibles simultanément.

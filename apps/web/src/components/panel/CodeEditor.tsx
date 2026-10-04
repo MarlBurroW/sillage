@@ -74,6 +74,7 @@ export function CodeEditor({
   sessionKey,
   revision,
   onPosition,
+  readOnly = false,
   ref,
 }: {
   initial: string
@@ -83,6 +84,8 @@ export function CodeEditor({
   sessionKey: string
   revision: number
   onPosition: (line: number, column: number) => void
+  /** Pour qui peut lire sans pouvoir modifier : le texte se parcourt et se cherche. */
+  readOnly?: boolean
   ref?: Ref<CodeEditorHandle>
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -135,6 +138,8 @@ export function CodeEditor({
         editorTheme,
         editorHighlight,
         EditorView.lineWrapping,
+        EditorState.readOnly.of(readOnly),
+        EditorView.editable.of(!readOnly),
         keymap.of([
           {
             // Le raccourci d'enregistrement du navigateur sauvegarderait la page.
@@ -182,7 +187,7 @@ export function CodeEditor({
       current.current = null
       editor.destroy()
     }
-  }, [path, sessionKey, revision])
+  }, [path, sessionKey, revision, readOnly])
 
   return <div ref={host} className="h-full overflow-hidden" />
 }

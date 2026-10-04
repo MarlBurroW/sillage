@@ -1,6 +1,7 @@
 import {
   Archive,
   Bell,
+  BookOpen,
   ChevronRight,
   Cpu,
   FolderOpen,
@@ -87,6 +88,13 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.mcp',
     descriptionKey: 'settings.section.mcp.description',
     icon: <Plug size={16} />,
+  },
+  {
+    to: 'skills',
+    group: 'workspace',
+    labelKey: 'settings.section.skills',
+    descriptionKey: 'settings.section.skills.description',
+    icon: <BookOpen size={16} />,
   },
   {
     to: 'api',
