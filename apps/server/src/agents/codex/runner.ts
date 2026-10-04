@@ -868,6 +868,10 @@ export class CodexRunner implements AgentRunner {
   }
 
   private subAgentActivity(item: Extract<ThreadItem, { type: 'subAgentActivity' }>, parent: string | null): void {
+    // Un sous-agent qui écrit à `/root` rapporte une activité sur le fil principal : ce
+    // n'est pas un sous-agent, et l'inscrire le laisserait « en cours » pour toujours,
+    // rien ne venant jamais le clore.
+    if (item.agentThreadId === this.threadId) return
     if (item.kind === 'started' || item.kind === 'interacted') {
       this.ensureSubAgent(item.agentThreadId, item.agentPath, parent)
     } else {
@@ -946,6 +950,7 @@ export class CodexRunner implements AgentRunner {
     if (item.type === 'subAgentActivity') this.subAgentActivity(item, parent)
     if (item.type === 'collabAgentToolCall') {
       for (const threadId of item.receiverThreadIds) {
+        if (threadId === this.threadId) continue
         const state = item.agentsStates[threadId]
         if (['spawnAgent', 'resumeAgent', 'sendInput', 'followupTask'].includes(item.tool) && item.status !== 'failed') {
           this.ensureSubAgent(threadId, threadId, parent, item.prompt ?? '')
