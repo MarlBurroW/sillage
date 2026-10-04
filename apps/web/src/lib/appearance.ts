@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 
 /**
  * Réglages fins du thème, appliqués sur `<html>` pour que toute l'application suive.
@@ -83,40 +83,60 @@ function read({ key, fallback }: AppearanceSetting): number {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-export function useAppearance() {
-  const [values, setValues] = useState<Record<AppearanceKey, number>>(
-    () =>
-      Object.fromEntries(
-        Object.entries(APPEARANCE_SETTINGS).map(([name, setting]) => [name, read(setting)]),
-      ) as Record<AppearanceKey, number>,
-  )
+/*
+ * Hors de React : la synchronisation avec le compte réécrit ces valeurs au chargement,
+ * et chaque écran qui les affiche doit suivre sans être remonté.
+ */
+let values = Object.fromEntries(
+  Object.entries(APPEARANCE_SETTINGS).map(([name, setting]) => [name, read(setting)]),
+) as Record<AppearanceKey, number>
+const listeners = new Set<() => void>()
 
-  const set = useCallback((name: AppearanceKey, value: number) => {
+export function currentAppearance(): Record<AppearanceKey, number> {
+  return values
+}
+
+export function subscribeAppearance(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+/**
+ * Pose des valeurs, et retire celles qui reviennent au défaut : un réglage jamais
+ * touché ne doit rien laisser dans `localStorage` ni sur `<html>`.
+ */
+export function applyAppearance(next: Partial<Record<AppearanceKey, number>>): void {
+  const root = document.documentElement
+  const merged = { ...values }
+  for (const [name, value] of Object.entries(next) as [AppearanceKey, number][]) {
     const setting = APPEARANCE_SETTINGS[name]
-    document.documentElement.style.setProperty(setting.property, String(value))
-    localStorage.setItem(setting.key, String(value))
-    setValues((current) => ({ ...current, [name]: value }))
-  }, [])
-
-  /**
-   * Remise à zéro, bornée aux réglages qu'on a sous les yeux : le bouton posé sous les
-   * curseurs de typographie ne doit pas emporter la teinte choisie ailleurs.
-   */
-  const reset = useCallback((names?: AppearanceKey[]) => {
-    const targets = names ?? (Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[])
-    for (const name of targets) {
-      const setting = APPEARANCE_SETTINGS[name]
-      document.documentElement.style.removeProperty(setting.property)
+    merged[name] = value
+    if (value === setting.fallback) {
+      root.style.removeProperty(setting.property)
       localStorage.removeItem(setting.key)
+    } else {
+      root.style.setProperty(setting.property, String(value))
+      localStorage.setItem(setting.key, String(value))
     }
-    setValues((current) => {
-      const next = { ...current }
-      for (const name of targets) next[name] = APPEARANCE_SETTINGS[name].fallback
-      return next
-    })
-  }, [])
+  }
+  values = merged
+  for (const listener of listeners) listener()
+}
 
-  return { values, set, reset }
+const setAppearance = (name: AppearanceKey, value: number) => applyAppearance({ [name]: value })
+
+/**
+ * Remise à zéro, bornée aux réglages qu'on a sous les yeux : le bouton posé sous les
+ * curseurs de typographie ne doit pas emporter la teinte choisie ailleurs.
+ */
+function resetAppearance(names?: AppearanceKey[]): void {
+  const targets = names ?? (Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[])
+  applyAppearance(Object.fromEntries(targets.map((name) => [name, APPEARANCE_SETTINGS[name].fallback])))
+}
+
+export function useAppearance() {
+  const current = useSyncExternalStore(subscribeAppearance, currentAppearance)
+  return { values: current, set: setAppearance, reset: resetAppearance }
 }
 
 /** Couleur résolue d'un token, pour afficher les valeurs réelles à l'écran. */

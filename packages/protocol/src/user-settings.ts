@@ -39,6 +39,28 @@ export interface UserSettingsDto {
    * projets toujours au même endroit, et la première création suffit à le dire.
    */
   projectsDir: string | null
+  /**
+   * Thème et réglages d'apparence, `null` tant que ce compte n'en a jamais enregistré.
+   *
+   * Au compte pour la même raison que les projets repliés : on retrouve ses couleurs
+   * en changeant de poste. Le navigateur en garde une copie, lue avant l'hydratation
+   * pour éviter un flash, mais c'est celle-ci qui fait foi.
+   *
+   * `null` et non des défauts : c'est ce qui permet au premier chargement de pousser
+   * les réglages déjà choisis dans ce navigateur au lieu de les écraser.
+   */
+  appearance: AppearancePrefs | null
+}
+
+/**
+ * Le serveur ne connaît ni les thèmes ni les curseurs : il stocke ce que l'interface
+ * lui confie, borné en taille. Un nom de thème retiré retombe sur le défaut côté client.
+ */
+export interface AppearancePrefs {
+  theme: string | null
+  syntax: string | null
+  /** Valeurs des curseurs, par nom de réglage (`hue`, `tint`, `readingSize`…). */
+  values: Record<string, number>
 }
 
 /**
@@ -71,6 +93,14 @@ export const agentDefaultsSchema = z.object({
   codex: codexConfigSchema.catch(DEFAULT_CODEX_CONFIG),
 })
 
+export const appearancePrefsSchema = z.object({
+  theme: z.string().max(40).nullable(),
+  syntax: z.string().max(40).nullable(),
+  values: z
+    .record(z.string().max(40), z.number().finite())
+    .refine((values) => Object.keys(values).length <= 32),
+})
+
 export const storedUserSettingsSchema = z
   .object({
     agentDefaults: agentDefaultsSchema.catch(DEFAULT_AGENT_DEFAULTS),
@@ -79,8 +109,14 @@ export const storedUserSettingsSchema = z
     // suppression, y compris pour les comptes qui ne se connectent plus.
     collapsedProjects: z.array(z.string()).default([]).catch([]),
     projectsDir: z.string().nullable().default(null).catch(null),
+    appearance: appearancePrefsSchema.nullable().default(null).catch(null),
   })
-  .catch({ agentDefaults: DEFAULT_AGENT_DEFAULTS, collapsedProjects: [], projectsDir: null })
+  .catch({
+    agentDefaults: DEFAULT_AGENT_DEFAULTS,
+    collapsedProjects: [],
+    projectsDir: null,
+    appearance: null,
+  })
 
 export const updateUserSettingsBodySchema = z.object({
   /**
@@ -93,4 +129,6 @@ export const updateUserSettingsBodySchema = z.object({
   collapsedProjects: z.array(z.string().uuid()).optional(),
   /** `null` retire le dossier mémorisé ; absent, il ne bouge pas. */
   projectsDir: z.string().min(1).nullable().optional(),
+  /** Remplacée en bloc, comme les projets repliés. */
+  appearance: appearancePrefsSchema.optional(),
 })

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { updateUserSettingsBodySchema, type UserSettingsDto } from '@sillage/protocol'
 import {
   readUserSettings,
+  writeAppearance,
   writeCollapsedProjects,
   writeProjectsDir,
   writeUserAgentDefault,
@@ -31,6 +32,7 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     if (body.agentDefault) writeUserAgentDefault(ctx.db, user.id, body.agentDefault)
     if (body.collapsedProjects) writeCollapsedProjects(ctx.db, user.id, body.collapsedProjects)
     if (body.projectsDir !== undefined) writeProjectsDir(ctx.db, user.id, body.projectsDir)
+    if (body.appearance) writeAppearance(ctx.db, user.id, body.appearance)
     // Relu plutôt que reconstruit depuis le corps : l'écran a besoin des deux CLI, et
     // le corps n'en porte qu'un.
     return readUserSettings(ctx.db, user.id)
