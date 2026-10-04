@@ -75,34 +75,21 @@ function DraftUsage({ agent, enabled }: { agent: AgentKind; enabled: boolean }) 
   if (!usage || !usage.limitsAvailable || usage.windows.length === 0) return null
 
   return (
-    <details className="rounded-lg border border-line px-3 text-xs text-ink-soft">
-      <summary className="cursor-pointer py-3 marker:text-ink-faint">
+    <section className="flex flex-col gap-2.5 rounded-lg border border-line px-3 py-3 text-xs text-ink-soft">
+      <div className="flex items-baseline justify-between gap-3">
         <span className="font-medium">
           {usage.plan
             ? t('draft.usage.titleWithPlan', { plan: usage.plan })
             : t('draft.usage.title')}
         </span>
-        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-3.5">
-          {usage.windows.map((window) => (
-            <span key={window.id} className={cx(
-              'tabular-nums',
-              window.utilization !== null && window.utilization >= 0.9 ? 'font-medium text-critical'
-                : window.utilization !== null && window.utilization >= 0.75 ? 'text-caution' : 'text-ink-faint',
-            )}>
-              {window.label} · {window.utilization === null ? '?' : `${Math.round(window.utilization * 100)} %`}
-            </span>
-          ))}
-        </span>
-      </summary>
-      <div className="flex flex-col gap-2.5 border-t border-line py-3">
         <span className="text-[0.6875rem] text-ink-faint">
           {t('usage.readAt', { age: readAge(usage.fetchedAt) })}
         </span>
-        {usage.windows.map((window) => (
-          <UsageBar key={window.id} window={window} />
-        ))}
       </div>
-    </details>
+      {usage.windows.map((window) => (
+        <UsageBar key={window.id} window={window} />
+      ))}
+    </section>
   )
 }
 
