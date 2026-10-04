@@ -62,6 +62,14 @@ export const claudeConfigSchema = z.object({
    */
   fastMode: z.boolean().default(false),
   /**
+   * Ultracode de Claude Code : effort `xhigh` et orchestration par workflows
+   * multi-agents sur chaque tâche de fond, le coût en tokens n'étant plus une
+   * contrainte. Le mot-clé « ultracode » dans un message n'en ouvre qu'un tour ; ce
+   * réglage le tient pour toute la session. Propre à la session, jamais écrit dans les
+   * fichiers du CLI, et réservé aux modèles qui gèrent `xhigh`.
+   */
+  ultracode: z.boolean().default(false),
+  /**
    * Style de sortie du CLI (`Concise`, `Explanatory`…), parmi ceux que le catalogue
    * annonce. Vide pour laisser le style par défaut.
    */
@@ -199,6 +207,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   sillageMcp: true,
   strictMcp: false,
   fastMode: false,
+  ultracode: false,
   outputStyle: CLI_DEFAULT,
   advisorModel: CLI_DEFAULT,
   maxBudgetUsd: null,

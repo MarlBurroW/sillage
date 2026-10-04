@@ -1,4 +1,4 @@
-import { Box, Brain, Compass, MessageSquareText, ShieldCheck, Sparkles, UserRoundSearch, Zap } from 'lucide-react'
+import { Box, Brain, Compass, MessageSquareText, ShieldCheck, Sparkles, UserRoundSearch, Workflow, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -115,6 +115,20 @@ function speedOptions(t: Translate): SettingChoice<SpeedChoice>[] {
   return [
     { value: 'standard', label: t('composer.speed.standard'), hint: t('composer.speed.standard.hint') },
     { value: 'fast', label: t('composer.speed.fast'), hint: t('composer.speed.fast.hint') },
+  ]
+}
+
+/**
+ * Ultracode, en deux valeurs pour la même raison que la vitesse. L'allumé porte le ton
+ * de mise en garde : il lance des workflows multi-agents à chaque tâche de fond, et le
+ * résumé doit le montrer tant qu'il dépense.
+ */
+type UltracodeChoice = 'off' | 'on'
+
+function ultracodeOptions(t: Translate): SettingChoice<UltracodeChoice>[] {
+  return [
+    { value: 'off', label: t('composer.ultracode.off'), hint: t('composer.ultracode.off.hint') },
+    { value: 'on', label: t('composer.ultracode.on'), hint: t('composer.ultracode.on.hint'), tone: 'caution' },
   ]
 }
 
@@ -305,6 +319,14 @@ export function useAgentSettings({
     supportsFastMode(catalog.models, resolvedModel)
 
   /**
+   * Ultracode tient l'effort à `xhigh` : le CLI le refuse sur un modèle qui ne gère pas
+   * ce niveau, donc le réglage n'existe que là, comme le mode rapide.
+   */
+  const supportsUltracode = (model: string): boolean =>
+    effortsFor(catalog?.models, model).some((effort) => effort.value === 'xhigh')
+  const ultracodeOffered = claude !== null && supportsUltracode(resolvedModel)
+
+  /**
    * Styles de réponse annoncés par le CLI, derrière une entrée « par défaut » : la
    * configuration vide veut dire « laisser le style habituel », et Radix refuse une
    * option de valeur vide, d'où la même sentinelle d'affichage que l'approbation.
@@ -446,6 +468,7 @@ export function useAgentSettings({
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
   const speedOptionList = speedOptions(t)
+  const ultracodeOptionList = ultracodeOptions(t)
 
   let groups: SettingGroup[] = []
   let summary: SummarySegment[] = []
@@ -467,6 +490,7 @@ export function useAgentSettings({
             // Garder le mode rapide sur un modèle qui ne le gère pas ferait basculer
             // le CLI sur Opus sans prévenir : il retombe avec le modèle.
             fastMode: claude.fastMode && supportsFastMode(catalog?.models, model),
+            ultracode: claude.ultracode && supportsUltracode(model),
           }),
       }),
       // Absente plutôt que grisée quand le modèle n'a pas de niveaux d'effort : un
@@ -497,6 +521,23 @@ export function useAgentSettings({
               options: speedOptionList,
               value: claude.fastMode ? 'fast' : 'standard',
               onChange: (speed) => onConfigChange({ ...claude, fastMode: speed === 'fast' }),
+            }),
+          ]
+        : []),
+      ...(ultracodeOffered
+        ? [
+            setting({
+              key: 'ultracode',
+              label: t('composer.setting.ultracode'),
+              icon: <Workflow size={15} />,
+              options: ultracodeOptionList,
+              value: claude.ultracode ? 'on' : 'off',
+              // L'allumer aligne l'effort sur le `xhigh` qu'impose le CLI, pour que le
+              // panneau dise vrai ; l'éteindre laisse l'effort où il est, comme le CLI.
+              onChange: (choice) =>
+                onConfigChange(
+                  choice === 'on' ? { ...claude, ultracode: true, effort: 'xhigh' } : { ...claude, ultracode: false },
+                ),
             }),
           ]
         : []),
@@ -556,6 +597,7 @@ export function useAgentSettings({
       // Le mode rapide coûte à chaque tour : tant qu'il est allumé, il se lit dans le
       // résumé, comme un garde-fou levé se lit dans le sien.
       ...(speedOffered && claude.fastMode ? [segment('speed', speedOptionList, 'fast')] : []),
+      ...(ultracodeOffered && claude.ultracode ? [segment('ultracode', ultracodeOptionList, 'on')] : []),
       segment('permission', permissionOptionList, claude.permissionMode),
     ]
 
