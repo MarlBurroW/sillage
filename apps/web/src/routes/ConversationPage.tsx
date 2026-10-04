@@ -830,7 +830,8 @@ export function ConversationPage() {
     // fil : c'est lui, et pas le projet, qui décide de ce qu'un chemin relatif désigne
     // quand la conversation tourne dans un worktree.
     <FileLinkContext.Provider value={conversationId}>
-    <div ref={panelLayout.containerRef} className="relative flex h-full overflow-hidden">
+    {/* `overflow-clip` et non `hidden` : un conteneur `hidden` reste défilable par programme, et l éditeur qui révèle une ligne pendant que le panneau glisse hors écran le décalait, laissant le panneau coupé à gauche. */}
+    <div ref={panelLayout.containerRef} className="relative flex h-full overflow-clip">
       <div
         className={cx(
           // `@container` : la réglette et les réglages du composer se replient selon la

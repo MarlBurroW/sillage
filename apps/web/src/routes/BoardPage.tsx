@@ -235,7 +235,7 @@ export function BoardPage() {
     // `h-full` et non `flex-1` : le conteneur de la coque défile, donc il n'impose
     // aucune hauteur à ses enfants, et les colonnes s'arrêtaient à leur contenu au
     // lieu de descendre jusqu'en bas. `relative` porte le tiroir, posé en absolu.
-    <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="relative flex h-full min-h-0 flex-col overflow-clip">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
           className={cx(
