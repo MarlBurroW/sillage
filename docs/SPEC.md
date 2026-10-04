@@ -308,6 +308,43 @@ CREATE TABLE user_settings (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   data    TEXT NOT NULL                    -- JSON
 );
+
+-- Bibliothèque de skills, livrée aux CLI comme des skills natifs (docs/skill-library.md).
+-- Le contenu vit sur le disque, sous <data>/skill-library, et fait foi : la table ne
+-- porte que la portée, l'activation et la provenance.
+
+CREATE TABLE library_skills (
+  id             TEXT PRIMARY KEY,         -- uuid
+  scope          TEXT NOT NULL,            -- global | project
+  project_id     TEXT REFERENCES projects(id) ON DELETE CASCADE,  -- null en global
+  name           TEXT NOT NULL,            -- nom du dossier, unique sur global + un projet
+  enabled        INTEGER NOT NULL DEFAULT 1,
+  source_id      TEXT REFERENCES skill_sources(id) ON DELETE SET NULL,
+  source_path    TEXT,
+  source_commit  TEXT,
+  installed_hash TEXT,                     -- empreinte à l'installation
+  created_by     TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
+);
+
+-- Dépôts git d'où la bibliothèque s'installe. Deux sources préconfigurées,
+-- insérées par la migration : anthropics/skills et openai/skills.
+
+CREATE TABLE skill_sources (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  url             TEXT NOT NULL,           -- tout ce que git clone accepte
+  ref             TEXT,                    -- null : branche par défaut
+  subpath         TEXT,                    -- null : tout le dépôt
+  builtin         INTEGER NOT NULL DEFAULT 0,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  last_commit     TEXT,
+  last_fetched_at INTEGER,
+  last_error      TEXT,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
 ```
 
 **Rétention.** `events` grossit vite (les deltas de texte sont nombreux). Deux mesures :

@@ -35,6 +35,7 @@ import {
   sniffProjectImage,
   writeProjectImage,
 } from '../../projects/image.js'
+import { SkillLibrary } from '../../skill-library/store.js'
 
 /**
  * Un utilisateur voit un projet s'il en est propriétaire ou si le projet est partagé.
@@ -412,6 +413,9 @@ export function registerProjectRoutes(
     // Le workspace sur disque n'est jamais touché : Sillage pointe dessus, ne le possède
     // pas. Les shells du projet, en revanche, tournent en son nom : on les ferme.
     terminals.closeForProject(id)
+    // Les skills du projet, eux, appartiennent à Sillage. Avant la cascade, qui efface
+    // les lignes dont on a besoin pour retrouver les skills désactivés.
+    new SkillLibrary(ctx.db, ctx.config.paths.skillLibrary).removeProject(id)
     await ctx.db.delete(projects).where(eq(projects.id, id))
     return reply.status(204).send()
   })

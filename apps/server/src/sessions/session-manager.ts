@@ -36,6 +36,7 @@ import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
 import { conversationMetrics } from '../conversations/metrics.js'
 import { readAppSettings } from '../settings/app-settings.js'
+import { SkillLibraryLayout } from '../skill-library/layout.js'
 import { resolveConversationCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
 
@@ -720,6 +721,10 @@ export class SessionManager {
               sillageMcp: builtinMcpEnabled(this.config.mcp.sillageServer, current),
             })
           : null,
+      skillRoots: (current) =>
+        this.config.skills.library && current.skillLibrary
+          ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(conversation.projectId)
+          : [],
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SillageEvent, raw?: unknown) => {
@@ -1263,6 +1268,31 @@ export class SessionManager {
     }
 
     await this.restartForConfig(conversationId, reason)
+  }
+
+  /**
+   * Fait relire la bibliothèque de skills aux sessions ouvertes qu'une écriture concerne :
+   * toutes pour la portée globale (`null`), celles du projet sinon.
+   *
+   * Sans attendre et sans échouer : l'écriture a réussi, et une session qui ne recharge
+   * pas verra le changement à sa prochaine reprise.
+   */
+  reloadSkillLibrary(projectId: string | null): void {
+    for (const [conversationId, managed] of this.runners) {
+      if (projectId !== null) {
+        const row = this.db
+          .select({ projectId: conversations.projectId })
+          .from(conversations)
+          .where(eq(conversations.id, conversationId))
+          .get()
+        if (row?.projectId !== projectId) continue
+      }
+      managed.runner.reloadSkillLibrary().catch((err: unknown) => {
+        process.stderr.write(
+          `[skills ${conversationId}] rechargement impossible : ${err instanceof Error ? err.message : String(err)}\n`,
+        )
+      })
+    }
   }
 
   /**

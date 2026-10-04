@@ -79,6 +79,7 @@ async function main(): Promise<void> {
     resumeSessionId: null,
     projectOverview: () => null,
     resolveMcpServers: () => ({ servers: [], failures: [] }),
+    skillRoots: () => [],
     emit: (event) => events.push(event),
     setStatus: (next) => {
       status = next

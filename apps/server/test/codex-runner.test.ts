@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { sillageEventSchema } from '@sillage/protocol'
-import { runnerFixture, asyncMessage, done, itemEvent } from './codex-support.js'
+import { DEFAULT_CODEX_CONFIG, sillageEventSchema } from '@sillage/protocol'
+import { CodexRunner } from '../src/agents/codex/runner.js'
+import { runnerFixture, asyncMessage, context, done, fixture, itemEvent } from './codex-support.js'
 
 test('questions Astra interactives, non bloquantes et encore répondables après la fin du tour', async (t) => {
   const f = await runnerFixture(t)
@@ -111,4 +112,37 @@ test('la fin du parent ne supprime pas une question encore attendue par son sous
   assert.equal(f.statuses.at(-1), 'awaiting_input')
   assert.ok(!f.events.some((event) => event.type === 'question.resolved'))
   assert.equal(await f.runner.answerQuestion(question.requestId, { status: 'answered', answers: { q: ['Continue'] }, decidedBy: 'test' }), true)
+})
+
+test('bibliothèque de skills : posée avant le thread, remplacée à chaud, absente si coupée', async (t) => {
+  const transport = await fixture(t)
+  const roots = ['/library/global', '/library/projects/p1']
+  const state = context({ ...transport, skillRoots: (config) => (config.skillLibrary ? roots : []) })
+  const runner = new CodexRunner(state.ctx)
+  transport.onClose(() => runner.stop())
+  await runner.start()
+
+  const calls = async () => (await transport.records()).filter((record) => record.method === 'skills/extraRoots/set')
+  const methods = (await transport.records()).map((record) => record.method)
+  const set = methods.indexOf('skills/extraRoots/set')
+  // La racine appartient au process, pas au thread : elle doit précéder `thread/start`.
+  assert.ok(set > methods.indexOf('initialized') && set < methods.indexOf('thread/start'))
+  assert.deepEqual((await calls())[0].params.extraRoots, ['/library/global/skills', '/library/projects/p1/skills'])
+
+  assert.equal(await runner.applyConfig({ ...DEFAULT_CODEX_CONFIG, skillLibrary: true }), true)
+  assert.equal((await calls()).length, 1, 'mêmes racines, rien à renvoyer')
+  // Recharger repose les racines : l'app-server ne voit pas seul un dossier qui part.
+  await runner.reloadSkillLibrary()
+  assert.equal((await calls()).length, 2)
+  assert.deepEqual((await calls())[1].params.extraRoots, (await calls())[0].params.extraRoots)
+  assert.equal(await runner.applyConfig({ ...DEFAULT_CODEX_CONFIG, skillLibrary: false }), true)
+  assert.deepEqual((await calls()).at(-1).params.extraRoots, [])
+  await runner.reloadSkillLibrary()
+  assert.equal((await calls()).length, 3, 'bibliothèque coupée, rien à recharger')
+
+  const off = await fixture(t)
+  const quiet = new CodexRunner(context({ ...off, config: { ...DEFAULT_CODEX_CONFIG, skillLibrary: false }, skillRoots: () => [] }).ctx)
+  off.onClose(() => quiet.stop())
+  await quiet.start()
+  assert.ok(!(await off.records()).some((record) => record.method === 'skills/extraRoots/set'))
 })

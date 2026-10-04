@@ -29,7 +29,7 @@ export function context(overrides: Partial<RunnerContext> = {}) {
   const ctx: RunnerContext = {
     conversationId: 'test', cwd: tmpdir(), binary: 'unused', attachmentsRoot: tmpdir(),
     config: DEFAULT_CODEX_CONFIG, resumeSessionId: null,
-    projectOverview: () => null, resolveMcpServers: () => ({ servers: [], failures: [] }),
+    projectOverview: () => null, resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
     emit: (event, native) => { events.push(event); raw.push(native) },
     setStatus: (status) => { statuses.push(status) }, setAgentSessionId: () => {},
     updateConfig: () => {}, openPermissionRequest: () => randomUUID(), closePermissionRequest: () => {},

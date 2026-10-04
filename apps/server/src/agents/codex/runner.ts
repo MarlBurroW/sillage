@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import {
   CLI_DEFAULT,
   parseElicitationFields,
@@ -29,6 +30,7 @@ import type {
   PermissionsRequestApprovalResponse,
   ReasoningTextDeltaNotification,
   SandboxPolicy,
+  SkillsExtraRootsSetResponse,
   SkillsListResponse,
   ThreadItem,
   ThreadNameUpdatedNotification,
@@ -193,6 +195,8 @@ export class CodexRunner implements AgentRunner {
   private lastMcpPayload: string | null = null
   /** Chemin de chaque compétence publiée, seule façon de rouvrir un nom à l'envoi. */
   private skillPaths = new Map<string, string>()
+  /** Racines de la bibliothèque de skills que l'app-server a acceptées. */
+  private skillRoots: string[] = []
   private config: CodexConfig
   private readonly interactions: PendingInteractions
   private readonly asyncQuestions: CodexAsyncQuestions
@@ -275,6 +279,12 @@ export class CodexRunner implements AgentRunner {
     })
 
     await this.client.initialize(CLIENT_INFO)
+
+    // Avant `thread/start` comme avant `thread/resume`. Sondé : la racine appartient au
+    // process et non au thread, elle disparaît avec l'app-server et doit être reposée à
+    // chaque lancement.
+    const skillRoots = this.ctx.skillRoots(this.config)
+    if (skillRoots.length > 0) await this.setSkillRoots(skillRoots)
 
     const resolved = this.ctx.resolveMcpServers(this.config)
     this.mcpServers = resolved.servers
@@ -1282,8 +1292,45 @@ export class CodexRunner implements AgentRunner {
 
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'codex') return false
+    // Contrairement aux plugins de Claude, les racines se remplacent à chaud. Une liste
+    // vide retire la bibliothèque, et `skills/changed` met l'inventaire à jour.
+    const skillRoots = this.ctx.skillRoots(config)
+    if (this.client && JSON.stringify(skillRoots) !== JSON.stringify(this.skillRoots)) {
+      await this.setSkillRoots(skillRoots)
+    }
     this.config = config
     return true
+  }
+
+  /**
+   * Repose les mêmes racines, ce qui fait tout relire. L'app-server surveille bien ses
+   * racines, mais sondé, il voit un dossier qui arrive et pas un dossier qui part :
+   * renommer, désactiver ou supprimer laisserait l'ancien nom dans son inventaire.
+   * `skills/changed` suit, que `publishSkills` relaie déjà.
+   */
+  async reloadSkillLibrary(): Promise<void> {
+    if (this.skillRoots.length > 0) await this.setSkillRoots(this.skillRoots)
+  }
+
+  /**
+   * Remplace les racines de la bibliothèque. On passe le dossier `skills/` de chaque
+   * plugin : c'est un dossier de skills, ce que l'app-server attend.
+   *
+   * Un échec n'emporte pas la session, qui tourne alors sans la bibliothèque : un CLI
+   * trop ancien pour connaître la méthode ne doit pas devenir inutilisable.
+   */
+  private async setSkillRoots(roots: string[]): Promise<void> {
+    if (!this.client) return
+    try {
+      await this.client.call<SkillsExtraRootsSetResponse, 'skills/extraRoots/set'>('skills/extraRoots/set', {
+        extraRoots: roots.map((root) => join(root, 'skills')),
+      })
+      this.skillRoots = roots
+    } catch (err) {
+      process.stderr.write(
+        `[codex ${this.conversationId}] bibliothèque de skills indisponible : ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+    }
   }
 
   async suggestedTitle(): Promise<string | null> {
