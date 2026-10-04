@@ -66,7 +66,10 @@ function tablist(tabs, show) {
       other.tabIndex = other === tab ? 0 : -1
     })
     show(tabs.indexOf(tab))
-    if (focus) tab.focus()
+    if (focus) {
+      tab.focus()
+      tab.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
   }
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => select(tab, false))

@@ -2,17 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Sillage · Claude Code and Codex, from a browser</title>
+  <title>Sillage · A workspace for coding agents</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A self-hosted, mobile-first web UI that drives the native Claude Code and Codex CLIs on your own machine.">
+  <meta name="description" content="A self-hosted workspace for Claude Code and Codex. Continue from any device, manage projects, and give agents the context to work together.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
-  <meta name="theme-color" content="#f3f6ff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0a0d24" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#faf7fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f0b11" media="(prefers-color-scheme: dark)">
   <meta property="og:title" content="Sillage">
-  <meta property="og:description" content="A self-hosted web UI for the native Claude Code and Codex CLIs.">
+  <meta property="og:description" content="Your projects, sessions and native coding agents, in one self-hosted workspace.">
   <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
   <meta property="og:type" content="website">
+  <noscript><style>.tab-panel[hidden], .shots-panels [hidden] { display: block !important; } .shots-nav, .tabs { display: none; } .shots-panels figure { margin-bottom: 2rem; }</style></noscript>
   <script>
     // Read before first paint: main.js loads too late to avoid a flash of the
     // system theme for someone who picked the other one.
@@ -38,8 +39,9 @@
       <span>Sillage</span>
     </a>
     <nav aria-label="Sections">
-      <a href="#tour">Tour</a>
-      <a href="#features">Features</a>
+      <a href="#projects">Projects</a>
+      <a href="#coordination">Coordination</a>
+      <a href="#tour">Product tour</a>
       <a href="#install">Install</a>
       <a class="repo" href="https://github.com/MarlBurroW/sillage">GitHub</a>
       <button class="theme-toggle" type="button" data-theme-toggle hidden>
@@ -56,69 +58,96 @@
 
   <main id="main">
     <section class="hero" id="top">
-      <p class="kicker">Self-hosted · Linux and Windows (WSL2) · MIT licensed</p>
-      <h1>Vibe-code from anywhere.</h1>
-      <p class="lede">
-        A web UI for the native Claude Code and Codex CLIs. They keep running on your own
-        machine, under your account, with your subscriptions. You stop needing a terminal
-        to reach them.
-      </p>
-      <p class="actions">
-        <a class="btn primary" href="#install">Install</a>
-        <a class="btn" href="https://github.com/MarlBurroW/sillage">Source on GitHub</a>
-        <a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest" hidden></a>
-      </p>
-
+      <p class="kicker">Open source / Self-hosted / Built around native CLIs</p>
+      <div class="hero-heading">
+        <h1>Keep your work<br>within reach.</h1>
+        <div>
+          <p class="lede">A workspace for your coding agents.<br>Continue from your phone. Keep projects organised. Give each session the context to work with the others.</p>
+          <p class="hero-detail">Claude Code and Codex run on your machine, with their native tools and your accounts. Sillage brings the work into your browser.</p>
+          <p class="actions">
+            <a class="btn primary" href="#install">Install Sillage <span aria-hidden="true">↗</span></a>
+            <a class="text-link" href="https://github.com/MarlBurroW/sillage">Explore the source <span aria-hidden="true">↗</span></a>
+          </p>
+        </div>
+      </div>
+      <div class="hero-meta"><span>Claude Code + Codex</span><span>Linux · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
       <figure class="hero-shot">
-        <picture>
+        <button type="button" data-zoom aria-label="Enlarge the conversation screenshot"><picture>
           <source srcset="screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
           <img src="screenshots/hero-light.png" width="3200" height="2000" fetchpriority="high"
                alt="A Claude Code conversation running in Sillage, with tool call groups and a reply being written">
-        </picture>
+        </picture></button>
+        <figcaption>Sillage’s conversation view. Your repository, tools and conversation share the same workspace.</figcaption>
       </figure>
     </section>
 
-    <section class="why">
-      <h2>Why Sillage</h2>
-      <div>
-        <p>
-          I wanted one place, on a server I own, that I can open from my phone. That is the
-          whole starting point: vibe-code from wherever I happen to be, without hauling a
-          laptop and a terminal around to do it.
-        </p>
-        <p>
-          What I did not want was another agent. Claude Code and Codex ship a harness their
-          makers put real work into tuning: the prompts, the tools, the permission flow.
-          Rewriting that inside a web app gets you a worse agent behind a nicer interface.
-          So Sillage drives the native CLIs and stays out of their way.
-        </p>
-        <p>
-          It speaks Claude Code and Codex because those are the two I use. That is my own
-          need, not a final list: adding a CLI means writing an adapter for it, and I expect
-          to add more.
-        </p>
-        <p>
-          The last piece is the one a terminal cannot give me. I wanted a thin layer above
-          the CLIs so that a session knows the others exist: what is running right now, what
-          an earlier session decided and why, what it left for whoever picks the work up
-          next. Whichever harness happened to run it.
-        </p>
-        <p>
-          One last thing, since it shaped all of the above: Sillage is built with AI,
-          heavily. Claude Code and Codex wrote most of the code, and most of that happened
-          from inside Sillage itself, often from a phone. The tool and the way I work on it
-          grew together, which is why it ended up looking like this rather than like the
-          specification I would have written first.
-        </p>
-        <p class="signature">
-          <a href="https://github.com/MarlBurroW">MarlBurroW</a>
-        </p>
+    <nav class="chapter-nav" aria-label="What Sillage does">
+      <a href="#anywhere"><span>01 / Continuity</span>Pick up where you left off ↗</a>
+      <a href="#projects"><span>02 / Projects</span>Keep track of the work ↗</a>
+      <a href="#coordination"><span>03 / Session awareness</span>Let agents coordinate ↗</a>
+      <a href="#agents"><span>04 / Multi-CLI</span>Choose the right harness ↗</a>
+    </nav>
+
+    <section class="editorial" id="anywhere">
+      <div class="section-label">01 / Continuity</div>
+      <div class="section-body">
+        <h2>Close the laptop.<br>Keep the session.</h2>
+        <p class="section-lede">The agent runs on your server. Your browser is where you follow along.</p>
+        <div class="prose-columns">
+          <p>Leave in the middle of a turn and reopen Sillage on your phone. The agent keeps working while you are away; the server’s event journal brings the conversation back when you reconnect.</p>
+          <p>Answer a permission request, review a diff or send a correction. Install Sillage as a PWA and receive push notifications when a turn finishes or an agent needs your attention.</p>
+        </div>
+        <ul class="inline-facts"><li>Persistent sessions</li><li>Message queue &amp; steering</li><li>Project-aware dictation</li></ul>
+      </div>
+    </section>
+
+    <section class="project-section" id="projects">
+      <div class="editorial-heading"><div class="section-label">02 / Projects</div><div><h2>A project lasts longer<br>than a conversation.</h2><p class="section-lede">Give the work a place to live, from the first task to the next handover.</p></div></div>
+      <figure class="product-shot">
+        <button type="button" data-zoom aria-label="Enlarge the project board screenshot"><picture>
+          <source srcset="screenshots/board-dark.png" media="(prefers-color-scheme: dark)">
+          <img src="screenshots/board-light.png" width="3680" height="2200" loading="lazy" alt="Sillage project board, with tasks organised into workflow columns">
+        </picture></button>
+        <figcaption>The project board. Cards keep the task and its conversations together.</figcaption>
+      </figure>
+      <div class="project-details">
+        <div><h3>Cards with a history</h3><p>Descriptions, attachments, linked sessions and notes. Start a conversation from a card; the next agent can read what came before.</p></div>
+        <div><h3>Room for parallel work</h3><p>Use the project root, an existing worktree or a new branch. Keep separate changes in separate worktrees while following them from the same project.</p></div>
+        <div><h3>The repository at hand</h3><p>Read files, edit code, inspect diffs and commits, or open a terminal beside the conversation. Search past conversations across projects.</p></div>
+      </div>
+    </section>
+
+    <section class="editorial coordination" id="coordination">
+      <div class="section-label">03 / Session awareness</div>
+      <div class="section-body">
+        <h2>Your agents should know<br>who else is working.</h2>
+        <p class="section-lede">Two sessions can share a repository without sharing context. Sillage gives them tools to find that context.</p>
+        <p>Through the built-in MCP server, Claude Code and Codex can discover active sessions, read earlier decisions, identify who edited a file and contact another session. The same project history is available to both.</p>
+        <dl class="tool-reference">
+          <div><dt>Before starting work</dt><dd>See active sessions, branches and worktrees.<code>list_sessions</code></dd></div>
+          <div><dt>Before undoing a change</dt><dd>Find the session that edited a file and check what it is doing.<code>find_file_edits</code></dd></div>
+          <div><dt>When a decision already exists</dt><dd>Search earlier conversations and read the reasoning.<code>search_history · read_conversation</code></dd></div>
+          <div><dt>When work overlaps</dt><dd>Message another session, announce a shared change or ask to be notified when it finishes.<code>send_session_message · broadcast_session_message · notify_when_done</code></dd></div>
+          <div><dt>When handing work over</dt><dd>Read the task and leave a note for the next session.<code>read_card · add_card_note</code></dd></div>
+        </dl>
+        <p class="technical-note">These tools help agents coordinate; they do not lock files or prevent merge conflicts. Use separate worktrees when changes need isolation.</p>
+        <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/apps/server/src/mcp/sillage-mcp.mjs">Read the tool definitions ↗</a>
+      </div>
+    </section>
+
+    <section class="editorial" id="agents">
+      <div class="section-label">04 / Multi-CLI by design</div>
+      <div class="section-body">
+        <h2>Native harnesses.<br>A shared workspace.</h2>
+        <p class="section-lede">Choose Claude Code or Codex for each conversation. Keep the project around it.</p>
+        <div class="prose-columns"><p>Sillage drives the native CLIs: their tools, permission requests and agent behaviour. Each adapter translates its events into a common format for the interface, history and search.</p><p>The board and coordination tools belong to the project, so a Codex session can look up a decision made in a Claude Code conversation. Additional CLIs need their own adapter; Claude Code and Codex are supported today.</p></div>
+        <div class="agent-links"><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/claude">Claude Code adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/codex">Codex adapter ↗</a></div>
       </div>
     </section>
 
     <section class="tour" id="tour" aria-labelledby="tour-title">
       <div class="tour-head">
-        <h2 id="tour-title">Around the conversation</h2>
+        <h2 id="tour-title">A closer look at the workspace</h2>
         <p>Chat is the middle of it. The repository, the history and the work in flight stay one panel away.</p>
       </div>
 
@@ -228,62 +257,21 @@
     </section>
 
     <section class="features" id="features" aria-labelledby="features-title">
-      <h2 id="features-title">What Sillage adds</h2>
-      <p class="features-intro">
-        The CLIs already know how to write code, and Sillage does not get in the way of
-        that. What follows is the part it builds around them.
-      </p>
+      <p class="section-label">Also in the workspace</p>
+      <h2 id="features-title">The everyday details, covered.</h2>
       <ul>
-        <li>
-          <h3>Sessions that outlive the client</h3>
-          <p>The event journal on the server is the source of truth, not your tab. Close the laptop in the middle of a turn and reopen on a phone: the agent kept working, and the thread replays exactly as it happened.</p>
-        </li>
-        <li>
-          <h3>A queue, and a way to cut in</h3>
-          <p>Write while a turn is running. The message waits on the server, leaves when the turn ends, and can be withdrawn before it does. When it cannot wait, push it into the turn already in flight instead.</p>
-        </li>
-        <li>
-          <h3>Two CLIs, one grammar</h3>
-          <p>Claude Code and Codex are translated into a single event schema. History, search, the board and the workspace panel behave the same way whichever one you started with.</p>
-        </li>
-        <li>
-          <h3>The repository, one panel away</h3>
-          <p>File explorer, editor, diffs, commit history and a real terminal, in the same screen as the conversation that changed them.</p>
-        </li>
-        <li>
-          <h3>Worktrees without the ceremony</h3>
-          <p>Start a conversation on the project root, on an existing worktree, or on a branch Sillage creates for it. Removing one shows you the uncommitted work first, and the conversations attached to it turn read-only rather than vanish.</p>
-        </li>
-        <li>
-          <h3>Everything you ever asked, searchable</h3>
-          <p>Full-text search over every conversation in every project, from a palette that also filters titles as you type. A terminal scrollback ends with the window; this does not.</p>
-        </li>
-        <li>
-          <h3>A board the agents can read</h3>
-          <p>Cards live beside the code they describe, and Sillage hands them to the agent through its own MCP server. A session can read its card, look up what an earlier one decided, see which sessions are running right now, and leave a note for whoever picks the card up next.</p>
-        </li>
-        <li>
-          <h3>It comes to you</h3>
-          <p>An installable PWA that pushes a notification when a turn ends or the agent needs an answer, and keeps quiet when you already have the conversation open. Answer from the phone, then put the phone down.</p>
-        </li>
-        <li>
-          <h3>Dictation that knows your repository</h3>
-          <p>Talk into the composer, which on a phone is the difference between an idea captured and an idea lost. The transcription is biased with a vocabulary read from the project itself and the branch you are on, and an optional second pass restores exact spellings like <code>vite.config.ts</code> and drops the hesitations. Bring your own endpoint: Groq, Mistral, OpenAI or a Whisper you host.</p>
-        </li>
-        <li>
-          <h3>MCP servers, declared once</h3>
-          <p>Configure them in the settings and hand them to the agents that should get them, rather than keeping a config file per CLI in sync by hand.</p>
-        </li>
-        <li>
-          <h3>A task API for machines</h3>
-          <p>Another machine, or another agent, can drive Sillage without a browser. <code>/api/v1</code> speaks tasks rather than screens: open one in a project, follow its events, answer what it asks, steer or interrupt it, and take a webhook when it lands. Bearer tokens carry their own scopes and an optional list of allowed projects, and never borrow the door the browser session uses.</p>
-        </li>
+        <li><h3>A queue you can steer</h3><p>Write while the agent runs. Queue a follow-up, withdraw it, or send a correction into the current turn.</p></li>
+        <li><h3>Dictation with project vocabulary</h3><p>Transcription uses a lexicon from your repository and current branch. An optional cleanup pass restores exact spellings. Bring an OpenAI-compatible endpoint.</p></li>
+        <li><h3>MCP configuration</h3><p>Declare external MCP servers once and choose which agents receive them.</p></li>
+        <li><h3>A task API</h3><p>Create tasks, follow events, answer requests and receive completion webhooks through <code>/api/v1</code>. Tokens have scopes and optional project restrictions.</p></li>
+        <li><h3>Processes in view</h3><p>On Linux, inspect commands and services attached to Sillage, their ports and originating conversations. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/services.md">Detection and limits ↗</a></p></li>
+        <li><h3>Updates from the interface</h3><p>See when a release is available and read what changed. Native installations can update from the UI; container installations update through their image.</p></li>
       </ul>
     </section>
 
     <section class="install" id="install" aria-labelledby="install-title">
       <div class="install-intro">
-        <h2 id="install-title">Install</h2>
+        <p class="section-label">Run it yourself</p><h2 id="install-title">Your machine.<br>Your workspace.</h2>
         <p>Docker, a systemd user service on Linux, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default.</p>
       </div>
 
@@ -308,13 +296,14 @@ services:
       - ~/projects:/home/node/workspace
 volumes:
   sillage-data:</code></pre>
-          <p>The CLIs are not in the image: install the ones you actually use from the UI, and they land in the data volume. Mount your credential directories to share the authentication you already did on the host, then create the first account:</p>
-<pre class="one-line"><code>docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
+          <p>The CLIs are not in the image: install the ones you actually use from the UI, and they land in the data volume. Adjust the mounted paths and authenticate your agents. Start the container, then create the first account:</p>
+<pre class="one-line"><code>docker compose up -d
+docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
         </div>
 
         <div id="panel-script" class="tab-panel" role="tabpanel" aria-labelledby="tab-script" data-panel="script" hidden>
 <pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Linux x64 or arm64 with systemd, with <code>claude</code> and <code>codex</code> already authenticated on the host. It installs under <code>~/.local/share/sillage</code>, fetches Node if the system has none recent enough, sets up a user service and creates the first account. Later updates happen from the UI.</p>
+          <p>Linux x64 or arm64 with systemd, Install the agents you use from the UI, then authenticate them on the host. It installs under <code>~/.local/share/sillage</code>, fetches Node if the system has none recent enough, sets up a user service and creates the first account. Later updates happen from the UI.</p>
         </div>
 
         <div id="panel-windows" class="tab-panel" role="tabpanel" aria-labelledby="tab-windows" data-panel="windows" hidden>
@@ -322,11 +311,12 @@ volumes:
 wsl --install
 <span class="dim"># 2. In the Ubuntu terminal</span>
 curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Sillage runs inside WSL2, the Linux built into Windows 10 and 11, and you use it from your Windows browser at <code>http://localhost:7317</code>. The same installer as on Linux enables systemd if the distribution lacks it, fetches Node, creates the first account and adds a <strong>Sillage</strong> entry to the Start menu. That entry keeps WSL running once the terminal is closed, and can start with Windows.</p>
+          <p>Sillage runs inside WSL2, the Linux built into Windows 10 and 11, and you use it from your Windows browser. The same installer as on Linux enables systemd if the distribution lacks it, fetches Node, creates the first account and adds a <strong>Sillage</strong> entry to the Start menu. That entry keeps WSL running once the terminal is closed, and can start with Windows.</p>
           <p>The agents are the Linux <code>claude</code> and <code>codex</code> of the distribution, not the Windows ones. Keep projects in the Linux file system, not under <code>/mnt/c</code>. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md">WSL2 guide</a> covers signing in to the agents, troubleshooting and uninstalling.</p>
         </div>
 
         <div id="panel-helm" class="tab-panel" role="tabpanel" aria-labelledby="tab-helm" data-panel="helm" hidden>
+<p>Clone the repository first; the chart lives in <code>deploy/helm/sillage</code>. See the <a href="https://github.com/MarlBurroW/sillage/tree/main/deploy/helm/sillage">Helm installation guide</a>.</p>
 <pre><code>helm install sillage ./deploy/helm/sillage \
   <span class="dim">--namespace</span> sillage <span class="dim">--create-namespace</span> \
   <span class="dim">--set</span> storage.data.storageClass=<span class="str">&lt;block-storage-class&gt;</span> \
@@ -335,6 +325,44 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
 <pre><code>kubectl <span class="dim">-n</span> sillage exec <span class="dim">-it</span> deploy/sillage \
   -- node /app/server/cli/user-create.js</code></pre>
         </div>
+      </div>
+    </section>
+
+    <section class="why">
+      <h2>Why I built Sillage</h2>
+      <div>
+        <p>
+          I wanted one place, on a server I own, that I can open from my phone. That is the
+          whole starting point: keep working from wherever I happen to be, without hauling a
+          laptop and a terminal around to do it.
+        </p>
+        <p>
+          What I did not want was another agent. Claude Code and Codex ship a harness their
+          makers put real work into tuning: the prompts, the tools, the permission flow.
+          Rewriting that inside a web app gets you a worse agent behind a nicer interface.
+          So Sillage drives the native CLIs and stays out of their way.
+        </p>
+        <p>
+          It speaks Claude Code and Codex because those are the two I use. That is my own
+          need, not a final list: adding a CLI means writing an adapter for it, and I expect
+          to add more.
+        </p>
+        <p>
+          The last piece is the one a terminal cannot give me. I wanted a thin layer above
+          the CLIs so that a session knows the others exist: what is running right now, what
+          an earlier session decided and why, what it left for whoever picks the work up
+          next. Whichever harness happened to run it.
+        </p>
+        <p>
+          One last thing, since it shaped all of the above: Sillage is built with AI,
+          heavily. Claude Code and Codex wrote most of the code, and most of that happened
+          from inside Sillage itself, often from a phone. The tool and the way I work on it
+          grew together, which is why it ended up looking like this rather than like the
+          specification I would have written first.
+        </p>
+        <p class="signature">
+          <a href="https://github.com/MarlBurroW">MarlBurroW</a>
+        </p>
       </div>
     </section>
 
@@ -361,11 +389,12 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
       </svg>
       <span>Sillage</span>
     </a>
-    <p>MIT licensed.</p>
+    <p>Open source · MIT licensed · Self-hosted</p>
     <nav aria-label="Footer">
       <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
       <a href="https://github.com/MarlBurroW/sillage/releases">Releases</a>
-      <a href="#install">Install</a>
+      <a href="https://github.com/MarlBurroW/sillage/issues">Issues</a>
+      <a href="https://github.com/MarlBurroW/sillage/blob/main/README.md">Documentation</a>
     </nav>
   </footer>
 

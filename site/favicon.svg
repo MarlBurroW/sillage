@@ -4,14 +4,14 @@
 
     La couleur ne peut pas venir des jetons du thème : un favicon est chargé comme une
     image, hors du document, et n'hérite de rien. Elle est donc figée sur l'accent par
-    défaut (teinte 275), avec une variante plus claire en thème sombre pour rester
+    du site (mauve), avec une variante plus claire en thème sombre pour rester
     lisible sur la barre d'onglets.
 
     Même tracé que `apps/web/src/components/Logo.tsx`.
   -->
   <style>
-    :root { --mark: #535cda; }
-    @media (prefers-color-scheme: dark) { :root { --mark: #8f9bff; } }
+    :root { --mark: #85409b; }
+    @media (prefers-color-scheme: dark) { :root { --mark: #cd7be5; } }
   </style>
   <circle cx="16" cy="6.4" r="3.4" fill="var(--mark)" />
   <g fill="none" stroke="var(--mark)" stroke-width="3" stroke-linecap="round">
