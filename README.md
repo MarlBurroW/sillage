@@ -8,6 +8,8 @@ A self-hosted, mobile-first web UI that drives the native Claude Code and Codex
 CLIs on your own machine. Vibe-code from anywhere: the official agent harnesses,
 without the terminal.
 
+Runs on Linux, on Windows through WSL2, in Docker or on Kubernetes.
+
 Website: [marlburrow.github.io/sillage](https://marlburrow.github.io/sillage)
 
 <picture>
@@ -101,9 +103,8 @@ WebSocket timeouts, egress the pod needs, and what to back up.
 
 ### One-line script (Linux, no Docker)
 
-Requires Linux x64/arm64, systemd and Node.js 22+. The agent CLIs are optional
-here too: Sillage installs the ones you want from the UI, you authenticate them
-yourself.
+Requires Linux x64/arm64 with systemd. The agent CLIs are optional here too:
+Sillage installs the ones you want from the UI, you authenticate them yourself.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash
@@ -116,10 +117,50 @@ updates happen from the web UI (Settings > About) or by re-running the script.
 
 Logs go to the journal: `journalctl --user -u sillage -f`.
 
-Any Node from 22 up works: every native module ships as an N-API prebuild, which
-does not depend on the Node ABI. The installer checks they load and rebuilds them
-if they do not, which then needs a compiler (`build-essential` and `python3` on
-Debian/Ubuntu).
+The service uses the system's Node when it is 22 or newer. Otherwise the
+installer downloads the current Node LTS under `~/.local/share/sillage/node`, for
+Sillage alone, and refreshes it on each run. Any Node from 22 up works: every
+native module ships as an N-API prebuild, which does not depend on the Node ABI.
+The installer checks they load and rebuilds them if they do not, which then needs
+a compiler (`build-essential` and `python3` on Debian/Ubuntu).
+
+### Windows (WSL2)
+
+Sillage runs inside WSL2, the Linux built into Windows 10 and 11, and you use it
+from your Windows browser. Nothing to install beforehand but WSL itself, not even
+Node.
+
+1. In PowerShell, as administrator, install WSL and Ubuntu, then restart Windows
+   when asked. Ubuntu opens and asks for a Linux user name and password:
+
+   ```powershell
+   wsl --install
+   ```
+
+2. In the Ubuntu terminal, run the same installer as on Linux:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash
+   ```
+
+   Under WSL it also enables systemd when the distribution lacks it, asks whether
+   Sillage should start with Windows, and adds a **Sillage** entry to the Start
+   menu. That entry keeps WSL running once the terminal is closed, starts
+   Sillage if WSL was stopped, and opens `http://localhost:7317` in the Windows
+   browser.
+
+3. Install and sign in to the agents inside Ubuntu: Sillage drives the Linux
+   `claude` and `codex`, not the Windows ones.
+
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash && claude
+   ```
+
+Keep your projects in the Linux file system (`~/projects`), not under `/mnt/c`:
+Windows drives are several times slower for git and the agents. The
+[WSL2 guide](docs/windows.md) covers Codex sign-in, how Sillage stays up, everyday
+commands, troubleshooting and uninstalling. Tested on Windows 11 with WSL 3.0.1,
+Ubuntu 26.04 and 24.04.
 
 ### From source (development)
 
@@ -165,6 +206,7 @@ packages/db       Drizzle schema and migrations
 deploy/           systemd unit template, config example, docker-compose example, Helm chart
 site/             one-page website (GitHub Pages) and its screenshots
 scripts/          screenshot runner, runtime staging, Codex type generation
+docs/windows.md   running Sillage on Windows through WSL2
 docs/brand/       the brand and the files derived from it
 ```
 
