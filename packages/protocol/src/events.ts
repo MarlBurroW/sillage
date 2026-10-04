@@ -254,8 +254,8 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     isError: z.boolean(),
     durationMs: z.number(),
     /**
-     * Taille réelle de la sortie, présente seulement quand `output` n'en est qu'un
-     * aperçu. Une relecture d'historique réduit les sorties volumineuses pour ne pas
+     * Taille réelle de la sortie, présente seulement quand `output` n'a pas été
+     * transmise. Une relecture d'historique retire les sorties volumineuses pour ne pas
      * transférer des mégaoctets que personne ne lit ; la carte de l'appel demande le
      * corps complet à l'ouverture. Jamais posé sur le direct, qui livre tout.
      */

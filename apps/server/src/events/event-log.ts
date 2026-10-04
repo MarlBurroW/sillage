@@ -8,6 +8,14 @@ import {
   type SillageEvent,
 } from '@sillage/protocol'
 import { indexConversation, indexMessage } from '../search/search-index.js'
+import {
+  advanceIndex,
+  emptySupersessionIndex,
+  INDEXED_TYPES,
+  isSuperseded,
+  type SupersessionIndex,
+} from './superseded.js'
+import { replayPayload, replayWeight } from './tool-output.js'
 
 /**
  * Le journal (invariant I2 de la spec).
@@ -102,8 +110,12 @@ function byteSize(payload: string, raw: string | null): number {
   return Buffer.byteLength(payload) + (raw === null ? 0 : Buffer.byteLength(raw))
 }
 
+/** Index de relecture gardés en mémoire : ceux des conversations ouvertes récemment. */
+const SUPERSESSION_INDEXES = 32
+
 export class EventLog {
   private readonly bus = new EventEmitter()
+  private readonly supersession = new Map<string, SupersessionIndex>()
 
   constructor(private readonly db: Db) {
     // Une conversation très suivie (plusieurs onglets, mobile et desktop) dépasse
@@ -307,6 +319,127 @@ export class EventLog {
       ts: row.ts,
       event: this.parseStored(row.seq, row.payload),
     }))
+  }
+
+  /**
+   * Page de relecture d'historique, sans ce que la suite du journal rend caduc
+   * (`superseded.ts`) ni les sorties d'outils volumineuses (`tool-output.ts`), et bornée
+   * en octets autant qu'en lignes.
+   *
+   * Les lignes sont d'abord listées sans leur contenu (`octet_length` lit la taille sans
+   * charger le payload), puis seules celles qu'on garde sont lues et validées : un patch
+   * écarté ne quitte pas le disque.
+   *
+   * La borne en octets protège le tas du daemon. Deux mille lignes consécutives pèsent
+   * jusqu'à 141 Mo sur une conversation de la base, quand la plupart tiennent en quelques
+   * centaines de ko. Une page garde toujours au moins un événement, sans quoi un
+   * événement plus lourd que la borne ne passerait jamais.
+   *
+   * `nextAfter` est le dernier `seq` examiné, gardé ou non : la page suivante reprend là.
+   */
+  readForReplay(
+    conversationId: string,
+    afterSeq: number,
+    limits: { rows: number; bytes: number },
+  ): { entries: JournalEntry[]; nextAfter: number } {
+    const index = this.supersessionIndex(conversationId)
+    const listed = this.db
+      .select({
+        seq: events.seq,
+        type: events.type,
+        bytes: replayWeight,
+        toolCallId: sql<string | null>`case when ${events.type} = 'tool.output_delta'
+          then ${events.payload} ->> '$.toolCallId' end`,
+      })
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), gt(events.seq, afterSeq)))
+      .orderBy(asc(events.seq))
+      .limit(limits.rows)
+      .all()
+
+    const kept: number[] = []
+    let bytes = 0
+    let nextAfter = afterSeq
+    for (const row of listed) {
+      if (!isSuperseded(index, row)) {
+        if (kept.length > 0 && bytes + row.bytes > limits.bytes) break
+        kept.push(row.seq)
+        bytes += row.bytes
+      }
+      nextAfter = row.seq
+    }
+
+    if (kept.length === 0) return { entries: [], nextAfter }
+
+    const rows = this.db
+      .select({ seq: events.seq, ts: events.ts, payload: replayPayload })
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), inArray(events.seq, kept)))
+      .orderBy(asc(events.seq))
+      .all()
+
+    return {
+      entries: rows.map((row) => ({
+        conversationId,
+        seq: row.seq,
+        ts: row.ts,
+        event: this.parseStored(row.seq, row.payload),
+      })),
+      nextAfter,
+    }
+  }
+
+  /**
+   * Index de supplantation d'une conversation, à jour de son dernier `seq`.
+   *
+   * Construit une fois (44 ms sur la plus lourde en base), puis avancé à chaque page sur
+   * les seuls événements arrivés depuis : relire toute la suite du journal à chaque page
+   * coûterait autant que ce qu'on cherche à épargner.
+   */
+  private supersessionIndex(conversationId: string): SupersessionIndex {
+    const lastSeq =
+      this.db
+        .select({ lastSeq: conversations.lastSeq })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .get()?.lastSeq ?? 0
+
+    let index = this.supersession.get(conversationId)
+    // Un journal ne raccourcit que remis à zéro hors du daemon : l'index repart alors de
+    // rien, plutôt que de trier selon un journal qui n'existe plus.
+    if (!index || index.seq > lastSeq) index = emptySupersessionIndex()
+
+    if (lastSeq > index.seq) {
+      const rows = this.db
+        .select({
+          seq: events.seq,
+          type: events.type,
+          toolCallId: sql<string | null>`case when ${events.type} = 'tool.completed'
+            then ${events.payload} ->> '$.toolCallId' end`,
+        })
+        .from(events)
+        .where(
+          and(
+            eq(events.conversationId, conversationId),
+            gt(events.seq, index.seq),
+            lte(events.seq, lastSeq),
+            inArray(events.type, INDEXED_TYPES),
+          ),
+        )
+        .orderBy(asc(events.seq))
+        .all()
+      advanceIndex(index, rows, lastSeq)
+    }
+
+    // Réinsérée pour passer en queue : une `Map` garde l'ordre d'insertion, donc la
+    // première clé est celle qu'on a relue le moins récemment.
+    this.supersession.delete(conversationId)
+    this.supersession.set(conversationId, index)
+    if (this.supersession.size > SUPERSESSION_INDEXES) {
+      const stale = this.supersession.keys().next().value
+      if (stale !== undefined) this.supersession.delete(stale)
+    }
+    return index
   }
 
   /**
