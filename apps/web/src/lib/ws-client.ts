@@ -51,9 +51,22 @@ export interface StatusWatcher {
    * été poussées à personne : ce qui est affiché doit être relu à la source.
    */
   onResync(): void
+  /** Un projet ou une conversation a été ajouté, retiré ou modifié ailleurs. */
+  onListsChanged(): void
 }
 
 const MAX_BACKOFF_MS = 15_000
+
+/**
+ * Délai laissé au serveur pour répondre au ping d'un retour au premier plan.
+ *
+ * Court : pendant ce temps, l'écran montre peut-être des statuts périmés, alors qu'un
+ * faux positif ne coûte qu'une reconnexion.
+ */
+const PROBE_TIMEOUT_MS = 3_000
+
+/** Au-delà, `resync` rend la main même sans socket : le serveur est injoignable. */
+const RESYNC_TIMEOUT_MS = 5_000
 
 /**
  * Les niveaux de l'arborescence se montent en cascade au dépliage. Ce délai laisse la
@@ -87,16 +100,32 @@ class WsClient {
   private reconnectAttempts = 0
   private reconnectTimer: number | null = null
   private heartbeatTimer: number | null = null
+  private lastBeatAt = 0
+  /**
+   * Messages reçus depuis le chargement, quels qu'ils soient : chacun prouve que le
+   * socket vit. Un compteur plutôt qu'une heure, pour qu'une réponse arrivée dans la
+   * même milliseconde que le ping ne passe pas pour un silence.
+   */
+  private received = 0
+  private probeTimer: number | null = null
+  private probeDeadline = 0
+  private readonly openWaiters = new Set<() => void>()
   private disposed = false
   /** Distingue la première ouverture d'une reprise, seule à devoir resynchroniser. */
   private opened = false
 
   constructor() {
     // Un socket tué par la mise en veille du téléphone ne déclenche pas toujours
-    // 'close'. Ces deux signaux sont ce qui rend la reprise instantanée sur mobile.
-    window.addEventListener('online', () => this.reconnectNow())
+    // 'close' : il se dit ouvert et ne reçoit plus rien, statuts compris. Chaque retour
+    // au premier plan le met donc à l'épreuve, au lieu de ne rétablir que ce qui s'est
+    // déclaré fermé. `resume` est le dégel d'un onglet par Chrome Android, `pageshow`
+    // le retour d'une page gardée en cache par le navigateur.
+    const wake = () => this.check()
+    window.addEventListener('online', wake)
+    window.addEventListener('pageshow', wake)
+    document.addEventListener('resume', wake)
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') this.reconnectNow()
+      if (document.visibilityState === 'visible') wake()
     })
   }
 
@@ -210,6 +239,31 @@ class WsClient {
     }
   }
 
+  /** Rétablit un socket fermé, met à l'épreuve un socket qui se dit ouvert. */
+  check(): void {
+    if (this.idle) return
+    if (this.isOpen) this.probe(PROBE_TIMEOUT_MS)
+    else this.reconnectNow()
+  }
+
+  /**
+   * Repart d'un socket neuf, comme après une coupure : les fils rattrapent leur retard
+   * par leur curseur, les statuts sont vidés puis relus. Résolu à l'ouverture, ou après
+   * `RESYNC_TIMEOUT_MS` si le serveur ne répond pas.
+   */
+  resync(): Promise<void> {
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer)
+        this.openWaiters.delete(done)
+        resolve()
+      }
+      const timer = window.setTimeout(done, RESYNC_TIMEOUT_MS)
+      this.openWaiters.add(done)
+      this.recycle()
+    })
+  }
+
   /** Curseur courant, utilisé après un rechargement REST pour se réaligner. */
   setCursor(conversationId: string, seq: number): void {
     const current = this.cursors.get(conversationId) ?? -1
@@ -239,9 +293,11 @@ class WsClient {
       this.opened = true
       this.broadcastConnection(true)
       this.startHeartbeat()
+      for (const waiter of [...this.openWaiters]) waiter()
     }
 
     socket.onmessage = (raw) => {
+      this.received += 1
       const message = JSON.parse(raw.data as string) as ServerMessage
       this.dispatch(message)
     }
@@ -270,6 +326,11 @@ class WsClient {
     if (message.t === 'tree-changed') {
       const scope = message.scope === 'project' ? projectScope(message.id) : message.id
       for (const listener of this.treeListeners) listener(scope, message.path)
+      return
+    }
+
+    if (message.t === 'lists-changed') {
+      for (const watcher of this.statusWatchers) watcher.onListsChanged()
       return
     }
 
@@ -343,9 +404,76 @@ class WsClient {
     this.connect()
   }
 
+  /**
+   * Abandonne le socket courant et en ouvre un neuf.
+   *
+   * `close()` seul ne suffit pas : sur une connexion morte, la fermeture attend une
+   * réponse qui ne viendra pas, et 'close' peut tarder des dizaines de secondes. Le
+   * socket est donc détaché avant d'être fermé, et la suite est celle d'une coupure
+   * ordinaire.
+   */
+  private recycle(): void {
+    const socket = this.socket
+    if (socket) {
+      socket.onopen = null
+      socket.onmessage = null
+      socket.onclose = null
+      socket.onerror = null
+      socket.close()
+      this.socket = null
+      this.stopHeartbeat()
+      this.broadcastConnection(false)
+    }
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.reconnectAttempts = 0
+    if (!this.idle) this.connect()
+  }
+
+  /**
+   * Envoie un ping et tient le socket pour mort si rien n'est revenu dans le délai.
+   *
+   * Le verdict compte les messages reçus plutôt que de se fier à la ponctualité du
+   * minuteur : en arrière-plan, le navigateur retarde les minuteurs, parfois d'une
+   * minute, et la réponse a pu arriver bien avant qu'il se déclenche. Une épreuve déjà
+   * en cours et plus proche de son terme est gardée : un battement ordinaire ne doit pas
+   * repousser le verdict d'un retour au premier plan.
+   */
+  private probe(timeoutMs: number): void {
+    const before = this.received
+    const deadline = Date.now() + timeoutMs
+    this.send({ t: 'ping' })
+    if (this.probeTimer !== null && this.probeDeadline <= deadline) return
+
+    this.clearProbe()
+    this.probeDeadline = deadline
+    this.probeTimer = window.setTimeout(() => {
+      this.probeTimer = null
+      if (this.received === before && this.isOpen) this.recycle()
+    }, timeoutMs)
+  }
+
+  private clearProbe(): void {
+    if (this.probeTimer !== null) {
+      clearTimeout(this.probeTimer)
+      this.probeTimer = null
+    }
+  }
+
   private startHeartbeat(): void {
     this.stopHeartbeat()
-    this.heartbeatTimer = window.setInterval(() => this.send({ t: 'ping' }), HEARTBEAT_INTERVAL_MS)
+    this.lastBeatAt = Date.now()
+    this.heartbeatTimer = window.setInterval(() => {
+      // Un battement très en retard trahit une mise en veille de la machine, que
+      // `visibilitychange` ne signale pas si l'onglet est resté au premier plan :
+      // portable refermé puis rouvert. Le verdict tombe alors vite, comme au retour
+      // d'un téléphone, plutôt qu'au battement suivant.
+      const late = Date.now() - this.lastBeatAt > HEARTBEAT_INTERVAL_MS * 2
+      this.lastBeatAt = Date.now()
+      this.probe(late ? PROBE_TIMEOUT_MS : HEARTBEAT_INTERVAL_MS)
+    }, HEARTBEAT_INTERVAL_MS)
   }
 
   private stopHeartbeat(): void {
@@ -353,6 +481,7 @@ class WsClient {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = null
     }
+    this.clearProbe()
   }
 }
 

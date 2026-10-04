@@ -405,6 +405,7 @@ export const en = {
   'shell.conversation.api': 'API',
   'shell.delete': 'Delete',
   'shell.conversation.deleteConfirm': 'Delete "{title}"?',
+  'shell.refresh': 'Refresh the list',
   'shell.conversations.detail.show': 'Show conversation details',
   'shell.conversations.detail.hide': 'Hide conversation details',
   'shell.conversation.turns': '{count} turns',
