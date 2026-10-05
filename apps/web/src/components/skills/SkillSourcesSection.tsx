@@ -1,9 +1,9 @@
 import { GitBranch, Library, MoreHorizontal, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import type { SkillSourceDto } from '@sillage/protocol'
+import type { SkillSearchResultDto, SkillSourceDto } from '@sillage/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { relativeDate } from '../../lib/dates'
-import { useTranslate } from '../../lib/i18n'
+import { locale, useTranslate } from '../../lib/i18n'
 import {
   shortCommit,
   useCreateSkillSource,
@@ -18,6 +18,12 @@ import { CatalogDialog } from './CatalogDialog'
 
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)
 
+/** Ce que le catalogue ouvre : une source, et le skill à montrer d'emblée s'il y en a un. */
+interface Browsing {
+  sourceId: string
+  skillName: string | null
+}
+
 /**
  * Les dépôts d'où la bibliothèque s'installe. Les déclarer et les rafraîchir revient aux
  * administrateurs ; parcourir un catalogue est ouvert à tous, pour installer dans les
@@ -27,7 +33,7 @@ export function SkillSourcesSection({ isAdmin }: { isAdmin: boolean }) {
   const t = useTranslate()
   const { data } = useSkillSources()
   const sources = data?.sources ?? []
-  const [browsing, setBrowsing] = useState<string | null>(null)
+  const [browsing, setBrowsing] = useState<Browsing | null>(null)
   const [adding, setAdding] = useState(false)
 
   return (
@@ -44,18 +50,24 @@ export function SkillSourcesSection({ isAdmin }: { isAdmin: boolean }) {
         ) : null}
       </div>
 
-      {adding ? <AddSourceForm onDone={(id) => { setAdding(false); if (id) setBrowsing(id) }} /> : null}
-      {isAdmin ? <SkillsShSearch onBrowse={setBrowsing} /> : null}
+      {adding ? <AddSourceForm onDone={(id) => { setAdding(false); if (id) setBrowsing({ sourceId: id, skillName: null }) }} /> : null}
+      {isAdmin ? <SkillsShSearch onOpen={setBrowsing} /> : null}
 
       {sources.map((source) => (
-        <SourceRow key={source.id} source={source} isAdmin={isAdmin} onBrowse={() => setBrowsing(source.id)} />
+        <SourceRow
+          key={source.id}
+          source={source}
+          isAdmin={isAdmin}
+          onBrowse={() => setBrowsing({ sourceId: source.id, skillName: null })}
+        />
       ))}
 
       <CatalogDialog
-        key={browsing ?? 'none'}
+        key={browsing ? `${browsing.sourceId}:${browsing.skillName ?? ''}` : 'none'}
         open={browsing !== null}
         onClose={() => setBrowsing(null)}
-        sourceId={browsing}
+        sourceId={browsing?.sourceId ?? null}
+        skillName={browsing?.skillName ?? null}
         scope="global"
         projectId={null}
       />
@@ -197,10 +209,14 @@ function AddSourceForm({ onDone }: { onDone: (sourceId: string | null) => void }
 }
 
 /**
- * Trouver un dépôt sur skills.sh. Masquée quand l'annuaire ne répond pas comme prévu :
- * son API n'est pas documentée, et rien ici ne dépend de l'utilisateur.
+ * Trouver un skill sur skills.sh et l'installer. Un skill s'installe depuis une source,
+ * qui suit ses mises à jour : son dépôt en devient une au passage, sans étape à part, et
+ * le catalogue s'ouvre sur le skill choisi.
+ *
+ * Masquée quand l'annuaire ne répond pas comme prévu : son API n'est pas documentée, et
+ * rien ici ne dépend de l'utilisateur.
  */
-function SkillsShSearch({ onBrowse }: { onBrowse: (sourceId: string) => void }) {
+function SkillsShSearch({ onOpen }: { onOpen: (browsing: Browsing) => void }) {
   const t = useTranslate()
   const [query, setQuery] = useState('')
   // Une requête par pause de frappe, pas une par lettre : l'annuaire n'est pas à nous.
@@ -210,21 +226,31 @@ function SkillsShSearch({ onBrowse }: { onBrowse: (sourceId: string) => void }) 
     return () => clearTimeout(timer)
   }, [query])
   const { data, isFetching } = useSkillSearch(settled)
+  const { data: declared } = useSkillSources()
   const create = useCreateSkillSource()
   const refresh = useRefreshSkillSource()
+  /** Le résultat dont le dépôt est en cours de récupération. */
   const [pending, setPending] = useState<string | null>(null)
 
   if (data && !data.available) return null
 
-  const add = (repository: string) => {
-    setPending(repository)
-    create.mutate(
-      { url: repository },
-      {
-        onSuccess: (source) => refresh.mutate(source.id, { onSettled: () => { setPending(null); onBrowse(source.id) } }),
-        onError: () => setPending(null),
-      },
-    )
+  const sourceOf = (result: SkillSearchResultDto) =>
+    declared?.sources.find((source) => source.id === result.sourceId) ?? null
+
+  const install = (result: SkillSearchResultDto) => {
+    const known = sourceOf(result)
+    const show = (sourceId: string) => onOpen({ sourceId, skillName: result.name })
+    if (known?.lastCommit) return show(known.id)
+    // Le catalogue ne liste que les sources récupérées : il ne s'ouvre qu'une fois le
+    // dépôt cloné, et l'erreur s'affiche ici sinon.
+    const retrieve = (sourceId: string) =>
+      refresh.mutate(sourceId, {
+        onSuccess: () => show(sourceId),
+        onSettled: () => setPending(null),
+      })
+    setPending(keyOf(result))
+    if (known) retrieve(known.id)
+    else create.mutate({ url: result.repository }, { onSuccess: (source) => retrieve(source.id), onError: () => setPending(null) })
   }
 
   return (
@@ -244,26 +270,36 @@ function SkillsShSearch({ onBrowse }: { onBrowse: (sourceId: string) => void }) 
         ) : null}
         {data && settled.trim().length >= 2 ? (
           <ul className="flex flex-col gap-1">
-            {data.results.map((result) => (
-              <li key={`${result.repository}/${result.name}`} className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-surface-high">
-                <span className="min-w-0 flex-1">
-                  <span className="font-mono text-sm">{result.name}</span>
-                  <span className="ml-2 font-mono text-xs text-ink-faint">{result.repository}</span>
-                </span>
-                <span className="shrink-0 text-xs text-ink-faint">{t('skills.search.installs', { count: result.installs })}</span>
-                {result.sourceId ? (
-                  <Button size="sm" variant="ghost" onClick={() => onBrowse(result.sourceId!)}>{t('skills.sources.browse')}</Button>
-                ) : (
-                  <Button size="sm" variant="secondary" disabled={pending !== null} onClick={() => add(result.repository)}>
-                    {pending === result.repository ? t('skills.sources.adding') : t('skills.search.add')}
-                  </Button>
-                )}
-              </li>
-            ))}
+            {data.results.map((result) => {
+              const source = sourceOf(result)
+              return (
+                <li key={keyOf(result)} className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-surface-high">
+                  {/* Nom, puis dépôt et audience : sur une ligne, au doigt, ils se chevauchaient. */}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-mono text-sm">{result.name}</span>
+                    <span className="truncate text-xs text-ink-faint">
+                      <span className="font-mono">{result.repository}</span>
+                      {' · '}
+                      {t('skills.search.installs', { count: result.installs.toLocaleString(locale()) })}
+                    </span>
+                  </span>
+                  {source && !source.enabled ? (
+                    <Badge>{t('skills.search.sourceDisabled')}</Badge>
+                  ) : (
+                    <Button size="sm" variant="secondary" disabled={pending !== null} onClick={() => install(result)}>
+                      {pending === keyOf(result) ? t('skills.search.fetching') : t('skills.search.install')}
+                    </Button>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         ) : null}
         {errorOf(create.error) ? <Banner>{errorOf(create.error)}</Banner> : null}
+        {errorOf(refresh.error) ? <Banner>{errorOf(refresh.error)}</Banner> : null}
       </CardBody>
     </Card>
   )
 }
+
+const keyOf = (result: SkillSearchResultDto) => `${result.repository}/${result.name}`
