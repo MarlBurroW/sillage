@@ -878,11 +878,13 @@ export class CodexRunner implements AgentRunner {
   }
 
   private subAgentActivity(item: Extract<ThreadItem, { type: 'subAgentActivity' }>, parent: string | null): void {
-    // Un sous-agent qui écrit à `/root` rapporte une activité sur le fil principal : ce
-    // n'est pas un sous-agent, et l'inscrire le laisserait « en cours » pour toujours,
-    // rien ne venant jamais le clore.
-    if (item.agentThreadId === this.threadId) return
-    if (item.kind === 'started' || item.kind === 'interacted') {
+    // `interacted` dit qu'un message a été remis à un agent, pas qu'il travaille : la TUI de
+    // Codex l'ignore pour la même raison. Si le message le relance, le `turn/started` de son
+    // fil le réinscrit. Le compter comme un démarrage laissait « en cours » pour toujours un
+    // sous-agent terminé à qui l'on venait d'écrire, ou le fil principal quand un sous-agent
+    // écrit à `/root` : rien ne venait jamais les clore.
+    if (item.kind === 'interacted' || item.agentThreadId === this.threadId) return
+    if (item.kind === 'started') {
       this.ensureSubAgent(item.agentThreadId, item.agentPath, parent)
     } else {
       this.completeSubAgent(item.agentThreadId, { agent: item.agentPath, status: item.kind })

@@ -98,6 +98,29 @@ test('la fin d’un sous-agent ne termine pas le tour principal', async (t) => {
   assert.ok(agent.type === 'tool.started' && message.type === 'message.completed' && message.parentToolCallId === agent.toolCallId)
 })
 
+test('un message à un sous-agent terminé ne le remet pas en cours, un nouveau tour si', async (t) => {
+  const f = await runnerFixture(t)
+  const interacted = (id: string, agentThreadId: string, agentPath: string) =>
+    itemEvent({ type: 'subAgentActivity', id, kind: 'interacted', agentThreadId, agentPath })
+  const running = () => f.events.filter((event) => event.type === 'background.updated').at(-1)
+  await f.emit([
+    { method: 'thread/started', params: { thread: { id: 'child', parentThreadId: 'root', agentNickname: 'Inspector', preview: 'Inspect' } } },
+    done('child-turn', 'child'),
+    // Le parent écrit au sous-agent terminé, et le sous-agent avait écrit à `/root`.
+    interacted('to-child', 'child', '/root/inspector'),
+    interacted('to-root', 'root', '/root'),
+  ])
+  assert.deepEqual(running(), { type: 'background.updated', tasks: [] })
+  assert.equal(f.events.filter((event) => event.type === 'task.started').length, 1)
+
+  // Le message relance un tour du sous-agent : lui seul le remet en cours, jusqu'à sa fin.
+  await f.emit([{ method: 'turn/started', params: { threadId: 'child', turn: { id: 'child-turn-2' } } }])
+  assert.deepEqual(running(), { type: 'background.updated', tasks: [{ id: 'child', kind: 'agent', description: 'Inspector' }] })
+  await f.emit([done('child-turn-2', 'child')])
+  assert.deepEqual(running(), { type: 'background.updated', tasks: [] })
+  for (const event of f.events) sillageEventSchema.parse(event)
+})
+
 test('la fin du parent ne supprime pas une question encore attendue par son sous-agent', async (t) => {
   const f = await runnerFixture(t)
   await f.emit([
