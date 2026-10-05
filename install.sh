@@ -468,6 +468,49 @@ run_powershell() {
     -EncodedCommand "$(printf '%s' "$1" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)" </dev/null | tr -d '\r'
 }
 
+# The PowerShell that creates the shortcuts, after the variables PS_SCRIPT sets. A function
+# and not a heredoc inside $(...): bash 3.2, macOS's, misreads one there, tripping over
+# the first apostrophe of its text, and refuses the whole script, whatever the platform.
+ps_shortcuts() {
+  cat <<'PS'
+$ErrorActionPreference = 'Stop'
+# Without a console, progress records come out as CLIXML noise in an error message.
+$ProgressPreference = 'SilentlyContinue'
+# wslg.exe runs a Linux command without a console window; wsl.exe would leave one open,
+# hence minimized. A wslg.exe error is a dialog box: shown, not minimized.
+# wslg.exe has no -e: `--` hands the rest of the line to the user's shell, for both. It
+# does not strip quotes either: the distribution name, which has no spaces, goes bare.
+$wslg = Join-Path $env:ProgramFiles 'WSL\wslg.exe'
+if (Test-Path $wslg) { $target = $wslg; $style = 1 } else { $target = (Get-Command wsl.exe).Source; $style = 7 }
+$arguments = "-d $distro -- `"$keeper`""
+# On the Windows side: the Start menu draws it while WSL is stopped.
+$icon = ''
+if ($iconSource) {
+  $icon = Join-Path $env:LOCALAPPDATA 'Sillage\sillage.ico'
+  New-Item -ItemType Directory -Force -Path (Split-Path $icon) | Out-Null
+  Copy-Item -LiteralPath $iconSource -Destination $icon -Force
+}
+$shell = New-Object -ComObject WScript.Shell
+function Set-Shortcut([string]$path, [string]$extra, [string]$description) {
+  $link = $shell.CreateShortcut($path)
+  $link.TargetPath = $target
+  $link.Arguments = "$arguments$extra"
+  $link.Description = $description
+  $link.WindowStyle = $style
+  if ($icon) { $link.IconLocation = "$icon,0" }
+  $link.Save()
+}
+$menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Sillage.lnk'
+$startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'Sillage.lnk'
+Set-Shortcut $menu ' --open' 'Open Sillage'
+if ($autostart) { Set-Shortcut $startup '' 'Keeps WSL running so that Sillage stays reachable' }
+elseif (Test-Path $startup) { Remove-Item $startup }
+# The Start menu entry itself, as a click would: the first launch goes the way every
+# later one will. Started from here, it still outlives the WSL session of the installer.
+if ($launch) { Start-Process -FilePath $menu }
+PS
+}
+
 ps_quote() { printf "'%s'" "${1//\'/\'\'}"; }
 
 # bytes N... — raw bytes, from decimal values.
@@ -542,44 +585,7 @@ EOF
 \$autostart = \$$([ "$WIN_AUTOSTART" = "yes" ] && echo true || echo false)
 \$iconSource = $(ps_quote "$ICON_SOURCE")
 \$launch = \$$([ "$LAUNCH" = "yes" ] && echo true || echo false)
-$(cat <<'PS'
-$ErrorActionPreference = 'Stop'
-# Without a console, progress records come out as CLIXML noise in an error message.
-$ProgressPreference = 'SilentlyContinue'
-# wslg.exe runs a Linux command without a console window; wsl.exe would leave one open,
-# hence minimized. A wslg.exe error is a dialog box: shown, not minimized.
-# wslg.exe has no -e: `--` hands the rest of the line to the user's shell, for both. It
-# does not strip quotes either: the distribution name, which has no spaces, goes bare.
-$wslg = Join-Path $env:ProgramFiles 'WSL\wslg.exe'
-if (Test-Path $wslg) { $target = $wslg; $style = 1 } else { $target = (Get-Command wsl.exe).Source; $style = 7 }
-$arguments = "-d $distro -- `"$keeper`""
-# On the Windows side: the Start menu draws it while WSL is stopped.
-$icon = ''
-if ($iconSource) {
-  $icon = Join-Path $env:LOCALAPPDATA 'Sillage\sillage.ico'
-  New-Item -ItemType Directory -Force -Path (Split-Path $icon) | Out-Null
-  Copy-Item -LiteralPath $iconSource -Destination $icon -Force
-}
-$shell = New-Object -ComObject WScript.Shell
-function Set-Shortcut([string]$path, [string]$extra, [string]$description) {
-  $link = $shell.CreateShortcut($path)
-  $link.TargetPath = $target
-  $link.Arguments = "$arguments$extra"
-  $link.Description = $description
-  $link.WindowStyle = $style
-  if ($icon) { $link.IconLocation = "$icon,0" }
-  $link.Save()
-}
-$menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Sillage.lnk'
-$startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'Sillage.lnk'
-Set-Shortcut $menu ' --open' 'Open Sillage'
-if ($autostart) { Set-Shortcut $startup '' 'Keeps WSL running so that Sillage stays reachable' }
-elseif (Test-Path $startup) { Remove-Item $startup }
-# The Start menu entry itself, as a click would: the first launch goes the way every
-# later one will. Started from here, it still outlives the WSL session of the installer.
-if ($launch) { Start-Process -FilePath $menu }
-PS
-)"
+$(ps_shortcuts)"
     if ERR="$(run_powershell "$PS_SCRIPT" 2>&1)"; then
       WIN_LINKS="yes"
     else
