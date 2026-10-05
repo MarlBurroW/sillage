@@ -23,10 +23,14 @@ fail() { printf '\033[1;31mcheck failed:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # Le PATH de launchd, sans Node : install.sh doit télécharger le sien. Sans terminal,
 # comme sous `curl | bash` lancé par un script.
+# install.sh s'est déjà arrêté à mi-chemin sur le runner, sur une erreur d'expansion du
+# bash 3.2, sans que son code de sortie le dise : on exige aussi son dernier message.
 run_installer() {
   env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" SHELL=/bin/zsh LANG=fr_FR.UTF-8 \
     PATH=/usr/bin:/bin:/usr/sbin:/sbin SILLAGE_ARCHIVE="$1" \
-    bash "$ROOT/install.sh" </dev/null
+    bash "$ROOT/install.sh" </dev/null 2>&1 | tee "$WORK/install.log"
+  grep -q 'Update later by re-running this script' "$WORK/install.log" \
+    || fail "install.sh stopped before its last message"
 }
 
 service_pid() { launchctl print "$SERVICE" | sed -nE 's/^[[:space:]]*pid = ([0-9]+)$/\1/p'; }
