@@ -21,6 +21,7 @@ import {
   useWriteRepoInstructions,
 } from '../../lib/instructions'
 import { Markdown } from '../chat/Markdown'
+import { HowItWorks, INSTRUCTIONS_HELP } from './HowItWorks'
 import { Banner, Button, ChoiceList, ConfirmDialog, IconButton, Select, cx, type Choice } from '../ui'
 
 /**
@@ -198,6 +199,7 @@ export function ProjectInstructions({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <HowItWorks items={INSTRUCTIONS_HELP} />
       {data.canEdit ? (
         <ChoiceList
           label={t('instructions.mode')}

@@ -57,6 +57,9 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   "start a Codex session at max effort to fix this" opens a conversation that you
   can follow like any other, with its own CLI, model, effort and worktree. The new
   session starts with the project's default permissions.
+- **Shared instructions and memory.** One `SILLAGE.md` and one project memory for
+  both CLIs, editable from the interface, which agents can read and rewrite.
+  [How it works](#instructions-and-memory).
 - **Installable PWA with push notifications**, silent while you already have the
   conversation open.
 - **Dictation** biased with a lexicon read from the project itself plus the
@@ -66,6 +69,47 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   one in a project, follow its events, answer what it asks, steer or interrupt
   it, and take a webhook when it lands. Bearer tokens carry their own scopes and
   an optional list of allowed projects, separate from the browser session.
+
+## Instructions and memory
+
+Each CLI keeps its own context files: Claude Code reads `CLAUDE.md` and its auto
+memory under `~/.claude`, Codex reads `AGENTS.md`. Sillage gives both CLIs the same
+two things instead.
+
+|  | Instructions (`SILLAGE.md`) | Memory |
+| --- | --- | --- |
+| What it holds | Rules you set: conventions, preferences, things to avoid | What agents learned while working: decisions, pitfalls, facts |
+| Scope | One global part, one part per project | One per project, shared by all its worktrees |
+| Who writes | You, in the interface; agents when you ask them | Agents, on their own; you can fix or delete notes |
+| Claude Code | Appended to its system prompt | Its native auto memory, pointed at Sillage's folder (`autoMemoryDirectory`) |
+| Codex | Added to its developer instructions | The index is given at startup; it reads notes from the folder and writes through MCP tools |
+| Agent tools | `read_instructions` · `edit_instructions` · `write_instructions` | `read_memory` · `write_memory` · `delete_memory` |
+| Edited from | Settings › Instructions (global), the project page, the conversation header | The project page |
+
+**Where a project's instructions live** is chosen when the project is created, and
+can be changed later:
+
+- *In Sillage*: kept in Sillage and given to both CLIs. The repository's `CLAUDE.md`
+  and `AGENTS.md` are hidden from agents (`claudeMdExcludes` for Claude Code,
+  `project_doc_max_bytes = 0` for Codex) so nothing arrives twice. The files
+  themselves are not touched.
+- *In the repository*: the project part is the workspace's `AGENTS.md` (or
+  `CLAUDE.md`), which both CLIs read on their own; the interface edits that file.
+  Only the global part comes from Sillage.
+
+By default, a project whose folder already has one of those files stays on the
+repository; existing projects keep working as before. Their instructions panel offers
+to move the files' content into Sillage in one step.
+
+**Memory** is the format Claude Code already uses: a `MEMORY.md` index and one note per
+file, under `<data>/memory/projects/<id>`. On first launch, the memory Claude kept for
+the project root is copied there; the original stays in place.
+
+**When changes apply.** Both are read when a session starts. A session already
+running keeps what it received: Claude Code records its system prompt on the first
+turn and replays it on resume, until the next compaction.
+
+Details and the probes behind them: [docs/sillage-md.md](docs/sillage-md.md).
 
 ## Install
 
