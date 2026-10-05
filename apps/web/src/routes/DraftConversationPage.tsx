@@ -318,7 +318,7 @@ export function DraftConversationPage() {
           {/* Radios natifs : choix compact, avec navigation au clavier par flèches. */}
           <fieldset className="flex flex-col gap-1.5">
             <legend className="mb-1.5 text-xs font-medium text-ink-soft">{t('draft.cli.legend')}</legend>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {AGENTS.map((option) => {
                 const selected = option.value === agent
                 const entry = availability?.agents.find((a) => a.agent === option.value)

@@ -25,3 +25,7 @@ enabled = true
 [agents.codex]
 binary = "codex"
 enabled = true
+
+[agents.opencode]
+binary = "opencode"
+enabled = true

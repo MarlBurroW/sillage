@@ -82,6 +82,9 @@ const configSchema = z.object({
       codex: z
         .object({ binary: z.string().default('codex'), enabled: z.boolean().default(true) })
         .default({}),
+      opencode: z
+        .object({ binary: z.string().default('opencode'), enabled: z.boolean().default(true) })
+        .default({}),
     })
     .default({}),
 })

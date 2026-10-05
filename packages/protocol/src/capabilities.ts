@@ -49,4 +49,14 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     stopBackgroundTask: false,
     draftCommands: false,
   },
+  // `steer` vrai, sondé sur opencode 1.18.25 : un `prompt_async` envoyé pendant un tour
+  // est pris à l'étape suivante du même tour, sans passage par `idle`. Le mode plan
+  // d'opencode est un agent qu'on choisit, il ne soumet rien à validation.
+  opencode: {
+    steer: true,
+    planReview: false,
+    cliSessions: false,
+    stopBackgroundTask: false,
+    draftCommands: true,
+  },
 }
