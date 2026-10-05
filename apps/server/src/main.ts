@@ -12,6 +12,7 @@ import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
 import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
+import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
 import { loadOrCreateKey } from './secrets/cipher.js'
@@ -47,6 +48,8 @@ async function main(): Promise<void> {
   // Construit avant l'application, dont les routes remettent ou écartent un message
   // retenu, mais démarré après elle, faute de logger avant.
   const relay = new SessionRelay(db, sessions, log)
+  // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry)
 
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
   const orphans = await attachments.purgeOrphans()
@@ -84,6 +87,7 @@ async function main(): Promise<void> {
   // Après `recoverInterrupted` : les statuts lus pour choisir entre inflexion et relance
   // doivent décrire les runners de ce process, pas ceux du précédent.
   relay.start(app.log)
+  agentRequests.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
 
@@ -95,6 +99,7 @@ async function main(): Promise<void> {
     webhooks.stop()
     scheduler.stop()
     relay.stop()
+    agentRequests.stop()
     await sessions.stopAll()
     terminals.shutdown()
     await app.close()

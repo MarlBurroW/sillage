@@ -932,6 +932,7 @@ export const fr: Catalog = {
   'message.copy.peer': 'Copier le message',
   'message.peer.broadcast': 'Annonce de la session',
   'message.peer.done': 'Fin de travail de la session',
+  'message.peer.launch': 'Mission confiée par la session',
   'sessionMessage.held.from': 'Message retenu de la session',
   'sessionMessage.held.loop': "Pas remis : les deux sessions échangent depuis trop longtemps sans personne pour regarder.",
   'sessionMessage.held.rate': "Pas remis : d'autres sessions ont déjà relancé celle-ci trop souvent dans l'heure.",

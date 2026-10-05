@@ -944,6 +944,7 @@ export const en = {
   'message.copy.peer': 'Copy message',
   'message.peer.broadcast': 'Announcement from session',
   'message.peer.done': 'Session finished',
+  'message.peer.launch': 'Task handed over by session',
   'sessionMessage.held.from': 'Held message from session',
   'sessionMessage.held.loop': 'Not delivered: the two sessions have been going back and forth for too long without anyone watching.',
   'sessionMessage.held.rate': 'Not delivered: other sessions have already restarted this one too often this hour.',

@@ -292,6 +292,47 @@ export const sessionWatches = sqliteTable(
   (t) => [index('idx_session_watches_open').on(t.firedAt)],
 )
 
+/**
+ * Une demande qu'une session adresse au daemon : lancer une autre session, créer une
+ * carte, lire le catalogue des modèles.
+ *
+ * Même boîte aux lettres que `session_messages`, mais avec retour : le serveur MCP
+ * dépose la demande puis attend que le daemon y écrive son résultat, parce que
+ * l'agent a besoin de la réponse pour continuer (l'identifiant de la session lancée,
+ * ou la liste des modèles qui existent quand il en a nommé un faux). Seul le daemon
+ * tient le catalogue des CLI, les runners et la création de worktrees.
+ *
+ * Gardée après traitement : c'est elle qui dit qui a lancé quoi, et donc la profondeur
+ * d'une chaîne de lancements et leur nombre dans l'heure.
+ */
+export const agentRequests = sqliteTable(
+  'agent_requests',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Conversation qui demande. Sans clé étrangère, comme les messages entre sessions. */
+    conversationId: text('conversation_id').notNull(),
+    kind: text('kind', { enum: ['start_session', 'create_card', 'list_models'] }).notNull(),
+    /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
+    payload: text('payload').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    /** Posé par le daemon quand la demande est traitée, réussie ou non. */
+    settledAt: timestamp('settled_at'),
+    /** Texte rendu à l'agent : le compte rendu, ou ce qui l'a empêché. */
+    result: text('result'),
+    isError: integer('is_error', { mode: 'boolean' }).notNull().default(false),
+    /** Session née de la demande, pour remonter une chaîne de lancements. */
+    launchedConversationId: text('launched_conversation_id'),
+  },
+  (t) => [
+    index('idx_agent_requests_pending').on(t.settledAt),
+    index('idx_agent_requests_from').on(t.conversationId, t.kind, t.createdAt),
+    index('idx_agent_requests_launched').on(t.launchedConversationId),
+  ],
+)
+
 export const conversations = sqliteTable(
   'conversations',
   {
@@ -874,6 +915,7 @@ export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect
 export type CardNoteRow = typeof cardNotes.$inferSelect
 export type SessionMessageRow = typeof sessionMessages.$inferSelect
+export type AgentRequestRow = typeof agentRequests.$inferSelect
 export type SessionWatchRow = typeof sessionWatches.$inferSelect
 export type PermissionRequestRow = typeof permissionRequests.$inferSelect
 export type McpServerRow = typeof mcpServers.$inferSelect

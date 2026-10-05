@@ -14,6 +14,7 @@ import {
   worktrees,
   writeTransaction,
   type CardRow,
+  type Db,
   type ProjectRow,
 } from '@sillage/db'
 import {
@@ -23,6 +24,7 @@ import {
   parseCardReferences,
   reorderCardsBodySchema,
   updateCardBodySchema,
+  type CardColumn,
   type CardConversationDto,
   type CardDto,
   type CardLinkDto,
@@ -210,38 +212,6 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     return dto
   }
 
-  /**
-   * Réécrit les backlinks d'une carte d'après sa description.
-   *
-   * Un `#12` qui ne désigne aucune carte du projet n'est pas une erreur : il reste dans
-   * le texte et ne produit simplement pas de lien. Refuser l'enregistrement pour une
-   * référence morte ferait d'une faute de frappe un blocage, alors que la description
-   * est de la prose avant d'être une structure.
-   */
-  const syncReferences = (card: CardRow, description: string): void => {
-    const numbers = parseCardReferences(description)
-    const targets =
-      numbers.length === 0
-        ? []
-        : ctx.db
-            .select({ id: cards.id })
-            .from(cards)
-            .where(and(eq(cards.projectId, card.projectId), inArray(cards.number, numbers)))
-            .all()
-            .map((row) => row.id)
-            // Une carte qui se cite elle-même n'apprend rien à personne.
-            .filter((id) => id !== card.id)
-
-    writeTransaction(ctx.db, (tx) => {
-      tx.delete(cardRefs).where(eq(cardRefs.sourceId, card.id)).run()
-      if (targets.length > 0) {
-        tx.insert(cardRefs)
-          .values(targets.map((targetId) => ({ sourceId: card.id, targetId })))
-          .run()
-      }
-    })
-  }
-
   app.get('/api/projects/:id/cards', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -298,40 +268,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const body = createCardBodySchema.parse(request.body)
     loadProject(id, user.id)
 
-    const now = Date.now()
-    // Numéro et position se calculent dans la transaction qui insère : deux créations
-    // simultanées y liraient sinon le même maximum et se disputeraient l'unicité.
-    const row = writeTransaction(ctx.db, (tx) => {
-      const [highest] = tx
-        .select({ number: max(cards.number) })
-        .from(cards)
-        .where(eq(cards.projectId, id))
-        .all()
-      const [last] = tx
-        .select({ position: max(cards.position) })
-        .from(cards)
-        .where(and(eq(cards.projectId, id), eq(cards.column, body.column)))
-        .all()
-
-      const created = {
-        id: randomUUID(),
-        projectId: id,
-        number: (highest?.number ?? 0) + 1,
-        title: body.title,
-        description: body.description,
-        column: body.column,
-        // En fin de colonne : une idée neuve n'est pas prioritaire par le seul fait
-        // d'être neuve, et s'insérer en tête déclasserait ce qui a déjà été trié.
-        position: (last?.position ?? 0) + 1,
-        createdBy: user.id,
-        createdAt: now,
-        updatedAt: now,
-      }
-      tx.insert(cards).values(created).run()
-      return created
-    })
-
-    syncReferences(row, row.description)
+    const row = createCard(ctx.db, id, user.id, body)
     return reply.status(201).send(readCard(row.id, id))
   })
 
@@ -360,7 +297,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       patch.updatedAt = Date.now()
       ctx.db.update(cards).set(patch).where(eq(cards.id, id)).run()
     }
-    if (body.description !== undefined) syncReferences(card, body.description)
+    if (body.description !== undefined) syncCardReferences(ctx.db, card, body.description)
 
     return readCard(id, card.projectId)
   })
@@ -589,6 +526,95 @@ export function advanceCardOnLaunch(ctx: AppContext, cardId: string): void {
     .set({ column: 'in_progress', updatedAt: Date.now() })
     .where(and(eq(cards.id, cardId), eq(cards.column, 'todo')))
     .run()
+}
+
+/**
+ * Crée une carte en fin de colonne, avec ses backlinks.
+ *
+ * Partagée entre la route du board et les demandes des agents (`create_card`) : le
+ * numéro et la position se calculent de la même façon, et deux copies auraient divergé.
+ */
+export function createCard(
+  db: Db,
+  projectId: string,
+  userId: string,
+  body: { title: string; description: string; column: CardColumn },
+): CardRow {
+  const row = insertCard(db, projectId, userId, body)
+  syncCardReferences(db, row, row.description)
+  return row
+}
+
+function insertCard(
+  db: Db,
+  projectId: string,
+  userId: string,
+  body: { title: string; description: string; column: CardColumn },
+): CardRow {
+  const now = Date.now()
+  // Numéro et position se calculent dans la transaction qui insère : deux créations
+  // simultanées y liraient sinon le même maximum et se disputeraient l'unicité.
+  return writeTransaction(db, (tx) => {
+    const [highest] = tx
+      .select({ number: max(cards.number) })
+      .from(cards)
+      .where(eq(cards.projectId, projectId))
+      .all()
+    const [last] = tx
+      .select({ position: max(cards.position) })
+      .from(cards)
+      .where(and(eq(cards.projectId, projectId), eq(cards.column, body.column)))
+      .all()
+
+    const created = {
+      id: randomUUID(),
+      projectId,
+      number: (highest?.number ?? 0) + 1,
+      title: body.title,
+      description: body.description,
+      column: body.column,
+      // En fin de colonne : une idée neuve n'est pas prioritaire par le seul fait
+      // d'être neuve, et s'insérer en tête déclasserait ce qui a déjà été trié.
+      position: (last?.position ?? 0) + 1,
+      createdBy: userId,
+      createdAt: now,
+      updatedAt: now,
+    }
+    tx.insert(cards).values(created).run()
+    return created
+  })
+}
+
+/**
+ * Réécrit les backlinks d'une carte d'après sa description.
+ *
+ * Un `#12` qui ne désigne aucune carte du projet n'est pas une erreur : il reste dans
+ * le texte et ne produit simplement pas de lien. Refuser l'enregistrement pour une
+ * référence morte ferait d'une faute de frappe un blocage, alors que la description
+ * est de la prose avant d'être une structure.
+ */
+function syncCardReferences(db: Db, card: CardRow, description: string): void {
+  const numbers = parseCardReferences(description)
+  const targets =
+    numbers.length === 0
+      ? []
+      : db
+          .select({ id: cards.id })
+          .from(cards)
+          .where(and(eq(cards.projectId, card.projectId), inArray(cards.number, numbers)))
+          .all()
+          .map((row) => row.id)
+          // Une carte qui se cite elle-même n'apprend rien à personne.
+          .filter((id) => id !== card.id)
+
+  writeTransaction(db, (tx) => {
+    tx.delete(cardRefs).where(eq(cardRefs.sourceId, card.id)).run()
+    if (targets.length > 0) {
+      tx.insert(cardRefs)
+        .values(targets.map((targetId) => ({ sourceId: card.id, targetId })))
+        .run()
+    }
+  })
 }
 
 /** Vérifie qu'une carte existe dans ce projet, avant de lui rattacher une conversation. */

@@ -6,7 +6,8 @@
  * mémoire et cet état, cadrés au projet courant.
  *
  * Les outils qui écrivent le font tous dans un flux ajouté : notes de carte, messages
- * entre sessions, surveillances. Seule exception, l'image du projet, qu'un agent pose ou
+ * entre sessions, surveillances, cartes neuves et sessions lancées, ces deux dernières
+ * par le daemon. Seule exception, l'image du projet, qu'un agent pose ou
  * remplace : elle n'est la consigne ni le jugement de personne, et l'utilisateur la
  * reprend d'un clic. La frontière est là et pas ailleurs : un agent peut
  * raconter ce qu'il a fait ou prévenir une autre session, il ne peut ni déplacer une
@@ -108,6 +109,19 @@ const CARD_EXCERPT_CHARS = 160
  * se met dans un fichier, ou se lit par read_conversation.
  */
 const MAX_PEER_MESSAGE_CHARS = 4000
+
+/**
+ * Combien de temps un outil attend que le daemon ait traité sa demande.
+ *
+ * Lancer une session démarre un CLI, et parfois un worktree avant lui : quelques
+ * secondes d'ordinaire, davantage sur une machine chargée. Passé ce délai, l'agent
+ * apprend que la demande court toujours plutôt que de rester suspendu.
+ */
+const REQUEST_WAIT_MS = { start_session: 90000, create_card: 15000, list_models: 30000 }
+const REQUEST_POLL_MS = 200
+
+/** Doit rester d'accord avec `MAX_LAUNCH_PROMPT_CHARS` de `agent-requests.ts`. */
+const MAX_LAUNCH_PROMPT_CHARS = 20000
 
 /** Messages rendus par read_session_messages, les plus récents. */
 const PEER_HISTORY_LIMIT = 20
@@ -290,6 +304,84 @@ const TOOLS = [
         },
       },
       required: ['body'],
+    },
+  },
+  {
+    name: 'create_card',
+    description:
+      "Ouvre une carte dans la colonne « à faire » du board de ce projet. Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas : un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Tu ne peux ni déplacer une carte ni réécrire une description existante : la colonne et la consigne appartiennent aux personnes.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Titre court, à la manière d\'un ticket : ce qu\'il faut faire, pas ce qu\'on a vu.',
+        },
+        description: {
+          type: 'string',
+          description:
+            "Description en markdown, compréhensible sans ce fil : symptôme, fichiers et lignes en cause, comment reproduire, piste de correction si tu en as une. `#12` cite une autre carte.",
+        },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'start_session',
+    description:
+      "Lance une nouvelle conversation Sillage dans ce projet, que l'utilisateur suit et reprend comme les autres. Sert quand l'utilisateur te demande de confier un travail à une autre session (« lance ça dans une autre session », « lance une session Codex en effort max pour… »), ou de traiter une carte du board à part. Pas pour ce que tu découvres seul sans qu'on te l'ait demandé : crée plutôt une carte avec create_card. Pas non plus pour un travail qui sert ta propre tâche : tes sous-agents sont faits pour ça. La nouvelle session ne connaît rien de ce fil : `prompt` doit se suffire. Elle démarre avec les réglages par défaut du projet pour ce CLI (permissions comprises), modèle et effort en plus si tu les donnes. Rend son identifiant : enchaîne avec notify_when_done si tu dois reprendre quand elle aura fini.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: `La mission, en markdown, ${MAX_LAUNCH_PROMPT_CHARS} caractères au plus. Elle doit se comprendre seule : contexte, fichiers en cause, ce qui est attendu, comment vérifier, et ce qu'il ne faut pas toucher. Ne cite pas « ce dont on parlait » : la session n'a pas ce fil.`,
+        },
+        title: {
+          type: 'string',
+          description: 'Titre de la conversation dans Sillage. Omettre pour le laisser venir de la mission.',
+        },
+        agent: {
+          type: 'string',
+          enum: ['claude', 'codex'],
+          description: 'CLI de la session. Omettre pour le même que le tien.',
+        },
+        model: {
+          type: 'string',
+          description:
+            "Modèle, par sa valeur ou son nom affiché tel que l'utilisateur le dit (« opus », « Astra »). Omettre pour le défaut du projet. list_models donne ce qui existe.",
+        },
+        effort: {
+          type: 'string',
+          description:
+            "Niveau d'effort (`low`, `medium`, `high`…, selon le modèle). `max` désigne le niveau de ce nom, ou à défaut le plus haut que le modèle accepte. Omettre pour le défaut du projet.",
+        },
+        worktree: {
+          type: 'string',
+          description:
+            "Où elle travaille. Omettre pour le même arbre que toi. `@root` pour la racine du projet. Sinon le nom d'un worktree existant, ou d'une branche à créer en worktree depuis HEAD (par exemple `fix/titre-tronque`) : à préférer pour un travail sans rapport avec le tien, pour que vos modifications ne se mêlent pas.",
+        },
+        card: {
+          type: 'integer',
+          description: 'Numéro de la carte que la session traite. Elle y est rattachée et passe « en cours » si elle était « à faire ».',
+        },
+      },
+      required: ['prompt'],
+    },
+  },
+  {
+    name: 'list_models',
+    description:
+      "Liste les modèles que chaque CLI propose, avec leurs niveaux d'effort, et les réglages par défaut d'une session lancée dans ce projet. Appelle cet outil quand l'utilisateur nomme un modèle pour start_session et que tu n'es pas sûr de sa valeur.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: {
+          type: 'string',
+          enum: ['claude', 'codex'],
+          description: 'Ne rendre que ce CLI. Omettre pour les deux.',
+        },
+      },
     },
   },
   {
@@ -1310,7 +1402,39 @@ function renderThread(found, before) {
 
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
 
-function callTool(name, args) {
+/**
+ * Dépose une demande pour le daemon et attend qu'il y réponde.
+ *
+ * Le daemon balaie la table toutes les demi-secondes ; ce process relit la ligne
+ * jusqu'à la trouver traitée, sur sa connexion en lecture seule.
+ */
+async function requestDaemon(kind, payload) {
+  const id = randomUUID()
+  writeDb()
+    .prepare(
+      `INSERT INTO agent_requests (id, project_id, conversation_id, kind, payload, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, PROJECT_ID, CURRENT_CONVERSATION, kind, JSON.stringify(payload), Date.now())
+
+  const read = db.prepare('SELECT settled_at, result, is_error FROM agent_requests WHERE id = ?')
+  const deadline = Date.now() + REQUEST_WAIT_MS[kind]
+  while (Date.now() < deadline) {
+    await new Promise((done) => setTimeout(done, REQUEST_POLL_MS))
+    const row = read.get(id)
+    if (row?.settled_at) return { ...text(row.result ?? ''), ...(row.is_error ? { isError: true } : {}) }
+  }
+  return {
+    ...text(
+      kind === 'start_session'
+        ? "Sillage n'a pas encore fini de lancer la session (le CLI met du temps à démarrer, ou le service ne tourne pas). Ne relance pas la demande : vérifie avec list_sessions dans un moment."
+        : "Sillage n'a pas répondu à temps : le service ne tourne peut-être pas. Réessaie plus tard.",
+    ),
+    isError: true,
+  }
+}
+
+async function callTool(name, args) {
   if (name === 'search_history') {
     const query = typeof args?.query === 'string' ? args.query : ''
     if (!query.trim()) return { ...text('Le paramètre `query` est requis.'), isError: true }
@@ -1545,12 +1669,32 @@ function callTool(name, args) {
     return text(renderCount(countActiveSessions()))
   }
 
+  if (name === 'create_card' || name === 'start_session' || name === 'list_models') {
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
+    }
+    if (name === 'create_card' && !(typeof args?.title === 'string' && args.title.trim())) {
+      return { ...text('Le paramètre `title` est requis.'), isError: true }
+    }
+    if (name === 'start_session') {
+      const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : ''
+      if (!prompt) return { ...text('Le paramètre `prompt` est requis.'), isError: true }
+      if (prompt.length > MAX_LAUNCH_PROMPT_CHARS) {
+        return {
+          ...text(`Mission trop longue (${prompt.length} caractères, ${MAX_LAUNCH_PROMPT_CHARS} au plus). Mets le détail dans un fichier et cite-le.`),
+          isError: true,
+        }
+      }
+    }
+    return requestDaemon(name, args ?? {})
+  }
+
   return { ...text(`Outil inconnu : ${name}`), isError: true }
 }
 
 log(`prêt, projet=${PROJECT_ID}`)
 
-createInterface({ input: process.stdin }).on('line', (line) => {
+createInterface({ input: process.stdin }).on('line', async (line) => {
   if (!line.trim()) return
 
   let msg
@@ -1583,7 +1727,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (msg.method === 'tools/call') {
     let result
     try {
-      result = callTool(msg.params?.name, msg.params?.arguments ?? {})
+      result = await callTool(msg.params?.name, msg.params?.arguments ?? {})
     } catch (err) {
       // Rendu en résultat d'outil et non en erreur JSON-RPC : le modèle peut corriger
       // sa requête, là où une erreur de protocole ne lui apprend rien.
