@@ -28,6 +28,7 @@ import {
 } from '@sillage/protocol'
 import { failedStatuses } from '../mcp-registry.js'
 import { AsyncQueue } from '../async-queue.js'
+import { agentProcessEnv } from '../process-env.js'
 import { PendingInteractions } from '../interactions.js'
 import { describeOutgoingMessage } from '../outgoing.js'
 import { journalDeath } from '../session-close.js'
@@ -253,7 +254,7 @@ export class ClaudeRunner implements AgentRunner {
           ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: overview } }
           : {}),
         cwd: this.ctx.cwd,
-        env: { ...process.env, ...this.ctx.processEnv },
+        env: agentProcessEnv(this.ctx.processEnv),
         model: config.model,
         effort: config.effort,
         permissionMode: toPermissionMode(config.permissionMode),
