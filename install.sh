@@ -404,7 +404,9 @@ fi
 
 # Startup opens the database and replays migrations: give it a few seconds before
 # calling it a failure, or a slow machine reports a false negative.
-say "Checking that Sillage answers on port $PORT…"
+# Braces before a non-ASCII character: in a UTF-8 locale, macOS's bash 3.2 takes the "…"
+# for the end of the variable name, and stops on an unbound variable.
+say "Checking that Sillage answers on port ${PORT}…"
 HEALTHY="no"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   if curl -fs -m 2 -o /dev/null "http://127.0.0.1:$PORT/api/health"; then
