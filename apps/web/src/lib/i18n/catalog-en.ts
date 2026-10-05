@@ -1902,6 +1902,19 @@ export const en = {
   "memory.delete.confirm": "Delete note",
   "memory.delete.body": "The note leaves the project memory, along with its line in MEMORY.md. Later sessions will no longer see it.",
   "error.memory_file_invalid": "Invalid note name: a flat .md file, no folder.",
+  "help.howItWorks": "How does it work?",
+  "instructions.how.injected": "When a session starts, Claude and Codex receive the global instructions in their prompt, then the project's.",
+  "instructions.how.sillage": "Instructions in Sillage: they are kept here, and the repository's CLAUDE.md and AGENTS.md are ignored by agents so nothing arrives twice. Those files are neither changed nor deleted.",
+  "instructions.how.repo": "Instructions in the repository: the project part is the workspace's AGENTS.md (or CLAUDE.md), which the CLIs read on their own. Sillage only adds the global instructions.",
+  "instructions.how.agents": "Ask an agent to revise these instructions and it reads and rewrites them with Sillage's tools (read_instructions, edit_instructions, write_instructions). The last change, yours or a session's, is shown under the editor.",
+  "instructions.how.timing": "A change applies to sessions that start afterwards: an open session keeps the version it received.",
+  "instructions.how.vsMemory": "Instructions or memory? Instructions are the rules you set; memory is what agents learn while working.",
+  "memory.how.what": "Agents note here, on their own, what later sessions will need: a preference, a decision and its reason, a pitfall. An index, MEMORY.md, and one note per file.",
+  "memory.how.claude": "Claude uses it as its usual memory: Sillage points it to this folder instead of the one in ~/.claude. It loads the index at startup and opens notes when it needs them.",
+  "memory.how.codex": "Codex has no memory of this kind: Sillage gives it the index at startup, it reads notes from the folder and writes with the write_memory and delete_memory tools, asking you to approve if its approval policy requires it.",
+  "memory.how.scope": "One memory per project, shared by Claude, Codex and every worktree of the project: what one learns, the other knows.",
+  "memory.how.import": "On first launch, the memory Claude already kept for the project root is copied here. The original stays in place.",
+  "memory.how.edit": "Fix or delete a note that has gone wrong: otherwise it will steer later sessions with the authority of a fact.",
 } as const
 
 /**

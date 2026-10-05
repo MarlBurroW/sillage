@@ -9,6 +9,7 @@ import {
   useWriteMemoryFile,
 } from '../../lib/memory'
 import { Card, CardBody, CardHeader, ConfirmDialog, IconButton, cx } from '../ui'
+import { HowItWorks, MEMORY_HELP } from './HowItWorks'
 import { MarkdownEditor } from './Instructions'
 
 /**
@@ -34,6 +35,7 @@ export function ProjectMemory({ projectId }: { projectId: string }) {
         icon={<Brain size={16} />}
       />
       <CardBody className="flex flex-col gap-3">
+        <HowItWorks items={MEMORY_HELP} />
         {data ? (
           <>
             <p className="text-xs text-ink-faint">

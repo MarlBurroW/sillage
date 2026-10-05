@@ -41,6 +41,7 @@
     <nav aria-label="Sections">
       <a href="#projects">Projects</a>
       <a href="#coordination">Coordination</a>
+      <a href="#context">Instructions &amp; memory</a>
       <a href="#tour">Product tour</a>
       <a href="#install">Install</a>
       <a class="repo" href="https://github.com/MarlBurroW/sillage">GitHub</a>
@@ -86,6 +87,7 @@
       <a href="#projects"><span>02 / Projects</span>Keep track of the work ↗</a>
       <a href="#coordination"><span>03 / Session awareness</span>Let agents coordinate ↗</a>
       <a href="#agents"><span>04 / Multi-CLI</span>Choose the right harness ↗</a>
+      <a href="#context"><span>05 / Shared context</span>One set of instructions, one memory ↗</a>
     </nav>
 
     <section class="editorial" id="anywhere">
@@ -143,6 +145,21 @@
         <p class="section-lede">Choose Claude Code or Codex for each conversation. Keep the project around it.</p>
         <div class="prose-columns"><p>Sillage drives the native CLIs: their tools, permission requests and agent behaviour. Each adapter translates its events into a common format for the interface, history and search.</p><p>The board and coordination tools belong to the project, so a Codex session can look up a decision made in a Claude Code conversation. Additional CLIs need their own adapter; Claude Code and Codex are supported today.</p></div>
         <div class="agent-links"><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/claude">Claude Code adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/codex">Codex adapter ↗</a></div>
+      </div>
+    </section>
+
+    <section class="editorial coordination" id="context">
+      <div class="section-label">05 / Shared context</div>
+      <div class="section-body">
+        <h2>One set of instructions.<br>One memory.</h2>
+        <p class="section-lede">Claude Code reads <code>CLAUDE.md</code> and keeps its memory under <code>~/.claude</code>. Codex reads <code>AGENTS.md</code>. Sillage gives both the same context.</p>
+        <div class="prose-columns"><p><strong>Instructions</strong> are the rules you set, in a <code>SILLAGE.md</code> with a global part and one per project. They are added to each CLI's prompt when a session starts. A project can keep them in Sillage, and the repository's <code>CLAUDE.md</code> and <code>AGENTS.md</code> are then hidden from agents so nothing arrives twice, or keep them in its repository, edited from the same panel.</p><p><strong>Memory</strong> is what agents learn while working: one per project, in the format Claude Code already uses. Claude writes it as its native memory, pointed at Sillage's folder; Codex gets the index at startup and writes through Sillage's tools. What one CLI learns, the other knows, and you can read and correct every note.</p></div>
+        <dl class="tool-reference">
+          <div><dt>When you change the rules</dt><dd>Ask an agent to revise the instructions; it edits them like a file.<code>read_instructions · edit_instructions · write_instructions</code></dd></div>
+          <div><dt>When something is worth remembering</dt><dd>Codex notes it in the project memory; Claude does it natively in the same folder.<code>read_memory · write_memory · delete_memory</code></dd></div>
+        </dl>
+        <p class="technical-note">Both are read when a session starts: a session already running keeps the version it received. Existing projects keep their repository files until you move them into Sillage.</p>
+        <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/sillage-md.md">How it works in detail ↗</a>
       </div>
     </section>
 
