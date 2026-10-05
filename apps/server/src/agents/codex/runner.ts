@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { agentProcessEnv } from '../process-env.js'
 import {
   CLI_DEFAULT,
   parseElicitationFields,
@@ -267,7 +268,7 @@ export class CodexRunner implements AgentRunner {
     this.client = new CodexAppServerClient({
       binary: this.ctx.binary,
       cwd: this.ctx.cwd,
-      env: { ...process.env, ...this.ctx.processEnv },
+      env: agentProcessEnv(this.ctx.processEnv),
       onNotification: (method, params) => {
         try { this.translate(method, params) }
         catch (error) {
