@@ -125,10 +125,11 @@ updates happen from the web UI (Settings > About) or by re-running the script.
 
 Logs go to the journal: `journalctl --user -u sillage -f`.
 
-The service uses the system's Node when it is 22 or newer. Otherwise the
+The service uses the system's Node when it is 22.14 or newer. Otherwise the
 installer downloads the current Node LTS under `~/.local/share/sillage/node`, for
-Sillage alone, and refreshes it on each run. Any Node from 22 up works: every
-native module ships as an N-API prebuild, which does not depend on the Node ABI.
+Sillage alone, and refreshes it on each run. Any Node from 22.14 up works: every
+native module ships as an N-API prebuild, which does not depend on the Node ABI, and
+22.14 brings N-API 10, which better-sqlite3 needs.
 The installer checks they load and rebuilds them if they do not, which then needs
 a compiler (`build-essential` and `python3` on Debian/Ubuntu).
 
@@ -195,7 +196,7 @@ Ubuntu 26.04 and 24.04.
 
 ### From source (development)
 
-Requires Node 22+ and pnpm 9, plus at least one agent CLI, from the host or
+Requires Node 22.14+ and pnpm 9, plus at least one agent CLI, from the host or
 installed from the UI:
 
 ```bash

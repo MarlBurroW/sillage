@@ -149,12 +149,14 @@ fi
 
 # --- Node.js -----------------------------------------------------------------
 
-# usable_node NODE — Node 22+, built for this machine. On a Mac migrated from Intel, an
-# x64 Node left in /usr/local runs under Rosetta and cannot load arm64 native modules.
+# usable_node NODE — Node 22+ with N-API 10, built for this machine. better-sqlite3 needs
+# N-API 10, which came with Node 22.14: an older 22 loads it, then crashes on the first
+# query. On a Mac migrated from Intel, an x64 Node left in /usr/local runs under Rosetta
+# and cannot load arm64 native modules.
 usable_node() {
-  local found
-  found="$("$1" -p 'process.versions.node.split(".")[0] + " " + process.arch' 2>/dev/null)" || return 1
-  [ "${found#* }" = "$ARCH" ] && [ "${found%% *}" -ge 22 ]
+  "$1" -e 'const v = process.versions
+    process.exit(v.node.split(".")[0] >= 22 && v.napi >= 10 && process.arch === process.argv[1] ? 0 : 1)' \
+    "$ARCH" 2>/dev/null
 }
 
 # The latest release of NODE_LINE, unpacked under NODE_DIR/<version> behind a `current`
@@ -189,9 +191,12 @@ NODE_BIN=""
 if SYSTEM_NODE="$(host_command node)" && usable_node "$SYSTEM_NODE"; then
   NODE_BIN="$SYSTEM_NODE"
 else
+  if [ -n "$SYSTEM_NODE" ]; then
+    say "note: $SYSTEM_NODE ($("$SYSTEM_NODE" -v 2>/dev/null || echo '?')) is older than 22.14 or not built for $ARCH. Sillage gets its own Node."
+  fi
   if ! install_private_node; then
     [ -x "$NODE_DIR/current/bin/node" ] \
-      || fail "Node.js >= 22 is required and could not be downloaded from nodejs.org.
+      || fail "Node.js >= 22.14 is required and could not be downloaded from nodejs.org.
   Install it yourself (https://nodejs.org, or fnm/nvm) and run this script again."
     say "warning: could not check nodejs.org for a newer Node.js; keeping $("$NODE_DIR/current/bin/node" -v)."
   fi
@@ -271,9 +276,11 @@ fi
 # shipped binaries should load anywhere. Should: a truncated download or a platform the
 # prebuild does not cover still yields a module that will not load, and the failure mode
 # is a service that starts, dies, and gets restarted forever. Catching it here costs a
-# second; discovering it afterwards costs a debugging session.
+# second; discovering it afterwards costs a debugging session. A query, not just a
+# require: a Node short of the N-API version the module needs loads it, then crashes on
+# the first call.
 sqlite_loads() {
-  (cd "$APP_DIR/current" && node -e 'require("better-sqlite3")') 2>&1
+  (cd "$APP_DIR/current" && node -e 'require("better-sqlite3")(":memory:").prepare("select 1").get()') 2>&1
 }
 
 if ! ERR="$(sqlite_loads)"; then

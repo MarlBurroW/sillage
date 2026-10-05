@@ -65,7 +65,7 @@ writeFileSync(
       // Reprend l'exigence de la racine dans l'arbre distribue : un `npm rebuild` ou un
       // `npm install` lance sous un Node trop vieux doit le dire, plutot que de laisser
       // decouvrir l'incompatibilite au premier crash.
-      engines: { node: '>=22' },
+      engines: { node: '>=22.14' },
       dependencies,
     },
     null,
