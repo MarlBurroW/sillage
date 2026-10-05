@@ -57,3 +57,32 @@ jusqu'à sa prochaine compaction. Le mode, lui, est lu au lancement du runner.
 La recette avec de vrais CLI a tourné sur un serveur jetable (`/tmp/smd-e2e`, port 7402) :
 9 vérifications sur 9, injection globale et projet, masque en mode `sillage`, mode
 `repo` intact, consigne retenue par Claude reçue par la session Codex suivante.
+
+# Mémoire du projet
+
+À côté des consignes, qui sont des règles données aux agents, la mémoire est ce qu'ils
+retiennent d'eux-mêmes : un index `MEMORY.md` et une note par fichier, au format de la
+mémoire automatique de Claude Code. Un dossier par projet, `<data>/memory/projects/<id>`,
+partagé par les deux CLI et par tous les worktrees du projet.
+
+- **Claude** reçoit ce dossier en `autoMemoryDirectory` (flag settings) et s'en sert
+  comme de sa mémoire native : il charge l'index au démarrage et écrit ses notes sans
+  demander de permission, même en mode par défaut. Rien n'est plus écrit dans
+  `~/.claude/projects/<dossier>/memory`.
+- **Codex** n'a pas d'équivalent (sa fonction `memories` extrait des souvenirs des fils
+  passés, en arrière-plan). Il reçoit l'index et le chemin du dossier dans ses
+  instructions développeur, lit les notes par `cat`, et écrit par les outils MCP
+  `read_memory`, `write_memory` et `delete_memory`, son bac à sable ne pouvant écrire hors
+  du workspace. `write_memory` ajoute seul la ligne d'index d'une note nouvelle.
+- **Interface** : une carte « Mémoire » sur la page du projet liste les notes, les ouvre
+  en édition et les supprime avec leur ligne d'index.
+
+Au premier lancement, la mémoire que Claude tenait pour la racine du workspace est
+copiée dans le dossier encore vide, une seule fois (trace `.imported-from.json`).
+L'original reste en place. Celle des worktrees, que Claude rangeait par dossier, n'est
+pas reprise.
+
+Sondé le 2026-10-05 sur Claude Code 2.1.286 : `autoMemoryDirectory` redirige lecture et
+écriture, et rien n'est écrit dans le dossier par défaut. Recette avec de vrais CLI :
+8 vérifications sur 8, import, écriture par Claude lue par Codex, écriture par Codex
+(`write_memory`) lue par Claude.

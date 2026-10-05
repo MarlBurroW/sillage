@@ -104,6 +104,8 @@ export interface Paths {
   logs: string
   /** Bibliothèque de skills, voir `skill-library/layout.ts`. */
   skillLibrary: string
+  /** Mémoire des agents, un dossier par projet, voir `memory/store.ts`. */
+  memory: string
   /**
    * Clones des sources de skills, dans le cache et non dans les données : ils se
    * refont d'un rafraîchissement, et la sauvegarde n'a pas à les transporter.
@@ -144,6 +146,7 @@ function resolvePaths(): Paths {
     worktrees: join(data, 'worktrees'),
     logs: join(data, 'logs'),
     skillLibrary: join(data, 'skill-library'),
+    memory: join(data, 'memory'),
     // Propre à chaque répertoire de données : deux instances sur une machine (un serveur
     // de test à côté du daemon) ont les mêmes identifiants de sources préconfigurées, et
     // ne doivent pas rafraîchir le même clone en même temps.

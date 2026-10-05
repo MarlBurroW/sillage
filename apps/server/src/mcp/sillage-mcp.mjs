@@ -34,14 +34,16 @@
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SILLAGE_MCP_DB
 const PROJECT_ID = process.env.SILLAGE_MCP_PROJECT
 /** Exclue des résultats : sans ça l'agent se relit lui-même et tourne en rond. */
 const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
+/** Dossier de mémoire du projet, partagé avec la mémoire automatique de Claude. */
+const MEMORY_DIR = process.env.SILLAGE_MCP_MEMORY ?? ''
 
 /** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
 const MAX_THREAD_CHARS = 20000
@@ -159,6 +161,14 @@ function sniffProjectImage(buffer) {
 
 /** Plafond d'une partie de SILLAGE.md, d'accord avec `MAX_INSTRUCTIONS_CHARS` du protocole. */
 const MAX_INSTRUCTIONS_CHARS = 40000
+
+/**
+ * Mémoire du projet. Doivent rester d'accord avec `memoryFileSchema`, `MEMORY_INDEX_FILE`
+ * et `MAX_MEMORY_FILE_CHARS` du protocole, et avec `apps/server/src/memory/store.ts`.
+ */
+const MEMORY_INDEX = 'MEMORY.md'
+const MEMORY_FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.md$/
+const MAX_MEMORY_FILE_CHARS = 100000
 
 /** Doit rester d'accord avec `REPO_INSTRUCTION_FILES` du protocole. */
 const REPO_INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md']
@@ -536,6 +546,37 @@ const TOOLS = [
       },
       required: ['content'],
     },
+  },
+  {
+    name: 'read_memory',
+    description:
+      "Lit la mémoire de ce projet, les notes que les sessions précédentes, Claude comme Codex, ont prises : sans `file`, l'index `MEMORY.md` et la liste des notes ; avec `file`, la note entière. Une note peut avoir vieilli : vérifie-la avant de t'appuyer dessus.",
+    inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Note à lire. Omettre pour l\'index.' } } },
+  },
+  {
+    name: 'write_memory',
+    description:
+      "Écrit une note dans la mémoire de ce projet, comme on écrit un fichier : le contenu remplace la note s'il y en a une. Sert à retenir ce qui servira aux sessions suivantes et que le dépôt ne dit pas : une préférence de l'utilisateur, une décision et sa raison, un piège rencontré, une ressource externe. Une note commence par un en-tête `---` avec `name`, `description` (une ligne, sert à juger de sa pertinence) et `type` (`user`, `feedback`, `project` ou `reference`), puis le fait. L'index `MEMORY.md` gagne seul une ligne pour une note nouvelle ; il s'écrit aussi directement. Mets à jour une note existante plutôt que d'en créer une seconde sur le même sujet. Une règle que l'utilisateur fixe pour tous ses agents va plutôt dans SILLAGE.md.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          description: "Nom du fichier, à plat et en `.md` : `MEMORY.md` pour l'index, sinon un nom court en kebab-case (`port-du-serveur-de-dev.md`).",
+        },
+        content: { type: 'string', description: 'Contenu entier de la note, en markdown.' },
+      },
+      required: ['file', 'content'],
+    },
+  },
+  {
+    name: 'delete_memory',
+    description:
+      "Retire une note de la mémoire de ce projet, et sa ligne de l'index. Pour une note devenue fausse ou sans objet.",
+    inputSchema: { type: 'object', properties: { file: {
+          type: 'string',
+          description: "Nom du fichier, à plat et en `.md` : `MEMORY.md` pour l'index, sinon un nom court en kebab-case (`port-du-serveur-de-dev.md`).",
+        }, }, required: ['file'] },
   },
   {
     name: 'count_active_sessions',
@@ -1299,6 +1340,49 @@ function instructionsTarget(args, writing) {
 
 const scopeLabel = (scope) => (scope === 'global' ? 'partie globale' : 'partie de ce projet')
 
+/** Les notes de la mémoire, index d'abord. */
+function memoryFiles() {
+  let names = []
+  try {
+    names = readdirSync(MEMORY_DIR)
+  } catch {
+    return []
+  }
+  return names
+    .filter((name) => MEMORY_FILE_PATTERN.test(name))
+    .sort((a, b) => (a === MEMORY_INDEX ? -1 : b === MEMORY_INDEX ? 1 : a.localeCompare(b)))
+}
+
+function readMemoryFile(file) {
+  try {
+    return readFileSync(join(MEMORY_DIR, file), 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/** Ce que l'en-tête d'une note dit d'elle, pour sa ligne d'index. */
+function frontmatterField(content, field) {
+  const head = /^---\n([\s\S]*?)\n---/.exec(content)?.[1] ?? ''
+  const line = head.split('\n').find((candidate) => candidate.startsWith(`${field}:`))
+  return line ? line.slice(field.length + 1).trim().replace(/^["']|["']$/g, '') : null
+}
+
+/**
+ * Ajoute à l'index la ligne d'une note qu'il ne cite pas encore. Claude tient son index
+ * lui-même ; ici l'outil le fait pour que Codex n'ait pas à y penser, et une note absente
+ * de l'index est une note que personne ne lira.
+ */
+function indexNote(file, content) {
+  const index = readMemoryFile(MEMORY_INDEX) ?? ''
+  if (index.includes(`](${file})`)) return false
+  const name = frontmatterField(content, 'name') ?? file.replace(/\.md$/, '')
+  const description = frontmatterField(content, 'description')
+  const line = `- [${name}](${file})${description ? ` — ${description}` : ''}`
+  writeFileSync(join(MEMORY_DIR, MEMORY_INDEX), index.trimEnd() ? `${index.trimEnd()}\n${line}\n` : `${line}\n`)
+  return true
+}
+
 /** Une conversation du projet que cette session peut joindre, ou null. */
 function peerConversation(id) {
   return (
@@ -1858,6 +1942,60 @@ async function callTool(name, args) {
       }
     }
     return requestDaemon(name, args ?? {})
+  }
+
+  if (name === 'read_memory' || name === 'write_memory' || name === 'delete_memory') {
+    if (!MEMORY_DIR) return { ...text("La mémoire n'est pas disponible dans cette session."), isError: true }
+    const file = typeof args?.file === 'string' ? args.file.trim() : ''
+
+    if (name === 'read_memory') {
+      if (!file) {
+        const files = memoryFiles()
+        if (files.length === 0) return text(`Mémoire vide (${MEMORY_DIR}).`)
+        const index = readMemoryFile(MEMORY_INDEX)
+        return text(
+          [
+            `Mémoire du projet, dans ${MEMORY_DIR} :`,
+            index ? `${MEMORY_INDEX} :\n\n${index.trim()}` : `Pas de ${MEMORY_INDEX}.`,
+            `Notes : ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'aucune'}.`,
+          ].join('\n\n'),
+        )
+      }
+      const content = MEMORY_FILE_PATTERN.test(file) ? readMemoryFile(file) : null
+      if (content === null) return { ...text(`Aucune note « ${file} ». read_memory sans \`file\` les liste.`), isError: true }
+      return text(content)
+    }
+
+    if (!MEMORY_FILE_PATTERN.test(file)) {
+      return {
+        ...text("`file` doit être un nom de fichier `.md` à plat : lettres, chiffres, points, tirets et soulignés, sans dossier."),
+        isError: true,
+      }
+    }
+
+    if (name === 'delete_memory') {
+      if (readMemoryFile(file) === null) return { ...text(`Aucune note « ${file} ».`), isError: true }
+      rmSync(join(MEMORY_DIR, file), { force: true })
+      if (file !== MEMORY_INDEX) {
+        const index = readMemoryFile(MEMORY_INDEX)
+        if (index !== null) {
+          const kept = index.split('\n').filter((line) => !line.includes(`](${file})`))
+          writeFileSync(join(MEMORY_DIR, MEMORY_INDEX), kept.join('\n'))
+        }
+      }
+      return text(`Note « ${file} » retirée de la mémoire.`)
+    }
+
+    if (typeof args?.content !== 'string') return { ...text('Le paramètre `content` est requis.'), isError: true }
+    if (args.content.length > MAX_MEMORY_FILE_CHARS) {
+      return { ...text(`Note trop longue (${args.content.length} caractères, ${MAX_MEMORY_FILE_CHARS} au plus).`), isError: true }
+    }
+    mkdirSync(MEMORY_DIR, { recursive: true })
+    writeFileSync(join(MEMORY_DIR, file), args.content)
+    const indexed = file !== MEMORY_INDEX && indexNote(file, args.content)
+    return text(
+      `Note « ${file} » écrite dans la mémoire du projet${indexed ? `, et ajoutée à ${MEMORY_INDEX}` : ''}. Les sessions suivantes, de Claude comme de Codex, la verront.`,
+    )
   }
 
   if (name === 'read_instructions') {

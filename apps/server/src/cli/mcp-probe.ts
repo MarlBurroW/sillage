@@ -58,7 +58,7 @@ function buildProbe(config: AgentConfig, binary: string, resumeSessionId: string
     binary,
     attachmentsRoot: tmpdir(),
     resumeSessionId,
-    projectOverview: () => null, maskedInstructionRoots: () => [],
+    projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
     resolveMcpServers: () => ({ servers: [probeServer], failures: [] }),
     skillRoots: () => [],
     emit: (event: SillageEvent) => {

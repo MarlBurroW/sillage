@@ -46,6 +46,8 @@ export interface BuiltinMcpParams {
   databasePath: string
   projectId: string
   conversationId: string
+  /** Dossier de mémoire du projet, où `write_memory` écrit pour Codex. */
+  memoryDir: string
 }
 
 /**
@@ -60,7 +62,7 @@ export function builtinMcpEnabled(enabled: boolean, config: AgentConfig): boolea
 }
 
 export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
-  const { enabled, config, databasePath, projectId, conversationId } = params
+  const { enabled, config, databasePath, projectId, conversationId, memoryDir } = params
   if (!builtinMcpEnabled(enabled, config)) return null
 
   return {
@@ -80,6 +82,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
         SILLAGE_MCP_DB: databasePath,
         SILLAGE_MCP_PROJECT: projectId,
         SILLAGE_MCP_CONVERSATION: conversationId,
+        SILLAGE_MCP_MEMORY: memoryDir,
       },
     },
     createdAt: 0,

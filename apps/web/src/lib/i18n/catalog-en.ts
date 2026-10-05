@@ -1892,6 +1892,16 @@ export const en = {
   "instructions.dialog.timing": "A change applies to sessions that start afterwards: an open session keeps the version it received.",
   "instructions.tab.project": "This project",
   "instructions.tab.global": "All projects",
+  "memory.title": "Memory",
+  "memory.description": "What agents have learned on their own about this project, shared by Claude and Codex. Rules you set belong in the instructions.",
+  "memory.count": "{count} note(s), in",
+  "memory.imported": "Imported from Claude's memory in {dir} on {when}. The original was left in place.",
+  "memory.empty": "Nothing remembered yet. Agents write here when they learn something later sessions will need.",
+  "memory.index": "Index, loaded at the start of every session",
+  "memory.delete.title": "Delete {file}?",
+  "memory.delete.confirm": "Delete note",
+  "memory.delete.body": "The note leaves the project memory, along with its line in MEMORY.md. Later sessions will no longer see it.",
+  "error.memory_file_invalid": "Invalid note name: a flat .md file, no folder.",
 } as const
 
 /**

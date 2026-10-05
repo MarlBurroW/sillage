@@ -150,7 +150,7 @@ export function instructionsAppendix(db: Db, input: AppendixInput): string | nul
   if (input.sillageMcp) {
     parts.push(
       input.mode === 'sillage'
-        ? "SILLAGE.md se lit et se modifie comme un fichier de consignes, avec `read_instructions`, `edit_instructions` et `write_instructions` du serveur `sillage`. Quand l'utilisateur te donne une consigne durable (une préférence, une convention, un piège à éviter) ou te demande de revoir ces consignes, c'est là qu'il faut écrire, plutôt que dans une mémoire propre à ton CLI que l'autre ne lit pas : elles vaudront pour les sessions suivantes, de Claude comme de Codex. Rien de ce qui ne vaut que pour la tâche en cours."
+        ? "SILLAGE.md se lit et se modifie comme un fichier de consignes, avec `read_instructions`, `edit_instructions` et `write_instructions` du serveur `sillage`. Quand l'utilisateur te donne une consigne durable (une préférence, une convention, un piège à éviter) ou te demande de revoir ces consignes, c'est là qu'il faut écrire : elles vaudront pour les sessions suivantes, de Claude comme de Codex. Rien de ce qui ne vaut que pour la tâche en cours ; un fait appris en route va plutôt dans la mémoire du projet."
         : "Les consignes de ce projet vivent dans le `AGENTS.md` ou le `CLAUDE.md` de son dépôt : c'est là qu'une consigne propre au projet se retient, avec tes outils de fichiers. Les outils SILLAGE.md du serveur `sillage` (`read_instructions`, `edit_instructions`, `write_instructions`) ne servent qu'à la partie valable pour tous les projets.",
     )
   }

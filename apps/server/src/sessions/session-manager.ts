@@ -22,6 +22,7 @@ import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { projectOverview } from '../agents/overview.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
+import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type {
@@ -696,6 +697,14 @@ export class SessionManager {
         .get()
       return project ? { ...project, mode: resolveInstructionsMode(project) } : null
     }
+    // Créé et, la première fois, rempli de la mémoire que Claude tenait pour ce
+    // workspace : sans l'import, déplacer son dossier lui ferait tout oublier.
+    const memoryDir = () =>
+      ensureProjectMemory(
+        this.config.paths.memory,
+        conversation.projectId,
+        instructions()?.workspacePath ?? cwd,
+      )
 
     return {
       conversationId,
@@ -719,6 +728,7 @@ export class SessionManager {
           databasePath: this.config.paths.database,
           projectId: conversation.projectId,
           conversationId,
+          memoryDir: memoryDir(),
         })
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },
@@ -737,6 +747,8 @@ export class SessionManager {
             mode: instructions()?.mode ?? 'repo',
             sillageMcp,
           }),
+          // Claude charge l'index de sa mémoire de lui-même ; Codex n'a que ce qu'on lui dit.
+          conversation.agent === 'codex' ? memoryAppendixForCodex(memoryDir(), sillageMcp) : null,
           this.config.mcp.sillageServer && current.sillageMcp
             ? projectOverview(this.db, {
                 projectId: conversation.projectId,
@@ -747,6 +759,7 @@ export class SessionManager {
         ].filter((part) => part !== null)
         return parts.length > 0 ? parts.join('\n\n') : null
       },
+      memoryDir,
       maskedInstructionRoots: () => {
         const current = instructions()
         return current?.mode === 'sillage' ? [current.workspacePath, cwd] : []
