@@ -122,13 +122,14 @@
       <div class="section-body">
         <h2>Your agents should know<br>who else is working.</h2>
         <p class="section-lede">Two sessions can share a repository without sharing context. Sillage gives them tools to find that context.</p>
-        <p>Through the built-in MCP server, Claude Code and Codex can discover active sessions, read earlier decisions, identify who edited a file and contact another session. The same project history is available to both.</p>
+        <p>Through the built-in MCP server, Claude Code and Codex can discover active sessions, read earlier decisions, identify who edited a file, contact another session and start a new one. The same project history is available to both.</p>
         <dl class="tool-reference">
           <div><dt>Before starting work</dt><dd>See active sessions, branches and worktrees.<code>list_sessions</code></dd></div>
           <div><dt>Before undoing a change</dt><dd>Find the session that edited a file and check what it is doing.<code>find_file_edits</code></dd></div>
           <div><dt>When a decision already exists</dt><dd>Search earlier conversations and read the reasoning.<code>search_history · read_conversation</code></dd></div>
           <div><dt>When work overlaps</dt><dd>Message another session, announce a shared change or ask to be notified when it finishes.<code>send_session_message · broadcast_session_message · notify_when_done</code></dd></div>
           <div><dt>When handing work over</dt><dd>Read the task and leave a note for the next session.<code>read_card · add_card_note</code></dd></div>
+          <div><dt>When work belongs elsewhere</dt><dd>Open a card for a bug found along the way. When you ask, start a new session with its own CLI, model, effort and worktree, then get notified when it finishes.<code>create_card · start_session · list_models</code></dd></div>
         </dl>
         <p class="technical-note">These tools help agents coordinate; they do not lock files or prevent merge conflicts. Use separate worktrees when changes need isolation.</p>
         <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/apps/server/src/mcp/sillage-mcp.mjs">Read the tool definitions ↗</a>
