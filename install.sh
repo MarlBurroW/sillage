@@ -301,10 +301,6 @@ fi
 
 # --- service -----------------------------------------------------------------
 
-# Sampled before the service boots and creates the database itself.
-FRESH_INSTALL="no"
-[ -f "$DATA_DIR/sillage.db" ] || FRESH_INSTALL="yes"
-
 render_service() {
   sed -e "s|__NODE__|$NODE_BIN|g" \
       -e "s|__NODE_DIR__|$(dirname "$NODE_BIN")|g" \
@@ -377,25 +373,6 @@ if [ "$PLATFORM" = "linux" ] && ! loginctl show-user "$USER" 2>/dev/null | grep 
     Run it yourself:  sudo loginctl enable-linger $USER"
 fi
 
-# --- first account -----------------------------------------------------------
-
-# Without this account the instance is unreachable: no default password, no signup
-# route. A failure here must be visible, never swallowed by a `|| true`.
-# The service's Node, which may be the private copy: `node` alone is not always on the PATH.
-ACCOUNT_HINT="$NODE_BIN $APP_DIR/current/server/cli/user-create.js"
-
-if [ "$FRESH_INSTALL" = "yes" ]; then
-  # curl | bash leaves no stdin: the account prompt needs a real terminal.
-  if has_tty; then
-    say "Create the first account (it gets admin rights):"
-    node "$APP_DIR/current/server/cli/user-create.js" < /dev/tty \
-      || say "warning: account creation failed. Retry with:  $ACCOUNT_HINT"
-  else
-    say "No terminal available. Create the first account with:"
-    say "  $ACCOUNT_HINT"
-  fi
-fi
-
 # --- final checks ------------------------------------------------------------
 
 # `Done.` only means something once checked. The installer used to announce success
@@ -437,18 +414,42 @@ if [ "$HEALTHY" != "yes" ]; then
   exit 1
 fi
 
-# A missing account breaks nothing visible: the server answers, but nobody can get in.
-# Read the database rather than assume the CLI succeeded. `require` resolves from the
-# current directory: run elsewhere it fails, and the check would report "unknown" on a
-# perfectly readable database.
-USER_COUNT="$(cd "$APP_DIR/current" && node -e 'try {
-  const db = require("better-sqlite3")(process.argv[1], { readonly: true, fileMustExist: true })
-  process.stdout.write(String(db.prepare("select count(*) as c from users").get().c))
-} catch { process.stdout.write("?") }' "$DATA_DIR/sillage.db" 2>/dev/null || echo '?')"
+# --- first account -----------------------------------------------------------
 
-if [ "$USER_COUNT" = "0" ]; then
-  say "warning: no account exists — the UI will refuse every login."
-  say "  Create one with:  $ACCOUNT_HINT"
+# Without an account the instance is unreachable: no default password, no signup route.
+# Asked once the server answers, so that its migrations have run, and whenever the
+# database holds no account, not only on a first install: an earlier run may have died
+# after the service created the database. A failure here must be visible, never
+# swallowed by a `|| true`.
+# The service's Node, which may be the private copy: `node` alone is not always on the PATH.
+ACCOUNT_HINT="$NODE_BIN $APP_DIR/current/server/cli/user-create.js"
+
+# Read the database rather than assume the CLI succeeded. `require` resolves from the
+# current directory: run elsewhere it fails, and the count would be "?" on a perfectly
+# readable database.
+user_count() {
+  (cd "$APP_DIR/current" && node -e 'try {
+    const db = require("better-sqlite3")(process.argv[1], { readonly: true, fileMustExist: true })
+    process.stdout.write(String(db.prepare("select count(*) as c from users").get().c))
+  } catch { process.stdout.write("?") }' "$DATA_DIR/sillage.db" 2>/dev/null) || echo '?'
+}
+
+ACCOUNT_CREATED="no"
+if [ "$(user_count)" = "0" ]; then
+  # curl | bash leaves no stdin: the account prompt needs a real terminal.
+  if has_tty; then
+    say "Create the first account (it gets admin rights):"
+    if node "$APP_DIR/current/server/cli/user-create.js" < /dev/tty; then
+      ACCOUNT_CREATED="yes"
+    else
+      say "warning: account creation failed."
+    fi
+  fi
+  # A missing account breaks nothing visible: the server answers, but nobody gets in.
+  if [ "$(user_count)" = "0" ]; then
+    say "warning: no account exists — the UI will refuse every login."
+    say "  Create one with:  $ACCOUNT_HINT"
+  fi
 fi
 
 # --- Windows integration (WSL) -----------------------------------------------
@@ -627,8 +628,8 @@ if [ "$IS_WSL" = "yes" ]; then
   fi
 elif [ "$PLATFORM" = "darwin" ]; then
   say "Done. Sillage is listening on http://localhost:$PORT and starts with your session."
-  # On a first install, the browser goes straight to the login page.
-  if [ "$FRESH_INSTALL" = "yes" ] && has_tty; then open "http://localhost:$PORT/" || true; fi
+  # With the account just created, the browser goes straight to the login page.
+  if [ "$ACCOUNT_CREATED" = "yes" ]; then open "http://localhost:$PORT/" || true; fi
 else
   say "Done. Sillage is listening on http://127.0.0.1:$PORT"
 fi
