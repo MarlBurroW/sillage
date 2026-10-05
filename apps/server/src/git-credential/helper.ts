@@ -71,12 +71,18 @@ export function credentialHelperCommand(paths: Paths, ownerId: string): string {
  *
  * `GIT_TERMINAL_PROMPT=0` est indispensable et pas un détail : sans terminal, un git qui
  * décide de demander un mot de passe reste bloqué jusqu'au timeout au lieu d'échouer.
+ *
+ * La valeur vide en tête vide la liste des helpers : git interroge sinon d'abord ceux des
+ * configurations système et globale. Sur macOS, celle de git pose `osxkeychain` : le
+ * trousseau répondrait avant Sillage, et garderait le jeton de Sillage après chaque succès.
  */
 export function credentialEnv(paths: Paths, ownerId: string): NodeJS.ProcessEnv {
   return {
     GIT_TERMINAL_PROMPT: '0',
-    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_COUNT: '2',
     GIT_CONFIG_KEY_0: 'credential.helper',
-    GIT_CONFIG_VALUE_0: credentialHelperCommand(paths, ownerId),
+    GIT_CONFIG_VALUE_0: '',
+    GIT_CONFIG_KEY_1: 'credential.helper',
+    GIT_CONFIG_VALUE_1: credentialHelperCommand(paths, ownerId),
   }
 }
