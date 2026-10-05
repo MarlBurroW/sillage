@@ -166,6 +166,7 @@ const PEER_LABELS = {
   message: 'message.peer.from',
   broadcast: 'message.peer.broadcast',
   done: 'message.peer.done',
+  launch: 'message.peer.launch',
 } as const
 
 /**

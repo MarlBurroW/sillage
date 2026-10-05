@@ -30,6 +30,11 @@ export interface CreateConversationInput {
   /** Carte traitée, quand la conversation est lancée depuis le board. */
   cardId: string | null
   title?: string
+  /**
+   * Texte dont tirer le titre provisoire, quand le premier message ne s'y prête pas :
+   * une mission confiée par une autre session commence par son enveloppe balisée.
+   */
+  titleSource?: string
   /** Jeton d'API à l'origine de la conversation ; null quand elle vient de l'interface. */
   origin: { tokenId: string; label: string } | null
   firstMessage?: {
@@ -67,7 +72,7 @@ export async function createConversation(
     worktreeId: input.worktreeId,
     cardId: input.cardId,
     userId: input.userId,
-    title: input.title ?? provisionalTitle(input.firstMessage?.text),
+    title: input.title ?? provisionalTitle(input.titleSource ?? input.firstMessage?.text),
     titleSetByUser: input.title !== undefined,
     agent: input.agent,
     agentSessionId: null,
