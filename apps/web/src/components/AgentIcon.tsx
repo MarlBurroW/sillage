@@ -8,6 +8,8 @@ const BRAND: Record<AgentKind, string> = {
   // OpenAI n'a pas de couleur de marque en aplat : le logo se porte en monochrome et
   // hérite donc de la couleur du texte environnant.
   codex: 'currentColor',
+  // Le logo d'opencode est lui aussi monochrome.
+  opencode: 'currentColor',
 }
 
 /**
@@ -47,6 +49,22 @@ function OpenAiMark({ size }: { size: number }) {
 }
 
 /**
+ * Marque opencode : le cadre de son logo, redessiné à la main en deux rectangles (le
+ * contour et le creux qu'il laisse en bas), sur la grille 24 des deux autres.
+ *
+ * Usage nominatif, comme pour OpenAI : dire quel CLI répond. Sillage n'est pas affilié
+ * à opencode.
+ */
+function OpencodeMark({ size }: { size: number }) {
+  return (
+    <svg role="img" viewBox="0 0 24 24" width={size} height={size} fill={BRAND.opencode} fillRule="evenodd" aria-hidden>
+      <path d="M4 1h16v22H4V1zm4 4v14h8V5H8z" />
+      <path d="M8 10h8v9H8z" opacity={0.3} />
+    </svg>
+  )
+}
+
+/**
  * Ce que l'UI sait de chaque CLI : libellé, éditeur, phrase de présentation, marque.
  *
  * Table exhaustive sur l'enum plutôt que des ternaires dispersés : un CLI ajouté au
@@ -75,6 +93,12 @@ export const AGENT_META: Record<AgentKind, AgentMeta> = {
     vendor: 'OpenAI',
     blurb: translate('agent.blurb.codex'),
     Mark: OpenAiMark,
+  },
+  opencode: {
+    label: 'OpenCode',
+    vendor: 'Anomaly',
+    blurb: translate('agent.blurb.opencode'),
+    Mark: OpencodeMark,
   },
 }
 

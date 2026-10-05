@@ -194,9 +194,56 @@ export const codexConfigSchema = z.object({
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
 
+/**
+ * Règle d'opencode pour une famille d'outils : demander, laisser faire, refuser.
+ *
+ * La chaîne vide est la sentinelle `CLI_DEFAULT` : Sillage ne pose alors aucune règle
+ * et celle de l'`opencode.json` de l'utilisateur s'applique (à défaut, opencode laisse
+ * faire). Les valeurs sont celles de `PermissionActionConfig` dans l'OpenAPI.
+ */
+export const opencodePermissionSchema = z.enum(['', 'ask', 'allow', 'deny'])
+export type OpencodePermission = z.infer<typeof opencodePermissionSchema>
+
+/**
+ * Les familles d'outils que Sillage règle. opencode en connaît d'autres (`read`,
+ * `task`, `skill`…) : elles gardent la règle du CLI, les exposer toutes ferait un écran
+ * de réglages que personne ne lit.
+ */
+export const opencodePermissionsSchema = z.object({
+  edit: opencodePermissionSchema.default('ask'),
+  bash: opencodePermissionSchema.default('ask'),
+  webfetch: opencodePermissionSchema.default(''),
+})
+export type OpencodePermissions = z.infer<typeof opencodePermissionsSchema>
+
+export const opencodeConfigSchema = z.object({
+  agent: z.literal('opencode'),
+  /** `fournisseur/modèle`, tel qu'opencode l'écrit. Vide : le défaut du CLI. */
+  model: z.string(),
+  /**
+   * Variante du modèle (`low`, `high`, `max`…), l'équivalent de l'effort chez les deux
+   * autres. Chaîne libre : chaque modèle annonce les siennes dans le catalogue.
+   */
+  variant: z.string().default(''),
+  /**
+   * Agent primaire d'opencode qui mène le tour : `build`, `plan`, ou un agent déclaré
+   * par l'utilisateur. C'est le pendant du `collaborationMode` de Codex, à ceci près
+   * que la liste est ouverte. Nommé ainsi parce que `agent` est déjà le discriminant.
+   */
+  primaryAgent: z.string().default('build'),
+  permissions: opencodePermissionsSchema.default({}),
+  additionalDirectories: z.array(z.string()).default([]),
+  /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
+  mcpServers: z.array(z.string()).default([]),
+  sillageMcp: sillageMcpSchema,
+  skillLibrary: skillLibrarySchema,
+})
+export type OpencodeConfig = z.infer<typeof opencodeConfigSchema>
+
 export const agentConfigSchema = z.discriminatedUnion('agent', [
   claudeConfigSchema,
   codexConfigSchema,
+  opencodeConfigSchema,
 ])
 export type AgentConfig = z.infer<typeof agentConfigSchema>
 
@@ -236,6 +283,20 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   sandbox: 'workspace-write',
   webSearch: false,
   profile: null,
+  additionalDirectories: [],
+  mcpServers: [],
+  sillageMcp: true,
+  skillLibrary: true,
+}
+
+export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
+  agent: 'opencode',
+  model: CLI_DEFAULT,
+  variant: CLI_DEFAULT,
+  primaryAgent: 'build',
+  // opencode laisse tout faire par défaut. Sillage part de « demander » pour ce qui
+  // écrit ou exécute, comme le mode manuel de Claude et le `on-request` de Codex.
+  permissions: { edit: 'ask', bash: 'ask', webfetch: CLI_DEFAULT },
   additionalDirectories: [],
   mcpServers: [],
   sillageMcp: true,
@@ -282,6 +343,7 @@ export function parseAgentConfig(stored: string): AgentConfig {
 export const DEFAULT_CONFIGS: Record<AgentConfig['agent'], AgentConfig> = {
   claude: DEFAULT_CLAUDE_CONFIG,
   codex: DEFAULT_CODEX_CONFIG,
+  opencode: DEFAULT_OPENCODE_CONFIG,
 }
 
 export function defaultConfigFor(agent: AgentConfig['agent']): AgentConfig {
