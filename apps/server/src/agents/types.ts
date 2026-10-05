@@ -81,6 +81,14 @@ export interface RunnerContext {
    */
   projectOverview(config: AgentConfig): string | null
   /**
+   * Dossiers dont les `CLAUDE.md` et `AGENTS.md` sont à masquer au CLI, parce que le
+   * projet garde ses consignes dans Sillage (SILLAGE.md) et qu'elles arrivent déjà par
+   * `projectOverview`. Vide quand le projet les garde dans son dépôt.
+   *
+   * Lu au lancement seulement : changer de mode vaut pour les sessions suivantes.
+   */
+  maskedInstructionRoots(): string[]
+  /**
    * Racines de plugin de la bibliothèque de skills à livrer : la globale, puis celle du
    * projet. Vide quand la bibliothèque est coupée pour l'instance ou pour la
    * conversation.

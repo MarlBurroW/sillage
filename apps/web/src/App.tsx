@@ -18,6 +18,7 @@ import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
 import { DictationSettingsPage } from './routes/DictationSettingsPage'
 import { McpSettingsPage } from './routes/McpSettingsPage'
 import { SkillEditorPage } from './routes/SkillEditorPage'
+import { InstructionsSettingsPage } from './routes/InstructionsSettingsPage'
 import { SkillLibrarySettingsPage } from './routes/SkillLibrarySettingsPage'
 import { NotificationsSection } from './routes/NotificationsSection'
 import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
@@ -64,6 +65,7 @@ export function App() {
             <Route path="cli" element={<CliDefaultsSettingsPage />} />
             <Route path="projets" element={<ProjectsSettingsPage />} />
             <Route path="mcp" element={<McpSettingsPage />} />
+            <Route path="consignes" element={<InstructionsSettingsPage />} />
             <Route path="skills" element={<SkillLibrarySettingsPage />} />
             <Route path="api" element={<ApiTokensSettingsPage />} />
             <Route path="git" element={<GitCredentialsSettingsPage />} />

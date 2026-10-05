@@ -48,6 +48,7 @@ import { toDto as toCommandDtos } from './command-catalog.js'
 import { editedPath, fileExists } from './file-edits.js'
 import { fromSdkMcpStatus, toSdkMcpServers } from './mcp.js'
 import { skillLibraryLaunchOptions } from './skill-library.js'
+import { claudeMdExcludes } from '../../instructions/store.js'
 import { toPermissionMode } from './permission-mode.js'
 import {
   ASK_USER_QUESTION,
@@ -77,17 +78,23 @@ const IGNORED_SUBTYPES = new Set(['session_state_changed'])
  * qu'allumé : éteint, il n'a rien à annoncer. Les deux autres clés sont omises quand la
  * configuration ne dit rien, pour laisser le CLI à son défaut.
  *
- * Les règles `deny` de la bibliothèque de skills n'y sont posées qu'au lancement.
+ * Les règles `deny` de la bibliothèque de skills n'y sont posées qu'au lancement, comme
+ * le masque des consignes du dépôt quand le projet tient les siennes dans SILLAGE.md.
  * `applyFlagSettings` ne retire que les clés qu'on lui passe à `null` : ne jamais
- * nommer `permissions` à chaud suffit à les garder.
+ * nommer `permissions` ni `claudeMdExcludes` à chaud suffit à les garder.
  */
-function flagSettings(config: ClaudeConfig, deny: string[] = []): Settings {
+function flagSettings(
+  config: ClaudeConfig,
+  deny: string[] = [],
+  excludes: string[] = [],
+): Settings {
   return {
     fastMode: config.fastMode,
     ...(config.ultracode ? { ultracode: true } : {}),
     ...(config.outputStyle ? { outputStyle: config.outputStyle } : {}),
     ...(config.advisorModel ? { advisorModel: config.advisorModel } : {}),
     ...(deny.length > 0 ? { permissions: { deny } } : {}),
+    ...(excludes.length > 0 ? { claudeMdExcludes: excludes } : {}),
   }
 }
 
@@ -273,7 +280,11 @@ export class ClaudeRunner implements AgentRunner {
         // l'utilisateur. Relevé par sonde, ce n'est pas déductible de la documentation.
         mcpServers: this.appliedMcpServers,
         strictMcpConfig: config.strictMcp,
-        settings: flagSettings(config, library.deny),
+        settings: flagSettings(
+          config,
+          library.deny,
+          claudeMdExcludes(this.ctx.maskedInstructionRoots()),
+        ),
         // Plafonds pour une session que personne ne regarde. Options de lancement
         // seulement : les changer relance le runner, voir `applyConfig`.
         ...(config.maxBudgetUsd === null ? {} : { maxBudgetUsd: config.maxBudgetUsd }),

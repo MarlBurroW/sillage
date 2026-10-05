@@ -7,6 +7,7 @@ import type { CardLinkDto } from './cards.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
+import { instructionsModeSchema, type InstructionsMode } from './instructions.js'
 import type { ProjectAgentDefaults } from './project-defaults.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
 
@@ -95,6 +96,8 @@ const projectCreationFields = {
   name: z.string().min(1).max(120),
   visibility: projectVisibilitySchema.default('private'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null),
+  /** Absent : le dépôt s'il porte déjà un `AGENTS.md` ou un `CLAUDE.md`, Sillage sinon. */
+  instructionsMode: instructionsModeSchema.optional(),
 }
 
 /**
@@ -195,6 +198,8 @@ export interface ProjectDto {
   conversationCount: number
   /** Préréglages du projet, socle des conversations qui s'y ouvrent. */
   defaultConfig: ProjectAgentDefaults
+  /** Null pour un projet d'avant le réglage : le mode se résout alors d'après le dossier. */
+  instructionsMode: InstructionsMode | null
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
   /** État du dépôt git, null si le workspace n'est pas un dépôt. */

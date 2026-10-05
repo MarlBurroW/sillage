@@ -7,9 +7,10 @@
  *
  * Les outils qui écrivent le font tous dans un flux ajouté : notes de carte, messages
  * entre sessions, surveillances, cartes neuves et sessions lancées, ces deux dernières
- * par le daemon. Seule exception, l'image du projet, qu'un agent pose ou
- * remplace : elle n'est la consigne ni le jugement de personne, et l'utilisateur la
- * reprend d'un clic. La frontière est là et pas ailleurs : un agent peut
+ * par le daemon. Deux exceptions. L'image du projet, qu'un agent pose ou remplace :
+ * elle n'est la consigne ni le jugement de personne, et l'utilisateur la reprend d'un
+ * clic. Et SILLAGE.md, qu'un agent lit et réécrit comme il le ferait d'un fichier de
+ * consignes du dépôt, à la demande de l'utilisateur, qui en voit la dernière main. La frontière est là et pas ailleurs : un agent peut
  * raconter ce qu'il a fait ou prévenir une autre session, il ne peut ni déplacer une
  * carte ni réécrire sa description. Déplacer serait se donner un satisfecit, et la
  * colonne cesserait d'être la position choisie qu'elle est censée rester ; réécrire la
@@ -155,6 +156,12 @@ function sniffProjectImage(buffer) {
   }
   return null
 }
+
+/** Plafond d'une partie de SILLAGE.md, d'accord avec `MAX_INSTRUCTIONS_CHARS` du protocole. */
+const MAX_INSTRUCTIONS_CHARS = 40000
+
+/** Doit rester d'accord avec `REPO_INSTRUCTION_FILES` du protocole. */
+const REPO_INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md']
 
 const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
@@ -471,6 +478,63 @@ const TOOLS = [
           description: "Ne rendre que l'échange avec cette conversation. Omettre pour tous.",
         },
       },
+    },
+  },
+  {
+    name: 'read_instructions',
+    description:
+      "Lit SILLAGE.md, les consignes que Sillage injecte dans le prompt de chaque session, de Claude comme de Codex : la partie de ce projet ou la partie globale. Ce que ton prompt en contient date du démarrage de la session ; lis la version courante avant de la modifier.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scope: {
+          type: 'string',
+          enum: ['project', 'global'],
+          description:
+            "`project` (par défaut) pour la partie de ce projet, `global` pour celle qui vaut dans tous les projets. Écrire dans la portée globale est réservé aux comptes administrateurs.",
+        },
+      },
+    },
+  },
+  {
+    name: 'edit_instructions',
+    description:
+      "Modifie SILLAGE.md comme l'outil d'édition de fichiers : remplace un passage exact par un autre. `old_text` doit apparaître une seule fois, sauf avec `replace_all`. Lis d'abord avec read_instructions. Sert à ajouter, corriger ou retirer une consigne quand l'utilisateur le demande, ou à retenir une consigne durable qu'il te donne (« retiens que… », « à partir de maintenant… ») ; pas pour ce qui ne vaut que pour la tâche en cours. Prend effet aux sessions qui démarrent ensuite.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        old_text: {
+          type: 'string',
+          description: "Passage à remplacer, au caractère près, retours à la ligne compris. Vide pour ajouter `new_text` à la fin.",
+        },
+        new_text: { type: 'string', description: 'Texte de remplacement, vide pour supprimer le passage.' },
+        replace_all: { type: 'boolean', description: 'Remplacer toutes les occurrences. Faux par défaut.' },
+        scope: {
+          type: 'string',
+          enum: ['project', 'global'],
+          description:
+            "`project` (par défaut) pour la partie de ce projet, `global` pour celle qui vaut dans tous les projets. Écrire dans la portée globale est réservé aux comptes administrateurs.",
+        },
+      },
+      required: ['old_text', 'new_text'],
+    },
+  },
+  {
+    name: 'write_instructions',
+    description:
+      "Réécrit entièrement une partie de SILLAGE.md, comme on réécrit un fichier : le contenu donné remplace tout l'existant. Pour une retouche, préfère edit_instructions. Lis d'abord avec read_instructions, pour ne pas effacer ce qui y était.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'Le nouveau contenu entier, en markdown. Vide pour tout effacer.' },
+        scope: {
+          type: 'string',
+          enum: ['project', 'global'],
+          description:
+            "`project` (par défaut) pour la partie de ce projet, `global` pour celle qui vaut dans tous les projets. Écrire dans la portée globale est réservé aux comptes administrateurs.",
+        },
+      },
+      required: ['content'],
     },
   },
   {
@@ -1128,6 +1192,113 @@ function setProjectImage(mimeType, data, provisional) {
     .run(PROJECT_ID, mimeType, data, provisional ? 1 : 0, Date.now())
 }
 
+/**
+ * Le mode de consignes du projet. Doit rester d'accord avec `resolveInstructionsMode` de
+ * `apps/server/src/instructions/store.ts` : un projet d'avant le réglage suit son dépôt
+ * s'il porte un fichier de consignes.
+ */
+function projectInstructionsMode() {
+  const project = db
+    .prepare('SELECT instructions_mode AS mode, workspace_path AS path FROM projects WHERE id = ?')
+    .get(PROJECT_ID)
+  if (!project) return { mode: 'repo', chosen: true }
+  if (project.mode) return { mode: project.mode, chosen: true }
+  const hasFile = REPO_INSTRUCTION_FILES.some((name) => {
+    try {
+      return statSync(resolve(project.path, name)).isFile()
+    } catch {
+      return false
+    }
+  })
+  return { mode: hasFile ? 'repo' : 'sillage', chosen: false }
+}
+
+/** Le compte qui a ouvert cette conversation est-il administrateur. */
+function conversationOwnerIsAdmin() {
+  if (!CURRENT_CONVERSATION) return false
+  const row = db
+    .prepare(
+      `SELECT u.is_admin AS admin FROM conversations c JOIN users u ON u.id = c.user_id
+       WHERE c.id = ?`,
+    )
+    .get(CURRENT_CONVERSATION)
+  return Boolean(row?.admin)
+}
+
+/** La partie de SILLAGE.md visée, telle qu'elle est en base. */
+function readInstructionsRow(projectId) {
+  return db
+    .prepare('SELECT content, updated_at AS updatedAt FROM instructions WHERE id = ?')
+    .get(projectId ?? 'global')
+}
+
+/**
+ * Réécrit une partie de SILLAGE.md d'après sa version courante, dans une transaction :
+ * une édition calculée sur un contenu qu'une autre session vient de changer ne doit pas
+ * effacer ce changement. `transform` rend le nouveau contenu, ou une chaîne d'erreur
+ * dans `{ error }`.
+ */
+function saveInstructions(projectId, transform, fixMode) {
+  const write = writeDb()
+  return write.transaction(() => {
+    const id = projectId ?? 'global'
+    const current = write.prepare('SELECT content FROM instructions WHERE id = ?').get(id)
+    const result = transform(current?.content ?? '')
+    if (typeof result !== 'string') return result
+    if (result.length > MAX_INSTRUCTIONS_CHARS) {
+      return {
+        error: `SILLAGE.md dépasserait ${MAX_INSTRUCTIONS_CHARS} caractères dans cette portée (${result.length}). Elle entre dans le contexte de chaque session : resserre-la.`,
+      }
+    }
+
+    write
+      .prepare(
+        `INSERT INTO instructions
+           (id, project_id, content, updated_at, updated_by_user_id, updated_by_conversation_id)
+         VALUES (?, ?, ?, ?, NULL, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           content = excluded.content, updated_at = excluded.updated_at,
+           updated_by_user_id = NULL,
+           updated_by_conversation_id = excluded.updated_by_conversation_id`,
+      )
+      .run(id, projectId, result, Date.now(), CURRENT_CONVERSATION || null)
+    if (fixMode) {
+      write
+        .prepare(`UPDATE projects SET instructions_mode = 'sillage' WHERE id = ? AND instructions_mode IS NULL`)
+        .run(PROJECT_ID)
+    }
+    return { content: result }
+  })()
+}
+
+/**
+ * La portée demandée, ou le refus à rendre tel quel. `writing` parce que lire la partie
+ * globale est permis à tous, comme dans l'interface.
+ */
+function instructionsTarget(args, writing) {
+  const scope = args?.scope === 'global' ? 'global' : 'project'
+  if (scope === 'global') {
+    if (writing && !conversationOwnerIsAdmin()) {
+      return {
+        refusal:
+          "La partie globale de SILLAGE.md entre dans toutes les sessions de l'instance : seul un compte administrateur peut y écrire, et cette conversation n'appartient pas à l'un d'eux. Écris dans la partie du projet (`scope: project`), ou propose à l'utilisateur de faire la modification lui-même.",
+      }
+    }
+    return { scope, projectId: null, fixMode: false }
+  }
+
+  const { mode, chosen } = projectInstructionsMode()
+  if (mode === 'repo') {
+    return {
+      refusal:
+        "Ce projet garde ses consignes dans son dépôt, dans `AGENTS.md` ou `CLAUDE.md` : lis-les et modifie-les avec tes outils de fichiers. Les outils SILLAGE.md ne servent pour lui qu'à la partie globale (`scope: global`).",
+    }
+  }
+  return { scope, projectId: PROJECT_ID, fixMode: !chosen }
+}
+
+const scopeLabel = (scope) => (scope === 'global' ? 'partie globale' : 'partie de ce projet')
+
 /** Une conversation du projet que cette session peut joindre, ou null. */
 function peerConversation(id) {
   return (
@@ -1687,6 +1858,51 @@ async function callTool(name, args) {
       }
     }
     return requestDaemon(name, args ?? {})
+  }
+
+  if (name === 'read_instructions') {
+    const target = instructionsTarget(args, false)
+    if (target.refusal) return { ...text(target.refusal), isError: true }
+    const row = readInstructionsRow(target.projectId)
+    if (!row?.content.trim()) return text(`SILLAGE.md, ${scopeLabel(target.scope)} : vide.`)
+    return text(`SILLAGE.md, ${scopeLabel(target.scope)} (${row.content.length} caractères) :\n\n${row.content}`)
+  }
+
+  if (name === 'edit_instructions' || name === 'write_instructions') {
+    const target = instructionsTarget(args, true)
+    if (target.refusal) return { ...text(target.refusal), isError: true }
+
+    let transform
+    if (name === 'write_instructions') {
+      if (typeof args?.content !== 'string') return { ...text('Le paramètre `content` est requis.'), isError: true }
+      transform = () => args.content
+    } else {
+      const oldText = typeof args?.old_text === 'string' ? args.old_text : null
+      const newText = typeof args?.new_text === 'string' ? args.new_text : null
+      if (oldText === null || newText === null) {
+        return { ...text('Les paramètres `old_text` et `new_text` sont requis.'), isError: true }
+      }
+      transform = (current) => {
+        if (oldText === '') {
+          const before = current.trimEnd()
+          return before ? `${before}\n${newText}` : newText
+        }
+        const count = current.split(oldText).length - 1
+        if (count === 0) {
+          return { error: "`old_text` n'apparaît pas dans SILLAGE.md. Relis la version courante avec read_instructions : elle a pu changer depuis le début de la session." }
+        }
+        if (count > 1 && args?.replace_all !== true) {
+          return { error: `\`old_text\` apparaît ${count} fois. Donne plus de contexte pour n'en désigner qu'une, ou passe \`replace_all: true\`.` }
+        }
+        return args?.replace_all === true ? current.split(oldText).join(newText) : current.replace(oldText, () => newText)
+      }
+    }
+
+    const result = saveInstructions(target.projectId, transform, target.fixMode)
+    if (result.error) return { ...text(result.error), isError: true }
+    return text(
+      `SILLAGE.md mis à jour (${scopeLabel(target.scope)}, ${result.content.length} caractères). Vaut pour les sessions qui démarrent ensuite, de Claude comme de Codex ; l'utilisateur voit la modification dans Sillage.`,
+    )
   }
 
   return { ...text(`Outil inconnu : ${name}`), isError: true }

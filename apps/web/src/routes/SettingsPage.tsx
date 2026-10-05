@@ -3,6 +3,7 @@ import {
   Bell,
   BookOpen,
   ChevronRight,
+  FileText,
   Cpu,
   FolderOpen,
   Info,
@@ -88,6 +89,13 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.mcp',
     descriptionKey: 'settings.section.mcp.description',
     icon: <Plug size={16} />,
+  },
+  {
+    to: 'consignes',
+    group: 'workspace',
+    labelKey: 'settings.section.instructions',
+    descriptionKey: 'settings.section.instructions.description',
+    icon: <FileText size={16} />,
   },
   {
     to: 'skills',

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { instructionsModeSchema } from './instructions.js'
 
 /**
  * Accès aux forges git, par utilisateur et par hôte.
@@ -75,6 +76,8 @@ export const startCloneBodySchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/)
     .nullable()
     .default(null),
+  /** Absent : décidé d'après le dépôt cloné, comme pour un dossier existant. */
+  instructionsMode: instructionsModeSchema.optional(),
 })
 
 export interface CloneJobDto {

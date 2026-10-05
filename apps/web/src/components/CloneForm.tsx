@@ -6,6 +6,11 @@ import { ApiRequestError } from '../lib/api'
 import { GITHUB_HOST, useGitCredentials } from '../lib/git-credentials'
 import { translateError, useTranslate } from '../lib/i18n'
 import { useCloneJob, useStartClone } from '../lib/projects'
+import {
+  InstructionsModeSelect,
+  instructionsModeField,
+  type InstructionsModeChoice,
+} from './instructions/Instructions'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
 import { RepoCombobox } from './RepoCombobox'
@@ -33,6 +38,7 @@ export function CloneForm() {
   const [parentDir, setParentDir] = useState('')
   const [directory, setDirectory] = useState('')
   const [visibility, setVisibility] = useState<'private' | 'shared'>('private')
+  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
   const [jobId, setJobId] = useState<string | null>(null)
 
   const startClone = useStartClone()
@@ -77,7 +83,14 @@ export function CloneForm() {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     startClone.mutate(
-      { url: url.trim(), name: name.trim(), parentDir, directory: directory.trim(), visibility },
+      {
+        url: url.trim(),
+        name: name.trim(),
+        parentDir,
+        directory: directory.trim(),
+        visibility,
+        ...instructionsModeField(instructionsMode),
+      },
       { onSuccess: (created) => setJobId(created.id) },
     )
   }
@@ -179,6 +192,7 @@ export function CloneForm() {
         onChange={setVisibility}
         options={VISIBILITY_OPTIONS}
       />
+      <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
 
       {job?.error ? (
         <Banner>

@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MAX_PROJECT_IMAGE_BYTES, type CloneJobDto, type ProjectDto } from '@sillage/protocol'
+import {
+  MAX_PROJECT_IMAGE_BYTES,
+  type CloneJobDto,
+  type InstructionsMode,
+  type ProjectDto,
+} from '@sillage/protocol'
 import { ApiRequestError, api } from './api'
 import { translate, translateError } from './i18n'
 
@@ -14,9 +19,10 @@ export function useProjects() {
 }
 
 /** Un dossier déjà là (`workspacePath`), ou un dossier à créer dans `parentDir`. */
-export type CreateProjectInput =
+export type CreateProjectInput = (
   | { name: string; workspacePath: string; visibility: 'private' | 'shared' }
   | { name: string; parentDir: string; directory: string; visibility: 'private' | 'shared' }
+) & { instructionsMode?: InstructionsMode }
 
 export function useCreateProject() {
   const queryClient = useQueryClient()
@@ -37,6 +43,7 @@ export interface StartCloneInput {
   parentDir: string
   directory: string
   visibility: 'private' | 'shared'
+  instructionsMode?: InstructionsMode
 }
 
 export function useStartClone() {

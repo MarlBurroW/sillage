@@ -77,7 +77,7 @@ async function main(): Promise<void> {
     binary: process.env.CLAUDE_BIN ?? 'claude',
     attachmentsRoot: tmpdir(),
     resumeSessionId: null,
-    projectOverview: () => null,
+    projectOverview: () => null, maskedInstructionRoots: () => [],
     resolveMcpServers: () => ({ servers: [], failures: [] }),
     skillRoots: () => [],
     emit: (event) => events.push(event),

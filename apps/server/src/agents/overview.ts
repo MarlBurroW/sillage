@@ -11,8 +11,8 @@ import { cards, conversations, projectImages, worktrees, type Db } from '@sillag
  *
  * Calculé et non stocké. Une note écrite quelque part et jamais relue vieillit et finit
  * par tromper avec l'autorité d'une note ; recalculer à chaque démarrage coûte une
- * requête et ne peut pas mentir. C'est aussi pour ça qu'aucun magasin de mémoire ne
- * vient s'ajouter à `CLAUDE.md`, à la roadmap et au journal.
+ * requête et ne peut pas mentir. Les consignes durables ont leur place à part, dans
+ * SILLAGE.md (`instructions/store.ts`), que l'utilisateur relit et taille lui-même.
  *
  * Le projet entier et non le seul worktree, contrairement à `find_file_edits` : ici on
  * cherche à savoir quels chantiers sont ouverts, et un chantier sur une autre branche
