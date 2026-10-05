@@ -12,6 +12,7 @@ import type { EventLog } from '../events/event-log.js'
 import { ClaudeAdapter } from './claude/adapter.js'
 import type { CliBinary } from './cli-binary.js'
 import { CodexAdapter } from './codex/adapter.js'
+import { OpencodeAdapter } from './opencode/adapter.js'
 import type { AgentRunner, RunnerContext } from './types.js'
 
 export class ForkError extends Error {}
@@ -62,7 +63,7 @@ export interface AgentAdapter {
   readonly capabilities: AgentCapabilities
   /**
    * Provenance estampillée sur les payloads natifs journalisés
-   * (« codex-app-server@v2 »...). À bumper quand le protocole du CLI change de
+   * (« codex-app-server@v2 », « opencode-server@v1 »...). À bumper quand le protocole du CLI change de
    * forme : c'est ce qui permettra de relire un vieux `raw` avec le bon lecteur.
    */
   readonly rawFormat: string
@@ -126,5 +127,9 @@ export class AgentRegistry {
 }
 
 export function createAgentRegistry(config: Config): AgentRegistry {
-  return new AgentRegistry([new ClaudeAdapter(config), new CodexAdapter(config)])
+  return new AgentRegistry([
+    new ClaudeAdapter(config),
+    new CodexAdapter(config),
+    new OpencodeAdapter(config),
+  ])
 }
