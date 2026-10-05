@@ -47,9 +47,16 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 - **Processes launched by Sillage.** On Linux, see commands and services still
   attached to Sillage, their parent, ports and originating conversation. Independent
   systemd services and tmux sessions are excluded. [Detection and limits](docs/services.md).
-- **A board the agents can read.** Cards per project, handed to the agent through
-  a built-in MCP server: a session can read its card, look up what an earlier one
-  decided, see which sessions are running, and leave a note for the next.
+- **A board the agents can read and add to.** Cards per project, handed to the
+  agent through a built-in MCP server: a session can read its card, look up what an
+  earlier one decided, see which sessions are running, and leave a note for the
+  next. It can also open a card for a bug it ran into along the way. Moving cards
+  and editing their descriptions stay with you.
+- **Sessions that coordinate.** Through the same server, a session can message
+  another, ask to be notified when it finishes, or start a new one when you ask:
+  "start a Codex session at max effort to fix this" opens a conversation that you
+  can follow like any other, with its own CLI, model, effort and worktree. The new
+  session starts with the project's default permissions.
 - **Installable PWA with push notifications**, silent while you already have the
   conversation open.
 - **Dictation** biased with a lexicon read from the project itself plus the
