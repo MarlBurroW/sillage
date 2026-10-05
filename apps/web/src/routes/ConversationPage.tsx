@@ -51,7 +51,7 @@ import { useFileDrop } from '../lib/file-drop'
 import { useConversationConfig } from '../lib/conversation-config'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
-import { openInstructions, useInstructionsFile } from '../lib/instructions'
+import { InstructionsDialog } from '../components/instructions/Instructions'
 import { clearSubAgent, setPanelOpen, usePanelLayout, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
@@ -161,7 +161,6 @@ export function ConversationPage() {
   // démarre le CLI côté serveur : elle ne part que pour l'agent de la conversation.
   const { data: catalog } = useAgentModels(conversation?.agent ?? 'claude', Boolean(conversation))
   const { data: worktrees } = useWorktrees(conversation?.projectId)
-  const instructionsFile = useInstructionsFile(conversationId, conversation?.agent)
   // Déjà chargée pour la sidebar : la provenance d'une branche s'y trouve sans requête
   // supplémentaire.
   const { data: allConversations } = useAllConversations()
@@ -274,6 +273,7 @@ export function ConversationPage() {
   const [flashed, setFlashed] = useState<string | null>(null)
   const [metaOpen, setMetaOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
+  const [instructionsOpen, setInstructionsOpen] = useState(false)
 
   /** Nombre de lignes montées, en partant de la fin. Voir `thread-window`. */
   const [windowSize, setWindowSize] = useState(INITIAL_WINDOW_ROWS)
@@ -919,16 +919,11 @@ export function ConversationPage() {
               Lire une conversation partagée donne le droit d'y chercher : seule la
               compaction touche à l'état du fil, et elle reste au propriétaire. */}
           <span className="hidden @min-[44rem]/thread:contents">
-            {/* Les consignes du projet se relisent souvent, et les retrouver passait
-                par l'explorateur : un geste pour un fichier dont on connaît le chemin. */}
-            {instructionsFile ? (
-              <IconButton
-                label={t('conversation.instructions', { file: instructionsFile })}
-                onClick={() => openInstructions(conversationId, instructionsFile)}
-              >
-                <FileText size={18} />
-              </IconButton>
-            ) : null}
+            {/* Les consignes se relisent et se retouchent souvent en travaillant : un
+                geste, sans quitter le fil ni passer par l'éditeur. */}
+            <IconButton label={t('conversation.instructions')} onClick={() => setInstructionsOpen(true)}>
+              <FileText size={18} />
+            </IconButton>
             <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
               <Search size={18} />
             </IconButton>
@@ -970,14 +965,9 @@ export function ConversationPage() {
               <MenuItem icon={<GaugeCircle size={14} />} onSelect={() => setUsageOpen(true)}>
                 {t('conversation.usage.label')}
               </MenuItem>
-              {instructionsFile ? (
-                <MenuItem
-                  icon={<FileText size={14} />}
-                  onSelect={() => openInstructions(conversationId, instructionsFile)}
-                >
-                  {t('conversation.instructions', { file: instructionsFile })}
-                </MenuItem>
-              ) : null}
+              <MenuItem icon={<FileText size={14} />} onSelect={() => setInstructionsOpen(true)}>
+                {t('conversation.instructions')}
+              </MenuItem>
               <MenuItem icon={<Search size={14} />} onSelect={() => setFindOpen(true)}>
                 {t('conversation.search')}
               </MenuItem>
@@ -1007,6 +997,11 @@ export function ConversationPage() {
           </IconButton>
         </header>
 
+        <InstructionsDialog
+          open={instructionsOpen}
+          onOpenChange={setInstructionsOpen}
+          projectId={conversation.projectId}
+        />
         <Dialog.Root open={metaOpen} onOpenChange={setMetaOpen}>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />

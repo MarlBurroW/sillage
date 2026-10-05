@@ -26,6 +26,7 @@ import type { Scheduler } from '../scheduler/scheduler.js'
 import type { WebhookService } from '../webhooks/service.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
+import { registerInstructionRoutes } from './routes/instructions.js'
 import { registerSkillLibraryRoutes } from './routes/skill-library.js'
 import { registerSkillSourceRoutes } from './routes/skill-sources.js'
 import { SkillSources } from '../skill-library/sources.js'
@@ -176,6 +177,7 @@ export async function buildApp(
     skillSources,
   )
   registerSkillLibraryRoutes(app, ctx, skillLibrary)
+  registerInstructionRoutes(app, ctx)
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
