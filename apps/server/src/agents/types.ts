@@ -89,6 +89,12 @@ export interface RunnerContext {
    */
   maskedInstructionRoots(): string[]
   /**
+   * Dossier de mémoire du projet, que Claude reçoit en `autoMemoryDirectory` à la place
+   * du sien. Créé au retour ; null pour les sondes, qui gardent la mémoire du poste.
+   * Codex le reçoit par `projectOverview`.
+   */
+  memoryDir(): string | null
+  /**
    * Racines de plugin de la bibliothèque de skills à livrer : la globale, puis celle du
    * projet. Vide quand la bibliothèque est coupée pour l'instance ou pour la
    * conversation.

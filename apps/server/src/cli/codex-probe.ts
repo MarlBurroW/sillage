@@ -19,7 +19,7 @@ const runner = new CodexRunner({
   config: { ...DEFAULT_CODEX_CONFIG, model: process.env.CODEX_MODEL ?? 'gpt-6-astra',
     reasoningEffort: 'low', collaborationMode: blocking ? 'plan' : 'default',
     sandbox: 'read-only', askForApproval: 'never', sillageMcp: false },
-  projectOverview: () => null, maskedInstructionRoots: () => [], resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
+  projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null, resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
   setAgentSessionId: () => {}, updateConfig: () => {},
   openPermissionRequest: () => 'probe-permission', closePermissionRequest: () => {},
   setStatus: (status) => { console.log(`status: ${status}`) },

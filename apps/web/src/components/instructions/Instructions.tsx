@@ -29,7 +29,7 @@ import { Banner, Button, ChoiceList, ConfirmDialog, IconButton, Select, cx, type
  * Le brouillon suit la version serveur tant qu'on n'y a pas touché : une consigne qu'un
  * agent écrit pendant que la page est ouverte apparaît, sans écraser une saisie en cours.
  */
-function MarkdownEditor({
+export function MarkdownEditor({
   value,
   canEdit,
   maxLength,
