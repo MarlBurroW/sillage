@@ -146,7 +146,9 @@ export class UpdateExecutor {
    */
   private async ensureNativeModules(dir: string): Promise<void> {
     const loads = () =>
-      execFileAsync(process.execPath, ['-e', 'require("better-sqlite3")'], { cwd: dir })
+      // Une requête, pas un simple require : un Node à qui manque la version de N-API du
+      // module le charge, puis plante au premier appel.
+      execFileAsync(process.execPath, ['-e', 'require("better-sqlite3")(":memory:").prepare("select 1").get()'], { cwd: dir })
 
     try {
       await loads()

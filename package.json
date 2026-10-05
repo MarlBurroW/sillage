@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "pnpm@9.15.9",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.14"
   },
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
