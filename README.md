@@ -8,7 +8,8 @@ A self-hosted, mobile-first web UI that drives the native Claude Code and Codex
 CLIs on your own machine. Vibe-code from anywhere: the official agent harnesses,
 without the terminal.
 
-Runs on Linux, on Windows through WSL2, in Docker or on Kubernetes.
+Runs on Linux, on macOS (Apple Silicon), on Windows through WSL2, in Docker or on
+Kubernetes.
 
 Website: [marlburrow.github.io/sillage](https://marlburrow.github.io/sillage)
 
@@ -131,6 +132,29 @@ native module ships as an N-API prebuild, which does not depend on the Node ABI.
 The installer checks they load and rebuilds them if they do not, which then needs
 a compiler (`build-essential` and `python3` on Debian/Ubuntu).
 
+### macOS (Apple Silicon)
+
+The same script installs Sillage on Macs with Apple Silicon. Run it from Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash
+```
+
+It needs git: if the Command Line Tools are missing, run `xcode-select --install`
+first. As on Linux it installs under `~/.local/share/sillage`, fetches Node if the
+system has none recent enough, creates the first account, then opens
+`http://localhost:7317`. The service is a launchd agent: it starts with your session
+and keeps running with Terminal closed, but nothing runs while the Mac sleeps.
+
+- Logs: `tail -f ~/.local/share/sillage/logs/sillage.log`. The file is not rotated.
+- Stop: `launchctl bootout gui/$(id -u)/io.github.marlburrow.sillage`. Re-running
+  the script starts it again.
+- Uninstall: stop it, then delete
+  `~/Library/LaunchAgents/io.github.marlburrow.sillage.plist` and
+  `~/.local/share/sillage`, which holds the database.
+
+The process view (Services) is Linux only.
+
 ### Windows (WSL2)
 
 Sillage runs inside WSL2, the Linux built into Windows 10 and 11, and you use it
@@ -197,9 +221,9 @@ Tunnel). Never expose it directly to the Internet.
 
 ## Releases
 
-Releases are git tags (`vX.Y.Z`). Each tag builds Linux tarballs (x64 and arm64,
-prebuilt native modules included), a multi-arch Docker image on
-`ghcr.io/marlburrow/sillage`, and a GitHub release with generated notes. The app
+Releases are git tags (`vX.Y.Z`). Each tag builds Linux tarballs (x64 and arm64) and
+a macOS one (Apple Silicon), prebuilt native modules included, a multi-arch Docker
+image on `ghcr.io/marlburrow/sillage`, and a GitHub release with generated notes. The app
 shows the installed version, checks for newer releases, and on installer-based
 setups can update itself from the UI.
 
@@ -210,7 +234,7 @@ apps/server       Fastify daemon: API, WebSocket, CLI supervision
 apps/web          React UI, PWA
 packages/protocol shared event schema and types
 packages/db       Drizzle schema and migrations
-deploy/           systemd unit template, config example, docker-compose example, Helm chart
+deploy/           service templates (systemd, launchd), config example, docker-compose example, Helm chart
 site/             one-page website (GitHub Pages) and its screenshots
 scripts/          screenshot runner, runtime staging, Codex type generation
 docs/windows.md   running Sillage on Windows through WSL2

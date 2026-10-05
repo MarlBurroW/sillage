@@ -64,8 +64,9 @@ export class ReleaseChecker {
       (r) => r.tag_name.replace(/^v/, '') === tag.replace(/^v/, ''),
     )
     if (!release) return null
+    const platform = process.platform === 'darwin' ? 'darwin' : 'linux'
     const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-    const asset = release.assets.find((a) => a.name.endsWith(`linux-${arch}.tar.gz`))
+    const asset = release.assets.find((a) => a.name.endsWith(`${platform}-${arch}.tar.gz`))
     return asset?.browser_download_url ?? null
   }
 
