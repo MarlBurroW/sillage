@@ -22,6 +22,7 @@ import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 import { useVersionInfo } from '../lib/system'
+import { UpdateDot } from '../components/UpdateDot'
 import { useMediaQuery } from '../lib/viewport'
 import { cx } from '../components/ui'
 
@@ -207,10 +208,7 @@ export function SettingsLayout() {
                     >
                       <span className="relative shrink-0 text-ink-faint">
                         {section.icon}
-                        {/* Une pastille, pas un toast : la mise à jour attend sans presser. */}
-                        {section.to === 'a-propos' && versionInfo?.updateAvailable ? (
-                          <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-accent" />
-                        ) : null}
+                        {section.to === 'a-propos' && versionInfo?.updateAvailable ? <UpdateDot /> : null}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{t(section.labelKey)}</span>

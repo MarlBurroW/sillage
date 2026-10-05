@@ -94,6 +94,8 @@ import { AgentIcon } from './AgentIcon'
 import { CommandPalette } from './CommandPalette'
 import { Logo } from './Logo'
 import { UpdatePrompt } from './UpdatePrompt'
+import { UpdateDot } from './UpdateDot'
+import { useUpdateNotice } from '../lib/system'
 import { MobileNavigationButton, MobileNavigationContext } from './MobileNavigation'
 import { PullToRefresh } from './PullToRefresh'
 import {
@@ -406,6 +408,7 @@ function Sidebar({
   // visible même si le retrait optimiste fait disparaître la ligne des favoris.
   const toggleFavorite = useToggleFavorite()
   const logout = useLogout()
+  const updateNotice = useUpdateNotice()
   const navigate = useNavigate()
   const routeProjectId = useMatch('/p/:projectId/*')?.params.projectId
   const visits = useProjectVisits(user?.id ?? '')
@@ -654,8 +657,12 @@ function Sidebar({
           <span>{t('services.title')}</span>
         </SidebarRow>
         <SidebarRow to="/settings" onClick={onNavigate}>
-          <Settings size={16} className="shrink-0" />
+          <span className="relative shrink-0">
+            <Settings size={16} />
+            {updateNotice ? <UpdateDot /> : null}
+          </span>
           <span className="truncate">{user?.displayName ?? t('shell.settings.fallback')}</span>
+          {updateNotice ? <span className="sr-only">{t('about.badge.updateAvailable')}</span> : null}
         </SidebarRow>
         <button
           type="button"
