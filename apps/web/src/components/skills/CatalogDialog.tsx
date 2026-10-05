@@ -27,6 +27,7 @@ export function CatalogDialog({
   open,
   onClose,
   sourceId,
+  skillName,
   scope,
   projectId,
 }: {
@@ -34,6 +35,8 @@ export function CatalogDialog({
   onClose: () => void
   /** Source ouverte d'abord ; à défaut, la première récupérée. */
   sourceId?: string | null
+  /** Skill montré d'emblée, par son nom : celui qu'on a choisi dans une recherche skills.sh. */
+  skillName?: string | null
   scope: LibrarySkillScope
   projectId: string | null
 }) {
@@ -43,13 +46,23 @@ export function CatalogDialog({
   const [chosen, setChosen] = useState<string | null>(sourceId ?? null)
   const current = fetched.find((source) => source.id === chosen) ?? fetched[0] ?? null
   const { data: catalog } = useSourceCatalog(open && current ? current.id : null)
-  const [filter, setFilter] = useState('')
+  // Le filtre part du skill demandé : au doigt, la liste réduite à lui laisse son aperçu
+  // juste en dessous. Le vider rend le reste du dépôt.
+  const [filter, setFilter] = useState(skillName ?? '')
   const [selected, setSelected] = useState<string | null>(null)
+  const [wanted, setWanted] = useState(skillName ?? null)
   const needle = filter.trim().toLowerCase()
   const skills = (catalog?.skills ?? []).filter(
-    (skill) => !needle || skill.name.toLowerCase().includes(needle) || skill.description.toLowerCase().includes(needle),
+    (skill) =>
+      !needle ||
+      skill.name.toLowerCase().includes(needle) ||
+      skill.path.toLowerCase().includes(needle) ||
+      skill.description.toLowerCase().includes(needle),
   )
-  const focused = skills.find((skill) => skill.path === selected) ?? null
+  const focused =
+    skills.find((skill) => skill.path === selected) ?? (selected === null && wanted ? findByName(skills, wanted) : null)
+  // Rapporté au catalogue entier : un filtre retouché ne fait pas disparaître le skill du dépôt.
+  const missing = selected === null && wanted !== null && catalog !== undefined && findByName(catalog.skills, wanted) === null
 
   return (
     <Dialog.Root open={open} onOpenChange={(next) => { if (!next) onClose() }}>
@@ -77,7 +90,7 @@ export function CatalogDialog({
                 <Select
                   label={t('skills.catalog.source')}
                   value={current?.id ?? ''}
-                  onChange={(id) => { setChosen(id); setSelected(null) }}
+                  onChange={(id) => { setChosen(id); setSelected(null); setWanted(null) }}
                   options={fetched.map((source) => ({
                     value: source.id,
                     label: `${source.name} · ${shortCommit(source.lastCommit)}`,
@@ -124,7 +137,9 @@ export function CatalogDialog({
                     onInstalled={onClose}
                   />
                 ) : (
-                  <p className="m-auto px-6 py-8 text-center text-sm text-ink-faint">{t('skills.catalog.pick')}</p>
+                  <p className="m-auto px-6 py-8 text-center text-sm text-ink-faint">
+                    {missing ? t('skills.catalog.missing', { name: wanted }) : t('skills.catalog.pick')}
+                  </p>
                 )}
               </div>
             </div>
@@ -133,6 +148,14 @@ export function CatalogDialog({
       </Dialog.Portal>
     </Dialog.Root>
   )
+}
+
+/**
+ * Le skill qu'un résultat de skills.sh désigne. L'annuaire le nomme comme son frontmatter,
+ * et le catalogue aussi, sauf quand le `SKILL.md` n'en donne pas : le dossier sert alors.
+ */
+function findByName(skills: SourceSkillDto[], name: string): SourceSkillDto | null {
+  return skills.find((skill) => skill.name === name) ?? skills.find((skill) => skill.path.split('/').pop() === name) ?? null
 }
 
 function CatalogBadges({ skill }: { skill: SourceSkillDto }) {
