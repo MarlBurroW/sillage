@@ -1,8 +1,9 @@
-import { BookOpen, Box, Brain, Compass, MessageSquareText, ShieldCheck, Sparkles, UserRoundSearch, Workflow, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Compass, FilePen, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, Workflow, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
   claudeEffortSchema,
+  codexModeSchema,
   DEFAULT_CLAUDE_CONFIG,
   type AgentConfig,
   type AgentModelDto,
@@ -11,6 +12,8 @@ import {
   type CodexConfig,
   type CodexMode,
   type McpServerStatus,
+  type OpencodePermission,
+  type OpencodePermissions,
 } from '@sillage/protocol'
 import { effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useMcpServers } from '../../lib/mcp'
@@ -166,6 +169,42 @@ function codexSandboxOptions(t: Translate): SettingChoice<CodexConfig['sandbox']
 }
 
 /**
+ * Règle d'opencode pour une famille d'outils, dans son vocabulaire : demander, laisser
+ * faire, refuser. La sentinelle `CLI_DEFAULT` est un état réel, celui où Sillage ne pose
+ * aucune règle et où l'`opencode.json` du poste décide : elle a son entrée, comme la
+ * politique d'approbation de Codex.
+ */
+type OpencodePermissionChoice = Exclude<OpencodePermission, ''> | typeof CLI_DEFAULT_CHOICE
+
+function opencodePermissionOptions(t: Translate): SettingChoice<OpencodePermissionChoice>[] {
+  return [
+    { value: 'ask', label: t('composer.opencodePermission.ask'), hint: t('composer.opencodePermission.ask.hint') },
+    {
+      value: 'allow',
+      label: t('composer.opencodePermission.allow'),
+      hint: t('composer.opencodePermission.allow.hint'),
+      tone: 'caution',
+    },
+    { value: 'deny', label: t('composer.opencodePermission.deny'), hint: t('composer.opencodePermission.deny.hint') },
+    {
+      value: CLI_DEFAULT_CHOICE,
+      label: t('composer.opencodePermission.cliDefault'),
+      hint: t('composer.opencodePermission.cliDefault.hint'),
+    },
+  ]
+}
+
+const opencodePermissionChoice = (value: OpencodePermission): OpencodePermissionChoice =>
+  value === CLI_DEFAULT ? CLI_DEFAULT_CHOICE : value
+
+/** Les familles réglables, dans l'ordre du panneau, avec leur intitulé et leur icône. */
+const OPENCODE_PERMISSIONS: { family: keyof OpencodePermissions; label: MessageKey; icon: ReactElement }[] = [
+  { family: 'edit', label: 'composer.setting.opencodeEdit', icon: <FilePen size={15} /> },
+  { family: 'bash', label: 'composer.setting.opencodeBash', icon: <SquareTerminal size={15} /> },
+  { family: 'webfetch', label: 'composer.setting.opencodeWebfetch', icon: <Globe size={15} /> },
+]
+
+/**
  * Nomme le modèle derrière la ligne par défaut du catalogue.
  *
  * Claude Code appelle la sienne « Default (recommended) », ce qui est long et ne dit
@@ -266,6 +305,7 @@ export function useAgentSettings({
   // d'un paramètre à l'intérieur des fonctions de rendu construites plus bas.
   const claude = config.agent === 'claude' ? config : null
   const codex = config.agent === 'codex' ? config : null
+  const opencode = config.agent === 'opencode' ? config : null
 
   /**
    * Modèle réellement en vigueur. `CLI_DEFAULT` ne désigne aucune entrée du catalogue :
@@ -317,7 +357,7 @@ export function useAgentSettings({
     // lisible quand le catalogue ne le déclare pas (ou plus). Seulement si le modèle
     // gère l'effort : sinon le sélecteur n'a pas à exister.
     const current =
-      config.agent === 'claude' ? config.effort : config.agent === 'codex' ? config.reasoningEffort : ''
+      config.agent === 'claude' ? config.effort : config.agent === 'codex' ? config.reasoningEffort : config.variant
     if (known.length > 0 && current && !known.some((option) => option.value === current)) {
       known.unshift({ value: current, label: current, hint: t('composer.select.saved') })
     }
@@ -404,8 +444,43 @@ export function useAgentSettings({
    * installée ne la connaît pas, et reste vide pour les CLI sans cette notion.
    */
   const codexModeOptions = useMemo((): SettingChoice<CodexMode>[] => {
-    return (catalog?.modes ?? []).map((entry) => ({ value: entry.mode, label: entry.label }))
+    // La liste est une chaîne libre côté protocole, opencode y rangeant ses agents :
+    // seuls les modes que Codex connaît peuvent partir dans sa configuration.
+    return (catalog?.modes ?? []).flatMap((entry) => {
+      const mode = codexModeSchema.safeParse(entry.mode)
+      return mode.success ? [{ value: mode.data, label: entry.label }] : []
+    })
   }, [catalog])
+
+  /**
+   * Agents primaires d'opencode (`build`, `plan`, ceux de l'utilisateur) : le pendant
+   * des modes de collaboration, à ceci près que la liste est ouverte. L'agent
+   * enregistré reste sélectionnable même si le catalogue ne l'annonce pas.
+   */
+  const primaryAgentOptions = useMemo((): SettingChoice<string>[] => {
+    if (!opencode) return []
+    const known: SettingChoice<string>[] = (catalog?.modes ?? []).map((entry) => ({
+      value: entry.mode,
+      label: entry.label,
+      hint: entry.hint ?? undefined,
+    }))
+    if (!known.some((option) => option.value === opencode.primaryAgent)) {
+      known.unshift({ value: opencode.primaryAgent, label: opencode.primaryAgent, hint: t('composer.select.saved') })
+    }
+    return known
+  }, [catalog, opencode, t])
+
+  /**
+   * Variantes du modèle, derrière une entrée « par défaut » : sans variante, opencode
+   * laisse au modèle ses réglages propres, et aucune des variantes ne désigne cet état.
+   */
+  const variantOptions = useMemo((): SettingChoice<string>[] => {
+    if (!opencode || effortOptions.length === 0) return []
+    return [
+      { value: CLI_DEFAULT_CHOICE, label: t('composer.variant.default'), hint: t('composer.variant.default.hint') },
+      ...effortOptions,
+    ]
+  }, [effortOptions, opencode, t])
 
   // L'approbation peut être un objet granulaire, que Sillage n'édite pas : il est
   // alors affiché comme une option non modifiable plutôt que comme un select vide.
@@ -489,6 +564,7 @@ export function useAgentSettings({
   const sandboxOptionList = codexSandboxOptions(t)
   const speedOptionList = speedOptions(t)
   const ultracodeOptionList = ultracodeOptions(t)
+  const opencodePermissionList = opencodePermissionOptions(t)
 
   let groups: SettingGroup[] = []
   let summary: SummarySegment[] = []
@@ -753,6 +829,125 @@ export function useAgentSettings({
         onSelectedChange={(ids) => onConfigChange({ ...codex, mcpServers: ids })}
         sillage={sillageAvailable ? codex.sillageMcp : null}
         onSillageChange={(sillageMcp) => onConfigChange({ ...codex, sillageMcp })}
+        strict={null}
+        onStrictChange={() => {}}
+        disabled={disabled}
+      />
+    )
+  } else if (opencode) {
+    const applied = appliedConfig?.agent === 'opencode' ? appliedConfig : null
+    const variant = opencode.variant || CLI_DEFAULT_CHOICE
+
+    groups = [
+      setting({
+        key: 'model',
+        label: t('composer.setting.model'),
+        icon: <Sparkles size={15} />,
+        options: modelOptions,
+        value: resolvedModel,
+        // Une variante que le nouveau modèle ne connaît pas retombe sur ses réglages
+        // propres, qui existent toujours.
+        onChange: (model) =>
+          onConfigChange({ ...opencode, model, variant: clampEffort(model, opencode.variant) }),
+      }),
+      setting({
+        key: 'mode',
+        label: t('composer.setting.primaryAgent'),
+        icon: <Compass size={15} />,
+        options: primaryAgentOptions,
+        value: opencode.primaryAgent,
+        onChange: (primaryAgent) => onConfigChange({ ...opencode, primaryAgent }),
+      }),
+      ...(variantOptions.length > 0
+        ? [
+            setting({
+              key: 'effort',
+              label: t('composer.setting.variant'),
+              icon: <Brain size={15} />,
+              options: variantOptions,
+              value: variant,
+              onChange: (choice) =>
+                onConfigChange({ ...opencode, variant: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice }),
+            }),
+          ]
+        : []),
+      // opencode lit ses règles au lancement : comme le mode de permission de Claude,
+      // un changement attend la relance de la session, et la ligne dit ce qui vaut
+      // encore d'ici là.
+      ...OPENCODE_PERMISSIONS.map(({ family, label, icon }) =>
+        setting({
+          key: `permission-${family}`,
+          label: t(label),
+          icon,
+          options: opencodePermissionList,
+          value: opencodePermissionChoice(opencode.permissions[family]),
+          onChange: (choice) =>
+            onConfigChange({
+              ...opencode,
+              permissions: {
+                ...opencode.permissions,
+                [family]: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice,
+              },
+            }),
+          notice: notice(
+            appliedLabel(
+              applied ? opencodePermissionChoice(applied.permissions[family]) : undefined,
+              opencodePermissionChoice(opencode.permissions[family]),
+              opencodePermissionList,
+            ),
+            t,
+          ),
+        }),
+      ),
+      ...(libraryAvailable
+        ? [
+            setting({
+              key: 'skillLibrary',
+              label: t('composer.setting.skillLibrary'),
+              icon: <BookOpen size={15} />,
+              options: libraryOptionList,
+              value: libraryChoice(opencode.skillLibrary),
+              onChange: (choice) => onConfigChange({ ...opencode, skillLibrary: choice === 'on' }),
+              notice: notice(
+                appliedLabel(
+                  applied ? libraryChoice(applied.skillLibrary) : undefined,
+                  libraryChoice(opencode.skillLibrary),
+                  libraryOptionList,
+                ),
+                t,
+              ),
+            }),
+          ]
+        : []),
+    ]
+
+    // Le résumé nomme la famille : « Autoriser » seul ne dirait pas quoi. Une famille
+    // laissée libre reste visible, comme tout garde-fou levé ; les deux en « demander »
+    // se résument en un mot.
+    const { edit, bash } = opencode.permissions
+    summary = [
+      segment('model', modelOptions, resolvedModel),
+      ...(opencode.variant ? [segment('effort', variantOptions, variant)] : []),
+      ...(opencode.primaryAgent === 'build' ? [] : [segment('mode', primaryAgentOptions, opencode.primaryAgent)]),
+      ...(edit === 'ask' && bash === 'ask'
+        ? [{ key: 'permission', label: t('composer.opencodePermission.summary.ask') }]
+        : []),
+      ...(edit === 'allow'
+        ? [{ key: 'permission-edit', label: t('composer.opencodePermission.summary.editAllow'), tone: 'caution' as const }]
+        : []),
+      ...(bash === 'allow'
+        ? [{ key: 'permission-bash', label: t('composer.opencodePermission.summary.bashAllow'), tone: 'caution' as const }]
+        : []),
+    ]
+
+    mcp = (
+      <McpControl
+        servers={mcpServers}
+        inventory={mcpInventory}
+        selected={opencode.mcpServers}
+        onSelectedChange={(ids) => onConfigChange({ ...opencode, mcpServers: ids })}
+        sillage={sillageAvailable ? opencode.sillageMcp : null}
+        onSillageChange={(sillageMcp) => onConfigChange({ ...opencode, sillageMcp })}
         strict={null}
         onStrictChange={() => {}}
         disabled={disabled}

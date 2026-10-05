@@ -352,7 +352,7 @@ export class AgentRequests {
 
     const model = catalog.find((entry) => entry.value === config.model) ?? catalog.find((entry) => entry.isDefault)
     const efforts = model?.efforts.map((entry) => entry.value) ?? []
-    const current = config.agent === 'claude' ? config.effort : config.reasoningEffort
+    const current = effortOf(config)
     if (!requestedEffort && model?.defaultEffort && efforts.length > 0 && !efforts.includes(current)) {
       // Le modèle demandé ne connaît pas l'effort des défauts : son propre défaut, comme
       // le fait le sélecteur de l'interface, plutôt qu'un lancement qui échouerait.
@@ -531,9 +531,15 @@ export function matchEffort(efforts: string[], wanted: string): string | null {
 function withEffort(config: AgentConfig, effort: string): AgentConfig {
   // Le schéma refuse plus bas un niveau que Claude ne connaît pas : le transtypage ne
   // sert qu'à passer la chaîne jusque-là.
-  return config.agent === 'claude'
-    ? { ...config, effort: effort as typeof config.effort }
-    : { ...config, reasoningEffort: effort }
+  if (config.agent === 'claude') return { ...config, effort: effort as typeof config.effort }
+  if (config.agent === 'codex') return { ...config, reasoningEffort: effort }
+  return { ...config, variant: effort }
+}
+
+/** L'effort sous le nom que chaque CLI lui donne : la variante, chez opencode. */
+function effortOf(config: AgentConfig): string {
+  if (config.agent === 'claude') return config.effort
+  return config.agent === 'codex' ? config.reasoningEffort : config.variant
 }
 
 function describeModel(config: AgentConfig): string {
@@ -541,8 +547,7 @@ function describeModel(config: AgentConfig): string {
 }
 
 function describeEffort(config: AgentConfig): string {
-  const effort = config.agent === 'claude' ? config.effort : config.reasoningEffort
-  return effort || 'celui du CLI'
+  return effortOf(config) || 'celui du CLI'
 }
 
 function describePermissions(config: AgentConfig): string | null {
@@ -551,6 +556,9 @@ function describePermissions(config: AgentConfig): string | null {
   }
   if (config.agent === 'codex' && config.askForApproval !== 'never' && config.askForApproval !== '') {
     return "Elle demandera l'approbation de l'utilisateur pour ce qui sort de son bac à sable, comme le veulent les défauts du projet."
+  }
+  if (config.agent === 'opencode' && (config.permissions.edit === 'ask' || config.permissions.bash === 'ask')) {
+    return "Elle demandera la permission de l'utilisateur avant d'écrire ou d'exécuter, comme le veulent les défauts du projet."
   }
   return null
 }

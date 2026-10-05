@@ -747,8 +747,9 @@ export class SessionManager {
             mode: instructions()?.mode ?? 'repo',
             sillageMcp,
           }),
-          // Claude charge l'index de sa mémoire de lui-même ; Codex n'a que ce qu'on lui dit.
-          conversation.agent === 'codex' ? memoryAppendixForCodex(memoryDir(), sillageMcp) : null,
+          // Claude charge l'index de sa mémoire de lui-même ; Codex et opencode n'ont que
+          // ce qu'on leur dit.
+          conversation.agent !== 'claude' ? memoryAppendixForCodex(memoryDir(), sillageMcp) : null,
           this.config.mcp.sillageServer && current.sillageMcp
             ? projectOverview(this.db, {
                 projectId: conversation.projectId,

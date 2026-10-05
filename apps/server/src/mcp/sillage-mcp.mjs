@@ -360,7 +360,7 @@ const TOOLS = [
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'codex'],
+          enum: ['claude', 'codex', 'opencode'],
           description: 'CLI de la session. Omettre pour le même que le tien.',
         },
         model: {
@@ -395,8 +395,8 @@ const TOOLS = [
       properties: {
         agent: {
           type: 'string',
-          enum: ['claude', 'codex'],
-          description: 'Ne rendre que ce CLI. Omettre pour les deux.',
+          enum: ['claude', 'codex', 'opencode'],
+          description: 'Ne rendre que ce CLI. Omettre pour tous.',
         },
       },
     },
