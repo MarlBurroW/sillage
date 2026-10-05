@@ -7,7 +7,7 @@
  *   ├── package.json          dépendances d'exécution seules, sans le workspace
  *   ├── server/               bundle du daemon (main.js, cli/, migrations/)
  *   ├── web/                  frontend buildé
- *   ├── deploy/               unité systemd template et config d'exemple
+ *   ├── deploy/               modèles du service (systemd, launchd), config d'exemple
  *   └── install.sh            pour que l'archive sache se réinstaller
  *
  * Le bundle tsup laisse toutes les dépendances runtime externes (modules natifs
@@ -43,6 +43,7 @@ cpSync(serverDist, join(out, 'server'), { recursive: true })
 cpSync(webDist, join(out, 'web'), { recursive: true })
 mkdirSync(join(out, 'deploy'), { recursive: true })
 cpSync(join(root, 'deploy/sillage.service.tmpl'), join(out, 'deploy/sillage.service.tmpl'))
+cpSync(join(root, 'deploy/sillage.plist.tmpl'), join(out, 'deploy/sillage.plist.tmpl'))
 cpSync(join(root, 'deploy/config.example.toml'), join(out, 'deploy/config.example.toml'))
 cpSync(join(root, 'install.sh'), join(out, 'install.sh'))
 

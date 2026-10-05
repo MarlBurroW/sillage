@@ -70,7 +70,7 @@
           </p>
         </div>
       </div>
-      <div class="hero-meta"><span>Claude Code + Codex</span><span>Linux · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
+      <div class="hero-meta"><span>Claude Code + Codex</span><span>Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
       <figure class="hero-shot">
         <button type="button" data-zoom aria-label="Enlarge the conversation screenshot"><picture>
           <source srcset="screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
@@ -273,13 +273,14 @@
     <section class="install" id="install" aria-labelledby="install-title">
       <div class="install-intro">
         <p class="section-label">Run it yourself</p><h2 id="install-title">Your machine.<br>Your workspace.</h2>
-        <p>Docker, a systemd user service on Linux, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default.</p>
+        <p>Docker, a systemd user service on Linux, a launchd agent on macOS, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default.</p>
       </div>
 
       <div class="install-box">
         <div class="tabs" role="tablist" aria-label="Installation method">
           <button id="tab-docker" role="tab" aria-selected="true" aria-controls="panel-docker" data-tab="docker">Docker</button>
           <button id="tab-script" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-script" data-tab="script">Linux</button>
+          <button id="tab-macos" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-macos" data-tab="macos">macOS</button>
           <button id="tab-windows" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-windows" data-tab="windows">Windows</button>
           <button id="tab-helm" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-helm" data-tab="helm">Kubernetes</button>
         </div>
@@ -305,6 +306,11 @@ docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
         <div id="panel-script" class="tab-panel" role="tabpanel" aria-labelledby="tab-script" data-panel="script" hidden>
 <pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
           <p>Linux x64 or arm64 with systemd. Install the agents you use from the UI, then authenticate them on the host. It installs under <code>~/.local/share/sillage</code>, fetches Node if the system has none recent enough, sets up a user service and creates the first account. Later updates happen from the UI.</p>
+        </div>
+
+        <div id="panel-macos" class="tab-panel" role="tabpanel" aria-labelledby="tab-macos" data-panel="macos" hidden>
+<pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
+          <p>Apple Silicon Macs, from Terminal. The same installer as on Linux fetches Node if needed, creates the first account, opens Sillage in your browser and sets up a launchd agent that starts with your session. It needs git: run <code>xcode-select --install</code> first if the Command Line Tools are missing. Your agents only work while the Mac is awake.</p>
         </div>
 
         <div id="panel-windows" class="tab-panel" role="tabpanel" aria-labelledby="tab-windows" data-panel="windows" hidden>
