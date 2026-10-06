@@ -130,6 +130,27 @@ dialog.addEventListener('click', (event) => {
   if (event.target === dialog) dialog.close()
 })
 
+// Le film d'ouverture : l'affiche et le bouton restent jusqu'au clic, puis la vidéo se
+// joue sur place avec ses contrôles. À la fin, le bouton revient pour la revoir. Le lien
+// #film (celui du README) mène ici ; la lecture attend le clic, car un navigateur refuse
+// de lancer seul une vidéo avec le son.
+const hero = document.querySelector('.hero-film')
+const film = hero.querySelector('[data-film]')
+const filmPlay = hero.querySelector('[data-film-play]')
+// Sans JavaScript, les contrôles natifs suffisent ; avec, le grand bouton les remplace.
+film.controls = false
+filmPlay.hidden = false
+filmPlay.addEventListener('click', () => {
+  hero.toggleAttribute('data-playing', true)
+  film.controls = true
+  film.play().catch(() => {})
+})
+film.addEventListener('ended', () => {
+  hero.toggleAttribute('data-playing', false)
+  film.controls = false
+  film.load() // revient à l'affiche
+})
+
 // The header only grows a rule once it sits over content.
 const topbar = document.querySelector('.topbar')
 const onScroll = () => topbar.toggleAttribute('data-stuck', window.scrollY > 8)

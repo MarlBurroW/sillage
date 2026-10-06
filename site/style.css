@@ -579,6 +579,46 @@ h2 { font-size: clamp(2rem, 3.6vw, 3.3rem); font-weight: 550; letter-spacing: -.
 .release { color: var(--muted); }
 .hero-shot { width: 100%; left: auto; translate: none; margin: 1rem 0 0; }
 .hero-shot img { border: 0; border-radius: 0; box-shadow: none; }
+/* Le film tient la place de la capture d'ouverture : on le voit sans défiler, et rien
+   ne se télécharge avant le clic (preload="none", seule l'affiche est chargée). */
+.film-frame { position: relative; aspect-ratio: 16 / 9; border: 1px solid var(--shot-edge); border-radius: .35rem; overflow: hidden; background: #0f0b11; }
+.film-frame video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Le bouton couvre toute l'affiche. Le rond se pose sur l'axe du mot-symbole, sous son trait
+   (l'affiche est une image fixe : ces repères en pourcentage valent à toutes les largeurs),
+   le libellé centré dessous. */
+.film-play {
+  --play: clamp(3rem, 6vw, 4.6rem);
+  position: absolute; inset: 0; display: block; padding: 0; border: 0; background: transparent;
+  color: #eee8f0; cursor: pointer; font: inherit; transition: opacity .25s;
+}
+.film-play-icon {
+  position: absolute; left: 50%; top: 61%; width: var(--play); aspect-ratio: 1; translate: -50% -50%;
+  border-radius: 50%; background: #cd7be5;
+  box-shadow: 0 0 0 .5rem rgb(205 123 229 / .18), 0 1rem 2.5rem rgb(0 0 0 / .45);
+  transition: scale .2s, box-shadow .2s;
+}
+.film-play-icon::after {
+  content: ''; position: absolute; left: 54%; top: 50%; translate: -50% -50%;
+  border-style: solid; border-width: .62em 0 .62em 1.05em; border-color: transparent transparent transparent #0f0b11;
+  font-size: calc(var(--play) / 4.2);
+}
+.film-play-label {
+  position: absolute; left: 50%; top: calc(61% + var(--play) / 2 + .9rem); translate: -50% 0;
+  display: flex; flex-direction: column; align-items: center; white-space: nowrap;
+  font-size: clamp(.95rem, 1.5vw, 1.2rem); font-weight: 600; letter-spacing: -.01em; line-height: 1.25; text-shadow: 0 2px 12px rgb(0 0 0 / .7);
+}
+.film-play-label small { color: #b5aab9; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .68em; font-weight: 500; letter-spacing: .06em; }
+.film-play:hover .film-play-icon, .film-play:focus-visible .film-play-icon { scale: 1.06; box-shadow: 0 0 0 .7rem rgb(205 123 229 / .26), 0 1rem 2.5rem rgb(0 0 0 / .45); }
+.film-play:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+.film-play[hidden] { display: none; }
+.hero-film[data-playing] .film-play { opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .film-play, .film-play-icon { transition: none; } }
+/* Sur un téléphone, l'affiche est trop petite pour le libellé : le rond seul, même axe. */
+@media (max-width: 600px) {
+  .film-play { --play: 2.8rem; }
+  .film-play-icon { top: 63%; box-shadow: 0 0 0 .35rem rgb(205 123 229 / .2), 0 .6rem 1.5rem rgb(0 0 0 / .45); }
+  .film-play-label { display: none; }
+}
 [data-zoom] { display: block; width: 100%; padding: 0; background: var(--raised); border: 1px solid var(--shot-edge); border-radius: .35rem; overflow: hidden; cursor: zoom-in; }
 figcaption { margin-top: .8rem; color: var(--muted); font-size: .8rem; }
 .chapter-nav { margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); border-block: 1px solid var(--line); }

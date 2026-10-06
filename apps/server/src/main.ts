@@ -12,6 +12,7 @@ import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
 import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
+import { TaskScheduler } from './scheduler/task-scheduler.js'
 import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
@@ -50,6 +51,8 @@ async function main(): Promise<void> {
   const relay = new SessionRelay(db, sessions, log)
   // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
   const agentRequests = new AgentRequests({ db, config }, sessions, registry)
+  // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
+  const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
   const orphans = await attachments.purgeOrphans()
@@ -71,6 +74,7 @@ async function main(): Promise<void> {
     webhooks,
     scheduler,
     relay,
+    tasks,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
@@ -88,6 +92,9 @@ async function main(): Promise<void> {
   // doivent décrire les runners de ce process, pas ceux du précédent.
   relay.start(app.log)
   agentRequests.start(app.log)
+  // Après `recoverInterrupted` aussi : un tir coupé par le redémarrage doit se lire
+  // « interrompu », pas « en cours » jusqu'à sa durée maximale.
+  tasks.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
 
@@ -100,6 +107,7 @@ async function main(): Promise<void> {
     scheduler.stop()
     relay.stop()
     agentRequests.stop()
+    tasks.stop()
     await sessions.stopAll()
     terminals.shutdown()
     await app.close()

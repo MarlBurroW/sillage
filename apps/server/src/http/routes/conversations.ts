@@ -105,6 +105,7 @@ export function conversationToDto(
     origin: row.originLabel
       ? { tokenId: row.createdByTokenId, label: row.originLabel }
       : null,
+    scheduleId: row.scheduleId,
   }
 }
 
@@ -460,6 +461,7 @@ export function registerConversationRoutes(
       // marqueur d'origine de la source lui attribuerait un jeton qui n'y est pour rien.
       createdByTokenId: null,
       originLabel: null,
+      scheduleId: null,
       status: 'idle',
       // Le journal est recopié juste après, qui posera le vrai compteur.
       lastSeq: 0,

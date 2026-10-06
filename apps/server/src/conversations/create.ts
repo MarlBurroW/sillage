@@ -37,6 +37,8 @@ export interface CreateConversationInput {
   titleSource?: string
   /** Jeton d'API à l'origine de la conversation ; null quand elle vient de l'interface. */
   origin: { tokenId: string; label: string } | null
+  /** Tâche planifiée dont ce fil est un tir ; absent pour toute autre conversation. */
+  scheduleId?: string
   firstMessage?: {
     clientMessageId: string
     text: string
@@ -79,6 +81,7 @@ export async function createConversation(
     forkedFromId: null,
     createdByTokenId: input.origin?.tokenId ?? null,
     originLabel: input.origin?.label ?? null,
+    scheduleId: input.scheduleId ?? null,
     config: JSON.stringify(input.config),
     status: 'idle',
     backgroundCount: 0,

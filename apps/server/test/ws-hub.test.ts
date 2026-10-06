@@ -21,6 +21,8 @@ import type { WebhookService } from '../src/webhooks/service.js'
 import { registerClaudeSessionRoutes } from '../src/http/routes/claude-sessions.js'
 import { registerConversationRoutes } from '../src/http/routes/conversations.js'
 import { registerProjectRoutes } from '../src/http/routes/projects.js'
+import { registerScheduleRoutes } from '../src/http/routes/schedules.js'
+import type { TaskScheduler } from '../src/scheduler/task-scheduler.js'
 import { registerV1Routes } from '../src/http/v1/index.js'
 import { LIST_ROUTES, registerWebSocketHub } from '../src/ws/hub.js'
 
@@ -179,6 +181,7 @@ test('chaque route de LIST_ROUTES existe', async (t) => {
   registerConversationRoutes(app, ctx, {} as EventLog, sessions, {} as AgentRegistry, {} as AttachmentStore, {} as WebhookService)
   registerClaudeSessionRoutes(app, ctx, {} as EventLog, sessions, {} as AgentRegistry)
   registerV1Routes(app, ctx, {} as EventLog, sessions, {} as AgentRegistry, {} as WebhookService)
+  registerScheduleRoutes(app, ctx, sessions, {} as AgentRegistry, {} as TaskScheduler)
   await app.ready()
   t.after(() => app.close())
 

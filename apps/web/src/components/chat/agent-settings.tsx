@@ -15,7 +15,7 @@ import {
   type OpencodePermission,
   type OpencodePermissions,
 } from '@sillage/protocol'
-import { effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
+import { catalogModel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useMcpServers } from '../../lib/mcp'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
@@ -340,8 +340,14 @@ export function useAgentSettings({
     // Le modèle enregistré doit rester sélectionnable même si le catalogue n'a pas pu
     // être lu, sinon le select s'affiche vide et efface le réglage de la conversation.
     // Seulement s'il y a un réglage à préserver : la sentinelle n'en est pas un.
+    // Un ancien nom d'un modèle toujours listé garde le nom lisible de celui-ci.
     if (config.model && !known.some((option) => option.value === config.model)) {
-      known.unshift({ value: config.model, label: config.model, hint: t('composer.select.saved') })
+      const listed = catalogModel(models, config.model)
+      known.unshift({
+        value: config.model,
+        label: listed?.displayName ?? config.model,
+        hint: [listed ? config.model : null, t('composer.select.saved')].filter(Boolean).join(' · '),
+      })
     }
     return known
   }, [catalog, config.model, t])
@@ -375,8 +381,9 @@ export function useAgentSettings({
     supportsFastMode(catalog.models, resolvedModel)
 
   /**
-   * Ultracode tient l'effort à `xhigh` : le CLI le refuse sur un modèle qui ne gère pas
-   * ce niveau, donc le réglage n'existe que là, comme le mode rapide.
+   * Ultracode n'impose plus `xhigh` depuis Claude Code 2.1.284, mais le CLI le refuse
+   * toujours sur un modèle qui ne gère pas ce niveau (sondé sur 2.1.291) : le réglage
+   * n'existe que là, comme le mode rapide.
    */
   const supportsUltracode = (model: string): boolean =>
     effortsFor(catalog?.models, model).some((effort) => effort.value === 'xhigh')
@@ -433,7 +440,7 @@ export function useAgentSettings({
    */
   const resolvedEffort = codex
     ? codex.reasoningEffort ||
-      catalog?.models.find((model) => model.value === resolvedModel)?.defaultEffort ||
+      catalogModel(catalog?.models, resolvedModel)?.defaultEffort ||
       CLI_DEFAULT
     : CLI_DEFAULT
 
@@ -628,12 +635,9 @@ export function useAgentSettings({
               icon: <UsersRound size={15} />,
               options: ultracodeOptionList,
               value: claude.ultracode ? 'on' : 'off',
-              // L'allumer aligne l'effort sur le `xhigh` qu'impose le CLI, pour que le
-              // panneau dise vrai ; l'éteindre laisse l'effort où il est, comme le CLI.
-              onChange: (choice) =>
-                onConfigChange(
-                  choice === 'on' ? { ...claude, ultracode: true, effort: 'xhigh' } : { ...claude, ultracode: false },
-                ),
+              // Indépendant de l'effort, comme dans le CLI depuis 2.1.284 : l'allumer ou
+              // l'éteindre laisse le niveau où il est.
+              onChange: (choice) => onConfigChange({ ...claude, ultracode: choice === 'on' }),
             }),
           ]
         : []),
