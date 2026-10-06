@@ -38,6 +38,7 @@ export const MEMORY_HELP: MessageKey[] = [
   'memory.how.what',
   'memory.how.claude',
   'memory.how.codex',
+  'memory.how.opencode',
   'memory.how.scope',
   'memory.how.import',
   'memory.how.edit',

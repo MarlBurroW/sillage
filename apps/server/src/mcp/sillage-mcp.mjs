@@ -493,7 +493,7 @@ const TOOLS = [
   {
     name: 'read_instructions',
     description:
-      "Lit SILLAGE.md, les consignes que Sillage injecte dans le prompt de chaque session, de Claude comme de Codex : la partie de ce projet ou la partie globale. Ce que ton prompt en contient date du démarrage de la session ; lis la version courante avant de la modifier.",
+      "Lit SILLAGE.md, les consignes que Sillage injecte dans le prompt de chaque session, quel que soit son CLI : la partie de ce projet ou la partie globale. Ce que ton prompt en contient date du démarrage de la session ; lis la version courante avant de la modifier.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -550,7 +550,7 @@ const TOOLS = [
   {
     name: 'read_memory',
     description:
-      "Lit la mémoire de ce projet, les notes que les sessions précédentes, Claude comme Codex, ont prises : sans `file`, l'index `MEMORY.md` et la liste des notes ; avec `file`, la note entière. Une note peut avoir vieilli : vérifie-la avant de t'appuyer dessus.",
+      "Lit la mémoire de ce projet, les notes que les sessions précédentes, quel que soit leur CLI, ont prises : sans `file`, l'index `MEMORY.md` et la liste des notes ; avec `file`, la note entière. Une note peut avoir vieilli : vérifie-la avant de t'appuyer dessus.",
     inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Note à lire. Omettre pour l\'index.' } } },
   },
   {
@@ -1994,7 +1994,7 @@ async function callTool(name, args) {
     writeFileSync(join(MEMORY_DIR, file), args.content)
     const indexed = file !== MEMORY_INDEX && indexNote(file, args.content)
     return text(
-      `Note « ${file} » écrite dans la mémoire du projet${indexed ? `, et ajoutée à ${MEMORY_INDEX}` : ''}. Les sessions suivantes, de Claude comme de Codex, la verront.`,
+      `Note « ${file} » écrite dans la mémoire du projet${indexed ? `, et ajoutée à ${MEMORY_INDEX}` : ''}. Les sessions suivantes, quel que soit leur CLI, la verront.`,
     )
   }
 
@@ -2039,7 +2039,7 @@ async function callTool(name, args) {
     const result = saveInstructions(target.projectId, transform, target.fixMode)
     if (result.error) return { ...text(result.error), isError: true }
     return text(
-      `SILLAGE.md mis à jour (${scopeLabel(target.scope)}, ${result.content.length} caractères). Vaut pour les sessions qui démarrent ensuite, de Claude comme de Codex ; l'utilisateur voit la modification dans Sillage.`,
+      `SILLAGE.md mis à jour (${scopeLabel(target.scope)}, ${result.content.length} caractères). Vaut pour les sessions qui démarrent ensuite, quel que soit leur CLI (OpenCode dès son prochain message) ; l'utilisateur voit la modification dans Sillage.`,
     )
   }
 

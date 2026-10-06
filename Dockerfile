@@ -46,7 +46,8 @@ RUN apt-get update \
 # ont besoin d'un vrai compte avec un HOME inscriptible pour leurs credentials.
 USER node
 RUN mkdir -p /home/node/.local/share/sillage /home/node/.config/sillage \
-             /home/node/.claude /home/node/.codex /home/node/workspace
+             /home/node/.claude /home/node/.codex /home/node/.local/share/opencode \
+             /home/node/workspace
 
 ENV NODE_ENV=production \
     SILLAGE_HOST=0.0.0.0 \
