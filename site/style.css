@@ -234,12 +234,47 @@ main > section + section { border-top: 1px solid var(--line); }
   box-shadow: var(--shot-shadow);
 }
 
-/* Why */
-
-.why { display: grid; grid-template-columns: 1fr 1.6fr; gap: clamp(2rem, 6vw, 5rem); }
-.why div { display: grid; gap: 1.2rem; color: var(--muted); }
-.signature { margin-top: .6rem; color: var(--faint); font-size: .88rem; }
-.signature a { color: var(--ink); font-weight: 550; text-decoration-color: var(--line); text-underline-offset: 3px; }
+/* La citation donne une voix au récit, sans ajouter une carte à la page. */
+.why { display: grid; grid-template-columns: 1fr 2fr; gap: clamp(2rem, 6vw, 5rem); }
+.founder-note { margin: 0; max-width: 43rem; min-width: 0; }
+.founder-note blockquote { margin: 0; position: relative; padding-top: 2.8rem; }
+.founder-note blockquote::before {
+  content: "\201C";
+  position: absolute;
+  top: -.55rem;
+  left: -.08em;
+  color: var(--accent);
+  font: 6rem/1 Georgia, "Times New Roman", serif;
+}
+.founder-lede {
+  font-size: clamp(1.65rem, 2.7vw, 2.3rem);
+  line-height: 1.3;
+  letter-spacing: -.035em;
+  font-weight: 500;
+  text-wrap: pretty;
+  color: var(--ink);
+}
+.founder-story { display: grid; gap: 1.1rem; margin-top: 1.8rem; color: var(--muted); }
+.founder-signature {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+  text-align: left;
+}
+.founder-avatar {
+  width: 3.5rem;
+  height: 3.5rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--sunken);
+}
+.founder-signature a { color: var(--ink); font-size: .95rem; font-weight: 600; text-decoration: none; }
+.founder-signature a:hover { text-decoration: underline; text-underline-offset: .2em; }
+.founder-role { display: block; color: var(--muted); font-size: .82rem; margin-top: .1rem; }
 
 /* Tour */
 
@@ -499,8 +534,6 @@ figcaption { margin-top: .8rem; color: var(--muted); font-size: .8rem; }
 .agent-links a { text-underline-offset: .3em; }
 .features ul { grid-template-columns: repeat(3, 1fr); }
 .features li { padding-top: 1.25rem; border-top: 1px solid var(--line); }
-.why { grid-template-columns: 1fr 2fr; }
-.why div { max-width: 43rem; }
 .zoom form { top: .7rem; right: .7rem; }
 .zoom form button { background: #211925; width: 2.75rem; height: 2.75rem; border: 1px solid #89748f; }
 .shots-nav [role="tab"], .tabs button { min-height: 44px; }
