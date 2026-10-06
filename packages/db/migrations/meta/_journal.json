@@ -218,6 +218,13 @@
       "when": 1791218638176,
       "tag": "0030_sillage_md",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791311354105,
+      "tag": "0031_scheduled_tasks",
+      "breakpoints": true
     }
   ]
 }

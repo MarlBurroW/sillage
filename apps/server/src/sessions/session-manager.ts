@@ -511,11 +511,20 @@ export class SessionManager {
 
     try {
       const conversation = this.db
-        .select({ userId: conversations.userId, title: conversations.title, projectId: conversations.projectId })
+        .select({
+          userId: conversations.userId,
+          title: conversations.title,
+          projectId: conversations.projectId,
+          scheduleId: conversations.scheduleId,
+        })
         .from(conversations)
         .where(eq(conversations.id, conversationId))
         .get()
       if (!conversation) return
+      // Un tir planifié qui finit n'a rien à annoncer : une tâche horaire sonnerait
+      // vingt-quatre fois par jour. Ses demandes de décision, elles, passent toujours,
+      // puisque le tir reste suspendu tant que personne n'y répond.
+      if (conversation.scheduleId && event.type === 'turn.completed') return
       if (notifier.isWatched(conversationId, conversation.userId)) return
 
       await notifier.notify(conversation.userId, {
@@ -716,7 +725,14 @@ export class SessionManager {
       // les installations faites depuis l'interface.
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
-      processEnv: processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId),
+      processEnv: {
+        ...processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId),
+        // Dit à Claude Code que c'est un hôte local qui l'a planifié, et non une
+        // personne qui l'a ouvert (sondé sur 2.1.291). Les autres CLI l'ignorent.
+        ...(conversation.scheduleId && conversation.agent === 'claude'
+          ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
+          : {}),
+      },
       // Le serveur de Sillage passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
       // l'emporter sur celui que la plateforme ajoute d'elle-même.
@@ -1184,6 +1200,25 @@ export class SessionManager {
       return
     }
     await managed.runner.interrupt()
+  }
+
+  /**
+   * Arrête pour de bon une conversation que personne ne surveille : le tour en cours,
+   * puis le process, travaux de fond et boucles compris.
+   *
+   * `interrupt` seul ne suffit pas à un tir planifié qui déborde : il rend la main au
+   * CLI, dont un travail de fond ou une boucle continuerait de tourner sans limite.
+   */
+  async terminate(conversationId: string): Promise<void> {
+    const managed = this.runners.get(conversationId)
+    if (managed) {
+      await managed.runner.interrupt().catch(() => undefined)
+      this.expireOpenPrompts(conversationId)
+      await this.stopRunner(conversationId)
+    }
+    // Le CLI n'a pas toujours eu le temps d'annoncer la fin du tour avant de mourir.
+    const { status } = this.loadConversation(conversationId)
+    if (status === 'running' || status === 'awaiting_input') this.setStatus(conversationId, 'interrupted')
   }
 
   resolvePermission(conversationId: string, requestId: string, decision: PermissionDecision): boolean {
