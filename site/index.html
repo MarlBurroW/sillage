@@ -388,42 +388,40 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
       </div>
     </section>
 
-    <section class="why">
-      <h2>Why I built Sillage</h2>
-      <div>
-        <p>
-          I wanted one place, on a server I own, that I can open from my phone. That is the
-          whole starting point: keep working from wherever I happen to be, without hauling a
-          laptop and a terminal around to do it.
-        </p>
-        <p>
-          What I did not want was another agent. Claude Code and Codex ship a harness their
-          makers put real work into tuning: the prompts, the tools, the permission flow.
-          Rewriting that inside a web app gets you a worse agent behind a nicer interface.
-          So Sillage drives the native CLIs and stays out of their way.
-        </p>
-        <p>
-          It started with Claude Code and Codex because those are the two I use. That was my
-          own need, not a final list: adding a CLI means writing an adapter for it, and
-          OpenCode came third, bringing every provider it can reach.
-        </p>
-        <p>
-          The last piece is the one a terminal cannot give me. I wanted a thin layer above
-          the CLIs so that a session knows the others exist: what is running right now, what
-          an earlier session decided and why, what it left for whoever picks the work up
-          next. Whichever harness happened to run it.
-        </p>
-        <p>
-          One last thing, since it shaped all of the above: Sillage is built with AI,
-          heavily. Claude Code and Codex wrote most of the code, and most of that happened
-          from inside Sillage itself, often from a phone. The tool and the way I work on it
-          grew together, which is why it ended up looking like this rather than like the
-          specification I would have written first.
-        </p>
-        <p class="signature">
-          <a href="https://github.com/MarlBurroW">MarlBurroW</a>
-        </p>
-      </div>
+    <section class="why" id="why" aria-labelledby="why-title">
+      <h2 id="why-title">Why I built Sillage</h2>
+      <figure class="founder-note">
+        <blockquote>
+          <p class="founder-lede">I wanted one place, on a server I own, that I could open from my phone and keep working.</p>
+          <div class="founder-story">
+            <p>
+              That was the starting point: pick up a project wherever I happen to be,
+              without carrying a laptop or keeping track of a dozen terminals.
+            </p>
+            <p>
+              I wanted to keep the agents I already used. Sillage runs Claude Code,
+              Codex and OpenCode through their native interfaces, keeping their tools
+              and permission flows. Each has its own adapter; OpenCode also brings
+              access to the providers and local models it supports.
+            </p>
+            <p>
+              What grew around them is a shared workspace: projects, a board,
+              instructions and memory. An agent can find out what other sessions are
+              doing, read earlier decisions and leave context for whoever picks up
+              the work next, even when they use a different CLI.
+            </p>
+            <p>
+              Sillage is built with AI, heavily. Claude Code and Codex wrote most of
+              the code, much of it from inside Sillage itself, often from a phone.
+              The tool and the way I work on it grew together.
+            </p>
+          </div>
+        </blockquote>
+        <figcaption class="founder-signature">
+          <img class="founder-avatar" src="avatar-marlburrow.jpg" width="56" height="56" loading="lazy" alt="">
+          <span><a href="https://github.com/MarlBurroW">MarlBurroW</a><span class="founder-role">Creator of Sillage</span></span>
+        </figcaption>
+      </figure>
     </section>
 
     <section class="security">
