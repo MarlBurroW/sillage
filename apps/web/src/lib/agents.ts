@@ -93,11 +93,33 @@ export function useAgentModels(agent: AgentKind, enabled = true) {
 }
 
 /**
+ * L'entrée du catalogue qui répond à un modèle enregistré.
+ *
+ * La valeur exacte d'abord. À défaut, celle d'un modèle que le CLI ne liste plus sous
+ * ce nom mais accepte toujours : `opus[1m]`, retiré du sélecteur par Claude Code
+ * 2.1.282 depuis qu'Opus a d'office un million de tokens de contexte, ou
+ * `claude-fable-5-1`, listé sous l'alias `fable` en 2.1.291. Sans ce repli, une
+ * conversation ouverte avant le changement perdait ses réglages d'effort, de vitesse
+ * et d'Ultracode. La ligne par défaut est écartée du dernier recours : elle pointe le
+ * même modèle qu'un alias, mais suit le CLI quand son défaut change.
+ */
+export function catalogModel(models: AgentModelDto[] | undefined, value: string): AgentModelDto | undefined {
+  if (!models) return undefined
+  const exact = models.find((model) => model.value === value)
+  if (exact) return exact
+  const bare = value.replace(/\[1m\]$/i, '')
+  return (
+    models.find((model) => model.value === bare) ??
+    models.find((model) => !model.isDefault && model.hint === bare)
+  )
+}
+
+/**
  * Niveaux d'effort du modèle sélectionné. Tous n'en ont pas (Haiku, par exemple) :
  * proposer un réglage sans effet serait un mensonge d'interface.
  */
 export function effortsFor(models: AgentModelDto[] | undefined, value: string): AgentEffortDto[] {
-  return models?.find((model) => model.value === value)?.efforts ?? []
+  return catalogModel(models, value)?.efforts ?? []
 }
 
 /**
@@ -106,5 +128,5 @@ export function effortsFor(models: AgentModelDto[] | undefined, value: string): 
  * réglage doit empêcher plutôt que subir.
  */
 export function supportsFastMode(models: AgentModelDto[] | undefined, value: string): boolean {
-  return models?.find((model) => model.value === value)?.supportsFastMode === true
+  return catalogModel(models, value)?.supportsFastMode === true
 }

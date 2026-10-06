@@ -14,7 +14,6 @@ import {
   type Query,
   type SDKMessage,
   type SDKUserMessage,
-  type Settings,
   type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk'
 import {
@@ -49,6 +48,7 @@ import { editedPath, fileExists } from './file-edits.js'
 import { fromSdkMcpStatus, toSdkMcpServers } from './mcp.js'
 import { skillLibraryLaunchOptions } from './skill-library.js'
 import { claudeMdExcludes } from '../../instructions/store.js'
+import { flagSettings, liveFlagSettings } from './flag-settings.js'
 import { toPermissionMode } from './permission-mode.js'
 import {
   ASK_USER_QUESTION,
@@ -57,7 +57,7 @@ import {
   toQuestions,
   toUpdatedInput,
 } from './prompts.js'
-import { describeFastMode, translateSignal } from './signals.js'
+import { describeFastMode, describePluginErrors, translateSignal } from './signals.js'
 
 /**
  * Messages natifs volontairement ignorés : ils décrivent une progression interne
@@ -66,42 +66,6 @@ import { describeFastMode, translateSignal } from './signals.js'
  * soit visible et non avalé. Ce qui n'y figure pas passe par `translateSignal`.
  */
 const IGNORED_SUBTYPES = new Set(['session_state_changed'])
-
-/**
- * La couche « flag » des réglages du CLI, celle de `--settings` au lancement et
- * d'`applyFlagSettings` à chaud : ce que la conversation impose par-dessus les fichiers
- * de réglages du poste.
- *
- * Le mode rapide y est toujours écrit, même à faux : c'est la conversation qui décide,
- * pas le `settings.json` de l'utilisateur, et le CLI exige de toute façon que la
- * session le demande (`sdk_opt_in_required`, relevé à la sonde). Ultracode n'est écrit
- * qu'allumé : éteint, il n'a rien à annoncer. Les deux autres clés sont omises quand la
- * configuration ne dit rien, pour laisser le CLI à son défaut.
- *
- * Les règles `deny` de la bibliothèque de skills n'y sont posées qu'au lancement, comme
- * le masque des consignes du dépôt quand le projet tient les siennes dans SILLAGE.md et
- * le dossier de mémoire. `applyFlagSettings` ne retire que les clés qu'on lui passe à
- * `null` : ne jamais nommer `permissions`, `claudeMdExcludes` ni `autoMemoryDirectory`
- * à chaud suffit à les garder.
- */
-function flagSettings(
-  config: ClaudeConfig,
-  deny: string[] = [],
-  excludes: string[] = [],
-  memoryDir: string | null = null,
-): Settings {
-  return {
-    fastMode: config.fastMode,
-    ...(config.ultracode ? { ultracode: true } : {}),
-    ...(config.outputStyle ? { outputStyle: config.outputStyle } : {}),
-    ...(config.advisorModel ? { advisorModel: config.advisorModel } : {}),
-    ...(deny.length > 0 ? { permissions: { deny } } : {}),
-    ...(excludes.length > 0 ? { claudeMdExcludes: excludes } : {}),
-    // La mémoire automatique de Claude, rangée chez Sillage pour que Codex la partage et
-    // que l'interface la montre. Claude l'écrit comme la sienne, sans permission.
-    ...(memoryDir ? { autoMemoryDirectory: memoryDir } : {}),
-  }
-}
 
 /**
  * Pas du compteur de réflexion, en tokens estimés.
@@ -203,6 +167,8 @@ export class ClaudeRunner implements AgentRunner {
   private sessionId: string | null = null
   /** Session et modèle du dernier `session.started` journalisé, pour ne pas le répéter à chaque tour. */
   private initSignature: string | null = null
+  /** Les `plugin_errors` du dernier init, pour n'en parler qu'au changement. */
+  private pluginErrorsSignature = '[]'
   /** Dernier état du mode rapide rapporté par le CLI, pour n'en journaliser que les changements. */
   private fastMode: { state: FastModeState; reason: FastModeDisabledReason | null } | null = null
   private stopped = false
@@ -600,6 +566,14 @@ export class ClaudeRunner implements AgentRunner {
             )
           }
           this.publishFastMode(message.fast_mode_state, message.fast_mode_disabled_reason)
+          // Même cadence que `session.started` : l'init revient à chaque tour, l'avis ne
+          // revient que si la liste des échecs a changé.
+          const pluginErrors = JSON.stringify(message.plugin_errors ?? [])
+          if (pluginErrors !== this.pluginErrorsSignature) {
+            this.pluginErrorsSignature = pluginErrors
+            const notice = describePluginErrors(message.plugin_errors)
+            if (notice) this.ctx.emit(notice, message)
+          }
           return
         }
         // Le reste des messages système est un signal ou du bruit : `signals.ts` tranche.
@@ -1286,20 +1260,7 @@ export class ClaudeRunner implements AgentRunner {
     if (JSON.stringify(this.ctx.skillRoots(config)) !== JSON.stringify(this.skillRoots)) return false
 
     await this.session.setModel(config.model)
-    // La même couche que `settings` au lancement. `null` retire une clé, donc rend le
-    // CLI à son défaut, là où l'omettre laisserait la valeur précédente en place. Le
-    // mode rapide, lui, ne prend effet qu'au tour suivant, et son état revient par le
-    // `result` : sondé, `applyFlagSettings({ fastMode: true })` suffit, sans relancer.
-    await this.session.applyFlagSettings({
-      effortLevel: config.effort,
-      fastMode: config.fastMode,
-      outputStyle: config.outputStyle || null,
-      advisorModel: config.advisorModel || null,
-      // Seulement quand il change : chaque bascule glisse au modèle un avis « Ultracode
-      // is on/off », relevé à la sonde, qu'un autre réglage n'a pas à répéter. `null`
-      // l'éteint en gardant l'effort courant, que la configuration porte de toute façon.
-      ...(config.ultracode !== this.config.ultracode ? { ultracode: config.ultracode ? true : null } : {}),
-    })
+    await this.session.applyFlagSettings(liveFlagSettings(this.config, config))
     await this.session.setPermissionMode(toPermissionMode(config.permissionMode))
 
     // Comparé sur les serveurs résolus et non sur les identifiants : une entrée du
