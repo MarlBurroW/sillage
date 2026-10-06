@@ -5,7 +5,6 @@ import {
   ChevronRight,
   FileText,
   Cpu,
-  FolderOpen,
   Info,
   GitBranch,
   KeyRound,
@@ -76,13 +75,6 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.cli',
     descriptionKey: 'settings.section.cli.description',
     icon: <SlidersHorizontal size={16} />,
-  },
-  {
-    to: 'projets',
-    group: 'workspace',
-    labelKey: 'settings.section.projects',
-    descriptionKey: 'settings.section.projects.description',
-    icon: <FolderOpen size={16} />,
   },
   {
     to: 'mcp',

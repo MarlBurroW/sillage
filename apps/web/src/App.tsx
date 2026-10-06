@@ -9,7 +9,7 @@ import { ServicesPage } from './routes/ServicesPage'
 import { LoginPage } from './routes/LoginPage'
 import { BoardPage } from './routes/BoardPage'
 import { ProjectPage } from './routes/ProjectPage'
-import { ProjectsSettingsPage } from './routes/ProjectsSettingsPage'
+import { NewProjectPage } from './routes/NewProjectPage'
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
@@ -52,6 +52,7 @@ export function App() {
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
+          <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/p/:projectId" element={<ProjectPage />} />
           <Route path="/p/:projectId/board" element={<BoardPage />} />
@@ -63,7 +64,7 @@ export function App() {
             <Route path="apparence" element={<AppearanceSection />} />
             <Route path="notifications" element={<NotificationsSection />} />
             <Route path="cli" element={<CliDefaultsSettingsPage />} />
-            <Route path="projets" element={<ProjectsSettingsPage />} />
+            <Route path="projets" element={<Navigate to="/projects/new" replace />} />
             <Route path="mcp" element={<McpSettingsPage />} />
             <Route path="consignes" element={<InstructionsSettingsPage />} />
             <Route path="skills" element={<SkillLibrarySettingsPage />} />

@@ -33,7 +33,7 @@ export function HomePage() {
       title={t('home.empty.title')}
       description={t('home.empty.description')}
       action={
-        <Link to="/settings/projets">
+        <Link to="/projects/new">
           <Button>{t('home.createProject')}</Button>
         </Link>
       }

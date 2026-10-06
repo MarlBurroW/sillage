@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { Check, ChevronsUpDown, FolderPlus, Layers, Search, Star, X } from 'lucide-react'
+import { Check, ChevronsUpDown, FolderPlus, Layers, Search, SlidersHorizontal, Star, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ProjectDto } from '@sillage/protocol'
@@ -44,13 +44,16 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
   ]
   return (
     <Dialog.Root open={open} onOpenChange={(value) => { setOpen(value); if (!value) setQuery('') }}>
+      <div className="mb-2 flex items-center gap-1">
       <Dialog.Trigger asChild>
-        <button type="button" aria-label={t('shell.switcher.choose')} className="mb-2 flex min-h-12 w-full items-center gap-2.5 rounded-lg border border-line bg-surface-high px-3 text-left hover:border-ink-faint">
+        <button type="button" aria-label={t('shell.switcher.choose')} className="flex min-h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-line bg-surface-high px-3 text-left hover:border-ink-faint">
           {all ? <Layers size={16} /> : <ProjectAvatar project={selected} className="size-5" />}
           <span className="min-w-0 flex-1"><span className="block text-[0.625rem] text-ink-faint">{t('shell.switcher.workspace')}</span><span className="block truncate text-sm font-semibold">{all ? t('shell.switcher.all') : selected?.name ?? t('shell.switcher.choose')}</span></span>
           <ChevronsUpDown size={14} className="shrink-0 text-ink-faint" />
         </button>
       </Dialog.Trigger>
+      {!all && selected && <IconButton label={t('shell.project.settings')} onClick={() => { navigate(`/p/${selected.id}`); onNavigate() }}><SlidersHorizontal size={16} /></IconButton>}
+      </div>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
         <Dialog.Content aria-describedby={undefined} className="fixed top-[10dvh] left-1/2 z-50 flex max-h-[80dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-float">
@@ -75,7 +78,7 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
             </div>)}
             {matches.length === 0 && <p role="status" className="px-2 py-6 text-center text-sm text-ink-faint">{t('shell.switcher.empty')}</p>}
           </div>
-          <button type="button" onClick={() => { navigate('/settings/projets'); setOpen(false); onNavigate() }} className="flex min-h-11 shrink-0 items-center gap-2 border-t border-line px-4 text-sm text-ink-soft hover:bg-surface-high"><FolderPlus size={15} />{t('shell.switcher.manage')}</button>
+          <button type="button" onClick={() => { navigate('/projects/new'); setOpen(false); onNavigate() }} className="flex min-h-11 shrink-0 items-center gap-2 border-t border-line px-4 text-sm text-ink-soft hover:bg-surface-high"><FolderPlus size={15} />{t('projects.create.title')}</button>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -85,8 +88,8 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
 function ProjectChoice({ project, selected, pinned, onPin, onSelect }: { project: ProjectDto; selected: boolean; pinned: boolean; onPin: () => void; onSelect: (fallback: string) => void }) {
   const t = useTranslate()
   const view = useProjectView(project.id)
-  return <div className={cx('flex items-center rounded-md', selected && 'bg-accent-wash')}>
-    <button type="button" data-project-choice onClick={() => onSelect(projectViewPath(project.id, view))} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high"><ProjectAvatar project={project} /><span className="flex-1 truncate">{project.name}</span>{selected && <Check size={14} className="shrink-0 text-accent" />}</button>
-    <IconButton label={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} onClick={onPin}><Star size={14} className={pinned ? 'fill-accent text-accent' : 'text-ink-faint'} /></IconButton>
+  return <div className={cx('flex items-center rounded-md transition-colors', selected ? 'bg-accent-wash' : 'hover:bg-surface-high')}>
+    <button type="button" data-project-choice aria-current={selected ? true : undefined} onClick={() => onSelect(projectViewPath(project.id, view))} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm"><ProjectAvatar project={project} /><span className="flex-1 truncate">{project.name}</span>{selected && <Check size={14} className="shrink-0 text-accent" />}</button>
+    <button type="button" aria-label={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} title={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} onClick={onPin} className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-accent"><Star size={14} className={pinned ? 'fill-accent text-accent' : undefined} /></button>
   </div>
 }

@@ -38,6 +38,7 @@ import { DictationStrip } from './DictationStrip'
 import { useAgentSettings } from './agent-settings'
 import { TokenPicker } from './TokenPicker'
 import { ComposerSettings } from './ComposerSettings'
+import { SkillsControl } from './SkillsControl'
 import { CardPicker } from './CardPicker'
 import { MentionPicker } from './MentionPicker'
 
@@ -829,6 +830,7 @@ export function Composer({
             </IconButton>
 
             {mcp}
+            <SkillsControl projectId={projectId} config={config} skills={skills} commands={commands} inputRef={textarea} />
 
             <ConfirmDialog
               open={sttNotice}

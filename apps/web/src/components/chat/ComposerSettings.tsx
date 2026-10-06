@@ -160,7 +160,7 @@ export function ComposerSettings({ groups, summary, mcp, feedback, disabled = fa
 }
 
 /** Même contenu, ancré sur ordinateur et dans une feuille sur écran tactile. */
-function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false }: {
+export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false }: {
   label: string
   trigger: ReactNode
   children: (close: (resumeTyping?: boolean) => void) => ReactNode
