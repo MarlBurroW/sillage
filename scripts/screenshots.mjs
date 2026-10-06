@@ -5,6 +5,7 @@
  * search:reindex` pour que la palette de recherche ait des résultats).
  *
  *   SILLAGE_URL=http://127.0.0.1:7517 node scripts/screenshots.mjs
+ *   SILLAGE_SHOTS=schedule node scripts/screenshots.mjs   # une partie des vues seulement
  *
  * Chaque vue sort en deux versions, `<nom>-dark.png` et `<nom>-light.png`, dans
  * `site/screenshots/`. Locale forcée en anglais : le site est en anglais.
@@ -113,6 +114,15 @@ function buildShots(t) {
         await page.waitForTimeout(1200)
       },
     },
+    {
+      name: 'schedule',
+      path: `/p/${t.nimbus.id}/schedules`,
+      waitFor: 'text=CLI release watch',
+      interact: async (page) => {
+        await page.getByRole('button', { name: /Run history/ }).click()
+        await page.getByText('finished').first().waitFor({ timeout: 10000 })
+      },
+    },
     { name: 'settings-mcp', path: '/settings/mcp', waitFor: 'text=playwright' },
     { name: 'settings-appearance', path: '/settings/apparence', waitFor: 'role=heading[name="Appearance"]' },
     // Les vues du panneau latéral ferment la liste : leur `storage` (panneau ouvert)
@@ -216,7 +226,10 @@ async function main() {
     data: { username: USERNAME, password: PASSWORD },
   })
   if (!login.ok()) throw new Error(`Login failed: ${login.status()} ${await login.text()}`)
-  const shots = buildShots(await resolveTargets(probe))
+  // `SILLAGE_SHOTS=schedule,board` ne refait que ces vues : les autres captures ne
+  // bougent pas pour une section ajoutée au site.
+  const only = process.env.SILLAGE_SHOTS?.split(',').map((name) => name.trim()).filter(Boolean)
+  const shots = buildShots(await resolveTargets(probe)).filter((shot) => !only || only.includes(shot.name))
   await probe.close()
 
   for (const theme of ['dark', 'light']) {

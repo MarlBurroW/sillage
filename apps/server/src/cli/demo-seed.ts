@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { eq } from 'drizzle-orm'
 import type { SillageEvent } from '@sillage/protocol'
 import {
   openDatabase,
@@ -16,6 +17,8 @@ import {
   events,
   permissionRequests,
   mcpServers,
+  scheduledRuns,
+  scheduledTasks,
 } from '@sillage/db'
 import { hashPassword } from '../auth/passwords.js'
 import { loadConfig } from '../config.js'
@@ -480,6 +483,7 @@ async function main(): Promise<void> {
   await db.delete(cardNotes)
   await db.delete(cardRefs)
   await db.delete(conversations)
+  await db.delete(scheduledTasks)
   await db.delete(cards)
   await db.delete(worktrees)
   await db.delete(mcpServers)
@@ -661,6 +665,8 @@ async function main(): Promise<void> {
     contextMax?: number
     /** Laisser du non-lu sur ce fil, pour montrer l'indicateur. */
     unread?: boolean
+    /** Tir d'une tâche planifiée : le fil sort de la liste et se range sous elle. */
+    scheduleId?: string
     events: SeededEvent[]
   }
 
@@ -1257,7 +1263,100 @@ All 6 forecast tests pass, including the two new offline cases.`,
     return thread
   }
 
+  /**
+   * Un tir de la veille hebdomadaire des CLI : le prompt tel que le planificateur
+   * l'enveloppe, puis le compte rendu court que le tir suivant recevra.
+   */
+  const watchEvents = (date: string, previous: string | null, reply: string): SeededEvent[] => [
+    {
+      at: 0,
+      event: {
+        type: 'session.started',
+        agent: 'claude',
+        agentSessionId: randomUUID(),
+        model: 'claude-sonnet-5',
+        cwd: nimbusRoot,
+        tools: CLAUDE_TOOLS,
+      },
+    },
+    {
+      at: 1,
+      event: {
+        type: 'message.completed',
+        messageId: 'msg_user_1',
+        role: 'user',
+        blocks: [
+          {
+            type: 'text',
+            text: `[Tâche planifiée Sillage « CLI release watch » — tir du ${date}]
+
+Tu tournes seul, dans une session neuve ouverte par le planificateur de Sillage : personne n'est au clavier. Ne pose pas de question et ne demande pas de confirmation, personne n'y répondrait : décide, et note tes hypothèses dans ta réponse finale. Ce qui demande un accord ou sort de la consigne, ouvre une carte (create_card) plutôt que de le faire. Le tir est interrompu au bout de 20 min. Ta dernière réponse sera transmise au tir suivant : fais-en un compte rendu court de ce que tu as trouvé et fait.
+
+${previous ? `Tir précédent : ${previous}, terminé normalement.\nSa dernière réponse :\n> No new release. Claude Code 2.1.288 and Codex 0.157.1 are current.` : "C'est le premier tir de cette tâche."}
+
+---
+
+Check the installed CLIs against their latest releases: run \`claude --version\` and \`codex --version\`, then compare with the GitHub releases of anthropics/claude-code and openai/codex. If a newer version exists, read its changelog and open a card listing what would affect Nimbus. If nothing changed, answer in one line.`,
+          },
+        ],
+        parentToolCallId: null,
+      },
+    },
+    { at: 2, event: { type: 'turn.started' } },
+    { at: 4, event: { type: 'tool.started', toolCallId: 'toolu_watch_bash', name: 'Bash', input: { command: 'claude --version && codex --version' }, parentToolCallId: null } },
+    { at: 5, event: { type: 'tool.completed', toolCallId: 'toolu_watch_bash', output: '2.1.291 (Claude Code)\ncodex-cli 0.157.1', isError: false, durationMs: 640 } },
+    {
+      at: 40,
+      event: {
+        type: 'message.completed',
+        messageId: 'msg_a1',
+        role: 'assistant',
+        blocks: [{ type: 'text', text: reply }],
+        parentToolCallId: null,
+      },
+    },
+    { at: 41, event: { type: 'turn.completed', stopReason: 'end_turn', costUsd: 0.0412, inputTokens: 6, outputTokens: 180, cacheCreationTokens: 2400, cacheReadTokens: 18000 } },
+  ]
+
+  const watchTaskId = randomUUID()
+  /** Date d'un tir passé, à 9 h, telle que le titre et le prompt l'écrivent. */
+  const watchDate = (ageDays: number) => `${new Date(now - ageDays * 86400e3).toISOString().slice(0, 10)} 09:00`
+
   const seeds: ConversationSeed[] = [
+    {
+      projectId: nimbusId,
+      title: `CLI release watch · ${watchDate(8)}`,
+      agent: 'claude',
+      model: 'claude-sonnet-5',
+      config: claudeConfig,
+      status: 'idle',
+      ageDays: 8,
+      spanSec: 41,
+      costUsd: 0.0412,
+      inputTokens: 6,
+      outputTokens: 180,
+      scheduleId: watchTaskId,
+      events: watchEvents(watchDate(8), null, 'No new release. Claude Code 2.1.288 and Codex 0.157.1 are current.'),
+    },
+    {
+      projectId: nimbusId,
+      title: `CLI release watch · ${watchDate(1)}`,
+      agent: 'claude',
+      model: 'claude-sonnet-5',
+      config: claudeConfig,
+      status: 'idle',
+      ageDays: 1,
+      spanSec: 41,
+      costUsd: 0.0498,
+      inputTokens: 6,
+      outputTokens: 210,
+      scheduleId: watchTaskId,
+      events: watchEvents(
+        watchDate(1),
+        watchDate(8),
+        'Claude Code moved from 2.1.288 to 2.1.291. The changelog mentions a new `/advisor` command and a fix to background task limits; nothing that touches the Nimbus build. Opened card #11 with the two items worth a look. Codex is unchanged at 0.157.1.',
+      ),
+    },
     {
       projectId: nimbusId,
       worktreeId: offlineWorktreeId,
@@ -1596,6 +1695,7 @@ All 6 forecast tests pass, including the two new offline cases.`,
       costUsd: seed.costUsd,
       inputTokens: seed.inputTokens,
       outputTokens: seed.outputTokens,
+      scheduleId: seed.scheduleId ?? null,
       position: position++,
       createdAt: start,
       updatedAt: start + seed.spanSec * 1000,
@@ -1608,6 +1708,52 @@ All 6 forecast tests pass, including the two new offline cases.`,
       updatedAt: now,
     })
   }
+
+  // La veille hebdomadaire des CLI : la tâche, et un tir par fil rangé sous elle.
+  const watchRuns = await db.select().from(conversations).where(eq(conversations.scheduleId, watchTaskId))
+  const nextMonday = (() => {
+    const date = new Date(now)
+    date.setDate(date.getDate() + ((8 - date.getDay()) % 7 || 7))
+    date.setHours(9, 0, 0, 0)
+    return date.getTime()
+  })()
+  // Les tirs sont datés de 9 h, comme le motif les prévoit ; les fils, eux, portent
+  // l'heure du seed, que la page ne montre pas.
+  const atNine = (ts: number) => new Date(ts).setHours(9, 0, 0, 0)
+  await db.insert(scheduledTasks).values({
+    id: watchTaskId,
+    projectId: nimbusId,
+    userId,
+    name: 'CLI release watch',
+    agent: 'claude',
+    config: JSON.stringify(claudeConfig),
+    prompt:
+      'Check the installed CLIs against their latest releases: run `claude --version` and `codex --version`, then compare with the GitHub releases of anthropics/claude-code and openai/codex. If a newer version exists, read its changelog and open a card listing what would affect Nimbus. If nothing changed, answer in one line.',
+    cadence: JSON.stringify({ kind: 'cron', expression: '0 9 * * 1' }),
+    executionMode: 'fresh',
+    overlapPolicy: 'skip',
+    maxDurationMinutes: 20,
+    enabled: true,
+    createdByConversationId: null,
+    lastRunAt: Math.max(...watchRuns.map((run) => atNine(run.createdAt))),
+    nextRunAt: nextMonday,
+    createdAt: now - 15 * 86400e3,
+    updatedAt: now - 15 * 86400e3,
+  })
+  await db.insert(scheduledRuns).values(
+    watchRuns.map((run) => ({
+      id: randomUUID(),
+      taskId: watchTaskId,
+      conversationId: run.id,
+      trigger: 'schedule' as const,
+      status: 'succeeded' as const,
+      scheduledFor: atNine(run.createdAt),
+      startedAt: atNine(run.createdAt),
+      finishedAt: atNine(run.createdAt) + (run.updatedAt - run.createdAt),
+      error: null,
+      summary: null,
+    })),
+  )
 
   // La demande de permission en attente, telle que le serveur l'aurait posée.
   const settingsConversation = await db.select().from(conversations)
