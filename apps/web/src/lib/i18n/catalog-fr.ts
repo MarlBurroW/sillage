@@ -1957,6 +1957,7 @@ export const fr: Catalog = {
   "schedule.delete.title": "Supprimer « {name} » ?",
   "schedule.delete.body": "La tâche ne tirera plus et un tir en cours est interrompu. Ses sessions passées sont conservées : elles rejoignent les conversations archivées du projet.",
   "schedule.sidebar.heading": "Planifiées",
+  "schedule.sidebar.empty": "Planifier une tâche…",
   "schedule.sidebar.allRuns": "Tout l’historique",
   "schedule.cadence.days": "Tous les {count} j",
   "schedule.cadence.hours": "Toutes les {count} h",

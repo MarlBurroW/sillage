@@ -1970,6 +1970,7 @@ export const en = {
   'schedule.delete.title': "Delete “{name}”?",
   'schedule.delete.body': "The task stops firing and a run in progress is interrupted. Its past sessions are kept: they move to the project’s archived conversations.",
   'schedule.sidebar.heading': "Scheduled",
+  'schedule.sidebar.empty': "Schedule a task…",
   'schedule.sidebar.allRuns': "Full history",
   'schedule.cadence.days': "Every {count} d",
   'schedule.cadence.hours': "Every {count} h",
