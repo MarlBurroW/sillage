@@ -73,11 +73,13 @@ export const claudeConfigSchema = z.object({
    */
   fastMode: z.boolean().default(false),
   /**
-   * Ultracode de Claude Code : effort `xhigh` et orchestration par workflows
-   * multi-agents sur chaque tâche de fond, le coût en tokens n'étant plus une
-   * contrainte. Le mot-clé « ultracode » dans un message n'en ouvre qu'un tour ; ce
-   * réglage le tient pour toute la session. Propre à la session, jamais écrit dans les
-   * fichiers du CLI, et réservé aux modèles qui gèrent `xhigh`.
+   * Ultracode de Claude Code : orchestration par workflows multi-agents sur chaque
+   * tâche de fond, le coût en tokens n'étant plus une contrainte. Le mot-clé
+   * « ultracode » dans un message n'en ouvre qu'un tour ; ce réglage le tient pour
+   * toute la session. Propre à la session, jamais écrit dans les fichiers du CLI.
+   * Depuis Claude Code 2.1.284, il n'impose plus l'effort `xhigh` et tient à tout
+   * niveau, mais le CLI ne l'ouvre toujours qu'aux modèles qui gèrent `xhigh` (sondé
+   * sur 2.1.291 : refusé à Haiku 4.5 et Sonnet 4.6).
    */
   ultracode: z.boolean().default(false),
   /**

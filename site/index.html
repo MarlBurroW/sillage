@@ -6,7 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="A self-hosted workspace for Claude Code, Codex and OpenCode. Continue from any device, manage projects, and give agents the context to work together.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
+  <!-- Changer ?v= à chaque modification de style.css ou de main.js : GitHub Pages les laisse
+       en cache dix minutes, et une page neuve servie avec une feuille ancienne se casse. -->
+  <link rel="stylesheet" href="style.css?v=film">
   <meta name="theme-color" content="#faf7fb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0f0b11" media="(prefers-color-scheme: dark)">
   <meta property="og:title" content="Sillage">
@@ -90,13 +92,18 @@
         </div>
       </div>
       <div class="hero-meta"><span>Claude Code + Codex + OpenCode</span><span>Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
-      <figure class="hero-shot">
-        <button type="button" data-zoom aria-label="Enlarge the conversation screenshot"><picture>
-          <source srcset="screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
-          <img src="screenshots/hero-light.png" width="3200" height="2000" fetchpriority="high"
-               alt="A Claude Code conversation running in Sillage, with tool call groups and a reply being written">
-        </picture></button>
-        <figcaption>Sillage’s conversation view. Your repository, tools and conversation share the same workspace.</figcaption>
+      <figure class="hero-shot hero-film" id="film">
+        <div class="film-frame">
+          <video controls preload="none" playsinline poster="film/poster.jpg" width="1920" height="1080" data-film>
+            <source src="film/sillage-film.mp4" type="video/mp4">
+            <a href="film/sillage-film.mp4">Download the film (MP4, 54 s)</a>
+          </video>
+          <button type="button" class="film-play" data-film-play hidden aria-label="Play the 54-second film about Sillage, with sound">
+            <span class="film-play-icon" aria-hidden="true"></span>
+            <span class="film-play-label" aria-hidden="true">Watch the film<small>0:54 · sound on</small></span>
+          </button>
+        </div>
+        <figcaption>Sillage in 54 seconds: one session followed from desk to phone, a project board, shared skills and MCP servers, and two agents working it out together.</figcaption>
       </figure>
     </section>
 
@@ -223,6 +230,27 @@
         </dl>
         <p class="technical-note">Both are read when a session starts: a session already running keeps the version it received. Existing projects keep their repository files until you move them into Sillage.</p>
         <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/sillage-md.md">How it works in detail ↗</a>
+      </div>
+    </section>
+
+    <section class="editorial" id="schedules">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
+      <div class="section-label">06 / Scheduled work</div>
+      <div class="section-body">
+        <h2>Some work should happen<br>while you are away.</h2>
+        <p class="section-lede">A release watch every Monday. A dependency audit each night. Sillage runs them on time, in a fresh session, and keeps the results out of your way.</p>
+        <figure class="product-shot">
+          <button type="button" data-zoom aria-label="Enlarge the scheduling page screenshot"><picture>
+            <source srcset="screenshots/schedule-dark.png" media="(prefers-color-scheme: dark)">
+            <img src="screenshots/schedule-light.png" width="3200" height="2000" loading="lazy" alt="Sillage scheduling page, with a weekly task, its next run and the history of past runs">
+          </picture></button>
+          <figcaption>The scheduling page. One task, its cadence, its guard rails, and every run it has made.</figcaption>
+        </figure>
+        <div class="prose-columns"><p>A scheduled task is a prompt with a cadence: every few hours, a cron expression, or a single date. Each run opens a new session of the CLI you chose, with the model, effort and permissions fixed on the task. The agent is told nobody is at the keyboard, gets the date, link and last reply of the previous run, and is cut off after a maximum duration. A run that overlaps the previous one is skipped, or waits.</p><p>Runs do not pile up in the session list. They sit under their task in the sidebar, one line per task with its state and last run, and the scheduling page keeps the full history. Neither CLI has a durable scheduler of its own: Claude's cron dies with its session, Codex has none. The daemon that already keeps your sessions alive does this for both.</p></div>
+        <dl class="tool-reference">
+          <div><dt>When you ask for recurring work</dt><dd>An agent can schedule it from the conversation, with an interval, a cron expression or a date. You adjust it later from the page.<code>schedule_task</code></dd></div>
+        </dl>
+        <p class="technical-note">Runs use the project's default permissions unless the task says otherwise: a run that asks for a permission waits until its time is up. Pick a mode that fits what the task has to do on its own.</p>
       </div>
     </section>
 
@@ -492,6 +520,7 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
     <img data-zoom-image alt="">
   </dialog>
 
-  <script src="main.js"></script>
+
+  <script src="main.js?v=film"></script>
 </body>
 </html>
