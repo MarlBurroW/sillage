@@ -87,7 +87,7 @@ Every other value is commented in `values.yaml`.
 ## Upgrade
 
 ```bash
-helm upgrade sillage ./deploy/helm/sillage --reuse-values --set image.tag=0.13.0
+helm upgrade sillage ./deploy/helm/sillage --reuse-values --set image.tag=0.14.0
 ```
 
 Schema migrations run at server startup, before the port opens, so no init Job is
