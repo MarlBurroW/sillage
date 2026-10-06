@@ -140,6 +140,15 @@ export class CliBinary {
   }
 
   /**
+   * Oublie la dernière sonde. À appeler quand on sait que le disque a changé : une
+   * installation qui vient d'aboutir ne doit pas rester « absente » jusqu'au bout du TTL,
+   * sans quoi l'écran re-propose d'installer ce qui vient de l'être.
+   */
+  invalidate(): void {
+    this.cache.invalidate()
+  }
+
+  /**
    * État tel que l'écran le lit.
    *
    * Un agent désactivé en configuration n'est pas sondé : lancer un process pour un CLI

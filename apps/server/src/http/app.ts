@@ -166,7 +166,12 @@ export async function buildApp(
   registerSessionMessageRoutes(app, ctx, relay)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)
-  registerAgentRoutes(app, ctx, registry, new CliInstaller(ctx.config.paths.agents))
+  registerAgentRoutes(
+    app,
+    ctx,
+    registry,
+    new CliInstaller(ctx.config.paths.agents, (kind) => registry.find(kind)?.cli.invalidate()),
+  )
   registerMcpRoutes(app, ctx)
   // Les sources lisent la bibliothèque pour installer, la bibliothèque lit leurs
   // catalogues pour signaler une mise à jour : les sources d'abord.

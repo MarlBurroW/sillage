@@ -36,7 +36,15 @@ export class CliInstaller {
   /** Un état par agent. Absent vaut « jamais tenté », que `state()` rend comme `idle`. */
   private readonly states = new Map<AgentKind, State>()
 
-  constructor(private readonly prefix: string) {}
+  constructor(
+    private readonly prefix: string,
+    /**
+     * Prévenu quand un CLI vient d'être posé. La sonde de présence est en cache, et sans
+     * ce signal elle dirait « absent » jusqu'à son expiration : l'écran reviendrait au
+     * bouton « Installer » juste après l'installation, comme si rien ne s'était passé.
+     */
+    private readonly onInstalled: (kind: AgentKind) => void = () => {},
+  ) {}
 
   state(kind: AgentKind): CliInstallStateDto {
     const state = this.states.get(kind) ?? { status: 'idle' }
@@ -69,6 +77,7 @@ export class CliInstaller {
       // démarrage : le dossier n'a de raison d'exister que si on installe.
       await mkdir(this.prefix, { recursive: true })
       await this.npm(pkg, version)
+      this.onInstalled(kind)
       this.states.set(kind, { status: 'idle' })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
