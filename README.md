@@ -13,7 +13,8 @@ Kubernetes. An always-on server is recommended for continuity across devices; a
 workstation works too while it stays awake and online.
 [Set up private remote access and agent preview links](docs/remote-access.md).
 
-Website: [marlburrow.github.io/sillage](https://marlburrow.github.io/sillage)
+Website: [marlburrow.github.io/sillage](https://marlburrow.github.io/sillage) ·
+Film: [Sillage in 54 seconds ▶](https://marlburrow.github.io/sillage/#film)
 
 <picture>
   <source srcset="site/screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
