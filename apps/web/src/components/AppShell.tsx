@@ -18,6 +18,7 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   Archive,
   ArchiveRestore,
+  CalendarClock,
   ChevronRight,
   FolderPlus,
   ListTree,
@@ -43,7 +44,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
-import type { ConversationDto, ConversationMetrics, ProjectDto } from '@sillage/protocol'
+import type { ConversationDto, ConversationMetrics, ProjectDto, ScheduledTaskDto } from '@sillage/protocol'
 import {
   useAllConversations,
   useArchiveConversation,
@@ -71,6 +72,8 @@ import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projec
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import { useRememberContext } from '../lib/last-context'
 import { SidebarActivity } from './SidebarActivity'
+import { SidebarSchedules } from './SidebarSchedules'
+import { useSchedules } from '../lib/schedules'
 import { ProjectAvatar } from './ProjectAvatar'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { useProjectVisits } from '../lib/project-visits'
@@ -193,7 +196,8 @@ export function AppShell() {
   const conversationRoute = useMatch('/p/:projectId/c/:conversationId')
   const boardRoute = useMatch('/p/:projectId/board')
   const servicesRoute = useMatch('/services')
-  const contextualHeader = Boolean(conversationRoute || boardRoute || servicesRoute)
+  const schedulesRoute = useMatch('/p/:projectId/schedules')
+  const contextualHeader = Boolean(conversationRoute || boardRoute || servicesRoute || schedulesRoute)
   const navInactive = wide ? hidden : !navOpen
   useVisualViewport()
   useFileDropGuard()
@@ -404,6 +408,10 @@ function Sidebar({
   const { data: user } = useCurrentUser()
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
+  const { data: schedules } = useSchedules()
+  // Les tirs planifiés ne comptent pas dans l'activité : une tâche qui tourne toute
+  // seule n'est pas une session qu'on suit, et sa section dit déjà où elle en est.
+  const attended = useMemo(() => conversations?.filter((entry) => !entry.scheduleId), [conversations])
   // Une seule mutation pour les deux apparitions d'un favori. Son erreur reste
   // visible même si le retrait optimiste fait disparaître la ligne des favoris.
   const toggleFavorite = useToggleFavorite()
@@ -547,7 +555,7 @@ function Sidebar({
       </div>
       <nav ref={nav} className="relative min-h-0 flex flex-1 flex-col px-2">
         <PullToRefresh target={nav} refreshing={refreshing} onRefresh={refresh} />
-        <SidebarActivity conversations={conversations} projects={projects} onNavigate={onNavigate}>
+        <SidebarActivity conversations={attended} projects={projects} onNavigate={onNavigate}>
         {/* Au-dessus des projets et transverse : c'est ce qui fait l'intérêt d'un
             signet, atteindre un fil sans se rappeler d'où il vient. La conversation
             reste listée dans son projet, elle n'est pas déplacée ici. */}
@@ -632,6 +640,7 @@ function Sidebar({
                     project={project}
                     toggleFavorite={toggleFavorite}
                     conversations={(conversations ?? []).filter((c) => c.projectId === project.id)}
+                    schedules={(schedules ?? []).filter((task) => task.projectId === project.id)}
                     focused={!allProjects}
                     open={!allProjects || (!dragging && !collapsed.has(project.id))}
                     // Le repli voulu par l'utilisateur, que `open` ne dit pas : un
@@ -685,6 +694,7 @@ interface ProjectGroupProps {
   toggleFavorite: FavoriteMutation
   /** Actives et rangées mêlées : le groupe fait lui-même la coupure. */
   conversations: ConversationDto[]
+  schedules: ScheduledTaskDto[]
   open: boolean
   focused?: boolean
   /** Replié par l'utilisateur, indépendamment de la fermeture forcée par un glissement. */
@@ -697,6 +707,7 @@ function ProjectGroup({
   project,
   toggleFavorite,
   conversations,
+  schedules,
   open,
   focused = false,
   collapsed,
@@ -707,8 +718,11 @@ function ProjectGroup({
   const navigate = useNavigate()
   const updateProject = useUpdateProject()
   const reorder = useReorderConversations(project.id)
-  const active = useMemo(() => conversations.filter((c) => !c.archivedAt), [conversations])
-  const archived = useMemo(() => conversations.filter((c) => c.archivedAt), [conversations])
+  // Les tirs planifiés sortent des deux listes, actives comme rangées : ils vivent sous
+  // leur tâche, dans la section « Planifiées ».
+  const active = useMemo(() => conversations.filter((c) => !c.archivedAt && !c.scheduleId), [conversations])
+  const archived = useMemo(() => conversations.filter((c) => c.archivedAt && !c.scheduleId), [conversations])
+  const scheduled = useMemo(() => conversations.filter((c) => c.scheduleId), [conversations])
   const [archiveOpen, setArchiveOpen] = useState(false)
   // Le clic rouvre le projet là où on l'a laissé : au board pour ceux qui s'y pilotent,
   // sur une conversation neuve pour les autres.
@@ -888,6 +902,15 @@ function ProjectGroup({
               {t('shell.project.board')}
             </MenuItem>
             <MenuItem
+              icon={<CalendarClock size={14} />}
+              onSelect={() => {
+                onNavigate()
+                navigate(`/p/${project.id}/schedules`)
+              }}
+            >
+              {t('schedule.title')}
+            </MenuItem>
+            <MenuItem
               icon={<SlidersHorizontal size={14} />}
               onSelect={() => {
                 onNavigate()
@@ -930,6 +953,16 @@ function ProjectGroup({
             >
               <SquareKanban size={13} />{t('shell.project.board')}
             </NavLink>
+            <NavLink
+              to={`/p/${project.id}/schedules`}
+              onClick={onNavigate}
+              className={({ isActive }) => cx(
+                'flex min-h-11 items-center gap-2 rounded-md px-2.5 text-xs transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11',
+                isActive ? 'bg-surface-high font-medium text-ink' : 'text-ink-soft',
+              )}
+            >
+              <CalendarClock size={13} />{t('schedule.title')}
+            </NavLink>
           </li>
           {active.length > 0 ? (
             <DndContext
@@ -964,6 +997,22 @@ function ProjectGroup({
               {t(showAll ? 'shell.switcher.less' : 'shell.switcher.more', { count: active.length })}
             </button>
           </li>}
+
+          <SidebarSchedules
+            projectId={project.id}
+            tasks={schedules}
+            conversations={scheduled}
+            onNavigate={onNavigate}
+            renderRun={(conversation) => (
+              <ConversationRow
+                key={conversation.id}
+                conversation={conversation}
+                toggleFavorite={toggleFavorite}
+                draggable={false}
+                onNavigate={onNavigate}
+              />
+            )}
+          />
 
           {/* Repliée et en fin de liste : ce qui est rangé doit rester atteignable sans
               revenir peser sur ce qu'on a sous les yeux. Hors des contextes de

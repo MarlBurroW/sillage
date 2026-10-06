@@ -454,6 +454,11 @@ export interface ConversationDto {
    * ne doit pas perdre son origine parce qu'on a fait le ménage dans ses jetons.
    */
   origin: { tokenId: string | null; label: string } | null
+  /**
+   * Tâche planifiée dont un tir a ouvert ce fil, null pour une conversation ordinaire.
+   * La sidebar s'en sert pour le sortir de la liste principale et le ranger sous sa tâche.
+   */
+  scheduleId: string | null
 }
 
 export interface JournalPageDto {

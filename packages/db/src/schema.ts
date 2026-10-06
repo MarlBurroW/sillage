@@ -339,7 +339,7 @@ export const agentRequests = sqliteTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     /** Conversation qui demande. Sans clé étrangère, comme les messages entre sessions. */
     conversationId: text('conversation_id').notNull(),
-    kind: text('kind', { enum: ['start_session', 'create_card', 'list_models'] }).notNull(),
+    kind: text('kind', { enum: ['start_session', 'create_card', 'list_models', 'schedule_task'] }).notNull(),
     /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
     payload: text('payload').notNull(),
     createdAt: timestamp('created_at').notNull(),
@@ -414,6 +414,18 @@ export const conversations = sqliteTable(
      * marqueur quand le jeton a été supprimé.
      */
     originLabel: text('origin_label'),
+    /**
+     * Tâche planifiée dont un tir a ouvert cette conversation, si c'en est un.
+     *
+     * C'est ce qui la sort de la liste principale : une tâche horaire y poserait
+     * vingt-quatre lignes par jour, que la sidebar range à la place sous leur tâche.
+     * Le tir précis se retrouve par `scheduled_runs.conversation_id`.
+     *
+     * Sans cascade, comme `cardId` : supprimer une tâche n'efface pas ce que ses tirs
+     * ont produit. La route de suppression vide la colonne et range les fils, qui
+     * redeviennent des conversations ordinaires.
+     */
+    scheduleId: text('schedule_id'),
     /** JSON AgentConfig. */
     config: text('config').notNull(),
     status: text('status')
@@ -490,6 +502,99 @@ export const conversations = sqliteTable(
   (t) => [
     index('idx_conversations_project').on(t.projectId, t.position),
     index('idx_conversations_user').on(t.userId),
+    index('idx_conversations_schedule').on(t.scheduleId),
+  ],
+)
+
+/**
+ * Tâches planifiées : un prompt que le daemon rejoue à cadence fixe, chaque tir dans une
+ * session neuve.
+ *
+ * Portées par Sillage parce qu'aucun CLI n'a de planificateur local durable : le
+ * `CronCreate` de Claude meurt avec sa session, Codex n'en a pas. Le daemon, lui,
+ * tourne en permanence.
+ */
+export const scheduledTasks = sqliteTable(
+  'scheduled_tasks',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Compte au nom duquel les tirs s'ouvrent : celui qui a créé la tâche. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    agent: text('agent').$type<AgentKind>().notNull(),
+    /**
+     * JSON AgentConfig : modèle, effort et permissions, figés par tâche.
+     *
+     * Une copie et non les défauts du projet relus à chaque tir : personne n'est au
+     * clavier pour répondre à une demande de permission, donc le garde-fou d'un tir
+     * doit être celui qu'on a choisi en créant la tâche, pas celui du jour.
+     */
+    config: text('config').notNull(),
+    prompt: text('prompt').notNull(),
+    /** JSON `ScheduleCadence` : intervalle, motif cron ou date unique. */
+    cadence: text('cadence').notNull(),
+    /** `fresh` : une session neuve par tir. Seul mode pour l'instant. */
+    executionMode: text('execution_mode').$type<'fresh'>().notNull().default('fresh'),
+    /** Que faire d'un tir qui arrive pendant que le précédent tourne encore. */
+    overlapPolicy: text('overlap_policy').$type<'skip' | 'wait'>().notNull().default('skip'),
+    /** Au-delà, le tir est interrompu : rien d'autre n'arrêterait un agent qui s'égare. */
+    maxDurationMinutes: integer('max_duration_minutes').notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    /** Conversation qui a créé la tâche par `schedule_task` ; NULL depuis l'interface. */
+    createdByConversationId: text('created_by_conversation_id'),
+    lastRunAt: timestamp('last_run_at'),
+    /** NULL quand plus rien n'est prévu : tâche ponctuelle déjà tirée. */
+    nextRunAt: timestamp('next_run_at'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [
+    index('idx_scheduled_tasks_project').on(t.projectId),
+    index('idx_scheduled_tasks_due').on(t.enabled, t.nextRunAt),
+  ],
+)
+
+/**
+ * Un tir d'une tâche planifiée, y compris ceux qui n'ont rien lancé.
+ *
+ * Un tir sauté ou raté au lancement y laisse une ligne sans conversation : sans elle,
+ * une tâche qui ne part jamais ressemblerait à une tâche qui n'a rien trouvé.
+ */
+export const scheduledRuns = sqliteTable(
+  'scheduled_runs',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => scheduledTasks.id, { onDelete: 'cascade' }),
+    /** Sans clé étrangère : le fil peut être supprimé, le tir reste dans l'historique. */
+    conversationId: text('conversation_id'),
+    trigger: text('trigger').$type<'schedule' | 'manual'>().notNull(),
+    status: text('status')
+      .$type<'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'>()
+      .notNull(),
+    /** L'heure prévue, que `startedAt` dépasse quand le daemon était arrêté ou occupé. */
+    scheduledFor: timestamp('scheduled_for').notNull(),
+    startedAt: timestamp('started_at').notNull(),
+    finishedAt: timestamp('finished_at'),
+    /** Ce qui a empêché ou coupé le tir, rédigé pour être lu tel quel. */
+    error: text('error'),
+    /**
+     * Dernière réponse de l'agent, tronquée, recopiée à la fin du tir.
+     *
+     * Dupliquée du journal à dessein : c'est ce que le tir suivant reçoit dans son
+     * prompt, et il doit le recevoir même si le fil a été supprimé entre-temps.
+     */
+    summary: text('summary'),
+  },
+  (t) => [
+    index('idx_scheduled_runs_task').on(t.taskId, t.startedAt),
+    index('idx_scheduled_runs_open').on(t.status),
   ],
 )
 
@@ -934,6 +1039,8 @@ export type ApiTokenRow = typeof apiTokens.$inferSelect
 export type ProjectRow = typeof projects.$inferSelect
 export type InstructionsRow = typeof instructions.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
+export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
+export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
 export type ConversationFavoriteRow = typeof conversationFavorites.$inferSelect
 export type EventRow = typeof events.$inferSelect

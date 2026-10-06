@@ -176,6 +176,7 @@ export function registerClaudeSessionRoutes(
       forkedFromId: null,
       createdByTokenId: null,
       originLabel: null,
+      scheduleId: null,
       config: JSON.stringify(config),
       status: 'idle',
       backgroundCount: 0,

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { Cron } from 'croner'
 import { and, asc, count, eq, gt, isNull, ne } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
@@ -7,17 +8,25 @@ import {
   cards,
   conversations,
   projects,
+  scheduledTasks,
   worktrees,
   type AgentRequestRow,
   type ConversationRow,
   type ProjectRow,
 } from '@sillage/db'
 import {
+  DEFAULT_SCHEDULE_DURATION_MINUTES,
+  MAX_SCHEDULE_DURATION_MINUTES,
+  MAX_SCHEDULE_NAME_CHARS,
+  MAX_SCHEDULE_PROMPT_CHARS,
+  MIN_SCHEDULE_DURATION_MINUTES,
   agentConfigSchema,
   agentKindSchema,
   defaultConfigFor,
   formatSessionMessage,
   readProjectDefaults,
+  scheduleCadenceSchema,
+  type ScheduleCadence,
   type AgentConfig,
   type AgentKind,
   type AgentModelDto,
@@ -28,12 +37,14 @@ import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { advanceCardOnLaunch, createCard } from '../http/routes/cards.js'
 import { createWorktree } from '../http/routes/worktrees.js'
+import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
 import type { SessionManager } from './session-manager.js'
 
 /**
  * Traite les demandes que les sessions adressent au daemon par le serveur MCP :
- * lancer une autre session, créer une carte, lire le catalogue des modèles.
+ * lancer une autre session, créer une carte, planifier une tâche, lire le catalogue des
+ * modèles.
  *
  * Le serveur MCP n'a que la base. Il dépose la demande et attend que ce balayage y
  * écrive le résultat ; plus court que celui du relais, parce qu'ici un agent est
@@ -66,6 +77,16 @@ export const LAUNCHES_PER_HOUR = 6
 export const MAX_LAUNCH_PROMPT_CHARS = 20000
 
 const HOUR_MS = 60 * 60 * 1000
+
+/**
+ * Cadence la plus serrée qu'un agent peut poser. L'interface descend plus bas, mais là
+ * une personne a choisi : une tâche à la minute créée sur un malentendu brûlerait un
+ * quota entier avant que quiconque la voie.
+ */
+export const MIN_AGENT_SCHEDULE_MINUTES = 15
+
+/** Tâches par projet au-delà desquelles un agent n'en ajoute plus. */
+export const MAX_AGENT_SCHEDULES_PER_PROJECT = 20
 
 /**
  * Remplace les `{param}` d'un message d'erreur HTTP : les erreurs des fonctions
@@ -160,6 +181,8 @@ export class AgentRequests {
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
         this.settle(request.id, text, false, launchedId)
+      } else if (request.kind === 'schedule_task') {
+        this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
       } else if (request.kind === 'create_card') {
         this.settle(request.id, this.createCard(requester, payload), false)
       } else {
@@ -420,6 +443,88 @@ export class AgentRequests {
     return card
   }
 
+  // --- schedule_task -------------------------------------------------------------
+
+  /**
+   * Crée une tâche planifiée, comme le ferait le formulaire de l'interface.
+   *
+   * Même latitude qu'un lancement : le modèle et l'effort se choisissent, les
+   * permissions restent celles des défauts du projet. Elles comptent davantage ici,
+   * personne n'étant là pendant les tirs, et la réponse les rappelle pour que l'agent
+   * le dise à l'utilisateur.
+   */
+  private async scheduleTask(
+    requester: ConversationRow,
+    project: ProjectRow,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    if (requester.scheduleId) {
+      throw new Refusal(
+        "Refusé : cette session est elle-même un tir planifié. Une tâche qui en crée d'autres se multiplierait sans personne pour l'arrêter ; ouvre une carte avec create_card.",
+      )
+    }
+
+    const name = typeof payload.name === 'string' ? payload.name.trim() : ''
+    if (!name) throw new Refusal('Le paramètre `name` est requis : le nom court de la tâche.')
+    if (name.length > MAX_SCHEDULE_NAME_CHARS) {
+      throw new Refusal(`Nom trop long (${MAX_SCHEDULE_NAME_CHARS} caractères au plus).`)
+    }
+    const prompt = typeof payload.prompt === 'string' ? payload.prompt.trim() : ''
+    if (!prompt) throw new Refusal('Le paramètre `prompt` est requis : la consigne rejouée à chaque tir.')
+    if (prompt.length > MAX_SCHEDULE_PROMPT_CHARS) {
+      throw new Refusal(
+        `Consigne trop longue (${prompt.length} caractères, ${MAX_SCHEDULE_PROMPT_CHARS} au plus). Mets le détail dans un fichier et cite-le.`,
+      )
+    }
+
+    const [existing] = this.ctx.db
+      .select({ total: count() })
+      .from(scheduledTasks)
+      .where(eq(scheduledTasks.projectId, project.id))
+      .all()
+    if ((existing?.total ?? 0) >= MAX_AGENT_SCHEDULES_PER_PROJECT) {
+      throw new Refusal(
+        `Refusé : ce projet porte déjà ${MAX_AGENT_SCHEDULES_PER_PROJECT} tâches planifiées. L'utilisateur peut en supprimer dans la vue Planification.`,
+      )
+    }
+
+    const cadence = parseAgentCadence(payload)
+    const maxDurationMinutes = payload.max_duration_minutes ?? DEFAULT_SCHEDULE_DURATION_MINUTES
+    if (
+      typeof maxDurationMinutes !== 'number' ||
+      !Number.isInteger(maxDurationMinutes) ||
+      maxDurationMinutes < MIN_SCHEDULE_DURATION_MINUTES ||
+      maxDurationMinutes > MAX_SCHEDULE_DURATION_MINUTES
+    ) {
+      throw new Refusal(
+        `\`max_duration_minutes\` est un entier entre ${MIN_SCHEDULE_DURATION_MINUTES} et ${MAX_SCHEDULE_DURATION_MINUTES}.`,
+      )
+    }
+    const overlap = payload.overlap ?? 'skip'
+    if (overlap !== 'skip' && overlap !== 'wait') {
+      throw new Refusal('`overlap` vaut `skip` (sauter le tir) ou `wait` (attendre la fin du précédent).')
+    }
+
+    const agent = this.parseAgent(payload.agent, requester.agent)
+    const config = await this.launchConfig(agent, project, requester.userId, payload)
+    const task = createScheduledTask(
+      this.ctx.db,
+      { projectId: project.id, userId: requester.userId, conversationId: requester.id },
+      { name, agent, config, prompt, cadence, overlapPolicy: overlap, maxDurationMinutes, enabled: true },
+    )
+
+    const lines = [
+      `Tâche planifiée « ${task.name} » créée, id ${task.id}.`,
+      `Cadence : ${describeCadence(cadence)}. Prochain tir : ${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur).`,
+      `Chaque tir ouvre une session neuve : CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}, ${task.maxDurationMinutes} min au plus, à la racine du projet.`,
+      describePermissions(config)
+        ? "Attention : avec les permissions par défaut du projet, un tir s'arrêtera pour demander un accord que personne ne donnera, jusqu'à sa durée maximale. Dis-le à l'utilisateur : il règle les permissions de la tâche dans la vue Planification."
+        : null,
+      "L'utilisateur la retrouve dans la vue Planification du projet, où il peut la modifier, la mettre en pause, la lancer tout de suite ou la supprimer. Ses tirs n'apparaissent pas dans la liste des sessions mais sous la tâche.",
+    ]
+    return lines.filter(Boolean).join('\n')
+  }
+
   // --- create_card ---------------------------------------------------------------
 
   /**
@@ -491,6 +596,62 @@ export class AgentRequests {
     }
     return `${sections.join('\n\n')}\n\nDans start_session, \`model\` accepte la valeur ou le nom affiché, et \`effort: "max"\` prend le plus haut niveau quand le modèle n'en a pas de ce nom.`
   }
+}
+
+/**
+ * La cadence telle qu'un agent la donne : exactement un de `every_minutes`, `cron`, `at`.
+ *
+ * Trois paramètres à plat plutôt qu'un objet discriminé : c'est la forme qu'un modèle
+ * remplit sans se tromper, et celle de `CronCreate` qu'il connaît déjà.
+ */
+function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence {
+  const given = ['every_minutes', 'cron', 'at'].filter(
+    (key) => payload[key] !== undefined && payload[key] !== null && payload[key] !== '',
+  )
+  if (given.length !== 1) {
+    throw new Refusal(
+      'Donne exactement une cadence : `every_minutes` (intervalle), `cron` (motif à cinq champs) ou `at` (date et heure uniques, ISO 8601).',
+    )
+  }
+
+  let candidate: unknown
+  if (given[0] === 'every_minutes') {
+    candidate = { kind: 'interval', minutes: payload.every_minutes }
+  } else if (given[0] === 'cron') {
+    candidate = { kind: 'cron', expression: typeof payload.cron === 'string' ? payload.cron.trim() : payload.cron }
+  } else {
+    const at = typeof payload.at === 'string' ? Date.parse(payload.at) : Number.NaN
+    if (Number.isNaN(at)) throw new Refusal('`at` doit être une date ISO 8601, par exemple 2026-10-12T09:00:00+02:00.')
+    if (at <= Date.now()) throw new Refusal('`at` est dans le passé.')
+    candidate = { kind: 'once', at }
+  }
+
+  const parsed = scheduleCadenceSchema.safeParse(candidate)
+  if (!parsed.success) {
+    throw new Refusal(
+      given[0] === 'cron'
+        ? `Motif cron invalide « ${String(payload.cron)} » : cinq champs (minute heure jour mois jour-de-semaine), lus à l'heure du serveur.`
+        : '`every_minutes` doit être un entier positif.',
+    )
+  }
+
+  const cadence = parsed.data
+  if (cadence.kind === 'interval' && cadence.minutes < MIN_AGENT_SCHEDULE_MINUTES) {
+    throw new Refusal(`Intervalle trop court : ${MIN_AGENT_SCHEDULE_MINUTES} minutes au moins.`)
+  }
+  if (cadence.kind === 'cron') {
+    const [first, second] = new Cron(cadence.expression, { paused: true }).nextRuns(2)
+    if (first && second && second.getTime() - first.getTime() < MIN_AGENT_SCHEDULE_MINUTES * 60_000) {
+      throw new Refusal(`Motif trop serré : ${MIN_AGENT_SCHEDULE_MINUTES} minutes au moins entre deux tirs.`)
+    }
+  }
+  return cadence
+}
+
+function describeCadence(cadence: ScheduleCadence): string {
+  if (cadence.kind === 'interval') return `toutes les ${cadence.minutes} minutes`
+  if (cadence.kind === 'cron') return `motif cron \`${cadence.expression}\``
+  return `une seule fois, le ${new Date(cadence.at).toLocaleString('fr-FR')}`
 }
 
 function nameModel(model: AgentModelDto): string {

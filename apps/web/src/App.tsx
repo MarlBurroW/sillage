@@ -9,6 +9,7 @@ import { ServicesPage } from './routes/ServicesPage'
 import { LoginPage } from './routes/LoginPage'
 import { BoardPage } from './routes/BoardPage'
 import { ProjectPage } from './routes/ProjectPage'
+import { SchedulePage } from './routes/SchedulePage'
 import { ProjectsSettingsPage } from './routes/ProjectsSettingsPage'
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
@@ -55,6 +56,7 @@ export function App() {
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/p/:projectId" element={<ProjectPage />} />
           <Route path="/p/:projectId/board" element={<BoardPage />} />
+          <Route path="/p/:projectId/schedules" element={<SchedulePage />} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />
