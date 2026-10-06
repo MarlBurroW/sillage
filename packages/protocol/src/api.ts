@@ -7,6 +7,7 @@ import type { CardLinkDto } from './cards.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
+import { instructionsModeSchema, type InstructionsMode } from './instructions.js'
 import type { ProjectAgentDefaults } from './project-defaults.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
 
@@ -95,6 +96,8 @@ const projectCreationFields = {
   name: z.string().min(1).max(120),
   visibility: projectVisibilitySchema.default('private'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null),
+  /** Absent : le dépôt s'il porte déjà un `AGENTS.md` ou un `CLAUDE.md`, Sillage sinon. */
+  instructionsMode: instructionsModeSchema.optional(),
 }
 
 /**
@@ -195,6 +198,8 @@ export interface ProjectDto {
   conversationCount: number
   /** Préréglages du projet, socle des conversations qui s'y ouvrent. */
   defaultConfig: ProjectAgentDefaults
+  /** Null pour un projet d'avant le réglage : le mode se résout alors d'après le dossier. */
+  instructionsMode: InstructionsMode | null
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
   /** État du dépôt git, null si le workspace n'est pas un dépôt. */
@@ -662,11 +667,27 @@ export interface CodexModeDto {
   label: string
 }
 
+/**
+ * Un mode de conduite du tour, tel que le CLI le nomme : mode de collaboration chez
+ * Codex, agent primaire chez opencode (`build`, `plan`, ou un agent de l'utilisateur).
+ * `mode` est une chaîne parce que la liste d'opencode est ouverte ; `CodexModeDto` en
+ * est le cas fermé.
+ */
+export interface AgentModeDto {
+  mode: string
+  label: string
+  /** Description donnée par le CLI, quand il en a une. */
+  hint?: string | null
+}
+
 /** Réponse de `/api/agents/:agent/models`, la même forme quel que soit le CLI. */
 export interface AgentModelsDto {
   models: AgentModelDto[]
-  /** Modes de collaboration (Codex) ; vide quand le CLI n'en annonce pas. */
-  modes: CodexModeDto[]
+  /**
+   * Modes de collaboration (Codex) ou agents primaires (opencode) ; vide quand le CLI
+   * n'en annonce pas.
+   */
+  modes: AgentModeDto[]
   /** Nature du compte quand le CLI la déclare (Claude) ; null sinon. */
   account: ClaudeAccountDto | null
   /** Styles de sortie que le CLI propose (Claude) ; vide quand il n'en a pas. */

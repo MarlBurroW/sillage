@@ -27,6 +27,11 @@ export class CachedProbe<T extends object> {
     return this.cache
   }
 
+  /** Oublie la valeur : la prochaine lecture sondera, TTL ou pas. */
+  invalidate(): void {
+    this.cache = null
+  }
+
   /** Périmée et sans lecture en vol : plus rien à garder. */
   expired(ttlMs: number): boolean {
     if (this.inflight !== null) return false

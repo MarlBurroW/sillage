@@ -1,4 +1,5 @@
 import {
+  FileText,
   FolderOpen,
   GitBranch,
   ImagePlus,
@@ -25,6 +26,8 @@ import {
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { useAgentSettings } from '../components/chat/agent-settings'
 import { ProjectSkills } from '../components/skills/ProjectSkills'
+import { ProjectInstructions } from '../components/instructions/Instructions'
+import { ProjectMemory } from '../components/instructions/ProjectMemory'
 import type { SettingGroup } from '../components/chat/ComposerSettings'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from '../components/PathField'
@@ -130,6 +133,19 @@ export function ProjectPage() {
       </Card>
 
       <WorktreeList projectId={project.id} isRepository={project.git !== null} />
+
+      <Card>
+        <CardHeader
+          title={t('instructions.project.title')}
+          description={t('instructions.project.description')}
+          icon={<FileText size={16} />}
+        />
+        <CardBody>
+          <ProjectInstructions projectId={project.id} />
+        </CardBody>
+      </Card>
+
+      <ProjectMemory projectId={project.id} />
 
       <ProjectSkills projectId={project.id} isOwner={project.isOwner} />
 

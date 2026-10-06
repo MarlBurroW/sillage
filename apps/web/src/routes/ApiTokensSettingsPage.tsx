@@ -21,7 +21,7 @@ import {
   Field,
   Select,
 } from '../components/ui'
-import { AgentIcon } from '../components/AgentIcon'
+import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { useAgentModels, effortsFor } from '../lib/agents'
@@ -59,7 +59,7 @@ const PERMISSION_MODE_KEYS = {
   dontAsk: 'composer.permission.dontAsk',
   bypassPermissions: 'composer.permission.bypass',
 } as const
-const AGENTS: AgentKind[] = ['claude', 'codex']
+const AGENTS = Object.keys(AGENT_LABELS) as AgentKind[]
 
 /** Durées de vie proposées, en jours. `none` laisse le jeton valable jusqu'à révocation. */
 const LIFETIMES = { none: null, '30': 30, '90': 90, '365': 365 } as const
@@ -245,7 +245,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
               }}
               options={AGENTS.map((kind) => ({
                 value: kind,
-                label: kind === 'claude' ? 'Claude Code' : 'Codex',
+                label: AGENT_LABELS[kind],
                 icon: <AgentIcon agent={kind} size={13} />,
               }))}
             />

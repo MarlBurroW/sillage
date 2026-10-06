@@ -298,6 +298,11 @@ export class CodexRunner implements AgentRunner {
       ...toCodexThreadConfig(this.mcpServers),
       // Rend aussi les questions structurées disponibles en mode de travail normal.
       'features.default_mode_request_user_input': true,
+      // Le projet tient ses consignes dans SILLAGE.md, qui arrive par
+      // `developerInstructions` : lire aussi l'`AGENTS.md` du dépôt les doublerait. Zéro
+      // coupe les seuls fichiers du projet, le `AGENTS.md` de `CODEX_HOME` reste lu
+      // (sondé sur codex-cli 0.157.1).
+      ...(this.ctx.maskedInstructionRoots().length > 0 ? { project_doc_max_bytes: 0 } : {}),
     }
 
     // L'équivalent de l'appendice au prompt système côté Claude. Sondé sur le CLI

@@ -5,6 +5,7 @@ import { and, eq, gt, or, sql } from 'drizzle-orm'
 import {
   conversations,
   permissionRequests,
+  projects,
   type ConversationRow,
   type Db,
 } from '@sillage/db'
@@ -20,6 +21,8 @@ import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { projectOverview } from '../agents/overview.js'
+import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
+import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type {
@@ -683,10 +686,29 @@ export class SessionManager {
     const conversationId = conversation.id
     const adapter = this.registry.adapter(conversation.agent)
     const config = parseAgentConfig(conversation.config)
+    const cwd = this.resolveCwd(conversation)
+    // Relu à chaque appel et non figé ici : le mode peut changer entre deux lancements
+    // d'un même runner, et pour un projet d'avant le réglage il dépend du dossier.
+    const instructions = () => {
+      const project = this.db
+        .select({ instructionsMode: projects.instructionsMode, workspacePath: projects.workspacePath })
+        .from(projects)
+        .where(eq(projects.id, conversation.projectId))
+        .get()
+      return project ? { ...project, mode: resolveInstructionsMode(project) } : null
+    }
+    // Créé et, la première fois, rempli de la mémoire que Claude tenait pour ce
+    // workspace : sans l'import, déplacer son dossier lui ferait tout oublier.
+    const memoryDir = () =>
+      ensureProjectMemory(
+        this.config.paths.memory,
+        conversation.projectId,
+        instructions()?.workspacePath ?? cwd,
+      )
 
     return {
       conversationId,
-      cwd: this.resolveCwd(conversation),
+      cwd,
       config,
       // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
       // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Sillage
@@ -706,6 +728,7 @@ export class SessionManager {
           databasePath: this.config.paths.database,
           projectId: conversation.projectId,
           conversationId,
+          memoryDir: memoryDir(),
         })
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },
@@ -713,14 +736,35 @@ export class SessionManager {
       // Suit les mêmes interrupteurs que le serveur MCP, sauf `strictMcp` : celui-ci
       // dit « pas d'autre serveur que ceux que j'ai déclarés », ce qui parle des outils
       // et non de ce que Sillage raconte de son propre état.
-      projectOverview: (current) =>
-        this.config.mcp.sillageServer && current.sillageMcp
-          ? projectOverview(this.db, {
-              projectId: conversation.projectId,
-              conversationId,
-              sillageMcp: builtinMcpEnabled(this.config.mcp.sillageServer, current),
-            })
-          : null,
+      //
+      // SILLAGE.md passe devant et hors de ces interrupteurs : ce sont les consignes de
+      // l'utilisateur, pas un apport de Sillage qu'on choisirait de couper.
+      projectOverview: (current) => {
+        const sillageMcp = builtinMcpEnabled(this.config.mcp.sillageServer, current)
+        const parts = [
+          instructionsAppendix(this.db, {
+            projectId: conversation.projectId,
+            mode: instructions()?.mode ?? 'repo',
+            sillageMcp,
+          }),
+          // Claude charge l'index de sa mémoire de lui-même ; Codex et opencode n'ont que
+          // ce qu'on leur dit.
+          conversation.agent !== 'claude' ? memoryAppendixForCodex(memoryDir(), sillageMcp) : null,
+          this.config.mcp.sillageServer && current.sillageMcp
+            ? projectOverview(this.db, {
+                projectId: conversation.projectId,
+                conversationId,
+                sillageMcp,
+              })
+            : null,
+        ].filter((part) => part !== null)
+        return parts.length > 0 ? parts.join('\n\n') : null
+      },
+      memoryDir,
+      maskedInstructionRoots: () => {
+        const current = instructions()
+        return current?.mode === 'sillage' ? [current.workspacePath, cwd] : []
+      },
       skillRoots: (current) =>
         this.config.skills.library && current.skillLibrary
           ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(conversation.projectId)

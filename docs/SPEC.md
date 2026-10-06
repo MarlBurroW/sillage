@@ -1314,14 +1314,11 @@ donc une vue ajoutée aujourd'hui s'applique aux conversations d'hier.
 
 ### 12.6 Design et thèmes
 
-**La marque.** Un point qui avance, et les rides qu'il laisse derrière lui : trois arcs
-qui s'élargissent et s'effacent en s'éloignant, comme les vagues transversales d'un vrai
-sillage. Trois instants du même événement, ce qu'un journal contient.
+**La marque : L’écho.** Trois ondes pleines et parallèles prolongent un mouvement :
+la trace du travail et la continuité des échanges.
 
-Elle est unie, jamais en dégradé, et tracée en `currentColor` : posée sur `text-accent`,
-elle suit le curseur de teinte des réglages, ce qu'un dégradé codé en dur ne saurait pas
-faire. Le dégradé ne sert qu'à la tuile des icônes d'application, où la marque est posée
-en blanc dessus.
+Dans l’interface, le symbole est tracé en `currentColor` et suit la teinte choisie dans
+les réglages. Les icônes autonomes le portent en blanc sur une tuile verte #436E69.
 
 Le tracé existe forcément en plusieurs exemplaires, parce qu'un favicon et un en-tête de
 README sont chargés comme des images et n'héritent d'aucun jeton : `docs/brand/README.md`

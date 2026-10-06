@@ -26,6 +26,8 @@ import type { Scheduler } from '../scheduler/scheduler.js'
 import type { WebhookService } from '../webhooks/service.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
+import { registerInstructionRoutes } from './routes/instructions.js'
+import { registerMemoryRoutes } from './routes/memory.js'
 import { registerSkillLibraryRoutes } from './routes/skill-library.js'
 import { registerSkillSourceRoutes } from './routes/skill-sources.js'
 import { SkillSources } from '../skill-library/sources.js'
@@ -164,7 +166,12 @@ export async function buildApp(
   registerSessionMessageRoutes(app, ctx, relay)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)
-  registerAgentRoutes(app, ctx, registry, new CliInstaller(ctx.config.paths.agents))
+  registerAgentRoutes(
+    app,
+    ctx,
+    registry,
+    new CliInstaller(ctx.config.paths.agents, (kind) => registry.find(kind)?.cli.invalidate()),
+  )
   registerMcpRoutes(app, ctx)
   // Les sources lisent la bibliothèque pour installer, la bibliothèque lit leurs
   // catalogues pour signaler une mise à jour : les sources d'abord.
@@ -176,6 +183,8 @@ export async function buildApp(
     skillSources,
   )
   registerSkillLibraryRoutes(app, ctx, skillLibrary)
+  registerInstructionRoutes(app, ctx)
+  registerMemoryRoutes(app, ctx)
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
