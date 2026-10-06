@@ -60,6 +60,15 @@ version reçue jusqu'à sa prochaine compaction. OpenCode, qui les reçoit avec 
 message, voit une modification dès le suivant. Le mode, lui, est lu au lancement du
 runner.
 
+## Donner aux agents des liens accessibles à distance
+
+Si le navigateur est sur un autre appareil, les liens de prévisualisation doivent
+utiliser le nom VPN de la machine qui exécute les agents. Le
+[guide d’accès distant](remote-access.md#teach-agents-to-share-reachable-preview-links)
+fournit un modèle à adapter dans les consignes globales ou celles du projet :
+nom réel de la machine, ports autorisés, HTTPS, vérification et nettoyage.
+Ces consignes guident les agents ; elles ne configurent pas le VPN elles-mêmes.
+
 ## Recette
 
 `apps/server/test/instructions.test.ts` couvre routes, modes, migration et l'outil MCP.

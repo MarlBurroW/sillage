@@ -9,7 +9,9 @@ OpenCode CLIs on your own machine. Vibe-code from anywhere: the official agent h
 without the terminal.
 
 Runs on Linux, on macOS (Apple Silicon), on Windows through WSL2, in Docker or on
-Kubernetes.
+Kubernetes. An always-on server is recommended for continuity across devices; a
+workstation works too while it stays awake and online.
+[Set up private remote access and agent preview links](docs/remote-access.md).
 
 Website: [marlburrow.github.io/sillage](https://marlburrow.github.io/sillage)
 
@@ -33,8 +35,9 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 ## What it adds on top of the CLIs
 
 - **Sessions that outlive the client.** The event journal on the server is the
-  source of truth, not the browser: close the laptop mid-turn and reopen on a
-  phone, the agent kept working and the thread replays as it happened.
+  source of truth, not the browser: close the browser mid-turn and reopen on a
+  phone through your configured remote connection. While the host stays awake and
+  Sillage is running, the agent keeps working and the thread replays as it happened.
 - **A queue, and steering.** Write while a turn runs. The message waits on the
   server and can be withdrawn, or goes straight into the turn already in flight.
 - **One grammar for every CLI.** Claude Code, Codex and OpenCode are translated
@@ -270,7 +273,9 @@ Sillage is built for a trusted circle, not for public exposure:
 
 The server listens on `127.0.0.1` by default and does not terminate TLS. To reach
 it remotely, go through a reverse proxy (Caddy) or a tunnel (Tailscale, Cloudflare
-Tunnel). Never expose it directly to the Internet.
+Tunnel with Access). Never expose it directly to the Internet.
+The [remote access guide](docs/remote-access.md) walks through Tailscale, other VPN
+options, HTTPS, and shared instructions for reachable agent preview links.
 
 ## Releases
 

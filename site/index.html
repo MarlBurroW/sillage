@@ -121,19 +121,21 @@
           <div class="arch-connector"><span>Read, edit &amp; run</span></div>
           <div class="arch-repo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="m10 11-3 3 3 3m4-6 3 3-3 3"/></svg><div><strong>Your project files</strong><span>Code, Git branches &amp; terminal</span></div></div>
         </div>
-        <figcaption>The browser can close. Your agents keep working.</figcaption>
+        <figcaption>The browser can close. Your agents keep working while their host stays awake.</figcaption>
       </figure>
     </section>
 
     <section class="editorial" id="anywhere">
       <div class="section-label">01 / Continuity</div>
       <div class="section-body">
-        <h2>Close the laptop.<br>Keep the session.</h2>
-        <p class="section-lede">The agent runs on your server. Your browser is where you follow along.</p>
+        <h2>Switch devices.<br>Keep the session.</h2>
+        <p class="section-lede">Your agents have a home. Follow their work from any device.</p>
         <div class="prose-columns">
-          <p>Leave in the middle of a turn and reopen Sillage on your phone. The agent keeps working while you are away; the server’s event journal brings the conversation back when you reconnect.</p>
+          <p>Run Sillage on an always-on server, connect through your VPN, and pick up on your phone. Close your browser mid-turn: the agent keeps working, and the event journal brings the conversation back when you reconnect.</p>
           <p>Answer a permission request, review a diff or send a correction. Install Sillage as a PWA and receive push notifications when a turn finishes or an agent needs your attention.</p>
         </div>
+        <p class="technical-note">Prefer your own computer? Sillage works there too. Keep it awake and online, and set up remote access before switching devices. Your agents and files stay on the machine where you installed them.</p>
+        <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Set up remote access &amp; agent preview links ↗</a>
         <ul class="inline-facts"><li>Persistent sessions</li><li>Message queue &amp; steering</li><li>Project-aware dictation</li></ul>
       </div>
     </section>
@@ -325,7 +327,8 @@
     <section class="install" id="install" aria-labelledby="install-title">
       <div class="install-intro">
         <p class="section-label">Run it yourself</p><h2 id="install-title">Your machine.<br>Your workspace.</h2>
-        <p>Docker, a systemd user service on Linux, a launchd agent on macOS, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default.</p>
+        <p>An always-on server is recommended for picking up work throughout the day. Your desktop works too, while it stays awake and connected.</p>
+        <p>Docker, a systemd user service on Linux, a launchd agent on macOS, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Add private remote access with a VPN</a> to connect from another device.</p>
       </div>
 
       <div class="install-box">
