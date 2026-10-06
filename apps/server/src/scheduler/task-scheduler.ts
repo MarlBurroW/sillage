@@ -87,7 +87,8 @@ export class TaskScheduler {
     if (this.firing.has(task.id) || this.openRun(task.id)) {
       throw conflict('schedule_already_running', 'A run of this task is still in progress.')
     }
-    return this.fire(task, 'manual', Date.now())
+    const now = Date.now()
+    return this.fire(task, 'manual', now, now)
   }
 
   // --- Tirs à l'heure ------------------------------------------------------------
@@ -135,7 +136,7 @@ export class TaskScheduler {
         continue
       }
 
-      await this.fire(task, 'schedule', scheduledFor)
+      await this.fire(task, 'schedule', scheduledFor, now)
     }
   }
 
@@ -162,9 +163,13 @@ export class TaskScheduler {
     task: ScheduledTaskRow,
     trigger: ScheduleRunTrigger,
     scheduledFor: number,
+    /**
+     * L'instant du balayage, et non une seconde lecture de l'horloge : le tir suivant
+     * s'arme depuis la même date que celle qui a jugé celui-ci dû.
+     */
+    startedAt: number,
   ): Promise<ScheduledRunRow> {
     this.firing.add(task.id)
-    const startedAt = Date.now()
     const run: ScheduledRunRow = {
       id: randomUUID(),
       taskId: task.id,
