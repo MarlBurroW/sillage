@@ -270,3 +270,82 @@ await q.applyFlagSettings({ outputStyle: 'Concise' })
 
 À rejouer au prochain bump du SDK : rien de tout ça n'est documenté au-delà des
 types, et `applyFlagSettings` est annoncé « streaming input only ».
+
+## Complément du 6 octobre 2026 : cible 2.1.291
+
+Relecture du changelog de 2.1.274 à 2.1.291 (≈ 1 500 lignes, surtout des correctifs) et
+du diff des types entre le SDK 0.3.273 et 0.3.291, avec des sondes par requêtes de
+contrôle sur le CLI du poste (2.1.286) et sur un 2.1.291 téléchargé à part, sans
+toucher au binaire du système.
+
+| | Installé sur ce poste | Dernier publié | Cible déclarée |
+|---|---|---|---|
+| CLI `@anthropic-ai/claude-code` | 2.1.286 | 2.1.291 (`stable` : 2.1.285, `next` : 2.1.292) | 2.1.273 → **2.1.291** |
+| SDK `@anthropic-ai/claude-agent-sdk` | 0.3.273 | 0.3.291 | 0.3.273 → **0.3.291** |
+
+Rien de ce que Sillage utilise n'a bougé dans le SDK : le typecheck passe sans
+retouche. Les outils `TaskOutput` (retiré en 2.1.276) et `REPL` sortent des schémas
+d'outils ; Sillage ne les traitait pas à part.
+
+### Ce qui touchait Sillage, et ce qui a été fait
+
+- **Ultracode n'est plus un niveau d'effort (2.1.284).** Il n'impose plus `xhigh` et
+  tient à tout niveau ; en revanche un `effortLevel` qui change le niveau sans la clé
+  `ultracode` l'éteint. Sillage envoyait l'effort seul : changer l'effort d'une
+  conversation en Ultracode l'éteignait côté CLI pendant que le composer l'affichait
+  allumé. Sondé sur 2.1.286 et 2.1.291 par `getSettings().applied` (méthode présente à
+  l'exécution, absente du type public). Corrigé : `liveFlagSettings` renvoie
+  `ultracode: true` avec tout changement d'effort, et le composer n'aligne plus
+  l'effort sur `xhigh` quand on l'allume. Le CLI le refuse toujours aux modèles sans
+  `xhigh` (`ultracodeAvailable: false` sur Haiku 4.5 et Sonnet 4.6) : le réglage reste
+  réservé à ceux-là.
+- **Noms de modèles qui sortent du catalogue.** `opus[1m]` n'est plus listé depuis
+  2.1.282 (Opus a d'office un million de tokens), et 2.1.291 liste Fable 5.1 sous
+  l'alias `fable` au lieu de `claude-fable-5-1`. Le CLI accepte toujours les anciens
+  noms, mais le composer, qui cherchait la valeur exacte, perdait l'effort, la vitesse
+  et Ultracode de ces conversations : 94 actives en `opus[1m]` en base, une dizaine en
+  `claude-fable-5-1`. `catalogModel` retrouve désormais l'entrée par le nom sans
+  `[1m]`, puis par l'identifiant résolu.
+- **Deux signaux de plus.** `conversation_reset` porte son `trigger` (`clear`,
+  `plan_mode_exit`, `fresh_session`, `onboarding`), traduit en phrase ; l'`init`
+  porte `plugin_errors`, relayé en un avis qui ne revient qu'au changement. Sillage
+  charge sa bibliothèque de skills comme plugins : un refus y était muet.
+
+### Ce qui touche Sillage sans code
+
+- **Limite des commandes de fond (2.1.285, 2.1.288).** Une commande lancée avec
+  `run_in_background` s'arrête au bout de 30 min par défaut, 2 h au plus, dans les
+  sessions « non surveillées ». Le CLI range dans cette catégorie toute session SDK
+  qui ne se déclare pas Desktop ou VS Code, donc celles de Sillage. À trancher : carte
+  #12.
+- **AGENTS.md lu par Claude (2.1.277)** : déjà couvert, `claudeMdExcludes` masque les
+  deux fichiers en mode SILLAGE.md (sondé le 5 octobre, `docs/sillage-md.md`).
+- **Mode de permission par défaut à `auto`** quand la session n'en donne aucun : Sillage
+  en passe toujours un.
+- **Opus 5.5 et Sonnet 5.5** : le catalogue est lu au CLI, ils sont apparus seuls.
+- Correctifs SDK qui profitent directement : un message envoyé en priorité ne coupe
+  plus un WebFetch en cours, les heartbeats d'outil arrivent pendant un flux bloqué,
+  le repli de modèle ne se répète plus à chaque message après un changement de modèle
+  en vol, `set_model` reprend les limites de sortie du nouveau modèle, un tour ne
+  reste plus ouvert quand son flux est coupé.
+
+### Laissé de côté, noté
+
+- `get_task_output`, la fin de la sortie d'une commande de fond, sans tour de modèle :
+  carte #13. Présente à l'exécution du SDK mais pas dans son type public.
+- Consultations de l'advisor (`advisor_tool_result`) que le fil ne rend pas : carte
+  #14.
+- `prewarm()` / `claim()` (alpha) : un CLI démarré d'avance, lié ensuite à une session.
+  Gagnerait le démarrage d'une conversation, mais impose de figer à l'avance tout ce
+  que Sillage passe au lancement (MCP, plugins, hooks).
+- MCP Apps (`readMcpResource`, `_meta.ui`, alpha) : rendre les widgets HTML des
+  serveurs MCP, en bac à sable.
+- `mcpServer` sur les demandes de permission (serveur et provenance d'un outil
+  `mcp__*`), `verbatimPrompts`, `pasted_content`, `view_mode` de `/focus` : sans usage
+  identifié aujourd'hui.
+
+Vérifié : typecheck, tests (dont `claude-flag-settings.test.ts` et les nouveaux cas de
+`claude-signals.test.ts`), lint, et un passage Playwright jetable sur le composer réel
+(API simulée), grand écran et téléphone : une conversation `opus[1m]` s'affiche « Opus
+5.5 » avec son effort, une `claude-fable-5-1` « Fable 5.1 », et Ultracode s'allume sans
+toucher à l'effort.

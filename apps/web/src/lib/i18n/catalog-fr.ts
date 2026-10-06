@@ -284,7 +284,7 @@ export const fr: Catalog = {
   'composer.ultracode.off': 'Désactivé',
   'composer.ultracode.off.hint': 'Les workflows ne partent qu’à la demande, ou avec le mot « ultracode » dans un message',
   'composer.ultracode.on': 'Ultracode',
-  'composer.ultracode.on.hint': 'Effort très élevé et workflows multi-agents sur chaque tâche de fond : bien plus de tokens',
+  'composer.ultracode.on.hint': 'Workflows multi-agents sur chaque tâche de fond, quel que soit l’effort : bien plus de tokens',
   'composer.setting.outputStyle': 'Style de réponse',
   'composer.outputStyle.default': 'Par défaut',
   'composer.outputStyle.default.hint': 'Le style habituel de Claude Code',

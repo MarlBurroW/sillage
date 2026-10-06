@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { sillageEventSchema } from '@sillage/protocol'
-import { describeFastMode, translateSignal } from '../src/agents/claude/signals.js'
+import { describeFastMode, describePluginErrors, translateSignal } from '../src/agents/claude/signals.js'
 
 /** Les champs communs à tout message du SDK, que les cas ne répètent pas. */
 const base = { uuid: '00000000-0000-0000-0000-000000000000', session_id: 'session' } as const
@@ -106,4 +106,30 @@ test('le mode rapide ne parle qu’aux changements qui concernent la conversatio
   assert.equal(stopped?.message, 'Mode rapide désactivé.')
 
   for (const event of [on, cooldown, blocked, stopped]) sillageEventSchema.parse(event)
+})
+
+test('une remise à zéro dit ce qui l’a causée, et garde la phrase générale sans motif', () => {
+  const describe = (fields: Record<string, unknown>) => {
+    const event = translateSignal(message({ type: 'conversation_reset', new_conversation_id: base.uuid, ...fields }))
+    return event?.type === 'agent.notice' ? event.message : null
+  }
+  assert.match(describe({}) ?? '', /Contexte effacé/)
+  assert.match(describe({ trigger: 'clear' }) ?? '', /Contexte effacé/)
+  assert.match(describe({ trigger: 'plan_mode_exit' }) ?? '', /Plan validé/)
+  assert.match(describe({ trigger: 'un-motif-futur' }) ?? '', /Contexte effacé/)
+})
+
+test('les plugins refusés au chargement deviennent un seul avis, rien quand tout passe', () => {
+  assert.equal(describePluginErrors(undefined), null)
+  assert.equal(describePluginErrors([]), null)
+  const one = describePluginErrors([{ plugin: 'sillage-lib', type: 'manifest', message: 'invalid manifest', path: '/tmp/lib' }])
+  assert.equal(one?.id, 'plugin-errors')
+  assert.equal(one?.level, 'warning')
+  assert.match(one?.message ?? '', /sillage-lib \(\/tmp\/lib\) : invalid manifest/)
+  assert.ok(sillageEventSchema.safeParse(one).success)
+  const two = describePluginErrors([
+    { plugin: 'a', type: 'x', message: 'boom' },
+    { plugin: 'b', type: 'y', message: 'bang' },
+  ])
+  assert.match(two?.message ?? '', /^2 plugins non chargés/)
 })
