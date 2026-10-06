@@ -5,7 +5,8 @@
 # dans le volume de données, donc ils survivent au remplacement du conteneur.
 #
 # Reste à les authentifier : montez les répertoires de credentials depuis l'hôte
-# (authentifiez-vous une fois sur l'hôte avec `claude` / `codex login`), ou faites-le
+# (authentifiez-vous une fois sur l'hôte avec `claude` / `codex login` /
+# `opencode auth login`), ou faites-le
 # dans le conteneur via `docker exec`.
 #
 # Premier compte (administrateur d'office) :
@@ -32,6 +33,9 @@ services:
       # Credentials des CLIs agents, partagés avec l'hôte.
       - ~/.claude:/home/node/.claude
       - ~/.codex:/home/node/.codex
+      # OpenCode y garde ses identifiants et ses sessions : sans ce volume, une
+      # conversation ne se reprendrait pas après le remplacement du conteneur.
+      - ~/.local/share/opencode:/home/node/.local/share/opencode
       # Vos dépôts : les projets créés dans Sillage pointent sur ces chemins.
       - ~/projects:/home/node/workspace
 

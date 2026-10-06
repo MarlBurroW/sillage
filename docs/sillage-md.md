@@ -1,7 +1,7 @@
-# SILLAGE.md : des consignes communes à Claude et Codex
+# SILLAGE.md : des consignes communes à Claude, Codex et OpenCode
 
 Des consignes tenues par Sillage et injectées dans le prompt système de chaque session,
-Claude comme Codex : une partie **globale** (administrateurs) et une par **projet**
+quel que soit son CLI : une partie **globale** (administrateurs) et une par **projet**
 (propriétaire). Éditables depuis la page du projet, les réglages (`/settings/consignes`)
 et l'en-tête d'une conversation, sans passer par l'éditeur de fichiers.
 
@@ -9,7 +9,7 @@ et l'en-tête d'une conversation, sans passer par l'éditeur de fichiers.
 
 Chaque projet a un mode, choisi à la création (`instructionsMode`) et modifiable ensuite :
 
-- **`sillage`** : le texte est en base (table `instructions`) et injecté aux deux CLI. Les
+- **`sillage`** : le texte est en base (table `instructions`) et injecté à chaque CLI. Les
   `CLAUDE.md`, `CLAUDE.local.md` et `AGENTS.md` du workspace et du worktree sont masqués
   aux agents, sans être touchés sur le disque : les garder lus doublerait les consignes.
 - **`repo`** : la partie projet est le `AGENTS.md` (ou `CLAUDE.md`) du dépôt, que les CLI
@@ -35,6 +35,13 @@ Sondé le 2026-10-05 sur Claude Code 2.1.286 et codex-cli 0.157.1.
 - Côté Codex, `project_doc_max_bytes = 0` coupe les `AGENTS.md` du projet ; celui de
   `CODEX_HOME` reste lu.
 
+Sondé le 2026-10-05 sur opencode 1.18.25.
+
+- OpenCode lit le `AGENTS.md` du projet, et à défaut son `CLAUDE.md`.
+- `OPENCODE_DISABLE_PROJECT_CONFIG=1` coupe les deux. C'est le seul interrupteur : il
+  coupe aussi l'`opencode.json` et le dossier `.opencode/` du projet. Les consignes
+  passent par le champ `system` de chaque message.
+
 ## Les agents peuvent y écrire
 
 Le serveur MCP `sillage` traite SILLAGE.md comme un fichier : `read_instructions` le lit,
@@ -47,9 +54,11 @@ l'agent vers le fichier du dépôt, qu'il modifie avec ses propres outils.
 
 ## Quand une modification prend effet
 
-Au lancement d'une session. Claude enregistre son prompt système au premier échange et
-le rejoue tel quel à la reprise : une session déjà ouverte garde la version reçue
-jusqu'à sa prochaine compaction. Le mode, lui, est lu au lancement du runner.
+Au lancement d'une session pour Claude et Codex. Claude enregistre son prompt système au
+premier échange et le rejoue tel quel à la reprise : une session déjà ouverte garde la
+version reçue jusqu'à sa prochaine compaction. OpenCode, qui les reçoit avec chaque
+message, voit une modification dès le suivant. Le mode, lui, est lu au lancement du
+runner.
 
 ## Recette
 
@@ -63,7 +72,7 @@ La recette avec de vrais CLI a tourné sur un serveur jetable (`/tmp/smd-e2e`, p
 À côté des consignes, qui sont des règles données aux agents, la mémoire est ce qu'ils
 retiennent d'eux-mêmes : un index `MEMORY.md` et une note par fichier, au format de la
 mémoire automatique de Claude Code. Un dossier par projet, `<data>/memory/projects/<id>`,
-partagé par les deux CLI et par tous les worktrees du projet.
+partagé par tous les CLI et par tous les worktrees du projet.
 
 - **Claude** reçoit ce dossier en `autoMemoryDirectory` (flag settings) et s'en sert
   comme de sa mémoire native : il charge l'index au démarrage et écrit ses notes sans
@@ -74,6 +83,8 @@ partagé par les deux CLI et par tous les worktrees du projet.
   instructions développeur, lit les notes par `cat`, et écrit par les outils MCP
   `read_memory`, `write_memory` et `delete_memory`, son bac à sable ne pouvant écrire hors
   du workspace. `write_memory` ajoute seul la ligne d'index d'une note nouvelle.
+- **OpenCode** est traité comme Codex : l'index et le chemin du dossier arrivent avec
+  chaque message, dans son prompt système, et il écrit par les mêmes outils MCP.
 - **Interface** : une carte « Mémoire » sur la page du projet liste les notes, les ouvre
   en édition et les supprime avec leur ligne d'index.
 

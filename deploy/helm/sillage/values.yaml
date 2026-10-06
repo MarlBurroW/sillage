@@ -65,9 +65,10 @@ storage:
     existingClaim: ""
 
   # $HOME du conteneur, où les CLI agents écrivent leurs credentials
-  # (~/.claude, ~/.codex). Un Secret ne convient pas : ces fichiers sont
-  # réécrits par les CLI au rafraîchissement des jetons, il leur faut un
-  # volume inscriptible. Voir le README pour l'amorçage.
+  # (~/.claude, ~/.codex, ~/.local/share/opencode, où OpenCode garde aussi ses
+  # sessions). Un Secret ne convient pas : ces fichiers sont réécrits par les
+  # CLI au rafraîchissement des jetons, il leur faut un volume inscriptible.
+  # Voir le README pour l'amorçage.
   home:
     enabled: true
     storageClass: ""

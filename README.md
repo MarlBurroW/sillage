@@ -4,8 +4,8 @@
 [![CI](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml/badge.svg)](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A self-hosted, mobile-first web UI that drives the native Claude Code and Codex
-CLIs on your own machine. Vibe-code from anywhere: the official agent harnesses,
+A self-hosted, mobile-first web UI that drives the native Claude Code, Codex and
+OpenCode CLIs on your own machine. Vibe-code from anywhere: the official agent harnesses,
 without the terminal.
 
 Runs on Linux, on Windows through WSL2, in Docker or on Kubernetes.
@@ -36,8 +36,8 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   phone, the agent kept working and the thread replays as it happened.
 - **A queue, and steering.** Write while a turn runs. The message waits on the
   server and can be withdrawn, or goes straight into the turn already in flight.
-- **One grammar for both CLIs.** Claude Code and Codex are translated into a
-  single event schema, so history, search, the board and the panel behave the
+- **One grammar for every CLI.** Claude Code, Codex and OpenCode are translated
+  into a single event schema, so history, search, the board and the panel behave the
   same way whichever one ran the conversation.
 - **The repository, one panel away.** File explorer, editor, diffs, commit
   history and terminals, beside the conversation that changed them.
@@ -58,7 +58,7 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   can follow like any other, with its own CLI, model, effort and worktree. The new
   session starts with the project's default permissions.
 - **Shared instructions and memory.** One `SILLAGE.md` and one project memory for
-  both CLIs, editable from the interface, which agents can read and rewrite.
+  all three CLIs, editable from the interface, which agents can read and rewrite.
   [How it works](#instructions-and-memory).
 - **Installable PWA with push notifications**, silent while you already have the
   conversation open.
@@ -73,8 +73,8 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 ## Instructions and memory
 
 Each CLI keeps its own context files: Claude Code reads `CLAUDE.md` and its auto
-memory under `~/.claude`, Codex reads `AGENTS.md`. Sillage gives both CLIs the same
-two things instead.
+memory under `~/.claude`, Codex reads `AGENTS.md`, OpenCode reads `AGENTS.md` or
+`CLAUDE.md`. Sillage gives all three the same two things instead.
 
 |  | Instructions (`SILLAGE.md`) | Memory |
 | --- | --- | --- |
@@ -83,18 +83,21 @@ two things instead.
 | Who writes | You, in the interface; agents when you ask them | Agents, on their own; you can fix or delete notes |
 | Claude Code | Appended to its system prompt | Its native auto memory, pointed at Sillage's folder (`autoMemoryDirectory`) |
 | Codex | Added to its developer instructions | The index is given at startup; it reads notes from the folder and writes through MCP tools |
+| OpenCode | Sent as the system prompt of each message | The index comes with each message; it reads notes from the folder and writes through MCP tools |
 | Agent tools | `read_instructions` · `edit_instructions` · `write_instructions` | `read_memory` · `write_memory` · `delete_memory` |
 | Edited from | Settings › Instructions (global), the project page, the conversation header | The project page |
 
 **Where a project's instructions live** is chosen when the project is created, and
 can be changed later:
 
-- *In Sillage*: kept in Sillage and given to both CLIs. The repository's `CLAUDE.md`
+- *In Sillage*: kept in Sillage and given to every CLI. The repository's `CLAUDE.md`
   and `AGENTS.md` are hidden from agents (`claudeMdExcludes` for Claude Code,
-  `project_doc_max_bytes = 0` for Codex) so nothing arrives twice. The files
-  themselves are not touched.
+  `project_doc_max_bytes = 0` for Codex, `OPENCODE_DISABLE_PROJECT_CONFIG` for
+  OpenCode) so nothing arrives twice. The files themselves are not touched.
+  OpenCode has no finer switch: its project `opencode.json` and `.opencode/` folder
+  are skipped too.
 - *In the repository*: the project part is the workspace's `AGENTS.md` (or
-  `CLAUDE.md`), which both CLIs read on their own; the interface edits that file.
+  `CLAUDE.md`), which the CLIs read on their own; the interface edits that file.
   Only the global part comes from Sillage.
 
 By default, a project whose folder already has one of those files stays on the
@@ -105,9 +108,10 @@ to move the files' content into Sillage in one step.
 file, under `<data>/memory/projects/<id>`. On first launch, the memory Claude kept for
 the project root is copied there; the original stays in place.
 
-**When changes apply.** Both are read when a session starts. A session already
-running keeps what it received: Claude Code records its system prompt on the first
-turn and replays it on resume, until the next compaction.
+**When changes apply.** Claude Code and Codex read both when a session starts. A
+session already running keeps what it received: Claude Code records its system
+prompt on the first turn and replays it on resume, until the next compaction.
+OpenCode receives them with every message, so an edit reaches it on the next one.
 
 Details and the probes behind them: [docs/sillage-md.md](docs/sillage-md.md).
 
@@ -201,7 +205,7 @@ Node.
    browser.
 
 3. Install and sign in to the agents inside Ubuntu: Sillage drives the Linux
-   `claude` and `codex`, not the Windows ones.
+   `claude`, `codex` and `opencode`, not the Windows ones.
 
    ```bash
    curl -fsSL https://claude.ai/install.sh | bash && claude
@@ -229,8 +233,8 @@ pnpm dev                  # API on :7317, Vite UI on :5317 with /api proxy
 
 Sillage is built for a trusted circle, not for public exposure:
 
-- Agents run under your system account, with your Claude and Codex credentials.
-  Every account on the instance shares your subscriptions.
+- Agents run under your system account, with your Claude, Codex and OpenCode
+  credentials. Every account on the instance shares your subscriptions and API keys.
 - Terminal mode gives a full shell under that same account.
 - There is no system-level isolation between users: a shared project is readable
   by every account.
@@ -250,15 +254,18 @@ setups can update itself from the UI.
 ## Repository layout
 
 ```
-apps/server       Fastify daemon: API, WebSocket, CLI supervision
-apps/web          React UI, PWA
-packages/protocol shared event schema and types
-packages/db       Drizzle schema and migrations
-deploy/           systemd unit template, config example, docker-compose example, Helm chart
-site/             one-page website (GitHub Pages) and its screenshots
-scripts/          screenshot runner, runtime staging, Codex type generation
-docs/windows.md   running Sillage on Windows through WSL2
-docs/brand/       the brand and the files derived from it
+apps/server        Fastify daemon: API, WebSocket, CLI supervision
+apps/web           React UI, PWA
+packages/protocol  shared event schema and types
+packages/db        Drizzle schema and migrations
+packages/*-bindings  types generated from the Codex and OpenCode protocols
+deploy/            systemd unit template, config example, docker-compose example, Helm chart
+site/              one-page website (GitHub Pages) and its screenshots
+scripts/           screenshot runner, runtime staging, Codex and OpenCode type generation
+docs/windows.md    running Sillage on Windows through WSL2
+docs/CODEX.md      what the Codex adapter relies on, as probed
+docs/OPENCODE.md   what the OpenCode adapter relies on, as probed
+docs/brand/        the brand and the files derived from it
 ```
 
 ## License
