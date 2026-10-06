@@ -14,6 +14,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @sillage/server test",
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
+    "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
@@ -22,9 +23,12 @@
     "user:create": "pnpm --filter @sillage/server user:create",
     "codex:types": "node scripts/codex-types.mjs",
     "codex:types:check": "node scripts/codex-types.mjs --check",
+    "opencode:types": "node scripts/opencode-types.mjs",
+    "opencode:types:check": "node scripts/opencode-types.mjs --check",
     "lint": "pnpm --filter @sillage/web lint"
   },
   "devDependencies": {
+    "openapi-typescript": "^7.13.0",
     "playwright": "^1.62.1",
     "typescript": "^5.7.3"
   }

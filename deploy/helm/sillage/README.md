@@ -46,11 +46,12 @@ when several StorageClasses are marked as default, Kubernetes reports nothing an
 silently picks the most recently created one. Name a block storage class
 explicitly.
 
-**The agent CLIs are not in the image.** They weigh 263 and 347 MB. Sillage
+**The agent CLIs are not in the image.** They weigh several hundred MB each (OpenCode alone, 353 MB). Sillage
 installs the ones you use from the UI, into the `data` volume, so they survive
 pod replacement. You then authenticate them from inside the pod
 (`kubectl exec -it ... -- bash`); the `home` volume keeps their credentials
-(`~/.claude`, `~/.codex`) across restarts.
+(`~/.claude`, `~/.codex`, and `~/.local/share/opencode`, where OpenCode also keeps its
+sessions) across restarts.
 
 **The pod needs egress** to the npm registry (installing the CLIs), the GitHub
 API (update check), the agent APIs and the browsers' Web Push endpoints. A strict
@@ -86,7 +87,7 @@ Every other value is commented in `values.yaml`.
 ## Upgrade
 
 ```bash
-helm upgrade sillage ./deploy/helm/sillage --reuse-values --set image.tag=0.10.0
+helm upgrade sillage ./deploy/helm/sillage --reuse-values --set image.tag=0.12.0
 ```
 
 Schema migrations run at server startup, before the port opens, so no init Job is

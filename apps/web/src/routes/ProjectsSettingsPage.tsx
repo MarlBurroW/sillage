@@ -15,6 +15,11 @@ import { useCreateProject, useProjects } from '../lib/projects'
 import { useUserSettings } from '../lib/user-settings'
 import { CloneForm } from '../components/CloneForm'
 import { PathField } from '../components/PathField'
+import {
+  InstructionsModeSelect,
+  instructionsModeField,
+  type InstructionsModeChoice,
+} from '../components/instructions/Instructions'
 import { SectionHeader } from './SettingsPage'
 import { useTranslate } from '../lib/i18n'
 import {
@@ -173,6 +178,7 @@ function NewFolderForm() {
   const [directory, setDirectory] = useState('')
   const [parentDir, setParentDir] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('private')
+  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
 
   // Les réglages arrivent après le premier rendu : le dossier mémorisé ne s'impose que
   // sur un champ encore vide, jamais par-dessus une saisie.
@@ -188,7 +194,13 @@ function NewFolderForm() {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     createProject.mutate(
-      { name: name.trim(), parentDir, directory: directory.trim(), visibility },
+      {
+        name: name.trim(),
+        parentDir,
+        directory: directory.trim(),
+        visibility,
+        ...instructionsModeField(instructionsMode),
+      },
       {
         onSuccess: () => {
           // Le dossier parent reste : c'est précisément ce qu'on ne veut plus retaper.
@@ -236,6 +248,7 @@ function NewFolderForm() {
         onChange={setVisibility}
         options={visibilityOptions}
       />
+      <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">
         {createProject.isPending ? t('projects.create.pending') : t('projects.create.submit')}
@@ -253,11 +266,12 @@ function ExistingFolderForm() {
   const [name, setName] = useState('')
   const [workspacePath, setWorkspacePath] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('private')
+  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
     createProject.mutate(
-      { name: name.trim(), workspacePath, visibility },
+      { name: name.trim(), workspacePath, visibility, ...instructionsModeField(instructionsMode) },
       {
         onSuccess: () => {
           setName('')
@@ -293,6 +307,7 @@ function ExistingFolderForm() {
         onChange={setVisibility}
         options={visibilityOptions}
       />
+      <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">
         {createProject.isPending ? t('projects.create.pending') : t('projects.create.submit')}

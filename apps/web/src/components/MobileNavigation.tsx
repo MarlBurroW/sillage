@@ -1,7 +1,9 @@
 import { createContext, useContext } from 'react'
 import { Menu } from 'lucide-react'
 import { useTranslate } from '../lib/i18n'
+import { useUpdateNotice } from '../lib/system'
 import { IconButton } from './ui'
+import { UpdateDot } from './UpdateDot'
 
 export const MobileNavigationContext = createContext<() => void>(() => {})
 
@@ -9,15 +11,21 @@ export const MobileNavigationContext = createContext<() => void>(() => {})
 export function MobileNavigationButton() {
   const open = useContext(MobileNavigationContext)
   const t = useTranslate()
+  // Au téléphone, la barre latérale est repliée derrière ce bouton : sa pastille
+  // serait invisible si celui-ci ne la reprenait pas.
+  const updateNotice = useUpdateNotice()
   return (
     <IconButton
-      label={t('shell.nav.open')}
+      label={updateNotice ? `${t('shell.nav.open')} · ${t('about.badge.updateAvailable')}` : t('shell.nav.open')}
       onClick={open}
       data-navigation-trigger
       aria-haspopup="dialog"
       className="md:hidden"
     >
-      <Menu size={20} />
+      <span className="relative">
+        <Menu size={20} />
+        {updateNotice ? <UpdateDot /> : null}
+      </span>
     </IconButton>
   )
 }

@@ -271,6 +271,7 @@ export interface WebhookPayload {
 export const EFFORT_FIELD: Record<AgentKind, string> = {
   claude: 'effort',
   codex: 'reasoningEffort',
+  opencode: 'variant',
 }
 
 /**
@@ -294,6 +295,7 @@ export const EFFORT_FIELD: Record<AgentKind, string> = {
 export const OVERRIDABLE_CONFIG_FIELDS: Record<AgentKind, readonly string[]> = {
   claude: ['model', 'effort', 'outputStyle', 'maxBudgetUsd', 'maxTurns'],
   codex: ['model', 'reasoningEffort', 'collaborationMode'],
+  opencode: ['model', 'variant', 'primaryAgent'],
 }
 
 /**
@@ -304,6 +306,12 @@ export const OVERRIDABLE_CONFIG_FIELDS: Record<AgentKind, readonly string[]> = {
  */
 export function isPermissiveConfig(config: AgentConfig): boolean {
   if (config.agent === 'claude') return config.permissionMode === 'bypassPermissions'
+  // La sentinelle compte comme permissive : sans règle posée par Sillage, opencode
+  // laisse faire, sauf réglage du poste que rien ici ne permet de connaître.
+  if (config.agent === 'opencode') {
+    return config.permissions.edit !== 'ask' && config.permissions.edit !== 'deny' &&
+      config.permissions.bash !== 'ask' && config.permissions.bash !== 'deny'
+  }
   return config.askForApproval === 'never' || config.sandbox === 'danger-full-access'
 }
 

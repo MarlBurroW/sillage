@@ -15,6 +15,7 @@ import {
   startCloneBodySchema,
   updateProjectBodySchema,
   type CloneJobDto,
+  type InstructionsMode,
   type ProjectDto,
 } from '@sillage/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
@@ -36,6 +37,7 @@ import {
   writeProjectImage,
 } from '../../projects/image.js'
 import { SkillLibrary } from '../../skill-library/store.js'
+import { repoInstructionFiles } from '../../instructions/store.js'
 
 /**
  * Un utilisateur voit un projet s'il en est propriétaire ou si le projet est partagé.
@@ -131,6 +133,7 @@ export function registerProjectRoutes(
       workspacePath: string
       visibility: 'private' | 'shared'
       color: string | null
+      instructionsMode: InstructionsMode | undefined
     },
   ) => {
     const [highest] = await ctx.db.select({ max: max(projects.position) }).from(projects)
@@ -138,6 +141,11 @@ export function registerProjectRoutes(
     const row = {
       id: randomUUID(),
       ...fields,
+      // Fixé dès la création, faute de choix d'après ce que le dossier porte déjà : un
+      // mode résolu à chaque lancement basculerait le jour où un agent crée un AGENTS.md.
+      instructionsMode:
+        fields.instructionsMode ??
+        (repoInstructionFiles(fields.workspacePath).length > 0 ? 'repo' : 'sillage'),
       ownerId,
       defaultConfig: null,
       position: (highest?.max ?? 0) + 1,
@@ -213,6 +221,7 @@ export function registerProjectRoutes(
           createdAt: project.createdAt,
           conversationCount,
           defaultConfig: readProjectDefaults(project.defaultConfig),
+          instructionsMode: project.instructionsMode,
           activeTerminals: terminals.aliveCount(project.id),
           git: await readGitStatus(project.workspacePath),
         }
@@ -242,6 +251,7 @@ export function registerProjectRoutes(
       workspacePath,
       visibility: body.visibility,
       color: body.color,
+      instructionsMode: body.instructionsMode,
     })
 
     const dto: ProjectDto = {
@@ -295,6 +305,7 @@ export function registerProjectRoutes(
           workspacePath: destination,
           visibility: body.visibility,
           color: body.color,
+          instructionsMode: body.instructionsMode,
         })
         return row.id
       },

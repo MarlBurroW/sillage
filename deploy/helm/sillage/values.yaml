@@ -5,7 +5,7 @@
 
 image:
   repository: ghcr.io/marlburrow/sillage
-  # Vide = le appVersion du Chart (0.10.0). Préfère un tag précis à `latest` :
+  # Vide = le appVersion du Chart (0.12.0). Préfère un tag précis à `latest` :
   # avec `latest` et pullPolicy IfNotPresent, un pod recréé peut repartir sur
   # l'image déjà en cache du nœud, donc sur une version plus ancienne.
   tag: ""
@@ -65,9 +65,10 @@ storage:
     existingClaim: ""
 
   # $HOME du conteneur, où les CLI agents écrivent leurs credentials
-  # (~/.claude, ~/.codex). Un Secret ne convient pas : ces fichiers sont
-  # réécrits par les CLI au rafraîchissement des jetons, il leur faut un
-  # volume inscriptible. Voir le README pour l'amorçage.
+  # (~/.claude, ~/.codex, ~/.local/share/opencode, où OpenCode garde aussi ses
+  # sessions). Un Secret ne convient pas : ces fichiers sont réécrits par les
+  # CLI au rafraîchissement des jetons, il leur faut un volume inscriptible.
+  # Voir le README pour l'amorçage.
   home:
     enabled: true
     storageClass: ""

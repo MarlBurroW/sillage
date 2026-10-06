@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Sillage · A workspace for coding agents</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A self-hosted workspace for Claude Code and Codex. Continue from any device, manage projects, and give agents the context to work together.">
+  <meta name="description" content="A self-hosted workspace for Claude Code, Codex and OpenCode. Continue from any device, manage projects, and give agents the context to work together.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
   <meta name="theme-color" content="#faf7fb" media="(prefers-color-scheme: light)">
@@ -28,19 +28,17 @@
 
   <header class="topbar">
     <a class="brand" href="#top">
-      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-        <circle cx="16" cy="6.4" r="3.4" fill="currentColor"/>
-        <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
-          <path d="M10.8 13.8Q16 17.4 21.2 13.8"/>
-          <path d="M7.4 19.2Q16 24.6 24.6 19.2" opacity=".7"/>
-          <path d="M4 24.6Q16 31.4 28 24.6" opacity=".45"/>
-        </g>
+      <svg viewBox="0 0 100 100" width="26" height="26" fill="currentColor" aria-hidden="true">
+        <path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/>
+        <path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/>
+        <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/>
       </svg>
       <span>Sillage</span>
     </a>
     <nav aria-label="Sections">
       <a href="#projects">Projects</a>
       <a href="#coordination">Coordination</a>
+      <a href="#context">Instructions &amp; memory</a>
       <a href="#tour">Product tour</a>
       <a href="#install">Install</a>
       <a class="repo" href="https://github.com/MarlBurroW/sillage">GitHub</a>
@@ -63,14 +61,14 @@
         <h1>Keep your work<br>within reach.</h1>
         <div>
           <p class="lede">A workspace for your coding agents.<br>Continue from your phone. Keep projects organised. Give each session the context to work with the others.</p>
-          <p class="hero-detail">Claude Code and Codex run on your machine, with their native tools and your accounts. Sillage brings the work into your browser.</p>
+          <p class="hero-detail">Claude Code, Codex and OpenCode run on your machine, with their native tools and your accounts. Sillage brings the work into your browser.</p>
           <p class="actions">
             <a class="btn primary" href="#install">Install Sillage <span aria-hidden="true">↗</span></a>
             <a class="text-link" href="https://github.com/MarlBurroW/sillage">Explore the source <span aria-hidden="true">↗</span></a>
           </p>
         </div>
       </div>
-      <div class="hero-meta"><span>Claude Code + Codex</span><span>Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
+      <div class="hero-meta"><span>Claude Code + Codex + OpenCode</span><span>Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
       <figure class="hero-shot">
         <button type="button" data-zoom aria-label="Enlarge the conversation screenshot"><picture>
           <source srcset="screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
@@ -86,6 +84,7 @@
       <a href="#projects"><span>02 / Projects</span>Keep track of the work ↗</a>
       <a href="#coordination"><span>03 / Session awareness</span>Let agents coordinate ↗</a>
       <a href="#agents"><span>04 / Multi-CLI</span>Choose the right harness ↗</a>
+      <a href="#context"><span>05 / Shared context</span>One set of instructions, one memory ↗</a>
     </nav>
 
     <section class="editorial" id="anywhere">
@@ -122,7 +121,7 @@
       <div class="section-body">
         <h2>Your agents should know<br>who else is working.</h2>
         <p class="section-lede">Two sessions can share a repository without sharing context. Sillage gives them tools to find that context.</p>
-        <p>Through the built-in MCP server, Claude Code and Codex can discover active sessions, read earlier decisions, identify who edited a file, contact another session and start a new one. The same project history is available to both.</p>
+        <p>Through the built-in MCP server, every agent can discover active sessions, read earlier decisions, identify who edited a file, contact another session and start a new one. The same project history is available to all of them.</p>
         <dl class="tool-reference">
           <div><dt>Before starting work</dt><dd>See active sessions, branches and worktrees.<code>list_sessions</code></dd></div>
           <div><dt>Before undoing a change</dt><dd>Find the session that edited a file and check what it is doing.<code>find_file_edits</code></dd></div>
@@ -140,9 +139,24 @@
       <div class="section-label">04 / Multi-CLI by design</div>
       <div class="section-body">
         <h2>Native harnesses.<br>A shared workspace.</h2>
-        <p class="section-lede">Choose Claude Code or Codex for each conversation. Keep the project around it.</p>
-        <div class="prose-columns"><p>Sillage drives the native CLIs: their tools, permission requests and agent behaviour. Each adapter translates its events into a common format for the interface, history and search.</p><p>The board and coordination tools belong to the project, so a Codex session can look up a decision made in a Claude Code conversation. Additional CLIs need their own adapter; Claude Code and Codex are supported today.</p></div>
-        <div class="agent-links"><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/claude">Claude Code adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/codex">Codex adapter ↗</a></div>
+        <p class="section-lede">Choose Claude Code, Codex or OpenCode for each conversation. Keep the project around it.</p>
+        <div class="prose-columns"><p>Sillage drives the native CLIs: their tools, permission requests and agent behaviour. Each adapter translates its events into a common format for the interface, history and search.</p><p>The board and coordination tools belong to the project, so a Codex session can look up a decision made in a Claude Code conversation. Additional CLIs need their own adapter; Claude Code, Codex and OpenCode are supported today. OpenCode brings any provider and model it can reach, including local ones.</p></div>
+        <div class="agent-links"><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/claude">Claude Code adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/codex">Codex adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/opencode">OpenCode adapter ↗</a></div>
+      </div>
+    </section>
+
+    <section class="editorial coordination" id="context">
+      <div class="section-label">05 / Shared context</div>
+      <div class="section-body">
+        <h2>One set of instructions.<br>One memory.</h2>
+        <p class="section-lede">Claude Code reads <code>CLAUDE.md</code> and keeps its memory under <code>~/.claude</code>. Codex reads <code>AGENTS.md</code>, OpenCode either one. Sillage gives all three the same context.</p>
+        <div class="prose-columns"><p><strong>Instructions</strong> are the rules you set, in a <code>SILLAGE.md</code> with a global part and one per project. They are added to each CLI's prompt: when a session starts for Claude Code and Codex, with every message for OpenCode. A project can keep them in Sillage, and the repository's <code>CLAUDE.md</code> and <code>AGENTS.md</code> are then hidden from agents so nothing arrives twice, or keep them in its repository, edited from the same panel.</p><p><strong>Memory</strong> is what agents learn while working: one per project, in the format Claude Code already uses. Claude writes it as its native memory, pointed at Sillage's folder; Codex and OpenCode get the index and write through Sillage's tools. What one CLI learns, the others know, and you can read and correct every note.</p></div>
+        <dl class="tool-reference">
+          <div><dt>When you change the rules</dt><dd>Ask an agent to revise the instructions; it edits them like a file.<code>read_instructions · edit_instructions · write_instructions</code></dd></div>
+          <div><dt>When something is worth remembering</dt><dd>Codex and OpenCode note it in the project memory; Claude does it natively in the same folder.<code>read_memory · write_memory · delete_memory</code></dd></div>
+        </dl>
+        <p class="technical-note">Both are read when a session starts: a session already running keeps the version it received. Existing projects keep their repository files until you move them into Sillage.</p>
+        <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/sillage-md.md">How it works in detail ↗</a>
       </div>
     </section>
 
@@ -242,7 +256,7 @@
                    alt="A Codex conversation in Sillage">
             </picture>
           </button>
-          <figcaption>Claude Code and Codex sit side by side in the sidebar. Same interface, same history, same board.</figcaption>
+          <figcaption>Claude Code, Codex and OpenCode sit side by side in the sidebar. Same interface, same history, same board.</figcaption>
         </figure>
         <figure id="shot-7" role="tabpanel" aria-labelledby="tab-7" hidden>
           <button type="button" data-zoom>
@@ -295,6 +309,7 @@ services:
       - sillage-data:/home/node/.local/share/sillage
       - ~/.claude:/home/node/.claude
       - ~/.codex:/home/node/.codex
+      - ~/.local/share/opencode:/home/node/.local/share/opencode
       - ~/projects:/home/node/workspace
 volumes:
   sillage-data:</code></pre>
@@ -319,7 +334,7 @@ wsl --install
 <span class="dim"># 2. In the Ubuntu terminal</span>
 curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
           <p>Sillage runs inside WSL2, the Linux built into Windows 10 and 11, and you use it from your Windows browser. The same installer as on Linux enables systemd if the distribution lacks it, fetches Node, creates the first account and adds a <strong>Sillage</strong> entry to the Start menu. That entry keeps WSL running once the terminal is closed, and can start with Windows.</p>
-          <p>The agents are the Linux <code>claude</code> and <code>codex</code> of the distribution, not the Windows ones. Keep projects in the Linux file system, not under <code>/mnt/c</code>. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md">WSL2 guide</a> covers signing in to the agents, troubleshooting and uninstalling.</p>
+          <p>The agents are the Linux <code>claude</code>, <code>codex</code> and <code>opencode</code> of the distribution, not the Windows ones. Keep projects in the Linux file system, not under <code>/mnt/c</code>. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md">WSL2 guide</a> covers signing in to the agents, troubleshooting and uninstalling.</p>
         </div>
 
         <div id="panel-helm" class="tab-panel" role="tabpanel" aria-labelledby="tab-helm" data-panel="helm" hidden>
@@ -350,9 +365,9 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
           So Sillage drives the native CLIs and stays out of their way.
         </p>
         <p>
-          It speaks Claude Code and Codex because those are the two I use. That is my own
-          need, not a final list: adding a CLI means writing an adapter for it, and I expect
-          to add more.
+          It started with Claude Code and Codex because those are the two I use. That was my
+          own need, not a final list: adding a CLI means writing an adapter for it, and
+          OpenCode came third, bringing every provider it can reach.
         </p>
         <p>
           The last piece is the one a terminal cannot give me. I wanted a thin layer above
@@ -386,13 +401,10 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
 
   <footer>
     <a class="brand" href="#top">
-      <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
-        <circle cx="16" cy="6.4" r="3.4" fill="currentColor"/>
-        <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
-          <path d="M10.8 13.8Q16 17.4 21.2 13.8"/>
-          <path d="M7.4 19.2Q16 24.6 24.6 19.2" opacity=".7"/>
-          <path d="M4 24.6Q16 31.4 28 24.6" opacity=".45"/>
-        </g>
+      <svg viewBox="0 0 100 100" width="22" height="22" fill="currentColor" aria-hidden="true">
+        <path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/>
+        <path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/>
+        <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/>
       </svg>
       <span>Sillage</span>
     </a>

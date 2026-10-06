@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn } from '@sillage/protocol'
+import type { AgentKind, CardColumn, InstructionsMode } from '@sillage/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -68,11 +68,36 @@ export const projects = sqliteTable(
      * ranger en fin de liste plutôt que de s'insérer au milieu.
      */
     position: integer('position').notNull().default(0),
+    /**
+     * Où vivent les consignes du projet : dans Sillage (`sillage`), injectées aux deux
+     * CLI pendant que les `CLAUDE.md` et `AGENTS.md` du dépôt sont masqués, ou dans le
+     * dépôt (`repo`), que les CLI lisent d'eux-mêmes. Fixé à la création ; null pour
+     * les projets d'avant, résolu d'après le dossier (voir `instructions/store.ts`).
+     */
+    instructionsMode: text('instructions_mode').$type<InstructionsMode>(),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },
   (t) => [index('idx_projects_owner').on(t.ownerId)],
 )
+
+/**
+ * SILLAGE.md : des consignes tenues par Sillage, communes à Claude et à Codex, injectées
+ * dans le prompt système de chaque session. Une ligne globale (`id` = `global`, sans
+ * projet) et une par projet (`id` = l'identifiant du projet).
+ *
+ * En base et non en fichier pour la même raison que l'image : le serveur MCP, qui y
+ * réécrit à la demande d'un agent, n'a que la base.
+ */
+export const instructions = sqliteTable('instructions', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+  /** Dernière main : une personne, ou la session d'un agent passé par les outils MCP. */
+  updatedByUserId: text('updated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  updatedByConversationId: text('updated_by_conversation_id'),
+})
 
 /**
  * L'image d'un projet, ce qui le fait reconnaître d'un coup d'œil dans la navigation.
@@ -907,6 +932,7 @@ export const apiIdempotency = sqliteTable(
 export type UserRow = typeof users.$inferSelect
 export type ApiTokenRow = typeof apiTokens.$inferSelect
 export type ProjectRow = typeof projects.$inferSelect
+export type InstructionsRow = typeof instructions.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
 export type ConversationFavoriteRow = typeof conversationFavorites.$inferSelect
