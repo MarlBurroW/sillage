@@ -32,9 +32,15 @@ Environment=PATH=__NODE_DIR__:__HOME__/.local/bin:__HOME__/.npm-global/bin:__HOM
 Restart=always
 RestartSec=2
 
-# Garde-fou : le daemon lui-meme tient dans ~110 Mo, les process agent sont ses enfants
-# et comptent dans ce total. A relever si max_concurrent_sessions est augmente.
-MemoryHigh=2G
+# Garde-fou, pas reservation : au-dela, le noyau ralentit le service au lieu de laisser
+# la machine entiere manquer de memoire. Les process agent sont ses enfants, et les
+# serveurs de dev qu'ils lancent (vite, bun : plusieurs Go piece) aussi. Un plafond fixe
+# ne convient a aucune machine : a 2G, puis a 12G sur une machine de 62 Go, le
+# ralentissement figeait le daemon lui-meme (etat D) sans rien tuer, et Sillage devenait
+# injoignable. D'ou une part de la RAM installee.
+# Pour une autre valeur : `systemctl --user edit sillage`, puis [Service] MemoryHigh=...
+# Ce fichier complementaire survit aux reinstallations, celui-ci est reecrit par install.sh.
+MemoryHigh=75%
 
 # Le journal, et non un fichier. Devant un service qui ne démarre pas, le premier
 # réflexe est `journalctl --user -u sillage` : y trouver les messages de systemd sans
