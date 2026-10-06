@@ -1,17 +1,15 @@
 import {
-  ChevronRight,
   FolderOpen,
   FolderPlus,
   GitBranch,
   Globe,
   Lock,
-  MessagesSquare,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { slugifyProjectName } from '@sillage/protocol'
 import { ApiRequestError } from '../lib/api'
-import { useCreateProject, useProjects } from '../lib/projects'
+import { useCreateProject } from '../lib/projects'
 import { useUserSettings } from '../lib/user-settings'
 import { CloneForm } from '../components/CloneForm'
 import { PathField } from '../components/PathField'
@@ -20,17 +18,14 @@ import {
   instructionsModeField,
   type InstructionsModeChoice,
 } from '../components/instructions/Instructions'
-import { SectionHeader } from './SettingsPage'
 import { useTranslate } from '../lib/i18n'
 import {
-  Badge,
   Banner,
   Button,
   Card,
   CardBody,
   CardHeader,
   ChoiceList,
-  EmptyState,
   Field,
   Select,
   type Choice,
@@ -58,9 +53,8 @@ function useVisibilityOptions(): SelectOption<Visibility>[] {
   ]
 }
 
-export function ProjectsSettingsPage() {
+export function NewProjectPage() {
   const t = useTranslate()
-  const { data: projects } = useProjects()
   // Le cas courant en premier : un projet qui démarre n'a qu'un nom à donner.
   const [mode, setMode] = useState<CreateMode>('new')
 
@@ -86,12 +80,12 @@ export function ProjectsSettingsPage() {
   ]
 
   return (
-    <div className="flex flex-col gap-4">
-      <SectionHeader title={t('projects.title')} description={t('projects.description')} />
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 md:p-8">
+      <h1 className="text-lg font-semibold tracking-tight">{t('projects.create.title')}</h1>
 
       <Card>
         <CardHeader
-          title={t('projects.create.title')}
+          title={t('projects.create.mode')}
           description={t('projects.create.description')}
           icon={<FolderOpen size={16} />}
         />
@@ -108,55 +102,6 @@ export function ProjectsSettingsPage() {
           {mode === 'existing' ? <ExistingFolderForm /> : null}
         </CardBody>
       </Card>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-ink-soft">{t('projects.existing.title')}</h2>
-
-        {projects && projects.length > 0 ? (
-          projects.map((project) => (
-            <Card key={project.id}>
-              <Link
-                to={`/p/${project.id}`}
-                className="flex items-center gap-3 px-5 py-4 transition-colors hover:text-accent"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate font-medium">{project.name}</p>
-                    <Badge
-                      tone={project.visibility === 'shared' ? 'accent' : 'neutral'}
-                      icon={project.visibility === 'shared' ? <Globe size={11} /> : <Lock size={11} />}
-                    >
-                      {project.visibility === 'shared'
-                        ? t('project.visibility.shared')
-                        : t('project.visibility.private')}
-                    </Badge>
-                  </div>
-                  <p className="mt-0.5 truncate font-mono text-xs text-ink-faint">
-                    {project.workspacePath}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-faint">
-                    <span>{project.ownerName}</span>
-                    <span className="flex items-center gap-1">
-                      <MessagesSquare size={12} />
-                      {project.conversationCount}
-                    </span>
-                    {project.git ? <span className="font-mono">{project.git.branch}</span> : null}
-                  </div>
-                </div>
-                <ChevronRight size={16} className="shrink-0 text-ink-faint" />
-              </Link>
-            </Card>
-          ))
-        ) : (
-          <Card>
-            <EmptyState
-              icon={<FolderOpen size={22} />}
-              title={t('projects.empty.title')}
-              description={t('projects.empty.description')}
-            />
-          </Card>
-        )}
-      </section>
     </div>
   )
 }
@@ -171,6 +116,7 @@ export function ProjectsSettingsPage() {
 function NewFolderForm() {
   const t = useTranslate()
   const createProject = useCreateProject()
+  const navigate = useNavigate()
   const { data: settings } = useUserSettings()
   const visibilityOptions = useVisibilityOptions()
 
@@ -202,11 +148,7 @@ function NewFolderForm() {
         ...instructionsModeField(instructionsMode),
       },
       {
-        onSuccess: () => {
-          // Le dossier parent reste : c'est précisément ce qu'on ne veut plus retaper.
-          setName('')
-          setDirectory('')
-        },
+        onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
       },
     )
   }
@@ -261,6 +203,7 @@ function NewFolderForm() {
 function ExistingFolderForm() {
   const t = useTranslate()
   const createProject = useCreateProject()
+  const navigate = useNavigate()
   const visibilityOptions = useVisibilityOptions()
 
   const [name, setName] = useState('')
@@ -273,10 +216,7 @@ function ExistingFolderForm() {
     createProject.mutate(
       { name: name.trim(), workspacePath, visibility, ...instructionsModeField(instructionsMode) },
       {
-        onSuccess: () => {
-          setName('')
-          setWorkspacePath('')
-        },
+        onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
       },
     )
   }

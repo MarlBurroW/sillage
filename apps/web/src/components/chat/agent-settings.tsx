@@ -1,4 +1,4 @@
-import { BookOpen, Box, Brain, Compass, FilePen, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, Workflow, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Compass, FilePen, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -625,7 +625,7 @@ export function useAgentSettings({
             setting({
               key: 'ultracode',
               label: t('composer.setting.ultracode'),
-              icon: <Workflow size={15} />,
+              icon: <UsersRound size={15} />,
               options: ultracodeOptionList,
               value: claude.ultracode ? 'on' : 'off',
               // L'allumer aligne l'effort sur le `xhigh` qu'impose le CLI, pour que le

@@ -602,7 +602,7 @@ function Sidebar({
             >
               <ListTree size={15} />
             </IconButton>
-            <NavLink to="/settings/projets" onClick={onNavigate} aria-label={t('shell.projects.add')}
+            <NavLink to="/projects/new" onClick={onNavigate} aria-label={t('shell.projects.add')}
               className="inline-flex size-11 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink md:size-7 pointer-coarse:size-11">
                 <FolderPlus size={15} />
             </NavLink>
@@ -656,12 +656,12 @@ function Sidebar({
           <Server size={16} className="shrink-0" />
           <span>{t('services.title')}</span>
         </SidebarRow>
-        <SidebarRow to="/settings" onClick={onNavigate}>
+        <SidebarRow to="/settings" end={false} onClick={onNavigate}>
           <span className="relative shrink-0">
             <Settings size={16} />
             {updateNotice ? <UpdateDot /> : null}
           </span>
-          <span className="truncate">{user?.displayName ?? t('shell.settings.fallback')}</span>
+          <span className="truncate">{t('shell.settings.label')}</span>
           {updateNotice ? <span className="sr-only">{t('about.badge.updateAvailable')}</span> : null}
         </SidebarRow>
         <button
@@ -1264,17 +1264,19 @@ function ConversationMetricsLine({ metrics }: { metrics: ConversationMetrics }) 
 
 function SidebarRow({
   to,
+  end = true,
   onClick,
   children,
 }: {
   to: string
+  end?: boolean
   onClick: () => void
   children: ReactNode
 }) {
   return (
     <NavLink
       to={to}
-      end
+      end={end}
       onClick={onClick}
       className={({ isActive }) =>
         cx(
