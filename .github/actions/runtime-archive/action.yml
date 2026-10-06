@@ -1,0 +1,76 @@
+name: Runtime archive
+description: >-
+  Assemble l'arbre d'exécution distribué (pnpm build déjà fait), vérifie ses modules
+  natifs, et l'empaquette en sillage-<version>-<platform>-<arch>.tar.gz. Partagé par la
+  release et par la CI, pour que la CI éprouve exactement ce que la release publie.
+
+inputs:
+  version:
+    description: Tag vX.Y.Z, ou identifiant d'un build de CI
+    required: true
+  platform:
+    description: linux ou darwin
+    required: true
+  arch:
+    description: x64 ou arm64
+    required: true
+
+outputs:
+  archive:
+    description: Nom de l'archive produite, à la racine du dépôt
+    value: ${{ steps.pack.outputs.archive }}
+
+runs:
+  using: composite
+  steps:
+    - name: Stage runtime tree
+      shell: bash
+      run: node scripts/stage-runtime.mjs out/sillage
+      env:
+        SILLAGE_VERSION: ${{ inputs.version }}
+    # npm et non pnpm : il produit un node_modules à plat, sans liens
+    # symboliques, qui survit à l'archivage tar. --legacy-peer-deps parce que
+    # le SDK Claude déclare un peer zod@^4 que pnpm tolère et npm refuse.
+    - name: Install production dependencies
+      shell: bash
+      run: npm install --omit=dev --legacy-peer-deps
+      working-directory: out/sillage
+    # Ces paquets optionnels du SDK Claude ne contiennent qu'une chose : le binaire
+    # `claude` lui-même, 263 Mo par architecture. Sillage lance désormais le CLI du
+    # système, résolu sur le PATH, et passe toujours `pathToClaudeCodeExecutable` au
+    # SDK pour que sa propre résolution ne soit jamais consultée. Les garder ferait
+    # transporter un CLI que la release n'utilise pas.
+    # Suppression ciblée plutôt que `--omit=optional` : les autres dépendances
+    # optionnelles de l'arbre restent légitimes.
+    - name: Drop the bundled Claude CLI binaries
+      shell: bash
+      run: rm -rf out/sillage/node_modules/@anthropic-ai/claude-agent-sdk-*
+    # node-pty publie le spawn-helper de ses prebuilds macOS sans bit d'exécution :
+    # chaque terminal échouerait sur « posix_spawnp failed ». Linux compile le sien.
+    - name: Make node-pty's spawn-helper executable
+      if: inputs.platform == 'darwin'
+      shell: bash
+      run: chmod +x out/sillage/node_modules/node-pty/prebuilds/darwin-*/spawn-helper
+    # Les migrations chargent better-sqlite3 ; un shell lancé par node-pty prouve le
+    # terminal, que le chargement seul du module ne prouve pas.
+    - name: Smoke test (native modules load, a terminal starts)
+      shell: bash
+      run: |
+        SILLAGE_DATA_DIR="$(mktemp -d)" node out/sillage/server/cli/migrate.js
+        cd out/sillage && node -e '
+          const shell = require("node-pty").spawn("/bin/sh", ["-c", "exit 3"], {})
+          shell.onExit(({ exitCode }) => process.exit(exitCode === 3 ? 0 : 1))
+          setTimeout(() => process.exit(2), 10000).unref()
+        '
+    # Le tar de macOS joint sinon les attributs étendus en fichiers ._* dans l'archive.
+    - name: Pack
+      id: pack
+      shell: bash
+      run: |
+        archive="sillage-${{ inputs.version }}-${{ inputs.platform }}-${{ inputs.arch }}.tar.gz"
+        if [ "${{ inputs.platform }}" = darwin ]; then
+          tar --no-mac-metadata --no-xattrs -czf "$archive" -C out sillage
+        else
+          tar -czf "$archive" -C out sillage
+        fi
+        echo "archive=$archive" >> "$GITHUB_OUTPUT"

@@ -23,7 +23,7 @@ const execFileAsync = promisify(execFile)
  * Rien n'est jamais modifié dans une release existante : on télécharge, on
  * extrait dans un dossier de transit, puis on bascule le lien `current` d'un
  * `rename` atomique. Tant que la bascule n'a pas eu lieu, un échec laisse
- * l'installation intacte. Le redémarrage est délégué à systemd.
+ * l'installation intacte. Le redémarrage est délégué à systemd, ou à launchd sur macOS.
  */
 export class UpdateExecutor {
   private status: UpdateStatus = {
@@ -146,7 +146,9 @@ export class UpdateExecutor {
    */
   private async ensureNativeModules(dir: string): Promise<void> {
     const loads = () =>
-      execFileAsync(process.execPath, ['-e', 'require("better-sqlite3")'], { cwd: dir })
+      // Une requête, pas un simple require : un Node à qui manque la version de N-API du
+      // module le charge, puis plante au premier appel.
+      execFileAsync(process.execPath, ['-e', 'require("better-sqlite3")(":memory:").prepare("select 1").get()'], { cwd: dir })
 
     try {
       await loads()
@@ -165,7 +167,7 @@ export class UpdateExecutor {
     } catch (err) {
       throw new Error(
         `better-sqlite3 ne peut pas être recompilé pour ${process.version} : ${err instanceof Error ? err.message.split('\n')[0] : String(err)}. ` +
-          'Installez de quoi compiler (build-essential, python3). La version en place est conservée.',
+          `Installez de quoi compiler (${process.platform === 'darwin' ? 'xcode-select --install' : 'build-essential, python3'}). La version en place est conservée.`,
       )
     }
     this.append('Module natif recompilé.')
@@ -189,9 +191,17 @@ export class UpdateExecutor {
    * être détaché pour survivre. Si systemctl n'est pas joignable (pas de bus
    * utilisateur), on sort en erreur pour que `Restart=` de l'unité relance le
    * process, qui suivra alors le lien `current` déjà basculé.
+   *
+   * Sous launchd, l'agent est `KeepAlive` : il relance le process quelle que soit
+   * sa sortie. Un SIGTERM à soi-même passe par l'arrêt propre de main.ts, sans
+   * avoir à connaître le label de l'agent.
    */
   private scheduleRestart(): void {
     setTimeout(() => {
+      if (process.platform === 'darwin') {
+        process.kill(process.pid, 'SIGTERM')
+        return
+      }
       try {
         const child = spawn('systemctl', ['--user', 'restart', 'sillage.service'], {
           detached: true,

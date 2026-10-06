@@ -1,8 +1,8 @@
 name: Release
 
 # Publier = pousser un tag `vX.Y.Z`. Le workflow construit les archives Linux
-# (x64 et arm64, node_modules natifs précompilés inclus), l'image Docker
-# multi-arch sur ghcr.io, puis crée la release GitHub avec ses notes générées.
+# (x64 et arm64) et macOS (arm64), node_modules natifs précompilés inclus, l'image
+# Docker multi-arch sur ghcr.io, puis crée la release GitHub avec ses notes générées.
 
 on:
   push:
@@ -18,13 +18,19 @@ env:
 jobs:
   tarball:
     # Runners natifs par architecture : compiler node-pty sous QEMU est lent et
-    # fragile. ubuntu-22.04 fixe la glibc de référence (2.35, Debian 12+).
+    # fragile. ubuntu-22.04 fixe la glibc de référence (2.35, Debian 12+). macos-15
+    # tourne sur Apple Silicon, seule cible macOS.
     strategy:
       matrix:
         include:
           - runner: ubuntu-22.04
+            platform: linux
             arch: x64
           - runner: ubuntu-22.04-arm
+            platform: linux
+            arch: arm64
+          - runner: macos-15
+            platform: darwin
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
@@ -38,33 +44,16 @@ jobs:
       - run: pnpm build
         env:
           SILLAGE_VERSION: ${{ github.ref_name }}
-      - name: Stage runtime tree
-        run: node scripts/stage-runtime.mjs out/sillage
-        env:
-          SILLAGE_VERSION: ${{ github.ref_name }}
-      # npm et non pnpm : il produit un node_modules à plat, sans liens
-      # symboliques, qui survit à l'archivage tar. --legacy-peer-deps parce que
-      # le SDK Claude déclare un peer zod@^4 que pnpm tolère et npm refuse.
-      - name: Install production dependencies
-        run: npm install --omit=dev --legacy-peer-deps
-        working-directory: out/sillage
-      # Ces paquets optionnels du SDK Claude ne contiennent qu'une chose : le binaire
-      # `claude` lui-même, 263 Mo par architecture. Sillage lance désormais le CLI du
-      # système, résolu sur le PATH, et passe toujours `pathToClaudeCodeExecutable` au
-      # SDK pour que sa propre résolution ne soit jamais consultée. Les garder ferait
-      # transporter un CLI que la release n'utilise pas.
-      # Suppression ciblée plutôt que `--omit=optional` : les autres dépendances
-      # optionnelles de l'arbre restent légitimes.
-      - name: Drop the bundled Claude CLI binaries
-        run: rm -rf out/sillage/node_modules/@anthropic-ai/claude-agent-sdk-*
-      - name: Smoke test (native modules load)
-        run: SILLAGE_DATA_DIR="$(mktemp -d)" node out/sillage/server/cli/migrate.js
-      - name: Pack
-        run: tar -czf "sillage-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz" -C out sillage
+      - uses: ./.github/actions/runtime-archive
+        id: archive
+        with:
+          version: ${{ github.ref_name }}
+          platform: ${{ matrix.platform }}
+          arch: ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
-          name: tarball-${{ matrix.arch }}
-          path: sillage-*.tar.gz
+          name: tarball-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ steps.archive.outputs.archive }}
           if-no-files-found: error
 
   docker:

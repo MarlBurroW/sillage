@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Agent launchd utilisateur (macOS), le pendant de sillage.service.tmpl, rendu par
+  install.sh dans ~/Library/LaunchAgents. Les placeholders __NODE__, __NODE_DIR__,
+  __INSTALL_DIR__, __DATA_DIR__, __HOME__, __SHELL__ et __LANG__ y deviennent des valeurs
+  absolues : launchd n'étend ni ~ ni les variables d'environnement.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.github.marlburrow.sillage</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>--max-old-space-size=256</string>
+    <string>__INSTALL_DIR__/current/server/main.js</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__INSTALL_DIR__/current</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>SILLAGE_WEB_ROOT</key>
+    <string>__INSTALL_DIR__/current/web</string>
+    <!-- Comme sous systemd : signale le layout de l'installeur, donc la mise à jour intégrée. -->
+    <key>SILLAGE_INSTALL_DIR</key>
+    <string>__INSTALL_DIR__</string>
+    <!-- Le PATH de launchd s'arrête à /usr/bin:/bin:/usr/sbin:/sbin : ni Homebrew, ni
+         ~/.local/bin, ni les binaires npm globaux, donc aucun CLI agent trouvable. -->
+    <key>PATH</key>
+    <string>__NODE_DIR__:__HOME__/.local/bin:__HOME__/.npm-global/bin:__HOME__/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <!-- Le shell des terminaux de Sillage, et une locale : launchd n'en pose aucune, et
+         sans elle zsh affiche les accents en séquences d'octets. Repris tous deux du
+         shell qui a lancé l'installeur. -->
+    <key>SHELL</key>
+    <string>__SHELL__</string>
+    <key>LANG</key>
+    <string>__LANG__</string>
+  </dict>
+
+  <!-- Démarre à l'ouverture de session. -->
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Relancé quelle que soit la sortie : la mise à jour intégrée s'arrête d'elle-même
+       et compte sur cette relance. launchd espace les démarrages d'au moins 10 s, ce
+       qui suffit à contenir un service qui meurt au lancement. -->
+  <key>KeepAlive</key>
+  <true/>
+  <!-- Sans type, launchd bride le CPU et les E/S du service et de ses enfants, c'est-à-dire
+       des agents et des builds qu'ils lancent. -->
+  <key>ProcessType</key>
+  <string>Interactive</string>
+
+  <!-- Pas de journal système à consulter comme sous systemd : un fichier, sans rotation. -->
+  <key>StandardOutPath</key>
+  <string>__DATA_DIR__/logs/sillage.log</string>
+  <key>StandardErrorPath</key>
+  <string>__DATA_DIR__/logs/sillage.log</string>
+</dict>
+</plist>

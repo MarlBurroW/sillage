@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -164,7 +165,9 @@ export class TerminalManager {
     }
 
     const id = randomUUID()
-    const pty = spawn(this.shell(), [], {
+    // Shell de connexion sur macOS, comme l'ouvre Terminal : c'est là que /etc/zprofile
+    // complète le PATH et que ~/.zprofile charge Homebrew.
+    const pty = spawn(this.shell(), process.platform === 'darwin' ? ['-l'] : [], {
       name: 'xterm-256color',
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
@@ -402,11 +405,16 @@ export class TerminalManager {
 /**
  * Le shell a-t-il un process enfant en cours ?
  *
- * Lecture de `/proc`, donc Linux seulement : ailleurs, la question répond non et
- * l'échéance d'inactivité retrouve son comportement d'origine.
+ * Lecture de `/proc` sous Linux, `pgrep` sur macOS, qui n'a pas de `/proc` et sort en 1
+ * quand rien ne correspond. Ailleurs, la question répond non et l'échéance d'inactivité
+ * retrouve son comportement d'origine. Posée une fois par échéance, pas plus souvent :
+ * l'appel synchrone ne coûte rien.
  */
 function hasChildProcess(pid: number): boolean {
   try {
+    if (process.platform === 'darwin') {
+      return execFileSync('pgrep', ['-P', String(pid)], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().length > 0
+    }
     return readFileSync(`/proc/${pid}/task/${pid}/children`, 'utf8').trim().length > 0
   } catch {
     return false

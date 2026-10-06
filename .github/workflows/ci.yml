@@ -27,3 +27,43 @@ jobs:
       - run: pnpm test
       - run: pnpm lint
       - run: pnpm build
+
+  macos:
+    # L'installation macOS de bout en bout, que rien ne permet d'essayer depuis Linux :
+    # l'archive construite comme en release, puis install.sh et l'agent launchd sur un
+    # Mac Apple Silicon. L'archive reste en artefact, pour un essai sur une vraie machine
+    # avec SILLAGE_ARCHIVE.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Une version non numérotée : l'application ne propose aucune mise à jour à un
+      # build de CI, et install.sh ne le range pas parmi les releases à élaguer.
+      - name: Build identifier
+        id: build
+        run: echo "version=ci-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - run: pnpm build
+        env:
+          SILLAGE_VERSION: ${{ steps.build.outputs.version }}
+      - uses: ./.github/actions/runtime-archive
+        id: archive
+        with:
+          version: ${{ steps.build.outputs.version }}
+          platform: darwin
+          arch: arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sillage-darwin-arm64
+          path: ${{ steps.archive.outputs.archive }}
+          if-no-files-found: error
+      - run: scripts/macos-install-check.sh "${{ steps.archive.outputs.archive }}"
+      - name: Service state and log, on failure
+        if: failure()
+        run: |
+          launchctl print "gui/$(id -u)/io.github.marlburrow.sillage" || true
+          tail -n 100 ~/.local/share/sillage/logs/sillage.log || true
