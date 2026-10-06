@@ -299,7 +299,7 @@ export const en = {
   'composer.ultracode.off': 'Off',
   'composer.ultracode.off.hint': 'Workflows run only on request, or with the word “ultracode” in a message',
   'composer.ultracode.on': 'Ultracode',
-  'composer.ultracode.on.hint': 'Extra-high effort and multi-agent workflows on every substantive task: far more tokens',
+  'composer.ultracode.on.hint': 'Multi-agent workflows on every substantive task, at any effort level: far more tokens',
   'composer.setting.outputStyle': 'Reply style',
   'composer.outputStyle.default': 'Default',
   'composer.outputStyle.default.hint': 'Claude Code’s usual style',
