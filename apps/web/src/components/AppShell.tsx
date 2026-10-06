@@ -1002,6 +1002,7 @@ function ProjectGroup({
             projectId={project.id}
             tasks={schedules}
             conversations={scheduled}
+            focused={focused}
             onNavigate={onNavigate}
             renderRun={(conversation) => (
               <ConversationRow
