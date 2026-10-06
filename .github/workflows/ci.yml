@@ -20,6 +20,9 @@ jobs:
       # Même version que les bindings relus ; une mise à jour se traite explicitement.
       - run: npm install --global @openai/codex@0.153.2
       - run: pnpm codex:types:check
+      # Idem pour OpenCode : le script lance un `opencode serve` jetable pour lire son OpenAPI.
+      - run: npm install --global opencode-ai@1.18.25
+      - run: pnpm opencode:types:check
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm lint

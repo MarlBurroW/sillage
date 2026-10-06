@@ -127,7 +127,7 @@ export function memoryAppendixForCodex(dir: string, sillageMcp: boolean): string
   }
 
   const parts = [
-    `# Mémoire du projet\n\nNotes que les sessions précédentes, Claude comme Codex, ont prises sur ce projet. Elles sont dans \`${dir}\`, une par fichier : lis avec \`cat\` celles qui touchent ta tâche. Une note peut avoir vieilli ; vérifie-la avant de t'appuyer dessus.`,
+    `# Mémoire du projet\n\nNotes que les sessions précédentes, quel que soit leur CLI, ont prises sur ce projet. Elles sont dans \`${dir}\`, une par fichier : lis avec \`cat\` celles qui touchent ta tâche. Une note peut avoir vieilli ; vérifie-la avant de t'appuyer dessus.`,
     index ? `## ${MEMORY_INDEX_FILE}\n\n${index}` : 'La mémoire est encore vide.',
   ]
   if (sillageMcp) {

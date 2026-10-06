@@ -1,8 +1,8 @@
 # Bibliothèque de skills : plan d'implémentation
 
-Une bibliothèque de skills tenue par Sillage, livrée à Claude Code et à Codex comme des
-skills natifs : invocables en `/nom` et `$nom`, déclenchés par leur description, sans
-rien écrire dans `~/.claude` ni dans `~/.codex`. Même principe que le registre MCP :
+Une bibliothèque de skills tenue par Sillage, livrée à Claude Code, à Codex et à OpenCode
+comme des skills natifs : invocables en `/nom` et `$nom`, déclenchés par leur description,
+sans rien écrire dans `~/.claude`, `~/.codex` ni `~/.config/opencode`. Même principe que le registre MCP :
 déclarés une fois, transmis à chaque lancement, et une conversation reprise dans un CLI
 natif ne les a pas.
 
@@ -59,6 +59,19 @@ dans `/tmp/skill-probe`, à rejouer si une version de CLI change le comportement
 - Lit les fichiers annexes par `cat` sous le sandbox `read-only`, sans approbation.
 - Ne substitue pas `$ARGUMENTS` : c'est le modèle qui interprète le marqueur.
 - `~/.codex/config.toml` reste intact.
+
+**OpenCode, clé `skills.paths` de la configuration injectée.** Sondé le 2026-10-05 sur
+opencode 1.18.25, ajouté après la livraison des lots.
+
+- Le dossier `skills/` de chaque racine passe dans `skills.paths`, par
+  `OPENCODE_CONFIG_CONTENT` : rien n'est écrit dans `~/.config/opencode`.
+- Les skills apparaissent parmi les commandes en `/` (`source: skill`) et dans l'outil
+  `skill` du modèle, qui les déclenche par leur description.
+- Un skill ajouté après le lancement n'est pas vu. Il faut jeter l'instance
+  (`POST /instance/dispose`), ce que le runner fait au repos ; le flux d'événements
+  ouvert devient alors muet et doit être rebranché.
+- OpenCode lit aussi de lui-même `~/.claude/skills`, `~/.agents/skills`, et les
+  `.claude/skills` et `.agents/skills` du dépôt en remontant depuis le dossier de travail.
 
 ## Modèle
 

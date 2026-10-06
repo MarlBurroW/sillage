@@ -54,7 +54,7 @@ The installer:
 5. asks whether Sillage should start when you sign in to Windows, adds the
    **Sillage** Start menu entry, and opens Sillage in your browser.
 
-**3. The agents.** Sillage drives the `claude` and `codex` CLIs of the Linux
+**3. The agents.** Sillage drives the `claude`, `codex` and `opencode` CLIs of the Linux
 distribution, not the Windows ones. Install and sign in to at least one, in the
 Ubuntu terminal or in a Sillage terminal.
 
@@ -74,6 +74,13 @@ in once:
 
 If no browser opens, open the link it prints in your Windows browser: the sign-in
 comes back to WSL through `localhost`.
+
+OpenCode: let Sillage install it the same way. Its free models work without an
+account; to use a provider of yours, sign in once:
+
+```bash
+~/.local/share/sillage/agents/bin/opencode auth login
+```
 
 ## Everyday use
 
@@ -157,4 +164,4 @@ Remove-Item "$([Environment]::GetFolderPath('Programs'))\Sillage.lnk", "$([Envir
 ```
 
 `wsl --shutdown` stops the keeper if it still runs. Your projects and the agents'
-credentials (`~/.claude`, `~/.codex`) are left in place.
+credentials (`~/.claude`, `~/.codex`, `~/.local/share/opencode`) are left in place.
