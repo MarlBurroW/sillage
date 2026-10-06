@@ -6,7 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="A self-hosted workspace for Claude Code, Codex and OpenCode. Continue from any device, manage projects, and give agents the context to work together.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
+  <!-- Changer ?v= à chaque modification de style.css ou de main.js : GitHub Pages les laisse
+       en cache dix minutes, et une page neuve servie avec une feuille ancienne se casse. -->
+  <link rel="stylesheet" href="style.css?v=film">
   <meta name="theme-color" content="#faf7fb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0f0b11" media="(prefers-color-scheme: dark)">
   <meta property="og:title" content="Sillage">
@@ -90,13 +92,18 @@
         </div>
       </div>
       <div class="hero-meta"><span>Claude Code + Codex + OpenCode</span><span>Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
-      <figure class="hero-shot">
-        <button type="button" data-zoom aria-label="Enlarge the conversation screenshot"><picture>
-          <source srcset="screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
-          <img src="screenshots/hero-light.png" width="3200" height="2000" fetchpriority="high"
-               alt="A Claude Code conversation running in Sillage, with tool call groups and a reply being written">
-        </picture></button>
-        <figcaption>Sillage’s conversation view. Your repository, tools and conversation share the same workspace.</figcaption>
+      <figure class="hero-shot hero-film" id="film">
+        <div class="film-frame">
+          <video controls preload="none" playsinline poster="film/poster.jpg" width="1920" height="1080" data-film>
+            <source src="film/sillage-film.mp4" type="video/mp4">
+            <a href="film/sillage-film.mp4">Download the film (MP4, 54 s)</a>
+          </video>
+          <button type="button" class="film-play" data-film-play hidden aria-label="Play the 54-second film about Sillage, with sound">
+            <span class="film-play-icon" aria-hidden="true"></span>
+            <span class="film-play-label" aria-hidden="true">Watch the film<small>0:54 · sound on</small></span>
+          </button>
+        </div>
+        <figcaption>Sillage in 54 seconds: one session followed from desk to phone, a project board, shared skills and MCP servers, and two agents working it out together.</figcaption>
       </figure>
     </section>
 
@@ -492,6 +499,7 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
     <img data-zoom-image alt="">
   </dialog>
 
-  <script src="main.js"></script>
+
+  <script src="main.js?v=film"></script>
 </body>
 </html>
