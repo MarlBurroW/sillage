@@ -533,3 +533,65 @@ figcaption { margin-top: .8rem; color: var(--muted); font-size: .8rem; }
   .chapter-nav span { font-size: .62rem; }
   .actions { gap: 1rem; }
 }
+
+/* Le cadre matérialise ce qui reste sur la machine, même sans navigateur ouvert. */
+.overview-heading { text-align: center; margin-bottom: 2.5rem; }
+.overview-heading p { color: var(--muted); margin-top: 1rem; }
+.architecture { max-width: 54rem; margin: 0 auto; text-align: center; }
+.architecture svg { width: 28px; height: 28px; flex-shrink: 0; }
+.arch-you, .arch-repo { display: flex; justify-content: center; align-items: center; gap: 1rem; }
+.arch-you svg, .arch-repo svg { width: 40px; height: 40px; color: var(--accent); }
+.arch-you div, .arch-repo div { text-align: left; }
+.architecture strong { font-weight: 620; }
+.arch-you strong, .arch-repo strong { display: block; font-size: 1.1rem; }
+.arch-you span, .arch-repo span { display: block; color: var(--muted); font-size: .85rem; }
+.arch-connector { height: 64px; position: relative; display: flex; align-items: center; justify-content: center; }
+.arch-connector::before { content: ''; position: absolute; inset: 0 auto; width: 1px; background: var(--faint); }
+.arch-connector::after { content: ''; position: absolute; bottom: 1px; width: 7px; height: 7px; border-right: 1px solid var(--faint); border-bottom: 1px solid var(--faint); transform: rotate(45deg); }
+.arch-connector span { position: relative; background: var(--bg); color: var(--muted); padding: 3px 12px; font-size: .75rem; }
+.arch-machine { border: 1px dashed var(--faint); border-radius: 24px; padding: 30px; position: relative; }
+.arch-boundary { position: absolute; top: -12px; right: 24px; padding: 0 10px; background: var(--bg); color: var(--muted); font-size: .75rem; }
+.arch-hub { border: 1px solid var(--accent); border-radius: 16px; overflow: hidden; background: var(--raised); }
+.arch-brand { display: flex; justify-content: center; align-items: center; gap: .6rem; padding: 18px; background: color-mix(in srgb, var(--accent) 9%, var(--raised)); }
+.arch-brand svg { color: var(--accent); }
+.arch-brand strong { font-size: 1.5rem; letter-spacing: -.04em; }
+.arch-brand span { margin-left: auto; color: var(--muted); font-size: .8rem; }
+.arch-functions { display: grid; grid-template-columns: repeat(3, 1fr); padding: 22px 12px; }
+.arch-functions a { display: flex; align-items: center; flex-direction: column; gap: 8px; padding: 4px 8px; text-decoration: none; }
+.arch-functions a:not(:nth-child(3n + 1)) { border-left: 1px solid var(--line); }
+.arch-functions a:nth-child(n + 4) { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 20px; }
+.arch-functions svg { color: var(--accent); margin-bottom: 4px; }
+.arch-functions strong { font-size: .95rem; }
+.arch-functions span { font-size: .75rem; color: var(--muted); }
+.arch-functions a:hover strong, .arch-memory:hover span { text-decoration: underline; text-underline-offset: 4px; }
+.arch-memory { display: flex; justify-content: center; align-items: center; gap: .7rem; padding: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; text-decoration: none; }
+.arch-memory svg { width: 20px; height: 20px; }
+.arch-agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; position: relative; }
+.arch-agents > div { display: flex; align-items: center; justify-content: center; gap: .6rem; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); padding: 16px 8px; }
+.arch-agents strong { font-size: .95rem; }
+/* Les fonds colorés distinguent les CLI, sans recolorer les marques monochromes. */
+.arch-agent-logo { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0; }
+.arch-agent-claude { background: #faeae3; color: #c56648; }
+.arch-agent-claude svg { color: #D97757; }
+.arch-agent-codex { background: #dff3ed; color: #202b28; }
+.arch-agent-opencode { background: #e5edff; color: #252b3a; }
+.arch-models { margin-top: 12px; font-size: .75rem; color: var(--muted); }
+.arch-models span { margin-inline: 5px; }
+.arch-repo { padding: 15px; border-radius: 12px; background: var(--sunken); }
+.architecture figcaption { margin-top: 18px; font-size: .85rem; }
+@media (max-width: 600px) {
+  .arch-machine { padding: 22px 12px 12px; border-radius: 18px; }
+  .arch-brand { flex-wrap: wrap; padding: 14px; }
+  .arch-brand span { flex-basis: 100%; margin: 0; }
+  .arch-functions { padding: 16px 4px; }
+  .arch-functions a { padding: 0 3px; }
+  .arch-functions strong { font-size: .7rem; letter-spacing: -.02em; }
+  .arch-functions span { display: none; }
+  .arch-functions a:nth-child(n + 4) { margin-top: 14px; padding-top: 16px; }
+  .arch-agents { gap: 6px; }
+  .arch-agents > div { flex-direction: column; gap: 10px; padding: 12px 3px; }
+  .arch-agents strong { font-size: .7rem; }
+  .arch-connector { height: 58px; }
+  .arch-memory { font-size: .72rem; }
+  .arch-boundary { right: 14px; }
+}
