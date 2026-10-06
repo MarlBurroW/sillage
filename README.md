@@ -173,6 +173,10 @@ updates happen from the web UI (Settings > About) or by re-running the script.
 
 Logs go to the journal: `journalctl --user -u sillage -f`.
 
+The service, agents and the dev servers they start included, may use up to 75% of
+the RAM before systemd slows it down. To change that, run `systemctl --user edit
+sillage` and set `MemoryHigh=` under `[Service]`: the override survives reinstalls.
+
 The service uses the system's Node when it is 22.14 or newer. Otherwise the
 installer downloads the current Node LTS under `~/.local/share/sillage/node`, for
 Sillage alone, and refreshes it on each run. Any Node from 22.14 up works: every
