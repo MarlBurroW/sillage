@@ -45,6 +45,14 @@ systemDark.addEventListener('change', (event) => {
   if (!storedTheme()) applyTheme(event.matches ? 'dark' : 'light')
 })
 
+// Le décor reste statique sans JavaScript ; hors écran, son animation est au repos.
+const backgroundObserver = new IntersectionObserver((entries) => {
+  entries.forEach(({ target, isIntersecting }) => target.toggleAttribute('data-visible', isIntersecting))
+})
+document.querySelectorAll('.site-background, .section-background').forEach((background) => {
+  backgroundObserver.observe(background)
+})
+
 // Latest release from GitHub. The page stays complete without it: the
 // unauthenticated API is capped at 60 requests per hour and per IP.
 fetch('https://api.github.com/repos/MarlBurroW/sillage/releases/latest')

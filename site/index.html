@@ -24,6 +24,26 @@
   </script>
 </head>
 <body>
+  <!-- Les trois rubans prolongent le logo, sans entrer dans le contenu de la page. -->
+  <div class="site-background" aria-hidden="true">
+    <svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false">
+      <defs>
+        <path id="background-ribbon" d="M-360 780H-160C460 780 260 80 880 80H1880V150H950C330 150 530 850-90 850H-360Z"/>
+      </defs>
+      <g id="background-pattern">
+        <g class="background-ribbons">
+          <use href="#background-ribbon"/>
+          <use href="#background-ribbon" transform="translate(180 100)"/>
+          <use href="#background-ribbon" transform="translate(360 200)"/>
+        </g>
+        <g class="background-threads">
+          <path d="M-360 815H-125C495 815 295 115 915 115H1880"/>
+          <path d="M-180 915H55C675 915 475 215 1095 215H2060"/>
+          <path d="M0 1015H235C855 1015 655 315 1275 315H2240"/>
+        </g>
+      </g>
+    </svg>
+  </div>
   <a class="skip" href="#main">Skip to content</a>
 
   <header class="topbar">
@@ -89,6 +109,7 @@
     </nav>
 
     <section class="overview" id="overview" aria-labelledby="overview-title">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="overview-heading">
         <h2 id="overview-title">Your idea. A shared workspace.<br>Agents that get to work.</h2>
         <p>You steer from your browser. Everything comes together on your machine.</p>
@@ -126,6 +147,7 @@
     </section>
 
     <section class="editorial" id="anywhere">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="section-label">01 / Continuity</div>
       <div class="section-body">
         <h2>Switch devices.<br>Keep the session.</h2>
@@ -141,6 +163,7 @@
     </section>
 
     <section class="project-section" id="projects">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="editorial-heading"><div class="section-label">02 / Projects</div><div><h2>A project lasts longer<br>than a conversation.</h2><p class="section-lede">Give the work a place to live, from the first task to the next handover.</p></div></div>
       <figure class="product-shot">
         <button type="button" data-zoom aria-label="Enlarge the project board screenshot"><picture>
@@ -157,6 +180,7 @@
     </section>
 
     <section class="editorial coordination" id="coordination">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="section-label">03 / Session awareness</div>
       <div class="section-body">
         <h2>Your agents should know<br>who else is working.</h2>
@@ -176,6 +200,7 @@
     </section>
 
     <section class="editorial" id="agents">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="section-label">04 / Multi-CLI by design</div>
       <div class="section-body">
         <h2>Native harnesses.<br>A shared workspace.</h2>
@@ -186,6 +211,7 @@
     </section>
 
     <section class="editorial coordination" id="context">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="section-label">05 / Shared context</div>
       <div class="section-body">
         <h2>One set of instructions.<br>One memory.</h2>
@@ -201,6 +227,7 @@
     </section>
 
     <section class="tour" id="tour" aria-labelledby="tour-title">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="tour-head">
         <h2 id="tour-title">A closer look at the workspace</h2>
         <p>Chat is the middle of it. The repository, the history and the work in flight stay one panel away.</p>
@@ -312,6 +339,7 @@
     </section>
 
     <section class="features" id="features" aria-labelledby="features-title">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <p class="section-label">Also in the workspace</p>
       <h2 id="features-title">The everyday details, covered.</h2>
       <ul>
@@ -325,6 +353,7 @@
     </section>
 
     <section class="install" id="install" aria-labelledby="install-title">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="install-intro">
         <p class="section-label">Run it yourself</p><h2 id="install-title">Your machine.<br>Your workspace.</h2>
         <p>An always-on server is recommended for picking up work throughout the day. Your desktop works too, while it stays awake and connected.</p>
@@ -392,6 +421,7 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
     </section>
 
     <section class="why" id="why" aria-labelledby="why-title">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <h2 id="why-title">Why I built Sillage</h2>
       <figure class="founder-note">
         <blockquote>
@@ -428,6 +458,7 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
     </section>
 
     <section class="security">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <h2>A word on security</h2>
       <p>
         Sillage is built for a trusted circle, not for the open Internet. Agents run under

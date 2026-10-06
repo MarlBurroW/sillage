@@ -74,13 +74,85 @@ html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 body {
+  position: relative;
+  isolation: isolate;
   margin: 0;
   background: var(--bg);
-  background-size: 100% 45rem, auto;
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Chaque paysage est ancré à son contenu ; les bords fondus évitent les raccords. */
+.site-background, .section-background {
+  position: absolute;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 95% 5%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 52%),
+    radial-gradient(ellipse at 0% 85%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 48%);
+}
+.site-background {
+  inset: 0 0 auto;
+  height: 100svh;
+  mask-image: linear-gradient(#000 65%, transparent);
+}
+main { overflow-x: clip; }
+main > section { position: relative; }
+.section-background {
+  inset-block: 0;
+  left: 50%;
+  width: 100vw;
+  translate: -50%;
+  mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent);
+}
+main > section:nth-of-type(even) .section-background { scale: -1 1; }
+.background-waves {
+  position: absolute;
+  inset: -6%;
+  width: 112%;
+  height: 112%;
+  color: var(--accent);
+  mask-image: radial-gradient(ellipse at 48% 42%, rgb(0 0 0 / .12) 12%, #000 78%);
+  animation: background-drift 28s ease-in-out infinite alternate;
+}
+.section-background .background-waves {
+  inset: auto -6%;
+  top: 50%;
+  height: 112%;
+  max-height: 85rem;
+  translate: 0 -50%;
+  animation-delay: -14s;
+}
+/* Seules les ondes visibles bougent, pour ne pas animer toute la page à la fois. */
+.site-background:not([data-visible]) .background-waves,
+.section-background:not([data-visible]) .background-waves { animation-play-state: paused; }
+.background-ribbons {
+  fill: currentColor;
+  fill-opacity: .035;
+  stroke: currentColor;
+  stroke-opacity: .15;
+  stroke-width: 1;
+}
+.background-threads {
+  stroke: currentColor;
+  stroke-opacity: .09;
+  stroke-width: 1;
+}
+@keyframes background-drift {
+  from { transform: translate3d(-12px, 10px, 0) rotate(-2deg); }
+  to { transform: translate3d(16px, -14px, 0) rotate(2deg); }
+}
+@media (max-width: 760px) {
+  .site-background, .section-background { opacity: .75; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .background-waves { animation: none; }
+}
+@media print, (forced-colors: active) {
+  .site-background, .section-background { display: none; }
 }
 
 img { display: block; max-width: 100%; height: auto; }
