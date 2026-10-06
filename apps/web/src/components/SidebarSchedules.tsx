@@ -1,4 +1,4 @@
-import { CalendarClock, ChevronRight } from 'lucide-react'
+import { CalendarClock, ChevronRight, Plus } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import type { ConversationDto, ScheduledTaskDto } from '@sillage/protocol'
@@ -33,6 +33,7 @@ export function SidebarSchedules({
   projectId,
   tasks,
   conversations,
+  focused,
   onNavigate,
   renderRun,
 }: {
@@ -40,11 +41,17 @@ export function SidebarSchedules({
   tasks: ScheduledTaskDto[]
   /** Les fils du projet issus d'un tir, toutes tâches confondues. */
   conversations: ConversationDto[]
+  /**
+   * Le projet est celui qu'on regarde. La section se montre alors même vide : c'est là
+   * qu'on découvre que la planification existe. Dans la vue de tous les projets, une
+   * section vide par projet ne dirait rien que du bruit.
+   */
+  focused: boolean
   onNavigate: () => void
   renderRun: (conversation: ConversationDto) => ReactNode
 }) {
   const t = useTranslate()
-  if (tasks.length === 0) return null
+  if (tasks.length === 0 && !focused) return null
 
   return (
     <li className="mt-2" data-sidebar-schedules>
@@ -58,6 +65,18 @@ export function SidebarSchedules({
         <span className="tabular-nums">{tasks.length}</span>
       </NavLink>
       <ul className="flex flex-col gap-px">
+        {tasks.length === 0 ? (
+          <li>
+            <NavLink
+              to={`/p/${projectId}/schedules`}
+              onClick={onNavigate}
+              className="flex min-h-11 items-center gap-1.5 rounded-md px-1 text-sm text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11"
+            >
+              <Plus size={13} className="shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{t('schedule.sidebar.empty')}</span>
+            </NavLink>
+          </li>
+        ) : null}
         {tasks.map((task) => (
           <TaskRow
             key={task.id}
