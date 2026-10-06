@@ -120,11 +120,21 @@ const MAX_PEER_MESSAGE_CHARS = 4000
  * secondes d'ordinaire, davantage sur une machine chargée. Passé ce délai, l'agent
  * apprend que la demande court toujours plutôt que de rester suspendu.
  */
-const REQUEST_WAIT_MS = { start_session: 90000, create_card: 15000, list_models: 30000 }
+const REQUEST_WAIT_MS = { start_session: 90000, create_card: 15000, list_models: 30000, schedule_task: 30000 }
 const REQUEST_POLL_MS = 200
 
 /** Doit rester d'accord avec `MAX_LAUNCH_PROMPT_CHARS` de `agent-requests.ts`. */
 const MAX_LAUNCH_PROMPT_CHARS = 20000
+
+/**
+ * Bornes d'une tâche planifiée, d'accord avec `MAX_SCHEDULE_PROMPT_CHARS` et
+ * `DEFAULT_SCHEDULE_DURATION_MINUTES` du protocole, et avec `MIN_AGENT_SCHEDULE_MINUTES`
+ * de `apps/server/src/sessions/agent-requests.ts`. Le daemon revalide tout : elles ne
+ * servent ici qu'à rédiger les descriptions.
+ */
+const MAX_SCHEDULE_PROMPT_CHARS = 20000
+const DEFAULT_SCHEDULE_DURATION_MINUTES = 30
+const MIN_AGENT_SCHEDULE_MINUTES = 15
 
 /** Messages rendus par read_session_messages, les plus récents. */
 const PEER_HISTORY_LIMIT = 20
@@ -384,6 +394,61 @@ const TOOLS = [
         },
       },
       required: ['prompt'],
+    },
+  },
+  {
+    name: 'schedule_task',
+    description:
+      "Crée une tâche planifiée dans ce projet : Sillage rejouera `prompt` à la cadence donnée, chaque fois dans une session neuve, même quand aucune session n'est ouverte et après un redémarrage. C'est le planificateur durable, commun à tous les CLI ; les boucles propres à une session (`/loop`, `CronCreate`) meurent avec elle. Sert quand l'utilisateur demande un travail récurrent ou différé (« vérifie ça tous les lundis », « relance l'audit demain à 9 h »). Pas de ta propre initiative : une tâche consomme du quota à chaque tir. Les tirs tournent sans personne au clavier, à la racine du projet, avec les permissions par défaut du projet pour ce CLI ; ils n'encombrent pas la liste des sessions, l'utilisateur les retrouve sous la tâche et la gère dans la vue Planification. Donne exactement une cadence parmi `every_minutes`, `cron` et `at`.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Nom court de la tâche, tel qu\'il apparaîtra dans la sidebar : « Veille des CLI », « Audit des dépendances ».',
+        },
+        prompt: {
+          type: 'string',
+          description: `La consigne rejouée à chaque tir, en markdown, ${MAX_SCHEDULE_PROMPT_CHARS} caractères au plus. Elle doit se comprendre seule, la session ne connaissant rien de ce fil : quoi vérifier, où, quoi faire d'une trouvaille (ouvrir une carte, écrire un rapport), et quoi ne pas toucher. Sillage y ajoute la date du tir, la date et le lien du tir précédent et sa dernière réponse ; \`{{date}}\`, \`{{previous_run_date}}\`, \`{{previous_run_url}}\` et \`{{previous_run_summary}}\` les placent où tu veux.`,
+        },
+        every_minutes: {
+          type: 'integer',
+          description: `Intervalle entre deux tirs, en minutes, ${MIN_AGENT_SCHEDULE_MINUTES} au moins. Le premier tir part un intervalle après la création.`,
+        },
+        cron: {
+          type: 'string',
+          description:
+            "Motif cron à cinq champs (minute heure jour mois jour-de-semaine), lu à l'heure du serveur : `0 9 * * 1` pour chaque lundi à 9 h.",
+        },
+        at: {
+          type: 'string',
+          description: 'Date et heure d\'un tir unique, ISO 8601 avec fuseau : `2026-10-12T09:00:00+02:00`.',
+        },
+        agent: {
+          type: 'string',
+          enum: ['claude', 'codex', 'opencode'],
+          description: 'CLI des tirs. Omettre pour le même que le tien.',
+        },
+        model: {
+          type: 'string',
+          description: 'Modèle, par sa valeur ou son nom affiché. Omettre pour le défaut du projet. list_models donne ce qui existe.',
+        },
+        effort: {
+          type: 'string',
+          description: "Niveau d'effort, comme pour start_session. Omettre pour le défaut du projet.",
+        },
+        max_duration_minutes: {
+          type: 'integer',
+          description: `Durée au-delà de laquelle un tir est interrompu. ${DEFAULT_SCHEDULE_DURATION_MINUTES} par défaut.`,
+        },
+        overlap: {
+          type: 'string',
+          enum: ['skip', 'wait'],
+          description:
+            'Quand un tir arrive alors que le précédent tourne encore : `skip` le saute (défaut), `wait` le fait partir dès que le précédent a fini.',
+        },
+      },
+      required: ['name', 'prompt'],
     },
   },
   {
@@ -1924,7 +1989,7 @@ async function callTool(name, args) {
     return text(renderCount(countActiveSessions()))
   }
 
-  if (name === 'create_card' || name === 'start_session' || name === 'list_models') {
+  if (name === 'create_card' || name === 'start_session' || name === 'list_models' || name === 'schedule_task') {
     if (!CURRENT_CONVERSATION) {
       return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
     }
@@ -1937,6 +2002,19 @@ async function callTool(name, args) {
       if (prompt.length > MAX_LAUNCH_PROMPT_CHARS) {
         return {
           ...text(`Mission trop longue (${prompt.length} caractères, ${MAX_LAUNCH_PROMPT_CHARS} au plus). Mets le détail dans un fichier et cite-le.`),
+          isError: true,
+        }
+      }
+    }
+    if (name === 'schedule_task') {
+      if (!(typeof args?.name === 'string' && args.name.trim())) {
+        return { ...text('Le paramètre `name` est requis.'), isError: true }
+      }
+      const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : ''
+      if (!prompt) return { ...text('Le paramètre `prompt` est requis.'), isError: true }
+      if (prompt.length > MAX_SCHEDULE_PROMPT_CHARS) {
+        return {
+          ...text(`Consigne trop longue (${prompt.length} caractères, ${MAX_SCHEDULE_PROMPT_CHARS} au plus). Mets le détail dans un fichier et cite-le.`),
           isError: true,
         }
       }

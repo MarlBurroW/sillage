@@ -467,6 +467,29 @@ export class EventLog {
   }
 
   /**
+   * Dernier texte que l'agent a adressé à l'utilisateur, hors sous-agents : ce qu'un
+   * appelant sans interface (webhook, tir planifié suivant) retient d'un tour.
+   */
+  lastAssistantText(conversationId: string): string | null {
+    const entries = this.latest(conversationId, ['message.completed'], 20)
+    for (const entry of entries) {
+      const event = entry.event as {
+        role?: string
+        parentToolCallId?: string | null
+        blocks?: { type: string; text?: string }[]
+      }
+      if (event.role !== 'assistant' || event.parentToolCallId !== null) continue
+      const text = (event.blocks ?? [])
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n')
+        .trim()
+      if (text) return text
+    }
+    return null
+  }
+
+  /**
    * Remet le compte de tours d'aplomb sur ce que contient le journal.
    *
    * Appelée en fin de tour : c'est le moment où les messages du tour sont tous écrits,
