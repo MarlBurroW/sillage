@@ -38,6 +38,18 @@ function notice(
 }
 
 /**
+ * Pourquoi le CLI a jeté la conversation, d'après le `trigger` de `conversation_reset`
+ * (SDK 0.3.291). Un motif absent, d'un CLI plus ancien, ou inconnu garde la phrase
+ * générale : le CLI demande de traiter chaque remise à zéro de la même façon.
+ */
+const RESET_MESSAGES: Record<string, string> = {
+  clear: 'Contexte effacé : la session repart de zéro.',
+  plan_mode_exit: 'Plan validé sur un contexte vidé : la session repart du seul plan.',
+  fresh_session: 'Nouvelle session ouverte pour exécuter le plan validé.',
+  onboarding: 'Accueil du CLI relancé : la session repart de zéro.',
+}
+
+/**
  * Traduit un signal, ou rend null pour tout message qui n'en est pas un.
  *
  * Appelée en dernier recours par le runner, après les messages qu'il traite lui-même :
@@ -48,7 +60,7 @@ export function translateSignal(message: SDKMessage): SillageEvent | null {
     return { type: 'suggestion.updated', text: message.suggestion }
   }
   if (message.type === 'conversation_reset') {
-    return notice('conversation_reset', 'Contexte effacé : la session repart de zéro.', 'info')
+    return notice('conversation_reset', RESET_MESSAGES[message.trigger ?? ''] ?? RESET_MESSAGES.clear!, 'info')
   }
   if (message.type !== 'system') return null
 
@@ -200,4 +212,30 @@ export function describeFastMode(
       )
     }
   }
+}
+
+/** Forme des `plugin_errors` de l'`init`, telle que le SDK 0.3.291 la type. */
+export interface PluginLoadError {
+  plugin: string
+  type: string
+  message: string
+  path?: string
+}
+
+/**
+ * Les plugins que le CLI n'a pas pu charger, d'après l'`init`.
+ *
+ * Sillage lui passe sa bibliothèque de skills sous forme de plugins : sans cet avis, un
+ * plugin refusé fait seulement disparaître ses skills de la liste, sans rien qui dise
+ * pourquoi. Un seul identifiant, pour que le fil montre le dernier état ; null quand
+ * tout s'est chargé.
+ */
+export function describePluginErrors(errors: PluginLoadError[] | undefined): Notice | null {
+  if (!errors || errors.length === 0) return null
+  const lines = errors.map((error) => `${error.plugin}${error.path ? ` (${error.path})` : ''} : ${error.message}`)
+  const message =
+    errors.length === 1
+      ? `Plugin non chargé par Claude Code, ${lines[0]}`
+      : `${errors.length} plugins non chargés par Claude Code :\n${lines.map((line) => `- ${line}`).join('\n')}`
+  return notice('plugin_errors', message, 'warning', errors, 'plugin-errors')
 }
