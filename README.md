@@ -62,6 +62,13 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   "start a Codex session at max effort to fix this" opens a conversation that you
   can follow like any other, with its own CLI, model, effort and worktree. The new
   session starts with the project's default permissions.
+- **Scheduled tasks.** A prompt replayed on a schedule, by interval, cron
+  expression or at a single date, each run in a fresh session of the CLI you chose,
+  with the model, effort and permissions fixed on the task. The daemon fires it with
+  nobody at the keyboard: the agent is told so, gets the date, link and last reply of
+  the previous run, and is cut off after a maximum duration. Runs stay out of the
+  session list and sit under their task in the sidebar. Agents can schedule too,
+  through `schedule_task`, the durable equivalent of Claude's session-bound cron.
 - **Shared instructions and memory.** One `SILLAGE.md` and one project memory for
   all three CLIs, editable from the interface, which agents can read and rewrite.
   [How it works](#instructions-and-memory).
