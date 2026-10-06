@@ -179,6 +179,8 @@ export function useStatusFeed(): void {
           const known = queryClient.getQueryData<ConversationDto[]>(['conversations', 'all'])
           if (known && !known.some((entry) => entry.id === conversationId)) {
             void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+            // Un fil inconnu est peut-être un tir planifié qui vient de partir.
+            void queryClient.invalidateQueries({ queryKey: ['schedules'] })
           }
         }
         const metricsChanged = !sameMetrics(metrics.get(conversationId), pushed)
@@ -221,6 +223,7 @@ export function useStatusFeed(): void {
           listsTimer = null
           void queryClient.invalidateQueries({ queryKey: ['conversations'] })
           void queryClient.invalidateQueries({ queryKey: ['projects'] })
+          void queryClient.invalidateQueries({ queryKey: ['schedules'] })
           // L'en-tête du fil ouvert aussi : renommé ou supprimé ailleurs, il doit le
           // montrer sans attendre qu'on en sorte.
           void queryClient.invalidateQueries({ queryKey: ['conversation'] })

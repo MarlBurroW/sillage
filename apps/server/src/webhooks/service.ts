@@ -351,22 +351,7 @@ export class WebhookService {
   }
 
   private lastAssistantText(conversationId: string): string | null {
-    const entries = this.log.latest(conversationId, ['message.completed'], 20)
-    for (const entry of entries) {
-      const event = entry.event as {
-        role?: string
-        parentToolCallId?: string | null
-        blocks?: { type: string; text?: string }[]
-      }
-      if (event.role !== 'assistant' || event.parentToolCallId !== null) continue
-      const text = (event.blocks ?? [])
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text)
-        .join('\n')
-        .trim()
-      if (text) return text
-    }
-    return null
+    return this.log.lastAssistantText(conversationId)
   }
 
   private enqueue(
