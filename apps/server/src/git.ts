@@ -237,9 +237,13 @@ export async function cloneRepository(
  * Local et non global : deux comptes de la même instance clonent chacun avec leur
  * propre identifiant de propriétaire, et une configuration globale n'en porterait qu'un.
  * Les worktrees héritent de cette configuration, qui vit dans le dépôt principal.
+ *
+ * Précédé d'une valeur vide, qui écarte les helpers des configurations système et
+ * globale, pour la raison donnée à `credentialEnv` : le trousseau de macOS en tête.
  */
 export async function setCredentialHelper(cwd: string, helper: string): Promise<void> {
-  await git(cwd, ['config', '--local', 'credential.helper', helper])
+  await git(cwd, ['config', '--local', '--replace-all', 'credential.helper', ''])
+  await git(cwd, ['config', '--local', '--add', 'credential.helper', helper])
 }
 
 /**
