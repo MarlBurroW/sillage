@@ -66,7 +66,7 @@ try {
   assert.equal(seedCode, 0, seed.diagnostics)
 
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', colorScheme: 'dark', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
     if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')
@@ -80,7 +80,7 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  const shots = join(root, 'docs/audits/2026-09-19-activity')
+  const shots = join(root, 'docs/audits/2026-10-07-activity')
   await mkdir(shots, { recursive: true })
   const atlas = projects.find((entry) => entry.name === 'Atlas API')
   const docs = projects.find((entry) => entry.name === 'Docs')
@@ -90,7 +90,7 @@ try {
     { id: 'activity-b', projectId: project.id, title: 'Valider les migrations', status: 'awaiting_input' },
     { id: 'activity-c', projectId: atlas.id, title: 'Optimiser les requêtes', status: 'running' },
     { id: 'activity-d', projectId: atlas.id, title: 'Attendre le choix utilisateur', status: 'awaiting_input' },
-    { id: 'activity-e', projectId: docs.id, title: 'Documenter les endpoints', status: 'running' },
+    { id: 'activity-e', projectId: docs.id, title: 'Documenter les endpoints et revoir les exemples après les retours de l’équipe', status: 'running' },
     { id: 'activity-f', projectId: extraProject.id, title: 'Surveiller le build', status: 'running' },
   ].map((entry) => ({ ...hero, archivedAt: null, favorite: false, lastNotableSeq: 5, lastReadSeq: 0, ...entry }))
   await page.route('**/api/projects', async (route) => route.fulfill({ json: [...projects, extraProject] }))
@@ -106,34 +106,38 @@ try {
   const total = activity.getByRole('button', { name: /Activité.*4 en cours/ })
   await total.waitFor()
   await activity.getByRole('button', { name: '2 à débloquer', exact: true }).waitFor()
-  assert.equal(await activity.getByRole('button', { name: /^Activité de / }).count(), 3)
-  await activity.getByRole('button', { name: '+ 1 autre projet', exact: true }).waitFor()
-  await activity.getByRole('button', { name: /^Activité de Nimbus/ }).click()
+  assert.equal(await activity.getByRole('link').count(), 4)
+  await activity.getByRole('button', { name: '+ 2 autres sessions actives', exact: true }).waitFor()
+  // L'attente est visible avant les sessions en cours, sans déplier un projet.
+  assert.match(await activity.getByRole('link').first().innerText(), /Valider les migrations/)
   await activity.getByRole('link', { name: /Compiler la nouvelle interface/ }).waitFor()
   await page.screenshot({ path: join(shots, 'activity-expanded.png') })
   await activity.getByRole('button', { name: 'Replier l’activité', exact: true }).click()
   await total.waitFor()
-  assert.equal(await activity.getByRole('button', { name: /^Activité de / }).count(), 0)
+  assert.equal(await activity.getByRole('link').count(), 0)
   await total.click()
   const overview = page.getByRole('dialog', { name: 'Activité globale', exact: true })
   await overview.getByRole('region', { name: 'À débloquer', exact: true }).waitFor()
-  await overview.getByRole('heading', { name: 'Autre projet', exact: false }).waitFor()
+  await overview.getByText('Autre projet', { exact: true }).waitFor()
   assert.equal(await overview.getByRole('link').count(), 6)
   await page.screenshot({ path: join(shots, 'activity-overview.png') })
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
+  await page.screenshot({ path: join(shots, 'activity-overview-light.png') })
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   // Une fin de tour fait baisser le compteur, sans faire disparaître la session.
   pushStatus('activity-a', 'running')
   pushStatus('activity-a', 'idle')
-  await overview.getByRole('button', { name: '3 en cours', exact: true }).waitFor()
+  await overview.getByRole('heading', { name: '3 en cours', exact: true }).waitFor()
   await overview.getByRole('region', { name: 'Viennent de s’arrêter', exact: true }).getByRole('link', { name: /Compiler la nouvelle interface.*Tour terminé/ }).waitFor()
   // Le travail en arrière-plan compte même si le tour principal est au repos.
   pushStatus('activity-a', 'idle', 1)
-  await overview.getByRole('button', { name: '4 en cours', exact: true }).waitFor()
+  await overview.getByRole('heading', { name: '4 en cours', exact: true }).waitFor()
   await overview.getByRole('link', { name: /Compiler la nouvelle interface.*En arrière-plan/ }).waitFor()
   pushStatus('activity-a', 'error')
   await overview.getByRole('region', { name: 'Viennent de s’arrêter', exact: true }).getByRole('link', { name: /Compiler la nouvelle interface.*En erreur/ }).waitFor()
-  await overview.getByRole('button', { name: '2 à débloquer', exact: true }).click()
+  await overview.getByRole('button', { name: 'À débloquer 2', exact: true }).click()
   assert.equal(await overview.getByRole('link').count(), 2)
-  await overview.getByRole('button', { name: '6 non lues', exact: true }).click()
+  await overview.getByRole('button', { name: 'Non lues 6', exact: true }).click()
   assert.equal(await overview.getByRole('link').count(), 6)
   await overview.getByRole('button', { name: 'Fermer', exact: true }).click()
   // Une nouvelle conversation, lancée depuis un autre client, rejoint le total.

@@ -33,6 +33,7 @@ export const en = {
   'shell.overview.interrupted': 'Interrupted',
   'shell.overview.error': 'Error',
   'shell.overview.background': 'In background',
+  'shell.overview.moreActive': '+ {count} more active sessions',
   'shell.overview.moreSessions': 'View all {count} sessions',
   'shell.overview.unknown': 'Project',
   'shell.overview.recentHint': 'Latest activity endings observed in this tab.',

@@ -21,6 +21,7 @@ export const fr: Catalog = {
   'shell.overview.interrupted': 'Interrompue',
   'shell.overview.error': 'En erreur',
   'shell.overview.background': 'En arrière-plan',
+  'shell.overview.moreActive': '+ {count} autres sessions actives',
   'shell.overview.moreSessions': 'Voir les {count} sessions',
   'shell.overview.unknown': 'Projet',
   'shell.overview.recentHint': 'Dernières fins d’activité observées dans cet onglet.',
