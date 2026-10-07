@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { Check, Code2, Download, Eye, Loader, MoreHorizontal, Save, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import {
@@ -93,13 +94,13 @@ function UserEditorPane({ userId, scope }: { userId: string; scope: string }) {
         ><Download size={14} /></IconButton> : null}
         <Menu
           trigger={
-            <button
+            <TooltipButton
               type="button"
               aria-label={t('editor.tabs.actions')}
               className="flex size-11 shrink-0 items-center justify-center border-l border-line text-ink-faint hover:text-ink md:size-8 pointer-coarse:size-11"
             >
               <MoreHorizontal size={14} />
-            </button>
+            </TooltipButton>
           }
         >
           <MenuLabel>{t('editor.tabs.open')}</MenuLabel>
@@ -236,14 +237,14 @@ function Tab({
         <span aria-label={t('editor.tab.unsaved')} className="size-1.5 shrink-0 rounded-full bg-accent" />
       ) : null}
 
-      <button
+      <TooltipButton
         type="button"
         onClick={onClose}
         aria-label={t('editor.tab.close', { path })}
         className="flex size-11 items-center justify-center rounded text-ink-faint opacity-0 hover:text-ink group-hover/tab:opacity-100 focus-visible:opacity-100 md:size-6 pointer-coarse:size-11 pointer-coarse:opacity-100"
       >
         <X size={12} />
-      </button>
+      </TooltipButton>
     </div>
   )
 }

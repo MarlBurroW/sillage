@@ -1,3 +1,4 @@
+import { TooltipButton } from './ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Check, ChevronsUpDown, FolderPlus, Layers, Search, SlidersHorizontal, Star, X } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -90,6 +91,6 @@ function ProjectChoice({ project, selected, pinned, onPin, onSelect }: { project
   const view = useProjectView(project.id)
   return <div className={cx('flex items-center rounded-md transition-colors', selected ? 'bg-accent-wash' : 'hover:bg-surface-high')}>
     <button type="button" data-project-choice aria-current={selected ? true : undefined} onClick={() => onSelect(projectViewPath(project.id, view))} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm"><ProjectAvatar project={project} /><span className="flex-1 truncate">{project.name}</span>{selected && <Check size={14} className="shrink-0 text-accent" />}</button>
-    <button type="button" aria-label={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} title={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} onClick={onPin} className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-accent"><Star size={14} className={pinned ? 'fill-accent text-accent' : undefined} /></button>
+    <TooltipButton type="button" aria-label={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} title={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} onClick={onPin} className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-accent"><Star size={14} className={pinned ? 'fill-accent text-accent' : undefined} /></TooltipButton>
   </div>
 }

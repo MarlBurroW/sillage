@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { Check, Copy, Download, WrapText } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useCopy } from '../../lib/clipboard'
@@ -46,7 +47,7 @@ export function ToolbarButton({
   children: ReactNode
 }) {
   return (
-    <button
+    <TooltipButton
       type="button"
       onClick={onClick}
       aria-label={label}
@@ -58,7 +59,7 @@ export function ToolbarButton({
       )}
     >
       {children}
-    </button>
+    </TooltipButton>
   )
 }
 

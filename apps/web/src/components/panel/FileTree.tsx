@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import {
   AtSign,
   ChevronRight,
@@ -235,14 +236,14 @@ export function FileTree({
             )}
           />
           {query ? (
-            <button
+            <TooltipButton
               type="button"
               onClick={() => setQuery('')}
               aria-label={t('filetree.search.clear')}
               className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 text-ink-faint hover:text-ink"
             >
               <X size={12} />
-            </button>
+            </TooltipButton>
           ) : null}
         </div>
 
@@ -322,7 +323,7 @@ function UploadQueue({ scope }: { scope: string }) {
               {upload.label}
             </span>
             <span className="shrink-0 text-ink-faint">{statusOf(upload)}</span>
-            <button
+            <TooltipButton
               type="button"
               onClick={() => dismissUpload(upload.id)}
               aria-label={
@@ -333,7 +334,7 @@ function UploadQueue({ scope }: { scope: string }) {
               className="shrink-0 rounded p-0.5 text-ink-faint hover:text-ink"
             >
               <X size={11} />
-            </button>
+            </TooltipButton>
           </div>
 
           {upload.status === 'error' ? (
@@ -441,7 +442,7 @@ function RootAction({
   onClick: () => void
 }) {
   return (
-    <button
+    <TooltipButton
       type="button"
       onClick={onClick}
       aria-label={label}
@@ -449,7 +450,7 @@ function RootAction({
       className="flex size-11 md:size-7 pointer-coarse:size-11 items-center justify-center rounded text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
     >
       {icon}
-    </button>
+    </TooltipButton>
   )
 }
 
@@ -864,13 +865,13 @@ function Entry({
             >
               <Menu
                 trigger={
-                  <button
+                  <TooltipButton
                     type="button"
                     aria-label={t('filetree.entry.actions', { name: entry.name })}
                     className="flex size-11 md:size-7 pointer-coarse:size-11 items-center justify-center rounded text-ink-faint hover:text-ink"
                   >
                     <MoreHorizontal size={14} />
-                  </button>
+                  </TooltipButton>
                 }
               >
                 {entryActions(entry, actions, expand).map((action) => (

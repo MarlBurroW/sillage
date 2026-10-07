@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as Popover from '@radix-ui/react-popover'
 import { ChevronDown, SlidersHorizontal } from 'lucide-react'
@@ -111,7 +112,7 @@ export function ComposerSettings({ groups, summary, mcp, feedback, disabled = fa
               disabled={disabled}
               quick
               trigger={
-                <button type="button" disabled={disabled} aria-label={label} title={label}
+                <TooltipButton type="button" disabled={disabled} aria-label={label} title={label}
                   className={cx(
                     'flex min-h-11 min-w-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-xs @min-[34rem]:max-w-80 @min-[34rem]:flex-initial',
                     'hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
@@ -122,7 +123,7 @@ export function ComposerSettings({ groups, summary, mcp, feedback, disabled = fa
                   <span className="hidden shrink-0 text-accent @min-[22rem]:inline-flex">{group.icon}</span>
                   <span className="min-w-0 flex-1 truncate text-left">{value}</span>
                   <ChevronDown size={12} className="shrink-0 text-ink-faint" />
-                </button>
+                </TooltipButton>
               }
             >
               {(close) => (
@@ -142,14 +143,14 @@ export function ComposerSettings({ groups, summary, mcp, feedback, disabled = fa
           inputRef={inputRef}
           disabled={disabled}
           trigger={
-            <button type="button" disabled={disabled}
+            <TooltipButton type="button" disabled={disabled}
               aria-label={t('composer.settings.label', { summary: summaryLabel })}
               title={[t('composer.settings.all'), ...statusLabels].join(' · ')}
               className="relative ml-auto flex size-11 shrink-0 items-center justify-center rounded-md text-ink-soft hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent data-[state=open]:bg-accent-wash disabled:pointer-events-none disabled:opacity-45"
             >
               <SlidersHorizontal size={16} />
               {statusLabels.length > 0 ? <span aria-hidden className={cx('absolute right-2 top-2 size-1.5 rounded-full', warnings.length > 0 ? 'bg-caution' : 'bg-accent')} /> : null}
-            </button>
+            </TooltipButton>
           }
         >
           {(close) => <SettingsPanel groups={groups} disabled={disabled} extra={mcp} feedback={feedback} onDone={() => close(true)} onClose={() => close()} />}

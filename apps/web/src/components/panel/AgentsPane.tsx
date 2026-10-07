@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { AGENT_CAPABILITIES, type AgentKind } from '@sillage/protocol'
 import { ArrowLeft, Bot, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
@@ -180,7 +181,7 @@ function BackgroundList({
             ) : null}
 
             {canStop ? (
-              <button
+              <TooltipButton
                 type="button"
                 onClick={() => void stop(task.id)}
                 disabled={stopping.has(task.id)}
@@ -189,7 +190,7 @@ function BackgroundList({
                 className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface hover:text-critical disabled:cursor-default disabled:opacity-40"
               >
                 <Square size={11} fill="currentColor" />
-              </button>
+              </TooltipButton>
             ) : null}
           </div>
         )
@@ -213,14 +214,14 @@ function SubAgentThread({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-line px-2 py-1.5">
-        <button
+        <TooltipButton
           type="button"
           onClick={onBack}
           aria-label={t('subagent.pane.back')}
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-ink"
         >
           <ArrowLeft size={15} />
-        </button>
+        </TooltipButton>
         <Bot size={14} className={cx('shrink-0', agent.status === 'running' ? 'text-accent' : 'text-ink-faint')} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs font-medium text-ink">{subAgentLabel(agent)}</span>
