@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import {
   Bot,
   FileCode,
@@ -393,7 +394,7 @@ function Tab({
 }) {
   const t = useTranslate()
   return (
-    <button
+    <TooltipButton
       type="button"
       onClick={onSelect}
       aria-pressed={active}
@@ -418,6 +419,6 @@ function Tab({
           {badge}
         </span>
       ) : null}
-    </button>
+    </TooltipButton>
   )
 }

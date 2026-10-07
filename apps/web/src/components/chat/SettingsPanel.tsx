@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { Check, Search, X } from 'lucide-react'
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
@@ -58,9 +59,9 @@ export function SettingsHeading({ title, onClose }: { title: string; onClose: ()
   return (
     <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line py-2 pr-2 pl-4">
       <h2 tabIndex={-1} data-settings-heading className="text-sm font-semibold outline-none">{title}</h2>
-      <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+      <TooltipButton type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
         <X size={18} />
-      </button>
+      </TooltipButton>
     </header>
   )
 }

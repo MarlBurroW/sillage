@@ -1,3 +1,4 @@
+import { TooltipButton } from '../components/ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
   ArrowDown,
@@ -1233,7 +1234,7 @@ export function ConversationPage() {
         <div className="relative shrink-0">
           {placed && !stuckToBottom ? (
             <>
-              <button
+              <TooltipButton
                 type="button"
                 onClick={() => {
                   const node = scroller.current
@@ -1247,7 +1248,7 @@ export function ConversationPage() {
                 aria-label={t('conversation.scroll.bottom')}
               >
                 <ArrowDown size={16} />
-              </button>
+              </TooltipButton>
 
               <div className="absolute right-3 bottom-full z-10 mb-2">
                 <TurnNav count={turns.length} onStep={step} />

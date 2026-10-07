@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { Check, Copy } from 'lucide-react'
 import { useCopy } from '../../lib/clipboard'
 import { cx } from '../ui'
@@ -17,7 +18,7 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
   const { state, copy } = useCopy()
 
   return (
-    <button
+    <TooltipButton
       type="button"
       aria-label={title}
       title={title}
@@ -30,6 +31,6 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
     >
       {state === 'copied' ? <Check size={13} /> : <Copy size={13} />}
       {state === 'copied' ? t('common.copied') : state === 'failed' ? t('common.failed') : t('common.copy')}
-    </button>
+    </TooltipButton>
   )
 }

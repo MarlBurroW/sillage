@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from 'react'
+import { TooltipButton } from './Tooltip'
 import { cx } from './cx'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
@@ -48,7 +49,7 @@ export function Button({
   )
 }
 
-interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface IconButtonProps extends ComponentPropsWithRef<'button'> {
   /** Obligatoire : un bouton sans texte doit porter son intitulé pour les lecteurs d'écran. */
   label: string
   /** `md` respecte la cible tactile de 44px ; `sm` est réservé aux listes denses. */
@@ -62,10 +63,10 @@ const ICON_SIZES = { sm: 'size-11 md:size-7 pointer-coarse:size-11', md: 'size-1
 
 export function IconButton({ label, size = 'md', children, className, ...props }: IconButtonProps) {
   return (
-    <button
+    <TooltipButton
       {...props}
       aria-label={label}
-      title={label}
+      title={props.title ?? label}
       className={cx(
         'inline-flex shrink-0 items-center justify-center rounded-md',
         'text-ink-faint transition-colors hover:bg-surface-high hover:text-ink',
@@ -75,6 +76,6 @@ export function IconButton({ label, size = 'md', children, className, ...props }
       )}
     >
       {children}
-    </button>
+    </TooltipButton>
   )
 }

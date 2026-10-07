@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { ChevronDown, ChevronUp, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { findRanges, supportsHighlight } from '../../lib/find-in-page'
@@ -161,7 +162,7 @@ export function ThreadSearch({
             : t('thread.search.position', { index: index + 1, count })}
       </span>
 
-      <button
+      <TooltipButton
         type="button"
         onClick={() => step(-1)}
         disabled={count === 0}
@@ -169,8 +170,8 @@ export function ThreadSearch({
         className="flex size-7 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink disabled:opacity-40"
       >
         <ChevronUp size={15} />
-      </button>
-      <button
+      </TooltipButton>
+      <TooltipButton
         type="button"
         onClick={() => step(1)}
         disabled={count === 0}
@@ -178,15 +179,15 @@ export function ThreadSearch({
         className="flex size-7 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink disabled:opacity-40"
       >
         <ChevronDown size={15} />
-      </button>
-      <button
+      </TooltipButton>
+      <TooltipButton
         type="button"
         onClick={onClose}
         aria-label={t('thread.search.close')}
         className="flex size-7 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink"
       >
         <X size={15} />
-      </button>
+      </TooltipButton>
     </div>
   )
 }
