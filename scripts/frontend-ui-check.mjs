@@ -280,6 +280,10 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await code.evaluate((node) => node === window.uiEditorNode), true, 'Resizing must retain the editor DOM')
   await workspace.getByRole('button', { name: 'Fermer le panneau', exact: true }).focus()
+  // Au clavier, le premier Échap ferme l'aide du bouton avant le panneau.
+  await page.getByRole('tooltip').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('tooltip').waitFor({ state: 'hidden' })
   await page.keyboard.press('Escape')
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Ouvrir le panneau')
   console.log('OK : focus des panneaux, menu superposé, raccourcis de l’éditeur et redimensionnement sans remontage.')

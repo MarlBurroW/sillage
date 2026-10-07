@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { Loader, Plus, SquareTerminal as TerminalIcon, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@sillage/protocol'
@@ -91,18 +92,18 @@ export function TerminalsPane({
                 terminal.alive ? 'bg-positive' : 'bg-ink-faint/50',
               )}
             />
-            <button
+            <TooltipButton
               type="button"
               onClick={() => close.mutate(terminal.id)}
               aria-label={t('terminal.tab.close', { title: terminal.title })}
               className="rounded p-0.5 text-ink-faint opacity-0 hover:text-ink group-hover/term:opacity-100"
             >
               <X size={12} />
-            </button>
+            </TooltipButton>
           </div>
         ))}
 
-        <button
+        <TooltipButton
           type="button"
           // Le nouveau terminal devient l'actif : cliquer sur « + » sans rien voir
           // changer donne l'impression que rien ne s'est passé.
@@ -113,7 +114,7 @@ export function TerminalsPane({
           className="flex size-8 shrink-0 items-center justify-center text-ink-faint hover:text-ink disabled:opacity-40"
         >
           {open.isPending ? <Loader size={13} className="animate-spin" /> : <Plus size={14} />}
-        </button>
+        </TooltipButton>
       </div>
 
       {error || open.error || close.error ? (

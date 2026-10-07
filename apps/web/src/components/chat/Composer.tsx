@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { ArrowUp, FastForward, Loader2, Mic, Paperclip, Square } from 'lucide-react'
 import {
   useCallback,
@@ -853,7 +854,7 @@ export function Composer({
                 sait le faire : le message est pris en compte immédiatement, au lieu
                 d'attendre la fin comme le fait la file. */}
             {running && onSteer && canSend ? (
-              <button
+              <TooltipButton
                 type="button"
                 onClick={() => void submit(onSteer)}
                 aria-label={t('composer.steer.aria')}
@@ -864,11 +865,11 @@ export function Composer({
                 )}
               >
                 <FastForward size={16} />
-              </button>
+              </TooltipButton>
             ) : null}
 
             {running ? (
-              <button
+              <TooltipButton
                 type="button"
                 onClick={onInterrupt}
                 aria-label={t('composer.interrupt')}
@@ -879,10 +880,10 @@ export function Composer({
                 )}
               >
                 <Square size={13} fill="currentColor" />
-              </button>
+              </TooltipButton>
             ) : null}
 
-            <button
+            <TooltipButton
               type="submit"
               disabled={!canSend}
               aria-label={running ? t('composer.send.queue') : t('composer.send.aria')}
@@ -897,7 +898,7 @@ export function Composer({
               )}
             >
               <ArrowUp size={17} strokeWidth={2.5} />
-            </button>
+            </TooltipButton>
           </div>
         </div>
       </form>
