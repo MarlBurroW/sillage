@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslate } from '../../lib/i18n'
@@ -100,7 +101,7 @@ export function DictationStrip({
         </div>
       )}
 
-      <button
+      <TooltipButton
         type="button"
         onClick={onStop}
         aria-label={t('composer.dictate.stop')}
@@ -111,7 +112,7 @@ export function DictationStrip({
         )}
       >
         <Square size={13} fill="currentColor" />
-      </button>
+      </TooltipButton>
     </div>
   )
 }

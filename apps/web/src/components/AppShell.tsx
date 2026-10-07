@@ -1,3 +1,4 @@
+import { Tooltip, TooltipButton } from './ui/Tooltip'
 import {
   DndContext,
   MouseSensor,
@@ -610,10 +611,10 @@ function Sidebar({
             >
               <ListTree size={15} />
             </IconButton>
-            <NavLink to="/projects/new" onClick={onNavigate} aria-label={t('shell.projects.add')}
+            <Tooltip label={t('shell.projects.add')}><NavLink to="/projects/new" onClick={onNavigate} aria-label={t('shell.projects.add')}
               className="inline-flex size-11 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink md:size-7 pointer-coarse:size-11">
                 <FolderPlus size={15} />
-            </NavLink>
+            </NavLink></Tooltip>
           </span>
         </div>
 
@@ -798,7 +799,7 @@ function ProjectGroup({
         // navigation se lisaient comme une seule liste plate.
         className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11"
       >
-        {!focused && <button
+        {!focused && <TooltipButton
           type="button"
           onClick={onToggle}
           aria-label={
@@ -810,7 +811,7 @@ function ProjectGroup({
           className="flex size-11 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink md:size-6 pointer-coarse:size-11"
         >
           <ChevronRight size={13} className={cx('transition-transform', open && 'rotate-90')} />
-        </button>}
+        </TooltipButton>}
 
         {editing ? (
           <RenameInput
@@ -864,18 +865,17 @@ function ProjectGroup({
           </NavLink>
         )}
 
-        <NavLink
+        <Tooltip label={t('shell.project.newConversation', { name: project.name })}><NavLink
           to={`/p/${project.id}/c/new`}
           onClick={onNavigate}
           aria-label={t('shell.project.newConversation', { name: project.name })}
-          title={t('shell.project.newConversation', { name: project.name })}
           className={({ isActive }) => cx(
             'inline-flex size-11 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-surface-high hover:text-ink md:size-7 pointer-coarse:size-11',
             isActive ? 'bg-surface-high text-ink' : 'text-ink-faint',
           )}
         >
           <Plus size={15} />
-        </NavLink>
+        </NavLink></Tooltip>
 
         {project.isOwner ? (
           <Menu

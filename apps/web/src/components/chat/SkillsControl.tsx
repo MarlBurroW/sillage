@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { BookOpen, Search } from 'lucide-react'
 import { useState, type RefObject } from 'react'
 import { Link } from 'react-router-dom'
@@ -20,10 +21,10 @@ export function SkillsControl({ inputRef, ...props }: SkillsControlProps) {
   const t = useTranslate()
   return (
     <SettingsSurface label={t('composer.skills.title')} inputRef={inputRef} disabled={false}
-      trigger={<button type="button" aria-label={t('composer.skills.title')} title={t('composer.skills.title')}
+      trigger={<TooltipButton type="button" aria-label={t('composer.skills.title')} title={t('composer.skills.title')}
         className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-ink-faint hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11">
         <BookOpen size={14} /><span>{t('composer.skills.title')}</span>
-      </button>}
+      </TooltipButton>}
     >
       {(close) => <SkillsInventory {...props} onClose={close} />}
     </SettingsSurface>

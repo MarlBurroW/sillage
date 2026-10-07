@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { PlugZap } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
@@ -187,7 +188,7 @@ export function McpControl({
     <Menu
       align="start"
       trigger={
-        <button
+        <TooltipButton
           type="button"
           disabled={disabled}
           aria-label={t('composer.mcp.label', { summary })}
@@ -205,7 +206,7 @@ export function McpControl({
           {/* Rien à zéro : un « 0 » se lirait comme une panne, pour la même raison
               que le compte d'outils reste muet tant que le CLI n'a pas répondu. */}
           {count > 0 ? <span>{count}</span> : null}
-        </button>
+        </TooltipButton>
       }
     >
       {items}

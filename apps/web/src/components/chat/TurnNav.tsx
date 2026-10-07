@@ -1,3 +1,4 @@
+import { TooltipButton } from '../ui/Tooltip'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
@@ -24,7 +25,7 @@ export function TurnNav({ count, onStep }: { count: number; onStep: (direction: 
         'surface flex flex-col overflow-hidden rounded-full border border-line shadow-float',
       )}
     >
-      <button
+      <TooltipButton
         type="button"
         onClick={() => onStep(-1)}
         aria-label={t('turn.nav.previous')}
@@ -32,9 +33,9 @@ export function TurnNav({ count, onStep }: { count: number; onStep: (direction: 
         className="flex size-9 items-center justify-center text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
       >
         <ChevronUp size={16} />
-      </button>
+      </TooltipButton>
       <span aria-hidden className="h-px bg-line" />
-      <button
+      <TooltipButton
         type="button"
         onClick={() => onStep(1)}
         aria-label={t('turn.nav.next')}
@@ -42,7 +43,7 @@ export function TurnNav({ count, onStep }: { count: number; onStep: (direction: 
         className="flex size-9 items-center justify-center text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
       >
         <ChevronDown size={16} />
-      </button>
+      </TooltipButton>
     </div>
   )
 }
