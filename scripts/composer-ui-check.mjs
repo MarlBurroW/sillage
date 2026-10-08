@@ -53,6 +53,7 @@ async function mount(page) {
     const routerModule = composerSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1]
     const { MemoryRouter } = await import(routerModule)
     const { Composer } = await import('/src/components/chat/Composer.tsx')
+    const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
     const { useConversationConfig } = await import('/src/lib/conversation-config.ts')
     const { useConversation } = await import('/src/lib/conversations.ts')
     const { useVisualViewport } = await import('/src/lib/viewport.ts')
@@ -78,7 +79,7 @@ async function mount(page) {
         onInterrupt: () => {},
       })
     }
-    createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client }, React.createElement(MemoryRouter, null, React.createElement(Harness))))
+    createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client }, React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null, React.createElement(Harness)))))
   })
   await page.getByRole('button', { name: 'Modèle : Modèle Alpha', exact: true }).waitFor()
 }
@@ -190,7 +191,13 @@ try {
     assert.equal(stored.codex.askForApproval, 'never')
     assert.deepEqual(stored.codex.mcpServers, ['docs'])
     assert.match(await full.getAttribute('aria-label'), /Accès total/)
-    assert.match(await full.getAttribute('title'), /Plan.*Approbations : Jamais.*Accès total/)
+    if (viewport.width >= 700) {
+      await full.hover()
+      await page.getByRole('tooltip').waitFor()
+      assert.match(await page.getByRole('tooltip').textContent(), /Plan.*Approbations : Jamais.*Accès total/)
+      await page.keyboard.press('Escape')
+      await page.mouse.move(0, 0)
+    }
     assert.equal((await page.locator('form').boundingBox()).height, compactHeight, 'Permission indicators do not add a row')
 
     failNext = true
@@ -288,7 +295,13 @@ try {
     await page.evaluate(() => window.settings.flush())
     assert.equal(stored.claude.strictMcp, true)
     assert.match(await full.getAttribute('aria-label'), /Tout autoriser/)
-    assert.match(await full.getAttribute('title'), /Tout autoriser/)
+    if (viewport.width >= 700) {
+      await full.hover()
+      await page.getByRole('tooltip').waitFor()
+      assert.match(await page.getByRole('tooltip').textContent(), /Tout autoriser/)
+      await page.keyboard.press('Escape')
+      await page.mouse.move(0, 0)
+    }
     await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.evaluate(() => window.setReadOnly(true))
