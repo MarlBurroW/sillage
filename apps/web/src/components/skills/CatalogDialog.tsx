@@ -1,7 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { Library, X } from 'lucide-react'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { skillNameSchema, type LibrarySkillScope, type SourceSkillDto } from '@sillage/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { useTranslate } from '../../lib/i18n'
@@ -17,7 +16,7 @@ import { useSkillPermissions } from './permissions'
 import { NameField } from './SkillDialog'
 
 /**
- * Le catalogue des sources : choisir un skill, le relire, l'installer.
+ * Le catalogue des sources : relire les skills et installer une sélection sans quitter la source.
  *
  * L'aperçu montre le `SKILL.md` brut, tel que le modèle le recevra, et la liste des
  * fichiers qui viendront avec : un skill tiers entre dans le contexte des agents et ses
@@ -41,11 +40,19 @@ export function CatalogDialog({
   projectId: string | null
 }) {
   const t = useTranslate()
+  const permissions = useSkillPermissions()
+  const [target, setTarget] = useState(scope === 'global' ? 'global' : projectId ?? '')
+  const destination = permissions.destinations.find((entry) => entry.value === target) ?? permissions.destinations[0]
+  const install = useInstallSourceSkill()
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [completed, setCompleted] = useState(0)
   const { data } = useSkillSources()
   const fetched = (data?.sources ?? []).filter((source) => source.enabled && source.lastCommit !== null)
   const [chosen, setChosen] = useState<string | null>(sourceId ?? null)
   const current = fetched.find((source) => source.id === chosen) ?? fetched[0] ?? null
-  const { data: catalog } = useSourceCatalog(open && current ? current.id : null)
+  const { data: catalog, isPending, error: catalogError } = useSourceCatalog(open && current ? current.id : null)
   // Le filtre part du skill demandé : au doigt, la liste réduite à lui laisse son aperçu
   // juste en dessous. Le vider rend le reste du dépôt.
   const [filter, setFilter] = useState(skillName ?? '')
@@ -64,8 +71,36 @@ export function CatalogDialog({
   // Rapporté au catalogue entier : un filtre retouché ne fait pas disparaître le skill du dépôt.
   const missing = selected === null && wanted !== null && catalog !== undefined && findByName(catalog.skills, wanted) === null
 
+  const eligible = (skill: SourceSkillDto) => !skill.problem && !skill.installed.some((entry) =>
+    entry.scope === destination?.scope && entry.projectId === destination?.projectId)
+  const available = skills.filter(eligible)
+  const toggle = (path: string) => setChecked((previous) => {
+    const next = new Set(previous)
+    if (next.has(path)) next.delete(path)
+    else next.add(path)
+    return next
+  })
+  const installSelected = async () => {
+    if (!current || !destination || busy) return
+    setBusy(true)
+    setErrors({})
+    setCompleted(0)
+    // Chaque succès est conservé : un conflit de nom ne bloque pas les autres skills.
+    for (const skill of (catalog?.skills ?? []).filter((item) => checked.has(item.path) && eligible(item))) {
+      try {
+        await install.mutateAsync({ sourceId: current.id, path: skill.path, scope: destination.scope, projectId: destination.projectId })
+        setCompleted((count) => count + 1)
+        setChecked((previous) => { const next = new Set(previous); next.delete(skill.path); return next })
+      } catch (error) {
+        setErrors((previous) => ({ ...previous, [skill.path]: error instanceof ApiRequestError ? error.message : t('skills.batch.error') }))
+      }
+    }
+    setBusy(false)
+  }
+  const close = () => { if (!busy) onClose() }
+
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+    <Dialog.Root open={open} onOpenChange={(next) => { if (!next) close() }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/35 backdrop-blur-sm" />
         <Dialog.Content
@@ -74,7 +109,7 @@ export function CatalogDialog({
         >
           <header className="flex items-center gap-3 border-b border-line px-5 py-3">
             <Dialog.Title className="flex-1 text-lg font-semibold">{t('skills.catalog.title')}</Dialog.Title>
-            <IconButton label={t('skills.dialog.close')} onClick={onClose}>
+            <IconButton label={t('skills.dialog.close')} onClick={close} disabled={busy}>
               <X size={18} />
             </IconButton>
           </header>
@@ -82,35 +117,49 @@ export function CatalogDialog({
           {fetched.length === 0 ? (
             <EmptyState icon={<Library size={22} />} title={t('skills.catalog.noSource')} description={t('skills.catalog.noSource.hint')} />
           ) : (
-            // Au doigt, la fenêtre défile d'un bloc : des zones défilantes empilées ne
-            // laissaient plus de place au SKILL.md, qu'il faut pourtant relire avant
-            // d'installer. Sur grand écran, liste et aperçu défilent chacun de leur côté.
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
-              <div className="flex flex-col gap-3 border-line p-4 md:min-h-0 md:w-80 md:shrink-0 md:border-r">
+            // Sur téléphone, la liste cède sa place à l'aperçu ; la sélection reste conservée.
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+              <div className={cx('flex min-h-0 flex-1 flex-col gap-3 border-line p-4 md:w-80 md:flex-none md:border-r', focused && 'hidden md:flex')}>
                 <Select
                   label={t('skills.catalog.source')}
                   value={current?.id ?? ''}
-                  onChange={(id) => { setChosen(id); setSelected(null); setWanted(null) }}
+                  disabled={busy}
+                  onChange={(id) => { setChosen(id); setSelected(null); setWanted(null); setChecked(new Set()); setErrors({}); setCompleted(0); setFilter('') }}
                   options={fetched.map((source) => ({
                     value: source.id,
                     label: `${source.name} · ${shortCommit(source.lastCommit)}`,
                   }))}
                 />
                 <input
+                  disabled={busy}
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
                   placeholder={t('skills.catalog.filter')}
                   aria-label={t('skills.catalog.filter')}
                   className="tap-target rounded-md border border-line bg-sunken px-3 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-accent"
                 />
-                <ul className="-mx-1 flex max-h-56 flex-col gap-0.5 overflow-y-auto md:max-h-none md:min-h-0 md:flex-1">
+                <Button size="sm" variant="ghost" disabled={busy || available.length === 0} onClick={() => setChecked((previous) => {
+                  const next = new Set(previous)
+                  if (available.every((skill) => next.has(skill.path))) available.forEach((skill) => next.delete(skill.path))
+                  else available.forEach((skill) => next.add(skill.path))
+                  return next
+                })}>{t(available.length > 0 && available.every((skill) => checked.has(skill.path)) ? 'skills.batch.clearVisible' : 'skills.batch.selectVisible')}</Button>
+                {isPending ? <p role="status" className="text-sm text-ink-faint">{t('skills.files.loading')}</p> : null}
+                {catalogError ? <Banner>{catalogError.message}</Banner> : null}
+                <ul className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
                   {skills.map((skill) => (
                     <li key={skill.path}>
+                      <div className="flex items-start gap-1">
+                        <label className="flex min-h-11 w-9 shrink-0 items-center justify-center">
+                          <input type="checkbox" aria-label={t('skills.batch.select', { name: skill.name })} checked={checked.has(skill.path)}
+                            disabled={busy || !eligible(skill)} onChange={() => toggle(skill.path)} className="size-4 accent-accent" />
+                        </label>
                       <button
                         type="button"
+                        disabled={busy}
                         onClick={() => setSelected(skill.path)}
                         className={cx(
-                          'flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors',
+                          'flex min-w-0 flex-1 flex-col gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors',
                           focused?.path === skill.path ? 'bg-accent-wash' : 'hover:bg-surface-high',
                         )}
                       >
@@ -120,21 +169,30 @@ export function CatalogDialog({
                         </span>
                         <span className="line-clamp-2 text-xs text-ink-faint">{skill.description}</span>
                       </button>
+                      </div>
+                      {errors[skill.path] ? <p role="alert" className="px-2 pb-2 text-xs text-critical">{errors[skill.path]}</p> : null}
                     </li>
                   ))}
                   {skills.length === 0 ? <li className="px-2.5 py-2 text-sm text-ink-faint">{t('skills.catalog.empty')}</li> : null}
                 </ul>
               </div>
 
-              <div className="flex flex-col border-t border-line md:min-h-0 md:flex-1 md:border-t-0">
+              <div className={cx('flex min-h-0 min-w-0 flex-1 flex-col border-line', !focused && 'hidden md:flex')}>
+                {focused ? <Button variant="ghost" className="shrink-0 self-start md:hidden" disabled={busy} onClick={() => { setSelected(null); setWanted(null) }}>{t('skills.catalog.back')}</Button> : null}
                 {focused && current ? (
                   <SkillPreview
-                    key={`${current.id}:${focused.path}`}
+                    key={`${current.id}:${focused.path}:${destination?.value}`}
                     sourceId={current.id}
                     skill={focused}
-                    scope={scope}
-                    projectId={projectId}
-                    onInstalled={onClose}
+                    scope={destination?.scope ?? scope}
+                    projectId={destination?.projectId ?? null}
+                    onInstalled={() => {
+                      setCompleted((count) => count + 1)
+                      setErrors((previous) => { const next = { ...previous }; delete next[focused.path]; return next })
+                      setChecked((previous) => { const next = new Set(previous); next.delete(focused.path); return next })
+                    }}
+                    disabled={busy}
+                    onBusy={setBusy}
                   />
                 ) : (
                   <p className="m-auto px-6 py-8 text-center text-sm text-ink-faint">
@@ -144,6 +202,17 @@ export function CatalogDialog({
               </div>
             </div>
           )}
+          {fetched.length > 0 ? <footer className="shrink-0 border-t border-line p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <Select label={t('skills.field.destination')} value={destination?.value ?? ''} disabled={busy}
+                onChange={(value) => { setTarget(value); setChecked(new Set()); setErrors({}); setCompleted(0) }}
+                options={permissions.destinations.map((entry) => ({ value: entry.value, label: entry.label }))} />
+              <Button disabled={busy || checked.size === 0 || !destination} onClick={() => void installSelected()}>
+                {busy ? t('skills.catalog.installing') : t('skills.batch.install', { count: checked.size })}
+              </Button>
+            </div>
+            {completed > 0 ? <p role="status" className="mt-2 text-sm text-positive">{t('skills.batch.completed', { count: completed })}</p> : null}
+          </footer> : null}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -179,26 +248,27 @@ function SkillPreview({
   scope,
   projectId,
   onInstalled,
+  disabled,
+  onBusy,
 }: {
   sourceId: string
   skill: SourceSkillDto
   scope: LibrarySkillScope
   projectId: string | null
   onInstalled: () => void
+  disabled: boolean
+  onBusy: (busy: boolean) => void
 }) {
   const t = useTranslate()
-  const navigate = useNavigate()
   const permissions = useSkillPermissions()
-  const { data: preview, isLoading } = useSourcePreview(sourceId, skill.path)
+  const { data: preview, isLoading, error: previewError } = useSourcePreview(sourceId, skill.path)
   const install = useInstallSourceSkill()
-  const initial = permissions.destinations.find((entry) => entry.scope === scope && entry.projectId === projectId)
-  const [target, setTarget] = useState(initial?.value ?? permissions.destinations[0]?.value ?? '')
-  const destination = permissions.destinations.find((entry) => entry.value === target)
+  const destination = permissions.destinations.find((entry) => entry.scope === scope && entry.projectId === projectId)
   const [name, setName] = useState(skillNameSchema.safeParse(skill.name).success ? skill.name : '')
 
   return (
-    <div className="flex flex-col md:min-h-0 md:flex-1">
-      <div className="p-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <h3 className="font-mono text-base font-semibold">{skill.name}</h3>
           <span className="font-mono text-xs text-ink-faint">{skill.path || '/'}</span>
@@ -211,11 +281,11 @@ function SkillPreview({
             </Banner>
           </div>
         ) : null}
-        {isLoading || !preview ? (
+        {previewError ? <Banner>{previewError.message}</Banner> : isLoading || !preview ? (
           <p className="text-sm text-ink-faint">{t('skills.files.loading')}</p>
         ) : (
           <>
-            <pre className="rounded-md border border-line bg-sunken p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink-soft">
+            <pre className="rounded-md border border-line bg-sunken p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words text-ink-soft">
               {preview.main}
             </pre>
             <p className="mt-3 mb-1 text-xs font-semibold text-ink-soft">{t('skills.catalog.files', { count: preview.files.length })}</p>
@@ -226,26 +296,21 @@ function SkillPreview({
         )}
       </div>
 
-      <footer className="flex flex-col gap-3 border-t border-line p-4">
+      <footer className="flex shrink-0 flex-col gap-3 border-t border-line p-4">
         {permissions.destinations.length === 0 ? (
           <p className="text-sm text-ink-faint">{t('skills.catalog.noDestination')}</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            <Select
-              label={t('skills.field.destination')}
-              value={target}
-              onChange={setTarget}
-              options={permissions.destinations.map((entry) => ({ value: entry.value, label: entry.label }))}
-            />
-            <NameField value={name} onChange={setName} />
+            <NameField value={name} onChange={setName} disabled={disabled} />
           </div>
         )}
         {install.error instanceof ApiRequestError ? <Banner>{install.error.message}</Banner> : null}
         <Button
           className="self-end"
-          disabled={!destination || !skillNameSchema.safeParse(name).success || skill.problem === 'skill_unreadable' || install.isPending}
-          onClick={() =>
-            destination &&
+          disabled={disabled || skill.installed.some((entry) => entry.scope === scope && entry.projectId === projectId && entry.name === name) || !destination || !skillNameSchema.safeParse(name).success || skill.problem === 'skill_unreadable' || install.isPending}
+          onClick={() => {
+            if (!destination) return
+            onBusy(true)
             install.mutate(
               {
                 sourceId,
@@ -254,9 +319,9 @@ function SkillPreview({
                 projectId: destination.projectId,
                 ...(name !== skill.name ? { name } : {}),
               },
-              { onSuccess: (created) => { onInstalled(); navigate(`/skills/${created.id}`) } },
+              { onSuccess: onInstalled, onSettled: () => onBusy(false) },
             )
-          }
+          }}
         >
           {install.isPending ? t('skills.catalog.installing') : t('skills.catalog.install')}
         </Button>

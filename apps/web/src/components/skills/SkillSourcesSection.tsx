@@ -50,6 +50,8 @@ export function SkillSourcesSection({ isAdmin }: { isAdmin: boolean }) {
         ) : null}
       </div>
 
+      <p className="text-sm text-ink-faint">{t('skills.updates.hint')}</p>
+
       {adding ? <AddSourceForm onDone={(id) => { setAdding(false); if (id) setBrowsing({ sourceId: id, skillName: null }) }} /> : null}
       {isAdmin ? <SkillsShSearch onOpen={setBrowsing} /> : null}
 

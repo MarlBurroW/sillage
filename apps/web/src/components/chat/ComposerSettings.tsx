@@ -161,13 +161,14 @@ export function ComposerSettings({ groups, summary, mcp, feedback, disabled = fa
 }
 
 /** Même contenu, ancré sur ordinateur et dans une feuille sur écran tactile. */
-export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false }: {
+export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, spacious = false }: {
   label: string
   trigger: ReactNode
   children: (close: (resumeTyping?: boolean) => void) => ReactNode
   inputRef: RefObject<HTMLTextAreaElement | null>
   disabled: boolean
   quick?: boolean
+  spacious?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const sheet = useMediaQuery('(max-width: 34rem), (pointer: coarse)')
@@ -206,19 +207,23 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
     }
   }
 
-  return sheet ? (
+  return sheet || spacious ? (
     <Dialog.Root open={open} onOpenChange={changeOpen}>
       <Dialog.Trigger asChild {...triggerEvents}>{trigger}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
         <Dialog.Content ref={content} aria-describedby={undefined} onOpenAutoFocus={onOpenAutoFocus} onCloseAutoFocus={onCloseAutoFocus}
-          className="surface fixed inset-x-0 z-50 flex flex-col overflow-hidden rounded-t-xl border-t border-line shadow-pop"
+          className={cx('surface fixed z-50 flex flex-col overflow-hidden border-line shadow-pop',
+            spacious && !sheet
+              ? 'left-1/2 top-1/2 w-[min(860px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border'
+              : 'inset-x-0 rounded-t-xl border-t')}
           style={{
-            bottom: 'max(0px, calc(100dvh - var(--sg-app-height, 100dvh) - var(--sg-viewport-top, 0px)))',
+            bottom: spacious && !sheet ? 'auto' : 'max(0px, calc(100dvh - var(--sg-app-height, 100dvh) - var(--sg-viewport-top, 0px)))',
+            height: spacious ? 'min(78dvh, 680px)' : undefined,
             maxHeight: 'min(85dvh, calc(var(--sg-app-height, 100dvh) - 1rem))',
           }}
         >
-          <div aria-hidden className="mx-auto mt-2 h-1 w-8 shrink-0 rounded-full bg-line-strong" />
+          {sheet ? <div aria-hidden className="mx-auto mt-2 h-1 w-8 shrink-0 rounded-full bg-line-strong" /> : null}
           <Dialog.Title className="sr-only">{label}</Dialog.Title>
           {children(close)}
         </Dialog.Content>
