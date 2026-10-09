@@ -1,11 +1,12 @@
 import { TooltipButton } from './ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Check, ChevronsUpDown, FolderPlus, Layers, Search, SlidersHorizontal, Star, X } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ProjectDto } from '@sillage/protocol'
 import { useTranslate } from '../lib/i18n'
 import { projectViewPath, useProjectView } from '../lib/project-view'
+import { useTogglePin } from '../lib/projects'
 import { scoreMatch } from '../lib/search'
 import { ProjectAvatar } from './ProjectAvatar'
 import { cx, IconButton } from './ui'
@@ -25,23 +26,30 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const list = useRef<HTMLDivElement>(null)
-  const storageKey = `sillage.pinnedProjects:${userId}`
-  const [pins, setPins] = useState<string[]>(() => {
+  const togglePin = useTogglePin()
+  // Les épingles vivaient dans le navigateur : celles d'avant sont poussées au serveur
+  // une fois, puis la clé locale disparaît pour que la migration ne rejoue pas.
+  useEffect(() => {
+    if (!userId || projects.length === 0) return
+    const storageKey = `sillage.pinnedProjects:${userId}`
     try {
-      const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]')
-      return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
-    } catch { return [] }
-  })
-  const togglePin = (id: string) => {
-    const next = pins.includes(id) ? pins.filter((entry) => entry !== id) : [...pins, id]
-    setPins(next)
-    try { localStorage.setItem(storageKey, JSON.stringify(next)) } catch { /* Stockage facultatif. */ }
-  }
+      const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? 'null')
+      if (value === null) return
+      localStorage.removeItem(storageKey)
+      if (!Array.isArray(value)) return
+      for (const id of value) {
+        const project = projects.find((entry) => entry.id === id)
+        if (project && !project.pinned) togglePin.mutate({ id: project.id, pinned: true })
+      }
+    } catch { /* Stockage facultatif. */ }
+    // Une seule passe par compte : relancer à chaque changement de liste réépinglerait.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, projects.length > 0])
   const matches = projects.filter((project) => scoreMatch(project.name, query.trim()) !== null || !query.trim())
   const groups = [
-    { label: t('shell.switcher.pinned'), entries: matches.filter((project) => pins.includes(project.id)) },
-    { label: t('shell.switcher.recent'), entries: recent.slice(0, 5).flatMap((id) => matches.filter((project) => project.id === id && !pins.includes(id))) },
-    { label: t('shell.projects.heading'), entries: matches.filter((project) => !pins.includes(project.id) && !recent.slice(0, 5).includes(project.id)) },
+    { label: t('shell.switcher.pinned'), entries: matches.filter((project) => project.pinned) },
+    { label: t('shell.switcher.recent'), entries: recent.slice(0, 5).flatMap((id) => matches.filter((project) => project.id === id && !project.pinned)) },
+    { label: t('shell.projects.heading'), entries: matches.filter((project) => !project.pinned && !recent.slice(0, 5).includes(project.id)) },
   ]
   return (
     <Dialog.Root open={open} onOpenChange={(value) => { setOpen(value); if (!value) setQuery('') }}>
@@ -75,7 +83,7 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
             {!query.trim() && <button type="button" onClick={() => { onAll(); setOpen(false) }} className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-sm hover:bg-surface-high"><Layers size={15} /><span className="flex-1 text-left">{t('shell.switcher.all')}</span>{all && <Check size={15} />}</button>}
             {groups.map((group) => group.entries.length > 0 && <div key={group.label}>
               <p className="px-2 pt-3 pb-1 text-[0.6875rem] font-semibold text-ink-faint">{group.label}</p>
-              {group.entries.map((project) => <ProjectChoice key={project.id} project={project} selected={!all && selected?.id === project.id} pinned={pins.includes(project.id)} onPin={() => togglePin(project.id)} onSelect={(fallback) => { onSelect(project, fallback); setOpen(false); setQuery('') }} />)}
+              {group.entries.map((project) => <ProjectChoice key={project.id} project={project} selected={!all && selected?.id === project.id} pinned={project.pinned} onPin={() => togglePin.mutate({ id: project.id, pinned: !project.pinned })} onSelect={(fallback) => { onSelect(project, fallback); setOpen(false); setQuery('') }} />)}
             </div>)}
             {matches.length === 0 && <p role="status" className="px-2 py-6 text-center text-sm text-ink-faint">{t('shell.switcher.empty')}</p>}
           </div>

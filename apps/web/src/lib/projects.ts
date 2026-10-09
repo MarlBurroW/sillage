@@ -109,6 +109,44 @@ export function useReorderProjects() {
   })
 }
 
+/**
+ * Épingle du sélecteur de projet.
+ *
+ * Appliquée localement avant la réponse, comme le signet de conversation : l'étoile
+ * doit se remplir au clic. Le serveur tient l'épingle par compte, ce qui la fait
+ * suivre d'un appareil à l'autre.
+ */
+export function useTogglePin() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      pinned
+        ? api.put<{ pinned: boolean }>(`/api/projects/${id}/pin`, {})
+        : api.delete<{ pinned: boolean }>(`/api/projects/${id}/pin`),
+
+    onMutate: async ({ id, pinned }) => {
+      await queryClient.cancelQueries({ queryKey: PROJECTS_KEY })
+      const previous = queryClient.getQueryData<ProjectDto[]>(PROJECTS_KEY)
+      queryClient.setQueryData<ProjectDto[]>(PROJECTS_KEY, (current) =>
+        current?.map((entry) => (entry.id === id ? { ...entry, pinned } : entry)),
+      )
+      return { previous }
+    },
+
+    onError: (_error, { id }, context) => {
+      // Ne revenir que sur l'épingle : un statut git ou un compteur ont pu bouger entre-temps.
+      const before = context?.previous?.find((entry) => entry.id === id)
+      if (!before) return
+      queryClient.setQueryData<ProjectDto[]>(PROJECTS_KEY, (current) =>
+        current?.map((entry) => (entry.id === id ? { ...entry, pinned: before.pinned } : entry)),
+      )
+    },
+
+    onSettled: () => queryClient.invalidateQueries({ queryKey: PROJECTS_KEY }),
+  })
+}
+
 export function useUpdateProject() {
   const queryClient = useQueryClient()
   return useMutation({
