@@ -27,17 +27,25 @@ export function useDebounced<T>(value: T, delay = DEBOUNCE_MS): T {
  *
  * `keepPreviousData` : sans lui, chaque frappe vide la liste avant de la remplir, et la
  * section clignote alors qu'elle affichait déjà une réponse valable.
+ *
+ * `settling` dit que la saisie n'est pas encore partie : sans lui, rien n'annonçait
+ * pendant le délai de frappe que des résultats allaient encore arriver.
  */
 export function useMessageSearch(query: string) {
   const settled = useDebounced(query)
 
-  return useQuery({
+  const result = useQuery({
     queryKey: ['search', settled],
     queryFn: () => api.get<SearchMessageDto[]>(`/api/search?q=${encodeURIComponent(settled)}`),
     enabled: settled.trim().length >= SEARCH_MIN_QUERY,
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
+  return {
+    data: result.data,
+    isFetching: result.isFetching,
+    settling: settled !== query && query.trim().length >= SEARCH_MIN_QUERY,
+  }
 }
 
 export interface ExcerptPart {

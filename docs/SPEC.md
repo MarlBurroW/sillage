@@ -731,6 +731,8 @@ POST   /api/push/subscribe                  { endpoint, keys }
 POST   /api/push/unsubscribe                { endpoint }
 
 GET    /api/search?q=                       messages contenant la requête, visibilité appliquée
+GET    /api/palette/catalog                 tickets et skills de tous les projets visibles
+GET    /api/palette/files                   ?q=&conversationId=  fichiers de tous les projets visibles
 
 Les routes du panneau existent en deux portées : `/api/conversations/:id/...` opère sur
 le répertoire du fil, worktree compris, et `/api/projects/:id/...` sur le workspace du
@@ -1527,15 +1529,45 @@ avance, le skill l'annonce, et la mise à jour se lit en diff avant de s'appliqu
 
 ### 12.10 Recherche
 
-Deux surfaces, une seule palette (Cmd+K, Ctrl+K, et une entrée dans la sidebar puisque le
-raccourci n'existe pas au doigt).
+Une palette (Cmd+K, Ctrl+K, et une entrée dans la sidebar puisque le raccourci n'existe pas
+au doigt) qui mène à tout ce qu'on peut rejoindre : projets, conversations, passages de
+messages, fichiers, tickets, tâches planifiées, skills, serveurs MCP, catégories de
+réglages, et quelques commandes (nouvelle conversation, board, thème).
 
-**Les titres ne passent pas par l'index.** La liste complète des conversations est déjà
-chargée pour la navigation : les filtrer en mémoire répond à la frappe sans aller-retour,
-et par sous-séquence, si bien que « poigne » retrouve « Poignée de sidebar ». Le contenu,
-lui, arrive du serveur une fois la saisie stabilisée (200 ms, à partir de 3 caractères),
-dans une seconde section. Deux sections plutôt qu'une bascule à mémoriser : chacune répond
-à une intention distincte et elles se distinguent au premier coup d'œil.
+**Aucun filtre à régler.** Une seule saisie, et les résultats se rangent sous leur projet,
+puis sous « Général » pour ce qui n'appartient à aucun. Les groupes se suivent par leur
+meilleur résultat, le projet courant favorisé à égalité ; dans un groupe, ce qui porte un
+nom passe avant les fichiers, et les fichiers avant les passages de messages : un dépôt a
+toujours un fichier qui ressemble à la saisie. Taper le nom d'un projet le restreint
+(« nimbus cache ») ou, seul, liste ses conversations ; taper un type (« skill », « ticket »,
+« mcp ») liste ce type. Chaque groupe montre cinq lignes et se déplie ; Tab passe au groupe
+suivant. Sans saisie, la palette sert de sélecteur rapide : les dernières conversations,
+projet courant d'abord.
+
+**Correspondance floue, la même au client et au serveur** (`packages/protocol/src/fuzzy.ts`),
+sans quoi le serveur écarterait un fichier que la palette aurait mis en tête. Chaque mot
+de la saisie se cherche séparément, dans le champ où il vaut le plus. Trois modes : lettres
+éparses pour un identifiant court (`cmdpal` retrouve `CommandPalette.tsx`), morceaux et
+initiales pour une phrase (`aocf` retrouve « Add offline caching for »), un seul morceau
+pour une description. Un saut n'atterrit au milieu d'un mot que s'il reste dans le même
+mot, et la moyenne exigée par lettre croît avec la longueur du texte : sans ces deux
+règles, un long nom en camelCase fournit toujours de quoi composer la saisie, et « power »
+ramenait `ApprovalsReviewer.ts`. Comme dans VS Code, le nom d'un fichier se cherche en
+lettres éparses et son dossier d'un seul tenant ; une barre oblique sépare comme une
+espace (`web/pal`).
+
+**Ce qui est déjà en mémoire répond à la frappe.** Projets, conversations, tâches et
+serveurs MCP viennent des listes de la navigation ; tickets et skills de tous les projets,
+d'un catalogue léger relu à chaque ouverture. Seuls passent par le serveur, une fois la
+saisie stabilisée, les fichiers (à partir de 2 caractères) et le contenu des messages (à
+partir de 3). Le serveur garde la liste des fichiers d'un répertoire quinze secondes : une
+saisie déclenche plusieurs recherches, et relancer `git ls-files` dans chaque projet à
+chaque lettre referait le même travail. Depuis une conversation en worktree, son projet se
+cherche dans le worktree, là où le fichier s'ouvrira.
+
+**Un fichier s'ouvre dans le panneau** : celui de la conversation ouverte quand il est de
+son projet, sinon celui du projet, sur sa vue d'accueil habituelle (board ou brouillon),
+pour ne pas la changer en passant. Le focus va à l'éditeur, pas au bouton du panneau.
 
 **L'index est dérivé, jamais une source** (invariant I2). Table FTS5 `search_messages`
 alimentée dans la transaction d'écriture du journal, donc elle ne peut pas contenir un
