@@ -65,18 +65,19 @@ export function SidebarSchedules({
         <span className="tabular-nums">{tasks.length}</span>
       </NavLink>
       <ul className="flex flex-col gap-px">
-        {tasks.length === 0 ? (
-          <li>
-            <NavLink
-              to={`/p/${projectId}/schedules`}
-              onClick={onNavigate}
-              className="flex min-h-11 items-center gap-1.5 rounded-md px-1 text-sm text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11"
-            >
-              <Plus size={13} className="shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{t('schedule.sidebar.empty')}</span>
-            </NavLink>
-          </li>
-        ) : null}
+        {/* Toujours là, et au format de « Nouvelle session » : les deux sections
+            s'ouvrent sur leur ligne d'ajout, ce qui les fait lire comme deux listes du
+            même projet. Le paramètre `new` ouvre directement le formulaire de la page. */}
+        <li>
+          <NavLink
+            to={`/p/${projectId}/schedules?new`}
+            onClick={onNavigate}
+            className="flex min-h-11 items-center gap-2 rounded-md px-2 text-[0.8125rem] text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11"
+          >
+            <Plus size={13} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{t('schedule.sidebar.new')}</span>
+          </NavLink>
+        </li>
         {tasks.map((task) => (
           <TaskRow
             key={task.id}

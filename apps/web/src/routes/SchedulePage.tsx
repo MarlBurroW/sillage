@@ -1,6 +1,6 @@
 import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Plus, Trash2, Zap } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@sillage/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
@@ -68,6 +68,20 @@ export function SchedulePage() {
 
   // `null` : fermé ; `'new'` : création ; sinon la tâche en cours de modification.
   const [editing, setEditing] = useState<ScheduledTaskDto | 'new' | null>(null)
+
+  // `?new` vient de la ligne d'ajout de la sidebar. On ouvre le formulaire puis on
+  // retire le paramètre, sans entrée d'historique : sinon un rechargement ou un retour
+  // arrière rouvrirait un formulaire qu'on a déjà fermé.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requested = searchParams.has('new')
+  useEffect(() => {
+    if (!requested || !project) return
+    setEditing('new')
+    setSearchParams((params) => {
+      params.delete('new')
+      return params
+    }, { replace: true })
+  }, [requested, project, setSearchParams])
 
   return (
     <div className="flex h-full min-h-0 flex-col">

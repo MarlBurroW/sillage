@@ -3,7 +3,7 @@ import { agentConfigSchema, type CodexMode } from './agent-config.js'
 // Import de type seulement, dans les deux sens : `cards.ts` a besoin du statut de
 // conversation et ce fichier de la puce de carte. Rien n'en subsiste à l'exécution,
 // donc aucun cycle de module.
-import type { CardLinkDto } from './cards.js'
+import type { CardColumn, CardLinkDto } from './cards.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
@@ -202,6 +202,11 @@ export interface ProjectDto {
   instructionsMode: InstructionsMode | null
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
+  /**
+   * Cartes du board par colonne, pour le résumer dans la navigation sans charger ses
+   * cartes. Une colonne vide est absente plutôt qu'à zéro.
+   */
+  cardCounts: Partial<Record<CardColumn, number>>
   /** Épinglé en tête du sélecteur par le compte appelant : un repère personnel. */
   pinned: boolean
   /** État du dépôt git, null si le workspace n'est pas un dépôt. */

@@ -23,6 +23,7 @@ import {
   ChevronRight,
   FolderPlus,
   ListTree,
+  MessagesSquare,
   LogOut,
   MoreHorizontal,
   Palette,
@@ -593,7 +594,7 @@ function Sidebar({
 
         <div className="flex items-center justify-between py-1 pr-1 pl-2.5">
           <span className="text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
-            {t(allProjects ? 'shell.projects.heading' : 'shell.switcher.sessions')}
+            {t(allProjects ? 'shell.projects.heading' : 'shell.switcher.project')}
           </span>
           <span className="flex items-center">
             {/* Le geste existe aussi au doigt, en tirant la liste vers le bas. Le bouton
@@ -865,18 +866,6 @@ function ProjectGroup({
           </NavLink>
         )}
 
-        <Tooltip label={t('shell.project.newConversation', { name: project.name })}><NavLink
-          to={`/p/${project.id}/c/new`}
-          onClick={onNavigate}
-          aria-label={t('shell.project.newConversation', { name: project.name })}
-          className={({ isActive }) => cx(
-            'inline-flex size-11 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-surface-high hover:text-ink md:size-7 pointer-coarse:size-11',
-            isActive ? 'bg-surface-high text-ink' : 'text-ink-faint',
-          )}
-        >
-          <Plus size={15} />
-        </NavLink></Tooltip>
-
         {project.isOwner ? (
           <Menu
             trigger={
@@ -942,26 +931,49 @@ function ProjectGroup({
 
       {open ? (
         <ul className="mt-1 mb-2 ml-3 flex flex-col gap-px border-l border-line pl-1.5">
-          <li className="mb-2">
+          {/* Vu seul, le projet se lit en sections au même format, en-tête en petites
+              capitales : Board, Sessions, Planifiées (les archivées ferment la marche).
+              Le Board n'a pas de lignes à montrer ici, son en-tête est donc un simple
+              lien vers sa page, comme celui des Planifiées.
+
+              Parmi tous les projets, ces en-têtes coûteraient deux lignes par projet
+              déplié : la vue d'ensemble garde la densité, et le projet ne montre que la
+              ligne d'ajout et ses sessions. Le Board reste au menu du projet. */}
+          {focused ? (
+            <>
+              <li>
+                <NavLink
+                  to={`/p/${project.id}/board`}
+                  onClick={onNavigate}
+                  className={({ isActive }) => cx(
+                    'flex min-h-11 items-center gap-1.5 rounded px-1 text-[0.6875rem] font-semibold tracking-wider uppercase transition-colors hover:text-ink-soft md:min-h-7 pointer-coarse:min-h-11',
+                    isActive ? 'text-ink' : 'text-ink-faint',
+                  )}
+                >
+                  <SquareKanban size={11} className="shrink-0" />
+                  <span className="flex-1">{t('shell.project.board')}</span>
+                  <BoardCounts counts={project.cardCounts} />
+                </NavLink>
+              </li>
+              <li className="mt-2 flex h-7 items-center gap-1.5 px-1 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
+                <MessagesSquare size={11} className="shrink-0" />
+                <span className="flex-1">{t('shell.project.sessions')}</span>
+                <span className="tabular-nums">{active.length}</span>
+              </li>
+            </>
+          ) : null}
+          {/* L'ajout ouvre la liste qu'il alimente, comme « Nouvelle tâche planifiée »
+              ouvre la sienne. */}
+          <li>
             <NavLink
-              to={`/p/${project.id}/board`}
+              to={`/p/${project.id}/c/new`}
               onClick={onNavigate}
               className={({ isActive }) => cx(
-                'flex min-h-11 items-center gap-2 rounded-md px-2.5 text-xs transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11',
-                isActive ? 'bg-surface-high font-medium text-ink' : 'text-ink-soft',
+                'flex min-h-11 items-center gap-2 rounded-md px-2 text-[0.8125rem] transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11',
+                isActive ? 'bg-surface-high text-ink' : 'text-ink-faint',
               )}
             >
-              <SquareKanban size={13} />{t('shell.project.board')}
-            </NavLink>
-            <NavLink
-              to={`/p/${project.id}/schedules`}
-              onClick={onNavigate}
-              className={({ isActive }) => cx(
-                'flex min-h-11 items-center gap-2 rounded-md px-2.5 text-xs transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11',
-                isActive ? 'bg-surface-high font-medium text-ink' : 'text-ink-soft',
-              )}
-            >
-              <CalendarClock size={13} />{t('schedule.title')}
+              <Plus size={13} className="shrink-0" />{t('shell.project.newSession')}
             </NavLink>
           </li>
           {active.length > 0 ? (
@@ -1049,6 +1061,30 @@ function ProjectGroup({
         </ul>
       ) : null}
     </li>
+  )
+}
+
+/**
+ * Le board résumé en face de son en-tête, en mots plutôt qu'en pastilles : des
+ * couleurs demanderaient une légende. On n'en garde que deux nombres, le travail
+ * ouvert (tout sauf les sorties, repliées aussi sur le board) et, en ambre, ce qui
+ * attend une relecture : la seule file qui réclame quelqu'un.
+ */
+function BoardCounts({ counts }: { counts: ProjectDto['cardCounts'] }) {
+  const t = useTranslate()
+  const review = counts.review ?? 0
+  const open = (counts.todo ?? 0) + (counts.in_progress ?? 0) + review
+  if (open === 0) return null
+  return (
+    <span className="shrink-0 font-medium tracking-normal normal-case tabular-nums">
+      {t(open > 1 ? 'shell.project.boardOpen.many' : 'shell.project.boardOpen.one', { count: String(open) })}
+      {review > 0 ? (
+        <>
+          {' · '}
+          <span className="text-caution">{t('shell.project.boardReview', { count: String(review) })}</span>
+        </>
+      ) : null}
+    </span>
   )
 }
 

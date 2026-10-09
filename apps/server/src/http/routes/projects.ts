@@ -14,6 +14,7 @@ import {
   serializeProjectDefaults,
   startCloneBodySchema,
   updateProjectBodySchema,
+  type CardColumn,
   type CloneJobDto,
   type InstructionsMode,
   type ProjectDto,
@@ -203,6 +204,19 @@ export function registerProjectRoutes(
       // les projets sont à zéro et la liste garde son ordre alphabétique d'origine.
       .orderBy(asc(projects.position), sql`${projects.name} collate nocase`)
 
+    // À part plutôt qu'en jointure : joindre les cartes à côté des conversations
+    // multiplierait les lignes et fausserait le compte des conversations. Une seule
+    // requête groupée suffit pour tous les projets.
+    const cardCounts = new Map<string, Partial<Record<CardColumn, number>>>()
+    for (const entry of await ctx.db
+      .select({ projectId: cards.projectId, column: cards.column, total: count() })
+      .from(cards)
+      .groupBy(cards.projectId, cards.column)) {
+      const counts = cardCounts.get(entry.projectId) ?? {}
+      counts[entry.column] = entry.total
+      cardCounts.set(entry.projectId, counts)
+    }
+
     // Les statuts git sont lus en parallèle : un dépôt lent ne doit pas sérialiser la liste.
     return Promise.all(
       rows.map(async ({ project, ownerName, conversationCount, ...row }): Promise<ProjectDto> => {
@@ -228,6 +242,7 @@ export function registerProjectRoutes(
           defaultConfig: readProjectDefaults(project.defaultConfig),
           instructionsMode: project.instructionsMode,
           activeTerminals: terminals.aliveCount(project.id),
+          cardCounts: cardCounts.get(project.id) ?? {},
           pinned: row.pinnedAt !== null,
           git: await readGitStatus(project.workspacePath),
         }
@@ -268,6 +283,7 @@ export function registerProjectRoutes(
       conversationCount: 0,
       defaultConfig: NO_PROJECT_DEFAULTS,
       activeTerminals: 0,
+      cardCounts: {},
       pinned: false,
       git: await readGitStatus(workspacePath),
     }
