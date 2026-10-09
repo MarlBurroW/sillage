@@ -1,4 +1,4 @@
-import { Plug, Plus, Trash2, X } from 'lucide-react'
+import { MoreHorizontal, Pencil, Plug, Plus, Trash2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type { McpServer, McpTransport } from '@sillage/protocol'
 import {
@@ -12,10 +12,14 @@ import {
   EmptyState,
   Field,
   IconButton,
+  Menu,
+  MenuItem,
+  MenuSeparator,
   Select,
+  Switch,
   cx,
 } from '../components/ui'
-import { SectionHeader } from './SettingsPage'
+import { ListHeading, SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
 import {
@@ -139,48 +143,73 @@ export function McpSettingsPage() {
   const servers = data?.servers ?? []
 
   const createServer = useCreateMcpServer()
+  const [adding, setAdding] = useState(false)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
+
+  const openForm = () => {
+    setForm(EMPTY_FORM)
+    createServer.reset()
+    setAdding(true)
+  }
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
     createServer.mutate(
       { name: form.name.trim(), enabled: true, transport: toTransport(form) },
-      { onSuccess: () => setForm(EMPTY_FORM) },
+      { onSuccess: () => setAdding(false) },
     )
   }
+
+  const addButton = isAdmin ? (
+    <Button size="sm" icon={<Plus size={15} />} disabled={adding} onClick={openForm}>
+      {t('mcp.create.open')}
+    </Button>
+  ) : null
 
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title={t('mcp.section.title')} description={t('mcp.section.description')} />
 
       <Banner tone="info">{t('mcp.banner')}</Banner>
-      <Banner tone="caution">{t('mcp.secrets')}</Banner>
-
-      {isAdmin ? (
-        <Card>
-          <CardHeader title={t('mcp.create.title')} icon={<Plus size={16} />} />
-          <CardBody>
-            <form onSubmit={submit} className="flex flex-col gap-4">
-              <TransportFields form={form} onChange={setForm} />
-              {errorOf(createServer.error) ? <Banner>{errorOf(createServer.error)}</Banner> : null}
-              <Button type="submit" disabled={createServer.isPending} className="self-start">
-                {createServer.isPending ? t('mcp.create.pending') : t('mcp.create.action')}
-              </Button>
-            </form>
-          </CardBody>
-        </Card>
-      ) : (
-        <Banner>{t('mcp.readonly')}</Banner>
-      )}
+      {isAdmin ? null : <Banner>{t('mcp.readonly')}</Banner>}
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-ink-soft">{t('mcp.existing.title')}</h2>
+        {/* Liste vide : c'est l'état vide qui porte le bouton, pas l'en-tête. */}
+        <ListHeading
+          title={t('mcp.existing.title')}
+          count={servers.length}
+          action={servers.length > 0 ? addButton : null}
+        />
+
+        {adding ? (
+          <Card>
+            <CardHeader title={t('mcp.create.title')} icon={<Plus size={16} />} />
+            <CardBody>
+              <form onSubmit={submit} className="flex flex-col gap-4">
+                <TransportFields form={form} onChange={setForm} autoFocus />
+                {errorOf(createServer.error) ? <Banner>{errorOf(createServer.error)}</Banner> : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="submit" disabled={createServer.isPending}>
+                    {createServer.isPending ? t('mcp.create.pending') : t('mcp.create.action')}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setAdding(false)}>
+                    {t('common.cancel')}
+                  </Button>
+                </div>
+              </form>
+            </CardBody>
+          </Card>
+        ) : null}
+
         {servers.length === 0 ? (
-          <EmptyState
-            icon={<Plug size={22} />}
-            title={t('mcp.empty.title')}
-            description={t('mcp.empty.description')}
-          />
+          adding ? null : (
+            <EmptyState
+              icon={<Plug size={22} />}
+              title={t('mcp.empty.title')}
+              description={t('mcp.empty.description')}
+              action={addButton}
+            />
+          )
         ) : (
           servers.map((server) => (
             <ServerCard key={server.id} server={server} canEdit={isAdmin} />
@@ -195,9 +224,12 @@ export function McpSettingsPage() {
 function TransportFields({
   form,
   onChange,
+  autoFocus = false,
 }: {
   form: FormState
   onChange: (form: FormState) => void
+  /** Pour le formulaire qu'on vient d'ouvrir : la main va au premier champ. */
+  autoFocus?: boolean
 }) {
   const t = useTranslate()
 
@@ -212,6 +244,7 @@ function TransportFields({
           pattern="[a-zA-Z0-9_-]+"
           autoCapitalize="none"
           autoCorrect="off"
+          autoFocus={autoFocus}
           required
         />
         <Select
@@ -275,6 +308,10 @@ function TransportFields({
           />
         </>
       )}
+
+      {/* Dans le formulaire et non en tête de page : c'est au moment de taper une
+          valeur qu'on décide de la mettre en clair ou derrière un secret. */}
+      <Banner tone="caution">{t('mcp.secrets')}</Banner>
     </>
   )
 }
@@ -391,10 +428,11 @@ function ServerCard({ server, canEdit }: { server: McpServer; canEdit: boolean }
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{server.name}</span>
-              <Badge tone={server.enabled ? 'accent' : 'neutral'}>
-                {t(server.enabled ? 'mcp.state.enabled' : 'mcp.state.disabled')}
-              </Badge>
               <Badge>{server.transport.type}</Badge>
+              {/* L'interrupteur dit déjà l'état à qui peut le changer ; la pastille
+                  reste pour les autres, et seulement quand il y a quelque chose à
+                  signaler. */}
+              {!server.enabled ? <Badge>{t('mcp.state.disabled')}</Badge> : null}
             </div>
             <p className="truncate font-mono text-xs text-ink-faint">
               {describeTransport(server.transport)}
@@ -402,38 +440,66 @@ function ServerCard({ server, canEdit }: { server: McpServer; canEdit: boolean }
           </div>
 
           {canEdit ? (
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() =>
-                  updateServer.mutate({ id: server.id, enabled: !server.enabled })
+            <div className="flex shrink-0 items-center gap-1">
+              <Switch
+                checked={server.enabled}
+                disabled={updateServer.isPending}
+                label={t('mcp.toggle.label', { name: server.name })}
+                onCheckedChange={(enabled) => updateServer.mutate({ id: server.id, enabled })}
+              />
+              {/* Au doigt, la largeur manque pour un bouton de plus à côté de la
+                  commande : « Modifier » passe dans le menu. Le formulaire ouvert
+                  porte son propre « Annuler », inutile d'en afficher deux. */}
+              {editing ? null : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="hidden md:inline-flex"
+                  onClick={startEditing}
+                >
+                  {t('mcp.action.edit')}
+                </Button>
+              )}
+              <Menu
+                trigger={
+                  <IconButton label={t('mcp.action.more')} size="sm">
+                    <MoreHorizontal size={16} />
+                  </IconButton>
                 }
               >
-                {t(server.enabled ? 'mcp.action.disable' : 'mcp.action.enable')}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => (editing ? setEditing(false) : startEditing())}>
-                {t(editing ? 'mcp.action.cancel' : 'mcp.action.edit')}
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                icon={<Trash2 size={15} />}
-                onClick={() => setConfirming(true)}
-              >
-                {t('mcp.action.delete')}
-              </Button>
+                <div className="md:hidden">
+                  <MenuItem
+                    icon={<Pencil size={15} />}
+                    onSelect={() => (editing ? setEditing(false) : startEditing())}
+                  >
+                    {t(editing ? 'mcp.action.cancel' : 'mcp.action.edit')}
+                  </MenuItem>
+                  <MenuSeparator />
+                </div>
+                <MenuItem icon={<Trash2 size={15} />} tone="critical" onSelect={() => setConfirming(true)}>
+                  {t('mcp.action.delete')}
+                </MenuItem>
+              </Menu>
             </div>
           ) : null}
         </div>
+
+        {errorOf(updateServer.error) && !editing ? (
+          <Banner>{errorOf(updateServer.error)}</Banner>
+        ) : null}
 
         {editing ? (
           <form onSubmit={save} className="flex flex-col gap-4 rounded-md border border-line bg-sunken p-3">
             <TransportFields form={form} onChange={setForm} />
             {errorOf(updateServer.error) ? <Banner>{errorOf(updateServer.error)}</Banner> : null}
-            <Button type="submit" disabled={updateServer.isPending} className="self-start">
-              {updateServer.isPending ? t('mcp.action.saving') : t('mcp.action.save')}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="submit" disabled={updateServer.isPending}>
+                {updateServer.isPending ? t('mcp.action.saving') : t('mcp.action.save')}
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
+                {t('common.cancel')}
+              </Button>
+            </div>
           </form>
         ) : null}
 

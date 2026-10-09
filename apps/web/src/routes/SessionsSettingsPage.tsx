@@ -74,10 +74,15 @@ export function SessionsSettingsPage() {
               <Banner tone="critical">{update.error.message}</Banner>
             ) : null}
 
-            <div>
+            <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={!valid || !dirty || update.isPending}>
                 {t('sessions.limit.save')}
               </Button>
+              {/* Le bouton qui se grise ne dit pas que ça a marché : il se grise aussi
+                  quand on remet la valeur d'origine. */}
+              {update.isSuccess && !dirty ? (
+                <span className="text-xs text-positive">{t('settings.saved')}</span>
+              ) : null}
             </div>
           </form>
         </CardBody>

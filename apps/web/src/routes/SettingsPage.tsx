@@ -239,7 +239,16 @@ export function SettingsLayout() {
 }
 
 /** Retour vers la liste, au doigt seulement : ailleurs la colonne est déjà visible. */
-export function SectionHeader({ title, description }: { title: string; description?: string }) {
+export function SectionHeader({
+  title,
+  description,
+  badge,
+}: {
+  title: string
+  description?: string
+  /** Posé à côté du titre : un statut qui qualifie la section entière, pas une carte. */
+  badge?: ReactNode
+}) {
   const t = useTranslate()
   return (
     <header className="mb-4 flex flex-col gap-1">
@@ -250,8 +259,43 @@ export function SectionHeader({ title, description }: { title: string; descripti
         <ChevronRight size={14} className="rotate-180" />
         {t('settings.title')}
       </NavLink>
-      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        {badge}
+      </div>
       {description ? <p className="text-sm text-ink-faint">{description}</p> : null}
     </header>
+  )
+}
+
+/**
+ * En-tête d'une liste de réglages : son titre, combien d'entrées, et l'action qui en
+ * ajoute une.
+ *
+ * La liste vient avant le formulaire : on ouvre un registre pour voir ce qu'il contient
+ * bien plus souvent que pour y ajouter, et un formulaire toujours déplié en tête
+ * repoussait ce qu'on venait voir sous le pli de l'écran.
+ */
+export function ListHeading({
+  title,
+  count,
+  action,
+}: {
+  title: string
+  count?: number
+  action?: ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-ink-soft">
+        {title}
+        {count ? (
+          <span className="rounded-full bg-surface-high px-1.5 text-xs font-medium text-ink-faint tabular-nums">
+            {count}
+          </span>
+        ) : null}
+      </h2>
+      {action}
+    </div>
   )
 }
