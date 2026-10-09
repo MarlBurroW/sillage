@@ -1,6 +1,7 @@
 import * as Primitive from '@radix-ui/react-context-menu'
 import type { ReactNode } from 'react'
 import { cx } from './cx'
+import { MenuHint } from './Menu'
 
 /**
  * Menu au clic droit.
@@ -18,9 +19,11 @@ export function ContextMenu({ trigger, children }: { trigger: ReactNode; childre
       <Primitive.Portal>
         <Primitive.Content
           className={cx(
-            'z-50 min-w-48 overflow-hidden rounded-lg border border-line p-1',
+            'z-50 min-w-48 overflow-x-hidden overflow-y-auto rounded-lg border border-line p-1',
             'surface shadow-pop',
           )}
+          // Un long menu au doigt dépasserait l'écran : il défile plutôt que d'être rogné.
+          style={{ maxHeight: 'var(--radix-context-menu-content-available-height)' }}
         >
           {children}
         </Primitive.Content>
@@ -33,11 +36,14 @@ export function ContextMenuItem({
   icon,
   onSelect,
   tone = 'neutral',
+  hint,
   children,
 }: {
   icon?: ReactNode
   onSelect: () => void
   tone?: 'neutral' | 'critical'
+  /** Raccourci clavier équivalent, voir `MenuHint`. */
+  hint?: string
   children: ReactNode
 }) {
   return (
@@ -52,6 +58,7 @@ export function ContextMenuItem({
     >
       {icon ? <span className="shrink-0">{icon}</span> : null}
       {children}
+      {hint ? <MenuHint>{hint}</MenuHint> : null}
     </Primitive.Item>
   )
 }

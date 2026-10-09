@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import {
   MAX_UPLOAD_BYTES,
+  archiveQuerySchema,
+  copyEntryBodySchema,
   createEntryBodySchema,
   deleteEntryBodySchema,
   moveEntryBodySchema,
@@ -13,6 +15,7 @@ import {
 } from '@sillage/protocol'
 import { readFileStates } from '../../git.js'
 import {
+  copyEntry,
   createEntry,
   deleteEntry,
   listDirectory,
@@ -20,6 +23,8 @@ import {
   searchEntries,
   writeUpload,
 } from '../../workspace.js'
+import { collectArchive, streamArchive } from '../../workspace-archive.js'
+import { attachmentHeader } from '../attachment-header.js'
 import type { AppContext } from '../context.js'
 import { badRequest } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -60,7 +65,7 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
       const cwd = cwdOf(ctx.db, id, user.id)
       const [entries, states] = await Promise.all([listDirectory(cwd, path), readFileStates(cwd)])
 
-      if (!states) return { path, entries, versioned: false }
+      if (!states) return { path, entries, versioned: false, root: cwd }
 
       const directoryStates = new Map<string, Exclude<FileState, 'ignored'>>()
       for (const [file, state] of states) {
@@ -87,6 +92,7 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
           return state ? { ...entry, state } : entry
         }),
         versioned: true,
+        root: cwd,
       }
     })
 
@@ -160,6 +166,38 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
       const cwd = cwdOf(ctx.db, id, user.id)
       await moveEntry(cwd, body.from, body.to)
       return reply.status(204).send()
+    })
+
+    /** Copier et dupliquer : le serveur choisit le nom, voir `copyEntry`. */
+    app.post(`${base}/entries/copy`, async (request, reply) => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const body = copyEntryBodySchema.parse(request.body)
+
+      const cwd = cwdOf(ctx.db, id, user.id)
+      const path = await copyEntry(cwd, body.from, body.toParent)
+      return reply.status(201).send({ path })
+    })
+
+    /**
+     * Une sélection de l'explorateur en `.zip`, écrit en flux.
+     *
+     * L'inventaire précède la réponse : un dépassement de plafond ou un chemin refusé
+     * répond une erreur, plutôt qu'un téléchargement coupé au milieu.
+     */
+    app.get(`${base}/entries/archive`, async (request, reply) => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const { path } = archiveQuerySchema.parse(request.query)
+
+      const cwd = cwdOf(ctx.db, id, user.id)
+      const archive = await collectArchive(cwd, path)
+      return reply
+        .header('content-type', 'application/zip')
+        .header('content-disposition', attachmentHeader(archive.filename))
+        .header('x-content-type-options', 'nosniff')
+        .header('cache-control', 'no-store')
+        .send(streamArchive(archive.items))
     })
 
     app.delete(`${base}/entries`, async (request, reply) => {

@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs'
-import { mkdir, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -134,7 +134,7 @@ export function resolveMention(
  * renommer ou supprimer le stockage de git par une requête directe détruirait
  * l'historique du dépôt, sans que rien ne soit récupérable.
  */
-function refuseGitInternals(relativePath: string): void {
+export function refuseGitInternals(relativePath: string): void {
   if (relativePath.split('/').includes('.git')) {
     throw new HttpError(400, 'git_internals', 'The .git folder cannot be manipulated here.')
   }
@@ -271,6 +271,90 @@ export async function moveEntry(root: string, from: string, to: string): Promise
       reason: err instanceof Error ? err.message : String(err),
     })
   }
+}
+
+/**
+ * Comme `resolveInside`, mais vérifié aussi sur le chemin réel.
+ *
+ * Le bornage lexical ne voit pas les liens : `lien/secret` reste « dans » le workspace
+ * même quand `lien` pointe sur `/etc`. Ce qui lit le contenu d'une entrée pour le
+ * recopier ou l'emporter doit donc regarder où elle mène vraiment.
+ */
+export async function resolveRealInside(root: string, relativePath: string): Promise<string> {
+  const absolute = resolveInside(root, relativePath)
+  const resolved = await Promise.all([realpath(root), realpath(absolute)]).catch(() => null)
+  if (!resolved) throw notFound('entry_not_found', 'Entry not found.')
+  resolveInside(resolved[0], resolved[1])
+  return absolute
+}
+
+/** Nom proposé à la n-ième collision : `nom copy.ext`, puis `nom copy 2.ext`… */
+function copyName(name: string, isDirectory: boolean, attempt: number): string {
+  if (attempt === 0) return name
+  // Un fichier caché sans extension (`.env`) n'a pas de point à garder pour la fin.
+  const dot = isDirectory ? -1 : name.lastIndexOf('.')
+  const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+  return `${stem} copy${attempt > 1 ? ` ${attempt}` : ''}${extension}`
+}
+
+/** Au-delà, la collision n'est plus un accident et chercher plus loin ne rapporte rien. */
+const MAX_COPY_ATTEMPTS = 100
+
+/**
+ * Copie une entrée dans un dossier, dossier compris avec son contenu, et renvoie le
+ * chemin créé.
+ *
+ * Le nom n'est jamais celui d'une entrée existante : coller là où le même nom existe
+ * déjà est le cas le plus courant (dupliquer sur place), et écraser n'est jamais ce
+ * qu'on voulait. Les liens symboliques du contenu sont recopiés tels quels plutôt que
+ * suivis : les suivre ferait entrer dans le workspace ce vers quoi ils pointent.
+ */
+export async function copyEntry(root: string, from: string, toParent: string): Promise<string> {
+  refuseGitInternals(from)
+  refuseGitInternals(toParent)
+
+  const source = await resolveRealInside(root, from)
+  const parent = resolveInside(root, toParent)
+  if (parent === source || parent.startsWith(`${source}/`)) {
+    throw new HttpError(400, 'copy_into_self', 'A folder cannot be copied into itself.')
+  }
+  if (!(await stat(parent).catch(() => null))?.isDirectory()) {
+    throw notFound('directory_not_found', 'Directory {path} does not exist.', { path: toParent })
+  }
+
+  const isDirectory = (await lstat(source)).isDirectory()
+  const name = basename(source)
+  for (let attempt = 0; attempt < MAX_COPY_ATTEMPTS; attempt += 1) {
+    const candidate = copyName(name, isDirectory, attempt)
+    const destination = resolveInside(parent, candidate)
+    if (await exists(destination)) continue
+
+    try {
+      await cp(source, destination, {
+        recursive: true,
+        // Le nom vient d'être trouvé libre, mais rien ne garantit qu'il le reste : la
+        // copie refuse plutôt que d'écraser ce qui serait apparu entre-temps.
+        errorOnExist: true,
+        force: false,
+        verbatimSymlinks: true,
+      })
+    } catch (err) {
+      // Une copie à moitié faite serait prise pour une copie réussie. Le nom était
+      // libre à l'instant : ce qui s'y trouve vient de cette copie, sauf si c'est
+      // justement la collision qui l'a fait échouer.
+      if ((err as NodeJS.ErrnoException).code !== 'ERR_FS_CP_EEXIST') {
+        await rm(destination, { recursive: true, force: true }).catch(() => {})
+      }
+      throw new HttpError(400, 'copy_failed', 'Could not copy {from}: {reason}.', {
+        from,
+        reason: err instanceof Error ? err.message : String(err),
+      })
+    }
+
+    return toParent ? `${toParent}/${candidate}` : candidate
+  }
+
+  throw new HttpError(409, 'entry_exists', '{name} already exists.', { name })
 }
 
 /** Supprime une entrée, dossier compris avec son contenu. */

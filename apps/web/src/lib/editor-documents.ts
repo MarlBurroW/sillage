@@ -129,3 +129,38 @@ export function useEditorDraftPaths(userId: string, scope: string): string[] {
   ), () => '[]')
   return JSON.parse(paths) as string[]
 }
+
+/** Chemins des documents de cette portée situés dans `path` ou égaux à lui. */
+function documentsWithin(scope: string, path: string): Array<{ key: string; userId: string; path: string }> {
+  return [...documents.keys()].flatMap((key) => {
+    const [userId, documentScope, documentPath] = JSON.parse(key.slice(PREFIX.length)) as string[]
+    if (documentScope !== scope || userId === undefined || documentPath === undefined) return []
+    if (documentPath !== path && !documentPath.startsWith(`${path}/`)) return []
+    return [{ key, userId, path: documentPath }]
+  })
+}
+
+/**
+ * Le document suit son fichier renommé, brouillon compris. Resté sous l'ancien chemin,
+ * le brouillon s'enregistrerait là-bas et recréerait le fichier qu'on vient de déplacer.
+ */
+export function moveDocuments(scope: string, from: string, to: string): void {
+  for (const entry of documentsWithin(scope, from)) {
+    const document = read(entry.key)
+    const next = to + entry.path.slice(from.length)
+    documents.delete(entry.key)
+    try { sessionStorage.removeItem(entry.key) } catch { /* Le brouillon reste en mémoire. */ }
+    update(keyOf(entry.userId, scope, next), {
+      ...document,
+      file: document.file && { ...document.file, path: next },
+    })
+  }
+}
+
+/** Vrai si un brouillon non enregistré porte sur ce chemin : son onglet doit rester. */
+export function hasDraft(scope: string, path: string): boolean {
+  return documentsWithin(scope, path).some((entry) => {
+    const document = read(entry.key)
+    return entry.path === path && (dirty(document) || document.saving)
+  })
+}

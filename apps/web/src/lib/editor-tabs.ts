@@ -147,3 +147,21 @@ export function closeTab(conversationId: string, path: string): void {
   })
   emit()
 }
+
+/**
+ * Reporte un renommage ou un déplacement fait dans l'explorateur : l'onglet suit son
+ * fichier, dossier parent compris, au lieu de rester sur un chemin qui n'existe plus.
+ */
+export function moveTabs(conversationId: string, from: string, to: string): void {
+  const current = byConversation.get(conversationId)
+  const move = (path: string) =>
+    path === from || path.startsWith(`${from}/`) ? to + path.slice(from.length) : path
+  if (!current?.paths.some((path) => move(path) !== path)) return
+
+  byConversation.set(conversationId, {
+    paths: current.paths.map(move),
+    active: current.active === null ? null : move(current.active),
+    preview: current.preview === null ? null : move(current.preview),
+  })
+  emit()
+}
