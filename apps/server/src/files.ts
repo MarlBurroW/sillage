@@ -45,7 +45,9 @@ async function gitFiles(cwd: string): Promise<string[] | null> {
     const { stdout } = await exec(
       'git',
       ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
-      { cwd, maxBuffer: 32 * 1024 * 1024 },
+      // Un dossier non ignoré de plusieurs millions de fichiers ferait attendre la
+      // saisie indéfiniment : passé ce délai, le parcours borné prend le relais.
+      { cwd, maxBuffer: 32 * 1024 * 1024, timeout: 10_000 },
     )
     return stdout.split('\0').filter((entry) => entry.length > 0)
   } catch {
@@ -96,8 +98,13 @@ function score(path: string, query: string): number | null {
   return gaps * 4 + path.length + inName
 }
 
+/** Fichiers du répertoire de travail, suivis ou non, ce que git ignore exclu. */
+export async function listWorkspaceFiles(cwd: string): Promise<string[]> {
+  return (await gitFiles(cwd)) ?? (await walk(cwd))
+}
+
 export async function searchFiles(cwd: string, query: string): Promise<FileMatch[]> {
-  const paths = (await gitFiles(cwd)) ?? (await walk(cwd))
+  const paths = await listWorkspaceFiles(cwd)
   const trimmed = query.trim()
 
   const scored = trimmed

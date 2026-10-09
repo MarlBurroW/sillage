@@ -79,6 +79,11 @@ export function useRememberProjectView(
   }, [projectId, view])
 }
 
+/** Vue retenue pour un projet, lue hors rendu : pour des liens fabriqués en lot. */
+export function projectViewOf(projectId: string): ProjectView {
+  return views[projectId] ?? 'draft'
+}
+
 /** Chemin d'accueil d'un projet, d'après ce qui a été retenu pour lui. */
 export function projectViewPath(projectId: string, view: ProjectView): string {
   return view === 'board' ? `/p/${projectId}/board` : `/p/${projectId}/c/new`

@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { and, asc, eq, or } from 'drizzle-orm'
+import { and, asc, eq, inArray, or } from 'drizzle-orm'
 import { librarySkills, skillSources, type Db, type LibrarySkillRow } from '@sillage/db'
 import {
   SKILL_MAIN_FILE,
@@ -25,6 +25,7 @@ import {
   type LibrarySkillFileDto,
   type LibrarySkillProblem,
   type LibrarySkillScope,
+  type PaletteSkillDto,
   type UpdateLibrarySkillBody,
 } from '@sillage/protocol'
 import { badRequest, conflict, notFound } from '../http/errors.js'
@@ -117,6 +118,34 @@ export class SkillLibrary {
       .orderBy(asc(librarySkills.name))
       .all()
       .map((row) => this.toDto(row, this.inspect(row)))
+  }
+
+  /**
+   * Les skills globaux et ceux de ces projets, pour la palette.
+   *
+   * Seul `SKILL.md` est relu, pour sa description : `list` calcule aussi l'empreinte de
+   * chaque skill installé, ce qui lit tous ses fichiers, et la palette n'en montre rien.
+   */
+  summaries(projectIds: readonly string[]): PaletteSkillDto[] {
+    const scope = projectIds.length
+      ? or(eq(librarySkills.scope, 'global'), inArray(librarySkills.projectId, [...projectIds]))
+      : eq(librarySkills.scope, 'global')
+    return this.db
+      .select()
+      .from(librarySkills)
+      .where(scope)
+      .orderBy(asc(librarySkills.name))
+      .all()
+      .map((row) => {
+        let description = ''
+        try {
+          const data = parseSkillMarkdown(readFileSync(join(this.dirOf(row), SKILL_MAIN_FILE), 'utf8')).data
+          if (typeof data.description === 'string') description = data.description
+        } catch {
+          // Un skill illisible reste trouvable par son nom ; sa page dira ce qui ne va pas.
+        }
+        return { id: row.id, projectId: row.projectId, name: row.name, description, enabled: row.enabled }
+      })
   }
 
   /** Les skills installés depuis une source, pour son catalogue. */
