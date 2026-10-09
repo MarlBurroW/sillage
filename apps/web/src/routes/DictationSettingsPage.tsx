@@ -81,6 +81,11 @@ export function DictationSettingsPage() {
   }
 
   const urlValid = baseUrl === '' || /^https?:\/\//.test(baseUrl)
+  const configured =
+    settings !== undefined &&
+    settings.sttBaseUrl !== '' &&
+    settings.sttModel !== '' &&
+    settings.sttSecret !== ''
   const dirty =
     settings !== undefined &&
     (baseUrl !== settings.sttBaseUrl ||
@@ -205,17 +210,20 @@ export function DictationSettingsPage() {
                 type="button"
                 variant="ghost"
                 icon={<RadioTower size={14} />}
-                disabled={
-                  !settings?.sttBaseUrl ||
-                  !settings.sttModel ||
-                  !settings.sttSecret ||
-                  dirty ||
-                  test.isPending
-                }
+                disabled={!configured || dirty || test.isPending}
                 onClick={() => test.mutate()}
               >
                 {t('stt.test.button')}
               </Button>
+              {/* Un bouton grisé sans raison visible passe pour cassé : la raison
+                  tient en une ligne. */}
+              {update.isSuccess && !dirty ? (
+                <span className="text-xs text-positive">{t('settings.saved')}</span>
+              ) : dirty ? (
+                <span className="text-xs text-ink-faint">{t('stt.test.saveFirst')}</span>
+              ) : settings && !configured ? (
+                <span className="text-xs text-ink-faint">{t('stt.test.needsConfig')}</span>
+              ) : null}
             </div>
           </form>
         </CardBody>

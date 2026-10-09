@@ -7,7 +7,7 @@ import {
   useUnsubscribePush,
   usePushStatus,
 } from '../lib/push'
-import { Banner, Button } from './ui'
+import { Badge, Banner, Button } from './ui'
 
 /**
  * Réglage des notifications système.
@@ -42,6 +42,16 @@ export function PushControls() {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-ink-soft">{t('push.description')}</p>
+
+      {/* L'état avant le bouton : « Activer » seul ne dit pas si c'est déjà fait
+          ailleurs sur cet appareil, et on vient souvent ici pour le vérifier. */}
+      {status ? (
+        <div>
+          <Badge tone={status.subscribed ? 'positive' : 'neutral'}>
+            {t(status.subscribed ? 'push.status.on' : 'push.status.off')}
+          </Badge>
+        </div>
+      ) : null}
 
       {status?.subscribed ? (
         <Button
