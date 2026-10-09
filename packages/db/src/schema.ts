@@ -339,7 +339,9 @@ export const agentRequests = sqliteTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     /** Conversation qui demande. Sans clé étrangère, comme les messages entre sessions. */
     conversationId: text('conversation_id').notNull(),
-    kind: text('kind', { enum: ['start_session', 'create_card', 'list_models', 'schedule_task'] }).notNull(),
+    kind: text('kind', {
+      enum: ['start_session', 'create_card', 'list_models', 'schedule_task', 'register_action', 'remove_action', 'run_action'],
+    }).notNull(),
     /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
     payload: text('payload').notNull(),
     createdAt: timestamp('created_at').notNull(),
@@ -677,6 +679,41 @@ export const projectPins = sqliteTable(
     createdAt: timestamp('created_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.projectId, t.userId] })],
+)
+
+/**
+ * Actions de projet : des boutons qui lancent une commande, créés depuis l'interface ou
+ * proposés par un agent avec `register_action`.
+ *
+ * En base et non dans un fichier du dépôt : Sillage n'impose pas son outillage aux
+ * projets qu'il pilote.
+ */
+export const projectActions = sqliteTable(
+  'project_actions',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    description: text('description'),
+    kind: text('kind').$type<'task' | 'service'>().notNull(),
+    command: text('command').notNull(),
+    /** Relatif au worktree où l'action est lancée ; NULL pour sa racine. */
+    subdir: text('subdir'),
+    /** Gabarit d'URL où ouvrir un service, `{port}` compris. */
+    url: text('url'),
+    /**
+     * NULL tant qu'une personne n'a pas relu la commande : posée à la création depuis
+     * l'interface, effacée quand un agent change ce qui s'exécute.
+     */
+    approvedAt: timestamp('approved_at'),
+    /** Dernière conversation à l'avoir créée ou modifiée par MCP ; NULL depuis l'interface. */
+    agentConversationId: text('agent_conversation_id'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [index('idx_project_actions_project').on(t.projectId, t.createdAt)],
 )
 
 /**
@@ -1064,6 +1101,7 @@ export type InstructionsRow = typeof instructions.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
 export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
 export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
+export type ProjectActionRow = typeof projectActions.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
 export type ConversationFavoriteRow = typeof conversationFavorites.$inferSelect
 export type EventRow = typeof events.$inferSelect

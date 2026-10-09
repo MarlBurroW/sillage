@@ -14,9 +14,11 @@ import {
   RefreshCw,
   SquareTerminal,
   X,
+  Zap,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind, McpServerStatus } from '@sillage/protocol'
+import { useActions } from '../../lib/actions'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn } from '../../lib/chat-fold'
 import { openTab } from '../../lib/editor-tabs'
@@ -42,6 +44,7 @@ import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { useProjects } from '../../lib/projects'
 import { IconButton, cx } from '../ui'
+import { ActionsPane } from './ActionsPane'
 import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
@@ -98,6 +101,10 @@ export function SidePanel({
   // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
   // diff comme en désignant un sous-agent depuis le bandeau.
   const t = useTranslate()
+  const { data: allActions } = useActions()
+  const proposedActions = (allActions ?? []).filter(
+    (action) => action.projectId === projectId && action.status === 'proposed',
+  ).length
   const scope = conversationId ?? projectScope(projectId)
   const { data: projects } = useProjects()
   const projectName = projects?.find((project) => project.id === projectId)?.name
@@ -235,6 +242,14 @@ export function SidePanel({
             active={tab === 'terminals'}
             onSelect={() => setPanelTab('terminals')}
           />
+          <Tab
+            icon={<Zap size={14} />}
+            label={t('panel.tab.actions')}
+            // Seules les actions à relire se comptent : elles attendent l'utilisateur.
+            badge={proposedActions}
+            active={tab === 'actions'}
+            onSelect={() => setPanelTab('actions')}
+          />
           {conversationId ? (
             <>
               <Tab
@@ -337,6 +352,8 @@ export function SidePanel({
           />
         </div>
       </div>
+
+      {tab === 'actions' ? <ActionsPane projectId={projectId} conversationId={conversationId} /> : null}
 
       {/* Monté seulement quand on le regarde, contrairement aux autres : il ne tient
           rien de vivant, tout son contenu vient du journal, et ses chronomètres n'ont

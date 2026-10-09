@@ -75,6 +75,7 @@ import {
 import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useWorktrees } from '../lib/worktrees'
+import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 
 /**
  * Chargé à la demande : l'éditeur embarque CodeMirror, et le mettre dans le paquet
@@ -990,6 +991,7 @@ export function ConversationPage() {
               se trouver du côté où celui-ci apparaît. Le panneau appartient à la
               conversation, il lit le répertoire de travail de ce fil, worktree
               compris, pas celui du projet. */}
+          <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} />
           <IconButton
             label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
             onClick={() => setPanelOpen(!panel.open)}

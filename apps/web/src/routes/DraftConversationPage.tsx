@@ -35,6 +35,7 @@ import { useSidebarHidden } from '../lib/sidebar'
 import { useAgentUsage } from '../lib/usage'
 import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
+import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 
 const SidePanel = lazy(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
@@ -297,6 +298,7 @@ export function DraftConversationPage() {
         ) : null}
         {/* Le panneau opère ici sur le workspace du projet : un terminal, les fichiers
             ou le diff s'ouvrent avant même qu'une session existe. */}
+        {projectId ? <ActionsLauncher projectId={projectId} size="sm" /> : null}
         {projectId ? (
           <IconButton
             label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}

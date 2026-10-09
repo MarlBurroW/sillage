@@ -61,6 +61,9 @@ interface ManagedTerminal {
   exited: boolean
   /** Le process a été emporté par un redémarrage du daemon, pas par un `exit`. */
   interrupted: boolean
+  /** Action de projet dont ce terminal joue la commande ; null pour un shell. */
+  actionId: string | null
+  exitCode: number | null
 }
 
 interface PersistedTerminal {
@@ -69,6 +72,16 @@ interface PersistedTerminal {
   title: string
   cwd: string
   createdAt: number
+  actionId?: string | null
+}
+
+/** Une commande à jouer à la place du shell interactif. */
+export interface TerminalCommand {
+  command: string
+  title: string
+  actionId: string | null
+  /** Variables propres à cette exécution, par-dessus celles du daemon et l'origine. */
+  env?: Record<string, string>
 }
 
 /** Le shell s'est terminé, ou n'a jamais démarré : deux refus distincts à afficher. */
@@ -131,7 +144,9 @@ export class TerminalManager {
     const managed = this.terminals.get(terminalId)
     if (!managed || managed.exited || !managed.pty) return
 
-    if (hasChildProcess(managed.pty.pid)) {
+    // Le process d'une action est la commande elle-même (`sh -c` l'exécute souvent à la
+    // place du shell) : pas d'enfant à voir, mais rien d'inactif non plus.
+    if (managed.actionId || hasChildProcess(managed.pty.pid)) {
       this.touch(terminalId)
       return
     }
@@ -148,6 +163,12 @@ export class TerminalManager {
     return this.of(projectId).map(toDto)
   }
 
+  /** Le dernier terminal ouvert pour cette action, vivant ou non. */
+  latestForAction(projectId: string, actionId: string): TerminalDto | null {
+    const found = this.of(projectId).filter((managed) => managed.actionId === actionId).at(-1)
+    return found ? toDto(found) : null
+  }
+
   /** Shells vivants du projet, pour l'indicateur d'activité de la liste de projets. */
   aliveCount(projectId: string): number {
     return [...this.terminals.values()].filter(
@@ -155,9 +176,24 @@ export class TerminalManager {
     ).length
   }
 
-  open(projectId: string, cwd: string): TerminalDto {
+  /**
+   * Ouvre un shell, ou joue une commande quand `run` est donné.
+   *
+   * Une commande passe par `shell -lc` plutôt que par une frappe dans un shell
+   * interactif : le terminal se termine avec elle, ce qui donne son code de sortie, et
+   * le shell de connexion charge le même PATH que celui qu'on ouvrirait à la main.
+   */
+  open(projectId: string, cwd: string, run?: TerminalCommand): TerminalDto {
     const existing = this.of(projectId)
-    if (existing.length >= MAX_TERMINALS_PER_PROJECT) {
+    if (run?.actionId) {
+      // Une exécution terminée de la même action cède sa place : relancer un bouton ne
+      // doit pas épuiser le plafond de terminaux avec des écrans périmés.
+      for (const previous of existing) {
+        if (previous.actionId === run.actionId && previous.exited) this.close(previous.id)
+      }
+    }
+    const remaining = this.of(projectId)
+    if (remaining.length >= MAX_TERMINALS_PER_PROJECT) {
       throw new TerminalError(
         'too_many_terminals',
         `Maximum ${MAX_TERMINALS_PER_PROJECT} terminals per project.`,
@@ -167,12 +203,18 @@ export class TerminalManager {
     const id = randomUUID()
     // Shell de connexion sur macOS, comme l'ouvre Terminal : c'est là que /etc/zprofile
     // complète le PATH et que ~/.zprofile charge Homebrew.
-    const pty = spawn(this.shell(), process.platform === 'darwin' ? ['-l'] : [], {
+    const args = run ? ['-lc', run.command] : process.platform === 'darwin' ? ['-l'] : []
+    const pty = spawn(this.shell(), args, {
       name: 'xterm-256color',
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       cwd,
-      env: { ...process.env, ...processOrigins(this.config.paths.data).environment(projectId, null), TERM: 'xterm-256color' },
+      env: {
+        ...process.env,
+        ...processOrigins(this.config.paths.data).environment(projectId, null),
+        ...run?.env,
+        TERM: 'xterm-256color',
+      },
     })
 
     const managed: ManagedTerminal = {
@@ -180,10 +222,12 @@ export class TerminalManager {
       projectId,
       // Numéroté d'après ce qui est ouvert, pas d'un compteur : fermer le premier puis
       // en rouvrir un ne doit pas donner deux « shell 2 ».
-      title: nextTitle(existing),
+      title: run?.title ?? nextTitle(remaining),
       pty,
       cwd,
-      replay: '',
+      // La commande en tête, en gris : l'écran dit ce qui a été lancé, même une fois
+      // la sortie défilée hors de vue.
+      replay: run ? `\x1b[2m$ ${run.command.replace(/\n/g, '\r\n  ')}\x1b[0m\r\n` : '',
       replayDirty: false,
       subscribers: new Set(),
       idleTimer: null,
@@ -192,6 +236,8 @@ export class TerminalManager {
       createdAt: Date.now(),
       exited: false,
       interrupted: false,
+      actionId: run?.actionId ?? null,
+      exitCode: null,
     }
     this.terminals.set(id, managed)
     this.persistMeta(managed)
@@ -208,6 +254,13 @@ export class TerminalManager {
       managed.exited = true
       if (managed.idleTimer) clearTimeout(managed.idleTimer)
       managed.idleTimer = null
+      if (run) {
+        managed.exitCode = exitCode
+        const footer = `\r\n\x1b[2m[${exitCode === 0 ? 'exit 0' : `exit ${exitCode}`}]\x1b[0m\r\n`
+        managed.replay = (managed.replay + footer).slice(-REPLAY_BYTES)
+        managed.replayDirty = true
+        for (const subscriber of managed.subscribers) subscriber.onOutput(footer)
+      }
       for (const subscriber of managed.subscribers) subscriber.onExit(exitCode)
     })
 
@@ -362,6 +415,8 @@ export class TerminalManager {
         createdAt: meta.createdAt,
         exited: true,
         interrupted: true,
+        actionId: meta.actionId ?? null,
+        exitCode: null,
       })
     }
   }
@@ -373,6 +428,7 @@ export class TerminalManager {
       title: managed.title,
       cwd: managed.cwd,
       createdAt: managed.createdAt,
+      actionId: managed.actionId,
     }
     try {
       writeFileSync(join(this.storeDir, `${managed.id}.json`), JSON.stringify(meta))
@@ -429,6 +485,8 @@ function toDto(managed: ManagedTerminal): TerminalDto {
     interrupted: managed.interrupted,
     cwd: managed.cwd,
     createdAt: managed.createdAt,
+    actionId: managed.actionId,
+    exitCode: managed.exitCode,
   }
 }
 

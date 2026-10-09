@@ -232,6 +232,13 @@
       "when": 1791573977997,
       "tag": "0032_project_pins",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1791585774446,
+      "tag": "0033_project_actions",
+      "breakpoints": true
     }
   ]
 }
