@@ -202,6 +202,8 @@ export interface ProjectDto {
   instructionsMode: InstructionsMode | null
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
+  /** Épinglé en tête du sélecteur par le compte appelant : un repère personnel. */
+  pinned: boolean
   /** État du dépôt git, null si le workspace n'est pas un dépôt. */
   git: { branch: string; isDirty: boolean } | null
 }

@@ -657,6 +657,29 @@ export const conversationFavorites = sqliteTable(
 )
 
 /**
+ * Les projets qu'un compte a épinglés en tête du sélecteur.
+ *
+ * Même logique que `conversation_favorites` : une épingle est un repère personnel, pas
+ * une propriété du projet. Sur un projet partagé, chacun garde son propre tri. Tenue
+ * en base plutôt que dans le `localStorage` du navigateur, pour survivre à un
+ * changement d'appareil ou au ménage d'un onglet.
+ */
+export const projectPins = sqliteTable(
+  'project_pins',
+  {
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Ordre de la section « Épinglés », du plus ancien épinglage au plus récent. */
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.userId] })],
+)
+
+/**
  * Le journal (invariant I2). `seq` est strictement croissant et sans trou par
  * conversation. WITHOUT ROWID parce que la clé primaire composite est déjà l'ordre
  * de lecture naturel.

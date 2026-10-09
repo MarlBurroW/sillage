@@ -3,7 +3,7 @@ import { mkdir, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, max, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { cards, conversations, projectImages, projects, users, writeTransaction } from '@sillage/db'
+import { cards, conversations, projectImages, projectPins, projects, users, writeTransaction } from '@sillage/db'
 import {
   createProjectBodySchema,
   MAX_PROJECT_IMAGE_BYTES,
@@ -180,10 +180,15 @@ export function registerProjectRoutes(
         // Sa date et son statut seulement : le blob ne sort que par sa propre route.
         imageUpdatedAt: projectImages.updatedAt,
         imageProvisional: projectImages.provisional,
+        pinnedAt: projectPins.createdAt,
       })
       .from(projects)
       .innerJoin(users, eq(users.id, projects.ownerId))
       .leftJoin(projectImages, eq(projectImages.projectId, projects.id))
+      .leftJoin(
+        projectPins,
+        and(eq(projectPins.projectId, projects.id), eq(projectPins.userId, user.id)),
+      )
       .leftJoin(
         conversations,
         and(eq(conversations.projectId, projects.id), isNull(conversations.archivedAt)),
@@ -223,6 +228,7 @@ export function registerProjectRoutes(
           defaultConfig: readProjectDefaults(project.defaultConfig),
           instructionsMode: project.instructionsMode,
           activeTerminals: terminals.aliveCount(project.id),
+          pinned: row.pinnedAt !== null,
           git: await readGitStatus(project.workspacePath),
         }
       }),
@@ -262,6 +268,7 @@ export function registerProjectRoutes(
       conversationCount: 0,
       defaultConfig: NO_PROJECT_DEFAULTS,
       activeTerminals: 0,
+      pinned: false,
       git: await readGitStatus(workspacePath),
     }
     return reply.status(201).send(dto)
@@ -437,6 +444,40 @@ export function registerProjectRoutes(
    * L'URL donnée au client porte la date de l'image : chaque version a la sienne, d'où
    * le cache immuable.
    */
+  /**
+   * Épingle ou désépingle le projet pour le compte appelant.
+   *
+   * Ouvert à tout membre qui voit le projet : épingler n'est pas le modifier. Idempotent
+   * des deux côtés, comme le signet de conversation, pour que le client n'ait pas à
+   * connaître l'état d'avant.
+   */
+  app.put('/api/projects/:id/pin', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadVisibleProject(id, user.id)
+
+    ctx.db
+      .insert(projectPins)
+      .values({ projectId: id, userId: user.id, createdAt: Date.now() })
+      .onConflictDoNothing()
+      .run()
+
+    return { pinned: true }
+  })
+
+  app.delete('/api/projects/:id/pin', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadVisibleProject(id, user.id)
+
+    ctx.db
+      .delete(projectPins)
+      .where(and(eq(projectPins.projectId, id), eq(projectPins.userId, user.id)))
+      .run()
+
+    return { pinned: false }
+  })
+
   app.get('/api/projects/:id/image', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
