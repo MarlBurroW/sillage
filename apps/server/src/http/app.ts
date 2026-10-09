@@ -50,6 +50,7 @@ import { registerFileRoutes } from './routes/files.js'
 import { registerGitViewRoutes } from './routes/git-views.js'
 import { registerFsRoutes } from './routes/fs.js'
 import { registerHealthRoutes } from './routes/health.js'
+import { registerPaletteRoutes } from './routes/palette.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerPushRoutes } from './routes/push.js'
 import { registerSearchRoutes } from './routes/search.js'
@@ -199,6 +200,7 @@ export async function buildApp(
   registerAttachmentRoutes(app, attachments, ctx)
   registerPushRoutes(app, push)
   registerSearchRoutes(app, ctx)
+  registerPaletteRoutes(app, ctx, skillLibrary)
   registerSettingsRoutes(app, ctx, scheduler)
   registerScheduleRoutes(app, ctx, sessions, registry, tasks)
   registerSttRoutes(app, ctx, secrets)
