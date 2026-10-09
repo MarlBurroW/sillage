@@ -46,7 +46,7 @@ export function AgentsPane({
 
   if (agents.length === 0 && background.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center p-4">
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4">
         <EmptyState
           title={t('subagent.pane.empty.title')}
           description={t('subagent.pane.empty.description')}
