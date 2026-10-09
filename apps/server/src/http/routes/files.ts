@@ -14,6 +14,7 @@ import {
   type FileContentDto,
 } from '@sillage/protocol'
 import { resolveInside } from '../../workspace.js'
+import { attachmentHeader } from '../attachment-header.js'
 import type { AppContext } from '../context.js'
 import { HttpError, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -222,12 +223,9 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         throw notFound('file_not_found', 'File not found.')
       }
 
-      const filename = encodeURIComponent(basename(path)).replace(/['()*]/g, (char) =>
-        `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-      )
       return reply
         .header('content-type', 'application/octet-stream')
-        .header('content-disposition', `attachment; filename*=UTF-8''${filename}`)
+        .header('content-disposition', attachmentHeader(basename(path)))
         .header('content-length', info.size)
         .header('x-content-type-options', 'nosniff')
         .header('cache-control', 'no-store')

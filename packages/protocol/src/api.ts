@@ -851,6 +851,11 @@ export interface TreeListingDto {
   entries: TreeEntryDto[]
   /** Faux hors dépôt git : l'explorateur n'affiche alors aucune couleur. */
   versioned: boolean
+  /**
+   * Chemin absolu du répertoire de travail. L'explorateur ne connaît que des chemins
+   * relatifs, et « Copier le chemin » doit rendre celui que le shell comprend.
+   */
+  root: string
 }
 
 export const treeSearchQuerySchema = z.object({
@@ -901,6 +906,33 @@ export const moveEntryBodySchema = z.object({
 })
 
 export const deleteEntryBodySchema = z.object({ path: z.string().min(1).max(1024) })
+
+/**
+ * Copie d'une entrée dans un dossier. Seul le dossier de destination est donné : le
+ * serveur choisit le nom, et suffixe « copy » plutôt que d'écraser ce qui s'y trouve,
+ * ce qui fait aussi de la copie sur place une duplication.
+ */
+export const copyEntryBodySchema = z.object({
+  from: z.string().min(1).max(1024),
+  toParent: z.string().max(1024).default(''),
+})
+
+/**
+ * Entrées réunies dans une même archive. Assez pour une sélection faite à la main ;
+ * au-delà, l'URL qui les porte dépasserait ce que le serveur HTTP accepte.
+ */
+export const MAX_ARCHIVE_PATHS = 200
+
+/**
+ * Entrées à télécharger en `.zip`, en paramètre répété (`?path=a&path=b`) : le
+ * téléchargement passe par un lien, donc par un `GET` sans corps.
+ */
+export const archiveQuerySchema = z.object({
+  path: z
+    .union([z.string(), z.array(z.string())])
+    .transform((value) => (Array.isArray(value) ? value : [value]))
+    .pipe(z.array(z.string().min(1).max(1024)).min(1).max(MAX_ARCHIVE_PATHS)),
+})
 
 /**
  * Plafond d'un fichier déposé dans l'explorateur.
