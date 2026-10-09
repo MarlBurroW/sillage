@@ -1,8 +1,4 @@
 import { execFile, spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { copyFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { FileState } from '@sillage/protocol'
 
@@ -303,35 +299,25 @@ export async function readFileStates(cwd: string): Promise<Map<string, FileState
   return states
 }
 
-/** Dernier commit, pour situer un diff vide. */
-export interface HeadCommit {
-  hash: string
-  subject: string
-  relativeDate: string
-}
-
-/**
- * Un dépôt sans commit n'a pas de HEAD : c'est un cas normal, pas une erreur.
- * Les champs sont séparés par un octet nul, seul séparateur qu'un sujet de commit ne
- * peut pas contenir.
- */
-export async function readHeadCommit(cwd: string): Promise<HeadCommit | null> {
-  try {
-    const raw = await git(cwd, ['log', '-1', '--format=%h%x00%s%x00%cr'])
-    const [hash, subject, relativeDate] = raw.trim().split('\0')
-    if (!hash) return null
-    return { hash, subject: subject ?? '', relativeDate: relativeDate ?? '' }
-  } catch {
-    return null
-  }
-}
-
 export interface Commit {
   hash: string
   shortHash: string
   subject: string
   author: string
   ts: number
+  refs: string[]
+}
+
+/**
+ * Les références que `%D` liste sur un commit : « HEAD -> main, origin/main, tag: v1 ».
+ * La flèche de HEAD est retirée, le commit courant étant signalé par ailleurs.
+ */
+function parseRefs(decoration: string | undefined): string[] {
+  if (!decoration) return []
+  return decoration
+    .split(', ')
+    .map((ref) => ref.replace(/^HEAD -> /, '').trim())
+    .filter((ref) => ref.length > 0 && ref !== 'HEAD')
 }
 
 /**
@@ -359,7 +345,7 @@ export async function readCommits(
       `--skip=${skip}`,
       // Octet nul entre les champs, saut de ligne entre les commits : un sujet peut
       // contenir n'importe quel caractère imprimable, y compris une tabulation.
-      '--format=%H%x00%h%x00%s%x00%an%x00%ct',
+      '--format=%H%x00%h%x00%s%x00%an%x00%ct%x00%D',
     ])
   } catch {
     return { commits: [], hasMore: false }
@@ -369,13 +355,14 @@ export async function readCommits(
     .split('\n')
     .filter((line) => line.trim().length > 0)
     .map((line) => {
-      const [hash, shortHash, subject, author, ts] = line.split('\0')
+      const [hash, shortHash, subject, author, ts, decoration] = line.split('\0')
       return {
         hash: hash ?? '',
         shortHash: shortHash ?? '',
         subject: subject ?? '',
         author: author ?? '',
         ts: Number(ts) * 1000 || 0,
+        refs: parseRefs(decoration),
       }
     })
     .filter((commit) => commit.hash.length > 0)
@@ -433,47 +420,5 @@ export async function readCommitDiff(cwd: string, hash: string): Promise<Working
     }
   } catch (err) {
     throw new GitError(gitMessage(err))
-  }
-}
-
-/**
- * Modifications non commitées du répertoire de travail, fichiers non suivis compris :
- * un agent qui crée un fichier doit apparaître dans le diff, sinon la vue ment.
- *
- * Le passage par un index temporaire (`GIT_INDEX_FILE`) est ce qui rend l'opération
- * réellement en lecture seule : faire un `git add --intent-to-add` sur l'index réel
- * modifierait le dépôt de l'utilisateur juste pour afficher un onglet.
- */
-export async function readWorkingDiff(cwd: string): Promise<WorkingDiff | null> {
-  const status = await readGitStatus(cwd)
-  if (!status) return null
-
-  const gitDir = (await git(cwd, ['rev-parse', '--absolute-git-dir'])).trim()
-  const scratchIndex = join(tmpdir(), `sillage-index-${randomUUID()}`)
-
-  try {
-    // On part d'une copie de l'index courant pour ne pas voir comme « ajoutés » des
-    // fichiers déjà stagés par l'utilisateur. Un dépôt sans index encore écrit est un
-    // cas normal, on repart alors d'un index vide.
-    await copyFile(join(gitDir, 'index'), scratchIndex).catch(() => {})
-    const env = { GIT_INDEX_FILE: scratchIndex }
-
-    await git(cwd, ['add', '--intent-to-add', '--all'], env)
-
-    const [numstat, patch] = await Promise.all([
-      git(cwd, ['diff', 'HEAD', '--numstat'], env),
-      git(cwd, ['diff', 'HEAD'], env),
-    ])
-
-    const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
-    return {
-      files: parseNumstat(numstat),
-      patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch,
-      truncated,
-    }
-  } catch (err) {
-    throw new GitError(gitMessage(err))
-  } finally {
-    await rm(scratchIndex, { force: true }).catch(() => {})
   }
 }
