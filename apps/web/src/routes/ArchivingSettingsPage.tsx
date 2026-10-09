@@ -149,6 +149,9 @@ export function ArchivingSettingsPage() {
               <Button type="submit" disabled={!daysValid || !human || !dirty || update.isPending}>
                 {t('archiving.delay.save')}
               </Button>
+              {update.isSuccess && !dirty ? (
+                <span className="text-xs text-positive">{t('settings.saved')}</span>
+              ) : null}
               {/* Sur les réglages enregistrés et non sur le formulaire : lancer un
                   passage sur un délai qu'on vient de taper sans l'enregistrer
                   rangerait selon une règle que le serveur ne connaît pas. */}

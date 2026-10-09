@@ -1,4 +1,4 @@
-import { KeyRound, Trash2 } from 'lucide-react'
+import { KeyRound, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type { GitCredential } from '@sillage/protocol'
 import {
@@ -11,7 +11,7 @@ import {
   EmptyState,
   Field,
 } from '../components/ui'
-import { SectionHeader } from './SettingsPage'
+import { ListHeading, SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { locale, useTranslate } from '../lib/i18n'
 import {
@@ -40,19 +40,33 @@ export function GitCredentialsSettingsPage() {
   const { data } = useGitCredentials()
   const putCredential = usePutGitCredential()
 
+  const [adding, setAdding] = useState(false)
   const [host, setHost] = useState(GITHUB_HOST)
   const [username, setUsername] = useState('x-access-token')
   const [token, setToken] = useState('')
+
+  const openForm = () => {
+    setHost(GITHUB_HOST)
+    setUsername('x-access-token')
+    setToken('')
+    putCredential.reset()
+    setAdding(true)
+  }
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
     putCredential.mutate(
       { host: host.trim().toLowerCase(), username: username.trim(), token },
-      { onSuccess: () => setToken('') },
+      { onSuccess: () => setAdding(false) },
     )
   }
 
   const credentials = data?.credentials ?? []
+  const addButton = (
+    <Button size="sm" icon={<Plus size={15} />} disabled={adding} onClick={openForm}>
+      {t('gitCredentials.create.open')}
+    </Button>
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,63 +76,79 @@ export function GitCredentialsSettingsPage() {
       />
 
       <Banner tone="info">{t('gitCredentials.banner')}</Banner>
-      <Banner>{t('gitCredentials.trustModel')}</Banner>
-
-      <Card>
-        <CardHeader title={t('gitCredentials.create.title')} icon={<KeyRound size={16} />} />
-        <CardBody>
-          <form onSubmit={submit} className="flex flex-col gap-4">
-            <Field
-              label={t('gitCredentials.host.label')}
-              hint={t('gitCredentials.host.hint')}
-              value={host}
-              onChange={(event) => setHost(event.target.value)}
-              pattern="[A-Za-z0-9.\-]+"
-              autoCapitalize="none"
-              autoCorrect="off"
-              required
-            />
-            <Field
-              label={t('gitCredentials.username.label')}
-              hint={t('gitCredentials.username.hint')}
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              autoCapitalize="none"
-              autoCorrect="off"
-              required
-            />
-            <Field
-              label={t('gitCredentials.token.label')}
-              hint={t('gitCredentials.token.hint')}
-              type="password"
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
-              // Le gestionnaire de mots de passe du navigateur n'a rien à retenir ici.
-              autoComplete="off"
-              required
-            />
-            {errorOf(putCredential.error) ? (
-              <Banner>{errorOf(putCredential.error)}</Banner>
-            ) : null}
-            <Button type="submit" disabled={putCredential.isPending} className="self-start">
-              {putCredential.isPending
-                ? t('gitCredentials.create.pending')
-                : t('gitCredentials.create.action')}
-            </Button>
-          </form>
-        </CardBody>
-      </Card>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-ink-soft">
-          {t('gitCredentials.existing.title')}
-        </h2>
+        <ListHeading
+          title={t('gitCredentials.existing.title')}
+          count={credentials.length}
+          action={credentials.length > 0 ? addButton : null}
+        />
+
+        {adding ? (
+          <Card>
+            <CardHeader title={t('gitCredentials.create.title')} icon={<KeyRound size={16} />} />
+            <CardBody>
+              <form onSubmit={submit} className="flex flex-col gap-4">
+                <Field
+                  label={t('gitCredentials.host.label')}
+                  hint={t('gitCredentials.host.hint')}
+                  value={host}
+                  onChange={(event) => setHost(event.target.value)}
+                  pattern="[A-Za-z0-9.\-]+"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoFocus
+                  required
+                />
+                <Field
+                  label={t('gitCredentials.username.label')}
+                  hint={t('gitCredentials.username.hint')}
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  required
+                />
+                <Field
+                  label={t('gitCredentials.token.label')}
+                  hint={t('gitCredentials.token.hint')}
+                  type="password"
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  // Le gestionnaire de mots de passe du navigateur n'a rien à retenir ici.
+                  autoComplete="off"
+                  required
+                />
+                {/* Au moment de choisir le jeton, pas en tête de page : c'est là
+                    qu'on décide de sa portée. */}
+                <Banner tone="caution">{t('gitCredentials.trustModel')}</Banner>
+                {errorOf(putCredential.error) ? (
+                  <Banner>{errorOf(putCredential.error)}</Banner>
+                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="submit" disabled={putCredential.isPending}>
+                    {putCredential.isPending
+                      ? t('gitCredentials.create.pending')
+                      : t('gitCredentials.create.action')}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setAdding(false)}>
+                    {t('common.cancel')}
+                  </Button>
+                </div>
+              </form>
+            </CardBody>
+          </Card>
+        ) : null}
+
         {credentials.length === 0 ? (
-          <EmptyState
-            icon={<KeyRound size={22} />}
-            title={t('gitCredentials.empty.title')}
-            description={t('gitCredentials.empty.description')}
-          />
+          adding ? null : (
+            <EmptyState
+              icon={<KeyRound size={22} />}
+              title={t('gitCredentials.empty.title')}
+              description={t('gitCredentials.empty.description')}
+              action={addButton}
+            />
+          )
         ) : (
           credentials.map((credential) => (
             <CredentialCard key={credential.host} credential={credential} />

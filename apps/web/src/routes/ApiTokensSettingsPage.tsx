@@ -20,9 +20,10 @@ import {
   EmptyState,
   Field,
   Select,
+  cx,
 } from '../components/ui'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
-import { SectionHeader } from './SettingsPage'
+import { ListHeading, SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { useAgentModels, effortsFor } from '../lib/agents'
 import {
@@ -32,7 +33,7 @@ import {
   useRevokeApiToken,
 } from '../lib/api-tokens'
 import { copyText } from '../lib/clipboard'
-import { locale, useTranslate } from '../lib/i18n'
+import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 
 /**
@@ -44,6 +45,14 @@ import { useProjects } from '../lib/projects'
  */
 
 const SCOPES = apiScopeSchema.options
+
+/** Ce que chaque portée ouvre, dit en clair : le nom seul ne dit pas où s'arrête `tasks:write`. */
+const SCOPE_HINT_KEYS: Record<ApiScope, MessageKey> = {
+  'projects:read': 'apiTokens.scope.projects:read',
+  'tasks:read': 'apiTokens.scope.tasks:read',
+  'tasks:write': 'apiTokens.scope.tasks:write',
+  'tasks:autonomous': 'apiTokens.scope.tasks:autonomous',
+}
 
 /**
  * Modes de permission proposables sur un jeton : ceux où le CLI garde un garde-fou.
@@ -72,7 +81,14 @@ const errorOf = (error: unknown): string | null =>
 export function ApiTokensSettingsPage() {
   const t = useTranslate()
   const { data: tokens } = useApiTokens()
+  const [adding, setAdding] = useState(false)
   const [created, setCreated] = useState<CreatedApiTokenDto | null>(null)
+
+  const addButton = (
+    <Button size="sm" icon={<Plus size={15} />} disabled={adding} onClick={() => setAdding(true)}>
+      {t('apiTokens.create.open')}
+    </Button>
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -85,17 +101,33 @@ export function ApiTokensSettingsPage() {
 
       {created ? <SecretReveal created={created} onDismiss={() => setCreated(null)} /> : null}
 
-      <CreateTokenCard onCreated={setCreated} />
-
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-ink-soft">{t('apiTokens.existing.title')}</h2>
+        <ListHeading
+          title={t('apiTokens.existing.title')}
+          count={tokens?.length}
+          action={tokens && tokens.length > 0 ? addButton : null}
+        />
+
+        {/* Remonté à la fermeture : un formulaire rouvert doit repartir vide, pas
+            des champs du jeton précédent. */}
+        {adding ? (
+          <CreateTokenCard
+            onCreated={(token) => {
+              setCreated(token)
+              setAdding(false)
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        ) : null}
+
         {tokens && tokens.length > 0 ? (
           tokens.map((token) => <TokenCard key={token.id} token={token} />)
-        ) : (
+        ) : adding ? null : (
           <EmptyState
             icon={<KeyRound size={22} />}
             title={t('apiTokens.empty.title')}
             description={t('apiTokens.empty.description')}
+            action={addButton}
           />
         )}
       </section>
@@ -167,7 +199,13 @@ function CopyableSecret({ label, value }: { label: string; value: string }) {
   )
 }
 
-function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDto) => void }) {
+function CreateTokenCard({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: (created: CreatedApiTokenDto) => void
+  onCancel: () => void
+}) {
   const t = useTranslate()
   const { data: projects } = useProjects()
   const createToken = useCreateApiToken()
@@ -210,14 +248,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
         expiresAt: days === null ? null : Date.now() + days * DAY_MS,
         webhookUrl: webhookUrl.trim() || null,
       },
-      {
-        onSuccess: (created) => {
-          onCreated(created)
-          setLabel('')
-          setProjectIds([])
-          setWebhookUrl('')
-        },
-      },
+      { onSuccess: onCreated },
     )
   }
 
@@ -231,6 +262,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
             hint={t('apiTokens.label.hint')}
             value={label}
             onChange={(event) => setLabel(event.target.value)}
+            autoFocus
             required
           />
 
@@ -319,18 +351,31 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
           />
 
           <fieldset className="flex flex-col gap-1.5">
-            <legend className="text-sm font-medium text-ink-soft">
+            <legend className="mb-1.5 text-sm font-medium text-ink-soft">
               {t('apiTokens.scopes.label')}
             </legend>
-            <div className="flex flex-wrap gap-3">
+            {/* Une ligne par portée, avec ce qu'elle ouvre : un nom comme
+                `tasks:write` ne dit pas s'il permet aussi d'arrêter une tâche. */}
+            <div className="grid gap-2 sm:grid-cols-2">
               {SCOPES.map((scope) => (
-                <label key={scope} className="flex items-center gap-2 text-sm text-ink">
+                <label
+                  key={scope}
+                  className={cx(
+                    'flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2 text-sm text-ink transition-colors',
+                    'has-checked:border-accent has-checked:bg-accent-wash',
+                    'border-line hover:border-line-strong',
+                  )}
+                >
                   <input
                     type="checkbox"
                     checked={scopes.includes(scope)}
                     onChange={() => setScopes(toggle(scopes, scope))}
+                    className="mt-0.5 size-4 shrink-0 accent-accent"
                   />
-                  <code className="font-mono text-xs">{scope}</code>
+                  <span className="min-w-0">
+                    <code className="font-mono text-xs">{scope}</code>
+                    <span className="block text-xs text-ink-faint">{t(SCOPE_HINT_KEYS[scope])}</span>
+                  </span>
                 </label>
               ))}
             </div>
@@ -350,6 +395,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
                     type="checkbox"
                     checked={projectIds.includes(project.id)}
                     onChange={() => setProjectIds(toggle(projectIds, project.id))}
+                    className="size-4 accent-accent"
                   />
                   {project.name}
                 </label>
@@ -359,13 +405,14 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
 
           {errorOf(createToken.error) ? <Banner>{errorOf(createToken.error)}</Banner> : null}
 
-          <Button
-            type="submit"
-            disabled={createToken.isPending || scopes.length === 0}
-            className="self-start"
-          >
-            {createToken.isPending ? t('apiTokens.create.pending') : t('apiTokens.create.action')}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" disabled={createToken.isPending || scopes.length === 0}>
+              {createToken.isPending ? t('apiTokens.create.pending') : t('apiTokens.create.action')}
+            </Button>
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              {t('common.cancel')}
+            </Button>
+          </div>
         </form>
       </CardBody>
     </Card>

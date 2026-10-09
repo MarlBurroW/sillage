@@ -1,4 +1,4 @@
-import { KeyRound, ShieldCheck, Trash2 } from 'lucide-react'
+import { KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type { Secret } from '@sillage/protocol'
 import {
@@ -12,7 +12,7 @@ import {
   EmptyState,
   Field,
 } from '../components/ui'
-import { SectionHeader } from './SettingsPage'
+import { ListHeading, SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { locale, useTranslate } from '../lib/i18n'
 import { useDeleteSecret, usePutSecret, useSecrets } from '../lib/secrets'
@@ -37,6 +37,7 @@ export function SecretsSettingsPage() {
   const { data } = useSecrets(isAdmin)
 
   const putSecret = usePutSecret()
+  const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
 
@@ -50,20 +51,24 @@ export function SecretsSettingsPage() {
     )
   }
 
+  const openForm = () => {
+    setName('')
+    setValue('')
+    putSecret.reset()
+    setAdding(true)
+  }
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    putSecret.mutate(
-      { name: name.trim(), value },
-      {
-        onSuccess: () => {
-          setName('')
-          setValue('')
-        },
-      },
-    )
+    putSecret.mutate({ name: name.trim(), value }, { onSuccess: () => setAdding(false) })
   }
 
   const secrets = data?.secrets ?? []
+  const addButton = (
+    <Button size="sm" icon={<Plus size={15} />} disabled={adding} onClick={openForm}>
+      {t('secrets.create.open')}
+    </Button>
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -73,48 +78,67 @@ export function SecretsSettingsPage() {
       />
 
       <Banner tone="info">{t('secrets.banner')}</Banner>
-      <Banner>{t('secrets.writeOnly')}</Banner>
-
-      <Card>
-        <CardHeader title={t('secrets.create.title')} icon={<KeyRound size={16} />} />
-        <CardBody>
-          <form onSubmit={submit} className="flex flex-col gap-4">
-            <Field
-              label={t('secrets.name.label')}
-              hint={t('secrets.name.hint')}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              pattern="[A-Za-z0-9_]+"
-              autoCapitalize="none"
-              autoCorrect="off"
-              required
-            />
-            <Field
-              label={t('secrets.value.label')}
-              hint={t('secrets.value.hint')}
-              type="password"
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              // Le gestionnaire de mots de passe du navigateur n'a rien à retenir ici.
-              autoComplete="off"
-              required
-            />
-            {errorOf(putSecret.error) ? <Banner>{errorOf(putSecret.error)}</Banner> : null}
-            <Button type="submit" disabled={putSecret.isPending} className="self-start">
-              {putSecret.isPending ? t('secrets.create.pending') : t('secrets.create.action')}
-            </Button>
-          </form>
-        </CardBody>
-      </Card>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-ink-soft">{t('secrets.existing.title')}</h2>
+        <ListHeading
+          title={t('secrets.existing.title')}
+          count={secrets.length}
+          action={secrets.length > 0 ? addButton : null}
+        />
+
+        {adding ? (
+          <Card>
+            <CardHeader title={t('secrets.create.title')} icon={<KeyRound size={16} />} />
+            <CardBody>
+              <form onSubmit={submit} className="flex flex-col gap-4">
+                <Field
+                  label={t('secrets.name.label')}
+                  hint={t('secrets.name.hint')}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  pattern="[A-Za-z0-9_]+"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoFocus
+                  required
+                />
+                <Field
+                  label={t('secrets.value.label')}
+                  hint={t('secrets.value.hint')}
+                  type="password"
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  // Le gestionnaire de mots de passe du navigateur n'a rien à retenir ici.
+                  autoComplete="off"
+                  required
+                />
+                {/* Au moment de saisir, pas en tête de page, et sur le ton d'une
+                    information : en rouge au-dessus de tout, on le lisait comme une
+                    erreur alors que rien n'avait encore été fait. */}
+                <Banner tone="info">{t('secrets.writeOnly')}</Banner>
+                {errorOf(putSecret.error) ? <Banner>{errorOf(putSecret.error)}</Banner> : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="submit" disabled={putSecret.isPending}>
+                    {putSecret.isPending ? t('secrets.create.pending') : t('secrets.create.action')}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setAdding(false)}>
+                    {t('common.cancel')}
+                  </Button>
+                </div>
+              </form>
+            </CardBody>
+          </Card>
+        ) : null}
+
         {secrets.length === 0 ? (
-          <EmptyState
-            icon={<KeyRound size={22} />}
-            title={t('secrets.empty.title')}
-            description={t('secrets.empty.description')}
-          />
+          adding ? null : (
+            <EmptyState
+              icon={<KeyRound size={22} />}
+              title={t('secrets.empty.title')}
+              description={t('secrets.empty.description')}
+              action={addButton}
+            />
+          )
         ) : (
           secrets.map((secret) => <SecretCard key={secret.name} secret={secret} />)
         )}
