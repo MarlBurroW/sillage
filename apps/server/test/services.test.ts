@@ -17,8 +17,10 @@ import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerServiceRoutes } from '../src/http/routes/services.js'
 import { ProcessOrigins, processOrigins } from '../src/services/origins.js'
-import { processIdentity, scanServiceProcesses, stopServiceProcess } from '../src/services/processes.js'
+import { foldProcesses, processIdentity, scanServiceProcesses, stopServiceProcess, type FoldableProcess } from '../src/services/processes.js'
+import { isShellCommand, redactSecrets, summarizeCommand } from '../src/services/command-line.js'
 import { executionLink, readProcessHost, type ProcessNode, type ProcessHost } from '../src/services/ownership.js'
+import { authoredDescription, execStartArgv, executableName, originToken, parseShow, scanServiceApps } from '../src/services/apps.js'
 
 async function directory(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'sillage-services-'))
@@ -83,6 +85,56 @@ test('parenté et cgroups : tmux exclu, orphelin pris en charge, autres unités 
   assert.equal(executionLink(160, nodes, host), 'service-group', 'Un subreaper systemd ne change pas le cgroup du processus orphelin')
 })
 
+test('ligne de commande : enrobage de Claude Code retiré, chemins réduits, secrets masqués, longueur bornée', () => {
+  const home = '/home/alex'
+  const wrapped = `source ${home}/.claude/shell-snapshots/snapshot-zsh-1.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB 2>/dev/null || true && { \\builtin unalias -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'npm run dev -- --port 5173 && echo '"'"'ok'"'"'' && pwd -P >| /tmp/claude-1-cwd`
+  assert.equal(summarizeCommand(['/usr/bin/zsh', '-c', wrapped], home), "npm run dev -- --port 5173 && echo 'ok'")
+  assert.equal(summarizeCommand(['/usr/bin/zsh', '-c', `source x || true && eval 'node scripts/check.mjs 2>&1 | tail -6' < /dev/null && pwd -P >| /tmp/claude-1-cwd`], home), 'node scripts/check.mjs 2>&1 | tail -6', 'Variante de fond, avec entrée redirigée')
+  assert.equal(summarizeCommand(['/bin/bash', '-lc', `cd ${home}/app && cargo run`], home), 'cd ~/app && cargo run')
+  assert.equal(summarizeCommand([`${home}/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome --type=renderer --headless`], home), 'chrome --type=renderer --headless', 'Titre réécrit : un seul argument, espaces compris')
+  assert.equal(summarizeCommand([`${home}/.nvm/versions/node/v24.0.0/bin/node`, `${home}/.nvm/versions/node/v24.0.0/bin/npx`, 'vite', '--port', '5251'], home), 'node npx vite --port 5251')
+  assert.equal(summarizeCommand([`${home}/.local/bin/claude`, '--resume=abc'], home), 'claude --resume=abc')
+  assert.equal(summarizeCommand(['/usr/bin/python3', '-m', 'http.server', '8793'], home), 'python3 -m http.server 8793')
+  assert.equal(summarizeCommand([]), null)
+  assert.equal(summarizeCommand(['node', '-e', 'x'.repeat(400)])!.length, 160)
+  assert.equal(isShellCommand(['/usr/bin/zsh', '-c', 'ls']), true)
+  assert.equal(isShellCommand(['/usr/bin/zsh']), false)
+  assert.equal(isShellCommand(['/usr/bin/node', '-c', 'ls']), false)
+  assert.equal(redactSecrets('curl -H "Authorization: Bearer abc.def" https://user:pw@host/db --token=t1 API_KEY=k1 -d password=p1'),
+    'curl -H "Authorization: Bearer …" https://user:…@host/db --token=… API_KEY=… -d password=…')
+  assert.equal(redactSecrets('git log --oneline -5'), 'git log --oneline -5')
+})
+
+test('pliage : lanceurs, commandes avec leur descendance, outils MCP, orphelins', async (t) => {
+  const dir = await directory(t)
+  const origins = new ProcessOrigins(dir)
+  const agent = origins.environment('project', 'conversation').SILLAGE_PROCESS_ORIGIN!
+  const terminal = origins.environment('project', null).SILLAGE_PROCESS_ORIGIN!
+  const make = (pid: number, parent: number, argv: string[], token = ''): FoldableProcess =>
+    ({ pid, parent, name: argv[0]!, argv, environment: token ? `SILLAGE_PROCESS_ORIGIN=${token}\0` : '', cgroup: null, start: String(pid) })
+  const nodes = new Map([
+    make(100, 1, ['node', 'main.js']),
+    make(110, 100, ['claude', '--resume'], agent),
+    make(111, 110, ['node', '/srv/sillage-mcp.mjs'], agent),
+    make(112, 110, ['zsh', '-c', 'npm run dev'], agent),
+    make(113, 112, ['node', 'vite.js'], agent),
+    make(114, 113, ['chrome'], agent), make(115, 113, ['chrome'], agent),
+    make(120, 100, ['zsh'], terminal),
+    make(121, 120, ['node', 'mcp-inspector.js'], terminal),
+    make(130, 1, ['python3', '-m', 'http.server'], agent),
+    make(131, 130, ['python3'], agent),
+    make(140, 1, ['tmux']), make(141, 140, ['node'], agent),
+  ].map((entry) => [entry.pid, entry]))
+  const linked = new Set([110, 111, 112, 113, 114, 115, 120, 121, 130, 131])
+  const folded = foldProcesses(nodes, linked, { pid: 100 }, origins)
+  assert.deepEqual([...folded.keys()].sort((a, b) => a - b), [110, 111, 112, 120, 121, 130])
+  assert.deepEqual(folded.get(110), { kind: 'launcher', launcherPid: null, members: [110] })
+  assert.deepEqual(folded.get(111), { kind: 'helper', launcherPid: 110, members: [111] }, 'Sous un agent, un serveur MCP est un outil')
+  assert.deepEqual(folded.get(112), { kind: 'command', launcherPid: 110, members: [112, 113, 114, 115] })
+  assert.deepEqual(folded.get(121), { kind: 'command', launcherPid: 120, members: [121] }, 'Sous un terminal, tout est commande')
+  assert.deepEqual(folded.get(130), { kind: 'detached', launcherPid: null, members: [130, 131] })
+})
+
 test('parenté réelle, commandes sans port, origine héritée et refus des processus autonomes', { skip: process.platform !== 'linux' }, async (t) => {
   const dir = await directory(t)
   const origins = new ProcessOrigins(dir)
@@ -95,6 +147,10 @@ test('parenté réelle, commandes sans port, origine héritée et refus des proc
   const restored = new ProcessOrigins(dir)
   const service = (await scanServiceProcesses(restored)).find((entry) => entry.pid === pid)!
   assert.ok(service)
+  assert.equal(service.kind, 'command')
+  assert.equal(service.launcherPid, child.pid)
+  assert.equal(service.processCount, 1)
+  assert.match(service.command ?? '', /^node -e /)
   assert.deepEqual(service.ports, [port])
   assert.deepEqual(service.origin, { projectId: 'project', conversationId: 'conversation' })
   assert.ok(service.memoryBytes > 0)
@@ -107,6 +163,9 @@ test('parenté réelle, commandes sans port, origine héritée et refus des proc
   assert.deepEqual(snapshot.find((entry) => entry.pid === noPort.pid)?.origin, service.origin, 'L’origine peut remonter au parent quand une commande nettoie son environnement')
   assert.equal(snapshot.some((entry) => entry.pid === independent.pid), false)
   assert.equal(service.parentPid, child.pid)
+  const launcher = snapshot.find((entry) => entry.pid === child.pid)!
+  assert.equal(launcher.kind, 'launcher')
+  assert.equal(stopServiceProcess(launcher, restored, host), false, 'Un lanceur se pilote depuis sa conversation')
   const signal = once(child, 'message')
   assert.equal(stopServiceProcess(service, restored, host), true)
   assert.deepEqual((await signal)[0], { signal: 'SIGTERM' })
@@ -194,7 +253,13 @@ test('API : aucune attribution par dossier, visibilité privée, arrêt autoris�
   assert.equal(unassigned.projectId, null)
   assert.equal(unassigned.canStop, false)
   assert.equal(found.conversationTitle, 'Service source')
+  assert.equal(found.kind, 'command')
   assert.equal(found.canStop, true)
+  const launcher = owned.find((entry) => entry.pid === tracked.child.pid)!
+  assert.equal(launcher.kind, 'launcher')
+  assert.equal(found.launcherPid, launcher.pid)
+  assert.equal(launcher.canStop, false)
+  assert.equal((await app.inject({ method: 'POST', url: `/api/services/${launcher.id}/stop`, headers: { 'x-test-user': 'owner' } })).statusCode, 409)
   assert.equal(owned.some((entry) => entry.pid === unrelated.pid), false)
   for (const user of ['other', 'admin']) {
     assert.equal((await list(user)).some((entry) => entry.pid === tracked.pid), false)
@@ -208,3 +273,106 @@ test('API : aucune attribution par dossier, visibilité privée, arrêt autoris�
   await exited
   assert.equal((await app.inject({ method: 'POST', url: `/api/services/${found.id}/stop`, headers: { 'x-test-user': 'owner' } })).statusCode, 404)
 })
+
+test('apps : lecture de systemctl show, jeton d’origine, exécutable sans arguments', () => {
+  const [first, second] = parseShow('Id=sillage-app-a.service\nEnvironment=PATH=/bin SILLAGE_PROCESS_ORIGIN=124e227b-65ce-43d8-8be0-5030d10e4481\n\nId=sillage-app-b.service\nWorkingDirectory=!/home/x\n')
+  assert.equal(first?.Id, 'sillage-app-a.service')
+  assert.equal(originToken(first?.Environment ?? ''), '124e227b-65ce-43d8-8be0-5030d10e4481')
+  assert.equal(originToken('PATH=/bin'), null)
+  assert.equal(second?.WorkingDirectory, '!/home/x')
+  assert.equal(executableName('{ path=/usr/bin/npm ; argv[]=/usr/bin/npm run dev --token=secret ; ignore_errors=no ; start_time=[n/a] }'), 'npm')
+  assert.equal(executableName(''), null)
+  assert.equal(summarizeCommand(execStartArgv('{ path=/usr/bin/npm ; argv[]=/usr/bin/npm run dev --token=secret ; ignore_errors=no ; start_time=[n/a] }')), 'npm run dev --token=…')
+  assert.deepEqual(execStartArgv(''), [])
+  assert.equal(authoredDescription('[systemd-run] /usr/bin/npm run dev --token=secret'), '', 'La description générée recopie les arguments')
+  assert.equal(authoredDescription('Démo météo'), 'Démo météo')
+})
+
+test('apps : unité réelle, ports, origine, visibilité et arrêt par l’API', { skip: process.platform !== 'linux' }, async (t) => {
+  const exec = promisify(execFile)
+  try { await exec('systemctl', ['--user', 'show', '--property=Version']) }
+  catch { t.skip('gestionnaire systemd utilisateur absent'); return }
+  const dir = await directory(t)
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  for (const id of ['owner', 'other', 'admin']) db.insert(users).values({ id, username: id, displayName: id, passwordHash: '', isAdmin: id === 'admin', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'Private', workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  db.insert(conversations).values({ id: 'conversation', projectId: 'project', userId: 'owner', title: 'App source', agent: 'claude', config: '{}', status: 'idle', createdAt: 1, updatedAt: 1 }).run()
+  const origins = processOrigins(dir)
+  const token = origins.environment('project', 'conversation').SILLAGE_PROCESS_ORIGIN!
+  const suffix = randomUUID().slice(0, 8)
+  const tracked = `sillage-app-test-${suffix}.service`
+  const orphan = `sillage-app-test-orphan-${suffix}.service`
+  t.after(async () => {
+    for (const unit of [tracked, orphan]) {
+      await exec('systemctl', ['--user', 'stop', unit]).catch(() => {})
+      await exec('systemctl', ['--user', 'reset-failed', unit]).catch(() => {})
+    }
+  })
+  const listen = "require('node:net').createServer().listen(0, '127.0.0.1')"
+  await exec('systemd-run', ['--user', '--collect', `--unit=${tracked}`, `--setenv=SILLAGE_PROCESS_ORIGIN=${token}`, `--working-directory=${dir}`, process.execPath, '-e', listen])
+  await exec('systemd-run', ['--user', '--collect', `--unit=${orphan}`, process.execPath, '-e', 'setInterval(() => {}, 1000)'])
+
+  // Le port n'est ouvert qu'une fois le processus lancé : quelques scans au plus.
+  let app = (await scanServiceApps(origins)).find((entry) => entry.unit === tracked)
+  for (let attempt = 0; attempt < 30 && !app?.ports.length; attempt++) {
+    await delay(100)
+    app = (await scanServiceApps(origins)).find((entry) => entry.unit === tracked)
+  }
+  assert.ok(app)
+  assert.equal(app.state, 'active')
+  assert.equal(app.ports.length, 1)
+  assert.deepEqual(app.origin, { projectId: 'project', conversationId: 'conversation' })
+  assert.equal(app.cwd, dir)
+  assert.equal(app.transient, true)
+  assert.equal(app.executable, 'node')
+  assert.match(app.command ?? '', /^node -e /)
+  assert.equal(app.description, '', 'Aucun argument ne sort par la description de systemd-run')
+  assert.ok(app.startedAt && Math.abs(Date.now() - app.startedAt) < 10_000)
+  assert.ok((app.memoryBytes ?? 0) > 0)
+
+  const server = Fastify()
+  server.addHook('preHandler', async (request) => {
+    request.user = db.select().from(users).where(eq(users.id, String(request.headers['x-test-user']))).get()
+  })
+  registerErrorHandler(server)
+  registerServiceRoutes(server, { db, config: { paths: { data: dir } } as Config })
+  t.after(() => server.close())
+  const apps = async (user: string) => {
+    const response = await server.inject({ url: '/api/services', headers: { 'x-test-user': user } })
+    assert.equal(response.statusCode, 200)
+    return response.json<ServicesDto>().apps.filter((entry) => entry.unit.endsWith(`${suffix}.service`))
+  }
+  const act = (user: string, id: string, action: string) =>
+    server.inject({ method: 'POST', url: `/api/services/apps/${encodeURIComponent(id)}/${action}`, headers: { 'x-test-user': user } })
+
+  const owned = await apps('owner')
+  assert.deepEqual(owned.map((entry) => entry.unit), [tracked], 'Le propriétaire voit son app, pas celle d’origine inconnue')
+  assert.equal(owned[0]!.conversationTitle, 'App source')
+  assert.equal(owned[0]!.canStop, true)
+  assert.deepEqual(await apps('other'), [], 'Un projet privé ne se montre pas aux autres')
+  const adminView = await apps('admin')
+  assert.deepEqual(adminView.map((entry) => entry.unit), [orphan], 'L’admin ne voit pas le projet privé d’un autre')
+  assert.equal(adminView[0]!.canStop, true, 'Sans origine, l’admin garde la main sur une sillage-app')
+
+  assert.equal((await act('other', owned[0]!.id, 'stop')).statusCode, 404)
+  assert.equal((await act('owner', owned[0]!.id, 'explode')).statusCode, 404)
+  assert.equal((await act('owner', owned[0]!.id, 'reset')).statusCode, 409, 'Rien à retirer sur une app en marche')
+  // Relancée, l'app change d'invocation : un clic sur l'ancienne liste ne la vise plus.
+  assert.equal((await act('owner', owned[0]!.id, 'restart')).statusCode, 202)
+  let restarted = (await apps('owner'))[0]
+  for (let attempt = 0; attempt < 50 && restarted?.id === owned[0]!.id; attempt++) {
+    await delay(100)
+    restarted = (await apps('owner'))[0]
+  }
+  assert.ok(restarted && restarted.id !== owned[0]!.id)
+  assert.equal((await act('owner', owned[0]!.id, 'stop')).statusCode, 404)
+  assert.equal((await act('owner', restarted.id, 'stop')).statusCode, 202)
+  assert.equal((await act('admin', adminView[0]!.id, 'stop')).statusCode, 202)
+  // `--no-block` : l'arrêt suit la réponse ; une unité transitoire arrêtée disparaît.
+  for (let attempt = 0; attempt < 50 && (await apps('admin')).length + (await apps('owner')).length > 0; attempt++) await delay(100)
+  assert.deepEqual([...await apps('owner'), ...await apps('admin')], [])
+  assert.equal((await act('owner', restarted.id, 'stop')).statusCode, 404)
+})
+
