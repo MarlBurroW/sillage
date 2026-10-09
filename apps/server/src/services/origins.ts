@@ -43,7 +43,12 @@ export class ProcessOrigins {
   resolve(environment: string): Origin | null {
     const token = environment.split('\0').find((entry) => entry.startsWith('SILLAGE_PROCESS_ORIGIN='))
       ?.slice('SILLAGE_PROCESS_ORIGIN='.length)
-    return token ? this.entries.get(token) ?? null : null
+    return token ? this.byToken(token) : null
+  }
+
+  /** Le jeton déjà extrait, tel que l'environnement d'une unité systemd le donne. */
+  byToken(token: string): Origin | null {
+    return this.entries.get(token) ?? null
   }
 }
 

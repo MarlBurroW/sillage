@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises'
@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { chromium } from 'playwright'
 
 // Base, projets et serveurs jetables : aucun agent ni service utilisateur n'est arrêté.
@@ -19,6 +20,9 @@ const runtime = process.env.SILLAGE_TEST_RUNTIME
 const data = await mkdtemp(join(tmpdir(), 'sillage-services-ui-'))
 const children = []
 const trackedProcesses = []
+// Unités systemd jetables, arrêtées en sortie même si le contrôle échoue.
+const units = []
+const systemd = (args) => promisify(execFile)('systemd-run', ['--user', '--collect', ...args])
 let browser
 
 async function port() {
@@ -49,7 +53,7 @@ async function ready(url, child) {
 }
 
 try {
-  const [apiPort, webPort, servicePort, oldPort] = await Promise.all([port(), port(), port(), port()])
+  const [apiPort, webPort, servicePort, oldPort, appPort] = await Promise.all([port(), port(), port(), port(), port()])
   const config = join(data, 'config.toml')
   await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n')
   const env = { ...process.env, SILLAGE_PORT: String(apiPort), SILLAGE_HOST: '127.0.0.1', SILLAGE_CONFIG: config, SILLAGE_DATA_DIR: join(data, 'data'), SILLAGE_WEB_ROOT: runtime ? join(runtime, 'web') : join(data, 'web') }
@@ -72,6 +76,11 @@ try {
   const vite = runtime ? server : run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
   const base = `http://127.0.0.1:${runtime ? apiPort : webPort}`
   await Promise.all([ready(`${base}/api/health`, server), ready(base, vite), ready(`http://127.0.0.1:${oldPort}`, old)])
+  // Une app permanente comme un agent la crée : unité sillage-app-*, avec le jeton d’origine.
+  const appName = `uicheck-${token.slice(0, 8)}`
+  units.push(`sillage-app-${appName}.service`)
+  await systemd([`--unit=sillage-app-${appName}`, `--setenv=SILLAGE_PROCESS_ORIGIN=${token}`, `--working-directory=${project.workspace_path}`, process.execPath, '-e', script(appPort)])
+  await ready(`http://127.0.0.1:${appPort}`, server)
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
@@ -122,18 +131,28 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`${base}/services`)
   await page.getByRole('heading', { name: 'Services', exact: true }).waitFor()
+  const appCard = page.locator('li').filter({ hasText: appName })
+  await appCard.getByText(`:${appPort}`, { exact: true }).waitFor()
+  await appCard.getByText('En marche', { exact: true }).waitFor()
+  await appCard.getByRole('link', { name: conversation.title, exact: true }).waitFor()
+  await appCard.getByText(`Journal : journalctl --user -u sillage-app-${appName}.service`, { exact: true }).waitFor()
   const row = page.locator('li').filter({ hasText: `PID ${service.pid}` })
   const oldRow = page.locator('li').filter({ hasText: `PID ${old.pid}` })
   await row.getByText(`:${servicePort}`, { exact: true }).waitFor()
   await row.getByRole('link', { name: conversation.title, exact: true }).waitFor()
   assert.equal(await oldRow.count(), 0, 'Un service indépendant est exclu même avec le même dossier et le même marqueur')
   const workerRow = page.locator('li').filter({ hasText: `PID ${worker.pid}` })
-  await workerRow.getByText('Terminal du projet', { exact: true }).waitFor()
-  await row.getByText('Processus enfant de Sillage', { exact: true }).waitFor()
-  await row.getByText(/Parent :/).waitFor()
+  // Les deux commandes sont rangées sous le terminal qui les a lancées, avec leur ligne de commande.
+  const terminalGroup = page.locator('section').filter({ has: page.getByText('Terminal', { exact: true }) })
+  await terminalGroup.getByRole('link', { name: 'Nimbus', exact: true }).first().waitFor()
+  assert.equal(await terminalGroup.locator('li').filter({ hasText: `PID ${worker.pid}` }).count(), 1)
+  await row.locator('code').filter({ hasText: 'service-fixture.cjs' }).waitFor()
+  await workerRow.locator('code').filter({ hasText: 'worker-fixture.cjs' }).waitFor()
+  await appCard.locator('code').filter({ hasText: /^node -e / }).waitFor()
   await page.getByRole('combobox').click()
   await page.getByRole('option', { name: 'Nimbus', exact: true }).click()
   assert.equal(await oldRow.count(), 0)
+  await appCard.getByText(`:${appPort}`, { exact: true }).waitFor()
   await page.screenshot({ path: '/tmp/sillage-services-desktop.png', fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
   // Le tiroir de navigation termine sa transition après le changement de breakpoint.
@@ -144,16 +163,23 @@ try {
   await row.getByRole('button', { name: 'Arrêter', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.screenshot({ path: '/tmp/sillage-services-mobile.png', fullPage: true })
+  await appCard.getByRole('button', { name: 'Arrêter', exact: true }).click()
+  await appCard.waitFor({ state: 'detached', timeout: 12000 })
+  assert.equal(await fetch(`http://127.0.0.1:${appPort}`).then(() => true, () => false), false, 'L’app arrêtée ne répond plus')
   await row.getByRole('button', { name: 'Arrêter', exact: true }).click()
   await row.waitFor({ state: 'detached', timeout: 12000 })
   await workerRow.getByRole('button', { name: 'Arrêter', exact: true }).click()
   await workerRow.waitFor({ state: 'detached', timeout: 12000 })
-  await page.getByText('Aucun processus rattaché', { exact: true }).waitFor()
+  await terminalGroup.getByText('Aucune commande en cours', { exact: true }).waitFor()
   assert.equal(old.exitCode, null, 'Stopping one service must not stop another')
   assert.deepEqual(errors, [])
-  console.log('OK : vrais enfants de Sillage, processus sans port, exclusion des services indépendants, mobile et arrêt ciblé.')
+  console.log('OK : commandes rangées sous leur terminal, lignes de commande, processus sans port, exclusion des services indépendants, app permanente, mobile et arrêt ciblé.')
 } finally {
   await browser?.close()
+  for (const unit of units) {
+    await promisify(execFile)('systemctl', ['--user', 'stop', unit]).catch(() => {})
+    await promisify(execFile)('systemctl', ['--user', 'reset-failed', unit]).catch(() => {})
+  }
   for (const { pid, start } of trackedProcesses) {
     const current = await readFile(`/proc/${pid}/stat`, 'utf8').catch(() => '')
     if (current && current.slice(current.lastIndexOf(')') + 2).split(' ')[19] === start) process.kill(pid, 'SIGTERM')

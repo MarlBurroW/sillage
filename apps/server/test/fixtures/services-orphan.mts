@@ -23,7 +23,7 @@ try {
   await exited
   const service = (await scanServiceProcesses(origins)).find((entry) => entry.pid === pid)
   assert.ok(service)
-  assert.equal(service.relation, 'service-group')
+  assert.equal(service.kind, 'detached')
   assert.equal(service.stopsWithSillage, true)
   assert.equal(stopServiceProcess(service, origins, host), true)
   await delay(100)
