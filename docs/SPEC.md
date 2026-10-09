@@ -745,9 +745,25 @@ DELETE .../entries                          { path }
 GET    .../file?path=                       contenu texte d'un fichier, avec son empreinte disque
 GET    .../file/raw                         contenu brut : images, PDF, audio/vidéo (Range), modèles 3D
 PUT    .../file                             { path, content, fingerprint } -> 409 si le disque a bougé
-GET    .../diff                             diff de travail du répertoire
-GET    .../commits?limit=                   derniers commits de la branche
+GET    .../commits?limit=                   derniers commits de la branche, avec leurs références
 GET    .../commits/:hash/diff               ce qu'un commit a changé
+GET    .../git/status                       index, répertoire de travail, conflits, amont, opération en cours
+GET    .../git/file-diff?path=&area=        diff d'un fichier, dans l'index ou le répertoire de travail
+GET    .../git/branches                     branches locales (avance, worktree) et distantes
+GET    .../git/stashes                      stashs du dépôt
+POST   .../git/stage | unstage              { paths? } -> tout le répertoire sans chemins
+POST   .../git/discard                      { paths } -> version de l'index, ou suppression si non suivi
+POST   .../git/commit                       { message, amend?, stageAll? } -> { hash, shortHash }
+POST   .../git/branches                     { name, from?, checkout? }
+DELETE .../git/branches                     { name, force? }
+POST   .../git/checkout                     { ref } -> branche locale, distante (suivie) ou commit (détaché)
+POST   .../git/merge                        { ref } -> { conflicts } ; un conflit n'est pas une erreur
+POST   .../git/abort | continue             l'opération en cours (merge, rebase, cherry-pick, revert)
+POST   .../git/fetch | pull | push          pull { rebase? }, push { force? } en --force-with-lease
+POST   .../git/stash                        { message?, includeUntracked? }
+POST   .../git/stash/apply | pop | drop     { index }
+POST   .../git/revert                       { hash }
+POST   .../git/reset                        { hash, mode: soft | mixed | hard }
 
 GET    /api/agents                          capacités et modèles disponibles par CLI
 GET    /api/health                          état du daemon, sessions actives, RSS
@@ -1683,6 +1699,37 @@ panneau, soit trois endroits où l'oublier.
 Rafraîchi à la **fin d'un tour**, moment où l'arborescence a réellement bougé, plus un
 bouton. Aucun sondage en boucle : pendant le tour, les fichiers changent à chaque écriture
 et relire à chaque événement ferait clignoter la liste sans rien apprendre.
+
+**Onglet Git.** Le dépôt tel qu'il est, et les gestes du quotidien dessus, pour ne plus
+passer par un terminal ni demander à un agent de commiter à sa place. En tête, la branche,
+son amont et son avance, avec fetch, pull et push ; puis quatre sections repliables dont
+l'état est retenu : les changements (conflits, index, hors index, et le formulaire de
+commit), les branches, les stashs, les commits. Tout passe par le binaire `git` du dépôt,
+jamais par une réimplémentation : hooks, `pull.rebase`, signature et helper de credentials
+s'appliquent comme depuis le shell.
+
+L'index est montré tel quel, en deux groupes, plutôt que caché derrière des cases à
+cocher : c'est la notion que le workflow demande pour choisir ce qu'un commit emporte, et
+une abstraction fuirait au premier `git add` d'un agent. Sans rien dans l'index, le bouton
+propose « tout ajouter et commiter » : le cas courant hors d'un commit soigné. Le message
+passe par l'entrée standard de git, un corps de plusieurs paragraphes garde sa forme, et
+son brouillon survit au changement d'onglet (`sessionStorage`, par portée).
+
+Les refus de git sont nommés par un code quand git les dit clairement, et l'avis qui les
+affiche propose le remède qu'on taperait ensuite : un push rejeté offre de forcer avec
+bail (`--force-with-lease`, jamais `--force`), un pull sur des branches divergentes offre
+merge ou rebase, une branche non fusionnée de la supprimer quand même, un checkout bloqué
+par des changements locaux de les stasher puis réessayer. Une fusion qui s'arrête sur des
+conflits n'est pas une erreur : le dépôt passe en « opération en cours », bandeau avec
+abandon et reprise, et les fichiers en conflit se marquent résolus depuis la liste.
+
+Les actions d'un même dépôt sont sérialisées côté serveur, sans quoi deux clics
+rapprochés finissent sur `index.lock`. Les lectures d'état passent par
+`GIT_OPTIONAL_LOCKS=0` pour ne pas gêner un agent qui commite au même moment. Ce qui
+détruit du travail (abandonner des changements, `reset --hard`, jeter un stash, supprimer
+une branche) demande une confirmation qui dit ce qui va se passer. Pas de graphe : les
+références posées sur chaque commit en disent l'essentiel, et un graphe dans 390 px n'en
+dirait pas plus.
 
 **Droits.** Tout compte qui voit le projet peut utiliser le panneau, y compris en écriture
 quand l'éditeur et les terminaux arriveront. C'est cohérent avec l'idée d'un projet
