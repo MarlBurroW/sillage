@@ -4,6 +4,16 @@ import { api } from './api'
 
 const cardsKey = (projectId: string) => ['cards', projectId]
 
+/**
+ * La liste des projets porte le compte des cartes par colonne, affiché dans la
+ * navigation : un changement de colonne, un ajout ou une suppression le rend faux.
+ * Une simple retouche de titre ou de description n'y touche pas, et ne relit donc pas
+ * la liste, qui interroge git pour chaque projet.
+ */
+function invalidateCardCounts(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: ['projects'] })
+}
+
 export function useCards(projectId: string | undefined) {
   return useQuery({
     queryKey: cardsKey(projectId ?? ''),
@@ -18,7 +28,10 @@ export function useCreateCard(projectId: string) {
   return useMutation({
     mutationFn: (input: { title: string; description?: string; column?: CardColumn }) =>
       api.post<CardDto>(`/api/projects/${projectId}/cards`, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+    onSuccess: () => {
+      invalidateCardCounts(queryClient)
+      return queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
+    },
   })
 }
 
@@ -35,7 +48,10 @@ export function useUpdateCard(projectId: string) {
       description?: string
       column?: CardColumn
     }) => api.patch<CardDto>(`/api/cards/${id}`, patch),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+    onSuccess: (_card, patch) => {
+      if (patch.column) invalidateCardCounts(queryClient)
+      return queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
+    },
   })
 }
 
@@ -53,6 +69,7 @@ export function useDeleteCard(projectId: string) {
     mutationFn: (id: string) => api.delete<void>(`/api/cards/${id}`),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
+      invalidateCardCounts(queryClient)
       // Les conversations rattachées perdent leur puce : leur liste devient fausse.
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
     },
@@ -97,7 +114,10 @@ export function useReorderCards(projectId: string) {
       if (context?.previous) queryClient.setQueryData(cardsKey(projectId), context.previous)
     },
 
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+    onSettled: () => {
+      invalidateCardCounts(queryClient)
+      return queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
+    },
   })
 }
 
