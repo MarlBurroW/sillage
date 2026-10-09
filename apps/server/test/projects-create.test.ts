@@ -112,3 +112,26 @@ test('réglages : projectsDir se pose et se retire par PATCH', async (t) => {
   const clear = await app.inject({ method: 'PATCH', url: '/api/me/settings', payload: { projectsDir: null } })
   assert.equal(clear.json().projectsDir, null)
 })
+
+test('épingle : personnelle, idempotente, et reflétée dans la liste', async (t) => {
+  const { dir, app, create } = await harness(t)
+  const parent = join(dir, 'projects')
+  await mkdir(parent)
+  const project = (await create({ name: 'Épinglé', parentDir: parent, directory: 'epingle' })).json<ProjectDto>()
+  assert.equal(project.pinned, false)
+
+  for (let i = 0; i < 2; i++) {
+    const pin = await app.inject({ method: 'PUT', url: `/api/projects/${project.id}/pin` })
+    assert.equal(pin.statusCode, 200, pin.body)
+  }
+  let list = (await app.inject({ method: 'GET', url: '/api/projects' })).json<ProjectDto[]>()
+  assert.equal(list.find((entry) => entry.id === project.id)?.pinned, true)
+
+  const unpin = await app.inject({ method: 'DELETE', url: `/api/projects/${project.id}/pin` })
+  assert.equal(unpin.statusCode, 200, unpin.body)
+  list = (await app.inject({ method: 'GET', url: '/api/projects' })).json<ProjectDto[]>()
+  assert.equal(list.find((entry) => entry.id === project.id)?.pinned, false)
+
+  const missing = await app.inject({ method: 'PUT', url: '/api/projects/nope/pin' })
+  assert.equal(missing.statusCode, 404)
+})
