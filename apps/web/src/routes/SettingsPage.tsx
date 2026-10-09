@@ -47,7 +47,8 @@ interface Section {
   adminOnly?: boolean
 }
 
-const SECTIONS: Section[] = [
+/** Exportée pour la palette de recherche, qui propose chaque catégorie. */
+export const SECTIONS: Section[] = [
   {
     to: 'compte',
     group: 'personal',
