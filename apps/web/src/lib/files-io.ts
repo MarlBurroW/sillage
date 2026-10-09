@@ -36,9 +36,28 @@ export function rawFileUrl(scope: WorkspaceScope, path: string): string {
 
 /** Le navigateur reçoit le flux directement, même pour les fichiers trop gros pour l'éditeur. */
 export function downloadFile(scope: WorkspaceScope, path: string): void {
+  startDownload(
+    `${workspaceApiBase(scope)}/file/download?path=${encodeURIComponent(path)}`,
+    path.split('/').pop() ?? path,
+  )
+}
+
+/**
+ * Dossiers et sélections, réunis en `.zip` par le serveur.
+ *
+ * Une archive plutôt qu'un téléchargement par fichier : le navigateur n'en accepte
+ * qu'un par geste, et demande pour les suivants une autorisation que rien n'explique.
+ * Le nom vient du serveur, qui seul sait de quel dossier commun partent les entrées.
+ */
+export function downloadArchive(scope: WorkspaceScope, paths: string[]): void {
+  const query = paths.map((path) => `path=${encodeURIComponent(path)}`).join('&')
+  startDownload(`${workspaceApiBase(scope)}/entries/archive?${query}`, '')
+}
+
+function startDownload(href: string, filename: string): void {
   const anchor = document.createElement('a')
-  anchor.href = `${workspaceApiBase(scope)}/file/download?path=${encodeURIComponent(path)}`
-  anchor.download = path.split('/').pop() ?? path
+  anchor.href = href
+  anchor.download = filename
   // Une erreur HTTP éventuelle ne doit pas remplacer l'IDE et ses brouillons.
   anchor.target = '_blank'
   anchor.rel = 'noopener'

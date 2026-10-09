@@ -39,7 +39,19 @@ interface MenuItemProps {
    * croire qu'elle n'existe pas.
    */
   disabled?: boolean
+  /** Raccourci clavier équivalent, voir `MenuHint`. */
+  hint?: string
   children: ReactNode
+}
+
+/**
+ * Raccourci rappelé en bout de ligne : c'est dans le menu qu'on découvre qu'il existe.
+ * Caché au doigt, où il n'y a pas de clavier pour s'en servir.
+ */
+export function MenuHint({ children }: { children: ReactNode }) {
+  return (
+    <span className="ml-auto pl-4 text-xs text-ink-faint pointer-coarse:hidden">{children}</span>
+  )
 }
 
 export function MenuItem({
@@ -47,6 +59,7 @@ export function MenuItem({
   onSelect,
   tone = 'neutral',
   disabled = false,
+  hint,
   children,
 }: MenuItemProps) {
   return (
@@ -63,6 +76,7 @@ export function MenuItem({
     >
       {icon ? <span className="shrink-0">{icon}</span> : null}
       {children}
+      {hint ? <MenuHint>{hint}</MenuHint> : null}
     </DropdownMenu.Item>
   )
 }
