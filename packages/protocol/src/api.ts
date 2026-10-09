@@ -515,23 +515,6 @@ export interface DiffFileDto {
   removed: number
 }
 
-export interface WorkingDiffDto {
-  /** Null si le répertoire de travail n'est pas un dépôt git. */
-  files: DiffFileDto[] | null
-  patch: string
-  truncated: boolean
-  cwd: string
-  /** Branche courante, ou null hors dépôt. Le worktree, lui, est déjà connu du fil. */
-  branch: string | null
-  /**
-   * Dernier commit, tel que `git log -1` le rend.
-   *
-   * Affiché parce qu'un diff vide a deux causes qu'on ne distingue pas autrement :
-   * rien n'a été touché, ou l'agent vient de commiter ce qu'il a fait.
-   */
-  head: { hash: string; subject: string; relativeDate: string } | null
-}
-
 /** Un commit de la branche courante, tel que `git log` le rend. */
 export interface CommitDto {
   /** Hash complet : c'est lui qui sert de clé et qu'on redemande pour le diff. */
@@ -546,6 +529,12 @@ export interface CommitDto {
    * serveur, et se fige au moment de la requête.
    */
   ts: number
+  /**
+   * Références posées sur ce commit : branches locales, branches distantes, tags
+   * (`tag: v1.0`). Ce que `%D` rend, sans la flèche `HEAD -> ` : le commit courant
+   * est signalé à part.
+   */
+  refs: string[]
 }
 
 export interface CommitListDto {
