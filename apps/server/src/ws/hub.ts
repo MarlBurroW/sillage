@@ -49,6 +49,10 @@ export const LIST_ROUTES: Record<string, 'shared' | 'personal'> = {
   'PATCH /api/schedules/:id': 'shared',
   'DELETE /api/schedules/:id': 'shared',
   'POST /api/schedules/:id/run': 'shared',
+  'POST /api/projects/:id/actions': 'shared',
+  'PATCH /api/actions/:id': 'shared',
+  'POST /api/actions/:id/approve': 'shared',
+  'DELETE /api/actions/:id': 'shared',
 }
 
 /**

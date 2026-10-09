@@ -31,6 +31,10 @@ export interface TerminalDto {
   /** Répertoire du shell : le workspace du projet, ou un worktree. */
   cwd: string
   createdAt: number
+  /** Action de projet qui a ouvert ce terminal pour y jouer sa commande. */
+  actionId: string | null
+  /** Code de sortie d'une commande d'action terminée ; null pour un shell ou tant qu'elle tourne. */
+  exitCode: number | null
 }
 
 export const renameTerminalBodySchema = z.object({ title: z.string().min(1).max(60) })

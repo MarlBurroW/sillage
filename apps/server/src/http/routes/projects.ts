@@ -43,7 +43,7 @@ import { repoInstructionFiles } from '../../instructions/store.js'
  * Un utilisateur voit un projet s'il en est propriétaire ou si le projet est partagé.
  * Seul le propriétaire peut le modifier ou le supprimer.
  */
-function visibilityFilter(userId: string) {
+export function visibilityFilter(userId: string) {
   return or(eq(projects.ownerId, userId), eq(projects.visibility, 'shared'))
 }
 

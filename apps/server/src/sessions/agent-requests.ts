@@ -21,6 +21,8 @@ import {
   MAX_SCHEDULE_PROMPT_CHARS,
   MIN_SCHEDULE_DURATION_MINUTES,
   agentConfigSchema,
+  createProjectActionBodySchema,
+  updateProjectActionBodySchema,
   agentKindSchema,
   defaultConfigFor,
   formatSessionMessage,
@@ -30,7 +32,16 @@ import {
   type AgentConfig,
   type AgentKind,
   type AgentModelDto,
+  type ProjectActionRunResult,
 } from '@sillage/protocol'
+import type { ZodError } from 'zod'
+import {
+  createAction,
+  deleteAction,
+  loadAction,
+  updateAction,
+  type ActionRunner,
+} from '../actions/actions.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { createConversation } from '../conversations/create.js'
 import type { AppContext } from '../http/context.js'
@@ -39,6 +50,7 @@ import { advanceCardOnLaunch, createCard } from '../http/routes/cards.js'
 import { createWorktree } from '../http/routes/worktrees.js'
 import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
+import { resolveConversationCwd } from '../workspace.js'
 import type { SessionManager } from './session-manager.js'
 
 /**
@@ -120,6 +132,8 @@ export class AgentRequests {
     private readonly ctx: AppContext,
     private readonly sessions: SessionManager,
     private readonly registry: AgentRegistry,
+    /** Absent des tests qui n'en ont pas l'usage : `run_action` y est alors refusé. */
+    private readonly actions?: ActionRunner,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -185,6 +199,12 @@ export class AgentRequests {
         this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
       } else if (request.kind === 'create_card') {
         this.settle(request.id, this.createCard(requester, payload), false)
+      } else if (request.kind === 'register_action') {
+        this.settle(request.id, this.registerAction(requester, payload), false)
+      } else if (request.kind === 'remove_action') {
+        this.settle(request.id, await this.removeAction(requester, payload), false)
+      } else if (request.kind === 'run_action') {
+        this.settle(request.id, await this.runAction(requester, payload), false)
       } else {
         this.settle(request.id, await this.listModels(requester, project, payload), false)
       }
@@ -561,6 +581,69 @@ export class AgentRequests {
     return `Carte #${card.number} « ${card.title} » créée dans « à faire ». Pour la faire traiter tout de suite : start_session avec card=${card.number}.`
   }
 
+  // --- actions -------------------------------------------------------------------
+
+  private projectAction(requester: ConversationRow, id: unknown) {
+    if (typeof id !== 'string' || !id) throw new Refusal('Le paramètre `id` est requis (voir list_actions).')
+    try {
+      const row = loadAction(this.ctx.db, id)
+      if (row.projectId === requester.projectId) return row
+    } catch {
+      // Même réponse qu'une action d'un autre projet.
+    }
+    throw new Refusal(`Aucune action \`${id}\` dans ce projet : list_actions donne les identifiants.`)
+  }
+
+  /**
+   * Créée ou modifiée en `proposed` : l'utilisateur relit la commande avant que son
+   * premier clic la lance. Renommer ou redécrire un bouton relu ne change pas son statut.
+   */
+  private registerAction(requester: ConversationRow, payload: Record<string, unknown>): string {
+    const fields = Object.fromEntries(
+      ['label', 'description', 'kind', 'command', 'subdir', 'url']
+        .filter((key) => payload[key] !== undefined && payload[key] !== null)
+        .map((key) => [key, payload[key]]),
+    )
+    if (payload.id !== undefined && payload.id !== null && payload.id !== '') {
+      const row = this.projectAction(requester, payload.id)
+      const parsed = updateProjectActionBodySchema.safeParse(fields)
+      if (!parsed.success) throw new Refusal(describeZod(parsed.error))
+      const next = updateAction(this.ctx.db, row, parsed.data, requester.id)
+      return next.approvedAt
+        ? `Action « ${next.label} » mise à jour ; elle reste validée.`
+        : `Action « ${next.label} » mise à jour. Sa commande a changé : l'utilisateur doit la valider avant de la lancer d'un clic.`
+    }
+    const parsed = createProjectActionBodySchema.safeParse(fields)
+    if (!parsed.success) throw new Refusal(describeZod(parsed.error))
+    const row = createAction(this.ctx.db, requester.projectId, parsed.data, requester.id)
+    return `Action « ${row.label} » (${row.kind}, id ${row.id}) proposée. Elle apparaît dans l'onglet Actions du panneau ; l'utilisateur la valide avant son premier lancement.`
+  }
+
+  private async removeAction(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
+    const row = this.projectAction(requester, payload.id)
+    await this.actions?.forget(row)
+    deleteAction(this.ctx.db, row.id)
+    return `Action « ${row.label} » supprimée${row.kind === 'service' ? ', et son service arrêté' : ''}.`
+  }
+
+  /**
+   * Lance l'action dans le worktree de la session qui demande. Permis même pour une
+   * action encore proposée : l'agent pourrait exécuter la même commande dans son shell,
+   * la relecture protège le clic de l'utilisateur, pas l'agent de lui-même.
+   */
+  private async runAction(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
+    if (!this.actions) throw new Refusal('Les actions ne sont pas disponibles sur ce serveur.')
+    const row = this.projectAction(requester, payload.id)
+    const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester), requester.id)
+    if (result.service) {
+      // Un temps pour qu'un échec immédiat (port pris, commande introuvable) se voie.
+      if (!result.alreadyRunning) await new Promise((resolve) => setTimeout(resolve, 2000))
+      const fresh = await this.actions.toDto(row)
+      return describeRun(row.label, result, fresh.service)
+    }
+    return describeRun(row.label, result, null)
+  }
+
   // --- list_models ---------------------------------------------------------------
 
   private async listModels(
@@ -722,4 +805,28 @@ function describePermissions(config: AgentConfig): string | null {
     return "Elle demandera la permission de l'utilisateur avant d'écrire ou d'exécuter, comme le veulent les défauts du projet."
   }
   return null
+}
+
+function describeZod(error: ZodError): string {
+  const issues = error.issues.map((issue) => `\`${issue.path.join('.') || 'paramètres'}\` : ${issue.message}`)
+  return `Paramètres invalides — ${issues.join(' ; ')}`
+}
+
+function describeRun(
+  label: string,
+  result: ProjectActionRunResult,
+  service: ProjectActionRunResult['service'],
+): string {
+  if (service) {
+    const ports = service.ports.length > 0 ? `, ports ${service.ports.join(', ')}` : ''
+    const state = `unité ${service.unit} : ${service.state}${ports}`
+    if (result.alreadyRunning) return `« ${label} » tournait déjà (${state}).`
+    if (service.state === 'failed') {
+      return `« ${label} » a échoué au démarrage (${state}). Journal : journalctl --user -u ${service.unit} -n 50`
+    }
+    return `« ${label} » démarré (${state}). Journal : journalctl --user -u ${service.unit} -n 50`
+  }
+  const terminal = result.terminal
+  if (result.alreadyRunning) return `« ${label} » tourne déjà dans le terminal « ${terminal?.title ?? label} » du panneau.`
+  return `« ${label} » lancé dans un terminal du panneau, sous les yeux de l'utilisateur. Tu n'en lis pas la sortie : pour l'exploiter toi-même, exécute la commande dans ton shell.`
 }

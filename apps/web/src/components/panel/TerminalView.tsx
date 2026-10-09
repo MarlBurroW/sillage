@@ -215,6 +215,11 @@ export function TerminalView({
       parent.removeEventListener('mouseup', onMouseUp)
       parent.removeEventListener('contextmenu', onContextMenu)
       typed.dispose()
+      // Une socket fermée avant d'avoir abouti lève `error` après coup : sans ce
+      // détachement, celle d'un montage défait (StrictMode, onglet changé vite)
+      // écrasait l'état de la suivante par « connexion impossible ».
+      socket.onmessage = null
+      socket.onerror = null
       socket.close()
       terminal.dispose()
       fit.current = null

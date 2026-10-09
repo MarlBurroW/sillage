@@ -3,6 +3,7 @@ import { Loader, Plus, SquareTerminal as TerminalIcon, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@sillage/protocol'
 import { useTranslate } from '../../lib/i18n'
+import { clearFocusedTerminal, useFocusedTerminal } from '../../lib/panel'
 import { useProjects } from '../../lib/projects'
 import { useCloseTerminal, useOpenTerminal, useTerminals } from '../../lib/terminals'
 import { Banner, Button, cx } from '../ui'
@@ -49,6 +50,14 @@ export function TerminalsPane({
     )
   }, [terminals])
 
+  // Un terminal ouvert par une action passe devant dès que la liste relue le contient.
+  const focused = useFocusedTerminal()
+  useEffect(() => {
+    if (!focused || !terminals?.some((terminal) => terminal.id === focused)) return
+    setActive(focused)
+    clearFocusedTerminal()
+  }, [focused, terminals])
+
   const full = (terminals?.length ?? 0) >= MAX_TERMINALS_PER_PROJECT
   const openNew = (input?: { cwd?: string }) =>
     open.mutate(input?.cwd ? input : { conversationId }, {
@@ -89,7 +98,8 @@ export function TerminalsPane({
               aria-label={terminal.alive ? t('terminal.tab.shellAlive') : t('terminal.tab.shellDone')}
               className={cx(
                 'size-1.5 shrink-0 rounded-full',
-                terminal.alive ? 'bg-positive' : 'bg-ink-faint/50',
+                // Une commande d'action sortie en erreur se signale sans ouvrir l'onglet.
+                terminal.alive ? 'bg-positive' : terminal.exitCode ? 'bg-critical' : 'bg-ink-faint/50',
               )}
             />
             <TooltipButton

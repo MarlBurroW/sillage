@@ -121,7 +121,7 @@ export function setPanelOpen(next: boolean): void {
   for (const listener of listeners) listener()
 }
 
-export type PanelTab = 'files' | 'git' | 'history' | 'terminals' | 'agents' | 'mcp'
+export type PanelTab = 'files' | 'git' | 'history' | 'terminals' | 'actions' | 'agents' | 'mcp'
 
 /**
  * Onglet affiché et sous-agent consulté.
@@ -149,6 +149,33 @@ export function setPanelTab(next: PanelTab): void {
   // onglet, alors qu'elle survit à un aller-retour dans le fil.
   subAgentId = null
   for (const listener of listeners) listener()
+}
+
+/**
+ * Terminal à mettre devant à la prochaine liste qui le contient : une action vient de
+ * l'ouvrir, et le panneau des terminaux, qui tient sa sélection, doit la suivre.
+ */
+let focusedTerminal: string | null = null
+
+export function useFocusedTerminal(): string | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => focusedTerminal,
+    () => null,
+  )
+}
+
+/** Ouvre le panneau sur un terminal donné, depuis n'importe où dans la vue. */
+export function showTerminal(id: string): void {
+  focusedTerminal = id
+  tab = 'terminals'
+  setPanelOpen(true)
+  for (const listener of listeners) listener()
+}
+
+/** Le panneau des terminaux a pris la sélection en compte. */
+export function clearFocusedTerminal(): void {
+  focusedTerminal = null
 }
 
 /** L'appel de spawn du sous-agent consulté, ou null pour la liste. */

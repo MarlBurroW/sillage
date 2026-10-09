@@ -37,6 +37,7 @@ import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import { useSidebarHidden } from '../lib/sidebar'
 import { useMediaQuery } from '../lib/viewport'
+import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 
 /** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
 const WIDE = '(min-width: 768px)'
@@ -272,6 +273,7 @@ export function BoardPage() {
           </Button>
           {/* Le panneau opère ici sur le workspace du projet : un terminal, les
               fichiers ou le diff s'ouvrent sans avoir à entrer dans une session. */}
+          <ActionsLauncher projectId={projectId} size="sm" />
           <IconButton
             label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
             size="sm"

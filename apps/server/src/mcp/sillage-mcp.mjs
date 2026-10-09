@@ -120,7 +120,24 @@ const MAX_PEER_MESSAGE_CHARS = 4000
  * secondes d'ordinaire, davantage sur une machine chargée. Passé ce délai, l'agent
  * apprend que la demande court toujours plutôt que de rester suspendu.
  */
-const REQUEST_WAIT_MS = { start_session: 90000, create_card: 15000, list_models: 30000, schedule_task: 30000 }
+const REQUEST_WAIT_MS = {
+  start_session: 90000,
+  create_card: 15000,
+  list_models: 30000,
+  schedule_task: 30000,
+  register_action: 15000,
+  remove_action: 20000,
+  // Démarrer une unité systemd, puis attendre de voir si elle tient.
+  run_action: 30000,
+}
+
+/**
+ * Bornes d'une action de projet, d'accord avec `MAX_ACTION_LABEL_CHARS` et
+ * `MAX_ACTION_COMMAND_CHARS` du protocole (`packages/protocol/src/actions.ts`). Le
+ * daemon revalide tout : elles ne servent ici qu'à rédiger les descriptions.
+ */
+const MAX_ACTION_LABEL_CHARS = 60
+const MAX_ACTION_COMMAND_CHARS = 4000
 const REQUEST_POLL_MS = 200
 
 /** Doit rester d'accord avec `MAX_LAUNCH_PROMPT_CHARS` de `agent-requests.ts`. */
@@ -351,6 +368,55 @@ const TOOLS = [
         },
       },
       required: ['title'],
+    },
+  },
+  {
+    name: 'list_actions',
+    description:
+      "Liste les actions de ce projet : les boutons de l'onglet Actions du panneau Sillage, qui lancent une commande d'un clic (serveur de dev, tests, seed…). Rend pour chacune son identifiant, sa nature, sa commande et si l'utilisateur l'a validée. Appelle-le avant register_action, pour modifier un bouton existant plutôt que d'en créer un doublon.",
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'register_action',
+    description:
+      `Crée ou modifie une action du projet : un bouton que l'utilisateur lance d'un clic depuis Sillage, dans le worktree de la conversation où il clique. Sert quand l'utilisateur le demande (« ajoute un bouton pour lancer le serveur »), ou de ta propre initiative quand tu mets en place une commande qu'il relancera souvent : serveur de dev, suite de tests, script de debug, seed de base. Pas pour une commande d'un seul usage. Deux natures : \`service\` pour ce qui tourne en continu (porté par une unité systemd sillage-app-*, visible dans la page Services, qui survit à cette session) ; \`task\` pour ce qui se termine (joué dans un terminal du panneau, avec son code de sortie). Rien n'est écrit dans le dépôt. Une action créée, ou dont tu changes la commande, la nature ou le dossier, attend que l'utilisateur la valide avant son premier lancement d'un clic. Avec \`id\`, modifie l'action existante (seuls les champs donnés changent).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: "Identifiant d'une action existante à modifier (voir list_actions). Omettre pour en créer une." },
+        label: { type: 'string', description: `Libellé du bouton, court (${MAX_ACTION_LABEL_CHARS} caractères au plus) : « Serveur de dev », « Tests e2e ».` },
+        kind: { type: 'string', enum: ['task', 'service'], description: '`service` pour ce qui tourne en continu, `task` pour ce qui se termine.' },
+        command: {
+          type: 'string',
+          description: `Commande shell (${MAX_ACTION_COMMAND_CHARS} caractères au plus), jouée par \`$SHELL -lc\`. Écris-la pour qu'elle marche depuis n'importe quel worktree du projet : pas de chemin absolu vers ce worktree-ci. Un serveur doit écouter sur 127.0.0.1.`,
+        },
+        description: { type: 'string', description: 'Une phrase qui dit ce que fait le bouton, montrée sous son libellé.' },
+        subdir: { type: 'string', description: 'Sous-dossier relatif où lancer la commande (ex. `apps/web`). Omettre pour la racine du worktree.' },
+        url: {
+          type: 'string',
+          description:
+            "Pour un `service` : l'adresse où l'ouvrir, affichée en lien quand il tourne. `{port}` y est remplacé par le port sur lequel il écoute (ex. `http://mon-hote:{port}`). Elle doit être joignable depuis le navigateur de l'utilisateur : pas `localhost` si Sillage tourne sur une autre machine que la sienne ; reprends l'adresse que donnent tes consignes s'il y en a une.",
+        },
+      },
+    },
+  },
+  {
+    name: 'remove_action',
+    description: "Supprime une action du projet, et arrête son service s'il tourne. Seulement à la demande de l'utilisateur, ou pour un bouton que tu as créé et qui n'a plus d'objet.",
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: "Identifiant de l'action (voir list_actions)." } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'run_action',
+    description:
+      "Lance une action du projet dans le worktree de cette conversation, comme le ferait un clic de l'utilisateur. Un `service` démarre son unité systemd : la réponse dit s'il tient, ses ports, et comment lire son journal. Une `task` s'ouvre dans un terminal du panneau, sous les yeux de l'utilisateur, mais tu n'en lis pas la sortie : pour exploiter un résultat, exécute plutôt la commande dans ton shell. Une exécution qui tourne encore n'est pas doublée.",
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: "Identifiant de l'action (voir list_actions)." } },
+      required: ['id'],
     },
   },
   {
@@ -1204,6 +1270,33 @@ function listCards(column) {
     .all(PROJECT_ID, column, column, CARD_LIMIT + 1)
 }
 
+function listActions() {
+  return db
+    .prepare(
+      `SELECT id, label, description, kind, command, subdir, url,
+              approved_at AS approvedAt
+       FROM project_actions
+       WHERE project_id = ?
+       ORDER BY created_at`,
+    )
+    .all(PROJECT_ID)
+}
+
+function renderActions(actions) {
+  if (actions.length === 0) {
+    return "Aucune action dans ce projet. register_action en crée une : un bouton que l'utilisateur lance d'un clic."
+  }
+  return actions
+    .map((action) => {
+      const status = action.approvedAt ? 'validée' : "en attente de validation par l'utilisateur"
+      const where = action.subdir ? ` — dans \`${action.subdir}\`` : ''
+      const about = action.description ? `\n  ${action.description}` : ''
+      const link = action.url ? `\n  ouvre ${action.url}` : ''
+      return `- « ${action.label} » (${action.kind}, ${status}, id \`${action.id}\`)${where}${about}${link}\n  \`${action.command.replace(/\n/g, ' ⏎ ')}\``
+    })
+    .join('\n')
+}
+
 function readCard(number) {
   const card = db
     .prepare(
@@ -1801,6 +1894,10 @@ async function callTool(name, args) {
     return text(renderFileEdits(rows, { path, withinMinutes, older }))
   }
 
+  if (name === 'list_actions') {
+    return text(renderActions(listActions()))
+  }
+
   if (name === 'list_cards') {
     const column = typeof args?.column === 'string' && COLUMN_LABELS[args.column] ? args.column : null
     return text(renderCards(listCards(column), column))
@@ -1989,7 +2086,15 @@ async function callTool(name, args) {
     return text(renderCount(countActiveSessions()))
   }
 
-  if (name === 'create_card' || name === 'start_session' || name === 'list_models' || name === 'schedule_task') {
+  if (
+    name === 'create_card' ||
+    name === 'start_session' ||
+    name === 'list_models' ||
+    name === 'schedule_task' ||
+    name === 'register_action' ||
+    name === 'remove_action' ||
+    name === 'run_action'
+  ) {
     if (!CURRENT_CONVERSATION) {
       return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
     }
@@ -2018,6 +2123,9 @@ async function callTool(name, args) {
           isError: true,
         }
       }
+    }
+    if ((name === 'remove_action' || name === 'run_action') && !(typeof args?.id === 'string' && args.id.trim())) {
+      return { ...text('Le paramètre `id` est requis (voir list_actions).'), isError: true }
     }
     return requestDaemon(name, args ?? {})
   }

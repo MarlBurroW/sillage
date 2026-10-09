@@ -6,7 +6,13 @@ import {
   MessageSquare,
   Moon,
   Plug,
+  ExternalLink,
+  Play,
   Plus,
+  RotateCw,
+  ShieldQuestion,
+  Square,
+  SquareTerminal,
   Server,
   SlidersHorizontal,
   SquareKanban,
@@ -19,10 +25,12 @@ import type {
   McpServer,
   PaletteCatalogDto,
   PaletteFilesDto,
+  ProjectActionDto,
   ProjectDto,
   ScheduledTaskDto,
   SearchMessageDto,
 } from '@sillage/protocol'
+import { actionView, describeActionState } from '../../lib/actions'
 import type { MessageKey, MessageParams } from '../../lib/i18n'
 import { describeTransport } from '../../lib/mcp'
 import {
@@ -78,6 +86,8 @@ export interface PaletteSources {
   conversations: readonly ConversationDto[]
   catalog: PaletteCatalogDto | undefined
   schedules: readonly ScheduledTaskDto[]
+  actions: readonly ProjectActionDto[]
+  runAction: (action: ProjectActionDto, op: PaletteActionOp) => void
   mcpServers: readonly McpServer[]
   settings: readonly SettingsEntry[]
   theme: Theme
@@ -192,6 +202,58 @@ function scheduleItems(t: Translate, schedules: readonly ScheduledTaskDto[], nam
   })
 }
 
+/** Ce qu'un résultat de la palette fait d'une action. */
+export type PaletteActionOp = 'run' | 'stop' | 'restart' | 'open' | 'output' | 'review'
+
+const ACTION_OPS: Record<PaletteActionOp, { title: MessageKey; icon: ReactNode }> = {
+  run: { title: 'search.command.runAction', icon: <Play size={ICON} /> },
+  stop: { title: 'search.command.stopAction', icon: <Square size={ICON - 2} /> },
+  restart: { title: 'search.command.restartAction', icon: <RotateCw size={ICON} /> },
+  open: { title: 'search.command.openAction', icon: <ExternalLink size={ICON} /> },
+  output: { title: 'search.command.outputAction', icon: <SquareTerminal size={ICON} /> },
+  review: { title: 'search.command.reviewAction', icon: <ShieldQuestion size={ICON} /> },
+}
+
+/**
+ * Les actions de projet, avec les gestes que leur état permet : un service en marche
+ * s'arrête, se relance et s'ouvre ; il ne se « lance » pas une seconde fois. Comme les
+ * raccourcis d'un projet, celles d'un autre projet ne viennent que si la saisie le nomme.
+ */
+function runItems(sources: PaletteSources, names: Map<string, string>): PaletteItem[] {
+  const { t } = sources
+  return sources.actions.flatMap((action): PaletteItem[] => {
+    const project = names.get(action.projectId)
+    if (project === undefined) return []
+    const view = actionView(action)
+    const ops: PaletteActionOp[] =
+      view.primary === 'review' ? ['review']
+        : view.primary === 'stop' ? [...(view.href ? ['open' as const] : []), 'stop', 'restart']
+          : view.primary === 'output' ? ['output']
+            : ['run']
+    const state = describeActionState(action, t)
+    return ops.map((op): PaletteItem => {
+      const title = t(ACTION_OPS[op].title, { label: action.label })
+      return {
+        key: `run:${action.id}:${op}`,
+        kind: 'action',
+        projectId: action.projectId,
+        title,
+        detail: state,
+        icon: ACTION_OPS[op].icon,
+        aside: t('search.kind.runAction'),
+        fields: [
+          // Le verbe compris : « arrêter » liste ce qui tourne, « lancer » ce qui attend.
+          sentence(title),
+          prose(action.command),
+          projectField(project, { required: action.projectId !== sources.currentProjectId }),
+          kindField(t('search.kind.runAction')),
+        ],
+        target: { type: 'run', run: () => sources.runAction(action, op) },
+      }
+    })
+  })
+}
+
 function skillItems(t: Translate, catalog: PaletteCatalogDto | undefined, names: Map<string, string>): PaletteItem[] {
   return (catalog?.skills ?? []).flatMap((skill): PaletteItem[] => {
     const project = skill.projectId === null ? null : names.get(skill.projectId)
@@ -303,6 +365,7 @@ export function buildPaletteItems(sources: PaletteSources): PaletteItem[] {
     ...conversations,
     ...cardItems(t, sources.catalog, names),
     ...scheduleItems(t, sources.schedules, names),
+    ...runItems(sources, names),
     ...skillItems(t, sources.catalog, names),
     ...generalItems(sources),
   ]

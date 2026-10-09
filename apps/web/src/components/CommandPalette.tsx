@@ -1,8 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { ChevronDown, Loader, Search, X } from 'lucide-react'
-import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useMatch, useNavigate } from 'react-router-dom'
 import { SEARCH_MIN_QUERY, type ProjectDto } from '@sillage/protocol'
+import type { ProjectActionDto } from '@sillage/protocol'
+import { actionView, useActions, useRunAction } from '../lib/actions'
 import { useAllConversations } from '../lib/conversations'
 import { relativeDate } from '../lib/dates'
 import { openTab } from '../lib/editor-tabs'
@@ -18,7 +20,7 @@ import {
   type PaletteHit,
   type PaletteItem,
 } from '../lib/palette'
-import { setPanelOpen, setPanelTab, setPanelTree } from '../lib/panel'
+import { setPanelOpen, setPanelTab, setPanelTree, showTerminal } from '../lib/panel'
 import { projectViewOf, projectViewPath } from '../lib/project-view'
 import { useProjects } from '../lib/projects'
 import { useSchedules } from '../lib/schedules'
@@ -30,7 +32,7 @@ import { projectScope } from '../lib/workspace-scope'
 import { SECTIONS } from '../routes/SettingsPage'
 import { Logo } from './Logo'
 import { ProjectAvatar } from './ProjectAvatar'
-import { buildFileItems, buildMessageItems, buildPaletteItems } from './palette/items'
+import { buildFileItems, buildMessageItems, buildPaletteItems, type PaletteActionOp } from './palette/items'
 import { IconButton, cx } from './ui'
 
 /**
@@ -130,6 +132,32 @@ export function CommandPalette({
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
+  const { data: actions } = useActions()
+  // `mutate` est stable, pas l’objet de la mutation : les résultats ne se refont pas à chaque rendu.
+  const { mutate: startAction } = useRunAction()
+  // Dans son projet, l'action tourne là où l'on est (worktree de la conversation
+  // ouverte) ; ailleurs, on rejoint d'abord le projet, dont le panneau montrera le
+  // terminal. Relire ouvre l'onglet Actions, où la commande se lit avant de partir.
+  const runAction = useCallback(
+    (action: ProjectActionDto, op: PaletteActionOp) => {
+      if (op === 'open') {
+        const href = actionView(action).href
+        if (href) window.open(href, '_blank', 'noreferrer')
+        return
+      }
+      const here = action.projectId === currentProjectId
+      if (!here) navigate(projectViewPath(action.projectId, projectViewOf(action.projectId)))
+      if (op === 'review') {
+        setPanelTab('actions')
+        setPanelOpen(true)
+      } else if (op === 'output') {
+        if (action.lastRun) showTerminal(action.lastRun.terminalId)
+      } else {
+        startAction({ action, op, conversationId: here ? (currentConversationId ?? undefined) : undefined })
+      }
+    },
+    [currentProjectId, currentConversationId, navigate, startAction],
+  )
   const { data: mcp } = useMcpServers()
   const { data: catalog } = usePaletteCatalog(open)
   const [theme, applyTheme] = useTheme()
@@ -173,12 +201,14 @@ export function CommandPalette({
         conversations: conversations ?? [],
         catalog,
         schedules: schedules ?? [],
+        actions: actions ?? [],
+        runAction,
         mcpServers: mcp?.servers ?? [],
         settings,
         theme,
         applyTheme,
       }),
-    [open, t, visibleProjects, currentProjectId, conversations, catalog, schedules, mcp, settings, theme, applyTheme],
+    [open, t, visibleProjects, currentProjectId, conversations, catalog, schedules, actions, runAction, mcp, settings, theme, applyTheme],
   )
   const fileItems = useMemo(
     () => buildFileItems(t, files.data, visibleProjects),

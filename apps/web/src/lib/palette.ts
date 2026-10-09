@@ -283,6 +283,15 @@ export function recentPalette(
     byProject.set(entry.projectId, list)
   }
 
+  // Les actions du projet courant passent devant ses conversations : à
+  // l'ouverture, la palette est aussi le chemin le plus court vers un bouton.
+  const runs = currentProjectId
+    ? [...items.values()].filter(
+        (item) => item.key.startsWith('run:') && item.projectId === currentProjectId,
+      )
+    : []
+  if (runs.length > 0 && currentProjectId && !byProject.has(currentProjectId)) byProject.set(currentProjectId, [])
+
   const order = [...byProject.keys()].sort((a, b) => {
     if (a === currentProjectId) return -1
     if (b === currentProjectId) return 1
@@ -296,7 +305,10 @@ export function recentPalette(
       .map((entry) => items.get(`conversation:${entry.id}`))
       .filter((item) => item !== undefined)
       .map((item): PaletteHit => ({ item, score: 0, title: [], detail: [] }))
-    return { key: projectId, projectId, hits, score: 0 }
+    const lead = projectId === currentProjectId
+      ? runs.map((item): PaletteHit => ({ item, score: 0, title: [], detail: [] }))
+      : []
+    return { key: projectId, projectId, hits: [...lead, ...hits], score: 0 }
   })
 }
 

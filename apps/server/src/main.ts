@@ -6,6 +6,7 @@ import { WebhookService } from './webhooks/service.js'
 import { purgeExpiredSessions } from './auth/sessions.js'
 import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
+import { ActionRunner } from './actions/actions.js'
 import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
@@ -44,13 +45,15 @@ async function main(): Promise<void> {
   const sessions = new SessionManager(db, log, config, registry, secrets)
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
+  // Boutons des projets : commandes jouées dans un terminal ou une unité systemd.
+  const actions = new ActionRunner(db, config, terminals)
   const recovered = sessions.recoverInterrupted()
   const webhooks = new WebhookService(db, log, sessions, config.server.publicUrl)
   // Construit avant l'application, dont les routes remettent ou écartent un message
   // retenu, mais démarré après elle, faute de logger avant.
   const relay = new SessionRelay(db, sessions, log)
   // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry)
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 
@@ -75,6 +78,7 @@ async function main(): Promise<void> {
     scheduler,
     relay,
     tasks,
+    actions,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')

@@ -171,3 +171,54 @@ export async function controlServiceApp(unit: string, action: ServiceAppAction):
   // et la liste, rafraîchie toutes les 5 secondes, dira où elle en est.
   await systemctl(action === 'reset' ? ['reset-failed', unit] : ['--no-block', action, unit])
 }
+
+let userManager: Promise<boolean> | null = null
+
+/**
+ * Un gestionnaire systemd utilisateur répond-il ? Non sous macOS, ni dans un conteneur
+ * sans systemd : les actions `service` y retombent dans un terminal. Demandé une fois
+ * par process, la réponse ne change pas sans redémarrage de la machine.
+ */
+export function serviceAppsAvailable(): Promise<boolean> {
+  if (process.platform !== 'linux') return Promise.resolve(false)
+  userManager ??= systemctl(['show-environment']).then(() => true, () => false)
+  return userManager
+}
+
+export interface ServiceAppLaunch {
+  unit: string
+  description: string
+  cwd: string
+  shell: string
+  command: string
+  /** L'origine (`SILLAGE_PROCESS_ORIGIN`) : c'est elle qui rattache l'app au projet dans Services. */
+  env: Record<string, string>
+}
+
+/**
+ * Démarre une commande comme unité transitoire `sillage-app-*`, hors du cgroup du
+ * daemon : elle lui survit, et le plafond mémoire du service ne s'applique pas à elle.
+ *
+ * Relancée sur échec, mais pas indéfiniment : un serveur qui ne trouve pas son port
+ * s'arrête au bout de quatre essais en une minute et reste `failed`, lisible dans
+ * Services, au lieu de boucler en silence.
+ */
+export async function startServiceApp(launch: ServiceAppLaunch): Promise<void> {
+  if (!APP_UNIT.test(launch.unit)) throw new Error(`Not a Sillage app unit: ${launch.unit}`)
+  // Une unité transitoire en échec reste chargée et bloquerait le nom.
+  await systemctl(['reset-failed', launch.unit]).catch(() => undefined)
+  await promisify(execFile)('systemd-run', [
+    '--user',
+    `--unit=${launch.unit}`,
+    `--description=${launch.description}`,
+    `--working-directory=${launch.cwd}`,
+    // Le PATH du daemon : sans lui, l'unité n'a que celui, minimal, du gestionnaire.
+    '--setenv=PATH',
+    ...Object.entries(launch.env).map(([key, value]) => `--setenv=${key}=${value}`),
+    '-p', 'Restart=on-failure',
+    '-p', 'RestartSec=3',
+    '-p', 'StartLimitIntervalSec=60',
+    '-p', 'StartLimitBurst=4',
+    launch.shell, '-lc', launch.command,
+  ], { timeout: 10000 })
+}
