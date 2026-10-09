@@ -4,22 +4,17 @@ import {
   commitListQuerySchema,
   type CommitDiffDto,
   type CommitListDto,
-  type WorkingDiffDto,
 } from '@sillage/protocol'
-import {
-  readCommitDiff,
-  readCommits,
-  readGitStatus,
-  readHeadCommit,
-  readWorkingDiff,
-} from '../../git.js'
+import { readCommitDiff, readCommits } from '../../git.js'
 import type { AppContext } from '../context.js'
 import { badRequest } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { workspaceScopes } from './workspace-scopes.js'
 
 /**
- * Lectures git de l'onglet Git du panneau : diff courant et commits.
+ * Lectures git de l'onglet Git du panneau : les commits et ce qu'ils ont changé. L'état
+ * du répertoire de travail, lui, vit dans `git-actions.ts` avec les gestes qui le
+ * modifient.
  *
  * Sorties de `conversations.ts` parce qu'elles n'ont rien de propre à un fil : elles ne
  * regardent qu'un répertoire, et existent donc aussi par projet, où le panneau montre
@@ -29,32 +24,6 @@ import { workspaceScopes } from './workspace-scopes.js'
 export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): void {
   // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
   for (const { base, cwdOf } of workspaceScopes) {
-    app.get(`${base}/diff`, async (request): Promise<WorkingDiffDto> => {
-      const user = requireUser(request)
-      const { id } = request.params as { id: string }
-
-      const cwd = cwdOf(ctx.db, id, user.id)
-      try {
-        // Les trois lectures partent ensemble : elles lancent chacune un process git, et
-        // les enchaîner triplerait le temps d'ouverture de l'onglet.
-        const [diff, status, head] = await Promise.all([
-          readWorkingDiff(cwd),
-          readGitStatus(cwd),
-          readHeadCommit(cwd),
-        ])
-        return {
-          files: diff?.files ?? null,
-          patch: diff?.patch ?? '',
-          truncated: diff?.truncated ?? false,
-          cwd,
-          branch: status?.branch ?? null,
-          head,
-        }
-      } catch (err) {
-        throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
-      }
-    })
-
     /**
      * Commits de la branche du répertoire consulté.
      *

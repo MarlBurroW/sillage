@@ -19,6 +19,7 @@
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:skills-ui": "node scripts/skills-ui-check.mjs",
     "test:tooltips-ui": "node scripts/tooltips-ui-check.mjs",
+    "test:git-ui": "node scripts/git-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
     "db:generate": "pnpm --filter @sillage/db generate",
     "db:migrate": "pnpm --filter @sillage/server migrate",
