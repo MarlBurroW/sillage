@@ -1,5 +1,6 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
-import { cards, conversations, projectImages, worktrees, type Db } from '@sillage/db'
+import { automationWebhooks, cards, conversations, projectImages, scheduledTasks, worktrees, type Db } from '@sillage/db'
+import { sessionMarker, sessionTrailer } from '@sillage/protocol'
 
 /**
  * Ce qui se passe sur le projet, injecté au démarrage d'une session.
@@ -166,6 +167,24 @@ function imageReminder(db: Db, input: OverviewInput): string | null {
 }
 
 /**
+ * La marque à laisser sur une forge, quand le projet a des automatisations déclenchées
+ * par webhook : c'est elle qui fait reconnaître qu'une issue ou une PR vient d'une
+ * session, et qui borne les chaînes. Rien à dire sans webhook : la consigne coûterait
+ * du contexte à chaque session pour un risque qui n'existe pas.
+ */
+function forgeMarkerReminder(db: Db, input: OverviewInput): string | null {
+  const hooks = db
+    .select({ name: scheduledTasks.name, enabled: scheduledTasks.enabled })
+    .from(automationWebhooks)
+    .innerJoin(scheduledTasks, eq(scheduledTasks.id, automationWebhooks.taskId))
+    .where(eq(scheduledTasks.projectId, input.projectId))
+    .all()
+  if (hooks.length === 0) return null
+  const names = hooks.map((hook) => `« ${hook.name} »${hook.enabled ? '' : ' (en pause)'}`).join(', ')
+  return `Ce projet a des automatisations déclenchées par webhook (${names}). Ce que tu publies sur une forge pour lui (issue, pull request, commentaire, revue) se termine par ${sessionMarker(input.conversationId)}, et tes messages de commit par le trailer \`${sessionTrailer(input.conversationId)}\` : c'est ce qui permet à Sillage de reconnaître ton travail et d'empêcher des agents de se relancer en chaîne. Ne pose jamais un label et n'écris jamais une commande qui déclenche l'une d'elles, sauf si l'utilisateur te le demande.`
+}
+
+/**
  * Null quand il n'y a rien à dire, et c'est important : un aperçu vide répété à chaque
  * démarrage apprend au modèle à ne plus le lire, et le jour où il porte quelque chose
  * il passe inaperçu.
@@ -173,7 +192,7 @@ function imageReminder(db: Db, input: OverviewInput): string | null {
 export function projectOverview(db: Db, input: OverviewInput): string | null {
   const now = Date.now()
   // La carte d'abord, puis l'image : ce qui est demandé passe avant ce qui est suggéré.
-  const briefing = [cardBriefing(db, input), imageReminder(db, input)]
+  const briefing = [cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
     .filter((part) => part !== null)
     .join('\n\n') || null
 
@@ -231,7 +250,7 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
 
   if (input.sillageMcp) {
     parts.push(
-      'Les outils du serveur `sillage` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment, `send_session_message` pour prévenir l\'une d\'elles ou lui poser une question quand ça ne peut pas attendre l\'utilisateur, `notify_when_done` pour être relancé quand elle aura fini plutôt que de la surveiller, `broadcast_session_message` avant un geste qui touche toutes celles qui travaillent, `list_cards` et `read_card` pour le travail que ce projet s\'est donné, `create_card` pour y noter ce qui sort de ton sujet, `start_session` pour confier un travail à une nouvelle session quand l\'utilisateur le demande, `schedule_task` pour planifier un travail récurrent ou différé qui survit à cette session, `list_actions` et `register_action` pour les boutons du projet qui lancent d\'un clic un serveur, des tests ou un script.',
+      'Les outils du serveur `sillage` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment, `send_session_message` pour prévenir l\'une d\'elles ou lui poser une question quand ça ne peut pas attendre l\'utilisateur, `notify_when_done` pour être relancé quand elle aura fini plutôt que de la surveiller, `broadcast_session_message` avant un geste qui touche toutes celles qui travaillent, `list_cards` et `read_card` pour le travail que ce projet s\'est donné, `create_card` pour y noter ce qui sort de ton sujet, `start_session` pour confier un travail à une nouvelle session quand l\'utilisateur le demande, `schedule_task` pour planifier un travail récurrent ou différé qui survit à cette session, `create_automation` pour lancer une session à chaque appel d\'un webhook (une issue étiquetée, une CI en échec), `list_actions` et `register_action` pour les boutons du projet qui lancent d\'un clic un serveur, des tests ou un script.',
     )
   }
 

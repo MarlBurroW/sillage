@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { useCurrentUser } from './lib/session'
@@ -11,6 +12,9 @@ import { BoardPage } from './routes/BoardPage'
 import { ProjectPage } from './routes/ProjectPage'
 import { NewProjectPage } from './routes/NewProjectPage'
 import { SchedulePage } from './routes/SchedulePage'
+// À la demande : l'explorateur et l'éditeur de script ne servent qu'ici, et le paquet
+// principal n'a plus de marge sous la limite du précache.
+const AutomationPage = lazy(() => import('./routes/AutomationPage').then((module) => ({ default: module.AutomationPage })))
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
@@ -58,6 +62,7 @@ export function App() {
           <Route path="/p/:projectId" element={<ProjectPage />} />
           <Route path="/p/:projectId/board" element={<BoardPage />} />
           <Route path="/p/:projectId/schedules" element={<SchedulePage />} />
+          <Route path="/p/:projectId/schedules/:taskId" element={<Suspense fallback={null}><AutomationPage /></Suspense>} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />

@@ -7,6 +7,7 @@ import { purgeExpiredSessions } from './auth/sessions.js'
 import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
 import { ActionRunner } from './actions/actions.js'
+import { AutomationReceiver } from './automations/receiver.js'
 import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
@@ -53,7 +54,7 @@ async function main(): Promise<void> {
   // retenu, mais démarré après elle, faute de logger avant.
   const relay = new SessionRelay(db, sessions, log)
   // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions)
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 
@@ -61,6 +62,8 @@ async function main(): Promise<void> {
   const orphans = await attachments.purgeOrphans()
 
   const push = new PushService(db, config.paths.data)
+  // Appels des webhooks d'automatisation : il décide, le planificateur tire.
+  const automations = new AutomationReceiver({ db, config }, encryptionKey, tasks, push)
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
   // démarré après elle, faute de logger avant.
   const scheduler = new Scheduler()
@@ -79,8 +82,10 @@ async function main(): Promise<void> {
     relay,
     tasks,
     actions,
+    automations,
   )
   push.setLogger(app.log)
+  automations.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
   if (recovered.length > 0) {
     app.log.info({ recovered: recovered.length }, 'conversations marquees interrompues apres redemarrage')

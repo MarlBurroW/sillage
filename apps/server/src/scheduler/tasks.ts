@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { desc, eq, inArray } from 'drizzle-orm'
 import {
+  automationWebhooks,
   conversations,
   scheduledRuns,
   scheduledTasks,
@@ -19,6 +20,7 @@ import {
   type ScheduledRunDto,
   type ScheduledTaskDto,
 } from '@sillage/protocol'
+import { webhookToDto } from '../automations/webhooks.js'
 import { badRequest } from '../http/errors.js'
 
 /**
@@ -47,8 +49,16 @@ export function runToDto(row: ScheduledRunRow): ScheduledRunDto {
   }
 }
 
-export function tasksToDto(db: Db, rows: ScheduledTaskRow[]): ScheduledTaskDto[] {
+export function tasksToDto(db: Db, rows: ScheduledTaskRow[], publicUrl: string): ScheduledTaskDto[] {
   if (rows.length === 0) return []
+  const hooks = new Map(
+    db
+      .select()
+      .from(automationWebhooks)
+      .where(inArray(automationWebhooks.taskId, rows.map((row) => row.id)))
+      .all()
+      .map((hook) => [hook.taskId, hook]),
+  )
   // Une requête par tâche plutôt qu'une fenêtre sur toutes : elles se comptent sur les
   // doigts, et l'index (task_id, started_at) rend chacune immédiate.
   return rows.map((row) => {
@@ -93,6 +103,7 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[]): ScheduledTaskDto[]
         ...runToDto(run),
         conversationId: run.conversationId && alive.has(run.conversationId) ? run.conversationId : null,
       })),
+      webhook: hooks.has(row.id) ? webhookToDto(hooks.get(row.id)!, publicUrl) : null,
     }
   })
 }
@@ -122,7 +133,8 @@ function assertCoherent(agent: AgentKind, config: AgentConfig): void {
  * autant la refuser à l'écriture.
  */
 function armedAt(cadence: ScheduleCadence, enabled: boolean, lastRunAt: number | null): number | null {
-  if (!enabled) return null
+  // Un webhook n'a pas d'heure : il part quand un appel arrive.
+  if (!enabled || cadence.kind === 'webhook') return null
   const next = nextScheduleRun(cadence, Date.now(), lastRunAt)
   if (next === null) {
     throw badRequest('schedule_never_fires', 'This schedule has no upcoming run.')

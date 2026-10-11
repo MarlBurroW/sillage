@@ -199,7 +199,8 @@ export function AppShell() {
   const boardRoute = useMatch('/p/:projectId/board')
   const servicesRoute = useMatch('/services')
   const schedulesRoute = useMatch('/p/:projectId/schedules')
-  const contextualHeader = Boolean(conversationRoute || boardRoute || servicesRoute || schedulesRoute)
+  const automationRoute = useMatch('/p/:projectId/schedules/:taskId')
+  const contextualHeader = Boolean(conversationRoute || boardRoute || servicesRoute || schedulesRoute || automationRoute)
   const navInactive = wide ? hidden : !navOpen
   useVisualViewport()
   useFileDropGuard()

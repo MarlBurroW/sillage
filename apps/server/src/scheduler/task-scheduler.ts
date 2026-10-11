@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import { and, desc, eq, isNotNull, isNull, lte, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, isNotNull, isNull, lte, ne } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
+  agentRequests,
+  automationDeliveries,
   conversations,
   projects,
   scheduledRuns,
   scheduledTasks,
+  type AutomationDeliveryRow,
   type ScheduledRunRow,
   type ScheduledTaskRow,
 } from '@sillage/db'
@@ -16,6 +19,9 @@ import type { EventLog } from '../events/event-log.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError, conflict } from '../http/errors.js'
 import type { SessionManager } from '../sessions/session-manager.js'
+import { buildWebhookPrompt } from '../automations/prompt.js'
+import { eventOf, setDeliveryOutcome } from '../automations/webhooks.js'
+import { launchRefusal } from '../sessions/agent-requests.js'
 import { readCadence } from './tasks.js'
 
 /**
@@ -43,6 +49,8 @@ export class TaskScheduler {
    * secondes, pendant lesquelles « lancer maintenant » ne doit pas en ouvrir un second.
    */
   private readonly firing = new Set<string>()
+  /** Un réveil demandé pendant un balayage : il en faut un autre aussitôt après. */
+  private again = false
 
   constructor(
     private readonly ctx: AppContext,
@@ -70,11 +78,38 @@ export class TaskScheduler {
       // celui qui attendait derrière lui, dans le même balayage.
       await this.settleRuns(now)
       await this.fireDue(now)
+      await this.drainWebhooks()
     } catch (err) {
       this.logger?.error({ err }, 'balayage des tâches planifiées en échec')
     } finally {
       this.busy = false
     }
+    if (this.again) {
+      this.again = false
+      setImmediate(() => void this.tick())
+    }
+  }
+
+  /**
+   * Balayage immédiat, pour qu'un appel de webhook retenu parte sans attendre le pas de
+   * cinq secondes. Pendant un balayage, on en redemande un juste après.
+   */
+  kick(): void {
+    if (this.busy) {
+      this.again = true
+      return
+    }
+    void this.tick()
+  }
+
+  /** Une session tourne, part, ou un appel attend déjà son tour. */
+  isBusy(taskId: string): boolean {
+    if (this.firing.has(taskId) || this.openRun(taskId)) return true
+    return Boolean(this.ctx.db
+      .select({ id: automationDeliveries.id })
+      .from(automationDeliveries)
+      .where(and(eq(automationDeliveries.taskId, taskId), eq(automationDeliveries.verdict, 'queued')))
+      .get())
   }
 
   /**
@@ -84,6 +119,9 @@ export class TaskScheduler {
   async runNow(taskId: string): Promise<ScheduledRunRow> {
     const task = this.ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, taskId)).get()
     if (!task) throw new HttpError(404, 'schedule_not_found', 'Scheduled task not found.')
+    if (readCadence(task.cadence).kind === 'webhook') {
+      throw conflict('automation_needs_delivery', 'A webhook automation runs from a received call: replay one from its log.')
+    }
     if (this.firing.has(task.id) || this.openRun(task.id)) {
       throw conflict('schedule_already_running', 'A run of this task is still in progress.')
     }
@@ -140,6 +178,46 @@ export class TaskScheduler {
     }
   }
 
+  // --- Appels de webhook en attente -----------------------------------------------
+
+  /**
+   * Tire les appels retenus, un à la fois par automatisation, du plus ancien au plus
+   * récent. Un appel en attente quand l'automatisation a été mise en pause ne part pas :
+   * on ne reprendrait pas une file d'il y a trois jours au moment de la réactiver.
+   */
+  private async drainWebhooks(): Promise<void> {
+    const queued = this.ctx.db
+      .select({ delivery: automationDeliveries, task: scheduledTasks, archivedAt: projects.archivedAt })
+      .from(automationDeliveries)
+      .innerJoin(scheduledTasks, eq(scheduledTasks.id, automationDeliveries.taskId))
+      .innerJoin(projects, eq(projects.id, scheduledTasks.projectId))
+      .where(eq(automationDeliveries.verdict, 'queued'))
+      .orderBy(asc(automationDeliveries.receivedAt))
+      .all()
+
+    const started = new Set<string>()
+    for (const { delivery, task, archivedAt } of queued) {
+      if (!task.enabled || archivedAt) {
+        setDeliveryOutcome(this.ctx.db, delivery.id, {
+          verdict: 'disabled',
+          reason: { code: 'paused_in_queue' },
+        })
+        continue
+      }
+      if (started.has(task.id) || this.firing.has(task.id) || this.openRun(task.id)) continue
+      // La chaîne a pu s'allonger pendant l'attente : la limite se relit au départ.
+      if (delivery.originConversationId) {
+        const refusal = launchRefusal(this.ctx.db, delivery.originConversationId)
+        if (refusal) {
+          setDeliveryOutcome(this.ctx.db, delivery.id, { verdict: 'chain_refused', reason: refusal.reason })
+          continue
+        }
+      }
+      started.add(task.id)
+      await this.fire(task, 'webhook', delivery.receivedAt, Date.now(), delivery)
+    }
+  }
+
   private openRun(taskId: string): ScheduledRunRow | undefined {
     return this.ctx.db
       .select()
@@ -168,6 +246,8 @@ export class TaskScheduler {
      * s'arme depuis la même date que celle qui a jugé celui-ci dû.
      */
     startedAt: number,
+    /** L'appel retenu, pour un tir de webhook. */
+    delivery?: AutomationDeliveryRow,
   ): Promise<ScheduledRunRow> {
     this.firing.add(task.id)
     const run: ScheduledRunRow = {
@@ -190,7 +270,18 @@ export class TaskScheduler {
       if (trigger === 'schedule') this.advance(task, startedAt)
 
       const config = await this.registry.adapter(task.agent).resolveDefaults(parseAgentConfig(task.config))
+      const conversationId = randomUUID()
+      const text = delivery
+        ? buildWebhookPrompt({ task, delivery, event: eventOf(delivery), conversationId, replay: false })
+        : buildRunPrompt({
+            task,
+            trigger,
+            firedAt: startedAt,
+            previous: this.previousRun(task.id),
+            publicUrl: this.ctx.config.server.publicUrl,
+          })
       const row = await createConversation(this.ctx.db, this.sessions, {
+        id: conversationId,
         projectId: task.projectId,
         userId: task.userId,
         agent: task.agent,
@@ -204,19 +295,29 @@ export class TaskScheduler {
         scheduleId: task.id,
         firstMessage: {
           clientMessageId: randomUUID(),
-          text: buildRunPrompt({
-            task,
-            trigger,
-            firedAt: startedAt,
-            previous: this.previousRun(task.id),
-            publicUrl: this.ctx.config.server.publicUrl,
-          }),
+          text,
           attachments: [],
           mentions: [],
           skills: [],
         },
       })
       run.conversationId = row.id
+      if (delivery?.originConversationId) {
+        // La filiation que relisent les limites de chaîne : cette session compte comme
+        // lancée par celle dont l'appel portait la marque.
+        this.ctx.db.insert(agentRequests).values({
+          id: randomUUID(),
+          projectId: task.projectId,
+          conversationId: delivery.originConversationId,
+          kind: 'webhook_launch',
+          payload: JSON.stringify({ taskId: task.id, deliveryId: delivery.id }),
+          createdAt: startedAt,
+          settledAt: startedAt,
+          result: null,
+          isError: false,
+          launchedConversationId: row.id,
+        }).run()
+      }
     } catch (err) {
       run.status = 'failed'
       run.finishedAt = Date.now()
@@ -227,6 +328,11 @@ export class TaskScheduler {
     }
 
     this.ctx.db.insert(scheduledRuns).values(run).run()
+    if (delivery) {
+      setDeliveryOutcome(this.ctx.db, delivery.id, run.conversationId
+        ? { verdict: 'launched', runId: run.id, conversationId: run.conversationId }
+        : { verdict: 'launch_failed', reason: { code: 'launch_failed', params: { message: run.error ?? '' } }, runId: run.id })
+    }
     return run
   }
 

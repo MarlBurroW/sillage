@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { Cron } from 'croner'
-import { and, asc, count, eq, gt, isNull, ne } from 'drizzle-orm'
+import { and, asc, count, eq, gt, inArray, isNull, ne } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
@@ -20,7 +20,9 @@ import {
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_PROMPT_CHARS,
   MIN_SCHEDULE_DURATION_MINUTES,
+  AUTOMATION_TEMPLATES,
   agentConfigSchema,
+  automationConditionsSchema,
   createProjectActionBodySchema,
   updateProjectActionBodySchema,
   agentKindSchema,
@@ -32,7 +34,10 @@ import {
   type AgentConfig,
   type AgentKind,
   type AgentModelDto,
+  type DeliveryReason,
   type ProjectActionRunResult,
+  type WebhookSettings,
+  type WebhookVerification,
 } from '@sillage/protocol'
 import type { ZodError } from 'zod'
 import {
@@ -43,6 +48,7 @@ import {
   type ActionRunner,
 } from '../actions/actions.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import { createWebhook, readSettings, revealSecret, webhookUrl } from '../automations/webhooks.js'
 import { createConversation } from '../conversations/create.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
@@ -134,6 +140,8 @@ export class AgentRequests {
     private readonly registry: AgentRegistry,
     /** Absent des tests qui n'en ont pas l'usage : `run_action` y est alors refusé. */
     private readonly actions?: ActionRunner,
+    /** Clé des secrets de signature des webhooks ; sans elle, `create_automation` est refusé. */
+    private readonly encryptionKey?: Buffer,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -203,6 +211,8 @@ export class AgentRequests {
         this.settle(request.id, this.registerAction(requester, payload), false)
       } else if (request.kind === 'remove_action') {
         this.settle(request.id, await this.removeAction(requester, payload), false)
+      } else if (request.kind === 'create_automation') {
+        this.settle(request.id, await this.createAutomation(requester, project, payload), false)
       } else if (request.kind === 'run_action') {
         this.settle(request.id, await this.runAction(requester, payload), false)
       } else {
@@ -299,42 +309,8 @@ export class AgentRequests {
    * module pose.
    */
   private assertLaunchAllowed(requester: ConversationRow, requestId: string): void {
-    let depth = 0
-    let current = requester.id
-    while (depth <= MAX_LAUNCH_DEPTH) {
-      const parent = this.ctx.db
-        .select({ from: agentRequests.conversationId })
-        .from(agentRequests)
-        .where(eq(agentRequests.launchedConversationId, current))
-        .get()
-      if (!parent) break
-      depth += 1
-      current = parent.from
-    }
-    if (depth >= MAX_LAUNCH_DEPTH) {
-      throw new Refusal(
-        `Refusé : cette session a elle-même été lancée par une session qui l'avait été (${depth} niveaux). Au-delà de ${MAX_LAUNCH_DEPTH}, plus de lancement en chaîne. Crée plutôt une carte avec create_card, ou propose à l'utilisateur de lancer la session lui-même.`,
-      )
-    }
-
-    const [recent] = this.ctx.db
-      .select({ total: count() })
-      .from(agentRequests)
-      .where(
-        and(
-          eq(agentRequests.conversationId, requester.id),
-          eq(agentRequests.kind, 'start_session'),
-          eq(agentRequests.isError, false),
-          ne(agentRequests.id, requestId),
-          gt(agentRequests.createdAt, Date.now() - HOUR_MS),
-        ),
-      )
-      .all()
-    if ((recent?.total ?? 0) >= LAUNCHES_PER_HOUR) {
-      throw new Refusal(
-        `Refusé : cette session a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure. Crée des cartes avec create_card pour le reste, l'utilisateur les lancera.`,
-      )
-    }
+    const refusal = launchRefusal(this.ctx.db, requester.id, requestId)
+    if (refusal) throw new Refusal(refusal.message)
   }
 
   private parseAgent(value: unknown, fallback: AgentKind): AgentKind {
@@ -545,6 +521,102 @@ export class AgentRequests {
     return lines.filter(Boolean).join('\n')
   }
 
+  // --- create_automation ---------------------------------------------------------
+
+  /**
+   * Une automatisation déclenchée par webhook, avec les bornes de `schedule_task` : pas
+   * depuis une session elle-même née d'une automatisation, et un plafond par projet.
+   * Le secret de signature est rendu à l'agent, qui en a besoin pour brancher le
+   * webhook chez l'appelant (`gh api repos/…/hooks`).
+   */
+  private async createAutomation(
+    requester: ConversationRow,
+    project: ProjectRow,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    if (!this.encryptionKey) throw new Refusal('Les automatisations ne sont pas disponibles sur ce serveur.')
+    if (requester.scheduleId) {
+      throw new Refusal(
+        "Refusé : cette session est elle-même née d'une automatisation ou d'une tâche planifiée. Une automatisation qui en crée d'autres se multiplierait sans personne pour l'arrêter ; ouvre une carte avec create_card.",
+      )
+    }
+    const name = typeof payload.name === 'string' ? payload.name.trim() : ''
+    if (!name) throw new Refusal('Le paramètre `name` est requis.')
+    if (name.length > MAX_SCHEDULE_NAME_CHARS) throw new Refusal(`Nom trop long (${MAX_SCHEDULE_NAME_CHARS} caractères au plus).`)
+
+    const template = payload.template === undefined || payload.template === null || payload.template === ''
+      ? null
+      : AUTOMATION_TEMPLATES.find((entry) => entry.id === payload.template)
+    if (template === undefined) {
+      throw new Refusal(`Modèle inconnu « ${String(payload.template)} ». Valeurs possibles : ${AUTOMATION_TEMPLATES.map((entry) => entry.id).join(', ')}.`)
+    }
+    const prompt = typeof payload.prompt === 'string' && payload.prompt.trim() ? payload.prompt.trim() : (template?.prompt.fr ?? '')
+    if (!prompt) throw new Refusal('Le paramètre `prompt` est requis sans modèle : la consigne, avec des `{{payload.…}}`.')
+    if (prompt.length > MAX_SCHEDULE_PROMPT_CHARS) throw new Refusal(`Consigne trop longue (${MAX_SCHEDULE_PROMPT_CHARS} caractères au plus).`)
+
+    const settings: Partial<WebhookSettings> = { ...template?.settings }
+    if (payload.conditions !== undefined) {
+      const parsed = automationConditionsSchema.safeParse({ mode: payload.match ?? 'all', rules: payload.conditions })
+      if (!parsed.success) throw new Refusal(describeZod(parsed.error))
+      settings.conditions = parsed.data
+    }
+    if (typeof payload.subject_path === 'string') settings.subjectPath = payload.subject_path.trim()
+    if (payload.verification !== undefined) {
+      const presets: Record<string, WebhookVerification> = {
+        github: { kind: 'hmac', header: 'x-hub-signature-256', algorithm: 'sha256', prefix: 'sha256=' },
+        gitlab: { kind: 'token', header: 'x-gitlab-token' },
+        none: { kind: 'none' },
+      }
+      const chosen = presets[String(payload.verification)]
+      if (!chosen) throw new Refusal('`verification` vaut `github`, `gitlab` ou `none`.')
+      settings.verification = chosen
+    }
+
+    const [existing] = this.ctx.db
+      .select({ total: count() })
+      .from(scheduledTasks)
+      .where(eq(scheduledTasks.projectId, project.id))
+      .all()
+    if ((existing?.total ?? 0) >= MAX_AGENT_SCHEDULES_PER_PROJECT) {
+      throw new Refusal(`Refusé : ce projet porte déjà ${MAX_AGENT_SCHEDULES_PER_PROJECT} automatisations et tâches planifiées.`)
+    }
+
+    const agent = this.parseAgent(payload.agent, requester.agent)
+    const config = await this.launchConfig(agent, project, requester.userId, payload)
+    const key = this.encryptionKey
+    const { task, hook } = this.ctx.db.transaction(() => {
+      const task = createScheduledTask(
+        this.ctx.db,
+        { projectId: project.id, userId: requester.userId, conversationId: requester.id },
+        {
+          name,
+          agent,
+          config,
+          prompt,
+          cadence: { kind: 'webhook' },
+          overlapPolicy: 'wait',
+          maxDurationMinutes: DEFAULT_SCHEDULE_DURATION_MINUTES,
+          enabled: true,
+        },
+      )
+      return { task, hook: createWebhook(this.ctx.db, key, task.id, settings, template?.id ?? null) }
+    })
+    const url = webhookUrl(this.ctx.config.server.publicUrl, hook.token)
+    const verification = readSettings(hook).verification
+    const secret = revealSecret(key, hook)
+
+    return [
+      `Automatisation « ${task.name} » créée (id ${task.id}), active.`,
+      `Adresse : ${url}`,
+      verification.kind === 'none'
+        ? 'Vérification : aucune, l\'adresse suffit. Préviens l\'utilisateur.'
+        : `Secret de signature : ${secret} (${verification.kind === 'hmac' ? `HMAC ${verification.algorithm} dans l'en-tête ${verification.header}` : `jeton dans l'en-tête ${verification.header}`}). Ne le recopie nulle part ailleurs que dans la configuration du webhook.`,
+      'Pour GitHub : `gh api repos/OWNER/REPO/hooks -f name=web -F active=true -f "events[]=issues" -f config[url]=<adresse> -f config[content_type]=json -f config[secret]=<secret>` (adapte les événements aux conditions).',
+      `Chaque appel retenu ouvre une session neuve (CLI ${agent}, modèle ${describeModel(config)}), une à la fois, ${DEFAULT_SCHEDULE_DURATION_MINUTES} min au plus ; au-delà de ${readSettings(hook).maxRunsPerHour} lancements par heure, elle se met en pause.`,
+      "L'utilisateur règle les conditions, le script et le prompt dans la vue Automatisations du projet, où il voit aussi chaque appel reçu et son sort.",
+    ].join('\n')
+  }
+
   // --- create_card ---------------------------------------------------------------
 
   /**
@@ -734,6 +806,7 @@ function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence {
 function describeCadence(cadence: ScheduleCadence): string {
   if (cadence.kind === 'interval') return `toutes les ${cadence.minutes} minutes`
   if (cadence.kind === 'cron') return `motif cron \`${cadence.expression}\``
+  if (cadence.kind === 'webhook') return 'à chaque appel de son webhook'
   return `une seule fois, le ${new Date(cadence.at).toLocaleString('fr-FR')}`
 }
 
@@ -829,4 +902,60 @@ function describeRun(
   const terminal = result.terminal
   if (result.alreadyRunning) return `« ${label} » tourne déjà dans le terminal « ${terminal?.title ?? label} » du panneau.`
   return `« ${label} » lancé dans un terminal du panneau, sous les yeux de l'utilisateur. Tu n'en lis pas la sortie : pour l'exploiter toi-même, exécute la commande dans ton shell.`
+}
+
+/**
+ * Pourquoi la session `from` ne peut plus en lancer d'autre, ou null si elle le peut :
+ * trop profonde dans une chaîne de lancements, ou trop de lancements dans l'heure.
+ *
+ * Partagée avec les webhooks : un appel qui porte la marque d'une session compte comme
+ * un lancement fait par elle (`webhook_launch`), et les mêmes limites s'appliquent, que
+ * la chaîne passe par `start_session` ou par une issue ouverte sur GitHub.
+ */
+export function launchRefusal(
+  db: AppContext['db'],
+  from: string,
+  excludeRequestId?: string,
+): { reason: DeliveryReason; message: string } | null {
+  let depth = 0
+  let current = from
+  while (depth <= MAX_LAUNCH_DEPTH) {
+    const parent = db
+      .select({ from: agentRequests.conversationId })
+      .from(agentRequests)
+      .where(eq(agentRequests.launchedConversationId, current))
+      .get()
+    if (!parent) break
+    depth += 1
+    current = parent.from
+  }
+  if (depth >= MAX_LAUNCH_DEPTH) {
+    return {
+      reason: { code: 'chain_depth', params: { depth, max: MAX_LAUNCH_DEPTH } },
+      // Le message va à l'agent, en français comme tout ce que Sillage lui écrit ; la
+      // raison codée va à l'interface, qui la traduit.
+      message: `Refusé : cette session a elle-même été lancée par une session qui l'avait été (${depth} niveaux). Au-delà de ${MAX_LAUNCH_DEPTH}, plus de lancement en chaîne. Crée plutôt une carte avec create_card, ou propose à l'utilisateur de lancer la session lui-même.`,
+    }
+  }
+
+  const [recent] = db
+    .select({ total: count() })
+    .from(agentRequests)
+    .where(
+      and(
+        eq(agentRequests.conversationId, from),
+        inArray(agentRequests.kind, ['start_session', 'webhook_launch']),
+        eq(agentRequests.isError, false),
+        ...(excludeRequestId ? [ne(agentRequests.id, excludeRequestId)] : []),
+        gt(agentRequests.createdAt, Date.now() - HOUR_MS),
+      ),
+    )
+    .all()
+  if ((recent?.total ?? 0) >= LAUNCHES_PER_HOUR) {
+    return {
+      reason: { code: 'chain_rate', params: { max: LAUNCHES_PER_HOUR } },
+      message: `Refusé : cette session a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure. Crée des cartes avec create_card pour le reste, l'utilisateur les lancera.`,
+    }
+  }
+  return null
 }

@@ -1,6 +1,6 @@
-import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Plus, Trash2, Zap } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Plus, SlidersHorizontal, Trash2, Webhook, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@sillage/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
@@ -57,6 +57,7 @@ const RUN_DOTS: Record<ScheduleRunStatus, string> = {
 export function SchedulePage() {
   const { projectId } = useParams()
   const t = useTranslate()
+  const navigate = useNavigate()
   const sidebarHidden = useSidebarHidden()
   const { data: projects } = useProjects()
   const { data: schedules, isPending, isError } = useSchedules()
@@ -135,6 +136,8 @@ export function SchedulePage() {
           project={project}
           task={editing === 'new' ? undefined : editing}
           onClose={() => setEditing(null)}
+          // Une automatisation par webhook se règle sur un vrai appel : sa page l'attend.
+          onCreated={(created) => navigate(`/p/${created.projectId}/schedules/${created.id}`)}
         />
       ) : null}
     </div>
@@ -150,12 +153,14 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
   const [confirming, setConfirming] = useState(false)
   const state = scheduleState(task)
   const error = update.error ?? run.error ?? remove.error
+  const webhook = task.webhook
 
   return (
     <li className="surface flex min-w-0 flex-col gap-3 rounded-lg border border-line p-4" data-schedule={task.name}>
       <div className="flex flex-wrap items-center gap-2">
         <AgentIcon agent={task.agent} size={16} />
         <h2 className="min-w-0 flex-1 font-medium break-words">{task.name}</h2>
+        {webhook ? <Badge icon={<Webhook size={12} />}>{t('automation.badge.webhook')}</Badge> : null}
         <Badge tone={STATE_TONES[state]}>{t(SCHEDULE_STATE_LABELS[state])}</Badge>
       </div>
 
@@ -163,9 +168,11 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
         <Fact label={t('schedule.fact.cadence')}>
           {describeCadence(task.cadence, (expression) => cronToHuman(expression, locale()))}
         </Fact>
-        <Fact label={t('schedule.fact.next')}>
-          {task.nextRunAt ? formatDateTime(task.nextRunAt) : t('schedule.fact.none')}
-        </Fact>
+        {webhook ? null : (
+          <Fact label={t('schedule.fact.next')}>
+            {task.nextRunAt ? formatDateTime(task.nextRunAt) : t('schedule.fact.none')}
+          </Fact>
+        )}
         <Fact label={t('schedule.fact.last')}>
           {task.lastRunAt ? relativeDate(task.lastRunAt) : t('schedule.fact.never')}
         </Fact>
@@ -181,18 +188,33 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
         {task.prompt}
       </p>
 
+      {webhook?.trippedAt ? (
+        <Banner tone="caution">
+          {t('automation.tripped', { max: webhook.maxRunsPerHour, date: formatDateTime(webhook.trippedAt) })}
+        </Banner>
+      ) : null}
       {error ? <Banner>{error.message}</Banner> : null}
 
       <div className="flex flex-wrap items-center gap-1 border-t border-line pt-3">
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<Zap size={14} />}
-          disabled={run.isPending || state === 'running'}
-          onClick={() => run.mutate(task.id)}
-        >
-          {t('schedule.action.runNow')}
-        </Button>
+        {webhook ? (
+          <Link
+            to={`/p/${task.projectId}/schedules/${task.id}`}
+            className="inline-flex h-11 items-center gap-1.5 rounded-md border border-line px-3 text-sm font-medium text-ink transition-colors hover:border-line-strong md:h-9"
+          >
+            <SlidersHorizontal size={14} />
+            {t('automation.action.configure')}
+          </Link>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Zap size={14} />}
+            disabled={run.isPending || state === 'running'}
+            onClick={() => run.mutate(task.id)}
+          >
+            {t('schedule.action.runNow')}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -204,9 +226,12 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
         >
           {t(task.enabled ? 'schedule.action.pause' : 'schedule.action.resume')}
         </Button>
-        <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={onEdit}>
-          {t('schedule.action.edit')}
-        </Button>
+        {/* Un webhook se règle sur sa page, tout entier : « Configurer » y mène. */}
+        {webhook ? null : (
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={onEdit}>
+            {t('schedule.action.edit')}
+          </Button>
+        )}
         <span className="ml-auto">
           <IconButton label={t('schedule.action.delete')} onClick={() => setConfirming(true)}>
             <Trash2 size={16} />

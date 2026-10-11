@@ -239,6 +239,13 @@
       "when": 1791585774446,
       "tag": "0033_project_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1791729958827,
+      "tag": "0034_automations",
+      "breakpoints": true
     }
   ]
 }

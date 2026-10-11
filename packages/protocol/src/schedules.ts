@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { agentConfigSchema, type AgentConfig } from './agent-config.js'
 import { cronScheduleSchema } from './app-settings.js'
 import { agentKindSchema, type AgentKind } from './events.js'
+import { automationTemplateIdSchema, webhookSettingsSchema, type WebhookAutomationDto } from './automations.js'
 
 /**
  * Tâches planifiées : un prompt que le daemon rejoue à cadence fixe, chaque tir dans
@@ -40,6 +41,9 @@ export const scheduleCadenceSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('cron'), expression: cronScheduleSchema }),
   z.object({ kind: z.literal('once'), at: z.number().int().positive() }),
+  // Pas d'heure : la tâche part quand son webhook reçoit un appel qui passe ses
+  // conditions. Sa configuration vit à part, voir `automations.ts`.
+  z.object({ kind: z.literal('webhook') }),
 ])
 export type ScheduleCadence = z.infer<typeof scheduleCadenceSchema>
 
@@ -58,7 +62,7 @@ export type ScheduleExecutionMode = z.infer<typeof scheduleExecutionModeSchema>
 export const scheduleRunStatusSchema = z.enum(['running', 'succeeded', 'failed', 'timed_out', 'skipped'])
 export type ScheduleRunStatus = z.infer<typeof scheduleRunStatusSchema>
 
-export type ScheduleRunTrigger = 'schedule' | 'manual'
+export type ScheduleRunTrigger = 'schedule' | 'manual' | 'webhook'
 
 export const createScheduledTaskBodySchema = z.object({
   name: z.string().trim().min(1).max(MAX_SCHEDULE_NAME_CHARS),
@@ -74,6 +78,13 @@ export const createScheduledTaskBodySchema = z.object({
     .max(MAX_SCHEDULE_DURATION_MINUTES)
     .default(DEFAULT_SCHEDULE_DURATION_MINUTES),
   enabled: z.boolean().default(true),
+  /** Pour une cadence `webhook` : le modèle de départ et des réglages qui le complètent. */
+  webhook: z
+    .object({
+      template: automationTemplateIdSchema.optional(),
+      settings: webhookSettingsSchema.partial().optional(),
+    })
+    .optional(),
 })
 
 /** Tout est facultatif : la pause n'envoie que `enabled`. */
@@ -127,6 +138,8 @@ export interface ScheduledTaskDto {
   updatedAt: number
   /** Les derniers tirs, du plus récent au plus ancien. */
   runs: ScheduledRunDto[]
+  /** Réglages du webhook, pour une tâche que déclenche un appel ; null sinon. */
+  webhook: WebhookAutomationDto | null
 }
 
 /**
@@ -144,6 +157,7 @@ export function nextScheduleRun(
   after: number,
   lastRunAt: number | null = null,
 ): number | null {
+  if (cadence.kind === 'webhook') return null
   if (cadence.kind === 'once') return cadence.at > after ? cadence.at : null
   if (cadence.kind === 'interval') {
     const step = cadence.minutes * 60_000

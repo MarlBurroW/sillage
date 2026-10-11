@@ -22,6 +22,8 @@ import { registerClaudeSessionRoutes } from '../src/http/routes/claude-sessions.
 import { registerConversationRoutes } from '../src/http/routes/conversations.js'
 import { registerProjectRoutes } from '../src/http/routes/projects.js'
 import { registerScheduleRoutes } from '../src/http/routes/schedules.js'
+import { registerAutomationRoutes } from '../src/http/routes/automations.js'
+import type { AutomationReceiver } from '../src/automations/receiver.js'
 import { registerActionRoutes } from '../src/http/routes/actions.js'
 import type { ActionRunner } from '../src/actions/actions.js'
 import type { TaskScheduler } from '../src/scheduler/task-scheduler.js'
@@ -183,7 +185,8 @@ test('chaque route de LIST_ROUTES existe', async (t) => {
   registerConversationRoutes(app, ctx, {} as EventLog, sessions, {} as AgentRegistry, {} as AttachmentStore, {} as WebhookService)
   registerClaudeSessionRoutes(app, ctx, {} as EventLog, sessions, {} as AgentRegistry)
   registerV1Routes(app, ctx, {} as EventLog, sessions, {} as AgentRegistry, {} as WebhookService)
-  registerScheduleRoutes(app, ctx, sessions, {} as AgentRegistry, {} as TaskScheduler)
+  registerScheduleRoutes(app, ctx, sessions, {} as AgentRegistry, {} as TaskScheduler, {} as AutomationReceiver)
+  registerAutomationRoutes(app, ctx, {} as AutomationReceiver)
   registerActionRoutes(app, ctx, sessions, {} as ActionRunner)
   await app.ready()
   t.after(() => app.close())

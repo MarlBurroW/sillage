@@ -1,23 +1,27 @@
 import { asc, eq, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { projects, scheduledTasks, type ScheduledTaskRow } from '@sillage/db'
+import { automationWebhooks, projects, scheduledTasks, type ScheduledTaskRow } from '@sillage/db'
 import {
+  AUTOMATION_TEMPLATES,
   createScheduledTaskBodySchema,
   updateScheduledTaskBodySchema,
   type ScheduledTaskDto,
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
+import type { AutomationReceiver } from '../../automations/receiver.js'
+import { createWebhook } from '../../automations/webhooks.js'
 import type { TaskScheduler } from '../../scheduler/task-scheduler.js'
 import {
   createScheduledTask,
   deleteScheduledTask,
+  readCadence,
   runToDto,
   tasksToDto,
   updateScheduledTask,
 } from '../../scheduler/tasks.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import type { AppContext } from '../context.js'
-import { forbidden, notFound } from '../errors.js'
+import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
@@ -33,7 +37,10 @@ export function registerScheduleRoutes(
   sessions: SessionManager,
   registry: AgentRegistry,
   tasks: TaskScheduler,
+  automations: AutomationReceiver,
 ): void {
+  // Lue à chaque appel : la configuration peut manquer au moment de l'enregistrement.
+  const publicUrl = () => ctx.config.server.publicUrl
   const loadProject = (projectId: string, userId: string) => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
     if (!project || (project.ownerId !== userId && project.visibility !== 'shared')) {
@@ -52,7 +59,7 @@ export function registerScheduleRoutes(
     return task
   }
 
-  const one = (row: ScheduledTaskRow): ScheduledTaskDto => tasksToDto(ctx.db, [row])[0]!
+  const one = (row: ScheduledTaskRow): ScheduledTaskDto => tasksToDto(ctx.db, [row], publicUrl())[0]!
 
   /** Toutes les tâches visibles, tous projets confondus : la sidebar les range par projet. */
   app.get('/api/schedules', async (request): Promise<ScheduledTaskDto[]> => {
@@ -67,6 +74,7 @@ export function registerScheduleRoutes(
     return tasksToDto(
       ctx.db,
       rows.map((row) => row.task),
+      publicUrl(),
     )
   })
 
@@ -79,7 +87,16 @@ export function registerScheduleRoutes(
     // Comme à la création d'une conversation : la tâche garde une configuration
     // explicite, pas un « défaut du CLI » qui changerait de sens d'un tir à l'autre.
     const config = await registry.adapter(body.agent).resolveDefaults(body.config)
-    const row = createScheduledTask(ctx.db, { projectId: id, userId: user.id }, { ...body, config })
+    // La tâche et son webhook ensemble : une automatisation sans adresse ne recevrait
+    // jamais rien, et resterait là sans le dire.
+    const row = ctx.db.transaction(() => {
+      const created = createScheduledTask(ctx.db, { projectId: id, userId: user.id }, { ...body, config })
+      if (body.cadence.kind === 'webhook') {
+        const template = AUTOMATION_TEMPLATES.find((entry) => entry.id === body.webhook?.template)
+        createWebhook(ctx.db, automations.key, created.id, { ...template?.settings, ...body.webhook?.settings }, template?.id ?? null)
+      }
+      return created
+    })
     return reply.status(201).send(one(row))
   })
 
@@ -88,6 +105,15 @@ export function registerScheduleRoutes(
     const { id } = request.params as { id: string }
     const body = updateScheduledTaskBodySchema.parse(request.body)
     const task = loadWritable(id, user.id)
+    // Horaire et webhook ne s'échangent pas : l'un a une adresse et un journal, l'autre
+    // une heure. Mieux vaut en créer une seconde que de perdre l'un en route.
+    if (body.cadence && (body.cadence.kind === 'webhook') !== (readCadence(task.cadence).kind === 'webhook')) {
+      throw badRequest('automation_trigger_fixed', 'A scheduled task cannot become a webhook automation, or the reverse.')
+    }
+    // Réactiver après un disjoncteur, c'est le réarmer.
+    if (body.enabled) {
+      ctx.db.update(automationWebhooks).set({ trippedAt: null }).where(eq(automationWebhooks.taskId, task.id)).run()
+    }
 
     const config = body.config
       ? await registry.adapter(body.agent ?? task.agent).resolveDefaults(body.config)

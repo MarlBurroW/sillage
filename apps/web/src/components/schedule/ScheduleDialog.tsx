@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { ShieldAlert, X } from 'lucide-react'
+import { CalendarClock, Webhook, X } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import {
   DEFAULT_SCHEDULE_DURATION_MINUTES,
@@ -7,12 +7,14 @@ import {
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_PROMPT_CHARS,
   MIN_SCHEDULE_DURATION_MINUTES,
+  AUTOMATION_TEMPLATES,
   agentKindSchema,
   defaultConfigFor,
   nextScheduleRun,
   scheduleCadenceSchema,
   type AgentConfig,
   type AgentKind,
+  type AutomationTemplateId,
   type ProjectDto,
   type ScheduleCadence,
   type ScheduleOverlapPolicy,
@@ -20,10 +22,11 @@ import {
 } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useAgentSettings } from '../chat/agent-settings'
-import type { SettingGroup } from '../chat/ComposerSettings'
+import { GroupField } from './GroupField'
 import { Banner, Button, Field, IconButton, Select, cx } from '../ui'
 import { cronToHuman } from '../../lib/cron'
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
+import { TEMPLATE_LABELS } from '../../lib/automations'
 import { formatDateTime, useCreateSchedule, useUpdateSchedule, type ScheduleInput } from '../../lib/schedules'
 import { useUserSettings } from '../../lib/user-settings'
 
@@ -35,7 +38,8 @@ import { useUserSettings } from '../../lib/user-settings'
  * modèles et de modes de permission aurait garanti que les deux divergent.
  */
 
-type CadenceKind = ScheduleCadence['kind']
+type CadenceKind = Exclude<ScheduleCadence['kind'], 'webhook'>
+type Trigger = 'schedule' | 'webhook'
 type IntervalUnit = 'minutes' | 'hours' | 'days'
 
 const UNIT_MINUTES: Record<IntervalUnit, number> = { minutes: 1, hours: 60, days: 1440 }
@@ -64,11 +68,14 @@ export function ScheduleDialog({
   project,
   task,
   onClose,
+  onCreated,
 }: {
   project: ProjectDto
   /** La tâche à modifier ; absente pour une création. */
   task?: ScheduledTaskDto
   onClose: () => void
+  /** Une automatisation par webhook créée : l'hôte ouvre sa page, où elle se règle. */
+  onCreated?: (task: ScheduledTaskDto) => void
 }) {
   const t = useTranslate()
   const promptId = useId()
@@ -79,7 +86,11 @@ export function ScheduleDialog({
 
   const [name, setName] = useState(task?.name ?? '')
   const [prompt, setPrompt] = useState(task?.prompt ?? '')
-  const [kind, setKind] = useState<CadenceKind>(task?.cadence.kind ?? 'interval')
+  // Horaire ou webhook se choisit à la création seulement : l'un a une heure, l'autre une
+  // adresse et un journal, et le serveur refuse de passer de l'un à l'autre.
+  const [trigger, setTrigger] = useState<Trigger>(task?.cadence.kind === 'webhook' ? 'webhook' : 'schedule')
+  const [template, setTemplate] = useState<AutomationTemplateId | 'generic'>('github_issue_label')
+  const [kind, setKind] = useState<CadenceKind>(task && task.cadence.kind !== 'webhook' ? task.cadence.kind : 'interval')
   const initialInterval = splitInterval(task?.cadence.kind === 'interval' ? task.cadence.minutes : 1440)
   const [intervalValue, setIntervalValue] = useState(initialInterval.value)
   const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>(initialInterval.unit)
@@ -91,6 +102,26 @@ export function ScheduleDialog({
   const [edited, setEdited] = useState<AgentConfig | null>(task?.config ?? null)
   const [maxDuration, setMaxDuration] = useState(String(task?.maxDurationMinutes ?? DEFAULT_SCHEDULE_DURATION_MINUTES))
   const [overlap, setOverlap] = useState<ScheduleOverlapPolicy>(task?.overlapPolicy ?? 'skip')
+  const templatePrompt = (id: AutomationTemplateId | 'generic') =>
+    id === 'generic' ? '' : (AUTOMATION_TEMPLATES.find((entry) => entry.id === id)?.prompt[locale() === 'fr' ? 'fr' : 'en'] ?? '')
+
+  const templateName = (id: AutomationTemplateId | 'generic') => (id === 'generic' ? '' : t(TEMPLATE_LABELS[id].name))
+
+  // Un webhook se crée avec son modèle et son nom, rien d'autre : tout ce qui le règle
+  // (déclenchement, session, prompt, garde-fous) vit sur sa page, où un vrai appel
+  // permet de l'essayer. Le formulaire crée, la page configure.
+  const webhookCreation = trigger === 'webhook' && !task
+
+  const chooseTrigger = (next: Trigger) => {
+    setTrigger(next)
+    if (next === 'webhook' && !name.trim()) setName(templateName(template))
+  }
+
+  const chooseTemplate = (next: AutomationTemplateId | 'generic') => {
+    // Le nom suit le modèle tant qu'on ne l'a pas retouché.
+    if (!name.trim() || name === templateName(template)) setName(templateName(next))
+    setTemplate(next)
+  }
 
   // Même ordre que pour une conversation neuve : le préréglage du projet, puis les
   // défauts du compte. Une configuration d'un autre CLI est abandonnée, pas convertie.
@@ -100,6 +131,7 @@ export function ScheduleDialog({
   const { groups, catalogError } = useAgentSettings({ config, onConfigChange: setEdited })
 
   const cadence = useMemo((): ScheduleCadence | null => {
+    if (trigger === 'webhook') return { kind: 'webhook' }
     const candidate =
       kind === 'interval'
         ? { kind, minutes: Number(intervalValue) * UNIT_MINUTES[intervalUnit] }
@@ -108,7 +140,7 @@ export function ScheduleDialog({
           : { kind, at: new Date(onceAt).getTime() }
     const parsed = scheduleCadenceSchema.safeParse(candidate)
     return parsed.success ? parsed.data : null
-  }, [kind, intervalValue, intervalUnit, cron, onceAt])
+  }, [trigger, kind, intervalValue, intervalUnit, cron, onceAt])
 
   // Le même calcul que le daemon : ce que l'aperçu annonce est ce qui sera armé, au
   // fuseau près, les heures d'un motif se lisant sur l'horloge du serveur.
@@ -118,21 +150,44 @@ export function ScheduleDialog({
   const duration = Number(maxDuration)
   const durationValid =
     Number.isInteger(duration) && duration >= MIN_SCHEDULE_DURATION_MINUTES && duration <= MAX_SCHEDULE_DURATION_MINUTES
-  const valid = Boolean(name.trim() && prompt.trim() && cadence && nextRun !== null && durationValid)
+  const valid = webhookCreation
+    ? Boolean(name.trim())
+    : Boolean(name.trim() && prompt.trim() && cadence && durationValid && (trigger === 'webhook' || nextRun !== null))
 
   const submit = () => {
     if (!valid || !cadence || mutation.isPending) return
-    const input: ScheduleInput = {
-      name: name.trim(),
-      agent,
-      config,
-      prompt: prompt.trim(),
-      cadence,
-      overlapPolicy: overlap,
-      maxDurationMinutes: duration,
-    }
+    const input: ScheduleInput = webhookCreation
+      ? {
+          name: name.trim(),
+          agent,
+          config,
+          // Le prompt du modèle, retouché ensuite sur la page avec un vrai appel sous les yeux.
+          prompt: templatePrompt(template) || t('automation.form.genericPrompt'),
+          cadence,
+          // Un webhook reçoit des appels en rafale : les mettre en file vaut mieux que de
+          // les perdre pendant qu'une session tourne.
+          overlapPolicy: 'wait',
+          maxDurationMinutes: DEFAULT_SCHEDULE_DURATION_MINUTES,
+          webhook: { template: template === 'generic' ? undefined : template },
+        }
+      : {
+          name: name.trim(),
+          agent,
+          config,
+          prompt: prompt.trim(),
+          cadence,
+          overlapPolicy: overlap,
+          maxDurationMinutes: duration,
+        }
     if (task) update.mutate({ id: task.id, ...input }, { onSuccess: onClose })
-    else create.mutate(input, { onSuccess: onClose })
+    else {
+      create.mutate(input, {
+        onSuccess: (created) => {
+          onClose()
+          if (trigger === 'webhook') onCreated?.(created)
+        },
+      })
+    }
   }
 
   const kinds: { value: CadenceKind; label: string }[] = [
@@ -151,7 +206,7 @@ export function ScheduleDialog({
         >
           <header className="flex items-center justify-between border-b border-line px-5 py-4">
             <Dialog.Title className="text-lg font-semibold">
-              {t(task ? 'schedule.form.editTitle' : 'schedule.form.createTitle')}
+              {t(task ? 'schedule.form.editTitle' : 'automation.form.createTitle')}
             </Dialog.Title>
             <IconButton label={t('common.close')} disabled={mutation.isPending} onClick={onClose}>
               <X size={18} />
@@ -160,15 +215,67 @@ export function ScheduleDialog({
 
           <form className="flex min-h-0 flex-col" onSubmit={(event) => { event.preventDefault(); submit() }}>
             <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:p-6">
+              {task ? null : (
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="mb-1.5 text-sm font-medium text-ink-soft">{t('automation.form.trigger')}</legend>
+                  <div role="radiogroup" aria-label={t('automation.form.trigger')} className="grid gap-2 sm:grid-cols-2">
+                    {([
+                      { value: 'schedule', icon: <CalendarClock size={16} />, title: t('automation.form.trigger.schedule'), hint: t('automation.form.trigger.scheduleHint') },
+                      { value: 'webhook', icon: <Webhook size={16} />, title: t('automation.form.trigger.webhook'), hint: t('automation.form.trigger.webhookHint') },
+                    ] as const).map((entry) => (
+                      <button
+                        key={entry.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={trigger === entry.value}
+                        onClick={() => chooseTrigger(entry.value)}
+                        className={cx(
+                          'flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-left transition-colors',
+                          trigger === entry.value ? 'border-accent bg-accent-wash' : 'border-line hover:border-line-strong',
+                        )}
+                      >
+                        <span className={cx('mt-0.5 shrink-0', trigger === entry.value ? 'text-accent' : 'text-ink-faint')}>{entry.icon}</span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-ink">{entry.title}</span>
+                          <span className="block text-xs text-ink-faint">{entry.hint}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+
+              {trigger === 'webhook' && !task ? (
+                <Select
+                  label={t('automation.form.template')}
+                  value={template}
+                  onChange={chooseTemplate}
+                  options={[
+                    { value: 'generic', label: t('automation.template.generic'), hint: t('automation.template.genericHint') },
+                    ...AUTOMATION_TEMPLATES.map((entry) => ({
+                      value: entry.id,
+                      label: t(TEMPLATE_LABELS[entry.id].title),
+                      hint: t(TEMPLATE_LABELS[entry.id].description),
+                    })),
+                  ]}
+                />
+              ) : null}
+
+              {webhookCreation ? (
+                <p className="text-xs text-ink-faint">{t('automation.form.next')}</p>
+              ) : null}
+
               <Field
                 label={t('schedule.form.name')}
-                placeholder={t('schedule.form.namePlaceholder')}
+                placeholder={t(trigger === 'webhook' ? 'automation.form.namePlaceholder' : 'schedule.form.namePlaceholder')}
                 maxLength={MAX_SCHEDULE_NAME_CHARS}
                 value={name}
                 autoFocus={!task}
                 onChange={(event) => setName(event.target.value)}
               />
 
+              {webhookCreation ? null : (
+                <>
               <div className="flex flex-col gap-1.5">
                 <label htmlFor={promptId} className="text-sm font-medium text-ink-soft">
                   {t('schedule.form.prompt')}
@@ -182,10 +289,10 @@ export function ScheduleDialog({
                   onChange={(event) => setPrompt(event.target.value)}
                   className="rounded-md border border-line bg-sunken px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus:border-accent"
                 />
-                <p className="text-xs text-ink-faint">{t('schedule.form.promptHint')}</p>
+                <p className="text-xs text-ink-faint">{t(trigger === 'webhook' ? 'automation.form.promptHint' : 'schedule.form.promptHint')}</p>
               </div>
 
-              <fieldset className="flex flex-col gap-2">
+              {trigger === 'schedule' ? <fieldset className="flex flex-col gap-2">
                 <legend className="mb-1.5 text-sm font-medium text-ink-soft">{t('schedule.form.cadence')}</legend>
                 <div role="radiogroup" aria-label={t('schedule.form.cadence')} className="flex gap-1 rounded-md border border-line bg-sunken p-1">
                   {kinds.map((entry) => (
@@ -276,7 +383,7 @@ export function ScheduleDialog({
                     {kind === 'cron' ? ` ${t('schedule.form.serverClock')}` : null}
                   </p>
                 ) : null}
-              </fieldset>
+              </fieldset> : null}
 
               <Select
                 label={t('draft.cli.legend')}
@@ -311,11 +418,14 @@ export function ScheduleDialog({
                   value={overlap}
                   onChange={setOverlap}
                   options={[
-                    { value: 'skip', label: t('schedule.form.overlap.skip'), hint: t('schedule.form.overlap.skipHint') },
-                    { value: 'wait', label: t('schedule.form.overlap.wait'), hint: t('schedule.form.overlap.waitHint') },
+                    { value: 'skip', label: t('schedule.form.overlap.skip'), hint: t(trigger === 'webhook' ? 'automation.form.overlap.skipHint' : 'schedule.form.overlap.skipHint') },
+                    { value: 'wait', label: t('schedule.form.overlap.wait'), hint: t(trigger === 'webhook' ? 'automation.form.overlap.waitHint' : 'schedule.form.overlap.waitHint') },
                   ]}
                 />
               </div>
+
+                </>
+              )}
 
               {mutation.isError ? <Banner>{mutation.error.message}</Banner> : null}
             </div>
@@ -325,28 +435,12 @@ export function ScheduleDialog({
                 {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={!valid || mutation.isPending}>
-                {t(task ? 'schedule.form.save' : 'schedule.form.create')}
+                {t(task ? 'schedule.form.save' : trigger === 'webhook' ? 'automation.form.createAndConfigure' : 'schedule.form.create')}
               </Button>
             </footer>
           </form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
-  )
-}
-
-/** Une catégorie de réglage en liste déroulante, comme sur l'écran des défauts du compte. */
-function GroupField({ group }: { group: SettingGroup }) {
-  const selected = group.options.find((option) => option.value === group.value)
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Select label={group.label} value={group.value} options={group.options} onChange={group.onChange} />
-      {selected?.tone === 'caution' ? (
-        <p className="flex items-start gap-1.5 text-xs text-caution">
-          <ShieldAlert size={13} className="mt-0.5 shrink-0" />
-          <span>{selected.hint}</span>
-        </p>
-      ) : null}
-    </div>
   )
 }

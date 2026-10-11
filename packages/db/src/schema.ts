@@ -340,7 +340,19 @@ export const agentRequests = sqliteTable(
     /** Conversation qui demande. Sans clé étrangère, comme les messages entre sessions. */
     conversationId: text('conversation_id').notNull(),
     kind: text('kind', {
-      enum: ['start_session', 'create_card', 'list_models', 'schedule_task', 'register_action', 'remove_action', 'run_action'],
+      enum: [
+        'start_session',
+        'create_card',
+        'list_models',
+        'schedule_task',
+        'register_action',
+        'remove_action',
+        'run_action',
+        // Une automatisation lancée par un appel qui porte la marque de cette session :
+        // la ligne garde la filiation, pour que les limites de chaîne s'y appliquent.
+        'webhook_launch',
+        'create_automation',
+      ],
     }).notNull(),
     /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
     payload: text('payload').notNull(),
@@ -576,7 +588,7 @@ export const scheduledRuns = sqliteTable(
       .references(() => scheduledTasks.id, { onDelete: 'cascade' }),
     /** Sans clé étrangère : le fil peut être supprimé, le tir reste dans l'historique. */
     conversationId: text('conversation_id'),
-    trigger: text('trigger').$type<'schedule' | 'manual'>().notNull(),
+    trigger: text('trigger').$type<'schedule' | 'manual' | 'webhook'>().notNull(),
     status: text('status')
       .$type<'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'>()
       .notNull(),
@@ -597,6 +609,74 @@ export const scheduledRuns = sqliteTable(
   (t) => [
     index('idx_scheduled_runs_task').on(t.taskId, t.startedAt),
     index('idx_scheduled_runs_open').on(t.status),
+  ],
+)
+
+/**
+ * Le webhook d'une automatisation : une tâche planifiée dont la cadence vaut
+ * `{ kind: 'webhook' }` et qui part quand un appel reçu passe ses conditions.
+ */
+export const automationWebhooks = sqliteTable(
+  'automation_webhooks',
+  {
+    taskId: text('task_id')
+      .primaryKey()
+      .references(() => scheduledTasks.id, { onDelete: 'cascade' }),
+    /** Dernier segment de l'URL publique : impossible à deviner, mais pas un secret de signature. */
+    token: text('token').notNull(),
+    /** Secret de signature chiffré (JSON `EncryptedValue`) : on le réaffiche pour le recopier chez l'appelant. */
+    secret: text('secret').notNull(),
+    /** JSON `WebhookVerification`. */
+    verification: text('verification').notNull(),
+    deliveryHeader: text('delivery_header').notNull().default(''),
+    /** JSON `AutomationConditions`. */
+    conditions: text('conditions').notNull(),
+    script: text('script').notNull().default(''),
+    subjectPath: text('subject_path').notNull().default(''),
+    markerPaths: text('marker_paths').notNull().default('*'),
+    maxRunsPerHour: integer('max_runs_per_hour').notNull(),
+    /** Le disjoncteur a sauté et mis la tâche en pause ; NULL une fois réactivée. */
+    trippedAt: timestamp('tripped_at'),
+    template: text('template'),
+  },
+  (t) => [uniqueIndex('idx_automation_webhooks_token').on(t.token)],
+)
+
+/**
+ * Chaque appel reçu par un webhook, avec son sort : lancé, filtré, refusé et pourquoi.
+ * C'est ce qui permet de mettre des conditions au point, et de rejouer un appel.
+ * Borné par webhook : les plus anciens partent quand les nouveaux arrivent.
+ */
+export const automationDeliveries = sqliteTable(
+  'automation_deliveries',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => scheduledTasks.id, { onDelete: 'cascade' }),
+    receivedAt: timestamp('received_at').notNull(),
+    /** Identifiant donné par l'appelant, pour reconnaître un rejeu. */
+    deliveryId: text('delivery_id'),
+    /** En-têtes en JSON, sans ceux qui portent un secret. */
+    headers: text('headers').notNull(),
+    query: text('query').notNull().default('{}'),
+    body: text('body').notNull(),
+    bytes: integer('bytes').notNull(),
+    truncated: integer('truncated', { mode: 'boolean' }).notNull().default(false),
+    verdict: text('verdict').notNull(),
+    /** JSON `DeliveryReason` : un code que l'interface traduit, et ses paramètres. */
+    reason: text('reason'),
+    subject: text('subject'),
+    /** Variables rendues par le script, en JSON, pour un appel mis en attente. */
+    vars: text('vars'),
+    summary: text('summary'),
+    runId: text('run_id'),
+    conversationId: text('conversation_id'),
+    originConversationId: text('origin_conversation_id'),
+  },
+  (t) => [
+    index('idx_automation_deliveries_task').on(t.taskId, t.receivedAt),
+    index('idx_automation_deliveries_queue').on(t.verdict, t.receivedAt),
   ],
 )
 
@@ -1101,6 +1181,8 @@ export type InstructionsRow = typeof instructions.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
 export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
 export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
+export type AutomationWebhookRow = typeof automationWebhooks.$inferSelect
+export type AutomationDeliveryRow = typeof automationDeliveries.$inferSelect
 export type ProjectActionRow = typeof projectActions.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
 export type ConversationFavoriteRow = typeof conversationFavorites.$inferSelect
