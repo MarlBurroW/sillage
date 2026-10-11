@@ -26,6 +26,8 @@ import type { Scheduler } from '../scheduler/scheduler.js'
 import type { TaskScheduler } from '../scheduler/task-scheduler.js'
 import { registerScheduleRoutes } from './routes/schedules.js'
 import { registerActionRoutes } from './routes/actions.js'
+import { HOOKS_PREFIX, registerAutomationRoutes } from './routes/automations.js'
+import type { AutomationReceiver } from '../automations/receiver.js'
 import type { ActionRunner } from '../actions/actions.js'
 import type { WebhookService } from '../webhooks/service.js'
 import { registerAgentRoutes } from './routes/agents.js'
@@ -95,6 +97,7 @@ export async function buildApp(
   relay: SessionRelay,
   tasks: TaskScheduler,
   actions: ActionRunner,
+  automations: AutomationReceiver,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -149,6 +152,8 @@ export async function buildApp(
     if (!request.url.startsWith('/api/')) return
     const path = request.url.split('?')[0] ?? request.url
     if (PUBLIC_ROUTES.has(path) || path === '/api/auth/logout') return
+    // Les webhooks n'ont ni session ni jeton : c'est leur signature qui les authentifie.
+    if (path.startsWith(HOOKS_PREFIX)) return
 
     if (path.startsWith(API_V1_PREFIX)) {
       if (!request.apiToken) {
@@ -206,7 +211,8 @@ export async function buildApp(
   registerSearchRoutes(app, ctx)
   registerPaletteRoutes(app, ctx, skillLibrary)
   registerSettingsRoutes(app, ctx, scheduler)
-  registerScheduleRoutes(app, ctx, sessions, registry, tasks)
+  registerScheduleRoutes(app, ctx, sessions, registry, tasks, automations)
+  registerAutomationRoutes(app, ctx, automations)
   registerActionRoutes(app, ctx, sessions, actions)
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx)

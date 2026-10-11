@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentConfig,
+  AutomationTemplateId,
+  WebhookSettings,
   AgentKind,
   ScheduleCadence,
   ScheduleOverlapPolicy,
@@ -30,6 +32,8 @@ export function useSchedules() {
 }
 
 export interface ScheduleInput {
+  /** À la création d'une automatisation par webhook : son modèle de départ. */
+  webhook?: { template?: AutomationTemplateId; settings?: Partial<WebhookSettings> }
   name: string
   agent: AgentKind
   config: AgentConfig
@@ -127,5 +131,6 @@ export function formatDateTime(ts: number): string {
 export function describeCadence(cadence: ScheduleCadence, cronHuman: (expression: string) => string | null): string {
   if (cadence.kind === 'interval') return formatMinutes(cadence.minutes)
   if (cadence.kind === 'once') return translate('schedule.cadence.onceAt', { date: formatDateTime(cadence.at) })
+  if (cadence.kind === 'webhook') return translate('schedule.cadence.webhook')
   return cronHuman(cadence.expression) ?? cadence.expression
 }

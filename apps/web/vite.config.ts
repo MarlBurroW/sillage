@@ -69,6 +69,11 @@ export default defineConfig({
         // La coque applicative est précachée, jamais les réponses d'API : les mettre
         // en cache produirait un fil incohérent avec le journal (invariant I2).
         globPatterns: ['**/*.{js,css,html,woff2}'],
+        // Le paquet principal dépasse les 2 Mio par défaut : il porte les deux catalogues
+        // de langues entiers. Il est téléchargé au démarrage quoi qu'il arrive ; l'exclure du
+        // précache casserait seulement l'application hors ligne. Le vrai remède est de
+        // charger à la demande le catalogue de la langue inactive.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [{ urlPattern: /^\/api\//, handler: 'NetworkOnly' }],

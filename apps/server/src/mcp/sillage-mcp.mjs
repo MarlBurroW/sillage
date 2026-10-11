@@ -129,6 +129,7 @@ const REQUEST_WAIT_MS = {
   remove_action: 20000,
   // Démarrer une unité systemd, puis attendre de voir si elle tient.
   run_action: 30000,
+  create_automation: 30000,
 }
 
 /**
@@ -417,6 +418,39 @@ const TOOLS = [
       type: 'object',
       properties: { id: { type: 'string', description: "Identifiant de l'action (voir list_actions)." } },
       required: ['id'],
+    },
+  },
+  {
+    name: 'create_automation',
+    description:
+      "Crée une automatisation déclenchée par webhook dans ce projet : chaque appel reçu qui passe ses conditions ouvre une session neuve, que l'utilisateur suit comme les autres. Sert quand l'utilisateur te le demande (« lance un agent quand une issue est étiquetée sillage », « corrige la CI quand elle échoue »). Rend l'adresse et le secret de signature, à brancher chez l'appelant : pour GitHub, avec `gh api repos/OWNER/REPO/hooks`. Les modèles préremplissent conditions, sujet et prompt : `github_issue_label` (issue étiquetée `sillage`), `github_comment_command` (commentaire qui commence par `/sillage`), `github_pr_opened` (relecture de PR), `github_ci_failed` (workflow en échec), `gitlab_generic`. Le prompt cite l'appel par `{{payload.…}}` et `{{headers.…}}`. Une session que tu lances ainsi suit les mêmes limites de chaîne que start_session ; laisse dans ce que tu publies sur la forge la marque que donnent tes consignes. L'utilisateur affine le reste (conditions, script, garde-fous) dans la vue Automatisations.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: "Nom court de l'automatisation." },
+        template: {
+          type: 'string',
+          enum: ['github_issue_label', 'github_comment_command', 'github_pr_opened', 'github_ci_failed', 'gitlab_generic'],
+          description: 'Modèle de départ. Omettre pour un webhook générique (donne alors `prompt` et `conditions`).',
+        },
+        prompt: { type: 'string', description: "Consigne de chaque session, avec des `{{payload.chemin}}`. Facultative avec un modèle, qui en fournit une." },
+        conditions: {
+          type: 'array',
+          description: "Remplace les conditions du modèle. Chaque règle : `path` (ex. `headers.x-github-event`, `payload.action`, `payload.issue.labels.*.name`), `op` (equals, not_equals, contains, not_contains, in, matches, exists, missing), `value`.",
+          items: {
+            type: 'object',
+            properties: { path: { type: 'string' }, op: { type: 'string' }, value: { type: 'string' } },
+            required: ['path', 'op'],
+          },
+        },
+        match: { type: 'string', enum: ['all', 'any'], description: 'Toutes les conditions (défaut) ou au moins une.' },
+        subject_path: { type: 'string', description: 'Chemin du sujet (ex. `payload.issue.number`) : deux appels en attente sur le même sujet fusionnent.' },
+        verification: { type: 'string', enum: ['github', 'gitlab', 'none'], description: 'Remplace la vérification du modèle.' },
+        agent: { type: 'string', description: 'CLI des sessions : claude, codex ou opencode. Par défaut, le tien.' },
+        model: { type: 'string', description: 'Modèle des sessions (voir list_models).' },
+        effort: { type: 'string', description: "Niveau d'effort des sessions." },
+      },
+      required: ['name'],
     },
   },
   {
@@ -2093,7 +2127,8 @@ async function callTool(name, args) {
     name === 'schedule_task' ||
     name === 'register_action' ||
     name === 'remove_action' ||
-    name === 'run_action'
+    name === 'run_action' ||
+    name === 'create_automation'
   ) {
     if (!CURRENT_CONVERSATION) {
       return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
@@ -2123,6 +2158,9 @@ async function callTool(name, args) {
           isError: true,
         }
       }
+    }
+    if (name === 'create_automation' && !(typeof args?.name === 'string' && args.name.trim())) {
+      return { ...text('Le paramètre `name` est requis.'), isError: true }
     }
     if ((name === 'remove_action' || name === 'run_action') && !(typeof args?.id === 'string' && args.id.trim())) {
       return { ...text('Le paramètre `id` est requis (voir list_actions).'), isError: true }

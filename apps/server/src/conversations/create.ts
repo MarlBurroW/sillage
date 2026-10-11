@@ -21,6 +21,11 @@ export function provisionalTitle(firstMessage: string | undefined): string {
 }
 
 export interface CreateConversationInput {
+  /**
+   * Identifiant imposé, quand le premier message doit le citer : une session née d'un
+   * webhook reçoit la marque à laisser sur la forge, qui porte son propre identifiant.
+   */
+  id?: string
   projectId: string
   userId: string
   agent: AgentKind
@@ -69,7 +74,7 @@ export async function createConversation(
 
   const now = Date.now()
   const row: ConversationRow = {
-    id: randomUUID(),
+    id: input.id ?? randomUUID(),
     projectId: input.projectId,
     worktreeId: input.worktreeId,
     cardId: input.cardId,

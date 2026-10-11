@@ -76,7 +76,10 @@ try {
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
   assert.ok(login.ok())
   const api = async (path) => (await context.request.get(`${base}${path}`)).json()
-  const project = (await api('/api/projects')).find((entry) => entry.name === 'Nimbus')
+  // Un projet sans automatisation : la démo en sème une dans Nimbus, et la page doit
+  // partir de son état vide.
+  const seeded = await api('/api/schedules')
+  const project = (await api('/api/projects')).find((entry) => !entry.archivedAt && !seeded.some((task) => task.projectId === entry.id))
   const schedules = async () => (await api('/api/schedules')).filter((task) => task.projectId === project.id)
   /** Attend qu'un état de la tâche soit vrai, le temps d'un tir réel. */
   const until = async (label, predicate, timeoutMs) => {
@@ -96,9 +99,9 @@ try {
 
   // --- Création par le formulaire ------------------------------------------------
   await page.goto(`${base}/p/${project.id}/schedules`)
-  await page.getByText('Aucune tâche planifiée dans ce projet').waitFor()
-  await page.getByRole('button', { name: 'Nouvelle tâche', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Nouvelle tâche planifiée', exact: true })
+  await page.getByText('Aucune automatisation dans ce projet').waitFor()
+  await page.getByRole('button', { name: 'Nouvelle automatisation', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Nouvelle automatisation', exact: true })
   await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('Veille de test')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
   // Sans cadence valide, rien ne part : le bouton doit le dire.
@@ -139,7 +142,7 @@ try {
   const nav = page.locator('aside nav')
   const threadLink = nav.locator(`a[href$="/c/${thread.id}"]`)
   const section = nav.locator('[data-sidebar-schedules]')
-  await section.getByText('Planifiées', { exact: true }).waitFor()
+  await section.getByText('Automatisations', { exact: true }).waitFor()
   assert.equal(await threadLink.count(), 0, 'Un tir ne doit pas apparaître dans la liste principale')
   await section.getByRole('button', { name: /Veille de test/ }).click()
   await threadLink.waitFor()
@@ -190,11 +193,12 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 })
   await card.getByRole('button', { name: 'Supprimer', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Supprimer', exact: true }).click()
-  await page.getByText('Aucune tâche planifiée dans ce projet').waitFor()
+  await page.getByText('Aucune automatisation dans ce projet').waitFor()
   const after = (await api('/api/conversations')).filter((entry) => entry.title.startsWith('Veille de test · '))
   assert.equal(after.length, 2)
   assert.ok(after.every((entry) => entry.scheduleId === null && entry.archivedAt !== null))
-  assert.equal(await nav.locator('[data-sidebar-schedules]').count(), 0)
+  // La section reste, vide : elle sert aussi à en créer une (voir 61129df).
+  assert.equal(await nav.locator('[data-sidebar-schedules]').getByText('Veille de test').count(), 0)
 
   assert.deepEqual(errors, [])
   console.log(`schedule-ui-check: ok (captures dans ${shots})`)

@@ -143,7 +143,8 @@ function TaskRow({
           {runs.length > RUNS_SHOWN || task.runs.length > runs.length ? (
             <li>
               <NavLink
-                to={`/p/${task.projectId}/schedules`}
+                // Une automatisation par webhook a sa propre page, avec son journal d'appels.
+                to={task.webhook ? `/p/${task.projectId}/schedules/${task.id}` : `/p/${task.projectId}/schedules`}
                 onClick={onNavigate}
                 className="flex min-h-9 items-center rounded px-2 text-xs text-ink-faint hover:bg-surface-high hover:text-ink-soft"
               >
