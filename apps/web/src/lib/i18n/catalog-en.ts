@@ -2583,6 +2583,7 @@ export const en = {
   'gitCredentials.create.open': 'Add an access',
   'apiTokens.create.open': 'Create a token',
   'apiTokens.scope.projects:read': 'List the projects and conversations the token can see',
+  'apiTokens.scope.projects:write': 'Create projects (tokens without project restrictions)',
   'apiTokens.scope.tasks:read': 'Read tasks, their status and their results',
   'apiTokens.scope.tasks:write': 'Launch, answer and stop tasks',
   'apiTokens.scope.tasks:autonomous': 'Allow a configuration without guardrails',

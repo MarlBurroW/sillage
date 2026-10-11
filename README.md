@@ -83,6 +83,8 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   one in a project, follow its events, answer what it asks, steer or interrupt
   it, and take a webhook when it lands. Bearer tokens carry their own scopes and
   an optional list of allowed projects, separate from the browser session.
+  Create projects with `POST /api/v1/projects` and the explicit `projects:write`
+  scope on an unrestricted token. [Project creation API](docs/api.md).
 
 ## Instructions and memory
 
