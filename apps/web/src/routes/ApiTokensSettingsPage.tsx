@@ -49,6 +49,7 @@ const SCOPES = apiScopeSchema.options
 /** Ce que chaque portée ouvre, dit en clair : le nom seul ne dit pas où s'arrête `tasks:write`. */
 const SCOPE_HINT_KEYS: Record<ApiScope, MessageKey> = {
   'projects:read': 'apiTokens.scope.projects:read',
+  'projects:write': 'apiTokens.scope.projects:write',
   'tasks:read': 'apiTokens.scope.tasks:read',
   'tasks:write': 'apiTokens.scope.tasks:write',
   'tasks:autonomous': 'apiTokens.scope.tasks:autonomous',

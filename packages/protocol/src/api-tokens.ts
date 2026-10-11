@@ -20,6 +20,7 @@ import { agentKindSchema, type AgentKind } from './events.js'
  */
 export const apiScopeSchema = z.enum([
   'projects:read',
+  'projects:write',
   'tasks:read',
   'tasks:write',
   'tasks:autonomous',
