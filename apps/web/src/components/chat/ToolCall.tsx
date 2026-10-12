@@ -27,6 +27,8 @@ import { useToolOutput } from '../../lib/tool-output'
 import { readableView } from '../tools/registry'
 import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
+import { ScheduleApprovalStrip } from './ScheduleApprovalStrip'
+import { isSillageTool } from '../../lib/sillage-tools'
 
 /**
  * Rendu d'un appel d'outil, et d'une suite d'appels repliée derrière une ligne.
@@ -286,6 +288,8 @@ export const ToolCall = memo(function ToolCall({
           {t('toolcall.subagent.view')}
         </button>
       ) : null}
+
+      {tool.status === 'done' && isSillageTool(tool.name, 'schedule_task') ? <ScheduleApprovalStrip tool={tool} /> : null}
     </div>
   )
 })
