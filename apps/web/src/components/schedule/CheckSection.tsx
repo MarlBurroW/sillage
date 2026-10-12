@@ -6,10 +6,11 @@ import {
   type ScheduleCheckResultDto,
   type ScheduleCheckVerdict,
 } from '@sillage/protocol'
+import type { ScheduledTaskDto } from '@sillage/protocol'
 import { ScriptEditor } from '../automation/ScriptEditor'
-import { Badge, Banner, Button, Field } from '../ui'
+import { Badge, Banner, Button, ConfirmDialog, Field } from '../ui'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
-import { useTestScheduleCheck } from '../../lib/schedules'
+import { useApproveScheduleCheck, useTestScheduleCheck } from '../../lib/schedules'
 
 /**
  * La vérification avant le tour, dans le formulaire d'une tâche : le script, son délai,
@@ -172,5 +173,38 @@ export function CheckReview({
         {t('schedule.check.reviewHint')}
       </p>
     </div>
+  )
+}
+
+/**
+ * La validation d'un script proposé par un agent : le texte, un essai, et le bouton qui
+ * valide exactement ce texte-là. Ouverte depuis la carte de la tâche ou depuis l'appel
+ * `schedule_task` dans la conversation.
+ */
+export function CheckApprovalDialog({
+  task,
+  open,
+  onOpenChange,
+}: {
+  task: ScheduledTaskDto
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const t = useTranslate()
+  const approve = useApproveScheduleCheck()
+  const check = task.check
+  if (!check) return null
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('schedule.check.reviewTitle', { name: task.name })}
+      confirmLabel={t('schedule.check.approve')}
+      busy={approve.isPending}
+      onConfirm={() => approve.mutate({ id: task.id, script: check.script }, { onSuccess: () => onOpenChange(false) })}
+    >
+      <CheckReview projectId={task.projectId} taskId={task.id} script={check.script} timeoutSeconds={check.timeoutSeconds} />
+      {approve.isError ? <Banner>{approve.error.message}</Banner> : null}
+    </ConfirmDialog>
   )
 }

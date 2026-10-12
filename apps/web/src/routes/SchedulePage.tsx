@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@sillage/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
-import { CheckReview } from '../components/schedule/CheckSection'
+import { CheckApprovalDialog } from '../components/schedule/CheckSection'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
 import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '../components/ui'
 import { cronToHuman } from '../lib/cron'
@@ -14,7 +14,6 @@ import { useProjects } from '../lib/projects'
 import {
   SCHEDULE_STATE_LABELS,
   describeCadence,
-  useApproveScheduleCheck,
   formatDateTime,
   scheduleState,
   useDeleteSchedule,
@@ -25,8 +24,9 @@ import {
 } from '../lib/schedules'
 import { useSidebarHidden } from '../lib/sidebar'
 
-const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'critical' | 'positive'> = {
+const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'caution' | 'critical' | 'positive'> = {
   running: 'accent',
+  approval: 'caution',
   paused: 'neutral',
   failed: 'critical',
   done: 'neutral',
@@ -153,12 +153,11 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
   const update = useUpdateSchedule()
   const run = useRunSchedule()
   const remove = useDeleteSchedule()
-  const approve = useApproveScheduleCheck()
   const [historyOpen, setHistoryOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [reviewing, setReviewing] = useState(false)
   const state = scheduleState(task)
-  const error = update.error ?? run.error ?? remove.error ?? approve.error
+  const error = update.error ?? run.error ?? remove.error
   const check = task.webhook ? null : task.check
   const webhook = task.webhook
 
@@ -207,6 +206,7 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
       ) : null}
       {check && !check.approved ? (
         <Banner tone="caution">
+          <span className="block font-medium">{t('schedule.check.pendingTitle')}</span>
           <span className="block">{t('schedule.check.pending')}</span>
           <Button className="mt-1.5" size="sm" variant="secondary" icon={<ShieldAlert size={14} />} onClick={() => setReviewing(true)}>
             {t('schedule.check.review')}
@@ -295,16 +295,7 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
       </div>
 
       {check && !check.approved ? (
-        <ConfirmDialog
-          open={reviewing}
-          onOpenChange={setReviewing}
-          title={t('schedule.check.reviewTitle', { name: task.name })}
-          confirmLabel={t('schedule.check.approve')}
-          busy={approve.isPending}
-          onConfirm={() => approve.mutate({ id: task.id, script: check.script }, { onSettled: () => setReviewing(false) })}
-        >
-          <CheckReview projectId={task.projectId} taskId={task.id} script={check.script} timeoutSeconds={check.timeoutSeconds} />
-        </ConfirmDialog>
+        <CheckApprovalDialog task={task} open={reviewing} onOpenChange={setReviewing} />
       ) : null}
 
       <ConfirmDialog

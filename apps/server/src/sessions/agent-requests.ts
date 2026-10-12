@@ -544,7 +544,7 @@ export class AgentRequests {
         ? "Attention : avec les permissions par défaut du projet, un tir s'arrêtera pour demander un accord que personne ne donnera, jusqu'à sa durée maximale. Dis-le à l'utilisateur : il règle les permissions de la tâche dans la vue Planification."
         : null,
       task.checkScript
-        ? "Le script de vérification attend la validation de l'utilisateur dans la vue Planification : tant qu'il n'est pas validé, les tirs sont écartés, sans script ni session. Dis-le-lui, et qu'il peut l'essayer avant de valider."
+        ? "Le script de vérification attend la validation de l'utilisateur : tant qu'il n'est pas validé, les tirs sont écartés, sans script ni session. Dis-le-lui : il peut le relire, l'essayer et le valider directement sous cet appel dans la conversation, ou depuis la vue Automatisations du projet."
         : null,
       "L'utilisateur la retrouve dans la vue Planification du projet, où il peut la modifier, la mettre en pause, la lancer tout de suite ou la supprimer. Ses tirs n'apparaissent pas dans la liste des sessions mais sous la tâche.",
     ]

@@ -11,6 +11,7 @@ import { cx } from './ui'
 const RUNS_SHOWN = 5
 
 const STATE_DOTS: Record<ScheduleState, string> = {
+  approval: 'bg-caution',
   running: 'bg-accent animate-pulse',
   paused: 'bg-line-strong',
   failed: 'bg-critical',

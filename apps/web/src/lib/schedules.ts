@@ -114,10 +114,11 @@ export function useApproveScheduleCheck() {
  * Le tir en cours prime sur la pause : une tâche mise en pause pendant un tir tourne
  * encore, et l'afficher « en pause » cacherait la session qui travaille.
  */
-export type ScheduleState = 'running' | 'paused' | 'failed' | 'done' | 'waiting'
+export type ScheduleState = 'running' | 'approval' | 'paused' | 'failed' | 'done' | 'waiting'
 
 export const SCHEDULE_STATE_LABELS: Record<ScheduleState, MessageKey> = {
   running: 'schedule.state.running',
+  approval: 'schedule.state.approval',
   paused: 'schedule.state.paused',
   failed: 'schedule.state.failed',
   done: 'schedule.state.done',
@@ -128,6 +129,9 @@ export function scheduleState(task: ScheduledTaskDto): ScheduleState {
   // Les tirs sautés ne disent rien de la santé de la tâche : on lit le dernier vrai.
   const last = task.runs.find((run) => run.status !== 'skipped')
   if (last?.status === 'running' || last?.status === 'checking') return 'running'
+  // Avant la pause : une tâche qui attend une validation ne fait rien tant qu'on ne l'a
+  // pas donnée, et c'est la seule chose qu'on attende de qui la regarde.
+  if (task.check && !task.check.approved && !task.webhook) return 'approval'
   if (!task.enabled) return task.cadence.kind === 'once' && task.lastRunAt ? 'done' : 'paused'
   if (last?.status === 'failed' || last?.status === 'timed_out') return 'failed'
   return 'waiting'

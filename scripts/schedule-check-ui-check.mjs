@@ -151,21 +151,43 @@ try {
   assert.match(text, /Version 9\.9 publiée/)
   await until('tour terminé', (entry) => entry.runs[0]?.status === 'succeeded', 150_000)
 
-  // --- Un script proposé par un agent attend la validation ---------------------------
+  // --- Un script proposé par un agent : validation depuis la conversation ---------
   // Le formulaire valide d'office ; l'agent passe par `schedule_task`. On simule sa
-  // proposition en base, sur ce serveur jetable.
+  // proposition en base, sur ce serveur jetable, avec l'appel d'outil qui l'a faite.
   const { default: Database } = await import(join(serverDir, 'node_modules/better-sqlite3/lib/index.js'))
   const db = new Database(join(data, 'data', 'sillage.db'))
-  db.prepare("UPDATE scheduled_tasks SET check_script = ?, check_approved_at = NULL, check_proposed_by = 'agent' WHERE id = ?")
-    .run('echo "proposé par un agent"; exit 10', task.id)
+  const script = 'echo "proposé par un agent"; exit 10'
+  db.prepare("UPDATE scheduled_tasks SET check_script = ?, check_approved_at = NULL, check_proposed_by = 'agent' WHERE id = ?").run(script, task.id)
+  const owner = db.prepare('SELECT owner_id AS id FROM projects WHERE id = ?').get(project.id).id
+  const now = Date.now()
+  const threadEvents = [
+    { type: 'message.completed', messageId: 'u1', role: 'user', blocks: [{ type: 'text', text: 'Vérifie chaque jour la version de Codex.' }], parentToolCallId: null },
+    { type: 'tool.started', toolCallId: 'call-1', name: 'mcp__sillage__schedule_task', input: { name: task.name, prompt: 'Analyse', cron: '0 9 * * *', check_script: script }, parentToolCallId: null },
+    { type: 'tool.completed', toolCallId: 'call-1', output: [{ type: 'text', text: `Tâche planifiée « ${task.name} » créée, id ${task.id}.` }], isError: false, durationMs: 800 },
+    { type: 'message.completed', messageId: 'a1', role: 'assistant', blocks: [{ type: 'text', text: 'C’est planifié. Le script attend ta validation.' }], parentToolCallId: null },
+  ]
+  db.prepare(`INSERT INTO conversations (id, project_id, user_id, title, agent, config, status, last_seq, last_notable_seq, position, created_at, updated_at)
+              VALUES ('agent-thread', ?, ?, 'Planifier la veille Codex', 'claude', ?, 'idle', ?, ?, -100, ?, ?)`)
+    .run(project.id, owner, JSON.stringify({ agent: 'claude', model: 'default', effort: 'medium', permissionMode: 'bypassPermissions' }), threadEvents.length, threadEvents.length, now, now)
+  const insertEvent = db.prepare('INSERT INTO events (conversation_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)')
+  threadEvents.forEach((event, index) => insertEvent.run('agent-thread', index + 1, now + index, event.type, JSON.stringify(event)))
   db.close()
-  await page.setViewportSize({ width: 390, height: 844 })
+
+  // La tâche se signale « À valider » sur sa carte, avant même qu'on l'ouvre.
   await page.reload()
-  await card.getByText(/Un agent a proposé un script/).waitFor()
+  await card.getByText('À valider', { exact: true }).waitFor()
+  await card.getByText('Script de vérification à valider').waitFor()
   await card.getByRole('button', { name: 'Lancer maintenant', exact: true }).click()
   task = await until('tir bloqué', (entry) => /en attente de validation/.test(entry.runs[0]?.error ?? ''), 15_000)
   assert.equal(task.runs[0].check, null, 'Un script non validé ne tourne pas')
-  await card.getByRole('button', { name: 'Relire le script', exact: true }).click()
+
+  // Le raccourci : sous l'appel de l'agent, dans la conversation.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`${base}/p/${project.id}/c/agent-thread`)
+  const strip = page.locator('[data-check-approval]')
+  await strip.waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'check-inline-mobile.png') })
+  await strip.getByRole('button', { name: 'Relire et valider', exact: true }).click()
   const review = page.getByRole('dialog')
   await review.getByText('proposé par un agent').first().waitFor()
   await review.getByRole('button', { name: 'Tester', exact: true }).click()
@@ -175,7 +197,13 @@ try {
   await review.getByRole('button', { name: 'Valider', exact: true }).click()
   await review.waitFor({ state: 'hidden' })
   await until('script validé', (entry) => entry.check?.approved === true, 10_000)
-  await card.getByText(/Un agent a proposé un script/).waitFor({ state: 'hidden' })
+  await page.getByText(`Script de vérification de « ${task.name} » validé.`).waitFor()
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'check-inline-approved-desktop.png') })
+
+  await page.goto(`${base}/p/${project.id}/schedules`)
+  await card.getByText('Script de vérification à valider').waitFor({ state: 'hidden' })
+  await page.setViewportSize({ width: 390, height: 844 })
 
   // --- Le formulaire au téléphone -------------------------------------------------
   await card.getByRole('button', { name: 'Modifier', exact: true }).click()
