@@ -8,6 +8,8 @@ import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
 import { ActionRunner } from './actions/actions.js'
 import { AutomationReceiver } from './automations/receiver.js'
+import { BoardSync } from './board/board-sync.js'
+import { BoardResponder } from './board/responder.js'
 import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
@@ -53,8 +55,11 @@ async function main(): Promise<void> {
   // Construit avant l'application, dont les routes remettent ou écartent un message
   // retenu, mais démarré après elle, faute de logger avant.
   const relay = new SessionRelay(db, sessions, log)
+  // Board relié aux issues GitHub : lit le dépôt, renvoie les changements faits ici, et
+  // ouvre les sessions de maintenance qu'une issue ou un commentaire déclenche.
+  const board = new BoardSync({ db, config }, gitCredentials, fetch, new BoardResponder({ db, config }, sessions, registry))
   // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey)
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 
@@ -83,6 +88,7 @@ async function main(): Promise<void> {
     tasks,
     actions,
     automations,
+    board,
   )
   push.setLogger(app.log)
   automations.setLogger(app.log)
@@ -104,6 +110,7 @@ async function main(): Promise<void> {
   // Après `recoverInterrupted` aussi : un tir coupé par le redémarrage doit se lire
   // « interrompu », pas « en cours » jusqu'à sa durée maximale.
   tasks.start(app.log)
+  board.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
 
@@ -117,6 +124,7 @@ async function main(): Promise<void> {
     relay.stop()
     agentRequests.stop()
     tasks.stop()
+    board.stop()
     await sessions.stopAll()
     terminals.shutdown()
     await app.close()

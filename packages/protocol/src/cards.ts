@@ -32,18 +32,23 @@ export const CARD_COLUMNS: readonly CardColumn[] = [
  */
 export const CARD_CLOSED_COLUMNS: readonly CardColumn[] = ['done', 'abandoned']
 
-const TITLE_MAX = 200
+export const CARD_TITLE_MAX = 200
 const DESCRIPTION_MAX = 20_000
 
 export const createCardBodySchema = z.object({
-  title: z.string().min(1).max(TITLE_MAX),
+  /**
+   * Créer la carte comme issue sur le dépôt relié ; absent, le réglage du board décide.
+   * Sans board relié, ignoré.
+   */
+  github: z.boolean().optional(),
+  title: z.string().min(1).max(CARD_TITLE_MAX),
   description: z.string().max(DESCRIPTION_MAX).default(''),
   column: cardColumnSchema.default('todo'),
 })
 
 export const updateCardBodySchema = z
   .object({
-    title: z.string().min(1).max(TITLE_MAX),
+    title: z.string().min(1).max(CARD_TITLE_MAX),
     description: z.string().max(DESCRIPTION_MAX),
     column: cardColumnSchema,
   })
@@ -98,7 +103,15 @@ const NOTE_MAX = 8_000
 
 export const createCardNoteBodySchema = z.object({
   body: z.string().min(1).max(NOTE_MAX),
+  /** Sur une carte liée à une issue : publier aussi la note en commentaire. */
+  publish: z.boolean().default(false),
 })
+
+/**
+ * Où en est la publication d'une note locale sur l'issue liée : partie, en route, ou
+ * refusée par GitHub. Absent pour une note restée locale ou venue de GitHub.
+ */
+export type CardNotePublication = 'pending' | 'published' | 'failed'
 
 /**
  * Une note du fil d'une carte : ce qu'une session a fait, trouvé ou décidé.
@@ -119,6 +132,28 @@ export interface CardNoteDto {
   author:
     | { kind: 'agent'; agent: AgentKind; conversationId: string | null; conversationTitle: string }
     | { kind: 'user'; name: string }
+    /** Un commentaire écrit sur GitHub, par quelqu'un de la communauté ou par soi. */
+    | { kind: 'github'; login: string }
+  /** Le commentaire GitHub de la note, venu de là-bas ou publié depuis ici. */
+  externalUrl: string | null
+  publication: CardNotePublication | null
+  /** Code du refus de GitHub, pour une publication en échec. */
+  publicationError: string | null
+}
+
+/** L'issue dont une carte est le reflet, ou dont elle s'est détachée. */
+export interface CardExternalDto {
+  provider: 'github'
+  number: number
+  url: string
+  author: string | null
+  labels: string[]
+  state: 'open' | 'closed'
+  /**
+   * Détachée : la carte est redevenue locale, l'issue vit sa vie sur GitHub et la
+   * synchronisation ne la touche plus. Le lien reste, pour savoir d'où elle vient.
+   */
+  detached: boolean
 }
 
 export interface CardDto {
@@ -142,6 +177,8 @@ export interface CardDto {
   references: CardLinkDto[]
   /** Cartes dont la description mentionne celle-ci. */
   referencedBy: CardLinkDto[]
+  /** L'issue GitHub liée, pour une carte d'un board relié ; null pour une carte locale. */
+  external: CardExternalDto | null
 }
 
 /**

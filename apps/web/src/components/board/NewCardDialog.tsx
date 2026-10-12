@@ -1,27 +1,34 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { useState } from 'react'
-import { CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
+import { CARD_COLUMNS, type BoardLinkDto, type CardColumn, type CardDto } from '@sillage/protocol'
 import { useCreateCard } from '../../lib/cards'
 import { useCardDraft } from '../../lib/card-drafts'
 import { useCurrentUser } from '../../lib/session'
 import { useTranslate } from '../../lib/i18n'
-import { Button, IconButton, Select } from '../ui'
+import { Button, ChoiceList, IconButton, Select } from '../ui'
 import { CardEditor } from './CardEditor'
 import { columnLabel } from './columns'
+import { GitHubMark } from './GitHubMark'
 
-export function NewCardDialog({ projectId, open, onClose, onCreated }: {
-  projectId: string; open: boolean; onClose: () => void; onCreated: (card: CardDto) => void
+export function NewCardDialog({ projectId, link, open, onClose, onCreated }: {
+  projectId: string; link: BoardLinkDto | null; open: boolean; onClose: () => void; onCreated: (card: CardDto) => void
 }) {
   const t = useTranslate()
   const { data: user } = useCurrentUser()
   const { draft, setDraft, acknowledge } = useCardDraft(user?.id ?? '', `new:${projectId}`)
   const value = draft ?? { title: '', description: '' }
   const [column, setColumn] = useState<CardColumn>('todo')
+  // Null : le réglage du board décide. Un choix fait ici vaut pour cette carte seulement.
+  const [target, setTarget] = useState<'local' | 'github' | null>(null)
+  const where = target ?? link?.newCards ?? 'local'
   const create = useCreateCard(projectId)
   const submit = () => {
     if (!value.title.trim() || create.isPending) return
-    create.mutate({ ...value, title: value.title.trim(), column }, { onSuccess: (card) => { acknowledge(value); onCreated(card) } })
+    create.mutate(
+      { ...value, title: value.title.trim(), column, ...(link ? { github: where === 'github' } : {}) },
+      { onSuccess: (card) => { acknowledge(value); setTarget(null); onCreated(card) } },
+    )
   }
   return <Dialog.Root open={open} onOpenChange={(next) => { if (!next && !create.isPending) onClose() }}>
     <Dialog.Portal>
@@ -35,8 +42,19 @@ export function NewCardDialog({ projectId, open, onClose, onCreated }: {
           <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:p-6">
             <CardEditor {...value} onChange={setDraft} disabled={create.isPending} />
             <Select label={t('board.card.column')} value={column} onChange={setColumn} options={CARD_COLUMNS.map((value) => ({ value, label: columnLabel(value) }))} />
+            {link ? (
+              <ChoiceList
+                label={t('board.github.create.where')}
+                value={where}
+                onChange={setTarget}
+                options={[
+                  { value: 'local', label: t('board.github.create.local'), hint: t('board.github.create.local.hint') },
+                  { value: 'github', label: t('board.github.create.github', { repo: link.repo }), hint: t('board.github.create.github.hint'), icon: <GitHubMark size={14} /> },
+                ]}
+              />
+            ) : null}
             <p className="text-xs text-ink-faint">{t('board.create.filesHint')}</p>
-            {create.isError ? <p role="alert" className="text-sm text-critical">{t('board.card.saveError')}</p> : null}
+            {create.isError ? <p role="alert" className="text-sm text-critical">{create.error.message}</p> : null}
           </div>
           <footer className="flex justify-end gap-2 border-t border-line px-5 py-4">
             <Button type="button" variant="ghost" disabled={create.isPending} onClick={onClose}>{t('board.card.cancel')}</Button>

@@ -23,15 +23,18 @@ import {
 import { ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
+import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type BoardLinkDto, type CardColumn, type CardDto } from '@sillage/protocol'
+import { BoardLinkDialog } from '../components/board/BoardLinkDialog'
+import { GitHubMark } from '../components/board/GitHubMark'
 import { NewCardDialog } from '../components/board/NewCardDialog'
 import { CardPanel } from '../components/board/CardPanel'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, cx } from '../components/ui'
+import { useBoardLink } from '../lib/board-link'
 import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
-import { useTranslate } from '../lib/i18n'
+import { translateError, useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
@@ -82,8 +85,16 @@ function targetColumn(layout: Layout, overId: string): CardColumn | undefined {
   return columnOf(layout, overId)
 }
 
+/** D'où vient une carte, pour le filtre d'un board relié. Une carte détachée est locale. */
+type CardSource = 'all' | 'local' | 'github'
+const isGitHubCard = (card: CardDto) => card.external !== null && !card.external.detached
+
 function matchesCard(card: CardDto, query: string): boolean {
-  if (query.startsWith('#')) return String(card.number).startsWith(query.slice(1))
+  // `#18` trouve la carte 18, et sur un board relié l'issue 18 : on cite les deux.
+  if (query.startsWith('#')) {
+    const digits = query.slice(1)
+    return String(card.number).startsWith(digits) || (card.external !== null && String(card.external.number).startsWith(digits))
+  }
   return `${card.number} ${card.title} ${card.description}`.toLocaleLowerCase().includes(query)
 }
 
@@ -97,15 +108,24 @@ export function BoardPage() {
   const panel = usePanelPresence()
 
   const { data: projects } = useProjects()
-  const { data: cards, isPending, isError, refetch } = useCards(projectId)
+  const { data: linkState } = useBoardLink(projectId)
+  const link = linkState?.link ?? null
+  const { data: cards, isPending, isError, refetch } = useCards(projectId, link !== null)
   const reorder = useReorderCards(projectId ?? '')
 
   useRememberProjectView(projectId, 'board')
 
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
+  const [linking, setLinking] = useState(false)
+  const [source, setSource] = useState<CardSource>('all')
   const search = query.trim().toLocaleLowerCase()
-  const matches = (card: CardDto) => matchesCard(card, search)
+  // Le filtre de provenance n'a de sens que sur un board relié ; délié, il ne doit
+  // pas cacher des cartes sans que rien à l'écran ne le dise.
+  const from: CardSource = link ? source : 'all'
+  const matches = (card: CardDto) =>
+    matchesCard(card, search) && (from === 'all' || (from === 'github') === isGitHubCard(card))
+  const filtering = Boolean(search) || from !== 'all'
   const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
   /**
    * Visibles d'emblée : le board dit où en est le projet, et masquer ce qui est fini
@@ -230,7 +250,7 @@ export function BoardPage() {
 
   const open = CARD_COLUMNS.filter((column) => !CARD_CLOSED_COLUMNS.includes(column))
   const hasClosed = CARD_CLOSED_COLUMNS.some((column) => (layout.get(column) ?? []).length > 0)
-  const shown = wide ? [...open, ...(showClosed || search ? CARD_CLOSED_COLUMNS.filter((column) => column !== 'abandoned' || (layout.get(column)?.length ?? 0) > 0) : [])] : [visibleColumn]
+  const shown = wide ? [...open, ...(showClosed || filtering ? CARD_CLOSED_COLUMNS.filter((column) => column !== 'abandoned' || (layout.get(column)?.length ?? 0) > 0) : [])] : [visibleColumn]
 
   return (
     // `h-full` et non `flex-1` : le conteneur de la coque défile, donc il n'impose
@@ -250,7 +270,29 @@ export function BoardPage() {
             {t('board.cardCount', { count: (cards ?? []).length })}
           </span>
           <div className="flex-1" />
-          <Button icon={<Plus size={16} />} onClick={() => setCreating(true)}>{t('board.create.title')}</Button>
+          {link ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<GitHubMark size={14} />}
+              aria-label={t('board.github.open', { repo: link.repo })}
+              title={link.lastError ? translateError(link.lastError, '') : t('board.github.open', { repo: link.repo })}
+              onClick={() => setLinking(true)}
+            >
+              <span className="hidden max-w-40 truncate font-mono text-xs lg:inline">{link.repo}</span>
+              {link.lastError ? <span className="size-1.5 rounded-full bg-caution" aria-hidden /> : null}
+            </Button>
+          ) : linkState && project.isOwner ? (
+            <Button variant="ghost" size="sm" icon={<GitHubMark size={14} />} onClick={() => setLinking(true)}>
+              <span className="hidden lg:inline">{t('board.github.connect')}</span>
+            </Button>
+          ) : null}
+          {/* Libellé court au téléphone : l'en-tête y tient alors sur deux lignes, au lieu
+              de laisser le bouton du panneau seul sur une troisième. */}
+          <Button icon={<Plus size={16} />} aria-label={t('board.create.title')} onClick={() => setCreating(true)}>
+            <span className="sm:hidden">{t('board.create.short')}</span>
+            <span className="hidden sm:inline">{t('board.create.title')}</span>
+          </Button>
           {wide && hasClosed ? (
             <Button
               variant="ghost"
@@ -284,7 +326,7 @@ export function BoardPage() {
         </header>
 
         <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-sunken px-3 sm:max-w-sm">
+          <div className="flex min-w-48 flex-1 items-center gap-2 rounded-lg border border-line bg-sunken px-3 sm:max-w-sm">
             <Search size={15} className="shrink-0 text-ink-faint" />
             <input type="search" value={query} onChange={(event) => {
               const value = event.target.value
@@ -296,10 +338,33 @@ export function BoardPage() {
             }} aria-label={t('board.search')}
               placeholder={t('board.search')} className="min-h-10 min-w-0 w-full bg-transparent text-sm outline-none placeholder:text-ink-faint" />
           </div>
+          {link ? (
+            <div role="radiogroup" aria-label={t('board.github.filter')} className="flex shrink-0 rounded-lg border border-line bg-sunken p-0.5">
+              {(['all', 'local', 'github'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={source === value}
+                  onClick={() => setSource(value)}
+                  className={cx(
+                    'flex min-h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors pointer-coarse:min-h-11',
+                    source === value ? 'surface text-ink shadow-sm' : 'text-ink-faint hover:text-ink',
+                  )}
+                >
+                  {value === 'github' ? <GitHubMark size={12} /> : null}
+                  {t(`board.github.filter.${value}`)}
+                  <span className="opacity-60">
+                    {(cards ?? []).filter((card) => value === 'all' || (value === 'github') === isGitHubCard(card)).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <p className="hidden text-xs text-ink-faint lg:block">{t(search ? 'board.searchHint' : 'board.hint')}</p>
           {reorder.isError ? <p role="alert" className="text-sm text-critical">{t('board.moveError')}</p> : null}
         </div>
-        {search && !(cards ?? []).some(matches) ? <p role="status" className="px-5 pt-4 text-sm text-ink-faint">{t('board.noResults')}</p> : null}
+        {filtering && !(cards ?? []).some(matches) ? <p role="status" className="px-5 pt-4 text-sm text-ink-faint">{t('board.noResults')}</p> : null}
         {!wide ? (
           <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-2 py-1.5">
             {CARD_COLUMNS.map((column) => {
@@ -347,8 +412,9 @@ export function BoardPage() {
                 cards={(layout.get(column) ?? [])
                   .map((id) => byId.get(id))
                   .filter((card): card is CardDto => card !== undefined && matches(card))}
-                filtered={Boolean(search)}
+                filtered={filtering}
                 projectId={projectId}
+                link={link}
                 openNumber={openCard?.number ?? null}
                 onOpenCard={(card) => showCard(card.number)}
               />
@@ -363,7 +429,10 @@ export function BoardPage() {
         </DndContext>
       </div>
 
-      <NewCardDialog projectId={projectId} open={creating} onClose={() => setCreating(false)} onCreated={(card) => {
+      {linkState ? (
+        <BoardLinkDialog projectId={projectId} project={project} state={linkState} canEdit={project.isOwner} open={linking} onClose={() => setLinking(false)} />
+      ) : null}
+      <NewCardDialog projectId={projectId} link={link} open={creating} onClose={() => setCreating(false)} onCreated={(card) => {
         setCreating(false); setQuery(''); setVisibleColumn(card.column); showCard(card.number)
       }} />
       {lingering ? (
@@ -371,6 +440,7 @@ export function BoardPage() {
           key={lingering.id}
           card={lingering}
           projectId={projectId}
+          link={link}
           open={openCard !== null}
           onClose={() => showCard(null)}
           onSelectCard={showCard}
@@ -393,9 +463,11 @@ function BoardColumn({
   openNumber,
   onOpenCard,
   filtered,
+  link,
 }: {
   column: CardColumn
   filtered: boolean
+  link: BoardLinkDto | null
   cards: CardDto[]
   projectId: string
   openNumber: number | null
@@ -460,6 +532,14 @@ function BoardColumn({
               }}
               className="w-full resize-none bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
             />
+            {/* L'ajout rapide suit le réglage du board : qu'il crée une issue publique
+                doit se lire avant d'appuyer sur Entrée, pas après. */}
+            {link?.newCards === 'github' ? (
+              <p className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
+                <GitHubMark size={11} />
+                {t('board.github.quickAddHint', { repo: link.repo })}
+              </p>
+            ) : null}
             <div className="flex items-center gap-1.5">
               <Button size="sm" disabled={!title.trim() || createCard.isPending} onClick={submit}>
                 {t('board.card.add')}
@@ -478,7 +558,7 @@ function BoardColumn({
           </div>
         ) : null}
 
-        {createCard.isError ? <p role="alert" className="px-2 text-xs text-critical">{t('board.card.saveError')}</p> : null}
+        {createCard.isError ? <p role="alert" className="px-2 text-xs text-critical">{createCard.error.message}</p> : null}
         <SortableContext
           items={cards.map((card) => card.id)}
           strategy={verticalListSortingStrategy}

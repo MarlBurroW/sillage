@@ -59,6 +59,7 @@ import { createConversation } from '../conversations/create.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { advanceCardOnLaunch, createCard } from '../http/routes/cards.js'
+import type { BoardSync } from '../board/board-sync.js'
 import { createWorktree } from '../http/routes/worktrees.js'
 import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
@@ -148,6 +149,8 @@ export class AgentRequests {
     private readonly actions?: ActionRunner,
     /** Clé des secrets de signature des webhooks ; sans elle, `create_automation` est refusé. */
     private readonly encryptionKey?: Buffer,
+    /** Board relié à GitHub ; sans lui, `create_card` reste local. */
+    private readonly board?: BoardSync,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -212,7 +215,7 @@ export class AgentRequests {
       } else if (request.kind === 'schedule_task') {
         this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
       } else if (request.kind === 'create_card') {
-        this.settle(request.id, this.createCard(requester, payload), false)
+        this.settle(request.id, await this.createCard(requester, payload), false)
       } else if (request.kind === 'register_action') {
         this.settle(request.id, this.registerAction(requester, payload), false)
       } else if (request.kind === 'remove_action') {
@@ -653,18 +656,28 @@ export class AgentRequests {
    * Toujours en « à faire » : une carte ouverte par un agent est une proposition, pas
    * un travail engagé. Elle avance quand une session la prend, comme toute autre.
    */
-  private createCard(requester: ConversationRow, payload: Record<string, unknown>): string {
+  private async createCard(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
     const title = typeof payload.title === 'string' ? payload.title.trim() : ''
     const description = typeof payload.description === 'string' ? payload.description.trim() : ''
     if (!title) throw new Refusal('Le paramètre `title` est requis.')
     if (title.length > 200) throw new Refusal('Titre trop long (200 caractères au plus).')
     if (description.length > 20000) throw new Refusal('Description trop longue (20 000 caractères au plus).')
 
-    const card = createCard(this.ctx.db, requester.projectId, requester.userId, {
-      title,
-      description,
-      column: 'todo',
-    })
+    // Le réglage du board décide, sauf demande explicite de l'agent, qui ne la fait que
+    // si l'utilisateur la lui a donnée : l'outil le lui dit.
+    const link = this.board?.link(requester.projectId)
+    if (payload.github === true && !link) {
+      throw new Refusal("Ce board n'est pas relié à GitHub : la carte ne peut être que locale. Recommence sans `github`.")
+    }
+    const github = Boolean(link) && (typeof payload.github === 'boolean' ? payload.github : link?.newCards === 'github')
+    const fields = { title, description, column: 'todo' as const }
+    const card =
+      github && this.board
+        ? await this.board.createIssueCard(requester.projectId, requester.userId, fields, {
+            agent: requester.agent,
+            conversationId: requester.id,
+          })
+        : createCard(this.ctx.db, requester.projectId, requester.userId, fields)
     // La provenance se lit dans le fil de la carte, avec un lien vers la session : la
     // description reste celle que l'agent a rédigée, et la personne qui la reprendra
     // sait d'où elle vient.
@@ -680,7 +693,13 @@ export class AgentRequests {
       })
       .run()
 
-    return `Carte #${card.number} « ${card.title} » créée dans « à faire ». Pour la faire traiter tout de suite : start_session avec card=${card.number}.`
+    const issue = github ? this.board?.issueOf(card.id) : undefined
+    const where = issue
+      ? ` et publiée sur GitHub comme issue #${issue.number} (${issue.url}), visible de tous si le dépôt est public`
+      : link
+        ? ', locale (elle ne part pas sur GitHub)'
+        : ''
+    return `Carte #${card.number} « ${card.title} » créée dans « à faire »${where}. Pour la faire traiter tout de suite : start_session avec card=${card.number}.`
   }
 
   // --- actions -------------------------------------------------------------------

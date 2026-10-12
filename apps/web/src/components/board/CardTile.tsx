@@ -5,6 +5,7 @@ import type { CardDto } from '@sillage/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { cx } from '../ui'
+import { GitHubMark } from './GitHubMark'
 
 /** Ce qui tient sous le titre sans transformer la tuile en fiche. */
 const EXCERPT_MAX = 120
@@ -39,6 +40,8 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
   // est le repère qu'on cherche avant d'en ouvrir une de plus.
   const branch = card.conversations.findLast((session) => session.worktreeName)?.worktreeName
   const agents = [...new Set(card.conversations.map((session) => session.agent))]
+  // Une carte détachée est redevenue locale : elle ne porte plus la marque.
+  const issue = card.external && !card.external.detached ? card.external : null
 
   const body = (
     <>
@@ -46,6 +49,16 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
         <span className="shrink-0 text-[0.6875rem] font-medium text-ink-faint">#{card.number}</span>
         <p className="min-w-0 flex-1 text-sm font-semibold leading-relaxed text-ink">{card.title}</p>
       </div>
+      {issue ? (
+        <p
+          className="mt-1.5 flex min-w-0 items-center gap-1 text-[0.6875rem] text-ink-faint"
+          title={t('board.github.tile', { number: issue.number, author: issue.author ?? '?' })}
+        >
+          <GitHubMark size={11} className="shrink-0" />
+          <span className="shrink-0 font-medium">{issue.number}</span>
+          {issue.author ? <span className="min-w-0 truncate">· @{issue.author}</span> : null}
+        </p>
+      ) : null}
 
       {excerpt ? (
         <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-ink-faint">
