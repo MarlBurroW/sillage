@@ -1,7 +1,7 @@
 # Intégration Codex
 
 Sillage utilise `codex app-server` sur stdio. Les bindings sont générés avec
-**codex-cli 0.153.2**. La référence générale est la
+**codex-cli 0.162.1**. La référence générale est la
 [documentation officielle App Server](https://learn.chatgpt.com/docs/app-server).
 Les champs récents, notamment `agentMessage.questions`, sont vérifiés dans les types
 générés par le binaire installé.
@@ -45,6 +45,14 @@ le journal et consultable dans le fil ; ses mises à jour remplacent le même re
 visuel. Les items ont un repli générique et un contrôle d'exhaustivité TypeScript.
 Une requête serveur non implémentée produit un avertissement et une erreur RPC
 explicite. Afficher un outil dynamique ne fournit pas son exécution côté client.
+
+## Fork
+
+Le fork passe par `thread/fork { lastTurnId, excludeTurns }` : le dernier tour conservé,
+inclus, dont l'identifiant natif se relit dans le `turn/completed` gardé en `raw` de
+l'événement `turn.completed`. `thread/rollback` n'existe plus depuis 0.156.0. Un fork à
+la fin du fil n'indique aucun tour ; un fork avant le premier tour terminé est refusé,
+la branche n'aurait rien à reprendre.
 
 ## Vérification et mise à jour
 
