@@ -2322,7 +2322,7 @@ qui hérite de l'historique jusqu'à ce point, sans toucher à l'originale.
 | | Mécanisme | Granularité |
 | --- | --- | --- |
 | Claude Code | `forkSession(id, { upToMessageId })` | message de transcript |
-| Codex | `thread/fork` puis `thread/rollback { numTurns }` sur le fork | tour |
+| Codex | `thread/fork { lastTurnId }`, dernier tour conservé inclus | tour |
 
 Vérifié de bout en bout des deux côtés, à travers Sillage : après un fork juste avant le
 second message, la branche répond « POMME » et l'originale « POMME, BANANE ». Le journal
@@ -2351,13 +2351,14 @@ Deux contraintes tirées de ces essais :
   un ; un message `result` n'existe pas dans le transcript et le fork échoue si on le
   désigne. L'`uuid` utilisable est celui que le SDK expose sur les messages `assistant`,
   déjà conservé dans `events.raw` (I3).
-- Codex ne sait pas couper à un message, seulement retirer des tours entiers depuis la
-  fin. La granularité commune est donc **le tour**, ce qui rejoint le découpage que la
+- Codex ne sait pas couper à un message, seulement à la fin d'un tour entier
+  (`lastTurnId`, inclusif ; `thread/rollback { numTurns }` a disparu en 0.156.0). La
+  granularité commune est donc **le tour**, ce qui rejoint le découpage que la
   réglette de navigation utilise déjà.
 
 Le journal de la nouvelle conversation est une copie de celui de l'originale jusqu'au
 point de coupe : sans ça, le fil forké serait vide alors que l'agent, lui, se souvient
-(I2). Le `thread/rollback` de Codex ne revient pas sur les fichiers déjà modifiés sur le
+(I2). Le fork de Codex ne revient pas sur les fichiers déjà modifiés sur le
 disque, et cette limite doit être dite à l'utilisateur plutôt que devinée.
 
 **Lot 6 : panneau latéral d'outils.** Chantier non spécifié. Explorateur de fichiers
