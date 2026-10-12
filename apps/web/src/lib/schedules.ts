@@ -6,6 +6,7 @@ import type {
   AgentKind,
   ScheduleCadence,
   ScheduleOverlapPolicy,
+  ScheduleCheckResultDto,
   ScheduledRunDto,
   ScheduledTaskDto,
 } from '@sillage/protocol'
@@ -41,6 +42,9 @@ export interface ScheduleInput {
   cadence: ScheduleCadence
   overlapPolicy: ScheduleOverlapPolicy
   maxDurationMinutes: number
+  /** Null retire la vérification. */
+  checkScript?: string | null
+  checkTimeoutSeconds?: number
 }
 
 function useInvalidate() {
@@ -81,7 +85,25 @@ export function useDeleteSchedule() {
 export function useRunSchedule() {
   const invalidate = useInvalidate()
   return useMutation({
-    mutationFn: (id: string) => api.post<ScheduledRunDto>(`/api/schedules/${id}/run`),
+    mutationFn: ({ id, skipCheck = false }: { id: string; skipCheck?: boolean }) =>
+      api.post<ScheduledRunDto>(`/api/schedules/${id}/run`, { skipCheck }),
+    onSuccess: invalidate,
+  })
+}
+
+/** Joue un script de vérification sans rien lancer ; rien n'est mis en cache. */
+export function useTestScheduleCheck(projectId: string) {
+  return useMutation({
+    mutationFn: (input: { script: string; timeoutSeconds: number; taskId?: string }) =>
+      api.post<ScheduleCheckResultDto>(`/api/projects/${projectId}/schedules/check-test`, input),
+  })
+}
+
+export function useApproveScheduleCheck() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: ({ id, script }: { id: string; script: string }) =>
+      api.post<ScheduledTaskDto>(`/api/schedules/${id}/check/approve`, { script }),
     onSuccess: invalidate,
   })
 }
@@ -105,7 +127,7 @@ export const SCHEDULE_STATE_LABELS: Record<ScheduleState, MessageKey> = {
 export function scheduleState(task: ScheduledTaskDto): ScheduleState {
   // Les tirs sautés ne disent rien de la santé de la tâche : on lit le dernier vrai.
   const last = task.runs.find((run) => run.status !== 'skipped')
-  if (last?.status === 'running') return 'running'
+  if (last?.status === 'running' || last?.status === 'checking') return 'running'
   if (!task.enabled) return task.cadence.kind === 'once' && task.lastRunAt ? 'done' : 'paused'
   if (last?.status === 'failed' || last?.status === 'timed_out') return 'failed'
   return 'waiting'

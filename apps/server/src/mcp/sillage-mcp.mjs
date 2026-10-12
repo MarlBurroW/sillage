@@ -153,6 +153,13 @@ const MAX_LAUNCH_PROMPT_CHARS = 20000
 const MAX_SCHEDULE_PROMPT_CHARS = 20000
 const DEFAULT_SCHEDULE_DURATION_MINUTES = 30
 const MIN_AGENT_SCHEDULE_MINUTES = 15
+/**
+ * Vérification avant le tour, d'accord avec `CHECK_SKIP_EXIT_CODE`,
+ * `MAX_CHECK_SCRIPT_CHARS` et `DEFAULT_CHECK_TIMEOUT_SECONDS` du protocole.
+ */
+const CHECK_SKIP_EXIT_CODE = 10
+const MAX_CHECK_SCRIPT_CHARS = 20000
+const DEFAULT_CHECK_TIMEOUT_SECONDS = 120
 
 /** Messages rendus par read_session_messages, les plus récents. */
 const PEER_HISTORY_LIMIT = 20
@@ -546,6 +553,14 @@ const TOOLS = [
           enum: ['skip', 'wait'],
           description:
             'Quand un tir arrive alors que le précédent tourne encore : `skip` le saute (défaut), `wait` le fait partir dès que le précédent a fini.',
+        },
+        check_script: {
+          type: 'string',
+          description: `Script de vérification joué par Sillage avant chaque tour, pour ne réveiller le LLM que quand il y a quelque chose à faire (une version publiée, un fichier changé, un test qui casse). Shell par défaut, ou tout langage avec un shebang ; ${MAX_CHECK_SCRIPT_CHARS} caractères au plus. Il tourne à la racine du projet. Code de sortie : 0 lance le tour, ${CHECK_SKIP_EXIT_CODE} l'écarte sans session (la première ligne de sa sortie sert de raison), tout autre code est une erreur et rien n'est lancé. Sa sortie standard est transmise au tour (\`{{check_output}}\` la place dans le prompt). Variables : SILLAGE_STATE_DIR (dossier conservé d'un tir à l'autre, pour comparer avec la dernière fois), SILLAGE_FIRED_AT, SILLAGE_TRIGGER, SILLAGE_PREVIOUS_RUN_AT, SILLAGE_PROJECT_DIR. Le script ne tournera qu'une fois validé par l'utilisateur : dis-le-lui.`,
+        },
+        check_timeout_seconds: {
+          type: 'integer',
+          description: `Délai du script de vérification, en secondes. ${DEFAULT_CHECK_TIMEOUT_SECONDS} par défaut.`,
         },
       },
       required: ['name', 'prompt'],
@@ -2157,6 +2172,9 @@ async function callTool(name, args) {
           ...text(`Consigne trop longue (${prompt.length} caractères, ${MAX_SCHEDULE_PROMPT_CHARS} au plus). Mets le détail dans un fichier et cite-le.`),
           isError: true,
         }
+      }
+      if (typeof args?.check_script === 'string' && args.check_script.length > MAX_CHECK_SCRIPT_CHARS) {
+        return { ...text(`Script de vérification trop long (${MAX_CHECK_SCRIPT_CHARS} caractères au plus).`), isError: true }
       }
     }
     if (name === 'create_automation' && !(typeof args?.name === 'string' && args.name.trim())) {

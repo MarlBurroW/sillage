@@ -15,7 +15,13 @@ import {
   type ProjectRow,
 } from '@sillage/db'
 import {
+  DEFAULT_CHECK_TIMEOUT_SECONDS,
   DEFAULT_SCHEDULE_DURATION_MINUTES,
+  MAX_CHECK_SCRIPT_CHARS,
+  MAX_CHECK_TIMEOUT_SECONDS,
+  MIN_CHECK_TIMEOUT_SECONDS,
+  checkScriptSchema,
+  checkTimeoutSchema,
   MAX_SCHEDULE_DURATION_MINUTES,
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_PROMPT_CHARS,
@@ -500,13 +506,34 @@ export class AgentRequests {
     if (overlap !== 'skip' && overlap !== 'wait') {
       throw new Refusal('`overlap` vaut `skip` (sauter le tir) ou `wait` (attendre la fin du précédent).')
     }
+    const checkScript = checkScriptSchema.safeParse(payload.check_script ?? null)
+    if (!checkScript.success) {
+      throw new Refusal(`\`check_script\` est le texte du script, ${MAX_CHECK_SCRIPT_CHARS} caractères au plus.`)
+    }
+    const checkTimeout = checkTimeoutSchema.safeParse(payload.check_timeout_seconds ?? DEFAULT_CHECK_TIMEOUT_SECONDS)
+    if (!checkTimeout.success) {
+      throw new Refusal(
+        `\`check_timeout_seconds\` est un entier entre ${MIN_CHECK_TIMEOUT_SECONDS} et ${MAX_CHECK_TIMEOUT_SECONDS}.`,
+      )
+    }
 
     const agent = this.parseAgent(payload.agent, requester.agent)
     const config = await this.launchConfig(agent, project, requester.userId, payload)
     const task = createScheduledTask(
       this.ctx.db,
       { projectId: project.id, userId: requester.userId, conversationId: requester.id },
-      { name, agent, config, prompt, cadence, overlapPolicy: overlap, maxDurationMinutes, enabled: true },
+      {
+        name,
+        agent,
+        config,
+        prompt,
+        cadence,
+        overlapPolicy: overlap,
+        maxDurationMinutes,
+        enabled: true,
+        checkScript: checkScript.data,
+        checkTimeoutSeconds: checkTimeout.data,
+      },
     )
 
     const lines = [
@@ -515,6 +542,9 @@ export class AgentRequests {
       `Chaque tir ouvre une session neuve : CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}, ${task.maxDurationMinutes} min au plus, à la racine du projet.`,
       describePermissions(config)
         ? "Attention : avec les permissions par défaut du projet, un tir s'arrêtera pour demander un accord que personne ne donnera, jusqu'à sa durée maximale. Dis-le à l'utilisateur : il règle les permissions de la tâche dans la vue Planification."
+        : null,
+      task.checkScript
+        ? "Le script de vérification attend la validation de l'utilisateur dans la vue Planification : tant qu'il n'est pas validé, les tirs sont écartés, sans script ni session. Dis-le-lui, et qu'il peut l'essayer avant de valider."
         : null,
       "L'utilisateur la retrouve dans la vue Planification du projet, où il peut la modifier, la mettre en pause, la lancer tout de suite ou la supprimer. Ses tirs n'apparaissent pas dans la liste des sessions mais sous la tâche.",
     ]

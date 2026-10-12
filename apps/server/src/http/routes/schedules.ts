@@ -1,17 +1,24 @@
-import { asc, eq, or } from 'drizzle-orm'
+import { rm } from 'node:fs/promises'
+import { and, asc, desc, eq, isNotNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { automationWebhooks, projects, scheduledTasks, type ScheduledTaskRow } from '@sillage/db'
+import { automationWebhooks, projects, scheduledRuns, scheduledTasks, type ScheduledTaskRow } from '@sillage/db'
 import {
   AUTOMATION_TEMPLATES,
+  approveScheduleCheckBodySchema,
   createScheduledTaskBodySchema,
+  runScheduleBodySchema,
+  testScheduleCheckBodySchema,
   updateScheduledTaskBodySchema,
+  type ScheduleCheckResultDto,
   type ScheduledTaskDto,
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
 import type { AutomationReceiver } from '../../automations/receiver.js'
 import { createWebhook } from '../../automations/webhooks.js'
+import { checkStateDir, runCheck } from '../../scheduler/check.js'
 import type { TaskScheduler } from '../../scheduler/task-scheduler.js'
 import {
+  approveScheduleCheck,
   createScheduledTask,
   deleteScheduledTask,
   readCadence,
@@ -129,6 +136,8 @@ export function registerScheduleRoutes(
     const running = deleteScheduledTask(ctx.db, id)
     // Un tir en vol n'a plus de tâche pour le borner : il s'arrête avec elle.
     await Promise.all(running.map((conversationId) => sessions.terminate(conversationId)))
+    // Ce que sa vérification gardait d'un tir à l'autre ne sert plus à personne.
+    await rm(checkStateDir(ctx.config.paths.data, id), { recursive: true, force: true })
     return reply.status(204).send()
   })
 
@@ -137,6 +146,49 @@ export function registerScheduleRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     loadWritable(id, user.id)
-    return reply.status(201).send(runToDto(await tasks.runNow(id)))
+    const body = runScheduleBodySchema.parse(request.body ?? {})
+    return reply.status(201).send(runToDto(await tasks.runNow(id, { skipCheck: body.skipCheck })))
+  })
+
+  /**
+   * Joue un script de vérification sans rien lancer, celui du formulaire, enregistré ou
+   * non. C'est exécuter du code sur le serveur : réservé à qui peut modifier la tâche,
+   * ou en créer une dans ce projet. L'état gardé entre deux tirs n'est pas touché.
+   */
+  app.post('/api/projects/:id/schedules/check-test', async (request): Promise<ScheduleCheckResultDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = testScheduleCheckBodySchema.parse(request.body)
+    const project = loadProject(id, user.id)
+    const task = body.taskId ? loadWritable(body.taskId, user.id) : null
+    if (task && task.projectId !== project.id) throw notFound('schedule_not_found', 'Scheduled task not found.')
+    const previous = task
+      ? ctx.db
+          .select({ startedAt: scheduledRuns.startedAt, status: scheduledRuns.status })
+          .from(scheduledRuns)
+          .where(and(eq(scheduledRuns.taskId, task.id), isNotNull(scheduledRuns.conversationId)))
+          .orderBy(desc(scheduledRuns.startedAt))
+          .get()
+      : undefined
+    return runCheck(body.script, {
+      taskId: task?.id ?? '',
+      taskName: task?.name ?? '',
+      projectId: project.id,
+      cwd: project.workspacePath,
+      // Sans tâche, un dossier vide : l'essai le copie sans jamais y écrire.
+      stateDir: checkStateDir(ctx.config.paths.data, task?.id ?? '_draft'),
+      firedAt: Date.now(),
+      trigger: 'test',
+      previous: previous ?? null,
+      timeoutMs: body.timeoutSeconds * 1000,
+    })
+  })
+
+  /** Valide le script qu'un agent a proposé, tel qu'il a été relu. */
+  app.post('/api/schedules/:id/check/approve', async (request): Promise<ScheduledTaskDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = approveScheduleCheckBodySchema.parse(request.body)
+    return one(approveScheduleCheck(ctx.db, loadWritable(id, user.id), body.script))
   })
 }

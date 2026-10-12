@@ -1,9 +1,10 @@
-import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Plus, SlidersHorizontal, Trash2, Webhook, Zap } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, ChevronRight, FlaskConical, Pause, Pencil, Play, Plus, ShieldAlert, SlidersHorizontal, Trash2, Webhook, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@sillage/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
+import { CheckReview } from '../components/schedule/CheckSection'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
 import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '../components/ui'
 import { cronToHuman } from '../lib/cron'
@@ -13,6 +14,7 @@ import { useProjects } from '../lib/projects'
 import {
   SCHEDULE_STATE_LABELS,
   describeCadence,
+  useApproveScheduleCheck,
   formatDateTime,
   scheduleState,
   useDeleteSchedule,
@@ -32,6 +34,7 @@ const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'critical' | 'po
 }
 
 const RUN_LABELS: Record<ScheduleRunStatus, MessageKey> = {
+  checking: 'schedule.run.checking',
   running: 'schedule.run.running',
   succeeded: 'schedule.run.succeeded',
   failed: 'schedule.run.failed',
@@ -40,6 +43,7 @@ const RUN_LABELS: Record<ScheduleRunStatus, MessageKey> = {
 }
 
 const RUN_DOTS: Record<ScheduleRunStatus, string> = {
+  checking: 'bg-accent animate-pulse',
   running: 'bg-accent animate-pulse',
   succeeded: 'bg-positive',
   failed: 'bg-critical',
@@ -149,10 +153,13 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
   const update = useUpdateSchedule()
   const run = useRunSchedule()
   const remove = useDeleteSchedule()
+  const approve = useApproveScheduleCheck()
   const [historyOpen, setHistoryOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
   const state = scheduleState(task)
-  const error = update.error ?? run.error ?? remove.error
+  const error = update.error ?? run.error ?? remove.error ?? approve.error
+  const check = task.webhook ? null : task.check
   const webhook = task.webhook
 
   return (
@@ -176,6 +183,11 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
         <Fact label={t('schedule.fact.last')}>
           {task.lastRunAt ? relativeDate(task.lastRunAt) : t('schedule.fact.never')}
         </Fact>
+        {check ? (
+          <Fact label={t('schedule.fact.check')}>
+            {t(check.approved ? 'schedule.fact.checkValue' : 'schedule.fact.checkPending', { seconds: check.timeoutSeconds })}
+          </Fact>
+        ) : null}
         <Fact label={t('schedule.fact.limit')}>
           {t('schedule.fact.limitValue', {
             minutes: task.maxDurationMinutes,
@@ -191,6 +203,14 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
       {webhook?.trippedAt ? (
         <Banner tone="caution">
           {t('automation.tripped', { max: webhook.maxRunsPerHour, date: formatDateTime(webhook.trippedAt) })}
+        </Banner>
+      ) : null}
+      {check && !check.approved ? (
+        <Banner tone="caution">
+          <span className="block">{t('schedule.check.pending')}</span>
+          <Button className="mt-1.5" size="sm" variant="secondary" icon={<ShieldAlert size={14} />} onClick={() => setReviewing(true)}>
+            {t('schedule.check.review')}
+          </Button>
         </Banner>
       ) : null}
       {error ? <Banner>{error.message}</Banner> : null}
@@ -210,11 +230,23 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
             size="sm"
             icon={<Zap size={14} />}
             disabled={run.isPending || state === 'running'}
-            onClick={() => run.mutate(task.id)}
+            onClick={() => run.mutate({ id: task.id })}
           >
             {t('schedule.action.runNow')}
           </Button>
         )}
+        {/* Pour essayer la tâche quand la vérification dit « rien à faire », ou se trompe. */}
+        {check ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<FlaskConical size={14} />}
+            disabled={run.isPending || state === 'running'}
+            onClick={() => run.mutate({ id: task.id, skipCheck: true })}
+          >
+            {t('schedule.action.runWithoutCheck')}
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"
@@ -262,6 +294,19 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
         ) : null}
       </div>
 
+      {check && !check.approved ? (
+        <ConfirmDialog
+          open={reviewing}
+          onOpenChange={setReviewing}
+          title={t('schedule.check.reviewTitle', { name: task.name })}
+          confirmLabel={t('schedule.check.approve')}
+          busy={approve.isPending}
+          onConfirm={() => approve.mutate({ id: task.id, script: check.script }, { onSettled: () => setReviewing(false) })}
+        >
+          <CheckReview projectId={task.projectId} taskId={task.id} script={check.script} timeoutSeconds={check.timeoutSeconds} />
+        </ConfirmDialog>
+      ) : null}
+
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
@@ -296,7 +341,9 @@ function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string })
       </span>
       <span className="shrink-0 text-ink-soft">{t(RUN_LABELS[run.status])}</span>
       {run.trigger === 'manual' ? <span className="shrink-0">{t('schedule.run.manual')}</span> : null}
-      {run.error ? <span className="min-w-0 truncate" title={run.error}>{run.error}</span> : null}
+      {/* Écarté par son script : « rien à faire », pas une anomalie comme un chevauchement. */}
+      {run.status === 'skipped' && run.check ? <span className="shrink-0">{t('schedule.run.byCheck')}</span> : null}
+      {run.error ? <span className="min-w-0 truncate" title={run.check?.stdout || run.error}>{run.error}</span> : null}
     </>
   )
   const className = 'flex min-h-9 min-w-0 items-center gap-2 rounded px-1 text-xs text-ink-faint'

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import {
   automationWebhooks,
   conversations,
@@ -10,6 +10,7 @@ import {
   type ScheduledTaskRow,
 } from '@sillage/db'
 import {
+  DEFAULT_CHECK_TIMEOUT_SECONDS,
   nextScheduleRun,
   parseAgentConfig,
   scheduleCadenceSchema,
@@ -21,7 +22,7 @@ import {
   type ScheduledTaskDto,
 } from '@sillage/protocol'
 import { webhookToDto } from '../automations/webhooks.js'
-import { badRequest } from '../http/errors.js'
+import { badRequest, conflict, notFound } from '../http/errors.js'
 
 /**
  * Lecture et écriture des tâches planifiées, partagées entre les routes de l'interface
@@ -46,6 +47,16 @@ export function runToDto(row: ScheduledRunRow): ScheduledRunDto {
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
     error: row.error,
+    // La durée est toujours posée quand le script a tourné, même tué avant d'avoir un code.
+    check:
+      row.checkDurationMs === null
+        ? null
+        : {
+            exitCode: row.checkExitCode,
+            stdout: row.checkOutput ?? '',
+            stderr: row.checkStderr ?? '',
+            durationMs: row.checkDurationMs,
+          },
   }
 }
 
@@ -104,6 +115,14 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[], publicUrl: string):
         conversationId: run.conversationId && alive.has(run.conversationId) ? run.conversationId : null,
       })),
       webhook: hooks.has(row.id) ? webhookToDto(hooks.get(row.id)!, publicUrl) : null,
+      check: row.checkScript
+        ? {
+            script: row.checkScript,
+            timeoutSeconds: row.checkTimeoutSeconds,
+            approved: row.checkApprovedAt !== null,
+            proposedBy: row.checkProposedBy,
+          }
+        : null,
     }
   })
 }
@@ -118,6 +137,9 @@ export interface ScheduledTaskInput {
   overlapPolicy: ScheduleOverlapPolicy
   maxDurationMinutes: number
   enabled: boolean
+  /** Null : pas de vérification avant le tour. */
+  checkScript?: string | null
+  checkTimeoutSeconds?: number
 }
 
 function assertCoherent(agent: AgentKind, config: AgentConfig): void {
@@ -163,6 +185,12 @@ export function createScheduledTask(
     maxDurationMinutes: input.maxDurationMinutes,
     enabled: input.enabled,
     createdByConversationId: owner.conversationId ?? null,
+    checkScript: input.checkScript ?? null,
+    checkTimeoutSeconds: input.checkTimeoutSeconds ?? DEFAULT_CHECK_TIMEOUT_SECONDS,
+    // Écrit dans l'interface, il est relu par qui l'a tapé ; écrit par un agent, il
+    // attend une personne.
+    checkApprovedAt: input.checkScript && !owner.conversationId ? now : null,
+    checkProposedBy: input.checkScript && owner.conversationId ? owner.conversationId : null,
     lastRunAt: null,
     nextRunAt: armedAt(input.cadence, input.enabled, null),
     createdAt: now,
@@ -172,10 +200,16 @@ export function createScheduledTask(
   return row
 }
 
+/**
+ * Modifie une tâche. `agentConversationId` null : le geste vient de l'interface, et
+ * enregistrer le script vaut le relire. Par un agent, un script changé redevient une
+ * proposition, comme la commande d'une action de projet.
+ */
 export function updateScheduledTask(
   db: Db,
   current: ScheduledTaskRow,
   patch: Partial<ScheduledTaskInput>,
+  agentConversationId: string | null = null,
 ): ScheduledTaskRow {
   const agent = patch.agent ?? current.agent
   const config = patch.config ?? parseAgentConfig(current.config)
@@ -197,9 +231,32 @@ export function updateScheduledTask(
     maxDurationMinutes: patch.maxDurationMinutes ?? current.maxDurationMinutes,
     enabled,
     nextRunAt: rearm ? armedAt(cadence, enabled, current.lastRunAt) : current.nextRunAt,
+    checkTimeoutSeconds: patch.checkTimeoutSeconds ?? current.checkTimeoutSeconds,
     updatedAt: Date.now(),
   }
+  if (patch.checkScript !== undefined && patch.checkScript !== current.checkScript) {
+    next.checkScript = patch.checkScript
+    next.checkApprovedAt = patch.checkScript && !agentConversationId ? next.updatedAt : null
+    next.checkProposedBy = patch.checkScript && agentConversationId ? agentConversationId : null
+  }
   db.update(scheduledTasks).set(next).where(eq(scheduledTasks.id, current.id)).run()
+  return next
+}
+
+/**
+ * Valide le script tel qu'il a été relu. S'il a changé depuis l'affichage, rien n'est
+ * validé : on aurait approuvé un texte que personne n'a vu.
+ */
+export function approveScheduleCheck(db: Db, task: ScheduledTaskRow, reviewed: string): ScheduledTaskRow {
+  if (!task.checkScript) throw notFound('schedule_check_missing', 'This task has no check script.')
+  if (task.checkScript !== reviewed) {
+    throw conflict('schedule_check_changed', 'The check script changed since it was displayed: review it again.')
+  }
+  const next = { ...task, checkApprovedAt: Date.now(), checkProposedBy: null }
+  db.update(scheduledTasks)
+    .set({ checkApprovedAt: next.checkApprovedAt, checkProposedBy: null })
+    .where(and(eq(scheduledTasks.id, task.id), eq(scheduledTasks.checkScript, reviewed)))
+    .run()
   return next
 }
 

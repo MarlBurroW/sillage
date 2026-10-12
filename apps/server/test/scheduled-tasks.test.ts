@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -16,6 +16,7 @@ import {
   users,
 } from '@sillage/db'
 import {
+  CHECK_SKIP_EXIT_CODE,
   DEFAULT_CLAUDE_CONFIG,
   nextScheduleRun,
   type AgentConfig,
@@ -26,7 +27,8 @@ import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
 import { TaskScheduler, buildRunPrompt } from '../src/scheduler/task-scheduler.js'
-import { createScheduledTask, deleteScheduledTask } from '../src/scheduler/tasks.js'
+import { runCheck } from '../src/scheduler/check.js'
+import { approveScheduleCheck, createScheduledTask, deleteScheduledTask, updateScheduledTask } from '../src/scheduler/tasks.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 
@@ -65,7 +67,7 @@ async function harness(t: TestContext) {
     }),
   } as unknown as AgentRegistry
   const config = {
-    paths: { worktrees: join(dir, 'worktrees') },
+    paths: { worktrees: join(dir, 'worktrees'), data: join(dir, 'data') },
     server: { publicUrl: 'https://sillage.example/' },
   } as unknown as Config
   const log = new EventLog(db)
@@ -99,11 +101,40 @@ async function harness(t: TestContext) {
     db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, conversationId)).run()
   }
 
+  /** Une tâche avec vérification, écrite dans l'interface (validée) ou par un agent. */
+  const checkedTask = (checkScript: string, options: { byAgent?: boolean; prompt?: string; timeoutSeconds?: number } = {}) =>
+    createScheduledTask(
+      db,
+      { projectId: 'project', userId: 'owner', conversationId: options.byAgent ? 'agent-conversation' : undefined },
+      {
+        name: 'Veille',
+        agent: 'claude',
+        config: DEFAULT_CLAUDE_CONFIG,
+        prompt: options.prompt ?? 'Sonde les CLI.',
+        cadence: { kind: 'interval', minutes: 60 },
+        overlapPolicy: 'skip',
+        maxDurationMinutes: 30,
+        enabled: true,
+        checkScript,
+        checkTimeoutSeconds: options.timeoutSeconds ?? 30,
+      },
+    )
+
+  /** La vérification ne bloque pas le balayage : on attend que son tir ait tranché. */
+  const settled = async (taskId: string) => {
+    for (let i = 0; i < 300; i++) {
+      const open = db.select().from(scheduledRuns).where(eq(scheduledRuns.taskId, taskId)).all()
+      if (open.length > 0 && open.every((run) => run.status !== 'checking')) return open
+      await new Promise((done) => setTimeout(done, 50))
+    }
+    throw new Error('La vérification ne s’est pas terminée')
+  }
+
   const runs = () => db.select().from(scheduledRuns).orderBy(asc(scheduledRuns.startedAt), asc(scheduledRuns.scheduledFor)).all()
   const reload = (id: string) => db.select().from(scheduledTasks).where(eq(scheduledTasks.id, id)).get()!
 
   return {
-    db, dbPath, sessions, registry, config, scheduler, task, finish, runs, reload, sent, terminated,
+    db, dir, dbPath, sessions, registry, config, scheduler, task, checkedTask, settled, finish, runs, reload, sent, terminated,
     failNextSends: () => { failSend = true },
   }
 }
@@ -317,4 +348,166 @@ test('schedule_task creates a task from a session, within the agent guard rails'
   assert.match(selfReplicating.content[0]!.text, /elle-même un tir planifié/)
 
   assert.equal(db.select().from(scheduledTasks).all().length, 1)
+})
+
+test('runCheck turns the exit code into a verdict and keeps the output', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'sillage-check-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const context = {
+    taskId: 'task',
+    taskName: 'Veille',
+    projectId: 'project',
+    cwd: dir,
+    stateDir: join(dir, 'state'),
+    firedAt: Date.now(),
+    trigger: 'schedule' as const,
+    previous: null,
+    timeoutMs: 20_000,
+  }
+
+  const launch = await runCheck('echo "nouvelle version"; echo oops >&2', context)
+  assert.equal(launch.verdict, 'launch')
+  assert.equal(launch.exitCode, 0)
+  assert.equal(launch.stdout.trim(), 'nouvelle version')
+  assert.equal(launch.stderr.trim(), 'oops')
+
+  const skip = await runCheck(`echo "rien de neuf"; exit ${CHECK_SKIP_EXIT_CODE}`, context)
+  assert.equal(skip.verdict, 'skip')
+
+  // Un plantage n'est jamais pris pour « rien à faire ».
+  const crash = await runCheck('exit 1', context)
+  assert.equal(crash.verdict, 'error')
+  assert.equal(crash.exitCode, 1)
+
+  const python = await runCheck('#!/usr/bin/env python3\nimport os\nprint(os.environ["SILLAGE_TASK_NAME"])', context)
+  assert.equal(python.stdout.trim(), 'Veille')
+
+  const slow = await runCheck('sleep 30', { ...context, timeoutMs: 300 })
+  assert.equal(slow.verdict, 'error')
+  assert.equal(slow.timedOut, true)
+  assert.ok(slow.durationMs < 10_000)
+})
+
+test('runCheck keeps its state between runs, but an essay works on a copy', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'sillage-check-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const context = {
+    taskId: 'task', taskName: 'Veille', projectId: 'project', cwd: dir, stateDir: join(dir, 'state'),
+    firedAt: Date.now(), trigger: 'schedule' as const, previous: null, timeoutMs: 20_000,
+  }
+  const script = `last=$(cat "$SILLAGE_STATE_DIR/seen" 2>/dev/null); [ "$last" = "1.2" ] && exit ${CHECK_SKIP_EXIT_CODE}; echo 1.2 > "$SILLAGE_STATE_DIR/seen"; echo "1.2 publiée"`
+
+  assert.equal((await runCheck(script, { ...context, trigger: 'test' })).verdict, 'launch')
+  // L'essai n'a rien laissé : le vrai tir voit encore la nouveauté.
+  assert.equal((await runCheck(script, context)).verdict, 'launch')
+  assert.equal((await runCheck(script, context)).verdict, 'skip')
+})
+
+test('a checked task only wakes the LLM when its script says so', async (t) => {
+  const { db, scheduler, checkedTask, settled, runs, sent, reload } = await harness(t)
+
+  const quiet = checkedTask(`echo "Toujours 0.160.1"; exit ${CHECK_SKIP_EXIT_CODE}`)
+  await scheduler.tick(quiet.nextRunAt!)
+  const [skipped] = await settled(quiet.id)
+  assert.equal(skipped?.status, 'skipped')
+  assert.equal(skipped?.error, 'Toujours 0.160.1')
+  assert.equal(skipped?.conversationId, null)
+  assert.equal(sent.length, 0)
+  // La cadence a avancé : le tir écarté compte comme un tir.
+  assert.ok(reload(quiet.id).nextRunAt! > quiet.nextRunAt!)
+
+  const busy = checkedTask('echo "Codex 0.161.0 publiée"', { prompt: 'Analyse : {{check_output}}' })
+  await scheduler.tick(busy.nextRunAt!)
+  const [launched] = await settled(busy.id)
+  assert.equal(launched?.status, 'running')
+  assert.equal(launched?.checkExitCode, 0)
+  assert.ok(launched?.conversationId)
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, launched!.conversationId!)).get()?.scheduleId, busy.id)
+  // Citée par la consigne, la sortie n'est pas répétée dans l'en-tête.
+  assert.match(sent[0]!.text, /Analyse : Codex 0\.161\.0 publiée$/)
+  assert.doesNotMatch(sent[0]!.text, /Sa sortie :/)
+
+  const broken = checkedTask('echo "registre injoignable" >&2; exit 3')
+  await scheduler.tick(broken.nextRunAt!)
+  const [failed] = await settled(broken.id)
+  assert.equal(failed?.status, 'failed')
+  assert.match(failed!.error!, /code 3\) : registre injoignable/)
+  assert.equal(runs().filter((run) => run.conversationId).length, 1)
+})
+
+test('a check written by an agent does not run before someone approves it', async (t) => {
+  const { db, scheduler, checkedTask, settled, sent, reload } = await harness(t)
+  const marker = join(tmpdir(), `sillage-check-marker-${Date.now()}`)
+  t.after(() => rm(marker, { force: true }))
+  const proposed = checkedTask(`touch ${marker}`, { byAgent: true })
+  assert.equal(proposed.checkApprovedAt, null)
+  assert.equal(proposed.checkProposedBy, 'agent-conversation')
+
+  await scheduler.tick(proposed.nextRunAt!)
+  const [blocked] = await settled(proposed.id)
+  assert.equal(blocked?.status, 'skipped')
+  assert.match(blocked!.error!, /en attente de validation/)
+  assert.equal(sent.length, 0)
+  await assert.rejects(stat(marker))
+
+  // Valider un texte qui a changé depuis l'affichage est refusé.
+  assert.throws(() => approveScheduleCheck(db, reload(proposed.id), 'echo autre chose'), /changed/)
+  approveScheduleCheck(db, reload(proposed.id), `touch ${marker}`)
+  await scheduler.runNow(proposed.id)
+  await settled(proposed.id)
+  await stat(marker)
+  assert.equal(sent.length, 1)
+
+  // L'interface qui réécrit le script le valide ; un agent qui le réécrit le remet en proposition.
+  const edited = updateScheduledTask(db, reload(proposed.id), { checkScript: 'exit 0' }, 'agent-conversation')
+  assert.equal(edited.checkApprovedAt, null)
+  assert.ok(updateScheduledTask(db, edited, { checkScript: 'exit 10' }).checkApprovedAt)
+})
+
+test('run now can skip the check, and a restart closes a check left in flight', async (t) => {
+  const { db, scheduler, checkedTask, sent, runs } = await harness(t)
+  const gated = checkedTask(`exit ${CHECK_SKIP_EXIT_CODE}`)
+
+  const forced = await scheduler.runNow(gated.id, { skipCheck: true })
+  assert.equal(forced.status, 'running')
+  assert.equal(forced.checkDurationMs, null)
+  assert.equal(sent.length, 1)
+
+  db.update(scheduledRuns).set({ status: 'checking' }).where(eq(scheduledRuns.id, forced.id)).run()
+  scheduler.start({ warn: () => undefined, error: () => undefined, info: () => undefined } as never)
+  scheduler.stop()
+  const [closed] = runs()
+  assert.equal(closed?.status, 'failed')
+  assert.match(closed!.error!, /redémarrage/)
+})
+
+test('schedule_task can propose a check, which waits for the user', async (t) => {
+  const { db, dbPath, sessions, registry, config } = await harness(t)
+  db.insert(conversations).values({
+    id: 'parent', projectId: 'project', userId: 'owner', title: 'Session', agent: 'claude', config: '{}', status: 'running',
+    createdAt: 1, updatedAt: Date.now(),
+  }).run()
+  const requests = new AgentRequests({ db, config }, sessions, registry)
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
+    env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: 'parent' },
+  })
+  let stdout = ''
+  child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+  child.stdin.write(JSON.stringify({
+    jsonrpc: '2.0', id: 1, method: 'tools/call',
+    params: { name: 'schedule_task', arguments: { name: 'Veille Codex', prompt: 'Analyse {{check_output}}', cron: '0 9 * * *', check_script: 'npm view @openai/codex version' } },
+  }) + '\n')
+  const deadline = Date.now() + 10000
+  while (!stdout.includes('\n') && Date.now() < deadline) {
+    await requests.sweep()
+    await new Promise((done) => setTimeout(done, 50))
+  }
+  child.kill()
+  const result = JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
+  assert.equal(result.isError, undefined, result.content[0]?.text)
+  assert.match(result.content[0]!.text, /attend la validation/)
+  const row = db.select().from(scheduledTasks).get()!
+  assert.equal(row.checkScript, 'npm view @openai/codex version')
+  assert.equal(row.checkApprovedAt, null)
+  assert.equal(row.checkProposedBy, 'parent')
 })

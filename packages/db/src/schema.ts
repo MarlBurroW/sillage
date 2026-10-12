@@ -561,6 +561,23 @@ export const scheduledTasks = sqliteTable(
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
     /** Conversation qui a créé la tâche par `schedule_task` ; NULL depuis l'interface. */
     createdByConversationId: text('created_by_conversation_id'),
+    /**
+     * Script de vérification joué avant le tour LLM, NULL sans vérification. Son code de
+     * sortie décide du lancement et sa sortie rejoint le prompt (voir `scheduler/check.ts`).
+     *
+     * Le contenu et non un chemin : le daemon l'exécute hors de toute session, et c'est ce
+     * texte précis qu'on valide. Un fichier pourrait changer après coup, y compris sous la
+     * main d'un tir qui tourne sans demander de permission.
+     */
+    checkScript: text('check_script'),
+    checkTimeoutSeconds: integer('check_timeout_seconds').notNull().default(120),
+    /**
+     * Validation du script par une personne. NULL tant qu'un agent l'a écrit ou modifié
+     * sans qu'on l'ait relu : le tir est alors écarté, ni script ni LLM.
+     */
+    checkApprovedAt: timestamp('check_approved_at'),
+    /** Conversation qui a proposé le script actuel ; NULL quand il vient de l'interface. */
+    checkProposedBy: text('check_proposed_by'),
     lastRunAt: timestamp('last_run_at'),
     /** NULL quand plus rien n'est prévu : tâche ponctuelle déjà tirée. */
     nextRunAt: timestamp('next_run_at'),
@@ -589,8 +606,9 @@ export const scheduledRuns = sqliteTable(
     /** Sans clé étrangère : le fil peut être supprimé, le tir reste dans l'historique. */
     conversationId: text('conversation_id'),
     trigger: text('trigger').$type<'schedule' | 'manual' | 'webhook'>().notNull(),
+    /** `checking` : la vérification tourne, ou la session démarre derrière elle. */
     status: text('status')
-      .$type<'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'>()
+      .$type<'checking' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'>()
       .notNull(),
     /** L'heure prévue, que `startedAt` dépasse quand le daemon était arrêté ou occupé. */
     scheduledFor: timestamp('scheduled_for').notNull(),
@@ -605,6 +623,14 @@ export const scheduledRuns = sqliteTable(
      * prompt, et il doit le recevoir même si le fil a été supprimé entre-temps.
      */
     summary: text('summary'),
+    /**
+     * Ce qu'a donné la vérification, NULL quand le tir n'en a pas joué. La sortie standard
+     * est celle que le prompt a reçue ; l'erreur standard sert au débogage.
+     */
+    checkExitCode: integer('check_exit_code'),
+    checkOutput: text('check_output'),
+    checkStderr: text('check_stderr'),
+    checkDurationMs: integer('check_duration_ms'),
   },
   (t) => [
     index('idx_scheduled_runs_task').on(t.taskId, t.startedAt),
