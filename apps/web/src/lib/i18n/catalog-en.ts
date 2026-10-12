@@ -1893,6 +1893,8 @@ export const en = {
   'error.session_budget_exceeded': "Session budget exhausted",
   'error.context_window_exceeded': "Context window exceeded",
   'error.server_overloaded': "Provider overloaded",
+  'error.flex_unavailable': "Flex processing unavailable",
+  'error.too_many_denials': "Too many denied requests, the turn stopped",
   'error.provider_unauthorized': "Authentication rejected by the provider",
   'error.bad_request': "Request rejected by the provider",
   'error.internal_server_error': "Provider error",

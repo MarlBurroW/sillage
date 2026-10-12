@@ -1881,6 +1881,8 @@ export const fr: Catalog = {
   'error.session_budget_exceeded': "Budget de la session épuisé",
   'error.context_window_exceeded': "Fenêtre de contexte dépassée",
   'error.server_overloaded': "Fournisseur surchargé",
+  'error.flex_unavailable': "Traitement Flex indisponible",
+  'error.too_many_denials': "Trop de refus, le tour s'est arrêté",
   'error.provider_unauthorized': "Authentification refusée par le fournisseur",
   'error.bad_request': "Requête refusée par le fournisseur",
   'error.internal_server_error': "Erreur du fournisseur",
