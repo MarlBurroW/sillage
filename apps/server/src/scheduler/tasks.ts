@@ -10,6 +10,7 @@ import {
   type ScheduledTaskRow,
 } from '@sillage/db'
 import {
+  DEFAULT_DECISION_HOURS,
   DEFAULT_CHECK_TIMEOUT_SECONDS,
   nextScheduleRun,
   parseAgentConfig,
@@ -108,6 +109,8 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[], publicUrl: string):
       enabled: row.enabled,
       lastRunAt: row.lastRunAt,
       nextRunAt: row.nextRunAt,
+      decisionsEnabled: row.decisionsEnabled,
+      decisionMaxHours: row.decisionMaxHours,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       runs: runs.map((run) => ({
@@ -140,6 +143,9 @@ export interface ScheduledTaskInput {
   /** Null : pas de vérification avant le tour. */
   checkScript?: string | null
   checkTimeoutSeconds?: number
+  /** L'agent peut demander une décision humaine ; éteint par défaut. */
+  decisionsEnabled?: boolean
+  decisionMaxHours?: number
 }
 
 function assertCoherent(agent: AgentKind, config: AgentConfig): void {
@@ -191,6 +197,8 @@ export function createScheduledTask(
     // attend une personne.
     checkApprovedAt: input.checkScript && !owner.conversationId ? now : null,
     checkProposedBy: input.checkScript && owner.conversationId ? owner.conversationId : null,
+    decisionsEnabled: input.decisionsEnabled ?? false,
+    decisionMaxHours: input.decisionMaxHours ?? DEFAULT_DECISION_HOURS,
     lastRunAt: null,
     nextRunAt: armedAt(input.cadence, input.enabled, null),
     createdAt: now,
@@ -232,6 +240,8 @@ export function updateScheduledTask(
     enabled,
     nextRunAt: rearm ? armedAt(cadence, enabled, current.lastRunAt) : current.nextRunAt,
     checkTimeoutSeconds: patch.checkTimeoutSeconds ?? current.checkTimeoutSeconds,
+    decisionsEnabled: patch.decisionsEnabled ?? current.decisionsEnabled,
+    decisionMaxHours: patch.decisionMaxHours ?? current.decisionMaxHours,
     updatedAt: Date.now(),
   }
   if (patch.checkScript !== undefined && patch.checkScript !== current.checkScript) {

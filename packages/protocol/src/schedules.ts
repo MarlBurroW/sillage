@@ -1,5 +1,6 @@
 import { Cron } from 'croner'
 import { z } from 'zod'
+import { DEFAULT_DECISION_HOURS, MAX_DECISION_HOURS } from './decisions.js'
 import { agentConfigSchema, type AgentConfig } from './agent-config.js'
 import { cronScheduleSchema } from './app-settings.js'
 import { agentKindSchema, type AgentKind } from './events.js'
@@ -106,6 +107,9 @@ export const createScheduledTaskBodySchema = z.object({
   enabled: z.boolean().default(true),
   checkScript: checkScriptSchema.default(null),
   checkTimeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
+  /** L'agent peut demander une décision, et elle attend au plus ce délai. Éteint par défaut. */
+  decisionsEnabled: z.boolean().default(false),
+  decisionMaxHours: z.number().int().min(1).max(MAX_DECISION_HOURS).default(DEFAULT_DECISION_HOURS),
   /** Pour une cadence `webhook` : le modèle de départ et des réglages qui le complètent. */
   webhook: z
     .object({
@@ -132,6 +136,8 @@ export const updateScheduledTaskBodySchema = z
     enabled: z.boolean(),
     checkScript: checkScriptSchema,
     checkTimeoutSeconds: checkTimeoutSchema,
+    decisionsEnabled: z.boolean(),
+    decisionMaxHours: z.number().int().min(1).max(MAX_DECISION_HOURS),
   })
   .partial()
 
@@ -228,6 +234,9 @@ export interface ScheduledTaskDto {
   webhook: WebhookAutomationDto | null
   /** Le script joué avant chaque tour ; null sans vérification. */
   check: ScheduledTaskCheckDto | null
+  /** L'agent peut demander une décision humaine, avec ce délai maximal. */
+  decisionsEnabled: boolean
+  decisionMaxHours: number
 }
 
 /**

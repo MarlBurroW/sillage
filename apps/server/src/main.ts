@@ -14,6 +14,8 @@ import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
+import { Notifications } from './notifications/dispatcher.js'
+import { DecisionService } from './decisions/service.js'
 import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
 import { TaskScheduler } from './scheduler/task-scheduler.js'
@@ -55,18 +57,22 @@ async function main(): Promise<void> {
   // Construit avant l'application, dont les routes remettent ou écartent un message
   // retenu, mais démarré après elle, faute de logger avant.
   const relay = new SessionRelay(db, sessions, log)
+  const push = new PushService(db, config.paths.data, config.server.publicUrl)
+  // Toast sur l'appareil où l'application est visible, notification système ailleurs.
+  const notifications = new Notifications(db, push)
+  // Ce que demandent les sessions autonomes à un humain, sans se bloquer.
+  const decisions = new DecisionService({ db, config }, sessions, notifications)
   // Board relié aux issues GitHub : lit le dépôt, renvoie les changements faits ici, et
   // ouvre les sessions de maintenance qu'une issue ou un commentaire déclenche.
   const board = new BoardSync({ db, config }, gitCredentials, fetch, new BoardResponder({ db, config }, sessions, registry))
   // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board)
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board, decisions)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
   const orphans = await attachments.purgeOrphans()
 
-  const push = new PushService(db, config.paths.data)
   // Appels des webhooks d'automatisation : il décide, le planificateur tire.
   const automations = new AutomationReceiver({ db, config }, encryptionKey, tasks, push)
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
@@ -89,6 +95,8 @@ async function main(): Promise<void> {
     actions,
     automations,
     board,
+    notifications,
+    decisions,
   )
   push.setLogger(app.log)
   automations.setLogger(app.log)
@@ -111,6 +119,7 @@ async function main(): Promise<void> {
   // « interrompu », pas « en cours » jusqu'à sa durée maximale.
   tasks.start(app.log)
   board.start(app.log)
+  decisions.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
 
@@ -125,6 +134,7 @@ async function main(): Promise<void> {
     agentRequests.stop()
     tasks.stop()
     board.stop()
+    decisions.stop()
     await sessions.stopAll()
     terminals.shutdown()
     await app.close()

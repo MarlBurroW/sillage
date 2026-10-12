@@ -1,4 +1,3 @@
-import { Card, CardBody } from '../components/ui'
 import { PushControls } from '../components/PushControls'
 import { SectionHeader } from './SettingsPage'
 import { useTranslate } from '../lib/i18n'
@@ -11,11 +10,7 @@ export function NotificationsSection() {
         title={t('settings.section.notifications')}
         description={t('settings.notifications.deviceScope')}
       />
-      <Card>
-        <CardBody>
-          <PushControls />
-        </CardBody>
-      </Card>
+      <PushControls />
     </div>
   )
 }

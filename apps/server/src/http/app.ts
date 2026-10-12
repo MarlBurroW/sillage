@@ -60,6 +60,9 @@ import { registerHealthRoutes } from './routes/health.js'
 import { registerPaletteRoutes } from './routes/palette.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerPushRoutes } from './routes/push.js'
+import { registerDecisionRoutes } from './routes/decisions.js'
+import type { DecisionService } from '../decisions/service.js'
+import type { Notifications } from '../notifications/dispatcher.js'
 import { registerSearchRoutes } from './routes/search.js'
 import { registerSettingsRoutes } from './routes/settings.js'
 import { registerSttRoutes } from './routes/stt.js'
@@ -101,6 +104,8 @@ export async function buildApp(
   actions: ActionRunner,
   automations: AutomationReceiver,
   board: BoardSync,
+  notifications: Notifications,
+  decisions: DecisionService,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -212,6 +217,7 @@ export async function buildApp(
   registerV1Routes(app, ctx, log, sessions, registry, webhooks)
   registerAttachmentRoutes(app, attachments, ctx)
   registerPushRoutes(app, push)
+  registerDecisionRoutes(app, decisions)
   registerSearchRoutes(app, ctx)
   registerPaletteRoutes(app, ctx, skillLibrary)
   registerSettingsRoutes(app, ctx, scheduler)
@@ -227,7 +233,7 @@ export async function buildApp(
   registerGitViewRoutes(app, ctx)
   registerGitActionRoutes(app, ctx)
   registerTerminalRoutes(app, ctx, sessions, terminals)
-  await registerWebSocketHub(app, ctx, log, sessions, push)
+  await registerWebSocketHub(app, ctx, log, sessions, notifications)
   // Après le hub : c'est lui qui enregistre le plugin websocket dont dépend le terminal.
   registerTerminalHub(app, ctx, terminals)
 

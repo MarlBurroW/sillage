@@ -4,6 +4,7 @@ import {
   storedUserSettingsSchema,
   type AgentConfig,
   type AppearancePrefs,
+  type NotificationPrefs,
   type UserSettingsDto,
 } from '@sillage/protocol'
 
@@ -81,6 +82,17 @@ export function writeProjectsDir(db: Db, userId: string, projectsDir: string | n
 export function writeAppearance(db: Db, userId: string, appearance: AppearancePrefs): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, appearance })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** Les sortes de notifications voulues, remplacées en bloc comme l'apparence. */
+export function writeNotificationPrefs(db: Db, userId: string, notifications: NotificationPrefs): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, notifications })
 
   db.insert(userSettings)
     .values({ userId, data })

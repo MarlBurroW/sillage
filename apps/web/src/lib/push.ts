@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PushStatusDto } from '@sillage/protocol'
+import type { PushDeviceDto, PushStatusDto, PushTestDto } from '@sillage/protocol'
 import { api } from './api'
+import { wsClient } from './ws-client'
 import { translate } from './i18n'
 
 const PUSH_KEY = ['push']
@@ -72,8 +73,12 @@ export function useSubscribePush() {
       })
 
       await api.post('/api/push/subscribe', subscription.toJSON())
+      wsClient.setPushEndpoint(subscription.endpoint)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: PUSH_KEY }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: PUSH_DEVICES_KEY })
+      return queryClient.invalidateQueries({ queryKey: PUSH_KEY })
+    },
   })
 }
 
@@ -90,7 +95,65 @@ export function useUnsubscribePush() {
       // l'endpoint resterait en base et recevrait des envois voués à l'échec.
       await api.post('/api/push/unsubscribe', { endpoint: subscription.endpoint })
       await subscription.unsubscribe()
+      wsClient.setPushEndpoint(null)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: PUSH_KEY }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: PUSH_DEVICES_KEY })
+      return queryClient.invalidateQueries({ queryKey: PUSH_KEY })
+    },
+  })
+}
+
+const PUSH_DEVICES_KEY = ['push-devices']
+
+/** Les appareils abonnés du compte, et celui-ci parmi eux. */
+export function usePushDevices(enabled: boolean) {
+  return useQuery({
+    queryKey: PUSH_DEVICES_KEY,
+    queryFn: async () => {
+      const { devices } = await api.get<{ devices: PushDeviceDto[] }>('/api/push/devices')
+      const current = await currentEndpoint()
+      return { devices, current }
+    },
+    enabled,
+  })
+}
+
+async function currentEndpoint(): Promise<string | null> {
+  if (!('serviceWorker' in navigator)) return null
+  try {
+    // `getRegistration` et non `ready` : sans service worker enregistré, `ready` ne se
+    // résout jamais, et l'écran attendrait indéfiniment.
+    const registration = await navigator.serviceWorker.getRegistration()
+    return (await registration?.pushManager?.getSubscription())?.endpoint ?? null
+  } catch {
+    return null
+  }
+}
+
+export function useRemovePushDevice() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (endpoint: string) => api.post<void>('/api/push/devices/remove', { endpoint }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: PUSH_KEY })
+      return queryClient.invalidateQueries({ queryKey: PUSH_DEVICES_KEY })
+    },
+  })
+}
+
+/** Une notification d'essai, après un délai pour fermer l'application ; suivie jusqu'au résultat. */
+export function useSendPushTest() {
+  return useMutation({
+    mutationFn: (delaySeconds: number) => api.post<PushTestDto>('/api/push/test', { delaySeconds }),
+  })
+}
+
+export function usePushTest(id: string | null) {
+  return useQuery({
+    queryKey: ['push-test', id],
+    queryFn: () => api.get<PushTestDto>(`/api/push/test/${id}`),
+    enabled: Boolean(id),
+    refetchInterval: (query) => (query.state.data?.deliveries ? false : 1_000),
   })
 }

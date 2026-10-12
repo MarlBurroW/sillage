@@ -96,6 +96,8 @@ export function registerBoardLinkRoutes(app: FastifyInstance, ctx: AppContext, b
       sessionConfig: readSessionConfig(link.sessionConfig),
       workspace: link.workspace,
       maxSessionsPerHour: link.maxSessionsPerHour,
+      decisionsEnabled: link.decisionsEnabled,
+      decisionMaxHours: link.decisionMaxHours,
       userId: link.userId,
       userName: row.userName,
       hiddenCount: parseHidden(link.hiddenIssues).length,

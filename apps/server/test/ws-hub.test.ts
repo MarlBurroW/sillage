@@ -11,7 +11,7 @@ import { conversations, openDatabase, projects, runMigrations, users } from '@si
 import type { ServerMessage } from '@sillage/protocol'
 import type { Config } from '../src/config.js'
 import type { EventLog } from '../src/events/event-log.js'
-import type { PushService } from '../src/push/push-service.js'
+import type { Notifications } from '../src/notifications/dispatcher.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { AttachmentStore } from '../src/attachments/store.js'
@@ -81,7 +81,7 @@ async function hub(t: TestContext, warm: string[] = []) {
   app.put('/api/conversations/:id/favorite', async () => ({ favorite: true }))
   app.post('/api/conversations/:id/read', async () => ({ lastReadSeq: 1 }))
 
-  await registerWebSocketHub(app, ctx, {} as EventLog, sessions, {} as PushService)
+  await registerWebSocketHub(app, ctx, {} as EventLog, sessions, { setPresence: () => {} } as unknown as Notifications)
   await app.ready()
   // Les deux bouts coupés net : une fermeture polie attend la réponse de l'autre côté,
   // que les flux simulés de `injectWS` ne transmettent pas, et `ws` patiente alors 30 s.

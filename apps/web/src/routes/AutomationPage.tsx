@@ -44,6 +44,7 @@ import { ConditionsEditor } from '../components/automation/ConditionsEditor'
 import { ScriptEditor } from '../components/automation/ScriptEditor'
 import { TestBench, type BenchCall } from '../components/automation/TestBench'
 import { GroupField } from '../components/schedule/GroupField'
+import { DecisionSettingsField } from '../components/decisions/DecisionSettingsField'
 import { Badge, Banner, Button, Card, CardBody, CardHeader, ConfirmDialog, EmptyState, Field, IconButton, Select, cx } from '../components/ui'
 import { automationSamples } from '../lib/automation-samples'
 import {
@@ -78,6 +79,8 @@ interface SessionDraft {
   maxDurationMinutes: number
   overlapPolicy: ScheduleOverlapPolicy
   prompt: string
+  decisionsEnabled: boolean
+  decisionMaxHours: number
 }
 
 function sessionOf(task: ScheduledTaskDto): SessionDraft {
@@ -87,6 +90,8 @@ function sessionOf(task: ScheduledTaskDto): SessionDraft {
     maxDurationMinutes: task.maxDurationMinutes,
     overlapPolicy: task.overlapPolicy,
     prompt: task.prompt,
+    decisionsEnabled: task.decisionsEnabled,
+    decisionMaxHours: task.decisionMaxHours,
   }
 }
 
@@ -511,6 +516,10 @@ function SessionCard({
             ]}
           />
         </div>
+        <DecisionSettingsField
+          value={{ decisionsEnabled: session.decisionsEnabled, decisionMaxHours: session.decisionMaxHours }}
+          onChange={(value) => onChange(value)}
+        />
       </CardBody>
     </Card>
   )
