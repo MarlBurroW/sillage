@@ -53,7 +53,7 @@ import { describePermission, describeTool, fileEdits, QUESTION_TOOL } from './to
  * lancement, voir `config.ts`. Modèle, variante et agent primaire partent en revanche
  * avec chaque message, donc se changent à chaud.
  *
- * Tout ce qui est affirmé ici du comportement d'opencode a été sondé sur la 1.18.25.
+ * Tout ce qui est affirmé ici du comportement d'opencode a été sondé sur la 1.18.25, et revérifié sur la 1.19.0 (dernière mineure de la ligne 1.x).
  */
 
 /** Délai accordé à opencode pour clore un tour interrompu avant de forcer `idle`. */

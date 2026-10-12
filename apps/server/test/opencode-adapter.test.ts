@@ -40,7 +40,7 @@ test('catalogue : modèles des fournisseurs connectés, variantes, agents primai
     [['review', '$ARGUMENTS'], ['lib-skill', '']])
   assert.deepEqual({ ...(await adapter.usage()), fetchedAt: 0 },
     { agent: 'opencode', plan: null, limitsAvailable: false, windows: [], credits: null, fetchedAt: 0 })
-  assert.equal((await adapter.cli.describe()).version, '1.18.25')
+  assert.equal((await adapter.cli.describe()).version, '1.19.0')
 })
 
 test('fork : coupe au message qui suit le dernier gardé, ou garde tout', async (t) => {
