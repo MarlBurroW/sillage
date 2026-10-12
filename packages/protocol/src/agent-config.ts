@@ -79,7 +79,7 @@ export const claudeConfigSchema = z.object({
    * toute la session. Propre à la session, jamais écrit dans les fichiers du CLI.
    * Depuis Claude Code 2.1.284, il n'impose plus l'effort `xhigh` et tient à tout
    * niveau, mais le CLI ne l'ouvre toujours qu'aux modèles qui gèrent `xhigh` (sondé
-   * sur 2.1.291 : refusé à Haiku 4.5 et Sonnet 4.6).
+   * sur 2.1.296 : ouvert à Haiku 5.5, refusé à Haiku 4.5 et Sonnet 4.6).
    */
   ultracode: z.boolean().default(false),
   /**

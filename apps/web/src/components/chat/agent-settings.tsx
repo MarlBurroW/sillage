@@ -382,7 +382,7 @@ export function useAgentSettings({
 
   /**
    * Ultracode n'impose plus `xhigh` depuis Claude Code 2.1.284, mais le CLI le refuse
-   * toujours sur un modèle qui ne gère pas ce niveau (sondé sur 2.1.291) : le réglage
+   * toujours sur un modèle qui ne gère pas ce niveau (sondé sur 2.1.296) : le réglage
    * n'existe que là, comme le mode rapide.
    */
   const supportsUltracode = (model: string): boolean =>
