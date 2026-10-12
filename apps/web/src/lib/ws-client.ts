@@ -7,6 +7,7 @@ import {
   type ConversationStatus,
   type ServerMessage,
   type SillageEvent,
+  type InAppNotification,
 } from '@sillage/protocol'
 import { decodeScope, projectScope, type WorkspaceScope } from './workspace-scope'
 
@@ -87,6 +88,11 @@ class WsClient {
   private readonly listeners = new Map<string, Set<StreamListener>>()
   private readonly cursors = new Map<string, number>()
   private readonly statusWatchers = new Set<StatusWatcher>()
+  /** Toasts poussés par le serveur pour cet onglet, quand il est visible. */
+  private readonly notifyListeners = new Set<(notification: InAppNotification) => void>()
+  private readonly decisionListeners = new Set<() => void>()
+  /** L'abonnement push de cet appareil, déclaré au serveur avec la visibilité. */
+  private pushEndpoint: string | null = null
   /**
    * Dossiers suivis sur le disque, comptés par conversation.
    *
@@ -126,7 +132,39 @@ class WsClient {
     document.addEventListener('resume', wake)
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') wake()
+      this.sendPresence()
     })
+    window.addEventListener('pagehide', () => this.sendPresence(false))
+    // L'abonnement de l'appareil, s'il existe : c'est ce qui permet au serveur de ne pas
+    // lui pousser de notification système pendant que l'application est sous les yeux.
+    if ('serviceWorker' in navigator) {
+      void navigator.serviceWorker
+        .getRegistration()
+        .then((registration) => registration?.pushManager?.getSubscription())
+        .then((subscription) => this.setPushEndpoint(subscription?.endpoint ?? null))
+        .catch(() => {})
+    }
+  }
+
+  /** Après un abonnement ou un désabonnement de cet appareil. */
+  setPushEndpoint(endpoint: string | null): void {
+    this.pushEndpoint = endpoint
+    this.sendPresence()
+  }
+
+  /** Visible ou non, et l'abonnement de l'appareil : de quoi choisir entre toast et notification. */
+  private sendPresence(visible = document.visibilityState === 'visible'): void {
+    if (this.isOpen) this.send({ t: 'presence', visible, endpoint: this.pushEndpoint })
+  }
+
+  onNotify(listener: (notification: InAppNotification) => void): () => void {
+    this.notifyListeners.add(listener)
+    return () => this.notifyListeners.delete(listener)
+  }
+
+  onDecisionsChanged(listener: () => void): () => void {
+    this.decisionListeners.add(listener)
+    return () => this.decisionListeners.delete(listener)
   }
 
   private get isOpen(): boolean {
@@ -285,6 +323,7 @@ class WsClient {
       // Le serveur a libéré les veilles de la connexion tombée : elles sont redéclarées
       // en entier, l'ensemble vivant côté client étant la référence.
       this.sendTreeWatches()
+      this.sendPresence()
       // Les fils rattrapent leur retard par leur curseur ; les statuts n'ont pas de
       // journal derrière eux et doivent être relus autrement.
       if (this.opened) {
@@ -331,6 +370,16 @@ class WsClient {
 
     if (message.t === 'lists-changed') {
       for (const watcher of this.statusWatchers) watcher.onListsChanged()
+      return
+    }
+
+    if (message.t === 'notify') {
+      for (const listener of this.notifyListeners) listener(message.notification)
+      return
+    }
+
+    if (message.t === 'decisions-changed') {
+      for (const listener of this.decisionListeners) listener()
       return
     }
 

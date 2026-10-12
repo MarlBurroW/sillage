@@ -6,6 +6,8 @@ import type {
   BoardWorkspace,
   CardColumn,
   CardNotePublication,
+  DecisionSourceKind,
+  DecisionStatus,
   InstructionsMode,
 } from '@sillage/protocol'
 import { sql } from 'drizzle-orm'
@@ -308,6 +310,9 @@ export const boardLinks = sqliteTable('board_links', {
   sessionConfig: text('session_config'),
   workspace: text('workspace').$type<BoardWorkspace>().notNull().default('worktree'),
   maxSessionsPerHour: integer('max_sessions_per_hour').notNull().default(10),
+  /** Les sessions de maintenance peuvent demander une décision humaine. */
+  decisionsEnabled: integer('decisions_enabled', { mode: 'boolean' }).notNull().default(false),
+  decisionMaxHours: integer('decision_max_hours').notNull().default(24),
   /**
    * Issues retirées du board à la main, en JSON. Supprimer leur carte ne suffirait pas :
    * la synchronisation suivante la recréerait.
@@ -472,6 +477,8 @@ export const agentRequests = sqliteTable(
         // Une automatisation lancée par un appel qui porte la marque de cette session :
         // la ligne garde la filiation, pour que les limites de chaîne s'y appliquent.
         'webhook_launch',
+        'request_decision',
+        'withdraw_decision',
         'create_automation',
       ],
     }).notNull(),
@@ -699,6 +706,9 @@ export const scheduledTasks = sqliteTable(
     checkApprovedAt: timestamp('check_approved_at'),
     /** Conversation qui a proposé le script actuel ; NULL quand il vient de l'interface. */
     checkProposedBy: text('check_proposed_by'),
+    /** Les tirs peuvent demander une décision humaine (`request_decision`). */
+    decisionsEnabled: integer('decisions_enabled', { mode: 'boolean' }).notNull().default(false),
+    decisionMaxHours: integer('decision_max_hours').notNull().default(24),
     lastRunAt: timestamp('last_run_at'),
     /** NULL quand plus rien n'est prévu : tâche ponctuelle déjà tirée. */
     nextRunAt: timestamp('next_run_at'),
@@ -1043,8 +1053,64 @@ export const pushSubscriptions = sqliteTable(
     auth: text('auth').notNull(),
     userAgent: text('user_agent'),
     createdAt: timestamp('created_at').notNull(),
+    /**
+     * Sujet VAPID à présenter pour cet abonnement : l'adresse publique de l'instance, lue
+     * à l'abonnement. Apple refuse un sujet en `localhost`, et une instance auto-hébergée
+     * n'a pas d'autre adresse à donner que celle par laquelle on l'a jointe.
+     */
+    subject: text('subject'),
   },
   (t) => [index('idx_push_user').on(t.userId)],
+)
+
+/**
+ * Les décisions demandées par les sessions autonomes (tâche planifiée, automatisation,
+ * maintenance du board) : déposées sans bloquer l'agent, tranchées par une personne ou
+ * par l'échéance, puis transmises à la session en message.
+ *
+ * En base plutôt qu'en mémoire comme les demandes natives des CLI : on les traite des
+ * heures plus tard, et un redémarrage du daemon ne doit pas les faire oublier.
+ */
+export const decisions = sqliteTable(
+  'decisions',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Sans clé étrangère : la décision garde sa trace quand la conversation disparaît. */
+    conversationId: text('conversation_id').notNull(),
+    /** Le compte qui doit répondre : celui à qui appartient la source. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    sourceKind: text('source_kind').$type<DecisionSourceKind>().notNull(),
+    sourceLabel: text('source_label').notNull(),
+    taskId: text('task_id'),
+    cardId: text('card_id'),
+    question: text('question').notNull(),
+    context: text('context').notNull().default(''),
+    /** JSON, libellés des choix proposés. */
+    options: text('options').notNull().default('[]'),
+    defaultOption: text('default_option'),
+    expiresAt: timestamp('expires_at').notNull(),
+    status: text('status').$type<DecisionStatus>().notNull(),
+    answerOption: text('answer_option'),
+    answerText: text('answer_text'),
+    answeredBy: text('answered_by'),
+    resolvedAt: timestamp('resolved_at'),
+    withdrawnReason: text('withdrawn_reason'),
+    /**
+     * Quand la réponse (ou l'échéance) a été remise à la session. NULL pour une décision
+     * tranchée dont la remise a échoué : le daemon réessaie.
+     */
+    deliveredAt: timestamp('delivered_at'),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_decisions_user_status').on(t.userId, t.status),
+    index('idx_decisions_conversation').on(t.conversationId, t.status),
+  ],
 )
 
 /**
@@ -1338,6 +1404,7 @@ export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect
 export type CardNoteRow = typeof cardNotes.$inferSelect
 export type BoardLinkRow = typeof boardLinks.$inferSelect
+export type DecisionRow = typeof decisions.$inferSelect
 export type CardIssueRow = typeof cardIssues.$inferSelect
 export type SessionMessageRow = typeof sessionMessages.$inferSelect
 export type AgentRequestRow = typeof agentRequests.$inferSelect

@@ -4,6 +4,7 @@ import {
   readUserSettings,
   writeAppearance,
   writeCollapsedProjects,
+  writeNotificationPrefs,
   writeProjectsDir,
   writeUserAgentDefault,
 } from '../../settings/user-settings.js'
@@ -33,6 +34,7 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     if (body.collapsedProjects) writeCollapsedProjects(ctx.db, user.id, body.collapsedProjects)
     if (body.projectsDir !== undefined) writeProjectsDir(ctx.db, user.id, body.projectsDir)
     if (body.appearance) writeAppearance(ctx.db, user.id, body.appearance)
+    if (body.notifications) writeNotificationPrefs(ctx.db, user.id, body.notifications)
     // Relu plutôt que reconstruit depuis le corps : l'écran a besoin des deux CLI, et
     // le corps n'en porte qu'un.
     return readUserSettings(ctx.db, user.id)

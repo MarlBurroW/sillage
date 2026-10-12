@@ -60,6 +60,7 @@ import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { advanceCardOnLaunch, createCard } from '../http/routes/cards.js'
 import type { BoardSync } from '../board/board-sync.js'
+import { DecisionRefusal, type DecisionService } from '../decisions/service.js'
 import { createWorktree } from '../http/routes/worktrees.js'
 import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
@@ -151,6 +152,8 @@ export class AgentRequests {
     private readonly encryptionKey?: Buffer,
     /** Board relié à GitHub ; sans lui, `create_card` reste local. */
     private readonly board?: BoardSync,
+    /** Décisions des sessions autonomes ; sans lui, `request_decision` est refusé. */
+    private readonly decisions?: DecisionService,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -214,6 +217,8 @@ export class AgentRequests {
         this.settle(request.id, text, false, launchedId)
       } else if (request.kind === 'schedule_task') {
         this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
+      } else if (request.kind === 'request_decision' || request.kind === 'withdraw_decision') {
+        this.settle(request.id, await this.decide(request.kind, requester, payload), false)
       } else if (request.kind === 'create_card') {
         this.settle(request.id, await this.createCard(requester, payload), false)
       } else if (request.kind === 'register_action') {
@@ -648,6 +653,18 @@ export class AgentRequests {
       `Chaque appel retenu ouvre une session neuve (CLI ${agent}, modèle ${describeModel(config)}), une à la fois, ${DEFAULT_SCHEDULE_DURATION_MINUTES} min au plus ; au-delà de ${readSettings(hook).maxRunsPerHour} lancements par heure, elle se met en pause.`,
       "L'utilisateur règle les conditions, le script et le prompt dans la vue Automatisations du projet, où il voit aussi chaque appel reçu et son sort.",
     ].join('\n')
+  }
+
+  // --- request_decision / withdraw_decision --------------------------------------
+
+  private async decide(kind: 'request_decision' | 'withdraw_decision', requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
+    if (!this.decisions) throw new Refusal('Les décisions ne sont pas disponibles sur ce serveur.')
+    try {
+      return kind === 'request_decision' ? await this.decisions.request(requester, payload) : this.decisions.withdraw(requester, payload)
+    } catch (err) {
+      if (err instanceof DecisionRefusal) throw new Refusal(err.message)
+      throw err
+    }
   }
 
   // --- create_card ---------------------------------------------------------------

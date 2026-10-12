@@ -23,6 +23,7 @@ import { useAgentSettings } from '../chat/agent-settings'
 import { GroupField } from '../schedule/GroupField'
 import { Banner, Button, ChoiceList, ConfirmDialog, Field, IconButton, Select, Switch, cx } from '../ui'
 import { GitHubMark } from './GitHubMark'
+import { DecisionSettingsField, decisionSettingsValid } from '../decisions/DecisionSettingsField'
 
 /**
  * Relier le board aux issues d'un dépôt GitHub, ou régler la liaison.
@@ -69,6 +70,8 @@ export function BoardLinkDialog({
           sessionConfig: link.sessionConfig,
           workspace: link.workspace,
           maxSessionsPerHour: link.maxSessionsPerHour,
+          decisionsEnabled: link.decisionsEnabled,
+          decisionMaxHours: link.decisionMaxHours,
         }
       : { repo: state.suggestedRepo ?? '', ...DEFAULT_BOARD_LINK_SETTINGS }
   const [settings, setSettings] = useState<BoardLinkSettings>(initial)
@@ -87,7 +90,11 @@ export function BoardLinkDialog({
     setSettings((current) => ({ ...current, [key]: value }))
 
   const repoValid = githubRepoSchema.safeParse(settings.repo).success
-  const capValid = Number.isInteger(settings.maxSessionsPerHour) && settings.maxSessionsPerHour >= 1 && settings.maxSessionsPerHour <= MAX_BOARD_SESSIONS_PER_HOUR
+  const capValid =
+    Number.isInteger(settings.maxSessionsPerHour) &&
+    settings.maxSessionsPerHour >= 1 &&
+    settings.maxSessionsPerHour <= MAX_BOARD_SESSIONS_PER_HOUR &&
+    decisionSettingsValid(settings)
   const readOnly = !canEdit || (!link && !state.hasCredential)
   const dirty = JSON.stringify(settings) !== JSON.stringify(initial())
   const submit = () => {
@@ -430,6 +437,14 @@ function MaintenanceSettings({
           onChange={(event) => set('maxSessionsPerHour', Math.trunc(Number(event.target.value)))}
           hint={t('board.github.maxSessions.hint')}
           error={settings.maxSessionsPerHour >= 1 && settings.maxSessionsPerHour <= MAX_BOARD_SESSIONS_PER_HOUR ? undefined : t('board.github.maxSessions.invalid', { max: MAX_BOARD_SESSIONS_PER_HOUR })}
+        />
+        <DecisionSettingsField
+          value={{ decisionsEnabled: settings.decisionsEnabled, decisionMaxHours: settings.decisionMaxHours }}
+          disabled={readOnly}
+          onChange={(value) => {
+            set('decisionsEnabled', value.decisionsEnabled)
+            set('decisionMaxHours', value.decisionMaxHours)
+          }}
         />
       </Group>
     </fieldset>

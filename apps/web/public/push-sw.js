@@ -9,6 +9,43 @@
  * vient du contenu poussé par le serveur.
  */
 
+/**
+ * Titres par sorte de notification, dans la langue de l'appareil : le serveur ne connaît
+ * pas celle de l'interface, et ce script n'a pas accès à son catalogue. Le titre envoyé
+ * par le serveur reste le repli.
+ */
+const TITLES = {
+  fr: {
+    permission: 'Une autorisation est demandée',
+    question: "L'agent te demande de choisir",
+    elicitation: 'Un service demande une saisie',
+    plan: 'Un plan attend ta validation',
+    turnCompleted: "L'agent a terminé",
+    decision: 'Décision à prendre',
+    test: 'Notification de test',
+  },
+  en: {
+    permission: 'Approval requested',
+    question: 'The agent is asking you to choose',
+    elicitation: 'A service is asking for input',
+    plan: 'A plan is waiting for approval',
+    turnCompleted: 'The agent has finished',
+    decision: 'Decision to make',
+    test: 'Test notification',
+  },
+}
+
+function titleOf(payload) {
+  const language = (self.navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en'
+  return (payload.kind && TITLES[language][payload.kind]) || payload.title
+}
+
+function bodyOf(payload) {
+  if (payload.kind !== 'test') return payload.body
+  const french = (self.navigator.language || 'en').toLowerCase().startsWith('fr')
+  return french ? 'Les notifications de Sillage arrivent bien sur cet appareil.' : 'Sillage notifications reach this device.'
+}
+
 self.addEventListener('push', (event) => {
   if (!event.data) return
 
@@ -21,9 +58,15 @@ self.addEventListener('push', (event) => {
     return
   }
 
+  // Le nombre de décisions en attente sur l'icône de l'application installée ; sans
+  // effet là où l'API n'existe pas.
+  if (typeof payload.badge === 'number' && self.navigator.setAppBadge) {
+    self.navigator.setAppBadge(payload.badge).catch(() => {})
+  }
+
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
+    self.registration.showNotification(titleOf(payload), {
+      body: bodyOf(payload),
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       // Une conversation ne garde qu'une notification affichée : le serveur envoie son

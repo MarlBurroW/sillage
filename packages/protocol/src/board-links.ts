@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentConfigSchema, type AgentConfig } from './agent-config.js'
 import { agentKindSchema } from './events.js'
+import { DEFAULT_DECISION_HOURS, MAX_DECISION_HOURS } from './decisions.js'
 
 /**
  * Un board relié à une source externe : les issues d'un dépôt GitHub y deviennent des
@@ -84,6 +85,9 @@ export const boardLinkSettingsSchema = z
      * s'arrête là.
      */
     maxSessionsPerHour: z.number().int().min(1).max(MAX_BOARD_SESSIONS_PER_HOUR),
+    /** Les sessions de maintenance peuvent demander une décision, attendue au plus ce délai. */
+    decisionsEnabled: z.boolean(),
+    decisionMaxHours: z.number().int().min(1).max(MAX_DECISION_HOURS),
   })
   .refine((settings) => settings.sessionConfig === null || settings.sessionConfig.agent === settings.sessionAgent, {
     message: 'The session settings belong to another CLI.',
@@ -111,6 +115,8 @@ export const DEFAULT_BOARD_LINK_SETTINGS: Omit<BoardLinkSettings, 'repo'> = {
   sessionConfig: null as AgentConfig | null,
   workspace: 'worktree',
   maxSessionsPerHour: 10,
+  decisionsEnabled: false,
+  decisionMaxHours: DEFAULT_DECISION_HOURS,
 }
 
 export interface BoardLinkDto extends BoardLinkSettings {

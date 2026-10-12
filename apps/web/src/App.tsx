@@ -28,6 +28,7 @@ import { SkillLibrarySettingsPage } from './routes/SkillLibrarySettingsPage'
 import { NotificationsSection } from './routes/NotificationsSection'
 import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
 import { GitCredentialsSettingsPage } from './routes/GitCredentialsSettingsPage'
+import { DecisionsPage } from './routes/DecisionsPage'
 import { SecretsSettingsPage } from './routes/SecretsSettingsPage'
 import { SessionsSettingsPage } from './routes/SessionsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
@@ -59,6 +60,7 @@ export function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/services" element={<ServicesPage />} />
+          <Route path="/decisions" element={<DecisionsPage />} />
           <Route path="/p/:projectId" element={<ProjectPage />} />
           <Route path="/p/:projectId/board" element={<BoardPage />} />
           <Route path="/p/:projectId/schedules" element={<SchedulePage />} />

@@ -24,6 +24,7 @@
     "test:actions-ui": "node scripts/actions-ui-check.mjs",
     "test:automations-ui": "node scripts/automations-ui-check.mjs",
     "test:board-github-ui": "node scripts/board-github-ui-check.mjs",
+    "test:decisions-ui": "node scripts/decisions-ui-check.mjs",
     "test:schedule-check-ui": "node scripts/schedule-check-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
     "db:generate": "pnpm --filter @sillage/db generate",

@@ -3,6 +3,7 @@ import { CalendarClock, Webhook, X } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import {
   DEFAULT_CHECK_TIMEOUT_SECONDS,
+  DEFAULT_DECISION_SETTINGS,
   DEFAULT_SCHEDULE_DURATION_MINUTES,
   MAX_CHECK_TIMEOUT_SECONDS,
   MIN_CHECK_TIMEOUT_SECONDS,
@@ -18,6 +19,7 @@ import {
   type AgentConfig,
   type AgentKind,
   type AutomationTemplateId,
+  type DecisionSettings,
   type ProjectDto,
   type ScheduleCadence,
   type ScheduleOverlapPolicy,
@@ -27,6 +29,7 @@ import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useAgentSettings } from '../chat/agent-settings'
 import { CheckSection } from './CheckSection'
 import { GroupField } from './GroupField'
+import { DecisionSettingsField, decisionSettingsValid } from '../decisions/DecisionSettingsField'
 import { Banner, Button, Field, IconButton, Select, cx } from '../ui'
 import { cronToHuman } from '../../lib/cron'
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
@@ -106,6 +109,10 @@ export function ScheduleDialog({
   const [edited, setEdited] = useState<AgentConfig | null>(task?.config ?? null)
   const [maxDuration, setMaxDuration] = useState(String(task?.maxDurationMinutes ?? DEFAULT_SCHEDULE_DURATION_MINUTES))
   const [overlap, setOverlap] = useState<ScheduleOverlapPolicy>(task?.overlapPolicy ?? 'skip')
+  const [decisionSettings, setDecisionSettings] = useState<DecisionSettings>({
+    decisionsEnabled: task?.decisionsEnabled ?? DEFAULT_DECISION_SETTINGS.decisionsEnabled,
+    decisionMaxHours: task?.decisionMaxHours ?? DEFAULT_DECISION_SETTINGS.decisionMaxHours,
+  })
   const [checkScript, setCheckScript] = useState<string | null>(task?.check?.script ?? null)
   const [checkTimeout, setCheckTimeout] = useState(String(task?.check?.timeoutSeconds ?? DEFAULT_CHECK_TIMEOUT_SECONDS))
   const templatePrompt = (id: AutomationTemplateId | 'generic') =>
@@ -165,7 +172,7 @@ export function ScheduleDialog({
     (Number.isInteger(timeoutSeconds) && timeoutSeconds >= MIN_CHECK_TIMEOUT_SECONDS && timeoutSeconds <= MAX_CHECK_TIMEOUT_SECONDS)
   const valid = webhookCreation
     ? Boolean(name.trim())
-    : Boolean(name.trim() && prompt.trim() && cadence && durationValid && checkValid && (trigger === 'webhook' || nextRun !== null))
+    : Boolean(name.trim() && prompt.trim() && cadence && durationValid && checkValid && decisionSettingsValid(decisionSettings) && (trigger === 'webhook' || nextRun !== null))
 
   const submit = () => {
     if (!valid || !cadence || mutation.isPending) return
@@ -191,6 +198,7 @@ export function ScheduleDialog({
           cadence,
           overlapPolicy: overlap,
           maxDurationMinutes: duration,
+          ...decisionSettings,
           // Un webhook a son propre script, sur sa page : celui-ci ne vaut que pour l'horaire.
           ...(trigger === 'schedule'
             ? {
@@ -454,6 +462,7 @@ export function ScheduleDialog({
                   ]}
                 />
               </div>
+              <DecisionSettingsField value={decisionSettings} onChange={setDecisionSettings} />
 
                 </>
               )}

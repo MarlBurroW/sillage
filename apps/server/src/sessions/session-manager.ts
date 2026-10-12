@@ -14,9 +14,10 @@ import {
   type AgentConfig,
   type ConversationMetrics,
   type ConversationStatus,
-  type PushPayload,
+  type CliRequestKind,
   type SillageEvent,
 } from '@sillage/protocol'
+import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
@@ -113,10 +114,29 @@ export interface StatusBroadcast {
 }
 
 /** Ce que le gestionnaire attend de la couche de notification, sans la connaître. */
+/** L'aiguillage des notifications (`notifications/dispatcher.ts`), vu d'ici. */
 export interface ConversationNotifier {
-  /** Vrai si ce compte a un onglet ouvert sur cette conversation, à l'instant. */
-  isWatched(conversationId: string, userId: string): boolean
-  notify(userId: string, payload: PushPayload): Promise<void>
+  dispatch(userId: string, notification: OutgoingNotification): Promise<void>
+}
+
+/** Ce qu'un CLI attend, en une ligne : l'outil et sa commande, ou la question posée. */
+function requestDetail(event: SillageEvent): string | null {
+  const clip = (text: string) => (text.length > 160 ? `${text.slice(0, 160)}…` : text)
+  if (event.type === 'permission.requested') {
+    const input = (event.input ?? {}) as Record<string, unknown>
+    const subject = [input.command, input.file_path, input.path, input.url, input.pattern].find((value) => typeof value === 'string')
+    return clip(subject ? `${event.toolName} : ${String(subject)}` : event.toolName)
+  }
+  if (event.type === 'question.requested') return event.questions[0] ? clip(event.questions[0].question) : null
+  if (event.type === 'elicitation.requested') return clip(`${event.serverName} : ${event.message}`)
+  return null
+}
+
+const REQUEST_KINDS: Partial<Record<SillageEvent['type'], CliRequestKind>> = {
+  'permission.requested': 'permission',
+  'question.requested': 'question',
+  'elicitation.requested': 'elicitation',
+  'plan.review_requested': 'plan',
 }
 
 export class SessionManager {
@@ -525,15 +545,32 @@ export class SessionManager {
       // vingt-quatre fois par jour. Ses demandes de décision, elles, passent toujours,
       // puisque le tir reste suspendu tant que personne n'y répond.
       if (conversation.scheduleId && event.type === 'turn.completed') return
-      if (notifier.isWatched(conversationId, conversation.userId)) return
+      const request = REQUEST_KINDS[event.type]
 
-      await notifier.notify(conversation.userId, {
-        title,
-        body: conversation.title,
-        url: `/p/${conversation.projectId}/c/${conversationId}`,
-        // Une conversation ne garde qu'une notification affichée : empiler « l'agent a
-        // terminé » cinq fois ne dit rien de plus que la dernière.
-        tag: conversationId,
+      // Visible sur la conversation : rien. Visible ailleurs : un toast pour une demande,
+      // rien pour une fin de tour, que la sidebar montre déjà. Absent : notification.
+      await notifier.dispatch(conversation.userId, {
+        kind: request ? 'cliRequest' : 'turnCompleted',
+        conversationId,
+        push: {
+          title,
+          body: conversation.title,
+          url: `/p/${conversation.projectId}/c/${conversationId}`,
+          // Une conversation ne garde qu'une notification affichée : empiler « l'agent a
+          // terminé » cinq fois ne dit rien de plus que la dernière.
+          tag: conversationId,
+          kind: request ?? 'turnCompleted',
+        },
+        toast: request
+          ? {
+              kind: 'cliRequest',
+              request,
+              conversationId,
+              projectId: conversation.projectId,
+              conversationTitle: conversation.title,
+              detail: requestDetail(event),
+            }
+          : undefined,
       })
     } catch (err) {
       // Une notification perdue n'est pas un incident de conversation, mais l'avaler

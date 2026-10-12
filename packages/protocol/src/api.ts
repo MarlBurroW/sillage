@@ -797,6 +797,13 @@ export interface PushPayload {
    * plutôt qu'une pile qui répète la même information.
    */
   tag: string
+  /**
+   * Ce qu'annonce la notification, pour que le service worker en compose le titre dans
+   * la langue de l'appareil ; `title` reste le repli.
+   */
+  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'test'
+  /** Décisions en attente, pour la pastille sur l'icône de l'application installée. */
+  badge?: number
 }
 
 export const pushSubscribeBodySchema = z.object({

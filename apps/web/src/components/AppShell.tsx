@@ -74,6 +74,10 @@ import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projec
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import { useRememberContext } from '../lib/last-context'
 import { SidebarActivity } from './SidebarActivity'
+import { Toaster } from './Toaster'
+import { DecisionDialog } from './decisions/DecisionDialog'
+import { SidebarDecisions } from './decisions/SidebarDecisions'
+import { useDecisionsLive } from '../lib/decisions'
 import { SidebarSchedules } from './SidebarSchedules'
 import { useSchedules } from '../lib/schedules'
 import { ProjectAvatar } from './ProjectAvatar'
@@ -188,6 +192,7 @@ function useDragSensors() {
  * Un seul composant de navigation, deux présentations.
  */
 export function AppShell() {
+  useDecisionsLive()
   const t = useTranslate()
   useAppearanceSync()
   const [navOpen, setNavOpen] = useState(false)
@@ -389,6 +394,10 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      {/* Hors de la colonne principale : une décision s'ouvre et un toast apparaît
+          par-dessus n'importe quelle vue, sidebar comprise. */}
+      <DecisionDialog />
+      <Toaster />
     </div>
     </MobileNavigationContext.Provider>
   )
@@ -558,6 +567,7 @@ function Sidebar({
       </div>
       <nav ref={nav} className="relative min-h-0 flex flex-1 flex-col px-2">
         <PullToRefresh target={nav} refreshing={refreshing} onRefresh={refresh} />
+        <SidebarDecisions onNavigate={onNavigate} />
         <SidebarActivity conversations={attended} projects={projects} onNavigate={onNavigate}>
         {/* Au-dessus des projets et transverse : c'est ce qui fait l'intérêt d'un
             signet, atteindre un fil sans se rappeler d'où il vient. La conversation

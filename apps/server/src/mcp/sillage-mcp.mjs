@@ -130,6 +130,8 @@ const REQUEST_WAIT_MS = {
   // Démarrer une unité systemd, puis attendre de voir si elle tient.
   run_action: 30000,
   create_automation: 30000,
+  request_decision: 15000,
+  withdraw_decision: 15000,
 }
 
 /**
@@ -386,6 +388,41 @@ const TOOLS = [
         },
       },
       required: ['title'],
+    },
+  },
+  {
+    name: 'request_decision',
+    description:
+      "Demande une décision à l'utilisateur, sans attendre sa réponse. Réservé aux sessions autonomes (tâche planifiée, automatisation, maintenance du board) dont la source le permet. Sers-t'en quand tes instructions prévoient de demander, ou qu'un choix sort de ce qu'elles couvrent ; pour le reste, décide seul : une session qui demande tout ne sert plus à rien. La demande apparaît dans « À décider » et notifie l'utilisateur. Ensuite, termine ton tour ou continue ce qui n'en dépend pas : la réponse t'arrivera en message. Une seule demande en attente à la fois.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        question: { type: 'string', description: 'La question, courte (300 caractères au plus), compréhensible sans le reste.' },
+        context: {
+          type: 'string',
+          description: "Ce qu'il faut savoir pour trancher, en markdown : ce que tu as trouvé, les liens (PR, issue, fichiers), les conséquences de chaque choix.",
+        },
+        options: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '2 à 6 réponses proposées, courtes. Une réponse libre reste toujours possible.',
+        },
+        default: { type: 'string', description: "Le choix appliqué si personne ne répond à temps ; il reprend exactement l'un des `options`." },
+        expires_in_hours: {
+          type: 'number',
+          description: "Délai de réponse en heures ; borné par le maximum réglé pour la source, qui s'applique s'il est omis.",
+        },
+      },
+      required: ['question'],
+    },
+  },
+  {
+    name: 'withdraw_decision',
+    description:
+      "Retire ta demande de décision en attente, quand elle n'a plus lieu d'être (la situation a changé, tu as trouvé la réponse ailleurs).",
+    inputSchema: {
+      type: 'object',
+      properties: { reason: { type: 'string', description: 'Pourquoi, en une phrase : l’utilisateur la lira dans l’historique.' } },
     },
   },
   {
@@ -1468,6 +1505,37 @@ function currentCard() {
   )
 }
 
+const DECISION_TOOLS = new Set(['request_decision', 'withdraw_decision'])
+
+/**
+ * La session courante peut-elle demander une décision ? Doit rester d'accord avec
+ * `DecisionService.sourceOf` (`apps/server/src/decisions/service.ts`) : une tâche
+ * planifiée ou une automatisation par sa colonne `schedule_id`, une session de
+ * maintenance par l'issue qu'elle suit (`card_issues.responder_id`).
+ */
+function decisionsAllowed() {
+  if (!CURRENT_CONVERSATION) return false
+  try {
+    const conversation = db.prepare('SELECT schedule_id AS scheduleId FROM conversations WHERE id = ?').get(CURRENT_CONVERSATION)
+    if (!conversation) return false
+    if (conversation.scheduleId) {
+      const task = db.prepare('SELECT decisions_enabled AS enabled FROM scheduled_tasks WHERE id = ?').get(conversation.scheduleId)
+      return Boolean(task?.enabled)
+    }
+    const link = db
+      .prepare(
+        `SELECT l.decisions_enabled AS enabled FROM card_issues AS i
+         JOIN board_links AS l ON l.project_id = i.project_id
+         WHERE i.responder_id = ?`,
+      )
+      .get(CURRENT_CONVERSATION)
+    return Boolean(link?.enabled)
+  } catch {
+    // Une base d'avant ces colonnes : pas de décisions.
+    return false
+  }
+}
+
 /** Les notes d'une carte, du plus ancien au plus récent, avec leur auteur. */
 function cardNotes(cardId) {
   return db
@@ -2292,10 +2360,15 @@ async function callTool(name, args) {
     name === 'register_action' ||
     name === 'remove_action' ||
     name === 'run_action' ||
-    name === 'create_automation'
+    name === 'create_automation' ||
+    name === 'request_decision' ||
+    name === 'withdraw_decision'
   ) {
     if (!CURRENT_CONVERSATION) {
       return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
+    }
+    if (name === 'request_decision' && !(typeof args?.question === 'string' && args.question.trim())) {
+      return { ...text('Le paramètre `question` est requis.'), isError: true }
     }
     if (name === 'create_card' && !(typeof args?.title === 'string' && args.title.trim())) {
       return { ...text('Le paramètre `title` est requis.'), isError: true }
@@ -2465,7 +2538,10 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   }
 
   if (msg.method === 'tools/list') {
-    send({ jsonrpc: '2.0', id: msg.id, result: { tools: TOOLS } })
+    // Les outils de décision ne sont proposés qu'aux sessions autonomes dont la source
+    // les permet : ailleurs, ils inciteraient l'agent à demander ce qu'il doit décider.
+    const decisions = decisionsAllowed()
+    send({ jsonrpc: '2.0', id: msg.id, result: { tools: TOOLS.filter((tool) => decisions || !DECISION_TOOLS.has(tool.name)) } })
     return
   }
 

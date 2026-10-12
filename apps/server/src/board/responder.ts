@@ -94,6 +94,9 @@ export class BoardResponder implements Responder {
 
     const id = randomUUID()
     const worktreeId = link.workspace === 'worktree' ? await this.worktree(project, link.userId, issue.number) : null
+    // Posé avant le lancement : le serveur MCP de la session lit dès son démarrage si elle
+    // est une session de maintenance (outils de décision), avant que la création rende la main.
+    this.ctx.db.update(cardIssues).set({ responderId: id }).where(eq(cardIssues.cardId, card.id)).run()
     const row = await createConversation(this.ctx.db, this.sessions, {
       id,
       projectId: link.projectId,
@@ -114,7 +117,7 @@ export class BoardResponder implements Responder {
         skills: [],
       },
     })
-    this.ctx.db.update(cardIssues).set({ responderId: row.id }).where(eq(cardIssues.cardId, card.id)).run()
+    void row
     return 'launched'
   }
 

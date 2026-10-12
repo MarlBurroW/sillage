@@ -45,6 +45,9 @@ export interface ScheduleInput {
   /** Null retire la vérification. */
   checkScript?: string | null
   checkTimeoutSeconds?: number
+  /** L'agent peut demander une décision, attendue au plus `decisionMaxHours`. */
+  decisionsEnabled?: boolean
+  decisionMaxHours?: number
 }
 
 function useInvalidate() {

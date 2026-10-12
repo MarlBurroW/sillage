@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DEFAULT_NOTIFICATION_PREFS, notificationPrefsSchema, type NotificationPrefs } from './notifications.js'
 import {
   agentConfigSchema,
   claudeConfigSchema,
@@ -53,6 +54,8 @@ export interface UserSettingsDto {
    * les réglages déjà choisis dans ce navigateur au lieu de les écraser.
    */
   appearance: AppearancePrefs | null
+  /** Les sortes de notifications que ce compte veut recevoir, sur tous ses appareils. */
+  notifications: NotificationPrefs
 }
 
 /**
@@ -117,12 +120,14 @@ export const storedUserSettingsSchema = z
     collapsedProjects: z.array(z.string()).default([]).catch([]),
     projectsDir: z.string().nullable().default(null).catch(null),
     appearance: appearancePrefsSchema.nullable().default(null).catch(null),
+    notifications: notificationPrefsSchema.default(DEFAULT_NOTIFICATION_PREFS).catch(DEFAULT_NOTIFICATION_PREFS),
   })
   .catch({
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
     collapsedProjects: [],
     projectsDir: null,
     appearance: null,
+    notifications: DEFAULT_NOTIFICATION_PREFS,
   })
 
 export const updateUserSettingsBodySchema = z.object({
@@ -138,4 +143,5 @@ export const updateUserSettingsBodySchema = z.object({
   projectsDir: z.string().min(1).nullable().optional(),
   /** Remplacée en bloc, comme les projets repliés. */
   appearance: appearancePrefsSchema.optional(),
+  notifications: notificationPrefsSchema.optional(),
 })
