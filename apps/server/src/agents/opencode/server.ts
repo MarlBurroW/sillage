@@ -11,7 +11,7 @@ import type { Config, Event } from '@sillage/opencode-bindings'
  * (le process, les requêtes, le flux) et rien du métier, comme `CodexAppServerClient`.
  *
  * Première génération de l'API seulement (`/session/...`, `GET /event`). Sondé sur
- * opencode 1.18.25 : la seconde (`/api/session/...`, `GET /api/event`) est un monde à
+ * opencode 1.18.25 et 1.19.0 : la seconde (`/api/session/...`, `GET /api/event`) est un monde à
  * part, son flux ne dit rien des sessions créées par la première, et il lui manque le
  * fork et les serveurs MCP.
  */
