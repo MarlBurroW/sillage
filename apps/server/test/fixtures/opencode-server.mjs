@@ -4,7 +4,7 @@ import { appendFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 
 if (process.argv.includes('--version')) {
-  console.log('1.18.25')
+  console.log('1.19.0')
   process.exit(0)
 }
 
@@ -27,7 +27,7 @@ const emit = (event) => {
 
 const session = (id) => ({
   id, slug: 'fixture', projectID: 'global', directory: process.cwd(), title: 'New session - 2026-01-01T00:00:00.000Z',
-  version: '1.18.25', time: { created: 1, updated: 1 },
+  version: '1.19.0', time: { created: 1, updated: 1 },
 })
 
 /** Messages rendus par `GET /session/:id/message`, que le test de fork peut remplacer. */
