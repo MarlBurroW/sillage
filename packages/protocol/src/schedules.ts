@@ -28,6 +28,31 @@ export const MAX_SCHEDULE_NAME_CHARS = 120
 export const MAX_SCHEDULE_PROMPT_CHARS = 20000
 
 /**
+ * Vérification avant le tour : un script que le daemon joue avant d'ouvrir la session,
+ * pour ne réveiller le LLM que quand il y a quelque chose à faire.
+ *
+ * Le contrat tient dans le code de sortie : `0` lance le tour, `CHECK_SKIP_EXIT_CODE`
+ * l'écarte sans session, tout autre code est une erreur. Un code dédié au « rien à
+ * faire » plutôt que `1` : un script qui plante sort souvent en 1, et sa panne passerait
+ * pour un « rien de neuf » silencieux.
+ */
+export const CHECK_SKIP_EXIT_CODE = 10
+export const MAX_CHECK_SCRIPT_CHARS = 20000
+export const MIN_CHECK_TIMEOUT_SECONDS = 5
+export const DEFAULT_CHECK_TIMEOUT_SECONDS = 120
+export const MAX_CHECK_TIMEOUT_SECONDS = 1800
+/** Ce que la sortie standard peut apporter au prompt ; au-delà, elle est tronquée. */
+export const MAX_CHECK_OUTPUT_CHARS = 20000
+
+/** Vide ou null retire la vérification : un champ vidé dans le formulaire veut dire « aucune ». */
+export const checkScriptSchema = z
+  .string()
+  .max(MAX_CHECK_SCRIPT_CHARS)
+  .nullable()
+  .transform((value) => (value && value.trim() ? value : null))
+export const checkTimeoutSchema = z.number().int().min(MIN_CHECK_TIMEOUT_SECONDS).max(MAX_CHECK_TIMEOUT_SECONDS)
+
+/**
  * Quand une tâche tire.
  *
  * Trois formes et non le seul motif cron : « toutes les 6 heures » se compte depuis le
@@ -59,7 +84,8 @@ export type ScheduleOverlapPolicy = z.infer<typeof scheduleOverlapPolicySchema>
 export const scheduleExecutionModeSchema = z.enum(['fresh'])
 export type ScheduleExecutionMode = z.infer<typeof scheduleExecutionModeSchema>
 
-export const scheduleRunStatusSchema = z.enum(['running', 'succeeded', 'failed', 'timed_out', 'skipped'])
+/** `checking` : la vérification tourne, ou la session démarre juste derrière elle. */
+export const scheduleRunStatusSchema = z.enum(['checking', 'running', 'succeeded', 'failed', 'timed_out', 'skipped'])
 export type ScheduleRunStatus = z.infer<typeof scheduleRunStatusSchema>
 
 export type ScheduleRunTrigger = 'schedule' | 'manual' | 'webhook'
@@ -78,6 +104,8 @@ export const createScheduledTaskBodySchema = z.object({
     .max(MAX_SCHEDULE_DURATION_MINUTES)
     .default(DEFAULT_SCHEDULE_DURATION_MINUTES),
   enabled: z.boolean().default(true),
+  checkScript: checkScriptSchema.default(null),
+  checkTimeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
   /** Pour une cadence `webhook` : le modèle de départ et des réglages qui le complètent. */
   webhook: z
     .object({
@@ -102,8 +130,54 @@ export const updateScheduledTaskBodySchema = z
       .min(MIN_SCHEDULE_DURATION_MINUTES)
       .max(MAX_SCHEDULE_DURATION_MINUTES),
     enabled: z.boolean(),
+    checkScript: checkScriptSchema,
+    checkTimeoutSeconds: checkTimeoutSchema,
   })
   .partial()
+
+/**
+ * Essai d'un script sans rien lancer, tel qu'il est dans le formulaire, avant même
+ * d'être enregistré. `taskId` le joue sur une copie de l'état de cette tâche ; sans
+ * lui, sur un état vide, comme un premier tir.
+ */
+export const testScheduleCheckBodySchema = z.object({
+  script: z.string().min(1).max(MAX_CHECK_SCRIPT_CHARS),
+  timeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
+  taskId: z.string().optional(),
+})
+
+/**
+ * Validation du script proposé par un agent. Le texte relu est renvoyé : s'il a changé
+ * entre l'affichage et le clic, on refuse plutôt que de valider ce qu'on n'a pas lu.
+ */
+export const approveScheduleCheckBodySchema = z.object({
+  script: z.string().min(1).max(MAX_CHECK_SCRIPT_CHARS),
+})
+
+/** « Lancer maintenant », avec ou sans la vérification. */
+export const runScheduleBodySchema = z.object({ skipCheck: z.boolean().default(false) }).default({})
+
+/** Verdict tiré du code de sortie : la seule chose que le daemon interprète. */
+export type ScheduleCheckVerdict = 'launch' | 'skip' | 'error'
+
+export interface ScheduleCheckResultDto {
+  verdict: ScheduleCheckVerdict
+  /** Null quand le script n'a pas fini : délai dépassé, ou impossible à lancer. */
+  exitCode: number | null
+  timedOut: boolean
+  /** Ce que le prompt reçoit, tronqué à `MAX_CHECK_OUTPUT_CHARS`. */
+  stdout: string
+  stderr: string
+  durationMs: number
+}
+
+/** Ce que la vérification a donné pour un tir. */
+export interface ScheduledRunCheckDto {
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  durationMs: number
+}
 
 export interface ScheduledRunDto {
   id: string
@@ -116,6 +190,18 @@ export interface ScheduledRunDto {
   startedAt: number
   finishedAt: number | null
   error: string | null
+  /** Null quand le tir n'a pas joué de vérification. */
+  check: ScheduledRunCheckDto | null
+}
+
+/** La vérification d'une tâche, telle que l'interface la montre et la fait valider. */
+export interface ScheduledTaskCheckDto {
+  script: string
+  timeoutSeconds: number
+  /** Faux tant qu'un script écrit par un agent n'a pas été relu : les tirs sont écartés. */
+  approved: boolean
+  /** Conversation de l'agent qui l'a proposé ; null quand il vient de l'interface. */
+  proposedBy: string | null
 }
 
 export interface ScheduledTaskDto {
@@ -140,6 +226,8 @@ export interface ScheduledTaskDto {
   runs: ScheduledRunDto[]
   /** Réglages du webhook, pour une tâche que déclenche un appel ; null sinon. */
   webhook: WebhookAutomationDto | null
+  /** Le script joué avant chaque tour ; null sans vérification. */
+  check: ScheduledTaskCheckDto | null
 }
 
 /**

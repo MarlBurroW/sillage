@@ -23,6 +23,7 @@
     "test:palette-ui": "node scripts/palette-ui-check.mjs",
     "test:actions-ui": "node scripts/actions-ui-check.mjs",
     "test:automations-ui": "node scripts/automations-ui-check.mjs",
+    "test:schedule-check-ui": "node scripts/schedule-check-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
     "db:generate": "pnpm --filter @sillage/db generate",
     "db:migrate": "pnpm --filter @sillage/server migrate",

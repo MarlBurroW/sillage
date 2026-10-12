@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, isNotNull, isNull, lte, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notInArray } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
@@ -22,6 +22,7 @@ import type { SessionManager } from '../sessions/session-manager.js'
 import { buildWebhookPrompt } from '../automations/prompt.js'
 import { eventOf, setDeliveryOutcome } from '../automations/webhooks.js'
 import { launchRefusal } from '../sessions/agent-requests.js'
+import { checkStateDir, firstLine, runCheck } from './check.js'
 import { readCadence } from './tasks.js'
 
 /**
@@ -61,6 +62,13 @@ export class TaskScheduler {
 
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
+    // Une vérification coupée par le redémarrage ne finira jamais : son script est mort
+    // avec le process précédent. La laisser en cours bloquerait la tâche pour toujours.
+    this.ctx.db
+      .update(scheduledRuns)
+      .set({ status: 'failed', finishedAt: Date.now(), error: 'Interrompu par un redémarrage de Sillage pendant la vérification.' })
+      .where(eq(scheduledRuns.status, 'checking'))
+      .run()
     this.timer = setInterval(() => void this.tick(), TICK_MS)
     this.timer.unref()
   }
@@ -114,9 +122,10 @@ export class TaskScheduler {
 
   /**
    * « Lancer maintenant ». Ne décale pas le prochain tir prévu : c'est un essai, pas un
-   * changement de cadence.
+   * changement de cadence. La vérification joue aussi, sauf si on demande de la passer :
+   * c'est ce qui permet d'essayer la tâche entière, script compris.
    */
-  async runNow(taskId: string): Promise<ScheduledRunRow> {
+  async runNow(taskId: string, options: { skipCheck?: boolean } = {}): Promise<ScheduledRunRow> {
     const task = this.ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, taskId)).get()
     if (!task) throw new HttpError(404, 'schedule_not_found', 'Scheduled task not found.')
     if (readCadence(task.cadence).kind === 'webhook') {
@@ -126,6 +135,7 @@ export class TaskScheduler {
       throw conflict('schedule_already_running', 'A run of this task is still in progress.')
     }
     const now = Date.now()
+    if (task.checkScript && !options.skipCheck) return this.startChecked(task, 'manual', now, now)
     return this.fire(task, 'manual', now, now)
   }
 
@@ -174,7 +184,125 @@ export class TaskScheduler {
         continue
       }
 
+      if (task.checkScript) {
+        // Pas attendu : un script peut prendre des minutes, et le balayage porte aussi
+        // les autres tâches et les appels de webhook.
+        this.startChecked(task, 'schedule', scheduledFor, now)
+        continue
+      }
       await this.fire(task, 'schedule', scheduledFor, now)
+    }
+  }
+
+  // --- Vérification avant le tour --------------------------------------------------
+
+  /**
+   * Ouvre le tir d'une tâche qui a une vérification : la ligne existe dès maintenant, en
+   * `checking`, pour que l'historique montre qu'il se passe quelque chose et qu'un second
+   * tir ne parte pas par-dessus. Le script et la session suivent sans être attendus.
+   */
+  private startChecked(
+    task: ScheduledTaskRow,
+    trigger: 'schedule' | 'manual',
+    scheduledFor: number,
+    startedAt: number,
+  ): ScheduledRunRow {
+    this.firing.add(task.id)
+    this.ctx.db.update(scheduledTasks).set({ lastRunAt: startedAt }).where(eq(scheduledTasks.id, task.id)).run()
+    if (trigger === 'schedule') this.advance(task, startedAt)
+
+    const run: ScheduledRunRow = {
+      id: randomUUID(),
+      taskId: task.id,
+      conversationId: null,
+      trigger,
+      status: 'checking',
+      scheduledFor,
+      startedAt,
+      finishedAt: null,
+      error: null,
+      summary: null,
+      checkExitCode: null,
+      checkOutput: null,
+      checkStderr: null,
+      checkDurationMs: null,
+    }
+    // Un script écrit par un agent et pas encore relu ne tourne pas, et le LLM non plus :
+    // la tâche comptait sur lui pour filtrer, la lancer sans reviendrait à l'ignorer.
+    if (task.checkApprovedAt === null) {
+      run.status = 'skipped'
+      run.finishedAt = startedAt
+      run.error = "Vérification proposée par un agent, en attente de validation : rien n'a été lancé."
+      this.ctx.db.insert(scheduledRuns).values(run).run()
+      this.firing.delete(task.id)
+      return run
+    }
+    this.ctx.db.insert(scheduledRuns).values(run).run()
+    void this.completeCheck(task, run)
+    return run
+  }
+
+  private async completeCheck(task: ScheduledTaskRow, run: ScheduledRunRow): Promise<void> {
+    const update = (patch: Partial<ScheduledRunRow>) =>
+      this.ctx.db.update(scheduledRuns).set(patch).where(eq(scheduledRuns.id, run.id)).run()
+    try {
+      const project = this.ctx.db
+        .select({ workspacePath: projects.workspacePath })
+        .from(projects)
+        .where(eq(projects.id, task.projectId))
+        .get()
+      if (!project) throw new Error('Le projet a disparu.')
+      const previous = this.previousRun(task.id)
+      const result = await runCheck(task.checkScript ?? '', {
+        taskId: task.id,
+        taskName: task.name,
+        projectId: task.projectId,
+        cwd: project.workspacePath,
+        stateDir: checkStateDir(this.ctx.config.paths.data, task.id),
+        firedAt: run.startedAt,
+        trigger: run.trigger === 'manual' ? 'manual' : 'schedule',
+        previous: previous && { startedAt: previous.startedAt, status: previous.status },
+        timeoutMs: task.checkTimeoutSeconds * 1000,
+      })
+      const now = Date.now()
+      update({
+        checkExitCode: result.exitCode,
+        checkOutput: result.stdout,
+        checkStderr: result.stderr,
+        checkDurationMs: result.durationMs,
+      })
+
+      if (result.verdict === 'skip') {
+        update({ status: 'skipped', finishedAt: now, error: firstLine(result.stdout) ?? 'Rien à faire selon la vérification.' })
+        return
+      }
+      if (result.verdict === 'error') {
+        const detail = firstLine(result.stderr)
+        update({
+          status: 'failed',
+          finishedAt: now,
+          error: result.timedOut
+            ? `Vérification interrompue au bout de ${task.checkTimeoutSeconds} s.`
+            : `Vérification en échec (code ${result.exitCode ?? '?'})${detail ? ` : ${detail}` : ''}.`,
+        })
+        return
+      }
+
+      // La tâche a pu être supprimée ou modifiée pendant que le script tournait : on
+      // lance avec ce qu'elle est maintenant, ou pas du tout.
+      const current = this.ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, task.id)).get()
+      if (!current) return
+      const conversationId = await this.openSession(current, run.trigger, run.startedAt, undefined, result.stdout)
+      update({ status: 'running', conversationId })
+    } catch (err) {
+      update({
+        status: 'failed',
+        finishedAt: Date.now(),
+        error: `Lancement impossible : ${err instanceof Error ? err.message : String(err)}`,
+      })
+      this.logger?.warn({ err, task: task.id }, 'tir planifié en échec à la vérification')
+    } finally {
+      this.firing.delete(task.id)
     }
   }
 
@@ -222,7 +350,7 @@ export class TaskScheduler {
     return this.ctx.db
       .select()
       .from(scheduledRuns)
-      .where(and(eq(scheduledRuns.taskId, taskId), eq(scheduledRuns.status, 'running')))
+      .where(and(eq(scheduledRuns.taskId, taskId), inArray(scheduledRuns.status, ['running', 'checking'])))
       .get()
   }
 
@@ -261,6 +389,10 @@ export class TaskScheduler {
       finishedAt: null,
       error: null,
       summary: null,
+      checkExitCode: null,
+      checkOutput: null,
+      checkStderr: null,
+      checkDurationMs: null,
     }
 
     try {
@@ -269,55 +401,7 @@ export class TaskScheduler {
       this.ctx.db.update(scheduledTasks).set({ lastRunAt: startedAt }).where(eq(scheduledTasks.id, task.id)).run()
       if (trigger === 'schedule') this.advance(task, startedAt)
 
-      const config = await this.registry.adapter(task.agent).resolveDefaults(parseAgentConfig(task.config))
-      const conversationId = randomUUID()
-      const text = delivery
-        ? buildWebhookPrompt({ task, delivery, event: eventOf(delivery), conversationId, replay: false })
-        : buildRunPrompt({
-            task,
-            trigger,
-            firedAt: startedAt,
-            previous: this.previousRun(task.id),
-            publicUrl: this.ctx.config.server.publicUrl,
-          })
-      const row = await createConversation(this.ctx.db, this.sessions, {
-        id: conversationId,
-        projectId: task.projectId,
-        userId: task.userId,
-        agent: task.agent,
-        config,
-        worktreeId: null,
-        cardId: null,
-        // Le nom de la tâche et l'heure : sous sa tâche, c'est la date qui distingue
-        // un tir du précédent, et ailleurs (recherche, favoris) c'est le nom.
-        title: `${task.name} · ${stamp(startedAt)}`,
-        origin: null,
-        scheduleId: task.id,
-        firstMessage: {
-          clientMessageId: randomUUID(),
-          text,
-          attachments: [],
-          mentions: [],
-          skills: [],
-        },
-      })
-      run.conversationId = row.id
-      if (delivery?.originConversationId) {
-        // La filiation que relisent les limites de chaîne : cette session compte comme
-        // lancée par celle dont l'appel portait la marque.
-        this.ctx.db.insert(agentRequests).values({
-          id: randomUUID(),
-          projectId: task.projectId,
-          conversationId: delivery.originConversationId,
-          kind: 'webhook_launch',
-          payload: JSON.stringify({ taskId: task.id, deliveryId: delivery.id }),
-          createdAt: startedAt,
-          settledAt: startedAt,
-          result: null,
-          isError: false,
-          launchedConversationId: row.id,
-        }).run()
-      }
+      run.conversationId = await this.openSession(task, trigger, startedAt, delivery)
     } catch (err) {
       run.status = 'failed'
       run.finishedAt = Date.now()
@@ -336,13 +420,81 @@ export class TaskScheduler {
     return run
   }
 
+  /** Ouvre la session d'un tir et rend son identifiant. */
+  private async openSession(
+    task: ScheduledTaskRow,
+    trigger: ScheduleRunTrigger,
+    startedAt: number,
+    delivery?: AutomationDeliveryRow,
+    /** Sortie de la vérification, quand le tir en a joué une. */
+    checkOutput?: string,
+  ): Promise<string> {
+    const config = await this.registry.adapter(task.agent).resolveDefaults(parseAgentConfig(task.config))
+    const conversationId = randomUUID()
+    const text = delivery
+      ? buildWebhookPrompt({ task, delivery, event: eventOf(delivery), conversationId, replay: false })
+      : buildRunPrompt({
+          task,
+          trigger,
+          firedAt: startedAt,
+          previous: this.previousRun(task.id),
+          publicUrl: this.ctx.config.server.publicUrl,
+          checkOutput,
+        })
+    const row = await createConversation(this.ctx.db, this.sessions, {
+      id: conversationId,
+      projectId: task.projectId,
+      userId: task.userId,
+      agent: task.agent,
+      config,
+      worktreeId: null,
+      cardId: null,
+      // Le nom de la tâche et l'heure : sous sa tâche, c'est la date qui distingue
+      // un tir du précédent, et ailleurs (recherche, favoris) c'est le nom.
+      title: `${task.name} · ${stamp(startedAt)}`,
+      origin: null,
+      scheduleId: task.id,
+      firstMessage: {
+        clientMessageId: randomUUID(),
+        text,
+        attachments: [],
+        mentions: [],
+        skills: [],
+      },
+    })
+    if (delivery?.originConversationId) {
+      // La filiation que relisent les limites de chaîne : cette session compte comme
+      // lancée par celle dont l'appel portait la marque.
+      this.ctx.db.insert(agentRequests).values({
+        id: randomUUID(),
+        projectId: task.projectId,
+        conversationId: delivery.originConversationId,
+        kind: 'webhook_launch',
+        payload: JSON.stringify({ taskId: task.id, deliveryId: delivery.id }),
+        createdAt: startedAt,
+        settledAt: startedAt,
+        result: null,
+        isError: false,
+        launchedConversationId: row.id,
+      }).run()
+    }
+    return row.id
+  }
+
   /** Le dernier tir qui a réellement ouvert une session, celui dont le suivant hérite. */
   private previousRun(taskId: string): ScheduledRunRow | null {
     return (
       this.ctx.db
         .select()
         .from(scheduledRuns)
-        .where(and(eq(scheduledRuns.taskId, taskId), ne(scheduledRuns.status, 'skipped'), ne(scheduledRuns.status, 'running')))
+        .where(
+          and(
+            eq(scheduledRuns.taskId, taskId),
+            // Un tir écarté ou arrêté par sa vérification n'a rien laissé à transmettre.
+            isNotNull(scheduledRuns.conversationId),
+            notInArray(scheduledRuns.status, ['running', 'checking']),
+          ),
+        )
         .orderBy(desc(scheduledRuns.startedAt))
         .limit(1)
         .get() ?? null
@@ -452,6 +604,7 @@ function stamp(ts: number): string {
 }
 
 const RUN_OUTCOMES: Record<ScheduledRunRow['status'], string> = {
+  checking: 'en vérification',
   running: 'encore en cours',
   succeeded: 'terminé normalement',
   failed: 'en échec',
@@ -478,8 +631,11 @@ export function buildRunPrompt(input: {
   firedAt: number
   previous: Pick<ScheduledRunRow, 'startedAt' | 'status' | 'conversationId' | 'summary' | 'error'> | null
   publicUrl: string
+  /** Ce que la vérification a écrit, quand elle a laissé partir ce tour. */
+  checkOutput?: string | null
 }): string {
   const { task, trigger, firedAt, previous, publicUrl } = input
+  const checkOutput = input.checkOutput?.trim() ?? ''
   const date = stamp(firedAt)
   const previousDate = previous ? stamp(previous.startedAt) : ''
   const previousUrl = previous?.conversationId
@@ -510,11 +666,18 @@ export function buildRunPrompt(input: {
     header.push("C'est le premier tir de cette tâche.")
   }
 
+  // Ce que la vérification a trouvé est la raison de ce tour : l'agent le reçoit même
+  // si la consigne ne le cite pas, sans doublon si elle le cite.
+  if (checkOutput && !/\{\{\s*check_output\s*\}\}/.test(task.prompt)) {
+    header.push('', 'Le script de vérification de la tâche a laissé partir ce tour. Sa sortie :', '```', checkOutput, '```')
+  }
+
   const variables: Record<string, string> = {
     date,
     previous_run_date: previousDate,
     previous_run_url: previousUrl,
     previous_run_summary: previousSummary,
+    check_output: checkOutput,
   }
   const prompt = task.prompt.replace(/\{\{\s*(\w+)\s*\}\}/g, (whole, key: string) => variables[key] ?? whole)
 

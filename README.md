@@ -69,8 +69,12 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   with the model, effort and permissions fixed on the task. The daemon fires it with
   nobody at the keyboard: the agent is told so, gets the date, link and last reply of
   the previous run, and is cut off after a maximum duration. Runs stay out of the
-  session list and sit under their task in the sidebar. Agents can schedule too,
-  through `schedule_task`, the durable equivalent of Claude's session-bound cron.
+  session list and sit under their task in the sidebar. An optional check script
+  runs first, in any language: exit 0 wakes the agent with the script's output,
+  exit 10 skips the run without opening a session, so a daily watch only costs
+  tokens when something changed. Agents can schedule too, through `schedule_task`,
+  the durable equivalent of Claude's session-bound cron; a check script an agent
+  writes waits for your approval before it runs.
 - **Shared instructions and memory.** One `SILLAGE.md` and one project memory for
   all three CLIs, editable from the interface, which agents can read and rewrite.
   [How it works](#instructions-and-memory).

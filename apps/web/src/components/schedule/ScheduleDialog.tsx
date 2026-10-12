@@ -2,7 +2,10 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { CalendarClock, Webhook, X } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import {
+  DEFAULT_CHECK_TIMEOUT_SECONDS,
   DEFAULT_SCHEDULE_DURATION_MINUTES,
+  MAX_CHECK_TIMEOUT_SECONDS,
+  MIN_CHECK_TIMEOUT_SECONDS,
   MAX_SCHEDULE_DURATION_MINUTES,
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_PROMPT_CHARS,
@@ -22,6 +25,7 @@ import {
 } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useAgentSettings } from '../chat/agent-settings'
+import { CheckSection } from './CheckSection'
 import { GroupField } from './GroupField'
 import { Banner, Button, Field, IconButton, Select, cx } from '../ui'
 import { cronToHuman } from '../../lib/cron'
@@ -102,6 +106,8 @@ export function ScheduleDialog({
   const [edited, setEdited] = useState<AgentConfig | null>(task?.config ?? null)
   const [maxDuration, setMaxDuration] = useState(String(task?.maxDurationMinutes ?? DEFAULT_SCHEDULE_DURATION_MINUTES))
   const [overlap, setOverlap] = useState<ScheduleOverlapPolicy>(task?.overlapPolicy ?? 'skip')
+  const [checkScript, setCheckScript] = useState<string | null>(task?.check?.script ?? null)
+  const [checkTimeout, setCheckTimeout] = useState(String(task?.check?.timeoutSeconds ?? DEFAULT_CHECK_TIMEOUT_SECONDS))
   const templatePrompt = (id: AutomationTemplateId | 'generic') =>
     id === 'generic' ? '' : (AUTOMATION_TEMPLATES.find((entry) => entry.id === id)?.prompt[locale() === 'fr' ? 'fr' : 'en'] ?? '')
 
@@ -150,9 +156,16 @@ export function ScheduleDialog({
   const duration = Number(maxDuration)
   const durationValid =
     Number.isInteger(duration) && duration >= MIN_SCHEDULE_DURATION_MINUTES && duration <= MAX_SCHEDULE_DURATION_MINUTES
+  const timeoutSeconds = Number(checkTimeout)
+  // Un script vidé vaut « pas de vérification » ; un délai, lui, doit se lire.
+  const checkValid =
+    trigger !== 'schedule' ||
+    checkScript === null ||
+    !checkScript.trim() ||
+    (Number.isInteger(timeoutSeconds) && timeoutSeconds >= MIN_CHECK_TIMEOUT_SECONDS && timeoutSeconds <= MAX_CHECK_TIMEOUT_SECONDS)
   const valid = webhookCreation
     ? Boolean(name.trim())
-    : Boolean(name.trim() && prompt.trim() && cadence && durationValid && (trigger === 'webhook' || nextRun !== null))
+    : Boolean(name.trim() && prompt.trim() && cadence && durationValid && checkValid && (trigger === 'webhook' || nextRun !== null))
 
   const submit = () => {
     if (!valid || !cadence || mutation.isPending) return
@@ -178,6 +191,13 @@ export function ScheduleDialog({
           cadence,
           overlapPolicy: overlap,
           maxDurationMinutes: duration,
+          // Un webhook a son propre script, sur sa page : celui-ci ne vaut que pour l'horaire.
+          ...(trigger === 'schedule'
+            ? {
+                checkScript: checkScript?.trim() ? checkScript : null,
+                ...(checkScript?.trim() ? { checkTimeoutSeconds: timeoutSeconds } : {}),
+              }
+            : {}),
         }
     if (task) update.mutate({ id: task.id, ...input }, { onSuccess: onClose })
     else {
@@ -384,6 +404,17 @@ export function ScheduleDialog({
                   </p>
                 ) : null}
               </fieldset> : null}
+
+              {trigger === 'schedule' ? (
+                <CheckSection
+                  projectId={project.id}
+                  taskId={task?.id}
+                  script={checkScript}
+                  timeout={checkTimeout}
+                  onScriptChange={setCheckScript}
+                  onTimeoutChange={setCheckTimeout}
+                />
+              ) : null}
 
               <Select
                 label={t('draft.cli.legend')}
