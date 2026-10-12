@@ -24,14 +24,19 @@ import { CodexRunner } from './runner.js'
 import { CodexUsageReader } from './usage.js'
 
 /**
- * Point de coupe d'un fork : nombre de tours à retirer depuis la fin de la branche.
+ * Point de coupe d'un fork : identifiant natif du dernier tour conservé.
  *
- * Codex ne sait pas couper à un message, seulement retirer des tours entiers
- * (`thread/rollback { numTurns }`). La granularité commune du fork est donc le tour,
- * ce qui tombe bien : c'est déjà le découpage de la réglette de navigation.
+ * Codex ne sait pas couper à un message, seulement à la fin d'un tour entier
+ * (`thread/fork { lastTurnId }`, inclusif). La granularité commune du fork est donc le
+ * tour, ce qui tombe bien : c'est déjà le découpage de la réglette de navigation.
+ *
+ * `null` quand rien n'est à retirer : le fork copie alors tout le fil. L'ancienne
+ * coupe « nombre de tours à retirer » passait par `thread/rollback`, que Codex a
+ * supprimé en 0.156.0 ; l'identifiant se relit dans le `turn/completed` natif que le
+ * runner conserve avec l'événement `turn.completed` (invariant I3).
  */
 interface CodexForkCut {
-  turnsToDrop: number
+  lastTurnId: string | null
 }
 
 export class CodexAdapter implements AgentAdapter {
@@ -61,11 +66,28 @@ export class CodexAdapter implements AgentAdapter {
 
   forkCut(log: EventLog, conversationId: string, throughSeq: number): CodexForkCut {
     const turns = log.countByType(conversationId, 'turn.completed', throughSeq)
-    return { turnsToDrop: Math.max(turns.total - turns.kept, 0) }
+    // Rien après le point de coupe : inutile de désigner un tour, et un journal ancien
+    // qui n'aurait pas conservé la notification native reste ainsi forkable en entier.
+    if (turns.kept === turns.total) return { lastTurnId: null }
+    if (turns.kept === 0) {
+      throw new ForkError(
+        'No completed turn before this point: there is nothing to resume in the branch.',
+      )
+    }
+    const raw = log.lastRawOfType(conversationId, 'turn.completed', throughSeq) as
+      | { turn?: { id?: unknown } }
+      | null
+    const lastTurnId = raw?.turn?.id
+    if (typeof lastTurnId !== 'string') {
+      throw new ForkError(
+        'The journal does not record the native id of the last kept turn: this conversation predates the fork cut by turn id.',
+      )
+    }
+    return { lastTurnId }
   }
 
   async fork(target: ForkTarget, cut: unknown): Promise<string> {
-    const { turnsToDrop } = cut as CodexForkCut
+    const { lastTurnId } = cut as CodexForkCut
     const client = new CodexAppServerClient({
       binary: await this.cli.executable(),
       cwd: target.cwd,
@@ -79,22 +101,14 @@ export class CodexAdapter implements AgentAdapter {
 
       const forked = await client.call<ThreadForkResponse, 'thread/fork'>('thread/fork', {
         threadId: target.agentSessionId,
+        // Le fork s'arrête au tour désigné, inclus (sondé sur codex-cli 0.162.1). Il ne
+        // revient pas sur les fichiers déjà écrits sur le disque, seulement sur la
+        // conversation, et cette limite est dite à l'utilisateur plutôt que devinée.
+        ...(lastTurnId === null ? {} : { lastTurnId }),
         // Seul l'identifiant sert : l'historique complet peut peser des dizaines de Mo.
         excludeTurns: true,
       })
-      const branchId = forked.thread.id
-
-      // Le fork copie tout le fil : c'est le rollback qui le ramène au point de coupe.
-      // Il ne revient pas sur les fichiers déjà écrits sur le disque, seulement sur la
-      // conversation, et cette limite est dite à l'utilisateur plutôt que devinée.
-      if (turnsToDrop > 0) {
-        await client.call('thread/rollback', {
-          threadId: branchId,
-          numTurns: turnsToDrop,
-        })
-      }
-
-      return branchId
+      return forked.thread.id
     } catch (err) {
       throw new ForkError(
         `Codex could not fork the thread: ${err instanceof Error ? err.message : String(err)}`,
