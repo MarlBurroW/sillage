@@ -76,7 +76,7 @@ export async function runnerFixture(t: TestContext, overrides: Partial<RunnerCon
   }
 }
 
-// Événements natifs, dans la forme sondée sur opencode 1.18.25.
+// Événements natifs, dans la forme sondée sur opencode 1.19.0.
 
 export const busy = (sessionID = ROOT) => ({ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } })
 export const idle = (sessionID = ROOT) => ({ type: 'session.idle', properties: { sessionID } })

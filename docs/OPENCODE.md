@@ -2,7 +2,7 @@
 
 Sillage lance un `opencode serve` par conversation et lui parle en HTTP, avec un flux
 SSE (`GET /event`). Les bindings sont générés depuis l'OpenAPI que le binaire publie sur
-`GET /doc`, avec **opencode 1.18.25**. Tout ce qui suit a été sondé sur cette version.
+`GET /doc`, avec **opencode 1.19.0**. Tout ce qui suit a été sondé sur cette version (1.18.25 à l'origine, revérifié sur 1.19.0 : l'API v1 n'a pas bougé).
 
 ## Génération d'API
 
