@@ -1,4 +1,13 @@
-import type { AgentKind, CardColumn, InstructionsMode } from '@sillage/protocol'
+import type {
+  AgentKind,
+  BoardCommentDelivery,
+  BoardIdentity,
+  BoardNewCards,
+  BoardWorkspace,
+  CardColumn,
+  CardNotePublication,
+  InstructionsMode,
+} from '@sillage/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -239,8 +248,120 @@ export const cardNotes = sqliteTable(
     userId: text('user_id').references(() => users.id),
     body: text('body').notNull(),
     createdAt: timestamp('created_at').notNull(),
+    /**
+     * Le commentaire GitHub dont la note est la copie, ou qu'elle est devenue une fois
+     * publiée. Avec `externalAuthor`, c'est un commentaire écrit sur GitHub ; sans, une
+     * note de Sillage publiée là-bas.
+     */
+    externalId: text('external_id'),
+    externalAuthor: text('external_author'),
+    externalUrl: text('external_url'),
+    /** Publication en commentaire sur l'issue de la carte ; null pour une note locale. */
+    publication: text('publication').$type<CardNotePublication>(),
+    publicationError: text('publication_error'),
   },
-  (t) => [index('idx_card_notes_card').on(t.cardId, t.createdAt)],
+  (t) => [
+    index('idx_card_notes_card').on(t.cardId, t.createdAt),
+    uniqueIndex('idx_card_notes_external').on(t.cardId, t.externalId),
+    index('idx_card_notes_publication').on(t.publication),
+  ],
+)
+
+/**
+ * Le board d'un projet relié aux issues d'un dépôt GitHub.
+ *
+ * Une ligne par projet : un board suit une seule source, sans quoi deux `#12` venus de
+ * deux dépôts se disputeraient la même carte. Les cartes locales ne sont pas concernées,
+ * elles vivent à côté et ne partent jamais d'elles-mêmes.
+ */
+export const boardLinks = sqliteTable('board_links', {
+  projectId: text('project_id')
+    .primaryKey()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  provider: text('provider').$type<'github'>().notNull().default('github'),
+  /** `owner/nom`. Ne change pas : relier un autre dépôt passe par délier celui-ci. */
+  repo: text('repo').notNull(),
+  /**
+   * Le compte dont l'identifiant github.com lit et écrit. Les issues créées depuis
+   * Sillage le sont à son nom, comme ce que ses agents poussent déjà.
+   */
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  labelFilter: text('label_filter').notNull().default(''),
+  closedDays: integer('closed_days').notNull().default(14),
+  newCards: text('new_cards').$type<BoardNewCards>().notNull().default('local'),
+  progressLabel: text('progress_label').notNull().default('in progress'),
+  reviewLabel: text('review_label').notNull().default('review'),
+  /** Une issue ouverte sur GitHub, sans marque de session, ouvre une session sur sa carte. */
+  onIssue: integer('on_issue', { mode: 'boolean' }).notNull().default(false),
+  issueInstructions: text('issue_instructions').notNull().default(''),
+  /** Un commentaire sans marque de session arrive dans la session de son issue. */
+  onComment: integer('on_comment', { mode: 'boolean' }).notNull().default(false),
+  commentInstructions: text('comment_instructions').notNull().default(''),
+  commentDelivery: text('comment_delivery').$type<BoardCommentDelivery>().notNull().default('queue'),
+  replyStyle: text('reply_style').notNull().default(''),
+  identity: text('identity').$type<BoardIdentity>().notNull().default('ai'),
+  signature: text('signature').notNull().default(''),
+  sessionAgent: text('session_agent').$type<AgentKind>().notNull().default('claude'),
+  /** JSON `AgentConfig` ; NULL : les réglages du projet pour ce CLI, lus au lancement. */
+  sessionConfig: text('session_config'),
+  workspace: text('workspace').$type<BoardWorkspace>().notNull().default('worktree'),
+  maxSessionsPerHour: integer('max_sessions_per_hour').notNull().default(10),
+  /**
+   * Issues retirées du board à la main, en JSON. Supprimer leur carte ne suffirait pas :
+   * la synchronisation suivante la recréerait.
+   */
+  hiddenIssues: text('hidden_issues').notNull().default('[]'),
+  /** `updated_at` GitHub le plus récent déjà lu, point de départ de la lecture suivante. */
+  cursor: text('cursor'),
+  lastSyncedAt: timestamp('last_synced_at'),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+})
+
+/**
+ * L'issue dont une carte est le reflet.
+ *
+ * Table à part plutôt que colonnes de `cards` : la plupart des cartes sont locales et
+ * n'ont rien de tout ceci. Les champs `title`, `body`, `state` et `labels` gardent ce
+ * que GitHub disait à la dernière lecture : c'est en les comparant à la carte qu'on sait
+ * qui a changé quoi, sans drapeau à tenir à jour dans chaque route qui touche une carte.
+ */
+export const cardIssues = sqliteTable(
+  'card_issues',
+  {
+    cardId: text('card_id')
+      .primaryKey()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    provider: text('provider').$type<'github'>().notNull().default('github'),
+    repo: text('repo').notNull(),
+    number: integer('number').notNull(),
+    url: text('url').notNull(),
+    author: text('author'),
+    title: text('title').notNull(),
+    body: text('body').notNull().default(''),
+    /** La marque de session retirée du corps à la lecture, remise à l'écriture. */
+    marker: text('marker'),
+    state: text('state').$type<'open' | 'closed'>().notNull(),
+    stateReason: text('state_reason'),
+    /** JSON, noms des labels. */
+    labels: text('labels').notNull().default('[]'),
+    remoteUpdatedAt: text('remote_updated_at').notNull(),
+    closedAt: timestamp('closed_at'),
+    /** Redevenue locale : la synchronisation ne la touche plus, l'issue vit sans elle. */
+    detached: integer('detached', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * La conversation qui répond aux commentaires de cette issue : les suivants lui
+     * arrivent en message plutôt que d'ouvrir chaque fois une session sans mémoire.
+     */
+    responderId: text('responder_id'),
+  },
+  (t) => [uniqueIndex('idx_card_issues_number').on(t.projectId, t.provider, t.repo, t.number)],
 )
 
 /**
@@ -1216,6 +1337,8 @@ export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect
 export type CardNoteRow = typeof cardNotes.$inferSelect
+export type BoardLinkRow = typeof boardLinks.$inferSelect
+export type CardIssueRow = typeof cardIssues.$inferSelect
 export type SessionMessageRow = typeof sessionMessages.$inferSelect
 export type AgentRequestRow = typeof agentRequests.$inferSelect
 export type SessionWatchRow = typeof sessionWatches.$inferSelect

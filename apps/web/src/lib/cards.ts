@@ -14,19 +14,24 @@ function invalidateCardCounts(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['projects'] })
 }
 
-export function useCards(projectId: string | undefined) {
+/**
+ * `live` : le board est relié à GitHub, des cartes arrivent sans geste de personne ici.
+ * Relire toutes les trente secondes suit le rythme des synchronisations.
+ */
+export function useCards(projectId: string | undefined, live = false) {
   return useQuery({
     queryKey: cardsKey(projectId ?? ''),
     queryFn: () => api.get<CardDto[]>(`/api/projects/${projectId}/cards`),
     enabled: Boolean(projectId),
     staleTime: 15_000,
+    refetchInterval: live ? 30_000 : false,
   })
 }
 
 export function useCreateCard(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { title: string; description?: string; column?: CardColumn }) =>
+    mutationFn: (input: { title: string; description?: string; column?: CardColumn; github?: boolean }) =>
       api.post<CardDto>(`/api/projects/${projectId}/cards`, input),
     onSuccess: () => {
       invalidateCardCounts(queryClient)
@@ -151,12 +156,16 @@ const notesKey = (cardId: string) => ['card-notes', cardId]
  * embarquer dans la liste ferait payer à chaque affichage du board des textes que
  * personne ne regarde.
  */
-export function useCardNotes(cardId: string | undefined) {
+export function useCardNotes(cardId: string | undefined, live = false) {
   return useQuery({
     queryKey: notesKey(cardId ?? ''),
     queryFn: () => api.get<CardNoteDto[]>(`/api/cards/${cardId}/notes`),
     enabled: Boolean(cardId),
     staleTime: 15_000,
+    // Une note en route vers GitHub part dans les secondes qui suivent : on la suit de
+    // près. Une carte suivie reçoit aussi les commentaires écrits là-bas.
+    refetchInterval: (query) =>
+      query.state.data?.some((note) => note.publication === 'pending') ? 3_000 : live ? 30_000 : false,
   })
 }
 
@@ -164,7 +173,8 @@ export function useAddCardNote(projectId: string, cardId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationKey: ['add-card-note', cardId],
-    mutationFn: (body: string) => api.post<CardNoteDto[]>(`/api/cards/${cardId}/notes`, { body }),
+    mutationFn: ({ body, publish = false }: { body: string; publish?: boolean }) =>
+      api.post<CardNoteDto[]>(`/api/cards/${cardId}/notes`, { body, publish }),
     onSuccess: (notes) => {
       queryClient.setQueryData(notesKey(cardId), notes)
       // Le compte affiché sur la tuile vient du board, qui ne sait rien de cet ajout.

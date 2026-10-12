@@ -3,8 +3,10 @@ import { toAttachmentDto, type AttachmentStore } from '../../attachments/store.j
 import { randomUUID } from 'node:crypto'
 import { and, asc, count, eq, inArray, max, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import type { BoardSync } from '../../board/board-sync.js'
 import {
   attachments,
+  cardIssues,
   cardNotes,
   cardRefs,
   cards,
@@ -27,11 +29,12 @@ import {
   type CardColumn,
   type CardConversationDto,
   type CardDto,
+  type CardExternalDto,
   type CardLinkDto,
   type CardNoteDto,
 } from '@sillage/protocol'
 import type { AppContext } from '../context.js'
-import { badRequest, forbidden, notFound } from '../errors.js'
+import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 const MENTION_LIMIT = 20
@@ -47,7 +50,13 @@ const MENTION_LIMIT = 20
  * d'une session, et elle vit dans la route de création de conversation parce que c'est
  * l'envoi du message qui la déclenche, pas l'observation d'une session active.
  */
-export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store: AttachmentStore): void {
+export function registerCardRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  store: AttachmentStore,
+  /** Absent des tests qui n'en ont pas l'usage : le board ne se relie alors à rien. */
+  board?: BoardSync,
+): void {
   const loadProject = (projectId: string, userId: string): ProjectRow => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
     if (!project) throw notFound('project_not_found', 'Project not found.')
@@ -170,6 +179,26 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       .from(attachments).where(inArray(attachments.cardId, ids)).groupBy(attachments.cardId)
       .all().map((row) => [row.cardId, row.total]))
 
+    const issues = new Map(
+      ctx.db
+        .select()
+        .from(cardIssues)
+        .where(inArray(cardIssues.cardId, ids))
+        .all()
+        .map((row): [string, CardExternalDto] => [
+          row.cardId,
+          {
+            provider: row.provider,
+            number: row.number,
+            url: row.url,
+            author: row.author,
+            labels: parseJsonList(row.labels),
+            state: row.state,
+            detached: row.detached,
+          },
+        ]),
+    )
+
     const authors = new Map(
       ctx.db
         .select({ id: users.id, displayName: users.displayName })
@@ -201,6 +230,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       attachmentCount: files.get(row.id) ?? 0,
       references: outgoing.get(row.id) ?? [],
       referencedBy: incoming.get(row.id) ?? [],
+      external: issues.get(row.id) ?? null,
     }))
   }
 
@@ -265,10 +295,15 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
   app.post('/api/projects/:id/cards', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const body = createCardBodySchema.parse(request.body)
+    const { github, ...body } = createCardBodySchema.parse(request.body)
     loadProject(id, user.id)
 
-    const row = createCard(ctx.db, id, user.id, body)
+    // Le réglage du board décide, sauf choix explicite ; sans board relié, tout est local.
+    const link = board?.link(id)
+    const row =
+      board && link && (github ?? link.newCards === 'github')
+        ? await board.createIssueCard(id, user.id, body)
+        : createCard(ctx.db, id, user.id, body)
     return reply.status(201).send(readCard(row.id, id))
   })
 
@@ -298,6 +333,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       ctx.db.update(cards).set(patch).where(eq(cards.id, id)).run()
     }
     if (body.description !== undefined) syncCardReferences(ctx.db, card, body.description)
+    // Une carte suivie a changé : la synchronisation compare et envoie à GitHub.
+    board?.kick(card.projectId)
 
     return readCard(id, card.projectId)
   })
@@ -317,6 +354,11 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       )
     }
 
+    // L'issue reste sur GitHub ; elle quitte seulement ce board, et n'y revient pas à
+    // la synchronisation suivante.
+    const issue = board?.issueOf(id)
+    if (board && issue && !issue.detached) board.hideIssue(card.projectId, issue.number)
+
     await store.removeForCards([id])
     writeTransaction(ctx.db, (tx) => {
       // Les conversations survivent à leur carte et redeviennent ordinaires : elles
@@ -326,6 +368,26 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     })
 
     return reply.status(204).send()
+  })
+
+  /** Publier une carte locale comme issue, ou rattacher une carte détachée à la sienne. */
+  app.post('/api/cards/:id/publish', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { card } = loadCard(id, user.id)
+    if (!board) throw conflict('board_not_linked', 'This board is not linked to GitHub.')
+    await board.publishCard(id)
+    return readCard(id, card.projectId)
+  })
+
+  /** La carte redevient locale ; l'issue reste sur GitHub et n'est plus suivie. */
+  app.post('/api/cards/:id/unlink', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { card } = loadCard(id, user.id)
+    if (!board) throw conflict('card_not_published', 'This card is not linked to an issue.')
+    board.detachCard(id)
+    return readCard(id, card.projectId)
   })
 
   app.get('/api/cards/:id/attachments', async (request) => {
@@ -373,7 +435,12 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = createCardNoteBodySchema.parse(request.body)
-    loadCard(id, user.id)
+    const { card } = loadCard(id, user.id)
+
+    const issue = body.publish ? board?.issueOf(id) : undefined
+    if (body.publish && (!issue || issue.detached)) {
+      throw conflict('card_not_published', 'This card is not linked to an issue.')
+    }
 
     ctx.db
       .insert(cardNotes)
@@ -384,8 +451,10 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
         userId: user.id,
         body: body.body,
         createdAt: Date.now(),
+        publication: issue ? 'pending' : null,
       })
       .run()
+    if (issue) board?.kick(card.projectId)
 
     return reply.status(201).send(readNotes(ctx, id))
   })
@@ -400,6 +469,11 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     // humain à protéger, et une note fausse doit pouvoir partir sans passer par son
     // propriétaire, qui est parfois un process mort depuis des jours.
     loadCard(note.cardId, user.id)
+    // Un commentaire qui vit sur GitHub s'y supprime : effacé ici seulement, il
+    // reviendrait à sa prochaine modification, et le fil mentirait entre-temps.
+    if (note.externalId !== null) {
+      throw conflict('card_note_on_github', 'This note lives on GitHub; delete it there.')
+    }
 
     ctx.db.delete(cardNotes).where(eq(cardNotes.id, id)).run()
     return reply.status(204).send()
@@ -465,6 +539,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
         })
       }
     })
+    board?.kick(id)
 
     return { ok: true }
   })
@@ -487,6 +562,10 @@ export function readNotes(ctx: AppContext, cardId: string): CardNoteDto[] {
       conversationTitle: conversations.title,
       agent: conversations.agent,
       userName: users.displayName,
+      externalAuthor: cardNotes.externalAuthor,
+      externalUrl: cardNotes.externalUrl,
+      publication: cardNotes.publication,
+      publicationError: cardNotes.publicationError,
     })
     .from(cardNotes)
     .leftJoin(conversations, eq(conversations.id, cardNotes.conversationId))
@@ -499,8 +578,13 @@ export function readNotes(ctx: AppContext, cardId: string): CardNoteDto[] {
     id: row.id,
     body: row.body,
     createdAt: row.createdAt,
+    externalUrl: row.externalUrl,
+    publication: row.publication,
+    publicationError: row.publicationError,
     author:
-      row.userName !== null
+      row.externalAuthor !== null
+        ? { kind: 'github' as const, login: row.externalAuthor }
+        : row.userName !== null
         ? { kind: 'user' as const, name: row.userName }
         : {
             kind: 'agent' as const,
@@ -593,16 +677,37 @@ function insertCard(
  * référence morte ferait d'une faute de frappe un blocage, alors que la description
  * est de la prose avant d'être une structure.
  */
-function syncCardReferences(db: Db, card: CardRow, description: string): void {
+export function syncCardReferences(db: Db, card: CardRow, description: string): void {
   const numbers = parseCardReferences(description)
+  // Dans le texte d'une issue, `#15` est l'issue 15 du dépôt, pas la carte 15 : la
+  // description part sur GitHub et c'est là qu'elle se lit. La référence vise donc la
+  // carte qui suit cette issue, s'il y en a une.
+  const issue = db
+    .select({ repo: cardIssues.repo })
+    .from(cardIssues)
+    .where(and(eq(cardIssues.cardId, card.id), eq(cardIssues.detached, false)))
+    .get()
   const targets =
     numbers.length === 0
       ? []
-      : db
-          .select({ id: cards.id })
-          .from(cards)
-          .where(and(eq(cards.projectId, card.projectId), inArray(cards.number, numbers)))
-          .all()
+      : (issue
+          ? db
+              .select({ id: cardIssues.cardId })
+              .from(cardIssues)
+              .where(
+                and(
+                  eq(cardIssues.projectId, card.projectId),
+                  eq(cardIssues.repo, issue.repo),
+                  inArray(cardIssues.number, numbers),
+                ),
+              )
+              .all()
+          : db
+              .select({ id: cards.id })
+              .from(cards)
+              .where(and(eq(cards.projectId, card.projectId), inArray(cards.number, numbers)))
+              .all()
+        )
           .map((row) => row.id)
           // Une carte qui se cite elle-même n'apprend rien à personne.
           .filter((id) => id !== card.id)
@@ -638,3 +743,12 @@ export function readCardLink(ctx: AppContext, cardId: string | null): CardLinkDt
   return row ?? null
 }
 
+
+function parseJsonList(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : []
+  } catch {
+    return []
+  }
+}

@@ -354,6 +354,11 @@ const TOOLS = [
           description:
             "Texte de la note, en markdown. Quelques phrases ou une courte liste, pas un rapport : elle sera relue en entier au début de chaque session suivante.",
         },
+        github: {
+          type: 'boolean',
+          description:
+            "Sur une carte qui suit une issue GitHub (read_card le dit) : publier aussi la note en commentaire sur l'issue, visible de tous si le dépôt est public. Sillage y ajoute ta marque de session, invisible, et la signature du board s'il en a une. Par défaut, la note reste locale.",
+        },
       },
       required: ['body'],
     },
@@ -374,8 +379,30 @@ const TOOLS = [
           description:
             "Description en markdown, compréhensible sans ce fil : symptôme, fichiers et lignes en cause, comment reproduire, piste de correction si tu en as une. `#12` cite une autre carte.",
         },
+        github: {
+          type: 'boolean',
+          description:
+            "Seulement si le board est relié à GitHub (list_cards le dit en tête) : true publie la carte comme issue sur le dépôt, visible de tous s'il est public ; false la garde locale. Omis, le réglage du board décide, et list_cards dit lequel. Ne force true que si l'utilisateur te l'a demandé ; une issue publique se rédige pour des inconnus, sans détail interne.",
+        },
       },
       required: ['title'],
+    },
+  },
+  {
+    name: 'update_issue',
+    description:
+      "Ferme ou rouvre l'issue GitHub que suit la carte de cette conversation. Fermée comme terminée, la carte passe en « Terminé » ; comme non prévue, en « Abandonné » ; rouverte, en « À faire ». Sillage l'applique sur GitHub dans les secondes qui suivent. Refusé sur une carte locale.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        state: { type: 'string', enum: ['closed', 'open'], description: 'closed pour fermer, open pour rouvrir.' },
+        reason: {
+          type: 'string',
+          enum: ['completed', 'not_planned'],
+          description: 'Pour une fermeture : completed (traitée, par défaut) ou not_planned (ne sera pas faite).',
+        },
+      },
+      required: ['state'],
     },
   },
   {
@@ -1302,8 +1329,10 @@ function listCards(column) {
               c.column   AS column,
               c.description AS description,
               c.updated_at  AS updatedAt,
-              (SELECT COUNT(*) FROM conversations AS v WHERE v.card_id = c.id) AS sessions
+              (SELECT COUNT(*) FROM conversations AS v WHERE v.card_id = c.id) AS sessions,
+              i.number AS issue, i.author AS issueAuthor, i.detached AS detached
        FROM cards AS c
+       LEFT JOIN card_issues AS i ON i.card_id = c.id
        WHERE c.project_id = ?
          AND (? IS NULL OR c.column = ?)
        ORDER BY CASE c.column
@@ -1386,7 +1415,44 @@ function readCard(number) {
   card.attachments = db.prepare(
     'SELECT filename, mime_type AS mimeType, size_bytes AS sizeBytes, storage_path AS path FROM attachments WHERE card_id = ? ORDER BY created_at'
   ).all(card.id)
+  card.issue = cardIssue(card.id)
   return card
+}
+
+/**
+ * Le board relié à GitHub, s'il l'est. Les noms de colonnes et leur sens doivent rester
+ * d'accord avec `board_links` dans `packages/db/src/schema.ts`.
+ */
+function boardLink() {
+  return (
+    db
+      .prepare(
+        `SELECT repo, new_cards AS newCards, identity, signature
+         FROM board_links WHERE project_id = ?`,
+      )
+      .get(PROJECT_ID) ?? null
+  )
+}
+
+/** L'issue que suit une carte, détachée ou non. */
+function cardIssue(cardId) {
+  return (
+    db
+      .prepare(
+        `SELECT number, url, author, state, labels, detached
+         FROM card_issues WHERE card_id = ?`,
+      )
+      .get(cardId) ?? null
+  )
+}
+
+/** La ligne d'en-tête du board relié, qui dit où vont les cartes neuves. */
+function describeBoardLink(link) {
+  const where =
+    link.newCards === 'github'
+      ? 'les cartes neuves deviennent des issues GitHub, create_card compris sauf `github: false`'
+      : 'les cartes neuves restent locales, sauf `github: true` sur create_card'
+  return `Board relié aux issues de github.com/${link.repo} : une carte marquée « GitHub #n » est une issue, publique si le dépôt l'est ; les autres sont locales. Ici, ${where}.`
 }
 
 /** La carte que traite la conversation courante, s'il y en a une. */
@@ -1409,7 +1475,8 @@ function cardNotes(cardId) {
       `SELECT n.body AS body, n.created_at AS createdAt,
               n.conversation_id AS conversationId,
               v.title AS conversationTitle, v.agent AS agent,
-              u.display_name AS userName
+              u.display_name AS userName,
+              n.external_author AS githubAuthor, n.publication AS publication
        FROM card_notes AS n
        LEFT JOIN conversations AS v ON v.id = n.conversation_id
        LEFT JOIN users AS u ON u.id = n.user_id
@@ -1419,13 +1486,34 @@ function cardNotes(cardId) {
     .all(cardId)
 }
 
-function addCardNote(cardId, body) {
+/**
+ * `publish` met la note en file : le daemon, qui seul déchiffre l'identifiant GitHub,
+ * la poste en commentaire au passage suivant.
+ */
+function addCardNote(cardId, body, publish) {
   writeDb()
     .prepare(
-      `INSERT INTO card_notes (id, card_id, conversation_id, user_id, body, created_at)
-       VALUES (?, ?, ?, NULL, ?, ?)`,
+      `INSERT INTO card_notes (id, card_id, conversation_id, user_id, body, created_at, publication)
+       VALUES (?, ?, ?, NULL, ?, ?, ?)`,
     )
-    .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, body, Date.now())
+    .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, body, Date.now(), publish ? 'pending' : null)
+}
+
+/**
+ * Change la colonne d'une carte, en fin de colonne, comme le fait le détail de la carte.
+ * Pour une carte suivie, le daemon voit l'écart avec l'issue et l'applique sur GitHub.
+ */
+function moveCard(cardId, column) {
+  const db = writeDb()
+  const { last } = db
+    .prepare('SELECT MAX(position) AS last FROM cards WHERE project_id = ? AND "column" = ?')
+    .get(PROJECT_ID, column)
+  db.prepare('UPDATE cards SET "column" = ?, position = ?, updated_at = ? WHERE id = ?').run(
+    column,
+    (last ?? 0) + 1,
+    Date.now(),
+    cardId,
+  )
 }
 
 function setProjectImage(mimeType, data, provisional) {
@@ -1674,10 +1762,17 @@ function renderCards(rows, column) {
       : ''
     const sessions = row.sessions > 0 ? `, ${row.sessions} session(s)` : ''
     const self = row.number === mine ? ' <- celle de cette conversation' : ''
-    return `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}${sessions}${self}${summary}`
+    const issue =
+      row.issue === null || row.issue === undefined
+        ? ''
+        : row.detached
+          ? ` (venue de l'issue GitHub #${row.issue}, détachée)`
+          : ` (GitHub #${row.issue}${row.issueAuthor ? ` de @${row.issueAuthor}` : ''})`
+    return `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}${issue}${sessions}${self}${summary}`
   })
 
-  const head = `${shown.length} carte(s)${column ? ` en « ${COLUMN_LABELS[column]} »` : ''} :`
+  const link = boardLink()
+  const head = `${link ? `${describeBoardLink(link)}\n\n` : ''}${shown.length} carte(s)${column ? ` en « ${COLUMN_LABELS[column]} »` : ''} :`
   const tail = truncated
     ? `\n\n${rows.length - CARD_LIMIT} carte(s) de plus ne sont pas rendues. Filtrer par colonne pour voir le reste.`
     : ''
@@ -1688,6 +1783,16 @@ function renderCard(card) {
   const parts = [
     `#${card.number} [${COLUMN_LABELS[card.column] ?? card.column}] ${card.title}`,
   ]
+
+  if (card.issue && !card.issue.detached) {
+    const labels = JSON.parse(card.issue.labels || '[]')
+    parts.push(
+      `Issue GitHub #${card.issue.number} (${card.issue.state === 'open' ? 'ouverte' : 'fermée'}${card.issue.author ? `, par @${card.issue.author}` : ''}${labels.length ? `, labels : ${labels.join(', ')}` : ''}) : ${card.issue.url}\n` +
+        "Le titre, la description et les commentaires viennent de GitHub ; les notes « @login » sont des commentaires écrits là-bas. Tes notes restent locales, sauf `github: true` sur add_card_note ; update_issue ferme ou rouvre l'issue.",
+    )
+  } else if (card.issue) {
+    parts.push(`Venue de l'issue GitHub #${card.issue.number} (${card.issue.url}), détachée : la carte est locale, l'issue n'est plus suivie.`)
+  }
 
   parts.push(card.description.trim() || '(aucune description)')
   if (card.attachments.length) {
@@ -1709,12 +1814,23 @@ function renderCard(card) {
   const notes = cardNotes(card.id)
   if (notes.length > 0) {
     const lines = notes.map((note) => {
-      const who = note.userName
-        ? note.userName
+      const published =
+        note.publication === 'published'
+          ? ', publiée sur GitHub'
+          : note.publication === 'pending'
+            ? ', en cours de publication sur GitHub'
+            : note.publication === 'failed'
+              ? ', publication sur GitHub refusée'
+              : ''
+      const who = note.githubAuthor
+        ? `@${note.githubAuthor} sur GitHub`
+        : note.userName
+        ? `${note.userName}${published}`
         : note.conversationId === CURRENT_CONVERSATION
           ? 'cette conversation'
           : `session ${note.agent ?? '?'}${note.conversationTitle ? ` « ${note.conversationTitle} »` : ''}`
-      return `[${who}, ${ago(note.createdAt)}]\n${note.body}`
+      const tail = note.githubAuthor || note.userName ? '' : published
+      return `[${who}${tail}, ${ago(note.createdAt)}]\n${note.body}`
     })
     parts.push(`${notes.length} note(s) laissée(s) sur cette carte :\n\n${lines.join('\n\n')}`)
   }
@@ -1981,8 +2097,41 @@ async function callTool(name, args) {
       }
     }
 
-    addCardNote(card.id, body)
+    if (args?.github === true) {
+      const link = boardLink()
+      const issue = cardIssue(card.id)
+      if (!link || !issue || issue.detached) {
+        return {
+          ...text(`La carte #${card.number} ne suit aucune issue GitHub : la note ne peut être que locale. Recommence sans \`github\`.`),
+          isError: true,
+        }
+      }
+      addCardNote(card.id, body, true)
+      const signed = link.identity === 'ai' && (link.signature ?? '').trim()
+      return text(
+        `Note ajoutée à la carte #${card.number} et mise en file pour l'issue GitHub #${issue.number} (${issue.url}) : Sillage la publie dans quelques secondes, avec ta marque de session${signed ? ` et la signature ${JSON.stringify(link.signature.trim())}` : ', sans signature visible'}.`,
+      )
+    }
+
+    addCardNote(card.id, body, false)
     return text(`Note ajoutée à la carte #${card.number} « ${card.title} ».`)
+  }
+
+  if (name === 'update_issue') {
+    const state = args?.state === 'open' ? 'open' : args?.state === 'closed' ? 'closed' : null
+    if (!state) return { ...text('Le paramètre `state` vaut closed ou open.'), isError: true }
+    const card = currentCard()
+    const issue = card ? cardIssue(card.id) : null
+    if (!card || !issue || issue.detached || !boardLink()) {
+      return {
+        ...text("Cette conversation n'est rattachée à aucune carte qui suit une issue GitHub : il n'y a rien à fermer ni rouvrir."),
+        isError: true,
+      }
+    }
+    const column = state === 'open' ? 'todo' : args?.reason === 'not_planned' ? 'abandoned' : 'done'
+    moveCard(card.id, column)
+    const verb = state === 'open' ? 'rouverte' : column === 'abandoned' ? 'fermée comme non prévue' : 'fermée comme terminée'
+    return text(`Carte #${card.number} passée en « ${COLUMN_LABELS[column]} » : l'issue #${issue.number} sera ${verb} sur GitHub dans quelques secondes.`)
   }
 
   if (name === 'set_project_image') {

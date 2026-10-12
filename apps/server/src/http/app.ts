@@ -48,6 +48,8 @@ import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerCardRoutes } from './routes/cards.js'
+import { registerBoardLinkRoutes } from './routes/board-link.js'
+import type { BoardSync } from '../board/board-sync.js'
 import { registerConversationRoutes } from './routes/conversations.js'
 import { registerSessionMessageRoutes } from './routes/session-messages.js'
 import { registerFileRoutes } from './routes/files.js'
@@ -98,6 +100,7 @@ export async function buildApp(
   tasks: TaskScheduler,
   actions: ActionRunner,
   automations: AutomationReceiver,
+  board: BoardSync,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -202,7 +205,8 @@ export async function buildApp(
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
   registerWorktreeRoutes(app, ctx, terminals)
-  registerCardRoutes(app, ctx, attachments)
+  registerCardRoutes(app, ctx, attachments, board)
+  registerBoardLinkRoutes(app, ctx, board)
   registerUserRoutes(app, ctx)
   registerApiTokenRoutes(app, ctx, registry)
   registerV1Routes(app, ctx, log, sessions, registry, webhooks)

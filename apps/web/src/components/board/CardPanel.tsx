@@ -1,7 +1,8 @@
-import { ChevronDown, GitBranch, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
+import { ChevronDown, ExternalLink, GitBranch, Link2, MoreHorizontal, Pencil, Play, Plus, Trash2, Unlink, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
+import { CARD_COLUMNS, type BoardLinkDto, type CardColumn, type CardDto } from '@sillage/protocol'
+import { useDetachCard, usePublishCard } from '../../lib/board-link'
 import { restoreCardPanelWidth, setCardPanelWidth } from '../../lib/board-panel'
 import { useCardSaving, useDeleteCard, useUpdateCard } from '../../lib/cards'
 import { useCardDraft } from '../../lib/card-drafts'
@@ -12,15 +13,18 @@ import { useMediaQuery } from '../../lib/viewport'
 import { PanelFocus } from '../PanelFocus'
 import { Markdown } from '../chat/Markdown'
 import { AgentIcon } from '../AgentIcon'
-import { Badge, Button, IconButton, Menu, MenuItem, cx } from '../ui'
+import { Badge, Banner, Button, ConfirmDialog, IconButton, Menu, MenuItem, cx } from '../ui'
 import { CardAttachments } from './CardAttachments'
 import { CardEditor } from './CardEditor'
 import { CardNotes } from './CardNotes'
 import { COLUMN_TONES, columnLabel } from './columns'
+import { GitHubMark } from './GitHubMark'
 
 interface CardPanelProps {
   card: CardDto
   projectId: string
+  /** Le board relié à GitHub, null sinon : il décide des gestes de publication offerts. */
+  link: BoardLinkDto | null
   /** État visé, distinct de la présence : le panneau reste monté le temps de sortir. */
   open: boolean
   onClose: () => void
@@ -34,7 +38,7 @@ interface CardPanelProps {
  * droit comme le panneau d'outils d'une conversation : c'est le même geste sur le même
  * bord, et deux animations différentes pour deux tiroirs voisins se remarquent.
  */
-export function CardPanel({ card, projectId, open, onClose, onSelectCard }: CardPanelProps) {
+export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }: CardPanelProps) {
   const t = useTranslate()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -62,7 +66,13 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
   const navigate = useNavigate()
   const updateCard = useUpdateCard(projectId)
   const deleteCard = useDeleteCard(projectId)
+  const publish = usePublishCard(projectId)
+  const detach = useDetachCard(projectId)
+  const [publishing, setPublishing] = useState(false)
   const saving = useCardSaving(card.id)
+  /** L'issue suivie ; une carte détachée en garde la trace mais redevient locale. */
+  const issue = card.external && !card.external.detached ? card.external : null
+  const detached = card.external?.detached ? card.external : null
   const latestSession = card.conversations.filter((session) => !session.archivedAt)
     .sort((a, b) => b.createdAt - a.createdAt)[0]
 
@@ -137,7 +147,37 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
             </MenuItem>
           ))}
         </Menu>
+        {issue ? (
+          <a href={issue.url} target="_blank" rel="noreferrer" title={t('board.github.openIssue', { number: issue.number })}
+            className="inline-flex min-h-9 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-ink-faint hover:bg-surface-high hover:text-ink pointer-coarse:min-h-11">
+            <GitHubMark size={13} />
+            {issue.number}
+            <ExternalLink size={11} />
+          </a>
+        ) : null}
         <div className="flex-1" />
+        {link || card.external ? (
+          <Menu align="end" trigger={<IconButton label={t('board.github.menu')} size="sm"><MoreHorizontal size={15} /></IconButton>}>
+            {issue ? (
+              <MenuItem icon={<Unlink size={14} />} disabled={detach.isPending} onSelect={() => detach.mutate(card.id)}>
+                {t('board.github.detach')}
+              </MenuItem>
+            ) : null}
+            {link && !card.external ? (
+              <MenuItem icon={<GitHubMark size={14} />} onSelect={() => setPublishing(true)}>{t('board.github.publish')}</MenuItem>
+            ) : null}
+            {link && detached ? (
+              <MenuItem icon={<Link2 size={14} />} disabled={publish.isPending} onSelect={() => publish.mutate(card.id)}>
+                {t('board.github.reattach', { number: detached.number })}
+              </MenuItem>
+            ) : null}
+            {card.external ? (
+              <MenuItem icon={<ExternalLink size={14} />} onSelect={() => window.open(card.external!.url, '_blank', 'noreferrer')}>
+                {t('board.github.openIssue', { number: card.external.number })}
+              </MenuItem>
+            ) : null}
+          </Menu>
+        ) : null}
         <IconButton data-panel-initial-focus label={t('board.panel.close')} size="sm" onClick={onClose}>
           <X size={15} />
         </IconButton>
@@ -160,6 +200,21 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
       </nav>
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5 sm:p-6">
         {tab === 'details' ? <>
+        {publish.isError || detach.isError ? <Banner>{(publish.error ?? detach.error)?.message}</Banner> : null}
+        {issue ? (
+          <div className="flex flex-col gap-2 rounded-xl border border-line bg-sunken/50 px-4 py-3 text-xs text-ink-faint">
+            <p className="flex flex-wrap items-center gap-1.5">
+              <GitHubMark size={13} className="text-ink-soft" />
+              <span>{t(issue.state === 'open' ? 'board.github.issueOpen' : 'board.github.issueClosed', { number: issue.number, author: issue.author ?? '?' })}</span>
+            </p>
+            {issue.labels.length > 0 ? (
+              <div className="flex flex-wrap gap-1">{issue.labels.map((label) => <Badge key={label}>{label}</Badge>)}</div>
+            ) : null}
+            <p className="leading-relaxed">{t('board.github.syncHint')}</p>
+          </div>
+        ) : detached ? (
+          <p className="flex items-center gap-1.5 text-xs text-ink-faint"><Unlink size={12} />{t('board.github.detachedHint', { number: detached.number })}</p>
+        ) : null}
         <div className="flex flex-col gap-4">
           {editVisible ? <CardEditor title={title} description={description} onChange={setDraft} /> : <>
             <div className="flex flex-col items-start gap-3 sm:flex-row">
@@ -178,7 +233,7 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
         <CardLinkList title={t('board.card.references')} links={card.references} onSelect={onSelectCard} />
         <CardLinkList title={t('board.card.referencedBy')} links={card.referencedBy} onSelect={onSelectCard} />
         </> : null}
-        {tab === 'activity' ? <CardNotes projectId={projectId} cardId={card.id} /> : null}
+        {tab === 'activity' ? <CardNotes projectId={projectId} cardId={card.id} issue={issue} /> : null}
         {tab === 'sessions' ? (
         <div className="flex flex-col gap-1.5">
           <h3 className="text-xs font-medium tracking-wide text-ink-faint uppercase">
@@ -220,18 +275,34 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
 
       <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-sunken/40 px-5 py-3">
         {editVisible ? <>
-          <p className="min-w-0 flex-1 text-xs text-ink-faint" role="status">{t(dirty ? 'board.card.draft' : 'board.editor.saved')}</p>
+          <p className="min-w-0 flex-1 text-xs text-ink-faint" role="status">{t(dirty ? (issue ? 'board.github.draft' : 'board.card.draft') : 'board.editor.saved')}</p>
           <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setDraft(null); setEditing(false) }}>{t('board.card.cancel')}</Button>
           <Button size="sm" disabled={!dirty || !title.trim() || saving} onClick={save}>{t(saving ? 'board.card.saving' : 'board.card.save')}</Button>
         </> : <>
-          <p className="min-w-0 flex-1 text-xs text-ink-faint">{t('board.card.author', { name: card.createdByName })}</p>
+          <p className="min-w-0 flex-1 text-xs text-ink-faint">
+            {card.external?.author ? t('board.github.author', { login: card.external.author }) : t('board.card.author', { name: card.createdByName })}
+          </p>
           <IconButton label={t('board.card.remove')} size="sm" disabled={deleteCard.isPending} onClick={() => {
-            if (!confirm(translate('board.card.remove.confirm', { number: card.number }))) return
+            const question = issue
+              ? translate('board.github.remove.confirm', { number: card.number, issue: issue.number })
+              : translate('board.card.remove.confirm', { number: card.number })
+            if (!confirm(question)) return
             deleteCard.mutate(card.id, { onSuccess: onClose })
           }}><Trash2 size={15} /></IconButton>
         </>}
         {deleteCard.isError ? <p role="alert" className="w-full text-sm text-critical">{t('board.files.error')}</p> : null}
       </footer>
+
+      <ConfirmDialog
+        open={publishing}
+        onOpenChange={setPublishing}
+        title={t('board.github.publish.title', { number: card.number })}
+        confirmLabel={t('board.github.publish')}
+        busy={publish.isPending}
+        onConfirm={() => publish.mutate(card.id, { onSettled: () => setPublishing(false) })}
+      >
+        <p>{t('board.github.publish.body', { repo: link?.repo ?? '' })}</p>
+      </ConfirmDialog>
 
       {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
           tiroir occupe tout l'écran, il n'y a rien à ajuster. */}
