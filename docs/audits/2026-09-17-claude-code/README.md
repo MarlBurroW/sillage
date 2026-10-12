@@ -349,3 +349,89 @@ Vérifié : typecheck, tests (dont `claude-flag-settings.test.ts` et les nouveau
 (API simulée), grand écran et téléphone : une conversation `opus[1m]` s'affiche « Opus
 5.5 » avec son effort, une `claude-fable-5-1` « Fable 5.1 », et Ultracode s'allume sans
 toucher à l'effort.
+
+## Complément du 12 octobre 2026 : cible 2.1.296
+
+Relecture du changelog de 2.1.292 à 2.1.296 (≈ 390 lignes, deux tiers de correctifs,
+beaucoup de Claude Tag, cloud et gateway sans rapport avec Sillage) et du diff des types
+entre le SDK 0.3.291 et 0.3.296. Sondes par requêtes de contrôle sur un 2.1.296 téléchargé
+à part (`npm pack @anthropic-ai/claude-code-linux-x64@2.1.296`), sans toucher au binaire
+du système, puis une session réelle sur un serveur jetable configuré sur ce binaire
+(`agents.claude.binary`), pilotée par l'API v1.
+
+| | Installé sur ce poste | Dernier publié | Cible déclarée |
+|---|---|---|---|
+| CLI `@anthropic-ai/claude-code` | 2.1.292 | 2.1.296 (9 octobre) | 2.1.291 → **2.1.296** |
+| SDK `@anthropic-ai/claude-agent-sdk` | 0.3.291 | 0.3.296 | 0.3.291 → **0.3.296** |
+
+Le SDK n'a que des ajouts de champs optionnels, aucun retrait : typecheck, tests et lint
+passent sans retouche de code. Seuls deux commentaires sondés ont été actualisés.
+
+### Ce qui change pour Sillage
+
+- **L'alias `haiku` désigne Haiku 5.5 (2.1.293).** Sondé : `haiku` → `claude-haiku-5-5`,
+  « Haiku 5.5 », contexte d'un million de tokens, efforts `low` → `max`, et Ultracode
+  s'y ouvre (`ultracodeAvailable: true` par `getSettings().applied`). Haiku 4.5 ne
+  s'obtient plus que sous `claude-haiku-4-5-20251001`, sans niveau d'effort, et
+  Ultracode lui reste refusé. Le catalogue vient du CLI, rien n'est codé en dur : les
+  conversations et tâches planifiées réglées sur `haiku` passent sur 5.5 au prochain
+  tour, sans rien dire. La session d'essai l'a montré (`session.started` annonce
+  `claude-haiku-5-5` pour une tâche créée en `haiku`). Le composer, qui n'offre Ultracode
+  qu'aux modèles à `xhigh`, l'offre donc désormais sur `haiku` : c'est voulu. Prévenir
+  du changement de modèle : carte #26.
+- **`claude_code_version` dans la réponse d'initialisation** : la version du process
+  qui tient la session, absente des CLI antérieurs. Sillage ne la lit pas encore ; elle
+  dirait quelle version une conversation en cours utilise réellement, là où l'écran
+  Agents ne connaît que le binaire du moment. Carte #27.
+- **Attribution des sous-agents et des tâches** : `agent_id` sur les messages, puis
+  `parent_task_id`, `subagent_type` et `run_id` sur `background_tasks_changed` et les
+  `task_*`. `background.updated` ne garde que l'identifiant, le type et la description.
+  Carte #22, ouverte par la veille.
+- **`overageEnabled` sur `rate_limit_event` (2.1.295)** : l'avertissement de quota dit
+  si l'usage supplémentaire est activé. `usage.updated` ne relaie pas le champ. Carte
+  #28.
+- **Nouveaux paramètres d'outils** : `effort` sur l'outil Agent (2.1.292), `allow_large`
+  sur Read (2.1.296). Les vues d'outils ne les montrent pas. Carte #29.
+- **Retards de réessai sur 529** : `CLAUDE_CODE_OVERLOADED_RETRY_BASE_DELAY_MS`
+  (2.1.292), `…_MAX_DELAY_MS` (2.1.296) et `CLAUDE_CODE_RETRY_WATCHDOG_MAX_WAIT_MS`
+  (2.1.295). Utiles aux sessions planifiées sans personne devant. Carte #30.
+- **Limite des descriptions d'outils MCP et des consignes de serveur portée de 2 048 à
+  4 096 caractères (2.1.296)** : les consignes du serveur `sillage` ont de la marge ;
+  `sillage-mcp.mjs` n'a rien à changer.
+- `SDKStartupFailureReason` gagne `org_config_required_unavailable` et
+  `org_config_refused` ; Sillage ne lit pas `startup_failure_reason`.
+- `autoCompactWindow` sur les définitions d'agents (2.1.296), `onFailure: "block"` sur
+  les hooks (2.1.295) : Sillage n'écrit ni agents personnalisés ni hooks de ce type.
+
+### Correctifs qui profitent aux sessions SDK, sans code
+
+- 2.1.292 : une commande de fond n'est plus arrêtée 5 s après le résultat final d'un
+  run SDK (voir #12 pour la limite de 30 min, qui demeure) ; le premier tour n'attend
+  plus le `resources/list` des serveurs MCP HTTP et SSE.
+- 2.1.293 : fuite mémoire des connexions MCP HTTP ; reprise erronée après compaction.
+- 2.1.295 : serveurs MCP distants qui restaient déconnectés après une coupure de plus
+  de 15 s ; retour en mode auto refusé après retrait de `disableAutoMode` ; un message
+  envoyé pendant qu'un tour tourne n'est plus perdu.
+- 2.1.296 : une interruption pendant un hook `UserPromptSubmit` ne termine plus une
+  session headless ; `/code-review` rend une liste numérotée au lieu d'un tableau JSON
+  brut ; le coût du cache de Sonnet 5.5 passe à 0,10 $/Mtok dans les chiffres du SDK.
+
+### Sondes du jour
+
+```js
+// Binaire 2.1.296 téléchargé à part, file d'entrée vide, aucun message au modèle.
+const init = await q.initializationResult()
+init.claude_code_version                       // '2.1.296'
+await q.applyFlagSettings({ ultracode: true, effortLevel: 'high' })
+;(await q.getSettings()).applied
+// { model: 'claude-haiku-5-5', effort: 'high', ultracode: true, ultracodeAvailable: true }
+await q.setModel('claude-haiku-4-5-20251001')
+;(await q.getSettings()).applied
+// { model: 'claude-haiku-4-5-20251001', effort: null, ultracode: false, ultracodeAvailable: false }
+```
+
+Vérifié : typecheck, tests, lint ; une session réelle (`haiku`, effort `low`, mode auto)
+sur un serveur jetable avec le binaire 2.1.296 : `GET /api/agents` lit 2.1.296 sans
+écart de version, l'outil Read tourne, le tour se termine en `success` et le contexte
+annonce un million de tokens. Au déploiement, `claude install 2.1.296` sur marldev : le
+CLI du poste ne se met pas à jour seul.
