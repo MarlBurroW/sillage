@@ -17,6 +17,7 @@ import {
 } from '@sillage/protocol'
 import { catalogModel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
+import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useMcpServers } from '../../lib/mcp'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
@@ -573,11 +574,18 @@ export function useAgentSettings({
    * et la catégorie n'apparaît que s'il y a un choix à faire : sans compte enregistré,
    * la connexion du CLI va de soi.
    */
-  const { data: accountList } = useClaudeAccounts(claude !== null)
+  const { data: claudeAccountList } = useClaudeAccounts(claude !== null)
+  // Codex : seuls les comptes connectés se choisissent, un home vide refuserait le tour.
+  const { data: codexAccountList } = useCodexAccounts(codex !== null)
   const accountOptions = useMemo((): SettingChoice<string>[] => {
-    if (!claude) return []
-    const accounts = accountList?.accounts ?? []
-    if (accounts.length === 0 && !claude.account) return []
+    const chosen = claude?.account ?? codex?.account ?? null
+    const accounts = claude
+      ? (claudeAccountList?.accounts ?? [])
+      : codex
+        ? (codexAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
+        : null
+    if (accounts === null) return []
+    if (accounts.length === 0 && !chosen) return []
     const known: SettingChoice<string>[] = [
       { value: CLI_DEFAULT_CHOICE, label: t('composer.account.cli'), hint: t('composer.account.cli.hint') },
       ...accounts.map((account) => ({ value: account.id, label: account.label })),
@@ -585,11 +593,11 @@ export function useAgentSettings({
     // Un compte supprimé depuis : la conversation le désigne encore, le serveur
     // repartira sur la connexion du CLI, et l'écran le dit plutôt que de montrer un
     // sélecteur vide.
-    if (claude.account && !accounts.some((account) => account.id === claude.account)) {
-      known.push({ value: claude.account, label: t('composer.account.missing'), hint: t('composer.select.saved') })
+    if (chosen && !accounts.some((account) => account.id === chosen)) {
+      known.push({ value: chosen, label: t('composer.account.missing'), hint: t('composer.select.saved') })
     }
     return known
-  }, [accountList, claude, t])
+  }, [claudeAccountList, codexAccountList, claude, codex, t])
   const accountChoice = (account: string | null) => account ?? CLI_DEFAULT_CHOICE
 
   const permissionOptionList = permissionOptions(t)
@@ -825,6 +833,29 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      ...(accountOptions.length > 0
+        ? [
+            setting({
+              key: 'account',
+              label: t('composer.setting.account'),
+              icon: <IdCard size={15} />,
+              options: accountOptions,
+              value: accountChoice(codex.account),
+              onChange: (choice) =>
+                onConfigChange({ ...codex, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+              // Le home du compte est l'environnement de l'app-server : changer de
+              // compte attend la relance de la session.
+              notice: notice(
+                appliedLabel(
+                  appliedConfig?.agent === 'codex' ? accountChoice(appliedConfig.account) : undefined,
+                  accountChoice(codex.account),
+                  accountOptions,
+                ),
+                t,
+              ),
+            }),
+          ]
+        : []),
       setting({
         key: 'approval',
         label: t('composer.setting.approval'),
@@ -869,6 +900,7 @@ export function useAgentSettings({
     summary = [
       segment('model', modelOptions, resolvedModel),
       ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+      ...(codex.account ? [segment('account', accountOptions, codex.account)] : []),
       ...(approvalOff ? [segment('approval', approvalOptions, approvalValue)] : []),
       ...(approvalOff && codex.sandbox !== 'danger-full-access'
         ? []

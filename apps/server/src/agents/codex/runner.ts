@@ -1300,6 +1300,10 @@ export class CodexRunner implements AgentRunner {
 
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'codex') return false
+    // Le home du compte est l'environnement de l'app-server, lu au lancement : changer
+    // de compte relance, et le thread se reprend depuis le nouveau home (ils partagent
+    // le dossier des sessions).
+    if (config.account !== this.config.account) return false
     // Contrairement aux plugins de Claude, les racines se remplacent à chaud. Une liste
     // vide retire la bibliothèque, et `skills/changed` met l'inventaire à jour.
     const skillRoots = this.ctx.skillRoots(config)

@@ -29,6 +29,7 @@ import { NotificationsSection } from './routes/NotificationsSection'
 import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
 import { GitCredentialsSettingsPage } from './routes/GitCredentialsSettingsPage'
 import { ClaudeAccountsSettingsPage } from './routes/ClaudeAccountsSettingsPage'
+import { CodexAccountsSettingsPage } from './routes/CodexAccountsSettingsPage'
 import { DecisionsPage } from './routes/DecisionsPage'
 import { SecretsSettingsPage } from './routes/SecretsSettingsPage'
 import { SessionsSettingsPage } from './routes/SessionsSettingsPage'
@@ -81,6 +82,7 @@ export function App() {
             <Route path="api" element={<ApiTokensSettingsPage />} />
             <Route path="git" element={<GitCredentialsSettingsPage />} />
             <Route path="comptes-claude" element={<ClaudeAccountsSettingsPage />} />
+            <Route path="comptes-codex" element={<CodexAccountsSettingsPage />} />
             <Route path="secrets" element={<SecretsSettingsPage />} />
             <Route path="dictee" element={<DictationSettingsPage />} />
             <Route path="archivage" element={<ArchivingSettingsPage />} />

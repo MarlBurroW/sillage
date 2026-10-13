@@ -10,6 +10,8 @@ import { eq } from 'drizzle-orm'
 import { claudeAccounts, openDatabase, runMigrations, users } from '@sillage/db'
 import type { AgentUsage, ClaudeAccount } from '@sillage/protocol'
 import { ClaudeAccountStore } from '../src/claude-accounts/store.js'
+import { CodexAccountHomes } from '../src/codex-accounts/homes.js'
+import { CodexAccountStore } from '../src/codex-accounts/store.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerAgentRoutes } from '../src/http/routes/agents.js'
 import { registerClaudeAccountRoutes } from '../src/http/routes/claude-accounts.js'
@@ -34,6 +36,7 @@ async function harness(t: TestContext) {
   // est tout ce que la route doit garantir.
   const seen: Array<{ accountId: string; token: string }> = []
   const adapter = {
+    kind: 'claude',
     label: 'Claude',
     usage: async () => ({ agent: 'claude', plan: 'cli', limitsAvailable: true, windows: [], credits: null, fetchedAt: 1 }) as AgentUsage,
     usageForAccount: async (accountId: string, token: string) => {
@@ -49,7 +52,7 @@ async function harness(t: TestContext) {
   })
   registerErrorHandler(app)
   registerClaudeAccountRoutes(app, store)
-  registerAgentRoutes(app, { db } as AppContext, registry, {} as CliInstaller, store)
+  registerAgentRoutes(app, { db } as AppContext, registry, {} as CliInstaller, store, { store: new CodexAccountStore(db), homes: new CodexAccountHomes(join(dir, 'codex')) })
   t.after(() => app.close())
   return { db, store, app, seen }
 }
