@@ -29,7 +29,6 @@ import type { SecretStore } from '../secrets/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
 import type { CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
-import { OAUTH_TOKEN_SCOPES } from '../agents/claude/usage.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -758,7 +757,11 @@ export class SessionManager {
           "Le compte Claude choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
         )
       }
-      return { CLAUDE_CODE_OAUTH_TOKEN: resolved.token, CLAUDE_CODE_OAUTH_SCOPES: OAUTH_TOKEN_SCOPES }
+      // Les deux passent devant la connexion enregistrée du CLI ; en mode non
+      // interactif, la clé API est prise sans qu'on le demande (sondé sur 2.1.296).
+      return resolved.kind === 'apiKey'
+        ? { ANTHROPIC_API_KEY: resolved.token }
+        : { CLAUDE_CODE_OAUTH_TOKEN: resolved.token }
     }
     // Codex : le home du compte, dont seul `auth.json` lui est propre. Un compte jamais
     // connecté vaut un compte absent : sans `auth.json`, l'app-server refuserait le tour.

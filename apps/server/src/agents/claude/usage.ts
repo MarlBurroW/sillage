@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
-import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
+import { CachedProbe } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { withControlSession } from './control-session.js'
 
@@ -119,31 +119,8 @@ function normalize(payload: unknown): Omit<AgentUsage, 'fetchedAt'> {
   }
 }
 
-/**
- * Portées à déclarer avec un jeton passé en variable : sans `user:profile`, le CLI tient
- * les limites de forfait pour inapplicables et ne les demande même pas (sondé sur
- * 2.1.296 : `rate_limits_available` passe de faux à vrai avec cette seule variable).
- * Un jeton qui n'aurait pas la portée échoue alors à la lecture, ce qui se voit.
- */
-export const OAUTH_TOKEN_SCOPES = 'user:inference user:profile'
-
 export class ClaudeUsageReader {
   private readonly cached = new CachedProbe(USAGE_CACHE_TTL_MS, () => this.probe())
-  /**
-   * Une sonde par compte supplémentaire, à part de celle de la connexion du CLI : la
-   * clé est l'identifiant du compte, le jeton est fourni à chaque lecture plutôt que
-   * retenu ici.
-   */
-  private readonly byAccount = new CachedProbeMap<Omit<AgentUsage, 'fetchedAt'>>(
-    USAGE_CACHE_TTL_MS,
-    (accountId) => {
-      const token = this.tokens.get(accountId)
-      if (!token) throw new Error('Jeton du compte Claude introuvable.')
-      return this.probe({ CLAUDE_CODE_OAUTH_TOKEN: token, CLAUDE_CODE_OAUTH_SCOPES: OAUTH_TOKEN_SCOPES })
-    },
-  )
-  private readonly tokens = new Map<string, string>()
-
   /** Résolu à chaque sonde, comme pour le catalogue : voir `ClaudeModelCatalog`. */
   constructor(private readonly executable: () => Promise<string>) {}
 
@@ -151,30 +128,26 @@ export class ClaudeUsageReader {
     return this.cached.read(force)
   }
 
-  /** La consommation du compte dont on passe le jeton, lue comme celle du CLI. */
-  async readForAccount(accountId: string, token: string, force = false): Promise<AgentUsage> {
-    // Posé le temps de la lecture seulement : la carte des sondes survit à la requête,
-    // les jetons n'ont pas à y rester.
-    this.tokens.set(accountId, token)
-    try {
-      return await this.byAccount.read(accountId, force)
-    } finally {
-      this.tokens.delete(accountId)
-    }
-  }
-
-  private probe(env?: Record<string, string>): Promise<Omit<AgentUsage, 'fetchedAt'>> {
+  private probe(): Promise<Omit<AgentUsage, 'fetchedAt'>> {
     // Requête de contrôle, sans tour : la lecture ne consomme ni tokens ni quota.
     return withControlSession(
-      {
-        executable: this.executable,
-        cwd: homedir(),
-        tag: 'usage',
-        timeoutMs: PROBE_TIMEOUT_MS,
-        ...(env ? { options: { env: { ...process.env, ...env } } } : {}),
-      },
+      { executable: this.executable, cwd: homedir(), tag: 'usage', timeoutMs: PROBE_TIMEOUT_MS },
       async (session) =>
         normalize(await session.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()),
     )
   }
+}
+
+/**
+ * La consommation d'un compte supplémentaire : connue d'avance, sans sonde.
+ *
+ * Une clé API n'a pas de forfait, donc pas de jauge. Un jeton de `setup-token` en a
+ * un, mais ne porte que la portée `user:inference` (lue dans l'URL d'autorisation,
+ * 2.1.296) : sans `user:profile`, le CLI tient les limites pour inapplicables et ne
+ * les demande pas. Lancer un process de 400 Mo pour l'entendre le dire n'a pas de
+ * sens ; c'est l'écran qui explique, d'après la nature du compte, pourquoi la jauge
+ * manque.
+ */
+export function claudeAccountUsage(): AgentUsage {
+  return { agent: 'claude', plan: null, limitsAvailable: false, windows: [], credits: null, fetchedAt: Date.now() }
 }

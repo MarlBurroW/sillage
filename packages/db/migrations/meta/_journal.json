@@ -281,6 +281,13 @@
       "when": 1791887229207,
       "tag": "0039_codex_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791895547414,
+      "tag": "0040_claude_account_kind",
+      "breakpoints": true
     }
   ]
 }
