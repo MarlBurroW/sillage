@@ -65,6 +65,16 @@ export function useVisualViewport(): void {
     const clear = () => {
       root.style.removeProperty('--sg-app-height')
       root.style.removeProperty('--sg-viewport-top')
+      /*
+       * Le clavier refermé peut laisser le viewport visuel décalé dans le viewport de
+       * mise en page : iPadOS en mode installé ne le ramène pas toujours à zéro, et
+       * n'émet alors ni `resize` ni `scroll`. Le calque fixe est bien redessiné à sa
+       * place, mais WebKit garde les zones de toucher de l'ancien décalage jusqu'au
+       * prochain défilement : la barre de saisie et le bas du fil ne répondent plus
+       * au doigt. Remettre le document à zéro recale les deux viewports et force ce
+       * recalcul. Sans décalage, l'appel ne fait rien.
+       */
+      window.scrollTo(0, 0)
     }
 
     const apply = () => {
@@ -92,15 +102,36 @@ export function useVisualViewport(): void {
       apply()
     }
 
+    /*
+     * Filet pour le clavier qui se ferme sans événement de viewport (voir `clear`) :
+     * quand la saisie perd le focus et qu'aucune autre ne le reprend, la mesure est
+     * rejouée après le délai de l'animation du clavier. Si `resize` a bien été émis
+     * entre-temps, `apply` a déjà tout remis et ce passage ne change rien.
+     */
+    let settle: ReturnType<typeof setTimeout> | undefined
+    const onFocusOut = () => {
+      clearTimeout(settle)
+      settle = setTimeout(() => {
+        if (document.activeElement instanceof HTMLElement && document.activeElement.matches('input, textarea, [contenteditable]')) return
+        apply()
+        // `apply` ne touche à rien si le clavier n'était pas reconnu : le recalage du
+        // document doit quand même avoir lieu.
+        window.scrollTo(0, 0)
+      }, 350)
+    }
+
     apply()
     viewport.addEventListener('resize', apply)
     viewport.addEventListener('scroll', apply)
     window.addEventListener('orientationchange', remeasure)
+    document.addEventListener('focusout', onFocusOut)
 
     return () => {
+      clearTimeout(settle)
       viewport.removeEventListener('resize', apply)
       viewport.removeEventListener('scroll', apply)
       window.removeEventListener('orientationchange', remeasure)
+      document.removeEventListener('focusout', onFocusOut)
       root.style.removeProperty('--sg-viewport-gap')
       clear()
     }
