@@ -67,9 +67,16 @@ export function useStartClaudeLogin() {
 }
 
 export function useClaudeLoginStatus(loginId: string | null) {
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: loginKey(loginId ?? ''),
-    queryFn: () => api.get<ClaudeLoginStatusDto>(`/api/claude-accounts/login/${encodeURIComponent(loginId ?? '')}`),
+    queryFn: async () => {
+      const status = await api.get<ClaudeLoginStatusDto>(`/api/claude-accounts/login/${encodeURIComponent(loginId ?? '')}`)
+      // C'est la relecture qui apprend la fin, l'envoi du code ne faisant que le
+      // transmettre : le compte créé doit apparaître dans la liste sans recharger.
+      if (status.state === 'done') void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+      return status
+    },
     enabled: loginId !== null,
     // Le CLI peut s'arrêter de lui-même (délai, erreur) : on le relit tant qu'il attend,
     // et pendant qu'il vérifie un code, l'envoi ne faisant que le lui transmettre.
