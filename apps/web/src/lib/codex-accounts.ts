@@ -52,9 +52,19 @@ export function useDeleteCodexAccount() {
  * attend d'être saisi : c'est le serveur qui apprend la fin, par l'app-server.
  */
 export function useCodexLoginStatus(id: string, watch: boolean) {
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: loginKey(id),
-    queryFn: () => api.get<CodexLoginStatusDto>(`/api/codex-accounts/${encodeURIComponent(id)}/login`),
+    queryFn: async () => {
+      const status = await api.get<CodexLoginStatusDto>(`/api/codex-accounts/${encodeURIComponent(id)}/login`)
+      // C'est la relecture qui apprend que Codex a fini, le code d'appareil se saisissant
+      // ailleurs : la carte doit passer à « Connecté » sans recharger la page.
+      if (status.state === 'done') {
+        void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+        void queryClient.invalidateQueries({ queryKey: ['usage'] })
+      }
+      return status
+    },
     refetchInterval: (query) => (watch || query.state.data?.state === 'pending' ? 2000 : false),
     staleTime: 0,
   })
