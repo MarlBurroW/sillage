@@ -655,6 +655,7 @@ export function useAgentSettings({
               label: t('composer.setting.speed'),
               icon: <Zap size={15} />,
               options: speedOptionList,
+              active: 'fast',
               value: claude.fastMode ? 'fast' : 'standard',
               onChange: (speed) => onConfigChange({ ...claude, fastMode: speed === 'fast' }),
             }),
@@ -667,6 +668,7 @@ export function useAgentSettings({
               label: t('composer.setting.ultracode'),
               icon: <UsersRound size={15} />,
               options: ultracodeOptionList,
+              active: 'on',
               value: claude.ultracode ? 'on' : 'off',
               // Indépendant de l'effort, comme dans le CLI depuis 2.1.284 : l'allumer ou
               // l'éteindre laisse le niveau où il est.
@@ -752,6 +754,7 @@ export function useAgentSettings({
               label: t('composer.setting.skillLibrary'),
               icon: <BookOpen size={15} />,
               options: libraryOptionList,
+              active: 'on',
               value: libraryChoice(claude.skillLibrary),
               onChange: (choice) => onConfigChange({ ...claude, skillLibrary: choice === 'on' }),
               // Comme le mode de permission : Claude ne reçoit ses plugins qu'au
@@ -888,6 +891,7 @@ export function useAgentSettings({
               label: t('composer.setting.skillLibrary'),
               icon: <BookOpen size={15} />,
               options: libraryOptionList,
+              active: 'on',
               value: libraryChoice(codex.skillLibrary),
               onChange: (choice) => onConfigChange({ ...codex, skillLibrary: choice === 'on' }),
             }),
@@ -992,6 +996,7 @@ export function useAgentSettings({
               label: t('composer.setting.skillLibrary'),
               icon: <BookOpen size={15} />,
               options: libraryOptionList,
+              active: 'on',
               value: libraryChoice(opencode.skillLibrary),
               onChange: (choice) => onConfigChange({ ...opencode, skillLibrary: choice === 'on' }),
               notice: notice(

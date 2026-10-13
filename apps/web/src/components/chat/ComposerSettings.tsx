@@ -39,6 +39,12 @@ export interface SettingGroup {
    * la changer sans repartir. Absent le reste du temps, c'est-à-dire presque toujours.
    */
   notice?: string
+  /**
+   * Pour une catégorie à deux états, la valeur qui compte comme « allumé ». Épinglée
+   * sous le composer, elle devient alors un interrupteur plutôt qu'un menu à deux
+   * lignes : on voit où on en est et un clic suffit à changer.
+   */
+  active?: string
 }
 
 /**
@@ -57,6 +63,7 @@ export function setting<V extends string>(group: {
   value: V
   onChange: (value: V) => void
   notice?: string
+  active?: V
 }): SettingGroup {
   return {
     ...group,
@@ -75,16 +82,24 @@ export interface SummarySegment {
 interface ComposerSettingsProps {
   groups: SettingGroup[]
   summary: SummarySegment[]
+  /** Clés des catégories à montrer sous le texte, dans l'ordre ; les inconnues sont ignorées. */
+  pinned: string[]
+  onPin?: (key: string, pinned: boolean) => void
   mcp?: ReactNode
   feedback?: ReactNode
   disabled?: boolean
   inputRef: RefObject<HTMLTextAreaElement | null>
 }
 
-export function ComposerSettings({ groups, summary, mcp, feedback, disabled = false, inputRef }: ComposerSettingsProps) {
+export function ComposerSettings({ groups, summary, pinned, onPin, mcp, feedback, disabled = false, inputRef }: ComposerSettingsProps) {
   const t = useTranslate()
-  const quick = ['model', 'effort'].flatMap((key) => groups.find((group) => group.key === key) ?? [])
-  const warnings = summary.filter((segment) => segment.tone === 'caution')
+  // Une clé épinglée dont la catégorie manque en ce moment (effort sans niveaux sur ce
+  // modèle, compte unique) n'est pas une erreur : elle reviendra avec la catégorie.
+  const quick = pinned.flatMap((key) => groups.find((group) => group.key === key) ?? [])
+  const quickKeys = new Set(quick.map((group) => group.key))
+  // Un garde-fou retiré se voit déjà sur sa puce quand elle est épinglée : le point
+  // du bouton « tous les réglages » ne signale que ce qui n'est pas sous les yeux.
+  const warnings = summary.filter((segment) => segment.tone === 'caution' && !quickKeys.has(segment.key))
   const plan = groups.find((group) => (group.key === 'mode' || group.key === 'permission') && group.value === 'plan')
   const statusLabels = [
     ...(plan ? [plan.options.find((option) => option.value === plan.value)?.label ?? plan.value] : []),
@@ -94,16 +109,17 @@ export function ComposerSettings({ groups, summary, mcp, feedback, disabled = fa
     }),
   ]
   const summaryLabel = [
-    ...summary.filter((segment) => segment.tone !== 'caution' && segment.key !== plan?.key).map((segment) => segment.label),
+    ...summary.filter((segment) => segment.tone !== 'caution' && segment.key !== plan?.key && !quickKeys.has(segment.key)).map((segment) => segment.label),
     ...statusLabels,
   ].join(' · ')
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1">
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         {quick.map((group) => {
           const value = group.options.find((option) => option.value === group.value)?.label || group.value || t('composer.select.default')
           const label = t('composer.settings.quick', { setting: group.label, value })
+          if (group.active !== undefined) return <ToggleChip key={group.key} group={group} label={label} disabled={disabled} />
           return (
             <SettingsSurface
               key={group.key}
@@ -114,10 +130,12 @@ export function ComposerSettings({ groups, summary, mcp, feedback, disabled = fa
               trigger={
                 <TooltipButton type="button" disabled={disabled} aria-label={label} title={label}
                   className={cx(
-                    'flex min-h-11 min-w-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-xs @min-[34rem]:max-w-80 @min-[34rem]:flex-initial',
-                    'hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-                    'data-[state=open]:border-accent/50 data-[state=open]:bg-accent-wash disabled:pointer-events-none disabled:opacity-45',
+                    chipClass,
+                    'data-[state=open]:border-accent/50 data-[state=open]:bg-accent-wash',
                     group.key === 'model' ? 'flex-[1.3] font-medium text-ink' : 'flex-1 text-ink-soft',
+                    // Au-delà de deux puces, chacune garde une largeur lisible et la
+                    // ligne se replie plutôt que d'écraser les valeurs.
+                    quick.length > 2 && (group.key === 'model' ? 'min-w-[9rem]' : 'min-w-[6.5rem]'),
                   )}
                 >
                   <span className="hidden shrink-0 text-accent @min-[22rem]:inline-flex">{group.icon}</span>
@@ -153,10 +171,41 @@ export function ComposerSettings({ groups, summary, mcp, feedback, disabled = fa
             </TooltipButton>
           }
         >
-          {(close) => <SettingsPanel groups={groups} disabled={disabled} extra={mcp} feedback={feedback} onDone={() => close(true)} onClose={() => close()} />}
+          {(close) => <SettingsPanel groups={groups} pinned={pinned} onPin={onPin} disabled={disabled} extra={mcp} feedback={feedback} onDone={() => close(true)} onClose={() => close()} />}
         </SettingsSurface>
       </div>
     </div>
+  )
+}
+
+const chipClass = cx(
+  'flex min-h-11 min-w-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-xs @min-[34rem]:max-w-80 @min-[34rem]:flex-initial',
+  'hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
+  'disabled:pointer-events-none disabled:opacity-45',
+)
+
+/**
+ * Une catégorie à deux états épinglée : le libellé de la catégorie, et un interrupteur
+ * qui dit où on en est. Un clic bascule sur l'autre valeur sans ouvrir de menu.
+ */
+function ToggleChip({ group, label, disabled }: { group: SettingGroup; label: string; disabled: boolean }) {
+  const checked = group.value === group.active
+  const other = group.options.find((option) => option.value !== group.value && !option.disabled)
+  const current = group.options.find((option) => option.value === group.value)
+  return (
+    <TooltipButton type="button" role="switch" aria-checked={checked} disabled={disabled || !other}
+      aria-label={label} title={[label, group.notice].filter(Boolean).join(' · ')}
+      onClick={() => { if (other) group.onChange(other.value) }}
+      className={cx(chipClass, 'flex-initial', checked ? 'border-accent/50 bg-accent-wash text-ink' : 'text-ink-soft',
+        checked && current?.tone === 'caution' && 'border-caution/50 bg-caution/10 text-caution')}
+    >
+      <span className={cx('hidden shrink-0 @min-[22rem]:inline-flex', checked && current?.tone === 'caution' ? 'text-caution' : 'text-accent')}>{group.icon}</span>
+      <span className="min-w-0 truncate">{group.label}</span>
+      <span aria-hidden className={cx('flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors',
+        checked ? 'justify-end' : 'bg-line-strong', checked && (current?.tone === 'caution' ? 'bg-caution' : 'bg-accent'))}>
+        <span className="size-3 rounded-full bg-surface shadow-sm" />
+      </span>
+    </TooltipButton>
   )
 }
 

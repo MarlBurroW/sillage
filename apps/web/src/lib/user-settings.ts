@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentConfig, NotificationPrefs, UserSettingsDto } from '@sillage/protocol'
+import type { AgentConfig, ComposerLayout, NotificationPrefs, UserSettingsDto } from '@sillage/protocol'
 import { api } from './api'
 
 const USER_SETTINGS_KEY = ['user-settings']
@@ -66,6 +66,28 @@ export function useUpdateNotificationPrefs() {
       return { previous }
     },
     onError: (_error, _prefs, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+}
+
+/**
+ * Les réglages épinglés sous le composer, remplacés en bloc et appliqués sans attendre :
+ * une puce qui apparaît après un aller-retour réseau donnerait l'impression que
+ * l'épingle n'a pas pris.
+ */
+export function useUpdateComposerLayout() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (composerLayout: ComposerLayout) => api.patch<UserSettingsDto>('/api/me/settings', { composerLayout }),
+    onMutate: async (composerLayout) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous) queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, composerLayout })
+      return { previous }
+    },
+    onError: (_error, _layout, context) => {
       if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
     },
     onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
