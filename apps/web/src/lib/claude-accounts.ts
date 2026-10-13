@@ -71,9 +71,10 @@ export function useClaudeLoginStatus(loginId: string | null) {
     queryKey: loginKey(loginId ?? ''),
     queryFn: () => api.get<ClaudeLoginStatusDto>(`/api/claude-accounts/login/${encodeURIComponent(loginId ?? '')}`),
     enabled: loginId !== null,
-    // Le CLI peut s'arrêter de lui-même (délai, erreur) : on le relit tant qu'il attend.
+    // Le CLI peut s'arrêter de lui-même (délai, erreur) : on le relit tant qu'il attend,
+    // et pendant qu'il vérifie un code, l'envoi ne faisant que le lui transmettre.
     refetchInterval: (query) =>
-      query.state.data?.state === 'waiting_code' || query.state.data?.state === 'starting' ? 3000 : false,
+      query.state.data?.state === 'done' || query.state.data?.state === 'failed' ? false : 2000,
     staleTime: 0,
   })
 }

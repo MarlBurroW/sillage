@@ -15,3 +15,22 @@ test("l'URL d'autorisation vient de la cible du lien OSC 8, pas du texte coupé 
   assert.equal(authUrlFrom(`${visible}\n${rest}`), null)
   assert.equal(authUrlFrom('rien'), null)
 })
+
+test('le jeton se reconstitue par-dessus les sauts de ligne, et s’arrête à la couleur qui suit', async () => {
+  const { plain, tokenFrom } = await import('../src/claude-accounts/login.js')
+  const token = 'sk-ant-oat01-' + 'A'.repeat(50) + 'b'.repeat(45)
+  // Le cadre Ink : le jeton en couleur, coupé à la largeur de la boîte, puis le conseil en gris.
+  const frame = `Your OAuth token (valid for 365 days):\r\n\x1b[33m${token.slice(0, 70)}\r\n${token.slice(70)}\x1b[39m\r\n\x1b[2mStore this token securely. You won't be able to see it again.\x1b[22m\r\n`
+  assert.equal(tokenFrom(plain(frame)), token)
+  // Une première image coupée, puis l'entière : la plus longue l'emporte.
+  assert.equal(tokenFrom(plain(`${token.slice(0, 80)}\x1b[0m\r\n` + frame)), token)
+  // Trop court pour être un jeton : une coupure, pas un compte.
+  assert.equal(tokenFrom(plain('sk-ant-oat01-abcdefghijklmnopqrstuvwxyz\x1b[0m rest')), null)
+  assert.equal(tokenFrom('rien'), null)
+})
+
+test('le motif d’un refus s’arrête où le CLI reprend la main, marque de couleur comprise', async () => {
+  const { plain } = await import('../src/claude-accounts/login.js')
+  const output = plain('\x1b[31mOAuth error: Request failed with status code 400\x1b[39m \x1b[2mPress Enter to retry.\x1b[22m')
+  assert.equal(/OAuth\s*error:\s*(.*?)(?=[\s\x00]*(?:Press\s*Enter|Retrying|$))/i.exec(output)?.[1]?.replace(/\x00/g, ''), 'Request failed with status code 400')
+})
