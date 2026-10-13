@@ -28,6 +28,8 @@ import type { ClaudeAccountStore } from './store.js'
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
 /** Le temps que le CLI vérifie un code auprès d'Anthropic et imprime le jeton. */
 const CODE_TIMEOUT_MS = 3 * 60 * 1000
+/** Entre le code et l'Entrée qui le valide, pour que le CLI ne les lise pas d'un bloc. */
+const ENTER_DELAY_MS = 300
 /** Ce qu'on garde de la sortie du CLI pour expliquer un échec, jeton masqué. */
 const DIAGNOSTIC_TAIL = 400
 const URL_PATTERN = /https:\/\/[a-z.]*claude\.com\/[^\s\x07\x1b"']*oauth\/authorize\?[^\s\x07\x1b"']+/g
@@ -190,7 +192,15 @@ export class ClaudeLoginService {
     if (login.status.state === 'failed') login.pty.write('\r')
     login.status = { ...login.status, state: 'checking', error: null }
     const since = login.output.length
-    login.pty.write(`${code.replace(/\s+/g, '')}\r`)
+    // Le code et l'Entrée en deux écritures, espacées : arrivés d'un bloc, le CLI tient
+    // un code long pour un collage et l'Entrée qui le suit en fait partie, rien n'est
+    // validé et l'écran reste muet (sondé sur 2.1.296 : 91 caractères + Entrée en une
+    // écriture, aucune réaction ; en deux, le code part). Un code court passait, d'où
+    // des essais à code faux qui marchaient.
+    login.pty.write(code.replace(/\s+/g, ''))
+    setTimeout(() => {
+      if (login.checking) login.pty.write('\r')
+    }, ENTER_DELAY_MS)
 
     const timer = setTimeout(() => {
       if (!login.checking) return
