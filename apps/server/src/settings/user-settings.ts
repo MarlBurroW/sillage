@@ -4,6 +4,7 @@ import {
   storedUserSettingsSchema,
   type AgentConfig,
   type AppearancePrefs,
+  type ComposerLayout,
   type NotificationPrefs,
   type UserSettingsDto,
 } from '@sillage/protocol'
@@ -93,6 +94,17 @@ export function writeAppearance(db: Db, userId: string, appearance: AppearancePr
 export function writeNotificationPrefs(db: Db, userId: string, notifications: NotificationPrefs): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, notifications })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** Les réglages épinglés sous le composer, par CLI, remplacés en bloc. */
+export function writeComposerLayout(db: Db, userId: string, composerLayout: ComposerLayout): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, composerLayout })
 
   db.insert(userSettings)
     .values({ userId, data })

@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  DEFAULT_COMPOSER_LAYOUT,
   MAX_ATTACHMENTS_PER_MESSAGE,
   NATIVE_SLASH_COMMANDS,
   parseSlashCommand,
@@ -32,6 +33,7 @@ import { useCardSuggestions } from '../../lib/cards'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
 import { useDictation, useSttEnabled } from '../../lib/stt'
 import { useTranslate } from '../../lib/i18n'
+import { useUpdateComposerLayout, useUserSettings } from '../../lib/user-settings'
 import { matchCommands, matchSkills, type PickerEntry } from '../../lib/composer-tokens'
 import { ConfirmDialog, IconButton, cx } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
@@ -267,6 +269,18 @@ export function Composer({
     mcpInventory,
     disabled,
   })
+
+  // Les réglages épinglés sous le texte, propres au CLI de cette conversation. Tant que
+  // le compte n'a pas répondu, la barre garde le défaut du protocole : mieux qu'une
+  // barre vide le temps d'un aller-retour.
+  const { data: userSettings } = useUserSettings()
+  const layout = userSettings?.composerLayout ?? DEFAULT_COMPOSER_LAYOUT
+  const updateLayout = useUpdateComposerLayout()
+  const pinned = layout[config.agent]
+  const pin = (key: string, wanted: boolean) => {
+    const next = wanted ? [...pinned.filter((item) => item !== key), key] : pinned.filter((item) => item !== key)
+    updateLayout.mutate({ ...layout, [config.agent]: next })
+  }
 
   // Hauteur suivant le contenu, plafonnée : sur mobile, un champ qui pousse la
   // conversation hors de l'écran rend la saisie inutilisable.
@@ -777,6 +791,8 @@ export function Composer({
               <ComposerSettings
                 groups={groups}
                 summary={summary}
+                pinned={pinned}
+                onPin={pin}
                 mcp={mcpPanel}
                 feedback={configFeedback}
                 disabled={disabled}

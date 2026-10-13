@@ -1415,6 +1415,8 @@ export const en = {
   'composer.settings.empty': 'No options available.',
   'composer.settings.saveError': 'Settings could not be saved.',
   'composer.settings.retry': 'Retry',
+  'composer.settings.pin': 'Pin {setting} under the composer',
+  'composer.settings.unpin': 'Unpin {setting} from the composer',
 
   // Commun
   'common.close': 'Close',

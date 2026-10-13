@@ -56,7 +56,40 @@ export interface UserSettingsDto {
   appearance: AppearancePrefs | null
   /** Les sortes de notifications que ce compte veut recevoir, sur tous ses appareils. */
   notifications: NotificationPrefs
+  /**
+   * Les réglages épinglés sous le composer, par CLI.
+   *
+   * Des clés de catégories (`model`, `effort`, `ultracode`…) dans l'ordre d'affichage,
+   * et non des valeurs : ce qui s'épingle est un accès, le réglage lui-même reste dans
+   * la conversation. Par CLI parce que les catégories ne se traduisent pas d'un CLI à
+   * l'autre, comme les défauts. Au compte pour la même raison que les projets repliés :
+   * on veut retrouver sa barre en changeant d'appareil.
+   */
+  composerLayout: ComposerLayout
 }
+
+/** Clés de catégories épinglées, par CLI. Une clé inconnue du CLI est ignorée à l'affichage. */
+export interface ComposerLayout {
+  claude: string[]
+  codex: string[]
+  opencode: string[]
+}
+
+/** Modèle et effort : la barre telle qu'elle était avant de devenir réglable. */
+export const DEFAULT_COMPOSER_LAYOUT: ComposerLayout = {
+  claude: ['model', 'effort'],
+  codex: ['model', 'effort'],
+  opencode: ['model', 'effort'],
+}
+
+/** Une clé de catégorie telle que `agent-settings` les nomme, sans rien de plus long. */
+const pinnedKeysSchema = z.array(z.string().min(1).max(40)).max(16)
+
+export const composerLayoutSchema = z.object({
+  claude: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.claude).catch(DEFAULT_COMPOSER_LAYOUT.claude),
+  codex: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.codex).catch(DEFAULT_COMPOSER_LAYOUT.codex),
+  opencode: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.opencode).catch(DEFAULT_COMPOSER_LAYOUT.opencode),
+})
 
 /**
  * Le serveur ne connaît ni les thèmes ni les curseurs : il stocke ce que l'interface
@@ -121,6 +154,7 @@ export const storedUserSettingsSchema = z
     projectsDir: z.string().nullable().default(null).catch(null),
     appearance: appearancePrefsSchema.nullable().default(null).catch(null),
     notifications: notificationPrefsSchema.default(DEFAULT_NOTIFICATION_PREFS).catch(DEFAULT_NOTIFICATION_PREFS),
+    composerLayout: composerLayoutSchema.default(DEFAULT_COMPOSER_LAYOUT).catch(DEFAULT_COMPOSER_LAYOUT),
   })
   .catch({
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
@@ -128,6 +162,7 @@ export const storedUserSettingsSchema = z
     projectsDir: null,
     appearance: null,
     notifications: DEFAULT_NOTIFICATION_PREFS,
+    composerLayout: DEFAULT_COMPOSER_LAYOUT,
   })
 
 export const updateUserSettingsBodySchema = z.object({
@@ -144,4 +179,6 @@ export const updateUserSettingsBodySchema = z.object({
   /** Remplacée en bloc, comme les projets repliés. */
   appearance: appearancePrefsSchema.optional(),
   notifications: notificationPrefsSchema.optional(),
+  /** Remplacée en bloc elle aussi : l'interface connaît la liste entière du CLI. */
+  composerLayout: composerLayoutSchema.optional(),
 })

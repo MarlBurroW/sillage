@@ -1,5 +1,5 @@
 import { TooltipButton } from '../ui/Tooltip'
-import { Check, Search, X } from 'lucide-react'
+import { Check, Pin, PinOff, Search, X } from 'lucide-react'
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
@@ -7,6 +7,9 @@ import type { SettingGroup } from './ComposerSettings'
 
 interface SettingsPanelProps {
   groups: SettingGroup[]
+  /** Catégories déjà épinglées sous le composer ; sans `onPin`, l'épingle n'est pas proposée. */
+  pinned?: string[]
+  onPin?: (key: string, pinned: boolean) => void
   disabled?: boolean
   /** MCP est un choix multiple, rendu après les choix uniques. */
   extra?: ReactNode
@@ -16,7 +19,7 @@ interface SettingsPanelProps {
 }
 
 /** Vue complète : les choix s'appliquent sans fermer le panneau. */
-export function SettingsPanel({ groups, disabled, extra, feedback, onDone, onClose }: SettingsPanelProps) {
+export function SettingsPanel({ groups, pinned = [], onPin, disabled, extra, feedback, onDone, onClose }: SettingsPanelProps) {
   const t = useTranslate()
   const ordered = [
     ...groups.filter((group) => group.key === 'model'),
@@ -29,8 +32,11 @@ export function SettingsPanel({ groups, disabled, extra, feedback, onDone, onClo
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4">
         {ordered.map((group) => (
           <section key={group.key} className="border-b border-line py-4 last:border-0">
-            <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-ink-soft">
+            <h3 className="mb-2 flex min-h-7 items-center gap-2 text-xs font-medium text-ink-soft">
               {group.icon}{group.label}
+              {/* L'épingle se décide ici, là où on vient chercher le réglage : on sait
+                  alors qu'on y reviendra souvent. */}
+              {onPin ? <PinButton group={group} pinned={pinned.includes(group.key)} onPin={onPin} /> : null}
             </h3>
             {group.notice ? <p className="mb-2 text-xs text-caution">{group.notice}</p> : null}
             <SettingOptions group={group} disabled={disabled} compact={group.key === 'effort' || group.key === 'mode'} onPick={group.onChange} />
@@ -51,6 +57,19 @@ export function SettingsPanel({ groups, disabled, extra, feedback, onDone, onClo
         </button>
       </footer>
     </>
+  )
+}
+
+function PinButton({ group, pinned, onPin }: { group: SettingGroup; pinned: boolean; onPin: (key: string, pinned: boolean) => void }) {
+  const t = useTranslate()
+  const label = t(pinned ? 'composer.settings.unpin' : 'composer.settings.pin', { setting: group.label })
+  return (
+    <TooltipButton type="button" aria-pressed={pinned} aria-label={label} title={label} onClick={() => onPin(group.key, !pinned)}
+      className={cx('ml-auto flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent',
+        pinned ? 'text-accent' : 'text-ink-faint')}
+    >
+      {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+    </TooltipButton>
   )
 }
 

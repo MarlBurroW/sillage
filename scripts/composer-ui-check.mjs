@@ -22,6 +22,8 @@ const efforts = [
   { value: 'low', label: 'Faible', hint: 'Réflexion limitée' },
   { value: 'medium', label: 'Moyen', hint: 'Réflexion intermédiaire' },
   { value: 'high', label: 'Élevé', hint: 'Réflexion approfondie' },
+  // `xhigh` : c'est lui qui rend Ultracode disponible, et donc épinglable.
+  { value: 'xhigh', label: 'Maximal', hint: 'Réflexion la plus longue' },
 ]
 const models = [
   { value: 'alpha', displayName: 'Modèle Alpha', description: 'Premier modèle', hint: 'alpha-v1', isDefault: true, efforts, defaultEffort: 'medium' },
@@ -100,6 +102,9 @@ try {
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     const stored = structuredClone(initial)
+    // Les réglages du compte, dont la barre épinglée : le défaut du protocole au départ.
+    const account = { agentDefaults: {}, collapsedProjects: [], projectsDir: null, appearance: null, notifications: {}, composerLayout: { claude: ['model', 'effort'], codex: ['model', 'effort'], opencode: ['model', 'effort'] } }
+    const layouts = []
     const patches = []
     const messages = []
     let hold = null
@@ -112,6 +117,10 @@ try {
       const path = new URL(request.url()).pathname
       const id = path.split('/')[3]
       if (path.endsWith('/models')) return route.fulfill({ json: { models, modes: id === 'codex' ? [{ mode: 'default', label: 'Standard' }, { mode: 'plan', label: 'Plan' }] : [], account: null, fetchedAt: Date.now() } })
+      if (path === '/api/me/settings') {
+        if (request.method() === 'PATCH') { account.composerLayout = request.postDataJSON().composerLayout; layouts.push(account.composerLayout) }
+        return route.fulfill({ json: account })
+      }
       if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true }], sillageServer: true } })
       if (path.endsWith('/messages')) {
         messages.push({ text: request.postDataJSON().text, config: structuredClone(stored[id]) })
@@ -302,6 +311,29 @@ try {
       await page.keyboard.press('Escape')
       await page.mouse.move(0, 0)
     }
+
+    // Épingler depuis le panneau : l'interrupteur et la puce apparaissent sous le texte,
+    // l'interrupteur bascule sans menu, et la liste part au compte.
+    await openAll()
+    await dialog.getByRole('button', { name: 'Épingler Ultracode sous le composeur', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Épingler Permissions sous le composeur', exact: true }).click()
+    await close()
+    const ultracode = page.getByRole('switch', { name: /^Ultracode :/ })
+    await ultracode.waitFor()
+    assert.equal(await ultracode.getAttribute('aria-checked'), 'false')
+    await page.getByRole('button', { name: /^Permissions :/ }).waitFor()
+    assert.deepEqual(layouts.at(-1).claude, ['model', 'effort', 'ultracode', 'permission'])
+    await ultracode.click()
+    await page.waitForFunction(() => document.querySelector('[role="switch"][aria-label^="Ultracode :"]').getAttribute('aria-checked') === 'true')
+    await page.evaluate(() => window.settings.flush())
+    assert.equal(stored.claude.ultracode, true)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Pinned chips do not overflow')
+    await openAll()
+    await dialog.getByRole('button', { name: 'Retirer Ultracode du composeur', exact: true }).click()
+    await close()
+    await ultracode.waitFor({ state: 'hidden' })
+    assert.deepEqual(layouts.at(-1).claude, ['model', 'effort', 'permission'])
+
     await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.evaluate(() => window.setReadOnly(true))
@@ -309,7 +341,7 @@ try {
     assert.equal(await model().isDisabled(), true)
     assert.equal(await full.isDisabled(), true)
     assert.deepEqual(errors, [])
-    console.log(`OK ${viewport.width}×${viewport.height}: quick choices, ordered saves, send waits, retry, draft, Claude/Codex, MCP, bounds`)
+    console.log(`OK ${viewport.width}×${viewport.height}: quick choices, ordered saves, send waits, retry, draft, Claude/Codex, MCP, pinned chips, bounds`)
     await context.close()
   }
 } finally {

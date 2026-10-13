@@ -1403,6 +1403,8 @@ export const fr: Catalog = {
   'composer.settings.empty': 'Aucune option disponible.',
   'composer.settings.saveError': 'Les réglages n’ont pas pu être enregistrés.',
   'composer.settings.retry': 'Réessayer',
+  'composer.settings.pin': 'Épingler {setting} sous le composeur',
+  'composer.settings.unpin': 'Retirer {setting} du composeur',
 
   // Commun
   'common.close': 'Fermer',
