@@ -24,6 +24,7 @@ import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
 import { ClaudeAccountStore } from './claude-accounts/store.js'
 import { ClaudeLoginService } from './claude-accounts/login.js'
+import { ClaudeAccountGauges } from './claude-accounts/gauges.js'
 import { CodexAccountHomes } from './codex-accounts/homes.js'
 import { CodexLoginService } from './codex-accounts/login.js'
 import { CodexAccountStore } from './codex-accounts/store.js'
@@ -52,9 +53,10 @@ async function main(): Promise<void> {
   const encryptionKey = loadOrCreateKey(config.paths.data)
   const secrets = new SecretStore(db, encryptionKey)
   const gitCredentials = new GitCredentialStore(db, encryptionKey)
-  const claudeAccounts = new ClaudeAccountStore(db, encryptionKey)
-  // La connexion guidée pilote `claude setup-token`, résolu comme pour les conversations.
-  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable())
+  const claudeGauges = new ClaudeAccountGauges(config.paths.claudeAccounts)
+  const claudeAccounts = new ClaudeAccountStore(db, encryptionKey, claudeGauges)
+  // La connexion guidée pilote le CLI, résolu comme pour les conversations.
+  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable(), claudeGauges)
   const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(config.paths.codexAccounts) }
   // La connexion d'un compte Codex lance l'app-server du CLI, résolu comme pour les
   // conversations : le binaire que Sillage gère passe avant celui du PATH.

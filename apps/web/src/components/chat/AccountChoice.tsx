@@ -21,7 +21,8 @@ import { ChoiceList, type Choice } from '../ui'
 /** Valeur de la connexion du CLI : `null` n'est pas une valeur d'option. */
 const CLI_ACCOUNT = 'cli'
 
-type Account = { id: string; label: string; kind: 'oauth' | 'apiKey' | 'chatgpt' }
+/** `gauged` : un abonnement dont l'usage se lit, ChatGPT ou Claude avec sa jauge. */
+type Account = { id: string; label: string; kind: 'oauth' | 'apiKey' | 'chatgpt' | 'gauged' }
 
 /** La fenêtre la plus chargée, puis la suivante : ce qui décide d'un choix. */
 function summarize(usage: AgentUsage | undefined, t: ReturnType<typeof useTranslate>): string | undefined {
@@ -51,7 +52,11 @@ export function AccountChoice({
   const { data: codexList } = useCodexAccounts(isCodex)
 
   const accounts: Account[] = isClaude
-    ? (claudeList?.accounts ?? []).map((account) => ({ id: account.id, label: account.label, kind: account.kind }))
+    ? (claudeList?.accounts ?? []).map((account) => ({
+        id: account.id,
+        label: account.label,
+        kind: account.kind === 'oauth' && account.gauge ? ('gauged' as const) : account.kind,
+      }))
     : isCodex
       ? (codexList?.accounts ?? [])
           // Un home sans connexion refuserait le tour : il ne se propose pas.
@@ -65,8 +70,9 @@ export function AccountChoice({
       : []
 
   const chosen = config.agent === 'opencode' ? null : config.account
-  // La connexion du CLI, puis les comptes. Un jeton de setup-token ne lit pas son forfait,
-  // une clé API n'en a pas : les sonder ne rendrait rien, leur aperçu est une phrase.
+  // La connexion du CLI, puis les comptes. Un jeton de setup-token sans jauge ne lit pas
+  // son forfait, une clé API n'en a pas : les sonder ne rendrait rien, leur aperçu est une
+  // phrase.
   const probed: (string | null)[] = [
     null,
     ...accounts.filter((account) => account.kind !== 'oauth' && account.kind !== 'apiKey').map((account) => account.id),

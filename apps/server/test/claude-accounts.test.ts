@@ -88,7 +88,9 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   const usage = await app.inject(`/api/agents/claude/usage?account=${account.id}`)
   assert.equal(usage.statusCode, 200, usage.body)
   assert.equal(usage.json<AgentUsage>().plan, account.id)
-  assert.deepEqual(seen, [{ accountId: account.id, token: TOKEN }])
+  // Sans jauge, le compte est connu mais rien n'est à lire : l'adaptateur reçoit une
+  // chaîne vide, jamais le jeton, qui ne lit pas les limites du forfait.
+  assert.deepEqual(seen, [{ accountId: account.id, token: '' }])
   assert.equal((await app.inject({ url: `/api/agents/claude/usage?account=${account.id}`, headers: { 'x-user': 'other' } })).statusCode, 404)
   assert.equal((await app.inject('/api/agents/claude/usage')).json<AgentUsage>().plan, 'cli', 'Sans compte, la connexion du CLI')
 
@@ -104,4 +106,43 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/claude-accounts/${account.id}` })).statusCode, 204)
   assert.equal(store.list('owner').length, 1)
   assert.equal(store.list('other').length, 1)
+})
+
+test('jauge d’un abonnement : reprise d’un dossier jetable, courriel lu, retirée avec le compte', async (t) => {
+  const { ClaudeAccountGauges } = await import('../src/claude-accounts/gauges.js')
+  const { mkdirSync, writeFileSync, existsSync, statSync } = await import('node:fs')
+  const dir = await mkdtemp(join(tmpdir(), 'sillage-gauges-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  const gauges = new ClaudeAccountGauges(join(dir, 'claude-accounts'))
+  const store = new ClaudeAccountStore(db, randomBytes(32), gauges)
+
+  const account = store.create('owner', 'Perso', TOKEN)
+  const keyed = store.create('owner', 'Boîte', 'sk-ant-api03-' + 'k'.repeat(40))
+  assert.equal(store.find('owner', account.id)?.gauge, null)
+
+  // Une connexion ratée ne laisse rien : pas d'identifiants, pas de reprise.
+  const staging = join(dir, 'staging')
+  mkdirSync(staging)
+  assert.throws(() => gauges.adopt(account.id, staging))
+  assert.equal(gauges.has(account.id), false)
+
+  writeFileSync(join(staging, '.credentials.json'), '{"claudeAiOauth":{}}')
+  writeFileSync(join(staging, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'perso@example.com' } }))
+  writeFileSync(join(staging, 'history.jsonl'), 'pas gardé')
+  gauges.adopt(account.id, staging)
+  assert.deepEqual(store.find('owner', account.id)?.gauge, { email: 'perso@example.com' })
+  assert.equal(existsSync(join(gauges.path(account.id), 'history.jsonl')), false, 'Seule la connexion est gardée')
+  assert.equal(statSync(join(gauges.path(account.id), '.credentials.json')).mode & 0o777, 0o600)
+
+  // Une clé API n'a pas de forfait : même un dossier égaré ne lui donne pas de jauge.
+  mkdirSync(gauges.path(keyed.id), { recursive: true })
+  writeFileSync(join(gauges.path(keyed.id), '.credentials.json'), '{}')
+  assert.equal(store.find('owner', keyed.id)?.gauge, null)
+
+  assert.ok(store.delete('owner', account.id))
+  assert.equal(existsSync(gauges.path(account.id)), false, 'La jauge part avec le compte')
 })

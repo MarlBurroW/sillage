@@ -1,4 +1,4 @@
-import { ExternalLink, IdCard, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ExternalLink, Gauge, IdCard, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type { ClaudeAccount, ClaudeLoginStatusDto } from '@sillage/protocol'
 import {
@@ -22,6 +22,8 @@ import {
   useClaudeLoginStatus,
   useCreateClaudeAccount,
   useDeleteClaudeAccount,
+  useForgetClaudeGauge,
+  useStartClaudeGauge,
   useStartClaudeLogin,
   useSubmitClaudeLoginCode,
   useUpdateClaudeAccount,
@@ -186,14 +188,30 @@ function AddAccountCard({ onClose }: { onClose: () => void }) {
  * Les étapes du CLI, suivies à l'écran : l'URL à ouvrir, le code à coller, puis le
  * compte créé. Un code refusé se ressaisit sans tout recommencer, tant que le CLI vit.
  */
-function GuidedLogin({ initial, onClose }: { initial: ClaudeLoginStatusDto; onClose: () => void }) {
+function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDto; onClose: () => void }) {
   const t = useTranslate()
+  /**
+   * La connexion suivie : celle du jeton, puis, si on l'enchaîne, celle de la jauge.
+   * Les deux passent par les mêmes routes de suivi, seul l'identifiant change.
+   */
+  const [initial, setInitial] = useState(first)
   const { data: polled } = useClaudeLoginStatus(initial.loginId)
   const submit = useSubmitClaudeLoginCode(initial.loginId)
   const cancel = useCancelClaudeLogin()
+  const startGauge = useStartClaudeGauge()
   const [code, setCode] = useState('')
   // L'envoi d'un code pose sa réponse dans la même relecture : c'est elle qui fait foi.
   const status = polled ?? initial
+  const gauge = status.purpose === 'gauge'
+
+  const chainGauge = (accountId: string) =>
+    startGauge.mutate(accountId, {
+      onSuccess: (next) => {
+        setCode('')
+        submit.reset()
+        setInitial(next)
+      },
+    })
 
   const send = (event: FormEvent) => {
     event.preventDefault()
@@ -207,13 +225,39 @@ function GuidedLogin({ initial, onClose }: { initial: ClaudeLoginStatusDto; onCl
 
   return (
     <Card>
-      <CardHeader title={t('claudeAccounts.guided.title')} icon={<IdCard size={16} />} />
+      <CardHeader
+        title={gauge ? t('claudeAccounts.gauge.title') : t('claudeAccounts.guided.title')}
+        icon={gauge ? <Gauge size={16} /> : <IdCard size={16} />}
+      />
       <CardBody className="flex flex-col gap-4">
+        {gauge && status.state !== 'done' ? <p className="text-sm text-ink-soft">{t('claudeAccounts.gauge.explain')}</p> : null}
         {status.state === 'done' ? (
           <>
-            <Banner tone="positive">{t('claudeAccounts.guided.done', { label: status.account?.label ?? '' })}</Banner>
-            <div>
-              <Button type="button" onClick={onClose}>{t('common.close')}</Button>
+            <Banner tone="positive">
+              {gauge
+                ? status.account?.gauge?.email
+                  ? t('claudeAccounts.gauge.doneWithEmail', { label: status.account.label, email: status.account.gauge.email })
+                  : t('claudeAccounts.gauge.done', { label: status.account?.label ?? '' })
+                : t('claudeAccounts.guided.done', { label: status.account?.label ?? '' })}
+            </Banner>
+            {/* Le jeton fait marcher les sessions, pas la jauge : la proposer dans la
+                foulée, c'est une page et un code de plus, au moment où l'on y est. */}
+            {!gauge && status.account ? <p className="text-sm text-ink-soft">{t('claudeAccounts.gauge.offer')}</p> : null}
+            {errorOf(startGauge.error) ? <Banner>{errorOf(startGauge.error)}</Banner> : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {!gauge && status.account ? (
+                <Button
+                  type="button"
+                  icon={<Gauge size={15} />}
+                  disabled={startGauge.isPending}
+                  onClick={() => chainGauge(status.account!.id)}
+                >
+                  {t('claudeAccounts.gauge.enable')}
+                </Button>
+              ) : null}
+              <Button type="button" variant={!gauge && status.account ? 'ghost' : 'primary'} onClick={onClose}>
+                {gauge ? t('common.close') : t('claudeAccounts.gauge.later')}
+              </Button>
             </div>
           </>
         ) : (
@@ -272,6 +316,10 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
   const t = useTranslate()
   const update = useUpdateClaudeAccount()
   const remove = useDeleteClaudeAccount()
+  const startGauge = useStartClaudeGauge()
+  const forgetGauge = useForgetClaudeGauge()
+  /** La connexion de jauge en cours pour ce compte, une fois lancée. */
+  const [gaugeLogin, setGaugeLogin] = useState<ClaudeLoginStatusDto | null>(null)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [label, setLabel] = useState(account.label)
@@ -348,6 +396,33 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
                 date: new Date(account.updatedAt).toLocaleString(locale()),
               })}
             </p>
+            {/* La jauge d'un abonnement : sans elle, le choix du compte se fait à l'aveugle. */}
+            {account.kind === 'oauth' ? (
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                <span className={account.gauge ? 'text-ink-soft' : 'text-ink-faint'}>
+                  <Gauge size={12} className="mr-1 inline align-[-2px]" />
+                  {account.gauge
+                    ? account.gauge.email
+                      ? t('claudeAccounts.gauge.onWithEmail', { email: account.gauge.email })
+                      : t('claudeAccounts.gauge.on')
+                    : t('claudeAccounts.gauge.off')}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={startGauge.isPending || gaugeLogin !== null}
+                  onClick={() => startGauge.mutate(account.id, { onSuccess: setGaugeLogin })}
+                >
+                  {account.gauge ? t('claudeAccounts.gauge.renew') : t('claudeAccounts.gauge.enable')}
+                </Button>
+                {account.gauge ? (
+                  <Button size="sm" variant="ghost" disabled={forgetGauge.isPending} onClick={() => forgetGauge.mutate(account.id)}>
+                    {t('claudeAccounts.gauge.remove')}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {errorOf(startGauge.error) ? <Banner>{errorOf(startGauge.error)}</Banner> : null}
           </div>
 
           <Button size="sm" variant="ghost" icon={<Pencil size={15} />} onClick={openEdit}>
@@ -363,6 +438,12 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
           </Button>
         </CardBody>
       )}
+
+      {gaugeLogin ? (
+        <div className="border-t border-line">
+          <GuidedLogin initial={gaugeLogin} onClose={() => setGaugeLogin(null)} />
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={confirming}
