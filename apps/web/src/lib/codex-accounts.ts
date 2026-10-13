@@ -11,7 +11,8 @@ import { api } from './api'
  */
 
 const ACCOUNTS_KEY = ['codex-accounts']
-const loginKey = (id: string) => ['codex-accounts', id, 'login']
+/** Hors de `ACCOUNTS_KEY`, pour la même raison que côté Claude : voir `claude-accounts.ts`. */
+const loginKey = (id: string) => ['codex-login', id]
 
 export function useCodexAccounts(enabled = true) {
   return useQuery({

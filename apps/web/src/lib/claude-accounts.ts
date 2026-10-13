@@ -57,7 +57,12 @@ export function useDeleteClaudeAccount() {
  * montre l'URL, recueille le code que la page affiche et le transmet. Le compte naît
  * quand le CLI a imprimé le jeton.
  */
-const loginKey = (loginId: string) => ['claude-accounts', 'login', loginId]
+/**
+ * Hors de `ACCOUNTS_KEY`, et pas en dessous : invalider la liste invaliderait aussi la
+ * connexion suivie, dont la relecture invalide la liste à sa fin. La boucle tournait à
+ * quarante requêtes par seconde et figeait l'écran sur « Vérification… » (13 octobre 2026).
+ */
+const loginKey = (loginId: string) => ['claude-login', loginId]
 
 export function useStartClaudeLogin() {
   return useMutation({
