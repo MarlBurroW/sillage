@@ -1,12 +1,14 @@
-import { IdCard, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ExternalLink, IdCard, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import type { ClaudeAccount } from '@sillage/protocol'
+import type { ClaudeAccount, ClaudeLoginStatusDto } from '@sillage/protocol'
 import {
+  Badge,
   Banner,
   Button,
   Card,
   CardBody,
   CardHeader,
+  ChoiceList,
   ConfirmDialog,
   EmptyState,
   Field,
@@ -15,9 +17,13 @@ import { ListHeading, SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { locale, useTranslate } from '../lib/i18n'
 import {
+  useCancelClaudeLogin,
   useClaudeAccounts,
+  useClaudeLoginStatus,
   useCreateClaudeAccount,
   useDeleteClaudeAccount,
+  useStartClaudeLogin,
+  useSubmitClaudeLoginCode,
   useUpdateClaudeAccount,
 } from '../lib/claude-accounts'
 
@@ -25,39 +31,30 @@ import {
  * Comptes Claude supplémentaires du compte Sillage.
  *
  * Le CLI ne tient qu'une connexion : celle de `/login`. Un abonnement de plus passe par
- * un jeton de `claude setup-token`, que l'utilisateur colle ici et que Sillage donne à
- * la session qui choisit ce compte. Comme pour les accès git, l'écran n'affiche jamais
- * un jeton : l'API n'en rend aucun. Ce qui reste et qui compte, c'est le nom qu'on lui
- * a donné et la date du dernier jeton, parce qu'il expire au bout d'un an.
+ * un jeton de `claude setup-token`, que Sillage sait obtenir lui-même en pilotant la
+ * commande : l'écran montre l'URL d'autorisation, recueille le code que la page
+ * affiche, et le compte naît avec le jeton. On peut aussi coller un jeton obtenu
+ * ailleurs, ou une clé API Console facturée à l'usage.
+ *
+ * Comme pour les accès git, l'écran n'affiche jamais un secret : l'API n'en rend
+ * aucun. Ce qui reste et qui compte, c'est le nom qu'on lui a donné, sa nature, et la
+ * date du dernier secret, parce qu'un jeton expire au bout d'un an.
  */
 
 const errorOf = (error: unknown): string | null =>
   error instanceof ApiRequestError ? error.message : null
 
+type AddMode = 'guided' | 'paste'
+
 export function ClaudeAccountsSettingsPage() {
   const t = useTranslate()
   const { data } = useClaudeAccounts()
-  const create = useCreateClaudeAccount()
 
   const [adding, setAdding] = useState(false)
-  const [label, setLabel] = useState('')
-  const [token, setToken] = useState('')
-
-  const openForm = () => {
-    setLabel('')
-    setToken('')
-    create.reset()
-    setAdding(true)
-  }
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    create.mutate({ label: label.trim(), token: token.trim() }, { onSuccess: () => setAdding(false) })
-  }
 
   const accounts = data?.accounts ?? []
   const addButton = (
-    <Button size="sm" icon={<Plus size={15} />} disabled={adding} onClick={openForm}>
+    <Button size="sm" icon={<Plus size={15} />} disabled={adding} onClick={() => setAdding(true)}>
       {t('claudeAccounts.create.open')}
     </Button>
   )
@@ -78,34 +75,7 @@ export function ClaudeAccountsSettingsPage() {
           action={accounts.length > 0 ? addButton : null}
         />
 
-        {adding ? (
-          <Card>
-            <CardHeader title={t('claudeAccounts.create.title')} icon={<KeyRound size={16} />} />
-            <CardBody>
-              <form onSubmit={submit} className="flex flex-col gap-4">
-                <Field
-                  label={t('claudeAccounts.label.label')}
-                  hint={t('claudeAccounts.label.hint')}
-                  value={label}
-                  onChange={(event) => setLabel(event.target.value)}
-                  maxLength={60}
-                  autoFocus
-                  required
-                />
-                <TokenField value={token} onChange={setToken} />
-                {errorOf(create.error) ? <Banner>{errorOf(create.error)}</Banner> : null}
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="submit" disabled={create.isPending}>
-                    {create.isPending ? t('claudeAccounts.create.pending') : t('claudeAccounts.create.action')}
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={() => setAdding(false)}>
-                    {t('common.cancel')}
-                  </Button>
-                </div>
-              </form>
-            </CardBody>
-          </Card>
-        ) : null}
+        {adding ? <AddAccountCard onClose={() => setAdding(false)} /> : null}
 
         {accounts.length === 0 ? (
           adding ? null : (
@@ -125,31 +95,176 @@ export function ClaudeAccountsSettingsPage() {
 }
 
 /**
- * Le jeton, avec la marche à suivre pour l'obtenir juste sous le champ : c'est au
- * moment de coller qu'on se demande d'où il vient. La commande se lance dans un
- * terminal où l'on est connecté au compte voulu, et le navigateur fait le reste.
+ * Le formulaire d'ajout : un nom, puis la voie. Guidée, le CLI est piloté par le
+ * serveur et l'écran suit ses étapes ; collée, le secret part tel quel.
  */
-function TokenField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function AddAccountCard({ onClose }: { onClose: () => void }) {
   const t = useTranslate()
+  const create = useCreateClaudeAccount()
+  const start = useStartClaudeLogin()
+  const [mode, setMode] = useState<AddMode>('guided')
+  const [label, setLabel] = useState('')
+  const [token, setToken] = useState('')
+  /** La connexion guidée en cours, une fois lancée. */
+  const [login, setLogin] = useState<ClaudeLoginStatusDto | null>(null)
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (mode === 'paste') {
+      create.mutate({ label: label.trim(), token: token.trim() }, { onSuccess: onClose })
+    } else {
+      start.mutate({ label: label.trim() }, { onSuccess: setLogin })
+    }
+  }
+
+  if (login) return <GuidedLogin initial={login} onClose={onClose} />
+
+  const modes = [
+    { value: 'guided' as const, label: t('claudeAccounts.mode.guided'), hint: t('claudeAccounts.mode.guided.hint') },
+    { value: 'paste' as const, label: t('claudeAccounts.mode.paste'), hint: t('claudeAccounts.mode.paste.hint') },
+  ]
+  const pending = create.isPending || start.isPending
+  const failure = errorOf(create.error) ?? errorOf(start.error)
+
   return (
-    <div className="flex flex-col gap-2">
-      <Field
-        label={t('claudeAccounts.token.label')}
-        hint={t('claudeAccounts.token.hint')}
-        type="password"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        // Le gestionnaire de mots de passe du navigateur n'a rien à retenir ici.
-        autoComplete="off"
-        autoCapitalize="none"
-        autoCorrect="off"
-        required
-      />
-      <p className="text-xs text-ink-faint">
-        {t('claudeAccounts.token.howto')}{' '}
-        <code className="rounded bg-sunken px-1 py-0.5 font-mono text-[0.8125rem] text-ink">claude setup-token</code>
-      </p>
-    </div>
+    <Card>
+      <CardHeader title={t('claudeAccounts.create.title')} icon={<IdCard size={16} />} />
+      <CardBody>
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <Field
+            label={t('claudeAccounts.label.label')}
+            hint={t('claudeAccounts.label.hint')}
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            maxLength={60}
+            autoFocus
+            required
+          />
+          <ChoiceList label={t('claudeAccounts.mode.label')} value={mode} options={modes} onChange={setMode} />
+          {mode === 'paste' ? (
+            <div className="flex flex-col gap-2">
+              <Field
+                label={t('claudeAccounts.token.label')}
+                hint={t('claudeAccounts.token.hint')}
+                type="password"
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                // Le gestionnaire de mots de passe du navigateur n'a rien à retenir ici.
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                required
+              />
+              <p className="text-xs text-ink-faint">
+                {t('claudeAccounts.token.howto')}{' '}
+                <code className="rounded bg-sunken px-1 py-0.5 font-mono text-[0.8125rem] text-ink">claude setup-token</code>
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-ink-faint">{t('claudeAccounts.guided.explain')}</p>
+          )}
+          {failure ? <Banner>{failure}</Banner> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" disabled={pending}>
+              {pending
+                ? t('claudeAccounts.create.pending')
+                : mode === 'paste'
+                  ? t('claudeAccounts.create.action')
+                  : t('claudeAccounts.guided.start')}
+            </Button>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+          </div>
+        </form>
+      </CardBody>
+    </Card>
+  )
+}
+
+/**
+ * Les étapes du CLI, suivies à l'écran : l'URL à ouvrir, le code à coller, puis le
+ * compte créé. Un code refusé se ressaisit sans tout recommencer, tant que le CLI vit.
+ */
+function GuidedLogin({ initial, onClose }: { initial: ClaudeLoginStatusDto; onClose: () => void }) {
+  const t = useTranslate()
+  const { data: polled } = useClaudeLoginStatus(initial.loginId)
+  const submit = useSubmitClaudeLoginCode(initial.loginId)
+  const cancel = useCancelClaudeLogin()
+  const [code, setCode] = useState('')
+  // Ce que le dernier envoi a rendu prime sur la relecture, qui peut dater d'avant.
+  const status = submit.data ?? polled ?? initial
+
+  const send = (event: FormEvent) => {
+    event.preventDefault()
+    submit.mutate({ code: code.trim() })
+  }
+
+  const close = () => {
+    if (status.state !== 'done') cancel.mutate(initial.loginId)
+    onClose()
+  }
+
+  return (
+    <Card>
+      <CardHeader title={t('claudeAccounts.guided.title')} icon={<IdCard size={16} />} />
+      <CardBody className="flex flex-col gap-4">
+        {status.state === 'done' ? (
+          <>
+            <Banner tone="positive">{t('claudeAccounts.guided.done', { label: status.account?.label ?? '' })}</Banner>
+            <div>
+              <Button type="button" onClick={onClose}>{t('common.close')}</Button>
+            </div>
+          </>
+        ) : (
+          <form onSubmit={send} className="flex flex-col gap-4">
+            <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-ink-soft">
+              <li>
+                {t('claudeAccounts.guided.step.open')}{' '}
+                {status.authUrl ? (
+                  <a
+                    href={status.authUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-accent underline-offset-2 hover:underline"
+                  >
+                    {t('claudeAccounts.guided.openLink')}
+                    <ExternalLink size={14} />
+                  </a>
+                ) : (
+                  <span className="text-ink-faint">{t('claudeAccounts.guided.starting')}</span>
+                )}
+              </li>
+              <li>{t('claudeAccounts.guided.step.authorize')}</li>
+              <li>{t('claudeAccounts.guided.step.paste')}</li>
+            </ol>
+            <Field
+              label={t('claudeAccounts.guided.code.label')}
+              hint={t('claudeAccounts.guided.code.hint')}
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              disabled={status.state === 'starting' || status.state === 'checking'}
+              required
+            />
+            {status.state === 'failed' && status.error ? <Banner>{status.error}</Banner> : null}
+            {errorOf(submit.error) ? <Banner>{errorOf(submit.error)}</Banner> : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="submit" disabled={submit.isPending || status.state === 'checking' || status.state === 'starting'}>
+                {submit.isPending || status.state === 'checking'
+                  ? t('claudeAccounts.guided.checking')
+                  : t('claudeAccounts.guided.submit')}
+              </Button>
+              <Button type="button" variant="ghost" onClick={close}>
+                {t('common.cancel')}
+              </Button>
+            </div>
+          </form>
+        )}
+      </CardBody>
+    </Card>
   )
 }
 
@@ -197,18 +312,16 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
                 maxLength={60}
                 required
               />
-              <div className="flex flex-col gap-2">
-                <Field
-                  label={t('claudeAccounts.token.label')}
-                  hint={t('claudeAccounts.token.replaceHint')}
-                  type="password"
-                  value={token}
-                  onChange={(event) => setToken(event.target.value)}
-                  autoComplete="off"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                />
-              </div>
+              <Field
+                label={t('claudeAccounts.token.label')}
+                hint={t('claudeAccounts.token.replaceHint')}
+                type="password"
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+              />
               {errorOf(update.error) ? <Banner>{errorOf(update.error)}</Banner> : null}
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="submit" disabled={update.isPending || (label.trim() === account.label && !token.trim())}>
@@ -222,9 +335,14 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
           </CardBody>
         </>
       ) : (
-        <CardBody className="flex items-start gap-3">
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="font-medium">{account.label}</span>
+        <CardBody className="flex flex-wrap items-start gap-3">
+          <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{account.label}</span>
+              <Badge icon={<KeyRound size={11} />}>
+                {account.kind === 'apiKey' ? t('claudeAccounts.kind.apiKey') : t('claudeAccounts.kind.oauth')}
+              </Badge>
+            </span>
             <p className="text-xs text-ink-faint">
               {t('claudeAccounts.updatedAt', {
                 date: new Date(account.updatedAt).toLocaleString(locale()),

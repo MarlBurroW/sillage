@@ -1,0 +1,1 @@
+ALTER TABLE `claude_accounts` ADD `kind` text DEFAULT 'oauth' NOT NULL;

@@ -1294,6 +1294,13 @@ export const claudeAccounts = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     label: text('label').notNull(),
+    /**
+     * Ce qu'est le secret : un jeton OAuth de `claude setup-token` (abonnement, passé
+     * dans `CLAUDE_CODE_OAUTH_TOKEN`) ou une clé API Console (facturée à l'usage, passée
+     * dans `ANTHROPIC_API_KEY`). Déduit du préfixe à l'écriture, retenu pour que le
+     * lancement n'ait pas à déchiffrer pour le savoir.
+     */
+    kind: text('kind').$type<'oauth' | 'apiKey'>().notNull().default('oauth'),
     ciphertext: text('ciphertext').notNull(),
     iv: text('iv').notNull(),
     authTag: text('auth_tag').notNull(),

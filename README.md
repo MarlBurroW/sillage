@@ -83,6 +83,9 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 - **Dictation** biased with a lexicon read from the project itself plus the
   current branch, then an optional cleanup pass. Any OpenAI-format endpoint.
 - **MCP servers** declared once and handed to the agents that should get them.
+- **Extra accounts.** Register other Claude subscriptions or API keys, and other
+  Codex sign-ins, then pick one per conversation; the CLI's own sign-in stays
+  untouched. [Extra accounts](docs/accounts.md).
 - **A task API for machines.** `/api/v1` speaks tasks rather than screens: open
   one in a project, follow its events, answer what it asks, steer or interrupt
   it, and take a webhook when it lands. Bearer tokens carry their own scopes and
@@ -313,6 +316,7 @@ deploy/            service templates (systemd, launchd), config example, docker-
 site/              one-page website (GitHub Pages) and its screenshots
 scripts/           screenshot runner, runtime staging, Codex and OpenCode type generation
 docs/windows.md    running Sillage on Windows through WSL2
+docs/accounts.md   extra Claude and Codex accounts, how they are wired, their limits
 docs/CODEX.md      what the Codex adapter relies on, as probed
 docs/OPENCODE.md   what the OpenCode adapter relies on, as probed
 docs/brand/        the brand and the files derived from it

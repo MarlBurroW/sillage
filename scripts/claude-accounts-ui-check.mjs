@@ -82,18 +82,41 @@ try {
   await page.getByText('Aucun compte supplémentaire').waitFor()
   await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
   await page.getByLabel('Nom').fill('Boulot')
-  await page.getByLabel('Jeton').fill('sk-ant-api03-pas-le-bon')
+  // Le flux guidé est proposé d'abord ; coller un secret est l'autre voie.
+  await page.getByRole('radio', { name: /Coller un jeton/ }).click()
+  await page.getByLabel('Jeton ou clé API').fill('sk-ant-api03-pas-le-bon')
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText(/sk-ant-oat01/).first().waitFor()
   assert.equal(await page.getByText('Comptes enregistrés').count(), 1)
-  await page.getByLabel('Jeton').fill(TOKEN)
+  await page.getByLabel('Jeton ou clé API').fill(TOKEN)
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
-  await page.getByText('Jeton mis à jour le').waitFor()
+  await page.getByText('Secret mis à jour le').waitFor()
+  await page.getByText('Abonnement', { exact: true }).waitFor()
   assert.ok(!(await page.content()).includes(TOKEN), 'Le jeton ne revient jamais au navigateur')
+  // Une clé API Console se reconnaît à son préfixe et s'affiche comme telle.
+  await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
+  await page.getByLabel('Nom').fill('Boîte')
+  await page.getByRole('radio', { name: /Coller un jeton/ }).click()
+  await page.getByLabel('Jeton ou clé API').fill('sk-ant-api03-' + 'k'.repeat(40))
+  await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
+  await page.getByText('Clé API', { exact: true }).waitFor()
   const listed = await (await context.request.get(`${base}/api/claude-accounts`)).json()
-  assert.deepEqual(listed.accounts.map((entry) => entry.label), ['Boulot'])
+  assert.deepEqual(listed.accounts.map((entry) => [entry.label, entry.kind]), [['Boulot', 'oauth'], ['Boîte', 'apiKey']])
   assert.ok(listed.accounts.every((entry) => !('token' in entry)))
   await page.screenshot({ path: '/tmp/sillage-claude-accounts-desktop.png' })
+  const keyed = listed.accounts[1].id
+  await context.request.delete(`${base}/api/claude-accounts/${keyed}`)
+  // Supprimé par l'API, hors de la page : elle ne le sait qu'en relisant.
+  await page.reload()
+  await page.getByText('Boulot', { exact: true }).waitFor()
+
+  // La connexion guidée sans CLI : l'écran dit que le CLI n'a rien imprimé, et on annule.
+  await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
+  await page.getByLabel('Nom').fill('Guidé')
+  await page.getByRole('button', { name: 'Lancer la connexion' }).click()
+  await page.getByText("Ouvrir la page d'autorisation").or(page.getByRole('alert')).first().waitFor({ timeout: 40000 })
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  await page.getByRole('button', { name: 'Ajouter un compte' }).first().waitFor()
 
   // Renommer sans toucher au jeton.
   await page.getByRole('button', { name: 'Modifier' }).click()

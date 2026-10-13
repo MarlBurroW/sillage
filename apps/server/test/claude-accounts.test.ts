@@ -51,7 +51,7 @@ async function harness(t: TestContext) {
     request.user = db.select().from(users).where(eq(users.id, String(request.headers['x-user'] ?? 'owner'))).get()
   })
   registerErrorHandler(app)
-  registerClaudeAccountRoutes(app, store)
+  registerClaudeAccountRoutes(app, store, {} as never)
   registerAgentRoutes(app, { db } as AppContext, registry, {} as CliInstaller, store, { store: new CodexAccountStore(db), homes: new CodexAccountHomes(join(dir, 'codex')) })
   t.after(() => app.close())
   return { db, store, app, seen }
@@ -64,6 +64,7 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   assert.equal(created.statusCode, 201, created.body)
   const account = created.json<ClaudeAccount>()
   assert.equal(account.label, 'Boulot')
+  assert.equal(account.kind, 'oauth')
   assert.ok(!('token' in account))
 
   // Le jeton n'est stocké que chiffré.
@@ -73,14 +74,17 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   assert.equal(store.resolveToken('other', account.id), undefined, "Le compte d'un autre ne se résout pas")
 
   assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: 'Boulot', token: TOKEN } })).statusCode, 409)
-  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: 'Perso', token: 'sk-ant-api03-nope' } })).statusCode, 400, 'Un jeton qui n’est pas de setup-token est refusé')
+  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: 'Perso', token: 'sk-ant-api03-nope' } })).statusCode, 400, 'Un secret tronqué est refusé')
+  const keyed = (await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: 'Boîte', token: 'sk-ant-api03-' + 'k'.repeat(40) } })).json<ClaudeAccount>()
+  assert.equal(keyed.kind, 'apiKey', 'Une clé API Console se reconnaît à son préfixe')
+  assert.equal(store.resolveToken('owner', keyed.id)?.kind, 'apiKey')
   assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: 'Boulot', token: TOKEN }, headers: { 'x-user': 'other' } })).statusCode, 201, 'Le même nom chez un autre utilisateur passe')
 
   const list = (await app.inject('/api/claude-accounts')).json<{ accounts: ClaudeAccount[] }>()
-  assert.deepEqual(list.accounts.map((entry) => entry.label), ['Boulot'])
+  assert.deepEqual(list.accounts.map((entry) => entry.label), ['Boulot', 'Boîte'])
   assert.ok(list.accounts.every((entry) => !('token' in entry)))
 
-  // La consommation par compte passe le jeton du compte, et seulement au propriétaire.
+  // La consommation par compte est demandée pour le compte, et seulement au propriétaire.
   const usage = await app.inject(`/api/agents/claude/usage?account=${account.id}`)
   assert.equal(usage.statusCode, 200, usage.body)
   assert.equal(usage.json<AgentUsage>().plan, account.id)
@@ -93,11 +97,11 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   const replaced = TOKEN.replace(/a+$/, 'b'.repeat(40))
   assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: { label: 'Travail', token: replaced } })).statusCode, 204)
   assert.equal(store.resolveToken('owner', account.id)?.token, replaced)
-  assert.equal(store.list('owner')[0]?.label, 'Travail')
+  assert.deepEqual(store.list('owner').map((entry) => entry.label), ['Boîte', 'Travail'])
   assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: { label: 'X' }, headers: { 'x-user': 'other' } })).statusCode, 404)
 
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/claude-accounts/${account.id}`, headers: { 'x-user': 'other' } })).statusCode, 404)
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/claude-accounts/${account.id}` })).statusCode, 204)
-  assert.equal(store.list('owner').length, 0)
+  assert.equal(store.list('owner').length, 1)
   assert.equal(store.list('other').length, 1)
 })

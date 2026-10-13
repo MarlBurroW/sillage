@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ClaudeAccount, ClaudeAccountListDto } from '@sillage/protocol'
+import type { ClaudeAccount, ClaudeAccountListDto, ClaudeLoginStatusDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
@@ -49,5 +49,49 @@ export function useDeleteClaudeAccount() {
   return useMutation({
     mutationFn: (id: string) => api.delete<void>(`/api/claude-accounts/${encodeURIComponent(id)}`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY }),
+  })
+}
+
+/**
+ * Connexion guidée d'un abonnement : le serveur pilote `claude setup-token`, l'écran
+ * montre l'URL, recueille le code que la page affiche et le transmet. Le compte naît
+ * quand le CLI a imprimé le jeton.
+ */
+const loginKey = (loginId: string) => ['claude-accounts', 'login', loginId]
+
+export function useStartClaudeLogin() {
+  return useMutation({
+    mutationFn: (input: { label: string }) =>
+      api.post<ClaudeLoginStatusDto>('/api/claude-accounts/login', input),
+  })
+}
+
+export function useClaudeLoginStatus(loginId: string | null) {
+  return useQuery({
+    queryKey: loginKey(loginId ?? ''),
+    queryFn: () => api.get<ClaudeLoginStatusDto>(`/api/claude-accounts/login/${encodeURIComponent(loginId ?? '')}`),
+    enabled: loginId !== null,
+    // Le CLI peut s'arrêter de lui-même (délai, erreur) : on le relit tant qu'il attend.
+    refetchInterval: (query) =>
+      query.state.data?.state === 'waiting_code' || query.state.data?.state === 'starting' ? 3000 : false,
+    staleTime: 0,
+  })
+}
+
+export function useSubmitClaudeLoginCode(loginId: string | null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { code: string }) =>
+      api.post<ClaudeLoginStatusDto>(`/api/claude-accounts/login/${encodeURIComponent(loginId ?? '')}/code`, input),
+    onSuccess: (status) => {
+      queryClient.setQueryData(loginKey(loginId ?? ''), status)
+      if (status.state === 'done') void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+    },
+  })
+}
+
+export function useCancelClaudeLogin() {
+  return useMutation({
+    mutationFn: (loginId: string) => api.delete<void>(`/api/claude-accounts/login/${encodeURIComponent(loginId)}`),
   })
 }

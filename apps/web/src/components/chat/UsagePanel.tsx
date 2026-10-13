@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { AgentKind } from '@sillage/protocol'
 import { AGENT_LABELS } from '../AgentIcon'
 import { locale, useTranslate } from '../../lib/i18n'
+import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useAgentUsage, useRefreshUsage } from '../../lib/usage'
 import { Banner, IconButton, cx } from '../ui'
 import { UsageBar, readAge } from './UsageBar'
@@ -29,6 +30,12 @@ function UsageContent({ agent, account }: { agent: AgentKind; account: string | 
   const t = useTranslate()
   const { data: usage, error, isPending, isFetching } = useAgentUsage(agent, true, account)
   const refresh = useRefreshUsage(agent, account)
+  // Un compte Claude supplémentaire n'a pas de jauge, mais pas pour la même raison
+  // selon sa nature : une clé API n'a pas de forfait, un jeton de setup-token en a un
+  // qu'il n'a pas le droit de lire. Le message doit dire lequel.
+  const { data: claudeAccounts } = useClaudeAccounts(agent === 'claude' && account !== null)
+  const accountKind = claudeAccounts?.accounts.find((entry) => entry.id === account)?.kind ?? null
+  const noLimitsMessage = accountKind === 'oauth' ? t('usage.noLimits.token') : t('usage.noLimits')
   const [refreshing, setRefreshing] = useState(false)
 
   const reload = async () => {
@@ -78,7 +85,7 @@ function UsageContent({ agent, account }: { agent: AgentKind; account: string | 
             ) : null}
 
             {!usage.limitsAvailable ? (
-              <p className="text-sm text-ink-faint">{t('usage.noLimits')}</p>
+              <p className="text-sm text-ink-faint">{noLimitsMessage}</p>
             ) : (
               <div className="flex flex-col gap-3.5">
                 {usage.windows.map((window) => (

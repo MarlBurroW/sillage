@@ -47,6 +47,7 @@ import { CloneJobs } from '../clone-jobs.js'
 import { GitHubRepoCatalog } from '../git-credentials/github.js'
 import type { GitCredentialStore } from '../git-credentials/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
+import type { ClaudeLoginService } from '../claude-accounts/login.js'
 import type { CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexLoginService } from '../codex-accounts/login.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
@@ -104,6 +105,7 @@ export async function buildApp(
   secrets: SecretStore,
   gitCredentials: GitCredentialStore,
   claudeAccounts: ClaudeAccountStore,
+  claudeLogin: ClaudeLoginService,
   codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   codexLogin: CodexLoginService,
   webhooks: WebhookService,
@@ -220,7 +222,7 @@ export async function buildApp(
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
-  registerClaudeAccountRoutes(app, claudeAccounts)
+  registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerWorktreeRoutes(app, ctx, terminals)
   registerCardRoutes(app, ctx, attachments, board)
