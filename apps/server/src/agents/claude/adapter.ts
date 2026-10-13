@@ -167,8 +167,10 @@ export class ClaudeAdapter implements AgentAdapter {
     return this.usageReader.read(force)
   }
 
-  usageForAccount(): Promise<AgentUsage> {
-    return Promise.resolve(claudeAccountUsage())
+  /** `credential` est le dossier de la connexion de jauge ; vide, le compte n'en a pas. */
+  usageForAccount(accountId: string, credential: string, force: boolean): Promise<AgentUsage> {
+    if (!credential) return Promise.resolve(claudeAccountUsage())
+    return this.usageReader.readForConfigDir(accountId, credential, force)
   }
 
   commands(cwd: string, force: boolean): Promise<ProjectCommandsDto> {

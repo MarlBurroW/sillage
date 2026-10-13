@@ -22,6 +22,13 @@ export const claudeAccountSchema = z.object({
   /** Nom choisi par l'utilisateur (« Perso », « Boulot ») : le jeton ne dit pas à qui il est. */
   label: z.string(),
   kind: claudeAccountKindSchema,
+  /**
+   * Jauge d'usage d'un abonnement : le jeton de setup-token ne porte que la portée
+   * `user:inference` et ne lit pas les limites du forfait. Une vraie connexion
+   * (`claude auth login`), gardée à part et réservée aux lectures d'usage, les lit.
+   * Null tant qu'elle n'a pas été faite, et pour une clé API, qui n'a pas de forfait.
+   */
+  gauge: z.object({ email: z.string().nullable() }).nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
 })
@@ -72,10 +79,17 @@ export interface ClaudeAccountListDto {
  * récupère le jeton imprimé. Le compte n'est créé qu'à la fin, avec ce jeton.
  */
 export const startClaudeLoginBodySchema = z.object({ label: claudeAccountLabelSchema })
+
+/**
+ * Ce que mène une connexion guidée : `token` crée le compte avec le jeton de
+ * `setup-token`, `gauge` donne une jauge à un compte existant par `auth login`.
+ */
+export type ClaudeLoginPurpose = 'token' | 'gauge'
 export const submitClaudeLoginCodeBodySchema = z.object({ code: z.string().trim().min(1).max(400) })
 
 export interface ClaudeLoginStatusDto {
   loginId: string
+  purpose: ClaudeLoginPurpose
   /**
    * `starting` tant que le CLI n'a pas imprimé l'URL ; `waiting_code` quand il
    * l'attend ; `checking` pendant qu'il vérifie un code ; `done` avec le compte créé ;

@@ -49,7 +49,13 @@ export function registerAgentRoutes(
    * ni jeton ni consommation. Null pour un compte inconnu, ou un CLI sans comptes.
    */
   const accountCredential = (agent: string, userId: string, accountId: string): string | null => {
-    if (agent === 'claude') return claudeAccounts.resolveToken(userId, accountId)?.token ?? null
+    if (agent === 'claude') {
+      // Le dossier de sa jauge s'il en a une ; une chaîne vide dit « compte connu, sans
+      // jauge », et l'adaptateur répond sans sonder.
+      const account = claudeAccounts.find(userId, accountId)
+      if (!account) return null
+      return account.gauge && claudeAccounts.gauges ? claudeAccounts.gauges.path(accountId) : ''
+    }
     if (agent === 'codex') {
       const account = codexAccounts.store.find(userId, accountId)
       return account && account.status === 'ready' ? codexAccounts.homes.ensure(accountId) : null

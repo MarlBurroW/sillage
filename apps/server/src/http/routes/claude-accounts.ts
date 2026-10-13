@@ -83,6 +83,30 @@ export function registerClaudeAccountRoutes(
     reply.status(204)
   })
 
+  /**
+   * Jauge d'un abonnement existant : une connexion `claude auth login`, suivie comme la
+   * connexion guidée, par les routes `/login/:loginId`. Une clé API n'a pas de forfait.
+   */
+  app.post('/api/claude-accounts/:id/gauge', async (request, reply): Promise<ClaudeLoginStatusDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const account = accounts.find(user.id, id)
+    if (!account) throw notFound('claude_account_not_found', 'Unknown Claude account.')
+    if (account.kind !== 'oauth') {
+      throw new HttpError(400, 'claude_account_no_plan', 'An API key has no plan limits to read.')
+    }
+    reply.status(201)
+    return login.startGauge(user.id, id, account.label)
+  })
+
+  app.delete('/api/claude-accounts/:id/gauge', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    if (!accounts.find(user.id, id)) throw notFound('claude_account_not_found', 'Unknown Claude account.')
+    accounts.gauges?.forget(id)
+    reply.status(204)
+  })
+
   app.patch('/api/claude-accounts/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

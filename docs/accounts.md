@@ -62,12 +62,25 @@ CLAUDE_CONFIG_DIR=~/.claude-work claude auth login
 CLAUDE_CONFIG_DIR=~/.claude-work claude setup-token
 ```
 
+### Usage gauge
+
+A subscription token cannot read plan limits: `setup-token` only asks for the
+`user:inference` scope (read in its authorization URL, 2.1.296), and without
+`user:profile` the CLI does not read them. Each subscription can therefore get a
+**gauge**: a second, full sign-in (`claude auth login`), run by Sillage the same guided
+way, and kept in `<data>/claude-accounts/<id>` (`.credentials.json` and `.claude.json`
+only, mode `0600`). Sessions never use it; usage reads run the CLI with
+`CLAUDE_CONFIG_DIR` pointing there, and the CLI renews that sign-in by itself.
+
+Sillage offers the gauge right after a subscription is added, and on every
+subscription card (**Enable the gauge**, **Sign in again**, **Remove the gauge**). The
+card shows the e-mail the gauge is signed in as: it should be the same account as the
+token. A refused code makes `auth login` exit (« Login failed: … »), unlike
+`setup-token` which waits for another; Sillage then starts a fresh one under the same
+sign-in and shows its new link. An API key has no plan, so no gauge.
+
 ### Limits
 
-- **No usage gauge for a subscription token.** `setup-token` only asks for the
-  `user:inference` scope (read in its authorization URL, 2.1.296), and without
-  `user:profile` the CLI does not read plan limits. The usage panel says so and points
-  to claude.ai. An API key has no plan, so no gauge either.
 - A token cannot open Remote Control sessions nor fetch claude.ai connectors. Local
   MCP servers work.
 - Nothing checks a secret when it is saved beyond its prefix: checking would cost a

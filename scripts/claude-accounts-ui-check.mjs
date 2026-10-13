@@ -92,6 +92,14 @@ try {
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText('Secret mis à jour le').waitFor()
   await page.getByText('Abonnement', { exact: true }).waitFor()
+  // Un abonnement sans jauge le dit, et propose de l'activer ; le flux lancé montre un lien
+  // d'autorisation qui demande la portée du profil, puis s'annule.
+  await page.getByText("Pas de jauge d'usage").waitFor()
+  await page.getByRole('button', { name: 'Activer la jauge' }).click()
+  await page.getByText("Jauge d'usage", { exact: true }).or(page.getByRole('alert')).first().waitFor({ timeout: 40000 })
+  await page.screenshot({ path: '/tmp/sillage-claude-gauge.png', fullPage: true })
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  await page.getByRole('button', { name: 'Activer la jauge' }).waitFor()
   assert.ok(!(await page.content()).includes(TOKEN), 'Le jeton ne revient jamais au navigateur')
   // Une clé API Console se reconnaît à son préfixe et s'affiche comme telle.
   await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()

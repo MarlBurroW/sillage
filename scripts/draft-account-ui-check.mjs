@@ -93,7 +93,7 @@ try {
   await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
   const group = page.getByRole('radiogroup', { name: 'Compte' })
   await group.waitFor()
-  await page.getByRole('radio', { name: /Boulot/ }).getByText(/jeton ne lit pas/).waitFor()
+  await page.getByRole('radio', { name: /Boulot/ }).getByText(/pas de jauge/).waitFor()
   assert.equal(await page.getByRole('radio', { name: /Connexion du CLI/ }).getAttribute('aria-checked'), 'true')
   // L'usage de la connexion du CLI arrive sous son option, lu sur le vrai CLI.
   await page.getByRole('radio', { name: /Connexion du CLI/ }).getByText(/%|Pas de limite|pas pu être lu/).waitFor({ timeout: 40000 })

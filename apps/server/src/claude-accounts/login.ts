@@ -3,8 +3,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
-import { claudeSecretKind, type ClaudeLoginStatusDto } from '@sillage/protocol'
+import { existsSync } from 'node:fs'
+import { claudeSecretKind, type ClaudeLoginPurpose, type ClaudeLoginStatusDto } from '@sillage/protocol'
 import { agentProcessEnv } from '../agents/process-env.js'
+import type { ClaudeAccountGauges } from './gauges.js'
 import type { ClaudeAccountStore } from './store.js'
 
 /**
@@ -22,6 +24,12 @@ import type { ClaudeAccountStore } from './store.js'
  * Le CLI tourne dans un dossier de configuration jetable : il ne doit ni lire la
  * connexion du poste ni y écrire quoi que ce soit. Le jeton n'existe qu'en mémoire le
  * temps d'être chiffré dans le compte, qui n'est créé qu'à ce moment.
+ *
+ * Le même dialogue sert à la jauge d'un compte existant, par `claude auth login` :
+ * même URL, même invite (sondé sur 2.1.296), mais la portée comprend `user:profile` et
+ * le CLI écrit sa connexion dans le dossier au lieu d'imprimer un jeton. La fin se lit
+ * donc à l'apparition de `.credentials.json`, et le dossier jetable est repris par
+ * `ClaudeAccountGauges.adopt` avant d'être effacé.
  */
 
 /** Au-delà, le CLI en attente est fermé : personne n'a collé le code. */
@@ -39,10 +47,17 @@ const TOKEN_CHARS = /[A-Za-z0-9_-]/
 const TOKEN_MIN_LENGTH = 60
 /** Le motif s'arrête où le CLI reprend la main : « Press Enter to retry », « Retrying… ». */
 const ERROR_PATTERN = /OAuth\s*error:\s*(.*?)(?=[\s\x00]*(?:Press\s*Enter|Retrying|$))/i
+/** Ce qu'`auth login` dit d'un code refusé, juste avant de quitter (sondé sur 2.1.296). */
+const LOGIN_FAILED_PATTERN = /Login\s*failed:\s*([^\n\x00]*)/i
+/** Les relances d'`auth login` après un code refusé, avant d'abandonner. */
+const MAX_RELAUNCHES = 5
 
 interface Login {
   ownerId: string
+  purpose: ClaudeLoginPurpose
+  /** Le libellé du compte à créer (`token`), ou le compte qui reçoit sa jauge (`gauge`). */
   label: string
+  accountId: string | null
   pty: IPty
   configDir: string
   /** Sortie cumulée, débarrassée des séquences de terminal, pour y lire invite et jeton. */
@@ -53,6 +68,11 @@ interface Login {
   timer: NodeJS.Timeout
   /** Délai de la vérification du code en cours, s'il y en a une. */
   checking: { since: number; timer: NodeJS.Timeout } | null
+  /** Ce qui relance le CLI : les arguments, et combien de fois il l'a été. */
+  args: string[]
+  relaunches: number
+  /** Posé par `finish` : un CLI qui meurt ensuite ne doit plus être relancé. */
+  closing: boolean
 }
 
 /**
@@ -133,7 +153,13 @@ export class ClaudeLoginService {
   constructor(
     private readonly store: ClaudeAccountStore,
     private readonly binary: () => Promise<string>,
+    private readonly gauges: ClaudeAccountGauges | null = null,
   ) {}
+
+  /** Connexion qui donne sa jauge à un compte existant, par `claude auth login`. */
+  startGauge(ownerId: string, accountId: string, label: string): Promise<ClaudeLoginStatusDto> {
+    return this.launch(ownerId, 'gauge', label, accountId)
+  }
 
   status(ownerId: string, loginId: string): ClaudeLoginStatusDto | undefined {
     const login = this.logins.get(loginId)
@@ -141,39 +167,37 @@ export class ClaudeLoginService {
   }
 
   /** Lance le CLI et attend qu'il imprime l'URL, ou qu'il échoue avant. */
-  async start(ownerId: string, label: string): Promise<ClaudeLoginStatusDto> {
+  start(ownerId: string, label: string): Promise<ClaudeLoginStatusDto> {
+    return this.launch(ownerId, 'token', label, null)
+  }
+
+  private async launch(
+    ownerId: string,
+    purpose: ClaudeLoginPurpose,
+    label: string,
+    accountId: string | null,
+  ): Promise<ClaudeLoginStatusDto> {
     const loginId = randomUUID()
-    const configDir = await mkdtemp(join(tmpdir(), 'sillage-claude-login-'))
-    const pty = spawn(await this.binary(), ['setup-token'], {
-      name: 'xterm-256color',
-      cols: 200,
-      rows: 40,
-      cwd: configDir,
-      env: agentProcessEnv({ CLAUDE_CONFIG_DIR: configDir, TERM: 'xterm-256color' }) as Record<string, string>,
-    })
+    const args = purpose === 'token' ? ['setup-token'] : ['auth', 'login', '--claudeai']
+    const { pty, configDir } = await this.spawnCli(args)
     const login: Login = {
       ownerId,
+      purpose,
       label,
+      accountId,
       pty,
       configDir,
       output: '',
       raw: '',
-      status: { loginId, state: 'starting', authUrl: null, error: null, account: null },
+      status: { loginId, purpose, state: 'starting', authUrl: null, error: null, account: null },
       timer: setTimeout(() => this.finish(loginId, 'Personne n’a collé le code à temps : connexion abandonnée.'), LOGIN_TIMEOUT_MS),
       checking: null,
+      args,
+      relaunches: 0,
+      closing: false,
     }
     this.logins.set(loginId, login)
-
-    pty.onData((data) => this.consume(loginId, data))
-    pty.onExit(({ exitCode }) => {
-      const current = this.logins.get(loginId)
-      if (!current || current.status.state === 'done') return
-      this.finish(
-        loginId,
-        current.status.error ??
-          `claude setup-token s'est arrêté (code ${exitCode}) sans donner de jeton. Sa sortie : ${diagnostic(current.output)}`,
-      )
-    })
+    this.attach(loginId, pty)
 
     // L'URL vient en une seconde ; au-delà, c'est que le CLI n'a pas démarré ou
     // qu'il raconte autre chose, et la sortie est le seul indice.
@@ -192,12 +216,14 @@ export class ClaudeLoginService {
   submitCode(ownerId: string, loginId: string, code: string): ClaudeLoginStatusDto | undefined {
     const login = this.logins.get(loginId)
     if (!login || login.ownerId !== ownerId) return undefined
-    if (login.status.state === 'done' || login.status.state === 'checking') return login.status
+    if (login.status.state === 'done' || login.status.state === 'checking' || login.status.state === 'starting') {
+      return login.status
+    }
 
     // Après un refus, le CLI attend Entrée pour rouvrir l'invite (sondé) : on la lui
     // donne, puis le code. Un code collé avec ses espaces ou sauts de ligne est nettoyé,
     // le CLI le refuserait tel quel.
-    if (login.status.state === 'failed') login.pty.write('\r')
+    if (login.status.state === 'failed' && login.purpose === 'token') login.pty.write('\r')
     login.status = { ...login.status, state: 'checking', error: null }
     const since = login.output.length
     // Le code et l'Entrée en deux écritures, espacées : arrivés d'un bloc, le CLI tient
@@ -216,13 +242,94 @@ export class ClaudeLoginService {
       login.status = {
         ...login.status,
         state: 'failed',
-        error: `Le CLI n'a pas donné de jeton en trois minutes. Sa sortie : ${diagnostic(login.output.slice(since))}`,
+        error: `Le CLI n'a pas conclu en trois minutes. Sa sortie : ${diagnostic(login.output.slice(since))}`,
       }
     }, CODE_TIMEOUT_MS)
     login.checking = { since, timer }
     // Le flux a peut-être déjà tout dit entre l'écriture et l'attente.
     this.settle(loginId)
+    // `auth login` peut écrire sa connexion sans rien imprimer de plus : on regarde le
+    // dossier à intervalle, tant que la vérification dure.
+    if (login.purpose === 'gauge') {
+      const watch = setInterval(() => {
+        if (!login.checking) return clearInterval(watch)
+        this.settle(loginId)
+      }, 1000)
+    }
     return login.status
+  }
+
+  /** Un CLI neuf, dans son propre dossier jetable. */
+  private async spawnCli(args: string[]): Promise<{ pty: IPty; configDir: string }> {
+    const configDir = await mkdtemp(join(tmpdir(), 'sillage-claude-login-'))
+    const pty = spawn(await this.binary(), args, {
+      name: 'xterm-256color',
+      // Large : l'URL d'`auth login` est imprimée en texte et non en lien, et la plus
+      // longue des deux, avec ses sept portées, ne doit pas dépendre de la largeur.
+      cols: 400,
+      rows: 40,
+      cwd: configDir,
+      env: agentProcessEnv({ CLAUDE_CONFIG_DIR: configDir, TERM: 'xterm-256color' }) as Record<string, string>,
+    })
+    return { pty, configDir }
+  }
+
+  /** Branche la sortie et la fin d'un CLI ; celles d'un CLI déjà remplacé sont ignorées. */
+  private attach(loginId: string, pty: IPty): void {
+    pty.onData((data) => {
+      if (this.logins.get(loginId)?.pty === pty) this.consume(loginId, data)
+    })
+    pty.onExit(({ exitCode }) => {
+      const current = this.logins.get(loginId)
+      if (!current || current.pty !== pty || current.closing || current.status.state === 'done') return
+      void this.exited(loginId, exitCode)
+    })
+  }
+
+  /**
+   * Le CLI a quitté sans conclure. `setup-token` attend un nouveau code après un refus,
+   * `auth login` quitte (« Login failed: … », sondé sur 2.1.296) : pour garder le même
+   * geste, on en relance un, sous la même connexion, et l'écran montre le nouveau lien.
+   */
+  private async exited(loginId: string, exitCode: number): Promise<void> {
+    const login = this.logins.get(loginId)
+    if (!login) return
+    // `auth login` réussi quitte aussi, une fois sa connexion écrite : c'est un succès,
+    // à reprendre avant que quoi que ce soit n'efface le dossier.
+    if (login.purpose === 'gauge' && existsSync(join(login.configDir, '.credentials.json'))) {
+      if (!login.checking) login.checking = { since: login.output.length, timer: setTimeout(() => undefined, 0) }
+      this.adoptGauge(loginId, 0)
+      return
+    }
+    const refused = LOGIN_FAILED_PATTERN.exec(login.output)?.[1]?.trim()
+    if (login.purpose === 'gauge' && refused && login.relaunches < MAX_RELAUNCHES) {
+      if (login.checking) {
+        clearTimeout(login.checking.timer)
+        login.checking = null
+      }
+      const previous = login.configDir
+      const { pty, configDir } = await this.spawnCli(login.args)
+      login.relaunches += 1
+      login.pty = pty
+      login.configDir = configDir
+      login.raw = ''
+      login.output = ''
+      login.status = {
+        ...login.status,
+        state: 'starting',
+        error: `Code refusé (${refused}). Une nouvelle page d'autorisation est prête : rouvre le lien ci-dessus et colle son code.`,
+      }
+      this.attach(loginId, pty)
+      await rm(previous, { recursive: true, force: true })
+      return
+    }
+    void this.finish(
+      loginId,
+      login.status.error ??
+        (refused
+          ? `Code refusé : ${refused}.`
+          : `claude ${login.args.join(' ')} s'est arrêté (code ${exitCode}) sans conclure. Sa sortie : ${diagnostic(login.output)}`),
+    )
   }
 
   async cancel(ownerId: string, loginId: string): Promise<boolean> {
@@ -247,7 +354,9 @@ export class ClaudeLoginService {
     login.output = plain(login.raw)
     const url = authUrlFrom(login.raw)
     if (login.status.state === 'starting' && url) {
-      login.status = { ...login.status, state: 'waiting_code', authUrl: url }
+      // Après une relance, l'écran reste sur l'échec, motif et nouveau lien compris :
+      // c'est l'envoi du prochain code qui l'efface.
+      login.status = { ...login.status, state: login.status.error ? 'failed' : 'waiting_code', authUrl: url }
     }
     if (login.checking) this.settle(loginId)
     // Hors vérification aussi : un flux rouvert change l'URL, et l'écran doit la suivre.
@@ -263,7 +372,12 @@ export class ClaudeLoginService {
     const login = this.logins.get(loginId)
     if (!login?.checking) return
     const since = login.output.slice(login.checking.since)
-    const token = tokenFrom(since)
+    // `auth login` ne montre rien de ce qu'il obtient : sa connexion se lit dans le dossier.
+    if (login.purpose === 'gauge' && existsSync(join(login.configDir, '.credentials.json'))) {
+      this.adoptGauge(loginId)
+      return
+    }
+    const token = login.purpose === 'token' ? tokenFrom(since) : null
     const refused = ERROR_PATTERN.exec(since)?.[1]?.replace(new RegExp(MARK, 'g'), '')
     // Un code d'une autre page : le CLI ne dit rien et rouvre un flux, avec une nouvelle
     // URL (vu le 13 octobre 2026, un code collé depuis une tentative précédente). On le
@@ -293,9 +407,34 @@ export class ClaudeLoginService {
     }
   }
 
+  /**
+   * Reprend la connexion de jauge. Le CLI écrit `.credentials.json` puis complète
+   * `.claude.json` (le compte, son courriel) : on laisse passer un instant pour que le
+   * second soit là, la jauge sait de toute façon vivre sans courriel.
+   */
+  private adoptGauge(loginId: string, delayMs = 1500): void {
+    const login = this.logins.get(loginId)
+    if (!login?.checking || !login.accountId || !this.gauges) return
+    clearTimeout(login.checking.timer)
+    login.checking = null
+    // Plus rien ne doit conclure à sa place : ni la fin du CLI, ni un délai.
+    login.closing = true
+    const accountId = login.accountId
+    setTimeout(() => {
+      try {
+        this.gauges!.adopt(accountId, login.configDir)
+        login.status = { ...login.status, state: 'done', error: null, account: this.store.find(login.ownerId, accountId) ?? null }
+      } catch (err) {
+        login.status = { ...login.status, state: 'failed', error: err instanceof Error ? err.message : String(err) }
+      }
+      void this.finish(loginId, null)
+    }, delayMs)
+  }
+
   private async finish(loginId: string, error: string | null): Promise<void> {
     const login = this.logins.get(loginId)
     if (!login) return
+    login.closing = true
     clearTimeout(login.timer)
     if (login.checking) {
       clearTimeout(login.checking.timer)

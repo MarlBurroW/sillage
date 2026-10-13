@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
-import { CachedProbe } from '../cached-probe.js'
+import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { withControlSession } from './control-session.js'
 
@@ -128,18 +128,56 @@ export class ClaudeUsageReader {
     return this.cached.read(force)
   }
 
-  private probe(): Promise<Omit<AgentUsage, 'fetchedAt'>> {
+  /**
+   * La consommation d'un abonnement supplémentaire, lue avec sa connexion de jauge (voir
+   * `ClaudeAccountGauges`). Une sonde par compte, à part de celle de la connexion du CLI ;
+   * le dossier est fourni à chaque lecture plutôt que retenu ici.
+   */
+  async readForConfigDir(accountId: string, configDir: string, force = false): Promise<AgentUsage> {
+    this.dirs.set(accountId, configDir)
+    try {
+      return await this.byAccount.read(accountId, force)
+    } finally {
+      this.dirs.delete(accountId)
+    }
+  }
+
+  private readonly dirs = new Map<string, string>()
+  private readonly byAccount = new CachedProbeMap<Omit<AgentUsage, 'fetchedAt'>>(USAGE_CACHE_TTL_MS, (accountId) => {
+    const configDir = this.dirs.get(accountId)
+    if (!configDir) throw new Error('Dossier de jauge introuvable.')
+    return this.probe(configDir)
+  })
+
+  private probe(configDir?: string): Promise<Omit<AgentUsage, 'fetchedAt'>> {
     // Requête de contrôle, sans tour : la lecture ne consomme ni tokens ni quota.
     return withControlSession(
-      { executable: this.executable, cwd: homedir(), tag: 'usage', timeoutMs: PROBE_TIMEOUT_MS },
+      {
+        executable: this.executable,
+        cwd: homedir(),
+        tag: 'usage',
+        timeoutMs: PROBE_TIMEOUT_MS,
+        // Le dossier de la jauge, et aucune variable qui ferait passer une autre
+        // connexion devant la sienne.
+        ...(configDir ? { options: { env: withoutAuthOverrides({ ...process.env, CLAUDE_CONFIG_DIR: configDir }) } } : {}),
+      },
       async (session) =>
         normalize(await session.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()),
     )
   }
 }
 
+/** Ce qui passe devant la connexion d'un dossier de configuration (voir la précédence de la doc). */
+function withoutAuthOverrides(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const next = { ...env }
+  for (const name of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_PROFILE', 'NODE_ENV']) {
+    delete next[name]
+  }
+  return next
+}
+
 /**
- * La consommation d'un compte supplémentaire : connue d'avance, sans sonde.
+ * La consommation d'un compte supplémentaire sans jauge : connue d'avance, sans sonde.
  *
  * Une clé API n'a pas de forfait, donc pas de jauge. Un jeton de `setup-token` en a
  * un, mais ne porte que la portée `user:inference` (lue dans l'URL d'autorisation,
