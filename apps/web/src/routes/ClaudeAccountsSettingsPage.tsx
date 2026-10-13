@@ -192,8 +192,8 @@ function GuidedLogin({ initial, onClose }: { initial: ClaudeLoginStatusDto; onCl
   const submit = useSubmitClaudeLoginCode(initial.loginId)
   const cancel = useCancelClaudeLogin()
   const [code, setCode] = useState('')
-  // Ce que le dernier envoi a rendu prime sur la relecture, qui peut dater d'avant.
-  const status = submit.data ?? polled ?? initial
+  // L'envoi d'un code pose sa réponse dans la même relecture : c'est elle qui fait foi.
+  const status = polled ?? initial
 
   const send = (event: FormEvent) => {
     event.preventDefault()

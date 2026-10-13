@@ -26,12 +26,17 @@ import type { ClaudeAccountStore } from './store.js'
 
 /** Au-delà, le CLI en attente est fermé : personne n'a collé le code. */
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
-/** Le temps que le CLI vérifie un code auprès d'Anthropic. */
-const CODE_TIMEOUT_MS = 60 * 1000
+/** Le temps que le CLI vérifie un code auprès d'Anthropic et imprime le jeton. */
+const CODE_TIMEOUT_MS = 3 * 60 * 1000
+/** Ce qu'on garde de la sortie du CLI pour expliquer un échec, jeton masqué. */
+const DIAGNOSTIC_TAIL = 400
 const URL_PATTERN = /https:\/\/[a-z.]*claude\.com\/[^\s\x07\x1b"']*oauth\/authorize\?[^\s\x07\x1b"']+/g
-const TOKEN_PATTERN = /sk-ant-oat01-[A-Za-z0-9_-]{20,}/
+const TOKEN_PREFIX = 'sk-ant-oat01-'
+const TOKEN_CHARS = /[A-Za-z0-9_-]/
+/** Un jeton de setup-token fait une centaine de caractères : moins, c'est une coupure. */
+const TOKEN_MIN_LENGTH = 60
 /** Le motif s'arrête où le CLI reprend la main : « Press Enter to retry », « Retrying… ». */
-const ERROR_PATTERN = /OAuth\s*error:\s*(.*?)(?=\s*(?:Press\s*Enter|Retrying|$))/i
+const ERROR_PATTERN = /OAuth\s*error:\s*(.*?)(?=[\s\x00]*(?:Press\s*Enter|Retrying|$))/i
 
 interface Login {
   ownerId: string
@@ -44,8 +49,8 @@ interface Login {
   raw: string
   status: ClaudeLoginStatusDto
   timer: NodeJS.Timeout
-  /** Résolution du code en cours de vérification, s'il y en a un. */
-  checking: { resolve: () => void; timer: NodeJS.Timeout } | null
+  /** Délai de la vérification du code en cours, s'il y en a une. */
+  checking: { since: number; timer: NodeJS.Timeout } | null
 }
 
 /**
@@ -63,13 +68,53 @@ export function authUrlFrom(raw: string): string | null {
   return complete.sort((a, b) => b.length - a.length)[0] ?? null
 }
 
-/** Retire ce qu'un terminal interprète : couleurs, curseur, liens OSC 8, et le retour chariot. */
-function plain(chunk: string): string {
+/**
+ * Remplace ce qu'un terminal interprète (couleurs, curseur, liens OSC 8) par une
+ * marque, et retire le retour chariot. Une marque et non rien : le jeton est imprimé
+ * en couleur, et c'est la remise à zéro de la couleur qui le sépare du texte qui suit.
+ */
+const MARK = '\x00'
+export function plain(chunk: string): string {
   return chunk
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-    .replace(/\x1b[()][A-Za-z0-9]/g, '')
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, MARK)
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, MARK)
+    .replace(/\x1b[()][A-Za-z0-9]/g, MARK)
     .replace(/[\x0e\x0f\x07\r]/g, '')
+}
+
+/**
+ * Le jeton imprimé par le CLI, reconstitué par-dessus les sauts de ligne.
+ *
+ * Ink coupe le texte à la largeur de sa boîte, et un jeton d'une centaine de
+ * caractères peut donc arriver sur deux lignes. On suit le jeton depuis son préfixe,
+ * en enjambant espaces et sauts de ligne, et on s'arrête à tout autre caractère, dont
+ * la marque laissée par la remise à zéro de la couleur. Le plus long l'emporte : un
+ * cadre Ink redessiné répète le jeton, parfois coupé.
+ */
+export function tokenFrom(output: string): string | null {
+  let best: string | null = null
+  for (let at = output.indexOf(TOKEN_PREFIX); at !== -1; at = output.indexOf(TOKEN_PREFIX, at + 1)) {
+    let token = TOKEN_PREFIX
+    for (let i = at + TOKEN_PREFIX.length; i < output.length; i += 1) {
+      const char = output[i]!
+      if (TOKEN_CHARS.test(char)) token += char
+      else if (char === ' ' || char === '\n' || char === '\t') continue
+      else break
+    }
+    if (token.length >= TOKEN_MIN_LENGTH && (best === null || token.length > best.length)) best = token
+  }
+  return best
+}
+
+/** La fin de la sortie du CLI, lisible et sans jeton : ce qu'on montre quand il n'a pas conclu. */
+function diagnostic(output: string): string {
+  return output
+    .replace(/sk-ant-oat01-[A-Za-z0-9_-]*/g, 'sk-ant-oat01-…')
+    .replace(new RegExp(MARK, 'g'), '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+    .slice(-DIAGNOSTIC_TAIL)
 }
 
 export class ClaudeLoginService {
@@ -113,7 +158,11 @@ export class ClaudeLoginService {
     pty.onExit(({ exitCode }) => {
       const current = this.logins.get(loginId)
       if (!current || current.status.state === 'done') return
-      this.finish(loginId, current.status.error ?? `claude setup-token s'est arrêté (code ${exitCode}) sans donner de jeton.`)
+      this.finish(
+        loginId,
+        current.status.error ??
+          `claude setup-token s'est arrêté (code ${exitCode}) sans donner de jeton. Sa sortie : ${diagnostic(current.output)}`,
+      )
     })
 
     // L'URL vient en une seconde ; au-delà, c'est que le CLI n'a pas démarré ou
@@ -124,31 +173,37 @@ export class ClaudeLoginService {
     return login.status
   }
 
-  /** Écrit le code au CLI et attend le jeton, ou son refus. */
-  async submitCode(ownerId: string, loginId: string, code: string): Promise<ClaudeLoginStatusDto | undefined> {
+  /**
+   * Écrit le code au CLI. La suite se lit par `status` : le jeton arrive en quelques
+   * secondes, mais l'échange peut traîner, et une requête HTTP qui attend trois minutes
+   * serait coupée avant. Un échec garde la fin de la sortie du CLI : c'est le seul
+   * indice de ce qu'il attendait.
+   */
+  submitCode(ownerId: string, loginId: string, code: string): ClaudeLoginStatusDto | undefined {
     const login = this.logins.get(loginId)
     if (!login || login.ownerId !== ownerId) return undefined
-    if (login.status.state === 'done') return login.status
-    if (login.status.state === 'checking') return login.status
+    if (login.status.state === 'done' || login.status.state === 'checking') return login.status
 
     // Après un refus, le CLI attend Entrée pour rouvrir l'invite (sondé) : on la lui
     // donne, puis le code. Un code collé avec ses espaces ou sauts de ligne est nettoyé,
     // le CLI le refuserait tel quel.
     if (login.status.state === 'failed') login.pty.write('\r')
     login.status = { ...login.status, state: 'checking', error: null }
-    const marker = login.output.length
+    const since = login.output.length
     login.pty.write(`${code.replace(/\s+/g, '')}\r`)
 
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        login.checking = null
-        login.status = { ...login.status, state: 'failed', error: 'Le CLI n’a pas répondu au code dans la minute.' }
-        resolve()
-      }, CODE_TIMEOUT_MS)
-      login.checking = { resolve, timer }
-      // Le flux a peut-être déjà tout dit entre l'écriture et l'attente.
-      this.settle(loginId, marker)
-    })
+    const timer = setTimeout(() => {
+      if (!login.checking) return
+      login.checking = null
+      login.status = {
+        ...login.status,
+        state: 'failed',
+        error: `Le CLI n'a pas donné de jeton en trois minutes. Sa sortie : ${diagnostic(login.output.slice(since))}`,
+      }
+    }, CODE_TIMEOUT_MS)
+    login.checking = { since, timer }
+    // Le flux a peut-être déjà tout dit entre l'écriture et l'attente.
+    this.settle(loginId)
     return login.status
   }
 
@@ -176,24 +231,23 @@ export class ClaudeLoginService {
       const url = authUrlFrom(login.raw)
       if (url) login.status = { ...login.status, state: 'waiting_code', authUrl: url }
     }
-    if (login.checking) this.settle(loginId, undefined)
+    if (login.checking) this.settle(loginId)
   }
 
   /**
    * Pendant la vérification d'un code : un jeton imprimé fait le compte, un refus
-   * remet en attente. Lu depuis `marker` quand on la connaît, pour ne pas reprendre
-   * un refus précédent.
+   * remet en attente. Lu depuis l'envoi du code, pour ne pas reprendre un refus
+   * précédent.
    */
-  private settle(loginId: string, marker: number | undefined): void {
+  private settle(loginId: string): void {
     const login = this.logins.get(loginId)
     if (!login?.checking) return
-    const since = login.output.slice(marker ?? 0)
-    const token = TOKEN_PATTERN.exec(since)?.[0]
-    const refused = ERROR_PATTERN.exec(since)?.[1]
+    const since = login.output.slice(login.checking.since)
+    const token = tokenFrom(since)
+    const refused = ERROR_PATTERN.exec(since)?.[1]?.replace(new RegExp(MARK, 'g'), '')
     if (!token && !refused) return
 
-    const { resolve, timer } = login.checking
-    clearTimeout(timer)
+    clearTimeout(login.checking.timer)
     login.checking = null
     if (token && claudeSecretKind(token) === 'oauth') {
       // Le libellé a pu être pris entre-temps : un suffixe vaut mieux qu'un jeton perdu.
@@ -204,7 +258,6 @@ export class ClaudeLoginService {
     } else {
       login.status = { ...login.status, state: 'failed', error: (refused ?? '').trim() || 'Code refusé.' }
     }
-    resolve()
   }
 
   private async finish(loginId: string, error: string | null): Promise<void> {
@@ -213,7 +266,6 @@ export class ClaudeLoginService {
     clearTimeout(login.timer)
     if (login.checking) {
       clearTimeout(login.checking.timer)
-      login.checking.resolve()
       login.checking = null
     }
     if (error !== null && login.status.state !== 'done') {

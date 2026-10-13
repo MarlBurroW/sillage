@@ -71,7 +71,7 @@ export function registerClaudeAccountRoutes(
     const user = requireUser(request)
     const { loginId } = request.params as { loginId: string }
     const body = submitClaudeLoginCodeBodySchema.parse(request.body)
-    const status = await login.submitCode(user.id, loginId, body.code)
+    const status = login.submitCode(user.id, loginId, body.code)
     if (!status) throw unknownLogin()
     return status
   })
