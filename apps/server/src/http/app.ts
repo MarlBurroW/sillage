@@ -41,9 +41,11 @@ import { SkillLibrary } from '../skill-library/store.js'
 import { registerSecretRoutes } from './routes/secrets.js'
 import type { SecretStore } from '../secrets/store.js'
 import { registerGitCredentialRoutes } from './routes/git-credentials.js'
+import { registerClaudeAccountRoutes } from './routes/claude-accounts.js'
 import { CloneJobs } from '../clone-jobs.js'
 import { GitHubRepoCatalog } from '../git-credentials/github.js'
 import type { GitCredentialStore } from '../git-credentials/store.js'
+import type { ClaudeAccountStore } from '../claude-accounts/store.js'
 import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
@@ -97,6 +99,7 @@ export async function buildApp(
   push: PushService,
   secrets: SecretStore,
   gitCredentials: GitCredentialStore,
+  claudeAccounts: ClaudeAccountStore,
   webhooks: WebhookService,
   scheduler: Scheduler,
   relay: SessionRelay,
@@ -192,6 +195,7 @@ export async function buildApp(
     ctx,
     registry,
     new CliInstaller(ctx.config.paths.agents, (kind) => registry.find(kind)?.cli.invalidate()),
+    claudeAccounts,
   )
   registerMcpRoutes(app, ctx)
   // Les sources lisent la bibliothèque pour installer, la bibliothèque lit leurs
@@ -209,6 +213,7 @@ export async function buildApp(
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
+  registerClaudeAccountRoutes(app, claudeAccounts)
   registerWorktreeRoutes(app, ctx, terminals)
   registerCardRoutes(app, ctx, attachments, board)
   registerBoardLinkRoutes(app, ctx, board)

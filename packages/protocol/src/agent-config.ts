@@ -102,6 +102,13 @@ export const claudeConfigSchema = z.object({
    */
   maxBudgetUsd: z.number().positive().nullable().default(null),
   maxTurns: z.number().int().positive().nullable().default(null),
+  /**
+   * Compte Claude de Sillage dont le jeton est passé à la session, `null` pour la
+   * connexion du CLI (`/login`). Un identifiant et non le jeton : la configuration
+   * voyage jusqu'au navigateur, le jeton reste chiffré en base. Le changer relance la
+   * session, le CLI ne lisant son jeton qu'au lancement.
+   */
+  account: z.string().nullable().default(null),
 })
 export type ClaudeConfig = z.infer<typeof claudeConfigSchema>
 
@@ -274,6 +281,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   advisorModel: CLI_DEFAULT,
   maxBudgetUsd: null,
   maxTurns: null,
+  account: null,
 }
 
 export const DEFAULT_CODEX_CONFIG: CodexConfig = {

@@ -34,6 +34,7 @@ import { ThreadSearch } from '../components/chat/ThreadSearch'
 import { TurnActivity } from '../components/chat/TurnActivity'
 import { TurnNav } from '../components/chat/TurnNav'
 import { UsagePanel } from '../components/chat/UsagePanel'
+import { usageAccountOf } from '../lib/usage'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
@@ -1092,7 +1093,7 @@ export function ConversationPage() {
           </Dialog.Portal>
         </Dialog.Root>
 
-        <UsagePanel agent={conversation.agent} open={usageOpen} onOpenChange={setUsageOpen} />
+        <UsagePanel agent={conversation.agent} account={usageAccountOf(config)} open={usageOpen} onOpenChange={setUsageOpen} />
 
         <ConfirmDialog
           open={forkTarget !== null}

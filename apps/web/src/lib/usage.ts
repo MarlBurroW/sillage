@@ -2,7 +2,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AgentKind, AgentUsage } from '@sillage/protocol'
 import { api } from './api'
 
-const usageKey = (agent: AgentKind) => ['usage', agent]
+/** `account` est l'identifiant d'un compte Claude supplémentaire, null pour la connexion du CLI. */
+const usageKey = (agent: AgentKind, account: string | null) => ['usage', agent, account]
+
+const usagePath = (agent: AgentKind, account: string | null, refresh: boolean) => {
+  const params = new URLSearchParams()
+  if (account) params.set('account', account)
+  if (refresh) params.set('refresh', '1')
+  const query = params.toString()
+  return `/api/agents/${agent}/usage${query ? `?${query}` : ''}`
+}
 
 /**
  * Consommation du compte.
@@ -18,10 +27,10 @@ const usageKey = (agent: AgentKind) => ['usage', agent]
  * `enabled` sert aux appelants qui affichent la consommation sans qu'on l'ait demandée,
  * comme la page de brouillon : interroger un CLI absent ne rapporterait qu'une erreur.
  */
-export function useAgentUsage(agent: AgentKind, enabled = true) {
+export function useAgentUsage(agent: AgentKind, enabled = true, account: string | null = null) {
   return useQuery({
-    queryKey: usageKey(agent),
-    queryFn: () => api.get<AgentUsage>(`/api/agents/${agent}/usage`),
+    queryKey: usageKey(agent, account),
+    queryFn: () => api.get<AgentUsage>(usagePath(agent, account, false)),
     enabled,
     staleTime: 0,
     // La consommation d'un compte n'a pas d'à-coups : réessayer en boucle ne ferait
@@ -31,11 +40,16 @@ export function useAgentUsage(agent: AgentKind, enabled = true) {
 }
 
 /** Relecture explicite, qui court-circuite aussi le cache du serveur. */
-export function useRefreshUsage(agent: AgentKind) {
+export function useRefreshUsage(agent: AgentKind, account: string | null = null) {
   const queryClient = useQueryClient()
 
   return async () => {
-    const fresh = await api.get<AgentUsage>(`/api/agents/${agent}/usage?refresh=1`)
-    queryClient.setQueryData(usageKey(agent), fresh)
+    const fresh = await api.get<AgentUsage>(usagePath(agent, account, true))
+    queryClient.setQueryData(usageKey(agent, account), fresh)
   }
+}
+
+/** Le compte Claude supplémentaire qu'une configuration désigne, null pour tout autre cas. */
+export function usageAccountOf(config: { agent: AgentKind; account?: string | null } | null | undefined): string | null {
+  return config?.agent === 'claude' ? (config.account ?? null) : null
 }

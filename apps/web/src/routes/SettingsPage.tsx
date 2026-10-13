@@ -7,6 +7,7 @@ import {
   Cpu,
   Info,
   GitBranch,
+  IdCard,
   KeyRound,
   Mic,
   Palette,
@@ -111,6 +112,13 @@ export const SECTIONS: Section[] = [
     labelKey: 'settings.section.git',
     descriptionKey: 'settings.section.git.description',
     icon: <GitBranch size={16} />,
+  },
+  {
+    to: 'comptes-claude',
+    group: 'workspace',
+    labelKey: 'settings.section.claudeAccounts',
+    descriptionKey: 'settings.section.claudeAccounts.description',
+    icon: <IdCard size={16} />,
   },
   {
     to: 'secrets',

@@ -1278,6 +1278,33 @@ export const gitCredentials = sqliteTable(
 )
 
 /**
+ * Comptes Claude supplémentaires, par utilisateur : un jeton OAuth longue durée de
+ * `claude setup-token` chacun, chiffré comme les credentials git.
+ *
+ * Par utilisateur et non par instance, pour la même raison que les credentials git :
+ * c'est l'abonnement de quelqu'un, et un administrateur n'a pas à emprunter celui d'un
+ * autre. Le libellé est ce que le sélecteur de compte affiche : un jeton ne porte ni
+ * courriel ni nom d'organisation lisibles sans dépenser un tour.
+ */
+export const claudeAccounts = sqliteTable(
+  'claude_accounts',
+  {
+    id: text('id').primaryKey(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    ciphertext: text('ciphertext').notNull(),
+    iv: text('iv').notNull(),
+    authTag: text('auth_tag').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  // Deux comptes du même nom seraient indiscernables dans le sélecteur.
+  (t) => [uniqueIndex('idx_claude_accounts_owner_label').on(t.ownerId, t.label)],
+)
+
+/**
  * Jetons d'API, porteurs d'identité des clients machine.
  *
  * Même stockage que les sessions : seul le SHA-256 du secret est retenu, le jeton en
@@ -1415,4 +1442,5 @@ export type SkillSourceRow = typeof skillSources.$inferSelect
 export type LibrarySkillRow = typeof librarySkills.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect
 export type GitCredentialRow = typeof gitCredentials.$inferSelect
+export type ClaudeAccountRow = typeof claudeAccounts.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect

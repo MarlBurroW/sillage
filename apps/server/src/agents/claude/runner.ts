@@ -1255,6 +1255,9 @@ export class ClaudeRunner implements AgentRunner {
       return false
     }
 
+    // Le compte aussi : le jeton arrive par l'environnement du process, lu au lancement.
+    if (config.account !== this.config.account) return false
+
     // Les plugins de la bibliothèque aussi. Comparé sur les racines et non sur le seul
     // interrupteur : c'est ce que le CLI a reçu qui compte.
     if (JSON.stringify(this.ctx.skillRoots(config)) !== JSON.stringify(this.skillRoots)) return false

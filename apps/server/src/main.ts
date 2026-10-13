@@ -22,6 +22,7 @@ import { TaskScheduler } from './scheduler/task-scheduler.js'
 import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
+import { ClaudeAccountStore } from './claude-accounts/store.js'
 import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
@@ -47,7 +48,8 @@ async function main(): Promise<void> {
   const encryptionKey = loadOrCreateKey(config.paths.data)
   const secrets = new SecretStore(db, encryptionKey)
   const gitCredentials = new GitCredentialStore(db, encryptionKey)
-  const sessions = new SessionManager(db, log, config, registry, secrets)
+  const claudeAccounts = new ClaudeAccountStore(db, encryptionKey)
+  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts)
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
   // Boutons des projets : commandes jouées dans un terminal ou une unité systemd.
@@ -88,6 +90,7 @@ async function main(): Promise<void> {
     push,
     secrets,
     gitCredentials,
+    claudeAccounts,
     webhooks,
     scheduler,
     relay,
