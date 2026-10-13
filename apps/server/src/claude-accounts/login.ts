@@ -28,7 +28,7 @@ import type { ClaudeAccountStore } from './store.js'
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
 /** Le temps que le CLI vérifie un code auprès d'Anthropic. */
 const CODE_TIMEOUT_MS = 60 * 1000
-const URL_PATTERN = /https:\/\/[a-z.]*claude\.com\/[^\s\x07\x1b"']*oauth\/authorize\?[^\s\x07\x1b"']+/
+const URL_PATTERN = /https:\/\/[a-z.]*claude\.com\/[^\s\x07\x1b"']*oauth\/authorize\?[^\s\x07\x1b"']+/g
 const TOKEN_PATTERN = /sk-ant-oat01-[A-Za-z0-9_-]{20,}/
 /** Le motif s'arrête où le CLI reprend la main : « Press Enter to retry », « Retrying… ». */
 const ERROR_PATTERN = /OAuth\s*error:\s*(.*?)(?=\s*(?:Press\s*Enter|Retrying|$))/i
@@ -38,12 +38,29 @@ interface Login {
   label: string
   pty: IPty
   configDir: string
-  /** Sortie cumulée, débarrassée des séquences de terminal, pour y lire URL, invite et jeton. */
+  /** Sortie cumulée, débarrassée des séquences de terminal, pour y lire invite et jeton. */
   output: string
+  /** La même, brute : c'est là que vit l'URL entière, dans la cible de son lien. */
+  raw: string
   status: ClaudeLoginStatusDto
   timer: NodeJS.Timeout
   /** Résolution du code en cours de vérification, s'il y en a un. */
   checking: { resolve: () => void; timer: NodeJS.Timeout } | null
+}
+
+/**
+ * L'URL d'autorisation, lue dans la sortie brute et non dans sa version nettoyée.
+ *
+ * Le CLI l'écrit en lien OSC 8 : la cible du lien porte l'URL entière, le texte
+ * visible n'en montre qu'une ligne, coupée à la largeur du terminal. Nettoyer d'abord
+ * retirait la cible et ne laissait que le texte, et l'URL tronquée finissait sur un
+ * `%3` incomplet que le navigateur réencodait en `%253` : « Requête OAuth non valide »
+ * (vu le 13 octobre 2026). On garde donc la plus longue occurrence, et seulement si
+ * elle va jusqu'au `state`, dernier paramètre.
+ */
+export function authUrlFrom(raw: string): string | null {
+  const complete = [...raw.matchAll(URL_PATTERN)].map((match) => match[0]).filter((url) => /[?&]state=[A-Za-z0-9_-]+$/.test(url))
+  return complete.sort((a, b) => b.length - a.length)[0] ?? null
 }
 
 /** Retire ce qu'un terminal interprète : couleurs, curseur, liens OSC 8, et le retour chariot. */
@@ -85,13 +102,14 @@ export class ClaudeLoginService {
       pty,
       configDir,
       output: '',
+      raw: '',
       status: { loginId, state: 'starting', authUrl: null, error: null, account: null },
       timer: setTimeout(() => this.finish(loginId, 'Personne n’a collé le code à temps : connexion abandonnée.'), LOGIN_TIMEOUT_MS),
       checking: null,
     }
     this.logins.set(loginId, login)
 
-    pty.onData((data) => this.consume(loginId, plain(data)))
+    pty.onData((data) => this.consume(loginId, data))
     pty.onExit(({ exitCode }) => {
       const current = this.logins.get(loginId)
       if (!current || current.status.state === 'done') return
@@ -147,12 +165,15 @@ export class ClaudeLoginService {
     for (const loginId of [...this.logins.keys()]) await this.finish(loginId, 'Serveur arrêté.')
   }
 
-  private consume(loginId: string, text: string): void {
+  private consume(loginId: string, data: string): void {
     const login = this.logins.get(loginId)
     if (!login) return
-    login.output += text
+    // Nettoyé sur le cumul et non par morceau : une séquence coupée entre deux
+    // morceaux laisserait ses débris dans ce qu'on lit.
+    login.raw += data
+    login.output = plain(login.raw)
     if (login.status.state === 'starting') {
-      const url = URL_PATTERN.exec(login.output)?.[0]
+      const url = authUrlFrom(login.raw)
       if (url) login.status = { ...login.status, state: 'waiting_code', authUrl: url }
     }
     if (login.checking) this.settle(loginId, undefined)
