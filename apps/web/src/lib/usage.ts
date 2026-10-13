@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AgentKind, AgentUsage } from '@sillage/protocol'
 import { api } from './api'
 
@@ -52,4 +52,21 @@ export function useRefreshUsage(agent: AgentKind, account: string | null = null)
 /** Le compte supplémentaire qu'une configuration désigne, null pour la connexion du CLI. */
 export function usageAccountOf(config: { agent: AgentKind; account?: string | null } | null | undefined): string | null {
   return config?.agent === 'claude' || config?.agent === 'codex' ? (config.account ?? null) : null
+}
+
+/**
+ * La consommation de plusieurs comptes d'un même CLI à la fois, pour les comparer avant
+ * de choisir. Mêmes clés et même cache que `useAgentUsage` : la jauge détaillée du
+ * compte retenu ne relance pas de lecture, et chaque sonde reste plafonnée côté serveur.
+ */
+export function useAccountsUsage(agent: AgentKind, accounts: (string | null)[], enabled: boolean) {
+  return useQueries({
+    queries: accounts.map((account) => ({
+      queryKey: usageKey(agent, account),
+      queryFn: () => api.get<AgentUsage>(usagePath(agent, account, false)),
+      enabled,
+      staleTime: 0,
+      retry: false,
+    })),
+  })
 }

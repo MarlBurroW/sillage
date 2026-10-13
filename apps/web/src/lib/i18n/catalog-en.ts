@@ -182,6 +182,13 @@ export const en = {
   'draft.usage.title': 'Account usage',
   'draft.usage.titleWithPlan': 'Account usage · {plan}',
   'draft.usage.unavailable': 'Usage could not be read for this CLI.',
+  'draft.account.legend': 'Account',
+  'draft.account.reading': 'Reading usage...',
+  'draft.account.unreadable': 'Usage could not be read',
+  'draft.account.noGauge': 'No plan limits',
+  'draft.account.tokenNoGauge': 'Subscription · its token cannot read plan limits',
+  'draft.account.apiKey': 'API key · billed per use',
+  'draft.account.missing': 'Deleted since: the session would start on the CLI sign-in',
   'draft.commands.unavailable': 'Slash commands could not be read for this CLI.',
 
   // Disponibilité des CLI agents
