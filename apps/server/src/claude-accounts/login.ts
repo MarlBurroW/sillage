@@ -67,7 +67,14 @@ interface Login {
  */
 export function authUrlFrom(raw: string): string | null {
   const complete = [...raw.matchAll(URL_PATTERN)].map((match) => match[0]).filter((url) => /[?&]state=[A-Za-z0-9_-]+$/.test(url))
-  return complete.sort((a, b) => b.length - a.length)[0] ?? null
+  // La dernière : le CLI rouvre un flux, avec une nouvelle URL, quand un code ne
+  // correspond pas à celui en cours, et c'est elle qu'il faut alors montrer.
+  return complete[complete.length - 1] ?? null
+}
+
+/** Le `state` d'une URL d'autorisation : ce qui distingue un flux d'un autre. */
+function stateOf(url: string | null): string | null {
+  return url ? (/[?&]state=([A-Za-z0-9_-]+)/.exec(url)?.[1] ?? null) : null
 }
 
 /**
@@ -112,7 +119,8 @@ export function tokenFrom(output: string): string | null {
 function diagnostic(output: string): string {
   return output
     .replace(/sk-ant-oat01-[A-Za-z0-9_-]*/g, 'sk-ant-oat01-…')
-    .replace(new RegExp(MARK, 'g'), '')
+    // Les marques, et ce qui reste de contrôle : un message d'erreur se lit et se sérialise.
+    .replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{2,}/g, '\n')
     .trim()
@@ -237,11 +245,13 @@ export class ClaudeLoginService {
     // morceaux laisserait ses débris dans ce qu'on lit.
     login.raw += data
     login.output = plain(login.raw)
-    if (login.status.state === 'starting') {
-      const url = authUrlFrom(login.raw)
-      if (url) login.status = { ...login.status, state: 'waiting_code', authUrl: url }
+    const url = authUrlFrom(login.raw)
+    if (login.status.state === 'starting' && url) {
+      login.status = { ...login.status, state: 'waiting_code', authUrl: url }
     }
     if (login.checking) this.settle(loginId)
+    // Hors vérification aussi : un flux rouvert change l'URL, et l'écran doit la suivre.
+    if (url && url !== login.status.authUrl) login.status = { ...login.status, authUrl: url }
   }
 
   /**
@@ -255,7 +265,12 @@ export class ClaudeLoginService {
     const since = login.output.slice(login.checking.since)
     const token = tokenFrom(since)
     const refused = ERROR_PATTERN.exec(since)?.[1]?.replace(new RegExp(MARK, 'g'), '')
-    if (!token && !refused) return
+    // Un code d'une autre page : le CLI ne dit rien et rouvre un flux, avec une nouvelle
+    // URL (vu le 13 octobre 2026, un code collé depuis une tentative précédente). On le
+    // dit, et l'URL affichée devient la nouvelle : il suffit de la rouvrir.
+    const reopened = authUrlFrom(login.raw)
+    const restarted = reopened !== null && stateOf(reopened) !== stateOf(login.status.authUrl)
+    if (!token && !refused && !restarted) return
 
     clearTimeout(login.checking.timer)
     login.checking = null
@@ -265,6 +280,14 @@ export class ClaudeLoginService {
       const account = this.store.create(login.ownerId, label, token)
       login.status = { ...login.status, state: 'done', error: null, account }
       void this.finish(loginId, null)
+    } else if (restarted && !refused) {
+      login.status = {
+        ...login.status,
+        state: 'failed',
+        authUrl: reopened,
+        error:
+          "Ce code vient d'une autre page d'autorisation : le CLI en a ouvert une nouvelle. Rouvre le lien ci-dessus et colle le code qu'il affiche.",
+      }
     } else {
       login.status = { ...login.status, state: 'failed', error: (refused ?? '').trim() || 'Code refusé.' }
     }

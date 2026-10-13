@@ -11,6 +11,9 @@ test("l'URL d'autorisation vient de la cible du lien OSC 8, pas du texte coupé 
   const rest = url.slice(200)
   const raw = `Browser didn't open? Use the url below to sign in (c to copy)\r\n\r\n\x1b]8;id=e80dlg;${url}\x07${visible}\x1b]8;;\x07\r\n\x1b]8;id=e80dlg;${url}\x07${rest}\x1b]8;;\x07\r\n\r\nPaste code here if prompted >`
   assert.equal(authUrlFrom(raw), url)
+  // Un flux rouvert imprime une nouvelle URL : c'est la dernière qui compte.
+  const reopened = url.replace(/state=.*$/, 'state=AUTRE_FLUX_0123456789')
+  assert.equal(authUrlFrom(`${raw}\r\n\x1b]8;id=x;${reopened}\x07${reopened.slice(0, 200)}\x1b]8;;\x07`), reopened)
   // Le texte seul, tel que le nettoyage le laisse : un `%3` coupé, donc rien de bon.
   assert.equal(authUrlFrom(`${visible}\n${rest}`), null)
   assert.equal(authUrlFrom('rien'), null)
