@@ -12,6 +12,7 @@ import {
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
+import { AccountChoice } from '../components/chat/AccountChoice'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { UsageBar, readAge } from '../components/chat/UsageBar'
 import { Banner, Button, IconButton, cx } from '../components/ui'
@@ -81,6 +82,8 @@ function DraftUsage({
   // La consommation n'est pas ce qu'on est venu chercher : quand la sonde échoue, une
   // ligne suffit, alors qu'un bandeau d'erreur crierait plus fort que le formulaire.
   if (error) return <p className="text-xs text-ink-faint">{t('draft.usage.unavailable')}</p>
+  // Un compte supplémentaire sans jauge : le choix vient d'être fait d'après l'usage, et
+  // une absence muette se lirait comme une panne. La raison est dite sous son option.
   if (!usage || !usage.limitsAvailable || usage.windows.length === 0) return null
 
   return (
@@ -402,6 +405,9 @@ export function DraftConversationPage() {
                 </div>
               ))}
           </fieldset>
+
+          {/* Juste sous le CLI : c'est la même question, avec quoi la session part. */}
+          <AccountChoice config={effective} onChange={setConfig} enabled={blocked === null} />
 
           {/* Le 502 de la sonde dit que le CLI n'a pas répondu ; le taire laisserait
               croire qu'il n'y a simplement aucune commande dans ce dossier. */}

@@ -169,6 +169,13 @@ export const fr: Catalog = {
   'draft.usage.title': 'Consommation du compte',
   'draft.usage.titleWithPlan': 'Consommation du compte · {plan}',
   'draft.usage.unavailable': "La consommation de ce CLI n'a pas pu être lue.",
+  'draft.account.legend': 'Compte',
+  'draft.account.reading': "Lecture de l'usage…",
+  'draft.account.unreadable': "L'usage n'a pas pu être lu",
+  'draft.account.noGauge': 'Pas de limite de forfait',
+  'draft.account.tokenNoGauge': 'Abonnement · son jeton ne lit pas les limites du forfait',
+  'draft.account.apiKey': "Clé API · facturée à l'usage",
+  'draft.account.missing': 'Supprimé depuis : la session partirait sur la connexion du CLI',
   'draft.commands.unavailable': "Les commandes en / de ce CLI n'ont pas pu être lues.",
 
   'agent.unavailable.disabled': 'Désactivé dans la configuration du serveur.',

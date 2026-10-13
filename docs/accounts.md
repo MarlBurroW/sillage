@@ -12,6 +12,12 @@ running conversation restarts the session, as the permission mode does. When the
 chosen account no longer exists, the session starts on the CLI's own sign-in and says
 so in the thread.
 
+On the new-session screen, an **Account** choice sits right under the CLI choice as
+soon as an extra account exists. Each option shows where its account stands: the two
+most loaded usage windows for the CLI's own sign-in and for Codex subscriptions, or a
+sentence for the accounts that have no gauge (a subscription token, an API key). It
+sets the same field as the composer's **Account** setting.
+
 ## Claude Code
 
 Settings › **Claude accounts**. An account is one of two things:
