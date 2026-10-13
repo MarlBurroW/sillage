@@ -121,6 +121,13 @@ export const SECTIONS: Section[] = [
     icon: <IdCard size={16} />,
   },
   {
+    to: 'comptes-codex',
+    group: 'workspace',
+    labelKey: 'settings.section.codexAccounts',
+    descriptionKey: 'settings.section.codexAccounts.description',
+    icon: <IdCard size={16} />,
+  },
+  {
     to: 'secrets',
     group: 'administration',
     labelKey: 'settings.section.secrets',

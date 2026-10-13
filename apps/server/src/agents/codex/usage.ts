@@ -1,10 +1,11 @@
 import { homedir } from 'node:os'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
 import type { GetAccountRateLimitsResponse, RateLimitSnapshot } from '@sillage/codex-bindings/v2'
-import { CachedProbe } from '../cached-probe.js'
+import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
+import { agentProcessEnv } from '../process-env.js'
 import { describeWindow } from './quota.js'
 
 /**
@@ -74,6 +75,16 @@ function normalize(response: GetAccountRateLimitsResponse): Omit<AgentUsage, 'fe
 
 export class CodexUsageReader {
   private readonly cached = new CachedProbe(USAGE_CACHE_TTL_MS, () => this.probe())
+  /** Une sonde par compte supplémentaire, dans le home du compte. */
+  private readonly byAccount = new CachedProbeMap<Omit<AgentUsage, 'fetchedAt'>>(
+    USAGE_CACHE_TTL_MS,
+    (accountId) => {
+      const home = this.homes.get(accountId)
+      if (!home) throw new Error('Home du compte Codex introuvable.')
+      return this.probe(home)
+    },
+  )
+  private readonly homes = new Map<string, string>()
 
   constructor(private readonly executable: () => Promise<string>) {}
 
@@ -81,10 +92,21 @@ export class CodexUsageReader {
     return this.cached.read(force)
   }
 
-  private async probe(): Promise<Omit<AgentUsage, 'fetchedAt'>> {
+  /** La consommation du compte dont on passe le `CODEX_HOME`. */
+  async readForAccount(accountId: string, home: string, force = false): Promise<AgentUsage> {
+    this.homes.set(accountId, home)
+    try {
+      return await this.byAccount.read(accountId, force)
+    } finally {
+      this.homes.delete(accountId)
+    }
+  }
+
+  private async probe(home?: string): Promise<Omit<AgentUsage, 'fetchedAt'>> {
     const client = new CodexAppServerClient({
       binary: await this.executable(),
-      cwd: homedir(),
+      cwd: home ?? homedir(),
+      ...(home ? { env: agentProcessEnv({ CODEX_HOME: home }) } : {}),
       onNotification: () => {},
       onServerRequest: () =>
         Promise.reject(new Error('Aucune requête serveur attendue pendant la lecture du quota.')),

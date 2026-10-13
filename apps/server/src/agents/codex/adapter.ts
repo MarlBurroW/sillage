@@ -167,6 +167,11 @@ export class CodexAdapter implements AgentAdapter {
     return this.usageReader.read(force)
   }
 
+  /** `credential` est ici le `CODEX_HOME` du compte, voir `CodexAccountHomes`. */
+  usageForAccount(accountId: string, credential: string, force: boolean): Promise<AgentUsage> {
+    return this.usageReader.readForAccount(accountId, credential, force)
+  }
+
   async resolveDefaults(config: AgentConfig): Promise<AgentConfig> {
     if (config.agent !== 'codex') return config
     if (config.model !== CLI_DEFAULT && config.reasoningEffort !== CLI_DEFAULT) return config

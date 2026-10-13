@@ -1305,6 +1305,32 @@ export const claudeAccounts = sqliteTable(
 )
 
 /**
+ * Comptes Codex supplémentaires, par utilisateur.
+ *
+ * Aucun secret ici, contrairement aux comptes Claude : la connexion vit dans l'`auth.json`
+ * du home que Sillage donne au compte (`<données>/codex-accounts/<id>`), écrit et
+ * rafraîchi par Codex lui-même. La ligne ne porte que le libellé et ce que Codex a dit
+ * du compte à la dernière connexion, pour que la liste se lise sans lancer d'app-server.
+ */
+export const codexAccounts = sqliteTable(
+  'codex_accounts',
+  {
+    id: text('id').primaryKey(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    /** `chatgpt` ou `apiKey` une fois connecté, NULL tant que le home est vide. */
+    authMode: text('auth_mode').$type<'chatgpt' | 'apiKey'>(),
+    email: text('email'),
+    planType: text('plan_type'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('idx_codex_accounts_owner_label').on(t.ownerId, t.label)],
+)
+
+/**
  * Jetons d'API, porteurs d'identité des clients machine.
  *
  * Même stockage que les sessions : seul le SHA-256 du secret est retenu, le jeton en
@@ -1443,4 +1469,5 @@ export type LibrarySkillRow = typeof librarySkills.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect
 export type GitCredentialRow = typeof gitCredentials.$inferSelect
 export type ClaudeAccountRow = typeof claudeAccounts.$inferSelect
+export type CodexAccountRow = typeof codexAccounts.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect

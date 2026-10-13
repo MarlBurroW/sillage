@@ -23,6 +23,9 @@ import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
 import { ClaudeAccountStore } from './claude-accounts/store.js'
+import { CodexAccountHomes } from './codex-accounts/homes.js'
+import { CodexLoginService } from './codex-accounts/login.js'
+import { CodexAccountStore } from './codex-accounts/store.js'
 import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
@@ -49,7 +52,11 @@ async function main(): Promise<void> {
   const secrets = new SecretStore(db, encryptionKey)
   const gitCredentials = new GitCredentialStore(db, encryptionKey)
   const claudeAccounts = new ClaudeAccountStore(db, encryptionKey)
-  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts)
+  const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(config.paths.codexAccounts) }
+  // La connexion d'un compte Codex lance l'app-server du CLI, résolu comme pour les
+  // conversations : le binaire que Sillage gère passe avant celui du PATH.
+  const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, () => registry.adapter('codex').cli.executable())
+  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts)
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
   // Boutons des projets : commandes jouées dans un terminal ou une unité systemd.
@@ -91,6 +98,8 @@ async function main(): Promise<void> {
     secrets,
     gitCredentials,
     claudeAccounts,
+    codexAccounts,
+    codexLogin,
     webhooks,
     scheduler,
     relay,

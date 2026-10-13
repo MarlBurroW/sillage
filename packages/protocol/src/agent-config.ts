@@ -200,6 +200,12 @@ export const codexConfigSchema = z.object({
   mcpServers: z.array(z.string()).default([]),
   sillageMcp: sillageMcpSchema,
   skillLibrary: skillLibrarySchema,
+  /**
+   * Compte Codex de Sillage dont le home est donné à la session (`CODEX_HOME`), `null`
+   * pour la connexion du CLI. Même raison d'être que `ClaudeConfig.account` ; le
+   * changer relance l'app-server, qui ne lit son home qu'au lancement.
+   */
+  account: z.string().nullable().default(null),
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
 
@@ -297,6 +303,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   mcpServers: [],
   sillageMcp: true,
   skillLibrary: true,
+  account: null,
 }
 
 export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {

@@ -27,6 +27,8 @@ import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
+import type { CodexAccountHomes } from '../codex-accounts/homes.js'
+import type { CodexAccountStore } from '../codex-accounts/store.js'
 import { OAUTH_TOKEN_SCOPES } from '../agents/claude/usage.js'
 import type {
   AgentRunner,
@@ -168,6 +170,7 @@ export class SessionManager {
     private readonly registry: AgentRegistry,
     private readonly secrets: SecretStore,
     private readonly claudeAccounts: ClaudeAccountStore,
+    private readonly codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   ) {
     this.statusBus.setMaxListeners(200)
   }
@@ -741,20 +744,34 @@ export class SessionManager {
    * la session part sur la connexion du CLI, et le fil le dit, parce que c'est un autre
    * abonnement qui va payer le tour.
    */
-  private claudeAccountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
-    if (config.agent !== 'claude' || !config.account) return {}
-    const resolved = this.claudeAccounts.resolveToken(conversation.userId, config.account)
-    if (!resolved) {
-      this.log.append(conversation.id, {
-        type: 'error',
-        code: 'claude_account_missing',
-        message:
-          "Le compte Claude choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
-        recoverable: true,
-      })
+  private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
+    if (config.agent === 'opencode' || !config.account) return {}
+    const missing = (code: string, message: string) => {
+      this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
       return {}
     }
-    return { CLAUDE_CODE_OAUTH_TOKEN: resolved.token, CLAUDE_CODE_OAUTH_SCOPES: OAUTH_TOKEN_SCOPES }
+    if (config.agent === 'claude') {
+      const resolved = this.claudeAccounts.resolveToken(conversation.userId, config.account)
+      if (!resolved) {
+        return missing(
+          'claude_account_missing',
+          "Le compte Claude choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
+        )
+      }
+      return { CLAUDE_CODE_OAUTH_TOKEN: resolved.token, CLAUDE_CODE_OAUTH_SCOPES: OAUTH_TOKEN_SCOPES }
+    }
+    // Codex : le home du compte, dont seul `auth.json` lui est propre. Un compte jamais
+    // connecté vaut un compte absent : sans `auth.json`, l'app-server refuserait le tour.
+    const account = this.codexAccounts.store.find(conversation.userId, config.account)
+    if (!account || account.status !== 'ready') {
+      return missing(
+        'codex_account_missing',
+        account
+          ? "Le compte Codex choisi pour cette conversation n'est pas connecté : la session repart sur la connexion du CLI."
+          : "Le compte Codex choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
+      )
+    }
+    return { CODEX_HOME: this.codexAccounts.homes.ensure(account.id) }
   }
 
   private buildContext(conversation: ConversationRow): RunnerContext {
@@ -798,7 +815,7 @@ export class SessionManager {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
-        ...this.claudeAccountEnv(conversation, config),
+        ...this.accountEnv(conversation, config),
       },
       // Le serveur de Sillage passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit

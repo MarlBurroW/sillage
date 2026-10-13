@@ -49,7 +49,7 @@ export function useRefreshUsage(agent: AgentKind, account: string | null = null)
   }
 }
 
-/** Le compte Claude supplémentaire qu'une configuration désigne, null pour tout autre cas. */
+/** Le compte supplémentaire qu'une configuration désigne, null pour la connexion du CLI. */
 export function usageAccountOf(config: { agent: AgentKind; account?: string | null } | null | undefined): string | null {
-  return config?.agent === 'claude' ? (config.account ?? null) : null
+  return config?.agent === 'claude' || config?.agent === 'codex' ? (config.account ?? null) : null
 }
