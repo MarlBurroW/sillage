@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { agentKindSchema, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@sillage/protocol'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
+import type { ClaudeAccountStore } from '../../claude-accounts/store.js'
 import { projectCwd } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
@@ -36,6 +37,7 @@ export function registerAgentRoutes(
   ctx: AppContext,
   registry: AgentRegistry,
   installer: CliInstaller,
+  claudeAccounts: ClaudeAccountStore,
 ): void {
   /** Le nom du CLI vient de la requête : un inconnu vaut 404, pas un défaut silencieux. */
   const resolveAdapter = (agent: string): AgentAdapter => {
@@ -96,15 +98,25 @@ export function registerAgentRoutes(
    * Consommation du compte. Lue à la demande plutôt que poussée : chaque lecture
    * démarre un process CLI, et la valeur n'intéresse que le moment où on l'ouvre.
    * `?refresh=1` court-circuite le cache, pour le bouton de rafraîchissement.
+   * `?account=` lit celle d'un compte supplémentaire de l'utilisateur, sous son jeton.
    */
   app.get('/api/agents/:agent/usage', async (request) => {
-    requireUser(request)
+    const user = requireUser(request)
     const adapter = resolveAdapter(paramsAgent(request.params))
-    const force = (request.query as { refresh?: string }).refresh === '1'
+    const { refresh, account } = request.query as { refresh?: string; account?: string }
+    const force = refresh === '1'
 
     try {
-      return await adapter.usage(force)
+      if (!account) return await adapter.usage(force)
+      // Résolu avec le propriétaire : l'identifiant d'un compte vient du navigateur, et
+      // celui d'un autre utilisateur ne doit rendre ni jeton ni consommation.
+      const resolved = claudeAccounts.resolveToken(user.id, account)
+      if (!resolved || !adapter.usageForAccount) {
+        throw new HttpError(404, 'claude_account_not_found', 'Unknown Claude account.')
+      }
+      return await adapter.usageForAccount(account, resolved.token, force)
     } catch (err) {
+      if (err instanceof HttpError) throw err
       throw cliUnavailable(
         adapter,
         'usage_unavailable',

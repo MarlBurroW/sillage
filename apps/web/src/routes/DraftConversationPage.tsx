@@ -32,7 +32,7 @@ import { useRememberProjectView } from '../lib/project-view'
 import { locale, useTranslate } from '../lib/i18n'
 import { setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useSidebarHidden } from '../lib/sidebar'
-import { useAgentUsage } from '../lib/usage'
+import { useAgentUsage, usageAccountOf } from '../lib/usage'
 import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
@@ -66,9 +66,17 @@ function formatDay(ts: number): string {
  * vide. La sonde met plusieurs secondes à froid, et le brouillon sert d'abord à taper
  * un message, pas à regarder des jauges apparaître.
  */
-function DraftUsage({ agent, enabled }: { agent: AgentKind; enabled: boolean }) {
+function DraftUsage({
+  agent,
+  account,
+  enabled,
+}: {
+  agent: AgentKind
+  account: string | null
+  enabled: boolean
+}) {
   const t = useTranslate()
-  const { data: usage, error } = useAgentUsage(agent, enabled)
+  const { data: usage, error } = useAgentUsage(agent, enabled, account)
 
   // La consommation n'est pas ce qu'on est venu chercher : quand la sonde échoue, une
   // ligne suffit, alors qu'un bandeau d'erreur crierait plus fort que le formulaire.
@@ -455,7 +463,7 @@ export function DraftConversationPage() {
             />
           )}
 
-          <DraftUsage agent={agent} enabled={blocked === null} />
+          <DraftUsage agent={agent} account={usageAccountOf(effective)} enabled={blocked === null} />
 
           {/* Sessions commencées au CLI dans ce dossier : plutôt qu'une nouvelle
               conversation, on peut adopter l'une d'elles. Importer ne copie rien,

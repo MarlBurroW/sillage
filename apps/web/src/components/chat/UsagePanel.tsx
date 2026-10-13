@@ -25,10 +25,10 @@ import { UsageBar, readAge } from './UsageBar'
  * CLI. La valeur précédente reste affichée pendant la relecture, donc rouvrir
  * n'efface pas l'écran pour le remplir à nouveau.
  */
-function UsageContent({ agent }: { agent: AgentKind }) {
+function UsageContent({ agent, account }: { agent: AgentKind; account: string | null }) {
   const t = useTranslate()
-  const { data: usage, error, isPending, isFetching } = useAgentUsage(agent)
-  const refresh = useRefreshUsage(agent)
+  const { data: usage, error, isPending, isFetching } = useAgentUsage(agent, true, account)
+  const refresh = useRefreshUsage(agent, account)
   const [refreshing, setRefreshing] = useState(false)
 
   const reload = async () => {
@@ -116,10 +116,13 @@ function UsageContent({ agent }: { agent: AgentKind }) {
 
 export function UsagePanel({
   agent,
+  account = null,
   open,
   onOpenChange,
 }: {
   agent: AgentKind
+  /** Compte Claude supplémentaire de la conversation, dont on lit la consommation plutôt que celle du CLI. */
+  account?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -135,7 +138,7 @@ export function UsagePanel({
             'sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border',
           )}
         >
-          <UsageContent agent={agent} />
+          <UsageContent agent={agent} account={account} />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

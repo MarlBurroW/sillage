@@ -26,6 +26,8 @@ import { instructionsAppendix, resolveInstructionsMode } from '../instructions/s
 import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
+import type { ClaudeAccountStore } from '../claude-accounts/store.js'
+import { OAUTH_TOKEN_SCOPES } from '../agents/claude/usage.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -165,6 +167,7 @@ export class SessionManager {
     private readonly config: Config,
     private readonly registry: AgentRegistry,
     private readonly secrets: SecretStore,
+    private readonly claudeAccounts: ClaudeAccountStore,
   ) {
     this.statusBus.setMaxListeners(200)
   }
@@ -728,6 +731,32 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Le jeton du compte Claude que la conversation désigne, dans la variable que le CLI
+   * fait passer devant sa connexion enregistrée (sondé sur 2.1.296). Rien pour la
+   * connexion du CLI, ni pour un autre agent.
+   *
+   * Un compte introuvable, supprimé depuis ou désigné par le préréglage d'un projet
+   * partagé alors qu'il appartient à un autre utilisateur, ne bloque pas le lancement :
+   * la session part sur la connexion du CLI, et le fil le dit, parce que c'est un autre
+   * abonnement qui va payer le tour.
+   */
+  private claudeAccountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
+    if (config.agent !== 'claude' || !config.account) return {}
+    const resolved = this.claudeAccounts.resolveToken(conversation.userId, config.account)
+    if (!resolved) {
+      this.log.append(conversation.id, {
+        type: 'error',
+        code: 'claude_account_missing',
+        message:
+          "Le compte Claude choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
+        recoverable: true,
+      })
+      return {}
+    }
+    return { CLAUDE_CODE_OAUTH_TOKEN: resolved.token, CLAUDE_CODE_OAUTH_SCOPES: OAUTH_TOKEN_SCOPES }
+  }
+
   private buildContext(conversation: ConversationRow): RunnerContext {
     const conversationId = conversation.id
     const adapter = this.registry.adapter(conversation.agent)
@@ -769,6 +798,7 @@ export class SessionManager {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
+        ...this.claudeAccountEnv(conversation, config),
       },
       // Le serveur de Sillage passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit

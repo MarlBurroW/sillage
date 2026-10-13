@@ -167,6 +167,10 @@ export class ClaudeAdapter implements AgentAdapter {
     return this.usageReader.read(force)
   }
 
+  usageForAccount(accountId: string, token: string, force: boolean): Promise<AgentUsage> {
+    return this.usageReader.readForAccount(accountId, token, force)
+  }
+
   commands(cwd: string, force: boolean): Promise<ProjectCommandsDto> {
     return this.commandCatalog.list(cwd, force)
   }

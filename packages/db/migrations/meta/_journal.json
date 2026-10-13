@@ -267,6 +267,13 @@
       "when": 1791824620300,
       "tag": "0037_decisions",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1791886485410,
+      "tag": "0038_claude_accounts",
+      "breakpoints": true
     }
   ]
 }

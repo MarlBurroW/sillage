@@ -84,6 +84,11 @@ export interface AgentAdapter {
   models(): Promise<AgentModelsDto>
   usage(force: boolean): Promise<AgentUsage>
   /**
+   * La même lecture sous le jeton d'un compte supplémentaire de Sillage (voir
+   * `ClaudeAccountStore`). Absente chez les CLI qui n'en tiennent pas.
+   */
+  usageForAccount?(accountId: string, token: string, force: boolean): Promise<AgentUsage>
+  /**
    * Commandes en `/` que le CLI reconnaît dans ce dossier, sans qu'une session tourne.
    * Sert le brouillon, où rien n'est encore lancé ; un CLI sans commandes en `/`
    * répond vide. `force` court-circuite le cache, pour un bouton de rafraîchissement.
