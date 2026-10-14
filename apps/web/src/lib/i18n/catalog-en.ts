@@ -2960,6 +2960,7 @@ export const en = {
   'apiTokens.scope.tasks:read': 'Read tasks, their status and their results',
   'apiTokens.scope.tasks:write': 'Launch, answer and stop tasks',
   'apiTokens.scope.tasks:autonomous': 'Allow a configuration without guardrails',
+  'apiTokens.scope.mcp': 'Use the MCP server over HTTP: history, board, sessions, memory and launches, in your name',
   'users.create.open': 'Create an account',
   'users.action.more': 'More actions',
   'users.delete.body': 'Refused while the account still owns projects or conversations. Its open sessions are signed out.',

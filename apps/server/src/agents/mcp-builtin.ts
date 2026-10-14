@@ -27,7 +27,7 @@ export const BUILTIN_MCP_SERVER_ID = 'builtin:sillage'
  * copié dans `dist/mcp/`. Deux candidats testés plutôt qu'un drapeau d'environnement,
  * qui mentirait le jour où quelqu'un lance le bundle depuis le dépôt.
  */
-function resolveEntry(): string {
+export function resolveEntry(): string {
   const candidates = [
     join(import.meta.dirname, '../mcp/sillage-mcp.mjs'),
     join(import.meta.dirname, 'mcp/sillage-mcp.mjs'),

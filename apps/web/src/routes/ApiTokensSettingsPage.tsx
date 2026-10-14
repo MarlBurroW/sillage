@@ -53,6 +53,7 @@ const SCOPE_HINT_KEYS: Record<ApiScope, MessageKey> = {
   'tasks:read': 'apiTokens.scope.tasks:read',
   'tasks:write': 'apiTokens.scope.tasks:write',
   'tasks:autonomous': 'apiTokens.scope.tasks:autonomous',
+  mcp: 'apiTokens.scope.mcp',
 }
 
 /**

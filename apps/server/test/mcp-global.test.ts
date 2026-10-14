@@ -94,7 +94,7 @@ test('each call names its project, by id, name or unambiguous fragment', async (
   assert.equal(call('list_cards', { project: 'nowhere' }).isError, true)
   const ambiguous = call('list_cards', { project: 'beta a' })
   assert.equal(ambiguous.isError, true)
-  assert.match(ambiguous.content[0]!.text, /Beta app.*Beta api/)
+  assert.match(ambiguous.content[0]!.text, /Beta api \(gamma\), Beta app \(beta\)/)
   assert.equal(call('list_cards', { project: 'Beta API' }).isError, undefined)
   assert.equal(call('list_cards', { project: 'gamma' }).isError, undefined)
   assert.match(call('list_sessions', { project: 'alph' }).content[0]!.text, /Session/)
