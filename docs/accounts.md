@@ -14,8 +14,9 @@ so in the thread.
 
 On the new-session screen, an **Account** choice sits right under the CLI choice as
 soon as an extra account exists. Each option shows where its account stands: the two
-most loaded usage windows for the CLI's own sign-in and for Codex subscriptions, or a
-sentence for the accounts that have no gauge (a subscription token, an API key). It
+most loaded usage windows for the CLI's own sign-in, Codex subscriptions and extra
+Claude subscriptions with their usage gauge enabled, or a sentence for accounts
+without a gauge (a subscription token without the extra sign-in, an API key). It
 sets the same field as the composer's **Account** setting.
 
 ## Claude Code
