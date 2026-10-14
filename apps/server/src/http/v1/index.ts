@@ -5,6 +5,7 @@ import type { SessionManager } from '../../sessions/session-manager.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import type { AppContext } from '../context.js'
 import { registerDiscoveryRoutes } from './discovery.js'
+import { registerMcpRoutes } from './mcp.js'
 import { registerProjectCreationRoutes } from './projects.js'
 import { registerTaskRoutes } from './tasks.js'
 
@@ -27,4 +28,5 @@ export function registerV1Routes(
   registerDiscoveryRoutes(app, ctx, registry)
   registerProjectCreationRoutes(app, ctx)
   registerTaskRoutes(app, ctx, log, sessions, registry, webhooks)
+  registerMcpRoutes(app, ctx)
 }

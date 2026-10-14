@@ -24,6 +24,13 @@ export const apiScopeSchema = z.enum([
   'tasks:read',
   'tasks:write',
   'tasks:autonomous',
+  /**
+   * Le serveur MCP de Sillage par HTTP (`POST /api/v1/mcp`), avec les outils d'une
+   * session mais au nom du compte : historique, board, sessions, mémoire, lancements.
+   * Portée à part parce qu'elle ouvre plus que les tâches : les consignes et la mémoire
+   * s'y écrivent.
+   */
+  'mcp',
 ])
 export type ApiScope = z.infer<typeof apiScopeSchema>
 

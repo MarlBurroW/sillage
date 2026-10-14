@@ -7,8 +7,9 @@ même serveur, `apps/server/src/mcp/sillage-mcp.mjs`, se lance à la main depuis
 hors Sillage : un Codex ou un Claude Code ouvert dans un terminal, sur la machine ou
 depuis un poste qui s'y connecte en SSH.
 
-Il parle en stdio et lit la base SQLite directement : pas de port, pas de jeton. Son
-environnement dit quelle portée il sert.
+Il parle en stdio et lit la base SQLite directement. Lancé à la main, il n'a ni port ni
+jeton : il fait confiance à qui peut le lancer. Par HTTP, c'est le jeton d'API qui
+authentifie (voir plus bas). Son environnement dit quelle portée il sert.
 
 ## Deux portées
 
@@ -18,6 +19,7 @@ environnement dit quelle portée il sert.
 | `SILLAGE_MCP_PROJECT` | identifiant du projet servi | **absent** |
 | `SILLAGE_MCP_USER` | — | nom du compte au nom duquel écrire ; facultatif si la base n'a qu'un compte |
 | `SILLAGE_MCP_MEMORY` | dossier de mémoire du projet | racine de la mémoire (`memory/` à côté de la base par défaut) |
+| `SILLAGE_MCP_PROJECTS` | — | liste blanche d'identifiants, séparés par des virgules ; posée par le pont HTTP d'après le jeton |
 | `SILLAGE_MCP_CONVERSATION` | conversation courante, exclue des résultats | — |
 
 **Mode conversation.** C'est celui que Sillage utilise. Les outils sont cadrés au
@@ -45,7 +47,41 @@ Les gestes qui passent par le daemon restent soumis à ses gardes : au plus six
 lancements par heure, comptés ensemble pour tout ce qui vient hors session, et le daemon
 doit tourner, sinon la demande expire.
 
-## Configuration côté CLI
+## Par HTTP, avec un jeton d'API
+
+Pour un client qui n'est pas sur la machine et n'a pas de SSH, le même serveur se sert
+par HTTP : `POST /api/v1/mcp`, transport « streamable HTTP » de MCP, derrière un jeton
+d'API qui porte la portée **`mcp`** (réglages → API de Sillage). Le pont
+(`apps/server/src/http/v1/mcp.ts`) ne réimplémente aucun outil : chaque session HTTP
+est un process du serveur en mode global, au nom du compte du jeton et borné à la liste
+de projets du jeton s'il en a une, et chaque message JSON-RPC lui est transmis.
+
+- `initialize` ouvre la session et rend un en-tête `Mcp-Session-Id`, à présenter
+  ensuite ; sans lui, ou après trente minutes sans requête, `404` : le client
+  recommence par `initialize`. `DELETE` ferme la session.
+- Toujours une réponse JSON, jamais un flux SSE ; `GET` répond `405`.
+- Au plus quatre sessions par jeton ; au-delà, la plus ancienne est fermée.
+
+Codex, depuis n'importe quel poste :
+
+```toml
+[mcp_servers.sillage]
+url = "https://sillage.marlburrow.dev/api/v1/mcp"
+bearer_token_env_var = "SILLAGE_TOKEN"   # exporté dans le shell qui lance codex
+```
+
+Claude Code :
+
+```bash
+claude mcp add --transport http sillage https://sillage.marlburrow.dev/api/v1/mcp \
+  --header "Authorization: Bearer sillage_pat_…"
+```
+
+Le jeton est la frontière : il écrit consignes et mémoire, lance des sessions, crée des
+cartes. Le restreindre à quelques projets limite ce qu'il atteint s'il fuit ; le révoquer
+ferme ses sessions au prochain message.
+
+## En stdio, sur la machine ou par SSH
 
 Les chemins ci-dessous sont ceux d'une installation par le script Linux, où la release
 courante est sous `~/.local/share/sillage/app/current` ; le `.mjs` dépend de
@@ -85,8 +121,9 @@ donc sans messages entre sessions.
 - `GLOBAL`, `selectProject` et `globalTools` dans `sillage-mcp.mjs` : le projet est un
   état du process posé au début de chaque appel, et les appels sont traités un par un
   pour qu'ils ne se chevauchent pas.
+- `http/v1/mcp.ts` : le pont HTTP, un process par session, portée `mcp` des jetons.
 - `agent_requests.user_id` (migration 0041) : une demande sans conversation porte le
   compte pour qui agir ; `AgentRequests.principal` en fait un demandeur sans session,
   et chaque traitement s'abstient de ce qui n'a de sens que pour une session.
-- Tests : `apps/server/test/mcp-global.test.ts` et le cas global de
+- Tests : `apps/server/test/mcp-global.test.ts`, `mcp-http.test.ts` et le cas global de
   `agent-requests.test.ts`.

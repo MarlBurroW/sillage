@@ -65,6 +65,11 @@ let MEMORY_DIR = GLOBAL ? '' : (process.env.SILLAGE_MCP_MEMORY ?? '')
 const MEMORY_ROOT = GLOBAL && DB_PATH ? process.env.SILLAGE_MCP_MEMORY || join(dirname(DB_PATH), 'memory') : ''
 /** Compte au nom duquel le mode global écrit : son nom d'utilisateur, ou le seul compte de la base. */
 const USER_NAME = process.env.SILLAGE_MCP_USER ?? ''
+/**
+ * Mode global : projets permis, identifiants séparés par des virgules ; vide, tous ceux
+ * que le compte voit. C'est la liste blanche d'un jeton d'API, posée par le pont HTTP.
+ */
+const ALLOWED_PROJECTS = (process.env.SILLAGE_MCP_PROJECTS ?? '').split(',').map((id) => id.trim()).filter(Boolean)
 
 /** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
 const MAX_THREAD_CHARS = 20000
@@ -959,7 +964,7 @@ function selectProject(name, args) {
     }
     return { ...text('Le paramètre `project` est requis : le nom ou l\'identifiant d\'un projet, voir list_projects.'), isError: true }
   }
-  const rows = db.prepare('SELECT id, name FROM projects').all()
+  const rows = visibleProjects()
   const lower = wanted.toLowerCase()
   let found = rows.filter((row) => row.id === wanted)
   if (found.length === 0) found = rows.filter((row) => row.name.toLowerCase() === lower)
@@ -979,7 +984,24 @@ function selectProject(name, args) {
   return null
 }
 
+/**
+ * Les projets que le mode global sert : ceux que le compte voit dans l'interface (les
+ * siens et les partagés), restreints à la liste blanche s'il y en a une. Les deux
+ * filtres se composent, comme pour un jeton d'API : un compte emprunté ne s'élargit pas.
+ */
+function visibleProjects() {
+  return db
+    .prepare(
+      `SELECT id, name FROM projects
+       WHERE archived_at IS NULL AND (owner_id = ? OR visibility = 'shared')
+       ORDER BY position, name`,
+    )
+    .all(USER.id)
+    .filter((row) => ALLOWED_PROJECTS.length === 0 || ALLOWED_PROJECTS.includes(row.id))
+}
+
 function listProjects() {
+  const visible = new Set(visibleProjects().map((row) => row.id))
   return db
     .prepare(
       `SELECT p.id AS id, p.name AS name, p.workspace_path AS path,
@@ -991,6 +1013,7 @@ function listProjects() {
        ORDER BY p.position, p.name`,
     )
     .all()
+    .filter((row) => visible.has(row.id))
 }
 
 function renderProjects(rows) {

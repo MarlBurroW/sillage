@@ -2947,6 +2947,7 @@ export const fr: Catalog = {
   'apiTokens.scope.tasks:read': 'Lire les tâches, leur état et leurs résultats',
   'apiTokens.scope.tasks:write': 'Lancer, répondre et arrêter des tâches',
   'apiTokens.scope.tasks:autonomous': 'Autoriser une configuration sans garde-fou',
+  'apiTokens.scope.mcp': 'Utiliser le serveur MCP par HTTP : historique, board, sessions, mémoire et lancements, en votre nom',
   'users.create.open': 'Créer un compte',
   'users.action.more': 'Autres actions',
   'users.delete.body': "Refusé tant que le compte possède des projets ou des conversations. Ses sessions ouvertes sont déconnectées.",
