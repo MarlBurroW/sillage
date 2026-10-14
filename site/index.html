@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <title>Sillage · A workspace for coding agents</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A self-hosted workspace for Claude Code, Codex and OpenCode. Continue from any device, manage projects, and give agents the context to work together.">
+  <meta name="description" content="A self-hosted workspace for Claude Code, Codex and OpenCode. Work from any device, connect GitHub issues, automate tasks and choose the account for each session.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <!-- Changer ?v= à chaque modification de style.css ou de main.js : GitHub Pages les laisse
        en cache dix minutes, et une page neuve servie avec une feuille ancienne se casse. -->
-  <link rel="stylesheet" href="style.css?v=film">
+  <link rel="stylesheet" href="style.css?v=automations">
   <meta name="theme-color" content="#faf7fb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0f0b11" media="(prefers-color-scheme: dark)">
   <meta property="og:title" content="Sillage">
-  <meta property="og:description" content="Your projects, sessions and native coding agents, in one self-hosted workspace.">
+  <meta property="og:description" content="Native coding agents, GitHub issues, scheduled work and webhook automations, in one self-hosted workspace.">
   <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
   <meta property="og:type" content="website">
   <noscript><style>.tab-panel[hidden], .shots-panels [hidden] { display: block !important; } .shots-nav, .tabs { display: none; } .shots-panels figure { margin-bottom: 2rem; }</style></noscript>
@@ -62,6 +62,7 @@
       <a href="#projects">Projects</a>
       <a href="#coordination">Coordination</a>
       <a href="#context">Instructions &amp; memory</a>
+      <a href="#schedules">Automations</a>
       <a href="#tour">Product tour</a>
       <a href="#install">Install</a>
       <a class="repo" href="https://github.com/MarlBurroW/sillage">GitHub</a>
@@ -83,7 +84,7 @@
       <div class="hero-heading">
         <h1>Keep your work<br>within reach.</h1>
         <div>
-          <p class="lede">A workspace for your coding agents.<br>Continue from your phone. Keep projects organised. Give each session the context to work with the others.</p>
+          <p class="lede">A workspace for your coding agents.<br>Continue from your phone. Turn issues and events into work. Keep the decisions within reach.</p>
           <p class="hero-detail">Claude Code, Codex and OpenCode run on your machine, with their native tools and your accounts. Sillage brings the work into your browser.</p>
           <p class="actions">
             <a class="btn primary" href="#install">Install Sillage <span aria-hidden="true">↗</span></a>
@@ -113,6 +114,7 @@
       <a href="#coordination"><span>03 / Session awareness</span>Let agents coordinate ↗</a>
       <a href="#agents"><span>04 / Multi-CLI</span>Choose the right harness ↗</a>
       <a href="#context"><span>05 / Shared context</span>One set of instructions, one memory ↗</a>
+      <a href="#schedules"><span>06 / Automations</span>Run on a schedule or an event ↗</a>
     </nav>
 
     <section class="overview" id="overview" aria-labelledby="overview-title">
@@ -161,7 +163,7 @@
         <p class="section-lede">Your agents have a home. Follow their work from any device.</p>
         <div class="prose-columns">
           <p>Run Sillage on an always-on server, connect through your VPN, and pick up on your phone. Close your browser mid-turn: the agent keeps working, and the event journal brings the conversation back when you reconnect.</p>
-          <p>Answer a permission request, review a diff or send a correction. Install Sillage as a PWA and receive push notifications when a turn finishes or an agent needs your attention.</p>
+          <p>Answer a permission request, review a diff or send a correction. Install Sillage as a PWA for push notifications on your other devices. Questions and decisions also appear as in-app toasts; a conversation already in view stays quiet.</p>
         </div>
         <p class="technical-note">Prefer your own computer? Sillage works there too. Keep it awake and online, and set up remote access before switching devices. Your agents and files stay on the machine where you installed them.</p>
         <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Set up remote access &amp; agent preview links ↗</a>
@@ -181,8 +183,11 @@
       </figure>
       <div class="project-details">
         <div><h3>Cards with a history</h3><p>Descriptions, attachments, linked sessions and notes. Start a conversation from a card; the next agent can read what came before.</p></div>
+        <div><h3>GitHub issues, on your board</h3><p>Link a repository and keep its issues alongside local cards. Comments and issue state sync with GitHub; labels map to your columns. You choose whether new cards stay local or become issues.</p></div>
+        <div><h3>Maintenance on your terms</h3><p>Let a new issue or comment start work with your instructions, CLI and permissions. Each issue keeps its own session, and later comments join it. Choose a separate worktree or the project root.</p></div>
         <div><h3>Room for parallel work</h3><p>Use the project root, an existing worktree or a new branch. Keep separate changes in separate worktrees while following them from the same project.</p></div>
-        <div><h3>The repository at hand</h3><p>Read files, edit code, inspect diffs and commits, or open a terminal beside the conversation. Search past conversations across projects.</p></div>
+        <div><h3>The repository at hand</h3><p>Read and edit files, stage changes, commit, manage branches or open a terminal beside the conversation. Move several files together, and use the command palette to find projects, sessions and past messages.</p></div>
+        <div><h3>Commands worth keeping</h3><p>Turn tests, dev servers and debug scripts into project actions. Run them from the header, panel or command palette, follow their output and open a service's preview link. Review commands proposed by agents before launching them from the interface.</p></div>
       </div>
     </section>
 
@@ -202,7 +207,8 @@
           <div><dt>When work belongs elsewhere</dt><dd>Open a card for a bug found along the way. When you ask, start a new session with its own CLI, model, effort and worktree, then get notified when it finishes.<code>create_card · start_session · list_models</code></dd></div>
         </dl>
         <p class="technical-note">These tools help agents coordinate; they do not lock files or prevent merge conflicts. Use separate worktrees when changes need isolation.</p>
-        <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/apps/server/src/mcp/sillage-mcp.mjs">Read the tool definitions ↗</a>
+        <p><strong>Bring your own MCP client.</strong> A CLI outside Sillage can read history, boards, instructions and memory across projects, and launch new work. Connect over HTTP with a scoped API token, or use stdio on the host or over SSH. Messaging between sessions remains available to agents running inside Sillage.</p>
+        <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/mcp.md">Connect an external CLI to Sillage ↗</a>
       </div>
     </section>
 
@@ -213,6 +219,10 @@
         <h2>Native harnesses.<br>A shared workspace.</h2>
         <p class="section-lede">Choose Claude Code, Codex or OpenCode for each conversation. Keep the project around it.</p>
         <div class="prose-columns"><p>Sillage drives the native CLIs: their tools, permission requests and agent behaviour. Each adapter translates its events into a common format for the interface, history and search.</p><p>The board and coordination tools belong to the project, so a Codex session can look up a decision made in a Claude Code conversation. Additional CLIs need their own adapter; Claude Code, Codex and OpenCode are supported today. OpenCode brings any provider and model it can reach, including local ones.</p></div>
+        <dl class="tool-reference">
+          <div><dt>Choose the account, too</dt><dd>Add Claude and Codex subscriptions or API keys from the interface, then choose an account for each conversation. Subscription usage helps you choose; extra Claude accounts need a separate sign-in for their gauge. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/accounts.md">Account setup and limits ↗</a></dd></div>
+          <div><dt>Keep your settings close</dt><dd>Pin the controls you use under the message box, from permissions and account to speed or advisor when the CLI supports them. Claude Code, Codex and OpenCode each keep their own composer layout.</dd></div>
+        </dl>
         <div class="agent-links"><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/claude">Claude Code adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/codex">Codex adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/opencode">OpenCode adapter ↗</a></div>
       </div>
     </section>
@@ -228,27 +238,29 @@
           <div><dt>When you change the rules</dt><dd>Ask an agent to revise the instructions; it edits them like a file.<code>read_instructions · edit_instructions · write_instructions</code></dd></div>
           <div><dt>When something is worth remembering</dt><dd>Codex and OpenCode note it in the project memory; Claude does it natively in the same folder.<code>read_memory · write_memory · delete_memory</code></dd></div>
         </dl>
-        <p class="technical-note">Both are read when a session starts: a session already running keeps the version it received. Existing projects keep their repository files until you move them into Sillage.</p>
+        <p class="technical-note">Claude Code and Codex read this context at session start; OpenCode receives it with each message. Existing projects keep their repository files until you move them into Sillage.</p>
         <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/sillage-md.md">How it works in detail ↗</a>
       </div>
     </section>
 
     <section class="editorial" id="schedules">
       <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="section-label">06 / Scheduled work</div>
+      <div class="section-label">06 / Automations</div>
       <div class="section-body">
         <h2>Some work should happen<br>while you are away.</h2>
-        <p class="section-lede">A release watch every Monday. A dependency audit each night. Sillage runs them on time, in a fresh session, and keeps the results out of your way.</p>
+        <p class="section-lede">A release watch every Monday. An issue labeled for an agent. A failing CI run to investigate. Start work on a schedule or when an event arrives.</p>
         <figure class="product-shot">
-          <button type="button" data-zoom aria-label="Enlarge the scheduling page screenshot"><picture>
+          <button type="button" data-zoom aria-label="Enlarge the automations page screenshot"><picture>
             <source srcset="screenshots/schedule-dark.png" media="(prefers-color-scheme: dark)">
-            <img src="screenshots/schedule-light.png" width="3200" height="2000" loading="lazy" alt="Sillage scheduling page, with a weekly task, its next run and the history of past runs">
+            <img src="screenshots/schedule-light.png" width="3200" height="2000" loading="lazy" alt="Sillage automations page, with a weekly task, its next run and the history of past runs">
           </picture></button>
-          <figcaption>The scheduling page. One task, its cadence, its guard rails, and every run it has made.</figcaption>
+          <figcaption>Scheduled tasks and webhooks live under Automations, with settings and a history for each task.</figcaption>
         </figure>
-        <div class="prose-columns"><p>A scheduled task is a prompt with a cadence: every few hours, a cron expression, or a single date. Each run opens a new session of the CLI you chose, with the model, effort and permissions fixed on the task. The agent is told nobody is at the keyboard, gets the date, link and last reply of the previous run, and is cut off after a maximum duration. A run that overlaps the previous one is skipped, or waits.</p><p>Runs do not pile up in the session list. They sit under their task in the sidebar, one line per task with its state and last run, and the scheduling page keeps the full history. Neither CLI has a durable scheduler of its own: Claude's cron dies with its session, Codex has none. The daemon that already keeps your sessions alive does this for both.</p></div>
+        <div class="prose-columns"><p><strong>On a schedule.</strong> Run a prompt at an interval, with a cron expression or on a single date. Each run gets a fresh session of Claude Code, Codex or OpenCode, the task's model and permissions, and the previous run's last reply. Set a maximum duration and decide whether overlapping runs wait or are skipped.</p><p><strong>On an event.</strong> Connect a webhook, inspect its payload, and use its fields in conditions and prompts. Start from GitHub templates for labeled issues, comment commands, new pull requests or failed CI, or connect another service. Simulate a delivery to check what would run; deduplication and hourly limits bound the launches.</p></div>
         <dl class="tool-reference">
-          <div><dt>When you ask for recurring work</dt><dd>An agent can schedule it from the conversation, with an interval, a cron expression or a date. You adjust it later from the page.<code>schedule_task</code></dd></div>
+          <div><dt>Check before waking the agent</dt><dd>An optional script can check whether anything changed. Exit 0 starts the session with its output; exit 10 skips it without spending model tokens. Scripts written by an agent wait for your review.</dd></div>
+          <div><dt>Keep decisions within reach</dt><dd>Enable decision requests for a schedule, webhook or GitHub maintenance rule. The agent can leave a question in Decisions, with a deadline and an optional fallback. Your answer goes back to its session. This is off by default and separate from native CLI permissions.</dd></div>
+          <div><dt>Set it up from a conversation</dt><dd>Ask an agent to create a schedule or a webhook automation, then adjust it in the interface. Runs stay grouped under their task instead of filling the main session list.<code>schedule_task · create_automation</code></dd></div>
         </dl>
         <p class="technical-note">Runs use the project's default permissions unless the task says otherwise: a run that asks for a permission waits until its time is up. Pick a mode that fits what the task has to do on its own.</p>
       </div>
@@ -373,8 +385,8 @@
       <ul>
         <li><h3>A queue you can steer</h3><p>Write while the agent runs. Queue a follow-up, withdraw it, or send a correction into the current turn.</p></li>
         <li><h3>Dictation with project vocabulary</h3><p>Transcription uses a lexicon from your repository and current branch. An optional cleanup pass restores exact spellings. Bring an OpenAI-compatible endpoint.</p></li>
-        <li><h3>Shared skills &amp; MCP tools</h3><p>Keep reusable skills in a central library for Claude Code and Codex. Declare external MCP servers once and choose which agents receive them.</p></li>
-        <li><h3>A task API</h3><p>Create tasks, follow events, answer requests and receive completion webhooks through <code>/api/v1</code>. Tokens have scopes and optional project restrictions.</p></li>
+        <li><h3>Shared skills &amp; MCP tools</h3><p>Keep reusable skills in a central library for Claude Code, Codex and OpenCode. Declare external MCP servers once and choose which agents receive them.</p></li>
+        <li><h3>A task API</h3><p>Create projects and tasks, follow events, answer requests and receive completion webhooks through <code>/api/v1</code>. Tokens have scopes and optional project restrictions. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/api.md">API guide ↗</a></p></li>
         <li><h3>Processes in view</h3><p>On Linux, inspect commands and services attached to Sillage, their ports and originating conversations. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/services.md">Detection and limits ↗</a></p></li>
         <li><h3>Updates from the interface</h3><p>See when a release is available and read what changed. Native installations can update from the UI; container installations update through their image.</p></li>
       </ul>
@@ -385,6 +397,7 @@
       <div class="install-intro">
         <p class="section-label">Run it yourself</p><h2 id="install-title">Your machine.<br>Your workspace.</h2>
         <p>An always-on server is recommended for picking up work throughout the day. Your desktop works too, while it stays awake and connected.</p>
+        <p>Install the CLIs you use from Settings. Reuse their sign-ins on the host, or add Claude and Codex accounts through Sillage's guided sign-in flows.</p>
         <p>Docker, a systemd user service on Linux, a launchd agent on macOS, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Add private remote access with a VPN</a> to connect from another device.</p>
       </div>
 
@@ -489,9 +502,10 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
       <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <h2>A word on security</h2>
       <p>
-        Sillage is built for a trusted circle, not for the open Internet. Agents run under
-        your system account with your credentials, every account on the instance shares
-        them, and terminal mode is a full shell. The server listens on localhost and does
+        Sillage is built for a trusted circle, not for the open Internet. Agents and
+        terminals run under one system account. Host CLI sign-ins are shared; extra
+        Claude and Codex accounts belong to the Sillage user who adds them, but this
+        does not isolate their files from that system account. The server listens on localhost and does
         not terminate TLS: reach it through a VPN, a tailnet or a reverse proxy you control.
       </p>
     </section>

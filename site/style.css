@@ -548,8 +548,11 @@ footer nav a:hover { color: var(--ink); }
   cursor: pointer;
 }
 
-@media (max-width: 760px) {
+/* Les six chapitres restent accessibles sous le film quand le menu ne tient plus. */
+@media (max-width: 1100px) {
   .topbar nav a:not(.repo) { display: none; }
+}
+@media (max-width: 760px) {
   .why, .install, .security { grid-template-columns: 1fr; gap: 1.5rem; }
   .tabs button { padding-inline: .65rem; }
   .shots-arrows { display: none; }
@@ -621,9 +624,11 @@ h2 { font-size: clamp(2rem, 3.6vw, 3.3rem); font-weight: 550; letter-spacing: -.
 }
 [data-zoom] { display: block; width: 100%; padding: 0; background: var(--raised); border: 1px solid var(--shot-edge); border-radius: .35rem; overflow: hidden; cursor: zoom-in; }
 figcaption { margin-top: .8rem; color: var(--muted); font-size: .8rem; }
-.chapter-nav { margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); border-block: 1px solid var(--line); }
+.chapter-nav { margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); border-block: 1px solid var(--line); }
 .chapter-nav a { padding: 1.25rem 1rem; text-decoration: none; font-size: .83rem; }
 .chapter-nav a + a { border-left: 1px solid var(--line); }
+.chapter-nav a:nth-child(3n+1) { border-left: 0; }
+.chapter-nav a:nth-child(n+4) { border-top: 1px solid var(--line); }
 .chapter-nav a:hover { background: var(--sunken); }
 .chapter-nav span { display: block; color: var(--muted); margin-bottom: .5rem; }
 .editorial, .editorial-heading { display: grid; grid-template-columns: 1fr 3fr; gap: 3rem; }
@@ -654,7 +659,8 @@ figcaption { margin-top: .8rem; color: var(--muted); font-size: .8rem; }
   .hero-heading { gap: 2rem; }
   .editorial, .editorial-heading { grid-template-columns: 1fr 3fr; gap: 1.5rem; }
   .chapter-nav { grid-template-columns: 1fr 1fr; }
-  .chapter-nav a:nth-child(3) { border-left: 0; }
+  .chapter-nav a:nth-child(n) { border-left: 0; }
+  .chapter-nav a:nth-child(even) { border-left: 1px solid var(--line); }
   .chapter-nav a:nth-child(n+3) { border-top: 1px solid var(--line); }
   .features ul { grid-template-columns: 1fr 1fr; }
 }

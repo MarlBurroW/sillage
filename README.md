@@ -45,7 +45,14 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   into a single event schema, so history, search, the board and the panel behave the
   same way whichever one ran the conversation.
 - **The repository, one panel away.** File explorer, editor, diffs, commit
-  history and terminals, beside the conversation that changed them.
+  history and terminals, beside the conversation that changed them. Stage changes,
+  commit, manage branches and remotes, or copy and move several files at once.
+- **Project actions.** Save a test command, a dev server or a debug script as a
+  button, available from the project header, the workspace panel and the command
+  palette. Tasks keep their output and exit code; services run as persistent user
+  units on Linux with systemd, with a terminal fallback elsewhere. Agents can
+  propose actions for you to review before their first launch from the interface.
+  Definitions stay in Sillage, without adding files to your repository.
 - **Worktrees.** Start a conversation on the project root, on an existing
   worktree, or on a branch Sillage creates for it.
 - **Full-text search** across every conversation in every project.
@@ -54,12 +61,13 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   plus the permanent apps agents run as `sillage-app-*` systemd units; stop them from
   the same page. Other systemd services and tmux sessions are excluded.
   [Detection and limits](docs/services.md).
-- **A board the agents can read and add to.** Cards per project, handed to the
-  agent through a built-in MCP server: a session can read its card, look up what an
-  earlier one decided, see which sessions are running, and leave a note for the
-  next. It can also open a card for a bug it ran into along the way. Moving cards
-  and editing their descriptions stay with you. The same server runs from a CLI
-  outside Sillage, over every project at once: [docs/mcp.md](docs/mcp.md).
+- **A board connected to GitHub.** Keep local cards alongside issues from a linked
+  repository, with descriptions, comments, attachments and sessions. Choose whether
+  new cards stay local or become issues; labels and issue state map to board columns.
+  Agents can read cards, leave notes, create cards, and close or reopen linked issues
+  through the built-in MCP server. Optional maintenance starts a session for a new
+  issue and brings subsequent comments into that issue's session, using your
+  instructions, CLI and worktree choice.
 - **Sessions that coordinate.** Through the same server, a session can message
   another, ask to be notified when it finishes, or start a new one when you ask:
   "start a Codex session at max effort to fix this" opens a conversation that you
@@ -76,23 +84,51 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   tokens when something changed. Agents can schedule too, through `schedule_task`,
   the durable equivalent of Claude's session-bound cron; a check script an agent
   writes waits for your approval before it runs.
+- **Webhook automations.** Start a session when an issue gets a label, a pull
+  request opens, CI fails, or another service sends an event. Inspect payloads,
+  build conditions and prompts from their fields, and simulate a delivery without
+  starting an agent. GitHub templates, an optional sandboxed JavaScript filter,
+  delivery deduplication and hourly limits help keep triggers under control.
+- **Decisions for autonomous work.** Enable decision requests on a schedule,
+  webhook automation or GitHub maintenance rule. The agent can leave a question in
+  **Decisions** and receive your answer back in its session, with an expiry and an
+  optional fallback choice. This is separate from the CLI's permission requests
+  and is off by default for each source.
 - **Shared instructions and memory.** One `SILLAGE.md` and one project memory for
   all three CLIs, editable from the interface, which agents can read and rewrite.
   [How it works](#instructions-and-memory).
-- **Installable PWA with push notifications**, silent while you already have the
-  conversation open.
+- **Installable PWA with notifications.** In-app toasts for questions and decisions,
+  push notifications on other devices, and silence while you already have the
+  conversation open. Manage subscribed devices and send a test from Settings.
 - **Dictation** biased with a lexicon read from the project itself plus the
   current branch, then an optional cleanup pass. Any OpenAI-format endpoint.
 - **MCP servers** declared once and handed to the agents that should get them.
+- **A shared skill library** for Claude Code, Codex and OpenCode, with global and
+  project skills managed from the interface. [Skill library](docs/skill-library.md).
 - **Extra accounts.** Register other Claude subscriptions or API keys, and other
-  Codex sign-ins, then pick one per conversation; the CLI's own sign-in stays
-  untouched. [Extra accounts](docs/accounts.md).
+  Codex subscriptions or API keys from the interface, then pick one when creating
+  a conversation or from its composer. Compare subscription usage before choosing;
+  extra Claude subscriptions need a separate guided sign-in to enable their gauge.
+  Added accounts belong to the Sillage user who registered them.
+  [Extra accounts](docs/accounts.md).
+- **A composer you can arrange.** Pin the settings you use under the message box:
+  permissions, speed, account, advisor or other controls supported by that CLI.
+  Each CLI keeps its own layout.
 - **A task API for machines.** `/api/v1` speaks tasks rather than screens: open
   one in a project, follow its events, answer what it asks, steer or interrupt
   it, and take a webhook when it lands. Bearer tokens carry their own scopes and
   an optional list of allowed projects, separate from the browser session.
   Create projects with `POST /api/v1/projects` and the explicit `projects:write`
   scope on an unrestricted token. [Project creation API](docs/api.md).
+- **Sillage's MCP from your own tools.** Connect an external CLI to project history,
+  boards, instructions and memory, and launch work across projects. Use stdio on
+  the host or over SSH, or Streamable HTTP at `/api/v1/mcp` with an API token carrying
+  the `mcp` scope and optional project restrictions. Session-to-session messaging
+  stays inside Sillage. [MCP setup and scope](docs/mcp.md).
+
+The CLI versions this tree targets are kept in
+[`packages/protocol/src/cli-versions.ts`](packages/protocol/src/cli-versions.ts).
+Sillage can install them from Settings and flags incompatible installed versions.
 
 ## Instructions and memory
 
@@ -140,6 +176,10 @@ OpenCode receives them with every message, so an edit reaches it on the next one
 Details and the probes behind them: [docs/sillage-md.md](docs/sillage-md.md).
 
 ## Install
+
+Install the CLIs you use from Settings. Reuse their existing sign-ins on the host,
+or add Claude and Codex accounts through Sillage's guided sign-in flows.
+[Account setup](docs/accounts.md).
 
 ### Docker
 
@@ -285,8 +325,10 @@ pnpm dev                  # API on :7317, Vite UI on :5317 with /api proxy
 
 Sillage is built for a trusted circle, not for public exposure:
 
-- Agents run under your system account, with your Claude, Codex and OpenCode
-  credentials. Every account on the instance shares your subscriptions and API keys.
+- Agents run under your system account. The host CLI sign-ins are shared; extra
+  Claude and Codex accounts can only be selected by the Sillage user who added them.
+  That selection rule is not an operating-system security boundary: agents and
+  terminals still run as the same system user and can access its files.
 - Terminal mode gives a full shell under that same account.
 - There is no system-level isolation between users: a shared project is readable
   by every account.
