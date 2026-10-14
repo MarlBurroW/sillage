@@ -288,6 +288,13 @@
       "when": 1791895547414,
       "tag": "0040_claude_account_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1792017288652,
+      "tag": "0041_agent_request_user",
+      "breakpoints": true
     }
   ]
 }

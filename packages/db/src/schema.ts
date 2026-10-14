@@ -463,8 +463,14 @@ export const agentRequests = sqliteTable(
     projectId: text('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    /** Conversation qui demande. Sans clé étrangère, comme les messages entre sessions. */
+    /**
+     * Conversation qui demande. Sans clé étrangère, comme les messages entre sessions.
+     * Vide quand la demande vient d'un client MCP hors session (`user_id` dit alors
+     * pour qui agir) : un CLI local branché sur toute l'instance, voir `docs/mcp.md`.
+     */
     conversationId: text('conversation_id').notNull(),
+    /** Compte au nom duquel agir quand aucune conversation ne demande. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     kind: text('kind', {
       enum: [
         'start_session',

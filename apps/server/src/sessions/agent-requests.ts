@@ -9,6 +9,7 @@ import {
   conversations,
   projects,
   scheduledTasks,
+  users,
   worktrees,
   type AgentRequestRow,
   type ConversationRow,
@@ -127,6 +128,18 @@ function describeError(err: unknown): string {
 
 class Refusal extends Error {}
 
+/**
+ * Qui demande : une session, ou un compte sans session.
+ *
+ * Le second cas est celui d'un CLI local branché sur toute l'instance par le serveur
+ * MCP en mode global (`docs/mcp.md`) : la demande porte un `user_id` et pas de
+ * conversation. Il a l'`id` vide, pas de worktree ni de tâche d'origine, et tout ce qui
+ * tient à une session (chaîne de lancements, note de provenance, décision) ne s'y
+ * applique pas. Un `Pick` et non la ligne entière, pour que le type dise ce que les
+ * traitements lisent vraiment.
+ */
+type Requester = Pick<ConversationRow, 'id' | 'projectId' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'>
+
 interface StartSessionPayload {
   prompt?: unknown
   title?: unknown
@@ -194,17 +207,20 @@ export class AgentRequests {
   private async handle(request: AgentRequestRow): Promise<void> {
     try {
       const payload = JSON.parse(request.payload) as Record<string, unknown>
-      const requester = this.ctx.db
-        .select()
-        .from(conversations)
-        .where(
-          and(
-            eq(conversations.id, request.conversationId),
-            eq(conversations.projectId, request.projectId),
-          ),
-        )
-        .get()
-      if (!requester) throw new Refusal("La session qui demande n'existe plus dans ce projet.")
+      const conversation = request.conversationId
+        ? this.ctx.db
+            .select()
+            .from(conversations)
+            .where(
+              and(
+                eq(conversations.id, request.conversationId),
+                eq(conversations.projectId, request.projectId),
+              ),
+            )
+            .get()
+        : null
+      if (request.conversationId && !conversation) throw new Refusal("La session qui demande n'existe plus dans ce projet.")
+      const requester: Requester = conversation ?? this.principal(request)
       const project = this.ctx.db
         .select()
         .from(projects)
@@ -218,7 +234,9 @@ export class AgentRequests {
       } else if (request.kind === 'schedule_task') {
         this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
       } else if (request.kind === 'request_decision' || request.kind === 'withdraw_decision') {
-        this.settle(request.id, await this.decide(request.kind, requester, payload), false)
+        // Une décision est posée au nom d'une session autonome : sans session, personne.
+        if (!conversation) throw new Refusal("Cet outil ne sert qu'aux sessions autonomes : hors session, il n'y a pas de décision à demander.")
+        this.settle(request.id, await this.decide(request.kind, conversation, payload), false)
       } else if (request.kind === 'create_card') {
         this.settle(request.id, await this.createCard(requester, payload), false)
       } else if (request.kind === 'register_action') {
@@ -240,6 +258,27 @@ export class AgentRequests {
     }
   }
 
+  /**
+   * Le demandeur d'une demande sans session : le compte qu'elle nomme.
+   *
+   * Le CLI par défaut est Claude, comme pour un projet neuf dans l'interface ; le client
+   * global passe `agent` quand il en veut un autre, et sa description le lui dit.
+   */
+  private principal(request: AgentRequestRow): Requester {
+    if (!request.userId) throw new Refusal("La demande ne vient d'aucune session ni d'aucun compte : Sillage ne sait pas pour qui agir.")
+    const user = this.ctx.db.select().from(users).where(eq(users.id, request.userId)).get()
+    if (!user) throw new Refusal("Le compte au nom duquel agir n'existe plus.")
+    return {
+      id: '',
+      projectId: request.projectId,
+      userId: user.id,
+      agent: 'claude',
+      worktreeId: null,
+      scheduleId: null,
+      title: user.displayName,
+    }
+  }
+
   private settle(id: string, result: string, isError: boolean, launchedId: string | null = null): void {
     this.ctx.db
       .update(agentRequests)
@@ -252,7 +291,7 @@ export class AgentRequests {
 
   private async startSession(
     request: AgentRequestRow,
-    requester: ConversationRow,
+    requester: Requester,
     project: ProjectRow,
     payload: StartSessionPayload,
   ): Promise<{ text: string; launchedId: string }> {
@@ -285,14 +324,18 @@ export class AgentRequests {
       origin: null,
       firstMessage: {
         clientMessageId: randomUUID(),
-        text: formatSessionMessage({
-          kind: 'launch',
-          from: requester.id,
-          title: requester.title,
-          agent: requester.agent,
-          messageId: request.id,
-          body: prompt,
-        }),
+        // Lancée par un compte et non par une session : la mission arrive nue, comme si
+        // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
+        text: requester.id
+          ? formatSessionMessage({
+              kind: 'launch',
+              from: requester.id,
+              title: requester.title,
+              agent: requester.agent,
+              messageId: request.id,
+              body: prompt,
+            })
+          : prompt,
         attachments: [],
         mentions: [],
         skills: [],
@@ -322,7 +365,7 @@ export class AgentRequests {
    * chacune : pas de colonne à ajouter aux conversations pour une question que seul ce
    * module pose.
    */
-  private assertLaunchAllowed(requester: ConversationRow, requestId: string): void {
+  private assertLaunchAllowed(requester: Requester, requestId: string): void {
     const refusal = launchRefusal(this.ctx.db, requester.id, requestId)
     if (refusal) throw new Refusal(refusal.message)
   }
@@ -417,7 +460,7 @@ export class AgentRequests {
    * worktree, que l'agent nomme ; `@root` désigne la racine du projet.
    */
   private async launchTree(
-    requester: ConversationRow,
+    requester: Requester,
     project: ProjectRow,
     value: unknown,
   ): Promise<string | null> {
@@ -464,7 +507,7 @@ export class AgentRequests {
    * le dise à l'utilisateur.
    */
   private async scheduleTask(
-    requester: ConversationRow,
+    requester: Requester,
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
@@ -529,7 +572,7 @@ export class AgentRequests {
     const config = await this.launchConfig(agent, project, requester.userId, payload)
     const task = createScheduledTask(
       this.ctx.db,
-      { projectId: project.id, userId: requester.userId, conversationId: requester.id },
+      { projectId: project.id, userId: requester.userId, conversationId: requester.id || undefined },
       {
         name,
         agent,
@@ -568,7 +611,7 @@ export class AgentRequests {
    * webhook chez l'appelant (`gh api repos/…/hooks`).
    */
   private async createAutomation(
-    requester: ConversationRow,
+    requester: Requester,
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
@@ -625,7 +668,7 @@ export class AgentRequests {
     const { task, hook } = this.ctx.db.transaction(() => {
       const task = createScheduledTask(
         this.ctx.db,
-        { projectId: project.id, userId: requester.userId, conversationId: requester.id },
+        { projectId: project.id, userId: requester.userId, conversationId: requester.id || undefined },
         {
           name,
           agent,
@@ -673,7 +716,7 @@ export class AgentRequests {
    * Toujours en « à faire » : une carte ouverte par un agent est une proposition, pas
    * un travail engagé. Elle avance quand une session la prend, comme toute autre.
    */
-  private async createCard(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
+  private async createCard(requester: Requester, payload: Record<string, unknown>): Promise<string> {
     const title = typeof payload.title === 'string' ? payload.title.trim() : ''
     const description = typeof payload.description === 'string' ? payload.description.trim() : ''
     if (!title) throw new Refusal('Le paramètre `title` est requis.')
@@ -690,25 +733,29 @@ export class AgentRequests {
     const fields = { title, description, column: 'todo' as const }
     const card =
       github && this.board
-        ? await this.board.createIssueCard(requester.projectId, requester.userId, fields, {
-            agent: requester.agent,
-            conversationId: requester.id,
-          })
+        ? await this.board.createIssueCard(
+            requester.projectId,
+            requester.userId,
+            fields,
+            requester.id ? { agent: requester.agent, conversationId: requester.id } : undefined,
+          )
         : createCard(this.ctx.db, requester.projectId, requester.userId, fields)
     // La provenance se lit dans le fil de la carte, avec un lien vers la session : la
     // description reste celle que l'agent a rédigée, et la personne qui la reprendra
-    // sait d'où elle vient.
-    this.ctx.db
-      .insert(cardNotes)
-      .values({
-        id: randomUUID(),
-        cardId: card.id,
-        conversationId: requester.id,
-        userId: null,
-        body: 'Carte ouverte depuis cette session.',
-        createdAt: Date.now(),
-      })
-      .run()
+    // sait d'où elle vient. Une carte ouverte au nom d'un compte porte déjà son auteur.
+    if (requester.id) {
+      this.ctx.db
+        .insert(cardNotes)
+        .values({
+          id: randomUUID(),
+          cardId: card.id,
+          conversationId: requester.id,
+          userId: null,
+          body: 'Carte ouverte depuis cette session.',
+          createdAt: Date.now(),
+        })
+        .run()
+    }
 
     const issue = github ? this.board?.issueOf(card.id) : undefined
     const where = issue
@@ -721,7 +768,7 @@ export class AgentRequests {
 
   // --- actions -------------------------------------------------------------------
 
-  private projectAction(requester: ConversationRow, id: unknown) {
+  private projectAction(requester: Requester, id: unknown) {
     if (typeof id !== 'string' || !id) throw new Refusal('Le paramètre `id` est requis (voir list_actions).')
     try {
       const row = loadAction(this.ctx.db, id)
@@ -736,7 +783,7 @@ export class AgentRequests {
    * Créée ou modifiée en `proposed` : l'utilisateur relit la commande avant que son
    * premier clic la lance. Renommer ou redécrire un bouton relu ne change pas son statut.
    */
-  private registerAction(requester: ConversationRow, payload: Record<string, unknown>): string {
+  private registerAction(requester: Requester, payload: Record<string, unknown>): string {
     const fields = Object.fromEntries(
       ['label', 'description', 'kind', 'command', 'subdir', 'url']
         .filter((key) => payload[key] !== undefined && payload[key] !== null)
@@ -746,18 +793,18 @@ export class AgentRequests {
       const row = this.projectAction(requester, payload.id)
       const parsed = updateProjectActionBodySchema.safeParse(fields)
       if (!parsed.success) throw new Refusal(describeZod(parsed.error))
-      const next = updateAction(this.ctx.db, row, parsed.data, requester.id)
+      const next = updateAction(this.ctx.db, row, parsed.data, requester.id || null)
       return next.approvedAt
         ? `Action « ${next.label} » mise à jour ; elle reste validée.`
         : `Action « ${next.label} » mise à jour. Sa commande a changé : l'utilisateur doit la valider avant de la lancer d'un clic.`
     }
     const parsed = createProjectActionBodySchema.safeParse(fields)
     if (!parsed.success) throw new Refusal(describeZod(parsed.error))
-    const row = createAction(this.ctx.db, requester.projectId, parsed.data, requester.id)
+    const row = createAction(this.ctx.db, requester.projectId, parsed.data, requester.id || null)
     return `Action « ${row.label} » (${row.kind}, id ${row.id}) proposée. Elle apparaît dans l'onglet Actions du panneau ; l'utilisateur la valide avant son premier lancement.`
   }
 
-  private async removeAction(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
+  private async removeAction(requester: Requester, payload: Record<string, unknown>): Promise<string> {
     const row = this.projectAction(requester, payload.id)
     await this.actions?.forget(row)
     deleteAction(this.ctx.db, row.id)
@@ -769,10 +816,10 @@ export class AgentRequests {
    * action encore proposée : l'agent pourrait exécuter la même commande dans son shell,
    * la relecture protège le clic de l'utilisateur, pas l'agent de lui-même.
    */
-  private async runAction(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
+  private async runAction(requester: Requester, payload: Record<string, unknown>): Promise<string> {
     if (!this.actions) throw new Refusal('Les actions ne sont pas disponibles sur ce serveur.')
     const row = this.projectAction(requester, payload.id)
-    const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester), requester.id)
+    const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester), requester.id || null)
     if (result.service) {
       // Un temps pour qu'un échec immédiat (port pris, commande introuvable) se voie.
       if (!result.alreadyRunning) await new Promise((resolve) => setTimeout(resolve, 2000))
@@ -785,7 +832,7 @@ export class AgentRequests {
   // --- list_models ---------------------------------------------------------------
 
   private async listModels(
-    requester: ConversationRow,
+    requester: Requester,
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
