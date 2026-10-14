@@ -83,7 +83,7 @@ export function projectCwd(
   return worktree.removedAt ? workspace : worktree.path
 }
 
-export function resolveConversationCwd(db: Db, conversation: ConversationRow): string {
+export function resolveConversationCwd(db: Db, conversation: Pick<ConversationRow, 'worktreeId' | 'projectId'>): string {
   if (conversation.worktreeId) {
     const worktree = db
       .select()

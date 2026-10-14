@@ -1,0 +1,1 @@
+ALTER TABLE `agent_requests` ADD `user_id` text REFERENCES users(id);

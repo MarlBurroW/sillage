@@ -30,20 +30,41 @@
  * jeton à faire circuler, pas de port à ouvrir : l'environnement ne porte qu'une portée,
  * jamais un secret. Ce n'est pas une frontière de sécurité pour autant, l'agent ayant
  * déjà un shell et le fichier sur le disque ; c'est le même accès, en plus commode.
+ *
+ * Deux modes. Monté par Sillage dans une conversation, il est cadré à son projet et
+ * parle au nom de cette session. Lancé à la main sans `SILLAGE_MCP_PROJECT`, par un CLI
+ * local branché sur toute l'instance (`docs/mcp.md`), il est *global* : chaque outil
+ * prend un paramètre `project`, `list_projects` les énumère, et les écritures sont au
+ * nom d'un compte (`SILLAGE_MCP_USER`) et non d'une session. Ce qui n'a de sens qu'entre
+ * sessions (messages, surveillances, décisions) n'y est pas proposé.
  */
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SILLAGE_MCP_DB
-const PROJECT_ID = process.env.SILLAGE_MCP_PROJECT
+/** Mode global : aucun projet imposé, chaque appel nomme le sien (voir l'en-tête). */
+const GLOBAL = !process.env.SILLAGE_MCP_PROJECT
+/**
+ * Le projet servi. Fixé pour toute la vie du process en mode conversation ; en mode
+ * global, posé au début de chaque appel d'outil d'après son paramètre `project`, les
+ * appels étant traités un par un pour que deux ne se marchent pas dessus.
+ */
+let PROJECT_ID = process.env.SILLAGE_MCP_PROJECT ?? ''
 /** Exclue des résultats : sans ça l'agent se relit lui-même et tourne en rond. */
 const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
-/** Dossier de mémoire du projet, partagé avec la mémoire automatique de Claude. */
-const MEMORY_DIR = process.env.SILLAGE_MCP_MEMORY ?? ''
+/**
+ * Dossier de mémoire du projet, partagé avec la mémoire automatique de Claude. En mode
+ * global, `SILLAGE_MCP_MEMORY` désigne la racine de la mémoire (à défaut, `memory/` à
+ * côté de la base, comme le daemon) et le dossier suit le projet de chaque appel.
+ */
+let MEMORY_DIR = GLOBAL ? '' : (process.env.SILLAGE_MCP_MEMORY ?? '')
+const MEMORY_ROOT = GLOBAL && DB_PATH ? process.env.SILLAGE_MCP_MEMORY || join(dirname(DB_PATH), 'memory') : ''
+/** Compte au nom duquel le mode global écrit : son nom d'utilisateur, ou le seul compte de la base. */
+const USER_NAME = process.env.SILLAGE_MCP_USER ?? ''
 
 /** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
 const MAX_THREAD_CHARS = 20000
@@ -213,12 +234,37 @@ const REPO_INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md']
 const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
 
-if (!DB_PATH || !PROJECT_ID) {
-  log('SILLAGE_MCP_DB et SILLAGE_MCP_PROJECT sont requis')
+if (!DB_PATH) {
+  log('SILLAGE_MCP_DB est requis')
   process.exit(1)
 }
 
 const db = new Database(DB_PATH, { readonly: true, fileMustExist: true })
+
+/**
+ * Le compte du mode global, résolu une fois au démarrage : nommé par l'environnement,
+ * ou le seul compte de la base, cas de la quasi-totalité des instances. Sans lui, pas
+ * d'auteur pour une carte ou une session lancée : on s'arrête tout de suite plutôt que
+ * de refuser chaque écriture.
+ */
+const USER = GLOBAL ? resolveUser() : null
+function resolveUser() {
+  const columns = 'id, username, display_name AS displayName, is_admin AS admin'
+  if (USER_NAME) {
+    const row = db.prepare(`SELECT ${columns} FROM users WHERE username = ?`).get(USER_NAME)
+    if (!row) {
+      log(`aucun compte « ${USER_NAME} » (SILLAGE_MCP_USER)`)
+      process.exit(1)
+    }
+    return row
+  }
+  const rows = db.prepare(`SELECT ${columns} FROM users ORDER BY created_at LIMIT 2`).all()
+  if (rows.length !== 1) {
+    log(rows.length === 0 ? 'aucun compte dans la base' : 'plusieurs comptes : SILLAGE_MCP_USER doit en nommer un')
+    process.exit(1)
+  }
+  return rows[0]
+}
 
 /**
  * Connexion d'écriture, ouverte au premier besoin et gardée ensuite.
@@ -829,6 +875,134 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: {} },
   },
 ]
+
+/**
+ * Mode global : ce que le client voit à la place de la liste cadrée.
+ *
+ * Un outil de plus, `list_projects`, et un paramètre `project` sur chaque autre, requis
+ * sauf là où un appel a un sens sans projet (le compte sur toute l'instance, la partie
+ * globale de SILLAGE.md). Les outils qui parlent entre sessions ne sont pas proposés :
+ * un client hors session n'a ni identité pour signer un message ni tour où en recevoir.
+ */
+const LIST_PROJECTS = {
+  name: 'list_projects',
+  description:
+    "Liste les projets de cette instance Sillage, avec leur dossier, leurs sessions en train de travailler et leur dernière activité. Les autres outils prennent un paramètre `project` : le nom ou l'identifiant rendus ici. Appelle cet outil en premier quand tu ne sais pas sous quel nom Sillage connaît un projet.",
+  inputSchema: { type: 'object', properties: {} },
+}
+
+const SESSION_ONLY_TOOLS = new Set([
+  'send_session_message',
+  'broadcast_session_message',
+  'notify_when_done',
+  'read_session_messages',
+  'request_decision',
+  'withdraw_decision',
+])
+
+/** Outils qui se passent de projet, pour certains appels. */
+const PROJECT_OPTIONAL_TOOLS = new Set(['count_active_sessions', 'read_instructions', 'edit_instructions', 'write_instructions'])
+
+const PROJECT_PARAM = {
+  type: 'string',
+  description: 'Projet visé : son nom ou son identifiant, tels que list_projects les rend.',
+}
+
+/** `card` remplace la carte de la conversation, qu'un client hors session n'a pas. */
+const CARD_PARAM = { type: 'integer', description: 'Numéro de la carte visée, tel que list_cards le donne.' }
+
+function globalTools() {
+  return [
+    LIST_PROJECTS,
+    ...TOOLS.filter((tool) => !SESSION_ONLY_TOOLS.has(tool.name)).map((tool) => {
+      const byCard = tool.name === 'add_card_note' || tool.name === 'update_issue'
+      const optional = PROJECT_OPTIONAL_TOOLS.has(tool.name)
+      const required = [...(optional ? [] : ['project']), ...(byCard ? ['card'] : []), ...(tool.inputSchema.required ?? [])]
+      const properties = Object.fromEntries(
+        Object.entries(tool.inputSchema.properties ?? {}).map(([key, value]) =>
+          // Hors session, « le tien » ne désigne aucun CLI : le daemon prend Claude.
+          key === 'agent' && typeof value.description === 'string'
+            ? [key, { ...value, description: value.description.replace('Omettre pour le même que le tien.', 'Omettre pour Claude.') }]
+            : [key, value],
+        ),
+      )
+      return {
+        ...tool,
+        description: byCard ? tool.description.replace(/de cette conversation|que traite cette conversation/, 'désignée par `card`') : tool.description,
+        inputSchema: {
+          ...tool.inputSchema,
+          properties: {
+            project: optional ? { ...PROJECT_PARAM, description: `${PROJECT_PARAM.description} Omis : ${tool.name === 'count_active_sessions' ? 'toute l\'instance' : 'seulement avec scope global'}.` } : PROJECT_PARAM,
+            ...(byCard ? { card: CARD_PARAM } : {}),
+            ...properties,
+          },
+          ...(required.length > 0 ? { required } : {}),
+        },
+      }
+    }),
+  ]
+}
+
+/**
+ * Le projet d'un appel du mode global, posé dans `PROJECT_ID` et `MEMORY_DIR`, ou le
+ * refus à rendre. Par identifiant, par nom exact, sinon par nom approchant s'il n'y en
+ * a qu'un : deviner entre deux serait écrire dans le mauvais projet.
+ */
+function selectProject(name, args) {
+  if (name === 'list_projects') return null
+  const wanted = typeof args?.project === 'string' ? args.project.trim() : ''
+  if (!wanted) {
+    if (name === 'count_active_sessions' || (PROJECT_OPTIONAL_TOOLS.has(name) && args?.scope === 'global')) {
+      PROJECT_ID = ''
+      MEMORY_DIR = ''
+      return null
+    }
+    return { ...text('Le paramètre `project` est requis : le nom ou l\'identifiant d\'un projet, voir list_projects.'), isError: true }
+  }
+  const rows = db.prepare('SELECT id, name FROM projects').all()
+  const lower = wanted.toLowerCase()
+  let found = rows.filter((row) => row.id === wanted)
+  if (found.length === 0) found = rows.filter((row) => row.name.toLowerCase() === lower)
+  if (found.length === 0) found = rows.filter((row) => row.name.toLowerCase().includes(lower))
+  if (found.length !== 1) {
+    return {
+      ...text(
+        found.length === 0
+          ? `Aucun projet « ${wanted} ». list_projects donne les noms et identifiants.`
+          : `Plusieurs projets répondent à « ${wanted} » : ${found.map((row) => `${row.name} (${row.id})`).join(', ')}. Précise.`,
+      ),
+      isError: true,
+    }
+  }
+  PROJECT_ID = found[0].id
+  MEMORY_DIR = join(MEMORY_ROOT, 'projects', PROJECT_ID)
+  return null
+}
+
+function listProjects() {
+  return db
+    .prepare(
+      `SELECT p.id AS id, p.name AS name, p.workspace_path AS path,
+              sum(CASE WHEN ${WORKING} THEN 1 ELSE 0 END) AS working,
+              max(c.updated_at) AS lastActivity
+       FROM projects AS p
+       LEFT JOIN conversations AS c ON c.project_id = p.id AND c.archived_at IS NULL
+       GROUP BY p.id
+       ORDER BY p.position, p.name`,
+    )
+    .all()
+}
+
+function renderProjects(rows) {
+  if (rows.length === 0) return 'Aucun projet dans cette instance.'
+  return [
+    `${rows.length} projet(s) :`,
+    ...rows.map(
+      (row) =>
+        `- ${row.name} (id ${row.id}) — ${row.path}${row.working ? ` — ${row.working} session(s) en train de travailler` : ''}${row.lastActivity ? ` — dernière activité ${ago(row.lastActivity)}` : ' — aucune conversation'}`,
+    ),
+  ].join('\n')
+}
 
 /**
  * Traduit une saisie libre en requête FTS5.
@@ -1562,9 +1736,9 @@ function addCardNote(cardId, body, publish) {
   writeDb()
     .prepare(
       `INSERT INTO card_notes (id, card_id, conversation_id, user_id, body, created_at, publication)
-       VALUES (?, ?, ?, NULL, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, body, Date.now(), publish ? 'pending' : null)
+    .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, USER?.id ?? null, body, Date.now(), publish ? 'pending' : null)
 }
 
 /**
@@ -1659,13 +1833,13 @@ function saveInstructions(projectId, transform, fixMode) {
       .prepare(
         `INSERT INTO instructions
            (id, project_id, content, updated_at, updated_by_user_id, updated_by_conversation_id)
-         VALUES (?, ?, ?, ?, NULL, ?)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            content = excluded.content, updated_at = excluded.updated_at,
-           updated_by_user_id = NULL,
+           updated_by_user_id = excluded.updated_by_user_id,
            updated_by_conversation_id = excluded.updated_by_conversation_id`,
       )
-      .run(id, projectId, result, Date.now(), CURRENT_CONVERSATION || null)
+      .run(id, projectId, result, Date.now(), USER?.id ?? null, CURRENT_CONVERSATION || null)
     if (fixMode) {
       write
         .prepare(`UPDATE projects SET instructions_mode = 'sillage' WHERE id = ? AND instructions_mode IS NULL`)
@@ -1682,7 +1856,7 @@ function saveInstructions(projectId, transform, fixMode) {
 function instructionsTarget(args, writing) {
   const scope = args?.scope === 'global' ? 'global' : 'project'
   if (scope === 'global') {
-    if (writing && !conversationOwnerIsAdmin()) {
+    if (writing && !(USER ? Boolean(USER.admin) : conversationOwnerIsAdmin())) {
       return {
         refusal:
           "La partie globale de SILLAGE.md entre dans toutes les sessions de l'instance : seul un compte administrateur peut y écrire, et cette conversation n'appartient pas à l'un d'eux. Écris dans la partie du projet (`scope: project`), ou propose à l'utilisateur de faire la modification lui-même.",
@@ -2058,10 +2232,10 @@ async function requestDaemon(kind, payload) {
   const id = randomUUID()
   writeDb()
     .prepare(
-      `INSERT INTO agent_requests (id, project_id, conversation_id, kind, payload, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO agent_requests (id, project_id, conversation_id, user_id, kind, payload, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, PROJECT_ID, CURRENT_CONVERSATION, kind, JSON.stringify(payload), Date.now())
+    .run(id, PROJECT_ID, CURRENT_CONVERSATION, USER?.id ?? null, kind, JSON.stringify(payload), Date.now())
 
   const read = db.prepare('SELECT settled_at, result, is_error FROM agent_requests WHERE id = ?')
   const deadline = Date.now() + REQUEST_WAIT_MS[kind]
@@ -2080,7 +2254,29 @@ async function requestDaemon(kind, payload) {
   }
 }
 
+/**
+ * La carte visée par add_card_note et update_issue : celle de la conversation, ou en
+ * mode global celle que `card` désigne.
+ */
+function targetCard(args) {
+  if (!GLOBAL) return currentCard()
+  const number = Number.isInteger(args?.card) ? args.card : null
+  if (number === null) return null
+  const card = db
+    .prepare('SELECT id, number, title FROM cards WHERE project_id = ? AND number = ?')
+    .get(PROJECT_ID, number)
+  return card ?? null
+}
+
+const NO_CARD =
+  "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Sillage, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même."
+const NO_SUCH_CARD = 'Le paramètre `card` est requis : le numéro d\'une carte de ce projet, voir list_cards.'
+
 async function callTool(name, args) {
+  if (name === 'list_projects') {
+    return text(renderProjects(listProjects()))
+  }
+
   if (name === 'search_history') {
     const query = typeof args?.query === 'string' ? args.query : ''
     if (!query.trim()) return { ...text('Le paramètre `query` est requis.'), isError: true }
@@ -2155,15 +2351,8 @@ async function callTool(name, args) {
     const body = typeof args?.body === 'string' ? args.body.trim() : ''
     if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
 
-    const card = currentCard()
-    if (!card) {
-      return {
-        ...text(
-          "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Sillage, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même.",
-        ),
-        isError: true,
-      }
-    }
+    const card = targetCard(args)
+    if (!card) return { ...text(GLOBAL ? NO_SUCH_CARD : NO_CARD), isError: true }
 
     if (args?.github === true) {
       const link = boardLink()
@@ -2188,11 +2377,16 @@ async function callTool(name, args) {
   if (name === 'update_issue') {
     const state = args?.state === 'open' ? 'open' : args?.state === 'closed' ? 'closed' : null
     if (!state) return { ...text('Le paramètre `state` vaut closed ou open.'), isError: true }
-    const card = currentCard()
+    const card = targetCard(args)
+    if (!card && GLOBAL) return { ...text(NO_SUCH_CARD), isError: true }
     const issue = card ? cardIssue(card.id) : null
     if (!card || !issue || issue.detached || !boardLink()) {
       return {
-        ...text("Cette conversation n'est rattachée à aucune carte qui suit une issue GitHub : il n'y a rien à fermer ni rouvrir."),
+        ...text(
+          GLOBAL
+            ? `La carte #${card.number} ne suit aucune issue GitHub : il n'y a rien à fermer ni rouvrir.`
+            : "Cette conversation n'est rattachée à aucune carte qui suit une issue GitHub : il n'y a rien à fermer ni rouvrir.",
+        ),
         isError: true,
       }
     }
@@ -2364,7 +2558,7 @@ async function callTool(name, args) {
     name === 'request_decision' ||
     name === 'withdraw_decision'
   ) {
-    if (!CURRENT_CONVERSATION) {
+    if (!CURRENT_CONVERSATION && !USER) {
       return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
     }
     if (name === 'request_decision' && !(typeof args?.question === 'string' && args.question.trim())) {
@@ -2510,7 +2704,14 @@ async function callTool(name, args) {
   return { ...text(`Outil inconnu : ${name}`), isError: true }
 }
 
-log(`prêt, projet=${PROJECT_ID}`)
+log(GLOBAL ? `prêt, mode global, compte=${USER.username}` : `prêt, projet=${PROJECT_ID}`)
+
+/**
+ * Les appels d'outils, un par un. Le serveur répond vite et le CLI n'en envoie guère
+ * plusieurs à la fois ; mais en mode global le projet est un état du process, et deux
+ * appels entrelacés sur des projets différents écriraient chacun dans celui de l'autre.
+ */
+let calls = Promise.resolve()
 
 createInterface({ input: process.stdin }).on('line', async (line) => {
   if (!line.trim()) return
@@ -2541,21 +2742,28 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     // Les outils de décision ne sont proposés qu'aux sessions autonomes dont la source
     // les permet : ailleurs, ils inciteraient l'agent à demander ce qu'il doit décider.
     const decisions = decisionsAllowed()
-    send({ jsonrpc: '2.0', id: msg.id, result: { tools: TOOLS.filter((tool) => decisions || !DECISION_TOOLS.has(tool.name)) } })
+    const tools = GLOBAL ? globalTools() : TOOLS.filter((tool) => decisions || !DECISION_TOOLS.has(tool.name))
+    send({ jsonrpc: '2.0', id: msg.id, result: { tools } })
     return
   }
 
   if (msg.method === 'tools/call') {
-    let result
-    try {
-      result = await callTool(msg.params?.name, msg.params?.arguments ?? {})
-    } catch (err) {
-      // Rendu en résultat d'outil et non en erreur JSON-RPC : le modèle peut corriger
-      // sa requête, là où une erreur de protocole ne lui apprend rien.
-      log(`échec de ${msg.params?.name} : ${err.message}`)
-      result = { ...text(`La recherche a échoué : ${err.message}`), isError: true }
-    }
-    send({ jsonrpc: '2.0', id: msg.id, result })
+    calls = calls.then(async () => {
+      const name = msg.params?.name
+      const args = msg.params?.arguments ?? {}
+      let result
+      try {
+        result = GLOBAL && SESSION_ONLY_TOOLS.has(name)
+          ? { ...text(`Outil ${name} indisponible hors session : il n'y a ni session pour signer ni tour où recevoir.`), isError: true }
+          : (GLOBAL && selectProject(name, args)) || (await callTool(name, args))
+      } catch (err) {
+        // Rendu en résultat d'outil et non en erreur JSON-RPC : le modèle peut corriger
+        // sa requête, là où une erreur de protocole ne lui apprend rien.
+        log(`échec de ${name} : ${err.message}`)
+        result = { ...text(`La recherche a échoué : ${err.message}`), isError: true }
+      }
+      send({ jsonrpc: '2.0', id: msg.id, result })
+    })
     return
   }
 

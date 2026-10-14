@@ -77,10 +77,16 @@ async function harness(t: TestContext) {
   const config = { paths: { worktrees: join(dir, 'worktrees') } } as unknown as Config
   const requests = new AgentRequests({ db, config }, sessions, registry)
 
-  /** Appelle un outil sur le vrai serveur MCP, pendant que le daemon balaie. */
+  /**
+   * Appelle un outil sur le vrai serveur MCP, pendant que le daemon balaie. `from` vide :
+   * le serveur en mode global, au nom du compte `owner`, avec le projet en paramètre.
+   */
   const mcp = async (from: string, name: string, args: object) => {
+    const env = from
+      ? { SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: from }
+      : { SILLAGE_MCP_USER: 'owner' }
     const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: from },
+      env: { ...process.env, SILLAGE_MCP_DB: dbPath, ...env },
     })
     let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
@@ -197,6 +203,31 @@ test('create_card opens a todo card and says which session opened it', async (t)
   assert.equal(card.number, 1)
   assert.equal(card.column, 'todo')
   assert.equal(db.select().from(cardNotes).get()?.conversationId, 'parent')
+})
+
+test('a global MCP client launches sessions and opens cards in the name of its account', async (t) => {
+  const { db, mcp, sent } = await harness(t)
+
+  const launch = await mcp('', 'start_session', { project: 'project', prompt: 'Relire la doc.', agent: 'codex' })
+  assert.equal(launch.isError, undefined, launch.content[0]?.text)
+  const request = db.select().from(agentRequests).get()!
+  assert.equal(request.conversationId, '')
+  assert.equal(request.userId, 'owner')
+  const launched = db.select().from(conversations).where(eq(conversations.id, request.launchedConversationId!)).get()!
+  assert.equal(launched.userId, 'owner')
+  assert.equal(launched.agent, 'codex')
+  // Pas de session d'origine : la mission arrive nue, sans enveloppe qui renverrait à rien.
+  assert.equal(sent[0]!.text, 'Relire la doc.')
+  assert.equal(parseSessionMessage(sent[0]!.text), null)
+
+  const created = await mcp('', 'create_card', { project: 'project', title: 'Doc à relire' })
+  assert.equal(created.isError, undefined, created.content[0]?.text)
+  const card = db.select().from(cards).get()!
+  assert.equal(card.createdBy, 'owner')
+  assert.equal(db.select().from(cardNotes).all().length, 0)
+
+  const decision = await mcp('', 'request_decision', { project: 'project', question: 'Quoi ?' })
+  assert.equal(decision.isError, true)
 })
 
 test('list_models shows the catalog and the defaults a launch would use', async (t) => {

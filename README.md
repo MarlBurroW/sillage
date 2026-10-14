@@ -58,7 +58,8 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   agent through a built-in MCP server: a session can read its card, look up what an
   earlier one decided, see which sessions are running, and leave a note for the
   next. It can also open a card for a bug it ran into along the way. Moving cards
-  and editing their descriptions stay with you.
+  and editing their descriptions stay with you. The same server runs from a CLI
+  outside Sillage, over every project at once: [docs/mcp.md](docs/mcp.md).
 - **Sessions that coordinate.** Through the same server, a session can message
   another, ask to be notified when it finishes, or start a new one when you ask:
   "start a Codex session at max effort to fix this" opens a conversation that you
