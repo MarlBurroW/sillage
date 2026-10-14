@@ -288,6 +288,15 @@ test('apps : lecture de systemctl show, jeton d’origine, exécutable sans argu
   assert.equal(authoredDescription('Démo météo'), 'Démo météo')
 })
 
+test('apps : masquer aussi les descriptions générées sans préfixe sur les anciens systemd', () => {
+  const execStart = '{ path=/usr/bin/npm ; argv[]=npm run dev --token=secret ; ignore_errors=no ; start_time=[n/a] }'
+  for (const description of ['/usr/bin/npm run dev --token=secret', 'npm run dev --token=secret', '/usr/bin/npm', '[systemd-run] npm run dev --token=secret']) {
+    assert.equal(authoredDescription(description, execStart), '')
+  }
+  assert.equal(authoredDescription('Démo météo', execStart), 'Démo météo')
+  assert.equal(authoredDescription('npm-dashboard', execStart), 'npm-dashboard')
+})
+
 test('apps : unité réelle, ports, origine, visibilité et arrêt par l’API', { skip: process.platform !== 'linux' }, async (t) => {
   const exec = promisify(execFile)
   try { await exec('systemctl', ['--user', 'show', '--property=Version']) }
