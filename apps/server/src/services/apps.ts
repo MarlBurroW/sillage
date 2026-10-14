@@ -82,11 +82,18 @@ export function execStartArgv(execStart: string): string[] {
 }
 
 /**
- * La description, sauf celle que `systemd-run` fabrique (« [systemd-run] » suivi de la
- * commande complète) : elle recopierait la commande sans en masquer les secrets.
+ * La description générée par `systemd-run` recopie les arguments sans masquer les
+ * secrets. Les anciens systemd n'ajoutent pas « [systemd-run] » : on reconnaît aussi
+ * la commande d'ExecStart, avec son chemin résolu ou son nom d'origine.
  */
-export function authoredDescription(description: string): string {
-  return description.startsWith('[systemd-run]') ? '' : description
+export function authoredDescription(description: string, execStart = ''): string {
+  if (description.startsWith('[systemd-run]')) return ''
+  const executable = /path=(\S+) ;/.exec(execStart)?.[1]
+  const command = execStartArgv(execStart)[0]
+  for (const prefix of [executable, command]) {
+    if (prefix && (description === prefix || description.startsWith(`${prefix} `))) return ''
+  }
+  return description
 }
 
 /** Valeur numérique de systemd, nulle quand il ne la suit pas (`[not set]`, 2^64 - 1). */
@@ -140,7 +147,7 @@ export async function scanServiceApps(origins: ProcessOrigins): Promise<ServiceA
     apps.push({
       id: `${unit.Id}#${unit.InvocationID ?? ''}`,
       unit: unit.Id,
-      description: authoredDescription(unit.Description ?? ''),
+      description: authoredDescription(unit.Description ?? '', unit.ExecStart ?? ''),
       executable: executableName(unit.ExecStart ?? ''),
       command: summarizeCommand(execStartArgv(unit.ExecStart ?? '')),
       state: unit.ActiveState ?? 'unknown',
