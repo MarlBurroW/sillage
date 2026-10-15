@@ -1,5 +1,6 @@
 import { MoreHorizontal, Pencil, Plug, Plus, Trash2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { NavLink } from 'react-router-dom'
 import type { McpServer, McpTransport } from '@sillage/protocol'
 import {
   Badge,
@@ -171,6 +172,15 @@ export function McpSettingsPage() {
       <SectionHeader title={t('mcp.section.title')} description={t('mcp.section.description')} />
 
       <Banner tone="info">{t('mcp.banner')}</Banner>
+      {/* Deux sens du même mot : ici, des serveurs que Sillage donne aux agents ; sous
+          « API et MCP », celui que Sillage expose lui-même. Le dire évite de chercher
+          ici comment brancher un Codex extérieur. */}
+      <p className="text-sm text-ink-faint">
+        {t('mcp.ownServer')}{' '}
+        <NavLink to="/settings/api" className="text-accent hover:underline">
+          {t('mcp.ownServer.link')}
+        </NavLink>
+      </p>
       {isAdmin ? null : <Banner>{t('mcp.readonly')}</Banner>}
 
       <section className="flex flex-col gap-2">
