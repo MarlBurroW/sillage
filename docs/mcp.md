@@ -41,7 +41,15 @@ la session, une session lancée reçoit la mission enveloppée, avec qui l'a con
   été tapée dans Sillage ; sans `agent`, elle tourne sous Claude ;
 - les outils qui parlent entre sessions ne sont pas proposés (`send_session_message`,
   `broadcast_session_message`, `notify_when_done`, `read_session_messages`, les
-  décisions) : un client hors session n'a ni identité pour signer ni tour où recevoir.
+  décisions) : un client hors session n'a ni identité pour signer ni tour où recevoir ;
+- à leur place, six outils agissent sur une session existante du compte comme
+  l'utilisateur le ferait dans l'interface : `read_session` (état, activité, dernier
+  message, sollicitation ouverte), `wait_for_session` (attend la fin du tour, 100 s au
+  plus), `message_session` (un message ordinaire, remis à la fin du tour si elle
+  travaille), `steer_session` (infléchit le tour en cours, sinon message ordinaire),
+  `interrupt_session`, et `reply_session` (répond à une permission, une question, un
+  plan ou une saisie, selon la forme que `read_session` décrit). Les quatre derniers
+  passent par le daemon (`agent_requests`, sans migration).
 
 Les gestes qui passent par le daemon restent soumis à ses gardes : au plus six
 lancements par heure, comptés ensemble pour tout ce qui vient hors session, et le daemon

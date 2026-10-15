@@ -30,6 +30,7 @@ import {
   AUTOMATION_TEMPLATES,
   agentConfigSchema,
   automationConditionsSchema,
+  taskReplyBodySchema,
   createProjectActionBodySchema,
   updateProjectActionBodySchema,
   agentKindSchema,
@@ -55,6 +56,7 @@ import {
   type ActionRunner,
 } from '../actions/actions.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import type { EventLog } from '../events/event-log.js'
 import { createWebhook, readSettings, revealSecret, webhookUrl } from '../automations/webhooks.js'
 import { createConversation } from '../conversations/create.js'
 import type { AppContext } from '../http/context.js'
@@ -167,6 +169,8 @@ export class AgentRequests {
     private readonly board?: BoardSync,
     /** Décisions des sessions autonomes ; sans lui, `request_decision` est refusé. */
     private readonly decisions?: DecisionService,
+    /** Journal, pour retrouver la sollicitation ouverte que `reply_session` résout. */
+    private readonly log?: EventLog,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -247,6 +251,13 @@ export class AgentRequests {
         this.settle(request.id, await this.createAutomation(requester, project, payload), false)
       } else if (request.kind === 'run_action') {
         this.settle(request.id, await this.runAction(requester, payload), false)
+      } else if (
+        request.kind === 'message_session' ||
+        request.kind === 'steer_session' ||
+        request.kind === 'interrupt_session' ||
+        request.kind === 'reply_session'
+      ) {
+        this.settle(request.id, await this.actOnSession(request.kind, requester, payload), false)
       } else {
         this.settle(request.id, await this.listModels(requester, project, payload), false)
       }
@@ -827,6 +838,100 @@ export class AgentRequests {
       return describeRun(row.label, result, fresh.service)
     }
     return describeRun(row.label, result, null)
+  }
+
+  // --- gestes sur une session existante -------------------------------------------
+
+  /**
+   * Ce qu'un client hors session fait à une session, comme l'utilisateur le ferait
+   * dans l'interface : lui écrire, infléchir son tour, l'arrêter, répondre à ce qu'elle
+   * demande. Réservé aux demandeurs sans session : une session qui veut parler à une
+   * autre a send_session_message, qui signe et remet le message dans les formes.
+   *
+   * La cible est une conversation du projet de la demande, qui appartient au compte :
+   * les mêmes bornes que `loadTaskForToken` côté API.
+   */
+  private async actOnSession(
+    kind: 'message_session' | 'steer_session' | 'interrupt_session' | 'reply_session',
+    requester: Requester,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    if (requester.id) {
+      throw new Refusal("Cet outil est réservé aux clients hors session : depuis une session, écris à une autre avec send_session_message.")
+    }
+    const id = typeof payload.session === 'string' ? payload.session.trim() : ''
+    if (!id) throw new Refusal('Le paramètre `session` est requis : l\'identifiant que list_sessions donne.')
+    const target = this.ctx.db
+      .select()
+      .from(conversations)
+      .where(and(eq(conversations.id, id), eq(conversations.projectId, requester.projectId), isNull(conversations.archivedAt)))
+      .get()
+    if (!target || target.userId !== requester.userId) {
+      throw new Refusal(`Aucune session « ${id} » à toi dans ce projet. list_sessions donne celles qui existent.`)
+    }
+
+    if (kind === 'interrupt_session') {
+      if (target.status !== 'running') return `La session « ${target.title} » ne travaille pas (${target.status}) : rien à interrompre.`
+      await this.sessions.interrupt(target.id)
+      return `Tour de « ${target.title} » interrompu. Un message la fait reprendre, avec son contexte.`
+    }
+
+    if (kind === 'reply_session') return this.replyToSession(target, requester, payload)
+
+    const body = typeof payload.body === 'string' ? payload.body.trim() : ''
+    if (!body) throw new Refusal('Le paramètre `body` est requis.')
+    if (body.length > MAX_LAUNCH_PROMPT_CHARS) {
+      throw new Refusal(`Message trop long (${body.length} caractères, ${MAX_LAUNCH_PROMPT_CHARS} au plus).`)
+    }
+    if (kind === 'steer_session') {
+      // Une inflexion n'existe que pendant un tour, et l'appelant perd souvent la
+      // course : le texte repart alors en message ordinaire plutôt que de se perdre.
+      const steered = await this.sessions.steer(target.id, randomUUID(), body, [], [])
+      if (steered) return `Tour de « ${target.title} » infléchi : le CLI lit le message dans le tour en cours.`
+      await this.sessions.sendMessage(target.id, randomUUID(), body, [], [])
+      return `Aucun tour en cours à infléchir sur « ${target.title} » (ou son CLI ne le permet pas) : le message est parti comme un message ordinaire, qui ouvre un tour.`
+    }
+    const busy = target.status === 'running'
+    await this.sessions.sendMessage(target.id, randomUUID(), body, [], [])
+    return busy
+      ? `Message mis en attente pour « ${target.title} » : elle travaille, il lui sera remis à la fin de son tour. wait_for_session puis read_session pour voir sa réponse.`
+      : `Message remis à « ${target.title} » : elle reprend, comme si l'utilisateur l'avait tapé dans Sillage. wait_for_session puis read_session pour voir sa réponse.`
+  }
+
+  /** Répond à la sollicitation ouverte, selon sa nature, comme la route `replies` de l'API. */
+  private async replyToSession(target: ConversationRow, requester: Requester, payload: Record<string, unknown>): Promise<string> {
+    if (!this.log) throw new Refusal('Les réponses aux sollicitations ne sont pas disponibles sur ce serveur.')
+    const requestId = typeof payload.request_id === 'string' ? payload.request_id.trim() : ''
+    const open = this.log.openPrompts(target.id)
+    const pending = requestId ? open.find((prompt) => prompt.requestId === requestId) : open[0]
+    if (!pending) {
+      throw new Refusal(
+        requestId
+          ? `Aucune sollicitation ouverte « ${requestId} » sur cette session : read_session dit ce qu'elle attend.`
+          : `La session « ${target.title} » n'attend aucune réponse.`,
+      )
+    }
+    const parsed = taskReplyBodySchema.safeParse({ kind: pending.kind, ...payload })
+    if (!parsed.success) throw new Refusal(`Réponse mal formée pour une sollicitation de type ${pending.kind} : ${describeZod(parsed.error)}`)
+    const body = parsed.data
+    const decidedBy = requester.userId
+    let resolved: boolean
+    switch (body.kind) {
+      case 'permission':
+        resolved = this.sessions.resolvePermission(target.id, pending.requestId, { decision: body.decision, scope: body.scope, decidedBy })
+        break
+      case 'question':
+        resolved = await this.sessions.answerQuestion(target.id, pending.requestId, { status: body.status, answers: body.answers, decidedBy })
+        break
+      case 'plan':
+        resolved = this.sessions.reviewPlan(target.id, pending.requestId, { decision: body.decision, followUpMode: body.followUpMode, decidedBy })
+        break
+      case 'elicitation':
+        resolved = this.sessions.resolveElicitation(target.id, pending.requestId, { action: body.action, content: body.content, decidedBy })
+        break
+    }
+    if (!resolved) throw new Refusal("Cette sollicitation a expiré : la session s'est arrêtée entre-temps. Un message la fait reprendre.")
+    return `Réponse (${body.kind}) remise à « ${target.title} » : elle continue. wait_for_session puis read_session pour la suite.`
   }
 
   // --- list_models ---------------------------------------------------------------

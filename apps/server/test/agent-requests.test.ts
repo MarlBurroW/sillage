@@ -18,6 +18,7 @@ import {
 } from '@sillage/db'
 import { parseSessionMessage, type AgentConfig, type AgentModelDto } from '@sillage/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
+import { EventLog } from '../src/events/event-log.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests, LAUNCHES_PER_HOUR, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
@@ -61,9 +62,27 @@ async function harness(t: TestContext) {
     }).run()
 
   const sent: { to: string; text: string }[] = []
+  const gestures: string[] = []
+  let steerWorks = false
   const sessions = {
     async sendMessage(to: string, _id: string, text: string) {
       sent.push({ to, text })
+    },
+    async steer(to: string, _id: string, text: string) {
+      if (!steerWorks) return false
+      gestures.push(`steer ${to}: ${text}`)
+      return true
+    },
+    async interrupt(to: string) {
+      gestures.push(`interrupt ${to}`)
+    },
+    resolvePermission(to: string, requestId: string, decision: { decision: string; scope: string }) {
+      gestures.push(`permission ${to} ${requestId} ${decision.decision}/${decision.scope}`)
+      return true
+    },
+    async answerQuestion(to: string, requestId: string, answer: { answers: Record<string, string[]> }) {
+      gestures.push(`answer ${to} ${requestId} ${JSON.stringify(answer.answers)}`)
+      return true
     },
   } as unknown as SessionManager
   const registry = {
@@ -75,7 +94,8 @@ async function harness(t: TestContext) {
     }),
   } as unknown as AgentRegistry
   const config = { paths: { worktrees: join(dir, 'worktrees') } } as unknown as Config
-  const requests = new AgentRequests({ db, config }, sessions, registry)
+  const log = new EventLog(db)
+  const requests = new AgentRequests({ db, config }, sessions, registry, undefined, undefined, undefined, undefined, log)
 
   /**
    * Appelle un outil sur le vrai serveur MCP, pendant que le daemon balaie. `from` vide :
@@ -101,7 +121,7 @@ async function harness(t: TestContext) {
     return JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
   }
 
-  return { db, conversation, mcp, sent }
+  return { db, conversation, mcp, sent, gestures, log, setSteer: (value: boolean) => { steerWorks = value } }
 }
 
 test('matchModel finds a model by the name the user says, and never guesses between two', () => {
@@ -228,6 +248,56 @@ test('a global MCP client launches sessions and opens cards in the name of its a
 
   const decision = await mcp('', 'request_decision', { project: 'project', question: 'Quoi ?' })
   assert.equal(decision.isError, true)
+})
+
+test('a global MCP client writes to, steers, interrupts and answers its own sessions', async (t) => {
+  const { db, conversation, mcp, sent, gestures, log, setSteer } = await harness(t)
+  conversation('idle-one')
+  conversation('busy-one')
+  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 'idle-one')).run()
+  db.insert(users).values({ id: 'other', username: 'other', displayName: 'other', passwordHash: '', createdAt: 1 }).run()
+  db.insert(conversations).values({
+    id: 'theirs', projectId: 'project', userId: 'other', title: 'Not mine', agent: 'claude', config: '{}', status: 'idle',
+    createdAt: 1, updatedAt: Date.now(),
+  }).run()
+
+  // Depuis une session, ces gestes sont refusés : elle a send_session_message.
+  assert.equal((await mcp('busy-one', 'message_session', { session: 'idle-one', body: 'x' })).isError, true)
+  // La session d'un autre compte n'existe pas pour ce client.
+  assert.equal((await mcp('', 'message_session', { project: 'project', session: 'theirs', body: 'x' })).isError, true)
+  assert.equal((await mcp('', 'message_session', { project: 'project', session: 'idle-one', body: '' })).isError, true)
+
+  const idle = await mcp('', 'message_session', { project: 'project', session: 'idle-one', body: 'Reprends.' })
+  assert.match(idle.content[0]!.text, /elle reprend/)
+  const busy = await mcp('', 'message_session', { project: 'project', session: 'busy-one', body: 'Plus tard.' })
+  assert.match(busy.content[0]!.text, /mis en attente/)
+  assert.deepEqual(sent.map((entry) => entry.text), ['Reprends.', 'Plus tard.'])
+
+  const missed = await mcp('', 'steer_session', { project: 'project', session: 'busy-one', body: 'Arrête les tests.' })
+  assert.match(missed.content[0]!.text, /message ordinaire/)
+  assert.equal(sent.at(-1)!.text, 'Arrête les tests.')
+  setSteer(true)
+  const steered = await mcp('', 'steer_session', { project: 'project', session: 'busy-one', body: 'Vraiment.' })
+  assert.match(steered.content[0]!.text, /infléchi/)
+  assert.equal(gestures.at(-1), 'steer busy-one: Vraiment.')
+
+  assert.match((await mcp('', 'interrupt_session', { project: 'project', session: 'idle-one' })).content[0]!.text, /rien à interrompre/)
+  assert.match((await mcp('', 'interrupt_session', { project: 'project', session: 'busy-one' })).content[0]!.text, /interrompu/)
+  assert.equal(gestures.at(-1), 'interrupt busy-one')
+
+  // Sans sollicitation ouverte, rien à répondre ; avec, la réponse prend la forme de la demande.
+  assert.equal((await mcp('', 'reply_session', { project: 'project', session: 'busy-one', decision: 'allowed' })).isError, true)
+  log.append('busy-one', { type: 'permission.requested', requestId: 'perm-1', toolName: 'Bash', input: { command: 'rm -rf dist' } } as never)
+  const wrong = await mcp('', 'reply_session', { project: 'project', session: 'busy-one', answers: { q: ['x'] } })
+  assert.equal(wrong.isError, true)
+  const allowed = await mcp('', 'reply_session', { project: 'project', session: 'busy-one', decision: 'allowed', scope: 'session' })
+  assert.equal(allowed.isError, undefined, allowed.content[0]?.text)
+  assert.equal(gestures.at(-1), 'permission busy-one perm-1 allowed/session')
+  log.append('busy-one', { type: 'permission.resolved', requestId: 'perm-1', decision: 'allowed', decidedBy: 'owner' } as never)
+  log.append('busy-one', { type: 'question.requested', requestId: 'q-1', questions: [{ id: 'color', header: 'Couleur', question: 'Laquelle ?', options: [{ label: 'bleu', description: '' }], multiSelect: false, allowOther: false }] } as never)
+  const answered = await mcp('', 'reply_session', { project: 'project', session: 'busy-one', request_id: 'q-1', answers: { color: ['bleu'] } })
+  assert.equal(answered.isError, undefined, answered.content[0]?.text)
+  assert.equal(gestures.at(-1), 'answer busy-one q-1 {"color":["bleu"]}')
 })
 
 test('list_models shows the catalog and the defaults a launch would use', async (t) => {
