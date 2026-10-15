@@ -4,6 +4,7 @@ import { useTranslate } from '../../lib/i18n'
 import { useLocalSkills, useSkillLibrary } from '../../lib/skill-library'
 import { Badge, Banner, Card, CardBody, CardHeader } from '../ui'
 import { AddSkillMenu } from './AddSkillMenu'
+import { SkillUpdates } from './SkillUpdates'
 import { SkillList, originLabel } from './SkillList'
 
 /**
@@ -33,6 +34,7 @@ export function ProjectSkills({ projectId, isOwner }: { projectId: string; isOwn
       />
       <CardBody className="flex flex-col gap-4">
         {data && !data.enabled ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}
+        <SkillUpdates skills={own} />
         {own.length > 0 ? (
           <SkillList skills={own} />
         ) : (

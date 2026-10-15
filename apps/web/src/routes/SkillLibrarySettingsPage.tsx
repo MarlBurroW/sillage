@@ -1,5 +1,6 @@
 import { BookOpen } from 'lucide-react'
 import { AddSkillMenu } from '../components/skills/AddSkillMenu'
+import { SkillUpdates } from '../components/skills/SkillUpdates'
 import { SkillList } from '../components/skills/SkillList'
 import { SkillSourcesSection } from '../components/skills/SkillSourcesSection'
 import { Banner, EmptyState } from '../components/ui'
@@ -29,6 +30,8 @@ export function SkillLibrarySettingsPage() {
       <Banner tone="info">{t('skills.banner')}</Banner>
       {data && !data.enabled ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}
       {isAdmin ? null : <Banner>{t('skills.readonly')}</Banner>}
+
+      <SkillUpdates skills={skills} />
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
