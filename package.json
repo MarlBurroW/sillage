@@ -13,6 +13,7 @@
     "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @sillage/server test",
+    "test:api-mcp-ui": "node scripts/api-mcp-ui-check.mjs",
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
