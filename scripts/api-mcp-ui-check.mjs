@@ -79,7 +79,10 @@ try {
     await page.getByRole('heading', { name: 'API REST', exact: true }).waitFor()
     await page.getByRole('heading', { name: 'Serveur MCP', exact: true }).waitFor()
     assert.ok(await page.getByText(`${base}/api/v1`, { exact: true }).isVisible())
-    assert.ok(await page.getByText(`${base}/api/v1/mcp`, { exact: true }).isVisible())
+    assert.ok(await page.getByText(`${base}/api/v1/mcp`, { exact: true }).first().isVisible())
+    // Sur la carte MCP, le guide replié porte un emplacement à la place du jeton.
+    await page.getByText('Brancher un client MCP', { exact: true }).click()
+    assert.ok(await page.getByText('Authorization: Bearer <jeton>', { exact: true }).isVisible())
     await page.screenshot({ path: join(shots, `${name}-surfaces.png`), fullPage: true })
 
     await page.getByRole('button', { name: 'Créer un jeton MCP', exact: true }).click()
@@ -105,10 +108,15 @@ try {
   const token = await tokenResponse.json()
   assert.deepEqual(token.token.scopes, ['mcp'])
   assert.equal(token.token.webhookUrl, null)
-  // Le jeton se montre avec les commandes prêtes à coller.
-  await page.getByText(`codex mcp add sillage --url ${base}/api/v1/mcp`, { exact: false }).waitFor()
-  assert.ok(await page.getByText(`export SILLAGE_TOKEN=${token.secret}`, { exact: false }).isVisible())
-  assert.ok(await page.getByText(`Authorization: Bearer ${token.secret}`, { exact: false }).isVisible())
+  // Le jeton se montre avec le guide de branchement, valable pour tout client MCP.
+  const reveal = page.locator('.surface', { has: page.getByRole('heading', { name: 'Votre jeton', exact: true }) })
+  await reveal.getByText('Sillage parle le protocole MCP standard', { exact: false }).waitFor()
+  assert.ok(await reveal.getByText(`Authorization: Bearer ${token.secret}`, { exact: true }).isVisible())
+  assert.ok(await reveal.getByText('HTTP « streamable »', { exact: false }).isVisible())
+  // Les exemples sont repliés, puis portent le jeton une fois ouverts.
+  await reveal.getByText('Exemples', { exact: true }).click()
+  assert.ok(await reveal.getByText(`http_headers = { "Authorization" = "Bearer ${token.secret}" }`, { exact: false }).isVisible())
+  assert.ok(await reveal.getByText('"mcpServers"', { exact: false }).isVisible())
   await page.screenshot({ path: join(shots, 'phone-secret.png'), fullPage: true })
   // Le CLI ne règle que les tâches : un jeton MCP seul n'en affiche pas.
   assert.equal(await page.locator('main').getByText('claude', { exact: true }).count(), 0)

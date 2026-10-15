@@ -101,11 +101,23 @@ const DOCS = {
 const apiEndpoint = () => `${window.location.origin}/api/v1`
 const mcpEndpoint = () => `${window.location.origin}/api/v1/mcp`
 
-/** L'ajout côté Codex, le jeton lu dans l'environnement plutôt qu'écrit dans sa config. */
-const codexCommand = (secret: string) =>
-  `export SILLAGE_TOKEN=${secret}\ncodex mcp add sillage --url ${mcpEndpoint()} --bearer-token-env-var SILLAGE_TOKEN`
-const claudeCommand = (secret: string) =>
-  `claude mcp add --transport http sillage ${mcpEndpoint()} --header "Authorization: Bearer ${secret}"`
+/**
+ * Exemples de configuration d'un client MCP. Ce ne sont que des cas particuliers des
+ * trois informations du guide (transport, adresse, en-tête) : MCP est un standard, et
+ * tout client qui parle HTTP « streamable » se configure de la même façon, sous des
+ * noms de champs différents. Formats sondés : `http_headers` lu par Codex 0.162.1
+ * (`codex mcp get --json`), `--header` de `claude mcp add`.
+ */
+const mcpJsonExample = (token: string) =>
+  JSON.stringify(
+    { mcpServers: { sillage: { type: 'http', url: mcpEndpoint(), headers: { Authorization: `Bearer ${token}` } } } },
+    null,
+    2,
+  )
+const codexTomlExample = (token: string) =>
+  `[mcp_servers.sillage]\nurl = "${mcpEndpoint()}"\nhttp_headers = { "Authorization" = "Bearer ${token}" }`
+const claudeCommandExample = (token: string) =>
+  `claude mcp add --transport http sillage ${mcpEndpoint()} --header "Authorization: Bearer ${token}"`
 
 /** Durées de vie proposées, en jours. `none` laisse le jeton valable jusqu'à révocation. */
 const LIFETIMES = { none: null, '30': 30, '90': 90, '365': 365 } as const
@@ -157,7 +169,18 @@ export function ApiTokensSettingsPage() {
           createLabel={t('apiTokens.surface.mcp.create')}
           disabled={adding !== null}
           onCreate={() => open('mcp')}
-        />
+        >
+          {/* Replié : utile au moment de brancher un client, encombrant le reste du temps.
+              Le jeton n'existe plus en clair, d'où l'emplacement à remplacer. */}
+          <details className="rounded-md border border-line px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium text-ink-soft">
+              {t('apiTokens.mcpGuide.toggle')}
+            </summary>
+            <div className="pt-3">
+              <McpConnectGuide token={null} />
+            </div>
+          </details>
+        </SurfaceCard>
       </section>
 
       <Banner tone="info">{t('apiTokens.banner')}</Banner>
@@ -210,6 +233,7 @@ function SurfaceCard({
   createLabel,
   disabled,
   onCreate,
+  children,
 }: {
   icon: ReactNode
   title: string
@@ -220,6 +244,8 @@ function SurfaceCard({
   createLabel: string
   disabled: boolean
   onCreate: () => void
+  /** Ce que la porte demande en plus pour s'en servir, sous son adresse. */
+  children?: ReactNode
 }) {
   const t = useTranslate()
   return (
@@ -228,6 +254,7 @@ function SurfaceCard({
       <CardBody className="flex flex-1 flex-col gap-3">
         <CopyableValue label={t('apiTokens.surface.endpoint')} value={endpoint} />
         <p className="text-xs text-ink-faint">{scopes}</p>
+        {children}
         <div className="mt-auto flex flex-wrap items-center gap-3">
           <Button size="sm" icon={<Plus size={15} />} disabled={disabled} onClick={onCreate}>
             {createLabel}
@@ -275,19 +302,70 @@ function SecretReveal({
             value={created.webhookSecret}
           />
         ) : null}
-        {/* Le jeton à peine né est le seul moment où une commande peut l'embarquer :
-            après, il n'existe plus en clair nulle part. */}
-        {created.token.scopes.includes('mcp') ? (
-          <>
-            <CopyableValue label={t('apiTokens.secret.codex')} value={codexCommand(created.secret)} multiline />
-            <CopyableValue label={t('apiTokens.secret.claude')} value={claudeCommand(created.secret)} multiline />
-          </>
-        ) : null}
+        {/* Le jeton à peine né est le seul moment où le guide peut l'embarquer : après, il
+            n'existe plus en clair nulle part. */}
+        {created.token.scopes.includes('mcp') ? <McpConnectGuide token={created.secret} /> : null}
         <Button size="sm" variant="ghost" onClick={onDismiss} className="self-start">
           {t('apiTokens.secret.dismiss')}
         </Button>
       </CardBody>
     </Card>
+  )
+}
+
+/**
+ * Comment brancher un client MCP sur Sillage, quel qu'il soit.
+ *
+ * MCP est un standard : tout client demande les trois mêmes choses, transport, adresse
+ * et authentification, sous des noms qui varient. Le guide les donne d'abord, puis dit
+ * comment les reconnaître dans un formulaire : c'est là que l'utilisateur se trompe,
+ * pas sur l'adresse. Les exemples ne viennent qu'ensuite, repliés, comme des cas
+ * particuliers. Sans jeton, ils portent un emplacement à remplacer.
+ */
+function McpConnectGuide({ token }: { token: string | null }) {
+  const t = useTranslate()
+  const value = token ?? t('apiTokens.mcpGuide.placeholder')
+  const examples: { label: string; value: string }[] = [
+    { label: t('apiTokens.mcpGuide.example.json'), value: mcpJsonExample(value) },
+    { label: t('apiTokens.mcpGuide.example.codex'), value: codexTomlExample(value) },
+    { label: t('apiTokens.mcpGuide.example.claude'), value: claudeCommandExample(value) },
+  ]
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-ink-soft">{t('apiTokens.mcpGuide.intro')}</p>
+      <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
+        <dt className="font-medium text-ink">{t('apiTokens.mcpGuide.transport')}</dt>
+        <dd className="text-ink-soft">{t('apiTokens.mcpGuide.transport.value')}</dd>
+        <dt className="font-medium text-ink">{t('apiTokens.mcpGuide.url')}</dt>
+        <dd className="min-w-0">
+          <code className="break-all font-mono text-xs text-ink">{mcpEndpoint()}</code>
+        </dd>
+        <dt className="font-medium text-ink">{t('apiTokens.mcpGuide.auth')}</dt>
+        <dd className="min-w-0">
+          <code className="break-all font-mono text-xs text-ink">Authorization: Bearer {value}</code>
+        </dd>
+      </dl>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-ink">{t('apiTokens.mcpGuide.fields')}</span>
+        <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-ink-soft">
+          <li>{t('apiTokens.mcpGuide.fields.headers')}</li>
+          <li>{t('apiTokens.mcpGuide.fields.bearer')}</li>
+          <li>{t('apiTokens.mcpGuide.fields.env')}</li>
+        </ul>
+      </div>
+
+      <details className="rounded-md border border-line px-3 py-2">
+        <summary className="cursor-pointer text-sm font-medium text-ink-soft">
+          {t('apiTokens.mcpGuide.examples')}
+        </summary>
+        <div className="flex flex-col gap-3 pt-3">
+          {examples.map((example) => (
+            <CopyableValue key={example.label} label={example.label} value={example.value} multiline />
+          ))}
+        </div>
+      </details>
+    </div>
   )
 }
 
