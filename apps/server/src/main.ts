@@ -80,7 +80,7 @@ async function main(): Promise<void> {
   // ouvre les sessions de maintenance qu'une issue ou un commentaire déclenche.
   const board = new BoardSync({ db, config }, gitCredentials, fetch, new BoardResponder({ db, config }, sessions, registry))
   // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board, decisions)
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board, decisions, log)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 

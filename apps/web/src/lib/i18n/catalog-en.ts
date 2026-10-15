@@ -665,7 +665,7 @@ export const en = {
   'apiTokens.surface.api.scopes': 'Scopes projects:* and tasks:*. Optional webhook when a task finishes.',
   'apiTokens.surface.api.create': 'Create an API token',
   'apiTokens.surface.mcp.title': 'MCP server',
-  'apiTokens.surface.mcp.description': 'For an agent outside Sillage, such as Codex or Claude Code on your laptop: the tools of a Sillage session, across all your projects. History, board, running sessions, memory, instructions, and launching sessions.',
+  'apiTokens.surface.mcp.description': 'For an agent outside Sillage, such as Codex or Claude Code on your laptop: the tools of a Sillage session, across all your projects. History, board, memory, instructions, launching sessions and talking to them.',
   'apiTokens.surface.mcp.scopes': 'Scope mcp. Streamable HTTP transport, with the token as a bearer.',
   'apiTokens.surface.mcp.create': 'Create an MCP token',
   'apiTokens.create.title.mcp': 'New MCP token',

@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { eq } from 'drizzle-orm'
 import { cardNotes, cards, conversations, openDatabase, projects, runMigrations, users } from '@sillage/db'
+import { EventLog } from '../src/events/event-log.js'
 
 /**
  * Le serveur MCP en mode global : lancé sans projet, au nom d'un compte, par un CLI
@@ -133,4 +135,53 @@ test('direct writes carry the account, and the card comes from the call', async 
   const peer = call('send_session_message', { project: 'alpha', to: 'x', body: 'y' })
   assert.equal(peer.isError, true)
   assert.match(peer.content[0]!.text, /hors session/)
+})
+
+test('read_session and wait_for_session fold the journal into the present state of a session', async (t) => {
+  const { db, run, call } = await harness(t)
+  const log = new EventLog(db)
+  db.insert(conversations).values({
+    id: 's1', projectId: 'alpha', userId: 'owner', title: 'Relire la doc', agent: 'codex', config: '{}', status: 'running',
+    createdAt: 1, updatedAt: Date.now(),
+  }).run()
+  db.insert(users).values({ id: 'other', username: 'other', displayName: 'Other', passwordHash: '', createdAt: 2 }).run()
+  db.insert(conversations).values({
+    id: 's2', projectId: 'alpha', userId: 'other', title: 'Pas à moi', agent: 'claude', config: '{}', status: 'idle',
+    createdAt: 1, updatedAt: Date.now(),
+  }).run()
+  const env = { SILLAGE_MCP_USER: 'owner' }
+
+  assert.equal(call('read_session', { project: 'alpha', session: 's2' }, env).isError, true)
+  let state = call('read_session', { project: 'alpha', session: 's1' }, env).content[0]!.text
+  assert.match(state, /« Relire la doc » \(s1\), codex, en cours/)
+  assert.match(state, /rien répondu/)
+
+  log.append('s1', { type: 'tool.started', toolCallId: 't1', name: 'Bash', input: {}, parentToolCallId: null } as never)
+  log.append('s1', { type: 'message.completed', role: 'assistant', blocks: [{ type: 'text', text: 'Je relis la doc.' }], parentToolCallId: null } as never)
+  log.append('s1', { type: 'question.requested', requestId: 'q-1', questions: [{ id: 'scope', header: 'Portée', question: 'Toute la doc ?', options: [{ label: 'oui', description: '' }, { label: 'non', description: 'seulement le README' }], multiSelect: false, allowOther: true }] } as never)
+  db.update(conversations).set({ status: 'awaiting_input' }).where(eq(conversations.id, 's1')).run()
+  state = call('read_session', { project: 'alpha', session: 's1' }, env).content[0]!.text
+  assert.match(state, /attend une réponse \(question, request_id q-1/)
+  assert.match(state, /\[scope\] Toute la doc \? Options : « oui », « non : seulement le README »\. Réponse libre acceptée\./)
+  assert.match(state, /Dernier message de la session \(.*\) :\nJe relis la doc\./)
+  assert.doesNotMatch(state, /En train d'appeler/)
+
+  // Une fois la question résolue et le tour fini, l'attente rend l'état tout de suite.
+  log.append('s1', { type: 'question.resolved', requestId: 'q-1', status: 'answered', answers: {}, decidedBy: 'owner' } as never)
+  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 's1')).run()
+  const started = Date.now()
+  const waited = call('wait_for_session', { project: 'alpha', session: 's1', timeout_seconds: 10 }, env).content[0]!.text
+  assert.ok(Date.now() - started < 8000)
+  assert.doesNotMatch(waited, /attend une réponse|Toujours en cours/)
+  assert.match(waited, /au repos : message_session la fait reprendre/)
+
+  // Encore en cours à l'échéance : l'état est rendu tel quel, sans erreur.
+  db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, 's1')).run()
+  const timedOut = call('wait_for_session', { project: 'alpha', session: 's1', timeout_seconds: 1 }, env).content[0]!.text
+  assert.match(timedOut, /Toujours en cours après 1 s/)
+
+  // Les nouveaux outils n'existent qu'en mode global.
+  const scoped = run({ SILLAGE_MCP_PROJECT: 'alpha', SILLAGE_MCP_CONVERSATION: 's1' }, [{ method: 'tools/list' }])
+  const names = (JSON.parse(scoped.stdout).result.tools as { name: string }[]).map((tool) => tool.name)
+  assert.ok(!names.includes('read_session') && !names.includes('message_session'))
 })

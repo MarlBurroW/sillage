@@ -158,7 +158,15 @@ const REQUEST_WAIT_MS = {
   create_automation: 30000,
   request_decision: 15000,
   withdraw_decision: 15000,
+  message_session: 20000,
+  steer_session: 20000,
+  interrupt_session: 20000,
+  reply_session: 20000,
 }
+
+/** Attente la plus longue de wait_for_session : sous les deux minutes du pont HTTP. */
+const MAX_WAIT_SECONDS = 100
+const WAIT_POLL_MS = 1000
 
 /**
  * Bornes d'une action de projet, d'accord avec `MAX_ACTION_LABEL_CHARS` et
@@ -882,6 +890,83 @@ const TOOLS = [
 ]
 
 /**
+ * Outils du seul mode global, sur une session existante.
+ *
+ * Une session Sillage n'en a pas l'usage : elle parle à une autre avec
+ * send_session_message, et c'est le daemon qui remet le message dans les formes. Un
+ * client hors session agit comme l'utilisateur le ferait dans l'interface : il lit où
+ * en est une session, lui écrit, répond à ce qu'elle demande, l'interrompt, et attend.
+ */
+const SESSION_PARAM = { type: 'string', description: "Identifiant de la session, tel que list_sessions ou start_session le rendent." }
+const GLOBAL_ONLY_TOOLS = [
+  {
+    name: 'read_session',
+    description:
+      "Où en est une session : son état, ce qu'elle fait en ce moment, son dernier message, et la sollicitation à laquelle elle attend une réponse s'il y en a une (question, permission, plan, saisie), avec ce qu'il faut pour y répondre par reply_session. Appelle cet outil après start_session ou message_session, et avant de répondre à une session qui « attend une réponse » dans list_sessions.",
+    inputSchema: { type: 'object', properties: { session: SESSION_PARAM }, required: ['session'] },
+  },
+  {
+    name: 'wait_for_session',
+    description:
+      "Attend qu'une session finisse son tour ou s'arrête sur une question, puis rend son état comme read_session. Bloque au plus `timeout_seconds` ; au-delà, rend l'état tel quel, la session continue. Sert après start_session ou message_session, pour lire la réponse sans interroger en boucle.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session: SESSION_PARAM,
+        timeout_seconds: { type: 'integer', description: `Attente maximale, en secondes. 60 par défaut, ${MAX_WAIT_SECONDS} au plus.` },
+      },
+      required: ['session'],
+    },
+  },
+  {
+    name: 'message_session',
+    description:
+      "Envoie un message à une session existante, comme si l'utilisateur l'avait tapé dans Sillage : une session au repos reprend avec son contexte, une session qui travaille le reçoit à la fin de son tour. Pour une mission neuve, préfère start_session ; pour corriger le tir pendant un tour, steer_session.",
+    inputSchema: {
+      type: 'object',
+      properties: { session: SESSION_PARAM, body: { type: 'string', description: 'Le message, en markdown.' } },
+      required: ['session', 'body'],
+    },
+  },
+  {
+    name: 'steer_session',
+    description:
+      "Infléchit le tour en cours d'une session : le CLI lit le message tout de suite, au milieu de son travail, sans attendre la fin du tour. Si aucun tour n'est en cours, ou si son CLI ne sait pas faire, le message part comme un message ordinaire.",
+    inputSchema: {
+      type: 'object',
+      properties: { session: SESSION_PARAM, body: { type: 'string', description: "L'inflexion, courte : ce qu'il faut changer ou arrêter de faire." } },
+      required: ['session', 'body'],
+    },
+  },
+  {
+    name: 'interrupt_session',
+    description:
+      "Arrête le tour en cours d'une session. Elle garde son contexte : un message_session la fait reprendre. Pour une session qui part dans la mauvaise direction et qu'une inflexion ne suffirait pas à ramener.",
+    inputSchema: { type: 'object', properties: { session: SESSION_PARAM }, required: ['session'] },
+  },
+  {
+    name: 'reply_session',
+    description:
+      "Répond à ce qu'une session attend, tel que read_session le décrit. Les champs dépendent de la sollicitation : une permission prend `decision` (allowed ou denied) et `scope` (once, session, always) ; une question prend `answers`, un objet { id de question: [réponses] }, ou `status: cancelled` ; un plan prend `decision` (approved ou rejected) et `followUpMode` facultatif ; une saisie prend `action` (accept, decline, cancel) et `content`. Sans `request_id`, répond à la sollicitation ouverte s'il n'y en a qu'une.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session: SESSION_PARAM,
+        request_id: { type: 'string', description: 'Identifiant de la sollicitation, rendu par read_session.' },
+        decision: { type: 'string', description: 'Permission : allowed ou denied. Plan : approved ou rejected.' },
+        scope: { type: 'string', enum: ['once', 'session', 'always'], description: "Permission : portée de l'accord, once par défaut." },
+        answers: { type: 'object', description: 'Question : { "<id>": ["réponse"] }, plusieurs réponses si la question le permet.' },
+        status: { type: 'string', enum: ['answered', 'cancelled'], description: 'Question : cancelled pour ne pas répondre.' },
+        followUpMode: { type: 'string', description: "Plan accepté : l'identifiant d'une suite proposée par read_session." },
+        action: { type: 'string', enum: ['accept', 'decline', 'cancel'], description: 'Saisie MCP : accepter avec `content`, ou refuser.' },
+        content: { type: 'object', description: 'Saisie MCP : les valeurs demandées.' },
+      },
+      required: ['session'],
+    },
+  },
+]
+
+/**
  * Mode global : ce que le client voit à la place de la liste cadrée.
  *
  * Un outil de plus, `list_projects`, et un paramètre `project` sur chaque autre, requis
@@ -919,7 +1004,7 @@ const CARD_PARAM = { type: 'integer', description: 'Numéro de la carte visée, 
 function globalTools() {
   return [
     LIST_PROJECTS,
-    ...TOOLS.filter((tool) => !SESSION_ONLY_TOOLS.has(tool.name)).map((tool) => {
+    ...[...TOOLS.filter((tool) => !SESSION_ONLY_TOOLS.has(tool.name)), ...GLOBAL_ONLY_TOOLS].map((tool) => {
       const byCard = tool.name === 'add_card_note' || tool.name === 'update_issue'
       const optional = PROJECT_OPTIONAL_TOOLS.has(tool.name)
       const required = [...(optional ? [] : ['project']), ...(byCard ? ['card'] : []), ...(tool.inputSchema.required ?? [])]
@@ -2291,6 +2376,121 @@ function targetCard(args) {
   return card ?? null
 }
 
+/**
+ * L'état présent d'une session, replié depuis la fin de son journal. Doit rester
+ * d'accord avec `digest` de `apps/server/src/http/v1/task-view.ts` : mêmes types lus,
+ * même fenêtre, même règle pour la sollicitation ouverte.
+ */
+const DIGEST_TYPES = [
+  'tool.started', 'tool.completed', 'message.completed',
+  'permission.requested', 'permission.resolved', 'question.requested', 'question.resolved',
+  'plan.review_requested', 'plan.review_resolved', 'elicitation.requested', 'elicitation.resolved',
+]
+const DIGEST_WINDOW = 300
+const PROMPT_KINDS = {
+  'permission.requested': 'permission',
+  'question.requested': 'question',
+  'plan.review_requested': 'plan',
+  'elicitation.requested': 'elicitation',
+}
+const RESOLVED_TYPES = new Set(['permission.resolved', 'question.resolved', 'plan.review_resolved', 'elicitation.resolved'])
+
+function sessionRow(id) {
+  return (
+    db
+      .prepare(
+        `SELECT c.id AS id, c.title AS title, c.agent AS agent, c.status AS status,
+                c.background_count AS background, c.loop_count AS loops, c.updated_at AS updatedAt,
+                c.user_id AS userId, w.name AS worktree
+         FROM conversations AS c LEFT JOIN worktrees AS w ON w.id = c.worktree_id
+         WHERE c.id = ? AND c.project_id = ? AND c.archived_at IS NULL`,
+      )
+      .get(id, PROJECT_ID) ?? null
+  )
+}
+
+function digestSession(id) {
+  const rows = db
+    .prepare(
+      `SELECT type, ts, payload FROM events
+       WHERE conversation_id = ? AND type IN (${DIGEST_TYPES.map(() => '?').join(', ')})
+       ORDER BY seq DESC LIMIT ${DIGEST_WINDOW}`,
+    )
+    .all(id, ...DIGEST_TYPES)
+  const completed = new Set()
+  const resolved = new Set()
+  let activity = null
+  let lastMessage = null
+  let pending = null
+  for (const row of rows) {
+    const event = JSON.parse(row.payload)
+    if (event.type === 'tool.completed') {
+      completed.add(event.toolCallId)
+    } else if (event.type === 'tool.started') {
+      if (!activity && !completed.has(event.toolCallId)) activity = { name: event.name, at: row.ts }
+    } else if (event.type === 'message.completed') {
+      if (lastMessage || event.role !== 'assistant' || (event.parentToolCallId ?? null) !== null) continue
+      const text = (event.blocks ?? []).filter((block) => block.type === 'text').map((block) => block.text).join('\n').trim()
+      if (text) lastMessage = { text, at: row.ts }
+    } else if (RESOLVED_TYPES.has(event.type)) {
+      resolved.add(event.requestId)
+    } else if (PROMPT_KINDS[event.type] && !pending && !resolved.has(event.requestId)) {
+      pending = { kind: PROMPT_KINDS[event.type], requestId: event.requestId, at: row.ts, event }
+    }
+  }
+  return { activity, lastMessage, pending }
+}
+
+/** La sollicitation ouverte, avec ce qu'il faut pour y répondre. */
+function renderPending(pending) {
+  const { event } = pending
+  const head = `Elle attend une réponse (${pending.kind}, request_id ${pending.requestId}, ${ago(pending.at)}) :`
+  if (pending.kind === 'permission') {
+    return `${head}\n  Permission pour l'outil ${event.toolName}${event.input !== undefined ? `, entrée ${clip(JSON.stringify(event.input), 600)}` : ''}.\n  reply_session avec decision allowed ou denied, scope once, session ou always.`
+  }
+  if (pending.kind === 'question') {
+    const questions = (event.questions ?? []).map((question) => {
+      const options = (question.options ?? []).map((option) => `« ${option.label}${option.description ? ` : ${option.description}` : ''} »`).join(', ')
+      return `  - [${question.id}] ${question.question}${options ? ` Options : ${options}.` : ''}${question.multiSelect ? ' Plusieurs réponses possibles.' : ''}${question.allowOther ? ' Réponse libre acceptée.' : ''}`
+    })
+    return `${head}\n${questions.join('\n')}\n  reply_session avec answers { "<id>": ["réponse"] }, ou status cancelled.`
+  }
+  if (pending.kind === 'plan') {
+    const follow = (event.followUpOptions ?? []).map((option) => `${option.id} (${option.label})`).join(', ')
+    return `${head}\n  Plan proposé :\n${clip(event.plan ?? '', 4000)}\n  reply_session avec decision approved ou rejected${follow ? `, et followUpMode parmi ${follow}` : ''}.`
+  }
+  return `${head}\n  Saisie demandée : ${event.message ?? ''}${event.requestedSchema ? `\n  Schéma : ${clip(JSON.stringify(event.requestedSchema), 1500)}` : ''}\n  reply_session avec action accept et content, ou action decline.`
+}
+
+function renderSession(row) {
+  const { activity, lastMessage, pending } = digestSession(row.id)
+  const lines = [
+    `Session « ${row.title} » (${row.id}), ${row.agent}, ${describeActivity(row)}, ${row.worktree ? `worktree ${row.worktree}` : 'racine du projet'}, dernière activité ${ago(row.updatedAt)}.`,
+  ]
+  if (row.status === 'running' && activity) lines.push(`En train d'appeler l'outil ${activity.name} (depuis ${ago(activity.at)}).`)
+  if (pending) lines.push(renderPending(pending))
+  lines.push(lastMessage ? `Dernier message de la session (${ago(lastMessage.at)}) :\n${clip(lastMessage.text, MAX_MESSAGE_CHARS)}` : "Elle n'a encore rien répondu.")
+  if (row.status === 'idle' && !pending) lines.push('Elle est au repos : message_session la fait reprendre, avec son contexte.')
+  return lines.join('\n\n')
+}
+
+/** Un tour est fini quand plus rien ne tourne et que rien de détaché ne continue. */
+const settled = (row) => row.status !== 'running' && row.background <= 0 && row.loops <= 0
+
+async function waitForSession(id, timeoutSeconds) {
+  const deadline = Date.now() + timeoutSeconds * 1000
+  let row = sessionRow(id)
+  // Un message vient souvent d'être envoyé : le statut ne passe à `running` qu'après
+  // un court délai, et rendre tout de suite « au repos » ferait rater le tour entier.
+  const grace = Date.now() + 3000
+  while (row && Date.now() < deadline) {
+    if (settled(row) && Date.now() >= grace) return { row, timedOut: false }
+    await new Promise((done) => setTimeout(done, WAIT_POLL_MS))
+    row = sessionRow(id)
+  }
+  return { row, timedOut: Boolean(row) }
+}
+
 const NO_CARD =
   "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Sillage, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même."
 const NO_SUCH_CARD = 'Le paramètre `card` est requis : le numéro d\'une carte de ce projet, voir list_cards.'
@@ -2298,6 +2498,22 @@ const NO_SUCH_CARD = 'Le paramètre `card` est requis : le numéro d\'une carte 
 async function callTool(name, args) {
   if (name === 'list_projects') {
     return text(renderProjects(listProjects()))
+  }
+
+  if (name === 'read_session' || name === 'wait_for_session') {
+    const id = typeof args?.session === 'string' ? args.session.trim() : ''
+    if (!id) return { ...text('Le paramètre `session` est requis.'), isError: true }
+    let row = sessionRow(id)
+    if (!row || row.userId !== USER?.id) {
+      return { ...text(`Aucune session « ${id} » à toi dans ce projet. list_sessions donne celles qui existent.`), isError: true }
+    }
+    if (name === 'wait_for_session') {
+      const asked = Number.isInteger(args?.timeout_seconds) ? args.timeout_seconds : 60
+      const waited = await waitForSession(id, Math.min(Math.max(asked, 1), MAX_WAIT_SECONDS))
+      row = waited.row ?? row
+      if (waited.timedOut) return text(`Toujours en cours après ${Math.min(Math.max(asked, 1), MAX_WAIT_SECONDS)} s. ${renderSession(row)}`)
+    }
+    return text(renderSession(row))
   }
 
   if (name === 'search_history') {
@@ -2579,7 +2795,11 @@ async function callTool(name, args) {
     name === 'run_action' ||
     name === 'create_automation' ||
     name === 'request_decision' ||
-    name === 'withdraw_decision'
+    name === 'withdraw_decision' ||
+    name === 'message_session' ||
+    name === 'steer_session' ||
+    name === 'interrupt_session' ||
+    name === 'reply_session'
   ) {
     if (!CURRENT_CONVERSATION && !USER) {
       return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }

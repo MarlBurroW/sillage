@@ -652,7 +652,7 @@ export const fr: Catalog = {
   'apiTokens.surface.api.scopes': "Portées projects:* et tasks:*. Webhook facultatif à la fin d'une tâche.",
   'apiTokens.surface.api.create': "Créer un jeton d'API",
   'apiTokens.surface.mcp.title': 'Serveur MCP',
-  'apiTokens.surface.mcp.description': "Pour un agent hors de Sillage, comme Codex ou Claude Code sur votre portable : les outils d'une session Sillage, sur tous vos projets. Historique, board, sessions en cours, mémoire, consignes, et lancement de sessions.",
+  'apiTokens.surface.mcp.description': "Pour un agent hors de Sillage, comme Codex ou Claude Code sur votre portable : les outils d'une session Sillage, sur tous vos projets. Historique, board, mémoire, consignes, lancement de sessions et dialogue avec elles.",
   'apiTokens.surface.mcp.scopes': 'Portée mcp. Transport HTTP « streamable », avec le jeton en bearer.',
   'apiTokens.surface.mcp.create': 'Créer un jeton MCP',
   'apiTokens.create.title.mcp': 'Nouveau jeton MCP',

@@ -486,6 +486,12 @@ export const agentRequests = sqliteTable(
         'request_decision',
         'withdraw_decision',
         'create_automation',
+        // Gestes sur une session existante, au nom d'un compte : ceux d'un client MCP
+        // hors session (`docs/mcp.md`), qui n'a pas de runner pour les faire lui-même.
+        'message_session',
+        'steer_session',
+        'interrupt_session',
+        'reply_session',
       ],
     }).notNull(),
     /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
