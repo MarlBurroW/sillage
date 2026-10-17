@@ -456,7 +456,7 @@ export function FileTree({
 
       <div className="flex items-center gap-1 px-2 pb-1">
         <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-medium text-ink-soft">
-          {t('filetree.title')}
+          <span className="truncate">{t('filetree.title')}</span>
           {operations.isPending ? <Loader size={11} className="animate-spin text-ink-faint" /> : null}
         </span>
         {/* Les créations visent le dossier de l'entrée désignée, la racine à défaut :

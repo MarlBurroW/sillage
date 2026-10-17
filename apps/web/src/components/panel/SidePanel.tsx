@@ -205,45 +205,38 @@ export function SidePanel({
         entered && open ? 'translate-x-0' : 'translate-x-full',
       )}
     >
-      {/* Pas d'encoche haute ici : même en plein écran, le panneau se pose sous
-          l'en-tête de la coque, qui la réserve déjà. La réserver deux fois creusait
-          59 px de vide au milieu de l'écran. */}
-      {/* `@container` : les onglets se réduisent à leurs icônes selon la largeur du
-          panneau, et non celle de la fenêtre, puisqu'il se redimensionne. */}
-      <header className="@container flex h-[var(--header-height)] shrink-0 items-center border-b border-line px-1.5">
-        {fullscreen ? <span title={workspaceLabel} className="mr-2 hidden max-w-60 truncate border-r border-line pr-3 pl-2 text-xs font-medium text-ink-soft md:block">{workspaceLabel}</span> : null}
-        {/* La liste défile plutôt que de pousser les actions hors de l'écran : au
-            doigt, les onglets nommés chassaient la croix de fermeture du panneau,
-            qui devenait alors impossible à refermer. */}
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+      <div className="flex min-h-0 flex-1">
+        {/* Le rail garde toutes les sections accessibles sans réduire leurs cibles
+            quand le panneau devient étroit. Il défile sur les écrans peu hauts. */}
+        <nav aria-label={t('panel.aria')} className="flex w-12 shrink-0 flex-col items-center overflow-y-auto border-r border-line bg-sunken py-1 pb-safe">
           <Tab
-            icon={<FileCode size={14} />}
+            icon={<FileCode size={20} />}
             label={t('panel.tab.files')}
             active={tab === 'files'}
             onSelect={() => setPanelTab('files')}
           />
           <Tab
-            icon={<GitCompare size={14} />}
+            icon={<GitCompare size={20} />}
             label={t('panel.tab.git')}
             active={tab === 'git'}
             onSelect={() => setPanelTab('git')}
           />
           {conversationId ? (
             <Tab
-              icon={<History size={14} />}
+              icon={<History size={20} />}
               label={t('panel.tab.history')}
               active={tab === 'history'}
               onSelect={() => setPanelTab('history')}
             />
           ) : null}
           <Tab
-            icon={<SquareTerminal size={14} />}
+            icon={<SquareTerminal size={20} />}
             label={t('panel.tab.terminals')}
             active={tab === 'terminals'}
             onSelect={() => setPanelTab('terminals')}
           />
           <Tab
-            icon={<Zap size={14} />}
+            icon={<Zap size={20} />}
             label={t('panel.tab.actions')}
             // Seules les actions à relire se comptent : elles attendent l'utilisateur.
             badge={proposedActions}
@@ -253,7 +246,7 @@ export function SidePanel({
           {conversationId ? (
             <>
               <Tab
-                icon={<Bot size={14} />}
+                icon={<Bot size={20} />}
                 label={t('panel.tab.agents')}
                 badge={
                   subAgents.filter((agent) => agent.status === 'running').length + background.length
@@ -262,7 +255,7 @@ export function SidePanel({
                 onSelect={() => setPanelTab('agents')}
               />
               <Tab
-                icon={<PlugZap size={14} />}
+                icon={<PlugZap size={20} />}
                 label={t('panel.tab.mcp')}
                 // Seuls les serveurs en défaut se comptent : une pastille sur un
                 // inventaire sain crierait en permanence pour ne rien dire.
@@ -274,6 +267,12 @@ export function SidePanel({
               />
             </>
           ) : null}
+        </nav>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header className="flex min-h-[var(--header-height)] shrink-0 flex-wrap items-center gap-y-1 border-b border-line px-1.5 py-1">
+        <div className="min-w-0 flex-1 pl-2">
+          <h2 className="truncate text-sm font-medium text-ink">{t(`panel.tab.${tab}`)}</h2>
+          {fullscreen ? <p title={workspaceLabel} className="hidden truncate text-xs text-ink-faint md:block">{workspaceLabel}</p> : null}
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5 pl-1">
@@ -372,6 +371,9 @@ export function SidePanel({
           perd à ne le monter que lorsqu'on le regarde. */}
       {tab === 'mcp' ? <McpPane servers={mcpServers} /> : null}
 
+        </div>
+      </div>
+
       {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
           panneau occupe tout l'écran, il n'y a rien à ajuster. */}
       <div
@@ -420,20 +422,14 @@ function Tab({
       aria-label={badge > 0 ? t('panel.tab.badge', { label, count: badge }) : label}
       title={label}
       className={cx(
-        'flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors md:h-8 md:min-w-0 pointer-coarse:h-11 pointer-coarse:min-w-11',
-        active ? 'bg-accent-wash text-ink' : 'text-ink-faint hover:text-ink',
+        'relative flex size-11 shrink-0 items-center justify-center border-l-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-accent',
+        active ? 'border-accent bg-accent-wash text-accent' : 'border-transparent text-ink-faint hover:bg-surface-high hover:text-ink',
       )}
     >
       <span className="shrink-0">{icon}</span>
-      {/* Les noms demandent plus de place que n'en offrent un téléphone ou la largeur
-          par défaut du panneau : en dessous, seul l'onglet actif garde le sien, ce qui
-          dit où l'on est sans que la liste ait à défiler. */}
-      <span className={cx(active ? '' : '@max-[34rem]:hidden')}>{label}</span>
-      {/* Le décompte, lui, ne se replie jamais : c'est ce qui signale une activité
-          dont on ne verrait sinon aucune trace, l'onglet étant fermé. */}
       {badge > 0 ? (
-        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-accent text-[0.625rem] font-semibold text-accent-ink">
-          {badge}
+        <span className="absolute top-1 right-0.5 flex min-w-4 h-4 px-0.5 items-center justify-center rounded-full bg-accent text-[0.625rem] font-semibold text-accent-ink">
+          {badge > 99 ? '99+' : badge}
         </span>
       ) : null}
     </TooltipButton>
