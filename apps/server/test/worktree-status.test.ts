@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { eq as sqlEq } from 'drizzle-orm'
+import { eq as sqlEq, sql } from 'drizzle-orm'
 import { cards, conversationPaths, conversations, openDatabase, projects, runMigrations, users, worktrees } from '@sillage/db'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { EventLog } from '../src/events/event-log.js'
@@ -308,6 +308,18 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
   assert.equal(db.select().from(conversationPaths).all().length, 1)
   assert.equal(backfillCommandPaths(db), 0)
   log.append('c-root', { type: 'file.edited', toolCallId: 't4', path: join(external, 'src/x.ts'), action: 'modified' })
+
+  // Par lots d'une commande : le curseur passe d'une conversation à l'autre sans rien perdre.
+  log.append('c-direct', { type: 'tool.started', toolCallId: 't5', name: 'Bash', input: { command: `git -C ${known} status` }, parentToolCallId: null })
+  db.delete(conversationPaths).run()
+  db.run(sql`DELETE FROM app_settings WHERE key = 'worktree_paths_backfill'`)
+  assert.equal(backfillCommandPaths(db, 1), 2)
+  assert.deepEqual(
+    db.select({ id: conversationPaths.conversationId, path: conversationPaths.path }).from(conversationPaths).all()
+      .map((row) => `${row.id}:${row.path}`).sort(),
+    [`c-both:${external}`, `c-direct:${known}`],
+  )
+  log.append('c-root', { type: 'file.edited', toolCallId: 't6', path: join(external, 'src/x.ts'), action: 'modified' })
 
   const first = await service.get(projectRow)
   assert.equal(first.base, 'main')
