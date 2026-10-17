@@ -717,7 +717,7 @@ figcaption { margin-top: .8rem; color: var(--muted); font-size: .8rem; }
 .arch-functions a:hover strong, .arch-memory:hover span { text-decoration: underline; text-underline-offset: 4px; }
 .arch-memory { display: flex; justify-content: center; align-items: center; gap: .7rem; padding: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; text-decoration: none; }
 .arch-memory svg { width: 20px; height: 20px; }
-.arch-agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; position: relative; }
+.arch-agents { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; position: relative; }
 .arch-agents > div { display: flex; align-items: center; justify-content: center; gap: .6rem; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); padding: 16px 8px; }
 .arch-agents strong { font-size: .95rem; }
 /* Les fonds colorés distinguent les CLI, sans recolorer les marques monochromes. */
@@ -726,6 +726,7 @@ figcaption { margin-top: .8rem; color: var(--muted); font-size: .8rem; }
 .arch-agent-claude svg { color: #D97757; }
 .arch-agent-codex { background: #dff3ed; color: #202b28; }
 .arch-agent-opencode { background: #e5edff; color: #252b3a; }
+.arch-agent-grok { background: #ebebeb; color: #141414; }
 .arch-models { margin-top: 12px; font-size: .75rem; color: var(--muted); }
 .arch-models span { margin-inline: 5px; }
 .arch-repo { padding: 15px; border-radius: 12px; background: var(--sunken); }
