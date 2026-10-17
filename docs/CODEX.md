@@ -1,7 +1,7 @@
 # Intégration Codex
 
 Sillage utilise `codex app-server` sur stdio. Les bindings sont générés avec
-**codex-cli 0.162.1**. La référence générale est la
+**codex-cli 0.163.0**. La référence générale est la
 [documentation officielle App Server](https://learn.chatgpt.com/docs/app-server).
 Les champs récents, notamment `agentMessage.questions`, sont vérifiés dans les types
 générés par le binaire installé.
@@ -45,6 +45,19 @@ le journal et consultable dans le fil ; ses mises à jour remplacent le même re
 visuel. Les items ont un repli générique et un contrôle d'exhaustivité TypeScript.
 Une requête serveur non implémentée produit un avertissement et une erreur RPC
 explicite. Afficher un outil dynamique ne fournit pas son exécution côté client.
+
+## Compatibilité 0.163.0
+
+`thread/readState/changed` est ignorée : l'état lu/non lu natif ne pilote pas celui
+de Sillage. Les méthodes de lecture d'items et de mise à jour de cet état ne sont
+pas utilisées. Les outils concurrents restent suivis par identifiant, même quand
+leurs sorties s'entrecroisent et qu'ils se terminent dans l'ordre inverse.
+
+Le 17 octobre 2026, le binaire 0.163.0 a été sondé avec un compte connecté :
+questions asynchrones et bloquantes, réponses et comptage des jetons passent par
+le vrai runner.
+`model/list` renvoie `gpt-6.1-sol` par défaut ; le catalogue reste lu dynamiquement.
+Les bindings sont vérifiés contre ce même binaire, isolé du CLI de production.
 
 ## Fork
 
