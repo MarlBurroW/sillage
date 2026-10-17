@@ -56,6 +56,8 @@ import {
 } from '../src/git-workflow.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerGitActionRoutes } from '../src/http/routes/git-actions.js'
+import { EventLog } from '../src/events/event-log.js'
+import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
 /**
  * Le module recopie `process.env` dans chaque git qu'il lance : sans ce cloisonnement, la
@@ -841,7 +843,13 @@ async function harness(t: TestContext) {
     request.user = db.select().from(users).where(eq(users.id, 'owner')).get()
   })
   registerErrorHandler(app)
-  registerGitActionRoutes(app, { db, config: { paths: { data: dir, database: join(dir, 'test.sqlite') } } as Config })
+  // Les routes périment l'avancement des chantiers après chaque action : un service
+  // réel sur cette base, qui n'est jamais lu ici.
+  registerGitActionRoutes(
+    app,
+    { db, config: { paths: { data: dir, database: join(dir, 'test.sqlite') } } as Config },
+    new WorktreeStatusService(db, new EventLog(db)),
+  )
   t.after(() => app.close())
 
   return { repo, plain, app }

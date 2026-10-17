@@ -8,6 +8,7 @@ import { useTranslate } from '../../lib/i18n'
 import { Markdown } from '../chat/Markdown'
 import { Badge, Banner, Button, IconButton, cx } from '../ui'
 import { DecisionSourceLine, decisionDue } from './DecisionSource'
+import { decisionContext, decisionOption, decisionQuestion } from './decision-text'
 
 /**
  * La réponse à une décision, d'où qu'on l'ouvre : la sidebar, un toast, l'historique ou
@@ -32,7 +33,7 @@ export function DecisionDialog() {
                 {t(!decision || decision.status === 'pending' ? 'decision.dialog.kicker' : `decision.status.${decision.status}`)}
               </p>
               <Dialog.Title className="mt-1 text-lg leading-snug font-semibold text-ink">
-                {decision?.question ?? (isError ? t('decision.dialog.missing') : '…')}
+                {decision ? decisionQuestion(decision, t) : isError ? t('decision.dialog.missing') : '…'}
               </Dialog.Title>
               {decision ? <DecisionSourceLine decision={decision} className="mt-1.5" /> : null}
             </div>
@@ -51,6 +52,9 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
   const [option, setOption] = useState<string | null>(null)
   const [text, setText] = useState('')
   const pending = decision.status === 'pending'
+  // Une proposition de nettoyage se tranche par un choix : pas d'agent à qui écrire.
+  const worktree = decision.source.kind === 'worktree'
+  const context = decisionContext(decision, t)
   // Tranchée ailleurs pendant qu'on hésitait : on le dit plutôt que d'échouer à l'envoi.
   useEffect(() => { if (!pending) answer.reset() }, [pending]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -62,9 +66,9 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
   return (
     <form className="flex min-h-0 flex-col" onSubmit={(event) => { event.preventDefault(); submit() }}>
       <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:p-6">
-        {decision.context ? (
+        {context ? (
           <div className="min-w-0 rounded-xl border border-line bg-sunken/50 px-4 py-3 text-sm leading-relaxed break-words text-ink-soft">
-            <Markdown text={decision.context} />
+            <Markdown text={context} />
           </div>
         ) : null}
 
@@ -84,14 +88,14 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
                       option === entry ? 'border-accent bg-accent-wash text-ink' : 'border-line text-ink-soft hover:border-line-strong hover:bg-surface-high',
                     )}
                   >
-                    <span className="min-w-0 flex-1">{entry}</span>
+                    <span className="min-w-0 flex-1">{decisionOption(decision, entry, t)}</span>
                     {decision.defaultOption === entry ? <Badge>{t('decision.dialog.default')}</Badge> : null}
                     {option === entry ? <Check size={15} className="shrink-0 text-accent" /> : null}
                   </button>
                 ))}
               </div>
             ) : null}
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
+            {worktree ? null : <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
               {t(decision.options.length > 0 ? 'decision.dialog.note' : 'decision.dialog.free')}
               <textarea
                 value={text}
@@ -102,10 +106,14 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
                 onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit() }}
                 className="w-full resize-y rounded-md border border-line bg-sunken px-3 py-2 text-sm font-normal text-ink outline-none placeholder:text-ink-faint focus:border-accent"
               />
-            </label>
+            </label>}
             <p className="text-xs text-ink-faint">
               {decisionDue(decision, t)}
-              {decision.defaultOption ? ` ${t('decision.dialog.fallback', { option: decision.defaultOption })}` : ` ${t('decision.dialog.noFallback')}`}
+              {worktree
+                ? ` ${t('decision.worktree.expiry')}`
+                : decision.defaultOption
+                  ? ` ${t('decision.dialog.fallback', { option: decision.defaultOption })}`
+                  : ` ${t('decision.dialog.noFallback')}`}
             </p>
             {answer.isError ? <Banner>{answer.error.message}</Banner> : null}
           </>
@@ -116,11 +124,11 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
 
       <footer className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-4">
         <Link
-          to={`/p/${decision.projectId}/c/${decision.conversationId}`}
+          to={worktree ? `/p/${decision.projectId}#worktrees` : `/p/${decision.projectId}/c/${decision.conversationId}`}
           onClick={() => openDecision(null)}
           className="inline-flex min-h-9 items-center gap-1 text-sm text-ink-faint hover:text-accent"
         >
-          {t('decision.dialog.openSession')}
+          {t(worktree ? 'decision.worktree.open' : 'decision.dialog.openSession')}
           <ArrowUpRight size={14} />
         </Link>
         <div className="flex-1" />
@@ -149,7 +157,7 @@ export function DecisionOutcome({ decision }: { decision: DecisionDto }) {
           ? t('decision.outcome.expired')
           : t('decision.outcome.answered', { name: answer?.byName ?? '?' })}
       </p>
-      {answer?.option ? <p className="font-medium text-ink">{answer.option}</p> : null}
+      {answer?.option ? <p className="font-medium text-ink">{decisionOption(decision, answer.option, t)}</p> : null}
       {answer?.text ? <p className="whitespace-pre-wrap text-ink-soft">{answer.text}</p> : null}
       {decision.status === 'expired' && !answer?.option ? <p className="text-ink-soft">{t('decision.outcome.noAnswer')}</p> : null}
     </div>

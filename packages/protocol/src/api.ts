@@ -546,6 +546,86 @@ export interface WorktreeDto {
   conversationCount: number
 }
 
+/**
+ * État d'un arbre par rapport à la branche par défaut du projet, du plus urgent au plus
+ * anodin : introuvable, du travail non commité que la base n'a pas, des commits que la
+ * base n'a pas, rien que la base n'ait déjà (donc à nettoyer).
+ */
+export type WorktreeState = 'missing' | 'dirty' | 'unmerged' | 'merged'
+
+/** Comment une conversation tient à un arbre : son cwd, ou des fichiers qu'elle y a écrits. */
+export type WorktreeLink = 'worktree' | 'edited'
+
+export interface WorktreeStatusDto {
+  /** Null pour un arbre que git connaît mais que Sillage n'a pas créé. */
+  id: string | null
+  /** Branche, ou nom de l'entrée en base quand la branche est perdue. */
+  name: string
+  path: string
+  branch: string | null
+  /** Vrai pour un arbre créé au shell, hors de Sillage. */
+  external: boolean
+  state: WorktreeState
+  /** Commits propres à la branche, et commits de la base qu'elle n'a pas. */
+  ahead: number
+  behind: number
+  /** Fichiers suivis modifiés, et fichiers non suivis. */
+  modified: number
+  untracked: number
+  /** La fusion dans la base produirait un conflit. */
+  conflicts: boolean
+  lastCommitAt: number | null
+  lastEditAt: number | null
+  conversations: { id: string; link: WorktreeLink }[]
+}
+
+export interface WorktreeStatusListDto {
+  /** Branche de comparaison ; null hors dépôt ou sans aucune branche. */
+  base: string | null
+  computedAt: number
+  /** Faux quand la liste rendue date du calcul précédent, le suivant étant en cours. */
+  fresh: boolean
+  worktrees: WorktreeStatusDto[]
+}
+
+/**
+ * Ce que « Nettoyer » ferait d'un arbre, lu avant de confirmer : rien ne disparaît en
+ * silence, la confirmation liste ce qui serait perdu et ce qui s'arrêterait.
+ */
+export interface WorktreeCleanupPlanDto {
+  path: string
+  name: string
+  branch: string | null
+  state: WorktreeState
+  /** Travail qui partirait avec l'arbre : non commité, non suivi, commits propres à la branche. */
+  modified: number
+  untracked: number
+  ahead: number
+  /** Vrai si la branche peut être supprimée : elle existe et n'est pas la base. */
+  branchDeletable: boolean
+  /** Sessions rattachées encore actives, à archiver. */
+  conversations: { id: string; title: string }[]
+  /** Services et démos dont le répertoire est dans l'arbre. */
+  services: { id: string; label: string; kind: 'app' | 'process' }[]
+  terminals: number
+  /** Carte traitée par une session rattachée, pas encore terminée. */
+  card: { id: string; number: number; title: string } | null
+}
+
+export const worktreeCleanupBodySchema = z.object({
+  path: z.string().min(1),
+  deleteBranch: z.boolean().default(true),
+  archiveSessions: z.boolean().default(true),
+  stopServices: z.boolean().default(true),
+})
+
+export interface WorktreeCleanupResultDto {
+  removed: boolean
+  branchDeleted: boolean
+  archived: number
+  stopped: number
+}
+
 export interface DiffFileDto {
   path: string
   added: number

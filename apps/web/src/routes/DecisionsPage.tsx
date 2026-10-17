@@ -6,6 +6,7 @@ import { DecisionSourceLine, decisionDue } from '../components/decisions/Decisio
 import { Badge, EmptyState, cx } from '../components/ui'
 import { openDecision, useDecisions } from '../lib/decisions'
 import { useTranslate, type MessageKey } from '../lib/i18n'
+import { decisionOption, decisionQuestion } from '../components/decisions/decision-text'
 
 const STATUS: Record<DecisionStatus, { label: MessageKey; tone: 'accent' | 'positive' | 'neutral' | 'caution' }> = {
   pending: { label: 'decision.status.pending', tone: 'accent' },
@@ -75,13 +76,13 @@ function DecisionRow({ decision }: { decision: DecisionDto }) {
     <li>
       <button type="button" onClick={() => openDecision(decision.id)} className="surface flex w-full flex-col gap-1.5 rounded-xl border border-line px-4 py-3 text-left hover:border-line-strong">
         <span className="flex items-start gap-2">
-          <span className="min-w-0 flex-1 text-sm font-medium text-ink">{decision.question}</span>
+          <span className="min-w-0 flex-1 text-sm font-medium text-ink">{decisionQuestion(decision, t)}</span>
           <Badge tone={status.tone}>{t(status.label)}</Badge>
         </span>
         <DecisionSourceLine decision={decision} />
         {decision.status === 'pending' ? <span className="text-xs text-ink-faint">{decisionDue(decision, t)}</span> : null}
         {decision.answer && (decision.answer.option || decision.answer.text) ? (
-          <span className="truncate text-xs text-ink-soft">→ {[decision.answer.option, decision.answer.text].filter(Boolean).join(' — ')}</span>
+          <span className="truncate text-xs text-ink-soft">→ {[decision.answer.option ? decisionOption(decision, decision.answer.option, t) : null, decision.answer.text].filter(Boolean).join(' — ')}</span>
         ) : null}
       </button>
     </li>

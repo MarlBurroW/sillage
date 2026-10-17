@@ -81,6 +81,8 @@ import { registerTreeRoutes } from './routes/tree.js'
 import { registerUserSettingsRoutes } from './routes/user-settings.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
+import type { WorktreeCleanup } from '../worktrees/cleanup.js'
+import type { WorktreeStatusService } from '../worktrees/status-service.js'
 
 /** Routes accessibles sans session. Tout le reste exige un utilisateur. */
 const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health'])
@@ -118,6 +120,8 @@ export async function buildApp(
   board: BoardSync,
   notifications: Notifications,
   decisions: DecisionService,
+  worktreeStatus: WorktreeStatusService,
+  worktreeCleanup: WorktreeCleanup,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -226,7 +230,7 @@ export async function buildApp(
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
   registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
-  registerWorktreeRoutes(app, ctx, terminals)
+  registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
   registerCardRoutes(app, ctx, attachments, board)
   registerBoardLinkRoutes(app, ctx, board)
   registerUserRoutes(app, ctx)
@@ -248,7 +252,7 @@ export async function buildApp(
   registerTreeRoutes(app, ctx)
   registerFileRoutes(app, ctx)
   registerGitViewRoutes(app, ctx)
-  registerGitActionRoutes(app, ctx)
+  registerGitActionRoutes(app, ctx, worktreeStatus)
   registerTerminalRoutes(app, ctx, sessions, terminals)
   await registerWebSocketHub(app, ctx, log, sessions, notifications)
   // Après le hub : c'est lui qui enregistre le plugin websocket dont dépend le terminal.

@@ -18,9 +18,27 @@ export const MAX_DECISION_ANSWER_CHARS = 4000
 export const MAX_DECISION_HOURS = 168
 export const DEFAULT_DECISION_HOURS = 24
 
-/** D'où vient la session qui demande : ce qui l'a ouverte sans personne au clavier. */
-export const decisionSourceKindSchema = z.enum(['schedule', 'webhook', 'board'])
+/**
+ * D'où vient la demande : ce qui a ouvert la session sans personne au clavier, ou, pour
+ * `worktree`, Sillage lui-même, qui propose de nettoyer un arbre fusionné et propre.
+ */
+export const decisionSourceKindSchema = z.enum(['schedule', 'webhook', 'board', 'worktree'])
 export type DecisionSourceKind = z.infer<typeof decisionSourceKindSchema>
+
+/**
+ * Les sources que tout client sait afficher, parce qu'elles existaient avant qu'on
+ * puisse en demander d'autres. Une source venue ensuite n'est servie qu'au client qui la
+ * nomme dans `sources` : un onglet resté sur une interface plus ancienne, le temps d'une
+ * mise à jour, ne reçoit ainsi jamais une décision qu'il ne saurait pas dessiner.
+ */
+export const BASELINE_DECISION_SOURCES: readonly DecisionSourceKind[] = ['schedule', 'webhook', 'board']
+
+/** Les sources qu'un client demande (`?sources=a,b`), les sources de base toujours comprises. */
+export function requestedDecisionSources(raw: unknown): DecisionSourceKind[] {
+  const asked = typeof raw === 'string' ? raw.split(',').map((entry) => entry.trim()) : []
+  const known = asked.filter((entry): entry is DecisionSourceKind => decisionSourceKindSchema.safeParse(entry).success)
+  return [...new Set([...BASELINE_DECISION_SOURCES, ...known])]
+}
 
 export const decisionStatusSchema = z.enum(['pending', 'answered', 'expired', 'withdrawn'])
 export type DecisionStatus = z.infer<typeof decisionStatusSchema>
@@ -46,7 +64,15 @@ export interface DecisionSourceDto {
   label: string
   taskId: string | null
   cardNumber: number | null
+  /** L'arbre qu'une proposition de nettoyage vise ; null pour les autres sources. */
+  worktreePath: string | null
 }
+
+/**
+ * Les choix d'une proposition de nettoyage. Des clés et non des phrases : le serveur ne
+ * connaît pas la langue du lecteur, l'interface les traduit.
+ */
+export const WORKTREE_DECISION_OPTIONS = ['clean', 'keep'] as const
 
 export interface DecisionAnswerDto {
   option: string | null

@@ -59,7 +59,8 @@ export function registerDiscoveryRoutes(
           worktrees: trees.map((tree) => ({
             id: tree.id,
             name: tree.name,
-            branch: tree.baseRef,
+            // Le nom du worktree est sa branche ; `baseRef` ne dit que d'où il part.
+            branch: tree.name,
           })),
           // Ce qu'une tâche obtiendra si elle ne demande rien : le jeton l'emporte sur
           // le projet, dont le préréglage ne vaut que pour un autre CLI.
