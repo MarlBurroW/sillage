@@ -14,10 +14,13 @@ export const COMMIT_PAGE = 30
  * s'ajouter en tête à chaque `git commit` de l'agent, et un rebase peut réécrire tout
  * ce qu'on avait déjà. Relire cent lignes de `git log` ne coûte rien.
  */
-export function useCommits(scope: WorkspaceScope, limit: number) {
+export function useCommits(scope: WorkspaceScope, limit: number, all = false) {
   return useQuery({
-    queryKey: ['commits', scope, limit],
-    queryFn: () => api.get<CommitListDto>(`${workspaceApiBase(scope)}/commits?limit=${limit}`),
+    queryKey: ['commits', scope, limit, all],
+    // Charger la suite ne doit ni vider le graphe ni faire perdre la position de lecture.
+    placeholderData: (previous, query) =>
+      query?.queryKey[1] === scope && query.queryKey[3] === all ? previous : undefined,
+    queryFn: () => api.get<CommitListDto>(`${workspaceApiBase(scope)}/commits?limit=${limit}&all=${all}`),
     // Comme le diff : relu à l'ouverture de l'onglet et à la fin d'un tour, jamais en
     // boucle. Chaque lecture lance un process git.
     staleTime: Infinity,
