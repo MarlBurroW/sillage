@@ -19,7 +19,7 @@ Une modification du dessin demande de toutes les mettre à jour.
 
 ## Couleur et placement
 
-Le vert #436E69 est la couleur de la signature autonome et des icônes d’application.
+L’indigo #535CDA, accent par défaut de l’application, est la couleur de la signature autonome et des icônes d’application.
 Dans les interfaces, `currentColor` conserve la palette du site et les thèmes choisis
 par l’utilisateur. Les favicons suivent la préférence système clair/sombre.
 

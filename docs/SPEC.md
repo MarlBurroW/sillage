@@ -1336,7 +1336,7 @@ donc une vue ajoutée aujourd'hui s'applique aux conversations d'hier.
 la trace du travail et la continuité des échanges.
 
 Dans l’interface, le symbole est tracé en `currentColor` et suit la teinte choisie dans
-les réglages. Les icônes autonomes le portent en blanc sur une tuile verte #436E69.
+les réglages. Les icônes autonomes le portent en blanc sur une tuile indigo #535CDA, l’accent par défaut de l’application.
 
 Le tracé existe forcément en plusieurs exemplaires, parce qu'un favicon et un en-tête de
 README sont chargés comme des images et n'héritent d'aucun jeton : `docs/brand/README.md`
