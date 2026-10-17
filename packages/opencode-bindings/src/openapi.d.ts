@@ -4791,6 +4791,20 @@ export interface components {
                     release_date?: string;
                     attachment?: boolean;
                     reasoning?: boolean;
+                    /** @description Reasoning controls the model accepts, used to build its variants */
+                    reasoning_options?: ({
+                        /** @enum {string} */
+                        type: "effort";
+                        values: string[];
+                    } | {
+                        /** @enum {string} */
+                        type: "toggle";
+                    } | {
+                        /** @enum {string} */
+                        type: "budget_tokens";
+                        min?: number;
+                        max?: number;
+                    })[];
                     temperature?: boolean;
                     tool_call?: boolean;
                     interleaved?: boolean | ("reasoning" | "reasoning_content" | "reasoning_text") | string | {

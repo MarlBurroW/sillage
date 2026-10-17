@@ -2311,6 +2311,7 @@ export const fr: Catalog = {
   'error.error_max_structured_output_retries': "La sortie structurée n'a pas pu être produite",
   'error.compact_failed': "La compaction du contexte a échoué",
   'error.runner_failed': "Le CLI s'est arrêté",
+  'error.opencode_unsupported_version': "OpenCode {version} n'est pas pris en charge : Sillage parle l'API serveur d'OpenCode 1.x, qu'OpenCode 2 a retirée. Installe OpenCode 1.x (opencode-ai) et ne lance pas `opencode upgrade --major`.",
   'error.config_agent_immutable': "Le CLI d'une conversation ne peut pas changer.",
   'error.config_agent_mismatch': "La configuration ne correspond pas au CLI choisi.",
   'error.conversation_busy': "Un tour est en cours : attends sa fin avant de compacter.",
