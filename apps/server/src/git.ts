@@ -243,6 +243,33 @@ export async function setCredentialHelper(cwd: string, helper: string): Promise<
 }
 
 /**
+ * Les helpers de credentials de la configuration locale, dans l'ordre où git les
+ * interroge. Null hors dépôt ou sans aucun helper local : rien à y voir.
+ */
+export async function readLocalCredentialHelpers(cwd: string): Promise<string[] | null> {
+  try {
+    // `-z` : une valeur se termine par un octet nul, ce qui garde la valeur vide de tête.
+    const raw = await git(cwd, ['config', '--local', '-z', '--get-all', 'credential.helper'])
+    return raw.split('\0').slice(0, -1)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Remplace toute la liste des helpers locaux, ordre compris.
+ *
+ * Effacer puis tout réécrire plutôt que `--replace-all` avec un motif : c'est la seule
+ * forme qui garantisse que chaque valeur reste à sa place dans la liste.
+ */
+export async function writeLocalCredentialHelpers(cwd: string, helpers: string[]): Promise<void> {
+  await git(cwd, ['config', '--local', '--unset-all', 'credential.helper'])
+  for (const helper of helpers) {
+    await git(cwd, ['config', '--local', '--add', 'credential.helper', helper])
+  }
+}
+
+/**
  * État de tous les fichiers du dépôt, en un seul appel.
  *
  * Les codes de `--porcelain` sont réduits à ce que montre une arborescence : savoir
