@@ -148,6 +148,16 @@ export const loopSchema = z.object({
 })
 export type Loop = z.infer<typeof loopSchema>
 
+/** Un fichier changé par un tour, entre les deux captures. Null pour un binaire. */
+export const checkpointFileSchema = z.object({
+  path: z.string(),
+  oldPath: z.string().nullable().default(null),
+  kind: z.enum(['added', 'modified', 'deleted', 'renamed', 'copied', 'typechange']),
+  added: z.number().nullable().default(null),
+  removed: z.number().nullable().default(null),
+})
+export type CheckpointFile = z.infer<typeof checkpointFileSchema>
+
 export const sillageEventSchema = z.discriminatedUnion('type', [
   // Cycle de vie
   z.object({
@@ -677,6 +687,37 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
       })
       .nullable()
       .optional(),
+  }),
+  /**
+   * Points de reprise d'un tour : l'état du workspace capturé avant et après.
+   *
+   * Deux événements et non un, parce que ce sont deux moments : `checkpoint.started`
+   * précède le message de l'utilisateur, et `checkpoint.completed` arrive quand la
+   * capture d'après est finie, c'est-à-dire après `turn.completed` et peut-être après
+   * le message suivant. La clé les relie, et désigne les refs git de la capture.
+   */
+  z.object({
+    type: z.literal('checkpoint.started'),
+    key: z.string(),
+  }),
+  z.object({
+    type: z.literal('checkpoint.completed'),
+    key: z.string(),
+    /** `failed` : la capture d'après n'a pas pu être faite, `reason` dit pourquoi. */
+    status: z.enum(['ready', 'failed']),
+    reason: z.string().nullable().default(null),
+    files: z.array(checkpointFileSchema).default([]),
+    /** Vrai quand la liste a été coupée : le diff complet reste lisible par l'API. */
+    truncated: z.boolean().default(false),
+    /** Fichiers apportés par un pull, une fusion ou un rebase pendant le tour, écartés. */
+    excluded: z.number().default(0),
+  }),
+  /** Le workspace a été ramené à l'état d'avant ce tour, à la demande de l'utilisateur. */
+  z.object({
+    type: z.literal('checkpoint.restored'),
+    key: z.string(),
+    written: z.number(),
+    deleted: z.number(),
   }),
   z.object({
     type: z.literal('diff.updated'),

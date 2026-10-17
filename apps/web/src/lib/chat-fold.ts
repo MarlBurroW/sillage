@@ -2,6 +2,7 @@ import type {
   AgentQuestion,
   AgentSkillDto,
   BackgroundTask,
+  CheckpointFile,
   ContentBlock,
   ElicitationField,
   ElicitationValue,
@@ -233,6 +234,30 @@ export interface EditTurn {
   files: EditedFile[]
 }
 
+/**
+ * Point de reprise d'un tour : ce que le tour a changé dans le dépôt, et de quoi y
+ * revenir.
+ *
+ * Rattaché au message utilisateur qui a ouvert le tour, comme `EditTurn` : c'est là
+ * que le fil le montre. `openerId` reste null le temps que ce message arrive, l'ordre
+ * du journal étant « capture d'avant, puis message ».
+ */
+export interface TurnCheckpoint {
+  key: string
+  /** Position de la capture d'avant dans le journal : juste avant le message du tour. */
+  seq: number
+  openerId: string | null
+  /** Texte du message qui a ouvert le tour : nomme le tour, et sert de brouillon au fork. */
+  openerText: string
+  status: 'pending' | 'ready' | 'failed'
+  files: CheckpointFile[]
+  truncated: boolean
+  excluded: number
+  reason: string | null
+  /** Vrai une fois le workspace ramené à l'état d'avant ce tour. */
+  restored: boolean
+}
+
 /** Dernier état de quota connu, tel qu'annoncé par le CLI. */
 export interface RateLimitState {
   type: string
@@ -276,6 +301,8 @@ export interface ChatState {
   thinkingTokens: number | null
   /** Historique des modifications, tour par tour, dérivé de `file.edited`. */
   editTurns: EditTurn[]
+  /** Points de reprise, un par tour capturé, dans l'ordre des tours. */
+  checkpoints: TurnCheckpoint[]
   /**
    * Une compaction est en cours.
    *
@@ -404,6 +431,7 @@ export function emptyChatState(): ChatState {
     rateLimit: null,
     context: null,
     editTurns: [],
+    checkpoints: [],
     turnRunning: false,
     thinkingTokens: null,
     compacting: false,
@@ -866,6 +894,19 @@ export function applyEvent(
     }
 
     case 'message.completed': {
+      // Le message qui suit une capture d'avant est celui qui ouvre le tour capturé.
+      if (event.role === 'user' && !event.parentToolCallId) {
+        const index = state.checkpoints.findIndex((checkpoint) => checkpoint.openerId === null)
+        if (index !== -1) {
+          const text = event.blocks
+            .filter((block) => block.type === 'text')
+            .map((block) => block.text)
+            .join('\n\n')
+          state.checkpoints = state.checkpoints.map((checkpoint, i) =>
+            i === index ? { ...checkpoint, openerId: event.messageId, openerText: text } : checkpoint,
+          )
+        }
+      }
       updateMessage(state, event.messageId, event.role, ts, seq, event.parentToolCallId, (message) => ({
         ...message,
         // Un message arrive en plusieurs morceaux sous le même identifiant : les
@@ -1024,6 +1065,54 @@ export function applyEvent(
 
     case 'context.compaction_started': {
       state.compacting = true
+      break
+    }
+
+    case 'checkpoint.started': {
+      state.checkpoints = [
+        ...state.checkpoints,
+        {
+          key: event.key,
+          seq,
+          openerId: null,
+          openerText: '',
+          status: 'pending',
+          files: [],
+          truncated: false,
+          excluded: 0,
+          reason: null,
+          restored: false,
+        },
+      ]
+      break
+    }
+
+    case 'checkpoint.completed': {
+      state.checkpoints = state.checkpoints.map((checkpoint) =>
+        checkpoint.key === event.key
+          ? {
+              ...checkpoint,
+              status: event.status,
+              files: event.files,
+              truncated: event.truncated,
+              excluded: event.excluded,
+              reason: event.reason,
+            }
+          : checkpoint,
+      )
+      break
+    }
+
+    case 'checkpoint.restored': {
+      state.checkpoints = state.checkpoints.map((checkpoint) =>
+        checkpoint.key === event.key ? { ...checkpoint, restored: true } : checkpoint,
+      )
+      // Repère dans le fil : l'agent, lui, ne sait pas que ses fichiers sont repartis.
+      appendItem(state, {
+        kind: 'notice',
+        id: `restore-${seq}`,
+        text: translate('checkpoint.restored.notice', { written: event.written, deleted: event.deleted }),
+      })
       break
     }
 

@@ -476,6 +476,8 @@ export function registerConversationRoutes(
     // Sans cette copie, la branche s'afficherait vide alors que l'agent, lui, se
     // souvient de tout l'historique conservé (invariant I2).
     const copied = log.copyThrough(id, row.id, body.throughSeq)
+    // Les repères de tour recopiés doivent mener aux mêmes captures.
+    await sessions.inheritCheckpoints(id, row.id)
 
     // Le fork hérite du rattachement : c'est le même travail exploré autrement.
     return reply
@@ -648,6 +650,8 @@ export function registerConversationRoutes(
     }
     if (body.pinned !== undefined) patch.pinned = body.pinned
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
+    // Un fil rangé n'a plus de tour à défaire : ses captures quittent le dépôt.
+    if (body.archived === true && conversation.archivedAt === null) void sessions.dropCheckpoints(id)
 
     if (body.cardId !== undefined) {
       if (body.cardId) assertCardInProject(ctx, body.cardId, conversation.projectId)
@@ -678,6 +682,8 @@ export function registerConversationRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     await loadWritable(id, user.id)
+    // Les captures git d'abord, tant que la ligne dit encore où est le dépôt.
+    await sessions.dropCheckpoints(id)
     // Les fichiers d'abord : la cascade de la base n'efface que les lignes.
     await attachments.removeForConversations([id])
     // L'index de recherche est une table virtuelle : aucune cascade ne l'atteint.

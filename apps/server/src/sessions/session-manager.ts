@@ -46,6 +46,16 @@ import { readAppSettings } from '../settings/app-settings.js'
 import { SkillLibraryLayout } from '../skill-library/layout.js'
 import { resolveConversationCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
+import {
+  CheckpointError,
+  captureSnapshot,
+  checkpointRef,
+  copyCheckpoints,
+  deleteCheckpoints,
+  diffCheckpoint,
+  restoreSnapshot,
+} from '../checkpoints.js'
+import { serialized } from '../git-workflow.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
 interface QueuedMessage {
@@ -84,6 +94,20 @@ interface ManagedRunner {
 
 /** Fenêtre de déduplication des envois (invariant I5). Voir sendMessage(). */
 const DEDUPE_TTL_MS = 5 * 60 * 1000
+
+/**
+ * Point de reprise ouvert pour le tour en cours : la capture d'avant est faite, celle
+ * d'après attend la fin du tour. Les fichiers que les outils touchent sont retenus ici
+ * pour distinguer, au diff, le travail du tour de ce qu'un pull a pu apporter.
+ */
+interface ActiveCheckpoint {
+  key: string
+  cwd: string
+  edited: Set<string>
+}
+
+/** Au-delà, l'événement de fin ne liste plus les fichiers : le fil n'en montre pas tant. */
+const CHECKPOINT_EVENT_FILES = 500
 
 /**
  * Événements qui valent une notification, avec ce qu'ils annoncent.
@@ -155,6 +179,7 @@ export class SessionManager {
    * reprise (voir `expireQueuedMessages`).
    */
   private readonly queues = new Map<string, QueuedMessage[]>()
+  private readonly checkpoints = new Map<string, ActiveCheckpoint>()
   /**
    * Renseigné après coup : le hub WebSocket, qui sait qui regarde quoi, n'existe pas
    * encore quand le gestionnaire est construit.
@@ -907,6 +932,14 @@ export class SessionManager {
             .where(eq(conversations.id, conversationId))
             .run()
         }
+        if (event.type === 'file.edited') {
+          this.checkpoints.get(conversationId)?.edited.add(event.path)
+        }
+        // La fin du tour et la fin de la capture sont deux jalons : la capture part
+        // ici sans être attendue, le statut retombe sans elle.
+        if (event.type === 'turn.completed' || event.type === 'session.ended') {
+          this.closeCheckpoint(conversationId)
+        }
         if (event.type === 'turn.completed') {
           this.log.refreshTurnCount(conversationId)
           // Le CLI ne résume la session qu'une fois le tour fini : c'est le premier
@@ -1241,8 +1274,137 @@ export class SessionManager {
     const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
 
     const runner = await this.ensureRunner(conversation)
-    await runner.send(text, attachments, resolved, skills)
+    // Après le démarrage du runner, qui peut prendre des secondes, et juste avant
+    // l'envoi : la capture doit être au plus près du premier geste de l'agent.
+    await this.openCheckpoint(conversation)
+    try {
+      await runner.send(text, attachments, resolved, skills)
+    } catch (err) {
+      this.checkpoints.delete(conversationId)
+      throw err
+    }
     this.touch(conversationId)
+  }
+
+  /**
+   * Capture l'état du workspace avant le tour, si le projet le demande.
+   *
+   * Un échec n'empêche jamais le message de partir : la capture est un confort, le
+   * tour est le travail. Hors dépôt git, rien n'est tenté ni signalé.
+   */
+  private async openCheckpoint(conversation: ConversationRow): Promise<void> {
+    if (this.checkpoints.has(conversation.id)) return
+    const project = this.db
+      .select({ turnCheckpoints: projects.turnCheckpoints })
+      .from(projects)
+      .where(eq(projects.id, conversation.projectId))
+      .get()
+    if (!project?.turnCheckpoints) return
+
+    const cwd = this.resolveCwd(conversation)
+    const key = randomUUID()
+    try {
+      await captureSnapshot(cwd, checkpointRef(conversation.id, key, 'before'))
+    } catch (err) {
+      if (!(err instanceof CheckpointError && err.code === 'checkpoint_not_repository')) {
+        console.warn(`[checkpoints] capture avant le tour impossible (${conversation.id}) :`, err)
+      }
+      return
+    }
+    this.checkpoints.set(conversation.id, { key, cwd, edited: new Set() })
+    this.log.append(conversation.id, { type: 'checkpoint.started', key })
+  }
+
+  /**
+   * Capture l'état d'après et journalise ce que le tour a changé, sans bloquer.
+   *
+   * Le point est retiré de la table avant la capture : un message en file peut ouvrir
+   * le tour suivant pendant qu'elle tourne, et il lui faut son propre point.
+   */
+  private closeCheckpoint(conversationId: string): void {
+    const active = this.checkpoints.get(conversationId)
+    if (!active) return
+    this.checkpoints.delete(conversationId)
+
+    void (async () => {
+      try {
+        await captureSnapshot(active.cwd, checkpointRef(conversationId, active.key, 'after'))
+        const diff = await diffCheckpoint(active.cwd, conversationId, active.key, [...active.edited])
+        this.log.append(conversationId, {
+          type: 'checkpoint.completed',
+          key: active.key,
+          status: 'ready',
+          reason: null,
+          files: diff.files.slice(0, CHECKPOINT_EVENT_FILES),
+          truncated: diff.files.length > CHECKPOINT_EVENT_FILES,
+          excluded: diff.excluded,
+        })
+      } catch (err) {
+        this.log.append(conversationId, {
+          type: 'checkpoint.completed',
+          key: active.key,
+          status: 'failed',
+          reason: err instanceof Error ? err.message : String(err),
+          files: [],
+          truncated: false,
+          excluded: 0,
+        })
+      }
+    })().catch((err: unknown) => {
+      // La conversation a pu être supprimée pendant la capture : plus de journal où écrire.
+      console.warn(`[checkpoints] capture après le tour perdue (${conversationId}) :`, err)
+    })
+  }
+
+  /**
+   * Ramène le workspace à l'état d'avant un tour.
+   *
+   * Refusé pendant un tour : l'agent écrirait dans des fichiers qu'on est en train de
+   * remettre. Sérialisé avec les actions de l'onglet Git, qui touchent le même dépôt.
+   * L'agent, lui, garde le souvenir du tour : c'est le fork, proposé à côté, qui
+   * ramène aussi la conversation en arrière.
+   */
+  async restoreCheckpoint(
+    conversationId: string,
+    key: string,
+  ): Promise<{ written: number; deleted: number; indexRestored: boolean }> {
+    if (this.isBusy(conversationId)) {
+      throw new HttpError(
+        409,
+        'conversation_busy',
+        'A turn is in progress: wait for it to finish before restoring the workspace.',
+      )
+    }
+    const cwd = this.workingDirectory(conversationId)
+    const result = await serialized(cwd, () =>
+      restoreSnapshot(cwd, checkpointRef(conversationId, key, 'before')),
+    )
+    this.log.append(conversationId, {
+      type: 'checkpoint.restored',
+      key,
+      written: result.written,
+      deleted: result.deleted,
+    })
+    return result
+  }
+
+  /** Donne à une branche les captures de sa source, pour que son journal recopié y mène. */
+  async inheritCheckpoints(fromId: string, toId: string): Promise<void> {
+    try {
+      await copyCheckpoints(this.workingDirectory(toId), fromId, toId)
+    } catch (err) {
+      console.warn(`[checkpoints] copie au fork impossible (${fromId} -> ${toId}) :`, err)
+    }
+  }
+
+  /** Retire les captures d'une conversation qu'on supprime ou qu'on range. Jamais bloquant. */
+  async dropCheckpoints(conversationId: string): Promise<void> {
+    this.checkpoints.delete(conversationId)
+    try {
+      await deleteCheckpoints(this.workingDirectory(conversationId), conversationId)
+    } catch (err) {
+      console.warn(`[checkpoints] nettoyage impossible (${conversationId}) :`, err)
+    }
   }
 
   /**

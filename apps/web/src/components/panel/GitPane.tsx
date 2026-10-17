@@ -1,8 +1,11 @@
 import { GitBranch, Loader, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { GitActionDto } from '@sillage/protocol'
+import type { TurnCheckpoint } from '../../lib/chat-fold'
 import { useGitAction, useGitStatus, useRefreshGit } from '../../lib/git'
 import { useTranslate } from '../../lib/i18n'
+import { clearCheckpoint, usePanelCheckpoint } from '../../lib/panel'
+import { RestoreCheckpointDialog } from '../chat/RestoreCheckpointDialog'
 import { Banner, Button, EmptyState, IconButton } from '../ui'
 import { BranchesSection } from './git/BranchesSection'
 import { ChangesSection } from './git/ChangesSection'
@@ -10,6 +13,7 @@ import { CommitsSection } from './git/CommitsSection'
 import { GitContext, type GitNotice } from './git/context'
 import { OperationBanner, RepoHeader } from './git/RepoHeader'
 import { StashesSection } from './git/StashesSection'
+import { TurnChangesView } from './git/TurnChangesView'
 
 /**
  * L'onglet Git : le dépôt tel qu'il est, et les gestes du quotidien dessus.
@@ -25,10 +29,17 @@ import { StashesSection } from './git/StashesSection'
  */
 export function GitPane({
   scope,
+  conversationId,
+  checkpoints = [],
+  canRestore = false,
   turnRunning,
   onOpenFile,
 }: {
   scope: string
+  /** Absente en vue projet : il n'y a alors pas de tour à montrer. */
+  conversationId?: string
+  checkpoints?: TurnCheckpoint[]
+  canRestore?: boolean
   turnRunning: boolean
   onOpenFile: (path: string) => void
 }) {
@@ -36,6 +47,10 @@ export function GitPane({
   const status = useGitStatus(scope)
   const refresh = useRefreshGit(scope)
   const [notice, setNotice] = useState<GitNotice | null>(null)
+  // Le tour désigné depuis le fil, s'il appartient bien à cette conversation.
+  const checkpointKey = usePanelCheckpoint()
+  const checkpoint = conversationId ? (checkpoints.find((entry) => entry.key === checkpointKey) ?? null) : null
+  const [restoring, setRestoring] = useState<TurnCheckpoint | null>(null)
 
   // Un tour qui se termine a pu commiter, changer de branche, tout réécrire : on relit.
   const wasRunning = useRef(turnRunning)
@@ -73,7 +88,26 @@ export function GitPane({
 
         {status.data && repo === null ? <NotARepository scope={scope} /> : null}
 
-        {repo ? (
+        {repo && checkpoint && conversationId ? (
+          <>
+            <TurnChangesView
+              conversationId={conversationId}
+              checkpoint={checkpoint}
+              label={checkpoint.openerText.replace(/\s+/g, ' ').trim().slice(0, 80) || null}
+              canRestore={canRestore}
+              onRestore={setRestoring}
+              onClose={clearCheckpoint}
+            />
+            <RestoreCheckpointDialog
+              conversationId={conversationId}
+              checkpoint={restoring}
+              openerText={restoring?.openerText ?? ''}
+              onClose={() => setRestoring(null)}
+            />
+          </>
+        ) : null}
+
+        {repo && !checkpoint ? (
           <>
             <RepoHeader repo={repo} refreshing={status.isFetching} onRefresh={refresh} />
             {notice ? <Notice notice={notice} onDismiss={() => setNotice(null)} /> : null}

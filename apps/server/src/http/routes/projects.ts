@@ -145,6 +145,7 @@ export function registerProjectRoutes(
           conversationCount,
           defaultConfig: readProjectDefaults(project.defaultConfig),
           instructionsMode: project.instructionsMode,
+          turnCheckpoints: project.turnCheckpoints,
           activeTerminals: terminals.aliveCount(project.id),
           cardCounts: cardCounts.get(project.id) ?? {},
           pinned: row.pinnedAt !== null,
@@ -304,6 +305,7 @@ export function registerProjectRoutes(
       })
     }
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
+    if (body.turnCheckpoints !== undefined) patch.turnCheckpoints = body.turnCheckpoints
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.update(projects).set(patch).where(eq(projects.id, id))
