@@ -370,11 +370,13 @@ export function SettingsHeading({ title, onClose, onBack, action }: { title: str
 }
 
 /** Flèches pour parcourir ; Entrée/Espace pour choisir, sans fermeture accidentelle. */
-export function SettingOptions({ group, onPick, disabled = false, compact = false }: {
+export function SettingOptions({ group, onPick, disabled = false, compact = false, dense = false }: {
   group: SettingGroup
   onPick: (value: string) => void
   disabled?: boolean
   compact?: boolean
+  /** Lignes serrées, description sur une ligne : pour une longue liste à parcourir d'un coup d'œil. */
+  dense?: boolean
 }) {
   const t = useTranslate()
   const id = useId()
@@ -427,16 +429,16 @@ export function SettingOptions({ group, onPick, disabled = false, compact = fals
                 'flex min-h-11 min-w-0 items-center gap-2 rounded-md border text-left transition-colors',
                 'hover:bg-accent-wash focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
                 'disabled:pointer-events-none disabled:opacity-45',
-                compact ? 'justify-center px-1.5 py-2 text-center text-xs' : 'px-3 py-2 text-sm',
+                compact ? 'justify-center px-1.5 py-2 text-center text-xs' : dense ? 'px-3 py-1 text-sm md:min-h-9 pointer-coarse:min-h-11' : 'px-3 py-2 text-sm',
                 checked ? 'border-accent/40 bg-accent-wash' : compact ? 'border-line' : 'border-transparent',
                 option.tone === 'caution' ? 'text-caution' : checked ? 'text-ink' : 'text-ink-soft',
               )}
             >
-              <span className="min-w-0 flex-1 wrap-anywhere">
+              <span className={cx('min-w-0 flex-1', !dense && 'wrap-anywhere')}>
                 <span className={cx('flex items-center gap-1.5 font-medium', compact && 'justify-center')}>
                   {option.icon ? <span className="shrink-0">{option.icon}</span> : null}{option.label}
                 </span>
-                {!compact && option.hint ? <span className="mt-0.5 block text-xs text-ink-faint">{option.hint}</span> : null}
+                {!compact && option.hint ? <span className={cx('block text-xs text-ink-faint', dense ? 'truncate' : 'mt-0.5')} title={dense ? option.hint : undefined}>{option.hint}</span> : null}
               </span>
               {!compact ? <Check size={16} aria-hidden className={cx('shrink-0 text-accent', !checked && 'invisible')} /> : null}
             </button>

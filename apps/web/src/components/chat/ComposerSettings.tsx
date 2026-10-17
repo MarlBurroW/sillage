@@ -188,18 +188,20 @@ export function ComposerQuickSettings(props: ComposerSettingsProps) {
           {(close) => (
             <>
               <SettingsHeading title={effort ? t('composer.settings.modelEffort') : model.label} onClose={() => close()} />
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-[max(0.75rem,var(--sg-safe-bottom))]">
+              {/* Les modèles défilent seuls ; l'effort reste fixé dessous. Un catalogue de
+                  douze modèles le repoussait sinon hors de vue, au bout du défilement. */}
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
                 {model.notice ? <p className="mb-2 text-xs text-caution">{model.notice}</p> : null}
                 {/* Choisir un modèle laisse le menu ouvert : ses niveaux d'effort
                     viennent de changer, et c'est souvent le choix suivant. */}
-                <SettingOptions group={model} disabled={disabled} onPick={model.onChange} />
-                {effort ? (
-                  <section className="mt-3 border-t border-line pt-3">
-                    <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-ink-soft">{effort.icon}{effort.label}</h3>
-                    <SettingOptions group={effort} disabled={disabled} compact onPick={(value) => { effort.onChange(value); close(true) }} />
-                  </section>
-                ) : null}
+                <SettingOptions group={model} disabled={disabled} dense onPick={model.onChange} />
               </div>
+              {effort ? (
+                <section aria-label={effort.label} className="shrink-0 border-t border-line p-3 pb-[max(0.75rem,var(--sg-safe-bottom))]">
+                  <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-ink-soft">{effort.icon}{effort.label}</h3>
+                  <SettingOptions group={effort} disabled={disabled} compact onPick={(value) => { effort.onChange(value); close(true) }} />
+                </section>
+              ) : <div aria-hidden className="shrink-0 pb-[var(--sg-safe-bottom)]" />}
             </>
           )}
         </SettingsSurface>
@@ -342,6 +344,9 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
       : null
     const focus = target ?? content.current?.querySelector<HTMLElement>('[data-settings-heading]')
     focus?.focus({ preventScroll: true })
+    // Le choix en cours peut être loin dans une longue liste : on l'amène en vue, dans
+    // sa liste seulement, sans faire défiler la page.
+    if (target) target.scrollIntoView({ block: 'nearest' })
   }
   const onCloseAutoFocus = (event: Event) => {
     // Sur téléphone et au clavier, Radix rend le focus au bouton d'ouverture.
