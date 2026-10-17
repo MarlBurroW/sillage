@@ -80,6 +80,7 @@ export function useRefreshGit(scope: WorkspaceScope): () => void {
     void queryClient.invalidateQueries({ queryKey: ['tree-search', scope] })
     void queryClient.invalidateQueries({ queryKey: ['projects'] })
     void queryClient.invalidateQueries({ queryKey: ['worktrees'] })
+    void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
     void queryClient.invalidateQueries({ queryKey: ['branches'] })
   }, [queryClient, scope])
 }

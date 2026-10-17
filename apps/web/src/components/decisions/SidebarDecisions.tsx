@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { openDecision, useDecisions } from '../../lib/decisions'
 import { useTranslate } from '../../lib/i18n'
 import { decisionDue } from './DecisionSource'
+import { decisionQuestion } from './decision-text'
 
 /** Au-delà, la section renvoie à l'historique : la sidebar ne doit pas devenir la file. */
 const SHOWN = 5
@@ -31,7 +32,7 @@ export function SidebarDecisions({ onNavigate }: { onNavigate: () => void }) {
               onClick={() => openDecision(decision.id)}
               className="flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left hover:bg-surface-high"
             >
-              <span className="line-clamp-2 text-sm text-ink">{decision.question}</span>
+              <span className="line-clamp-2 text-sm text-ink">{decisionQuestion(decision, t)}</span>
               <span className="truncate text-[0.6875rem] text-ink-faint">
                 {decision.source.label} · {decisionDue(decision, t)}
               </span>

@@ -162,6 +162,10 @@ const REQUEST_WAIT_MS = {
   steer_session: 20000,
   interrupt_session: 20000,
   reply_session: 20000,
+  // `git worktree add` extrait tout l'arbre : quelques secondes sur un gros dépôt.
+  create_worktree: 60000,
+  // Le premier calcul d'avancement lance plusieurs git par arbre.
+  list_worktrees: 30000,
 }
 
 /** Attente la plus longue de wait_for_session : sous les deux minutes du pont HTTP. */
@@ -625,6 +629,32 @@ const TOOLS = [
       },
       required: ['prompt'],
     },
+  },
+  {
+    name: 'create_worktree',
+    description:
+      "Crée un worktree git de ce projet, par Sillage, et y rattache ta session : l'utilisateur la voit avec sa branche et l'état de l'arbre dans la barre latérale, et retrouve l'arbre dans la vue Chantiers, d'où il le nettoie une fois fusionné. C'est la façon de travailler à l'écart de l'arbre principal : n'utilise pas `git worktree add` toi-même, Sillage ne saurait ni que l'arbre existe ni que tu y travailles. Ton répertoire de travail ne change pas : tu travailles dans l'arbre par chemins absolus, que la réponse te donne. Appelle list_worktrees avant, pour reprendre un arbre qui existe plutôt que d'en créer un second. Pour confier un travail à une nouvelle session dans un arbre à part, préfère start_session avec `worktree`.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        branch: {
+          type: 'string',
+          description:
+            "Nom de la branche, qui nomme aussi l'arbre : lettres, chiffres, . _ - /, par exemple `fix/titre-tronque`. Une branche existante est reprise telle quelle ; un worktree Sillage du même nom est rendu sans être recréé.",
+        },
+        base: {
+          type: 'string',
+          description: "D'où part une branche neuve. Omettre pour la branche par défaut du projet (celle que désigne origin/HEAD, sinon main).",
+        },
+      },
+      required: ['branch'],
+    },
+  },
+  {
+    name: 'list_worktrees',
+    description:
+      "Liste les worktrees de ce projet, y compris ceux créés hors de Sillage, avec leur état par rapport à la branche par défaut (non commité, à fusionner, fusionné, introuvable) et les sessions qui y travaillent. Sert avant create_worktree, pour reprendre un arbre existant, et pour savoir si un chantier est déjà fusionné.",
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'schedule_task',
@@ -2799,7 +2829,9 @@ async function callTool(name, args) {
     name === 'message_session' ||
     name === 'steer_session' ||
     name === 'interrupt_session' ||
-    name === 'reply_session'
+    name === 'reply_session' ||
+    name === 'create_worktree' ||
+    name === 'list_worktrees'
   ) {
     if (!CURRENT_CONVERSATION && !USER) {
       return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
@@ -2835,6 +2867,9 @@ async function callTool(name, args) {
       if (typeof args?.check_script === 'string' && args.check_script.length > MAX_CHECK_SCRIPT_CHARS) {
         return { ...text(`Script de vérification trop long (${MAX_CHECK_SCRIPT_CHARS} caractères au plus).`), isError: true }
       }
+    }
+    if (name === 'create_worktree' && !(typeof args?.branch === 'string' && args.branch.trim())) {
+      return { ...text('Le paramètre `branch` est requis, par exemple `fix/titre-tronque`.'), isError: true }
     }
     if (name === 'create_automation' && !(typeof args?.name === 'string' && args.name.trim())) {
       return { ...text('Le paramètre `name` est requis.'), isError: true }

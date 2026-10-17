@@ -273,7 +273,8 @@ export class CodexRunner implements AgentRunner {
       case 'workspace-write':
         return {
           type: 'workspaceWrite',
-          writableRoots: this.config.additionalDirectories,
+          // Relu à chaque tour : un worktree créé en cours de session s'ouvre au suivant.
+          writableRoots: [...this.config.additionalDirectories, ...(this.ctx.workTrees?.() ?? [])],
           networkAccess: this.config.webSearch,
           excludeTmpdirEnvVar: false,
           excludeSlashTmp: false,

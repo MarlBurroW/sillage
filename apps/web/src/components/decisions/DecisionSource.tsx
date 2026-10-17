@@ -1,4 +1,4 @@
-import { CalendarClock, KanbanSquare, Webhook } from 'lucide-react'
+import { CalendarClock, FolderGit2, KanbanSquare, Webhook } from 'lucide-react'
 import type { DecisionDto, DecisionSourceKind } from '@sillage/protocol'
 import type { translate } from '../../lib/i18n'
 import { useTranslate } from '../../lib/i18n'
@@ -9,9 +9,10 @@ const ICONS: Record<DecisionSourceKind, typeof Webhook> = {
   schedule: CalendarClock,
   webhook: Webhook,
   board: KanbanSquare,
+  worktree: FolderGit2,
 }
 
-/** D'où vient la demande : la tâche, l'automatisation ou l'issue, et le projet. */
+/** D'où vient la demande : la tâche, l'automatisation, l'issue ou la branche, et le projet. */
 export function DecisionSourceLine({ decision, className }: { decision: DecisionDto; className?: string }) {
   const t = useTranslate()
   const Icon = ICONS[decision.source.kind]

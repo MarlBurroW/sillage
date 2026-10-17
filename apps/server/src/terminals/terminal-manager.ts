@@ -365,6 +365,14 @@ export class TerminalManager {
     }
   }
 
+  /** Les shells ouverts dans un dossier ou en dessous : à fermer avant qu'il parte. */
+  underCwd(cwd: string): string[] {
+    const prefix = cwd.endsWith('/') ? cwd : `${cwd}/`
+    return [...this.terminals.values()]
+      .filter((managed) => managed.cwd === cwd || managed.cwd.startsWith(prefix))
+      .map((managed) => managed.id)
+  }
+
   /**
    * Arrêt du daemon : on écrit les écrans puis on tue les process, mais on garde les
    * fichiers. C'est eux qui feront réapparaître les entrées, marquées interrompues.

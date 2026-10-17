@@ -194,7 +194,11 @@ export function useStatusFeed(): void {
         const previous = statuses.get(conversationId)
         const wasBusy = previous === 'running' || previous === 'awaiting_input' || (backgrounds.get(conversationId) ?? 0) > 0
         const busy = status === 'running' || status === 'awaiting_input' || background > 0
-        if (wasBusy && !busy) settledAt.set(conversationId, Date.now())
+        if (wasBusy && !busy) {
+          settledAt.set(conversationId, Date.now())
+          // Un tour fini a pu commiter ou écrire dans un arbre : les chantiers se relisent.
+          void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+        }
         if (busy) settledAt.delete(conversationId)
         statuses.set(conversationId, status)
         backgrounds.set(conversationId, background)
@@ -225,6 +229,7 @@ export function useStatusFeed(): void {
           void queryClient.invalidateQueries({ queryKey: ['projects'] })
           void queryClient.invalidateQueries({ queryKey: ['schedules'] })
           void queryClient.invalidateQueries({ queryKey: ['actions'] })
+          void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
           // L'en-tête du fil ouvert aussi : renommé ou supprimé ailleurs, il doit le
           // montrer sans attendre qu'on en sorte.
           void queryClient.invalidateQueries({ queryKey: ['conversation'] })

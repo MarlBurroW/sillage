@@ -19,6 +19,8 @@ import {
   MAX_DECISION_OPTION_CHARS,
   MAX_DECISION_OPTIONS,
   MAX_DECISION_QUESTION_CHARS,
+  WORKTREE_DECISION_OPTIONS,
+  decisionSourceKindSchema,
   type DecisionDto,
   type DecisionSourceKind,
 } from '@sillage/protocol'
@@ -67,10 +69,33 @@ function stamp(ms: number): string {
  * la réponse lui revient en message : c'est ce qui survit aux redémarrages, là où une
  * demande native du CLI meurt avec son process.
  */
+/** Ce qu'il advient d'un « Nettoyer » : fait, ou refusé parce que l'arbre a changé depuis. */
+export type WorktreeCleanOutcome = 'cleaned' | 'stale'
+
+/** Une proposition de nettoyage d'arbre, telle que la vue des chantiers la détecte. */
+export interface WorktreeProposal {
+  projectId: string
+  userId: string
+  /** La session la plus récente de l'arbre, ou '' s'il n'en a aucune. */
+  conversationId: string
+  branch: string
+  path: string
+  base: string
+  sessions: number
+}
+
+/** Une proposition de nettoyage attend une semaine : l'arbre ne périme pas. */
+const WORKTREE_DECISION_HOURS = 168
+
 export class DecisionService {
   private timer: NodeJS.Timeout | null = null
   private logger: FastifyBaseLogger | null = null
   private ticking = false
+  /**
+   * Le nettoyage, branché après coup : il dépend des terminaux et des sessions, que le
+   * service des décisions n'a pas à connaître. Sans lui, « Nettoyer » est refusé.
+   */
+  private cleanWorktree: ((row: DecisionRow) => Promise<WorktreeCleanOutcome>) | null = null
 
   constructor(
     private readonly ctx: AppContext,
@@ -198,6 +223,7 @@ export class DecisionService {
       resolvedAt: null,
       withdrawnReason: null,
       deliveredAt: null,
+      worktreePath: null,
       createdAt: now,
     }
     this.ctx.db.insert(decisions).values(row).run()
@@ -222,22 +248,120 @@ export class DecisionService {
     return `Demande retirée (« ${pending.question} »).`
   }
 
+  // --- Propositions de nettoyage (par la vue des chantiers) ------------------------
+
+  setWorktreeCleaner(clean: (row: DecisionRow) => Promise<WorktreeCleanOutcome>): void {
+    this.cleanWorktree = clean
+  }
+
+  /**
+   * Propose de nettoyer un arbre fusionné et propre, une seule fois par arbre : une
+   * réponse « Garder », ou une échéance, vaut pour la suite. Seul un retrait (l'arbre a
+   * bougé entre-temps) laisse la question se reposer quand il redevient fusionné.
+   */
+  async proposeWorktreeCleanup(proposal: WorktreeProposal): Promise<boolean> {
+    const asked = this.ctx.db
+      .select({ id: decisions.id })
+      .from(decisions)
+      .where(
+        and(
+          eq(decisions.projectId, proposal.projectId),
+          eq(decisions.worktreePath, proposal.path),
+          inArray(decisions.status, ['pending', 'answered', 'expired']),
+        ),
+      )
+      .get()
+    if (asked) return false
+
+    const now = Date.now()
+    const row: DecisionRow = {
+      id: randomUUID(),
+      projectId: proposal.projectId,
+      conversationId: proposal.conversationId,
+      userId: proposal.userId,
+      sourceKind: 'worktree',
+      sourceLabel: proposal.branch,
+      taskId: null,
+      cardId: null,
+      // En français comme le reste de ce que le serveur écrit (notifications) ;
+      // l'interface, elle, recompose la question et les choix dans la langue du lecteur.
+      question: `${proposal.branch} est fusionnée et propre : nettoyer ?`,
+      context: [
+        `Rien dans l'arbre que ${proposal.base} n'ait déjà.`,
+        `Nettoyer retire l'arbre (${proposal.path}), supprime la branche, archive ${proposal.sessions} session(s) et arrête ce qui y tourne.`,
+      ].join('\n\n'),
+      options: JSON.stringify(WORKTREE_DECISION_OPTIONS),
+      defaultOption: null,
+      expiresAt: now + WORKTREE_DECISION_HOURS * HOUR_MS,
+      status: 'pending',
+      answerOption: null,
+      answerText: null,
+      answeredBy: null,
+      resolvedAt: null,
+      withdrawnReason: null,
+      deliveredAt: null,
+      worktreePath: proposal.path,
+      createdAt: now,
+    }
+    this.ctx.db.insert(decisions).values(row).run()
+    await this.announce(row)
+    return true
+  }
+
+  /** Retire la proposition en attente pour un arbre qui a bougé ou disparu. */
+  withdrawWorktreeProposal(projectId: string, path: string, reason: string): void {
+    const pending = this.ctx.db
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.projectId, projectId), eq(decisions.worktreePath, path), eq(decisions.status, 'pending')))
+      .get()
+    if (pending) this.close(pending, { status: 'withdrawn', withdrawnReason: reason, deliveredAt: Date.now() })
+  }
+
+  /** Les arbres d'un projet qui ont une proposition en attente. */
+  pendingWorktreeProposals(projectId: string): string[] {
+    return this.ctx.db
+      .select({ path: decisions.worktreePath })
+      .from(decisions)
+      .where(and(eq(decisions.projectId, projectId), eq(decisions.sourceKind, 'worktree'), eq(decisions.status, 'pending')))
+      .all()
+      .flatMap((row) => (row.path ? [row.path] : []))
+  }
+
   // --- Gestes de l'utilisateur ------------------------------------------------------
 
-  list(userId: string, status: 'pending' | 'all', limit = 100): DecisionDto[] {
+  /**
+   * `sources` : celles que le client sait afficher (voir `requestedDecisionSources`).
+   * Toutes par défaut, comme pour `get` : seule la route restreint.
+   */
+  list(
+    userId: string,
+    status: 'pending' | 'all',
+    sources: readonly DecisionSourceKind[] = decisionSourceKindSchema.options,
+    limit = 100,
+  ): DecisionDto[] {
     const rows = this.ctx.db
       .select()
       .from(decisions)
-      .where(status === 'pending' ? and(eq(decisions.userId, userId), eq(decisions.status, 'pending')) : eq(decisions.userId, userId))
+      .where(
+        and(
+          eq(decisions.userId, userId),
+          inArray(decisions.sourceKind, [...sources]),
+          status === 'pending' ? eq(decisions.status, 'pending') : undefined,
+        ),
+      )
       .orderBy(status === 'pending' ? decisions.createdAt : desc(decisions.createdAt))
       .limit(limit)
       .all()
     return this.toDtos(rows)
   }
 
-  get(userId: string, id: string): DecisionDto {
+  /** Toutes les sources par défaut : seul un client qui lit pour afficher en restreint la liste. */
+  get(userId: string, id: string, sources: readonly DecisionSourceKind[] = decisionSourceKindSchema.options): DecisionDto {
     const row = this.ctx.db.select().from(decisions).where(eq(decisions.id, id)).get()
-    if (!row || row.userId !== userId) throw new HttpError(404, 'decision_not_found', 'Decision not found.')
+    if (!row || row.userId !== userId || !sources.includes(row.sourceKind)) {
+      throw new HttpError(404, 'decision_not_found', 'Decision not found.')
+    }
     return this.toDtos([row])[0]!
   }
 
@@ -256,6 +380,7 @@ export class DecisionService {
     if (body.option !== null && !parseOptions(row.options).includes(body.option)) {
       throw new HttpError(400, 'decision_unknown_option', 'This option was not offered.')
     }
+    if (row.sourceKind === 'worktree') return this.answerWorktree(userId, row, body)
     const closed = this.close(row, {
       status: 'answered',
       answerOption: body.option,
@@ -264,6 +389,33 @@ export class DecisionService {
     })
     await this.deliver(closed)
     return this.get(userId, id)
+  }
+
+  /**
+   * La réponse à une proposition de nettoyage n'est remise à personne : elle agit. Le
+   * nettoyage se fait avant de clore, pour qu'un échec laisse la question ouverte ; un
+   * arbre qui a bougé depuis la question retire la proposition au lieu de nettoyer.
+   */
+  private async answerWorktree(userId: string, row: DecisionRow, body: { option: string | null; text: string }): Promise<DecisionDto> {
+    if (body.option !== 'clean' && body.option !== 'keep') {
+      throw new HttpError(400, 'decision_option_required', 'Choose one of the options.')
+    }
+    if (body.option === 'clean') {
+      if (!this.cleanWorktree) throw new HttpError(409, 'worktree_clean_unavailable', 'Cleaning up is not available.')
+      const outcome = await this.cleanWorktree(row)
+      if (outcome === 'stale') {
+        this.close(row, { status: 'withdrawn', withdrawnReason: "L'arbre a changé depuis la question : rien n'a été nettoyé.", deliveredAt: Date.now() })
+        throw new HttpError(409, 'worktree_not_merged', 'This worktree changed since the question: nothing was cleaned up.')
+      }
+    }
+    this.close(row, {
+      status: 'answered',
+      answerOption: body.option,
+      answerText: body.text || null,
+      answeredBy: userId,
+      deliveredAt: Date.now(),
+    })
+    return this.get(userId, row.id)
   }
 
   // --- Passages ---------------------------------------------------------------------
@@ -291,6 +443,12 @@ export class DecisionService {
               .map((row) => [row.id, row.archivedAt]),
       )
       for (const row of pending) {
+        // Une proposition de nettoyage ne dépend d'aucune session : la vue des chantiers
+        // la retire quand l'arbre bouge, et l'échéance la clôt sans rien remettre.
+        if (row.sourceKind === 'worktree') {
+          if (row.expiresAt <= now) this.close(row, { status: 'expired', deliveredAt: now })
+          continue
+        }
         const archivedAt = alive.get(row.conversationId)
         if (archivedAt === undefined || archivedAt !== null) {
           // Archiver une session, c'est la ranger : sa demande n'attend plus personne.
@@ -322,6 +480,10 @@ export class DecisionService {
 
   /** La réponse, ou l'échéance, part à la session : c'est ce message qui la relance. */
   private async deliver(row: DecisionRow): Promise<void> {
+    if (row.sourceKind === 'worktree') {
+      this.ctx.db.update(decisions).set({ deliveredAt: Date.now() }).where(eq(decisions.id, row.id)).run()
+      return
+    }
     const exists = this.ctx.db.select({ id: conversations.id }).from(conversations).where(eq(conversations.id, row.conversationId)).get()
     if (exists) {
       try {
@@ -400,6 +562,7 @@ export class DecisionService {
           decisionId: row.id,
           question: row.question,
           sourceLabel: row.sourceLabel,
+          sourceKind: row.sourceKind,
           projectName: project?.name ?? '',
         },
       })
@@ -450,6 +613,7 @@ export class DecisionService {
         label: row.sourceLabel,
         taskId: row.taskId,
         cardNumber: row.cardId ? (cardNumbers.get(row.cardId) ?? null) : null,
+        worktreePath: row.worktreePath,
       },
       question: row.question,
       context: row.context,
