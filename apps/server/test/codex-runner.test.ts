@@ -190,3 +190,60 @@ test('Codex 0.163 : état de lecture ignoré et sorties des outils concurrents a
   assert.ok(!f.events.some((event) => event.type === 'agent.notice' || event.type === 'error'))
   assert.equal(f.statuses.at(-1), 'idle')
 })
+
+/**
+ * Séquence relevée sur codex-cli 0.163.0 (`instant_interrupt` actif par défaut), sonde
+ * `codex-steer-probe.ts` : un `turn/steer` pendant `item/agentMessage/delta` coupe la
+ * réponse, qui ne reçoit jamais d'`item/completed` ; l'écho `userMessage` du steer
+ * suit, puis une nouvelle réponse, dans le même tour.
+ */
+const userEcho = (id: string, text: string) => ({ type: 'userMessage', id, content: [{ type: 'text', text, text_elements: [] }] })
+const answer = (id: string, text: string) => ({ type: 'agentMessage', id, text, phase: 'final_answer', memoryCitation: null })
+const delta = (itemId: string, text: string) => ({ method: 'item/agentMessage/delta', params: { threadId: 'root', turnId: 'turn-1', itemId, delta: text } })
+
+async function settled(check: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.ok(check(), 'La séquence rejouée doit aboutir.')
+}
+
+test('steer pendant la réponse (instant_interrupt) : écho unique, réponse coupée close, un seul tour', async (t) => {
+  const f = await runnerFixture(t)
+  await f.emit([
+    itemEvent(userEcho('u1', 'liste'), 'item/started'), itemEvent(userEcho('u1', 'liste')),
+    itemEvent(answer('cut', ''), 'item/started'), delta('cut', 'un\n'), delta('cut', 'deux\n'),
+  ])
+  const steer = JSON.stringify({ notifications: [
+    delta('cut', 'trois\n'),
+    itemEvent(userEcho('u2', 'stop'), 'item/started'), itemEvent(userEcho('u2', 'stop')),
+    itemEvent(answer('next', ''), 'item/started'), delta('next', 'PINEAPPLE'), itemEvent(answer('next', 'PINEAPPLE')),
+    // Hypothétique sur 0.163.0, mais un CLI qui clôt tard ne doit pas doubler le texte.
+    itemEvent(answer('cut', 'un\ndeux\ntrois\nquatre\n')),
+    done(),
+  ] })
+  assert.equal(await f.runner.steer(`fixture:${steer}`, [], [], []), true)
+  await settled(() => f.events.some((event) => event.type === 'turn.completed'))
+
+  const steerRecord = (await f.records()).find((record) => record.method === 'turn/steer')
+  assert.equal(steerRecord.params.expectedTurnId, 'turn-1')
+  const completed = f.events.filter((event) => event.type === 'message.completed')
+  assert.deepEqual(completed.map((event) => event.role), ['user', 'user', 'assistant', 'assistant'])
+  const [cut, next] = completed.slice(2)
+  assert.ok(cut?.type === 'message.completed' && next?.type === 'message.completed')
+  assert.equal(cut.messageId, 'cut')
+  assert.deepEqual(cut.blocks, [{ type: 'text', text: 'un\ndeux\ntrois\n' }])
+  assert.equal(next.messageId, 'next')
+  assert.equal(f.events.filter((event) => event.type === 'turn.completed').length, 1)
+  assert.equal(f.statuses.at(-1), 'idle')
+  for (const event of f.events) sillageEventSchema.parse(event)
+})
+
+test('une réponse coupée sans item/completed est close avant la fin du tour', async (t) => {
+  const f = await runnerFixture(t)
+  await f.emit([itemEvent(answer('cut', ''), 'item/started'), delta('cut', 'partiel'), done()])
+  const types = f.events.map((event) => (event.type === 'message.completed' ? `${event.role}:${event.messageId}` : event.type))
+  const closed = types.indexOf('assistant:cut')
+  assert.ok(closed !== -1 && closed < types.indexOf('turn.completed'))
+  // Un message ordinaire, clos par le CLI, ne l'est qu'une fois.
+  await f.emit([itemEvent(answer('whole', ''), 'item/started'), delta('whole', 'ok'), itemEvent(answer('whole', 'ok')), done('turn-2')])
+  assert.equal(f.events.filter((event) => event.type === 'message.completed' && event.messageId === 'whole').length, 1)
+})

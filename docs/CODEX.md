@@ -59,6 +59,27 @@ le vrai runner.
 `model/list` renvoie `gpt-6.1-sol` par défaut ; le catalogue reste lu dynamiquement.
 Les bindings sont vérifiés contre ce même binaire, isolé du CLI de production.
 
+## Steer pendant la réponse
+
+Depuis 0.162.1, `instant_interrupt` est actif par défaut : `turn/steer` coupe la
+réponse en cours. Sondé le 17 octobre 2026 sur 0.163.0 (`gpt-6-astra`), steer envoyé
+au milieu des `item/agentMessage/delta` :
+
+1. `turn/steer` répond `{ turnId }`, le même tour ; quelques deltas de la réponse
+   coupée arrivent encore après l'accusé.
+2. Cette réponse n'a **jamais** d'`item/completed`, et `thread/read` ne la garde pas.
+3. Écho `userMessage` du steer (`item/started` puis `item/completed`), nouvelle
+   réponse `agentMessage` complète, puis un seul `turn/completed` au statut `completed`.
+
+Le runner ignore l'écho, puisque le message est journalisé par `steer`, donc il
+apparaît une seule fois. Il clôt la réponse coupée avec le texte déjà reçu en flux,
+à l'arrivée de l'écho ou, à défaut, avant `turn.completed`. Sans cela, elle
+n'existerait dans le journal que sous forme de deltas, absente de la recherche, du
+transfert vers un autre CLI et de `read_conversation`. Un `item/completed` tardif pour
+le même item serait ignoré. La séquence est rejouée dans `test/codex-runner.test.ts` ;
+la sonde manuelle `pnpm --filter @sillage/server codex:steer-probe` la relève sur le
+vrai CLI (`--raw` pour la séquence app-server brute, sans Sillage).
+
 ## Fork
 
 Le fork passe par `thread/fork { lastTurnId, excludeTurns }` : le dernier tour conservé,
