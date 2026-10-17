@@ -295,6 +295,13 @@
       "when": 1792017288652,
       "tag": "0041_agent_request_user",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1792099429244,
+      "tag": "0042_conversation_handoffs",
+      "breakpoints": true
     }
   ]
 }

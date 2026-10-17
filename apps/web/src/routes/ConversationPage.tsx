@@ -2,6 +2,7 @@ import { TooltipButton } from '../components/ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
   ArrowDown,
+  ArrowRightLeft,
   Info,
   X,
   FileText,
@@ -22,6 +23,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AGENT_CAPABILITIES } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
+import { HandoffDialog } from '../components/chat/HandoffDialog'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
 import { Composer } from '../components/chat/Composer'
 import { MobileNavigationButton } from '../components/MobileNavigation'
@@ -44,6 +46,7 @@ import {
   compactConversation,
   conversationsKey,
   forkConversation,
+  useHandoff,
   interruptConversation,
   sendMessage,
   steerConversation,
@@ -284,6 +287,8 @@ export function ConversationPage() {
   /** Dernier tour atteint par un saut, mis en évidence le temps qu'on le repère. */
   const [flashed, setFlashed] = useState<string | null>(null)
   const [metaOpen, setMetaOpen] = useState(false)
+  /** Dialogue « Continuer dans un autre CLI » : le geste change d'outil, il se confirme. */
+  const [handoffOpen, setHandoffOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
   const [instructionsOpen, setInstructionsOpen] = useState(false)
 
@@ -775,6 +780,9 @@ export function ConversationPage() {
     [conversationId, navigate, queryClient, t],
   )
 
+  // Lu seulement quand le dialogue de détails est ouvert : la plupart des fils n'en ont pas.
+  const handoff = useHandoff(conversationId, metaOpen && Boolean(conversation?.handoffFromId))
+
   // `config` est nul exactement quand la conversation l'est, mais le typage ne le sait
   // pas : il rejoint la garde plutôt que d'être forcé plus bas.
   if (!conversationId || !conversation || !config) return null
@@ -789,6 +797,9 @@ export function ConversationPage() {
   const worktree = worktrees?.find((entry) => entry.id === conversation.worktreeId)
   const origin = conversation.forkedFromId
     ? allConversations?.find((entry) => entry.id === conversation.forkedFromId)
+    : undefined
+  const continued = conversation.handoffFromId
+    ? allConversations?.find((entry) => entry.id === conversation.handoffFromId)
     : undefined
 
   const compact = async () => {
@@ -961,6 +972,9 @@ export function ConversationPage() {
               <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
                 {t('conversation.meta.details')}
               </MenuItem>
+              <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setHandoffOpen(true)}>
+                {t('conversation.handoff.menu')}
+              </MenuItem>
             </Menu>
           </span>
           <span className="shrink-0 @min-[44rem]/thread:hidden">
@@ -973,6 +987,9 @@ export function ConversationPage() {
             >
               <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
                 {t('conversation.meta.details')}
+              </MenuItem>
+              <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setHandoffOpen(true)}>
+                {t('conversation.handoff.menu')}
               </MenuItem>
               <MenuItem icon={<GaugeCircle size={14} />} onSelect={() => setUsageOpen(true)}>
                 {t('conversation.usage.label')}
@@ -1059,6 +1076,20 @@ export function ConversationPage() {
                   </Link>
                 ) : null}
 
+                {/* Une suite dit quel fil elle continue, et avec quel CLI il était mené :
+                    c'est ce qui explique que l'agent connaisse un travail que ce fil ne
+                    montre pas. */}
+                {continued ? (
+                  <Link
+                    to={`/p/${continued.projectId}/c/${continued.id}`}
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
+                    title={t('conversation.meta.continues', { title: continued.title, agent: AGENT_LABELS[continued.agent] })}
+                  >
+                    <AgentIcon agent={continued.agent} size={10} />
+                    <span className="max-w-32 truncate">{continued.title}</span>
+                  </Link>
+                ) : null}
+
                 {/* Le chemin de retour vers le chantier : depuis une session, on remonte
                     au travail qu'elle traite. Le titre est celui de la carte au moment du
                     chargement, pas une copie figée à la création. */}
@@ -1084,6 +1115,23 @@ export function ConversationPage() {
                     <Terminal size={10} />
                     {t('conversation.meta.apiControlled', { label: conversation.origin.label })}
                   </span>
+                ) : null}
+
+                {/* Ce que l'agent d'une suite sait de sa source : le bloc tel qu'il
+                    l'a reçu, pour vérifier ce qui lui manque avant de le lui redire. */}
+                {handoff.data ? (
+                  <details className="basis-full text-xs">
+                    <summary className="cursor-pointer text-ink-soft">
+                      {t('conversation.meta.handoff')} ·{' '}
+                      {t('conversation.meta.handoffSize', {
+                        kilobytes: Math.max(1, Math.round(handoff.data.bytes / 1000)),
+                        budget: Math.round(handoff.data.budgetTokens / 1000),
+                      })}
+                    </summary>
+                    <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-sunken p-2 text-[0.6875rem] whitespace-pre-wrap text-ink-soft">
+                      {handoff.data.text}
+                    </pre>
+                  </details>
                 ) : null}
 
                 {/* Tout vient du fold : le journal est la seule source d'affichage (I2),
@@ -1122,6 +1170,10 @@ export function ConversationPage() {
           </p>
           <p>{t('conversation.fork.confirm.unaffected')}</p>
         </ConfirmDialog>
+
+        {handoffOpen ? (
+          <HandoffDialog open={handoffOpen} onOpenChange={setHandoffOpen} source={conversation} />
+        ) : null}
 
         <ThreadSearch
           scroller={scroller}
