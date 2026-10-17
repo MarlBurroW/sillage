@@ -300,6 +300,7 @@ export async function readFileStates(cwd: string): Promise<Map<string, FileState
 }
 
 export interface Commit {
+  parents: string[]
   hash: string
   shortHash: string
   subject: string
@@ -321,7 +322,7 @@ function parseRefs(decoration: string | undefined): string[] {
 }
 
 /**
- * Commits de la branche courante, du plus récent au plus ancien.
+ * Historique topologique : chaque enfant précède ses parents, même si les dates se croisent.
  *
  * Un commit de plus que demandé est lu, et non renvoyé : c'est ce qui dit s'il reste
  * quelque chose derrière, sans avoir à compter l'historique entier.
@@ -333,29 +334,31 @@ export async function readCommits(
   cwd: string,
   limit: number,
   skip: number,
+  all = false,
 ): Promise<{ commits: Commit[]; hasMore: boolean } | null> {
-  const status = await readGitStatus(cwd)
-  if (!status) return null
-
-  let raw: string
   try {
-    raw = await git(cwd, [
-      'log',
-      `--max-count=${limit + 1}`,
-      `--skip=${skip}`,
-      // Octet nul entre les champs, saut de ligne entre les commits : un sujet peut
-      // contenir n'importe quel caractère imprimable, y compris une tabulation.
-      '--format=%H%x00%h%x00%s%x00%an%x00%ct%x00%D',
-    ])
+    if ((await git(cwd, ['rev-parse', '--is-inside-work-tree'])).trim() !== 'true') return null
   } catch {
-    return { commits: [], hasMore: false }
+    return null
   }
+  const hasHead = await git(cwd, ['rev-parse', '--verify', 'HEAD']).then(() => true).catch(() => false)
+  if (!all && !hasHead) return { commits: [], hasMore: false }
+
+  // Les refs explicites évitent d’inclure les commits techniques des stashs ou des points de reprise.
+  const raw = await git(cwd, [
+    'log',
+    '--topo-order',
+    ...(all ? ['--branches', '--remotes', '--tags', ...(hasHead ? ['HEAD'] : [])] : []),
+    `--max-count=${limit + 1}`,
+    `--skip=${skip}`,
+    '--format=%H%x00%h%x00%s%x00%an%x00%ct%x00%D%x00%P',
+  ])
 
   const commits = raw
     .split('\n')
     .filter((line) => line.trim().length > 0)
     .map((line) => {
-      const [hash, shortHash, subject, author, ts, decoration] = line.split('\0')
+      const [hash, shortHash, subject, author, ts, decoration, parents] = line.split('\0')
       return {
         hash: hash ?? '',
         shortHash: shortHash ?? '',
@@ -363,6 +366,7 @@ export async function readCommits(
         author: author ?? '',
         ts: Number(ts) * 1000 || 0,
         refs: parseRefs(decoration),
+        parents: parents?.split(' ').filter(Boolean) ?? [],
       }
     })
     .filter((commit) => commit.hash.length > 0)

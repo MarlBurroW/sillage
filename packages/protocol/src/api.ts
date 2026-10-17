@@ -524,6 +524,8 @@ export interface DiffFileDto {
 
 /** Un commit de la branche courante, tel que `git log` le rend. */
 export interface CommitDto {
+  /** Parents dans l’ordre Git ; le premier poursuit la branche. */
+  parents: string[]
   /** Hash complet : c'est lui qui sert de clé et qu'on redemande pour le diff. */
   hash: string
   shortHash: string
@@ -559,7 +561,8 @@ export interface CommitDiffDto {
 }
 
 export const commitListQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  all: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  limit: z.coerce.number().int().min(1).max(2000).default(30),
   skip: z.coerce.number().int().min(0).default(0),
 })
 
