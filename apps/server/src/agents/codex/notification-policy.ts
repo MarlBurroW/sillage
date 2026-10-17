@@ -5,6 +5,8 @@ export const NOTIFICATION_POLICY: Record<string, 'handled' | 'notice' | 'ignore'
   'error': 'handled',
   'thread/started': 'handled',
   'thread/status/changed': 'handled',
+  // L'état lu/non lu du CLI ne pilote pas celui du journal Sillage.
+  'thread/readState/changed': 'ignore',
   'thread/archived': 'notice',
   'thread/deleted': 'notice',
   'thread/unarchived': 'notice',
