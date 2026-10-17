@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import type { McpServer, McpServerStatus } from '@sillage/protocol'
 import { translate, useTranslate } from '../../lib/i18n'
 import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
+import { toolButtonClass } from './composer-buttons'
 
 /**
  * Serveurs MCP actifs sur la conversation, et l'isolation stricte de Claude.
@@ -25,6 +26,8 @@ import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
 
 export interface McpControlProps {
   presentation?: 'menu' | 'panel'
+  /** Composer de téléphone : bouton plus petit à l'œil, même cible au doigt. */
+  narrow?: boolean
   /** Registre de Sillage : le seul que ce contrôle peut activer ou désactiver. */
   servers: McpServer[]
   /**
@@ -62,6 +65,7 @@ export function McpControl({
   strict,
   onStrictChange,
   disabled = false,
+  narrow = false,
 }: McpControlProps) {
   const t = useTranslate()
   const CheckboxItem = presentation === 'panel' ? McpSwitch : MenuCheckboxItem
@@ -193,19 +197,13 @@ export function McpControl({
           disabled={disabled}
           aria-label={t('composer.mcp.label', { summary })}
           title={summary}
-          className={cx(
-            'flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md px-2 text-xs tabular-nums md:min-h-8 pointer-coarse:min-h-11',
-            'border border-transparent bg-transparent text-ink-faint transition-colors',
-            'hover:bg-surface-high hover:text-ink',
-            'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-            'data-[state=open]:bg-surface-high data-[state=open]:text-ink',
-            'disabled:pointer-events-none disabled:opacity-45',
-          )}
+          className={cx(toolButtonClass(narrow), 'relative tabular-nums')}
         >
-          <PlugZap size={14} className="shrink-0" />
+          <PlugZap size={16} className="shrink-0" />
           {/* Rien à zéro : un « 0 » se lirait comme une panne, pour la même raison
-              que le compte d'outils reste muet tant que le CLI n'a pas répondu. */}
-          {count > 0 ? <span>{count}</span> : null}
+              que le compte d'outils reste muet tant que le CLI n'a pas répondu. En
+              pastille, pour que le bouton garde la taille d'une icône. */}
+          {count > 0 ? <span aria-hidden className="absolute top-0.5 right-0 min-w-3.5 rounded-full bg-accent-wash px-1 text-center text-[0.625rem] leading-3.5 text-ink">{count}</span> : null}
         </TooltipButton>
       }
     >

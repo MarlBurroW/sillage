@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 import { useTranslate } from '../../lib/i18n'
 import { useMediaQuery } from '../../lib/viewport'
 import { cx } from '../ui'
+import { toolButtonClass } from './composer-buttons'
 import { SettingOptions, SettingsHeading, SettingsPanel } from './SettingsPanel'
 
 /**
@@ -79,28 +80,43 @@ export interface SummarySegment {
   tone?: SettingTone
 }
 
-interface ComposerSettingsProps {
+/** Les deux catégories réunies dans une seule puce, toujours présente sous le texte. */
+export const MODEL_EFFORT_KEYS: readonly string[] = ['model', 'effort']
+
+export interface ComposerSettingsProps {
   groups: SettingGroup[]
   summary: SummarySegment[]
-  /** Clés des catégories à montrer sous le texte, dans l'ordre ; les inconnues sont ignorées. */
+  /**
+   * Catégories ajoutées à côté de la puce modèle·effort, dans l'ordre ; les clés
+   * inconnues, et `model`/`effort` déjà dans la puce, sont ignorées.
+   */
   pinned: string[]
-  onPin?: (key: string, pinned: boolean) => void
+  onPinnedChange?: (next: string[]) => void
+  /**
+   * Composer étroit, c'est-à-dire téléphone : la puce seule, qui ouvre le panneau
+   * complet, sans épingles ni bouton de réglages à part.
+   */
+  narrow: boolean
   mcp?: ReactNode
   feedback?: ReactNode
   disabled?: boolean
   inputRef: RefObject<HTMLTextAreaElement | null>
 }
 
-export function ComposerSettings({ groups, summary, pinned, onPin, mcp, feedback, disabled = false, inputRef }: ComposerSettingsProps) {
+/** Les catégories épinglées qui existent en ce moment, puce modèle·effort exclue. */
+export function pinnedExtras(groups: SettingGroup[], pinned: string[]): SettingGroup[] {
+  return pinned.flatMap((key) => MODEL_EFFORT_KEYS.includes(key) ? [] : groups.find((group) => group.key === key) ?? [])
+}
+
+/**
+ * Ce que le bouton « tous les réglages » doit signaler : le mode plan et les
+ * garde-fous retirés qui ne sont pas déjà sous les yeux dans une puce.
+ */
+function useStatus({ groups, summary, pinned, narrow }: Pick<ComposerSettingsProps, 'groups' | 'summary' | 'pinned' | 'narrow'>) {
   const t = useTranslate()
-  // Une clé épinglée dont la catégorie manque en ce moment (effort sans niveaux sur ce
-  // modèle, compte unique) n'est pas une erreur : elle reviendra avec la catégorie.
-  const quick = pinned.flatMap((key) => groups.find((group) => group.key === key) ?? [])
-  const quickKeys = new Set(quick.map((group) => group.key))
-  // Un garde-fou retiré se voit déjà sur sa puce quand elle est épinglée : le point
-  // du bouton « tous les réglages » ne signale que ce qui n'est pas sous les yeux.
-  const warnings = summary.filter((segment) => segment.tone === 'caution' && !quickKeys.has(segment.key))
-  const plan = groups.find((group) => (group.key === 'mode' || group.key === 'permission') && group.value === 'plan')
+  const visible = new Set([...MODEL_EFFORT_KEYS, ...(narrow ? [] : pinnedExtras(groups, pinned).map((group) => group.key))])
+  const warnings = summary.filter((segment) => segment.tone === 'caution' && !visible.has(segment.key))
+  const plan = groups.find((group) => (group.key === 'mode' || group.key === 'permission') && group.value === 'plan' && !visible.has(group.key))
   const statusLabels = [
     ...(plan ? [plan.options.find((option) => option.value === plan.value)?.label ?? plan.value] : []),
     ...warnings.map((segment) => {
@@ -109,102 +125,183 @@ export function ComposerSettings({ groups, summary, pinned, onPin, mcp, feedback
     }),
   ]
   const summaryLabel = [
-    ...summary.filter((segment) => segment.tone !== 'caution' && segment.key !== plan?.key && !quickKeys.has(segment.key)).map((segment) => segment.label),
+    ...summary.filter((segment) => segment.tone !== 'caution' && segment.key !== plan?.key && !visible.has(segment.key)).map((segment) => segment.label),
     ...statusLabels,
   ].join(' · ')
+  return { statusLabels, summaryLabel, caution: warnings.length > 0 }
+}
 
+/** Le panneau complet, sur ordinateur derrière son bouton, au téléphone derrière la puce. */
+function FullPanel({ groups, pinned, onPinnedChange, narrow, mcp, feedback, disabled, close }: ComposerSettingsProps & { close: (resumeTyping?: boolean) => void }) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        {quick.map((group) => {
-          const value = group.options.find((option) => option.value === group.value)?.label || group.value || t('composer.select.default')
-          const label = t('composer.settings.quick', { setting: group.label, value })
-          if (group.active !== undefined) return <ToggleChip key={group.key} group={group} label={label} disabled={disabled} />
-          return (
-            <SettingsSurface
-              key={group.key}
-              label={group.label}
-              inputRef={inputRef}
-              disabled={disabled}
-              quick
-              trigger={
-                <TooltipButton type="button" disabled={disabled} aria-label={label} title={label}
-                  className={cx(
-                    chipClass,
-                    'data-[state=open]:border-accent/50 data-[state=open]:bg-accent-wash',
-                    group.key === 'model' ? 'flex-[1.3] font-medium text-ink' : 'flex-1 text-ink-soft',
-                    // Au-delà de deux puces, chacune garde une largeur lisible et la
-                    // ligne se replie plutôt que d'écraser les valeurs.
-                    quick.length > 2 && (group.key === 'model' ? 'min-w-[9rem]' : 'min-w-[6.5rem]'),
-                  )}
-                >
-                  <span className="hidden shrink-0 text-accent @min-[22rem]:inline-flex">{group.icon}</span>
-                  <span className="min-w-0 flex-1 truncate text-left">{value}</span>
-                  <ChevronDown size={12} className="shrink-0 text-ink-faint" />
-                </TooltipButton>
-              }
-            >
-              {(close) => (
-                <>
-                  <SettingsHeading title={group.label} onClose={() => close()} />
-                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-[max(0.75rem,var(--sg-safe-bottom))]">
-                    {group.notice ? <p className="mb-2 text-xs text-caution">{group.notice}</p> : null}
-                    <SettingOptions group={group} disabled={disabled} onPick={(value) => { group.onChange(value); close(true) }} />
-                  </div>
-                </>
-              )}
-            </SettingsSurface>
-          )
-        })}
-        <SettingsSurface
-          label={t('composer.settings.title')}
-          inputRef={inputRef}
-          disabled={disabled}
-          trigger={
-            <TooltipButton type="button" disabled={disabled}
-              aria-label={t('composer.settings.label', { summary: summaryLabel })}
-              title={[t('composer.settings.all'), ...statusLabels].join(' · ')}
-              className="relative ml-auto flex size-11 shrink-0 items-center justify-center rounded-md text-ink-soft hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent data-[state=open]:bg-accent-wash disabled:pointer-events-none disabled:opacity-45"
-            >
-              <SlidersHorizontal size={16} />
-              {statusLabels.length > 0 ? <span aria-hidden className={cx('absolute right-2 top-2 size-1.5 rounded-full', warnings.length > 0 ? 'bg-caution' : 'bg-accent')} /> : null}
-            </TooltipButton>
-          }
-        >
-          {(close) => <SettingsPanel groups={groups} pinned={pinned} onPin={onPin} disabled={disabled} extra={mcp} feedback={feedback} onDone={() => close(true)} onClose={() => close()} />}
-        </SettingsSurface>
-      </div>
-    </div>
+    <SettingsPanel groups={groups} pinned={pinned} onPinnedChange={narrow ? undefined : onPinnedChange} disabled={disabled}
+      extra={mcp} feedback={feedback} onDone={() => close(true)} onClose={() => close()} />
   )
 }
 
-const chipClass = cx(
-  'flex min-h-11 min-w-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-xs @min-[34rem]:max-w-80 @min-[34rem]:flex-initial',
-  'hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-  'disabled:pointer-events-none disabled:opacity-45',
-)
+/**
+ * La puce modèle·effort et, sur ordinateur, les réglages épinglés à côté.
+ *
+ * Modèle et effort se choisissent presque toujours ensemble, et l'effort dépend du
+ * modèle : une seule puce leur suffit, et laisse la place aux réglages qu'on ajoute.
+ */
+export function ComposerQuickSettings(props: ComposerSettingsProps) {
+  const { groups, pinned, narrow, disabled = false, inputRef } = props
+  const t = useTranslate()
+  const model = groups.find((group) => group.key === 'model')
+  const effort = groups.find((group) => group.key === 'effort')
+  const extras = narrow ? [] : pinnedExtras(groups, pinned)
+  const { statusLabels, caution } = useStatus(props)
+  if (!model) return null
+
+  const modelValue = valueLabel(model, t)
+  const effortValue = effort ? valueLabel(effort, t) : null
+  const label = t('composer.settings.quick', {
+    setting: effort ? t('composer.settings.modelEffort') : model.label,
+    value: [modelValue, effortValue].filter(Boolean).join(' · '),
+  })
+
+  const chip = (
+    <TooltipButton type="button" disabled={disabled}
+      aria-label={narrow && statusLabels.length > 0 ? [label, ...statusLabels].join(' · ') : label}
+      title={narrow ? [label, ...statusLabels].join(' · ') : label}
+      className={cx(chipClass(narrow), 'min-w-0 font-medium text-ink', narrow ? 'flex-initial' : 'shrink-0 max-w-80')}
+    >
+      {narrow ? null : <span className="shrink-0 text-accent">{model.icon}</span>}
+      <span className="min-w-0 truncate text-left">
+        {modelValue}{effortValue ? <span className="font-normal text-ink-soft"> · {effortValue}</span> : null}
+      </span>
+      {/* Au téléphone, pas de bouton de réglages à part : la puce porte son signal. */}
+      {narrow && statusLabels.length > 0 ? <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', caution ? 'bg-caution' : 'bg-accent')} /> : null}
+      <ChevronDown size={12} className="shrink-0 text-ink-faint" />
+    </TooltipButton>
+  )
+
+  return (
+    <>
+      {narrow ? (
+        <SettingsSurface label={t('composer.settings.title')} inputRef={inputRef} disabled={disabled} trigger={chip}>
+          {(close) => <FullPanel {...props} close={close} />}
+        </SettingsSurface>
+      ) : (
+        <SettingsSurface label={t('composer.settings.modelEffort')} inputRef={inputRef} disabled={disabled} quick trigger={chip}>
+          {(close) => (
+            <>
+              <SettingsHeading title={effort ? t('composer.settings.modelEffort') : model.label} onClose={() => close()} />
+              {/* Les modèles défilent seuls ; l'effort reste fixé dessous. Un catalogue de
+                  douze modèles le repoussait sinon hors de vue, au bout du défilement. */}
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+                {model.notice ? <p className="mb-2 text-xs text-caution">{model.notice}</p> : null}
+                {/* Choisir un modèle laisse le menu ouvert : ses niveaux d'effort
+                    viennent de changer, et c'est souvent le choix suivant. */}
+                <SettingOptions group={model} disabled={disabled} dense onPick={model.onChange} />
+              </div>
+              {effort ? (
+                <section aria-label={effort.label} className="shrink-0 border-t border-line p-3 pb-[max(0.75rem,var(--sg-safe-bottom))]">
+                  <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-ink-soft">{effort.icon}{effort.label}</h3>
+                  <SettingOptions group={effort} disabled={disabled} compact onPick={(value) => { effort.onChange(value); close(true) }} />
+                </section>
+              ) : <div aria-hidden className="shrink-0 pb-[var(--sg-safe-bottom)]" />}
+            </>
+          )}
+        </SettingsSurface>
+      )}
+      {extras.map((group) => group.active !== undefined
+        ? <ToggleIcon key={group.key} group={group} disabled={disabled} />
+        : <ExtraChip key={group.key} group={group} disabled={disabled} inputRef={inputRef} />)}
+    </>
+  )
+}
+
+/** Le bouton du panneau complet, sur ordinateur seulement. */
+export function ComposerSettingsButton(props: ComposerSettingsProps) {
+  const { disabled = false, inputRef } = props
+  const t = useTranslate()
+  const { statusLabels, summaryLabel, caution } = useStatus(props)
+  return (
+    <SettingsSurface
+      label={t('composer.settings.title')}
+      inputRef={inputRef}
+      disabled={disabled}
+      trigger={
+        <TooltipButton type="button" disabled={disabled}
+          aria-label={t('composer.settings.label', { summary: summaryLabel })}
+          title={[t('composer.settings.all'), ...statusLabels].join(' · ')}
+          className={cx(toolButtonClass(false), 'relative text-ink-soft data-[state=open]:bg-accent-wash')}
+        >
+          <SlidersHorizontal size={16} />
+          {statusLabels.length > 0 ? <span aria-hidden className={cx('absolute right-1 top-1 size-1.5 rounded-full', caution ? 'bg-caution' : 'bg-accent')} /> : null}
+        </TooltipButton>
+      }
+    >
+      {(close) => <FullPanel {...props} close={close} />}
+    </SettingsSurface>
+  )
+}
+
+function valueLabel(group: SettingGroup, t: ReturnType<typeof useTranslate>): string {
+  return group.options.find((option) => option.value === group.value)?.label || group.value || t('composer.select.default')
+}
+
+function chipClass(narrow: boolean): string {
+  return cx(
+    'flex items-center gap-1.5 rounded-md px-2 text-xs',
+    'hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
+    'data-[state=open]:bg-surface-high disabled:pointer-events-none disabled:opacity-45',
+    narrow ? 'relative h-9 text-[0.8125rem] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[""]' : 'min-h-11 md:min-h-8 pointer-coarse:min-h-11',
+  )
+}
+
+/** Une catégorie épinglée à plusieurs valeurs : sa valeur, et son menu. */
+function ExtraChip({ group, disabled, inputRef }: { group: SettingGroup; disabled: boolean; inputRef: RefObject<HTMLTextAreaElement | null> }) {
+  const t = useTranslate()
+  const current = group.options.find((option) => option.value === group.value)
+  const value = valueLabel(group, t)
+  const label = t('composer.settings.quick', { setting: group.label, value })
+  const caution = current?.tone === 'caution'
+  return (
+    <SettingsSurface label={group.label} inputRef={inputRef} disabled={disabled} quick
+      trigger={
+        <TooltipButton type="button" disabled={disabled} aria-label={label} title={[label, group.notice].filter(Boolean).join(' · ')}
+          className={cx(chipClass(false), 'max-w-60 shrink-0', caution ? 'text-caution' : 'text-ink-soft')}
+        >
+          <span className={cx('shrink-0', caution ? 'text-caution' : 'text-accent')}>{group.icon}</span>
+          <span className="min-w-0 truncate text-left">{value}</span>
+          <ChevronDown size={12} className="shrink-0 text-ink-faint" />
+        </TooltipButton>
+      }
+    >
+      {(close) => (
+        <>
+          <SettingsHeading title={group.label} onClose={() => close()} />
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-[max(0.75rem,var(--sg-safe-bottom))]">
+            {group.notice ? <p className="mb-2 text-xs text-caution">{group.notice}</p> : null}
+            <SettingOptions group={group} disabled={disabled} onPick={(value) => { group.onChange(value); close(true) }} />
+          </div>
+        </>
+      )}
+    </SettingsSurface>
+  )
+}
 
 /**
- * Une catégorie à deux états épinglée : le libellé de la catégorie, et un interrupteur
- * qui dit où on en est. Un clic bascule sur l'autre valeur sans ouvrir de menu.
+ * Une catégorie à deux états épinglée : son icône seule, colorée quand elle est
+ * allumée. Un clic bascule ; le nom et l'état passent dans l'infobulle.
  */
-function ToggleChip({ group, label, disabled }: { group: SettingGroup; label: string; disabled: boolean }) {
+function ToggleIcon({ group, disabled }: { group: SettingGroup; disabled: boolean }) {
+  const t = useTranslate()
   const checked = group.value === group.active
   const other = group.options.find((option) => option.value !== group.value && !option.disabled)
   const current = group.options.find((option) => option.value === group.value)
+  const label = t('composer.settings.quick', { setting: group.label, value: valueLabel(group, t) })
+  const caution = checked && current?.tone === 'caution'
   return (
     <TooltipButton type="button" role="switch" aria-checked={checked} disabled={disabled || !other}
       aria-label={label} title={[label, group.notice].filter(Boolean).join(' · ')}
       onClick={() => { if (other) group.onChange(other.value) }}
-      className={cx(chipClass, 'flex-initial', checked ? 'border-accent/50 bg-accent-wash text-ink' : 'text-ink-soft',
-        checked && current?.tone === 'caution' && 'border-caution/50 bg-caution/10 text-caution')}
+      className={cx(toolButtonClass(false), checked && (caution ? 'bg-caution/14 text-caution hover:bg-caution/20 hover:text-caution' : 'bg-accent-wash text-accent hover:bg-accent-wash hover:text-accent'))}
     >
-      <span className={cx('hidden shrink-0 @min-[22rem]:inline-flex', checked && current?.tone === 'caution' ? 'text-caution' : 'text-accent')}>{group.icon}</span>
-      <span className="min-w-0 truncate">{group.label}</span>
-      <span aria-hidden className={cx('flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors',
-        checked ? 'justify-end' : 'bg-line-strong', checked && (current?.tone === 'caution' ? 'bg-caution' : 'bg-accent'))}>
-        <span className="size-3 rounded-full bg-surface shadow-sm" />
-      </span>
+      {group.icon}
     </TooltipButton>
   )
 }
@@ -247,6 +344,9 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
       : null
     const focus = target ?? content.current?.querySelector<HTMLElement>('[data-settings-heading]')
     focus?.focus({ preventScroll: true })
+    // Le choix en cours peut être loin dans une longue liste : on l'amène en vue, dans
+    // sa liste seulement, sans faire défiler la page.
+    if (target) target.scrollIntoView({ block: 'nearest' })
   }
   const onCloseAutoFocus = (event: Event) => {
     // Sur téléphone et au clavier, Radix rend le focus au bouton d'ouverture.
