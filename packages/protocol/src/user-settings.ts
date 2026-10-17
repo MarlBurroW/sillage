@@ -60,9 +60,10 @@ export interface UserSettingsDto {
   /** Les sortes de notifications que ce compte veut recevoir, sur tous ses appareils. */
   notifications: NotificationPrefs
   /**
-   * Les réglages épinglés sous le composer, par CLI.
+   * Les réglages épinglés sous le composer, par CLI, en plus de la puce modèle·effort
+   * qui y est toujours. Sur ordinateur seulement : au téléphone, la puce reste seule.
    *
-   * Des clés de catégories (`model`, `effort`, `ultracode`…) dans l'ordre d'affichage,
+   * Des clés de catégories (`ultracode`, `permission`…) dans l'ordre d'affichage,
    * et non des valeurs : ce qui s'épingle est un accès, le réglage lui-même reste dans
    * la conversation. Par CLI parce que les catégories ne se traduisent pas d'un CLI à
    * l'autre, comme les défauts. Au compte pour la même raison que les projets repliés :
@@ -71,7 +72,10 @@ export interface UserSettingsDto {
   composerLayout: ComposerLayout
 }
 
-/** Clés de catégories épinglées, par CLI. Une clé inconnue du CLI est ignorée à l'affichage. */
+/**
+ * Clés de catégories épinglées, par CLI. Une clé inconnue du CLI est ignorée à
+ * l'affichage, comme `model` et `effort` qu'enregistraient les premières versions.
+ */
 export interface ComposerLayout {
   claude: string[]
   codex: string[]
@@ -79,12 +83,12 @@ export interface ComposerLayout {
   grok: string[]
 }
 
-/** Modèle et effort : la barre telle qu'elle était avant de devenir réglable. */
+/** Rien d'épinglé : la puce modèle·effort seule. */
 export const DEFAULT_COMPOSER_LAYOUT: ComposerLayout = {
-  claude: ['model', 'effort'],
-  codex: ['model', 'effort'],
-  opencode: ['model', 'effort'],
-  grok: ['model', 'effort'],
+  claude: [],
+  codex: [],
+  opencode: [],
+  grok: [],
 }
 
 /** Une clé de catégorie telle que `agent-settings` les nomme, sans rien de plus long. */

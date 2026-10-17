@@ -1510,6 +1510,16 @@ export const fr: Catalog = {
   'composer.settings.retry': 'Réessayer',
   'composer.settings.pin': 'Épingler {setting} sous le composeur',
   'composer.settings.unpin': 'Retirer {setting} du composeur',
+  'composer.settings.pinnedSection': 'Sous le composeur',
+  'composer.settings.pinnedEmpty': 'Épingle un réglage pour l’ajouter à côté du modèle, sur ordinateur.',
+  'composer.settings.modelEffort': 'Modèle et effort',
+  'composer.settings.otherSection': 'Autres réglages',
+  'composer.settings.reorder': 'Déplacer {setting}',
+  'composer.settings.reorder.instructions': 'Espace pour saisir le réglage, les flèches pour le déplacer, Espace à nouveau pour le poser, Échap pour annuler.',
+  'composer.settings.reorder.picked': '{setting} saisi.',
+  'composer.settings.reorder.moved': '{setting} déplacé en position {position}.',
+  'composer.settings.reorder.dropped': '{setting} posé en position {position}.',
+  'composer.settings.reorder.cancelled': 'Déplacement de {setting} annulé.',
 
   // Commun
   'common.close': 'Fermer',

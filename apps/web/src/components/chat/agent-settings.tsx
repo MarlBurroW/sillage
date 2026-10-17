@@ -293,7 +293,7 @@ export interface AgentSettings {
   /** Valeurs annoncées par l'accès complet et états de permissions à garder visibles. */
   summary: SummarySegment[]
   /** Serveurs MCP et isolation stricte, déjà rendus. */
-  mcp: ReactNode
+  mcp: ReactElement<McpControlProps> | null
   /** Les mêmes contrôles MCP, dépliés dans la vue complète du composer. */
   mcpPanel: ReactNode
   /** Le CLI n'a pas répondu : la liste des modèles se réduit à ce qui est enregistré. */

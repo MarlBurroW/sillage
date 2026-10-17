@@ -1,8 +1,10 @@
 import { TooltipButton } from '../ui/Tooltip'
 import { ArrowUp, FastForward, Loader2, Mic, Paperclip, Square } from 'lucide-react'
 import {
+  cloneElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -35,17 +37,23 @@ import { useDictation, useSttEnabled } from '../../lib/stt'
 import { useTranslate } from '../../lib/i18n'
 import { useUpdateComposerLayout, useUserSettings } from '../../lib/user-settings'
 import { matchCommands, matchSkills, type PickerEntry } from '../../lib/composer-tokens'
-import { ConfirmDialog, IconButton, cx } from '../ui'
+import { ConfirmDialog, cx } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
 import { DictationStrip } from './DictationStrip'
 import { useAgentSettings } from './agent-settings'
 import { TokenPicker } from './TokenPicker'
-import { ComposerSettings } from './ComposerSettings'
+import { ComposerQuickSettings, ComposerSettingsButton } from './ComposerSettings'
+import { toolButtonClass } from './composer-buttons'
 import { SkillsControl } from './SkillsControl'
 import { CardPicker } from './CardPicker'
 import { MentionPicker } from './MentionPicker'
 
 /** Le `@...` en cours de saisie, repéré autour du curseur. */
+/** Sous cette largeur de barre, le composer prend sa forme de téléphone. */
+const NARROW_BAR_PX = 480
+/** L'écart `gap-1` de la barre, pour mesurer la place des réglages épinglés. */
+const BAR_GAP_PX = 4
+
 interface MentionToken {
   query: string
   /** Position du `@` lui-même, pour remplacer le jeton entier à la sélection. */
@@ -277,10 +285,37 @@ export function Composer({
   const layout = userSettings?.composerLayout ?? DEFAULT_COMPOSER_LAYOUT
   const updateLayout = useUpdateComposerLayout()
   const pinned = layout[config.agent]
-  const pin = (key: string, wanted: boolean) => {
-    const next = wanted ? [...pinned.filter((item) => item !== key), key] : pinned.filter((item) => item !== key)
-    updateLayout.mutate({ ...layout, [config.agent]: next })
-  }
+  const setPinned = (next: string[]) => updateLayout.mutate({ ...layout, [config.agent]: next })
+
+  // Largeur de la barre plutôt que de la fenêtre, qui ignore la sidebar et le panneau :
+  // en dessous, c'est la barre de téléphone, sur une ligne et sans épingles.
+  const bar = useRef<HTMLDivElement>(null)
+  const prefs = useRef<HTMLDivElement>(null)
+  const lead = useRef<HTMLDivElement>(null)
+  const trail = useRef<HTMLDivElement>(null)
+  const [narrow, setNarrow] = useState(false)
+  const [split, setSplit] = useState(false)
+  const measureBar = useCallback(() => {
+    const node = bar.current
+    if (!node || !prefs.current || !lead.current || !trail.current) return
+    const width = node.clientWidth
+    setNarrow(width < NARROW_BAR_PX)
+    // La largeur naturelle des puces ne dépend pas du repli (elles ne rétrécissent pas) :
+    // la comparer à la place libre ne fait pas osciller la barre entre deux états.
+    const chips = [...prefs.current.children] as HTMLElement[]
+    const natural = chips.reduce((sum, chip) => sum + chip.offsetWidth, 0) + BAR_GAP_PX * Math.max(0, chips.length - 1)
+    const free = width - lead.current.offsetWidth - trail.current.offsetWidth - BAR_GAP_PX * 2
+    setSplit(width >= NARROW_BAR_PX && natural > free)
+  }, [])
+  useLayoutEffect(() => {
+    const node = bar.current
+    if (!node) return
+    const observer = new ResizeObserver(measureBar)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [measureBar])
+  // Une épingle, une valeur plus longue ou un compte MCP changent la place prise.
+  useLayoutEffect(measureBar)
 
   // Hauteur suivant le contenu, plafonnée : sur mobile, un champ qui pousse la
   // conversation hors de l'écran rend la saisie inutilisable.
@@ -682,6 +717,38 @@ export function Composer({
     </div>
   ) : null
 
+  const settingsProps = {
+    groups,
+    summary,
+    pinned,
+    onPinnedChange: setPinned,
+    narrow,
+    mcp: mcpPanel,
+    feedback: configFeedback,
+    disabled,
+    inputRef: textarea,
+  }
+
+  const dictate = (
+    <TooltipButton
+      type="button"
+      aria-label={dictation.state === 'recording' ? t('composer.dictate.stop') : t('composer.dictate.start')}
+      title={dictation.state === 'recording' ? t('composer.dictate.stop') : t('composer.dictate.start')}
+      disabled={disabled || dictation.state === 'transcribing'}
+      onClick={() => {
+        if (sttEnabled) void dictation.toggle()
+        else setSttNotice(true)
+      }}
+      className={cx(
+        toolButtonClass(narrow),
+        dictation.state === 'recording' &&
+          'animate-pulse bg-critical/12 text-critical hover:bg-critical/20 hover:text-critical',
+      )}
+    >
+      {dictation.state === 'transcribing' ? <Loader2 size={16} className="animate-spin" /> : <Mic size={16} />}
+    </TooltipButton>
+  )
+
   return (
     // L'encoche est portée par la page (`pb-safe`), pas ici : deux `env()` empilés
     // creuseraient un vide de deux encoches.
@@ -786,20 +853,8 @@ export function Composer({
             )}
           />
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <div className="flex min-w-0 basis-full items-center border-b border-line pb-1">
-              <ComposerSettings
-                groups={groups}
-                summary={summary}
-                pinned={pinned}
-                onPin={pin}
-                mcp={mcpPanel}
-                feedback={configFeedback}
-                disabled={disabled}
-                inputRef={textarea}
-              />
-            </div>
-            {/* Pas de `capture` : iOS propose alors lui-même l'appareil photo, la
+          <div ref={bar} className={cx('flex items-center gap-1', split && 'flex-wrap')}>
+                        {/* Pas de `capture` : iOS propose alors lui-même l'appareil photo, la
                 photothèque et les fichiers, ce qu'un `capture` forcé interdirait. */}
             <input
               ref={filePicker}
@@ -813,42 +868,88 @@ export function Composer({
                 event.target.value = ''
               }}
             />
-            <IconButton
-              label={t('composer.attach.label')}
-              size="sm"
-              disabled={disabled || attachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
-              onClick={() => filePicker.current?.click()}
-            >
-              <Paperclip size={16} />
-            </IconButton>
+            {/* Les réglages épinglés qui ne tiennent plus à côté des outils prennent leur
+                propre ligne au-dessus, plutôt que d'écraser les valeurs. */}
+            <div ref={prefs}
+              className={cx('flex min-w-0 items-center gap-1', split ? 'order-first basis-full flex-wrap border-b border-line pb-1' : 'order-2')}>
+              <ComposerQuickSettings {...settingsProps} />
+            </div>
+            <div ref={lead} className="order-1 flex shrink-0 items-center gap-1">
+              <TooltipButton type="button" aria-label={t('composer.attach.label')} title={t('composer.attach.label')}
+                className={toolButtonClass(narrow)}
+                disabled={disabled || attachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
+                onClick={() => filePicker.current?.click()}
+              >
+                <Paperclip size={16} />
+              </TooltipButton>
+              {narrow ? null : dictate}
+              {narrow || split ? null : <span aria-hidden className="mx-0.5 h-4 w-px bg-line" />}
+            </div>
+            <div ref={trail} className="order-3 ml-auto flex shrink-0 items-center gap-1">
+              {mcp ? cloneElement(mcp, { narrow }) : null}
+              <SkillsControl projectId={projectId} config={config} skills={skills} commands={commands} inputRef={textarea} narrow={narrow} />
+              {context ? <span className="flex items-center px-1"><ContextMeter context={context} compact={narrow} /></span> : null}
+              {narrow ? null : <ComposerSettingsButton {...settingsProps} />}
+              {/* Les deux boutons coexistent pendant un tour : on doit pouvoir arrêter
+                  l'agent sans perdre le message qu'on vient de taper, et l'envoyer sans
+                  avoir à l'arrêter. */}
+              {/* Infléchir n'est proposé que pendant un tour, et seulement là où le CLI
+                  sait le faire : le message est pris en compte immédiatement, au lieu
+                  d'attendre la fin comme le fait la file. */}
+              {running && onSteer && canSend ? (
+                <TooltipButton
+                  type="button"
+                  onClick={() => void submit(onSteer)}
+                  aria-label={t('composer.steer.aria')}
+                  title={t('composer.steer.hint')}
+                  className={cx(
+                    'flex shrink-0 items-center justify-center rounded-full',
+                  narrow ? 'relative size-9 before:absolute before:-inset-1 before:content-[""]' : 'size-11 md:size-9 pointer-coarse:size-11',
+                    'border border-accent text-accent transition-colors hover:bg-accent-wash',
+                  )}
+                >
+                  <FastForward size={16} />
+                </TooltipButton>
+              ) : null}
 
-            <IconButton
-              label={
-                dictation.state === 'recording'
-                  ? t('composer.dictate.stop')
-                  : t('composer.dictate.start')
-              }
-              size="sm"
-              disabled={disabled || dictation.state === 'transcribing'}
-              onClick={() => {
-                if (sttEnabled) void dictation.toggle()
-                else setSttNotice(true)
-              }}
-              className={cx(
-                dictation.state === 'recording' &&
-                  'animate-pulse bg-critical/12 text-critical hover:bg-critical/20 hover:text-critical',
-              )}
-            >
-              {dictation.state === 'transcribing' ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Mic size={16} />
-              )}
-            </IconButton>
+              {running ? (
+                <TooltipButton
+                  type="button"
+                  onClick={onInterrupt}
+                  aria-label={t('composer.interrupt')}
+                  title={t('composer.interrupt')}
+                  className={cx(
+                    'flex shrink-0 items-center justify-center rounded-full',
+                  narrow ? 'relative size-9 before:absolute before:-inset-1 before:content-[""]' : 'size-11 md:size-9 pointer-coarse:size-11',
+                    'border border-line bg-surface-high text-ink transition-colors hover:border-line-strong',
+                  )}
+                >
+                  <Square size={13} fill="currentColor" />
+                </TooltipButton>
+              ) : null}
 
-            {mcp}
-            <SkillsControl projectId={projectId} config={config} skills={skills} commands={commands} inputRef={textarea} />
-
+              {/* Au téléphone, le micro et l'envoi se partagent la même place : on dicte
+                  un champ vide, on envoie un champ rempli. */}
+              {narrow && !canSend ? dictate : null}
+              <TooltipButton
+                type="submit"
+                disabled={!canSend}
+                aria-label={running ? t('composer.send.queue') : t('composer.send.aria')}
+                title={running ? t('composer.send.queue.hint') : t('composer.send.aria')}
+                className={cx(
+                  'flex shrink-0 items-center justify-center rounded-full',
+                  narrow ? 'relative size-9 before:absolute before:-inset-1 before:content-[""]' : 'size-11 md:size-9 pointer-coarse:size-11',
+                  'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',
+                  'disabled:pointer-events-none disabled:opacity-35',
+                  // Pendant un tour, le bouton d'arrêt reste l'action principale : celui-ci
+                  // ne s'affiche que s'il y a réellement quelque chose à mettre en file.
+                  // Au téléphone, il laisse aussi sa place au micro tant que rien n'est écrit.
+                  (running || narrow) && !canSend && 'hidden',
+                )}
+              >
+                <ArrowUp size={17} strokeWidth={2.5} />
+              </TooltipButton>
+            </div>
             <ConfirmDialog
               open={sttNotice}
               onOpenChange={setSttNotice}
@@ -859,62 +960,6 @@ export function Composer({
               <p>{t('composer.dictate.unconfigured.body')}</p>
             </ConfirmDialog>
 
-            <span className="ml-auto flex items-center">
-              {context ? <ContextMeter context={context} /> : null}
-            </span>
-
-            {/* Les deux boutons coexistent pendant un tour : on doit pouvoir arrêter
-                l'agent sans perdre le message qu'on vient de taper, et l'envoyer sans
-                avoir à l'arrêter. */}
-            {/* Infléchir n'est proposé que pendant un tour, et seulement là où le CLI
-                sait le faire : le message est pris en compte immédiatement, au lieu
-                d'attendre la fin comme le fait la file. */}
-            {running && onSteer && canSend ? (
-              <TooltipButton
-                type="button"
-                onClick={() => void submit(onSteer)}
-                aria-label={t('composer.steer.aria')}
-                title={t('composer.steer.hint')}
-                className={cx(
-                  'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
-                  'border border-accent text-accent transition-colors hover:bg-accent-wash',
-                )}
-              >
-                <FastForward size={16} />
-              </TooltipButton>
-            ) : null}
-
-            {running ? (
-              <TooltipButton
-                type="button"
-                onClick={onInterrupt}
-                aria-label={t('composer.interrupt')}
-                title={t('composer.interrupt')}
-                className={cx(
-                  'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
-                  'border border-line bg-surface-high text-ink transition-colors hover:border-line-strong',
-                )}
-              >
-                <Square size={13} fill="currentColor" />
-              </TooltipButton>
-            ) : null}
-
-            <TooltipButton
-              type="submit"
-              disabled={!canSend}
-              aria-label={running ? t('composer.send.queue') : t('composer.send.aria')}
-              title={running ? t('composer.send.queue.hint') : t('composer.send.aria')}
-              className={cx(
-                'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
-                'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',
-                'disabled:pointer-events-none disabled:opacity-35',
-                // Pendant un tour, le bouton d'arrêt reste l'action principale : celui-ci
-                // ne s'affiche que s'il y a réellement quelque chose à mettre en file.
-                running && !canSend && 'hidden',
-              )}
-            >
-              <ArrowUp size={17} strokeWidth={2.5} />
-            </TooltipButton>
           </div>
         </div>
       </form>

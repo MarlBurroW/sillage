@@ -1522,6 +1522,16 @@ export const en = {
   'composer.settings.retry': 'Retry',
   'composer.settings.pin': 'Pin {setting} under the composer',
   'composer.settings.unpin': 'Unpin {setting} from the composer',
+  'composer.settings.pinnedSection': 'Under the composer',
+  'composer.settings.pinnedEmpty': 'Pin a setting to add it next to the model on a computer.',
+  'composer.settings.modelEffort': 'Model and effort',
+  'composer.settings.otherSection': 'Other settings',
+  'composer.settings.reorder': 'Move {setting}',
+  'composer.settings.reorder.instructions': 'Press Space to pick up the setting, the arrow keys to move it, Space again to drop it, Escape to cancel.',
+  'composer.settings.reorder.picked': '{setting} picked up.',
+  'composer.settings.reorder.moved': '{setting} moved to position {position}.',
+  'composer.settings.reorder.dropped': '{setting} dropped at position {position}.',
+  'composer.settings.reorder.cancelled': 'Move of {setting} cancelled.',
 
   // Commun
   'common.close': 'Close',

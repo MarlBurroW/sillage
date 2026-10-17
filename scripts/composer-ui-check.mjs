@@ -83,7 +83,7 @@ async function mount(page) {
     }
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client }, React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null, React.createElement(Harness)))))
   })
-  await page.getByRole('button', { name: 'Modèle : Modèle Alpha', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Modèle et effort : Modèle Alpha · Élevé', exact: true }).waitFor()
 }
 
 try {
@@ -103,7 +103,7 @@ try {
     page.on('pageerror', (error) => errors.push(error.message))
     const stored = structuredClone(initial)
     // Les réglages du compte, dont la barre épinglée : le défaut du protocole au départ.
-    const account = { agentDefaults: {}, collapsedProjects: [], projectsDir: null, appearance: null, notifications: {}, composerLayout: { claude: ['model', 'effort'], codex: ['model', 'effort'], opencode: ['model', 'effort'] } }
+    const account = { agentDefaults: {}, collapsedProjects: [], projectsDir: null, appearance: null, notifications: {}, composerLayout: { claude: ['model', 'effort'], codex: ['model', 'effort'], opencode: [], grok: [] } }
     const layouts = []
     const patches = []
     const messages = []
@@ -144,33 +144,81 @@ try {
     })
     await mount(page)
     const field = page.getByPlaceholder('Écris ton message...')
+    // Téléphone : la barre de moins de 480 px, puce modèle·effort seule, qui ouvre la
+    // feuille complète ; pas de bouton de réglages à part ni d'épingles.
+    const narrow = viewport.width < 500
+    const touch = viewport.width < 700
     const full = page.getByRole('button', { name: /^Réglages de la conversation,/ })
-    const model = () => page.getByRole('button', { name: /^Modèle :/ })
-    const effort = () => page.getByRole('button', { name: /^Effort de réflexion :/ })
+    const chip = () => page.getByRole('button', { name: /^(Modèle et effort|Modèle) :/ })
     const dialog = page.getByRole('dialog')
-    const openAll = async () => { await full.click(); await dialog.waitFor() }
+    const openAll = async () => { await (narrow ? chip() : full).click(); await dialog.waitFor() }
+    // Ce qui porte les garde-fous retirés : le bouton du panneau, ou la puce au téléphone.
+    const status = () => narrow ? chip() : full
+    // Le panneau est une liste : une ligne par réglage, qui s'ouvre sur ses options et y
+    // revient après le choix.
+    const row = (setting) => dialog.getByRole('button', { name: new RegExp(`^${setting} :`) })
+    const pick = async (setting, option) => {
+      // Au téléphone, modèle et effort sont dépliés en tête de la feuille.
+      if (narrow && (setting === 'Modèle' || setting === 'Effort de réflexion')) {
+        await dialog.getByRole('radio', { name: option, exact: typeof option === 'string' }).click()
+        return
+      }
+      await row(setting).click()
+      await dialog.getByRole('radio', { name: option, exact: typeof option === 'string' }).click()
+      await row(setting).waitFor()
+    }
+    const mcpView = async () => { await dialog.getByRole('button', { name: 'Serveurs MCP', exact: true }).click(); await dialog.locator('[data-settings-heading]', { hasText: 'Serveurs MCP' }).waitFor() }
+    const back = async () => { await dialog.getByRole('button', { name: 'Retour', exact: true }).click(); await dialog.locator('[data-settings-heading]', { hasText: 'Réglages de la conversation' }).waitFor() }
     const close = async () => { await page.getByRole('button', { name: 'Terminé', exact: true }).click(); await dialog.waitFor({ state: 'hidden' }) }
-    for (const button of [model(), effort(), full]) {
+    // 32 px à la souris, 44 au doigt ; au téléphone, 36 à l'œil et 44 au doigt grâce à
+    // une marge invisible, vérifiée en touchant juste au-dessus du bouton.
+    for (const button of narrow ? [chip()] : [chip(), full]) {
       const bounds = await button.boundingBox()
-      assert.ok(bounds.width >= 44 && bounds.height >= 44)
+      assert.ok(bounds.height >= (narrow ? 36 : touch ? 44 : 32), `${viewport.width}: ${bounds.height}`)
+      if (narrow) {
+        const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label'), { x: bounds.x + bounds.width / 2, y: bounds.y - 3 })
+        assert.match(hit ?? '', /^Modèle et effort/, 'The touch target extends past the visible chip')
+      }
+    }
+    if (narrow) {
+      // Le micro tient la place de l'envoi tant que le champ est vide.
+      assert.equal(await page.getByRole('button', { name: 'Envoyer le message', exact: true }).isVisible(), false)
+      assert.equal(await page.getByRole('button', { name: /^Dicter/ }).count(), 1)
     }
 
     await field.fill('Brouillon conservé')
     await field.evaluate((node) => node.setSelectionRange(3, 9))
     let release
     hold = new Promise((resolve) => { release = resolve })
-    await model().click()
-    await page.getByRole('radio', { name: /^Modèle Beta/ }).click()
-    await dialog.waitFor({ state: 'hidden' })
-    await page.getByRole('button', { name: 'Modèle : Modèle Beta', exact: true }).waitFor()
-    assert.equal(await effort().getAttribute('aria-label'), 'Effort de réflexion : Moyen', 'Effort falls back immediately')
-    if (viewport.width >= 700) {
-      await page.waitForFunction(() => document.activeElement.tagName === 'TEXTAREA')
-      assert.deepEqual(await field.evaluate((node) => [node.selectionStart, node.selectionEnd]), [3, 9])
-    } else assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'TEXTAREA')
-    await effort().click()
-    await page.getByRole('radio', { name: /^Faible/ }).click()
-    await page.getByRole('button', { name: 'Effort de réflexion : Faible', exact: true }).waitFor()
+    if (narrow) {
+      assert.equal(await page.getByRole('button', { name: /^Dicter/ }).count(), 0, 'Typed text swaps the mic for send')
+      await openAll()
+      await dialog.getByRole('radio', { name: /^Modèle Beta/ }).click()
+      // La feuille est modale : le reste de la page est masqué tant qu'elle est ouverte,
+      // l'effort retombé se lit donc dans la feuille.
+      assert.equal(await dialog.getByRole('radio', { name: /^Modèle Beta/ }).getAttribute('aria-checked'), 'true')
+      assert.equal(await dialog.getByRole('radio', { name: 'Moyen', exact: true }).getAttribute('aria-checked'), 'true', 'Effort falls back immediately')
+      await dialog.getByRole('radio', { name: 'Faible', exact: true }).click()
+      await close()
+      assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'TEXTAREA')
+    } else {
+      // Choisir un modèle laisse le menu ouvert, l'effort retombe aussitôt sur un niveau
+      // du nouveau modèle ; choisir l'effort referme et rend la saisie.
+      await chip().click()
+      await page.getByRole('radio', { name: /^Modèle Beta/ }).click()
+      // Au doigt, le menu est une feuille modale qui masque la puce : l'effort retombé
+      // se lit alors dans la feuille.
+      if (touch) assert.equal(await dialog.getByRole('radio', { name: 'Moyen', exact: true }).getAttribute('aria-checked'), 'true')
+      else await page.getByRole('button', { name: 'Modèle et effort : Modèle Beta · Moyen', exact: true }).waitFor()
+      assert.equal(await dialog.isVisible(), true, 'Picking a model keeps the menu open')
+      await page.getByRole('radio', { name: 'Faible', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
+      if (!touch) {
+        await page.waitForFunction(() => document.activeElement.tagName === 'TEXTAREA')
+        assert.deepEqual(await field.evaluate((node) => [node.selectionStart, node.selectionEnd]), [3, 9])
+      } else assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'TEXTAREA')
+    }
+    await page.getByRole('button', { name: 'Modèle et effort : Modèle Beta · Faible', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Envoyer le message', exact: true }).click()
     assert.equal(messages.length, 0, 'Sending waits for the pending settings')
     release()
@@ -183,14 +231,20 @@ try {
     await field.fill('Encore un brouillon')
     const compactHeight = (await page.locator('form').boundingBox()).height
     await openAll()
-    await page.getByRole('radio', { name: /^Modèle Alpha/ }).click()
-    await page.getByRole('radio', { name: 'Élevé', exact: true }).click()
-    await page.getByRole('radio', { name: 'Plan', exact: true }).click()
-    await page.getByRole('radio', { name: /^Accès total/ }).click()
-    await page.getByRole('radio', { name: /^Jamais/ }).click()
+    // La liste tient sans défiler : c'est tout l'objet de la vue en deux niveaux.
+    if (!narrow) assert.equal(await dialog.locator('.overflow-y-auto').evaluate((node) => node.scrollHeight <= node.clientHeight + 1), viewport.height >= 600, 'The settings list fits without scrolling')
+    // Au téléphone, rien ne s'épingle ni ne se trie.
+    if (narrow) assert.equal(await dialog.getByRole('button', { name: /^Épingler/ }).count(), 0)
+    await pick('Modèle', /^Modèle Alpha/)
+    await pick('Effort de réflexion', 'Élevé')
+    await pick('Mode', 'Plan')
+    await pick('Bac à sable', /^Accès total/)
+    await pick('Approbations', /^Jamais/)
+    await mcpView()
     await page.getByRole('switch', { name: 'Documentation', exact: true }).click()
-    assert.equal(await dialog.isVisible(), true)
     assert.equal(await page.getByRole('switch', { name: 'CLI externe' }).count(), 0)
+    await back()
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Serveurs MCP', 'Back returns focus to the row')
     const panelBounds = await dialog.boundingBox()
     assert.ok(panelBounds.y >= 0 && panelBounds.y + panelBounds.height <= viewport.height + 1)
     await close()
@@ -199,7 +253,7 @@ try {
     assert.equal(stored.codex.collaborationMode, 'plan')
     assert.equal(stored.codex.askForApproval, 'never')
     assert.deepEqual(stored.codex.mcpServers, ['docs'])
-    assert.match(await full.getAttribute('aria-label'), /Accès total/)
+    assert.match(await status().getAttribute('aria-label'), /Accès total/)
     if (viewport.width >= 700) {
       await full.hover()
       await page.getByRole('tooltip').waitFor()
@@ -210,8 +264,15 @@ try {
     assert.equal((await page.locator('form').boundingBox()).height, compactHeight, 'Permission indicators do not add a row')
 
     failNext = true
-    await effort().click()
-    await page.getByRole('radio', { name: /^Moyen/ }).click()
+    if (narrow) {
+      await openAll()
+      await dialog.getByRole('radio', { name: /^Moyen/ }).click()
+      await dialog.getByRole('alert').waitFor()
+      await close()
+    } else {
+      await chip().click()
+      await page.getByRole('radio', { name: /^Moyen/ }).click()
+    }
     await page.getByRole('alert').filter({ hasText: 'Les réglages' }).waitFor()
     assert.equal(await field.inputValue(), 'Encore un brouillon')
     await page.getByRole('button', { name: 'Envoyer le message', exact: true }).click()
@@ -224,21 +285,34 @@ try {
 
     await openAll()
     failNext = true
-    await page.getByRole('radio', { name: 'Faible', exact: true }).click()
+    await pick('Effort de réflexion', 'Faible')
     await dialog.getByRole('alert').waitFor()
     await dialog.getByRole('button', { name: 'Réessayer', exact: true }).click()
     await dialog.getByRole('alert').waitFor({ state: 'hidden' })
     assert.equal(await dialog.isVisible(), true, 'Retry does not leave the complete panel')
     await close()
     await page.evaluate(() => window.settings.flush())
+    // Radix rend le focus au bouton du panneau une image après la fermeture : le poser
+    // avant ferait atterrir l'Entrée suivante sur le panneau complet.
+    await delay(100)
 
-    await model().focus()
-    await page.keyboard.press('Enter')
-    await page.keyboard.press('End')
-    assert.equal(await dialog.isVisible(), true)
-    await page.keyboard.press('Enter')
-    await dialog.waitFor({ state: 'hidden' })
-    assert.equal(await effort().count(), 0)
+    if (narrow) {
+      await openAll()
+      await dialog.getByRole('radio', { name: /^Sans réflexion/ }).click()
+      await close()
+    } else {
+      // Au clavier : le menu s'ouvre sur le modèle choisi, Fin va au dernier, Entrée le
+      // prend ; sans niveaux d'effort, la section disparaît et Échap referme.
+      await chip().focus()
+      await page.keyboard.press('Enter')
+      await dialog.waitFor()
+      await page.keyboard.press('End')
+      await page.keyboard.press('Enter')
+      await dialog.getByRole('radiogroup', { name: 'Effort de réflexion' }).waitFor({ state: 'detached' })
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'hidden' })
+      await page.getByRole('button', { name: 'Modèle : Sans réflexion', exact: true }).waitFor()
+    }
     assert.equal(await field.inputValue(), 'Encore un brouillon')
     await page.evaluate(() => window.settings.flush())
 
@@ -253,16 +327,23 @@ try {
         window.settings.change({ ...window.settings.config, model: 'saved-model', askForApproval: { granular: { sandbox_approval: true, rules: true, skill_approval: true, request_permissions: true, mcp_elicitations: true } } })
         await window.settings.flush()
       })
-      await page.getByRole('button', { name: 'Modèle : saved-model', exact: true }).waitFor()
-      await model().click()
+      await page.getByRole('button', { name: /^(Modèle et effort|Modèle) : saved-model/ }).waitFor()
+      await chip().click()
       await page.getByRole('searchbox', { name: 'Rechercher un modèle', exact: true }).fill('Archive 9')
-      assert.equal(await page.getByRole('radio').count(), 1)
+      assert.equal(await page.getByRole('radiogroup', { name: 'Modèle', exact: true }).getByRole('radio').count(), 1)
       await page.keyboard.press('Escape')
       await openAll()
+      await row('Approbations').click()
       const approval = page.getByRole('radiogroup', { name: 'Approbations', exact: true })
       assert.equal(await approval.getByRole('radio', { name: /^Granulaire/ }).isDisabled(), true)
       assert.equal(await approval.getByRole('radio', { name: /^Défaut du CLI/ }).getAttribute('tabindex'), '0')
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'hidden' })
+      // Passé en largeur de téléphone, la feuille s'ouvre depuis la puce.
       await page.setViewportSize({ width: 390, height: 844 })
+      await full.waitFor({ state: 'detached' })
+      await chip().click()
       await page.getByRole('dialog', { name: 'Réglages de la conversation', exact: true }).waitFor()
       for (let i = 0; i < 18; i++) {
         await page.keyboard.press('Tab')
@@ -281,29 +362,31 @@ try {
       })
       await close()
       await page.setViewportSize(viewport)
+      await full.waitFor()
 
       hold = new Promise((resolve) => { release = resolve })
       await openAll()
-      await page.getByRole('radio', { name: /^Sur demande/ }).click()
+      await pick('Approbations', /^Sur demande/)
       await close()
       await page.evaluate(() => window.setConversation('claude'))
-      await page.getByRole('button', { name: 'Modèle : Modèle Alpha', exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Modèle et effort : Modèle Alpha · Élevé', exact: true }).waitFor()
       release()
       await page.waitForFunction(() => window.client.getQueryData(['conversation', 'codex'])?.config.askForApproval === 'on-request')
       assert.equal(await page.evaluate(() => window.settings.config.agent), 'claude', 'A late write belongs to its conversation')
     }
 
     await page.evaluate(() => window.setConversation('claude'))
-    await model().waitFor()
+    await chip().waitFor()
     await openAll()
-    await page.getByRole('radio', { name: /^Tout autoriser/ }).click()
-    await page.getByText('En vigueur : Demander', { exact: true }).waitFor()
+    await pick('Permissions', /^Tout autoriser/)
+    await dialog.getByText('En vigueur : Demander', { exact: true }).waitFor()
+    await mcpView()
     await page.getByRole('switch', { name: /^N'utiliser que les serveurs/ }).click()
     assert.equal(await page.getByRole('switch', { name: /^Mémoire et coordination/ }).isDisabled(), true)
     await close()
     await page.evaluate(() => window.settings.flush())
     assert.equal(stored.claude.strictMcp, true)
-    assert.match(await full.getAttribute('aria-label'), /Tout autoriser/)
+    assert.match(await status().getAttribute('aria-label'), /Tout autoriser/)
     if (viewport.width >= 700) {
       await full.hover()
       await page.getByRole('tooltip').waitFor()
@@ -312,36 +395,84 @@ try {
       await page.mouse.move(0, 0)
     }
 
-    // Épingler depuis le panneau : l'interrupteur et la puce apparaissent sous le texte,
-    // l'interrupteur bascule sans menu, et la liste part au compte.
-    await openAll()
-    await dialog.getByRole('button', { name: 'Épingler Ultracode sous le composeur', exact: true }).click()
-    await dialog.getByRole('button', { name: 'Épingler Permissions sous le composeur', exact: true }).click()
-    await close()
-    const ultracode = page.getByRole('switch', { name: /^Ultracode :/ })
-    await ultracode.waitFor()
-    assert.equal(await ultracode.getAttribute('aria-checked'), 'false')
-    await page.getByRole('button', { name: /^Permissions :/ }).waitFor()
-    assert.deepEqual(layouts.at(-1).claude, ['model', 'effort', 'ultracode', 'permission'])
-    await ultracode.click()
-    await page.waitForFunction(() => document.querySelector('[role="switch"][aria-label^="Ultracode :"]').getAttribute('aria-checked') === 'true')
-    await page.evaluate(() => window.settings.flush())
-    assert.equal(stored.claude.ultracode, true)
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Pinned chips do not overflow')
-    await openAll()
-    await dialog.getByRole('button', { name: 'Retirer Ultracode du composeur', exact: true }).click()
-    await close()
-    await ultracode.waitFor({ state: 'hidden' })
-    assert.deepEqual(layouts.at(-1).claude, ['model', 'effort', 'permission'])
+    if (narrow) {
+      // Au téléphone, une barre épinglée ne s'affiche pas : la puce modèle·effort reste seule.
+      account.composerLayout = { ...account.composerLayout, claude: ['ultracode', 'permission'] }
+      await page.evaluate(() => window.client.refetchQueries({ queryKey: ['user-settings'] }))
+      await page.waitForFunction(() => window.client.getQueryData(['user-settings'])?.composerLayout.claude.length === 2)
+      assert.equal(await page.getByRole('switch', { name: /^Ultracode :/ }).count(), 0)
+      assert.equal(await page.getByRole('button', { name: /^Permissions :/ }).count(), 0)
+    } else {
+      // Épingler depuis le panneau : l'interrupteur et la puce apparaissent à côté de la
+      // puce modèle·effort, et la liste part au compte, débarrassée des clés `model` et
+      // `effort` qu'enregistraient les premières versions.
+      await openAll()
+      assert.equal(await dialog.getByRole('button', { name: /^Épingler (Modèle|Effort)/ }).count(), 0, 'Model and effort are always there')
+      await dialog.getByRole('button', { name: 'Épingler Ultracode sous le composeur', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Épingler Permissions sous le composeur', exact: true }).click()
+      await close()
+      const ultracode = page.getByRole('switch', { name: /^Ultracode :/ })
+      await ultracode.waitFor()
+      assert.equal(await ultracode.getAttribute('aria-checked'), 'false')
+      await page.getByRole('button', { name: /^Permissions :/ }).waitFor()
+      assert.deepEqual(layouts.at(-1).claude, ['ultracode', 'permission'])
+
+      // Réordonner au clavier depuis la poignée, puis à la souris quand les deux
+      // poignées tiennent à l'écran ; la barre suit.
+      await openAll()
+      await dialog.getByRole('button', { name: 'Déplacer Permissions', exact: true }).focus()
+      // dnd-kit mesure les lignes entre deux touches : sans pause, le déplacement part
+      // avant que la position de départ soit connue.
+      for (const key of ['Space', 'ArrowUp', 'Space']) { await page.keyboard.press(key); await delay(150) }
+      await delay(250)
+      assert.deepEqual(layouts.at(-1).claude, ['permission', 'ultracode'])
+      const ultracodeHandle = dialog.getByRole('button', { name: 'Déplacer Ultracode', exact: true })
+      if (viewport.height >= 600) {
+        const grip = await ultracodeHandle.boundingBox()
+        const target = await dialog.getByRole('button', { name: 'Déplacer Permissions', exact: true }).boundingBox()
+        await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
+        await page.mouse.down()
+        await page.mouse.move(grip.x + grip.width / 2, grip.y - 10, { steps: 4 })
+        await page.mouse.move(target.x + target.width / 2, target.y + 4, { steps: 8 })
+        // La cible se calcule à l'image suivante : lâcher dans la foulée la manquerait.
+        await delay(150)
+        await page.mouse.up()
+      } else {
+        // Sur une feuille basse, la liste défile et les poignées ne tiennent pas
+        // ensemble à l'écran : le même déplacement s'y fait au clavier.
+        await ultracodeHandle.focus()
+        for (const key of ['Space', 'ArrowUp', 'Space']) { await page.keyboard.press(key); await delay(150) }
+      }
+      await delay(250)
+      assert.deepEqual(layouts.at(-1).claude, ['ultracode', 'permission'])
+      await close()
+      const chips = await page.locator('form [aria-label*=" : "]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label').split(' :')[0]))
+      assert.deepEqual(chips.slice(0, 3), ['Modèle et effort', 'Ultracode', 'Permissions'])
+      await ultracode.click()
+      await page.waitForFunction(() => document.querySelector('[role="switch"][aria-label^="Ultracode :"]').getAttribute('aria-checked') === 'true')
+      await page.evaluate(() => window.settings.flush())
+      assert.equal(stored.claude.ultracode, true)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Pinned chips do not overflow')
+      // Tout tient sur une ligne : la barre n'a pas à se replier.
+      const [chipBox, sendBox] = [await chip().boundingBox(), await page.getByRole('button', { name: /^Réglages de la conversation,/ }).boundingBox()]
+      // À la souris, tout tient sur une ligne ; au doigt, les cibles de 44 px font
+      // passer les réglages sur leur ligne, et c'est le repli voulu.
+      assert.equal(Math.abs(chipBox.y + chipBox.height / 2 - (sendBox.y + sendBox.height / 2)) < 4, !touch, 'One line with the mouse, folded with touch targets')
+      await openAll()
+      await dialog.getByRole('button', { name: 'Retirer Ultracode du composeur', exact: true }).click()
+      await close()
+      await ultracode.waitFor({ state: 'hidden' })
+      assert.deepEqual(layouts.at(-1).claude, ['permission'])
+    }
 
     await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.evaluate(() => window.setReadOnly(true))
-    await page.waitForFunction(() => document.querySelector('button[aria-label^="Modèle :"]').disabled)
-    assert.equal(await model().isDisabled(), true)
-    assert.equal(await full.isDisabled(), true)
+    await page.waitForFunction(() => document.querySelector('button[aria-label^="Modèle"]').disabled)
+    assert.equal(await chip().isDisabled(), true)
+    if (!narrow) assert.equal(await full.isDisabled(), true)
     assert.deepEqual(errors, [])
-    console.log(`OK ${viewport.width}×${viewport.height}: quick choices, ordered saves, send waits, retry, draft, Claude/Codex, MCP, pinned chips, bounds`)
+    console.log(`OK ${viewport.width}×${viewport.height}: quick choices, ordered saves, send waits, retry, draft, Claude/Codex, MCP, pinned chips, reorder, bounds`)
     await context.close()
   }
 } finally {
