@@ -1,11 +1,11 @@
-import { Code, Contrast, Languages, Moon, Palette, Sun, TextQuote } from 'lucide-react'
+import { Code, Contrast, Languages, Loader, Moon, Palette, Sun, TextQuote } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { AppearanceControls } from '../components/AppearanceControls'
 import { AppearancePresets } from '../components/AppearancePresets'
 import { ReadingPreview } from '../components/ReadingPreview'
 import { SyntaxThemeControls } from '../components/SyntaxThemeControls'
 import { useAppearance } from '../lib/appearance'
-import { LOCALES, LOCALE_LABELS, setLocale, useLocale, useTranslate } from '../lib/i18n'
+import { LOCALES, LOCALE_LABELS, setLocale, useLocale, usePendingLocale, useTranslate } from '../lib/i18n'
 import { THEMES, THEME_LABELS, useTheme, type Theme } from '../lib/theme'
 import { Card, CardBody, CardHeader, cx } from '../components/ui'
 import { SectionHeader } from './SettingsPage'
@@ -20,6 +20,9 @@ export function AppearanceSection() {
   const [theme, setTheme] = useTheme()
   const appearance = useAppearance()
   const active = useLocale()
+  // Langue dont le catalogue se télécharge encore : l'interface ne bascule qu'une fois
+  // qu'il est là, et le bouton montre l'attente plutôt que de sembler ignorer le clic.
+  const pending = usePendingLocale()
   const t = useTranslate()
 
   return (
@@ -43,10 +46,15 @@ export function AppearanceSection() {
               <button
                 key={option}
                 type="button"
-                onClick={() => setLocale(option)}
+                onClick={() => {
+                  // Un échec laisse l'interface dans sa langue, entière : rien à réparer
+                  // à l'écran, un nouveau clic retentera.
+                  setLocale(option).catch((error: unknown) => console.warn(error))
+                }}
                 aria-pressed={active === option}
+                aria-busy={pending === option}
                 className={cx(
-                  'rounded-md border px-3 py-2.5 text-sm font-medium transition-colors',
+                  'flex items-center justify-center gap-2 rounded-md border px-3 py-2.5 text-sm font-medium transition-colors',
                   active === option
                     ? 'border-accent bg-accent-wash text-ink'
                     : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
@@ -54,6 +62,7 @@ export function AppearanceSection() {
               >
                 {/* Chaque langue dans la sienne : on cherche « Français » même quand
                     l'interface est en anglais. */}
+                {pending === option ? <Loader size={14} className="animate-spin" aria-hidden /> : null}
                 {LOCALE_LABELS[option]}
               </button>
             ))}
