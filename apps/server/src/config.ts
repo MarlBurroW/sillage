@@ -85,6 +85,9 @@ const configSchema = z.object({
       opencode: z
         .object({ binary: z.string().default('opencode'), enabled: z.boolean().default(true) })
         .default({}),
+      grok: z
+        .object({ binary: z.string().default('grok'), enabled: z.boolean().default(true) })
+        .default({}),
     })
     .default({}),
 })

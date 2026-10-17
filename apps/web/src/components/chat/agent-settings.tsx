@@ -11,6 +11,7 @@ import {
   type CodexApprovalName,
   type CodexConfig,
   type CodexMode,
+  type GrokConfig,
   type McpServerStatus,
   type OpencodePermission,
   type OpencodePermissions,
@@ -67,6 +68,34 @@ function permissionOptions(t: Translate): SettingChoice<ClaudeConfig['permission
       hint: t('composer.permission.bypass.hint'),
       tone: 'caution',
     },
+  ]
+}
+
+/**
+ * Modes de Grok Build. Ses noms recopient ceux de Claude Code, à `manual` près, qu'il
+ * appelle `default` : les libellés de Claude servent donc, sauf l'automatique, dont
+ * l'indice nomme l'agent qui décide. Tous se changent à chaud.
+ */
+function grokPermissionOptions(t: Translate): SettingChoice<GrokConfig['permissionMode']>[] {
+  return [
+    { value: 'default', label: t('composer.permission.manual'), hint: t('composer.permission.manual.hint') },
+    { value: 'auto', label: t('composer.permission.auto'), hint: t('composer.grokPermission.auto.hint') },
+    { value: 'plan', label: t('composer.permission.plan'), hint: t('composer.permission.plan.hint') },
+    {
+      value: 'bypassPermissions',
+      label: t('composer.permission.bypass'),
+      hint: t('composer.permission.bypass.hint'),
+      tone: 'caution',
+    },
+  ]
+}
+
+type WebSearchChoice = 'on' | 'off'
+
+function webSearchOptions(t: Translate): SettingChoice<WebSearchChoice>[] {
+  return [
+    { value: 'on', label: t('composer.webSearch.on'), hint: t('composer.webSearch.on.hint') },
+    { value: 'off', label: t('composer.webSearch.off'), hint: t('composer.webSearch.off.hint') },
   ]
 }
 
@@ -308,6 +337,7 @@ export function useAgentSettings({
   const claude = config.agent === 'claude' ? config : null
   const codex = config.agent === 'codex' ? config : null
   const opencode = config.agent === 'opencode' ? config : null
+  const grok = config.agent === 'grok' ? config : null
 
   /**
    * Modèle réellement en vigueur. `CLI_DEFAULT` ne désigne aucune entrée du catalogue :
@@ -365,7 +395,7 @@ export function useAgentSettings({
     // lisible quand le catalogue ne le déclare pas (ou plus). Seulement si le modèle
     // gère l'effort : sinon le sélecteur n'a pas à exister.
     const current =
-      config.agent === 'claude' ? config.effort : config.agent === 'codex' ? config.reasoningEffort : config.variant
+      config.agent === 'claude' ? config.effort : config.agent === 'opencode' ? config.variant : config.reasoningEffort
     if (known.length > 0 && current && !known.some((option) => option.value === current)) {
       known.unshift({ value: current, label: current, hint: t('composer.select.saved') })
     }
@@ -440,8 +470,9 @@ export function useAgentSettings({
    * Même sentinelle côté effort, que seul Codex laisse vide : le niveau montré est
    * celui que le modèle retenu annonce par défaut.
    */
-  const resolvedEffort = codex
-    ? codex.reasoningEffort ||
+  const effortSetting = codex ?? grok
+  const resolvedEffort = effortSetting
+    ? effortSetting.reasoningEffort ||
       catalogModel(catalog?.models, resolvedModel)?.defaultEffort ||
       CLI_DEFAULT
     : CLI_DEFAULT
@@ -605,6 +636,8 @@ export function useAgentSettings({
   const speedOptionList = speedOptions(t)
   const ultracodeOptionList = ultracodeOptions(t)
   const opencodePermissionList = opencodePermissionOptions(t)
+  const grokPermissionList = grokPermissionOptions(t)
+  const webSearchOptionList = webSearchOptions(t)
 
   let groups: SettingGroup[] = []
   let summary: SummarySegment[] = []
@@ -1039,6 +1072,98 @@ export function useAgentSettings({
         onSelectedChange={(ids) => onConfigChange({ ...opencode, mcpServers: ids })}
         sillage={sillageAvailable ? opencode.sillageMcp : null}
         onSillageChange={(sillageMcp) => onConfigChange({ ...opencode, sillageMcp })}
+        strict={null}
+        onStrictChange={() => {}}
+        disabled={disabled}
+      />
+    )
+  } else if (grok) {
+    const applied = appliedConfig?.agent === 'grok' ? appliedConfig : null
+    const webSearch: WebSearchChoice = grok.webSearch ? 'on' : 'off'
+
+    groups = [
+      setting({
+        key: 'model',
+        label: t('composer.setting.model'),
+        icon: <Sparkles size={15} />,
+        options: modelOptions,
+        value: resolvedModel,
+        onChange: (model) =>
+          onConfigChange({ ...grok, model, reasoningEffort: clampEffort(model, grok.reasoningEffort) }),
+      }),
+      ...(effortOptions.length > 0
+        ? [
+            setting({
+              key: 'effort',
+              label: t('composer.setting.effort'),
+              icon: <Brain size={15} />,
+              options: effortOptions,
+              value: resolvedEffort,
+              onChange: (reasoningEffort) => onConfigChange({ ...grok, reasoningEffort }),
+            }),
+          ]
+        : []),
+      setting({
+        key: 'permission',
+        label: t('composer.setting.permission'),
+        icon: <ShieldCheck size={15} />,
+        options: grokPermissionList,
+        value: grok.permissionMode,
+        onChange: (permissionMode) => onConfigChange({ ...grok, permissionMode }),
+      }),
+      // Grok coupe ses outils web par une option de lancement : le changement attend
+      // la relance de la session, et la ligne dit ce qui vaut d'ici là.
+      setting({
+        key: 'webSearch',
+        label: t('composer.setting.webSearch'),
+        icon: <Globe size={15} />,
+        options: webSearchOptionList,
+        active: 'on',
+        value: webSearch,
+        onChange: (choice) => onConfigChange({ ...grok, webSearch: choice === 'on' }),
+        notice: notice(
+          appliedLabel(applied ? (applied.webSearch ? 'on' : 'off') : undefined, webSearch, webSearchOptionList),
+          t,
+        ),
+      }),
+      ...(libraryAvailable
+        ? [
+            setting({
+              key: 'skillLibrary',
+              label: t('composer.setting.skillLibrary'),
+              icon: <BookOpen size={15} />,
+              options: libraryOptionList,
+              active: 'on',
+              value: libraryChoice(grok.skillLibrary),
+              onChange: (choice) => onConfigChange({ ...grok, skillLibrary: choice === 'on' }),
+              // Les skills arrivent en plugin au lancement du process, comme chez Claude.
+              notice: notice(
+                appliedLabel(
+                  applied ? libraryChoice(applied.skillLibrary) : undefined,
+                  libraryChoice(grok.skillLibrary),
+                  libraryOptionList,
+                ),
+                t,
+              ),
+            }),
+          ]
+        : []),
+    ]
+
+    summary = [
+      segment('model', modelOptions, resolvedModel),
+      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+      segment('permission', grokPermissionList, grok.permissionMode),
+    ]
+
+    mcp = (
+      <McpControl
+        servers={mcpServers}
+        inventory={mcpInventory}
+        selected={grok.mcpServers}
+        onSelectedChange={(ids) => onConfigChange({ ...grok, mcpServers: ids })}
+        sillage={sillageAvailable ? grok.sillageMcp : null}
+        onSillageChange={(sillageMcp) => onConfigChange({ ...grok, sillageMcp })}
         strict={null}
         onStrictChange={() => {}}
         disabled={disabled}

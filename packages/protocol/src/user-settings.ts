@@ -5,12 +5,15 @@ import {
   claudeConfigSchema,
   codexConfigSchema,
   opencodeConfigSchema,
+  grokConfigSchema,
   DEFAULT_CLAUDE_CONFIG,
   DEFAULT_CODEX_CONFIG,
   DEFAULT_OPENCODE_CONFIG,
+  DEFAULT_GROK_CONFIG,
   type ClaudeConfig,
   type CodexConfig,
   type OpencodeConfig,
+  type GrokConfig,
 } from './agent-config.js'
 
 /**
@@ -73,6 +76,7 @@ export interface ComposerLayout {
   claude: string[]
   codex: string[]
   opencode: string[]
+  grok: string[]
 }
 
 /** Modèle et effort : la barre telle qu'elle était avant de devenir réglable. */
@@ -80,6 +84,7 @@ export const DEFAULT_COMPOSER_LAYOUT: ComposerLayout = {
   claude: ['model', 'effort'],
   codex: ['model', 'effort'],
   opencode: ['model', 'effort'],
+  grok: ['model', 'effort'],
 }
 
 /** Une clé de catégorie telle que `agent-settings` les nomme, sans rien de plus long. */
@@ -89,6 +94,7 @@ export const composerLayoutSchema = z.object({
   claude: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.claude).catch(DEFAULT_COMPOSER_LAYOUT.claude),
   codex: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.codex).catch(DEFAULT_COMPOSER_LAYOUT.codex),
   opencode: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.opencode).catch(DEFAULT_COMPOSER_LAYOUT.opencode),
+  grok: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.grok).catch(DEFAULT_COMPOSER_LAYOUT.grok),
 })
 
 /**
@@ -113,12 +119,14 @@ export interface AgentDefaults {
   claude: ClaudeConfig
   codex: CodexConfig
   opencode: OpencodeConfig
+  grok: GrokConfig
 }
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
   claude: DEFAULT_CLAUDE_CONFIG,
   codex: DEFAULT_CODEX_CONFIG,
   opencode: DEFAULT_OPENCODE_CONFIG,
+  grok: DEFAULT_GROK_CONFIG,
 }
 
 /**
@@ -134,6 +142,7 @@ export const agentDefaultsSchema = z.object({
   codex: codexConfigSchema.catch(DEFAULT_CODEX_CONFIG),
   // `default` en plus du `catch` : les réglages écrits avant opencode n'ont pas la clé.
   opencode: opencodeConfigSchema.default(DEFAULT_OPENCODE_CONFIG).catch(DEFAULT_OPENCODE_CONFIG),
+  grok: grokConfigSchema.default(DEFAULT_GROK_CONFIG).catch(DEFAULT_GROK_CONFIG),
 })
 
 export const appearancePrefsSchema = z.object({

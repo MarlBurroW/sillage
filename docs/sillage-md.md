@@ -1,4 +1,4 @@
-# SILLAGE.md : des consignes communes à Claude, Codex et OpenCode
+# SILLAGE.md : des consignes communes à Claude, Codex, OpenCode et Grok Build
 
 Des consignes tenues par Sillage et injectées dans le prompt système de chaque session,
 quel que soit son CLI : une partie **globale** (administrateurs) et une par **projet**
@@ -42,6 +42,19 @@ Sondé le 2026-10-05 sur opencode 1.18.25.
   coupe aussi l'`opencode.json` et le dossier `.opencode/` du projet. Les consignes
   passent par le champ `system` de chaque message.
 
+Sondé le 2026-10-17 sur Grok Build 1.0.62.
+
+- Grok lit `AGENTS.md`, `Agents.md`, `AGENT.md`, `CLAUDE.md` et `Claude.md` de chaque
+  dossier entre la racine du dépôt et le dossier de travail, plus ceux de `~/.grok`, et
+  ceux de `~/.claude` tant que `GROK_CLAUDE_AGENTS_ENABLED` n'est pas coupé (Sillage le
+  coupe toujours).
+- Le seul interrupteur est le profil d'agent : `_meta.agentProfile` avec
+  `agentsMd: false` à la création et à la reprise de la session. Il ne retire au prompt
+  système que le paragraphe sur la vérification au navigateur.
+- Les consignes passent par `_meta.rules` de `session/new`, ajouté au prompt système dans
+  un bloc `<human_rules>`. Le champ `systemPrompt` de l'ACP et l'option `--rules` sont
+  ignorés par `grok agent`.
+
 ## Les agents peuvent y écrire
 
 Le serveur MCP `sillage` traite SILLAGE.md comme un fichier : `read_instructions` le lit,
@@ -57,7 +70,8 @@ l'agent vers le fichier du dépôt, qu'il modifie avec ses propres outils.
 Au lancement d'une session pour Claude et Codex. Claude enregistre son prompt système au
 premier échange et le rejoue tel quel à la reprise : une session déjà ouverte garde la
 version reçue jusqu'à sa prochaine compaction. OpenCode, qui les reçoit avec chaque
-message, voit une modification dès le suivant. Le mode, lui, est lu au lancement du
+message, voit une modification dès le suivant. Grok Build les reçoit à la création de la
+session et les garde toute sa vie : une reprise relit le prompt système enregistré. Le mode, lui, est lu au lancement du
 runner.
 
 ## Donner aux agents des liens accessibles à distance
@@ -94,6 +108,9 @@ partagé par tous les CLI et par tous les worktrees du projet.
   du workspace. `write_memory` ajoute seul la ligne d'index d'une note nouvelle.
 - **OpenCode** est traité comme Codex : l'index et le chemin du dossier arrivent avec
   chaque message, dans son prompt système, et il écrit par les mêmes outils MCP.
+- **Grok Build** aussi, à ceci près que l'index arrive une fois, dans les `rules` de la
+  création de session. Sa propre mémoire entre sessions (`~/.grok/memory-v2`) n'est pas
+  touchée.
 - **Interface** : une carte « Mémoire » sur la page du projet liste les notes, les ouvre
   en édition et les supprime avec leur ligne d'index.
 

@@ -50,8 +50,8 @@ explicitly.
 installs the ones you use from the UI, into the `data` volume, so they survive
 pod replacement. You then authenticate them from inside the pod
 (`kubectl exec -it ... -- bash`); the `home` volume keeps their credentials
-(`~/.claude`, `~/.codex`, and `~/.local/share/opencode`, where OpenCode also keeps its
-sessions) across restarts.
+(`~/.claude`, `~/.codex`, `~/.local/share/opencode`, where OpenCode also keeps its
+sessions, and `~/.grok` for Grok Build) across restarts.
 
 **The pod needs egress** to the npm registry (installing the CLIs), the GitHub
 API (update check), the agent APIs and the browsers' Web Push endpoints. A strict

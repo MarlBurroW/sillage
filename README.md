@@ -4,8 +4,8 @@
 [![CI](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml/badge.svg)](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A self-hosted, mobile-first web UI that drives the native Claude Code, Codex and
-OpenCode CLIs on your own machine. Vibe-code from anywhere: the official agent harnesses,
+A self-hosted, mobile-first web UI that drives the native Claude Code, Codex, OpenCode
+and Grok Build CLIs on your own machine. Vibe-code from anywhere: the official agent harnesses,
 without the terminal.
 
 Runs on Linux, on macOS (Apple Silicon), on Windows through WSL2, in Docker or on
@@ -41,7 +41,7 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   Sillage is running, the agent keeps working and the thread replays as it happened.
 - **A queue, and steering.** Write while a turn runs. The message waits on the
   server and can be withdrawn, or goes straight into the turn already in flight.
-- **One grammar for every CLI.** Claude Code, Codex and OpenCode are translated
+- **One grammar for every CLI.** Claude Code, Codex, OpenCode and Grok Build are translated
   into a single event schema, so history, search, the board and the panel behave the
   same way whichever one ran the conversation.
 - **The repository, one panel away.** File explorer, editor, diffs, commit
@@ -102,12 +102,12 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   conversation open. Manage subscribed devices and send a test from Settings.
 - **Dictation** biased with a lexicon read from the project itself plus the
   current branch, then an optional cleanup pass. Any OpenAI-format endpoint.
-- **Continue a conversation in another CLI.** From Claude Code to Codex or OpenCode and
-  back: the new agent receives a budgeted selection of the thread, full messages rather
+- **Continue a conversation in another CLI.** From Claude Code to Codex, OpenCode or
+  Grok Build and back: the new agent receives a budgeted selection of the thread, full messages rather
   than a summary, with references it can read back through the Sillage MCP server.
   [How the handoff is built](docs/cli-handoff.md).
 - **MCP servers** declared once and handed to the agents that should get them.
-- **A shared skill library** for Claude Code, Codex and OpenCode, with global and
+- **A shared skill library** for Claude Code, Codex, OpenCode and Grok Build, with global and
   project skills managed from the interface. [Skill library](docs/skill-library.md).
 - **Extra accounts.** Register other Claude subscriptions or API keys, and other
   Codex subscriptions or API keys from the interface, then pick one when creating
@@ -137,8 +137,8 @@ Sillage can install them from Settings and flags incompatible installed versions
 ## Instructions and memory
 
 Each CLI keeps its own context files: Claude Code reads `CLAUDE.md` and its auto
-memory under `~/.claude`, Codex reads `AGENTS.md`, OpenCode reads `AGENTS.md` or
-`CLAUDE.md`. Sillage gives all three the same two things instead.
+memory under `~/.claude`, Codex reads `AGENTS.md`, OpenCode and Grok Build read
+`AGENTS.md` or `CLAUDE.md`. Sillage gives all four the same two things instead.
 
 |  | Instructions (`SILLAGE.md`) | Memory |
 | --- | --- | --- |
@@ -148,6 +148,7 @@ memory under `~/.claude`, Codex reads `AGENTS.md`, OpenCode reads `AGENTS.md` or
 | Claude Code | Appended to its system prompt | Its native auto memory, pointed at Sillage's folder (`autoMemoryDirectory`) |
 | Codex | Added to its developer instructions | The index is given at startup; it reads notes from the folder and writes through MCP tools |
 | OpenCode | Sent as the system prompt of each message | The index comes with each message; it reads notes from the folder and writes through MCP tools |
+| Grok Build | Appended to its system prompt when the session is created (`rules`) | The index is given at creation; it reads notes from the folder and writes through MCP tools |
 | Agent tools | `read_instructions` · `edit_instructions` · `write_instructions` | `read_memory` · `write_memory` · `delete_memory` |
 | Edited from | Settings › Instructions (global), the project page, the conversation header | The project page |
 
@@ -157,7 +158,7 @@ can be changed later:
 - *In Sillage*: kept in Sillage and given to every CLI. The repository's `CLAUDE.md`
   and `AGENTS.md` are hidden from agents (`claudeMdExcludes` for Claude Code,
   `project_doc_max_bytes = 0` for Codex, `OPENCODE_DISABLE_PROJECT_CONFIG` for
-  OpenCode) so nothing arrives twice. The files themselves are not touched.
+  OpenCode, an agent profile without `agentsMd` for Grok Build) so nothing arrives twice. The files themselves are not touched.
   OpenCode has no finer switch: its project `opencode.json` and `.opencode/` folder
   are skipped too.
 - *In the repository*: the project part is the workspace's `AGENTS.md` (or
@@ -176,6 +177,7 @@ the project root is copied there; the original stays in place.
 session already running keeps what it received: Claude Code records its system
 prompt on the first turn and replays it on resume, until the next compaction.
 OpenCode receives them with every message, so an edit reaches it on the next one.
+Grok Build receives them when a session is created, and keeps them for its whole life.
 
 Details and the probes behind them: [docs/sillage-md.md](docs/sillage-md.md).
 
@@ -301,7 +303,7 @@ Node.
    browser.
 
 3. Install and sign in to the agents inside Ubuntu: Sillage drives the Linux
-   `claude`, `codex` and `opencode`, not the Windows ones.
+   `claude`, `codex`, `opencode` and `grok`, not the Windows ones.
 
    ```bash
    curl -fsSL https://claude.ai/install.sh | bash && claude
@@ -366,6 +368,7 @@ docs/windows.md    running Sillage on Windows through WSL2
 docs/accounts.md   extra Claude and Codex accounts, how they are wired, their limits
 docs/CODEX.md      what the Codex adapter relies on, as probed
 docs/OPENCODE.md   what the OpenCode adapter relies on, as probed
+docs/GROK.md       what the Grok Build adapter (Agent Client Protocol) relies on, as probed
 docs/brand/        the brand and the files derived from it
 ```
 

@@ -69,7 +69,7 @@ export function AccountChoice({
           }))
       : []
 
-  const chosen = config.agent === 'opencode' ? null : config.account
+  const chosen = config.agent === 'opencode' || config.agent === 'grok' ? null : config.account
   // La connexion du CLI, puis les comptes. Un jeton de setup-token sans jauge ne lit pas
   // son forfait, une clé API n'en a pas : les sonder ne rendrait rien, leur aperçu est une
   // phrase.
@@ -80,7 +80,7 @@ export function AccountChoice({
   const usages = useAccountsUsage(config.agent, probed, enabled && accounts.length > 0)
   const usageOf = (account: string | null) => usages[probed.indexOf(account)]
 
-  if (config.agent === 'opencode' || accounts.length === 0) return null
+  if (config.agent === 'opencode' || config.agent === 'grok' || accounts.length === 0) return null
 
   const hintFor = (account: Account | null): string | undefined => {
     if (account?.kind === 'oauth') return t('draft.account.tokenNoGauge')
