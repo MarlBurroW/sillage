@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
 import { and, eq, gt, or, sql } from 'drizzle-orm'
 import {
+  conversationHandoffs,
   conversations,
   permissionRequests,
   projects,
@@ -844,7 +845,17 @@ export class SessionManager {
       // l'utilisateur, pas un apport de Sillage qu'on choisirait de couper.
       projectOverview: (current) => {
         const sillageMcp = builtinMcpEnabled(this.config.mcp.sillageServer, current)
+        // Le contexte transmis par la conversation que celle-ci continue, dans le
+        // même canal que SILLAGE.md et hors de tout interrupteur : c'est l'historique
+        // de ce fil, pas un apport de Sillage. Relu à chaque démarrage parce que le
+        // CLI repart sans lui à chaque reprise, comme pour les consignes.
+        const handoff = this.db
+          .select({ text: conversationHandoffs.text })
+          .from(conversationHandoffs)
+          .where(eq(conversationHandoffs.conversationId, conversationId))
+          .get()
         const parts = [
+          handoff?.text ?? null,
           instructionsAppendix(this.db, {
             projectId: conversation.projectId,
             mode: instructions()?.mode ?? 'repo',
