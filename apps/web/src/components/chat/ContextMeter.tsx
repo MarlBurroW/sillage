@@ -25,7 +25,7 @@ function formatTokens(count: number): string {
  * conversation. Une jauge cliquable ne dit pas ce que le clic ferait, et la seule
  * façon de l'apprendre était de l'essayer sur une conversation en cours.
  */
-export function ContextMeter({ context }: { context: ContextState }) {
+export function ContextMeter({ context, compact = false }: { context: ContextState; compact?: boolean }) {
   const ratio = Math.min(Math.max(context.ratio, 0), 1)
   const percent = Math.round(ratio * 100)
 
@@ -61,7 +61,9 @@ export function ContextMeter({ context }: { context: ContextState }) {
           transform="rotate(-90 9 9)"
         />
       </svg>
-      {percent} %
+      {/* Au téléphone, l'anneau seul : le pourcentage reste lu par le lecteur d'écran
+          et dans l'infobulle, sans prendre la place d'un bouton sur la ligne. */}
+      {compact ? <span className="sr-only">{percent} %</span> : `${percent} %`}
     </span>
   )
 }
