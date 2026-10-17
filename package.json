@@ -28,6 +28,7 @@
     "test:board-github-ui": "node scripts/board-github-ui-check.mjs",
     "test:decisions-ui": "node scripts/decisions-ui-check.mjs",
     "test:schedule-check-ui": "node scripts/schedule-check-ui-check.mjs",
+    "test:images-ui": "node scripts/image-viewer-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
     "db:generate": "pnpm --filter @sillage/db generate",
     "db:migrate": "pnpm --filter @sillage/server migrate",
