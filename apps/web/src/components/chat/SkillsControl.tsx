@@ -7,6 +7,7 @@ import { useTranslate } from '../../lib/i18n'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { SettingsSurface } from './ComposerSettings'
 import { SettingsHeading } from './SettingsPanel'
+import { toolButtonClass } from './composer-buttons'
 
 interface SkillsControlProps {
   projectId?: string
@@ -17,13 +18,13 @@ interface SkillsControlProps {
 }
 
 /** Le catalogue configuré ne prouve pas que le CLI l'a déjà chargé. */
-export function SkillsControl({ inputRef, ...props }: SkillsControlProps) {
+export function SkillsControl({ inputRef, narrow = false, ...props }: SkillsControlProps & { narrow?: boolean }) {
   const t = useTranslate()
+  // Icône seule, comme MCP à côté : le libellé passe dans l'infobulle et le nom accessible.
   return (
     <SettingsSurface label={t('composer.skills.title')} inputRef={inputRef} disabled={false} spacious
-      trigger={<TooltipButton type="button" aria-label={t('composer.skills.title')} title={t('composer.skills.title')}
-        className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-ink-faint hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11">
-        <BookOpen size={14} /><span>{t('composer.skills.title')}</span>
+      trigger={<TooltipButton type="button" aria-label={t('composer.skills.title')} title={t('composer.skills.title')} className={toolButtonClass(narrow)}>
+        <BookOpen size={16} />
       </TooltipButton>}
     >
       {(close) => <SkillsInventory {...props} onClose={close} />}

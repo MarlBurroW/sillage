@@ -18,6 +18,7 @@
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
+    "test:viewport-ui": "node scripts/viewport-ui-check.mjs",
     "test:skill-updates-ui": "node scripts/skill-updates-ui-check.mjs",
     "test:skills-ui": "node scripts/skills-ui-check.mjs",
     "test:tooltips-ui": "node scripts/tooltips-ui-check.mjs",

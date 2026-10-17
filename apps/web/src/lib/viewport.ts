@@ -77,13 +77,21 @@ export function useVisualViewport(): void {
       window.scrollTo(0, 0)
     }
 
+    const hasInputFocus = () => document.activeElement instanceof HTMLElement
+      && document.activeElement.matches('input, textarea, [contenteditable]:not([contenteditable="false"])')
+
     const apply = () => {
-      const gap = window.innerHeight - viewport.height
-      if (gap < resting) resting = gap
+      // `innerHeight` peut suivre le clavier sur iOS ; le calque fixe reste, lui,
+      // dimensionné par le viewport de mise en page.
+      const gap = Math.max(0, Math.max(root.clientHeight, window.innerHeight) - viewport.height)
+      // Un montage ou une rotation pendant la saisie ne doit pas enregistrer la
+      // hauteur du clavier comme écart au repos. La fermeture affinera la mesure.
+      if (!hasInputFocus() && gap < resting) resting = gap
+      const baseline = Number.isFinite(resting) ? resting : 0
 
       // Le clavier est la seule raison d'imposer une hauteur : hors de ce cas, la
       // mesure est retirée plutôt que corrigée, et la règle CSS reprend la main.
-      if (gap - resting < KEYBOARD_MIN_PX) {
+      if (gap - baseline < KEYBOARD_MIN_PX) {
         clear()
         return
       }
@@ -112,7 +120,7 @@ export function useVisualViewport(): void {
     const onFocusOut = () => {
       clearTimeout(settle)
       settle = setTimeout(() => {
-        if (document.activeElement instanceof HTMLElement && document.activeElement.matches('input, textarea, [contenteditable]')) return
+        if (hasInputFocus()) return
         apply()
         // `apply` ne touche à rien si le clavier n'était pas reconnu : le recalage du
         // document doit quand même avoir lieu.
