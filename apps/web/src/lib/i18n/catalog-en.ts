@@ -2323,6 +2323,7 @@ export const en = {
   'error.error_max_structured_output_retries': "Structured output could not be produced",
   'error.compact_failed': "Context compaction failed",
   'error.runner_failed': "The CLI stopped",
+  'error.opencode_unsupported_version': "OpenCode {version} is not supported: Sillage speaks the OpenCode 1.x server API, which OpenCode 2 removed. Install OpenCode 1.x (opencode-ai) and do not run `opencode upgrade --major`.",
   'error.config_agent_immutable': "The CLI of a conversation cannot change.",
   'error.config_agent_mismatch': "The configuration does not match the selected CLI.",
   'error.conversation_busy': "A turn is in progress: wait for it to finish before compacting.",

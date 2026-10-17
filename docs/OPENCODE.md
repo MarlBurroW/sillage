@@ -2,7 +2,29 @@
 
 Sillage lance un `opencode serve` par conversation et lui parle en HTTP, avec un flux
 SSE (`GET /event`). Les bindings sont générés depuis l'OpenAPI que le binaire publie sur
-`GET /doc`, avec **opencode 1.19.0**. Tout ce qui suit a été sondé sur cette version (1.18.25 à l'origine, revérifié sur 1.19.0 : l'API v1 n'a pas bougé).
+`GET /doc`, avec **opencode 1.19.3**. Tout ce qui suit a été sondé sur cette version
+(1.18.25 à l'origine, revérifié sur 1.19.0 puis 1.19.3 : l'API v1 n'a pas bougé ; la
+1.19.3 ajoute seulement `reasoning_options` aux modèles de `ProviderConfig`, dont
+opencode tire les variantes que l'adaptateur lit déjà).
+
+Ce qui a changé sur la ligne 1.x et compte pour Sillage :
+
+- **1.19.1** : le partage de session n'existe plus (liens, commandes, import depuis une
+  URL). Les routes `/session/{id}/share` restent dans l'OpenAPI mais ne servent plus ;
+  Sillage n'y a jamais touché et garde `share: 'disabled'` au lancement, toujours accepté.
+- **1.19.2** : la 1.x ne propose plus la 2.x comme mise à jour ordinaire (ni la
+  vérification de mise à jour, ni le script d'installation). Passer à OpenCode 2 reste un
+  geste explicite : `/update` ou `opencode upgrade --major`.
+
+**Ne pas lancer `opencode upgrade --major`** (ni l'offre 2.0 de `/update`) sur une
+machine qui fait tourner Sillage tant que l'adaptateur parle l'API v1 : OpenCode 2
+(`@opencode/cli` 2.x) a retiré cette API au profit de `/api/...`, et `--major` désinstalle
+la 1.x. Un garde-fou (`apps/server/src/agents/opencode/version-guard.ts`) lit
+`opencode --version` avant chaque `opencode serve` et refuse une majeure ≥ 2 avec l'erreur
+`opencode_unsupported_version`, plutôt que de laisser tourner une conversation muette.
+Vérifié sur `@opencode/cli` 2.0.32, qui répond `opencode v2.0.32` à `--version` : son
+`serve` annonce bien `server listening on ...`, mais `/session`, `/event` et `/doc`
+répondent la page HTML de son application web (200), et seule `/api/...` est l'API.
 
 ## Génération d'API
 

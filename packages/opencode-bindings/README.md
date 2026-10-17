@@ -5,7 +5,7 @@ binaire installé publie sur `GET /doc` (`pnpm opencode:types`). Paquet à part 
 même raison que `@sillage/codex-bindings` : `@sillage/protocol` reste neutre vis-à-vis
 des CLI.
 
-Généré avec **opencode 1.19.0**.
+Généré avec **opencode 1.19.3**.
 
 `src/openapi.d.ts` est généré et ne se retouche pas. `src/index.ts` est écrit à la
 main : il donne un nom court aux schémas dont l'adaptateur se sert, et c'est lui qui
