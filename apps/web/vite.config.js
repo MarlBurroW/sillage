@@ -68,7 +68,7 @@ export default defineConfig({
                 // La coque applicative est précachée, jamais les réponses d'API : les mettre
                 // en cache produirait un fil incohérent avec le journal (invariant I2).
                 globPatterns: ['**/*.{js,css,html,woff2}'],
-                // Voir vite.config.ts : le paquet principal dépasse les 2 Mio par défaut.
+                // Voir vite.config.ts : le paquet principal dépasse encore les 2 Mio par défaut.
                 maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
                 navigateFallback: '/index.html',
                 navigateFallbackDenylist: [/^\/api\//],
