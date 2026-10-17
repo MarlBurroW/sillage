@@ -2,6 +2,23 @@ import type { Catalog } from './catalog-en'
 
 /** Catalogue français. Typé d'après l'anglais : une clé oubliée casse le build. */
 export const fr: Catalog = {
+  'git.graph.history': "Historique des commits",
+  'git.graph.details': "Détails du commit",
+  'git.graph.keyboard': "↑ ↓ Parcourir les commits",
+  'git.graph.files': "{count} fichiers modifiés",
+  'git.graph.title': "Graphe",
+  'git.graph.work': "Espace de travail",
+  'git.graph.views': "Vues Git",
+  'git.graph.scope': "Portée de l’historique",
+  'git.graph.all': "Toutes les branches",
+  'git.graph.current': "Branche courante",
+  'git.graph.search': "Rechercher un commit…",
+  'git.graph.count': "{count} commits",
+  'git.graph.searchHint': "Les résultats ressortent dans l’historique chargé. Les autres commits restent visibles pour suivre les branches.",
+  'git.graph.close': "Fermer les détails",
+  'git.graph.select': "Sélectionnez un commit pour examiner ses changements.",
+  'git.graph.merge': "Fusion de {count} parents",
+  'git.graph.limit': "2 000 commits chargés. Sélectionnez la branche courante pour cibler l’historique.",
   'image.title': "Visualisateur d’images",
   'image.open': "Agrandir l’image : {name}",
   'image.close': "Fermer",

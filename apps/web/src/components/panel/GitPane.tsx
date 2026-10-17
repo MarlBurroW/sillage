@@ -1,3 +1,4 @@
+import './git/git-workspace.css'
 import { GitBranch, Loader, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { GitActionDto } from '@sillage/protocol'
@@ -11,18 +12,7 @@ import { GitContext, type GitNotice } from './git/context'
 import { OperationBanner, RepoHeader } from './git/RepoHeader'
 import { StashesSection } from './git/StashesSection'
 
-/**
- * L'onglet Git : le dépôt tel qu'il est, et les gestes du quotidien dessus.
- *
- * Ce que dit le dépôt, tous auteurs confondus, donc y compris ce qu'on a modifié
- * soi-même à la main ou ce qu'un agent a écrit par une commande shell. Ce que l'agent
- * a fait tour par tour est une autre question, et vit dans l'onglet Historique.
- *
- * Les gestes sont ceux d'un client git ordinaire, ramenés à ce qu'un panneau étroit
- * peut tenir : index et commit, branches, remote, stashs, et quelques actions sur les
- * commits. Pas de graphe : les références posées sur chaque commit en disent l'essentiel,
- * et un graphe dans 390 px de large n'en dirait pas plus.
- */
+/** Le graphe garde sa place pendant que l’on inspecte un commit ou prépare le suivant. */
 export function GitPane({
   scope,
   turnRunning,
@@ -33,6 +23,7 @@ export function GitPane({
   onOpenFile: (path: string) => void
 }) {
   const t = useTranslate()
+  const [view, setView] = useState<'graph' | 'work'>('graph')
   const status = useGitStatus(scope)
   const refresh = useRefreshGit(scope)
   const [notice, setNotice] = useState<GitNotice | null>(null)
@@ -57,7 +48,7 @@ export function GitPane({
     <GitContext.Provider value={{ scope, notify: setNotice, openFile: onOpenFile }}>
       {/* `@container` : l'auteur d'un commit et les dates ne s'affichent que si la ligne
           a la place, qui dépend de la largeur du panneau et non de celle de la fenêtre. */}
-      <div className="@container flex h-full min-h-0 min-w-0 flex-col overflow-y-auto pb-safe">
+      <div className="git-workspace @container flex h-full min-h-0 min-w-0 flex-col overflow-hidden pb-safe">
         {status.isPending ? (
           <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">
             <Loader size={11} className="animate-spin" />
@@ -78,10 +69,43 @@ export function GitPane({
             <RepoHeader repo={repo} refreshing={status.isFetching} onRefresh={refresh} />
             {notice ? <Notice notice={notice} onDismiss={() => setNotice(null)} /> : null}
             <OperationBanner repo={repo} />
-            <ChangesSection repo={repo} />
-            <BranchesSection repo={repo} />
-            <StashesSection repo={repo} />
-            <CommitsSection repo={repo} />
+            <div
+              className="flex shrink-0 gap-1 border-b border-line p-2 @min-[60rem]:hidden"
+              role="group"
+              aria-label={t('git.graph.views')}
+            >
+              <Button
+                size="sm"
+                variant={view === 'graph' ? 'primary' : 'ghost'}
+                aria-pressed={view === 'graph'}
+                onClick={() => setView('graph')}
+              >
+                {t('git.graph.title')}
+              </Button>
+              <Button
+                size="sm"
+                variant={view === 'work' ? 'primary' : 'ghost'}
+                aria-pressed={view === 'work'}
+                onClick={() => setView('work')}
+              >
+                {t('git.graph.work')}{' '}
+                {repo.staged.length + repo.unstaged.length + repo.conflicted.length || ''}
+              </Button>
+            </div>
+            <div className="flex min-h-0 flex-1">
+              <div
+                className={`git-work-sidebar ${view === 'work' ? 'flex' : 'hidden'} min-h-0 w-full shrink-0 flex-col overflow-auto @min-[60rem]:flex @min-[60rem]:w-[17rem] @min-[60rem]:border-r @min-[60rem]:border-line`}
+              >
+                <ChangesSection repo={repo} />
+                <BranchesSection repo={repo} />
+                <StashesSection repo={repo} />
+              </div>
+              <div
+                className={`${view === 'graph' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 @min-[60rem]:flex`}
+              >
+                <CommitsSection key={scope} repo={repo} />
+              </div>
+            </div>
           </>
         ) : null}
       </div>

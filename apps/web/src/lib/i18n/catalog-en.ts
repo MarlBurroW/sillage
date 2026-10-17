@@ -14,6 +14,23 @@
  * Les paramètres s'écrivent `{nom}` et sont substitués par `t()`.
  */
 export const en = {
+  'git.graph.history': "Commit history",
+  'git.graph.details': "Commit details",
+  'git.graph.keyboard': "↑ ↓ Navigate commits",
+  'git.graph.files': "{count} changed files",
+  'git.graph.title': "Graph",
+  'git.graph.work': "Working tree",
+  'git.graph.views': "Git views",
+  'git.graph.scope': "History scope",
+  'git.graph.all': "All branches",
+  'git.graph.current': "Current branch",
+  'git.graph.search': "Find a commit…",
+  'git.graph.count': "{count} commits",
+  'git.graph.searchHint': "Matches are highlighted in loaded history. Other commits stay visible to preserve branch connections.",
+  'git.graph.close': "Close details",
+  'git.graph.select': "Select a commit to inspect its changes.",
+  'git.graph.merge': "Merge of {count} parents",
+  'git.graph.limit': "2,000 commits loaded. Select the current branch to narrow the history.",
   'image.title': "Image viewer",
   'image.open': "Open image: {name}",
   'image.close': "Close",

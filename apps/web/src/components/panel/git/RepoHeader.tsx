@@ -106,8 +106,8 @@ export function RepoHeader({
   const name = repo.branch ?? (repo.detached ? t('git.header.detached') : t('git.header.unborn'))
 
   return (
-    <div className="flex flex-col gap-1 border-b border-line px-2 py-1.5">
-      <div className="flex min-w-0 items-center gap-1.5">
+    <div className="git-repo-header flex flex-col gap-1 border-b border-line">
+      <div className="git-repo-identity flex min-w-0 items-center gap-1.5">
         <GitBranch size={13} className="shrink-0 text-ink-faint" />
         <span
           className={cx('min-w-0 truncate text-[0.8125rem] font-medium', repo.branch ? 'text-ink' : 'text-ink-soft italic')}
@@ -133,7 +133,7 @@ export function RepoHeader({
         </IconButton>
       </div>
 
-      <div className="flex items-center gap-0.5">
+      <div className="git-repo-remote flex items-center gap-0.5">
         <span className="min-w-0 flex-1 truncate pl-0.5 text-[0.6875rem] text-ink-faint">
           {repo.upstream
             ? t('git.header.upstream', { upstream: repo.upstream })
