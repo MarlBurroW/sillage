@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:net'
 import type { Config, Event } from '@sillage/opencode-bindings'
+import { assertSupportedOpencode } from './version-guard.js'
 
 /**
  * Un `opencode serve` et le client HTTP qui lui parle.
@@ -11,7 +12,7 @@ import type { Config, Event } from '@sillage/opencode-bindings'
  * (le process, les requêtes, le flux) et rien du métier, comme `CodexAppServerClient`.
  *
  * Première génération de l'API seulement (`/session/...`, `GET /event`). Sondé sur
- * opencode 1.18.25 et 1.19.0 : la seconde (`/api/session/...`, `GET /api/event`) est un monde à
+ * opencode 1.18.25, 1.19.0 et 1.19.3 : la seconde (`/api/session/...`, `GET /api/event`) est un monde à
  * part, son flux ne dit rien des sessions créées par la première, et il lui manque le
  * fork et les serveurs MCP.
  */
@@ -75,6 +76,9 @@ export class OpencodeServer {
    * par ce port.
    */
   static async start(options: OpencodeServerOptions): Promise<OpencodeServer> {
+    // Ici, seul point de lancement : session, catalogue, commandes et fork passent tous
+    // par là, et un opencode 2 doit être refusé partout plutôt que de tourner à vide.
+    await assertSupportedOpencode(options.binary)
     const password = randomBytes(24).toString('hex')
     const port = await freePort()
     const child = spawn(options.binary, ['serve', '--port', String(port), '--hostname', '127.0.0.1'], {

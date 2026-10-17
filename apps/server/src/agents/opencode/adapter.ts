@@ -60,7 +60,7 @@ export class OpencodeAdapter implements AgentAdapter {
   readonly capabilities = AGENT_CAPABILITIES.opencode
   /**
    * `v1` désigne la première génération de l'API d'`opencode serve` (`/session/...`,
-   * flux `GET /event`), sondée sur opencode 1.18.25 puis 1.19.0. La seconde (`/api/session/...`,
+   * flux `GET /event`), sondée sur opencode 1.18.25, 1.19.0 puis 1.19.3. La seconde (`/api/session/...`,
    * événements `session.next.*`) n'a ni fork ni serveurs MCP, et son flux ignore les
    * sessions de la première : l'adaptateur n'en parle qu'une.
    */
