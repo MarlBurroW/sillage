@@ -53,9 +53,13 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         send({ id, error: { code: -32600, message: 'expected turn mismatch' } })
         break
       }
-      // Ordre relevé sur 0.163.0 : l'accusé du steer précède la fin des deltas coupés.
-      send({ id, result: { turnId: turn.id } })
       const text = params.input.find((input) => input.type === 'text')?.text ?? ''
+      const turnId = turn.id
+      // `fixture-late:` rejoue le pire cas : les notifications lues avant l'accusé,
+      // comme lorsqu'elles arrivent dans le même bloc de stdout.
+      if (text.startsWith('fixture-late:')) emit(JSON.parse(text.slice(13)))
+      // Ordre relevé sur 0.163.0 : l'accusé du steer précède la fin des deltas coupés.
+      send({ id, result: { turnId } })
       if (text.startsWith('fixture:')) emit(JSON.parse(text.slice(8)))
       break
     }
