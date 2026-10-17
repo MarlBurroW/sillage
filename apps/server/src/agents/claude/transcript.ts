@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ContentBlock, SillageEvent } from '@sillage/protocol'
@@ -61,24 +61,41 @@ export function readTranscript(cwd: string, sessionId: string): Promise<Transcri
   return readJsonl(transcriptPath(cwd, sessionId))
 }
 
+const REQUEST_REPLAY_TYPES = new Set(['api-request', 'api-request-shape', 'api-request-blob'])
+
 async function readJsonl(path: string): Promise<TranscriptEntry[]> {
-  let content: string
+  let file
   try {
-    content = await readFile(path, 'utf8')
+    file = await open(path, 'r')
   } catch {
     return []
   }
 
   const entries: TranscriptEntry[] = []
-  for (const line of content.split('\n')) {
-    if (!line.trim()) continue
-    try {
-      const parsed: unknown = JSON.parse(line)
-      if (typeof parsed === 'object' && parsed !== null) entries.push(parsed as TranscriptEntry)
-    } catch {
-      // Une ligne tronquée (écriture en cours au moment de la lecture) n'invalide pas
-      // le reste du fichier.
+  try {
+    // Depuis 2.1.300, le rejeu du CLI duplique prompts et outils. Lire en flux évite
+    // de garder le fichier entier en mémoire en plus des entrées utiles à l'affichage.
+    for await (const line of file.readLines()) {
+      // Sondé sur 2.1.301 : ces lignes commencent par le type. L'ancrage empêche
+      // d'écarter un message qui ne ferait que citer ce format dans son contenu.
+      if (/^\s*\{\s*"type"\s*:\s*"api-request(?:-shape|-blob)?"\s*[,}]/.test(line)) continue
+      try {
+        const parsed: unknown = JSON.parse(line)
+        if (typeof parsed !== 'object' || parsed === null) continue
+        const entry = parsed as TranscriptEntry
+        // Le filtre reste juste si une future version déplace la propriété type.
+        if (typeof entry.type === 'string' && REQUEST_REPLAY_TYPES.has(entry.type)) continue
+        entries.push(entry)
+      } catch {
+        // Une ligne tronquée (écriture en cours au moment de la lecture) n'invalide
+        // pas le reste du fichier.
+      }
     }
+  } catch {
+    // Comme un fichier absent, une lecture impossible ne fournit aucun historique.
+    return []
+  } finally {
+    await file.close()
   }
   return entries
 }
