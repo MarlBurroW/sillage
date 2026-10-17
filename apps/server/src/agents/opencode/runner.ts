@@ -302,7 +302,7 @@ export class OpencodeRunner implements AgentRunner {
     journalDeath(this.ctx, {
       type: 'error',
       code: 'runner_failed',
-      message: `opencode serve s'est arrêté de façon inattendue (code ${code ?? 'inconnu'}).`,
+      message: `opencode serve stopped unexpectedly (code ${code ?? 'unknown'}).`,
       recoverable: true,
     })
   }

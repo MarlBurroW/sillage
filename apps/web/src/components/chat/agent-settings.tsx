@@ -15,7 +15,7 @@ import {
   type OpencodePermission,
   type OpencodePermissions,
 } from '@sillage/protocol'
-import { catalogModel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
+import { catalogModel, effortLabel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useMcpServers } from '../../lib/mcp'
@@ -357,7 +357,7 @@ export function useAgentSettings({
   const effortOptions = useMemo((): SettingChoice<string>[] => {
     const known = effortsFor(catalog?.models, resolvedModel).map((effort) => ({
       value: effort.value,
-      label: effort.label,
+      label: effortLabel(t, effort),
       hint: effort.hint ?? undefined,
     }))
 
@@ -367,7 +367,7 @@ export function useAgentSettings({
     const current =
       config.agent === 'claude' ? config.effort : config.agent === 'codex' ? config.reasoningEffort : config.variant
     if (known.length > 0 && current && !known.some((option) => option.value === current)) {
-      known.unshift({ value: current, label: current, hint: t('composer.select.saved') })
+      known.unshift({ value: current, label: effortLabel(t, { value: current, label: current, hint: null }), hint: t('composer.select.saved') })
     }
     return known
   }, [catalog, config, resolvedModel, t])

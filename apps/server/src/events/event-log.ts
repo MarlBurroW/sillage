@@ -838,7 +838,7 @@ export class EventLog {
     return {
       type: 'error',
       code: 'event_unreadable',
-      message: `Événement ${seq} illisible (${parsed.error.issues[0]?.message ?? 'forme inconnue'}).`,
+      message: `Event ${seq} is unreadable (${parsed.error.issues[0]?.message ?? 'unknown shape'}).`,
       recoverable: true,
     }
   }

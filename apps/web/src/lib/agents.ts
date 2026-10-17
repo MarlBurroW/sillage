@@ -9,7 +9,7 @@ import {
   type AgentModelDto,
   type AgentModelsDto,
 } from '@sillage/protocol'
-import { translate } from './i18n'
+import { translate, type MessageKey } from './i18n'
 import { api } from './api'
 
 /**
@@ -120,6 +120,27 @@ export function catalogModel(models: AgentModelDto[] | undefined, value: string)
  */
 export function effortsFor(models: AgentModelDto[] | undefined, value: string): AgentEffortDto[] {
   return catalogModel(models, value)?.efforts ?? []
+}
+
+/** Niveaux communs aux trois CLI ; les variantes propres à opencode gardent leur nom. */
+const EFFORT_KEYS: Record<string, MessageKey> = {
+  none: 'effort.level.none',
+  minimal: 'effort.level.minimal',
+  low: 'effort.level.low',
+  medium: 'effort.level.medium',
+  high: 'effort.level.high',
+  xhigh: 'effort.level.xhigh',
+  max: 'effort.level.max',
+}
+
+/**
+ * Libellé d'un niveau d'effort dans la langue de l'interface. Le serveur ne connaît pas
+ * cette langue : il envoie la valeur, et un libellé anglais (Claude) ou la valeur brute
+ * (Codex, opencode) qui ne sert plus que de repli pour un niveau inconnu.
+ */
+export function effortLabel(t: (key: MessageKey) => string, effort: AgentEffortDto): string {
+  const key = EFFORT_KEYS[effort.value]
+  return key ? t(key) : effort.label
 }
 
 /**

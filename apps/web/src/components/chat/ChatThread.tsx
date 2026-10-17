@@ -1,7 +1,7 @@
 import { Fragment, type RefObject } from 'react'
 import type { MessageItem, TurnCheckpoint } from '../../lib/chat-fold'
 import type { ChatRow } from '../../lib/tool-rows'
-import { translateError, useTranslate } from '../../lib/i18n'
+import { translate, translateError, useTranslate } from '../../lib/i18n'
 import { Banner, cx } from '../ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
 import { MessageBubble } from './MessageBubble'
@@ -12,6 +12,23 @@ import { QuestionPrompt } from './QuestionPrompt'
 import { TaskResult } from './TaskResult'
 import { ToolCall, ToolCallGroup } from './ToolCall'
 import { TurnChanges } from './TurnChanges'
+
+/**
+ * Ce qui reste à montrer sous le titre traduit d'une erreur écrite par Sillage. Son
+ * message, complet pour les lecteurs du journal sans catalogue (planificateur, webhooks),
+ * redirait le titre ; et les journaux d'avant le portent en français.
+ */
+const ERROR_DETAILS: Record<string, (message: string) => string> = {
+  daemon_restarted: () => '',
+  // Seule la raison, entre parenthèses en fin de phrase, apprend quelque chose. Celle
+  // que Sillage rédige se traduit ; une erreur du CLI reste telle qu'il l'a écrite.
+  config_applied_by_restart: (message) => {
+    const reason = /\(([^]*)\)\.?$/.exec(message)?.[1] ?? message
+    return LIVE_CHANGE_REFUSED.has(reason) ? translate('error.config_applied_by_restart.live') : reason
+  },
+}
+/** La raison de `restartForConfig`, en anglais et telle que l'écrivaient les journaux d'avant. */
+const LIVE_CHANGE_REFUSED = new Set(['the CLI cannot apply this change live', 'le CLI ne gère pas ce changement à chaud'])
 
 /**
  * Rendu d'un fil de conversation.
@@ -172,11 +189,13 @@ export function ChatThread({
             // catalogue ne peut pas connaître, comme l'heure de retour d'un quota.
             // Un code sans clé n'a pas de titre, et le message se suffit.
             const title = translateError(item.code, '')
+            const detail = ERROR_DETAILS[item.code]
+            const message = title && detail ? detail(item.message) : item.message
             return (
               <Banner key={item.id} tone={item.recoverable ? 'caution' : 'critical'}>
                 {title ? <span className="font-medium">{title}</span> : null}
-                {title ? <br /> : null}
-                <span className="whitespace-pre-wrap break-words">{item.message}</span>
+                {title && message ? <br /> : null}
+                {message ? <span className="whitespace-pre-wrap break-words">{message}</span> : null}
               </Banner>
             )
           }

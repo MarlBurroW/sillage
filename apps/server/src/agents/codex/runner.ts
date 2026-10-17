@@ -508,7 +508,7 @@ export class CodexRunner implements AgentRunner {
     journalDeath(this.ctx, {
       type: 'error',
       code: 'runner_failed',
-      message: `codex app-server s'est arrêté de façon inattendue (code ${code ?? 'inconnu'}).`,
+      message: `codex app-server stopped unexpectedly (code ${code ?? 'unknown'}).`,
       recoverable: true,
     })
   }
