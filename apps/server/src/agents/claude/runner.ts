@@ -461,7 +461,7 @@ export class ClaudeRunner implements AgentRunner {
               {
                 type: 'error',
                 code: 'compact_failed',
-                message: message.compact_error ?? 'La compaction du contexte a échoué.',
+                message: message.compact_error ?? 'Context compaction failed.',
                 recoverable: true,
               },
               message,
@@ -711,7 +711,7 @@ export class ClaudeRunner implements AgentRunner {
             {
               type: 'error',
               code: message.subtype,
-              message: message.errors.join('\n') || `Le tour s'est arrêté : ${message.subtype}.`,
+              message: message.errors.join('\n') || `The turn stopped: ${message.subtype}.`,
               recoverable: true,
             },
             message,
@@ -721,7 +721,7 @@ export class ClaudeRunner implements AgentRunner {
             {
               type: 'error',
               code: 'turn_failed',
-              message: message.result || 'Le tour a échoué sans explication du CLI.',
+              message: message.result || 'The turn failed without an explanation from the CLI.',
               recoverable: true,
             },
             message,

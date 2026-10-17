@@ -233,7 +233,9 @@ export class SessionManager {
       this.log.append(row.id, {
         type: 'error',
         code: 'daemon_restarted',
-        message: "Le daemon a redémarré pendant cette conversation. L'agent a été interrompu.",
+        // Le web traduit d'après le code ; le message anglais sert aux lecteurs du journal
+        // qui n'ont pas le catalogue (MCP, recherche).
+        message: 'The daemon restarted during this conversation. The agent was interrupted.',
         recoverable: true,
       })
       this.expireOpenPrompts(row.id)
@@ -679,7 +681,7 @@ export class SessionManager {
       this.log.append(conversationId, {
         type: 'error',
         code: 'queued_message_failed',
-        message: `Le message en attente n'a pas pu partir : ${
+        message: `The queued message could not be sent: ${
           err instanceof Error ? err.message : String(err)
         }`,
         recoverable: true,
@@ -1584,7 +1586,7 @@ export class SessionManager {
     let reason: string | null = null
     try {
       applied = await managed.runner.applyConfig(config)
-      if (!applied) reason = 'le CLI ne gère pas ce changement à chaud'
+      if (!applied) reason = 'the CLI cannot apply this change live'
     } catch (err) {
       reason = err instanceof Error ? err.message : String(err)
     }
@@ -1600,7 +1602,7 @@ export class SessionManager {
       this.log.append(conversationId, {
         type: 'error',
         code: 'config_restart_deferred',
-        message: 'Ce réglage demande de relancer la session : il prendra effet à la fin du tour.',
+        message: 'This setting requires restarting the session: it will take effect at the end of the turn.',
         recoverable: true,
       })
       return
@@ -1648,7 +1650,7 @@ export class SessionManager {
     this.log.append(conversationId, {
       type: 'error',
       code: 'config_applied_by_restart',
-      message: `Réglages appliqués en relançant la session (${reason}).`,
+      message: `Settings applied by restarting the session (${reason ?? 'no reason given'}).`,
       recoverable: true,
     })
     this.setStatus(conversationId, 'idle')

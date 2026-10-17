@@ -81,16 +81,30 @@ export function locale(): Locale {
  * téléchargement. Un échec (hors ligne sans précache, chunk introuvable après un
  * déploiement) n'empêche pas de démarrer : on reste en anglais, sans toucher au choix
  * enregistré, qui reprendra au prochain chargement.
+ *
+ * Le chargement part dès l'import du module (plus bas), et cette fonction rend la même
+ * promesse à chaque appel : `main.tsx` l'attend, tandis qu'un composant monté sans
+ * passer par lui (bancs Playwright, aperçus) bascule à son arrivée, par `notify`.
  */
-export async function initLocale(): Promise<void> {
+export function initLocale(): Promise<void> {
+  initial ??= loadInitial()
+  return initial
+}
+
+let initial: Promise<void> | null = null
+
+async function loadInitial(): Promise<void> {
   const wanted = detect()
   requested = wanted
   try {
     await loadCatalog(wanted)
-    if (requested === wanted) apply(wanted)
+    if (requested === wanted && current !== wanted) {
+      apply(wanted)
+      notify()
+    }
   } catch (error) {
     console.warn(`Catalogue « ${wanted} » indisponible, interface en anglais.`, error)
-    apply(FALLBACK)
+    if (requested === wanted) apply(FALLBACK)
   }
 }
 
@@ -219,3 +233,6 @@ function pendingLocale(): Locale | null {
 export function usePendingLocale(): Locale | null {
   return useSyncExternalStore(subscribe, pendingLocale, () => null)
 }
+
+// Pas sous Node : les tests du serveur importent le fold du fil, qui traduit.
+if (typeof document !== 'undefined') void initLocale()
