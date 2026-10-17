@@ -146,8 +146,41 @@ export function setPanelTab(next: PanelTab): void {
   tab = next
   // Cliquer l'onglet se lit comme « montre-moi les sous-agents », pas « rouvre celui
   // que je consultais » : la sélection ne survit donc pas à un passage par un autre
-  // onglet, alors qu'elle survit à un aller-retour dans le fil.
+  // onglet, alors qu'elle survit à un aller-retour dans le fil. Même doctrine pour le
+  // tour consulté dans l'onglet Git : revenir sur Git montre le dépôt, pas le tour.
   subAgentId = null
+  checkpointKey = null
+  for (const listener of listeners) listener()
+}
+
+/**
+ * Tour dont l'onglet Git montre les changements, désigné depuis le fil.
+ *
+ * Ici pour la même raison que le sous-agent : le geste part du fil et doit ouvrir le
+ * panneau, choisir l'onglet et désigner le tour d'un coup.
+ */
+let checkpointKey: string | null = null
+
+export function usePanelCheckpoint(): string | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => checkpointKey,
+    () => null,
+  )
+}
+
+/** Montre les changements d'un tour dans l'onglet Git, panneau ouvert. */
+export function showCheckpoint(key: string): void {
+  setPanelOpen(true)
+  tab = 'git'
+  subAgentId = null
+  checkpointKey = key
+  for (const listener of listeners) listener()
+}
+
+export function clearCheckpoint(): void {
+  if (checkpointKey === null) return
+  checkpointKey = null
   for (const listener of listeners) listener()
 }
 

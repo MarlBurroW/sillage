@@ -237,3 +237,20 @@ export const gitResetBodySchema = z.object({
 export const gitRevertBodySchema = z.object({
   hash: commitHashSchema,
 })
+
+// Points de reprise d'un tour
+
+export const checkpointKeySchema = z.string().regex(/^[0-9a-f-]{8,64}$/)
+
+export const checkpointFileDiffQuerySchema = z.object({
+  path: gitPathSchema,
+  /** L'ancien nom d'un renommage : sans lui, git montrerait une création. */
+  oldPath: gitPathSchema.optional(),
+})
+
+export interface CheckpointRestoreDto {
+  written: number
+  deleted: number
+  /** Faux quand l'index n'a pas pu être capturé (conflits au moment du tour). */
+  indexRestored: boolean
+}

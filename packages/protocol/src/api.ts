@@ -150,6 +150,7 @@ export const updateProjectBodySchema = z
         message: 'The configuration must belong to the named agent.',
       }),
     archived: z.boolean(),
+    turnCheckpoints: z.boolean(),
   })
   .partial()
 
@@ -200,6 +201,8 @@ export interface ProjectDto {
   defaultConfig: ProjectAgentDefaults
   /** Null pour un projet d'avant le réglage : le mode se résout alors d'après le dossier. */
   instructionsMode: InstructionsMode | null
+  /** Points de reprise git par tour (voir `checkpoints.ts` côté serveur). */
+  turnCheckpoints: boolean
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
   /**

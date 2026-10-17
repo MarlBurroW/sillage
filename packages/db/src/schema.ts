@@ -86,6 +86,12 @@ export const projects = sqliteTable(
      * les projets d'avant, résolu d'après le dossier (voir `instructions/store.ts`).
      */
     instructionsMode: text('instructions_mode').$type<InstructionsMode>(),
+    /**
+     * Capturer l'état du workspace avant et après chaque tour (refs git cachées), pour
+     * montrer ce qu'un tour a changé et pouvoir y revenir. Vrai par défaut ; à couper
+     * sur un dépôt si lourd que la capture retarde visiblement l'envoi d'un message.
+     */
+    turnCheckpoints: integer('turn_checkpoints', { mode: 'boolean' }).notNull().default(true),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },

@@ -94,6 +94,7 @@ export const insertProject = async (
       (repoInstructionFiles(fields.workspacePath).length > 0 ? 'repo' : 'sillage'),
     ownerId,
     defaultConfig: null,
+    turnCheckpoints: true,
     position: (highest?.max ?? 0) + 1,
     archivedAt: null,
     createdAt: Date.now(),

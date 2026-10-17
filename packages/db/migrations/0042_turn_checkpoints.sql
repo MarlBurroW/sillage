@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `turn_checkpoints` integer DEFAULT true NOT NULL;

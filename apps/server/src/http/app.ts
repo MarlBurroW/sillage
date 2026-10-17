@@ -62,6 +62,7 @@ import { registerSessionMessageRoutes } from './routes/session-messages.js'
 import { registerFileRoutes } from './routes/files.js'
 import { registerGitActionRoutes } from './routes/git-actions.js'
 import { registerGitViewRoutes } from './routes/git-views.js'
+import { registerCheckpointRoutes } from './routes/checkpoints.js'
 import { registerFsRoutes } from './routes/fs.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerPaletteRoutes } from './routes/palette.js'
@@ -195,6 +196,7 @@ export async function buildApp(
   registerAuthRoutes(app, ctx)
   registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals)
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks)
+  registerCheckpointRoutes(app, ctx, sessions)
   registerSessionMessageRoutes(app, ctx, relay)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerFsRoutes(app)

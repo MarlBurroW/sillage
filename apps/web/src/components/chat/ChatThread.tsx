@@ -1,5 +1,5 @@
-import type { RefObject } from 'react'
-import type { MessageItem } from '../../lib/chat-fold'
+import { Fragment, type RefObject } from 'react'
+import type { MessageItem, TurnCheckpoint } from '../../lib/chat-fold'
 import type { ChatRow } from '../../lib/tool-rows'
 import { translateError, useTranslate } from '../../lib/i18n'
 import { Banner, cx } from '../ui'
@@ -11,6 +11,7 @@ import { PlanProgress } from './PlanProgress'
 import { QuestionPrompt } from './QuestionPrompt'
 import { TaskResult } from './TaskResult'
 import { ToolCall, ToolCallGroup } from './ToolCall'
+import { TurnChanges } from './TurnChanges'
 
 /**
  * Rendu d'un fil de conversation.
@@ -29,6 +30,9 @@ export function ChatThread({
   onFork,
   flashedId = null,
   anchors,
+  checkpoints,
+  onShowChanges,
+  onRestoreCheckpoint,
 }: {
   rows: ChatRow[]
   conversationId: string
@@ -43,11 +47,52 @@ export function ChatThread({
   flashedId?: string | null
   /** Position des messages utilisateur, tenue à jour pour la réglette des tours. */
   anchors?: RefObject<Map<string, HTMLElement>>
+  /** Points de reprise des tours, absents sur le fil d'un sous-agent. */
+  checkpoints?: TurnCheckpoint[]
+  onShowChanges?: (checkpoint: TurnCheckpoint) => void
+  onRestoreCheckpoint?: (checkpoint: TurnCheckpoint) => void
 }) {
   const t = useTranslate()
+
+  // Le repère d'un tour se pose à sa fin : juste avant le message utilisateur suivant,
+  // ou sous le dernier élément du fil. Le tour est reconnu par le message qui l'ouvre.
+  const byOpener = new Map<string, TurnCheckpoint>()
+  for (const checkpoint of checkpoints ?? []) {
+    if (checkpoint.openerId) byOpener.set(checkpoint.openerId, checkpoint)
+  }
+  let current: TurnCheckpoint | null = null
+  const strip = (checkpoint: TurnCheckpoint | null) =>
+    checkpoint && onShowChanges ? (
+      <TurnChanges
+        key={`checkpoint-${checkpoint.key}`}
+        checkpoint={checkpoint}
+        onShow={onShowChanges}
+        onRestore={onRestoreCheckpoint}
+      />
+    ) : null
+
   return (
     <>
       {rows.map((row) => {
+        if (row.kind === 'item' && row.item.kind === 'message' && row.item.role === 'user' && !row.item.parentToolCallId) {
+          const closing = strip(current)
+          current = byOpener.get(row.item.id) ?? null
+          if (closing) {
+            return (
+              <Fragment key={`turn-${row.item.id}`}>
+                {closing}
+                {renderRow(row)}
+              </Fragment>
+            )
+          }
+        }
+        return renderRow(row)
+      })}
+      {strip(current)}
+    </>
+  )
+
+  function renderRow(row: ChatRow) {
         if (row.kind === 'tool-group') {
           return <ToolCallGroup key={row.key} tools={row.tools} conversationId={conversationId} />
         }
@@ -173,7 +218,5 @@ export function ChatThread({
               </div>
             )
         }
-      })}
-    </>
-  )
+  }
 }
