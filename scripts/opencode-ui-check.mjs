@@ -59,6 +59,9 @@ try {
       const { QueryClient, QueryClientProvider } = await import(queryModule)
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
       const { ChatThread } = await import('/src/components/chat/ChatThread.tsx')
+      // Les bulles portent des infobulles (bouton copier) : l'application les enveloppe dans
+      // ce fournisseur à la racine (main.tsx), le banc doit faire de même.
+      const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
       const { TurnActivity } = await import('/src/components/chat/TurnActivity.tsx')
       const { applyEvent, emptyChatState } = await import('/src/lib/chat-fold.ts')
       const { buildRows } = await import('/src/lib/tool-rows.ts')
@@ -68,8 +71,10 @@ try {
       window.appendEvent = (event) => {
         state = applyEvent(state, ++seq, Date.now(), event)
         root.render(React.createElement(QueryClientProvider, { client: queryClient },
-          React.createElement(ChatThread, { rows: buildRows(state.items), conversationId: 'fixture', canDecide: true }),
-          state.turnRunning ? React.createElement(TurnActivity, { label: 'Travail en cours' }) : null,
+          React.createElement(TooltipProvider, null,
+            React.createElement(ChatThread, { rows: buildRows(state.items), conversationId: 'fixture', canDecide: true }),
+            state.turnRunning ? React.createElement(TurnActivity, { label: 'Travail en cours' }) : null,
+          ),
         ))
       }
       // Les événements tels que `apps/server/src/agents/opencode/` les émet.
