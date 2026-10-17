@@ -27,6 +27,8 @@ async function mount(page) {
     window.$RefreshSig$ = () => (type) => type
     window.__vite_plugin_react_preamble_installed__ = true
     localStorage.setItem('sillage.locale', 'fr')
+    // readableView est appelé hors rendu : son libellé se fige, il faut le catalogue d'abord.
+    await (await import('/src/lib/i18n/index.ts')).initLocale()
     document.documentElement.dataset.theme = 'dark'
     await import('/src/styles/index.css')
     const React = (await import('/node_modules/.vite/deps/react.js')).default
