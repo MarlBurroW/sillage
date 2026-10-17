@@ -29,7 +29,7 @@ export function Section({
 }) {
   return (
     <section className="shrink-0">
-      <div className="surface sticky top-0 z-10 flex items-center gap-1 border-b border-line py-0.5 pr-1 pl-1.5">
+      <div className="git-section-heading surface sticky top-0 z-10 flex items-center gap-1 border-b border-line py-0.5 pr-1 pl-1.5">
         <button
           type="button"
           onClick={onToggle}
@@ -40,7 +40,7 @@ export function Section({
             size={12}
             className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
           />
-          <span className="truncate text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">
+          <span className="truncate text-[0.6875rem] font-semibold text-ink-soft">
             {title}
           </span>
           {count ? (

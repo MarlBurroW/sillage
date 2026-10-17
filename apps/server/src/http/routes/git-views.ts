@@ -25,7 +25,7 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
   // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
   for (const { base, cwdOf } of workspaceScopes) {
     /**
-     * Commits de la branche du répertoire consulté.
+     * Historique de la branche courante, ou de toutes les branches pour le graphe.
      *
      * Paginé plutôt que plafonné : un dépôt a des milliers de commits, et l'onglet en
      * montre les derniers, avec de quoi remonter plus loin à la demande.
@@ -33,10 +33,10 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
     app.get(`${base}/commits`, async (request): Promise<CommitListDto> => {
       const user = requireUser(request)
       const { id } = request.params as { id: string }
-      const { limit, skip } = commitListQuerySchema.parse(request.query)
+      const { limit, skip, all } = commitListQuerySchema.parse(request.query)
 
       try {
-        const result = await readCommits(cwdOf(ctx.db, id, user.id), limit, skip)
+        const result = await readCommits(cwdOf(ctx.db, id, user.id), limit, skip, all)
         return { commits: result?.commits ?? null, hasMore: result?.hasMore ?? false }
       } catch (err) {
         throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
