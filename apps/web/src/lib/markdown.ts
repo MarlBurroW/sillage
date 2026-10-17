@@ -282,7 +282,10 @@ function markFilePaths(md: MarkdownIt): void {
     if (token.attrGet('data-sg-drop') !== null) return md.utils.escapeHtml(alt)
 
     const path = token.attrGet('data-sg-path')
-    if (path === null) return self.renderToken(tokens, idx, options)
+    if (path === null) {
+      token.attrSet('alt', alt)
+      return `<button type="button" class="sg-file-image">${self.renderToken(tokens, idx, options)}</button>`
+    }
 
     // Fichier confirmé mais pas affichable : le même bouton que pour un chemin cité,
     // portant le texte alternatif quand il y en a un, le chemin sinon.

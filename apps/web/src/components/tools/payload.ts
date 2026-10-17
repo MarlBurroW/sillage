@@ -61,30 +61,23 @@ export interface ImageBlock {
   data: string
 }
 
-/**
- * Le bloc image d'une sortie, s'il y en a un.
- *
- * Symétrique d'`outputText` : là où celui-ci ignore les blocs image, celui-ci ne
- * retient qu'eux. Une lecture de fichier binaire (screenshot, photo) rend un tableau
- * à un seul bloc `image` en base64 ; c'est le seul cas géré ici, une image distante
- * par URL n'existe pas dans ce format de `tool_result`.
- */
-export function imageBlock(output: unknown): ImageBlock | null {
-  if (!Array.isArray(output)) return null
-
-  for (const block of output) {
+/** Images des sorties Claude et MCP ; le texte voisin reste rendu séparément. */
+export function imageBlocks(output: unknown): ImageBlock[] {
+  const content = Array.isArray(output) ? output : fields(output)?.content
+  if (!Array.isArray(content)) return []
+  return content.flatMap((block) => {
     const f = fields(block)
-    if (f?.type !== 'image') continue
+    if (f?.type !== 'image') return []
     const source = fields(f.source)
-    if (source?.type !== 'base64') continue
-    const mediaType = source.media_type
-    const data = source.data
-    if (typeof mediaType === 'string' && typeof data === 'string' && data.length > 0) {
-      return { mediaType, data }
-    }
-  }
+    const mediaType = source?.media_type ?? f.mimeType
+    const data = source?.data ?? f.data
+    return typeof mediaType === 'string' && /^image\//.test(mediaType) && typeof data === 'string' && data.length > 0
+      ? [{ mediaType, data }] : []
+  })
+}
 
-  return null
+export function imageBlock(output: unknown): ImageBlock | null {
+  return imageBlocks(output)[0] ?? null
 }
 
 /** Lignes non vides d'une sortie, pour les outils qui en produisent une par résultat. */
