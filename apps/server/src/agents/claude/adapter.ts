@@ -33,13 +33,16 @@ interface ClaudeForkCut {
   upToMessageId: string | null
 }
 
-/** Libellés des niveaux d'effort. Un niveau inconnu s'affiche par sa valeur. */
+/**
+ * Libellés anglais des niveaux d'effort, pour les clients de l'API. Le web ne s'en sert
+ * qu'en repli : il traduit d'après la valeur, le serveur ignorant la langue de l'utilisateur.
+ */
 const EFFORT_LABELS: Record<string, string> = {
-  low: 'Faible',
-  medium: 'Moyen',
-  high: 'Élevé',
-  xhigh: 'Très élevé',
-  max: 'Maximal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
 }
 
 export class ClaudeAdapter implements AgentAdapter {
