@@ -1,9 +1,10 @@
-import { useContext, useMemo, type MouseEvent } from 'react'
+import { useContext, useMemo, useState, type MouseEvent } from 'react'
 import { openTab } from '../../lib/editor-tabs'
 import { FileLinkContext, useKnownFiles } from '../../lib/file-links'
 import { parseMarkdown } from '../../lib/markdown'
 import { setPanelOpen, setPanelTab } from '../../lib/panel'
 import { CodeBlock } from './CodeBlock'
+import { ImageViewer, type ViewerImage } from './ImageViewer'
 import { MarkdownTable } from './MarkdownTable'
 
 /**
@@ -18,6 +19,7 @@ import { MarkdownTable } from './MarkdownTable'
  * partent, au lieu de partir de la racine du workspace.
  */
 export function Markdown({ text, base }: { text: string; base?: string }) {
+  const [viewer, setViewer] = useState<{ images: ViewerImage[]; index: number } | null>(null)
   const conversationId = useContext(FileLinkContext)
 
   // Première passe : ce que le texte cite. Elle ne produit aucun lien, mais son HTML
@@ -50,6 +52,15 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
    * quel, il n'y a pas de composant React où accrocher un `onClick`.
    */
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
+    const element = event.target as HTMLElement
+    const image = element instanceof HTMLImageElement ? element : element.closest('button, a')?.querySelector('img')
+    if (image) {
+      event.preventDefault()
+      image.closest<HTMLElement>('button, a')?.focus()
+      const all = [...event.currentTarget.closest('.sg-reading')!.querySelectorAll('img')]
+      setViewer({ images: all.map((entry) => ({ src: entry.src, alt: entry.alt })), index: all.indexOf(image) })
+      return
+    }
     const target = (event.target as HTMLElement).closest<HTMLElement>('[data-sg-path]')
     const path = target?.dataset.sgPath
     if (!path || !conversationId) return
@@ -62,6 +73,7 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
 
   return (
     <div className="sg-reading flex flex-col gap-3">
+      {viewer && <ImageViewer images={viewer.images} initialIndex={viewer.index} onClose={() => setViewer(null)} />}
       {segments.map((segment, index) => {
         // L'index comme clé : les segments n'ont pas d'identité propre et la liste est
         // reconstruite entièrement à chaque changement du texte.

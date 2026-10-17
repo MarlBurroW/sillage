@@ -435,3 +435,81 @@ sur un serveur jetable avec le binaire 2.1.296 : `GET /api/agents` lit 2.1.296 s
 écart de version, l'outil Read tourne, le tour se termine en `success` et le contexte
 annonce un million de tokens. Au déploiement, `claude install 2.1.296` sur marldev : le
 CLI du poste ne se met pas à jour seul.
+
+## Complément du 17 octobre 2026 : cible 2.1.301
+
+Carte #42, incluant les veilles #37 et #38. Cible CLI **2.1.301**, dépendance
+SDK **^0.3.301**, résolution du lockfile **0.3.301**. La 2.1.302 existe déjà lors du
+chantier ; elle ne fait pas partie de cette validation. Une installation fraîche
+sans lockfile peut résoudre le caret vers une version ultérieure.
+
+### Compatibilité et périmètre
+
+Le [changelog officiel](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)
+annonce notamment des corrections de double exécution en reprise SDK, de pièces
+jointes envoyées en cours de tour, de reprise après compaction et de permissions
+interrompues par un message. Ces corrections viennent du CLI ; elles ne demandent
+pas de changement d'adaptateur. Elles ne sont pas toutes reproduites ici.
+
+Le diff des déclarations SDK 0.3.296 → 0.3.301 ne retire aucun contrat utilisé par
+Sillage. Les nouveaux paramètres restent optionnels. Décisions pour les ajouts :
+
+- `reloadPlugins({ addPlugins })` permet un ajout à chaud, mais pas un retrait :
+  conserver pour ce bump la relance actuelle quand les racines de skills changent.
+- `BUILTIN_TOOL_NAMES` et `LEGACY_TOOL_NAME_ALIASES` ne justifient pas à eux seuls
+  un nouvel écran. La liste d'outils disponible vient toujours de la session.
+- Les politiques par outil des serveurs MCP SDK ne concernent pas notre transport
+  MCP stdio/HTTP actuel.
+- `CLAUDE_CODE_RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS` complète la piste #30 :
+  il faudra régler ensemble l'activation du watchdog et ses délais. Ce bump
+  n'active pas de réessai automatique.
+- La compaction au repos reste une piste : aucun bénéfice en SDK n'a été démontré
+  par cette sonde. Ne pas la présenter comme disponible dans Sillage.
+
+### Transcripts : protection de l'import et de la synchronisation
+
+Le vrai transcript de l'essai 2.1.301 contient `api-request-shape`,
+`api-request-blob` et `api-request`, avec `type` en première propriété. Même un
+appel refusé pour quota écrit ces lignes. `readJsonl` lit désormais ligne par ligne
+et saute ces trois types avant parsing dans ce format ; un filtre après parsing
+couvre aussi un ordre différent des propriétés. L'ancrage du premier filtre évite
+les faux positifs dans le contenu d'un message. Le même lecteur sert aux sous-agents.
+
+Aucune dépendance au drapeau interne `CLAUDE_CODE_ELEGANT_MEADOW` : le CLI continue
+à écrire son rejeu. La croissance disque reste donc présente. Cette protection ne
+remplace pas tout le chantier #17 : les entrées utiles sont encore accumulées en
+mémoire, et la synchronisation ne lit pas seulement le suffixe manquant.
+
+### Vérifications et limites
+
+Binaire téléchargé à part : `@anthropic-ai/claude-code-linux-x64@2.1.301`.
+Le CLI système reste **2.1.296** ; aucun déploiement ni redémarrage de production.
+
+- `initializationResult().claude_code_version` : `2.1.301`.
+- Catalogue : Opus 5.5, Fable 5.1, Sonnet 5.5 et Haiku 5.5, mêmes alias qu'avant.
+- `applyFlagSettings({ ultracode: true, effortLevel: 'high' })`, puis
+  `getSettings().applied` : Haiku 5.5, effort high, Ultracode actif et disponible.
+  Après `setModel('claude-haiku-4-5-20251001')` : effort null, Ultracode inactif et
+  indisponible. Aucun appel au modèle nécessaire pour ces contrôles.
+- La sonde renvoie `capabilities: ['mcp_call_result_not_for_model_v1']` ; ne pas
+  supposer cette liste identique à la précédente. L'adaptateur ne s'y appuie pas.
+- Serveur jetable, base neuve, port 7501, binaire 2.1.301 : création d'un projet et
+  d'une tâche par l'API v1, initialisation Haiku 5.5 et connexion du MCP Sillage
+  réussies. **Essai réel bloqué par le quota du compte**, avant Read et
+  AskUserQuestion. Le journal reçoit bien `error: turn_failed` avec le refus de
+  quota ; le SDK envoie aussi un résultat final traduit en `stopReason: success`,
+  qui ne prouve donc pas à lui seul la réussite. Refaire Read + réponse à
+  AskUserQuestion après rétablissement du quota avant de déclarer ce parcours validé.
+- `NODE_ENV=development pnpm typecheck`, `pnpm test` (241 tests) et `pnpm lint` : OK.
+  Test ajouté : rejeu de 2 Mo, ordre des propriétés différent, contenu ressemblant
+  à un type de rejeu, CRLF, ligne tronquée, dernière ligne sans saut, sous-agent et
+  fichier absent.
+- Sonde mémoire séparée : 200 Mo de lignes de rejeu, puis un message utile, lus
+  avec Node 24 `--max-old-space-size=96` ; seul le message est conservé, sans OOM
+  (RSS ≈ 180 Mio, le plafond de tas n'est pas un plafond de RSS).
+- pnpm signale le peer Zod 4 attendu par le SDK face au Zod 3 du projet ; cet
+  avertissement était déjà présent avec 0.3.296. Aucun serveur MCP SDK n'est créé.
+
+Pas de changement d'interface : aucun parcours Playwright ajouté pour ce bump.
+Lors d'un futur déploiement autorisé, installer aussi `claude install 2.1.301`
+selon la procédure supervisée ; ne pas installer le CLI système pendant la préparation.
