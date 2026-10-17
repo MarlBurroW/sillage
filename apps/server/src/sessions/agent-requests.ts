@@ -1067,14 +1067,15 @@ function withEffort(config: AgentConfig, effort: string): AgentConfig {
   // Le schéma refuse plus bas un niveau que Claude ne connaît pas : le transtypage ne
   // sert qu'à passer la chaîne jusque-là.
   if (config.agent === 'claude') return { ...config, effort: effort as typeof config.effort }
-  if (config.agent === 'codex') return { ...config, reasoningEffort: effort }
+  if (config.agent === 'codex' || config.agent === 'grok') return { ...config, reasoningEffort: effort }
   return { ...config, variant: effort }
 }
 
 /** L'effort sous le nom que chaque CLI lui donne : la variante, chez opencode. */
 function effortOf(config: AgentConfig): string {
   if (config.agent === 'claude') return config.effort
-  return config.agent === 'codex' ? config.reasoningEffort : config.variant
+  if (config.agent === 'opencode') return config.variant
+  return config.reasoningEffort
 }
 
 function describeModel(config: AgentConfig): string {
@@ -1093,6 +1094,9 @@ function describePermissions(config: AgentConfig): string | null {
     return "Elle demandera l'approbation de l'utilisateur pour ce qui sort de son bac à sable, comme le veulent les défauts du projet."
   }
   if (config.agent === 'opencode' && (config.permissions.edit === 'ask' || config.permissions.bash === 'ask')) {
+    return "Elle demandera la permission de l'utilisateur avant d'écrire ou d'exécuter, comme le veulent les défauts du projet."
+  }
+  if (config.agent === 'grok' && (config.permissionMode === 'default' || config.permissionMode === 'plan')) {
     return "Elle demandera la permission de l'utilisateur avant d'écrire ou d'exécuter, comme le veulent les défauts du projet."
   }
   return null

@@ -73,6 +73,14 @@ opencode 1.18.25, ajouté après la livraison des lots.
 - OpenCode lit aussi de lui-même `~/.claude/skills`, `~/.agents/skills`, et les
   `.claude/skills` et `.agents/skills` du dépôt en remontant depuis le dossier de travail.
 
+**Grok Build, `--plugin-dir` par racine.** Sondé le 2026-10-17 sur Grok Build 1.0.62.
+
+- Grok lit les plugins au format de Claude Code, manifeste facultatif : chaque racine de
+  la bibliothèque part en `--plugin-dir` au lancement de `grok agent`.
+- `_x.ai/plugins/reload` les fait relire après une écriture, sans relancer la session.
+- `GROK_CLAUDE_SKILLS_ENABLED=0` l'empêche de relire `~/.claude/skills` en plus. Les
+  dossiers `.grok/skills` et `.agents/skills` du dépôt restent lus.
+
 ## Modèle
 
 ### Sur disque

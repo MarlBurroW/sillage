@@ -772,7 +772,7 @@ export class SessionManager {
    * abonnement qui va payer le tour.
    */
   private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
-    if (config.agent === 'opencode' || !config.account) return {}
+    if (config.agent === 'opencode' || config.agent === 'grok' || !config.account) return {}
     const missing = (code: string, message: string) => {
       this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
       return {}

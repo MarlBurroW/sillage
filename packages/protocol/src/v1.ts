@@ -272,6 +272,7 @@ export const EFFORT_FIELD: Record<AgentKind, string> = {
   claude: 'effort',
   codex: 'reasoningEffort',
   opencode: 'variant',
+  grok: 'reasoningEffort',
 }
 
 /**
@@ -296,6 +297,7 @@ export const OVERRIDABLE_CONFIG_FIELDS: Record<AgentKind, readonly string[]> = {
   claude: ['model', 'effort', 'outputStyle', 'maxBudgetUsd', 'maxTurns'],
   codex: ['model', 'reasoningEffort', 'collaborationMode'],
   opencode: ['model', 'variant', 'primaryAgent'],
+  grok: ['model', 'reasoningEffort'],
 }
 
 /**
@@ -312,6 +314,9 @@ export function isPermissiveConfig(config: AgentConfig): boolean {
     return config.permissions.edit !== 'ask' && config.permissions.edit !== 'deny' &&
       config.permissions.bash !== 'ask' && config.permissions.bash !== 'deny'
   }
+  // `auto` laisse un classifieur trancher sans demander, ce qui revient au même pour qui
+  // n'est pas là : seuls `default` et `plan` gardent quelqu'un dans la boucle.
+  if (config.agent === 'grok') return config.permissionMode === 'bypassPermissions' || config.permissionMode === 'auto'
   return config.askForApproval === 'never' || config.sandbox === 'danger-full-access'
 }
 

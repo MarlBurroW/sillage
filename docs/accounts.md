@@ -130,3 +130,8 @@ without `auth.json` would refuse the turn.
 ## OpenCode
 
 Not covered: OpenCode has no account notion in Sillage.
+
+## Grok Build
+
+Not covered yet: Grok Build runs on the CLI's own sign-in (`grok login`, in `~/.grok`).
+A `GROK_HOME` per account would be the way to add extra accounts.
