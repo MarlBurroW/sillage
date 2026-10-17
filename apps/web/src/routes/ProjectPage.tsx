@@ -32,6 +32,7 @@ import type { SettingGroup } from '../components/chat/ComposerSettings'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from '../components/PathField'
 import { ProjectAvatar } from '../components/ProjectAvatar'
+import { WorktreeBoard } from '../components/WorktreeBoard'
 import {
   Badge,
   Banner,
@@ -49,7 +50,6 @@ import {
 } from '../components/ui'
 import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
-import { useDeleteWorktree, useWorktrees } from '../lib/worktrees'
 import { translate, useTranslate } from '../lib/i18n'
 import {
   useDeleteProject,
@@ -133,7 +133,7 @@ export function ProjectPage() {
         </CardBody>
       </Card>
 
-      <WorktreeList projectId={project.id} isRepository={project.git !== null} />
+      <WorktreeBoard projectId={project.id} isRepository={project.git !== null} />
 
       <Card>
         <CardHeader
@@ -239,70 +239,6 @@ function ProjectImage({ project }: { project: ProjectDto }) {
           <p className="text-xs text-ink-faint">{t('project.image.provisional')}</p>
         ) : null}
         {error ? <Banner>{error}</Banner> : null}
-      </CardBody>
-    </Card>
-  )
-}
-
-function WorktreeList({ projectId, isRepository }: { projectId: string; isRepository: boolean }) {
-  const { data: worktrees } = useWorktrees(isRepository ? projectId : undefined)
-  const deleteWorktree = useDeleteWorktree(projectId)
-  const t = useTranslate()
-
-  if (!isRepository || !worktrees || worktrees.length === 0) return null
-
-  return (
-    <Card>
-      <CardHeader
-        title={t('project.worktrees.title')}
-        description={t('project.worktrees.description')}
-        icon={<GitBranch size={16} />}
-      />
-      <CardBody className="flex flex-col gap-2">
-        {worktrees.map((worktree) => (
-          <div key={worktree.id} className="flex items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-mono text-sm">{worktree.name}</p>
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-faint">
-                {worktree.git ? (
-                  worktree.git.isDirty ? (
-                    <Badge tone="caution">{t('project.git.dirty')}</Badge>
-                  ) : (
-                    <Badge tone="positive">{t('project.git.clean')}</Badge>
-                  )
-                ) : (
-                  <Badge tone="critical">{t('project.worktree.missing')}</Badge>
-                )}
-                <span>
-                  {worktree.conversationCount > 1
-                    ? t('project.worktree.conversationsMany', { count: worktree.conversationCount })
-                    : t('project.worktree.conversationsOne', { count: worktree.conversationCount })}
-                </span>
-              </div>
-            </div>
-            <Button
-              variant="danger"
-              size="sm"
-              icon={<Trash2 size={15} />}
-              disabled={deleteWorktree.isPending}
-              onClick={() => {
-                const dirty = worktree.git?.isDirty === true
-                const warning = dirty
-                  ? translate('project.worktree.deleteDirtyWarning', { name: worktree.name })
-                  : translate('project.worktree.deleteConfirm', { name: worktree.name })
-                const used =
-                  worktree.conversationCount > 0
-                    ? `\n${translate('project.worktree.deleteUsedCount', { count: worktree.conversationCount })}`
-                    : ''
-                if (!confirm(warning + used)) return
-                // `force` uniquement si l'utilisateur a vu l'avertissement correspondant.
-                deleteWorktree.mutate({ id: worktree.id, force: dirty })
-              }}
-            >
-              {t('project.worktree.delete')}
-            </Button>
-          </div>
-        ))}
       </CardBody>
     </Card>
   )

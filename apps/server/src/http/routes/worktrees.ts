@@ -4,9 +4,18 @@ import { join } from 'node:path'
 import { and, count, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { conversations, projects, worktrees, type ProjectRow, type WorktreeRow } from '@sillage/db'
-import { createWorktreeBodySchema, type WorktreeDto } from '@sillage/protocol'
+import {
+  createWorktreeBodySchema,
+  worktreeCleanupBodySchema,
+  type WorktreeCleanupPlanDto,
+  type WorktreeCleanupResultDto,
+  type WorktreeDto,
+  type WorktreeStatusListDto,
+} from '@sillage/protocol'
 import { GitError, addWorktree, readGitStatus, removeWorktree } from '../../git.js'
 import type { TerminalManager } from '../../terminals/terminal-manager.js'
+import type { WorktreeCleanup } from '../../worktrees/cleanup.js'
+import type { WorktreeStatusService } from '../../worktrees/status-service.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -20,6 +29,8 @@ export function registerWorktreeRoutes(
   app: FastifyInstance,
   ctx: AppContext,
   terminals: TerminalManager,
+  worktreeStatus: WorktreeStatusService,
+  cleanup: WorktreeCleanup,
 ): void {
   const loadProject = (projectId: string, userId: string): ProjectRow => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
@@ -63,6 +74,44 @@ export function registerWorktreeRoutes(
     return Promise.all(rows.map(toDto))
   })
 
+  /**
+   * Les chantiers du projet : tous les arbres que git ou la base connaissent, jugés
+   * contre la branche par défaut, avec les conversations qui y tiennent. Servi depuis
+   * le cache du service, qui ne bloque jamais sur un gros dépôt (voir là-bas).
+   */
+  app.get('/api/projects/:id/worktrees/status', async (request): Promise<WorktreeStatusListDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = loadProject(id, user.id)
+    if (!(await readGitStatus(project.workspacePath))) {
+      return { base: null, computedAt: Date.now(), fresh: true, worktrees: [] }
+    }
+    return worktreeStatus.get(project)
+  })
+
+  /** Ce que « Nettoyer » ferait d'un arbre, pour la confirmation. 404 si le chemin n'est pas un arbre du projet. */
+  app.get('/api/projects/:id/worktrees/cleanup', async (request): Promise<WorktreeCleanupPlanDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { path } = request.query as { path?: string }
+    const project = loadProject(id, user.id)
+    if (project.ownerId !== user.id) throw forbidden('worktree_delete_forbidden', 'Only the project owner can clean a worktree.')
+    const plan = path ? await cleanup.plan(project, path) : null
+    if (!plan) throw notFound('worktree_not_found', 'Worktree not found.')
+    return plan
+  })
+
+  app.post('/api/projects/:id/worktrees/cleanup', async (request): Promise<WorktreeCleanupResultDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = worktreeCleanupBodySchema.parse(request.body)
+    const project = loadProject(id, user.id)
+    if (project.ownerId !== user.id) throw forbidden('worktree_delete_forbidden', 'Only the project owner can clean a worktree.')
+    const result = await cleanup.run(project, body)
+    if (!result) throw notFound('worktree_not_found', 'Worktree not found.')
+    return result
+  })
+
   app.post('/api/projects/:id/worktrees', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -70,6 +119,7 @@ export function registerWorktreeRoutes(
 
     const project = loadProject(id, user.id)
     const row = await createWorktree(ctx, project, user.id, body.name, body.baseRef)
+    worktreeStatus.forget(project.id)
 
     return reply.status(201).send(await toDto(row))
   })
@@ -114,6 +164,7 @@ export function registerWorktreeRoutes(
     // Les conversations rattachées passent en lecture seule au lieu d'être effacées :
     // leur historique reste consultable.
     ctx.db.update(worktrees).set({ removedAt: Date.now() }).where(eq(worktrees.id, id)).run()
+    worktreeStatus.forget(project.id)
 
     return reply.status(204).send()
   })

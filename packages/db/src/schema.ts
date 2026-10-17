@@ -160,6 +160,29 @@ export const worktrees = sqliteTable(
 )
 
 /**
+ * Chemins absolus qu'une conversation a touchés hors de son répertoire de travail.
+ *
+ * Une session notée à la racine du projet qui écrit dans `~/projects/x-feature` y
+ * travaille en réalité : c'est ce rattachement « a écrit dans » que la vue des
+ * chantiers croise avec les worktrees du dépôt. Tenu à jour à l'écriture du journal,
+ * avec un rattrapage unique à la migration, pour ne pas rebalayer des millions
+ * d'événements à chaque lecture. Distinct de `conversations.worktree_id`, qui décide du
+ * cwd de la reprise et ne doit jamais être réécrit après coup.
+ */
+export const conversationPaths = sqliteTable(
+  'conversation_paths',
+  {
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    /** Chemin absolu d'un fichier édité, ou d'un dossier cité par une commande. */
+    path: text('path').notNull(),
+    lastTs: timestamp('last_ts').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.conversationId, t.path] })],
+)
+
+/**
  * Cartes du board : le travail à faire, distinct de la conversation qui l'exécute.
  *
  * Une carte survit à ses sessions et en porte plusieurs ; c'est ce qui la sépare d'une
@@ -498,6 +521,9 @@ export const agentRequests = sqliteTable(
         'steer_session',
         'interrupt_session',
         'reply_session',
+        // Worktrees : git et l'avancement des arbres ne vivent que dans le daemon.
+        'create_worktree',
+        'list_worktrees',
       ],
     }).notNull(),
     /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
@@ -1152,6 +1178,12 @@ export const decisions = sqliteTable(
      * tranchée dont la remise a échoué : le daemon réessaie.
      */
     deliveredAt: timestamp('delivered_at'),
+    /**
+     * Pour une proposition de nettoyage (`source_kind = 'worktree'`) : l'arbre visé. La
+     * réponse ne part à aucune session, elle nettoie cet arbre ; c'est aussi la clé qui
+     * évite de reposer la question pour un arbre déjà tranché.
+     */
+    worktreePath: text('worktree_path'),
     createdAt: timestamp('created_at').notNull(),
   },
   (t) => [

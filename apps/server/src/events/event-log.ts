@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm'
-import { conversations, events, writeTransaction, type Db } from '@sillage/db'
+import { conversationPaths, conversations, events, writeTransaction, type Db, type Tx } from '@sillage/db'
 import {
   sillageEventSchema,
   type BackgroundTask,
@@ -16,6 +16,7 @@ import {
   type SupersessionIndex,
 } from './superseded.js'
 import { replayPayload, replayWeight } from './tool-output.js'
+import { touchedPaths } from './touched-paths.js'
 
 /**
  * Le journal (invariant I2 de la spec).
@@ -173,6 +174,7 @@ export class EventLog {
       // Dans la même transaction que l'écriture du journal : l'index ne peut pas
       // contenir un message que le journal n'aurait pas, ni l'inverse.
       if (event.type === 'message.completed') indexMessage(tx, conversationId, seq)
+      recordTouchedPaths(tx, conversationId, event, ts)
 
       return { conversationId, seq, ts, event }
     })
@@ -229,6 +231,7 @@ export class EventLog {
           })
           .run()
         if (item.event.type === 'message.completed') indexMessage(tx, conversationId, seq)
+        recordTouchedPaths(tx, conversationId, item.event, item.ts)
         return { conversationId, seq, ts: item.ts, event: item.event }
       })
 
@@ -863,3 +866,25 @@ export class EventLog {
 
 /** Canal du bus réservé aux abonnés transverses ; hors de portée d'un id de conversation. */
 const ALL_EVENTS = Symbol('all-events')
+
+/**
+ * Mémorise les chemins hors cwd que l'événement révèle (voir `touched-paths.ts`), dans
+ * la transaction du journal : la vue des chantiers les lit au lieu de rebalayer les
+ * événements, et ne peut pas en voir un que le journal n'aurait pas.
+ */
+function recordTouchedPaths(
+  tx: Tx,
+  conversationId: string,
+  event: SillageEvent,
+  ts: number,
+): void {
+  for (const path of touchedPaths(event)) {
+    tx.insert(conversationPaths)
+      .values({ conversationId, path, lastTs: ts })
+      .onConflictDoUpdate({
+        target: [conversationPaths.conversationId, conversationPaths.path],
+        set: { lastTs: sql`max(${conversationPaths.lastTs}, ${ts})` },
+      })
+      .run()
+  }
+}

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { DecisionSourceKind } from './decisions.js'
 
 /**
  * Ce que Sillage signale hors de la conversation regardée : une notification système
@@ -32,6 +33,8 @@ export type InAppNotification =
       decisionId: string
       question: string
       sourceLabel: string
+      /** Facultatif pour un client plus récent que le serveur, le temps d'un déploiement. */
+      sourceKind?: DecisionSourceKind
       projectName: string
     }
   | {

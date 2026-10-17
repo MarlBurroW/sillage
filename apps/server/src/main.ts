@@ -34,6 +34,10 @@ import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
 import { TerminalManager } from './terminals/terminal-manager.js'
+import { backfillCommandPaths } from './worktrees/backfill.js'
+import { WorktreeCleanup } from './worktrees/cleanup.js'
+import { watchMergedWorktrees } from './worktrees/merge-watch.js'
+import { WorktreeStatusService } from './worktrees/status-service.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -43,6 +47,7 @@ async function main(): Promise<void> {
 
   const { db, sqlite } = openDatabase(config.paths.database)
   runPendingMigrations(db, migrationsFolder())
+  backfillCommandPaths(db)
   await purgeExpiredSessions(db)
   purgeIdempotencyKeys(db)
 
@@ -77,12 +82,18 @@ async function main(): Promise<void> {
   // Toast sur l'appareil où l'application est visible, notification système ailleurs.
   const notifications = new Notifications(db, push)
   // Ce que demandent les sessions autonomes à un humain, sans se bloquer.
+  // L'avancement des worktrees, par projet, invalidé à chaque fin de tour.
+  const worktreeStatus = new WorktreeStatusService(db, log)
   const decisions = new DecisionService({ db, config }, sessions, notifications)
+  // Nettoyer un chantier ferme ses terminaux et range ses sessions ; une fusion détectée
+  // le propose dans « À décider ».
+  const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, (id) => sessions.dropCheckpoints(id))
+  watchMergedWorktrees(db, worktreeStatus, decisions, worktreeCleanup)
   // Board relié aux issues GitHub : lit le dépôt, renvoie les changements faits ici, et
   // ouvre les sessions de maintenance qu'une issue ou un commentaire déclenche.
   const board = new BoardSync({ db, config }, gitCredentials, fetch, new BoardResponder({ db, config }, sessions, registry))
   // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board, decisions, log)
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board, decisions, log, worktreeStatus)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 
@@ -117,6 +128,8 @@ async function main(): Promise<void> {
     board,
     notifications,
     decisions,
+    worktreeStatus,
+    worktreeCleanup,
   )
   push.setLogger(app.log)
   automations.setLogger(app.log)

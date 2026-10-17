@@ -57,6 +57,7 @@ import {
   restoreSnapshot,
 } from '../checkpoints.js'
 import { serialized } from '../git-workflow.js'
+import { linkedWorktreePaths } from '../worktrees/linked.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
 interface QueuedMessage {
@@ -910,6 +911,7 @@ export class SessionManager {
         this.config.skills.library && current.skillLibrary
           ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(conversation.projectId)
           : [],
+      workTrees: () => linkedWorktreePaths(this.db, conversationId, conversation.projectId),
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SillageEvent, raw?: unknown) => {

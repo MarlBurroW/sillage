@@ -42,6 +42,7 @@ import {
   Trash2,
   Users,
   X,
+  FolderGit2,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
@@ -70,8 +71,10 @@ import { useUpdateCollapsedProjects, useUserSettings } from '../lib/user-setting
 import { useAppearanceSync } from '../lib/appearance-sync'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { SignalDot } from './chat/Signals'
+import { WorktreeTag } from './WorktreeTag'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
 import { projectViewPath, useProjectView } from '../lib/project-view'
+import { useWorktreeStatuses, worktreeCounts } from '../lib/worktrees'
 import { useRememberContext } from '../lib/last-context'
 import { SidebarActivity } from './SidebarActivity'
 import { Toaster } from './Toaster'
@@ -966,6 +969,7 @@ function ProjectGroup({
                   <BoardCounts counts={project.cardCounts} />
                 </NavLink>
               </li>
+              <WorktreesLine projectId={project.id} onNavigate={onNavigate} />
               <li className="mt-2 flex h-7 items-center gap-1.5 px-1 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
                 <MessagesSquare size={11} className="shrink-0" />
                 <span className="flex-1">{t('shell.project.sessions')}</span>
@@ -1096,6 +1100,40 @@ function BoardCounts({ counts }: { counts: ProjectDto['cardCounts'] }) {
         </>
       ) : null}
     </span>
+  )
+}
+
+/**
+ * Les chantiers en face du projet, au même format que le board : ce qui attend encore
+ * (non commité, à fusionner, introuvable) et, en ambre, ce qui n'attend que d'être
+ * nettoyé. Absent tant que le projet n'a pas d'arbre hors du principal : la ligne ne
+ * vaut que par ce qu'elle compte.
+ */
+function WorktreesLine({ projectId, onNavigate }: { projectId: string; onNavigate: () => void }) {
+  const t = useTranslate()
+  const { data } = useWorktreeStatuses(projectId)
+  if (!data || data.worktrees.length === 0) return null
+  const { pending, cleanable } = worktreeCounts(data)
+  return (
+    <li>
+      <NavLink
+        to={`/p/${projectId}#worktrees`}
+        onClick={onNavigate}
+        className="flex min-h-11 items-center gap-1.5 rounded px-1 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft md:min-h-7 pointer-coarse:min-h-11"
+      >
+        <FolderGit2 size={11} className="shrink-0" />
+        <span className="flex-1">{t('shell.project.worktrees')}</span>
+        <span className="shrink-0 font-medium tracking-normal normal-case tabular-nums">
+          {pending > 0
+            ? t(pending > 1 ? 'shell.project.worktreesPending.many' : 'shell.project.worktreesPending.one', { count: String(pending) })
+            : null}
+          {pending > 0 && cleanable > 0 ? ' · ' : null}
+          {cleanable > 0 ? (
+            <span className="text-caution">{t('shell.project.worktreesCleanable', { count: String(cleanable) })}</span>
+          ) : null}
+        </span>
+      </NavLink>
+    </li>
   )
 }
 
@@ -1250,6 +1288,9 @@ function ConversationRow({
             {loop ? <SignalDot signal={loop} /> : null}
           </span>
         </span>
+        {/* Hors de l'arbre principal, la ligne dit où : branche et état de l'arbre.
+            Rien sinon, c'est le contraste qui fait repérer les sessions en worktree. */}
+        <WorktreeTag conversation={conversation} />
         {detailed ? <ConversationMetricsLine metrics={metrics} /> : null}
       </NavLink>
 
