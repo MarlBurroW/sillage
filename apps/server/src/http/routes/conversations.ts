@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import {
   cards,
   conversationFavorites,
+  conversationHandoffs,
   conversationReads,
   conversations,
   projects,
@@ -15,6 +16,7 @@ import {
   editDiffQuerySchema,
   elicitationAnswerBodySchema,
   forkConversationBodySchema,
+  handoffConversationBodySchema,
   markReadBodySchema,
   permissionDecisionBodySchema,
   planDecisionBodySchema,
@@ -29,6 +31,7 @@ import {
   type ConversationMetrics,
   type ConversationStatus,
   type EditDiffDto,
+  type HandoffDto,
   type JournalPageDto,
   type ToolOutputDto,
 } from '@sillage/protocol'
@@ -36,6 +39,12 @@ import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { createConversation } from '../../conversations/create.js'
+import {
+  buildHandoff,
+  clampHandoffTokens,
+  HandoffError,
+  readHandoffItems,
+} from '../../conversations/handoff.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
@@ -86,6 +95,7 @@ export function conversationToDto(
     titleSetByUser: row.titleSetByUser,
     agent: row.agent,
     forkedFromId: row.forkedFromId,
+    handoffFromId: row.handoffFromId,
     config: parseAgentConfig(row.config),
     status: row.status,
     lastSeq: row.lastSeq,
@@ -479,6 +489,17 @@ export function registerConversationRoutes(
     // Les repères de tour recopiés doivent mener aux mêmes captures.
     await sessions.inheritCheckpoints(id, row.id)
 
+    // Une branche d'une suite reste une suite : le contexte transmis arrive par le
+    // prompt système à chaque démarrage, et la branche le perdrait sans sa propre ligne.
+    const handoff = ctx.db
+      .select()
+      .from(conversationHandoffs)
+      .where(eq(conversationHandoffs.conversationId, id))
+      .get()
+    if (handoff) {
+      ctx.db.insert(conversationHandoffs).values({ ...handoff, conversationId: row.id }).run()
+    }
+
     // Le fork hérite du rattachement : c'est le même travail exploré autrement.
     return reply
       .status(201)
@@ -491,6 +512,84 @@ export function registerConversationRoutes(
           false,
         ),
       )
+  })
+
+  /**
+   * Continue une conversation dans un autre CLI.
+   *
+   * Même droit de lecture que le fork : continuer un fil partagé est une lecture, et la
+   * suite appartient à qui l'ouvre. Rien n'est envoyé au CLI ici : la sélection est
+   * écrite avec la conversation, et c'est le premier message, la nouvelle demande, qui
+   * lancera la session avec ce contexte dans son prompt système.
+   */
+  app.post('/api/conversations/:id/handoff', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = handoffConversationBodySchema.parse(request.body)
+    const source = await loadReadable(id, user.id)
+
+    if (body.config.agent !== body.agent) {
+      throw badRequest('config_agent_mismatch', 'The configuration does not match the selected CLI.')
+    }
+
+    const budgetTokens = clampHandoffTokens(body.budgetTokens)
+    let handoff
+    try {
+      handoff = buildHandoff(
+        readHandoffItems(log, id),
+        { id: source.id, title: source.title, agent: source.agent },
+        body.agent,
+        budgetTokens,
+      )
+    } catch (err) {
+      if (err instanceof HandoffError) throw badRequest(err.code, err.message)
+      throw err
+    }
+
+    const config = await registry.adapter(body.agent).resolveDefaults(body.config)
+    const row = await createConversation(ctx.db, sessions, {
+      projectId: source.projectId,
+      userId: user.id,
+      agent: body.agent,
+      config,
+      // Même arbre et même chantier : c'est le même travail, poursuivi avec un autre
+      // outil.
+      worktreeId: source.worktreeId,
+      cardId: source.cardId,
+      title: body.title ?? source.title,
+      origin: null,
+      handoff: {
+        fromConversationId: source.id,
+        throughSeq: source.lastSeq,
+        budgetTokens,
+        text: handoff.text,
+      },
+    })
+
+    return reply
+      .status(201)
+      .send(conversationToDto(row, user.id, 0, readCardLink(ctx, row.cardId), false))
+  })
+
+  /** Ce qu'une suite a reçu de sa source, pour que l'utilisateur voie ce que l'agent sait. */
+  app.get('/api/conversations/:id/handoff', async (request): Promise<HandoffDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadReadable(id, user.id)
+    const row = ctx.db
+      .select()
+      .from(conversationHandoffs)
+      .where(eq(conversationHandoffs.conversationId, id))
+      .get()
+    if (!row) throw notFound('handoff_not_found', 'This conversation does not continue another one.')
+    return {
+      fromConversationId: row.fromConversationId,
+      throughSeq: row.throughSeq,
+      budgetTokens: row.budgetTokens,
+      bytes: Buffer.byteLength(row.text),
+      text: row.text,
+      createdAt: row.createdAt,
+    }
   })
 
   app.get('/api/conversations/:id', async (request) => {

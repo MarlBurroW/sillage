@@ -102,6 +102,10 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   conversation open. Manage subscribed devices and send a test from Settings.
 - **Dictation** biased with a lexicon read from the project itself plus the
   current branch, then an optional cleanup pass. Any OpenAI-format endpoint.
+- **Continue a conversation in another CLI.** From Claude Code to Codex or OpenCode and
+  back: the new agent receives a budgeted selection of the thread, full messages rather
+  than a summary, with references it can read back through the Sillage MCP server.
+  [How the handoff is built](docs/cli-handoff.md).
 - **MCP servers** declared once and handed to the agents that should get them.
 - **A shared skill library** for Claude Code, Codex and OpenCode, with global and
   project skills managed from the interface. [Skill library](docs/skill-library.md).

@@ -121,7 +121,7 @@ try {
 
   // Retour au dépôt : l'onglet Git ordinaire revient.
   await panel.getByRole('button', { name: 'Retour au dépôt', exact: true }).click()
-  await panel.getByText('Changements', { exact: true }).first().waitFor()
+  await panel.getByText('Changements du tour', { exact: true }).waitFor({ state: 'hidden' })
 
   // Restaurer depuis le fil, après confirmation.
   await strip.getByRole('button', { name: "Revenir à l'état d'avant ce tour", exact: true }).click()

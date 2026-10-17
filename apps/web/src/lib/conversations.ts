@@ -4,6 +4,7 @@ import type {
   ElicitationAction,
   ElicitationValue,
   ConversationDto,
+  HandoffDto,
   JournalPageDto,
   SillageEvent,
 } from '@sillage/protocol'
@@ -291,6 +292,29 @@ export function forkConversation(
   throughSeq: number,
 ): Promise<ConversationDto> {
   return api.post<ConversationDto>(`/api/conversations/${conversationId}/fork`, { throughSeq })
+}
+
+/**
+ * Continue la conversation dans un autre CLI.
+ *
+ * La suite est créée sans message : la nouvelle demande s'écrit dans son composer, et
+ * le contexte sélectionné part au CLI avec elle, au premier tour.
+ */
+export function handoffConversation(
+  conversationId: string,
+  body: { agent: AgentConfig['agent']; config: AgentConfig; budgetTokens?: number },
+): Promise<ConversationDto> {
+  return api.post<ConversationDto>(`/api/conversations/${conversationId}/handoff`, body)
+}
+
+/** Ce qu'une suite a reçu de sa source ; absent pour toute autre conversation. */
+export function useHandoff(conversationId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['conversation', conversationId, 'handoff'],
+    queryFn: () => api.get<HandoffDto>(`/api/conversations/${conversationId}/handoff`),
+    enabled: Boolean(conversationId) && enabled,
+    staleTime: Infinity,
+  })
 }
 
 /** Retire un message de la file avant son envoi au CLI. */

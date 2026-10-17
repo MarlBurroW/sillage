@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { eq, min } from 'drizzle-orm'
-import { conversations, type ConversationRow, type Db } from '@sillage/db'
+import { conversationHandoffs, conversations, type ConversationRow, type Db } from '@sillage/db'
 import type { AgentConfig, AgentKind } from '@sillage/protocol'
 import type { OutgoingAttachment } from '../agents/types.js'
 import type { SessionManager } from '../sessions/session-manager.js'
@@ -44,6 +44,16 @@ export interface CreateConversationInput {
   origin: { tokenId: string; label: string } | null
   /** Tâche planifiée dont ce fil est un tir ; absent pour toute autre conversation. */
   scheduleId?: string
+  /**
+   * Contexte transmis depuis une autre conversation, quand celle-ci la continue dans un
+   * autre CLI : écrit avec la ligne, pour que le premier démarrage du CLI le trouve.
+   */
+  handoff?: {
+    fromConversationId: string
+    throughSeq: number
+    budgetTokens: number
+    text: string
+  }
   firstMessage?: {
     clientMessageId: string
     text: string
@@ -84,6 +94,7 @@ export async function createConversation(
     agent: input.agent,
     agentSessionId: null,
     forkedFromId: null,
+    handoffFromId: input.handoff?.fromConversationId ?? null,
     createdByTokenId: input.origin?.tokenId ?? null,
     originLabel: input.origin?.label ?? null,
     scheduleId: input.scheduleId ?? null,
@@ -108,6 +119,11 @@ export async function createConversation(
     updatedAt: now,
   }
   db.insert(conversations).values(row).run()
+  if (input.handoff) {
+    db.insert(conversationHandoffs)
+      .values({ conversationId: row.id, createdAt: now, ...input.handoff })
+      .run()
+  }
 
   if (input.firstMessage) {
     // Si l'envoi échoue, la conversation ne doit pas rester comme un fil vide :

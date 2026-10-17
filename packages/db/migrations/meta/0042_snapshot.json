@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "53e7c506-acd8-459a-b2c4-e506ee8abe3b",
+  "id": "6bba25a0-c087-417f-b73f-cddafd384b80",
   "prevId": "c1ff6f1a-3a09-471c-a971-a547d1fb7954",
   "tables": {
     "agent_requests": {
@@ -1915,6 +1915,72 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "conversation_handoffs": {
+      "name": "conversation_handoffs",
+      "columns": {
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_conversation_id": {
+          "name": "from_conversation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "through_seq": {
+          "name": "through_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "budget_tokens": {
+          "name": "budget_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "conversation_handoffs_conversation_id_conversations_id_fk": {
+          "name": "conversation_handoffs_conversation_id_conversations_id_fk",
+          "tableFrom": "conversation_handoffs",
+          "tableTo": "conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "conversation_reads": {
       "name": "conversation_reads",
       "columns": {
@@ -2058,6 +2124,13 @@
         },
         "forked_from_id": {
           "name": "forked_from_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "handoff_from_id": {
+          "name": "handoff_from_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -3393,14 +3466,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "turn_checkpoints": {
-          "name": "turn_checkpoints",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
         },
         "archived_at": {
           "name": "archived_at",
