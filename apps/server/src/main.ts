@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { openDatabase } from '@sillage/db'
+import { openDatabase, projects } from '@sillage/db'
 import { createAgentRegistry } from './agents/registry.js'
 import { purgeIdempotencyKeys } from './auth/api-tokens.js'
 import { WebhookService } from './webhooks/service.js'
@@ -22,6 +22,8 @@ import { TaskScheduler } from './scheduler/task-scheduler.js'
 import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
+import { installCredentialLauncher } from './git-credential/helper.js'
+import { upgradeCredentialHelpers } from './git-credential/migrate.js'
 import { ClaudeAccountStore } from './claude-accounts/store.js'
 import { ClaudeLoginService } from './claude-accounts/login.js'
 import { ClaudeAccountGauges } from './claude-accounts/gauges.js'
@@ -140,6 +142,23 @@ async function main(): Promise<void> {
   decisions.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
+
+  // Le lanceur du helper git décrit le Node et la release de ce process : réécrit à
+  // chaque démarrage, il suit les mises à jour sans que les dépôts clonés aient à changer.
+  // Puis les dépôts clonés avant lui passent au lanceur. Après listen et sans l'attendre :
+  // un git par projet n'a pas à retarder l'ouverture du serveur.
+  try {
+    installCredentialLauncher(config.paths)
+    const workspaces = db.select({ path: projects.workspacePath }).from(projects).all().map((row) => row.path)
+    upgradeCredentialHelpers(workspaces, config.paths)
+      .then((upgraded) => {
+        if (upgraded.length > 0) app.log.info({ repos: upgraded }, 'helper git des depots clones mis a jour')
+      })
+      .catch((err: unknown) => app.log.warn({ err }, 'mise a jour du helper git des depots impossible'))
+  } catch (err) {
+    // Installation incomplète (pas de `.mjs`) : le serveur sert quand même, sans helper.
+    app.log.warn({ err }, 'lanceur du helper git non installe')
+  }
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'arrêt en cours')
