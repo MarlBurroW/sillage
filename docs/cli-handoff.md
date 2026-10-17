@@ -1,7 +1,7 @@
 # Continuer une conversation dans un autre CLI
 
 Depuis une conversation, « Continuer dans un autre CLI… » (menu `…` de l'en-tête) ouvre
-une conversation neuve menée avec Claude Code, Codex ou opencode, qui reprend le fil
+une conversation neuve menée avec Claude Code, Codex, opencode ou Grok Build, qui reprend le fil
 là où il en est. Le modèle à suivre est celui des « portable handoffs » de T3 Code :
 pas un résumé écrit par un agent, mais une **sélection budgétée de l'historique**, textes
 entiers, dans l'ordre et avec leur rôle.
@@ -10,9 +10,10 @@ entiers, dans l'ordre et avec leur rôle.
 
 Un bloc injecté dans le canal de consignes du CLI, le même que SILLAGE.md : le prompt
 système chez Claude (`systemPrompt.append`), les `developerInstructions` du thread chez
-Codex, le `system` de chaque message chez opencode. Il y reste pour toute la vie de la
-conversation, comme l'historique d'un fil ordinaire, et il est relu à chaque démarrage
-du CLI puisque celui-ci repart sans lui à chaque reprise.
+Codex, le `system` de chaque message chez opencode, les `rules` de la création de session
+chez Grok Build. Il y reste pour toute la vie de la conversation, comme l'historique d'un
+fil ordinaire, et il est relu à chaque démarrage du CLI puisque celui-ci repart sans lui
+à chaque reprise (Grok, lui, le garde dans le prompt système enregistré avec la session).
 
 Le bloc contient, dans l'ordre de priorité de la sélection :
 

@@ -105,6 +105,10 @@ spec:
             - name: home
               mountPath: /home/node/.local/share/opencode
               subPath: opencode
+            # Connexion, sessions et binaire de Grok Build.
+            - name: home
+              mountPath: /home/node/.grok
+              subPath: grok
             {{- end }}
             {{- if .Values.storage.workspace.enabled }}
             - name: workspace

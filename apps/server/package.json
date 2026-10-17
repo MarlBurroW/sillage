@@ -46,6 +46,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@agentclientprotocol/sdk": "1.9.0",
     "@types/node": "^22.10.7",
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
