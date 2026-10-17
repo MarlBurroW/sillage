@@ -316,6 +316,37 @@ try {
     assert.equal(await field.inputValue(), 'Encore un brouillon')
     await page.evaluate(() => window.settings.flush())
 
+    // Un vrai catalogue compte une douzaine de modèles : l'effort doit rester visible
+    // sans défiler, sous la liste des modèles qui défile seule.
+    await page.evaluate(async () => {
+      const key = ['agents', 'codex', 'models']
+      window.configBackup = window.settings.config
+      window.settings.change({ ...window.settings.config, model: 'alpha', reasoningEffort: 'high' })
+      await window.settings.flush()
+      window.longCatalogBackup = window.client.getQueryData(key)
+      const catalog = window.longCatalogBackup
+      window.client.setQueryData(key, {
+        ...catalog,
+        models: [...catalog.models, ...Array.from({ length: 12 }, (_, i) => ({ ...catalog.models[0], value: `long-${i}`, displayName: `Modèle long ${i}`, description: 'Une description assez longue pour tenir sur plusieurs lignes si on la laissait faire', isDefault: false }))],
+      })
+    })
+    await (narrow ? openAll() : chip().click())
+    await dialog.waitFor()
+    const effortGroup = dialog.getByRole('radiogroup', { name: 'Effort de réflexion', exact: true })
+    const [effortBox, dialogBox] = [await effortGroup.boundingBox(), await dialog.boundingBox()]
+    assert.ok(effortBox.y >= dialogBox.y && effortBox.y + effortBox.height <= dialogBox.y + dialogBox.height + 1, `${viewport.width}: effort visible without scrolling`)
+    if (!narrow) {
+      assert.equal(await dialog.locator('.overflow-y-auto').first().evaluate((node) => node.scrollHeight > node.clientHeight), true, 'The model list scrolls on its own')
+      await page.keyboard.press('Escape')
+    } else await close()
+    await dialog.waitFor({ state: 'hidden' })
+    await page.evaluate(async () => {
+      window.client.setQueryData(['agents', 'codex', 'models'], window.longCatalogBackup)
+      window.settings.change(window.configBackup)
+      await window.settings.flush()
+    })
+    await delay(100)
+
     if (viewport.width === 1440) {
       // Catalogue long, valeur enregistrée hors catalogue et politique granulaire.
       await page.evaluate(async () => {
