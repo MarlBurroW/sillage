@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type { Paths } from '../config.js'
 
 /**
@@ -34,32 +34,90 @@ function resolveEntry(): string {
 }
 
 /** Git exécute un helper préfixé de `!` via un shell, donc tout argument doit être cité. */
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+/**
+ * Le lanceur stable du helper, dans le répertoire de données.
+ *
+ * Le `.git/config` d'un dépôt cloné survit à tout : aux mises à jour, qui ne gardent que
+ * trois releases, et aux changements de Node (un `nvm uninstall`). Il n'y écrit donc
+ * plus que ce chemin, qui ne bouge pas ; c'est le lanceur, réécrit à chaque démarrage,
+ * qui porte le Node et le `.mjs` du serveur du moment.
+ */
+export function credentialLauncherPath(paths: Pick<Paths, 'data'>): string {
+  return join(paths.data, 'bin', 'sillage-git-credential')
+}
+
+/**
+ * Le contenu du lanceur : du sh POSIX, que lisent aussi bien le dash de Debian, le bash
+ * 3.2 de macOS que celui du conteneur.
+ *
+ * Le Node et le `.mjs` sont ceux du serveur qui l'écrit, et pas `app/current/…` ni le
+ * `node` du PATH : better-sqlite3 est compilé pour un Node précis, et seul le couple du
+ * serveur en marche est sûr de s'accorder. Si l'un des deux a disparu (Node désinstallé
+ * sans redémarrer Sillage), une ligne claire vaut mieux qu'une trace de Node.
+ *
+ * La base et la clé sont ici plutôt que dans le `.git/config` : elles suivent le
+ * répertoire de données, comme le lanceur lui-même.
+ */
+export function credentialLauncherScript(paths: Pick<Paths, 'data' | 'database'>, node: string, entry: string): string {
+  return [
+    '#!/bin/sh',
+    '# Lanceur du helper de credentials git de Sillage.',
+    '# Réécrit à chaque démarrage du serveur : ne pas modifier à la main.',
+    `node=${shellQuote(node)}`,
+    `entry=${shellQuote(entry)}`,
+    'if [ ! -x "$node" ] || [ ! -f "$entry" ]; then',
+    '  echo "sillage: helper de credentials introuvable ($node, $entry) ; redémarrez Sillage pour le réinstaller." >&2',
+    '  exit 1',
+    'fi',
+    `exec "$node" "$entry" --db ${shellQuote(paths.database)} --key ${shellQuote(join(paths.data, 'secret.key'))} "$@"`,
+    '',
+  ].join('\n')
+}
+
+/**
+ * Écrit le lanceur s'il manque ou ne décrit pas ce serveur.
+ *
+ * Relu à chaque appel plutôt que retenu en mémoire : quelques centaines d'octets, lus au
+ * clone ou au push, et un lanceur abîmé ou écrit par un autre process se répare seul.
+ *
+ * Par renommage d'un fichier temporaire : un git qui l'exécute pendant le démarrage voit
+ * l'ancien ou le nouveau, jamais un fichier à moitié écrit.
+ */
+export function installCredentialLauncher(paths: Pick<Paths, 'data' | 'database'>): string {
+  const target = credentialLauncherPath(paths)
+  const script = credentialLauncherScript(paths, process.execPath, resolveEntry())
+  let current: string | null = null
+  try {
+    current = readFileSync(target, 'utf8')
+  } catch {
+    // Absent : premier démarrage de cette version, ou dossier nettoyé.
+  }
+  if (current !== script) {
+    mkdirSync(dirname(target), { recursive: true })
+    const temp = `${target}.${process.pid}.tmp`
+    writeFileSync(temp, script, { mode: 0o755 })
+    renameSync(temp, target)
+  }
+  return target
 }
 
 /**
  * La valeur à écrire dans `credential.helper`.
  *
- * `process.execPath` et non « node » : sous systemd le PATH est minimal, et rien ne
- * garantit que celui d'un agent mène au même runtime que celui du serveur.
+ * Elle ne nomme que le lanceur et le propriétaire, rien qui dépende de la version
+ * installée (voir `credentialLauncherPath`).
  *
- * Les arguments ne portent que des chemins et un identifiant de propriétaire, jamais le
- * jeton : c'est le helper qui va le chercher dans la base au moment où git le réclame.
- * Une ligne de commande est lisible dans `ps` par quiconque a un shell sur la machine.
+ * Les arguments ne portent jamais le jeton : c'est le helper qui va le chercher dans la
+ * base au moment où git le réclame. Une ligne de commande est lisible dans `ps` par
+ * quiconque a un shell sur la machine.
  */
-export function credentialHelperCommand(paths: Paths, ownerId: string): string {
-  const args = [
-    process.execPath,
-    resolveEntry(),
-    '--db',
-    paths.database,
-    '--key',
-    join(paths.data, 'secret.key'),
-    '--owner',
-    ownerId,
-  ]
-  return `!${args.map(shellQuote).join(' ')}`
+export function credentialHelperCommand(paths: Pick<Paths, 'data' | 'database'>, ownerId: string): string {
+  const launcher = installCredentialLauncher(paths)
+  return `!${[launcher, '--owner', ownerId].map(shellQuote).join(' ')}`
 }
 
 /**
@@ -76,7 +134,7 @@ export function credentialHelperCommand(paths: Paths, ownerId: string): string {
  * configurations système et globale. Sur macOS, celle de git pose `osxkeychain` : le
  * trousseau répondrait avant Sillage, et garderait le jeton de Sillage après chaque succès.
  */
-export function credentialEnv(paths: Paths, ownerId: string): NodeJS.ProcessEnv {
+export function credentialEnv(paths: Pick<Paths, 'data' | 'database'>, ownerId: string): NodeJS.ProcessEnv {
   return {
     GIT_TERMINAL_PROMPT: '0',
     GIT_CONFIG_COUNT: '2',
