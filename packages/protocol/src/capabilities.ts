@@ -59,4 +59,14 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     stopBackgroundTask: false,
     draftCommands: true,
   },
+  // Grok Build parle ACP, plus ses extensions `_x.ai/…` : `interject` glisse un message
+  // dans le tour en cours, `exit_plan_mode` soumet le plan (sondé sur 1.0.62). Ses
+  // commandes en `/` arrivent avec `initialize`, sans session à ouvrir.
+  grok: {
+    steer: true,
+    planReview: true,
+    cliSessions: false,
+    stopBackgroundTask: false,
+    draftCommands: true,
+  },
 }

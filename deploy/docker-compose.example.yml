@@ -36,6 +36,8 @@ services:
       # OpenCode y garde ses identifiants et ses sessions : sans ce volume, une
       # conversation ne se reprendrait pas après le remplacement du conteneur.
       - ~/.local/share/opencode:/home/node/.local/share/opencode
+      # Grok Build y garde sa connexion, ses sessions et son binaire.
+      - ~/.grok:/home/node/.grok
       # Vos dépôts : les projets créés dans Sillage pointent sur ces chemins.
       - ~/projects:/home/node/workspace
 

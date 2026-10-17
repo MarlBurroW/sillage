@@ -576,7 +576,7 @@ const TOOLS = [
         match: { type: 'string', enum: ['all', 'any'], description: 'Toutes les conditions (défaut) ou au moins une.' },
         subject_path: { type: 'string', description: 'Chemin du sujet (ex. `payload.issue.number`) : deux appels en attente sur le même sujet fusionnent.' },
         verification: { type: 'string', enum: ['github', 'gitlab', 'none'], description: 'Remplace la vérification du modèle.' },
-        agent: { type: 'string', description: 'CLI des sessions : claude, codex ou opencode. Par défaut, le tien.' },
+        agent: { type: 'string', description: 'CLI des sessions : claude, codex, opencode ou grok. Par défaut, le tien.' },
         model: { type: 'string', description: 'Modèle des sessions (voir list_models).' },
         effort: { type: 'string', description: "Niveau d'effort des sessions." },
       },
@@ -600,7 +600,7 @@ const TOOLS = [
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode'],
+          enum: ['claude', 'codex', 'opencode', 'grok'],
           description: 'CLI de la session. Omettre pour le même que le tien.',
         },
         model: {
@@ -656,7 +656,7 @@ const TOOLS = [
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode'],
+          enum: ['claude', 'codex', 'opencode', 'grok'],
           description: 'CLI des tirs. Omettre pour le même que le tien.',
         },
         model: {
@@ -698,7 +698,7 @@ const TOOLS = [
       properties: {
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode'],
+          enum: ['claude', 'codex', 'opencode', 'grok'],
           description: 'Ne rendre que ce CLI. Omettre pour tous.',
         },
       },

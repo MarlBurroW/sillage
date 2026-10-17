@@ -255,10 +255,42 @@ export const opencodeConfigSchema = z.object({
 })
 export type OpencodeConfig = z.infer<typeof opencodeConfigSchema>
 
+/**
+ * Modes de Grok Build, tels que son ACP les connaît (sondé sur 1.0.62) : `default`
+ * demande avant d'écrire ou d'exécuter, `auto` laisse un classifieur trancher,
+ * `bypassPermissions` est son `yoloMode`, `plan` son mode de session qui interdit
+ * d'écrire jusqu'à la validation du plan. Le `--permission-mode` du TUI en connaît
+ * d'autres (`acceptEdits`, `dontAsk`), que l'ACP ne relaie pas.
+ */
+export const grokPermissionModeSchema = z.enum(['default', 'auto', 'plan', 'bypassPermissions'])
+export type GrokPermissionMode = z.infer<typeof grokPermissionModeSchema>
+
+export const grokConfigSchema = z.object({
+  agent: z.literal('grok'),
+  /** Identifiant du catalogue de Grok (`grok-4.6`…). Vide : le défaut du CLI. */
+  model: z.string(),
+  /**
+   * Effort de raisonnement, parmi ceux que le modèle annonce (`low` → `xhigh` sur
+   * grok-4.6, sans `xhigh` sur grok-4.5). Chaîne libre pour la même raison que chez
+   * Codex : la liste dépend du modèle.
+   */
+  reasoningEffort: z.string().default(''),
+  permissionMode: grokPermissionModeSchema.default('default'),
+  /** Recherche web et lecture de pages, que Grok ouvre d'office (`--disable-web-search`). */
+  webSearch: z.boolean().default(true),
+  additionalDirectories: z.array(z.string()).default([]),
+  /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
+  mcpServers: z.array(z.string()).default([]),
+  sillageMcp: sillageMcpSchema,
+  skillLibrary: skillLibrarySchema,
+})
+export type GrokConfig = z.infer<typeof grokConfigSchema>
+
 export const agentConfigSchema = z.discriminatedUnion('agent', [
   claudeConfigSchema,
   codexConfigSchema,
   opencodeConfigSchema,
+  grokConfigSchema,
 ])
 export type AgentConfig = z.infer<typeof agentConfigSchema>
 
@@ -320,6 +352,19 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   skillLibrary: true,
 }
 
+export const DEFAULT_GROK_CONFIG: GrokConfig = {
+  agent: 'grok',
+  model: CLI_DEFAULT,
+  reasoningEffort: CLI_DEFAULT,
+  // Le mode qui demande avant d'écrire ou d'exécuter, comme les défauts des trois autres.
+  permissionMode: 'default',
+  webSearch: true,
+  additionalDirectories: [],
+  mcpServers: [],
+  sillageMcp: true,
+  skillLibrary: true,
+}
+
 /**
  * Garde-fou de compilation : si `pnpm codex:types` fait apparaître une nouvelle
  * variante d'approbation ou de sandbox, ces alias deviennent `never` et le typecheck
@@ -361,6 +406,7 @@ export const DEFAULT_CONFIGS: Record<AgentConfig['agent'], AgentConfig> = {
   claude: DEFAULT_CLAUDE_CONFIG,
   codex: DEFAULT_CODEX_CONFIG,
   opencode: DEFAULT_OPENCODE_CONFIG,
+  grok: DEFAULT_GROK_CONFIG,
 }
 
 export function defaultConfigFor(agent: AgentConfig['agent']): AgentConfig {

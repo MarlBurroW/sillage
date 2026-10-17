@@ -4,9 +4,11 @@ import {
   claudeConfigSchema,
   codexConfigSchema,
   opencodeConfigSchema,
+  grokConfigSchema,
   type ClaudeConfig,
   type CodexConfig,
   type OpencodeConfig,
+  type GrokConfig,
 } from './agent-config.js'
 
 /**
@@ -28,12 +30,14 @@ export interface ProjectAgentDefaults {
   claude: ClaudeConfig | null
   codex: CodexConfig | null
   opencode: OpencodeConfig | null
+  grok: GrokConfig | null
 }
 
 export const NO_PROJECT_DEFAULTS: ProjectAgentDefaults = {
   claude: null,
   codex: null,
   opencode: null,
+  grok: null,
 }
 
 /**
@@ -45,6 +49,7 @@ export const projectAgentDefaultsSchema = z
     claude: claudeConfigSchema.nullable().default(null).catch(null),
     codex: codexConfigSchema.nullable().default(null).catch(null),
     opencode: opencodeConfigSchema.nullable().default(null).catch(null),
+    grok: grokConfigSchema.nullable().default(null).catch(null),
   })
   .catch(NO_PROJECT_DEFAULTS)
 
@@ -78,6 +83,6 @@ export function readProjectDefaults(raw: string | null | undefined): ProjectAgen
  * projet neuf, et rien ne distingue « vidé » de « jamais réglé ».
  */
 export function serializeProjectDefaults(defaults: ProjectAgentDefaults): string | null {
-  if (!defaults.claude && !defaults.codex && !defaults.opencode) return null
+  if (!defaults.claude && !defaults.codex && !defaults.opencode && !defaults.grok) return null
   return JSON.stringify(defaults)
 }

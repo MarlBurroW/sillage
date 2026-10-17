@@ -208,6 +208,7 @@ fi
 host_command claude >/dev/null || say "note: 'claude' CLI not found on PATH. Sillage can install it for you from the web interface; you will still need to authenticate it."
 host_command codex  >/dev/null || say "note: 'codex' CLI not found on PATH. Sillage can install it for you from the web interface; you will still need to authenticate it."
 host_command opencode >/dev/null || [ -x "$HOME/.opencode/bin/opencode" ] || say "note: 'opencode' CLI not found. Sillage can install it for you from the web interface; its free models need no account."
+host_command grok >/dev/null || [ -x "$HOME/.grok/bin/grok" ] || say "note: 'grok' CLI not found. Sillage can install it for you from the web interface; sign in afterwards with 'grok login --device-auth'."
 
 # --- resolve version ---------------------------------------------------------
 

@@ -261,7 +261,12 @@ export function selectHandoff(items: HandoffItem[], budgetBytes: number): Handof
   return { head, tail, omitted, omittedTools }
 }
 
-const AGENT_NAMES: Record<AgentKind, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'opencode' }
+const AGENT_NAMES: Record<AgentKind, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  opencode: 'opencode',
+  grok: 'Grok Build',
+}
 
 function renderItem(item: HandoffItem): string {
   switch (item.kind) {
