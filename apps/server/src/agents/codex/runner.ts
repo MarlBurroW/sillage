@@ -218,6 +218,13 @@ export class CodexRunner implements AgentRunner {
    * invisibles pour la recherche, le transfert vers un autre CLI ou `read_conversation`.
    */
   private readonly streamedAnswers = new Map<string, string>()
+  /**
+   * Message steeré pas encore journalisé. Il s'écrit à l'écho du CLI ou, à défaut, à la
+   * réponse de `turn/steer` : quand l'accusé et les notifications arrivent dans le même
+   * bloc de stdout, celles-ci passent avant la suite de l'`await`, et le message de
+   * l'utilisateur se serait retrouvé après la réponse qu'il a provoquée.
+   */
+  private pendingSteer: { blocks: ContentBlock[] } | null = null
   /** Nom que Codex donne au fil, annoncé par `thread/name/updated`. */
   private suggested: string | null = null
   /** Tour en cours : `turn/interrupt` l'exige, contrairement au SDK Claude. */
@@ -968,7 +975,12 @@ export class CodexRunner implements AgentRunner {
     if (this.startedItems.has(item.id) || this.completedItems.has(item.id)) return
     // L'écho d'un message steeré est le signal que la réponse en cours a été coupée :
     // aucun autre événement ne le dit, et elle ne recevra plus rien.
-    if (item.type === 'userMessage' && parent === null) this.closeCutAnswers(raw)
+    // Le message steeré passe avant la clôture, dans le même ordre que lorsque l'accusé
+    // du steer arrive seul, avant les notifications.
+    if (item.type === 'userMessage' && parent === null) {
+      this.flushPendingSteer()
+      this.closeCutAnswers(raw)
+    }
     this.startedItems.add(item.id)
     this.durations.start(item.id)
     for (const event of startedItem(item, parent)) this.ctx.emit(event, raw)
@@ -1301,12 +1313,26 @@ export class CodexRunner implements AgentRunner {
     if (!this.client || !this.threadId || !this.turnId) return false
 
     const { blocks, input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills))
-    await this.client.call('turn/steer', {
-      threadId: this.threadId,
-      expectedTurnId: this.turnId,
-      input,
-    })
+    this.pendingSteer = { blocks }
+    try {
+      await this.client.call('turn/steer', {
+        threadId: this.threadId,
+        expectedTurnId: this.turnId,
+        input,
+      })
+    } catch (error) {
+      // Refusé (le tour venait de finir) : rien n'a été envoyé, rien ne s'écrit.
+      this.pendingSteer = null
+      throw error
+    }
+    this.flushPendingSteer()
+    return true
+  }
 
+  private flushPendingSteer(): void {
+    if (!this.pendingSteer) return
+    const { blocks } = this.pendingSteer
+    this.pendingSteer = null
     this.ctx.emit({
       type: 'message.completed',
       messageId: randomUUID(),
@@ -1314,7 +1340,6 @@ export class CodexRunner implements AgentRunner {
       blocks,
       parentToolCallId: null,
     })
-    return true
   }
 
   /**

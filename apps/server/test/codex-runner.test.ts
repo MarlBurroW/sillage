@@ -206,7 +206,7 @@ async function settled(check: () => boolean): Promise<void> {
   assert.ok(check(), 'La séquence rejouée doit aboutir.')
 }
 
-test('steer pendant la réponse (instant_interrupt) : écho unique, réponse coupée close, un seul tour', async (t) => {
+for (const prefix of ['fixture:', 'fixture-late:']) test(`steer pendant la réponse (instant_interrupt) : écho unique, réponse coupée close, un seul tour (${prefix})`, async (t) => {
   const f = await runnerFixture(t)
   await f.emit([
     itemEvent(userEcho('u1', 'liste'), 'item/started'), itemEvent(userEcho('u1', 'liste')),
@@ -220,7 +220,7 @@ test('steer pendant la réponse (instant_interrupt) : écho unique, réponse cou
     itemEvent(answer('cut', 'un\ndeux\ntrois\nquatre\n')),
     done(),
   ] })
-  assert.equal(await f.runner.steer(`fixture:${steer}`, [], [], []), true)
+  assert.equal(await f.runner.steer(`${prefix}${steer}`, [], [], []), true)
   await settled(() => f.events.some((event) => event.type === 'turn.completed'))
 
   const steerRecord = (await f.records()).find((record) => record.method === 'turn/steer')
