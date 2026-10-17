@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
@@ -71,6 +71,16 @@ try {
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
+  // Un historique ramifié assez long pour traverser plusieurs pages du graphe.
+  const repoRoot = join(data, 'data', 'demo', 'nimbus')
+  const git = (...args) => execFileSync('git', args, { cwd: repoRoot, env, stdio: 'pipe' })
+  git('checkout', '-b', 'feat/weather-alerts')
+  git('commit', '--allow-empty', '-m', 'Add severe weather alerts')
+  git('checkout', 'main')
+  git('commit', '--allow-empty', '-m', 'Improve forecast reliability')
+  git('merge', '--no-ff', 'feat/weather-alerts', '-m', 'Merge weather alerts')
+  for (let i = 0; i < 32; i++) git('commit', '--allow-empty', '-m', `Weather data refresh ${i + 1}`)
+
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
 
   const session = async (viewport, mobile) => {
@@ -100,6 +110,7 @@ try {
   await panel.getByText('feat/offline-cache', { exact: true }).first().waitFor()
   const stagedGroup = panel.getByText('Dans l’index', { exact: true })
   const unstagedGroup = panel.getByText('Hors de l’index', { exact: true })
+  await panel.getByRole('button', { name: /^Espace de travail/ }).click()
   await unstagedGroup.waitFor()
   assert.equal(await stagedGroup.count(), 0, 'Rien dans l’index au départ')
 
@@ -122,7 +133,9 @@ try {
   await message.fill('Vérifier le commit depuis Sillage\n\nDeuxième paragraphe conservé tel quel.')
   await message.press('Control+Enter')
   await panel.getByText(/^Commit [0-9a-f]{7,} créé\.$/).waitFor()
+  await panel.getByRole('button', { name: 'Graphe', exact: true }).click()
   await panel.getByText('Vérifier le commit depuis Sillage', { exact: true }).first().waitFor()
+  await panel.getByRole('button', { name: /^Espace de travail/ }).click()
   assert.equal(await message.inputValue(), '', 'Le message est vidé après le commit')
   assert.equal(await stagedGroup.count(), 0, 'L’index est vide après le commit')
   console.log('OK : commit créé et listé.')
@@ -168,8 +181,33 @@ try {
   console.log('OK : stash puis pop, les changements sont revenus.')
 
   // Les références des commits : la branche courante est posée sur le commit de tête.
-  await panel.locator('[title="feat/offline-cache"]').first().waitFor()
+  await panel.getByRole('button', { name: 'Graphe', exact: true }).click()
+  await panel.locator('[data-git-rail]').first().waitFor()
+  await panel.getByRole('button', { name: 'Charger des commits plus anciens', exact: true }).scrollIntoViewIfNeeded()
+  const scrollBefore = await panel.locator('[data-git-scroll]').evaluate((node) => node.scrollTop)
+  await panel.getByRole('button', { name: 'Charger des commits plus anciens', exact: true }).click()
+  await panel.getByText('Merge weather alerts', { exact: true }).waitFor()
+  assert.ok(await panel.locator('[data-git-commit]').count() > 30)
+  assert.ok(await panel.locator('[data-git-scroll]').evaluate((node) => node.scrollTop) >= scrollBefore - 2)
+  const rows = panel.locator('[data-git-commit]')
+  assert.ok(await rows.count() > 1)
+  await rows.first().getByRole('button').first().click()
+  await panel.locator('[data-git-inspector]').waitFor()
+  await rows.first().locator('[data-git-select]').press('ArrowDown')
+  assert.equal(await rows.nth(1).locator('[data-git-select]').getAttribute('aria-pressed'), 'true')
+  await panel.getByRole('searchbox').fill('Vérifier le commit')
+  assert.ok(await panel.locator('[data-git-commit].opacity-30').count() > 0)
+  await panel.getByRole('searchbox').fill('')
+  await panel.getByRole('button', { name: 'Fermer les détails' }).click()
+  await panel.getByRole('combobox', { name: 'Portée de l’historique' }).selectOption('current')
+  await panel.locator('[data-git-rail]').first().waitFor()
+  await panel.getByRole('combobox', { name: 'Portée de l’historique' }).selectOption('all')
+  await panel.getByRole('button', { name: 'Afficher l’IDE en plein écran' }).click()
+  await panel.getByRole('textbox', { name: 'Message du commit', exact: true }).waitFor()
+  await panel.locator('[data-git-rail]').first().waitFor()
   await page.screenshot({ path: '/tmp/sillage-git-desktop.png' })
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+  await page.screenshot({ path: '/tmp/sillage-git-desktop-dark.png' })
   assert.deepEqual(errors, [])
 
   // Le dépôt a bien bougé sur le disque : le commit existe dans l'API des commits.
@@ -182,6 +220,11 @@ try {
   const mobilePanel = phone.page.locator('[data-panel="workspace"]')
   await mobilePanel.getByRole('button', { name: 'Git', exact: true }).click()
   await mobilePanel.getByText('feat/offline-cache', { exact: true }).first().waitFor()
+  await mobilePanel.locator('[data-git-rail]').first().waitFor()
+  await mobilePanel.locator('[data-git-commit]').first().getByRole('button').first().click()
+  await mobilePanel.locator('[data-git-inspector]').waitFor()
+  await phone.page.screenshot({ path: '/tmp/sillage-git-graph-phone.png' })
+  await mobilePanel.getByRole('button', { name: /^Espace de travail/ }).click()
   await mobilePanel.getByRole('button', { name: 'Tout ajouter et commiter', exact: true }).waitFor()
   const stage = mobilePanel.getByRole('button', { name: 'Ajouter à l’index', exact: true }).first()
   const box = await stage.boundingBox()

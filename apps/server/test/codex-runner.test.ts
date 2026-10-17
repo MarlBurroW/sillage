@@ -169,3 +169,24 @@ test('bibliothèque de skills : posée avant le thread, remplacée à chaud, abs
   await quiet.start()
   assert.ok(!(await off.records()).some((record) => record.method === 'skills/extraRoots/set'))
 })
+
+test('Codex 0.163 : état de lecture ignoré et sorties des outils concurrents associées par id', async (t) => {
+  const f = await runnerFixture(t)
+  const command = (id: string) => ({ type: 'commandExecution', id, command: `cat ${id}`, cwd: '/tmp',
+    status: 'inProgress', commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null })
+  await f.emit([
+    { method: 'thread/readState/changed', params: { threadId: 'root', readState: { firstUnread: null, revision: '1' } } },
+    itemEvent(command('first'), 'item/started'),
+    itemEvent(command('second'), 'item/started'),
+    { method: 'item/commandExecution/outputDelta', params: { threadId: 'root', turnId: 'turn-1', itemId: 'second', delta: 'B' } },
+    { method: 'item/commandExecution/outputDelta', params: { threadId: 'root', turnId: 'turn-1', itemId: 'first', delta: 'A' } },
+    itemEvent({ ...command('second'), status: 'completed', aggregatedOutput: 'B', exitCode: 0 }),
+    itemEvent({ ...command('first'), status: 'completed', aggregatedOutput: 'A', exitCode: 0 }),
+    done(),
+  ])
+  assert.deepEqual(f.events.filter((event) => event.type === 'tool.started').map((event) => event.toolCallId), ['first', 'second'])
+  assert.deepEqual(f.events.filter((event) => event.type === 'tool.output_delta').map((event) => [event.toolCallId, event.chunk]), [['second', 'B'], ['first', 'A']])
+  assert.deepEqual(f.events.filter((event) => event.type === 'tool.completed').map((event) => [event.toolCallId, event.output]), [['second', 'B'], ['first', 'A']])
+  assert.ok(!f.events.some((event) => event.type === 'agent.notice' || event.type === 'error'))
+  assert.equal(f.statuses.at(-1), 'idle')
+})

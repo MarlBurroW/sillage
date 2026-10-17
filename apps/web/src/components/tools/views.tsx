@@ -6,9 +6,10 @@ import { languageFromPath } from '../../lib/highlight'
 import { translate, type MessageKey } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
 import { Markdown } from '../chat/Markdown'
+import { ImageGallery } from '../chat/ImageViewer'
 import { cx } from '../ui'
 import { Code, Empty, Plain, Section } from './parts'
-import { fields, flag, imageBlock, list, outputLines, outputText, scalar, stripLineNumbers, text } from './payload'
+import { fields, flag, imageBlocks, list, outputLines, outputText, scalar, stripLineNumbers, text } from './payload'
 
 /**
  * Rendu lisible d'un appel d'outil.
@@ -82,15 +83,11 @@ const read: ToolView = (tool) => {
     .filter((part): part is string => part !== null)
     .join(' · ')
 
-  const image = pending(tool) ? null : imageBlock(tool.output)
-  if (image !== null) {
+  const images = pending(tool) ? [] : imageBlocks(tool.output)
+  if (images.length > 0) {
     return (
       <Section label={translate('tool.read.content')} hint={hint}>
-        <img
-          src={`data:${image.mediaType};base64,${image.data}`}
-          alt={path}
-          className="max-h-80 rounded-md border border-line object-contain"
-        />
+        <ImageGallery images={images.map((image) => ({ src: `data:${image.mediaType};base64,${image.data}`, alt: path }))} />
       </Section>
     )
   }
@@ -122,19 +119,15 @@ const viewImage: ToolView = (tool) => {
   const path = text(tool.input, 'path')
   if (path === null) return null
 
-  const image = pending(tool) ? null : imageBlock(tool.output)
+  const images = pending(tool) ? [] : imageBlocks(tool.output)
   return (
     <Section label={translate('tool.viewImage.label')} hint={path}>
       {pending(tool) ? (
         <Empty>{translate('tool.read.loading')}</Empty>
-      ) : image === null ? (
+      ) : images.length === 0 ? (
         <Empty>{translate('tool.viewImage.unavailable')}</Empty>
       ) : (
-        <img
-          src={`data:${image.mediaType};base64,${image.data}`}
-          alt={path}
-          className="max-h-80 rounded-md border border-line object-contain"
-        />
+        <ImageGallery images={images.map((image) => ({ src: `data:${image.mediaType};base64,${image.data}`, alt: path }))} />
       )}
     </Section>
   )
@@ -393,6 +386,8 @@ export const genericView: ToolView = (tool) => {
   const short = entries.filter(([, value]) => isShort(value))
   const long = entries.filter(([, value]) => !isShort(value))
   const output = pending(tool) ? null : tool.output
+  const images = imageBlocks(output)
+  const imageText = images.length > 0 ? outputText(Array.isArray(output) ? output : fields(output)?.content) : null
 
   if (entries.length === 0 && output === null) return null
 
@@ -419,7 +414,10 @@ export const genericView: ToolView = (tool) => {
         </Section>
       ))}
 
-      {output === null ? null : typeof output === 'string' || Array.isArray(output) ? (
+      {images.length > 0 ? <Section label={translate('tool.viewImage.label')}>
+        <ImageGallery images={images.map((image) => ({ src: `data:${image.mediaType};base64,${image.data}`, alt: translate('image.title') }))} />
+        {imageText && <Plain content={imageText} />}
+      </Section> : output === null ? null : typeof output === 'string' || Array.isArray(output) ? (
         <TextOutput tool={tool} />
       ) : (
         <Section label={translate('tool.output.label')}>

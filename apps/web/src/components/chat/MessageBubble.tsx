@@ -7,6 +7,7 @@ import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
 import { locale, useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 import { CopyButton } from './CopyButton'
+import { ImageGallery } from './ImageViewer'
 import { Markdown } from './Markdown'
 
 /**
@@ -240,16 +241,7 @@ function Attachments({
     <div className="flex flex-col gap-2">
       {images.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {images.map((image) => (
-            <a key={image.url} href={image.url} target="_blank" rel="noopener noreferrer">
-              <img
-                src={image.url}
-                alt={t('message.attachment.alt')}
-                loading="lazy"
-                className="max-h-56 rounded-md border border-line object-contain"
-              />
-            </a>
-          ))}
+          <ImageGallery images={images.map((image) => ({ src: image.url, alt: t('message.attachment.alt') }))} className="max-h-56 rounded-md border border-line object-contain" />
         </div>
       ) : null}
 
