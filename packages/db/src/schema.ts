@@ -562,6 +562,14 @@ export const conversations = sqliteTable(
      */
     forkedFromId: text('forked_from_id'),
     /**
+     * Conversation que celle-ci continue dans un autre CLI, si c'est une suite.
+     *
+     * Distinct du fork : l'agent ne reprend pas l'historique natif, il reçoit une
+     * sélection du fil, tenue dans `conversation_handoffs`. Sans cascade, comme
+     * `forkedFromId` : la suite survit à l'originale.
+     */
+    handoffFromId: text('handoff_from_id'),
+    /**
      * Jeton d'API qui a créé la conversation, pour l'audit et pour que `GET /api/v1/tasks`
      * puisse rendre à un appelant ce qu'il a lui-même lancé. Sans cascade : supprimer un
      * jeton n'efface pas les conversations qu'il a ouvertes.
@@ -665,6 +673,27 @@ export const conversations = sqliteTable(
     index('idx_conversations_schedule').on(t.scheduleId),
   ],
 )
+
+/**
+ * Le contexte transmis à une conversation qui en continue une autre dans un autre CLI.
+ *
+ * Le texte est figé à la création, comme un fork fige le journal : la source peut
+ * continuer après, la suite est partie de ce qu'elle était à ce moment-là. Dans sa
+ * propre table parce qu'il pèse jusqu'à 64 ko et ne sert qu'au démarrage du CLI, là
+ * où la ligne de conversation est relue à chaque liste.
+ */
+export const conversationHandoffs = sqliteTable('conversation_handoffs', {
+  conversationId: text('conversation_id')
+    .primaryKey()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  fromConversationId: text('from_conversation_id').notNull(),
+  /** Dernier `seq` de la source pris en compte, pour dire jusqu'où la suite a vu. */
+  throughSeq: integer('through_seq').notNull(),
+  budgetTokens: integer('budget_tokens').notNull(),
+  /** Le bloc injecté au CLI, tel quel. */
+  text: text('text').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+})
 
 /**
  * Tâches planifiées : un prompt que le daemon rejoue à cadence fixe, chaque tir dans une

@@ -336,6 +336,31 @@ export const forkConversationBodySchema = z.object({
   title: z.string().min(1).max(200).optional(),
 })
 
+/**
+ * Suite d'une conversation dans un autre CLI.
+ *
+ * Le CLI cible et sa configuration, comme à la création ; le budget en jetons de la
+ * sélection d'historique, ramené dans les bornes du serveur. Pas de premier message :
+ * la nouvelle demande s'écrit dans la suite, une fois ouverte, et n'est jamais mêlée au
+ * contexte transféré.
+ */
+export const handoffConversationBodySchema = z.object({
+  agent: agentKindSchema,
+  config: agentConfigSchema,
+  title: z.string().min(1).max(200).optional(),
+  budgetTokens: z.number().int().positive().optional(),
+})
+
+/** Ce qui a été transmis à une suite, pour l'afficher. */
+export interface HandoffDto {
+  fromConversationId: string
+  throughSeq: number
+  budgetTokens: number
+  bytes: number
+  text: string
+  createdAt: number
+}
+
 export const permissionDecisionBodySchema = z.object({
   decision: z.enum(['allowed', 'denied']),
   scope: z.enum(['once', 'session', 'always']).default('once'),
@@ -426,6 +451,8 @@ export interface ConversationDto {
   agent: AgentKind
   /** Conversation d'origine si celle-ci est une branche. Null sinon. */
   forkedFromId: string | null
+  /** Conversation que celle-ci continue dans un autre CLI. Null sinon. */
+  handoffFromId: string | null
   config: unknown
   status: ConversationStatus
   lastSeq: number

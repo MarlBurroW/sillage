@@ -299,8 +299,15 @@
     {
       "idx": 42,
       "version": "6",
-      "when": 1792105921481,
-      "tag": "0042_turn_checkpoints",
+      "when": 1792099429244,
+      "tag": "0042_conversation_handoffs",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1792233142944,
+      "tag": "0043_turn_checkpoints",
       "breakpoints": true
     }
   ]
