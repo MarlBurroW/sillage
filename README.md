@@ -44,17 +44,33 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 - **One grammar for every CLI.** Claude Code, Codex, OpenCode and Grok Build are translated
   into a single event schema, so history, search, the board and the panel behave the
   same way whichever one ran the conversation.
-- **The repository, one panel away.** File explorer, editor, diffs, commit
-  history and terminals, beside the conversation that changed them. Stage changes,
-  commit, manage branches and remotes, or copy and move several files at once.
+- **The repository, one panel away.** File explorer, editor, diffs, a branch graph
+  and terminals, beside the conversation that changed them. Stage changes, commit,
+  manage branches and remotes, or copy and move several files at once. The commit
+  history draws its branches and merges as a graph, over the current branch or all
+  of them, with a diff inspector for each commit. Images that agents read or
+  produce open in a viewer with zoom, rotation, copy and download.
+- **What each turn changed, and a way back.** With turn checkpoints enabled on a
+  project, Sillage captures the workspace before and after every turn in hidden git
+  refs. Each turn lists the files it changed, opens them as a diff, and can be
+  reverted: the files go back to their state before the turn, commits made during
+  it stay as uncommitted changes, and you can fork the conversation from before
+  that turn at the same time.
 - **Project actions.** Save a test command, a dev server or a debug script as a
   button, available from the project header, the workspace panel and the command
   palette. Tasks keep their output and exit code; services run as persistent user
   units on Linux with systemd, with a terminal fallback elsewhere. Agents can
   propose actions for you to review before their first launch from the interface.
   Definitions stay in Sillage, without adding files to your repository.
-- **Worktrees.** Start a conversation on the project root, on an existing
-  worktree, or on a branch Sillage creates for it.
+- **Worktrees, followed to the end.** Start a conversation on the project root, on
+  an existing worktree, or on a branch Sillage creates for it. The project page lists
+  every tree git knows, including those created from a shell, compared with the
+  default branch: uncommitted work, commits to merge, merged, or folder missing, with
+  the sessions working there. The sidebar shows each conversation's branch and state.
+  Cleaning up a tree is one action that first says what would be lost; once a tree
+  is merged and clean, Sillage proposes the cleanup as a decision. Agents create and
+  list worktrees through `create_worktree` and `list_worktrees`, so the interface
+  sees them.
 - **Full-text search** across every conversation in every project.
 - **Processes launched by Sillage.** On Linux, see what each agent and terminal has
   started, each command with its process tree, ports and originating conversation,
@@ -95,7 +111,7 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   optional fallback choice. This is separate from the CLI's permission requests
   and is off by default for each source.
 - **Shared instructions and memory.** One `SILLAGE.md` and one project memory for
-  all three CLIs, editable from the interface, which agents can read and rewrite.
+  all four CLIs, editable from the interface, which agents can read and rewrite.
   [How it works](#instructions-and-memory).
 - **Installable PWA with notifications.** In-app toasts for questions and decisions,
   push notifications on other devices, and silence while you already have the
@@ -115,9 +131,11 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   extra Claude subscriptions need a separate guided sign-in to enable their gauge.
   Added accounts belong to the Sillage user who registered them.
   [Extra accounts](docs/accounts.md).
-- **A composer you can arrange.** Pin the settings you use under the message box:
-  permissions, speed, account, advisor or other controls supported by that CLI.
-  Each CLI keeps its own layout.
+- **A composer you can arrange.** Model and effort sit in one chip under the
+  message box; pin the other settings you use next to it: permissions, speed,
+  account, advisor or other controls supported by that CLI, and order them. Each
+  CLI keeps its own layout; on a phone the chip stays and the rest lives in the
+  settings panel.
 - **A task API for machines.** `/api/v1` speaks tasks rather than screens: open
   one in a project, follow its events, answer what it asks, steer or interrupt
   it, and take a webhook when it lands. Bearer tokens carry their own scopes and
@@ -365,7 +383,14 @@ deploy/            service templates (systemd, launchd), config example, docker-
 site/              one-page website (GitHub Pages) and its screenshots
 scripts/           screenshot runner, runtime staging, Codex and OpenCode type generation
 docs/windows.md    running Sillage on Windows through WSL2
+docs/remote-access.md  reaching Sillage and agent preview links from other devices
 docs/accounts.md   extra Claude and Codex accounts, how they are wired, their limits
+docs/api.md        the task API and project creation
+docs/mcp.md        connecting an external MCP client to Sillage
+docs/cli-handoff.md  how a conversation continues in another CLI
+docs/skill-library.md  the shared skill library
+docs/services.md   what the process view detects, and its limits
+docs/sillage-md.md shared instructions and memory, with the probes behind them
 docs/CODEX.md      what the Codex adapter relies on, as probed
 docs/OPENCODE.md   what the OpenCode adapter relies on, as probed
 docs/GROK.md       what the Grok Build adapter (Agent Client Protocol) relies on, as probed

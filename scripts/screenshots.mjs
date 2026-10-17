@@ -123,6 +123,12 @@ function buildShots(t) {
         await page.getByText('finished').first().waitFor({ timeout: 10000 })
       },
     },
+    {
+      // La page du projet : la vue Chantiers compare chaque arbre à main.
+      name: 'worktrees',
+      path: `/p/${t.nimbus.id}`,
+      waitFor: 'text=feat/radar-prefetch',
+    },
     { name: 'settings-mcp', path: '/settings/mcp', waitFor: 'text=playwright' },
     { name: 'settings-appearance', path: '/settings/apparence', waitFor: 'role=heading[name="Appearance"]' },
     // Les vues du panneau latéral ferment la liste : leur `storage` (panneau ouvert)
@@ -147,12 +153,14 @@ function buildShots(t) {
       name: 'panel-git',
       path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
       waitFor: 'text=Offline fallback is in place',
-      storage: { 'sillage.panelOpen': '1' },
+      // Assez large pour que le graphe et l'arbre de travail tiennent côte à côte.
+      storage: { 'sillage.panelOpen': '1', 'sillage.panelDockedWidth': '1040' },
       viewport: BOARD_VIEWPORT,
       interact: async (page) => {
         const panel = page.locator('[data-panel="workspace"]')
         await panel.waitFor({ timeout: 10000 })
-        await panel.locator('text=Git').first().click()
+        // Le rail du panneau porte des icônes : le nom de l'onglet est son aria-label.
+        await panel.getByRole('button', { name: 'Git', exact: true }).click()
         await panel.locator('text=Cache the last forecast per city').first().waitFor({ timeout: 10000 })
         // Déplier le diff du fichier principal, pour montrer de vrais hunks.
         await panel.locator('text=src/lib/forecast.ts').first().click()
