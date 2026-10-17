@@ -32,6 +32,7 @@ import { ConversationMinimap } from '../components/chat/ConversationMinimap'
 import { PromptSuggestion } from '../components/chat/PromptSuggestion'
 import { QueuedMessages } from '../components/chat/QueuedMessages'
 import { HeldSessionMessages } from '../components/chat/HeldSessionMessages'
+import { WorkspaceLabel } from '../components/chat/WorkspaceLabel'
 import { ThreadSearch } from '../components/chat/ThreadSearch'
 import { TurnActivity } from '../components/chat/TurnActivity'
 import { TurnNav } from '../components/chat/TurnNav'
@@ -747,6 +748,18 @@ export function ConversationPage() {
     }
   }, [stream.state.turnRunning, conversationId, queryClient])
 
+  // La branche de l'en-tête aussi, mais seulement à la fin d'un tour vu en direct : un
+  // checkout l'a peut-être changée. À l'ouverture du fil le cache suffit, et relire
+  // l'état git de tous les projets à chaque navigation coûterait pour rien.
+  const turnWasRunning = useRef(false)
+  useEffect(() => {
+    if (turnWasRunning.current && !stream.state.turnRunning) {
+      void queryClient.invalidateQueries({ queryKey: ['projects'] })
+      void queryClient.invalidateQueries({ queryKey: ['worktrees'] })
+    }
+    turnWasRunning.current = stream.state.turnRunning
+  }, [stream.state.turnRunning, queryClient])
+
   /**
    * Branche la conversation juste avant un message.
    *
@@ -798,6 +811,7 @@ export function ConversationPage() {
     AGENT_CAPABILITIES[conversation.agent].steer &&
     (stream.status === 'running' || stream.status === 'awaiting_input')
   const worktree = worktrees?.find((entry) => entry.id === conversation.worktreeId)
+  const project = projects?.find((entry) => entry.id === conversation.projectId)
   const origin = conversation.forkedFromId
     ? allConversations?.find((entry) => entry.id === conversation.forkedFromId)
     : undefined
@@ -902,12 +916,22 @@ export function ConversationPage() {
           </span>
 
           <div className="min-w-0 flex-1">
-            <Link
-              to={`/p/${conversation.projectId}`}
-              className="block w-fit max-w-full truncate rounded-sm text-xs text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              {projects?.find((project) => project.id === conversation.projectId)?.name}
-            </Link>
+            {/* Le projet garde sa place, c'est la branche qui se tronque d'abord. */}
+            <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
+              <Link
+                to={`/p/${conversation.projectId}`}
+                className="max-w-[60%] shrink-0 truncate rounded-sm hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                {project?.name}
+              </Link>
+              <WorkspaceLabel
+                worktreeId={conversation.worktreeId}
+                worktree={worktree}
+                worktreesLoaded={worktrees !== undefined}
+                projectGit={project?.git}
+                projectPath={project?.workspacePath}
+              />
+            </div>
             <p className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</p>
 
 
