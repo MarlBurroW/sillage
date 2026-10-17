@@ -132,7 +132,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
   assert.equal(announced.userId, 'owner')
   assert.equal(announced.notification.kind, 'decision')
   assert.equal(announced.notification.push.badge, 1)
-  assert.deepEqual(announced.notification.toast, { kind: 'decision', decisionId: row.id, question: 'Push the fix to main?', sourceLabel: 'Veille Codex', projectName: 'Nimbus' })
+  assert.deepEqual(announced.notification.toast, { kind: 'decision', decisionId: row.id, question: 'Push the fix to main?', sourceLabel: 'Veille Codex', sourceKind: 'schedule', projectName: 'Nimbus' })
 
   assert.equal((await ask(TASK_SESSION, 'request_decision', { question: 'Another one?' })).isError, true, 'One pending at a time')
 

@@ -104,6 +104,11 @@ export interface RunnerContext {
    * l'interrupteur change à chaud.
    */
   skillRoots(config: AgentConfig): string[]
+  /**
+   * Worktrees où la session travaille hors de son cwd (voir `worktrees/linked.ts`), à
+   * ouvrir en écriture. Facultatif : un runner de test n'en a pas.
+   */
+  workTrees?(): string[]
   /** Identifiant de session natif à reprendre, null pour une nouvelle session. */
   resumeSessionId: string | null
   /** Écrit dans le journal puis diffuse. `raw` conserve le message natif du CLI. */

@@ -53,6 +53,7 @@ import type { AppContext } from '../context.js'
 import { HttpError, badRequest, conflict } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { workspaceScopes } from './workspace-scopes.js'
+import type { WorktreeStatusService } from '../../worktrees/status-service.js'
 
 /**
  * Le workflow git de l'onglet Git : état détaillé du dépôt, puis les gestes dessus.
@@ -64,7 +65,11 @@ import { workspaceScopes } from './workspace-scopes.js'
  * Les actions d'un même dépôt sont sérialisées : git refuse de travailler à deux, et
  * un double clic ne doit pas finir en « index.lock exists ».
  */
-export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function registerGitActionRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  worktreeStatus: WorktreeStatusService,
+): void {
   /**
    * Le helper de credentials de Sillage, pour les commandes qui parlent au remote.
    * Introuvable sur une installation incomplète : on s'en passe plutôt que d'interdire
@@ -125,6 +130,8 @@ export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): 
           const result = await guard(() =>
             serialized(cwd, () => handler(cwd, request.body, user.id)),
           )
+          // Commit, fusion, branche : l'avancement des chantiers a pu changer.
+          worktreeStatus.invalidateForCwd(cwd)
           if (result === undefined) return reply.status(options.status ?? 204).send()
           return result
         },

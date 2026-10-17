@@ -1,10 +1,16 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { DecisionDto } from '@sillage/protocol'
+import { decisionSourceKindSchema, type DecisionDto } from '@sillage/protocol'
 import { api } from './api'
 import { wsClient } from './ws-client'
 
 const decisionsKey = (status: 'pending' | 'all') => ['decisions', status]
+
+/**
+ * Toutes les sources que ce code sait afficher : le serveur ne sert les plus récentes
+ * qu'aux clients qui les nomment (voir `requestedDecisionSources`).
+ */
+const SOURCES = `sources=${decisionSourceKindSchema.options.join(',')}`
 
 /**
  * Les décisions du compte. Relues quand le serveur signale un changement, et toutes les
@@ -13,7 +19,7 @@ const decisionsKey = (status: 'pending' | 'all') => ['decisions', status]
 export function useDecisions(status: 'pending' | 'all' = 'pending') {
   return useQuery({
     queryKey: decisionsKey(status),
-    queryFn: async () => (await api.get<{ decisions: DecisionDto[] }>(`/api/decisions?status=${status}`)).decisions,
+    queryFn: async () => (await api.get<{ decisions: DecisionDto[] }>(`/api/decisions?status=${status}&${SOURCES}`)).decisions,
     staleTime: 15_000,
     refetchInterval: 60_000,
   })
@@ -22,7 +28,7 @@ export function useDecisions(status: 'pending' | 'all' = 'pending') {
 export function useDecision(id: string | null) {
   return useQuery({
     queryKey: ['decision', id],
-    queryFn: () => api.get<DecisionDto>(`/api/decisions/${id}`),
+    queryFn: () => api.get<DecisionDto>(`/api/decisions/${id}?${SOURCES}`),
     enabled: Boolean(id),
   })
 }

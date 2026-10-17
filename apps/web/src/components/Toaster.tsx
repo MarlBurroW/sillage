@@ -7,6 +7,7 @@ import { useTranslate, type MessageKey } from '../lib/i18n'
 import { dismissDecisionToasts, dismissToast, pushToast, useToasts, type Toast } from '../lib/toasts'
 import { wsClient } from '../lib/ws-client'
 import { Button, IconButton } from './ui'
+import { toastQuestion } from './decisions/decision-text'
 
 /** Au-delà, les toasts se résument : une pile qui couvre l'écran ne se lit plus. */
 const VISIBLE = 2
@@ -69,7 +70,7 @@ function ToastCard({ toast }: { toast: Toast }) {
           {decision ? t('toast.decision.title') : t(REQUEST_TITLES[notification.request])}
         </p>
         <p className="mt-0.5 line-clamp-2 text-sm font-medium text-ink">
-          {decision ? notification.question : notification.conversationTitle}
+          {decision ? toastQuestion(notification, t) : notification.conversationTitle}
         </p>
         <p className="mt-0.5 truncate text-xs text-ink-faint">
           {decision ? [notification.sourceLabel, notification.projectName].filter(Boolean).join(' · ') : notification.detail}

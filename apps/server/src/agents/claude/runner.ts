@@ -239,10 +239,13 @@ export class ClaudeRunner implements AgentRunner {
         // Les pièces jointes sont stockées hors du workspace : sans ce dossier
         // autorisé, l'agent se verrait refuser la lecture des fichiers qu'on lui joint.
         // Même raison pour les fichiers annexes des skills de la bibliothèque.
+        // Les worktrees créés par la session hors de son cwd : lus au lancement, un arbre
+        // créé en cours de route ne compte qu'à la relance du CLI.
         additionalDirectories: [
           ...config.additionalDirectories,
           this.ctx.attachmentsRoot,
           ...library.additionalDirectories,
+          ...(this.ctx.workTrees?.() ?? []),
         ],
         plugins: library.plugins,
         // Transmis en mémoire, à chaque lancement. Rien n'en est écrit dans
