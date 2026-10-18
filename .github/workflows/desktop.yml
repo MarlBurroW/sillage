@@ -1,10 +1,10 @@
 name: Desktop
 
 # L'application de bureau : l'arbre d'exécution de la release, le Node qui l'a construit et
-# Electron, empaquetés pour chaque plateforme. Appelé par release.yml à chaque tag (toutes
-# les cibles) et par la CI (Linux x64, lancé pour de vrai). On peut aussi le lancer à la
-# main sur une branche (Actions > Desktop > Run workflow) : les paquets restent alors en
-# artefacts du run, rien n'est publié.
+# Electron, empaquetés pour chaque plateforme, puis lancés pour de vrai. Appelé par
+# release.yml à chaque tag (toutes les cibles) et par la CI (Linux x64). Une fois ce
+# fichier sur main, on peut aussi le lancer à la main pour une branche (Actions > Desktop
+# > Run workflow) : les paquets restent alors en artefacts du run, rien n'est publié.
 #
 # Pas encore de signature Apple : l'app macOS est signée ad hoc, et Gatekeeper demande de
 # l'autoriser à la première ouverture.
@@ -41,6 +41,10 @@ env:
   # electron-builder télécharge son propre Electron ; celui du paquet npm ne sert qu'à
   # lancer l'app depuis le dépôt.
   ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  # Dans une PR, electron-builder saute toute signature, ad hoc comprise : l'app macOS
+  # en sortirait non signée, ce qu'un Mac Apple Silicon refuse. La signature ad hoc ne
+  # demande aucun secret, rien ne s'oppose à la forcer.
+  CSC_FOR_PULL_REQUEST: 'true'
 
 jobs:
   package:
@@ -84,12 +88,21 @@ jobs:
           version='${{ inputs.version }}'
           os=$([ "$PLATFORM" = darwin ] && echo mac || echo linux)
           pnpm exec electron-builder "--$os" "--$ARCH" --publish never -c.extraMetadata.version="${version#v}"
-      # L'app empaquetée, lancée sous un écran virtuel : serveur, session, écrans du profil
-      # de bureau, garde d'origine. linux-unpacked est l'étape que l'AppImage et le .deb
-      # emballent.
+      - name: Verify the macOS signature
+        if: env.PLATFORM == 'darwin'
+        run: codesign --verify --deep --strict --verbose=2 apps/desktop/release/mac-arm64/Sillage.app
+      # L'app empaquetée, lancée pour de vrai : serveur, session, écrans du profil de
+      # bureau, garde d'origine, arrêt. Sous Linux, linux-unpacked est l'étape que
+      # l'AppImage et le .deb emballent, et l'écran vient de Xvfb.
       - name: Launch check
-        if: matrix.target == 'linux-x64'
-        run: xvfb-run -a node scripts/desktop-ui-check.mjs apps/desktop/release/linux-unpacked/sillage
+        run: |
+          if [ "$PLATFORM" = darwin ]; then
+            node scripts/desktop-ui-check.mjs
+          elif command -v xvfb-run >/dev/null; then
+            xvfb-run -a node scripts/desktop-ui-check.mjs
+          else
+            echo "::warning::xvfb-run absent du runner, lancement non vérifié"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}

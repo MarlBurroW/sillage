@@ -87,12 +87,13 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<s
  * Retire ce que l'emballage de l'app ajoute à l'environnement et qui n'a rien à faire
  * chez les agents ni dans les terminaux. Une AppImage pose `APPDIR` et préfixe des
  * chemins vers son point de montage, qui change à chaque lancement : un `git` lancé par
- * un agent chargerait sinon les bibliothèques embarquées dans l'app.
+ * un agent chargerait sinon les bibliothèques embarquées dans l'app. Le profil jetable du
+ * contrôle de lancement ne regarde que l'app, pas ses enfants.
  */
 function withoutLauncherVars(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...source }
   const appDir = env.APPDIR
-  for (const name of ['APPDIR', 'APPIMAGE', 'ARGV0', 'OWD', 'CHROME_DESKTOP', 'ELECTRON_RUN_AS_NODE']) {
+  for (const name of ['APPDIR', 'APPIMAGE', 'ARGV0', 'OWD', 'CHROME_DESKTOP', 'ELECTRON_RUN_AS_NODE', 'SILLAGE_DESKTOP_USER_DATA']) {
     delete env[name]
   }
   if (appDir) {
