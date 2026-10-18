@@ -23,6 +23,7 @@
     "test:skills-ui": "node scripts/skills-ui-check.mjs",
     "test:tooltips-ui": "node scripts/tooltips-ui-check.mjs",
     "test:git-ui": "node scripts/git-ui-check.mjs",
+    "test:panel-empty-ui": "node scripts/panel-empty-ui-check.mjs",
     "test:checkpoints-ui": "node scripts/checkpoints-ui-check.mjs",
     "test:workspace-label-ui": "node scripts/workspace-label-ui-check.mjs",
     "test:palette-ui": "node scripts/palette-ui-check.mjs",

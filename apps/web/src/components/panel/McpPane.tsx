@@ -1,3 +1,4 @@
+import { PanelEmptyState } from './PanelEmptyState'
 import { CircleAlert, CircleCheck, KeyRound, Loader, Plug, PlugZap } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { McpServerState, McpServerStatus } from '@sillage/protocol'
@@ -46,13 +47,13 @@ export function McpPane({ servers }: { servers: McpServerStatus[] }) {
 
   if (servers.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+      <PanelEmptyState>
         <EmptyState
           icon={<PlugZap size={22} />}
           title={t('panel.mcp.empty.title')}
           description={t('panel.mcp.empty.description')}
         />
-      </div>
+      </PanelEmptyState>
     )
   }
 

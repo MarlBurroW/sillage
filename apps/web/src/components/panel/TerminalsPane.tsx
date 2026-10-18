@@ -1,3 +1,4 @@
+import { PanelEmptyState } from './PanelEmptyState'
 import { TooltipButton } from '../ui/Tooltip'
 import { Loader, Plus, SquareTerminal as TerminalIcon, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -145,7 +146,7 @@ export function TerminalsPane({
       ) : null}
 
       {terminals?.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+        <PanelEmptyState>
           <span className="grid size-12 place-items-center rounded-xl border border-line bg-surface-high text-ink-faint">
             <TerminalIcon size={22} />
           </span>
@@ -159,7 +160,7 @@ export function TerminalsPane({
             {open.isPending ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
             {t('terminal.new')}
           </Button>
-        </div>
+        </PanelEmptyState>
       ) : null}
 
       {/* Le shell a été emporté par un redémarrage du daemon : l'écran en dessous est

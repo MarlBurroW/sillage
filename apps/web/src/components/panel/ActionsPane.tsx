@@ -1,3 +1,4 @@
+import { PanelEmptyState } from './PanelEmptyState'
 import { Loader, Plus, Zap } from 'lucide-react'
 import { useActions } from '../../lib/actions'
 import { useTranslate } from '../../lib/i18n'
@@ -28,7 +29,7 @@ export function ActionsPane({ projectId, conversationId }: { projectId: string; 
           {t('actions.loading')}
         </p>
       ) : actions.length === 0 ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+        <PanelEmptyState>
           <EmptyState
             icon={<Zap size={22} />}
             title={t('actions.empty.title')}
@@ -39,7 +40,7 @@ export function ActionsPane({ projectId, conversationId }: { projectId: string; 
               </Button>
             }
           />
-        </div>
+        </PanelEmptyState>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <ActionList actions={actions} conversationId={conversationId} handlers={handlers} />

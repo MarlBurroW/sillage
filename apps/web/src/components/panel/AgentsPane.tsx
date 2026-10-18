@@ -1,3 +1,4 @@
+import { PanelEmptyState } from './PanelEmptyState'
 import { TooltipButton } from '../ui/Tooltip'
 import { AGENT_CAPABILITIES, type AgentKind } from '@sillage/protocol'
 import { ArrowLeft, Bot, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
@@ -46,12 +47,12 @@ export function AgentsPane({
 
   if (agents.length === 0 && background.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+      <PanelEmptyState>
         <EmptyState
           title={t('subagent.pane.empty.title')}
           description={t('subagent.pane.empty.description')}
         />
-      </div>
+      </PanelEmptyState>
     )
   }
 

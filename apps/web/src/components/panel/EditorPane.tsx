@@ -1,3 +1,4 @@
+import { PanelEmptyState } from './PanelEmptyState'
 import { TooltipButton } from '../ui/Tooltip'
 import { Check, Code2, Download, Eye, Loader, MoreHorizontal, Save, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
@@ -67,7 +68,7 @@ function UserEditorPane({ userId, scope }: { userId: string; scope: string }) {
           </div>
         </details>
       ) : null}
-      {paths.length === 0 ? <p className="px-4 py-8 text-center text-sm text-ink-faint">{t('editor.empty')}</p> : <>
+      {paths.length === 0 ? <PanelEmptyState><p className="text-sm text-ink-faint">{t('editor.empty')}</p></PanelEmptyState> : <>
       <div className="flex shrink-0 items-center border-b border-line">
         <div ref={tabList} data-file-tabs className="flex min-w-0 flex-1 items-center gap-px overflow-x-auto">
           {paths.map((path, index) => (

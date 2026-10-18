@@ -1,3 +1,4 @@
+import { PanelEmptyState } from './PanelEmptyState'
 import './git/git-workspace.css'
 import { GitBranch, Loader, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -63,7 +64,7 @@ export function GitPane({
     <GitContext.Provider value={{ scope, notify: setNotice, openFile: onOpenFile }}>
       {/* `@container` : l'auteur d'un commit et les dates ne s'affichent que si la ligne
           a la place, qui dépend de la largeur du panneau et non de celle de la fenêtre. */}
-      <div className="git-workspace @container flex h-full min-h-0 min-w-0 flex-col overflow-hidden pb-safe">
+      <div className="git-workspace @container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-safe">
         {status.isPending ? (
           <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">
             <Loader size={11} className="animate-spin" />
@@ -194,7 +195,7 @@ function NotARepository({ scope }: { scope: string }) {
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <div className="flex min-h-0 flex-1 items-center p-4">
+    <PanelEmptyState>
       <EmptyState
         icon={<GitBranch size={22} />}
         title={t('changes.diff.notGitRepo')}
@@ -213,6 +214,6 @@ function NotARepository({ scope }: { scope: string }) {
           </Button>
         }
       />
-    </div>
+    </PanelEmptyState>
   )
 }

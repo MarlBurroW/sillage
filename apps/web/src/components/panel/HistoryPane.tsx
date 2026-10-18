@@ -1,3 +1,4 @@
+import { PanelEmptyState } from './PanelEmptyState'
 import { ChevronRight, Loader } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { EditTurn, EditedFile } from '../../lib/chat-fold'
@@ -35,11 +36,13 @@ export function HistoryPane({
   const t = useTranslate()
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto pb-safe">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pb-safe">
       <SectionTitle>{t('changes.history.title')}</SectionTitle>
 
       {turns.length === 0 ? (
-        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.history.empty')}</p>
+        <PanelEmptyState>
+          <p className="text-xs text-ink-faint">{t('changes.history.empty')}</p>
+        </PanelEmptyState>
       ) : null}
 
       {/* Le plus récent en tête : c'est le tour dont on vient de voir le résultat. */}
