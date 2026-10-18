@@ -1,0 +1,101 @@
+name: Desktop
+
+# L'application de bureau : l'arbre d'exécution de la release, le Node qui l'a construit et
+# Electron, empaquetés pour chaque plateforme. Appelé par release.yml à chaque tag (toutes
+# les cibles) et par la CI (Linux x64, lancé pour de vrai). On peut aussi le lancer à la
+# main sur une branche (Actions > Desktop > Run workflow) : les paquets restent alors en
+# artefacts du run, rien n'est publié.
+#
+# Pas encore de signature Apple : l'app macOS est signée ad hoc, et Gatekeeper demande de
+# l'autoriser à la première ouverture.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version inscrite dans l'app (vX.Y.Z)
+        required: true
+        type: string
+      targets:
+        description: Cibles, en tableau JSON (linux-x64, linux-arm64, darwin-arm64)
+        required: false
+        type: string
+        default: '["linux-x64", "linux-arm64", "darwin-arm64"]'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version inscrite dans l'app (vX.Y.Z)
+        required: false
+        type: string
+        default: v0.0.0-dev
+      targets:
+        description: Cibles, en tableau JSON (linux-x64, linux-arm64, darwin-arm64)
+        required: false
+        type: string
+        default: '["linux-x64", "linux-arm64", "darwin-arm64"]'
+
+permissions:
+  contents: read
+
+env:
+  # electron-builder télécharge son propre Electron ; celui du paquet npm ne sert qu'à
+  # lancer l'app depuis le dépôt.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(inputs.targets) }}
+    # Runners natifs, comme les archives de la release : les modules natifs embarqués
+    # sont compilés pour la plateforme qui les lance. ubuntu-22.04 fixe la glibc de
+    # référence et laisse le bac à sable de Chromium créer ses namespaces sans profil
+    # AppArmor, ce que le lancement réel de l'app demande.
+    runs-on: >-
+      ${{ matrix.target == 'darwin-arm64' && 'macos-15'
+        || matrix.target == 'linux-arm64' && 'ubuntu-22.04-arm'
+        || 'ubuntu-22.04' }}
+    env:
+      PLATFORM: ${{ startsWith(matrix.target, 'darwin') && 'darwin' || 'linux' }}
+      ARCH: ${{ endsWith(matrix.target, 'arm64') && 'arm64' || 'x64' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      # Ce Node construit l'arbre d'exécution et voyage avec l'app, à la version près
+      # (scripts/desktop-stage.mjs) : ses modules natifs n'acceptent que cette ABI.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+        env:
+          SILLAGE_VERSION: ${{ inputs.version }}
+      - uses: ./.github/actions/runtime-archive
+        with:
+          version: ${{ inputs.version }}
+          platform: ${{ env.PLATFORM }}
+          arch: ${{ env.ARCH }}
+      - run: node scripts/desktop-stage.mjs out/sillage
+      - name: Package
+        working-directory: apps/desktop
+        run: |
+          version='${{ inputs.version }}'
+          os=$([ "$PLATFORM" = darwin ] && echo mac || echo linux)
+          pnpm exec electron-builder "--$os" "--$ARCH" --publish never -c.extraMetadata.version="${version#v}"
+      # L'app empaquetée, lancée sous un écran virtuel : serveur, session, écrans du profil
+      # de bureau, garde d'origine. linux-unpacked est l'étape que l'AppImage et le .deb
+      # emballent.
+      - name: Launch check
+        if: matrix.target == 'linux-x64'
+        run: xvfb-run -a node scripts/desktop-ui-check.mjs apps/desktop/release/linux-unpacked/sillage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+          if-no-files-found: error

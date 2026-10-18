@@ -130,6 +130,8 @@ export function AboutSection() {
               ) : (
                 <p className="text-sm text-ink-faint">{t('about.update.askAdmin')}</p>
               )
+            ) : info.channel === 'desktop' ? (
+              <p className="text-sm text-ink-faint">{t('about.desktop.instructions')}</p>
             ) : (
               <p className="text-sm text-ink-faint">{t('about.manual.instructions')}</p>
             )}

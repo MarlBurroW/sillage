@@ -101,6 +101,7 @@ import { useTranslate } from '../lib/i18n'
 import { resizeHandle } from '../lib/resize-handle'
 import { useMediaQuery, useVisualViewport } from '../lib/viewport'
 import { PROJECT_COLORS } from '../lib/project-colors'
+import { useCapability } from '../lib/instance'
 import { useCurrentUser, useLogout } from '../lib/session'
 import { AgentIcon } from './AgentIcon'
 import { CommandPalette } from './CommandPalette'
@@ -200,6 +201,7 @@ export function AppShell() {
   useAppearanceSync()
   const [navOpen, setNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const pwa = useCapability('pwa')
   const hidden = useSidebarHidden()
   const aside = useRef<HTMLElement>(null)
   const wide = useMediaQuery('(min-width: 48rem)')
@@ -368,7 +370,8 @@ export function AppShell() {
       ) : null}
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
-      <UpdatePrompt />
+      {/* Monter l'invite enregistre le service worker : sans PWA, ni l'un ni l'autre. */}
+      {pwa ? <UpdatePrompt /> : null}
 
       {/* Aucune gouttière : le bouton de réaffichage se pose dans le coin haut-gauche,
           et ce sont les vues qui ont un en-tête qui lui réservent sa place
@@ -431,6 +434,8 @@ function Sidebar({
   // visible même si le retrait optimiste fait disparaître la ligne des favoris.
   const toggleFavorite = useToggleFavorite()
   const logout = useLogout()
+  // Sans mot de passe, une déconnexion ne laisserait qu'une page de connexion sans issue.
+  const passwordAuth = useCapability('passwordAuth')
   const updateNotice = useUpdateNotice()
   const navigate = useNavigate()
   const routeProjectId = useMatch('/p/:projectId/*')?.params.projectId
@@ -689,17 +694,19 @@ function Sidebar({
           <span className="truncate">{t('shell.settings.label')}</span>
           {updateNotice ? <span className="sr-only">{t('about.badge.updateAvailable')}</span> : null}
         </SidebarRow>
-        <button
-          type="button"
-          onClick={() => logout.mutate()}
-          className={cx(
-            'flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm',
-            'text-ink-faint transition-colors hover:bg-surface-high hover:text-ink',
-          )}
-        >
-          <LogOut size={16} className="shrink-0" />
-          {t('shell.logout')}
-        </button>
+        {passwordAuth ? (
+          <button
+            type="button"
+            onClick={() => logout.mutate()}
+            className={cx(
+              'flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm',
+              'text-ink-faint transition-colors hover:bg-surface-high hover:text-ink',
+            )}
+          >
+            <LogOut size={16} className="shrink-0" />
+            {t('shell.logout')}
+          </button>
+        ) : null}
       </div>
     </div>
   )

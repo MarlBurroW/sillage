@@ -33,6 +33,15 @@ try {
     await render(`apps/web/public/${name}`, size, size, svg)
   }
 
+  // L'application de bureau, au gabarit des icônes macOS : la tuile occupe 824 px d'un
+  // carré de 1024, aux coins de 185 px, et la marge reste transparente pour l'ombre que
+  // le Dock dessine. electron-builder en tire l'.icns du Mac et les tailles de Linux.
+  const desktop = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="#535cda"/>
+    <g transform="translate(248.3 248.3) scale(5.2736)" fill="white">${paths}</g>
+  </svg>`
+  await render('apps/desktop/resources/icon.png', 1024, 1024, desktop)
+
   // Un même visuel de partage évite de laisser l’ancienne marque sur le site.
   const og = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
     <rect width="1200" height="630" fill="#0b0d1c"/>

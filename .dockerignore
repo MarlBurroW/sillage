@@ -6,3 +6,6 @@ apps/web/public/file-icons
 site
 docs
 *.log
+apps/desktop/stage
+apps/desktop/release
+out

@@ -20,6 +20,8 @@ import { registerWebSocketHub } from '../ws/hub.js'
 import { MAX_ATTACHMENT_BYTES } from '@sillage/protocol'
 import type { AppContext } from './context.js'
 import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
+import { registerLocalOriginGuard } from './local-origin.js'
+import { INSTANCE_PROFILE } from '../instance/profile.js'
 import { registerApiTokenRoutes } from './routes/api-tokens.js'
 import { registerV1Routes } from './v1/index.js'
 import type { Scheduler } from '../scheduler/scheduler.js'
@@ -84,8 +86,13 @@ import { registerWorktreeRoutes } from './routes/worktrees.js'
 import type { WorktreeCleanup } from '../worktrees/cleanup.js'
 import type { WorktreeStatusService } from '../worktrees/status-service.js'
 
-/** Routes accessibles sans session. Tout le reste exige un utilisateur. */
-const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health'])
+/**
+ * Routes accessibles sans session. Tout le reste exige un utilisateur.
+ *
+ * Le profil de l'instance en fait partie : l'interface l'attend avant de dessiner quoi que
+ * ce soit, page de connexion comprise.
+ */
+const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health', '/api/system/instance'])
 
 /**
  * L'API publique, réservée aux jetons.
@@ -136,6 +143,7 @@ export async function buildApp(
   })
 
   registerErrorHandler(app)
+  if (INSTANCE_PROFILE === 'desktop') registerLocalOriginGuard(app)
 
   /**
    * Rien ne compressait sur le chemin : ni Sillage, ni le nginx qui le précède, dont le
