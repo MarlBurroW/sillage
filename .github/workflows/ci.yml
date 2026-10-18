@@ -79,6 +79,4 @@ jobs:
     uses: ./.github/workflows/desktop.yml
     with:
       version: v0.0.0-ci
-      # TEMPORAIRE : macOS, le temps d'essayer le .dmg sur un vrai Mac avant la première
-      # release. À retirer avant la fusion.
-      targets: '["linux-x64", "darwin-arm64"]'
+      targets: '["linux-x64"]'
