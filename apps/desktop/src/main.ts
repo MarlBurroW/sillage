@@ -24,6 +24,9 @@ let server: RunningServer | null = null
 let origin = ''
 let quitting = false
 
+// Un profil jetable pour le contrôle de lancement (scripts/desktop-ui-check.mjs), qui ne
+// touche ni aux projets ni aux réglages de l'utilisateur. Avant toute lecture du chemin.
+if (process.env.SILLAGE_DESKTOP_USER_DATA) app.setPath('userData', process.env.SILLAGE_DESKTOP_USER_DATA)
 const userData = app.getPath('userData')
 const logFile = join(userData, 'logs', 'server.log')
 

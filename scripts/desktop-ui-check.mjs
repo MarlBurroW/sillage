@@ -12,17 +12,26 @@ import { _electron as electron } from 'playwright'
  * fenêtre s'ouvre sans page de connexion, les écrans réservés au serveur hébergé ont
  * disparu, le serveur refuse ce qui ne vient pas de la fenêtre, et quitter l'arrête.
  *
- * Linux seulement : le profil de l'app vit sous $XDG_CONFIG_HOME, qu'on dirige vers un
- * dossier temporaire. Sur une machine où les namespaces sont restreints (Ubuntu 24.04+),
- * le bac à sable de Chromium demande un profil AppArmor pour l'exécutable testé.
+ * Le profil de l'app (base, réglages, journal) va dans un dossier temporaire, par
+ * SILLAGE_DESKTOP_USER_DATA. Sous Linux, il faut un écran (xvfb-run) et, là où les
+ * namespaces sont restreints (Ubuntu 24.04+), un profil AppArmor pour l'exécutable testé.
  *
  * Usage : node scripts/desktop-ui-check.mjs [exécutable]
- * (par défaut apps/desktop/release/linux-unpacked/sillage, que produit
- * `electron-builder --linux --dir`)
+ * (par défaut celui que produit electron-builder pour la plateforme courante :
+ * apps/desktop/release/linux-unpacked/sillage, ou
+ * apps/desktop/release/mac-arm64/Sillage.app/Contents/MacOS/Sillage)
  */
 const root = fileURLToPath(new URL('../', import.meta.url))
-const executable = process.argv[2] ?? join(root, 'apps/desktop/release/linux-unpacked/sillage')
+const executable =
+  process.argv[2] ??
+  join(
+    root,
+    process.platform === 'darwin'
+      ? `apps/desktop/release/mac-${process.arch}/Sillage.app/Contents/MacOS/Sillage`
+      : 'apps/desktop/release/linux-unpacked/sillage',
+  )
 const scratch = await mkdtemp(join(tmpdir(), 'sillage-desktop-check-'))
+const userData = join(scratch, 'user-data')
 const shots = join(scratch, 'shots')
 await mkdir(shots)
 let app
@@ -49,7 +58,7 @@ async function listening(port) {
 try {
   app = await electron.launch({
     executablePath: executable,
-    env: { ...process.env, XDG_CONFIG_HOME: join(scratch, 'config') },
+    env: { ...process.env, SILLAGE_DESKTOP_USER_DATA: userData },
     timeout: 120_000,
   })
   const page = await app.firstWindow({ timeout: 120_000 })
@@ -102,7 +111,7 @@ try {
   )
 
   // La session a transité par le tube du lanceur, jamais par le journal.
-  const log = await readFile(join(scratch, 'config/Sillage/logs/server.log'), 'utf8')
+  const log = await readFile(join(userData, 'logs/server.log'), 'utf8')
   const cookie = (await page.context().cookies()).find((entry) => entry.name === 'sillage_session')
   assert.ok(cookie, 'cookie de session posé par le lanceur')
   assert.ok(!log.includes(cookie.value), 'la session ne doit pas apparaître dans le journal')
