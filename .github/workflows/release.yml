@@ -3,6 +3,8 @@ name: Release
 # Publier = pousser un tag `vX.Y.Z`. Le workflow construit les archives Linux
 # (x64 et arm64) et macOS (arm64), node_modules natifs précompilés inclus, l'image
 # Docker multi-arch sur ghcr.io, puis crée la release GitHub avec ses notes générées.
+# L'application de bureau (desktop.yml) rejoint ensuite la release pour les mêmes
+# plateformes.
 
 on:
   push:
@@ -14,6 +16,9 @@ permissions:
 
 env:
   IMAGE: ghcr.io/marlburrow/sillage
+  # Le binaire d'Electron ne sert qu'à lancer l'app de bureau depuis le dépôt ;
+  # desktop.yml laisse electron-builder télécharger le sien.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
 jobs:
   tarball:
@@ -133,5 +138,34 @@ jobs:
       # l'écran « À propos » de l'application les affiche telles quelles.
       - name: Create the GitHub release
         run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes dist/*.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  desktop:
+    uses: ./.github/workflows/desktop.yml
+    with:
+      version: ${{ github.ref_name }}
+
+  desktop-publish:
+    # Ajoutée à la release une fois celle-ci créée, et sans la retenir : une app de bureau
+    # en échec sur une plateforme ne prive personne du serveur, ni des autres plateformes.
+    needs: [release, desktop]
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: desktop
+      - name: Attach the desktop app to the release
+        run: |
+          shopt -s nullglob
+          files=(desktop/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::warning::aucun paquet de bureau à publier"
+            exit 0
+          fi
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1071,6 +1071,7 @@ export const en = {
   'about.update.action': 'Update to {version}',
   'about.update.askAdmin': 'Ask an administrator to perform the update.',
   'about.manual.instructions': 'Manually managed installation: get the new version from GitHub.',
+  'about.desktop.instructions': 'Desktop app: download the new version from its GitHub page, linked below, and replace this one.',
   'about.update.phase.idle': 'Waiting',
   'about.update.phase.downloading': 'Downloading…',
   'about.update.phase.extracting': 'Extracting…',

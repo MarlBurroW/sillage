@@ -5,6 +5,8 @@
 # et ont besoin de python3/make/g++, déjà présents ici.
 FROM node:22-bookworm AS build
 RUN corepack enable
+# Le binaire d'Electron ne sert qu'à lancer l'app de bureau depuis le dépôt.
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 WORKDIR /src
 
 # Le store pnpm ne dépend que du lockfile : cette étape reste en cache tant que

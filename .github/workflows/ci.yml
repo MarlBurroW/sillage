@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+env:
+  # Le binaire d'Electron ne sert qu'à lancer l'app de bureau depuis le dépôt.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -67,3 +71,12 @@ jobs:
         run: |
           launchctl print "gui/$(id -u)/io.github.marlburrow.sillage" || true
           tail -n 100 ~/.local/share/sillage/logs/sillage.log || true
+
+  desktop:
+    # L'application de bureau de Linux, empaquetée comme en release puis lancée pour de
+    # vrai : ce qu'un tag publierait ne se découvre pas cassé le jour de la release. Le
+    # paquet reste en artefact du run.
+    uses: ./.github/workflows/desktop.yml
+    with:
+      version: v0.0.0-ci
+      targets: '["linux-x64"]'

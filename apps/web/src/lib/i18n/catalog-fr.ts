@@ -1059,6 +1059,7 @@ export const fr: Catalog = {
   'about.update.action': 'Mettre à jour vers {version}',
   'about.update.askAdmin': "Demandez à un administrateur d'effectuer la mise à jour.",
   'about.manual.instructions': 'Installation gérée manuellement : récupérez la nouvelle version depuis GitHub.',
+  'about.desktop.instructions': 'Application de bureau : téléchargez la nouvelle version depuis sa page GitHub, en lien ci-dessous, et remplacez celle-ci.',
   'about.update.phase.idle': 'En attente',
   'about.update.phase.downloading': 'Téléchargement…',
   'about.update.phase.extracting': 'Extraction…',

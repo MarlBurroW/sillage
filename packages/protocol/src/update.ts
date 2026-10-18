@@ -6,9 +6,11 @@
  *   jour intégrée est disponible pour un administrateur.
  * - `docker` : l'image est immuable, on affiche seulement la nouvelle version et
  *   la commande à lancer.
+ * - `desktop` : l'application de bureau, qu'on remplace par sa nouvelle version ; le
+ *   serveur n'a rien à faire lui-même.
  * - `none` : checkout de dev ou layout inconnu, pas de mise à jour proposée.
  */
-export type UpdateChannel = 'installer' | 'docker' | 'none'
+export type UpdateChannel = 'installer' | 'docker' | 'desktop' | 'none'
 
 export interface ReleaseNote {
   tag: string

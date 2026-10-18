@@ -12,3 +12,6 @@ data/
 *.db
 *.db-wal
 *.db-shm
+
+# Arbre d’exécution assemblé par scripts/stage-runtime.mjs (CI, app de bureau)
+/out/

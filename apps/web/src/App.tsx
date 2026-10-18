@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
+import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
 import { DesignPage } from './routes/DesignPage'
 import { ConversationPage } from './routes/ConversationPage'
@@ -38,10 +39,12 @@ import { UsersSettingsPage } from './routes/UsersSettingsPage'
 
 export function App() {
   const { data: user, isPending } = useCurrentUser()
+  // Attendu avec la session : les écrans lisent ses capacités sans état intermédiaire.
+  const { isPending: instancePending } = useInstance()
 
   // Écran vide plutôt qu'un spinner : la vérification de session est locale et brève,
   // un spinner qui clignote est plus désagréable que rien.
-  if (isPending) return null
+  if (isPending || instancePending) return null
 
   if (!user) {
     return (

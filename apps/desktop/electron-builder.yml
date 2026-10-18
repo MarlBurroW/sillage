@@ -1,0 +1,71 @@
+# Empaquetage de l'application de bureau.
+#
+# Rien n'y est recompilé : `stage/` reçoit l'arbre d'exécution de la release et le Node
+# qui l'a construit (scripts/desktop-stage.mjs), et l'app les lance comme le service
+# d'une installation. La version vient du tag, passée par la CI
+# (-c.extraMetadata.version).
+
+# Même famille que le label launchd de l'installeur macOS.
+appId: io.github.marlburrow.sillage
+productName: Sillage
+copyright: Copyright © MarlBurroW
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**
+  - package.json
+# `stage/` entier plutôt que `stage/sillage` : electron-builder écarte toujours le
+# node_modules placé à la racine d'une source copiée, et le serveur ne démarrerait pas.
+# Un niveau plus bas, il passe.
+extraResources:
+  - from: stage
+    to: .
+artifactName: Sillage-${version}-${os}-${arch}.${ext}
+publish: null
+# L'app n'a aucune dépendance native à recompiler pour Electron : celles du serveur
+# tournent sous le Node embarqué, déjà construites pour lui.
+npmRebuild: false
+
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  # Signature ad hoc en attendant celle du compte développeur : sans signature du tout,
+  # un Mac Apple Silicon refuse de lancer l'app. Le runtime durci exigerait une
+  # dérogation de validation des bibliothèques avec une signature ad hoc.
+  identity: '-'
+  hardenedRuntime: false
+  extendInfo:
+    # Demandée par macOS dès que la dictée ouvre le micro ; sans elle, l'app est tuée.
+    NSMicrophoneUsageDescription: Sillage uses the microphone for dictation.
+
+linux:
+  # Le .deb installe un profil AppArmor : depuis Ubuntu 24.04, sans lui, le bac à sable
+  # de Chromium ne peut plus créer ses namespaces et l'app s'arrête au lancement.
+  # L'AppImage, qui n'installe rien, ne s'ouvre pas sur ces systèmes sans ce profil.
+  target:
+    - deb
+    - AppImage
+  category: Development
+  executableName: sillage
+  # Le .deb exige un mainteneur, faute de quoi electron-builder demande un e-mail
+  # d'auteur, qui serait publié dans chaque paquet.
+  maintainer: MarlBurroW (https://github.com/MarlBurroW/sillage)
+  synopsis: Agentic development platform for Claude Code, Codex, OpenCode and Grok
+
+deb:
+  # Les dépendances d'electron-builder (getDefaultDepends, FpmTarget.js), plus git, sans
+  # lequel Sillage ne clone, ne compare ni ne crée de worktree.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - git
