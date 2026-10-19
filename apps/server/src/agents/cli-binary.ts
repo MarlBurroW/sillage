@@ -39,8 +39,10 @@ export type CliStatus =
 const TTL_MS = 60_000
 
 /** Fenêtre laissée au CLI pour annoncer sa version. Au-delà, on le dit présent
- *  mais muet : un binaire lent à démarrer reste utilisable. */
-const VERSION_TIMEOUT_MS = 5_000
+ *  mais muet : un binaire lent à démarrer reste utilisable. Plus large sous Windows, où
+ *  Defender analyse un binaire fraîchement installé à son premier lancement : Grok y a
+ *  dépassé les cinq secondes juste après son installation. */
+const VERSION_TIMEOUT_MS = process.platform === 'win32' ? 20_000 : 5_000
 
 function isExecutable(path: string): boolean {
   try {
