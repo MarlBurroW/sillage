@@ -391,10 +391,20 @@ pnpm user:create          # optional: the first account from a terminal rather t
 
 ## Install the desktop app
 
-Download the app from the [latest release](https://github.com/MarlBurroW/sillage/releases/latest):
-the `.dmg` for Apple Silicon Macs, the `.exe` installer for Windows (x64), the `.deb`
-for Debian and Ubuntu (x64, arm64), or the AppImage for other distributions. It bundles the server of the release and its own
-Node, and opens Sillage in its own window. Your agents use your own CLIs and sign-ins.
+Each link downloads the package of the
+[latest release](https://github.com/MarlBurroW/sillage/releases/latest) directly:
+
+| System | Package |
+|---|---|
+| Windows (x64) | [Sillage-win-x64.exe](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-win-x64.exe) |
+| macOS (Apple Silicon) | [Sillage-mac-arm64.dmg](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-mac-arm64.dmg) |
+| Debian, Ubuntu (x64) | [Sillage-linux-amd64.deb](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-amd64.deb) |
+| Debian, Ubuntu (arm64) | [Sillage-linux-arm64.deb](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.deb) |
+| Other Linux (x64) | [Sillage-linux-x86_64.AppImage](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-x86_64.AppImage) |
+| Other Linux (arm64) | [Sillage-linux-arm64.AppImage](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.AppImage) |
+
+The app bundles the server of the release and its own Node, and opens Sillage in its
+own window. Your agents use your own CLIs and sign-ins.
 
 The app is not notarized by Apple yet: on the first launch, allow it in System
 Settings > Privacy & Security (**Open Anyway**), or run

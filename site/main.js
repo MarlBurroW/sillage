@@ -53,16 +53,59 @@ document.querySelectorAll('.site-background, .section-background').forEach((back
   backgroundObserver.observe(background)
 })
 
-// Latest release from GitHub. The page stays complete without it: the
-// unauthenticated API is capped at 60 requests per hour and per IP.
+// Sillage Desktop: the package for the visitor's system, as a direct download.
+const DESKTOP_PACKAGES = {
+  windows: { asset: 'win-x64.exe', label: 'Download for Windows' },
+  mac: { asset: 'mac-arm64.dmg', label: 'Download for macOS' },
+  linux: { asset: 'linux-amd64.deb', label: 'Download for Linux (.deb)' },
+}
+
+function desktopSystem() {
+  if (/android|iphone|ipad|ipod/i.test(navigator.userAgent)) return null
+  const platform = (navigator.userAgentData?.platform || navigator.platform || '').toLowerCase()
+  // iPadOS asks for the desktop site as a Mac, but no Mac has a touch screen.
+  if (platform.includes('mac')) return navigator.maxTouchPoints > 1 ? null : 'mac'
+  if (platform.includes('win')) return 'windows'
+  if (platform.includes('linux')) return 'linux'
+  return null
+}
+
+const desktopPackage = DESKTOP_PACKAGES[desktopSystem()]
+
+// Offered only once the release is known to carry this system's package: a direct link
+// to a file the release lacks would end on a GitHub error page.
+function offerDownload(href, version) {
+  document.querySelectorAll('[data-desktop-download]').forEach((button) => {
+    const detail = button.hasAttribute('data-detailed') ? ` · v${version}` : ''
+    button.href = href
+    button.firstChild.textContent = `${desktopPackage.label}${detail} `
+    button.hidden = false
+  })
+}
+
+// Latest release from GitHub: the version badge, and the direct downloads. The package
+// links already point at `releases/latest/download/` and stable asset names; the answer
+// adds the version and covers older releases, whose asset names carried it. The page
+// stays complete without it: the unauthenticated API is capped at 60 requests per hour
+// and per IP.
 fetch('https://api.github.com/repos/MarlBurroW/sillage/releases/latest')
   .then((res) => (res.ok ? res.json() : null))
   .then((release) => {
     if (!release?.tag_name) return
+    const version = release.tag_name.replace(/^v/, '')
     const badge = document.getElementById('version-badge')
-    badge.textContent = `v${release.tag_name.replace(/^v/, '')} available`
+    badge.textContent = `v${version} available`
     badge.href = release.html_url
     badge.hidden = false
+
+    const assets = release.assets ?? []
+    const find = (suffix) => assets.find((asset) => asset.name.endsWith(suffix))
+    document.querySelectorAll('[data-asset]').forEach((link) => {
+      const asset = find(link.dataset.asset)
+      if (asset) link.href = asset.browser_download_url
+    })
+    const own = desktopPackage && find(desktopPackage.asset)
+    if (own) offerDownload(own.browser_download_url, version)
   })
   .catch(() => {})
 

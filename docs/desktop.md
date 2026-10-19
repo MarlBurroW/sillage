@@ -12,15 +12,16 @@ To follow your agents from a phone or another computer and leave them working,
 
 ## Download
 
-Every release ships the app next to the server archives:
-[latest release](https://github.com/MarlBurroW/sillage/releases/latest).
+Every release ships the app next to the server archives. Each link downloads the
+package of the [latest release](https://github.com/MarlBurroW/sillage/releases/latest)
+directly:
 
-| System | File |
+| System | Package |
 |---|---|
-| macOS, Apple Silicon | `Sillage-<version>-mac-arm64.dmg` (or the `.zip`) |
-| Windows | `Sillage-<version>-win-x64.exe` |
-| Debian, Ubuntu | `Sillage-<version>-linux-amd64.deb` or `-linux-arm64.deb` |
-| Other Linux | `Sillage-<version>-linux-x86_64.AppImage` or `-linux-arm64.AppImage` |
+| macOS, Apple Silicon | [Sillage-mac-arm64.dmg](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-mac-arm64.dmg) (or the [`.zip`](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-mac-arm64.zip)) |
+| Windows | [Sillage-win-x64.exe](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-win-x64.exe) |
+| Debian, Ubuntu | [x64 `.deb`](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-amd64.deb) or [arm64 `.deb`](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.deb) |
+| Other Linux | [x64 AppImage](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-x86_64.AppImage) or [arm64 AppImage](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.AppImage) |
 
 ### macOS
 
@@ -51,7 +52,7 @@ PowerShell (PowerShell 7 when it is installed).
 On Debian and Ubuntu, prefer the `.deb`:
 
 ```bash
-sudo apt install ./Sillage-<version>-linux-amd64.deb
+sudo apt install ./Sillage-linux-amd64.deb
 ```
 
 It pulls in git, and installs an AppArmor profile that Ubuntu 24.04 and later

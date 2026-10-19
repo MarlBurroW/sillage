@@ -21,7 +21,9 @@ files:
 extraResources:
   - from: stage
     to: .
-artifactName: Sillage-${version}-${os}-${arch}.${ext}
+# Sans version : `releases/latest/download/<nom>` mène toujours au dernier paquet, et le
+# site comme le README en font des liens de téléchargement direct.
+artifactName: Sillage-${os}-${arch}.${ext}
 publish: null
 # L'app n'a aucune dépendance native à recompiler pour Electron : celles du serveur
 # tournent sous le Node embarqué, pas sous Electron.
