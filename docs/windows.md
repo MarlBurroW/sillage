@@ -50,9 +50,9 @@ The installer:
 2. downloads Node.js under `~/.local/share/sillage/node` when none is installed;
 3. installs Sillage under `~/.local/share/sillage` as a systemd user service, and
    enables lingering so it starts with the distribution;
-4. creates the first account, which gets admin rights;
-5. asks whether Sillage should start when you sign in to Windows, adds the
-   **Sillage** Start menu entry, and opens Sillage in your browser.
+4. asks whether Sillage should start when you sign in to Windows, adds the
+   **Sillage** Start menu entry, and opens Sillage in your browser, where the
+   first-run tour creates the first account (it gets admin rights).
 
 **3. The agents.** Sillage drives the `claude`, `codex` and `opencode` CLIs of the Linux
 distribution, not the Windows ones. Install and sign in to at least one, in the

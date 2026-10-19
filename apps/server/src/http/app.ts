@@ -92,7 +92,7 @@ import type { WorktreeStatusService } from '../worktrees/status-service.js'
  * Le profil de l'instance en fait partie : l'interface l'attend avant de dessiner quoi que
  * ce soit, page de connexion comprise.
  */
-const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health', '/api/system/instance'])
+const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/auth/setup', '/api/health', '/api/system/instance'])
 
 /**
  * L'API publique, réservée aux jetons.
@@ -255,7 +255,7 @@ export async function buildApp(
   registerActionRoutes(app, ctx, sessions, actions)
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx)
-  registerSystemRoutes(app)
+  registerSystemRoutes(app, ctx)
   registerServiceRoutes(app, ctx)
   registerTreeRoutes(app, ctx)
   registerFileRoutes(app, ctx)

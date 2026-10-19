@@ -113,7 +113,7 @@ export function NewProjectPage() {
  * et le dossier parent est celui de la dernière création. Dans le cas courant, il n'y a
  * donc qu'un champ à remplir.
  */
-function NewFolderForm() {
+export function NewFolderForm({ onCreated }: { onCreated?: (projectId: string) => void } = {}) {
   const t = useTranslate()
   const createProject = useCreateProject()
   const navigate = useNavigate()
@@ -148,7 +148,8 @@ function NewFolderForm() {
         ...instructionsModeField(instructionsMode),
       },
       {
-        onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
+        // La visite garde la main sur la suite : elle note le projet et change d'étape.
+        onSuccess: (project) => (onCreated ? onCreated(project.id) : navigate(`/p/${project.id}/c/new`)),
       },
     )
   }
@@ -200,7 +201,7 @@ function NewFolderForm() {
 }
 
 /** Un dossier déjà présent, n'importe où sur la machine : rien n'est créé. */
-function ExistingFolderForm() {
+export function ExistingFolderForm({ onCreated }: { onCreated?: (projectId: string) => void } = {}) {
   const t = useTranslate()
   const createProject = useCreateProject()
   const navigate = useNavigate()
@@ -216,7 +217,7 @@ function ExistingFolderForm() {
     createProject.mutate(
       { name: name.trim(), workspacePath, visibility, ...instructionsModeField(instructionsMode) },
       {
-        onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
+        onSuccess: (project) => (onCreated ? onCreated(project.id) : navigate(`/p/${project.id}/c/new`)),
       },
     )
   }

@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
+import { useUserSettings } from './lib/user-settings'
 import { DesignPage } from './routes/DesignPage'
 import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
@@ -16,6 +17,9 @@ import { SchedulePage } from './routes/SchedulePage'
 // À la demande : l'explorateur et l'éditeur de script ne servent qu'ici, et le paquet
 // principal n'a plus de marge sous la limite du précache.
 const AutomationPage = lazy(() => import('./routes/AutomationPage').then((module) => ({ default: module.AutomationPage })))
+// La visite ne sert qu'une fois par compte : son code, générateur de QR compris, n'a
+// rien à faire dans le paquet principal.
+const OnboardingPage = lazy(() => import('./routes/OnboardingPage').then((module) => ({ default: module.OnboardingPage })))
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
@@ -40,13 +44,33 @@ import { UsersSettingsPage } from './routes/UsersSettingsPage'
 export function App() {
   const { data: user, isPending } = useCurrentUser()
   // Attendu avec la session : les écrans lisent ses capacités sans état intermédiaire.
-  const { isPending: instancePending } = useInstance()
+  const { data: instance, isPending: instancePending } = useInstance()
+  // Les réglages du compte décident si la visite est due : attendus aussi, pour ne pas
+  // dessiner l'application une fraction de seconde avant de l'ouvrir.
+  const { data: settings, isPending: settingsPending } = useUserSettings(Boolean(user))
 
   // Écran vide plutôt qu'un spinner : la vérification de session est locale et brève,
   // un spinner qui clignote est plus désagréable que rien.
-  if (isPending || instancePending) return null
+  if (isPending || instancePending || (user && settingsPending)) return null
+
+  const onboarding = (
+    <Suspense fallback={null}>
+      <OnboardingPage />
+    </Suspense>
+  )
 
   if (!user) {
+    // Une base sans compte n'a pas de page de connexion à proposer : la visite
+    // commence par créer le premier compte, sur n'importe quelle adresse.
+    if (instance?.needsSetup && instance.capabilities.passwordAuth) {
+      return (
+        <BrowserRouter>
+          <Routes>
+            <Route path="*" element={onboarding} />
+          </Routes>
+        </BrowserRouter>
+      )
+    }
     return (
       <BrowserRouter>
         <Routes>
@@ -57,10 +81,24 @@ export function App() {
     )
   }
 
+  // La visite due prend toute la place : rien d'autre à voir tant qu'elle n'est pas
+  // finie ou passée, et elle reprend à son étape sur n'importe quel appareil.
+  if (settings?.onboarding.pending) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/bienvenue" element={onboarding} />
+          <Route path="*" element={<Navigate to="/bienvenue" replace />} />
+        </Routes>
+      </BrowserRouter>
+    )
+  }
+
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route path="/bienvenue" element={<Navigate to="/" replace />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />

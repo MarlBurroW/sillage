@@ -52,6 +52,12 @@ export const createUserBodySchema = z.object({
   isAdmin: z.boolean().default(false),
 })
 
+/**
+ * Le premier compte, créé depuis la visite quand la base n'en a aucun. Administrateur
+ * d'office, comme en ligne de commande : personne d'autre ne pourrait le promouvoir.
+ */
+export const setupAccountBodySchema = createUserBodySchema.omit({ isAdmin: true })
+
 /** Même contrainte qu'à la création : l'identifiant sert de nom de connexion. */
 const usernameSchema = z
   .string()
@@ -115,6 +121,15 @@ export const createProjectBodySchema = z.union([
     directory: z.string().min(1).max(120),
   }),
 ])
+
+/**
+ * Le projet d'essai de la visite : Sillage écrit un petit dépôt dans `parentDir` et crée
+ * le projet dessus. Le nom du dossier est à lui, pour qu'on le reconnaisse et le retire.
+ */
+export const createSampleProjectBodySchema = z.object({
+  parentDir: z.string().min(1),
+  visibility: projectVisibilitySchema.default('private'),
+})
 
 /**
  * Nom de dossier tiré d'un nom de projet : `Mon Projet Été` devient `mon-projet-ete`.

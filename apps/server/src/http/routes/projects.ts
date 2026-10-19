@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { cards, conversations, projectImages, projectPins, projects, users, writeTransaction } from '@sillage/db'
 import {
   createProjectBodySchema,
+  createSampleProjectBodySchema,
   MAX_PROJECT_IMAGE_BYTES,
   NO_PROJECT_DEFAULTS,
   parseRemoteUrl,
@@ -28,6 +29,7 @@ import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { projectCwd } from '../../workspace.js'
 import { writeProjectsDir } from '../../settings/user-settings.js'
+import { createSampleProject } from '../../projects/sample.js'
 import {
   projectImageDto,
   readProjectImage,
@@ -164,6 +166,29 @@ export function registerProjectRoutes(
       // Seule l'interface mémorise le dossier proposé à la prochaine création.
       writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
     }
+
+    const dto: ProjectDto = {
+      ...row,
+      image: null,
+      ownerName: user.displayName,
+      isOwner: true,
+      conversationCount: 0,
+      defaultConfig: NO_PROJECT_DEFAULTS,
+      activeTerminals: 0,
+      cardCounts: {},
+      pinned: false,
+      git: await readGitStatus(row.workspacePath),
+    }
+    return reply.status(201).send(dto)
+  })
+
+  /** Le projet d'essai de la visite : un petit dépôt écrit par Sillage, puis le projet dessus. */
+  app.post('/api/projects/sample', async (request, reply) => {
+    const user = requireUser(request)
+    const body = createSampleProjectBodySchema.parse(request.body)
+
+    const row = await createSampleProject(ctx, user.id, body)
+    writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
 
     const dto: ProjectDto = {
       ...row,

@@ -1,11 +1,13 @@
 import { eq } from 'drizzle-orm'
 import { userSettings, type Db } from '@sillage/db'
 import {
+  DEFAULT_ONBOARDING,
   storedUserSettingsSchema,
   type AgentConfig,
   type AppearancePrefs,
   type ComposerLayout,
   type NotificationPrefs,
+  type OnboardingState,
   type UserSettingsDto,
 } from '@sillage/protocol'
 
@@ -66,6 +68,27 @@ export function writeCollapsedProjects(db: Db, userId: string, projectIds: strin
     .values({ userId, data })
     .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
     .run()
+}
+
+/**
+ * L'état de la visite, remplacé en bloc.
+ *
+ * Appelé aussi à la création d'un compte, pour l'armer : c'est la seule façon pour un
+ * compte d'avoir la visite due, les comptes d'avant la visite ne la voyant jamais.
+ */
+export function writeOnboarding(db: Db, userId: string, onboarding: OnboardingState): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, onboarding })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** La visite due, à sa première étape : ce qu'un compte reçoit en naissant. */
+export function armOnboarding(db: Db, userId: string): void {
+  writeOnboarding(db, userId, { ...DEFAULT_ONBOARDING, pending: true })
 }
 
 /** Le dossier parent proposé à la prochaine création de projet, ou `null` pour l'oublier. */

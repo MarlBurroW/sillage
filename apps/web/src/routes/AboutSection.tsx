@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { ExternalLink, RefreshCw } from 'lucide-react'
-import type { UpdatePhase } from '@sillage/protocol'
+import { Compass, ExternalLink, RefreshCw } from 'lucide-react'
+import { DEFAULT_ONBOARDING, type UpdatePhase } from '@sillage/protocol'
 import { Markdown } from '../components/chat/Markdown'
 import { Badge, Banner, Button, Card, CardBody, CardHeader, ConfirmDialog } from '../components/ui'
 import { api } from '../lib/api'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
+import { useUpdateOnboarding, useUserSettings } from '../lib/user-settings'
 import {
   useRefreshVersionInfo,
   useStartUpdate,
@@ -33,6 +34,8 @@ export function AboutSection() {
   const [tracking, setTracking] = useState(false)
   const { data: status } = useUpdateStatus(tracking)
 
+  const { data: settings } = useUserSettings()
+  const replay = useUpdateOnboarding()
   const isAdmin = user?.isAdmin ?? false
   const updating = tracking && status !== undefined && status.phase !== 'failed'
 
@@ -61,6 +64,21 @@ export function AboutSection() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title={t('about.title')} description={t('about.description')} />
+
+      {/* La visite se rejoue d'ici : elle rouvre à sa première étape, sans rien défaire. */}
+      <Card>
+        <CardHeader title={t('about.tour.title')} description={t('about.tour.description')} />
+        <CardBody>
+          <Button
+            variant="secondary"
+            icon={<Compass size={15} />}
+            disabled={replay.isPending}
+            onClick={() => replay.mutate({ ...DEFAULT_ONBOARDING, pending: true, answers: settings?.onboarding.answers ?? DEFAULT_ONBOARDING.answers })}
+          >
+            {t('about.tour.replay')}
+          </Button>
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader title={t('about.version.card')} />

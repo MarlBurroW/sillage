@@ -1,6 +1,10 @@
+import { homedir, hostname } from 'node:os'
+import { count } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import { users } from '@sillage/db'
 import type { InstanceInfo, UpdateStatus, VersionInfo } from '@sillage/protocol'
 import { instanceInfo } from '../../instance/profile.js'
+import type { AppContext } from '../context.js'
 import { UpdateError, UpdateExecutor } from '../../update/executor.js'
 import { ReleaseChecker } from '../../update/release-checker.js'
 import { HttpError } from '../errors.js'
@@ -11,13 +15,23 @@ import { requireAdmin, requireUser } from '../require-user.js'
  * La vérification est visible de tout utilisateur connecté ; seul un
  * administrateur peut forcer un rafraîchissement ou lancer la mise à jour.
  */
-export function registerSystemRoutes(app: FastifyInstance): void {
+export function registerSystemRoutes(app: FastifyInstance, ctx: AppContext): void {
   const checker = new ReleaseChecker()
   const executor = new UpdateExecutor(checker, app.log)
 
   // Public, comme la santé : l'interface l'attend avant la page de connexion, et le profil
-  // ne dit rien qu'un visiteur ne puisse déduire de l'écran.
-  app.get('/api/system/instance', async (): Promise<InstanceInfo> => instanceInfo())
+  // ne dit rien qu'un visiteur ne puisse déduire de l'écran. Qu'il n'y ait aucun compte
+  // non plus : la page de connexion le dirait à sa façon, en refusant tout le monde.
+  app.get('/api/system/instance', async (): Promise<InstanceInfo> => {
+    const info = instanceInfo()
+    const [tally] = ctx.db.select({ total: count() }).from(users).all()
+    return {
+      ...info,
+      needsSetup: info.profile === 'server' && (tally?.total ?? 0) === 0,
+      hostname: hostname(),
+      homeDir: homedir(),
+    }
+  })
 
   app.get<{ Querystring: { refresh?: string } }>(
     '/api/system/version',

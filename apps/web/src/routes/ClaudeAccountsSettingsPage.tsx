@@ -100,7 +100,7 @@ export function ClaudeAccountsSettingsPage() {
  * Le formulaire d'ajout : un nom, puis la voie. Guidée, le CLI est piloté par le
  * serveur et l'écran suit ses étapes ; collée, le secret part tel quel.
  */
-function AddAccountCard({ onClose }: { onClose: () => void }) {
+export function AddAccountCard({ onClose }: { onClose: () => void }) {
   const t = useTranslate()
   const create = useCreateClaudeAccount()
   const start = useStartClaudeLogin()
@@ -188,7 +188,7 @@ function AddAccountCard({ onClose }: { onClose: () => void }) {
  * Les étapes du CLI, suivies à l'écran : l'URL à ouvrir, le code à coller, puis le
  * compte créé. Un code refusé se ressaisit sans tout recommencer, tant que le CLI vit.
  */
-function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDto; onClose: () => void }) {
+export function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDto; onClose: () => void }) {
   const t = useTranslate()
   /**
    * La connexion suivie : celle du jeton, puis, si on l'enchaîne, celle de la jauge.

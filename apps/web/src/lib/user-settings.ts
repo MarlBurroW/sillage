@@ -1,13 +1,36 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentConfig, ComposerLayout, NotificationPrefs, UserSettingsDto } from '@sillage/protocol'
+import type { AgentConfig, ComposerLayout, NotificationPrefs, OnboardingState, UserSettingsDto } from '@sillage/protocol'
 import { api } from './api'
 
 const USER_SETTINGS_KEY = ['user-settings']
 
-export function useUserSettings() {
+/** `enabled` pour les écrans montés avant la session : sans compte, la route répondrait 401. */
+export function useUserSettings(enabled = true) {
   return useQuery({
     queryKey: USER_SETTINGS_KEY,
     queryFn: () => api.get<UserSettingsDto>('/api/me/settings'),
+    enabled,
+  })
+}
+
+/**
+ * L'état de la visite, remplacé en bloc et appliqué sans attendre : l'étape suivante
+ * doit s'afficher au clic, pas après l'aller-retour qui la mémorise.
+ */
+export function useUpdateOnboarding() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (onboarding: OnboardingState) => api.patch<UserSettingsDto>('/api/me/settings', { onboarding }),
+    onMutate: async (onboarding) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous) queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, onboarding })
+      return { previous }
+    },
+    onError: (_error, _state, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
   })
 }
 

@@ -1,5 +1,5 @@
 import { GitBranch, Globe, Lock } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { parseRemoteUrl, type GitRepoDto } from '@sillage/protocol'
 import { Link } from 'react-router-dom'
 import { ApiRequestError } from '../lib/api'
@@ -27,7 +27,7 @@ function directoryFromUrl(url: string): string {
   return parseRemoteUrl(url)?.repo ?? ''
 }
 
-export function CloneForm() {
+export function CloneForm({ onCreated }: { onCreated?: (projectId: string) => void } = {}) {
   const t = useTranslate()
   const { data: credentials } = useGitCredentials()
   const savedHosts = credentials?.credentials.map((entry) => entry.host) ?? []
@@ -50,6 +50,15 @@ export function CloneForm() {
   useEffect(() => {
     if (settings?.projectsDir) setParentDir((current) => current || settings.projectsDir!)
   }, [settings?.projectsDir])
+
+  // Le projet naît à la fin du clone, pas au clic : c'est le suivi du travail qui
+  // l'annonce, une seule fois, à qui a demandé à le savoir.
+  const announced = useRef(false)
+  useEffect(() => {
+    if (job?.status !== 'done' || !job.projectId || !onCreated || announced.current) return
+    announced.current = true
+    onCreated(job.projectId)
+  }, [job, onCreated])
 
   const VISIBILITY_OPTIONS: SelectOption<'private' | 'shared'>[] = [
     {

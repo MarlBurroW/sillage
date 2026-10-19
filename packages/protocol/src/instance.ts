@@ -35,4 +35,14 @@ export interface InstanceCapabilities {
 export interface InstanceInfo {
   profile: InstanceProfile
   capabilities: InstanceCapabilities
+  /**
+   * Vrai tant que la base n'a aucun compte : l'interface ouvre alors la visite sur la
+   * création du premier compte au lieu de la page de connexion. Toujours faux en bureau,
+   * où le lanceur crée le compte lui-même.
+   */
+  needsSetup: boolean
+  /** Nom de la machine, pour dire à l'utilisateur où Sillage vient de démarrer. */
+  hostname: string
+  /** Dossier personnel du compte système qui fait tourner Sillage : là où ranger les projets. */
+  homeDir: string
 }

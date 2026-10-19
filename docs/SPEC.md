@@ -2019,8 +2019,10 @@ l'onglet étant fermé.
   bibliothèque.
 - Cookie de session opaque de 32 octets, seul son SHA-256 est stocké. Durée 30 jours,
   prolongée à chaque usage.
-- Pas d'inscription ouverte. Le premier compte est créé par une commande
-  `pnpm sillage user:create`, les suivants par un administrateur depuis `/settings/users`.
+- Pas d'inscription ouverte. Le premier compte est créé depuis la visite de première
+  ouverture (`POST /api/auth/setup`, qui ne répond que tant que la base n'a aucun compte)
+  ou par une commande `pnpm sillage user:create`, les suivants par un administrateur
+  depuis `/settings/users`.
 - Limitation de débit sur `/api/auth/login` : 5 tentatives par minute et par IP.
 - Pas de 2FA en v1. Sillage doit être derrière un reverse proxy ou un VPN, ce qui est
   documenté dans le README.
