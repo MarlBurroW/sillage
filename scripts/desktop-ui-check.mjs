@@ -91,6 +91,12 @@ try {
   })
   const page = await app.firstWindow({ timeout: 120_000 })
   await page.waitForLoadState('domcontentloaded')
+  // Premier lancement : la visite s'ouvre, sans compte à créer. On la passe, et son
+  // récapitulatif mène à la création du premier projet, dans la coque de l'application.
+  await page.waitForURL(/\/bienvenue$/, { timeout: 60_000 })
+  await page.getByRole('button', { name: /Passer la visite|Skip the tour/ }).click()
+  await page.getByRole('button', { name: /Créer mon premier projet|Create my first project/ }).click()
+  await page.waitForURL(/\/projects\/new$/)
   // La coque de l'application, signe que la session est ouverte.
   await page.getByRole('link', { name: /Paramètres|Settings/ }).first().waitFor({ timeout: 60_000 })
 
