@@ -17,24 +17,27 @@ import { _electron as electron } from 'playwright'
  * namespaces sont restreints (Ubuntu 24.04+), un profil AppArmor pour l'exécutable testé.
  *
  * Usage : node scripts/desktop-ui-check.mjs [exécutable]
- * (par défaut celui que produit electron-builder pour la plateforme courante :
- * apps/desktop/release/linux-unpacked/sillage, ou
- * apps/desktop/release/mac-arm64/Sillage.app/Contents/MacOS/Sillage)
+ * (par défaut celui que produit electron-builder pour la plateforme courante)
  */
 const root = fileURLToPath(new URL('../', import.meta.url))
-const executable =
-  process.argv[2] ??
-  join(
-    root,
-    process.platform === 'darwin'
-      ? `apps/desktop/release/mac-${process.arch}/Sillage.app/Contents/MacOS/Sillage`
-      : 'apps/desktop/release/linux-unpacked/sillage',
-  )
+const executable = process.argv[2] ?? join(root, 'apps/desktop/release', packagedApp())
 const scratch = await mkdtemp(join(tmpdir(), 'sillage-desktop-check-'))
 const userData = join(scratch, 'user-data')
 const shots = join(scratch, 'shots')
 await mkdir(shots)
 let app
+
+/**
+ * L'app non emballée, là où electron-builder la laisse : son dossier ne porte pas
+ * l'architecture pour x64 (`linux-unpacked`, `mac`), mais la porte pour les autres
+ * (`linux-arm64-unpacked`, `mac-arm64`).
+ */
+function packagedApp() {
+  if (process.platform === 'darwin') {
+    return `${process.arch === 'x64' ? 'mac' : `mac-${process.arch}`}/Sillage.app/Contents/MacOS/Sillage`
+  }
+  return `${process.arch === 'x64' ? 'linux-unpacked' : `linux-${process.arch}-unpacked`}/sillage`
+}
 
 /** Une requête HTTP brute, pour forger `Host` et `Origin` comme le ferait une page hostile. */
 function raw(port, path, headers) {
