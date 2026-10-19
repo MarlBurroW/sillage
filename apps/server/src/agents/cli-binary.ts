@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process'
 import { accessSync, constants } from 'node:fs'
-import { delimiter, isAbsolute, join } from 'node:path'
+import nodePath from 'node:path'
 import { promisify } from 'node:util'
 import type { AgentAvailabilityDto, AgentKind } from '@sillage/protocol'
 import { CachedProbe } from './cached-probe.js'
+import { launchOf } from './launch.js'
 
 const run = promisify(execFile)
 
@@ -56,31 +57,62 @@ function isExecutable(path: string): boolean {
  * Un nom nu est cherché dans le `PATH` comme le ferait `spawn`. Un chemin absolu est
  * pris tel quel : la configuration désigne alors une installation précise, et lui
  * substituer une autre trahirait le réglage.
+ *
+ * Sous Windows, un nom se complète des extensions de `PATHEXT` (`claude.exe`,
+ * `codex.cmd`), et npm pose les lanceurs à la racine de son préfixe plutôt que dans
+ * `bin/`. `env` et `platform` ne servent qu'aux tests.
  */
-export function resolveBinary(binary: string, managedDir?: string): string | null {
-  if (isAbsolute(binary)) return isExecutable(binary) ? binary : null
+export function resolveBinary(
+  binary: string,
+  managedDir?: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  exists: (path: string) => boolean = isExecutable,
+): string | null {
+  const windows = platform === 'win32'
+  const paths = windows ? nodePath.win32 : nodePath.posix
+  const names = windows ? withExtensions(binary, env) : [binary]
+  if (paths.isAbsolute(binary)) return names.find(exists) ?? null
 
   // Un nom contenant un séparateur est un chemin relatif, que `spawn` résoudrait
   // depuis le répertoire courant du daemon. Ce répertoire n'a rien à voir avec le
   // workspace des conversations, donc le réglage n'aurait pas de sens : on refuse.
-  if (binary.includes('/')) return null
+  if (binary.includes('/') || (windows && binary.includes('\\'))) return null
 
   // Ce que Sillage a installé passe avant le PATH du système. L'ordre suit l'intention :
   // un CLI n'atterrit ici que parce que quelqu'un l'a demandé depuis l'interface, alors
   // qu'un CLI du PATH peut n'être là que par accident d'environnement. C'est aussi la
   // seule façon d'honorer « installer une version précise pour Sillage » quand le
   // système en porte déjà une autre.
-  if (managedDir) {
-    const managed = join(managedDir, 'bin', binary)
-    if (isExecutable(managed)) return managed
-  }
-
-  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    if (dir.length === 0) continue
-    const candidate = join(dir, binary)
-    if (isExecutable(candidate)) return candidate
+  const dirs = managedDir ? [windows ? managedDir : paths.join(managedDir, 'bin')] : []
+  dirs.push(...(pathValue(env) ?? '').split(paths.delimiter).filter((dir) => dir.length > 0))
+  for (const dir of dirs) {
+    const found = names.map((name) => paths.join(dir, name)).find(exists)
+    if (found) return found
   }
   return null
+}
+
+/**
+ * Les noms à essayer pour `binary` sous Windows, dans l'ordre de `PATHEXT` : un nom qui
+ * porte déjà une extension connue se cherche tel quel.
+ */
+function withExtensions(binary: string, env: NodeJS.ProcessEnv): string[] {
+  const extensions = (pathExt(env) ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+  if (extensions.some((ext) => binary.toLowerCase().endsWith(ext.toLowerCase()))) return [binary]
+  return extensions.map((ext) => `${binary}${ext.toLowerCase()}`)
+}
+
+/**
+ * `PATH` quelle que soit la casse de sa clé : sous Windows elle s'écrit `Path`, et une
+ * copie de `process.env` en objet ordinaire n'est plus insensible à la casse.
+ */
+function pathValue(env: NodeJS.ProcessEnv): string | undefined {
+  return env.PATH ?? Object.entries(env).find(([key]) => key.toUpperCase() === 'PATH')?.[1]
+}
+
+function pathExt(env: NodeJS.ProcessEnv): string | undefined {
+  return env.PATHEXT ?? Object.entries(env).find(([key]) => key.toUpperCase() === 'PATHEXT')?.[1]
 }
 
 /**
@@ -92,9 +124,13 @@ export function resolveBinary(binary: string, managedDir?: string): string | nul
  * Null quand le binaire n'a rien répondu d'exploitable : présent vaut mieux
  * qu'introuvable, même sans numéro.
  */
-async function probeVersion(path: string): Promise<string | null> {
+async function probeVersion(binary: string): Promise<string | null> {
   try {
-    const { stdout } = await run(path, ['--version'], { timeout: VERSION_TIMEOUT_MS })
+    const launch = launchOf(binary)
+    const { stdout } = await run(launch.command, [...launch.args, '--version'], {
+      timeout: VERSION_TIMEOUT_MS,
+      windowsHide: true,
+    })
     const line = stdout.trim().split('\n')[0]?.trim()
     if (!line) return null
     return /\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?/.exec(line)?.[0] ?? line
@@ -108,7 +144,7 @@ async function probe(binary: string, managedDir: string): Promise<CliStatus> {
   if (!path) {
     // Distinguer les deux cas vaut la peine : un binaire présent mais sans bit
     // d'exécution se répare d'un `chmod`, une absence demande une installation.
-    return { found: false, reason: isAbsolute(binary) ? 'not_executable' : 'not_on_path' }
+    return { found: false, reason: nodePath.isAbsolute(binary) ? 'not_executable' : 'not_on_path' }
   }
   return { found: true, path, version: await probeVersion(path) }
 }

@@ -1,6 +1,7 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { linksTo, linkTo } from '../platform/links.js'
 
 /**
  * Le `GROK_HOME` d'un compte supplémentaire, sur le modèle de `CodexAccountHomes`.
@@ -53,10 +54,10 @@ export class GrokAccountHomes {
         // Un lien juste : rien à faire. Un lien vers ailleurs : repris. Un vrai fichier
         // ou dossier : propre au compte, laissé.
         if (!current.isSymbolicLink()) continue
-        if (readlinkSync(link) === target) continue
+        if (linksTo(link, target)) continue
         unlinkSync(link)
       }
-      symlinkSync(target, link)
+      linkTo(target, link)
     }
     return home
   }

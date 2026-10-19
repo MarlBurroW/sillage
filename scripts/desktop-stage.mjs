@@ -8,7 +8,8 @@
  * Le Node embarqué est celui qui exécute ce script, à la version près. En CI, c'est
  * celui sous lequel l'arbre d'exécution vient d'être installé et vérifié : l'app livre
  * ce couple tel quel. Il est téléchargé depuis nodejs.org et vérifié contre le
- * SHASUMS256 publié à côté, comme le fait install.sh.
+ * SHASUMS256 publié à côté, comme le fait install.sh. Sous Windows, l'archive est un
+ * .zip, `node.exe` est à sa racine et npm s'y lance par `npm.cmd`.
  *
  * Usage : node scripts/desktop-stage.mjs <arbre d'exécution>
  * (l'arbre que `.github/actions/runtime-archive` assemble dans out/sillage)
@@ -29,7 +30,8 @@ if (!existsSync(join(runtime, 'server/main.js')) || !existsSync(join(runtime, 'n
   console.error(`arbre d'exécution incomplet : ${runtime} (server/main.js et node_modules/ attendus)`)
   process.exit(1)
 }
-if (process.platform !== 'darwin' && process.platform !== 'linux') {
+const windows = process.platform === 'win32'
+if (!['darwin', 'linux', 'win32'].includes(process.platform)) {
   console.error(`plateforme non prise en charge : ${process.platform}`)
   process.exit(1)
 }
@@ -54,9 +56,12 @@ keepOnly(join(modules, 'better-sqlite3/prebuilds'), (entry) => entry === `${targ
 for (const sources of ['node-pty/deps', 'node-pty/third_party', 'better-sqlite3/deps']) {
   rmSync(join(modules, sources), { recursive: true, force: true })
 }
+// Les symboles de débogage de node-pty pour Windows pèsent plus que ses binaires.
+keepOnly(join(modules, 'node-pty/prebuilds', target), (entry) => !entry.endsWith('.pdb'))
 
 const version = process.version
-const name = `node-${version}-${process.platform}-${process.arch}`
+const name = `node-${version}-${windows ? 'win' : process.platform}-${process.arch}`
+const format = windows ? 'zip' : 'tar.gz'
 const base = `https://nodejs.org/dist/${version}`
 
 const sums = await download(`${base}/SHASUMS256.txt`)
@@ -64,28 +69,34 @@ const expected = sums
   .toString('utf8')
   .split('\n')
   .map((line) => line.trim().split(/\s+/))
-  .find(([, file]) => file === `${name}.tar.gz`)?.[0]
-if (!expected) throw new Error(`${name}.tar.gz absent de ${base}/SHASUMS256.txt`)
+  .find(([, file]) => file === `${name}.${format}`)?.[0]
+if (!expected) throw new Error(`${name}.${format} absent de ${base}/SHASUMS256.txt`)
 
-const archive = await download(`${base}/${name}.tar.gz`)
+const archive = await download(`${base}/${name}.${format}`)
 const actual = createHash('sha256').update(archive).digest('hex')
-if (actual !== expected) throw new Error(`${name}.tar.gz : somme ${actual}, attendue ${expected}`)
+if (actual !== expected) throw new Error(`${name}.${format} : somme ${actual}, attendue ${expected}`)
 
 const scratch = mkdtempSync(join(tmpdir(), 'sillage-desktop-'))
 try {
-  const file = join(scratch, `${name}.tar.gz`)
+  const file = join(scratch, `${name}.${format}`)
   writeFileSync(file, archive)
   const node = join(stage, 'node')
   mkdirSync(node)
-  execFileSync('tar', ['-xzf', file, '-C', node, '--strip-components=1'])
+  // Le tar de Windows (bsdtar, dans System32) lit les .zip ; celui de Git for Windows, plus
+  // tôt dans le PATH d'un shell bash, ne les lit pas.
+  const tar = windows ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
+  execFileSync(tar, [windows ? '-xf' : '-xzf', file, '-C', node, '--strip-components=1'])
 
   // Ni en-têtes C, ni pages de manuel, ni corepack : l'app lance Node et npm, rien d'autre.
-  for (const entry of ['include', 'share', 'lib/node_modules/corepack', 'bin/corepack', 'CHANGELOG.md', 'README.md']) {
+  const extras = windows
+    ? ['corepack', 'corepack.cmd', 'node_modules/corepack', 'install_tools.bat', 'nodevars.bat', 'CHANGELOG.md', 'README.md']
+    : ['include', 'share', 'lib/node_modules/corepack', 'bin/corepack', 'CHANGELOG.md', 'README.md']
+  for (const entry of extras) {
     rmSync(join(node, entry), { recursive: true, force: true })
   }
   // npm et npx sont des liens symboliques dans l'archive : des lanceurs à la place, qui
-  // survivent à l'empaquetage.
-  for (const [command, script] of [
+  // survivent à l'empaquetage. Sous Windows, ce sont déjà des fichiers (`npm.cmd`).
+  for (const [command, script] of windows ? [] : [
     ['npm', 'npm-cli.js'],
     ['npx', 'npx-cli.js'],
   ]) {
@@ -100,12 +111,14 @@ try {
 
   // Le contrôle qui compte, après l'élagage : sous le Node embarqué, la base s'ouvre et un
   // terminal démarre, comme le vérifie l'archive de la release.
+  const shell = windows ? '["cmd.exe", ["/d", "/c", "exit 3"]]' : '["/bin/sh", ["-c", "exit 3"]]'
   execFileSync(
-    join(node, 'bin/node'),
+    join(node, windows ? 'node.exe' : 'bin/node'),
     [
       '-e',
       `require("better-sqlite3")(":memory:").prepare("select 1").get()
-       const shell = require("node-pty").spawn("/bin/sh", ["-c", "exit 3"], {})
+       const [file, args] = ${shell}
+       const shell = require("node-pty").spawn(file, args, {})
        shell.onExit(({ exitCode }) => process.exit(exitCode === 3 ? 0 : 1))
        setTimeout(() => process.exit(2), 10000).unref()`,
     ],

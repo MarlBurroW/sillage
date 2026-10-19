@@ -9,6 +9,8 @@ import {
   type ScheduleCheckVerdict,
 } from '@sillage/protocol'
 import { agentProcessEnv } from '../agents/process-env.js'
+import { gitBash } from '../platform/shells.js'
+import { killTree } from '../platform/process-tree.js'
 import { serviceAppsAvailable } from '../services/apps.js'
 
 /**
@@ -74,7 +76,13 @@ export async function runCheck(script: string, context: CheckContext): Promise<S
     await writeFile(file, script, { mode: 0o700 })
     await chmod(file, 0o700)
     // Sans shebang, le script est du shell : c'est ce qu'on écrit le plus souvent ici.
-    const command = script.startsWith('#!') ? [file] : ['/bin/sh', file]
+    let command: string[]
+    try {
+      command = checkCommand(script, file)
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      return { verdict: verdictOf(null, false), exitCode: null, timedOut: false, stdout: '', stderr: reason, durationMs: Date.now() - started }
+    }
 
     const env = agentProcessEnv({
       SILLAGE_TASK_ID: context.taskId,
@@ -129,14 +137,16 @@ function execute(
     }
 
     // Un groupe de processus à lui : le délai doit emporter les commandes que le script
-    // a lancées, pas seulement le shell.
-    const child = spawn(argv[0]!, argv.slice(1), { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    // a lancées, pas seulement le shell (voir `killTree`, qui s'en passe sous Windows).
+    const child = spawn(argv[0]!, argv.slice(1), {
+      cwd,
+      env,
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
     const kill = (signal: NodeJS.Signals) => {
-      try {
-        if (child.pid) process.kill(-child.pid, signal)
-      } catch {
-        // Déjà terminé.
-      }
+      if (child.pid) killTree(child.pid, signal)
     }
     let killer: NodeJS.Timeout | undefined
     const timer = setTimeout(() => {
@@ -155,6 +165,19 @@ function execute(
     child.on('error', (err) => finish(null, `Lancement impossible : ${err.message}`))
     child.on('close', (code) => finish(code))
   })
+}
+
+/**
+ * La commande qui exécute le script. Sous Windows, le bash de Git for Windows tient lieu
+ * de `/bin/sh` et suit aussi le shebang d'un script qui en a un ; sans lui, rien ne
+ * saurait exécuter ce script, et le dire vaut mieux qu'un échec obscur.
+ */
+function checkCommand(script: string, file: string): string[] {
+  const shebang = script.startsWith('#!')
+  if (process.platform !== 'win32') return shebang ? [file] : ['/bin/sh', file]
+  const bash = gitBash()
+  if (!bash) throw new Error('Git for Windows est introuvable : son bash exécute les scripts de vérification.')
+  return shebang ? [bash, '-c', 'exec "$0"', file] : [bash, file]
 }
 
 function clip(text: string, max: number): string {

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { launchOf } from '../agents/launch.js'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { GrokLoginStatusDto } from '@sillage/protocol'
@@ -78,10 +79,12 @@ export class GrokLoginService {
     if (this.pending.has(accountId)) return this.status(accountId)
     this.outcomes.delete(accountId)
     const home = this.homes.ensure(accountId)
-    const child = spawn(await this.binary(), ['login', '--device-auth'], {
+    const launch = launchOf(await this.binary())
+    const child = spawn(launch.command, [...launch.args, 'login', '--device-auth'], {
       cwd: home,
       env: this.env(home),
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     })
 
     let output = ''
@@ -168,7 +171,8 @@ export class GrokLoginService {
     const home = this.homes.ensure(accountId)
     const binary = await this.binary()
     await new Promise<void>((resolve) => {
-      const child = spawn(binary, ['logout'], { cwd: home, env: this.env(home), stdio: 'ignore' })
+      const launch = launchOf(binary)
+      const child = spawn(launch.command, [...launch.args, 'logout'], { cwd: home, env: this.env(home), stdio: 'ignore', windowsHide: true })
       const timer = setTimeout(() => child.kill(), 20_000)
       child.on('exit', () => { clearTimeout(timer); resolve() })
       child.on('error', () => { clearTimeout(timer); resolve() })

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { launchOf } from '../launch.js'
 import { statSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { HttpError } from '../../http/errors.js'
@@ -56,7 +57,8 @@ function fileKey(binary: string): string {
 
 async function readVersion(binary: string): Promise<string | null> {
   try {
-    const { stdout } = await run(binary, ['--version'], { timeout: VERSION_TIMEOUT_MS })
+    const launch = launchOf(binary)
+    const { stdout } = await run(launch.command, [...launch.args, '--version'], { timeout: VERSION_TIMEOUT_MS, windowsHide: true })
     // La 1.x répond « 1.19.3 », la 2.x « opencode v2.0.32 » : on ne garde que le numéro.
     return /\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?/.exec(stdout)?.[0] ?? null
   } catch {

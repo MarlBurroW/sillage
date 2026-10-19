@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { launchOf } from '../launch.js'
 import { createInterface, type Interface } from 'node:readline'
 import type {
   ClientRequest,
@@ -68,10 +69,12 @@ export class CodexAppServerClient {
   private readonly serverRequests = new Set<RequestId>()
 
   constructor(private readonly options: CodexClientOptions) {
-    this.child = spawn(options.binary, ['app-server'], {
+    const launch = launchOf(options.binary)
+    this.child = spawn(launch.command, [...launch.args, 'app-server'], {
       cwd: options.cwd,
       env: options.env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     })
 
     // Le sandbox Linux de Codex se plaint bruyamment sur les hôtes sans espaces de

@@ -46,6 +46,18 @@ async function describeEntry(parentPath: string, name: string): Promise<FsEntryD
   return { name, path, isGitRepo: existsSync(join(path, '.git')), readable }
 }
 
+/**
+ * Les racines proposées à côté du dossier personnel : `/`, ou sous Windows chaque lecteur
+ * présent, puisqu'il n'y a pas de racine commune.
+ */
+function systemRoots(): { label: string; path: string }[] {
+  if (process.platform !== 'win32') return [{ label: 'Racine', path: '/' }]
+  return 'CDEFGHIJKLMNOPQRSTUVWXYZ'
+    .split('')
+    .map((letter) => ({ label: `${letter}:`, path: `${letter}:\\` }))
+    .filter((root) => existsSync(root.path))
+}
+
 export function registerFsRoutes(app: FastifyInstance): void {
   const home = homedir()
 
@@ -95,10 +107,7 @@ export function registerFsRoutes(app: FastifyInstance): void {
       entries: described.filter((entry): entry is FsEntryDto => entry !== null),
       isGitRepo: existsSync(join(path, '.git')),
       truncated,
-      roots: [
-        { label: 'Accueil', path: home },
-        { label: 'Racine', path: '/' },
-      ],
+      roots: [{ label: 'Accueil', path: home }, ...systemRoots()],
     }
   })
 
@@ -106,9 +115,10 @@ export function registerFsRoutes(app: FastifyInstance): void {
     requireUser(request)
     const body = mkdirBodySchema.parse(request.body)
 
-    // Un nom qui contient '/' viserait un autre dossier que celui affiché ; '.' et '..'
-    // n'ont pas de sens comme nom d'entrée à créer.
-    if (body.name.includes('/') || body.name === '.' || body.name === '..') {
+    // Un nom qui contient '/' (ou '\' sous Windows) viserait un autre dossier que celui
+    // affiché ; '.' et '..' n'ont pas de sens comme nom d'entrée à créer.
+    const separator = body.name.includes('/') || (process.platform === 'win32' && body.name.includes('\\'))
+    if (separator || body.name === '.' || body.name === '..') {
       throw badRequest('invalid_name', '{name} is not a valid folder name.', { name: body.name })
     }
 

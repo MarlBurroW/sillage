@@ -60,6 +60,15 @@ async function askLoginShell(node: string, base: NodeJS.ProcessEnv): Promise<Nod
   return withoutLauncherVars(env)
 }
 
+/**
+ * La clé du PATH dans `env`. Sous Windows elle s'écrit `Path`, et une copie de
+ * `process.env` en objet ordinaire n'est plus insensible à la casse : écrire `PATH` à côté
+ * créerait une seconde variable, et le processus enfant ne lirait que l'une des deux.
+ */
+export function pathKey(env: NodeJS.ProcessEnv): string {
+  return Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH'
+}
+
 function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
     // stdin fermé : un shell interactif qui poserait une question n'attend pas une

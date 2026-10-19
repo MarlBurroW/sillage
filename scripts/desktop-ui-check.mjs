@@ -12,6 +12,10 @@ import { _electron as electron } from 'playwright'
  * fenêtre s'ouvre sans page de connexion, les écrans réservés au serveur hébergé ont
  * disparu, le serveur refuse ce qui ne vient pas de la fenêtre, et quitter l'arrête.
  *
+ * Il ouvre aussi un terminal, qui doit exécuter une commande dans le shell de la plateforme
+ * (PowerShell sous Windows). Avec SILLAGE_CHECK_INSTALL=<cli>, il installe ce CLI par le
+ * npm que l'app embarque, puis vérifie qu'il est détecté et répond à --version.
+ *
  * Le profil de l'app (base, réglages, journal) va dans un dossier temporaire, par
  * SILLAGE_DESKTOP_USER_DATA. Sous Linux, il faut un écran (xvfb-run) et, là où les
  * namespaces sont restreints (Ubuntu 24.04+), un profil AppArmor pour l'exécutable testé.
@@ -35,6 +39,9 @@ let app
 function packagedApp() {
   if (process.platform === 'darwin') {
     return `${process.arch === 'x64' ? 'mac' : `mac-${process.arch}`}/Sillage.app/Contents/MacOS/Sillage`
+  }
+  if (process.platform === 'win32') {
+    return `${process.arch === 'x64' ? 'win-unpacked' : `win-${process.arch}-unpacked`}/Sillage.exe`
   }
   return `${process.arch === 'x64' ? 'linux-unpacked' : `linux-${process.arch}-unpacked`}/sillage`
 }
@@ -112,6 +119,68 @@ try {
     }),
     403,
   )
+
+  // Un terminal tourne dans le shell interactif de la plateforme, par le pty du serveur.
+  // L'expression n'apparaît calculée que dans la sortie, jamais dans l'écho de la saisie.
+  const workspace = join(scratch, 'workspace')
+  await mkdir(workspace)
+  const project = await page.evaluate(async (workspacePath) => {
+    const response = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Essai', workspacePath }),
+    })
+    return response.json()
+  }, workspace)
+  assert.ok(project.id, `projet non créé : ${JSON.stringify(project)}`)
+  const input = process.platform === 'win32' ? 'Write-Output ("sillage-" + (40 + 2))\r' : 'echo sillage-$((40 + 2))\r'
+  const terminal = await page.evaluate(
+    async ({ projectId, input }) => {
+      const opened = await fetch(`/api/projects/${projectId}/terminals`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      }).then((response) => response.json())
+      return await new Promise((resolve) => {
+        const socket = new WebSocket(`ws://${location.host}/api/projects/${projectId}/terminal?terminalId=${opened.id}`)
+        let output = ''
+        const done = (ok) => {
+          clearTimeout(timer)
+          socket.close()
+          resolve({ ok, output: output.slice(-800) })
+        }
+        const timer = setTimeout(() => done(false), 30_000)
+        socket.onmessage = (event) => {
+          const message = JSON.parse(event.data)
+          if (message.t === 'ready') socket.send(JSON.stringify({ t: 'input', data: input }))
+          if (message.t === 'output') output += message.data
+          if (output.includes('sillage-42')) done(true)
+        }
+        socket.onerror = () => done(false)
+      })
+    },
+    { projectId: project.id, input },
+  )
+  assert.ok(terminal.ok, `le terminal n'a pas exécuté la commande : ${JSON.stringify(terminal.output)}`)
+
+  // Un CLI s'installe par le npm embarqué, et se lance ensuite par son lanceur npm : sous
+  // Windows, un `.cmd` que le serveur doit savoir lire.
+  const cli = process.env.SILLAGE_CHECK_INSTALL
+  if (cli) {
+    const started = await page.evaluate((name) => fetch(`/api/agents/${name}/install`, { method: 'POST' }).then((r) => r.status), cli)
+    assert.equal(started, 202)
+    let agent
+    for (let i = 0; i < 120; i++) {
+      await delay(5000)
+      const list = await page.evaluate(() => fetch('/api/agents?refresh=1').then((r) => r.json()))
+      agent = list.agents.find((entry) => entry.agent === cli)
+      if (agent.install.status !== 'running') break
+    }
+    assert.equal(agent.install.status, 'idle', `installation de ${cli} : ${JSON.stringify(agent.install)}`)
+    assert.ok(agent.installed && agent.managed, `${cli} non détecté : ${JSON.stringify(agent)}`)
+    assert.ok(agent.version, `${cli} ne répond pas à --version : ${JSON.stringify(agent)}`)
+    console.log(`${cli} ${agent.version} installé : ${agent.path}`)
+  }
 
   // La session a transité par le tube du lanceur, jamais par le journal.
   const log = await readFile(join(userData, 'logs/server.log'), 'utf8')

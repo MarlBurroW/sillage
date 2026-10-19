@@ -5,6 +5,8 @@ import {
   type AgentKind,
   type CliInstallStateDto,
 } from '@sillage/protocol'
+import { resolveBinary } from './cli-binary.js'
+import { launchOf } from './launch.js'
 
 /**
  * Installation des CLI agents par Sillage lui-même.
@@ -95,10 +97,18 @@ export class CliInstaller {
       // `--prefix` plutôt que la configuration npm de l'utilisateur : Sillage installe
       // chez lui, et ne doit pas déplacer ce qui est déjà installé sur le système.
       // `--no-fund --no-audit` parce que rien ne lit cette sortie.
+      // npm se cherche comme un CLI : sous Windows c'est un lanceur `npm.cmd`, que Node ne
+      // lance pas sans shell. L'app de bureau en embarque un, placé en dernier dans le PATH.
+      const npm = resolveBinary('npm')
+      if (!npm) {
+        reject(new Error("npm est introuvable sur le serveur : impossible d'installer un CLI."))
+        return
+      }
+      const launch = launchOf(npm)
       const child = execFile(
-        'npm',
-        ['install', '-g', '--prefix', this.prefix, '--no-fund', '--no-audit', `${pkg}@${version}`],
-        { timeout: INSTALL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
+        launch.command,
+        [...launch.args, 'install', '-g', '--prefix', this.prefix, '--no-fund', '--no-audit', `${pkg}@${version}`],
+        { timeout: INSTALL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
         (err, _stdout, stderr) => {
           if (!err) return resolve()
           // La sortie d'erreur de npm dit ce qui a échoué (réseau, droits, version

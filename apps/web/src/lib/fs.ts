@@ -28,8 +28,20 @@ export function useCreateDirectory() {
   })
 }
 
-/** Découpe un chemin absolu en segments cliquables pour le fil d'Ariane. */
+/**
+ * Découpe un chemin absolu en segments cliquables pour le fil d'Ariane. Un chemin Windows
+ * (`C:\Users\…`) commence par son lecteur, qui tient lieu de racine.
+ */
 export function breadcrumbSegments(path: string): { label: string; path: string }[] {
+  const drive = /^([A-Za-z]:)[\\/]/.exec(path)
+  if (drive) {
+    const root = `${drive[1]}\\`
+    const rest = path.slice(drive[0].length).split(/[\\/]/).filter(Boolean)
+    return [
+      { label: drive[1]!, path: root },
+      ...rest.map((label, index) => ({ label, path: `${root}${rest.slice(0, index + 1).join('\\')}` })),
+    ]
+  }
   const parts = path.split('/').filter(Boolean)
   return parts.map((label, index) => ({
     label,

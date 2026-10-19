@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, mkdirSync, openSync, renameSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Readable } from 'node:stream'
@@ -41,7 +41,11 @@ const STOP_TIMEOUT_MS = 15_000
  *
  * Le serveur annonce son port et la session de l'utilisateur sur le descripteur 3, un
  * tube réservé à cet échange (`apps/server/src/instance/desktop.ts`) : la session ne
- * passe ni par le réseau ni par le journal, où vont stdout et stderr.
+ * passe ni par le réseau ni par le journal, où vont stdout et stderr. Son entrée standard
+ * est un tube que l'app ferme pour demander l'arrêt, sous Windows comme ailleurs.
+ *
+ * `windowsHide` donne au serveur une console cachée plutôt qu'une fenêtre : les git et les
+ * CLI qu'il lance en héritent, au lieu d'ouvrir chacun la sienne.
  */
 export function startServer(options: ServerOptions): RunningServer {
   mkdirSync(dirname(options.logFile), { recursive: true })
@@ -61,7 +65,8 @@ export function startServer(options: ServerOptions): RunningServer {
       SILLAGE_HOST: '127.0.0.1',
       SILLAGE_PORT: String(options.port),
     },
-    stdio: ['ignore', log, log, 'pipe'],
+    stdio: ['pipe', log, log, 'pipe'],
+    windowsHide: true,
   })
   // Le serveur a sa propre copie du descripteur ; la nôtre ne servirait qu'à fuir.
   closeSync(log)
@@ -75,7 +80,7 @@ export function startServer(options: ServerOptions): RunningServer {
     const channel = child.stdio[3] as Readable
     let buffer = ''
     const timer = setTimeout(() => {
-      child.kill('SIGKILL')
+      killTree(child.pid)
       reject(new Error(`le serveur n'a pas répondu en ${READY_TIMEOUT_MS / 1000} s`))
     }, READY_TIMEOUT_MS)
     const fail = (err: Error) => {
@@ -109,14 +114,27 @@ export function startServer(options: ServerOptions): RunningServer {
     stop() {
       if (exited) return Promise.resolve()
       return new Promise((resolve) => {
-        const timer = setTimeout(() => child.kill('SIGKILL'), STOP_TIMEOUT_MS)
+        const timer = setTimeout(() => killTree(child.pid), STOP_TIMEOUT_MS)
         child.once('exit', () => {
           clearTimeout(timer)
           resolve()
         })
-        child.kill('SIGTERM')
+        child.stdin?.end()
       })
     },
+  }
+}
+
+/**
+ * Le dernier recours, quand le serveur n'a pas su s'arrêter : sous Windows, `taskkill /T`
+ * emporte aussi les CLI qu'il a lancés, que rien d'autre n'arrêterait.
+ */
+function killTree(pid: number | undefined): void {
+  if (pid === undefined) return
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+  } else {
+    process.kill(pid, 'SIGKILL')
   }
 }
 

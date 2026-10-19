@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@sillage/protocol'
 import type { Config } from '../config.js'
+import { commandShell, interactiveShell } from '../platform/shells.js'
 import { processOrigins } from '../services/origins.js'
 
 /**
@@ -32,7 +33,6 @@ const REPLAY_BYTES = 128 * 1024
 /** L'écran se réécrit sur disque à ce pas, tant qu'il a changé depuis la dernière fois. */
 const FLUSH_INTERVAL_MS = 30 * 1000
 
-const DEFAULT_SHELL = '/bin/sh'
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24
 
@@ -107,17 +107,6 @@ export class TerminalManager {
 
     this.flushTimer = setInterval(() => this.flushDirty(), FLUSH_INTERVAL_MS)
     this.flushTimer.unref()
-  }
-
-  /**
-   * Le shell de l'utilisateur, ou un repli POSIX.
-   *
-   * Sous systemd, `SHELL` peut manquer : sans repli, le terminal ne démarrerait tout
-   * simplement pas, et l'erreur n'apparaîtrait qu'à l'ouverture de la vue.
-   */
-  private shell(): string {
-    const fromEnv = process.env.SHELL
-    return fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_SHELL
   }
 
   private touch(terminalId: string): void {
@@ -201,10 +190,10 @@ export class TerminalManager {
     }
 
     const id = randomUUID()
-    // Shell de connexion sur macOS, comme l'ouvre Terminal : c'est là que /etc/zprofile
-    // complète le PATH et que ~/.zprofile charge Homebrew.
-    const args = run ? ['-lc', run.command] : process.platform === 'darwin' ? ['-l'] : []
-    const pty = spawn(this.shell(), args, {
+    // Une commande se lance dans le shell qui comprend sa syntaxe POSIX, un terminal vide
+    // dans celui de l'utilisateur (voir `platform/shells.ts`).
+    const shell = run ? commandShell() : interactiveShell()
+    const pty = spawn(shell.command, run ? [...shell.args, run.command] : shell.args, {
       name: 'xterm-256color',
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,

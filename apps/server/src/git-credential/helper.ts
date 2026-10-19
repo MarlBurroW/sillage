@@ -67,13 +67,13 @@ export function credentialLauncherScript(paths: Pick<Paths, 'data' | 'database'>
     '#!/bin/sh',
     '# Lanceur du helper de credentials git de Sillage.',
     '# Réécrit à chaque démarrage du serveur : ne pas modifier à la main.',
-    `node=${shellQuote(node)}`,
-    `entry=${shellQuote(entry)}`,
+    `node=${shellQuote(gitPath(node))}`,
+    `entry=${shellQuote(gitPath(entry))}`,
     'if [ ! -x "$node" ] || [ ! -f "$entry" ]; then',
     '  echo "sillage: helper de credentials introuvable ($node, $entry) ; redémarrez Sillage pour le réinstaller." >&2',
     '  exit 1',
     'fi',
-    `exec "$node" "$entry" --db ${shellQuote(paths.database)} --key ${shellQuote(join(paths.data, 'secret.key'))} "$@"`,
+    `exec "$node" "$entry" --db ${shellQuote(gitPath(paths.database))} --key ${shellQuote(gitPath(join(paths.data, 'secret.key')))} "$@"`,
     '',
   ].join('\n')
 }
@@ -117,7 +117,16 @@ export function installCredentialLauncher(paths: Pick<Paths, 'data' | 'database'
  */
 export function credentialHelperCommand(paths: Pick<Paths, 'data' | 'database'>, ownerId: string): string {
   const launcher = installCredentialLauncher(paths)
-  return `!${[launcher, '--owner', ownerId].map(shellQuote).join(' ')}`
+  return `!${[gitPath(launcher), '--owner', ownerId].map(shellQuote).join(' ')}`
+}
+
+/**
+ * Un chemin tel que le lit le sh qui exécute le helper. Sous Windows, c'est celui de Git
+ * for Windows : il comprend `C:/…` comme le Node qu'il lance, alors que les barres
+ * obliques inverses d'un chemin Windows se lisent mal entre les mains d'un shell.
+ */
+function gitPath(path: string): string {
+  return process.platform === 'win32' ? path.replaceAll('\\', '/') : path
 }
 
 /**

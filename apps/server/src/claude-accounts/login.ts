@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
+import { launchOf } from '../agents/launch.js'
 import { existsSync } from 'node:fs'
 import { claudeSecretKind, type ClaudeLoginPurpose, type ClaudeLoginStatusDto } from '@sillage/protocol'
 import { agentProcessEnv } from '../agents/process-env.js'
@@ -262,7 +263,8 @@ export class ClaudeLoginService {
   /** Un CLI neuf, dans son propre dossier jetable. */
   private async spawnCli(args: string[]): Promise<{ pty: IPty; configDir: string }> {
     const configDir = await mkdtemp(join(tmpdir(), 'sillage-claude-login-'))
-    const pty = spawn(await this.binary(), args, {
+    const launch = launchOf(await this.binary())
+    const pty = spawn(launch.command, [...launch.args, ...args], {
       name: 'xterm-256color',
       // Large : l'URL d'`auth login` est imprimée en texte et non en lien, et la plus
       // longue des deux, avec ses sept portées, ne doit pas dépendre de la largeur.

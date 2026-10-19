@@ -1,5 +1,6 @@
 import { query, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { AsyncQueue } from '../async-queue.js'
+import { sdkExecutable } from '../launch.js'
 
 /**
  * Une session Claude ouverte le temps d'une requête de contrôle, puis refermée.
@@ -52,7 +53,7 @@ export async function withControlSession<T>(
         ...options,
         cwd,
         abortController: abort,
-        pathToClaudeCodeExecutable: await executable(),
+        pathToClaudeCodeExecutable: sdkExecutable(await executable()),
         // La sortie d'erreur du CLI est la seule explication d'une sonde ratée : la
         // jeter ne laisse au serveur qu'un 502 sans motif.
         stderr: (data) => process.stderr.write(`[claude ${tag}] ${data}`),

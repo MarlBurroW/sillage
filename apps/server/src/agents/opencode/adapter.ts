@@ -34,7 +34,7 @@ interface OpencodeForkCut {
  * L'installeur officiel d'opencode pose le binaire ici, et n'ajoute ce dossier au PATH
  * que dans les fichiers du shell interactif : un daemon ne l'y voit pas.
  */
-const INSTALLER_BINARY = join(homedir(), '.opencode/bin/opencode')
+const INSTALLER_BINARY = join(homedir(), '.opencode/bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode')
 
 /**
  * Le nom configuré, ou le chemin de l'installeur quand ce nom ne mène nulle part.

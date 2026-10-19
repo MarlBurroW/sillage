@@ -191,7 +191,12 @@ async function main(): Promise<void> {
     app.log.warn({ err }, 'lanceur du helper git non installe')
   }
 
+  // Deux demandes d'arrêt peuvent se croiser (un signal, puis l'app de bureau qui ferme
+  // l'entrée standard) : la seconde ne doit pas refermer ce que la première a fermé.
+  let stopping = false
   const shutdown = async (signal: string) => {
+    if (stopping) return
+    stopping = true
     app.log.info({ signal }, 'arrêt en cours')
     // Avant stopAll, qui expire les sollicitations : les statuts disent encore ce qui
     // était en vol, et les livraisons persistées partiront au prochain démarrage.
@@ -211,6 +216,13 @@ async function main(): Promise<void> {
   }
   process.on('SIGINT', () => void shutdown('SIGINT'))
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
+  // L'app de bureau demande l'arrêt en fermant l'entrée standard : sous Windows, il n'y a
+  // pas de signal à envoyer, et tuer le serveur laisserait les CLI des sessions orphelins.
+  // L'entrée se ferme aussi quand l'app disparaît sans prévenir : le serveur part avec elle.
+  if (INSTANCE_PROFILE === 'desktop') {
+    process.stdin.on('end', () => void shutdown('launcher'))
+    process.stdin.resume()
+  }
 }
 
 main().catch((err: unknown) => {

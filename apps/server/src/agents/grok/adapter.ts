@@ -29,7 +29,7 @@ import { describeEdit } from './tools.js'
  * binaire ici et n'ajoute ce dossier qu'au PATH du shell interactif : un daemon ne l'y
  * voit pas.
  */
-const INSTALLER_BINARY = join(homedir(), '.grok/bin/grok')
+const INSTALLER_BINARY = join(homedir(), '.grok/bin', process.platform === 'win32' ? 'grok.exe' : 'grok')
 
 /** Le nom configuré, ou le chemin de l'installeur quand ce nom ne mène nulle part. */
 function configuredBinary(binary: string, managedDir: string): string {

@@ -9,7 +9,7 @@ inputs:
     description: Tag vX.Y.Z, ou identifiant d'un build de CI
     required: true
   platform:
-    description: linux ou darwin
+    description: linux, darwin ou win32
     required: true
   arch:
     description: x64 ou arm64
@@ -58,7 +58,8 @@ runs:
       run: |
         SILLAGE_DATA_DIR="$(mktemp -d)" node out/sillage/server/cli/migrate.js
         cd out/sillage && node -e '
-          const shell = require("node-pty").spawn("/bin/sh", ["-c", "exit 3"], {})
+          const [file, args] = process.platform === "win32" ? ["cmd.exe", ["/d", "/c", "exit 3"]] : ["/bin/sh", ["-c", "exit 3"]]
+          const shell = require("node-pty").spawn(file, args, {})
           shell.onExit(({ exitCode }) => process.exit(exitCode === 3 ? 0 : 1))
           setTimeout(() => process.exit(2), 10000).unref()
         '

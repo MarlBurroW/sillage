@@ -41,6 +41,12 @@ mac:
     # Demandée par macOS dès que la dictée ouvre le micro ; sans elle, l'app est tuée.
     NSMicrophoneUsageDescription: Sillage uses the microphone for dictation.
 
+win:
+  # Installeur NSIS par utilisateur (AppData\Local\Programs), sans droits
+  # d'administrateur. Pas encore de signature : SmartScreen avertit au premier lancement.
+  target:
+    - nsis
+
 linux:
   # Le .deb installe un profil AppArmor : depuis Ubuntu 24.04, sans lui, le bac à sable
   # de Chromium ne peut plus créer ses namespaces et l'app s'arrête au lancement.

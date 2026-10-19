@@ -26,6 +26,7 @@ import {
   type PlanFollowUpOption,
 } from '@sillage/protocol'
 import { failedStatuses } from '../mcp-registry.js'
+import { sdkExecutable } from '../launch.js'
 import { AsyncQueue } from '../async-queue.js'
 import { agentProcessEnv } from '../process-env.js'
 import { PendingInteractions } from '../interactions.js'
@@ -281,7 +282,7 @@ export class ClaudeRunner implements AgentRunner {
         // binaire dans le paquet plateforme `@anthropic-ai/claude-agent-sdk-<os>-<arch>`,
         // que la release ne transporte plus : sans ce chemin, le SDK échouerait sur
         // « Native CLI binary not found » au lieu d'utiliser le CLI du système.
-        pathToClaudeCodeExecutable: this.ctx.binary,
+        pathToClaudeCodeExecutable: sdkExecutable(this.ctx.binary),
         canUseTool: this.handleToolRequest,
         onElicitation: this.handleElicitation,
         // Seul canal par lequel le CLI livre les tâches planifiées de la session. Ni

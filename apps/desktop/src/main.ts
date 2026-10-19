@@ -2,7 +2,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { BrowserWindow, app, dialog, session, shell } from 'electron'
 import { stablePort } from './port'
 import { startServer, type RunningServer } from './server'
-import { loginShellEnv } from './shell-env'
+import { loginShellEnv, pathKey } from './shell-env'
 import { text } from './texts'
 
 /**
@@ -26,7 +26,10 @@ let quitting = false
 
 // Un profil jetable pour le contrôle de lancement (scripts/desktop-ui-check.mjs), qui ne
 // touche ni aux projets ni aux réglages de l'utilisateur. Avant toute lecture du chemin.
+// Sous Windows, dans AppData\Local plutôt que Roaming : la base peut peser des gigaoctets,
+// et un profil itinérant la recopierait à chaque ouverture de session.
 if (process.env.SILLAGE_DESKTOP_USER_DATA) app.setPath('userData', process.env.SILLAGE_DESKTOP_USER_DATA)
+else if (process.platform === 'win32' && process.env.LOCALAPPDATA) app.setPath('userData', join(process.env.LOCALAPPDATA, 'Sillage'))
 const userData = app.getPath('userData')
 const logFile = join(userData, 'logs', 'server.log')
 
@@ -59,7 +62,8 @@ async function boot(): Promise<void> {
   const env = await loginShellEnv(node, locale.includes('_') ? `${locale}.UTF-8` : 'en_US.UTF-8')
   // Node et npm embarqués en dernier recours : ceux que l'utilisateur maintient passent
   // devant, mais Sillage peut installer un CLI et le lancer sur un poste qui n'a rien.
-  env.PATH = [env.PATH, dirname(node)].filter(Boolean).join(delimiter)
+  const key = pathKey(env)
+  env[key] = [env[key], dirname(node)].filter(Boolean).join(delimiter)
   const port = await stablePort(join(userData, 'desktop.json'))
 
   await launch({ env, port })

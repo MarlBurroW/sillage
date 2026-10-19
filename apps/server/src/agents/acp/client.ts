@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { launchOf } from '../launch.js'
 import { createInterface, type Interface } from 'node:readline'
 import type { InitializeRequest, InitializeResponse } from '@agentclientprotocol/sdk'
 
@@ -65,10 +66,12 @@ export class AcpClient {
   private stderrTail = ''
 
   constructor(private readonly options: AcpClientOptions) {
-    this.child = spawn(options.binary, options.args, {
+    const launch = launchOf(options.binary)
+    this.child = spawn(launch.command, [...launch.args, ...options.args], {
       cwd: options.cwd,
       env: options.env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     })
 
     this.child.stderr.on('data', (chunk: Buffer) => {
