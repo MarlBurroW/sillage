@@ -9,7 +9,7 @@ import { useCloneJob, useStartClone } from '../lib/projects'
 import {
   InstructionsModeSelect,
   instructionsModeField,
-  type InstructionsModeChoice,
+  useInstructionsModeChoice,
 } from './instructions/Instructions'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
@@ -38,7 +38,7 @@ export function CloneForm() {
   const [parentDir, setParentDir] = useState('')
   const [directory, setDirectory] = useState('')
   const [visibility, setVisibility] = useState<'private' | 'shared'>('private')
-  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
+  const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
   const [jobId, setJobId] = useState<string | null>(null)
 
   const startClone = useStartClone()

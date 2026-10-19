@@ -3,7 +3,8 @@ import { mkdir, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { max } from 'drizzle-orm'
 import { projects } from '@sillage/db'
-import { createProjectBodySchema, type InstructionsMode } from '@sillage/protocol'
+import { createProjectBodySchema, type InstructionsMode, type MemoryMode } from '@sillage/protocol'
+import { readUserSettings } from '../settings/user-settings.js'
 import { repoInstructionFiles } from '../instructions/store.js'
 import type { AppContext } from '../http/context.js'
 import { badRequest, conflict } from '../http/errors.js'
@@ -80,18 +81,27 @@ export const insertProject = async (
     visibility: 'private' | 'shared'
     color: string | null
     instructionsMode: InstructionsMode | undefined
+    memoryMode?: MemoryMode
   },
 ) => {
   const [highest] = await ctx.db.select({ max: max(projects.position) }).from(projects)
+  // Ce que le compte a choisi pour ses projets à venir, quand la création ne dit rien.
+  const defaults = readUserSettings(ctx.db, ownerId).projectDefaults
 
   const row = {
     id: randomUUID(),
     ...fields,
-    // Fixé dès la création, faute de choix d'après ce que le dossier porte déjà : un
-    // mode résolu à chaque lancement basculerait le jour où un agent crée un AGENTS.md.
+    // Fixé dès la création : un mode résolu à chaque lancement basculerait le jour où
+    // un agent crée un AGENTS.md. Faute de choix, le défaut du compte ; `auto` regarde
+    // ce que le dossier porte déjà.
     instructionsMode:
       fields.instructionsMode ??
-      (repoInstructionFiles(fields.workspacePath).length > 0 ? 'repo' : 'sillage'),
+      (defaults.instructionsMode !== 'auto'
+        ? defaults.instructionsMode
+        : repoInstructionFiles(fields.workspacePath).length > 0
+          ? 'repo'
+          : 'sillage'),
+    memoryMode: fields.memoryMode ?? defaults.memoryMode,
     ownerId,
     defaultConfig: null,
     turnCheckpoints: true,
@@ -119,5 +129,6 @@ export async function createProject(ctx: AppContext, ownerId: string, input: unk
     visibility: body.visibility,
     color: body.color,
     instructionsMode: body.instructionsMode,
+    memoryMode: body.memoryMode,
   })
 }

@@ -62,6 +62,7 @@ const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
  * côté de la base, comme le daemon) et le dossier suit le projet de chaque appel.
  */
 let MEMORY_DIR = GLOBAL ? '' : (process.env.SILLAGE_MCP_MEMORY ?? '')
+const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
 const MEMORY_ROOT = GLOBAL && DB_PATH ? process.env.SILLAGE_MCP_MEMORY || join(dirname(DB_PATH), 'memory') : ''
 /** Compte au nom duquel le mode global écrit : son nom d'utilisateur, ou le seul compte de la base. */
 const USER_NAME = process.env.SILLAGE_MCP_USER ?? ''
@@ -3020,7 +3021,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     // Les outils de décision ne sont proposés qu'aux sessions autonomes dont la source
     // les permet : ailleurs, ils inciteraient l'agent à demander ce qu'il doit décider.
     const decisions = decisionsAllowed()
-    const tools = GLOBAL ? globalTools() : TOOLS.filter((tool) => decisions || !DECISION_TOOLS.has(tool.name))
+    // Sans dossier de mémoire (projet en mode natif), les outils de mémoire n'ont rien
+    // sur quoi agir : ils ne sont pas annoncés plutôt que de répondre une erreur.
+    const tools = GLOBAL
+      ? globalTools()
+      : TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (MEMORY_DIR || !MEMORY_TOOLS.has(tool.name)))
     send({ jsonrpc: '2.0', id: msg.id, result: { tools } })
     return
   }

@@ -48,6 +48,12 @@ export interface AppSettingsDto {
    * repart en reprise au message suivant.
    */
   maxConcurrentSessions: number
+  /**
+   * Racine publique de l'instance, celle que Sillage met dans les liens qu'il donne :
+   * webhooks, réponses de l'API, tâches planifiées. Vide, elle se déduit de l'en-tête
+   * `Host` de chaque requête.
+   */
+  publicUrl: string
 }
 
 /** Résultat d'un passage d'archivage lancé à la main. */
@@ -73,6 +79,16 @@ export const updateAppSettingsBodySchema = z.object({
   sttModel: z.string().trim().max(200).optional(),
   sttSecret: z.string().trim().max(200).optional(),
   sttCleanupModel: z.string().trim().max(200).optional(),
+  /** Vide pour revenir à la déduction par requête ; sinon une origine http(s), sans chemin. */
+  publicUrl: z
+    .string()
+    .trim()
+    .max(300)
+    .refine((value) => value === '' || /^https?:\/\/[^\s/?#]+$/.test(value.replace(/\/+$/, '')), {
+      message: 'Public URL must be an http(s) origin such as https://sillage.example.com.',
+    })
+    .transform((value) => value.replace(/\/+$/, ''))
+    .optional(),
   /**
    * Au moins une session, sinon plus rien ne peut démarrer. La borne haute écarte les
    * valeurs qui feraient tomber la machine avant d'être atteintes : à 400-500 Mo la

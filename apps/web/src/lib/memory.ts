@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ProjectMemoryDto } from '@sillage/protocol'
+import type { MemoryMode, ProjectMemoryDto } from '@sillage/protocol'
 import { api } from './api'
 
 /** Relue à chaque ouverture : les agents y écrivent sans passer par l'interface. */
@@ -9,6 +9,18 @@ export function useProjectMemory(projectId: string) {
   return useQuery({
     queryKey: memoryKey(projectId),
     queryFn: () => api.get<ProjectMemoryDto>(`/api/projects/${projectId}/memory`),
+  })
+}
+
+/** Où vit la mémoire de ce projet. Pris au prochain lancement de runner. */
+export function useSetMemoryMode(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (memoryMode: MemoryMode) => api.patch<{ ok: true }>(`/api/projects/${projectId}`, { memoryMode }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: memoryKey(projectId) })
+      void queryClient.invalidateQueries({ queryKey: ['projects'] })
+    },
   })
 }
 

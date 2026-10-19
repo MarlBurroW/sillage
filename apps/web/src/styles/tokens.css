@@ -19,7 +19,7 @@
  */
 
 :root {
-  --sg-tint: 1;
+  --sg-tint: 0.25;
   --sg-lift: 0;
 
   /* Dose de teinte d'accent sur la bulle utilisateur, voir `.sg-user-bubble`. */
@@ -27,7 +27,7 @@
 }
 
 :root[data-theme='light'] {
-  --sg-hue: 275;
+  --sg-hue: 318;
 
   /*
    * Confort de lecture du fil, pilotés depuis les réglages (`appearance.ts`).
@@ -98,7 +98,7 @@
 }
 
 :root[data-theme='dark'] {
-  --sg-hue: 275;
+  --sg-hue: 318;
 
   --sg-canvas: oklch(calc(0.168 + var(--sg-lift)) calc(0.055 * var(--sg-tint)) var(--sg-hue));
   --sg-surface: oklch(calc(0.215 + var(--sg-lift)) calc(0.062 * var(--sg-tint)) var(--sg-hue));
@@ -148,7 +148,7 @@
 
 /* Contraste renforcé : surfaces strictement neutres, aucun dégradé, aucune ombre. */
 :root[data-theme='dark-contrast'] {
-  --sg-hue: 275;
+  --sg-hue: 318;
 
   --sg-canvas: oklch(calc(0.115 + var(--sg-lift)) 0 0);
   --sg-surface: oklch(calc(0.17 + var(--sg-lift)) 0 0);

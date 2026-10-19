@@ -824,6 +824,8 @@ export class SessionManager {
   }
 
   private buildContext(conversation: ConversationRow): RunnerContext {
+    const memoryDirOrNull = (agent: ConversationRow['agent'], dir: string | null, sillageMcp: boolean) =>
+      agent !== 'claude' && dir ? memoryAppendixForCodex(dir, sillageMcp) : null
     const conversationId = conversation.id
     const adapter = this.registry.adapter(conversation.agent)
     const config = parseAgentConfig(conversation.config)
@@ -832,20 +834,20 @@ export class SessionManager {
     // d'un même runner, et pour un projet d'avant le réglage il dépend du dossier.
     const instructions = () => {
       const project = this.db
-        .select({ instructionsMode: projects.instructionsMode, workspacePath: projects.workspacePath })
+        .select({ instructionsMode: projects.instructionsMode, workspacePath: projects.workspacePath, memoryMode: projects.memoryMode })
         .from(projects)
         .where(eq(projects.id, conversation.projectId))
         .get()
       return project ? { ...project, mode: resolveInstructionsMode(project) } : null
     }
     // Créé et, la première fois, rempli de la mémoire que Claude tenait pour ce
-    // workspace : sans l'import, déplacer son dossier lui ferait tout oublier.
-    const memoryDir = () =>
-      ensureProjectMemory(
-        this.config.paths.memory,
-        conversation.projectId,
-        instructions()?.workspacePath ?? cwd,
-      )
+    // workspace : sans l'import, déplacer son dossier lui ferait tout oublier. Null en
+    // mode natif : chaque CLI garde alors la sienne, et Sillage n'en parle pas.
+    const memoryDir = () => {
+      const project = instructions()
+      if (project?.memoryMode === 'native') return null
+      return ensureProjectMemory(this.config.paths.memory, conversation.projectId, project?.workspacePath ?? cwd)
+    }
 
     return {
       conversationId,
@@ -907,8 +909,8 @@ export class SessionManager {
             sillageMcp,
           }),
           // Claude charge l'index de sa mémoire de lui-même ; Codex et opencode n'ont que
-          // ce qu'on leur dit.
-          conversation.agent !== 'claude' ? memoryAppendixForCodex(memoryDir(), sillageMcp) : null,
+          // ce qu'on leur dit. Rien en mode natif.
+          memoryDirOrNull(conversation.agent, memoryDir(), sillageMcp),
           this.config.mcp.sillageServer && current.sillageMcp
             ? projectOverview(this.db, {
                 projectId: conversation.projectId,

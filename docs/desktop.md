@@ -77,6 +77,12 @@ from the one Claude keeps when used alone.
 - **No sign-in.** The app opens your session when it starts. Its server listens on
   `127.0.0.1` and serves only the app's window: no other page on the machine, opened
   in your browser or served by another program, can use your session.
+- **A shorter first-run tour.** The first launch opens the same guided setup as the
+  server edition, minus what has no meaning here: no account to create, no team or
+  phone question, no public address, no push notifications. It starts at Welcome and
+  runs through appearance, agents, permissions and instructions, then leads to
+  your first project.
+  Replay it from Settings › About.
 - **Your data stays with the app**, in `~/Library/Application Support/Sillage` on
   macOS, `%LOCALAPPDATA%\Sillage` on Windows and `~/.config/Sillage` on Linux:
   projects, conversations and settings in `data/`, the server log in

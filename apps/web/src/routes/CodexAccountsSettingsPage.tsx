@@ -228,7 +228,7 @@ function AccountCard({ account }: { account: CodexAccount }) {
  * La connexion du compte, sous sa carte : les deux voies tant qu'il n'est pas
  * connecté, le code à saisir pendant l'attente, la déconnexion une fois prêt.
  */
-function LoginControls({ account }: { account: CodexAccount }) {
+export function LoginControls({ account }: { account: CodexAccount }) {
   const t = useTranslate()
   const { data: status } = useCodexLoginStatus(account.id, account.status === 'pending')
   const start = useStartCodexLogin(account.id)

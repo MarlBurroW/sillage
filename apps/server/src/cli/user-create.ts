@@ -4,6 +4,7 @@ import { openDatabase, users } from '@sillage/db'
 import { hashPassword } from '../auth/passwords.js'
 import { loadConfig } from '../config.js'
 import { migrationsFolder, runPendingMigrations } from '../migrations.js'
+import { armOnboarding } from '../settings/user-settings.js'
 import { Prompter } from './prompt.js'
 
 const MIN_PASSWORD_LENGTH = 8
@@ -37,14 +38,17 @@ async function main(): Promise<void> {
     const isAdmin =
       isFirstUser || (await prompt.ask('Administrateur ? [o/N] : ')).toLowerCase() === 'o'
 
+    const id = randomUUID()
     await db.insert(users).values({
-      id: randomUUID(),
+      id,
       username,
       passwordHash: await hashPassword(password),
       displayName,
       isAdmin,
       createdAt: Date.now(),
     })
+    // La visite attend ce compte à sa première connexion, comme un compte créé par l'écran.
+    armOnboarding(db, id)
 
     console.log(`Utilisateur "${username}" créé${isAdmin ? ' (administrateur)' : ''}.`)
   } finally {

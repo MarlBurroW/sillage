@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
 import { conversations, projects, worktrees, type ApiTokenRow, type ProjectRow } from '@sillage/db'
+import { publicUrlOf } from '../../settings/app-settings.js'
 import type { AppContext } from '../context.js'
 import { badRequest, notFound } from '../errors.js'
 
@@ -103,7 +104,7 @@ export function assertWorktreeBelongs(
  * pas qu'un jeton puisse fabriquer un lien vers un autre site.
  */
 export function publicBaseUrl(ctx: AppContext, request: FastifyRequest): string {
-  const configured = ctx.config.server.publicUrl
+  const configured = publicUrlOf(ctx.db, ctx.config)
   if (configured) return configured.replace(/\/+$/, '')
 
   const host = request.headers.host ?? `localhost:${ctx.config.server.port}`

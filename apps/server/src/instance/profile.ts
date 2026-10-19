@@ -21,6 +21,7 @@ export function instanceCapabilities(profile: InstanceProfile): InstanceCapabili
   }
 }
 
-export function instanceInfo(): InstanceInfo {
+/** Le profil et ses capacités ; la route y ajoute ce qui se lit en base ou sur la machine. */
+export function instanceInfo(): Omit<InstanceInfo, 'needsSetup' | 'hostname' | 'homeDir'> {
   return { profile: INSTANCE_PROFILE, capabilities: instanceCapabilities(INSTANCE_PROFILE) }
 }

@@ -113,6 +113,12 @@ partagé par tous les CLI et par tous les worktrees du projet.
   touchée.
 - **Interface** : une carte « Mémoire » sur la page du projet liste les notes, les ouvre
   en édition et les supprime avec leur ligne d'index.
+- **Mode natif** (`memoryMode = 'native'`, réglé sur la carte Mémoire) : Sillage ne tient
+  plus de dossier pour ce projet. Claude garde sa mémoire habituelle dans `~/.claude`, par
+  dossier de travail ; Codex, OpenCode et Grok la leur ; aucun index n'est injecté et les
+  outils MCP de mémoire ne sont pas annoncés. Le défaut des projets à venir, comme celui du
+  mode des consignes, est un réglage du compte (`projectDefaults`), posé par la visite de
+  première ouverture.
 
 Au premier lancement, la mémoire que Claude tenait pour la racine du workspace est
 copiée dans le dossier encore vide, une seule fois (trace `.imported-from.json`).

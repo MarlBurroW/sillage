@@ -241,6 +241,15 @@ authentication done on the host, and your projects:
 curl -fsSLO https://raw.githubusercontent.com/MarlBurroW/sillage/main/deploy/docker-compose.example.yml
 mv docker-compose.example.yml docker-compose.yml   # then adjust the mounted paths
 docker compose up -d
+```
+
+Then open Sillage in your browser: with no account yet, it starts on the first-run
+tour, which creates the first account (admin) and walks you through agents,
+permissions, where instructions and memory live, your general instructions and
+remote access, then leads to your first project. Without a browser at hand,
+the command line does the same:
+
+```bash
 docker compose exec -it sillage node /app/server/cli/user-create.js   # first account, admin
 ```
 
@@ -257,6 +266,12 @@ helm install sillage ./deploy/helm/sillage \
   --namespace sillage --create-namespace \
   --set storage.data.storageClass=<a-block-storage-class> \
   --set ingress.enabled=true --set ingress.host=sillage.example.com
+```
+
+Open the ingress host: the first-run tour creates the first account. Or from a
+terminal:
+
+```bash
 kubectl -n sillage exec -it deploy/sillage -- node /app/server/cli/user-create.js
 ```
 
@@ -279,9 +294,10 @@ Sillage installs the ones you want from the UI, you authenticate them yourself.
 curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash
 ```
 
-This installs under `~/.local/share/sillage`, sets up a systemd user service,
-enables lingering (so the service survives logout) and creates the first account.
-It then checks that the server actually answers before reporting success. Later
+This installs under `~/.local/share/sillage`, sets up a systemd user service and
+enables lingering (so the service survives logout). It then checks that the server
+actually answers before reporting success. Open Sillage in your browser: the
+first-run tour creates the first account and sets the instance up. Later
 updates happen from the web UI (Settings > About) or by re-running the script.
 
 Logs go to the journal: `journalctl --user -u sillage -f`.
@@ -310,8 +326,8 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
 
 It needs git: if the Command Line Tools are missing, run `xcode-select --install`
 first. As on Linux it installs under `~/.local/share/sillage`, fetches Node if the
-system has none recent enough, creates the first account, then opens
-`http://localhost:7317`. The service is a launchd agent: it starts with your session
+system has none recent enough, then opens `http://localhost:7317` on the first-run
+tour, which creates the first account. The service is a launchd agent: it starts with your session
 and keeps running with Terminal closed, but nothing runs while the Mac sleeps.
 
 - Logs: `tail -f ~/.local/share/sillage/logs/sillage.log`. The file is not rotated.
@@ -369,8 +385,8 @@ installed from the UI:
 ```bash
 pnpm install
 pnpm db:generate          # only after changing packages/db/src/schema.ts
-pnpm user:create          # first account, admin
 pnpm dev                  # API on :7317, Vite UI on :5317 with /api proxy
+pnpm user:create          # optional: the first account from a terminal rather than the tour
 ```
 
 ## Install the desktop app

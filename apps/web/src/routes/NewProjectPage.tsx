@@ -4,6 +4,7 @@ import {
   GitBranch,
   Globe,
   Lock,
+  Sparkles,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -12,11 +13,12 @@ import { ApiRequestError } from '../lib/api'
 import { useCreateProject } from '../lib/projects'
 import { useUserSettings } from '../lib/user-settings'
 import { CloneForm } from '../components/CloneForm'
+import { SampleProjectForm } from '../components/SampleProjectForm'
 import { PathField } from '../components/PathField'
 import {
   InstructionsModeSelect,
   instructionsModeField,
-  type InstructionsModeChoice,
+  useInstructionsModeChoice,
 } from '../components/instructions/Instructions'
 import { useTranslate } from '../lib/i18n'
 import {
@@ -32,7 +34,7 @@ import {
   type SelectOption,
 } from '../components/ui'
 
-type CreateMode = 'new' | 'existing' | 'clone'
+type CreateMode = 'new' | 'existing' | 'clone' | 'sample'
 type Visibility = 'private' | 'shared'
 
 function useVisibilityOptions(): SelectOption<Visibility>[] {
@@ -77,6 +79,13 @@ export function NewProjectPage() {
       hint: t('projects.create.mode.clone.hint'),
       icon: <GitBranch size={15} />,
     },
+    // Pour essayer sans risque : un petit dépôt que Sillage écrit lui-même.
+    {
+      value: 'sample',
+      label: t('projects.create.mode.sample'),
+      hint: t('projects.create.mode.sample.hint'),
+      icon: <Sparkles size={15} />,
+    },
   ]
 
   return (
@@ -100,6 +109,7 @@ export function NewProjectPage() {
           {mode === 'clone' ? <CloneForm /> : null}
           {mode === 'new' ? <NewFolderForm /> : null}
           {mode === 'existing' ? <ExistingFolderForm /> : null}
+          {mode === 'sample' ? <SampleProjectForm /> : null}
         </CardBody>
       </Card>
     </div>
@@ -124,7 +134,7 @@ function NewFolderForm() {
   const [directory, setDirectory] = useState('')
   const [parentDir, setParentDir] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('private')
-  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
+  const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
 
   // Les réglages arrivent après le premier rendu : le dossier mémorisé ne s'impose que
   // sur un champ encore vide, jamais par-dessus une saisie.
@@ -209,7 +219,7 @@ function ExistingFolderForm() {
   const [name, setName] = useState('')
   const [workspacePath, setWorkspacePath] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('private')
-  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
+  const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
 
   const submit = (event: FormEvent) => {
     event.preventDefault()

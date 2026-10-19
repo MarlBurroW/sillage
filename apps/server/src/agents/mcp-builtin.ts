@@ -47,7 +47,8 @@ export interface BuiltinMcpParams {
   projectId: string
   conversationId: string
   /** Dossier de mémoire du projet, où `write_memory` écrit pour Codex. */
-  memoryDir: string
+  /** Null en mode natif : les outils de mémoire ne sont alors pas proposés. */
+  memoryDir: string | null
 }
 
 /**
@@ -82,7 +83,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
         SILLAGE_MCP_DB: databasePath,
         SILLAGE_MCP_PROJECT: projectId,
         SILLAGE_MCP_CONVERSATION: conversationId,
-        SILLAGE_MCP_MEMORY: memoryDir,
+        ...(memoryDir ? { SILLAGE_MCP_MEMORY: memoryDir } : {}),
       },
     },
     createdAt: 0,

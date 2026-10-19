@@ -11,6 +11,7 @@ import {
   type RepoInstructionFile,
 } from '@sillage/protocol'
 import { ApiRequestError } from '../../lib/api'
+import { useProjectDefaults } from '../../lib/user-settings'
 import { locale, useTranslate } from '../../lib/i18n'
 import {
   mergedForImport,
@@ -376,6 +377,17 @@ export function InstructionsDialog({
 
 /** Le choix proposé à la création ; `auto` laisse le serveur regarder le dossier. */
 export type InstructionsModeChoice = InstructionsMode | 'auto'
+
+/**
+ * Le choix d'un formulaire de création : le défaut du compte, jusqu'à ce qu'on en
+ * prenne un autre. Les réglages arrivent après le premier rendu, d'où le suivi : sans
+ * lui, le formulaire montrerait « selon le dossier » alors que le compte dit autre chose.
+ */
+export function useInstructionsModeChoice(): [InstructionsModeChoice, (next: InstructionsModeChoice) => void] {
+  const defaults = useProjectDefaults()
+  const [chosen, setChosen] = useState<InstructionsModeChoice | null>(null)
+  return [chosen ?? defaults.instructionsMode, setChosen]
+}
 
 export function InstructionsModeSelect({
   value,

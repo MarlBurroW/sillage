@@ -1,6 +1,7 @@
 import { rm } from 'node:fs/promises'
 import { and, asc, desc, eq, isNotNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import { publicUrlOf } from '../../settings/app-settings.js'
 import { automationWebhooks, projects, scheduledRuns, scheduledTasks, type ScheduledTaskRow } from '@sillage/db'
 import {
   AUTOMATION_TEMPLATES,
@@ -47,7 +48,7 @@ export function registerScheduleRoutes(
   automations: AutomationReceiver,
 ): void {
   // Lue à chaque appel : la configuration peut manquer au moment de l'enregistrement.
-  const publicUrl = () => ctx.config.server.publicUrl
+  const publicUrl = () => publicUrlOf(ctx.db, ctx.config)
   const loadProject = (projectId: string, userId: string) => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
     if (!project || (project.ownerId !== userId && project.visibility !== 'shared')) {

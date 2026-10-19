@@ -17,8 +17,9 @@ export interface AppearanceSetting {
 }
 
 export const APPEARANCE_SETTINGS = {
-  hue: { key: 'sillage.hue', property: '--sg-hue', fallback: 275, min: 0, max: 360, step: 1 },
-  tint: { key: 'sillage.tint', property: '--sg-tint', fallback: 1, min: 0, max: 2.5, step: 0.05 },
+  // Les défauts sont ceux de tokens.css : teinte 318, ambiance « Discret » (0,25).
+  hue: { key: 'sillage.hue', property: '--sg-hue', fallback: 318, min: 0, max: 360, step: 1 },
+  tint: { key: 'sillage.tint', property: '--sg-tint', fallback: 0.25, min: 0, max: 2.5, step: 0.05 },
   // Bornes volontairement étroites : au-delà, les surfaces rejoignent le texte et le
   // contraste s'effondre au lieu de simplement s'éclaircir.
   lift: { key: 'sillage.lift', property: '--sg-lift', fallback: 0, min: -0.06, max: 0.12, step: 0.005 },

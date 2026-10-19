@@ -475,19 +475,19 @@ services:
       - ~/projects:/home/node/workspace
 volumes:
   sillage-data:</code></pre>
-          <p>The CLIs are not in the image: install the ones you actually use from the UI, and they land in the data volume. Adjust the mounted paths and authenticate your agents. Start the container, then create the first account:</p>
+          <p>The CLIs are not in the image: install the ones you actually use from the UI, and they land in the data volume. Adjust the mounted paths. Start the container, then open Sillage in your browser: the first-run tour creates the first account and sets the instance up. Without a browser at hand, the command line does the same:</p>
 <pre class="one-line"><code>docker compose up -d
 docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
         </div>
 
         <div id="panel-script" class="tab-panel" role="tabpanel" aria-labelledby="tab-script" data-panel="script" hidden>
 <pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Linux x64 or arm64 with systemd. Install the agents you use from the UI, then authenticate them on the host. It installs under <code>~/.local/share/sillage</code>, fetches Node if the system has none recent enough, sets up a user service and creates the first account. Later updates happen from the UI.</p>
+          <p>Linux x64 or arm64 with systemd. Install the agents you use from the UI, then authenticate them on the host. It installs under <code>~/.local/share/sillage</code>, fetches Node if the system has none recent enough and sets up a user service. Open Sillage in your browser: the first-run tour creates the first account. Later updates happen from the UI.</p>
         </div>
 
         <div id="panel-macos" class="tab-panel" role="tabpanel" aria-labelledby="tab-macos" data-panel="macos" hidden>
 <pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Apple Silicon Macs, from Terminal: Sillage Server as a background service your other devices can reach. For an app in its own window, see <a href="#install-desktop">Sillage Desktop</a> below. The same installer as on Linux fetches Node if needed, creates the first account, opens Sillage in your browser and sets up a launchd agent that starts with your session. It needs git: run <code>xcode-select --install</code> first if the Command Line Tools are missing. Your agents only work while the Mac is awake.</p>
+          <p>Apple Silicon Macs, from Terminal: Sillage Server as a background service your other devices can reach. For an app in its own window, see <a href="#install-desktop">Sillage Desktop</a> below. The same installer as on Linux fetches Node if needed, opens Sillage in your browser on the first-run tour, which creates the first account, and sets up a launchd agent that starts with your session. It needs git: run <code>xcode-select --install</code> first if the Command Line Tools are missing. Your agents only work while the Mac is awake.</p>
         </div>
 
         <div id="panel-windows" class="tab-panel" role="tabpanel" aria-labelledby="tab-windows" data-panel="windows" hidden>
@@ -495,7 +495,7 @@ docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
 wsl --install
 <span class="dim"># 2. In the Ubuntu terminal</span>
 curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Sillage runs inside WSL2, the Linux built into Windows 10 and 11, and you use it from your Windows browser. The same installer as on Linux enables systemd if the distribution lacks it, fetches Node, creates the first account and adds a <strong>Sillage</strong> entry to the Start menu. That entry keeps WSL running once the terminal is closed, and can start with Windows.</p>
+          <p>Sillage runs inside WSL2, the Linux built into Windows 10 and 11, and you use it from your Windows browser. The same installer as on Linux enables systemd if the distribution lacks it, fetches Node and adds a <strong>Sillage</strong> entry to the Start menu; the first-run tour creates the first account in your browser. That entry keeps WSL running once the terminal is closed, and can start with Windows.</p>
           <p>The agents are the Linux <code>claude</code>, <code>codex</code>, <code>opencode</code> and <code>grok</code> of the distribution, not the Windows ones. Keep projects in the Linux file system, not under <code>/mnt/c</code>. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md">WSL2 guide</a> covers signing in to the agents, troubleshooting and uninstalling.</p>
         </div>
 
@@ -505,7 +505,7 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
   <span class="dim">--namespace</span> sillage <span class="dim">--create-namespace</span> \
   <span class="dim">--set</span> storage.data.storageClass=<span class="str">&lt;block-storage-class&gt;</span> \
   <span class="dim">--set</span> ingress.enabled=<span class="str">true</span> <span class="dim">--set</span> ingress.host=<span class="str">sillage.example.com</span></code></pre>
-          <p>One replica, <code>Recreate</code> strategy: the state is a SQLite database on a <code>ReadWriteOnce</code> volume, and two pods writing to it means corruption. Give the data volume a block storage class rather than NFS, whose file locks SQLite cannot rely on. Then create the first account:</p>
+          <p>One replica, <code>Recreate</code> strategy: the state is a SQLite database on a <code>ReadWriteOnce</code> volume, and two pods writing to it means corruption. Give the data volume a block storage class rather than NFS, whose file locks SQLite cannot rely on. Then open the ingress host: the first-run tour creates the first account. Or from a terminal:</p>
 <pre><code>kubectl <span class="dim">-n</span> sillage exec <span class="dim">-it</span> deploy/sillage \
   -- node /app/server/cli/user-create.js</code></pre>
         </div>
