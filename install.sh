@@ -419,10 +419,11 @@ fi
 # --- first account -----------------------------------------------------------
 
 # Without an account the instance is unreachable: no default password, no signup route.
-# Asked once the server answers, so that its migrations have run, and whenever the
-# database holds no account, not only on a first install: an earlier run may have died
-# after the service created the database. A failure here must be visible, never
-# swallowed by a `|| true`.
+# The first account is created from the browser: a database without any account opens
+# Sillage on the account step of the first-run tour, whatever the address. Checked once
+# the server answers, so that its migrations have run, and whenever the database holds
+# no account, not only on a first install. The command-line creation stays for the
+# cases without a browser at hand.
 # The service's Node, which may be the private copy: `node` alone is not always on the PATH.
 ACCOUNT_HINT="$NODE_BIN $APP_DIR/current/server/cli/user-create.js"
 
@@ -436,22 +437,11 @@ user_count() {
   } catch { process.stdout.write("?") }' "$DATA_DIR/sillage.db" 2>/dev/null) || echo '?'
 }
 
-ACCOUNT_CREATED="no"
+FIRST_ACCOUNT_PENDING="no"
 if [ "$(user_count)" = "0" ]; then
-  # curl | bash leaves no stdin: the account prompt needs a real terminal.
-  if has_tty; then
-    say "Create the first account (it gets admin rights):"
-    if node "$APP_DIR/current/server/cli/user-create.js" < /dev/tty; then
-      ACCOUNT_CREATED="yes"
-    else
-      say "warning: account creation failed."
-    fi
-  fi
-  # A missing account breaks nothing visible: the server answers, but nobody gets in.
-  if [ "$(user_count)" = "0" ]; then
-    say "warning: no account exists — the UI will refuse every login."
-    say "  Create one with:  $ACCOUNT_HINT"
-  fi
+  FIRST_ACCOUNT_PENDING="yes"
+  say "No account yet: open Sillage in your browser to create the first one (it gets admin rights)."
+  say "  Or from a terminal:  $ACCOUNT_HINT"
 fi
 
 # --- Windows integration (WSL) -----------------------------------------------
@@ -630,8 +620,8 @@ if [ "$IS_WSL" = "yes" ]; then
   fi
 elif [ "$PLATFORM" = "darwin" ]; then
   say "Done. Sillage is listening on http://localhost:$PORT and starts with your session."
-  # With the account just created, the browser goes straight to the login page.
-  if [ "$ACCOUNT_CREATED" = "yes" ]; then open "http://localhost:$PORT/" || true; fi
+  # Without an account yet, the browser lands on the first-run tour, which creates it.
+  if [ "$FIRST_ACCOUNT_PENDING" = "yes" ]; then open "http://localhost:$PORT/" || true; fi
 else
   say "Done. Sillage is listening on http://127.0.0.1:$PORT"
 fi

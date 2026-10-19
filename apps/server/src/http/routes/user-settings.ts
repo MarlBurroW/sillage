@@ -6,6 +6,8 @@ import {
   writeCollapsedProjects,
   writeComposerLayout,
   writeNotificationPrefs,
+  writeOnboarding,
+  writeProjectDefaults,
   writeProjectsDir,
   writeUserAgentDefault,
 } from '../../settings/user-settings.js'
@@ -37,6 +39,8 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     if (body.appearance) writeAppearance(ctx.db, user.id, body.appearance)
     if (body.notifications) writeNotificationPrefs(ctx.db, user.id, body.notifications)
     if (body.composerLayout) writeComposerLayout(ctx.db, user.id, body.composerLayout)
+    if (body.onboarding) writeOnboarding(ctx.db, user.id, body.onboarding)
+    if (body.projectDefaults) writeProjectDefaults(ctx.db, user.id, body.projectDefaults)
     // Relu plutôt que reconstruit depuis le corps : l'écran a besoin des deux CLI, et
     // le corps n'en porte qu'un.
     return readUserSettings(ctx.db, user.id)

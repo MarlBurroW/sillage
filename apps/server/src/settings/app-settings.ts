@@ -23,6 +23,7 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
   const days = readValue(db, 'autoArchiveDays')
   const schedule = readValue(db, 'autoArchiveSchedule')
   const maxSessions = readValue(db, 'maxConcurrentSessions')
+  const publicUrl = readValue(db, 'publicUrl')
 
   return {
     autoArchiveDays:
@@ -41,7 +42,20 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
       typeof maxSessions === 'number' && Number.isInteger(maxSessions) && maxSessions >= 1
         ? maxSessions
         : config.limits.maxConcurrentSessions,
+    // La chaîne vide posée en base compte comme un choix : revenir à la déduction par
+    // requête, même si le fichier de configuration en fixe une.
+    publicUrl: typeof publicUrl === 'string' ? publicUrl : config.server.publicUrl,
   }
+}
+
+/**
+ * Racine publique à mettre dans un lien, ou vide pour la déduire de la requête.
+ *
+ * Relue à chaque appel, comme le reste : l'adresse se règle dans la visite ou les
+ * réglages, et un lien de webhook copié juste après doit déjà la porter.
+ */
+export function publicUrlOf(db: Db, config: Config): string {
+  return readAppSettings(db, config).publicUrl
 }
 
 export function writeAppSettings(db: Db, patch: Partial<AppSettings>): void {

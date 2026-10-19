@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CurrentUser } from '@sillage/protocol'
 import { ApiRequestError, api } from './api'
 
-const ME_KEY = ['auth', 'me']
+export const ME_KEY = ['auth', 'me']
 
 export function useCurrentUser() {
   return useQuery({

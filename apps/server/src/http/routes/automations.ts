@@ -1,5 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import { publicUrlOf } from '../../settings/app-settings.js'
 import { automationDeliveries, projects, scheduledTasks, type ScheduledTaskRow } from '@sillage/db'
 import {
   replayWebhookBodySchema,
@@ -46,7 +47,7 @@ export const HOOKS_PREFIX = '/api/hooks/'
  */
 export function registerAutomationRoutes(app: FastifyInstance, ctx: AppContext, receiver: AutomationReceiver): void {
   // Lue à chaque appel : la configuration peut manquer au moment de l'enregistrement.
-  const publicUrl = () => ctx.config.server.publicUrl
+  const publicUrl = () => publicUrlOf(ctx.db, ctx.config)
 
   const loadProject = (projectId: string, userId: string) => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()

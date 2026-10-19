@@ -1,13 +1,60 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentConfig, ComposerLayout, NotificationPrefs, UserSettingsDto } from '@sillage/protocol'
+import { DEFAULT_PROJECT_DEFAULTS, type AgentConfig, type ComposerLayout, type NotificationPrefs, type OnboardingState, type ProjectDefaults, type UserSettingsDto } from '@sillage/protocol'
 import { api } from './api'
 
 const USER_SETTINGS_KEY = ['user-settings']
 
-export function useUserSettings() {
+/** `enabled` pour les écrans montés avant la session : sans compte, la route répondrait 401. */
+export function useUserSettings(enabled = true) {
   return useQuery({
     queryKey: USER_SETTINGS_KEY,
     queryFn: () => api.get<UserSettingsDto>('/api/me/settings'),
+    enabled,
+  })
+}
+
+/** Les défauts des projets à venir, ceux du protocole tant que le compte n'est pas lu. */
+export function useProjectDefaults(): ProjectDefaults {
+  const { data } = useUserSettings()
+  return data?.projectDefaults ?? DEFAULT_PROJECT_DEFAULTS
+}
+
+/** Les deux défauts, remplacés en bloc et appliqués sans attendre : ce sont des cartes qu'on clique. */
+export function useUpdateProjectDefaults() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (projectDefaults: ProjectDefaults) => api.patch<UserSettingsDto>('/api/me/settings', { projectDefaults }),
+    onMutate: async (projectDefaults) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous) queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, projectDefaults })
+      return { previous }
+    },
+    onError: (_error, _defaults, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+}
+
+/**
+ * L'état de la visite, remplacé en bloc et appliqué sans attendre : l'étape suivante
+ * doit s'afficher au clic, pas après l'aller-retour qui la mémorise.
+ */
+export function useUpdateOnboarding() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (onboarding: OnboardingState) => api.patch<UserSettingsDto>('/api/me/settings', { onboarding }),
+    onMutate: async (onboarding) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous) queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, onboarding })
+      return { previous }
+    },
+    onError: (_error, _state, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
   })
 }
 

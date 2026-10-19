@@ -83,6 +83,20 @@ export function PushControls() {
   )
 }
 
+/**
+ * L'abonnement de cet appareil seul, pour la visite : la liste des appareils et l'essai
+ * n'ont de sens qu'une fois plusieurs appareils abonnés.
+ */
+export function PushEnrol() {
+  const availability = pushAvailability()
+  const t = useTranslate()
+  if (availability === 'insecure') return <Banner tone="info">{t('push.insecure')}</Banner>
+  if (availability === 'unsupported') {
+    return <Banner tone="info">{t(iosOutsideHomeScreen() ? 'push.iosHomeScreen' : 'push.unsupported')}</Banner>
+  }
+  return <ThisDevice />
+}
+
 function ThisDevice() {
   const t = useTranslate()
   const { data: status } = usePushStatus(true)

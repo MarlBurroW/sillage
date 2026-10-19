@@ -1,14 +1,15 @@
 import { Brain, ChevronRight, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { MAX_MEMORY_FILE_CHARS, MEMORY_INDEX_FILE, type MemoryFileDto } from '@sillage/protocol'
+import { MAX_MEMORY_FILE_CHARS, MEMORY_INDEX_FILE, type MemoryFileDto, type MemoryMode } from '@sillage/protocol'
 import { locale, useTranslate } from '../../lib/i18n'
 import {
   memoryDescription,
   useDeleteMemoryFile,
   useProjectMemory,
+  useSetMemoryMode,
   useWriteMemoryFile,
 } from '../../lib/memory'
-import { Card, CardBody, CardHeader, ConfirmDialog, IconButton, cx } from '../ui'
+import { Banner, Card, CardBody, CardHeader, ChoiceList, ConfirmDialog, IconButton, cx, type Choice } from '../ui'
 import { HowItWorks, MEMORY_HELP } from './HowItWorks'
 import { MarkdownEditor } from './Instructions'
 
@@ -25,7 +26,12 @@ export function ProjectMemory({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const remove = useDeleteMemoryFile(projectId)
+  const setMode = useSetMemoryMode(projectId)
   const notes = data?.files.filter((file) => file.file !== MEMORY_INDEX_FILE).length ?? 0
+  const modes: Choice<MemoryMode>[] = [
+    { value: 'sillage', label: t('memory.mode.sillage'), hint: t('memory.mode.sillage.hint') },
+    { value: 'native', label: t('memory.mode.native'), hint: t('memory.mode.native.hint') },
+  ]
 
   return (
     <Card>
@@ -36,7 +42,12 @@ export function ProjectMemory({ projectId }: { projectId: string }) {
       />
       <CardBody className="flex flex-col gap-3">
         <HowItWorks items={MEMORY_HELP} />
-        {data ? (
+        {/* Où elle vit, pour ce projet : le propriétaire tranche, les autres voient. */}
+        {data?.canEdit ? (
+          <ChoiceList label={t('memory.mode')} value={data.mode} options={modes} onChange={(mode) => setMode.mutate(mode)} />
+        ) : null}
+        {data?.mode === 'native' ? <Banner tone="info">{t('memory.native.notice')}</Banner> : null}
+        {data && data.mode === 'sillage' ? (
           <>
             <p className="text-xs text-ink-faint">
               {t('memory.count', { count: notes })}{' '}

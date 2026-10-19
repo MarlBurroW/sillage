@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `memory_mode` text DEFAULT 'sillage' NOT NULL;

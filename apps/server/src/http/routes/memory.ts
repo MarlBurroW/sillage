@@ -42,11 +42,22 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
   const dirOf = (project: ProjectRow) =>
     ensureProjectMemory(ctx.config.paths.memory, project.id, project.workspacePath)
 
+  const assertSillageMemory = (project: ProjectRow): void => {
+    if (project.memoryMode === 'native') {
+      throw badRequest('memory_native', 'This project keeps memory in each CLI: nothing for Sillage to edit.')
+    }
+  }
+
   app.get('/api/projects/:id/memory', async (request): Promise<ProjectMemoryDto> => {
     const user = requireUser(request)
     const project = requireProject((request.params as { id: string }).id, user)
+    // En mode natif, Sillage ne tient pas de dossier : rien à lister, et rien à créer.
+    if (project.memoryMode === 'native') {
+      return { mode: 'native', dir: '', files: [], importedFrom: null, canEdit: project.ownerId === user.id }
+    }
     const dir = dirOf(project)
     return {
+      mode: 'sillage',
       dir,
       files: await listMemory(dir),
       importedFrom: readImportMarker(dir),
@@ -58,6 +69,7 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
     const user = requireUser(request)
     const project = requireProject((request.params as { id: string }).id, user)
     assertOwner(project, user)
+    assertSillageMemory(project)
     const body = writeMemoryFileBodySchema.parse(request.body)
     await writeMemoryFile(dirOf(project), requireFile(request.params), body.content)
     return reply.status(204).send()
@@ -67,6 +79,7 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
     const user = requireUser(request)
     const project = requireProject((request.params as { id: string }).id, user)
     assertOwner(project, user)
+    assertSillageMemory(project)
     await deleteMemoryFile(dirOf(project), requireFile(request.params))
     return reply.status(204).send()
   })

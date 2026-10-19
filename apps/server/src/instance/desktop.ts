@@ -5,6 +5,7 @@ import { asc, eq } from 'drizzle-orm'
 import { authSessions, users, type Db, type UserRow } from '@sillage/db'
 import { hashPassword } from '../auth/passwords.js'
 import { createSession } from '../auth/sessions.js'
+import { armOnboarding } from '../settings/user-settings.js'
 
 /**
  * Descripteur hérité du lanceur de bureau, par lequel le serveur lui remet son adresse
@@ -43,6 +44,8 @@ async function createLocalUser(db: Db): Promise<UserRow> {
     createdAt: Date.now(),
   }
   await db.insert(users).values(row)
+  // Premier lancement : la visite s'ouvre dans la fenêtre, sans étape de compte.
+  armOnboarding(db, row.id)
   return row
 }
 

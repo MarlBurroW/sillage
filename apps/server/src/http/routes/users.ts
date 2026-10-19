@@ -8,6 +8,7 @@ import { SESSION_COOKIE, sessionTokenHash } from '../../auth/sessions.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
+import { armOnboarding } from '../../settings/user-settings.js'
 
 /**
  * Administration des comptes.
@@ -91,10 +92,11 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
       })
     }
 
+    const id = randomUUID()
     ctx.db
       .insert(users)
       .values({
-        id: randomUUID(),
+        id,
         username: body.username,
         passwordHash: await hashPassword(body.password),
         displayName: body.displayName,
@@ -102,6 +104,8 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
         createdAt: Date.now(),
       })
       .run()
+    // Le compte invité prend possession de lui-même à sa première connexion.
+    armOnboarding(ctx.db, id)
 
     return reply.status(201).send({ ok: true })
   })
