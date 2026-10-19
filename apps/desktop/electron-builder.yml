@@ -24,7 +24,7 @@ extraResources:
 artifactName: Sillage-${version}-${os}-${arch}.${ext}
 publish: null
 # L'app n'a aucune dépendance native à recompiler pour Electron : celles du serveur
-# tournent sous le Node embarqué, déjà construites pour lui.
+# tournent sous le Node embarqué, pas sous Electron.
 npmRebuild: false
 
 mac:

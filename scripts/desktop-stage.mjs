@@ -6,8 +6,8 @@
  *   └── node/      le Node officiel qui le fait tourner, npm compris
  *
  * Le Node embarqué est celui qui exécute ce script, à la version près. En CI, c'est
- * celui qui vient de lancer `npm install` dans l'arbre d'exécution : better-sqlite3 n'y
- * accepte que son ABI. Il est téléchargé depuis nodejs.org et vérifié contre le
+ * celui sous lequel l'arbre d'exécution vient d'être installé et vérifié : l'app livre
+ * ce couple tel quel. Il est téléchargé depuis nodejs.org et vérifié contre le
  * SHASUMS256 publié à côté, comme le fait install.sh.
  *
  * Usage : node scripts/desktop-stage.mjs <arbre d'exécution>

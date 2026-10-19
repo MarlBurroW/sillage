@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import type { Readable } from 'node:stream'
 
 export interface ServerOptions {
-  /** Le Node embarqué, celui sous lequel l'arbre d'exécution a compilé ses modules natifs. */
+  /** Le Node embarqué, celui sous lequel l'arbre d'exécution a été installé et vérifié. */
   node: string
   /** L'arbre d'exécution de la release : `server/`, `web/`, `node_modules/`. */
   runtime: string

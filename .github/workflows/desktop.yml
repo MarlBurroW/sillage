@@ -66,8 +66,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-      # Ce Node construit l'arbre d'exécution et voyage avec l'app, à la version près
-      # (scripts/desktop-stage.mjs) : ses modules natifs n'acceptent que cette ABI.
+      # Ce Node installe l'arbre d'exécution et voyage avec l'app, à la version près
+      # (scripts/desktop-stage.mjs) : l'app livre le couple que ce job a vérifié.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
