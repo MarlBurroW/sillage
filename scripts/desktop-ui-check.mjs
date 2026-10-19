@@ -66,6 +66,17 @@ try {
   })
   const page = await app.firstWindow({ timeout: 120_000 })
   await page.waitForLoadState('domcontentloaded')
+  // Premier lancement : le compte local ouvert par le lanceur a sa visite armée, et la
+  // fenêtre s'ouvre dessus, sans étape de compte ni de mot de passe. On la passe ; « C'est
+  // prêt » mène à la création du premier projet, dans la coque de l'application.
+  await page.waitForURL(/\/bienvenue$/, { timeout: 60_000 })
+  await page.getByRole('heading', { level: 1 }).first().waitFor()
+  assert.equal(await page.getByText(/Créer ton compte|Create your account/).count(), 0, 'pas de compte à créer en bureau')
+  await page.screenshot({ path: join(shots, 'onboarding.png') })
+  await page.getByRole('button', { name: /Passer la visite|Skip the tour/ }).click()
+  await page.getByRole('heading', { level: 1, name: /C’est prêt\.|All set\./ }).waitFor()
+  await page.getByRole('button', { name: /Créer mon premier projet|Create my first project/ }).click()
+  await page.waitForURL(/\/projects\/new$/)
   // La coque de l'application, signe que la session est ouverte.
   await page.getByRole('link', { name: /Paramètres|Settings/ }).first().waitFor({ timeout: 60_000 })
 
