@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { request } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -46,6 +48,20 @@ function packagedApp() {
     return `${process.arch === 'x64' ? 'win-unpacked' : `win-${process.arch}-unpacked`}/Sillage.exe`
   }
   return `${process.arch === 'x64' ? 'linux-unpacked' : `linux-${process.arch}-unpacked`}/sillage`
+}
+
+/**
+ * Ce qu'un CLI muet répond quand on le lance à la main, sans le délai de la sonde : son
+ * lanceur npm, puis sa sortie, à lire dans le journal de la CI.
+ */
+function diagnose(path) {
+  if (/\.cmd$/i.test(path)) console.log(`lanceur ${path} :\n${readFileSync(path, 'utf8')}`)
+  const started = Date.now()
+  const result = spawnSync(path, ['--version'], { shell: true, encoding: 'utf8', timeout: 120_000 })
+  console.log(
+    `${path} --version, ${Date.now() - started} ms : status=${result.status} error=${result.error?.message}\n` +
+      `stdout: ${result.stdout}\nstderr: ${result.stderr}`,
+  )
 }
 
 /** Une requête HTTP brute, pour forger `Host` et `Origin` comme le ferait une page hostile. */
@@ -194,6 +210,7 @@ try {
     }
     assert.equal(agent.install.status, 'idle', `installation de ${cli} : ${JSON.stringify(agent.install)}`)
     assert.ok(agent.installed && agent.managed, `${cli} non détecté : ${JSON.stringify(agent)}`)
+    if (!agent.version) diagnose(agent.path)
     assert.ok(agent.version, `${cli} ne répond pas à --version : ${JSON.stringify(agent)}`)
     console.log(`${cli} ${agent.version} installé : ${agent.path}`)
   }
