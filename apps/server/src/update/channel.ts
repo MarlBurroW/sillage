@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import type { UpdateChannel } from '@sillage/protocol'
+import { INSTANCE_PROFILE } from '../instance/profile.js'
 
 /**
  * L'unité systemd générée par install.sh pose SILLAGE_INSTALL_DIR, l'image
@@ -9,6 +10,9 @@ import type { UpdateChannel } from '@sillage/protocol'
  * écraserait des fichiers qu'on ne gère pas.
  */
 export function detectChannel(): UpdateChannel {
+  // L'application de bureau se remplace par sa nouvelle version : le serveur qu'elle
+  // embarque ne touche jamais à ses propres fichiers.
+  if (INSTANCE_PROFILE === 'desktop') return 'desktop'
   if (process.env.SILLAGE_UPDATE_CHANNEL === 'docker' || existsSync('/.dockerenv')) {
     return 'docker'
   }

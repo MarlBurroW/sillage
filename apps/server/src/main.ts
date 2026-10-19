@@ -12,6 +12,8 @@ import { BoardSync } from './board/board-sync.js'
 import { BoardResponder } from './board/responder.js'
 import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
+import { announceToLauncher, openDesktopSession, scrubLauncherEnv } from './instance/desktop.js'
+import { INSTANCE_PROFILE } from './instance/profile.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
 import { Notifications } from './notifications/dispatcher.js'
@@ -41,6 +43,7 @@ import { WorktreeStatusService } from './worktrees/status-service.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
+  if (INSTANCE_PROFILE === 'desktop') scrubLauncherEnv()
   for (const dir of [config.paths.attachments, config.paths.worktrees, config.paths.logs]) {
     mkdirSync(dir, { recursive: true })
   }
@@ -155,6 +158,14 @@ async function main(): Promise<void> {
   decisions.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
+
+  // L'application de bureau attend cette annonce pour ouvrir sa fenêtre : le serveur
+  // répond déjà, et la session de l'utilisateur est prête à poser en cookie.
+  if (INSTANCE_PROFILE === 'desktop') {
+    const address = app.server.address()
+    const port = typeof address === 'object' && address ? address.port : config.server.port
+    announceToLauncher(port, await openDesktopSession(db))
+  }
 
   // Le lanceur du helper git décrit le Node et la release de ce process : réécrit à
   // chaque démarrage, il suit les mises à jour sans que les dépôts clonés aient à changer.

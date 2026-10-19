@@ -20,6 +20,8 @@ import {
 import type { ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
+import type { InstanceCapabilities } from '@sillage/protocol'
+import { useInstance } from '../lib/instance'
 import { useCurrentUser } from '../lib/session'
 import { useVersionInfo } from '../lib/system'
 import { UpdateDot } from '../components/UpdateDot'
@@ -46,16 +48,30 @@ interface Section {
   descriptionKey: MessageKey
   icon: ReactNode
   adminOnly?: boolean
+  /** Capacité de l'instance sans laquelle la catégorie n'a pas d'objet. */
+  requires?: keyof InstanceCapabilities
 }
 
-/** Exportée pour la palette de recherche, qui propose chaque catégorie. */
-export const SECTIONS: Section[] = [
+/**
+ * Les catégories que cet utilisateur voit sur cette instance. Partagée avec la palette
+ * de recherche, qui ne doit pas proposer une catégorie que la page cache.
+ */
+export function visibleSections(isAdmin: boolean, capabilities: InstanceCapabilities | undefined): Section[] {
+  return SECTIONS.filter(
+    (section) =>
+      (!section.adminOnly || isAdmin) && (!section.requires || (capabilities?.[section.requires] ?? true)),
+  )
+}
+
+/** Lue à travers `visibleSections`, qui applique droits et capacités. */
+const SECTIONS: Section[] = [
   {
     to: 'compte',
     group: 'personal',
     labelKey: 'settings.section.account',
     descriptionKey: 'settings.section.account.description',
     icon: <UserRound size={16} />,
+    requires: 'passwordAuth',
   },
   {
     to: 'apparence',
@@ -70,6 +86,7 @@ export const SECTIONS: Section[] = [
     labelKey: 'settings.section.notifications',
     descriptionKey: 'settings.section.notifications.description',
     icon: <Bell size={16} />,
+    requires: 'webPush',
   },
   {
     to: 'cli',
@@ -166,6 +183,7 @@ export const SECTIONS: Section[] = [
     descriptionKey: 'settings.section.accounts.description',
     icon: <Users size={16} />,
     adminOnly: true,
+    requires: 'passwordAuth',
   },
   {
     to: 'a-propos',
@@ -183,7 +201,8 @@ export function SettingsLayout() {
   const { data: user } = useCurrentUser()
   const { data: versionInfo } = useVersionInfo()
   const { pathname } = useLocation()
-  const sections = SECTIONS.filter((section) => !section.adminOnly || user?.isAdmin)
+  const { data: instance } = useInstance()
+  const sections = visibleSections(Boolean(user?.isAdmin), instance?.capabilities)
   const onIndex = pathname === '/settings' || pathname === '/settings/'
   // Doit rester aligné sur `md:` de Tailwind, qui commande les deux dispositions.
   const wide = useMediaQuery('(min-width: 48rem)')
@@ -248,7 +267,7 @@ export function SettingsLayout() {
             vide : la première prend la main. La redirection est conditionnée à la
             largeur réelle et non à une classe `hidden` : un élément caché en CSS reste
             monté, et la liste du téléphone se serait redirigée toute seule. */}
-        {onIndex ? wide ? <Navigate to="compte" replace /> : null : <Outlet />}
+        {onIndex ? wide ? <Navigate to={sections[0]?.to ?? 'a-propos'} replace /> : null : <Outlet />}
       </div>
     </div>
   )

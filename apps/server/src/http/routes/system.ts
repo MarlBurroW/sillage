@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import type { UpdateStatus, VersionInfo } from '@sillage/protocol'
+import type { InstanceInfo, UpdateStatus, VersionInfo } from '@sillage/protocol'
+import { instanceInfo } from '../../instance/profile.js'
 import { UpdateError, UpdateExecutor } from '../../update/executor.js'
 import { ReleaseChecker } from '../../update/release-checker.js'
 import { HttpError } from '../errors.js'
@@ -13,6 +14,10 @@ import { requireAdmin, requireUser } from '../require-user.js'
 export function registerSystemRoutes(app: FastifyInstance): void {
   const checker = new ReleaseChecker()
   const executor = new UpdateExecutor(checker, app.log)
+
+  // Public, comme la santé : l'interface l'attend avant la page de connexion, et le profil
+  // ne dit rien qu'un visiteur ne puisse déduire de l'écran.
+  app.get('/api/system/instance', async (): Promise<InstanceInfo> => instanceInfo())
 
   app.get<{ Querystring: { refresh?: string } }>(
     '/api/system/version',

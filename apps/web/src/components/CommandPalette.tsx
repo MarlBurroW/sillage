@@ -25,11 +25,12 @@ import { projectViewOf, projectViewPath } from '../lib/project-view'
 import { useProjects } from '../lib/projects'
 import { useSchedules } from '../lib/schedules'
 import { splitExcerpt, useMessageSearch } from '../lib/search'
+import { useInstance } from '../lib/instance'
 import { useCurrentUser } from '../lib/session'
 import { useTheme } from '../lib/theme'
 import { useMediaQuery } from '../lib/viewport'
 import { projectScope } from '../lib/workspace-scope'
-import { SECTIONS } from '../routes/SettingsPage'
+import { visibleSections } from '../routes/SettingsPage'
 import { Logo } from './Logo'
 import { ProjectAvatar } from './ProjectAvatar'
 import { buildFileItems, buildMessageItems, buildPaletteItems, type PaletteActionOp } from './palette/items'
@@ -129,6 +130,7 @@ export function CommandPalette({
   const currentConversationId = draft ? null : (conversationRoute?.params.conversationId ?? null)
 
   const { data: user } = useCurrentUser()
+  const { data: instance } = useInstance()
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
@@ -186,8 +188,8 @@ export function CommandPalette({
 
   const visibleProjects = useMemo(() => projects ?? [], [projects])
   const settings = useMemo(
-    () => SECTIONS.filter((section) => !section.adminOnly || user?.isAdmin),
-    [user?.isAdmin],
+    () => visibleSections(Boolean(user?.isAdmin), instance?.capabilities),
+    [user?.isAdmin, instance?.capabilities],
   )
 
   // Fabriqués à l'ouverture seulement : la liste des conversations bouge à chaque
