@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <title>Sillage · A workspace for coding agents</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A self-hosted workspace for Claude Code, Codex, OpenCode and Grok Build. Work from any device, connect GitHub issues, automate tasks and choose the account for each session.">
+  <meta name="description" content="A workspace for Claude Code, Codex, OpenCode and Grok Build, on a server you reach from any device or as a desktop app on your workstation. Connect GitHub issues, automate tasks and choose the account for each session.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <!-- Changer ?v= à chaque modification de style.css ou de main.js : GitHub Pages les laisse
        en cache dix minutes, et une page neuve servie avec une feuille ancienne se casse. -->
-  <link rel="stylesheet" href="style.css?v=v019">
+  <link rel="stylesheet" href="style.css?v=v020">
   <meta name="theme-color" content="#faf7fb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0f0b11" media="(prefers-color-scheme: dark)">
   <meta property="og:title" content="Sillage">
@@ -64,7 +64,7 @@
       <a href="#context">Instructions &amp; memory</a>
       <a href="#schedules">Automations</a>
       <a href="#tour">Product tour</a>
-      <a href="#install">Install</a>
+      <a href="#editions">Install</a>
       <a class="repo" href="https://github.com/MarlBurroW/sillage">GitHub</a>
       <button class="theme-toggle" type="button" data-theme-toggle hidden>
         <svg data-icon="moon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -85,14 +85,14 @@
         <h1>Keep your work<br>within reach.</h1>
         <div>
           <p class="lede">A workspace for your coding agents.<br>Continue from your phone. Turn issues and events into work. Keep the decisions within reach.</p>
-          <p class="hero-detail">Claude Code, Codex, OpenCode and Grok Build run on your machine, with their native tools and your accounts. Sillage brings the work into your browser.</p>
+          <p class="hero-detail">Claude Code, Codex, OpenCode and Grok Build run with their native tools and your accounts. Run Sillage on a server you reach from any device, or as a desktop app on your workstation.</p>
           <p class="actions">
-            <a class="btn primary" href="#install">Install Sillage <span aria-hidden="true">↗</span></a>
+            <a class="btn primary" href="#editions">Install Sillage <span aria-hidden="true">↗</span></a>
             <a class="text-link" href="https://github.com/MarlBurroW/sillage">Explore the source <span aria-hidden="true">↗</span></a>
           </p>
         </div>
       </div>
-      <div class="hero-meta"><span>Claude Code + Codex + OpenCode + Grok Build</span><span>Desktop app · Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
+      <div class="hero-meta"><span>Claude Code + Codex + OpenCode + Grok Build</span><span>Server: Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><span>Desktop: macOS · Linux</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
       <figure class="hero-shot hero-film" id="film">
         <div class="film-frame">
           <video controls preload="none" playsinline poster="film/poster.jpg" width="1920" height="1080" data-film>
@@ -166,7 +166,7 @@
           <p>Run Sillage on an always-on server, connect through your VPN, and pick up on your phone. Close your browser mid-turn: the agent keeps working, and the event journal brings the conversation back when you reconnect.</p>
           <p>Answer a permission request, review a diff or send a correction. Install Sillage as a PWA for push notifications on your other devices. Questions and decisions also appear as in-app toasts; a conversation already in view stays quiet.</p>
         </div>
-        <p class="technical-note">Prefer your own computer? Sillage works there too. Keep it awake and online, and set up remote access before switching devices. Your agents and files stay on the machine where you installed them.</p>
+        <p class="technical-note">Switching devices takes Sillage Server, on a machine that stays on and online: a server, or your own computer if it stays awake. <a href="#editions">Sillage Desktop</a> keeps the work in one window on your workstation, with no access from other devices.</p>
         <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Set up remote access &amp; agent preview links ↗</a>
         <ul class="inline-facts"><li>Persistent sessions</li><li>Message queue &amp; steering</li><li>Project-aware dictation</li></ul>
       </div>
@@ -265,6 +265,7 @@
           <div><dt>Set it up from a conversation</dt><dd>Ask an agent to create a schedule or a webhook automation, then adjust it in the interface. Runs stay grouped under their task instead of filling the main session list.<code>schedule_task · create_automation</code></dd></div>
         </dl>
         <p class="technical-note">Runs use the project's default permissions unless the task says otherwise: a run that asks for a permission waits until its time is up. Pick a mode that fits what the task has to do on its own.</p>
+        <p class="technical-note">Webhooks need Sillage Server: the desktop app has no address the Internet can reach. It runs schedules while it is open, and a run that came due during sleep starts on wake.</p>
       </div>
     </section>
 
@@ -403,39 +404,64 @@
         <li><h3>Processes in view</h3><p>On Linux, inspect commands and services attached to Sillage, their ports and originating conversations. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/services.md">Detection and limits ↗</a></p></li>
         <li><h3>Each turn, reversible</h3><p>With turn checkpoints on, every turn lists the files it changed and can be reverted to the state before it, with an optional fork of the conversation from that point.</p></li>
         <li><h3>Images, up close</h3><p>Screenshots an agent reads or produces open in a viewer: zoom, pan, rotate, copy as PNG or download the original.</p></li>
-        <li><h3>Updates from the interface</h3><p>See when a release is available and read what changed. Native installations can update from the UI; container installations update through their image.</p></li>
+        <li><h3>Updates from the interface</h3><p>See when a release is available and read what changed. Native server installations update from the UI, containers through their image, and the desktop app by downloading the new version.</p></li>
       </ul>
+    </section>
+
+    <section class="editorial" id="editions" aria-labelledby="editions-title">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
+      <div class="section-label">Two editions</div>
+      <div class="section-body">
+        <h2 id="editions-title">On a server.<br>Or on your workstation.</h2>
+        <p class="section-lede">The same workspace either way. What changes is where Sillage runs, and where you reach it from.</p>
+        <div class="editions">
+          <div class="edition">
+            <h3>Sillage Server</h3>
+            <p class="edition-tag">Always on. Reachable from every device.</p>
+            <ul>
+              <li>Runs on a server, a NAS, a VPS or any machine that stays on.</li>
+              <li>Open it from any browser: phone, tablet or laptop. Install it as a PWA for push notifications.</li>
+              <li>Agents keep working with your laptop closed. Schedules and webhooks fire on time.</li>
+              <li>Accounts with passwords, to share it with a few trusted people.</li>
+              <li>Docker, a service on Linux, macOS or WSL2, or Kubernetes. Updates from the interface.</li>
+            </ul>
+            <a class="text-link" href="#install">Install the server ↓</a>
+          </div>
+          <div class="edition">
+            <h3>Sillage Desktop</h3>
+            <p class="edition-tag">On your workstation. Nothing to host.</p>
+            <ul>
+              <li>An app for macOS (Apple Silicon) and Linux, with the server built in.</li>
+              <li>Opens in its own window, next to your editor, with no account or password.</li>
+              <li>Agents work while the app is open and the computer awake.</li>
+              <li>One person, one computer: no phone access, no push notifications, no webhooks from the Internet.</li>
+              <li>Each release ships it; a new version replaces the old one.</li>
+            </ul>
+            <a class="text-link" href="#install-desktop">Download the app ↓</a>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="install" id="install" aria-labelledby="install-title">
       <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="install-intro">
-        <p class="section-label">Run it yourself</p><h2 id="install-title">Your machine.<br>Your workspace.</h2>
-        <p>An always-on server is recommended for picking up work throughout the day. Your desktop works too, while it stays awake and connected.</p>
+        <p class="section-label">Install Sillage Server</p><h2 id="install-title">A workspace<br>that stays on.</h2>
+        <p>For a machine that stays on: a home server, a NAS, a VPS. Your desktop works too, while it stays awake and connected.</p>
         <p>Install the CLIs you use from Settings. Reuse their sign-ins on the host, or add Claude and Codex accounts through Sillage's guided sign-in flows.</p>
-        <p>No server yet? The desktop app for macOS and Linux runs Sillage on your own computer, in its own window, with no account to create.</p>
         <p>Docker, a systemd user service on Linux, a launchd agent on macOS, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Add private remote access with a VPN</a> to connect from another device.</p>
       </div>
 
       <div class="install-box">
         <div class="tabs" role="tablist" aria-label="Installation method">
-          <button id="tab-desktop" role="tab" aria-selected="true" aria-controls="panel-desktop" data-tab="desktop">Desktop app</button>
-          <button id="tab-docker" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-docker" data-tab="docker">Docker</button>
+          <button id="tab-docker" role="tab" aria-selected="true" aria-controls="panel-docker" data-tab="docker">Docker</button>
           <button id="tab-script" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-script" data-tab="script">Linux</button>
           <button id="tab-macos" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-macos" data-tab="macos">macOS</button>
           <button id="tab-windows" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-windows" data-tab="windows">Windows</button>
           <button id="tab-helm" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-helm" data-tab="helm">Kubernetes</button>
         </div>
 
-        <div id="panel-desktop" class="tab-panel" role="tabpanel" aria-labelledby="tab-desktop" data-panel="desktop">
-          <p><a class="btn primary" href="https://github.com/MarlBurroW/sillage/releases/latest">Download from the latest release <span aria-hidden="true">↗</span></a></p>
-          <p>The <code>.dmg</code> for Apple Silicon Macs, the <code>.deb</code> for Debian and Ubuntu (x64, arm64), the AppImage for other distributions. The app bundles the server and its own Node: install your agents, and Sillage opens in its own window, with their sign-ins and no password.</p>
-          <p>It is not notarized by Apple yet. On the first launch, allow it in System Settings &gt; Privacy &amp; Security, or from Terminal:</p>
-<pre class="one-line"><code>xattr -dr com.apple.quarantine /Applications/Sillage.app</code></pre>
-          <p>Your agents work while the app runs, and only on this computer: no access from your phone, no push notifications, no webhooks from the Internet. For those, install a server. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md">desktop guide</a> covers what differs, where your data lives and how to uninstall.</p>
-        </div>
-
-        <div id="panel-docker" class="tab-panel" role="tabpanel" aria-labelledby="tab-docker" data-panel="docker" hidden>
+        <div id="panel-docker" class="tab-panel" role="tabpanel" aria-labelledby="tab-docker" data-panel="docker">
 <pre><code><span class="dim"># docker-compose.yml</span>
 services:
   sillage:
@@ -461,7 +487,7 @@ docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
 
         <div id="panel-macos" class="tab-panel" role="tabpanel" aria-labelledby="tab-macos" data-panel="macos" hidden>
 <pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Apple Silicon Macs, from Terminal. The same installer as on Linux fetches Node if needed, creates the first account, opens Sillage in your browser and sets up a launchd agent that starts with your session. It needs git: run <code>xcode-select --install</code> first if the Command Line Tools are missing. Your agents only work while the Mac is awake.</p>
+          <p>Apple Silicon Macs, from Terminal: Sillage Server as a background service your other devices can reach. For an app in its own window, see <a href="#install-desktop">Sillage Desktop</a> below. The same installer as on Linux fetches Node if needed, creates the first account, opens Sillage in your browser and sets up a launchd agent that starts with your session. It needs git: run <code>xcode-select --install</code> first if the Command Line Tools are missing. Your agents only work while the Mac is awake.</p>
         </div>
 
         <div id="panel-windows" class="tab-panel" role="tabpanel" aria-labelledby="tab-windows" data-panel="windows" hidden>
@@ -482,6 +508,25 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
           <p>One replica, <code>Recreate</code> strategy: the state is a SQLite database on a <code>ReadWriteOnce</code> volume, and two pods writing to it means corruption. Give the data volume a block storage class rather than NFS, whose file locks SQLite cannot rely on. Then create the first account:</p>
 <pre><code>kubectl <span class="dim">-n</span> sillage exec <span class="dim">-it</span> deploy/sillage \
   -- node /app/server/cli/user-create.js</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="install" id="install-desktop" aria-labelledby="install-desktop-title">
+      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
+      <div class="install-intro">
+        <p class="section-label">Install Sillage Desktop</p><h2 id="install-desktop-title">A workspace<br>on your desk.</h2>
+        <p>For the computer you code on. No server to set up, no account to create: the app bundles the server and its own Node, and opens Sillage in its own window.</p>
+        <p>Your agents use your CLIs and their sign-ins, and work while the app is open. Everything stays on this computer: no access from your phone, no push notifications, no webhooks from the Internet.</p>
+      </div>
+
+      <div class="install-box">
+        <div class="download-panel">
+          <p><a class="btn primary" href="https://github.com/MarlBurroW/sillage/releases/latest">Download from the latest release <span aria-hidden="true">↗</span></a></p>
+          <p>The <code>.dmg</code> for Apple Silicon Macs, the <code>.deb</code> for Debian and Ubuntu (x64, arm64), the AppImage for other distributions.</p>
+          <p>The app is not notarized by Apple yet. On the first launch, allow it in System Settings &gt; Privacy &amp; Security, or from Terminal:</p>
+<pre class="one-line"><code>xattr -dr com.apple.quarantine /Applications/Sillage.app</code></pre>
+          <p>The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md">desktop guide</a> covers what differs from the server, where your data lives and how to uninstall.</p>
         </div>
       </div>
     </section>
@@ -532,6 +577,7 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
         Claude and Codex accounts belong to the Sillage user who adds them, but this
         does not isolate their files from that system account. The server listens on localhost and does
         not terminate TLS: reach it through a VPN, a tailnet or a reverse proxy you control.
+        Sillage Desktop has no sign-in: its server answers only the app's own window.
       </p>
     </section>
   </main>

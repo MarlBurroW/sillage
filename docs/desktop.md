@@ -1,13 +1,14 @@
-# Desktop app
+# Sillage Desktop
 
-Sillage also comes as a desktop app for macOS (Apple Silicon) and Linux (x64 and
-arm64). It bundles the server of the release and its own Node, starts them when you
-open it, and shows the interface in its own window. There is no server to set up,
-no account to create and no password.
+Sillage Desktop is the edition for your workstation: an app for macOS (Apple Silicon)
+and Linux (x64 and arm64). It bundles the server of the release and its own Node,
+starts them when you open it, and shows the interface in its own window. There is no
+server to set up, no account to create and no password.
 
 It is the simplest way to try Sillage, or to use it on the machine where you code.
-To follow your agents from a phone or another computer, an always-on
-[server install](../README.md#install) remains the way to go.
+To follow your agents from a phone or another computer and leave them working,
+[Sillage Server](../README.md#install-the-server) is the edition to install
+([compare the two](../README.md#server-or-desktop)).
 
 ## Download
 
@@ -59,7 +60,7 @@ drive the same session from both at once. Claude's automatic memory is the
 exception: in Sillage it lives in the project memory that every CLI shares, separate
 from the one Claude keeps when used alone.
 
-## What differs from a server install
+## What differs from Sillage Server
 
 - **No sign-in.** The app opens your session when it starts. Its server listens on
   `127.0.0.1` and serves only the app's window: no other page on the machine, opened

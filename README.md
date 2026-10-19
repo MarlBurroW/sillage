@@ -8,11 +8,15 @@ A self-hosted, mobile-first web UI that drives the native Claude Code, Codex, Op
 and Grok Build CLIs on your own machine. Vibe-code from anywhere: the official agent harnesses,
 without the terminal.
 
-Runs on Linux, on macOS (Apple Silicon), on Windows through WSL2, in Docker or on
-Kubernetes, or as a [desktop app](docs/desktop.md) for macOS and Linux that needs no
-server at all. An always-on server is recommended for continuity across devices; a
-workstation works too while it stays awake and online.
-[Set up private remote access and agent preview links](docs/remote-access.md).
+It comes in two editions, from the same code and the same releases
+([compare them](#server-or-desktop)):
+
+- **Sillage Server** runs permanently on a server, or on any machine that stays on,
+  and you reach it from any device: phone, tablet or laptop. Linux, macOS (Apple
+  Silicon), Windows through WSL2, Docker or Kubernetes.
+  [Set up private remote access and agent preview links](docs/remote-access.md).
+- **Sillage Desktop** is an app for your workstation, macOS (Apple Silicon) or Linux,
+  with nothing to host: it opens Sillage in its own window, on that computer only.
 
 Website: [marlburrow.github.io/sillage](https://marlburrow.github.io/sillage) ·
 Film: [Sillage in 54 seconds ▶](https://marlburrow.github.io/sillage/#film)
@@ -200,25 +204,31 @@ Grok Build receives them when a session is created, and keeps them for its whole
 
 Details and the probes behind them: [docs/sillage-md.md](docs/sillage-md.md).
 
-## Install
+## Server or desktop
 
-Install the CLIs you use from Settings. Reuse their existing sign-ins on the host,
-or add Claude and Codex accounts through Sillage's guided sign-in flows.
+Both editions run the same server and the same interface, built from the same release.
+What differs is where Sillage runs, and where you reach it from.
+
+| | Sillage Server | Sillage Desktop |
+|---|---|---|
+| Runs on | a server, a NAS, a VPS, or any machine that stays on | your workstation, as an app |
+| Reach it from | any browser: phone, tablet, laptop (installable as a PWA) | its own window, on that computer |
+| Agents work | around the clock, with your laptop closed | while the app is open and the computer awake |
+| Sign-in | accounts with passwords, for a few trusted people | none: one person, one computer |
+| Push notifications | to your phone and other devices | none, in-app toasts only |
+| Webhook automations | yes, from GitHub, CI or any service | no: no address the Internet can reach |
+| Install | Docker, a service on Linux, macOS or WSL2, Helm | the `.dmg`, `.deb` or AppImage of a release |
+| Updates | from the UI, or by pulling a new image | download the new version |
+
+Pick the server to follow your agents from anywhere and leave them working; pick the
+desktop app to try Sillage, or to work on the machine where your code lives. Each
+keeps its own data: moving from one to the other means a fresh install.
+
+In both, install the CLIs you use from Settings. Reuse their existing sign-ins on the
+host, or add Claude and Codex accounts through Sillage's guided sign-in flows.
 [Account setup](docs/accounts.md).
 
-### Desktop app (macOS, Linux)
-
-No server, no account to create: download the app from the
-[latest release](https://github.com/MarlBurroW/sillage/releases/latest), the `.dmg`
-for Apple Silicon Macs, the `.deb` for Debian and Ubuntu (x64, arm64), or the
-AppImage for other distributions. It bundles the server of the release and its own
-Node, and opens Sillage in its own window. Agents use your own CLIs and sign-ins.
-
-The app is not notarized by Apple yet: on the first launch, allow it in System
-Settings > Privacy & Security (**Open Anyway**). Agents run while the app runs, and
-it has no access from other devices, no push notifications and no webhooks from the
-Internet. The [desktop guide](docs/desktop.md) covers what differs from a server
-install, where the data lives, and how to uninstall.
+## Install the server
 
 ### Docker
 
@@ -289,7 +299,9 @@ a compiler (`build-essential` and `python3` on Debian/Ubuntu).
 
 ### macOS (Apple Silicon)
 
-The same script installs Sillage on Macs with Apple Silicon. Run it from Terminal:
+The same script installs Sillage Server on Macs with Apple Silicon, as a background
+service your other devices can reach. For an app in its own window, see
+[the desktop app](#install-the-desktop-app). Run it from Terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash
@@ -360,6 +372,21 @@ pnpm user:create          # first account, admin
 pnpm dev                  # API on :7317, Vite UI on :5317 with /api proxy
 ```
 
+## Install the desktop app
+
+Download the app from the [latest release](https://github.com/MarlBurroW/sillage/releases/latest):
+the `.dmg` for Apple Silicon Macs, the `.deb` for Debian and Ubuntu (x64, arm64), or
+the AppImage for other distributions. It bundles the server of the release and its own
+Node, and opens Sillage in its own window. Your agents use your own CLIs and sign-ins.
+
+The app is not notarized by Apple yet: on the first launch, allow it in System
+Settings > Privacy & Security (**Open Anyway**), or run
+`xattr -dr com.apple.quarantine /Applications/Sillage.app`. On Ubuntu 24.04 and
+later, prefer the `.deb`: it installs the AppArmor profile the app needs to start.
+
+The [desktop guide](docs/desktop.md) covers what differs from the server, where the
+data lives, and how to uninstall.
+
 ## Security model
 
 Sillage is built for a trusted circle, not for public exposure:
@@ -372,9 +399,9 @@ Sillage is built for a trusted circle, not for public exposure:
 - There is no system-level isolation between users: a shared project is readable
   by every account.
 
-The desktop app has no password: it opens its own session at launch, and its
-server, on `127.0.0.1`, serves only the app's window. Pages opened in a browser or
-served by another program on the machine cannot use that session.
+Sillage Desktop has no password: it opens its own session at launch, and its server,
+on `127.0.0.1`, serves only the app's window. Pages opened in a browser or served by
+another program on the machine cannot use that session.
 
 The server listens on `127.0.0.1` by default and does not terminate TLS. To reach
 it remotely, go through a reverse proxy (Caddy) or a tunnel (Tailscale, Cloudflare

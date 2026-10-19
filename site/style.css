@@ -439,6 +439,15 @@ main > section + section { border-top: 1px solid var(--line); }
   font-size: .9em;
 }
 
+/* Editions */
+
+.editions { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem 3rem; margin-top: 2.5rem; }
+.edition { padding-top: 1.25rem; border-top: 1px solid var(--line); }
+.edition h3 { font-size: 1.25rem; }
+.edition-tag { margin-top: .4rem; font-weight: 550; }
+.edition ul { margin: 1rem 0 1.25rem; padding-left: 1.1rem; color: var(--muted); font-size: .92rem; }
+.edition li + li { margin-top: .4rem; }
+
 /* Install */
 
 .install { display: grid; grid-template-columns: 1fr 1.6fr; gap: clamp(2rem, 6vw, 5rem); }
@@ -484,8 +493,8 @@ pre {
 pre.one-line { padding-block: .95rem; }
 .dim { color: var(--code-dim); }
 .str { color: var(--code-str); }
-.tab-panel > p { margin: 1rem 0; color: var(--muted); font-size: .88rem; }
-.tab-panel > p code {
+.tab-panel > p, .download-panel > p { margin: 1rem 0; color: var(--muted); font-size: .88rem; }
+.tab-panel > p code, .download-panel > p code {
   padding: .1rem .35rem;
   border-radius: .25rem;
   background: var(--sunken);
@@ -553,7 +562,7 @@ footer nav a:hover { color: var(--ink); }
   .topbar nav a:not(.repo) { display: none; }
 }
 @media (max-width: 760px) {
-  .why, .install, .security { grid-template-columns: 1fr; gap: 1.5rem; }
+  .why, .install, .security, .editions { grid-template-columns: 1fr; gap: 1.5rem; }
   .tabs button { padding-inline: .65rem; }
   .shots-arrows { display: none; }
   footer { justify-content: flex-start; }
