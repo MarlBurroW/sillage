@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Faux `opencode serve` déterministe : aucun modèle, réseau ou accès à la base d'opencode.
 import { appendFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { createServer } from 'node:http'
 
 if (process.argv.includes('--version')) {
@@ -9,7 +10,10 @@ if (process.argv.includes('--version')) {
 }
 
 // Ce que le runner a injecté au lancement, pour que les tests le relisent.
-writeFileSync('launch.json', JSON.stringify({
+// À côté du script, jamais dans le dossier courant : le catalogue lance opencode depuis
+// le HOME, où ces traces n'ont rien à faire.
+const here = dirname(process.argv[1])
+writeFileSync(join(here, 'launch.json'), JSON.stringify({
   config: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? '{}'),
   disableProjectConfig: process.env.OPENCODE_DISABLE_PROJECT_CONFIG ?? null,
   pid: process.pid,
@@ -54,7 +58,7 @@ const server = createServer((request, response) => {
   request.on('data', (chunk) => { raw += chunk })
   request.on('end', () => {
     const body = raw ? JSON.parse(raw) : null
-    appendFileSync('http.jsonl', `${JSON.stringify({ method: request.method, path: pathname, body })}\n`)
+    appendFileSync(join(here, 'http.jsonl'), `${JSON.stringify({ method: request.method, path: pathname, body })}\n`)
     const route = `${request.method} ${pathname}`
 
     if (route === 'POST /session') return json(response, 200, session('ses_root'))

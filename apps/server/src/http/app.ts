@@ -45,6 +45,7 @@ import type { SecretStore } from '../secrets/store.js'
 import { registerGitCredentialRoutes } from './routes/git-credentials.js'
 import { registerClaudeAccountRoutes } from './routes/claude-accounts.js'
 import { registerCodexAccountRoutes } from './routes/codex-accounts.js'
+import { registerGrokAccountRoutes } from './routes/grok-accounts.js'
 import { CloneJobs } from '../clone-jobs.js'
 import { GitHubRepoCatalog } from '../git-credentials/github.js'
 import type { GitCredentialStore } from '../git-credentials/store.js'
@@ -53,6 +54,9 @@ import type { ClaudeLoginService } from '../claude-accounts/login.js'
 import type { CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexLoginService } from '../codex-accounts/login.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
+import type { GrokAccountHomes } from '../grok-accounts/homes.js'
+import type { GrokLoginService } from '../grok-accounts/login.js'
+import type { GrokAccountStore } from '../grok-accounts/store.js'
 import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
@@ -118,6 +122,8 @@ export async function buildApp(
   claudeLogin: ClaudeLoginService,
   codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   codexLogin: CodexLoginService,
+  grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
+  grokLogin: GrokLoginService,
   webhooks: WebhookService,
   scheduler: Scheduler,
   relay: SessionRelay,
@@ -219,6 +225,7 @@ export async function buildApp(
     new CliInstaller(ctx.config.paths.agents, (kind) => registry.find(kind)?.cli.invalidate()),
     claudeAccounts,
     codexAccounts,
+    grokAccounts,
   )
   registerMcpRoutes(app, ctx)
   // Les sources lisent la bibliothèque pour installer, la bibliothèque lit leurs
@@ -238,6 +245,7 @@ export async function buildApp(
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
   registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
+  registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
   registerCardRoutes(app, ctx, attachments, board)
   registerBoardLinkRoutes(app, ctx, board)

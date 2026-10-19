@@ -955,6 +955,8 @@ export class GrokRunner implements AgentRunner {
     if (config.agent !== 'grok' || !this.launched || !this.client || !this.sessionId) return false
     if (!sameLaunch(this.launchFor(config), this.launched)) return false
     if (JSON.stringify(this.ctx.resolveMcpServers(config).servers) !== this.launchedMcp) return false
+    // Le compte est le `GROK_HOME` du process : il ne se change qu'en le relançant.
+    if (config.account !== this.config.account) return false
     try {
       await this.applySessionOptions(config)
       if (config.permissionMode !== this.config.permissionMode) await this.applyPermissionMode(config.permissionMode)

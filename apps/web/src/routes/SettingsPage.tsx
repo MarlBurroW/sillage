@@ -145,6 +145,13 @@ const SECTIONS: Section[] = [
     icon: <IdCard size={16} />,
   },
   {
+    to: 'comptes-grok',
+    group: 'workspace',
+    labelKey: 'settings.section.grokAccounts',
+    descriptionKey: 'settings.section.grokAccounts.description',
+    icon: <IdCard size={16} />,
+  },
+  {
     to: 'secrets',
     group: 'administration',
     labelKey: 'settings.section.secrets',

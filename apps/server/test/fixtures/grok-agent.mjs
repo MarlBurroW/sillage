@@ -7,6 +7,7 @@
 // la réponse est journalisée) ou une pause (`wait`).
 // La réponse au `session/prompt` porte `stopReason` et `usage` du scénario.
 import { appendFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
 if (process.argv.includes('--version')) {
@@ -14,13 +15,37 @@ if (process.argv.includes('--version')) {
   process.exit(0)
 }
 
-writeFileSync('launch.json', JSON.stringify({
+// `grok login --device-auth` et `grok logout`, tels que sondés sur 1.0.62 : l'URL et le
+// code, puis la connexion écrite dans `$GROK_HOME/auth.json`. `FIXTURE_LOGIN=fail` simule
+// un refus, `FIXTURE_LOGIN_DELAY` le temps que l'utilisateur met à confirmer.
+const grokHome = process.env.GROK_HOME ?? process.cwd()
+if (process.argv[2] === 'login') {
+  process.stdout.write('To sign in, open this URL in your browser:\n\n  \x1b[1mhttps://accounts.x.ai/oauth2/device?user_code=W68V-VRXD\x1b[0m\n\n')
+  process.stdout.write('Confirm this code in your browser:\n\n  W68V-VRXD\n\nWaiting for authorization...\n')
+  setTimeout(() => {
+    if (process.env.FIXTURE_LOGIN === 'fail') {
+      process.stderr.write('Error: authorization denied\n')
+      process.exit(1)
+    }
+    writeFileSync(`${grokHome}/auth.json`, '{"fixture":true}')
+    process.stdout.write('\x1b[K\u2713 Signed in as fixture@example.com\n')
+    process.exit(0)
+  }, Number(process.env.FIXTURE_LOGIN_DELAY ?? 50))
+} else if (process.argv[2] === 'logout') {
+  appendFileSync(`${grokHome}/logout.log`, 'logout\n')
+  process.exit(0)
+}
+
+// À côté du script, jamais dans le dossier courant : le catalogue lance le CLI depuis le
+// HOME, où ces traces n'ont rien à faire.
+const here = dirname(process.argv[1])
+writeFileSync(join(here, 'launch.json'), JSON.stringify({
   args: process.argv.slice(2),
   env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('GROK_'))),
   pid: process.pid,
 }))
 
-const record = (entry) => appendFileSync('rpc.jsonl', `${JSON.stringify(entry)}\n`)
+const record = (entry) => appendFileSync(join(here, 'rpc.jsonl'), `${JSON.stringify(entry)}\n`)
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`)
 const notify = (method, params) => send({ jsonrpc: '2.0', method, params })
 
@@ -114,6 +139,18 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     case '_x.ai/compact_conversation':
       notify('_x.ai/session_notification', { sessionId, update: { sessionUpdate: 'auto_compact_completed', tokens_before: 900, tokens_after: 300 } })
       return reply({})
+    case 'authenticate':
+      if (message.params.methodId === 'xai.api_key' && process.env.XAI_API_KEY) {
+        writeFileSync(`${grokHome}/auth.json`, JSON.stringify({ apiKey: '***' }))
+        return reply({})
+      }
+      return send({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'Authentication required' } })
+    case '_x.ai/billing':
+      return reply({
+        config: { creditUsagePercent: 8, currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', start: '2026-10-12T22:23:39Z', end: '2026-10-19T22:23:39Z' },
+          onDemandCap: { val: 2000 }, onDemandUsed: { val: 500 }, prepaidBalance: {} },
+        subscription_tier: 'X Premium',
+      })
     case '_x.ai/session/fork':
       return reply({ newSessionId: 'ses_forked', parentSessionId: message.params.sourceSessionId })
     default:

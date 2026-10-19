@@ -18,6 +18,7 @@ import { CLIENT_INFO } from '../codex/client-info.js'
 import { agentProcessEnv } from '../process-env.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
+import { GrokUsageReader } from './billing.js'
 import { GrokCatalog } from './catalog.js'
 import { GROK_ISOLATION_ENV } from './launch.js'
 import { GrokRunner } from './runner.js'
@@ -60,11 +61,13 @@ export class GrokAdapter implements AgentAdapter {
   readonly cli: CliBinary
 
   private readonly catalog: GrokCatalog
+  private readonly usageReader: GrokUsageReader
 
   constructor(config: Config) {
     this.binary = configuredBinary(config.agents.grok.binary, config.paths.agents)
     this.cli = new CliBinary('grok', this.binary, config.agents.grok.enabled, config.paths.agents)
     this.catalog = new GrokCatalog(() => this.cli.executable())
+    this.usageReader = new GrokUsageReader(() => this.cli.executable())
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
@@ -144,11 +147,17 @@ export class GrokAdapter implements AgentAdapter {
   }
 
   /**
-   * Grok ne publie pas la consommation de l'abonnement : le flux ne porte qu'un coût par
-   * tour. `limitsAvailable: false` le dit sans que ce soit une panne.
+   * Consommation de l'abonnement par `_x.ai/billing` : une enveloppe de crédits par
+   * semaine ou par mois. Sans connexion (ou sur une clé API), Grok refuse la lecture :
+   * `limitsAvailable: false` le dit sans que ce soit une panne.
    */
-  async usage(): Promise<AgentUsage> {
-    return { agent: 'grok', plan: null, limitsAvailable: false, windows: [], credits: null, fetchedAt: Date.now() }
+  usage(force: boolean): Promise<AgentUsage> {
+    return this.usageReader.read(force)
+  }
+
+  /** `credential` est ici le `GROK_HOME` du compte, voir `GrokAccountHomes`. */
+  usageForAccount(accountId: string, credential: string, force: boolean): Promise<AgentUsage> {
+    return this.usageReader.readForAccount(accountId, credential, force)
   }
 
   async resolveDefaults(config: AgentConfig): Promise<AgentConfig> {

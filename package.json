@@ -16,6 +16,8 @@
     "test:api-mcp-ui": "node scripts/api-mcp-ui-check.mjs",
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
+    "test:grok-ui": "node scripts/grok-ui-check.mjs",
+    "test:grok-accounts-ui": "node scripts/grok-accounts-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:viewport-ui": "node scripts/viewport-ui-check.mjs",

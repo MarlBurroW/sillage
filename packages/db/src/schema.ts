@@ -1417,6 +1417,33 @@ export const codexAccounts = sqliteTable(
 )
 
 /**
+ * Comptes Grok Build supplémentaires, par utilisateur.
+ *
+ * Même parti que les comptes Codex : aucun secret ici. La connexion vit dans l'`auth.json`
+ * du `GROK_HOME` que Sillage donne au compte (`<données>/grok-accounts/<id>`), écrit et
+ * rafraîchi par Grok. La ligne retient le libellé et ce que Grok a dit du compte, pour
+ * que la liste se lise sans lancer de process.
+ */
+export const grokAccounts = sqliteTable(
+  'grok_accounts',
+  {
+    id: text('id').primaryKey(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    /** `grok` (abonnement, connexion grok.com) ou `apiKey` une fois connecté, NULL avant. */
+    authMode: text('auth_mode').$type<'grok' | 'apiKey'>(),
+    email: text('email'),
+    /** Formule annoncée par la facturation de Grok (« X Premium », « SuperGrok »…). */
+    plan: text('plan'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('idx_grok_accounts_owner_label').on(t.ownerId, t.label)],
+)
+
+/**
  * Jetons d'API, porteurs d'identité des clients machine.
  *
  * Même stockage que les sessions : seul le SHA-256 du secret est retenu, le jeton en
@@ -1556,4 +1583,5 @@ export type SecretRow = typeof secrets.$inferSelect
 export type GitCredentialRow = typeof gitCredentials.$inferSelect
 export type ClaudeAccountRow = typeof claudeAccounts.$inferSelect
 export type CodexAccountRow = typeof codexAccounts.$inferSelect
+export type GrokAccountRow = typeof grokAccounts.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect

@@ -245,6 +245,7 @@ test('modèle, effort et mode de permission se changent à chaud ; les outils we
     [{ yolo_mode: true, auto_mode: false }, { yolo_mode: false, auto_mode: false }])
   assert.deepEqual(rpc.filter((entry) => entry.method === 'session/set_mode').map((entry) => entry.params.modeId), ['plan'])
   assert.equal(await f.runner.applyConfig({ ...DEFAULT_GROK_CONFIG, webSearch: false }), false)
+  assert.equal(await f.runner.applyConfig({ ...DEFAULT_GROK_CONFIG, account: 'autre' }), false, 'le compte est le home du process')
 })
 
 test('le texte de projet part en règles à la création de la session, pas dans les messages', async (t) => {

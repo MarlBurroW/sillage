@@ -39,8 +39,10 @@ function SkillsInventory({ projectId, config, skills, commands, onClose }: Omit<
   const library = useSkillLibrary(projectId ?? null)
   const configured = (library.data?.skills ?? []).filter((skill) => skill.enabled && !skill.problem)
   const libraryEnabled = config.skillLibrary && library.data?.enabled === true
-  // Claude ne distingue pas les skills des commandes dans son inventaire public.
-  const reported = config.agent === 'claude' ? commands : skills
+  // Claude ne distingue pas les skills des commandes dans son inventaire public, et Grok
+  // les publie lui aussi parmi ses commandes en `/`.
+  const listsSkillsAsCommands = config.agent === 'claude' || config.agent === 'grok'
+  const reported = listsSkillsAsCommands ? commands : skills
   const matches = (item: { name: string; description: string }) =>
     (item.name + ' ' + item.description).toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
   const visibleLibrary = configured.filter(matches)
@@ -72,8 +74,8 @@ function SkillsInventory({ projectId, config, skills, commands, onClose }: Omit<
           scope={t(skill.scope === 'project' ? 'composer.skills.project' : 'composer.skills.global')} />)}
         {libraryEnabled && visibleLibrary.length === 0 ? <p className="py-3 text-sm text-ink-faint">{t('composer.skills.empty')}</p> : null}
       </section> : <section>
-        <h3 className="pt-3 text-xs font-semibold text-ink-soft">{t(config.agent === 'claude' ? 'composer.skills.commands' : 'composer.skills.reported')}</h3>
-        <p className="py-3 text-xs text-ink-faint">{t(config.agent === 'claude' ? 'composer.skills.commandsHint' : 'composer.skills.reportedHint')}</p>
+        <h3 className="pt-3 text-xs font-semibold text-ink-soft">{t(listsSkillsAsCommands ? 'composer.skills.commands' : 'composer.skills.reported')}</h3>
+        <p className="py-3 text-xs text-ink-faint">{t(listsSkillsAsCommands ? 'composer.skills.commandsHint' : 'composer.skills.reportedHint')}</p>
         {visibleReported.map((skill) => <InventoryRow key={skill.name} name={skill.name} description={skill.description} />)}
         {visibleReported.length === 0 ? <p className="py-3 text-sm text-ink-faint">{t(reported.length === 0 ? 'composer.skills.notReported' : 'composer.skills.empty')}</p> : null}
       </section>}
