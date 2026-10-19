@@ -91,23 +91,35 @@ Les permissions à chaud passent par la notification `_x.ai/yolo_mode_changed`
 - **Catalogue** : la réponse à `initialize` porte les modèles du compte connecté
   (`_meta.modelState`) et les commandes intégrées, sans ouvrir de session.
 
-## Connexion
+## Connexion, comptes et consommation
 
-`grok login --device-auth` sur la machine qui fait tourner Sillage (abonnement
-SuperGrok ou X Premium+), ou `XAI_API_KEY`. Les identifiants vont dans `~/.grok/auth.json`
-(`GROK_HOME` pour un autre dossier).
+La connexion du CLI : `grok login --device-auth` sur la machine qui fait tourner Sillage
+(abonnement SuperGrok ou X Premium), ou `XAI_API_KEY`. Les identifiants vont dans
+`~/.grok/auth.json`.
 
-## Hors périmètre de la première version
+Des comptes supplémentaires se déclarent dans **Réglages › Comptes Grok**, sur le modèle
+des comptes Codex : un `GROK_HOME` par compte sous `<données>/grok-accounts/<id>`, lié au
+home de l'utilisateur sauf `auth.json`, `models_cache.json` et `settings_cache.json`. La
+connexion passe par `grok login --device-auth` lancé dans ce home (Sillage lit l'URL et le
+code sur sa sortie), ou par la méthode ACP `xai.api_key`, que Grok enregistre dans
+l'`auth.json` du home. La déconnexion joue `grok logout` puis retire cet `auth.json`.
 
-Comptes Grok multiples dans Sillage (un `GROK_HOME` par compte serait la voie), fil des
-sous-agents (leurs `session/update` arrivent sous l'identifiant de leur propre session),
-travaux de fond, quota de l'abonnement, import des sessions commencées dans le TUI.
+La jauge vient de l'extension `_x.ai/billing` (`creditUsagePercent`, `currentPeriod`,
+`onDemandCap`/`onDemandUsed`, `prepaidBalance`, `subscription_tier`), lue sur un process
+jetable, pour la connexion du CLI comme pour chaque compte.
+
+## Hors périmètre
+
+Fil des sous-agents (leurs `session/update` arrivent sous l'identifiant de leur propre
+session), travaux de fond, import des sessions commencées dans le TUI.
 
 ## Vérifications
 
 ```sh
 pnpm typecheck
-pnpm test        # dont test/grok-runner.test.ts et test/grok-adapter.test.ts, sur un faux agent ACP
+pnpm test                 # dont test/grok-*.test.ts, sur un faux Grok (test/fixtures/grok-agent.mjs)
+pnpm test:grok-ui         # rendu d'un fil Grok : outils, MCP, permission, question, plan
+pnpm test:grok-accounts-ui # comptes Grok : connexion, choix du compte, jauge, déconnexion
 ```
 
 Pour un essai réel : un serveur Sillage jetable (`SILLAGE_DATA_DIR`, `SILLAGE_PORT`

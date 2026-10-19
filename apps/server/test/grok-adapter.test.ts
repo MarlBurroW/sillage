@@ -42,8 +42,9 @@ test('catalogue : modèles, efforts du plus bas au plus haut, défauts et comman
   assert.deepEqual((await adapter.commands(cwd, false)).commands.map((command) => [command.name, command.argumentHint]), [['compact', ''], ['goal', '<objective>']])
   assert.ok(!(await rpc()).some((entry) => entry.method === 'session/new'), 'le catalogue n’ouvre pas de session')
   assert.equal((await adapter.cli.describe()).version, '1.0.62')
-  assert.deepEqual({ ...(await adapter.usage()), fetchedAt: 0 },
-    { agent: 'grok', plan: null, limitsAvailable: false, windows: [], credits: null, fetchedAt: 0 })
+  const usage = await adapter.usage(false)
+  assert.equal(usage.plan, 'X Premium', 'la formule vient de `_x.ai/billing`')
+  assert.deepEqual(usage.windows.map((window) => [window.id, window.utilization]), [['credits', 0.08]])
 })
 
 test('fork : rang du dernier tour gardé, ou toute la session', async (t) => {

@@ -19,6 +19,7 @@ import {
 import { catalogModel, effortLabel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
+import { useGrokAccounts } from '../../lib/grok-accounts'
 import { useMcpServers } from '../../lib/mcp'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
@@ -608,13 +609,17 @@ export function useAgentSettings({
   const { data: claudeAccountList } = useClaudeAccounts(claude !== null)
   // Codex : seuls les comptes connectés se choisissent, un home vide refuserait le tour.
   const { data: codexAccountList } = useCodexAccounts(codex !== null)
+  // Grok, sur le même modèle que Codex : un home par compte, connecté ou non.
+  const { data: grokAccountList } = useGrokAccounts(grok !== null)
   const accountOptions = useMemo((): SettingChoice<string>[] => {
-    const chosen = claude?.account ?? codex?.account ?? null
+    const chosen = claude?.account ?? codex?.account ?? grok?.account ?? null
     const accounts = claude
       ? (claudeAccountList?.accounts ?? [])
       : codex
         ? (codexAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
-        : null
+        : grok
+          ? (grokAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
+          : null
     if (accounts === null) return []
     if (accounts.length === 0 && !chosen) return []
     const known: SettingChoice<string>[] = [
@@ -628,7 +633,7 @@ export function useAgentSettings({
       known.push({ value: chosen, label: t('composer.account.missing'), hint: t('composer.select.saved') })
     }
     return known
-  }, [claudeAccountList, codexAccountList, claude, codex, t])
+  }, [claudeAccountList, codexAccountList, grokAccountList, claude, codex, grok, t])
   const accountChoice = (account: string | null) => account ?? CLI_DEFAULT_CHOICE
 
   const permissionOptionList = permissionOptions(t)
@@ -1111,6 +1116,25 @@ export function useAgentSettings({
         value: grok.permissionMode,
         onChange: (permissionMode) => onConfigChange({ ...grok, permissionMode }),
       }),
+      ...(accountOptions.length > 0
+        ? [
+            setting({
+              key: 'account',
+              label: t('composer.setting.account'),
+              icon: <IdCard size={15} />,
+              options: accountOptions,
+              value: accountChoice(grok.account),
+              onChange: (choice) =>
+                onConfigChange({ ...grok, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+              // Le compte est le `GROK_HOME` du process : changer de compte attend la
+              // relance de la session.
+              notice: notice(
+                appliedLabel(applied ? accountChoice(applied.account) : undefined, accountChoice(grok.account), accountOptions),
+                t,
+              ),
+            }),
+          ]
+        : []),
       // Grok coupe ses outils web par une option de lancement : le changement attend
       // la relance de la session, et la ligne dit ce qui vaut d'ici là.
       setting({
@@ -1153,6 +1177,7 @@ export function useAgentSettings({
     summary = [
       segment('model', modelOptions, resolvedModel),
       ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+      ...(grok.account ? [segment('account', accountOptions, grok.account)] : []),
       segment('permission', grokPermissionList, grok.permissionMode),
     ]
 

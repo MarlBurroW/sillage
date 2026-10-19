@@ -6,6 +6,8 @@ import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
 import type { ClaudeAccountStore } from '../../claude-accounts/store.js'
 import type { CodexAccountHomes } from '../../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../../codex-accounts/store.js'
+import type { GrokAccountHomes } from '../../grok-accounts/homes.js'
+import type { GrokAccountStore } from '../../grok-accounts/store.js'
 import { projectCwd } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
@@ -41,6 +43,7 @@ export function registerAgentRoutes(
   installer: CliInstaller,
   claudeAccounts: ClaudeAccountStore,
   codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
+  grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
 ): void {
   /** Le nom du CLI vient de la requête : un inconnu vaut 404, pas un défaut silencieux. */
   /**
@@ -59,6 +62,10 @@ export function registerAgentRoutes(
     if (agent === 'codex') {
       const account = codexAccounts.store.find(userId, accountId)
       return account && account.status === 'ready' ? codexAccounts.homes.ensure(accountId) : null
+    }
+    if (agent === 'grok') {
+      const account = grokAccounts.store.find(userId, accountId)
+      return account && account.status === 'ready' ? grokAccounts.homes.ensure(accountId) : null
     }
     return null
   }

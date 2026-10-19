@@ -130,8 +130,9 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 - **MCP servers** declared once and handed to the agents that should get them.
 - **A shared skill library** for Claude Code, Codex, OpenCode and Grok Build, with global and
   project skills managed from the interface. [Skill library](docs/skill-library.md).
-- **Extra accounts.** Register other Claude subscriptions or API keys, and other
-  Codex subscriptions or API keys from the interface, then pick one when creating
+- **Extra accounts.** Register other Claude subscriptions or API keys, other Codex
+  subscriptions or API keys, and other Grok subscriptions or xAI API keys from the
+  interface, then pick one when creating
   a conversation or from its composer. Compare subscription usage before choosing;
   extra Claude subscriptions need a separate guided sign-in to enable their gauge.
   Added accounts belong to the Sillage user who registered them.
@@ -448,7 +449,7 @@ scripts/           screenshot runner, runtime and desktop staging, Codex and Ope
 docs/desktop.md    the desktop app: download, what differs from a server, uninstall
 docs/windows.md    running Sillage on Windows through WSL2
 docs/remote-access.md  reaching Sillage and agent preview links from other devices
-docs/accounts.md   extra Claude and Codex accounts, how they are wired, their limits
+docs/accounts.md   extra Claude, Codex and Grok accounts, how they are wired, their limits
 docs/api.md        the task API and project creation
 docs/mcp.md        connecting an external MCP client to Sillage
 docs/cli-handoff.md  how a conversation continues in another CLI

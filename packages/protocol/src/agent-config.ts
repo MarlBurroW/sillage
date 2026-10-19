@@ -283,6 +283,11 @@ export const grokConfigSchema = z.object({
   mcpServers: z.array(z.string()).default([]),
   sillageMcp: sillageMcpSchema,
   skillLibrary: skillLibrarySchema,
+  /**
+   * Compte Grok de Sillage dont le home est donné à la session (`GROK_HOME`), `null` pour
+   * la connexion du CLI. Le changer relance le process, qui ne lit son home qu'au lancement.
+   */
+  account: z.string().nullable().default(null),
 })
 export type GrokConfig = z.infer<typeof grokConfigSchema>
 
@@ -363,6 +368,7 @@ export const DEFAULT_GROK_CONFIG: GrokConfig = {
   mcpServers: [],
   sillageMcp: true,
   skillLibrary: true,
+  account: null,
 }
 
 /**

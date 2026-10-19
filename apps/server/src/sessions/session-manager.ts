@@ -30,6 +30,8 @@ import type { SecretStore } from '../secrets/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
 import type { CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
+import type { GrokAccountHomes } from '../grok-accounts/homes.js'
+import type { GrokAccountStore } from '../grok-accounts/store.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -197,6 +199,7 @@ export class SessionManager {
     private readonly secrets: SecretStore,
     private readonly claudeAccounts: ClaudeAccountStore,
     private readonly codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
+    private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
   ) {
     this.statusBus.setMaxListeners(200)
   }
@@ -773,7 +776,7 @@ export class SessionManager {
    * abonnement qui va payer le tour.
    */
   private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
-    if (config.agent === 'opencode' || config.agent === 'grok' || !config.account) return {}
+    if (config.agent === 'opencode' || !config.account) return {}
     const missing = (code: string, message: string) => {
       this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
       return {}
@@ -791,6 +794,20 @@ export class SessionManager {
       return resolved.kind === 'apiKey'
         ? { ANTHROPIC_API_KEY: resolved.token }
         : { CLAUDE_CODE_OAUTH_TOKEN: resolved.token }
+    }
+    // Grok : même parti que Codex, un `GROK_HOME` par compte, dont seule la connexion lui
+    // est propre. Un compte jamais connecté vaut un compte absent.
+    if (config.agent === 'grok') {
+      const account = this.grokAccounts.store.find(conversation.userId, config.account)
+      if (!account || account.status !== 'ready') {
+        return missing(
+          'grok_account_missing',
+          account
+            ? "Le compte Grok choisi pour cette conversation n'est pas connecté : la session repart sur la connexion du CLI."
+            : "Le compte Grok choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
+        )
+      }
+      return { GROK_HOME: this.grokAccounts.homes.ensure(account.id) }
     }
     // Codex : le home du compte, dont seul `auth.json` lui est propre. Un compte jamais
     // connecté vaut un compte absent : sans `auth.json`, l'app-server refuserait le tour.
