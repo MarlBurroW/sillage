@@ -2,7 +2,7 @@ name: Desktop
 
 # L'application de bureau : l'arbre d'exécution de la release, le Node qui l'a construit et
 # Electron, empaquetés pour chaque plateforme, puis lancés pour de vrai. Appelé par
-# release.yml à chaque tag (toutes les cibles) et par la CI (Linux x64). Une fois ce
+# release.yml à chaque tag (toutes les cibles) et par la CI (Linux x64 et Windows x64). Une fois ce
 # fichier sur main, on peut aussi le lancer à la main pour une branche (Actions > Desktop
 # > Run workflow) : les paquets restent alors en artefacts du run, rien n'est publié.
 #
@@ -20,7 +20,7 @@ on:
         description: Cibles, en tableau JSON (linux-x64, linux-arm64, darwin-arm64, win-x64)
         required: false
         type: string
-        default: '["linux-x64", "linux-arm64", "darwin-arm64"]'
+        default: '["linux-x64", "linux-arm64", "darwin-arm64", "win-x64"]'
       install-check:
         description: CLI à installer pendant le contrôle de lancement (liste séparée par des virgules)
         required: false
@@ -37,7 +37,7 @@ on:
         description: Cibles, en tableau JSON (linux-x64, linux-arm64, darwin-arm64, win-x64)
         required: false
         type: string
-        default: '["linux-x64", "linux-arm64", "darwin-arm64"]'
+        default: '["linux-x64", "linux-arm64", "darwin-arm64", "win-x64"]'
       install-check:
         description: CLI à installer pendant le contrôle de lancement (liste séparée par des virgules)
         required: false

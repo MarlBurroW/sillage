@@ -92,7 +92,7 @@
           </p>
         </div>
       </div>
-      <div class="hero-meta"><span>Claude Code + Codex + OpenCode + Grok Build</span><span>Server: Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><span>Desktop: macOS · Linux</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
+      <div class="hero-meta"><span>Claude Code + Codex + OpenCode + Grok Build</span><span>Server: Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><span>Desktop: macOS · Windows · Linux</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
       <figure class="hero-shot hero-film" id="film">
         <div class="film-frame">
           <video controls preload="none" playsinline poster="film/poster.jpg" width="1920" height="1080" data-film>
@@ -431,7 +431,7 @@
             <h3>Sillage Desktop</h3>
             <p class="edition-tag">On your workstation. Nothing to host.</p>
             <ul>
-              <li>An app for macOS (Apple Silicon) and Linux, with the server built in.</li>
+              <li>An app for macOS (Apple Silicon), Windows and Linux, with the server built in.</li>
               <li>Opens in its own window, next to your editor, with no account or password.</li>
               <li>Agents work while the app is open and the computer awake.</li>
               <li>One person, one computer: no phone access, no push notifications, no webhooks from the Internet.</li>
@@ -523,7 +523,7 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
       <div class="install-box">
         <div class="download-panel">
           <p><a class="btn primary" href="https://github.com/MarlBurroW/sillage/releases/latest">Download from the latest release <span aria-hidden="true">↗</span></a></p>
-          <p>The <code>.dmg</code> for Apple Silicon Macs, the <code>.deb</code> for Debian and Ubuntu (x64, arm64), the AppImage for other distributions.</p>
+          <p>The <code>.dmg</code> for Apple Silicon Macs, the <code>.exe</code> installer for Windows, the <code>.deb</code> for Debian and Ubuntu (x64, arm64), the AppImage for other distributions. On Windows, Sillage needs <a href="https://git-scm.com/download/win">Git for Windows</a>, and SmartScreen asks you to confirm the first run (<em>More info</em>, then <em>Run anyway</em>).</p>
           <p>The app is not notarized by Apple yet. On the first launch, allow it in System Settings &gt; Privacy &amp; Security, or from Terminal:</p>
 <pre class="one-line"><code>xattr -dr com.apple.quarantine /Applications/Sillage.app</code></pre>
           <p>The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md">desktop guide</a> covers what differs from the server, where your data lives and how to uninstall.</p>

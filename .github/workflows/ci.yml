@@ -73,10 +73,11 @@ jobs:
           tail -n 100 ~/.local/share/sillage/logs/sillage.log || true
 
   desktop:
-    # L'application de bureau de Linux, empaquetée comme en release puis lancée pour de
-    # vrai : ce qu'un tag publierait ne se découvre pas cassé le jour de la release. Le
-    # paquet reste en artefact du run.
+    # L'application de bureau de Linux et de Windows, empaquetée comme en release puis
+    # lancée pour de vrai : ce qu'un tag publierait ne se découvre pas cassé le jour de la
+    # release. Windows y est parce que ses chemins de code (lanceurs npm, shells) ne
+    # s'éprouvent nulle part ailleurs. Les paquets restent en artefacts du run.
     uses: ./.github/workflows/desktop.yml
     with:
       version: v0.0.0-ci
-      targets: '["linux-x64"]'
+      targets: '["linux-x64", "win-x64"]'

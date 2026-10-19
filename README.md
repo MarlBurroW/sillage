@@ -15,8 +15,8 @@ It comes in two editions, from the same code and the same releases
   and you reach it from any device: phone, tablet or laptop. Linux, macOS (Apple
   Silicon), Windows through WSL2, Docker or Kubernetes.
   [Set up private remote access and agent preview links](docs/remote-access.md).
-- **Sillage Desktop** is an app for your workstation, macOS (Apple Silicon) or Linux,
-  with nothing to host: it opens Sillage in its own window, on that computer only.
+- **Sillage Desktop** is an app for your workstation, macOS (Apple Silicon), Windows or
+  Linux, with nothing to host: it opens Sillage in its own window, on that computer only.
 
 Website: [marlburrow.github.io/sillage](https://marlburrow.github.io/sillage) ·
 Film: [Sillage in 54 seconds ▶](https://marlburrow.github.io/sillage/#film)
@@ -218,7 +218,7 @@ What differs is where Sillage runs, and where you reach it from.
 | Sign-in | accounts with passwords, for a few trusted people | none: one person, one computer |
 | Push notifications | to your phone and other devices | none, in-app toasts only |
 | Webhook automations | yes, from GitHub, CI or any service | no: no address the Internet can reach |
-| Install | Docker, a service on Linux, macOS or WSL2, Helm | the `.dmg`, `.deb` or AppImage of a release |
+| Install | Docker, a service on Linux, macOS or WSL2, Helm | the `.dmg`, `.exe`, `.deb` or AppImage of a release |
 | Updates | from the UI, or by pulling a new image | download the new version |
 
 Pick the server to follow your agents from anywhere and leave them working; pick the
@@ -376,14 +376,16 @@ pnpm dev                  # API on :7317, Vite UI on :5317 with /api proxy
 ## Install the desktop app
 
 Download the app from the [latest release](https://github.com/MarlBurroW/sillage/releases/latest):
-the `.dmg` for Apple Silicon Macs, the `.deb` for Debian and Ubuntu (x64, arm64), or
-the AppImage for other distributions. It bundles the server of the release and its own
+the `.dmg` for Apple Silicon Macs, the `.exe` installer for Windows (x64), the `.deb`
+for Debian and Ubuntu (x64, arm64), or the AppImage for other distributions. It bundles the server of the release and its own
 Node, and opens Sillage in its own window. Your agents use your own CLIs and sign-ins.
 
 The app is not notarized by Apple yet: on the first launch, allow it in System
 Settings > Privacy & Security (**Open Anyway**), or run
 `xattr -dr com.apple.quarantine /Applications/Sillage.app`. On Ubuntu 24.04 and
-later, prefer the `.deb`: it installs the AppArmor profile the app needs to start.
+later, prefer the `.deb`: it installs the AppArmor profile the app needs to start. On
+Windows, SmartScreen asks you to confirm the first run (**More info**, then **Run
+anyway**), and Sillage needs [Git for Windows](https://git-scm.com/download/win).
 
 The [desktop guide](docs/desktop.md) covers what differs from the server, where the
 data lives, and how to uninstall.
@@ -414,8 +416,9 @@ options, HTTPS, and shared instructions for reachable agent preview links.
 
 Releases are git tags (`vX.Y.Z`). Each tag builds Linux tarballs (x64 and arm64) and
 a macOS one (Apple Silicon), prebuilt native modules included, a multi-arch Docker
-image on `ghcr.io/marlburrow/sillage`, the desktop app (`.dmg` and `.zip` for macOS,
-`.deb` and AppImage for Linux x64 and arm64), and a GitHub release. The app shows the
+image on `ghcr.io/marlburrow/sillage`, the desktop app (`.dmg` and `.zip` for macOS, an
+`.exe` installer for Windows, `.deb` and AppImage for Linux x64 and arm64), and a GitHub
+release. The app shows the
 installed version, checks for newer releases, and on installer-based setups can
 update itself from the UI.
 
