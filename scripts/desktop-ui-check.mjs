@@ -13,8 +13,10 @@ import { _electron as electron } from 'playwright'
  * disparu, le serveur refuse ce qui ne vient pas de la fenêtre, et quitter l'arrête.
  *
  * Il ouvre aussi un terminal, qui doit exécuter une commande dans le shell de la plateforme
- * (PowerShell sous Windows). Avec SILLAGE_CHECK_INSTALL=<cli>, il installe ce CLI par le
- * npm que l'app embarque, puis vérifie qu'il est détecté et répond à --version.
+ * (PowerShell sous Windows), et joue un script de vérification de tâche planifiée, qui doit
+ * passer par le shell POSIX (le bash de Git for Windows). Avec SILLAGE_CHECK_INSTALL=<cli>
+ * (ou une liste séparée par des virgules), il installe ces CLI par le npm que l'app
+ * embarque, puis vérifie qu'ils sont détectés et répondent à --version.
  *
  * Le profil de l'app (base, réglages, journal) va dans un dossier temporaire, par
  * SILLAGE_DESKTOP_USER_DATA. Sous Linux, il faut un écran (xvfb-run) et, là où les
@@ -163,10 +165,24 @@ try {
   )
   assert.ok(terminal.ok, `le terminal n'a pas exécuté la commande : ${JSON.stringify(terminal.output)}`)
 
+  // Un script de vérification passe par le shell POSIX, le bash de Git for Windows sous
+  // Windows : l'expression arithmétique n'y donne 42 que dans un shell POSIX.
+  const check = await page.evaluate(
+    (projectId) =>
+      fetch(`/api/projects/${projectId}/schedules/check-test`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ script: 'echo "sillage-$((40 + 2)) $(uname -s)"', timeoutSeconds: 30 }),
+      }).then((response) => response.json()),
+    project.id,
+  )
+  assert.match(check.stdout ?? '', /sillage-42/, `script de vérification : ${JSON.stringify(check)}`)
+  console.log(`script de vérification : ${check.stdout.trim()}`)
+
   // Un CLI s'installe par le npm embarqué, et se lance ensuite par son lanceur npm : sous
-  // Windows, un `.cmd` que le serveur doit savoir lire.
-  const cli = process.env.SILLAGE_CHECK_INSTALL
-  if (cli) {
+  // Windows, un `.cmd` que le serveur doit savoir lire. Un à un : deux installations dans le
+  // même préfixe npm se marcheraient dessus.
+  for (const cli of (process.env.SILLAGE_CHECK_INSTALL ?? '').split(',').map((name) => name.trim()).filter(Boolean)) {
     const started = await page.evaluate((name) => fetch(`/api/agents/${name}/install`, { method: 'POST' }).then((r) => r.status), cli)
     assert.equal(started, 202)
     let agent

@@ -21,6 +21,11 @@ on:
         required: false
         type: string
         default: '["linux-x64", "linux-arm64", "darwin-arm64"]'
+      install-check:
+        description: CLI à installer pendant le contrôle de lancement (liste séparée par des virgules)
+        required: false
+        type: string
+        default: ''
   workflow_dispatch:
     inputs:
       version:
@@ -33,6 +38,11 @@ on:
         required: false
         type: string
         default: '["linux-x64", "linux-arm64", "darwin-arm64"]'
+      install-check:
+        description: CLI à installer pendant le contrôle de lancement (liste séparée par des virgules)
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -112,9 +122,9 @@ jobs:
       # l'AppImage et le .deb emballent, et l'écran vient de Xvfb.
       - name: Launch check
         env:
-          # Sous Windows, le contrôle installe aussi un CLI par le npm embarqué : c'est là que
-          # les lanceurs npm (`.cmd`) demandent d'être lus plutôt que lancés.
-          SILLAGE_CHECK_INSTALL: ${{ runner.os == 'Windows' && 'codex' || '' }}
+          # Sous Windows, le contrôle installe au moins Codex par le npm embarqué : c'est là
+          # que les lanceurs npm (`.cmd`) demandent d'être lus plutôt que lancés.
+          SILLAGE_CHECK_INSTALL: ${{ inputs.install-check || (runner.os == 'Windows' && 'codex' || '') }}
         run: |
           if [ "$PLATFORM" = darwin ] || [ "$PLATFORM" = win32 ]; then
             node scripts/desktop-ui-check.mjs
