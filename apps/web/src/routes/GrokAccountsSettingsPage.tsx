@@ -228,7 +228,7 @@ function AccountCard({ account }: { account: GrokAccount }) {
  * La connexion du compte, sous sa carte : les deux voies tant qu'il n'est pas
  * connecté, le code à saisir pendant l'attente, la déconnexion une fois prêt.
  */
-function LoginControls({ account }: { account: GrokAccount }) {
+export function LoginControls({ account }: { account: GrokAccount }) {
   const t = useTranslate()
   const { data: status } = useGrokLoginStatus(account.id, account.status === 'pending')
   const start = useStartGrokLogin(account.id)
