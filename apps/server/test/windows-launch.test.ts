@@ -81,6 +81,15 @@ test('le npm.cmd de Node désigne npm-cli.js, pas le calcul de préfixe', () => 
   assert.equal(npmShimTarget('C:\\node\\npm.cmd', NPM_CMD), 'C:\\node\\node_modules\\npm\\bin\\npm-cli.js')
 })
 
+test('un script à shebang node sans extension, comme bin/grok, se lance par Node', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-shim-'))
+  const shim = join(dir, 'grok.cmd')
+  writeFileSync(shim, NODE_SHIM.replace('@openai\\codex\\bin\\codex.js', '@xai-official\\grok\\bin\\grok'))
+  const launch = launchOf(shim, 'win32')
+  assert.equal(launch.command, process.execPath)
+  assert.match(launch.args[0]!, /grok\\bin\\grok$/)
+})
+
 test("un lanceur inconnu n'a pas de cible", () => {
   assert.equal(npmShimTarget('C:\\x\\tool.cmd', '@echo off\r\necho bonjour\r\n'), null)
 })

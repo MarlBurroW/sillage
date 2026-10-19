@@ -19,11 +19,12 @@ export interface Launch {
  */
 export function launchOf(binary: string, platform: NodeJS.Platform = process.platform): Launch {
   if (platform !== 'win32' || !/\.(cmd|bat)$/i.test(binary)) return { command: binary, args: [] }
-  const target = npmShimTarget(binary, readFileSync(binary, 'utf8'))
+  const content = readFileSync(binary, 'utf8')
+  const target = npmShimTarget(binary, content)
   if (!target) {
     throw new Error(`Lanceur Windows non reconnu : ${binary}. Seuls les lanceurs écrits par npm sont pris en charge.`)
   }
-  return isScript(target) ? { command: process.execPath, args: [target] } : { command: target, args: [] }
+  return runsThroughNode(content, target) ? { command: process.execPath, args: [target] } : { command: target, args: [] }
 }
 
 /**
@@ -47,13 +48,19 @@ export function sdkExecutable(binary: string, platform: NodeJS.Platform = proces
  * de npm.
  */
 export function npmShimTarget(shim: string, content: string): string | null {
-  const relatives = [...content.matchAll(/%~?dp0%?\\([^"\r\n%]+?\.(?:c?js|mjs|exe|com))/gi)]
+  const relatives = [...content.matchAll(/%~?dp0%?\\([^"\r\n%]+)/gi)]
     .map((match) => match[1]!)
     .filter((relative) => !/(^|\\)(node\.exe|npm-prefix\.js)$/i.test(relative))
   const relative = relatives.at(-1)
   return relative ? path.win32.join(path.win32.dirname(shim), relative) : null
 }
 
-function isScript(target: string): boolean {
-  return /\.(c|m)?js$/i.test(target)
+/**
+ * Le lanceur passe-t-il sa cible à Node ? Un script `.js` toujours ; un fichier sans
+ * extension quand le lanceur le confie à `%_prog%` (le Node que `cmd-shim` choisit) ou à
+ * `%NODE_EXE%` (le `npm.cmd` de Node). C'est le cas de Grok, dont `bin/grok` est un script
+ * à shebang node qui lance ensuite le binaire natif.
+ */
+function runsThroughNode(content: string, target: string): boolean {
+  return /\.(c|m)?js$/i.test(target) || /%_prog%|%NODE_EXE%/i.test(content)
 }
