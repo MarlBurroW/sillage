@@ -11,6 +11,14 @@ import { z } from 'zod'
  */
 export const MEMORY_INDEX_FILE = 'MEMORY.md'
 
+/**
+ * Où vit la mémoire d'un projet : dans Sillage (`sillage`), un dossier par projet commun
+ * aux CLI et aux worktrees, ou chez chaque CLI (`native`), Claude dans son `~/.claude`
+ * par dossier de travail, les autres avec la leur, sans que Sillage en voie rien.
+ */
+export const memoryModeSchema = z.enum(['sillage', 'native'])
+export type MemoryMode = z.infer<typeof memoryModeSchema>
+
 /** Un nom de note : un fichier markdown à plat, sans chemin. */
 export const memoryFileSchema = z
   .string()
@@ -26,7 +34,8 @@ export interface MemoryFileDto {
 }
 
 export interface ProjectMemoryDto {
-  /** Le dossier sur le disque, que Claude écrit et que Codex lit. */
+  mode: MemoryMode
+  /** Le dossier sur le disque, que Claude écrit et que Codex lit ; vide en mode natif. */
   dir: string
   /** `MEMORY.md` d'abord, puis les notes par nom. */
   files: MemoryFileDto[]

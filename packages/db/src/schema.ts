@@ -8,7 +8,7 @@ import type {
   CardNotePublication,
   DecisionSourceKind,
   DecisionStatus,
-  InstructionsMode,
+  InstructionsMode, MemoryMode,
 } from '@sillage/protocol'
 import { sql } from 'drizzle-orm'
 import {
@@ -92,6 +92,12 @@ export const projects = sqliteTable(
      * sur un dépôt si lourd que la capture retarde visiblement l'envoi d'un message.
      */
     turnCheckpoints: integer('turn_checkpoints', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * Où vit la mémoire des agents : dans Sillage (un dossier par projet, commun aux CLI
+     * et aux worktrees) ou chez chaque CLI (`native`, Sillage ne s'en mêle pas). Fixé à
+     * la création d'après le défaut du compte ; `sillage` pour les projets d'avant.
+     */
+    memoryMode: text('memory_mode').$type<MemoryMode>().notNull().default('sillage'),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },

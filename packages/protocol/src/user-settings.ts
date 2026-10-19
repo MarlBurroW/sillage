@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { agentKindSchema, type AgentKind } from './events.js'
+import { instructionsModeSchema } from './instructions.js'
+import { memoryModeSchema, type MemoryMode } from './memory.js'
 import { DEFAULT_NOTIFICATION_PREFS, notificationPrefsSchema, type NotificationPrefs } from './notifications.js'
 import {
   agentConfigSchema,
@@ -78,7 +80,30 @@ export interface UserSettingsDto {
    * consignes), et la reprendre sur un autre appareil doit repartir de la bonne étape.
    */
   onboarding: OnboardingState
+  /**
+   * Avec quoi un nouveau projet de ce compte démarre, quand sa création ne dit rien.
+   *
+   * Au compte et non à l'instance : où l'on garde ses consignes et sa mémoire relève de
+   * la façon de travailler de chacun, comme le mode de permission.
+   */
+  projectDefaults: ProjectDefaults
 }
+
+/**
+ * `auto` pour les consignes : le dépôt s'il porte déjà un `AGENTS.md` ou un
+ * `CLAUDE.md`, Sillage sinon, ce que le serveur faisait d'office jusqu'ici.
+ */
+export interface ProjectDefaults {
+  instructionsMode: 'auto' | 'sillage' | 'repo'
+  memoryMode: MemoryMode
+}
+
+export const DEFAULT_PROJECT_DEFAULTS: ProjectDefaults = { instructionsMode: 'auto', memoryMode: 'sillage' }
+
+export const projectDefaultsSchema = z.object({
+  instructionsMode: z.union([z.literal('auto'), instructionsModeSchema]).default('auto').catch('auto'),
+  memoryMode: memoryModeSchema.default('sillage').catch('sillage'),
+})
 
 /**
  * Ce que la visite demande d'abord, et qui décide des étapes suivantes.
@@ -117,8 +142,6 @@ export interface OnboardingState {
    * depuis la liste, en arrière comme en avant, sans refaire celles d'entre deux.
    */
   visited: string[]
-  /** Le projet créé par la visite, vers lequel « C'est prêt » ouvre la conversation. */
-  projectId: string | null
 }
 
 export const DEFAULT_ONBOARDING_ANSWERS: OnboardingAnswers = {
@@ -136,7 +159,6 @@ export const DEFAULT_ONBOARDING: OnboardingState = {
   answers: DEFAULT_ONBOARDING_ANSWERS,
   skipped: [],
   visited: [],
-  projectId: null,
 }
 
 export const onboardingAnswersSchema = z.object({
@@ -154,7 +176,6 @@ export const onboardingStateSchema = z.object({
   answers: onboardingAnswersSchema.default(DEFAULT_ONBOARDING_ANSWERS).catch(DEFAULT_ONBOARDING_ANSWERS),
   skipped: z.array(z.string().max(40)).max(32).default([]).catch([]),
   visited: z.array(z.string().max(40)).max(32).default([]).catch([]),
-  projectId: z.string().nullable().default(null).catch(null),
 })
 
 /**
@@ -254,6 +275,7 @@ export const storedUserSettingsSchema = z
     notifications: notificationPrefsSchema.default(DEFAULT_NOTIFICATION_PREFS).catch(DEFAULT_NOTIFICATION_PREFS),
     composerLayout: composerLayoutSchema.default(DEFAULT_COMPOSER_LAYOUT).catch(DEFAULT_COMPOSER_LAYOUT),
     onboarding: onboardingStateSchema.default(DEFAULT_ONBOARDING).catch(DEFAULT_ONBOARDING),
+    projectDefaults: projectDefaultsSchema.default(DEFAULT_PROJECT_DEFAULTS).catch(DEFAULT_PROJECT_DEFAULTS),
   })
   .catch({
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
@@ -263,6 +285,7 @@ export const storedUserSettingsSchema = z
     notifications: DEFAULT_NOTIFICATION_PREFS,
     composerLayout: DEFAULT_COMPOSER_LAYOUT,
     onboarding: DEFAULT_ONBOARDING,
+    projectDefaults: DEFAULT_PROJECT_DEFAULTS,
   })
 
 export const updateUserSettingsBodySchema = z.object({
@@ -283,4 +306,6 @@ export const updateUserSettingsBodySchema = z.object({
   composerLayout: composerLayoutSchema.optional(),
   /** Remplacé en bloc : la visite connaît son état entier à chaque pas. */
   onboarding: onboardingStateSchema.optional(),
+  /** Remplacés en bloc : deux choix, toujours faits ensemble. */
+  projectDefaults: projectDefaultsSchema.optional(),
 })

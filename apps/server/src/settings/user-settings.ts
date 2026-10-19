@@ -8,6 +8,7 @@ import {
   type ComposerLayout,
   type NotificationPrefs,
   type OnboardingState,
+  type ProjectDefaults,
   type UserSettingsDto,
 } from '@sillage/protocol'
 
@@ -79,6 +80,17 @@ export function writeCollapsedProjects(db: Db, userId: string, projectIds: strin
 export function writeOnboarding(db: Db, userId: string, onboarding: OnboardingState): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, onboarding })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** Les défauts des projets à venir, remplacés en bloc. */
+export function writeProjectDefaults(db: Db, userId: string, projectDefaults: ProjectDefaults): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, projectDefaults })
 
   db.insert(userSettings)
     .values({ userId, data })

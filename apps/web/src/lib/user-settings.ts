@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentConfig, ComposerLayout, NotificationPrefs, OnboardingState, UserSettingsDto } from '@sillage/protocol'
+import { DEFAULT_PROJECT_DEFAULTS, type AgentConfig, type ComposerLayout, type NotificationPrefs, type OnboardingState, type ProjectDefaults, type UserSettingsDto } from '@sillage/protocol'
 import { api } from './api'
 
 const USER_SETTINGS_KEY = ['user-settings']
@@ -10,6 +10,30 @@ export function useUserSettings(enabled = true) {
     queryKey: USER_SETTINGS_KEY,
     queryFn: () => api.get<UserSettingsDto>('/api/me/settings'),
     enabled,
+  })
+}
+
+/** Les défauts des projets à venir, ceux du protocole tant que le compte n'est pas lu. */
+export function useProjectDefaults(): ProjectDefaults {
+  const { data } = useUserSettings()
+  return data?.projectDefaults ?? DEFAULT_PROJECT_DEFAULTS
+}
+
+/** Les deux défauts, remplacés en bloc et appliqués sans attendre : ce sont des cartes qu'on clique. */
+export function useUpdateProjectDefaults() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (projectDefaults: ProjectDefaults) => api.patch<UserSettingsDto>('/api/me/settings', { projectDefaults }),
+    onMutate: async (projectDefaults) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous) queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, projectDefaults })
+      return { previous }
+    },
+    onError: (_error, _defaults, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
   })
 }
 

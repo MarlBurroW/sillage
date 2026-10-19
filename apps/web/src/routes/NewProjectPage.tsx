@@ -4,6 +4,7 @@ import {
   GitBranch,
   Globe,
   Lock,
+  Sparkles,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -12,11 +13,12 @@ import { ApiRequestError } from '../lib/api'
 import { useCreateProject } from '../lib/projects'
 import { useUserSettings } from '../lib/user-settings'
 import { CloneForm } from '../components/CloneForm'
+import { SampleProjectForm } from '../components/SampleProjectForm'
 import { PathField } from '../components/PathField'
 import {
   InstructionsModeSelect,
   instructionsModeField,
-  type InstructionsModeChoice,
+  useInstructionsModeChoice,
 } from '../components/instructions/Instructions'
 import { useTranslate } from '../lib/i18n'
 import {
@@ -32,7 +34,7 @@ import {
   type SelectOption,
 } from '../components/ui'
 
-type CreateMode = 'new' | 'existing' | 'clone'
+type CreateMode = 'new' | 'existing' | 'clone' | 'sample'
 type Visibility = 'private' | 'shared'
 
 function useVisibilityOptions(): SelectOption<Visibility>[] {
@@ -77,6 +79,13 @@ export function NewProjectPage() {
       hint: t('projects.create.mode.clone.hint'),
       icon: <GitBranch size={15} />,
     },
+    // Pour essayer sans risque : un petit dépôt que Sillage écrit lui-même.
+    {
+      value: 'sample',
+      label: t('projects.create.mode.sample'),
+      hint: t('projects.create.mode.sample.hint'),
+      icon: <Sparkles size={15} />,
+    },
   ]
 
   return (
@@ -100,6 +109,7 @@ export function NewProjectPage() {
           {mode === 'clone' ? <CloneForm /> : null}
           {mode === 'new' ? <NewFolderForm /> : null}
           {mode === 'existing' ? <ExistingFolderForm /> : null}
+          {mode === 'sample' ? <SampleProjectForm /> : null}
         </CardBody>
       </Card>
     </div>
@@ -113,7 +123,7 @@ export function NewProjectPage() {
  * et le dossier parent est celui de la dernière création. Dans le cas courant, il n'y a
  * donc qu'un champ à remplir.
  */
-export function NewFolderForm({ onCreated }: { onCreated?: (projectId: string) => void } = {}) {
+function NewFolderForm() {
   const t = useTranslate()
   const createProject = useCreateProject()
   const navigate = useNavigate()
@@ -124,7 +134,7 @@ export function NewFolderForm({ onCreated }: { onCreated?: (projectId: string) =
   const [directory, setDirectory] = useState('')
   const [parentDir, setParentDir] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('private')
-  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
+  const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
 
   // Les réglages arrivent après le premier rendu : le dossier mémorisé ne s'impose que
   // sur un champ encore vide, jamais par-dessus une saisie.
@@ -148,8 +158,7 @@ export function NewFolderForm({ onCreated }: { onCreated?: (projectId: string) =
         ...instructionsModeField(instructionsMode),
       },
       {
-        // La visite garde la main sur la suite : elle note le projet et change d'étape.
-        onSuccess: (project) => (onCreated ? onCreated(project.id) : navigate(`/p/${project.id}/c/new`)),
+        onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
       },
     )
   }
@@ -201,7 +210,7 @@ export function NewFolderForm({ onCreated }: { onCreated?: (projectId: string) =
 }
 
 /** Un dossier déjà présent, n'importe où sur la machine : rien n'est créé. */
-export function ExistingFolderForm({ onCreated }: { onCreated?: (projectId: string) => void } = {}) {
+function ExistingFolderForm() {
   const t = useTranslate()
   const createProject = useCreateProject()
   const navigate = useNavigate()
@@ -210,14 +219,14 @@ export function ExistingFolderForm({ onCreated }: { onCreated?: (projectId: stri
   const [name, setName] = useState('')
   const [workspacePath, setWorkspacePath] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('private')
-  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
+  const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
     createProject.mutate(
       { name: name.trim(), workspacePath, visibility, ...instructionsModeField(instructionsMode) },
       {
-        onSuccess: (project) => (onCreated ? onCreated(project.id) : navigate(`/p/${project.id}/c/new`)),
+        onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
       },
     )
   }

@@ -68,7 +68,8 @@ from the one Claude keeps when used alone.
 - **A shorter first-run tour.** The first launch opens the same guided setup as the
   server edition, minus what has no meaning here: no account to create, no team or
   phone question, no public address, no push notifications. It starts at Welcome and
-  runs through appearance, agents, a first project, permissions and instructions.
+  runs through appearance, agents, permissions and instructions, then leads to
+  your first project.
   Replay it from Settings › About.
 - **Your data stays with the app**, in `~/Library/Application Support/Sillage` on
   macOS and `~/.config/Sillage` on Linux: projects, conversations and settings in

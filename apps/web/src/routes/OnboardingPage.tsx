@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { DEFAULT_ONBOARDING, type OnboardingAnswers, type OnboardingState } from '@sillage/protocol'
 import { AccountStep } from '../components/onboarding/AccountStep'
 import { AddressStep } from '../components/onboarding/AddressStep'
 import { AgentsStep } from '../components/onboarding/AgentsStep'
 import { AppearanceStep } from '../components/onboarding/AppearanceStep'
-import { ProjectStep } from '../components/onboarding/ProjectStep'
+import { MemoryStep } from '../components/onboarding/MemoryStep'
 import { ReadyStep } from '../components/onboarding/ReadyStep'
 import { RulesStep } from '../components/onboarding/RulesStep'
 import { WelcomeStep } from '../components/onboarding/WelcomeStep'
@@ -15,6 +14,7 @@ import { useAppearanceSync } from '../lib/appearance-sync'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { useInstance } from '../lib/instance'
 import { onboardingSteps, type OnboardingStepId } from '../lib/onboarding'
+import { useProjects } from '../lib/projects'
 import { useCurrentUser } from '../lib/session'
 import { useUpdateOnboarding, useUserSettings } from '../lib/user-settings'
 
@@ -23,8 +23,8 @@ const STEPS: Record<OnboardingStepId, (props: StepProps) => React.ReactElement> 
   welcome: WelcomeStep,
   appearance: AppearanceStep,
   agents: AgentsStep,
-  project: ProjectStep,
   work: WorkStep,
+  memory: MemoryStep,
   rules: RulesStep,
   address: AddressStep,
   ready: ReadyStep,
@@ -35,8 +35,8 @@ const SUBTITLES: Record<OnboardingStepId, MessageKey> = {
   welcome: 'onboarding.step.welcome.sub',
   appearance: 'onboarding.step.appearance.sub',
   agents: 'onboarding.step.agents.sub',
-  project: 'onboarding.step.project.sub',
   work: 'onboarding.step.work.sub',
+  memory: 'onboarding.step.memory.sub',
   rules: 'onboarding.step.rules.sub',
   address: 'onboarding.step.address.sub',
   ready: 'onboarding.step.ready.sub',
@@ -58,10 +58,10 @@ function AppearanceSyncGate() {
  */
 export function OnboardingPage() {
   const t = useTranslate()
-  const navigate = useNavigate()
   const { data: user } = useCurrentUser()
   const { data: instance } = useInstance()
   const { data: settings } = useUserSettings(Boolean(user))
+  const { data: projects } = useProjects()
   const update = useUpdateOnboarding()
   const [local, setLocal] = useState<OnboardingState>({ ...DEFAULT_ONBOARDING, pending: true })
 
@@ -100,11 +100,11 @@ export function OnboardingPage() {
   }
   const setAnswers = (patch: Partial<OnboardingAnswers>) => persist({ answers: { ...state.answers, ...patch } })
 
-  const finish = () =>
-    update.mutate(
-      { ...state, pending: false, step: 0 },
-      { onSuccess: () => navigate(state.projectId ? `/p/${state.projectId}/c/new` : '/', { replace: true }) },
-    )
+  // La visite ne crée pas de projet : elle y mène, quand il n'y en a encore aucun. La
+  // destination se joue dans `App` (route /bienvenue hors visite), dès que la visite
+  // n'est plus due : naviguer d'ici arriverait après le démontage de cette page.
+  const noProject = projects !== undefined && projects.length === 0
+  const finish = () => update.mutate({ ...state, pending: false, step: 0 })
 
   const visited = (...ids: OnboardingStepId[]) => [...new Set([...state.visited, ...ids])]
   const next = async () => {
@@ -166,7 +166,7 @@ export function OnboardingPage() {
       : current === 'welcome'
         ? t('onboarding.shell.start')
         : last
-          ? t(state.projectId ? 'onboarding.shell.open' : 'onboarding.shell.finish')
+          ? t(noProject ? 'onboarding.shell.createProject' : 'onboarding.shell.finish')
           : t('onboarding.shell.continue')
 
   const Step = STEPS[current]

@@ -1,5 +1,5 @@
 import { GitBranch, Globe, Lock } from 'lucide-react'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { parseRemoteUrl, type GitRepoDto } from '@sillage/protocol'
 import { Link } from 'react-router-dom'
 import { ApiRequestError } from '../lib/api'
@@ -9,7 +9,7 @@ import { useCloneJob, useStartClone } from '../lib/projects'
 import {
   InstructionsModeSelect,
   instructionsModeField,
-  type InstructionsModeChoice,
+  useInstructionsModeChoice,
 } from './instructions/Instructions'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
@@ -27,7 +27,7 @@ function directoryFromUrl(url: string): string {
   return parseRemoteUrl(url)?.repo ?? ''
 }
 
-export function CloneForm({ onCreated }: { onCreated?: (projectId: string) => void } = {}) {
+export function CloneForm() {
   const t = useTranslate()
   const { data: credentials } = useGitCredentials()
   const savedHosts = credentials?.credentials.map((entry) => entry.host) ?? []
@@ -38,7 +38,7 @@ export function CloneForm({ onCreated }: { onCreated?: (projectId: string) => vo
   const [parentDir, setParentDir] = useState('')
   const [directory, setDirectory] = useState('')
   const [visibility, setVisibility] = useState<'private' | 'shared'>('private')
-  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
+  const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
   const [jobId, setJobId] = useState<string | null>(null)
 
   const startClone = useStartClone()
@@ -50,15 +50,6 @@ export function CloneForm({ onCreated }: { onCreated?: (projectId: string) => vo
   useEffect(() => {
     if (settings?.projectsDir) setParentDir((current) => current || settings.projectsDir!)
   }, [settings?.projectsDir])
-
-  // Le projet naît à la fin du clone, pas au clic : c'est le suivi du travail qui
-  // l'annonce, une seule fois, à qui a demandé à le savoir.
-  const announced = useRef(false)
-  useEffect(() => {
-    if (job?.status !== 'done' || !job.projectId || !onCreated || announced.current) return
-    announced.current = true
-    onCreated(job.projectId)
-  }, [job, onCreated])
 
   const VISIBILITY_OPTIONS: SelectOption<'private' | 'shared'>[] = [
     {

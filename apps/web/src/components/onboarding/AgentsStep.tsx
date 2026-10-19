@@ -1,14 +1,13 @@
 import { Check, Download, KeyRound, Plus, TerminalSquare } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
-import type { AgentAvailabilityDto, AgentKind, CodexAccount } from '@sillage/protocol'
-import { useAgentAvailability, useInstallAgent } from '../../lib/agents'
-import { useClaudeAccounts } from '../../lib/claude-accounts'
-import { useCodexAccounts, useCreateCodexAccount } from '../../lib/codex-accounts'
-import { useTranslate } from '../../lib/i18n'
+import { useState, type ReactNode } from 'react'
+import type { AgentAvailabilityDto, AgentKind } from '@sillage/protocol'
+import { useAgentAvailability, useAgentInstall } from '../../lib/agents'
+import { useExtraAccounts, type ExtraAccountAgent } from '../../lib/extra-accounts'
+import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { useAgentUsage } from '../../lib/usage'
-import { useUpdateAgentDefault, useUserSettings } from '../../lib/user-settings'
 import { AddAccountCard as ClaudeAddAccountCard } from '../../routes/ClaudeAccountsSettingsPage'
 import { LoginControls as CodexLoginControls } from '../../routes/CodexAccountsSettingsPage'
+import { LoginControls as GrokLoginControls } from '../../routes/GrokAccountsSettingsPage'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { Badge, Banner, Button, Card } from '../ui'
 import { StepTitle, Tip, Why, useCommit, useGate, type StepProps } from './shell'
@@ -21,13 +20,22 @@ const CLI_LOGIN: Record<AgentKind, string> = {
   grok: 'grok login',
 }
 
+/** Le nom donné au compte que la visite crée pour le connecter. */
+const EXTRA_LABEL: Record<ExtraAccountAgent, MessageKey> = {
+  claude: 'onboarding.agents.claudeLabel',
+  codex: 'onboarding.agents.codexLabel',
+  grok: 'onboarding.agents.grokLabel',
+}
+
 /**
- * Tes agents : un rang par CLI retenu, avec ce que le serveur en sait.
+ * Tes agents : une carte par CLI retenu, avec ce que le serveur en sait.
  *
  * Deux choses à faire comprendre, dans cet ordre : par défaut, une conversation part sur
  * la connexion que le CLI garde lui-même sur la machine, et il n'y a rien à faire si
  * elle existe ; les comptes supplémentaires sont une option, pour un autre abonnement
- * ou une clé API, et le seul chemin de connexion sans terminal.
+ * ou une clé API, et le seul chemin de connexion sans terminal. La logique vient des
+ * bibliothèques partagées avec les réglages et la page de brouillon ; seule la mise en
+ * forme est propre à la visite.
  */
 export function AgentsStep({ nav, state, profile }: StepProps) {
   const t = useTranslate()
@@ -55,7 +63,7 @@ export function AgentsStep({ nav, state, profile }: StepProps) {
       {/* Une carte par CLI : son en-tête dit où il en est, son corps ce qui s'y règle. */}
       <div className="flex flex-col gap-3">
         {rows.map((entry) => (
-          <AgentRow key={entry.agent} entry={entry} />
+          <AgentCard key={entry.agent} entry={entry} />
         ))}
         {availability && rows.length === 0 ? <p className="text-sm text-ink-faint">{t('onboarding.agents.none')}</p> : null}
       </div>
@@ -70,11 +78,10 @@ export function AgentsStep({ nav, state, profile }: StepProps) {
   )
 }
 
-function AgentRow({ entry }: { entry: AgentAvailabilityDto }) {
+function AgentCard({ entry }: { entry: AgentAvailabilityDto }) {
   const t = useTranslate()
-  const install = useInstallAgent()
   const label = AGENT_LABELS[entry.agent]
-  const installing = entry.install.status === 'running'
+  const install = useAgentInstall(entry, label)
   // Le forfait que la lecture d'usage rapporte, quand elle y arrive : le signe le plus
   // sûr que le CLI est connecté. Son absence ne prouve pas le contraire.
   const { data: usage } = useAgentUsage(entry.agent, entry.installed)
@@ -94,25 +101,15 @@ function AgentRow({ entry }: { entry: AgentAvailabilityDto }) {
             <Badge tone="neutral">{entry.reason === 'disabled' ? t('agent.unavailable.disabled') : t('onboarding.agents.missing')}</Badge>
           )}
         </div>
-        {!entry.installed && entry.reason !== 'disabled' ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            icon={<Download size={14} />}
-            disabled={installing || install.isPending}
-            onClick={() => install.mutate(entry.agent)}
-          >
-            {installing
-              ? t('agent.install.running', { label, version: entry.install.status === 'running' ? entry.install.version : '' })
-              : entry.install.status === 'failed'
-                ? t('agent.install.retry')
-                : t('agent.install.action', { version: entry.preferredVersion })}
+        {install.offered ? (
+          <Button size="sm" variant="secondary" icon={<Download size={14} />} disabled={install.busy} onClick={install.start}>
+            {install.running ? install.status : install.action}
           </Button>
         ) : null}
       </div>
-      {entry.install.status === 'failed' && entry.install.error ? (
+      {install.failed ? (
         <div className="px-4 pt-3">
-          <Banner>{entry.install.error}</Banner>
+          <Banner>{install.status}</Banner>
         </div>
       ) : null}
 
@@ -133,10 +130,9 @@ function AgentRow({ entry }: { entry: AgentAvailabilityDto }) {
             )}
           </Section>
 
-          {/* Puis l'option, pour qui en a besoin. Seuls Claude et Codex ont des comptes
-              supplémentaires dans Sillage. */}
-          {entry.agent === 'claude' ? <ClaudeExtra cliConnected={plan !== null} /> : null}
-          {entry.agent === 'codex' ? <CodexExtra cliConnected={plan !== null} /> : null}
+          {/* Puis l'option, pour qui en a besoin. OpenCode n'a pas de comptes dans Sillage :
+              il se connecte fournisseur par fournisseur depuis son propre CLI. */}
+          {entry.agent !== 'opencode' ? <ExtraAccounts agent={entry.agent} cliConnected={plan !== null} /> : null}
         </div>
       ) : null}
     </Card>
@@ -158,92 +154,24 @@ function Section({ icon, title, badge, children, actions }: { icon: ReactNode; t
 }
 
 /**
- * Les comptes Claude supplémentaires : ceux déjà là, et l'ajout, par la connexion guidée
- * ou un jeton collé. Quand le CLI n'a pas l'air connecté, le premier compte ajouté ici
- * devient celui des nouvelles conversations : sans ça, elles partiraient sur une
- * connexion absente. Quand le CLI l'est, le compte s'ajoute sans rien changer.
+ * Les comptes supplémentaires d'un CLI : ceux qui existent, en badges, et l'ajout avec le
+ * formulaire de connexion des réglages. La logique est dans `useExtraAccounts`.
  */
-function ClaudeExtra({ cliConnected }: { cliConnected: boolean }) {
+function ExtraAccounts({ agent, cliConnected }: { agent: ExtraAccountAgent; cliConnected: boolean }) {
   const t = useTranslate()
-  const { data } = useClaudeAccounts()
-  const { data: settings } = useUserSettings()
-  const updateDefault = useUpdateAgentDefault()
-  const [adding, setAdding] = useState(false)
-  const [known, setKnown] = useState<Set<string> | null>(null)
-  const accounts = data?.accounts ?? []
+  const extra = useExtraAccounts(agent, { adoptAsDefault: !cliConnected, defaultLabel: t(EXTRA_LABEL[agent]) })
+  // Claude ne crée le compte qu'à la fin de son formulaire : son ouverture est locale.
+  const [claudeAdding, setClaudeAdding] = useState(false)
+  const form =
+    agent === 'claude'
+      ? claudeAdding
+        ? <ClaudeAddAccountCard onClose={() => setClaudeAdding(false)} />
+        : null
+      : agent === 'codex'
+        ? extra.codexOpened && <CodexLoginControls account={extra.codexOpened} />
+        : extra.grokOpened && <GrokLoginControls account={extra.grokOpened} />
+  const add = agent === 'claude' ? () => setClaudeAdding(true) : extra.begin
 
-  // Les comptes présents à l'arrivée ne sont pas « ajoutés ici ».
-  useEffect(() => {
-    if (data && known === null) setKnown(new Set(data.accounts.map((account) => account.id)))
-  }, [data, known])
-
-  const defaults = settings?.agentDefaults.claude
-  const firstAdded = known ? (accounts.find((account) => !known.has(account.id))?.id ?? null) : null
-  useEffect(() => {
-    if (cliConnected || !defaults || defaults.account !== null || !firstAdded || updateDefault.isPending) return
-    updateDefault.mutate({ ...defaults, account: firstAdded })
-  }, [cliConnected, defaults, firstAdded, updateDefault])
-
-  return (
-    <ExtraAccounts
-      accounts={accounts.map((account) => ({ id: account.id, label: account.label, ready: true, isDefault: defaults?.account === account.id }))}
-      adding={adding}
-      onAdd={() => setAdding(true)}
-      form={adding ? <ClaudeAddAccountCard onClose={() => setAdding(false)} /> : null}
-      hint={t(cliConnected ? 'onboarding.agents.extra.hint' : 'onboarding.agents.extra.hint.noCli')}
-    />
-  )
-}
-
-/**
- * Même chose pour Codex : un compte supplémentaire, connecté par code d'appareil ou clé
- * API. Le compte naît avant sa connexion ; son état vient de la liste, relue pendant
- * la connexion.
- */
-function CodexExtra({ cliConnected }: { cliConnected: boolean }) {
-  const t = useTranslate()
-  const { data } = useCodexAccounts()
-  const create = useCreateCodexAccount()
-  const { data: settings } = useUserSettings()
-  const updateDefault = useUpdateAgentDefault()
-  const [openedId, setOpenedId] = useState<string | null>(null)
-  const accounts = data?.accounts ?? []
-  const opened: CodexAccount | null = accounts.find((account) => account.id === openedId) ?? null
-
-  const defaults = settings?.agentDefaults.codex
-  useEffect(() => {
-    if (cliConnected || !defaults || defaults.account !== null || !opened || opened.status !== 'ready' || updateDefault.isPending) return
-    updateDefault.mutate({ ...defaults, account: opened.id })
-  }, [cliConnected, defaults, opened, updateDefault])
-
-  return (
-    <ExtraAccounts
-      accounts={accounts.map((account) => ({ id: account.id, label: account.label, ready: account.status === 'ready', isDefault: defaults?.account === account.id }))}
-      adding={opened !== null}
-      pending={create.isPending}
-      onAdd={() => create.mutate({ label: t('onboarding.agents.codexLabel') }, { onSuccess: (account) => setOpenedId(account.id) })}
-      form={opened ? <CodexLoginControls account={opened} /> : null}
-      hint={t(cliConnected ? 'onboarding.agents.extra.hint' : 'onboarding.agents.extra.hint.noCli')}
-    />
-  )
-}
-
-function ExtraAccounts({
-  accounts,
-  adding,
-  pending = false,
-  onAdd,
-  form,
-  hint,
-}: {
-  accounts: { id: string; label: string; ready: boolean; isDefault: boolean }[]
-  adding: boolean
-  pending?: boolean
-  onAdd: () => void
-  form: ReactNode
-  hint: string
-}) {
-  const t = useTranslate()
   return (
     <Section
       icon={<KeyRound size={14} />}
@@ -251,9 +179,9 @@ function ExtraAccounts({
       badge={<Badge tone="neutral">{t('onboarding.agents.extra.optional')}</Badge>}
       actions={
         <div className="flex flex-col gap-2">
-          {accounts.length > 0 ? (
+          {extra.accounts.length > 0 ? (
             <ul className="flex flex-wrap gap-1.5">
-              {accounts.map((account) => (
+              {extra.accounts.map((account) => (
                 <li key={account.id}>
                   <Badge tone={account.isDefault ? 'accent' : account.ready ? 'positive' : 'neutral'}>
                     {account.ready ? <Check size={12} /> : <KeyRound size={12} />} {account.label}
@@ -263,19 +191,19 @@ function ExtraAccounts({
               ))}
             </ul>
           ) : null}
-          {adding ? (
+          {form ? (
             form
           ) : (
             <div>
-              <Button size="sm" variant="secondary" icon={<Plus size={14} />} disabled={pending} onClick={onAdd}>
-                {t(accounts.length > 0 ? 'onboarding.agents.addAccount' : 'onboarding.agents.connect')}
+              <Button size="sm" variant="secondary" icon={<Plus size={14} />} disabled={extra.creating} onClick={add}>
+                {t(extra.accounts.length > 0 ? 'onboarding.agents.addAccount' : 'onboarding.agents.connect')}
               </Button>
             </div>
           )}
         </div>
       }
     >
-      {hint}
+      {t(cliConnected ? 'onboarding.agents.extra.hint' : 'onboarding.agents.extra.hint.noCli')}
     </Section>
   )
 }

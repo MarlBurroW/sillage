@@ -1,4 +1,4 @@
-import { Bot, Circle, CircleCheck, Clock, Eye, FileText, FolderOpen, Globe, Layers, MessageSquare, PanelRight, ShieldCheck, Smartphone, UserRound } from 'lucide-react'
+import { Bot, Brain, Circle, CircleCheck, Clock, Eye, FileText, Globe, Layers, MessageSquare, PanelRight, ShieldCheck, Smartphone, UserRound } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useAgentAvailability } from '../../lib/agents'
 import { useAppSettings } from '../../lib/app-settings'
@@ -6,8 +6,8 @@ import { useAppearance } from '../../lib/appearance'
 import { useTranslate } from '../../lib/i18n'
 import { useGlobalInstructions } from '../../lib/instructions'
 import { currentOrigin, describeOrigin, onboardingSteps } from '../../lib/onboarding'
-import { useProjects } from '../../lib/projects'
 import { THEME_LABELS, useTheme } from '../../lib/theme'
+import { useProjectDefaults } from '../../lib/user-settings'
 import { AGENT_LABELS } from '../AgentIcon'
 import { Question, StepTitle, useCommit, useGate, type StepProps } from './shell'
 
@@ -16,18 +16,17 @@ export function ReadyStep({ nav, state, user, profile }: StepProps) {
   const t = useTranslate()
   const admin = user?.isAdmin ?? false
   const steps = onboardingSteps({ profile, isAdmin: admin, answers: state.answers })
-  const { data: projects } = useProjects()
   const { data: availability } = useAgentAvailability()
   const { data: appSettings } = useAppSettings()
   const { data: instructions } = useGlobalInstructions()
   const [theme] = useTheme()
   const appearance = useAppearance()
+  const projectDefaults = useProjectDefaults()
 
   useGate(nav, { canContinue: true, laterAllowed: false, skipAllowed: false })
   useCommit(nav, null)
 
   const skipped = (id: string) => state.skipped.includes(id)
-  const project = projects?.find((entry) => entry.id === state.projectId) ?? null
   const chosenAgents = state.answers.agents.length > 0 ? state.answers.agents : (['claude'] as const)
   const agentsLine = chosenAgents
     .map((agent) => {
@@ -60,18 +59,18 @@ export function ReadyStep({ nav, state, user, profile }: StepProps) {
   })
   items.push({ id: 'agents', icon: <Bot size={16} />, title: t('onboarding.ready.agents'), detail: agentsLine, done: !skipped('agents') })
   items.push({
-    id: 'project',
-    icon: <FolderOpen size={16} />,
-    title: t('onboarding.ready.project'),
-    detail: project ? `${project.name} · ${project.workspacePath}` : t('onboarding.ready.project.none'),
-    done: project !== null,
-  })
-  items.push({
     id: 'work',
     icon: <ShieldCheck size={16} />,
     title: t('onboarding.ready.work'),
-    detail: skipped('work') ? t('onboarding.ready.work.default') : `${permission}${project?.turnCheckpoints ? ` · ${t('onboarding.ready.work.checkpoints')}` : ''}`,
+    detail: skipped('work') ? t('onboarding.ready.work.default') : permission,
     done: !skipped('work'),
+  })
+  items.push({
+    id: 'memory',
+    icon: <Brain size={16} />,
+    title: t('onboarding.ready.memory'),
+    detail: `${t(`onboarding.memory.instructions.${projectDefaults.instructionsMode}` as const)} · ${t(`onboarding.memory.memory.${projectDefaults.memoryMode}` as const)}`,
+    done: !skipped('memory'),
   })
   if (steps.includes('rules')) {
     const lines = (instructions?.content ?? '').split('\n').filter((line) => line.trim().length > 0).length

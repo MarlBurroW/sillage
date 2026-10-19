@@ -244,8 +244,9 @@ docker compose up -d
 ```
 
 Then open Sillage in your browser: with no account yet, it starts on the first-run
-tour, which creates the first account (admin) and walks you through agents, a first
-project, permissions, instructions and remote access. Without a browser at hand,
+tour, which creates the first account (admin) and walks you through agents,
+permissions, where instructions and memory live, your general instructions and
+remote access, then leads to your first project. Without a browser at hand,
 the command line does the same:
 
 ```bash

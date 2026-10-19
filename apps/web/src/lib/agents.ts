@@ -9,7 +9,7 @@ import {
   type AgentModelDto,
   type AgentModelsDto,
 } from '@sillage/protocol'
-import { translate, type MessageKey } from './i18n'
+import { translate, useTranslate, type MessageKey } from './i18n'
 import { api } from './api'
 
 /**
@@ -42,6 +42,38 @@ export function useInstallAgent() {
     mutationFn: (agent: AgentKind) => api.post(`/api/agents/${agent}/install`, {}),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['agents', 'availability'] }),
   })
+}
+
+/**
+ * L'installation d'un CLI, telle qu'un écran la propose : si elle a lieu d'être, où elle
+ * en est, les phrases à montrer et l'action. Commun à la page de brouillon et à la
+ * visite ; chacune pose son bouton et son texte où elle veut. `label` est le nom affiché
+ * du CLI, que l'écran connaît déjà.
+ */
+export function useAgentInstall(entry: AgentAvailabilityDto | undefined, label: string) {
+  const t = useTranslate()
+  const install = useInstallAgent()
+  const state = entry?.install
+  const running = state?.status === 'running'
+  const failed = state?.status === 'failed'
+  return {
+    /** Vrai quand il y a quelque chose à proposer : le CLI manque, et pas parce qu'il est coupé. */
+    offered: entry !== undefined && !entry.installed && entry.reason !== 'disabled',
+    running,
+    failed,
+    /** Ce qui se passe : l'installation en cours, le motif de l'échec, ou l'absence. */
+    status: running
+      ? t('agent.install.running', { label, version: state.version })
+      : failed
+        ? state.error
+        : t('agent.install.missing', { label }),
+    /** Le libellé du bouton : installer la version visée, ou réessayer. */
+    action: failed ? t('agent.install.retry') : t('agent.install.action', { version: entry?.preferredVersion ?? '' }),
+    busy: running || install.isPending,
+    start: () => {
+      if (entry) install.mutate(entry.agent)
+    },
+  }
 }
 
 /**

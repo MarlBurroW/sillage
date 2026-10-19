@@ -13,6 +13,11 @@ const SUGGESTIONS: { id: string; label: MessageKey; text: MessageKey }[] = [
   { id: 'why', label: 'onboarding.rules.suggest.why', text: 'onboarding.rules.suggest.why.text' },
   { id: 'short', label: 'onboarding.rules.suggest.short', text: 'onboarding.rules.suggest.short.text' },
   { id: 'files', label: 'onboarding.rules.suggest.files', text: 'onboarding.rules.suggest.files.text' },
+  { id: 'coauthor', label: 'onboarding.rules.suggest.coauthor', text: 'onboarding.rules.suggest.coauthor.text' },
+  { id: 'nocommit', label: 'onboarding.rules.suggest.nocommit', text: 'onboarding.rules.suggest.nocommit.text' },
+  { id: 'deps', label: 'onboarding.rules.suggest.deps', text: 'onboarding.rules.suggest.deps.text' },
+  { id: 'tests', label: 'onboarding.rules.suggest.tests', text: 'onboarding.rules.suggest.tests.text' },
+  { id: 'scope', label: 'onboarding.rules.suggest.scope', text: 'onboarding.rules.suggest.scope.text' },
 ]
 
 /**

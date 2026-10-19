@@ -1,4 +1,4 @@
-import { BookOpen, Box, Brain, Compass, FilePen, Globe, IdCard, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Compass, FilePen, Globe, IdCard, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Wallet, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -47,6 +47,26 @@ import { McpControl, type McpControlProps } from './McpControl'
 
 /** Traduction, passée aux fabriques d'options qui vivent hors du composant. */
 type Translate = (key: MessageKey, params?: MessageParams) => string
+
+/**
+ * Plafond de dépense d'une conversation Claude, en paliers plutôt qu'en champ libre :
+ * les catégories sont des listes de choix, et un palier se lit d'un coup d'œil dans
+ * la puce du composer. `none` retire le plafond ; au-delà du montant, le CLI clôt le
+ * tour en erreur (`error_max_budget_usd`).
+ */
+const BUDGET_STEPS_USD = [2, 5, 10, 25, 50] as const
+
+function budgetOptions(t: Translate, current: number | null): SettingChoice<string>[] {
+  const options: SettingChoice<string>[] = [
+    { value: 'none', label: t('composer.budget.none'), hint: t('composer.budget.none.hint') },
+    ...BUDGET_STEPS_USD.map((amount) => ({ value: String(amount), label: t('composer.budget.amount', { amount }) })),
+  ]
+  // Un montant posé autrement (API, ancienne version) reste sélectionnable et lisible.
+  if (current !== null && !options.some((option) => option.value === String(current))) {
+    options.push({ value: String(current), label: t('composer.budget.amount', { amount: current }), hint: t('composer.select.saved') })
+  }
+  return options
+}
 
 function permissionOptions(t: Translate): SettingChoice<ClaudeConfig['permissionMode']>[] {
   return [
@@ -756,6 +776,14 @@ export function useAgentSettings({
           ),
           t,
         ),
+      }),
+      setting({
+        key: 'budget',
+        label: t('composer.setting.budget'),
+        icon: <Wallet size={15} />,
+        options: budgetOptions(t, claude.maxBudgetUsd),
+        value: claude.maxBudgetUsd === null ? 'none' : String(claude.maxBudgetUsd),
+        onChange: (budget) => onConfigChange({ ...claude, maxBudgetUsd: budget === 'none' ? null : Number(budget) }),
       }),
       // Absents quand le catalogue n'en annonce pas, comme l'effort : un CLI sans
       // styles ou sans modèles n'a pas à montrer un sélecteur vide.

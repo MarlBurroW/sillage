@@ -116,7 +116,6 @@ test('la visite se mémorise au compte, et un membre créé par un administrateu
         step: 3,
         answers: { agents: ['claude'], team: 'team', devices: 'phone', guidance: 'direct', permission: 'acceptEdits' },
         skipped: ['appearance'],
-        projectId: null,
       },
     },
   })

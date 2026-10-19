@@ -148,6 +148,7 @@ export function registerProjectRoutes(
           defaultConfig: readProjectDefaults(project.defaultConfig),
           instructionsMode: project.instructionsMode,
           turnCheckpoints: project.turnCheckpoints,
+          memoryMode: project.memoryMode,
           activeTerminals: terminals.aliveCount(project.id),
           cardCounts: cardCounts.get(project.id) ?? {},
           pinned: row.pinnedAt !== null,
@@ -331,6 +332,8 @@ export function registerProjectRoutes(
     }
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
     if (body.turnCheckpoints !== undefined) patch.turnCheckpoints = body.turnCheckpoints
+    // Pris au prochain lancement de runner : une session en cours garde sa mémoire.
+    if (body.memoryMode !== undefined) patch.memoryMode = body.memoryMode
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.update(projects).set(patch).where(eq(projects.id, id))

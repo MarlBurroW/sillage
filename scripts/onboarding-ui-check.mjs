@@ -129,25 +129,30 @@ try {
   // La liste ramène en arrière, puis en avant jusqu'à l'étape déjà atteinte, pas au-delà.
   await page.locator('aside ol li button', { hasText: 'Apparence' }).click()
   await heading().filter({ hasText: 'Apparence' }).waitFor()
-  assert.equal(await page.locator('aside ol li button:disabled', { hasText: 'Ton premier projet' }).count(), 1, 'une étape jamais atteinte ne se clique pas')
+  assert.equal(await page.locator('aside ol li button:disabled', { hasText: 'Comment l’agent travaille' }).count(), 1, 'une étape jamais atteinte ne se clique pas')
   await page.locator('aside ol li button', { hasText: 'Tes agents' }).click()
   await heading().filter({ hasText: 'Tes agents' }).waitFor()
   await next('Continuer')
 
-  // Projet d'essai, écrit par Sillage dans un dossier qui n'existe pas encore.
-  await heading().filter({ hasText: 'Ton premier projet' }).waitFor()
-  await page.locator('button:disabled', { hasText: 'Continuer' }).waitFor()
-  await page.getByRole('radio', { name: /Projet d’essai/ }).click()
-  await page.getByLabel('Dossier des projets').fill(join(data, 'projects'))
-  await page.getByRole('button', { name: 'Créer le projet d’essai' }).click()
-  await page.getByText('Projet prêt : Sillage sample').waitFor()
-  await page.screenshot({ path: '/tmp/sillage-onboarding-project.png' })
-  await next('Continuer')
-
-  // Permissions : « Éditions acceptées » part dans les défauts du CLI retenu.
+  // Permissions : « Éditions acceptées » part dans les défauts du CLI retenu. Les points
+  // de reprise s'expliquent sans se régler : ils sont par projet, et la visite n'en crée pas.
   await heading().filter({ hasText: 'Comment l’agent travaille' }).waitFor()
+  await page.getByText('Points de reprise par tour').waitFor()
   await page.getByRole('radio', { name: /Éditions acceptées/ }).click()
   await page.getByRole('radio', { name: /Éditions acceptées/, checked: true }).waitFor()
+  // Le volet détaillé : les groupes du composeur, par CLI, dont le budget de Claude.
+  await page.getByRole('button', { name: 'Régler chaque CLI en détail' }).click()
+  await page.getByText('Budget par conversation').waitFor()
+  await page.getByText(/Modèle/).first().waitFor({ timeout: 60000 })
+  await page.screenshot({ path: '/tmp/sillage-onboarding-work-detail.png', fullPage: true })
+  await next('Continuer')
+
+  // Consignes et mémoire : deux défauts de compte. La mémoire native, pour voir le
+  // projet d'essai en hériter plus bas.
+  await heading().filter({ hasText: 'Consignes et mémoire' }).waitFor()
+  await page.getByRole('radio', { name: /Celle de chaque CLI/ }).click()
+  await page.getByRole('radio', { name: /Celle de chaque CLI/, checked: true }).waitFor()
+  await page.screenshot({ path: '/tmp/sillage-onboarding-memory.png' })
   await next('Continuer')
 
   // Consignes : une puce écrit une ligne, enregistrée à « Continuer ».
@@ -166,18 +171,27 @@ try {
   await page.screenshot({ path: '/tmp/sillage-onboarding-address.png' })
   await page.getByLabel('Adresse publique').press('Enter')
 
-  // C'est prêt : le récapitulatif, puis la première conversation du projet.
+  // C'est prêt : le récapitulatif, puis, sans projet encore, l'écran qui en crée un.
   await heading().filter({ hasText: 'C’est prêt.' }).waitFor()
-  await page.getByText('Sillage sample').first().waitFor()
   await page.getByText('Éditions acceptées').waitFor()
+  assert.equal(await page.getByText('Projet', { exact: true }).count(), 0, 'la visite ne parle plus de projet')
   await page.screenshot({ path: '/tmp/sillage-onboarding-ready.png' })
-  await next('Ouvrir ma première conversation')
+  await next('Créer mon premier projet')
+  await page.waitForURL(/\/projects\/new$/)
+
+  // Le projet d'essai, désormais quatrième origine de l'écran Nouveau projet : Sillage
+  // l'écrit dans un dossier qui n'existe pas encore, et ouvre sa première conversation.
+  await page.getByRole('radio', { name: /Projet d’essai/ }).click()
+  await page.getByLabel('Dossier des projets').fill(join(data, 'projects'))
+  await page.getByRole('button', { name: 'Créer le projet d’essai' }).click()
   await page.waitForURL(/\/p\/[^/]+\/c\/new$/)
+  await page.screenshot({ path: '/tmp/sillage-onboarding-project.png' })
 
   // Ce que la visite a laissé derrière elle, lu sur l'API.
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
   assert.equal(settings.onboarding.pending, false)
   assert.equal(settings.agentDefaults.claude.permissionMode, 'acceptEdits')
+  assert.equal(settings.agentDefaults.claude.maxBudgetUsd, null)
   assert.deepEqual(settings.onboarding.answers.agents, ['claude'])
   const instructions = await (await context.request.get(`${base}/api/instructions`)).json()
   assert.match(instructions.content, /Lance les tests et le typecheck/)
@@ -187,6 +201,17 @@ try {
   assert.equal(projects.length, 1)
   assert.equal(projects[0].name, 'Sillage sample')
   assert.equal(projects[0].workspacePath, join(data, 'projects', 'sillage-sample'))
+  // Le projet d'essai a pris le défaut du compte : mémoire native, rien à lister ; le
+  // propriétaire peut revenir sur Sillage, et la carte retrouve son dossier.
+  assert.equal(settings.projectDefaults.memoryMode, 'native')
+  assert.equal(projects[0].memoryMode, 'native')
+  const nativeMemory = await (await context.request.get(`${base}/api/projects/${projects[0].id}/memory`)).json()
+  assert.equal(nativeMemory.mode, 'native')
+  assert.deepEqual(nativeMemory.files, [])
+  assert.ok((await context.request.patch(`${base}/api/projects/${projects[0].id}`, { data: { memoryMode: 'sillage' } })).ok())
+  const sillageMemory = await (await context.request.get(`${base}/api/projects/${projects[0].id}/memory`)).json()
+  assert.equal(sillageMemory.mode, 'sillage')
+  assert.ok(sillageMemory.dir.length > 0)
 
   // Revenir sur /bienvenue une fois la visite finie ramène à l'application.
   await page.goto(`${base}/bienvenue`)
@@ -214,8 +239,10 @@ try {
   await phone.getByRole('heading', { level: 1 }).filter({ hasText: 'C’est prêt.' }).waitFor()
   assert.equal(await phone.getByText('Consignes', { exact: true }).count(), 0)
   await phone.screenshot({ path: '/tmp/sillage-onboarding-member-ready.png', fullPage: true })
-  await phone.getByRole('button', { name: 'Terminer' }).click()
-  await phone.waitForURL((url) => !url.pathname.startsWith('/bienvenue'))
+  // Le seul projet est celui de l'administrateur, privé : le membre n'en voit aucun, et sa
+  // visite finit elle aussi sur la création d'un projet.
+  await phone.getByRole('button', { name: 'Créer mon premier projet' }).click()
+  await phone.waitForURL(/\/projects\/new$/)
   const bobSettings = await (await member.request.get(`${base}/api/me/settings`)).json()
   assert.equal(bobSettings.onboarding.pending, false)
   const me = await (await member.request.get(`${base}/api/auth/me`)).json()
@@ -285,8 +312,9 @@ try {
     assert.equal(await desk.getByText(absent, { exact: true }).count(), 0, `${absent} n’a rien à faire en bureau`)
   }
   await desk.screenshot({ path: '/tmp/sillage-onboarding-desktop-ready.png' })
-  await desk.getByRole('button', { name: 'Terminer' }).click()
-  await desk.waitForURL((url) => !url.pathname.startsWith('/bienvenue'))
+  // Base neuve, aucun projet : la visite finit sur la création du premier.
+  await desk.getByRole('button', { name: 'Créer mon premier projet' }).click()
+  await desk.waitForURL(/\/projects\/new$/)
   await window.close()
 
   assert.deepEqual(errors, [])

@@ -4,6 +4,7 @@ import { AppShell } from './components/AppShell'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
 import { useUserSettings } from './lib/user-settings'
+import { useProjects } from './lib/projects'
 import { DesignPage } from './routes/DesignPage'
 import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
@@ -41,6 +42,13 @@ import { SecretsSettingsPage } from './routes/SecretsSettingsPage'
 import { SessionsSettingsPage } from './routes/SessionsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
 import { UsersSettingsPage } from './routes/UsersSettingsPage'
+
+/** Après la visite : la création du premier projet s'il n'y en a aucun, sinon l'accueil. */
+function OnboardingExit() {
+  const { data: projects } = useProjects()
+  if (!projects) return null
+  return <Navigate to={projects.length === 0 ? '/projects/new' : '/'} replace />
+}
 
 export function App() {
   const { data: user, isPending } = useCurrentUser()
@@ -99,7 +107,7 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Navigate to="/" replace />} />
-        <Route path="/bienvenue" element={<Navigate to="/" replace />} />
+        <Route path="/bienvenue" element={<OnboardingExit />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />

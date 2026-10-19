@@ -8,6 +8,7 @@ import { elicitationActionSchema, elicitationContentSchema } from './elicitation
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
 import { instructionsModeSchema, type InstructionsMode } from './instructions.js'
+import { memoryModeSchema, type MemoryMode } from './memory.js'
 import type { ProjectAgentDefaults } from './project-defaults.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
 
@@ -104,6 +105,8 @@ const projectCreationFields = {
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null),
   /** Absent : le dépôt s'il porte déjà un `AGENTS.md` ou un `CLAUDE.md`, Sillage sinon. */
   instructionsMode: instructionsModeSchema.optional(),
+  /** Absent : le défaut du compte. */
+  memoryMode: memoryModeSchema.optional(),
 }
 
 /**
@@ -166,6 +169,7 @@ export const updateProjectBodySchema = z
       }),
     archived: z.boolean(),
     turnCheckpoints: z.boolean(),
+    memoryMode: memoryModeSchema,
   })
   .partial()
 
@@ -218,6 +222,8 @@ export interface ProjectDto {
   instructionsMode: InstructionsMode | null
   /** Points de reprise git par tour (voir `checkpoints.ts` côté serveur). */
   turnCheckpoints: boolean
+  /** Où vit la mémoire des agents de ce projet (voir `memory.ts`). */
+  memoryMode: MemoryMode
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
   /**

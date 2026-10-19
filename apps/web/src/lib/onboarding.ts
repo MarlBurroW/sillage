@@ -12,8 +12,8 @@ export type OnboardingStepId =
   | 'welcome'
   | 'appearance'
   | 'agents'
-  | 'project'
   | 'work'
+  | 'memory'
   | 'rules'
   | 'address'
   | 'ready'
@@ -29,7 +29,9 @@ export function onboardingSteps({ profile, isAdmin, answers }: OnboardingShape):
   // Hébergé : le compte d'abord, créé s'il est le premier, repris s'il a été ouvert par
   // un administrateur. En bureau, le lanceur a déjà ouvert la session.
   if (profile === 'server') steps.push('account')
-  steps.push('welcome', 'appearance', 'agents', 'project', 'work')
+  steps.push('welcome', 'appearance', 'agents', 'work')
+  // Où vivent consignes et mémoire des projets : un défaut de compte, pour chacun.
+  steps.push('memory')
   // Les consignes globales relèvent de l'administrateur ; celles d'un projet se règlent
   // sur sa page.
   if (isAdmin) steps.push('rules')
