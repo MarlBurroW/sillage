@@ -92,7 +92,7 @@
           </p>
         </div>
       </div>
-      <div class="hero-meta"><span>Claude Code + Codex + OpenCode + Grok Build</span><span>Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
+      <div class="hero-meta"><span>Claude Code + Codex + OpenCode + Grok Build</span><span>Desktop app · Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
       <figure class="hero-shot hero-film" id="film">
         <div class="film-frame">
           <video controls preload="none" playsinline poster="film/poster.jpg" width="1920" height="1080" data-film>
@@ -413,19 +413,29 @@
         <p class="section-label">Run it yourself</p><h2 id="install-title">Your machine.<br>Your workspace.</h2>
         <p>An always-on server is recommended for picking up work throughout the day. Your desktop works too, while it stays awake and connected.</p>
         <p>Install the CLIs you use from Settings. Reuse their sign-ins on the host, or add Claude and Codex accounts through Sillage's guided sign-in flows.</p>
+        <p>No server yet? The desktop app for macOS and Linux runs Sillage on your own computer, in its own window, with no account to create.</p>
         <p>Docker, a systemd user service on Linux, a launchd agent on macOS, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Add private remote access with a VPN</a> to connect from another device.</p>
       </div>
 
       <div class="install-box">
         <div class="tabs" role="tablist" aria-label="Installation method">
-          <button id="tab-docker" role="tab" aria-selected="true" aria-controls="panel-docker" data-tab="docker">Docker</button>
+          <button id="tab-desktop" role="tab" aria-selected="true" aria-controls="panel-desktop" data-tab="desktop">Desktop app</button>
+          <button id="tab-docker" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-docker" data-tab="docker">Docker</button>
           <button id="tab-script" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-script" data-tab="script">Linux</button>
           <button id="tab-macos" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-macos" data-tab="macos">macOS</button>
           <button id="tab-windows" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-windows" data-tab="windows">Windows</button>
           <button id="tab-helm" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-helm" data-tab="helm">Kubernetes</button>
         </div>
 
-        <div id="panel-docker" class="tab-panel" role="tabpanel" aria-labelledby="tab-docker" data-panel="docker">
+        <div id="panel-desktop" class="tab-panel" role="tabpanel" aria-labelledby="tab-desktop" data-panel="desktop">
+          <p><a class="btn primary" href="https://github.com/MarlBurroW/sillage/releases/latest">Download from the latest release <span aria-hidden="true">↗</span></a></p>
+          <p>The <code>.dmg</code> for Apple Silicon Macs, the <code>.deb</code> for Debian and Ubuntu (x64, arm64), the AppImage for other distributions. The app bundles the server and its own Node: install your agents, and Sillage opens in its own window, with their sign-ins and no password.</p>
+          <p>It is not notarized by Apple yet. On the first launch, allow it in System Settings &gt; Privacy &amp; Security, or from Terminal:</p>
+<pre class="one-line"><code>xattr -dr com.apple.quarantine /Applications/Sillage.app</code></pre>
+          <p>Your agents work while the app runs, and only on this computer: no access from your phone, no push notifications, no webhooks from the Internet. For those, install a server. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md">desktop guide</a> covers what differs, where your data lives and how to uninstall.</p>
+        </div>
+
+        <div id="panel-docker" class="tab-panel" role="tabpanel" aria-labelledby="tab-docker" data-panel="docker" hidden>
 <pre><code><span class="dim"># docker-compose.yml</span>
 services:
   sillage:

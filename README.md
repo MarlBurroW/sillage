@@ -9,7 +9,8 @@ and Grok Build CLIs on your own machine. Vibe-code from anywhere: the official a
 without the terminal.
 
 Runs on Linux, on macOS (Apple Silicon), on Windows through WSL2, in Docker or on
-Kubernetes. An always-on server is recommended for continuity across devices; a
+Kubernetes, or as a [desktop app](docs/desktop.md) for macOS and Linux that needs no
+server at all. An always-on server is recommended for continuity across devices; a
 workstation works too while it stays awake and online.
 [Set up private remote access and agent preview links](docs/remote-access.md).
 
@@ -205,6 +206,20 @@ Install the CLIs you use from Settings. Reuse their existing sign-ins on the hos
 or add Claude and Codex accounts through Sillage's guided sign-in flows.
 [Account setup](docs/accounts.md).
 
+### Desktop app (macOS, Linux)
+
+No server, no account to create: download the app from the
+[latest release](https://github.com/MarlBurroW/sillage/releases/latest), the `.dmg`
+for Apple Silicon Macs, the `.deb` for Debian and Ubuntu (x64, arm64), or the
+AppImage for other distributions. It bundles the server of the release and its own
+Node, and opens Sillage in its own window. Agents use your own CLIs and sign-ins.
+
+The app is not notarized by Apple yet: on the first launch, allow it in System
+Settings > Privacy & Security (**Open Anyway**). Agents run while the app runs, and
+it has no access from other devices, no push notifications and no webhooks from the
+Internet. The [desktop guide](docs/desktop.md) covers what differs from a server
+install, where the data lives, and how to uninstall.
+
 ### Docker
 
 The agent CLIs are not in the image: install the ones you use from the UI and
@@ -357,6 +372,10 @@ Sillage is built for a trusted circle, not for public exposure:
 - There is no system-level isolation between users: a shared project is readable
   by every account.
 
+The desktop app has no password: it opens its own session at launch, and its
+server, on `127.0.0.1`, serves only the app's window. Pages opened in a browser or
+served by another program on the machine cannot use that session.
+
 The server listens on `127.0.0.1` by default and does not terminate TLS. To reach
 it remotely, go through a reverse proxy (Caddy) or a tunnel (Tailscale, Cloudflare
 Tunnel with Access). Never expose it directly to the Internet.
@@ -367,21 +386,24 @@ options, HTTPS, and shared instructions for reachable agent preview links.
 
 Releases are git tags (`vX.Y.Z`). Each tag builds Linux tarballs (x64 and arm64) and
 a macOS one (Apple Silicon), prebuilt native modules included, a multi-arch Docker
-image on `ghcr.io/marlburrow/sillage`, and a GitHub release with generated notes. The app
-shows the installed version, checks for newer releases, and on installer-based
-setups can update itself from the UI.
+image on `ghcr.io/marlburrow/sillage`, the desktop app (`.dmg` and `.zip` for macOS,
+`.deb` and AppImage for Linux x64 and arm64), and a GitHub release. The app shows the
+installed version, checks for newer releases, and on installer-based setups can
+update itself from the UI.
 
 ## Repository layout
 
 ```
 apps/server        Fastify daemon: API, WebSocket, CLI supervision
 apps/web           React UI, PWA
+apps/desktop       Electron app: runs the release server with its own Node, in a window
 packages/protocol  shared event schema and types
 packages/db        Drizzle schema and migrations
 packages/*-bindings  types generated from the Codex and OpenCode protocols
 deploy/            service templates (systemd, launchd), config example, docker-compose example, Helm chart
 site/              one-page website (GitHub Pages) and its screenshots
-scripts/           screenshot runner, runtime staging, Codex and OpenCode type generation
+scripts/           screenshot runner, runtime and desktop staging, Codex and OpenCode type generation
+docs/desktop.md    the desktop app: download, what differs from a server, uninstall
 docs/windows.md    running Sillage on Windows through WSL2
 docs/remote-access.md  reaching Sillage and agent preview links from other devices
 docs/accounts.md   extra Claude and Codex accounts, how they are wired, their limits
