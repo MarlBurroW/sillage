@@ -85,7 +85,10 @@ jobs:
       - name: Run package scripts with Git Bash
         if: runner.os == 'Windows'
         run: pnpm config set script-shell 'C:\Program Files\Git\bin\bash.exe'
-      - run: pnpm install --frozen-lockfile
+      # Sous Windows, sans scripts d'installation : better-sqlite3 et node-pty y chargent leurs
+      # binaires précompilés, et le `node-gyp rebuild` qu'impose le binding.gyp de
+      # better-sqlite3 échoue sur un Visual Studio trop récent pour lui.
+      - run: pnpm install --frozen-lockfile ${{ runner.os == 'Windows' && '--ignore-scripts' || '' }}
       - run: pnpm build
         env:
           SILLAGE_VERSION: ${{ inputs.version }}

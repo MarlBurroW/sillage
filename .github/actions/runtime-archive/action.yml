@@ -31,9 +31,11 @@ runs:
     # npm et non pnpm : il produit un node_modules à plat, sans liens
     # symboliques, qui survit à l'archivage tar. --legacy-peer-deps parce que
     # le SDK Claude déclare un peer zod@^4 que pnpm tolère et npm refuse.
+    # Sous Windows, sans scripts d'installation : voir `desktop.yml`. Les binaires
+    # précompilés de better-sqlite3 et de node-pty suffisent, le contrôle plus bas le prouve.
     - name: Install production dependencies
       shell: bash
-      run: npm install --omit=dev --legacy-peer-deps
+      run: npm install --omit=dev --legacy-peer-deps ${{ inputs.platform == 'win32' && '--ignore-scripts' || '' }}
       working-directory: out/sillage
     # Ces paquets optionnels du SDK Claude ne contiennent qu'une chose : le binaire
     # `claude` lui-même, 263 Mo par architecture. Sillage lance désormais le CLI du
