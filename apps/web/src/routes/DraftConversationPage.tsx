@@ -219,7 +219,7 @@ export function DraftConversationPage() {
 
   // Chargées seulement quand le CLI retenu persiste des sessions locales relisibles.
   // Un worktree écarte la liste : ces sessions vivent dans le dossier racine du projet.
-  const { data: cliSessions } = useClaudeSessions(
+  const { data: cliSessions, error: cliSessionsError } = useClaudeSessions(
     projectId,
     AGENT_CAPABILITIES[agent].cliSessions && !effectiveWorktreeId,
   )
@@ -463,6 +463,15 @@ export function DraftConversationPage() {
           {/* Sessions commencées au CLI dans ce dossier : plutôt qu'une nouvelle
               conversation, on peut adopter l'une d'elles. Importer ne copie rien,
               c'est la même session, qui reste reprenable avec `claude --resume`. */}
+          {/* Une liste qui n'arrive pas se dit : sans ça, l'erreur ressemblait à
+              « aucune session », et rien ne permettait de la distinguer. */}
+          {AGENT_CAPABILITIES[agent].cliSessions && !effectiveWorktreeId && cliSessionsError ? (
+            <Banner>
+              {cliSessionsError instanceof Error
+                ? cliSessionsError.message
+                : t('draft.cliSessions.error')}
+            </Banner>
+          ) : null}
           {AGENT_CAPABILITIES[agent].cliSessions && cliSessionList.length > 0 ? (
             <details className="rounded-lg border border-line px-3 pb-2">
               <summary className="cursor-pointer py-3 text-xs font-medium text-ink-soft">

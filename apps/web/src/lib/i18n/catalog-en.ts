@@ -2382,6 +2382,7 @@ export const en = {
   'settings.notifications.deviceScope': 'Specific to this device: enabling it here changes nothing elsewhere.',
   'draft.cliSessions.title': 'Or resume a {label} session',
   'draft.cliSessions.description': 'Started with the CLI in this folder. The conversation continues the same session, both ways; just avoid being on both at once.',
+  'draft.cliSessions.error': 'The CLI sessions of this folder could not be listed.',
   'draft.import.error': 'Import failed.',
   'home.empty.description': 'A project points at a folder on your machine. That is the starting point for every conversation.',
     'home.createProject': 'Create a project',

@@ -21,6 +21,7 @@ import type { EventLog } from '../../events/event-log.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import { readUserSettings } from '../../settings/user-settings.js'
 import { resolveConversationCwd } from '../../workspace.js'
+import { samePath } from '../../agents/paths.js'
 import { badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import type { AppContext } from '../context.js'
@@ -101,8 +102,9 @@ export function registerClaudeSessionRoutes(
     return {
       sessions: found
         // Une session d'un autre dossier ne serait pas reprenable : le CLI retrouve
-        // son transcript par le chemin, pas par le seul identifiant.
-        .filter((session) => session.cwd === undefined || session.cwd === project.workspacePath)
+        // son transcript par le chemin, pas par le seul identifiant. Même dossier au sens
+        // du système : la casse et les séparateurs varient d'un terminal à l'autre.
+        .filter((session) => session.cwd === undefined || samePath(session.cwd, project.workspacePath))
         .filter((session) => !linked.has(session.sessionId))
         // Sans premier message, il n'y a rien à reprendre : ce sont des sessions
         // ouvertes puis refermées aussitôt.
