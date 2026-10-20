@@ -67,9 +67,11 @@ function installedVersion() {
     }).trim()
   }
   if (process.platform === 'win32') {
-    return execFileSync('powershell', ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${executable}').VersionInfo.ProductVersion`], {
-      encoding: 'utf8',
-    }).trim()
+    // Absent le temps que l'installeur le remplace ; sa version a quatre parties (0.0.2.0).
+    const script = `(Get-Item -LiteralPath '${executable}' -ErrorAction SilentlyContinue).VersionInfo.ProductVersion`
+    return execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' })
+      .trim()
+      .replace(/^(\d+\.\d+\.\d+)\.0$/, '$1')
   }
   const debPackage = ownerPackage(executable)
   if (debPackage) return execFileSync('dpkg-query', ['-W', '-f=${Version}', debPackage], { encoding: 'utf8' }).trim()
@@ -185,7 +187,12 @@ try {
 
   await waitFor(`app installée en ${target}`, () => installedVersion() === target, 300_000)
   console.log(`app installée en ${target}`)
-  if (bundle) assert.equal(readFileSync(join(userData, 'update-result'), 'utf8').trim(), 'ok')
+  if (bundle) {
+    // Le verdict du script d'échange, qui l'écrit juste après avoir mis la nouvelle app en place.
+    const result = join(userData, 'update-result')
+    await waitFor("verdict de l'échange", () => existsSync(result), 30_000)
+    assert.equal(readFileSync(result, 'utf8').trim(), 'ok')
+  }
 
   const relaunched = await waitFor('app relancée', () => appProcesses().length > 0 && appProcesses(), 120_000)
   console.log(`app relancée (process ${relaunched.join(', ')})`)

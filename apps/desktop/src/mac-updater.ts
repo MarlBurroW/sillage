@@ -137,8 +137,9 @@ async function plistValue(bundle: string, key: string): Promise<string> {
 /**
  * Attend que Sillage soit fermé, serveur compris, puis échange les deux apps. Deux
  * renommages dans le même dossier : l'app n'est absente que l'instant qui les sépare, et
- * un échec du second remet l'ancienne en place. La relance, demandée ou non, rouvre l'app
- * qui est en place, nouvelle ou ancienne.
+ * un échec du second remet l'ancienne en place. La relance, demandée, rouvre l'app qui est
+ * en place, nouvelle ou ancienne ; l'ancienne, quelques centaines de Mo, ne s'efface
+ * qu'ensuite.
  */
 const INSTALL_SCRIPT = `#!/bin/sh
 pid=$1 app=$2 staged=$3 relaunch=$4 result=$5
@@ -163,11 +164,11 @@ swap() {
     echo "$error" > "$result"
     return
   fi
-  rm -rf "$old"
   echo ok > "$result"
 }
 swap
 if [ "$relaunch" = 1 ]; then
   open "$app"
 fi
+rm -rf "$app.previous"
 `

@@ -1,5 +1,6 @@
-import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, join } from 'node:path'
 import { BrowserWindow, app, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { AppImageUpdater, DebUpdater, NsisUpdater, type BaseUpdater, type Logger } from 'electron-updater'
 import type { DesktopUpdateState, DesktopUpdateUnsupportedReason } from '@sillage/protocol'
@@ -126,14 +127,41 @@ export function setupUpdates(options: UpdateOptions): void {
 function createUpdater(resultFile: string): BaseUpdater | DesktopUpdateUnsupportedReason {
   // Lancée depuis le dépôt, ou build de CI (0.0.0-dev) : rien de publié à quoi se comparer.
   if (!app.isPackaged || !/^\d+\.\d+\.\d+$/.test(app.getVersion())) return 'development'
-  if (process.platform === 'win32') return new NsisUpdater()
+  if (process.platform === 'win32') {
+    const updater = new NsisUpdater()
+    // L'installeur complet est publié, pas l'installeur web qui irait chercher le reste.
+    updater.disableWebInstaller = true
+    return updater
+  }
   if (process.platform === 'darwin') return bundleIsReplaceable() ? new MacBundleUpdater(resultFile) : 'location'
   // L'AppImage d'abord : la cible .deb écrit `package-type` dans le dossier qu'elle partage
   // avec l'AppImage, qui peut donc l'embarquer aussi. Le dossier décompressé (`*-unpacked`),
   // qui le porte également, n'est installé nulle part.
-  if (process.env.APPIMAGE) return new AppImageUpdater()
+  if (process.env.APPIMAGE) return new AppImageFileUpdater()
   if (packageType() === 'deb' && !/-unpacked[\\/]/.test(app.getPath('exe'))) return new DebUpdater()
   return 'package'
+}
+
+/**
+ * L'AppImage remplacée sans être exécutée. electron-updater lance la nouvelle une fois
+ * (APPIMAGE_EXIT_AFTER_INSTALL) pour son contrat de licence, que Sillage n'a pas ; extraite
+ * plutôt que montée (APPIMAGE_EXTRACT_AND_RUN, là où FUSE manque), elle liste alors chaque
+ * fichier sur sa sortie, qui déborde le tampon d'execFileSync : l'installation passait
+ * pour ratée, le fichier déjà remplacé.
+ */
+class AppImageFileUpdater extends AppImageUpdater {
+  protected override doInstall(): boolean {
+    const appImage = process.env.APPIMAGE
+    const update = this.installerPath
+    if (!appImage || !isAbsolute(appImage) || !update) throw new Error('No AppImage to replace.')
+    // Copiée à côté d'abord (mv copie d'un système de fichiers à l'autre), puis renommée
+    // d'un coup : l'AppImage n'est jamais à moitié écrite, et l'app en cours garde l'ancienne.
+    const staged = `${appImage}.update`
+    execFileSync('mv', ['-f', update, staged])
+    chmodSync(staged, 0o755)
+    renameSync(staged, appImage)
+    return true
+  }
 }
 
 function packageType(): string | null {
