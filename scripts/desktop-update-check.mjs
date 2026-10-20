@@ -90,7 +90,8 @@ function ownerPackage(file) {
 /** Les process de l'app installée, la fenêtre relancée comprise, mais pas ses auxiliaires. */
 function appProcesses() {
   if (process.platform === 'win32') {
-    const script = `Get-Process -Name Sillage -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '${executable}' } | ForEach-Object { $_.Id }`
+    // `exit 0` : sans process à lister, PowerShell sortirait en erreur.
+    const script = `Get-Process -Name Sillage -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '${executable}' } | ForEach-Object { $_.Id }; exit 0`
     return execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' }).split(/\s+/).filter(Boolean).map(Number)
   }
   // Sous Linux, l'AppImage relancée tourne depuis son point de montage : c'est le nom du
