@@ -104,11 +104,15 @@ export function useReorderCards(projectId: string) {
       for (const group of columns) {
         group.ids.forEach((id, index) => moved.set(id, { column: group.column, position: index }))
       }
+      const now = Date.now()
       queryClient.setQueryData(
         cardsKey(projectId),
         previous.map((card) => {
           const move = moved.get(card.id)
-          return move ? { ...card, ...move } : card
+          if (!move) return card
+          // L'arrivée dans la colonne aussi, pour l'ordre par arrivée : sans elle, la
+          // carte se poserait à son ancienne date avant de sauter au retour du serveur.
+          return { ...card, ...move, columnEnteredAt: move.column === card.column ? card.columnEnteredAt : now }
         }),
       )
       return { previous }

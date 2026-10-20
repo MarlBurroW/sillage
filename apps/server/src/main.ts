@@ -42,6 +42,7 @@ import { TerminalManager } from './terminals/terminal-manager.js'
 import { backfillCommandPaths } from './worktrees/backfill.js'
 import { WorktreeCleanup } from './worktrees/cleanup.js'
 import { watchMergedWorktrees } from './worktrees/merge-watch.js'
+import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
 
 async function main(): Promise<void> {
@@ -97,6 +98,7 @@ async function main(): Promise<void> {
   // le propose dans « À décider ».
   const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, (id) => sessions.dropCheckpoints(id))
   watchMergedWorktrees(db, worktreeStatus, decisions, worktreeCleanup)
+  watchMergedCards(db, worktreeStatus)
   // Board relié aux issues GitHub : lit le dépôt, renvoie les changements faits ici, et
   // ouvre les sessions de maintenance qu'une issue ou un commentaire déclenche.
   const board = new BoardSync({ db, config }, gitCredentials, fetch, new BoardResponder({ db, config }, sessions, registry))

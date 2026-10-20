@@ -396,7 +396,7 @@ const TOOLS = [
   {
     name: 'read_card',
     description:
-      "Lit une carte de ce projet en entier : sa description, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée et les cartes qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, et les sessions passées disent ce qui a déjà été tenté. La colonne d'une carte se change dans l'interface, par une personne, jamais par toi.",
+      "Lit une carte de ce projet en entier : sa description, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée et les cartes qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, et les sessions passées disent ce qui a déjà été tenté. Pour changer sa colonne, move_card.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -430,9 +430,33 @@ const TOOLS = [
     },
   },
   {
+    name: 'move_card',
+    description:
+      "Change la colonne d'une carte du board. Deux usages : quand l'utilisateur te le demande, sur n'importe quelle carte ; et, de toi-même, pour la carte de cette conversation quand ton travail change d'étape, en « à vérifier » (review) quand tu as fini et qu'une personne doit relire. Ne passe une carte en « terminé » ou « abandonné » de toi-même que si l'utilisateur l'a dit : c'est lui qui juge qu'un travail est clos. Une ligne dans l'activité de la carte garde la trace du déplacement. Sur une carte qui suit une issue GitHub, Sillage reporte la colonne sur l'issue (étiquette, fermeture ou réouverture).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        number: {
+          type: 'integer',
+          description: "Numéro de la carte, tel qu'il s'écrit après le `#`. Omis : la carte de cette conversation.",
+        },
+        column: {
+          type: 'string',
+          enum: ['todo', 'in_progress', 'review', 'done', 'abandoned'],
+          description: 'Colonne d’arrivée : todo (à faire), in_progress (en cours), review (à vérifier), done (terminé), abandoned (abandonné).',
+        },
+        reason: {
+          type: 'string',
+          description: "Pourquoi, en une phrase, ajoutée à la ligne d'activité. Facultatif.",
+        },
+      },
+      required: ['column'],
+    },
+  },
+  {
     name: 'create_card',
     description:
-      "Ouvre une carte dans la colonne « à faire » du board de ce projet. Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas : un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Tu ne peux ni déplacer une carte ni réécrire une description existante : la colonne et la consigne appartiennent aux personnes.",
+      "Ouvre une carte dans la colonne « à faire » du board de ce projet. Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas : un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Tu ne réécris pas une description existante : la consigne appartient à qui l'a écrite. Pour changer la colonne d'une carte, move_card.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -2642,6 +2666,50 @@ async function callTool(name, args) {
 
     addCardNote(card.id, body, false)
     return text(`Note ajoutée à la carte #${card.number} « ${card.title} ».`)
+  }
+
+  if (name === 'move_card') {
+    const column = typeof args?.column === 'string' && COLUMN_LABELS[args.column] ? args.column : null
+    if (!column) {
+      return { ...text('Le paramètre `column` vaut todo, in_progress, review, done ou abandoned.'), isError: true }
+    }
+    const number = Number.isInteger(args?.number) ? args.number : null
+    const target = number !== null ? { number } : GLOBAL ? null : currentCard()
+    if (!target) {
+      return {
+        ...text(
+          GLOBAL
+            ? 'Le paramètre `number` est requis : il désigne la carte à déplacer.'
+            : "Cette conversation n'est rattachée à aucune carte : donne le numéro de celle à déplacer (`number`).",
+        ),
+        isError: true,
+      }
+    }
+    const card = db
+      .prepare('SELECT id, number, title, "column" AS column FROM cards WHERE project_id = ? AND number = ?')
+      .get(PROJECT_ID, target.number)
+    if (!card) {
+      return {
+        ...text(`Aucune carte #${target.number} dans ce projet. Appeler list_cards pour voir celles qui existent.`),
+        isError: true,
+      }
+    }
+    if (card.column === column) {
+      return text(`La carte #${card.number} « ${card.title} » est déjà en « ${COLUMN_LABELS[column]} ».`)
+    }
+    moveCard(card.id, column)
+    const reason = typeof args?.reason === 'string' ? args.reason.trim().slice(0, 500) : ''
+    addCardNote(
+      card.id,
+      `Déplacée de « ${COLUMN_LABELS[card.column]} » vers « ${COLUMN_LABELS[column]} ».${reason ? ` ${reason}` : ''}`,
+      false,
+    )
+    const issue = cardIssue(card.id)
+    const tracked = issue && !issue.detached && boardLink()
+    return text(
+      `Carte #${card.number} « ${card.title} » passée de « ${COLUMN_LABELS[card.column]} » à « ${COLUMN_LABELS[column]} ».` +
+        (tracked ? ` L'issue #${issue.number} suivra sur GitHub dans quelques secondes.` : ''),
+    )
   }
 
   if (name === 'update_issue') {

@@ -225,6 +225,9 @@ export function registerCardRoutes(
       createdByName: authors.get(row.createdBy) ?? '',
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      // Une carte écrite avant la migration et jamais touchée depuis n'en a pas : sa
+      // création reste alors son arrivée.
+      columnEnteredAt: row.columnEnteredAt ?? row.createdAt,
       conversations: sessions.get(row.id) ?? [],
       noteCount: notes.get(row.id) ?? 0,
       attachmentCount: files.get(row.id) ?? 0,
@@ -663,6 +666,8 @@ function insertCard(
       createdBy: userId,
       createdAt: now,
       updatedAt: now,
+      columnEnteredAt: now,
+      doneByMerge: null,
     }
     tx.insert(cards).values(created).run()
     return created

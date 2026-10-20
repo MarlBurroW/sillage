@@ -120,7 +120,7 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
 
   if (input.sillageMcp) {
     lines.push(
-      `\`read_card\` avec le numéro ${card.number} rend sa description entière, les chemins locaux de ses pièces jointes à consulter avec tes outils de lecture, les notes des sessions précédentes et les cartes qui la citent ; \`add_card_note\` laisse à la suivante ce qu'elle ne pourra pas redécouvrir seule, et c'est à faire avant de terminer. La colonne d'une carte, elle, se change dans l'interface et jamais par toi.`,
+      `\`read_card\` avec le numéro ${card.number} rend sa description entière, les chemins locaux de ses pièces jointes à consulter avec tes outils de lecture, les notes des sessions précédentes et les cartes qui la citent ; \`add_card_note\` laisse à la suivante ce qu'elle ne pourra pas redécouvrir seule, et c'est à faire avant de terminer. \`move_card\` la passe en « à vérifier » quand ton travail est prêt à relire ; « terminé » et « abandonné » restent à l'utilisateur, sauf s'il te le demande.`,
     )
   }
 

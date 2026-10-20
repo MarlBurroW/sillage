@@ -27,6 +27,13 @@ import {
  * projet peuvent donc ne pas travailler avec les mêmes garde-fous, ce qui est le but :
  * le mode de permission engage celui qui lit les réponses, pas l'instance.
  */
+/**
+ * Ordre des cartes d'une colonne : `manual` suit le glisser-déposer, `recent` met en tête
+ * la dernière arrivée dans la colonne, `oldest` la plus ancienne (une file d'attente).
+ */
+export const boardOrderSchema = z.enum(['manual', 'recent', 'oldest'])
+export type BoardOrder = z.infer<typeof boardOrderSchema>
+
 export interface UserSettingsDto {
   agentDefaults: AgentDefaults
   /**
@@ -50,6 +57,13 @@ export interface UserSettingsDto {
    * les projets repliés : le choix vaut sur tous ses appareils.
    */
   hiddenAgents: AgentKind[]
+  /**
+   * Ordre des cartes dans les colonnes du board, par projet : manuel (glisser-déposer)
+   * ou par arrivée dans la colonne, récentes ou anciennes en tête. Absent vaut manuel.
+   * Au compte et non au projet : c'est une façon de lire le board, pas une règle qu'un
+   * membre impose aux autres.
+   */
+  boardOrder: Record<string, BoardOrder>
   /**
    * Dossier parent proposé à la création d'un projet, `null` tant qu'aucun projet n'a
    * été créé ainsi.
@@ -280,6 +294,7 @@ export const storedUserSettingsSchema = z
     // suppression, y compris pour les comptes qui ne se connectent plus.
     collapsedProjects: z.array(z.string()).default([]).catch([]),
     hiddenAgents: z.array(agentKindSchema).default([]).catch([]),
+    boardOrder: z.record(z.string(), boardOrderSchema).default({}).catch({}),
     projectsDir: z.string().nullable().default(null).catch(null),
     appearance: appearancePrefsSchema.nullable().default(null).catch(null),
     notifications: notificationPrefsSchema.default(DEFAULT_NOTIFICATION_PREFS).catch(DEFAULT_NOTIFICATION_PREFS),
@@ -291,6 +306,7 @@ export const storedUserSettingsSchema = z
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
     collapsedProjects: [],
     hiddenAgents: [],
+    boardOrder: {},
     projectsDir: null,
     appearance: null,
     notifications: DEFAULT_NOTIFICATION_PREFS,
@@ -310,6 +326,8 @@ export const updateUserSettingsBodySchema = z.object({
   collapsedProjects: z.array(z.string().uuid()).optional(),
   /** La liste entière, pour la même raison. */
   hiddenAgents: z.array(agentKindSchema).optional(),
+  /** L'ordre d'un seul board ; les autres projets gardent le leur. */
+  boardOrder: z.object({ projectId: z.string().uuid(), order: boardOrderSchema }).optional(),
   /** `null` retire le dossier mémorisé ; absent, il ne bouge pas. */
   projectsDir: z.string().min(1).nullable().optional(),
   /** Remplacée en bloc, comme les projets repliés. */

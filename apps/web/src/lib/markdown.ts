@@ -1,6 +1,6 @@
 import MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
-import { VIEWABLE_IMAGE_TYPES } from '@sillage/protocol'
+import { VIEWABLE_IMAGE_TYPES, cardReferenceRanges } from '@sillage/protocol'
 import { rawFileUrl } from './files-io'
 import type { WorkspaceScope } from './workspace-scope'
 
@@ -320,6 +320,58 @@ function markFilePaths(md: MarkdownIt): void {
 
 markFilePaths(md)
 
+/**
+ * Rend cliquables les `#12` qui désignent une carte du board.
+ *
+ * Seuls les numéros de `cards` sont transformés, comme les chemins de fichiers : un
+ * « issue #1 » d'un autre dépôt ou un numéro qui n'existe pas ici reste du texte, plutôt
+ * qu'un lien vers une carte qui n'est pas la bonne. Jamais dans le code ni dans un lien :
+ * la passe ne touche que les jetons de texte hors lien. Le bouton porte le numéro, et
+ * c'est un écouteur délégué qui ouvre la carte et en montre l'aperçu.
+ */
+function markCardReferences(md: MarkdownIt): void {
+  md.core.ruler.push('sg_card_refs', (state) => {
+    const known = (state.env as MarkdownEnv).cards
+    if (!known || known.size === 0) return true
+
+    const text = (content: string): Token => {
+      const token = new state.Token('text', '', 0)
+      token.content = content
+      return token
+    }
+
+    for (const token of state.tokens) {
+      if (token.type !== 'inline' || !token.children) continue
+      const children: Token[] = []
+      let inLink = 0
+      for (const child of token.children) {
+        if (child.type === 'link_open') inLink += 1
+        if (child.type === 'link_close') inLink -= 1
+        const ranges = child.type === 'text' && inLink === 0
+          ? cardReferenceRanges(child.content).filter((range) => known.has(range.number))
+          : []
+        if (ranges.length === 0) {
+          children.push(child)
+          continue
+        }
+        let at = 0
+        for (const range of ranges) {
+          if (range.start > at) children.push(text(child.content.slice(at, range.start)))
+          const button = new state.Token('html_inline', '', 0)
+          button.content = `<button type="button" class="sg-card-ref" data-sg-card="${range.number}">#${range.number}</button>`
+          children.push(button)
+          at = range.end
+        }
+        if (at < child.content.length) children.push(text(child.content.slice(at)))
+      }
+      token.children = children
+    }
+    return true
+  })
+}
+
+markCardReferences(md)
+
 /** Ce que la passe de rendu reçoit et remplit. */
 interface MarkdownEnv {
   /** Chemins possibles rencontrés, à soumettre au serveur. */
@@ -333,6 +385,8 @@ interface MarkdownEnv {
   scope?: WorkspaceScope
   /** Dossier du document rendu, d'où partent ses liens relatifs. Voir `pathTarget`. */
   base?: string
+  /** Numéros des cartes du board auquel le texte se rapporte. Voir `markCardReferences`. */
+  cards?: Set<number>
 }
 
 /** Un segment de contenu, tel que le composant React doit le rendre. */
@@ -386,7 +440,7 @@ function tableRows(tokens: Token[], start: number, end: number): string[][] {
  */
 export function parseMarkdown(
   text: string,
-  options: { knownFiles?: Set<string>; scope?: WorkspaceScope; base?: string } = {},
+  options: { knownFiles?: Set<string>; scope?: WorkspaceScope; base?: string; cards?: Set<number> } = {},
 ): MarkdownDocument {
   const candidates = new Set<string>()
   const env: MarkdownEnv = { candidates, ...options }

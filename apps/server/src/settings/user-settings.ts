@@ -6,6 +6,7 @@ import {
   type AgentConfig,
   type AgentKind,
   type AppearancePrefs,
+  type BoardOrder,
   type ComposerLayout,
   type NotificationPrefs,
   type OnboardingState,
@@ -65,6 +66,21 @@ export function writeUserAgentDefault(db: Db, userId: string, config: AgentConfi
 export function writeCollapsedProjects(db: Db, userId: string, projectIds: string[]): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, collapsedProjects: [...new Set(projectIds)] })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** L'ordre du board d'un projet, sans toucher à celui des autres. */
+export function writeBoardOrder(db: Db, userId: string, projectId: string, order: BoardOrder): void {
+  const current = readUserSettings(db, userId)
+  const boardOrder = { ...current.boardOrder }
+  // Le manuel est le défaut : l'écrire ne ferait que grossir la charge.
+  if (order === 'manual') delete boardOrder[projectId]
+  else boardOrder[projectId] = order
+  const data = JSON.stringify({ ...current, boardOrder })
 
   db.insert(userSettings)
     .values({ userId, data })
