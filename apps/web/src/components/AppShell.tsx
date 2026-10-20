@@ -114,6 +114,10 @@ import { PullToRefresh } from './PullToRefresh'
 import {
   Banner,
   Button,
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSwatch,
   IconButton,
   Menu,
   MenuItem,
@@ -123,6 +127,14 @@ import {
   MenuSwatchRow,
   cx,
 } from './ui'
+
+/**
+ * Au doigt, le clic droit n'existe pas et l'appui long lance déjà le glissement d'une
+ * ligne : le menu contextuel y reste muet, le bouton « … » toujours visible suffit.
+ */
+function useContextMenuEnabled(): boolean {
+  return !useMediaQuery('(pointer: coarse)')
+}
 
 /** Le raccourci porte la touche que la plateforme utilise réellement. */
 const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
@@ -738,7 +750,6 @@ function ProjectGroup({
   onNavigate,
 }: ProjectGroupProps) {
   const t = useTranslate()
-  const navigate = useNavigate()
   const updateProject = useUpdateProject()
   const reorder = useReorderConversations(project.id)
   // Les tirs planifiés sortent des deux listes, actives comme rangées : ils vivent sous
@@ -757,6 +768,7 @@ function ProjectGroup({
   const openConversationId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
   const hasUnread = useHasUnread(active, openConversationId)
 
+  const contextMenu = useContextMenuEnabled()
   const [showAll, setShowAll] = useState(false)
   const visibleActive = focused && !showAll
     ? active.filter((entry, index) => index < 10 || entry.id === openConversationId || entry.favorite)
@@ -812,6 +824,13 @@ function ProjectGroup({
     >
       {/* Le fond est porté par la ligne entière, pas par le lien : sinon les boutons
           d'action se retrouvent visuellement hors de l'élément survolé. */}
+      {/* Le clic droit sur l'en-tête ouvre le même menu que le bouton « … » : viser le
+          bouton est fastidieux, et un explorateur de fichiers a habitué à ce geste. Sur
+          l'en-tête seul, pas sur la ligne entière : les conversations dessous ont le
+          leur, et deux menus pour un même clic s'ouvriraient l'un sur l'autre. */}
+      <ContextMenu
+        disabled={!contextMenu || !project.isOwner || editing}
+        trigger={
       <div
         ref={setActivatorNodeRef}
         {...attributes}
@@ -899,56 +918,14 @@ function ProjectGroup({
               </IconButton>
             }
           >
-            <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
-              {t('shell.rename')}
-            </MenuItem>
-            <MenuItem
-              icon={<SquareKanban size={14} />}
-              onSelect={() => {
-                onNavigate()
-                navigate(`/p/${project.id}/board`)
-              }}
-            >
-              {t('shell.project.board')}
-            </MenuItem>
-            <MenuItem
-              icon={<CalendarClock size={14} />}
-              onSelect={() => {
-                onNavigate()
-                navigate(`/p/${project.id}/schedules`)
-              }}
-            >
-              {t('schedule.title')}
-            </MenuItem>
-            <MenuItem
-              icon={<SlidersHorizontal size={14} />}
-              onSelect={() => {
-                onNavigate()
-                navigate(`/p/${project.id}`)
-              }}
-            >
-              {t('shell.project.settings')}
-            </MenuItem>
-            <MenuSeparator />
-            <MenuLabel>
-              <span className="flex items-center gap-1.5">
-                <Palette size={11} /> {t('shell.color')}
-              </span>
-            </MenuLabel>
-            <MenuSwatchRow>
-              {PROJECT_COLORS.map((entry) => (
-                <MenuSwatch
-                  key={entry.value ?? 'default'}
-                  color={entry.value}
-                  label={t(entry.label)}
-                  selected={project.color === entry.value}
-                  onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
-                />
-              ))}
-            </MenuSwatchRow>
+            <ProjectMenuItems variant="dropdown" project={project} onRename={() => setEditing(true)} onNavigate={onNavigate} />
           </Menu>
         ) : null}
       </div>
+        }
+      >
+        <ProjectMenuItems variant="context" project={project} onRename={() => setEditing(true)} onNavigate={onNavigate} />
+      </ContextMenu>
 
       {open ? (
         <ul className="mt-1 mb-2 ml-3 flex flex-col gap-px border-l border-line pl-1.5">
@@ -1162,12 +1139,9 @@ function ConversationRow({
 }) {
   const t = useTranslate()
   const rename = useRenameConversation()
-  const remove = useDeleteConversation()
-  const setArchived = useArchiveConversation()
   const isArchived = conversation.archivedAt !== null
-  const navigate = useNavigate()
   const openMatch = useMatch('/p/:projectId/c/:conversationId')
-  const projectView = useProjectView(conversation.projectId)
+  const contextMenu = useContextMenuEnabled()
   const [editing, setEditing] = useState(false)
   // Le statut du socket prime sur celui de la liste, qui date de son chargement.
   const status = useLiveStatus(conversation.id) ?? conversation.status
@@ -1232,6 +1206,10 @@ function ConversationRow({
   const unread = !isActive && isUnread(conversation, pushedSeq)
 
   return (
+    // Le clic droit sur la ligne ouvre le menu du bouton « … », qu'il faut sinon viser.
+    <ContextMenu
+      disabled={!contextMenu}
+      trigger={
     <li
       ref={setNodeRef}
       style={style}
@@ -1329,23 +1307,61 @@ function ConversationRow({
             </IconButton>
           }
         >
-          <MenuItem icon={<Star size={14} />} disabled={toggleFavorite.isPending} onSelect={() => toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })}>
-            {conversation.favorite ? t('shell.conversation.unfavorite') : t('shell.conversation.favorite')}
-          </MenuItem>
-          {conversation.isOwner ? (
-          <>
-          <MenuSeparator />
-          <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
+          <ConversationMenuItems variant="dropdown" conversation={conversation} toggleFavorite={toggleFavorite} onRename={() => setEditing(true)} />
+        </Menu>
+    </li>
+      }
+    >
+      <ConversationMenuItems variant="context" conversation={conversation} toggleFavorite={toggleFavorite} onRename={() => setEditing(true)} />
+    </ContextMenu>
+  )
+}
+
+/**
+ * Les actions d'une conversation, pour le menu déroulant du bouton « … » comme pour le
+ * clic droit sur la ligne : une seule liste, deux primitives Radix qui ne partagent
+ * pas leurs entrées. Même découpage que les entrées de l'explorateur.
+ */
+function ConversationMenuItems({
+  variant,
+  conversation,
+  toggleFavorite,
+  onRename,
+}: {
+  variant: 'context' | 'dropdown'
+  conversation: ConversationDto
+  toggleFavorite: FavoriteMutation
+  onRename: () => void
+}) {
+  const t = useTranslate()
+  const remove = useDeleteConversation()
+  const setArchived = useArchiveConversation()
+  const isArchived = conversation.archivedAt !== null
+  const navigate = useNavigate()
+  const openMatch = useMatch('/p/:projectId/c/:conversationId')
+  const projectView = useProjectView(conversation.projectId)
+  const Item = variant === 'context' ? ContextMenuItem : MenuItem
+  const Separator = variant === 'context' ? ContextMenuSeparator : MenuSeparator
+
+  return (
+    <>
+      <Item icon={<Star size={14} />} disabled={toggleFavorite.isPending} onSelect={() => toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })}>
+        {conversation.favorite ? t('shell.conversation.unfavorite') : t('shell.conversation.favorite')}
+      </Item>
+      {conversation.isOwner ? (
+        <>
+          <Separator />
+          <Item icon={<Pencil size={14} />} onSelect={onRename}>
             {t('shell.rename')}
-          </MenuItem>
-          <MenuItem
+          </Item>
+          <Item
             icon={isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
             onSelect={() => setArchived.mutate({ id: conversation.id, archived: !isArchived })}
           >
             {isArchived ? t('shell.conversation.unarchive') : t('shell.conversation.archive')}
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem
+          </Item>
+          <Separator />
+          <Item
             icon={<Trash2 size={14} />}
             tone="critical"
             onSelect={() => {
@@ -1363,11 +1379,69 @@ function ConversationRow({
             }}
           >
             {t('shell.delete')}
-          </MenuItem>
-          </>
-          ) : null}
-        </Menu>
-    </li>
+          </Item>
+        </>
+      ) : null}
+    </>
+  )
+}
+
+/** Les actions d'un projet, pour le bouton « … » comme pour le clic droit sur l'en-tête. */
+function ProjectMenuItems({
+  variant,
+  project,
+  onRename,
+  onNavigate,
+}: {
+  variant: 'context' | 'dropdown'
+  project: ProjectDto
+  onRename: () => void
+  onNavigate: () => void
+}) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const updateProject = useUpdateProject()
+  const Item = variant === 'context' ? ContextMenuItem : MenuItem
+  const Separator = variant === 'context' ? ContextMenuSeparator : MenuSeparator
+  const Swatch = variant === 'context' ? ContextMenuSwatch : MenuSwatch
+  const go = (path: string) => {
+    onNavigate()
+    navigate(path)
+  }
+
+  return (
+    <>
+      <Item icon={<Pencil size={14} />} onSelect={onRename}>
+        {t('shell.rename')}
+      </Item>
+      <Item icon={<SquareKanban size={14} />} onSelect={() => go(`/p/${project.id}/board`)}>
+        {t('shell.project.board')}
+      </Item>
+      <Item icon={<CalendarClock size={14} />} onSelect={() => go(`/p/${project.id}/schedules`)}>
+        {t('schedule.title')}
+      </Item>
+      <Item icon={<SlidersHorizontal size={14} />} onSelect={() => go(`/p/${project.id}`)}>
+        {t('shell.project.settings')}
+      </Item>
+      <Separator />
+      {/* Libellé et rangée sont de simples blocs, communs aux deux primitives. */}
+      <MenuLabel>
+        <span className="flex items-center gap-1.5">
+          <Palette size={11} /> {t('shell.color')}
+        </span>
+      </MenuLabel>
+      <MenuSwatchRow>
+        {PROJECT_COLORS.map((entry) => (
+          <Swatch
+            key={entry.value ?? 'default'}
+            color={entry.value}
+            label={t(entry.label)}
+            selected={project.color === entry.value}
+            onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
+          />
+        ))}
+      </MenuSwatchRow>
+    </>
   )
 }
 

@@ -51,6 +51,7 @@ import {
 import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
 import { translate, useTranslate } from '../lib/i18n'
+import { useCapability } from '../lib/instance'
 import {
   useDeleteProject,
   useProjects,
@@ -84,6 +85,7 @@ export function ProjectPage() {
   const { data: projects, isPending } = useProjects()
   const { data: conversations } = useAllConversations()
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
 
   const project = projects?.find((p) => p.id === projectId)
 
@@ -100,11 +102,13 @@ export function ProjectPage() {
           {project.name}
         </h1>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
-            {project.visibility === 'shared'
-              ? t('project.visibility.shared')
-              : t('project.visibility.private')}
-          </Badge>
+          {sharedProjects ? (
+            <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
+              {project.visibility === 'shared'
+                ? t('project.visibility.shared')
+                : t('project.visibility.private')}
+            </Badge>
+          ) : null}
           {project.git ? (
             <>
               <Badge icon={<GitBranch size={11} />}>{project.git.branch}</Badge>
@@ -406,6 +410,7 @@ function ProjectSettings({
   const updateProject = useUpdateProject()
   const deleteProject = useDeleteProject()
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
 
   const [name, setName] = useState(initialName)
   const [workspacePath, setWorkspacePath] = useState(initialPath)
@@ -445,12 +450,14 @@ function ProjectSettings({
           <Banner tone="caution">{t('project.settings.pathChanged.warning')}</Banner>
         ) : null}
 
-        <Select
-          label={t('project.settings.visibility')}
-          value={visibility}
-          onChange={setVisibility}
-          options={visibilityOptions()}
-        />
+        {sharedProjects ? (
+          <Select
+            label={t('project.settings.visibility')}
+            value={visibility}
+            onChange={setVisibility}
+            options={visibilityOptions()}
+          />
+        ) : null}
 
         {/* Appliqué au clic, hors du formulaire : un interrupteur, pas une case à enregistrer. */}
         <div className="flex items-center gap-3">

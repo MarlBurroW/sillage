@@ -595,6 +595,25 @@
 }
 
 /* Vague des points de l'indicateur de tour. */
+/*
+ * Barre d'installation d'un CLI : un segment qui balaie la piste, puisque npm ne donne
+ * pas de proportion. Immobile pour qui a réduit les animations, le texte à côté suffit.
+ */
+.sg-install-sweep {
+  animation: sg-install-sweep 1.4s ease-in-out infinite;
+}
+@keyframes sg-install-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sg-install-sweep {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
 @keyframes sg-pulse-dot {
   0%,
   100% {

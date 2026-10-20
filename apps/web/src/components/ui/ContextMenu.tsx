@@ -12,10 +12,23 @@ import { MenuHint } from './Menu'
  * menus de l'application, à un seul endroit près : `Item` et consorts appartiennent à
  * deux modules Radix différents et ne se partagent pas.
  */
-export function ContextMenu({ trigger, children }: { trigger: ReactNode; children: ReactNode }) {
+export function ContextMenu({
+  trigger,
+  disabled = false,
+  children,
+}: {
+  trigger: ReactNode
+  /**
+   * Coupe le déclencheur sans retirer le menu de l'arbre. Sert au doigt, quand l'appui
+   * long appartient déjà à un autre geste (le glissement d'une ligne) et qu'un bouton
+   * visible donne de toute façon les mêmes actions.
+   */
+  disabled?: boolean
+  children: ReactNode
+}) {
   return (
     <Primitive.Root>
-      <Primitive.Trigger asChild>{trigger}</Primitive.Trigger>
+      <Primitive.Trigger asChild disabled={disabled}>{trigger}</Primitive.Trigger>
       <Primitive.Portal>
         <Primitive.Content
           className={cx(
@@ -36,12 +49,15 @@ export function ContextMenuItem({
   icon,
   onSelect,
   tone = 'neutral',
+  disabled = false,
   hint,
   children,
 }: {
   icon?: ReactNode
   onSelect: () => void
   tone?: 'neutral' | 'critical'
+  /** Grisée plutôt que retirée, comme `MenuItem`. */
+  disabled?: boolean
   /** Raccourci clavier équivalent, voir `MenuHint`. */
   hint?: string
   children: ReactNode
@@ -49,8 +65,10 @@ export function ContextMenuItem({
   return (
     <Primitive.Item
       onSelect={onSelect}
+      disabled={disabled}
       className={cx(
         'flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-45',
         tone === 'critical'
           ? 'text-critical data-[highlighted]:bg-critical/12'
           : 'text-ink-soft data-[highlighted]:bg-accent-wash data-[highlighted]:text-ink',
@@ -65,4 +83,33 @@ export function ContextMenuItem({
 
 export function ContextMenuSeparator() {
   return <Primitive.Separator className="my-1 h-px bg-line" />
+}
+
+/** La pastille de couleur de `MenuSwatch`, pour un menu au clic droit. */
+export function ContextMenuSwatch({
+  color,
+  selected,
+  label,
+  onSelect,
+}: {
+  color: string | null
+  selected: boolean
+  label: string
+  onSelect: () => void
+}) {
+  return (
+    <Primitive.Item asChild onSelect={onSelect}>
+      <button
+        type="button"
+        aria-label={label}
+        title={label}
+        className={cx(
+          'size-5 shrink-0 cursor-pointer rounded-full outline-none transition-transform',
+          'hover:scale-110 focus-visible:scale-110',
+          selected ? 'ring-2 ring-ink ring-offset-2 ring-offset-[var(--sg-surface)]' : '',
+        )}
+        style={{ background: color ?? 'var(--sg-accent)' }}
+      />
+    </Primitive.Item>
+  )
 }

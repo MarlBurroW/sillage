@@ -1461,7 +1461,7 @@ Check the installed CLIs against their latest releases: run \`claude --version\`
           file: { path: 'src/lib/radar-prefetch.ts', action: 'created' },
         },
         assistant:
-          'Prefetching is in: `tilesToPrefetch` computes the ring around the viewport and the map layer warms those tiles on idle. Panning one screen in any direction no longer shows blanks. Worth a review pass on mobile, where the tile budget is tighter.',
+          'Prefetching is in: `tilesToPrefetch` computes the ring around the viewport and the map layer warms those tiles on idle. Panning one screen in any direction no longer shows blanks.\n\n| Viewport | Ring tiles | Warm-up |\n|---|---|---|\n| Phone (390×844) | 12 | 180 ms |\n| Tablet (1024×768) | 20 | 310 ms |\n| Desktop (1440×900) | 28 | 420 ms |\n\nWorth a review pass on mobile, where the tile budget is tighter.',
         costUsd: 0.3418,
         outputTokens: 2450,
       }),

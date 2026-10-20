@@ -38,6 +38,7 @@
     "test:worktrees-ui": "node scripts/worktree-status-ui-check.mjs",
     "test:desktop-ui": "node scripts/desktop-ui-check.mjs",
     "test:onboarding-ui": "node scripts/onboarding-ui-check.mjs",
+    "test:windows-feedback-ui": "node scripts/windows-feedback-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
     "db:generate": "pnpm --filter @sillage/db generate",
     "db:migrate": "pnpm --filter @sillage/server migrate",

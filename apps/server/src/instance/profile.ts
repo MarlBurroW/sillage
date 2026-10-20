@@ -18,6 +18,8 @@ export function instanceCapabilities(profile: InstanceProfile): InstanceCapabili
     // pas un serveur qui n'écoute que sur 127.0.0.1.
     webPush: !desktop,
     pwa: !desktop,
+    // Un seul compte en bureau : rien à partager, rien à cacher.
+    sharedProjects: !desktop,
   }
 }
 

@@ -9,6 +9,7 @@ import { AddAccountCard as ClaudeAddAccountCard } from '../../routes/ClaudeAccou
 import { LoginControls as CodexLoginControls } from '../../routes/CodexAccountsSettingsPage'
 import { LoginControls as GrokLoginControls } from '../../routes/GrokAccountsSettingsPage'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
+import { AgentInstallProgress } from '../AgentInstallProgress'
 import { Badge, Banner, Button, Card } from '../ui'
 import { StepTitle, Tip, Why, useCommit, useGate, type StepProps } from './shell'
 
@@ -101,12 +102,17 @@ function AgentCard({ entry }: { entry: AgentAvailabilityDto }) {
             <Badge tone="neutral">{entry.reason === 'disabled' ? t('agent.unavailable.disabled') : t('onboarding.agents.missing')}</Badge>
           )}
         </div>
-        {install.offered ? (
+        {install.offered && !install.progress ? (
           <Button size="sm" variant="secondary" icon={<Download size={14} />} disabled={install.busy} onClick={install.start}>
-            {install.running ? install.status : install.action}
+            {install.action}
           </Button>
         ) : null}
       </div>
+      {/* Le bouton laisse la place à l'avancement : une installation dure plusieurs
+          minutes, et un bouton grisé ne dit pas si quelque chose se passe. */}
+      {install.progress ? (
+        <AgentInstallProgress label={label} version={entry.preferredVersion} progress={install.progress} className="px-4 pt-3" />
+      ) : null}
       {install.failed ? (
         <div className="px-4 pt-3">
           <Banner>{install.status}</Banner>

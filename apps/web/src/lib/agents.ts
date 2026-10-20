@@ -9,8 +9,10 @@ import {
   type AgentModelDto,
   type AgentModelsDto,
 } from '@sillage/protocol'
+import { useMemo } from 'react'
 import { translate, useTranslate, type MessageKey } from './i18n'
 import { api } from './api'
+import { useUpdateHiddenAgents, useUserSettings } from './user-settings'
 
 /**
  * Présence et version des CLI sur la machine du serveur.
@@ -70,10 +72,41 @@ export function useAgentInstall(entry: AgentAvailabilityDto | undefined, label: 
     /** Le libellé du bouton : installer la version visée, ou réessayer. */
     action: failed ? t('agent.install.retry') : t('agent.install.action', { version: entry?.preferredVersion ?? '' }),
     busy: running || install.isPending,
+    /**
+     * Où en est l'installation, pour `AgentInstallProgress` : null hors installation.
+     * Dès le clic et avant la réponse du serveur, un départ sans rien de reçu : le
+     * bouton ne doit pas rester muet le temps de l'aller-retour.
+     */
+    progress: running
+      ? { startedAt: state.startedAt, fetched: state.fetched, current: state.current }
+      : install.isPending
+        ? { startedAt: Date.now(), fetched: 0, current: null }
+        : null,
     start: () => {
       if (entry) install.mutate(entry.agent)
     },
   }
+}
+
+/**
+ * Les CLI que ce compte a masqués tant qu'ils manquent, et de quoi en masquer un ou
+ * tout rouvrir. Un CLI masqué mais installé ne l'est plus : le masque ne porte que sur
+ * la proposition d'installer, voir `hiddenAgent`.
+ */
+export function useHiddenAgents() {
+  const { data: settings } = useUserSettings()
+  const update = useUpdateHiddenAgents()
+  const hidden = useMemo(() => settings?.hiddenAgents ?? [], [settings?.hiddenAgents])
+  return {
+    hidden,
+    hide: (agent: AgentKind) => update.mutate([...hidden, agent]),
+    reveal: () => update.mutate([]),
+  }
+}
+
+/** Un CLI à ne pas proposer : masqué par le compte, et toujours absent. */
+export function hiddenAgent(entry: AgentAvailabilityDto | undefined, hidden: AgentKind[]): boolean {
+  return entry !== undefined && !entry.installed && hidden.includes(entry.agent)
 }
 
 /**

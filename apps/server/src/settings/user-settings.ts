@@ -4,6 +4,7 @@ import {
   DEFAULT_ONBOARDING,
   storedUserSettingsSchema,
   type AgentConfig,
+  type AgentKind,
   type AppearancePrefs,
   type ComposerLayout,
   type NotificationPrefs,
@@ -64,6 +65,17 @@ export function writeUserAgentDefault(db: Db, userId: string, config: AgentConfi
 export function writeCollapsedProjects(db: Db, userId: string, projectIds: string[]): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, collapsedProjects: [...new Set(projectIds)] })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** Les CLI masqués tant qu'ils manquent, remplacés en bloc comme les projets repliés. */
+export function writeHiddenAgents(db: Db, userId: string, agents: AgentKind[]): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, hiddenAgents: [...new Set(agents)] })
 
   db.insert(userSettings)
     .values({ userId, data })

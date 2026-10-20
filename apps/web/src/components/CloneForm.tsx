@@ -13,6 +13,7 @@ import {
 } from './instructions/Instructions'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
+import { useCapability } from '../lib/instance'
 import { RepoCombobox } from './RepoCombobox'
 import { Banner, Button, Field, Select, type SelectOption } from './ui'
 
@@ -29,6 +30,7 @@ function directoryFromUrl(url: string): string {
 
 export function CloneForm() {
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
   const { data: credentials } = useGitCredentials()
   const savedHosts = credentials?.credentials.map((entry) => entry.host) ?? []
   const hasGitHub = savedHosts.includes(GITHUB_HOST)
@@ -186,12 +188,14 @@ export function CloneForm() {
         autoCorrect="off"
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={VISIBILITY_OPTIONS}
-      />
+      {sharedProjects ? (
+        <Select
+          label={t('project.settings.visibility')}
+          value={visibility}
+          onChange={setVisibility}
+          options={VISIBILITY_OPTIONS}
+        />
+      ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
 
       {job?.error ? (
