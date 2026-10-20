@@ -169,6 +169,8 @@ export interface CardDto {
   createdByName: string
   createdAt: number
   updatedAt: number
+  /** Arrivée dans la colonne actuelle, pour l'ordre « par arrivée » du board. */
+  columnEnteredAt: number
   conversations: CardConversationDto[]
   /** Les notes ne voyagent pas avec la liste : le board n'en affiche que le compte. */
   attachmentCount: number
@@ -196,13 +198,25 @@ const CARD_REFERENCE = /(?:^|[^\w#])#(\d+)\b/g
  */
 export function parseCardReferences(text: string): number[] {
   const found: number[] = []
-  for (const match of text.matchAll(CARD_REFERENCE)) {
-    const number = Number(match[1])
-    if (Number.isSafeInteger(number) && number > 0 && !found.includes(number)) {
-      found.push(number)
-    }
+  for (const { number } of cardReferenceRanges(text)) {
+    if (!found.includes(number)) found.push(number)
   }
   return found
+}
+
+/**
+ * Chaque `#n` d'un texte, avec sa place : début du `#` et fin du numéro. Sert au rendu,
+ * qui remplace la référence par un lien sans toucher au caractère qui la précède.
+ */
+export function cardReferenceRanges(text: string): { start: number; end: number; number: number }[] {
+  const ranges: { start: number; end: number; number: number }[] = []
+  for (const match of text.matchAll(CARD_REFERENCE)) {
+    const number = Number(match[1])
+    if (!Number.isSafeInteger(number) || number <= 0) continue
+    const end = match.index + match[0].length
+    ranges.push({ start: end - (match[1] ?? '').length - 1, end, number })
+  }
+  return ranges
 }
 
 /**

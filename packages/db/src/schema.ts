@@ -220,6 +220,22 @@ export const cards = sqliteTable(
     column: text('column').$type<CardColumn>().notNull(),
     /** Ordre manuel dans sa colonne, croissant. Réécrit en bloc par le glisser-déposer. */
     position: integer('position').notNull().default(0),
+    /**
+     * Arrivée dans la colonne actuelle, pour l'ordre « par arrivée » du board.
+     *
+     * Tenue par deux déclencheurs SQLite (migration 0047) et non par le code : une carte
+     * change de colonne par l'interface, par un agent depuis le serveur MCP, par la
+     * synchronisation GitHub ou au lancement de sa première session, et un oubli dans
+     * l'un de ces chemins fausserait l'ordre sans bruit. `updatedAt` ne convient pas :
+     * corriger une faute dans la description ne fait pas arriver la carte.
+     */
+    columnEnteredAt: timestamp('column_entered_at'),
+    /**
+     * Le worktree dont la fusion a fait passer la carte en « Terminé ». Retenu pour ne
+     * le faire qu'une fois : une personne qui ramène la carte en cours après coup a ses
+     * raisons, et l'arbre fusionné ne doit pas la renvoyer à chaque calcul.
+     */
+    doneByMerge: text('done_by_merge'),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id),

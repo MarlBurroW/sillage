@@ -1,7 +1,9 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
+import { Clock, GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
+import type { KeyboardEventHandler, MouseEventHandler, TouchEventHandler } from 'react'
 import type { CardDto } from '@sillage/protocol'
+import { relativeDate } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { cx } from '../ui'
@@ -16,22 +18,28 @@ interface CardTileProps {
   /** Rendu dans le calque de glissement : ni tri, ni clic, seulement l'apparence. */
   disabled?: boolean
   overlay?: boolean
+  /** Le board est trié par arrivée : la tuile dit depuis quand elle est dans la colonne. */
+  showArrival?: boolean
   onOpen?: () => void
 }
 
 /**
  * Une carte du board.
  *
- * Le corps est un bouton et le glissement a sa poignée, plutôt qu'une tuile qui serait
- * les deux à la fois. Au pointeur, un seuil de déplacement suffirait à distinguer le
- * clic du geste ; au clavier non, la barre d'espace servant aux deux, et une carte
- * qu'on ne peut plus ouvrir sans souris est un recul que l'ergonomie du glissement ne
- * rachète pas.
+ * Au pointeur, la carte entière se saisit : viser la petite poignée était la gêne, et le
+ * seuil de déplacement des capteurs (6 px à la souris, un appui long au doigt) suffit à
+ * distinguer le clic du geste. Au clavier non, la barre d'espace servant aux deux : le
+ * corps reste un bouton qui ouvre la carte, et seule la poignée prend le glissement au
+ * clavier. Une carte qu'on ne pourrait plus ouvrir sans souris serait un recul.
  */
-export function CardTile({ card, selected = false, overlay = false, disabled = false, onOpen }: CardTileProps) {
+export function CardTile({ card, selected = false, overlay = false, disabled = false, showArrival = false, onOpen }: CardTileProps) {
   const t = useTranslate()
   const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } =
     useSortable({ id: card.id, disabled: overlay || disabled })
+  // dnd-kit type ses écouteurs en `Function` ; ce sont ceux de ses trois capteurs.
+  const gesture = listeners as
+    | { onMouseDown?: MouseEventHandler; onTouchStart?: TouchEventHandler; onKeyDown?: KeyboardEventHandler }
+    | undefined
 
   const excerpt = card.description.trim().replace(/\s+/g, ' ')
   const sessions = card.conversations.length
@@ -66,8 +74,14 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
         </p>
       ) : null}
 
-      {sessions > 0 || links > 0 || branch || card.attachmentCount > 0 ? (
+      {sessions > 0 || links > 0 || branch || card.attachmentCount > 0 || showArrival ? (
         <div className="mt-3 flex flex-wrap border-t border-line/60 pt-2.5 items-center gap-x-2.5 gap-y-1 text-[0.6875rem] text-ink-faint">
+          {showArrival ? (
+            <span className="inline-flex items-center gap-1" title={t('board.card.arrived', { when: relativeDate(card.columnEnteredAt) })}>
+              <Clock size={11} />
+              {relativeDate(card.columnEnteredAt)}
+            </span>
+          ) : null}
           {agents.map((agent) => (
             <AgentIcon key={agent} agent={agent} size={11} />
           ))}
@@ -114,6 +128,10 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
+      // Souris et doigt seulement : le clavier passe par la poignée, voir plus haut.
+      onMouseDown={gesture?.onMouseDown}
+      onTouchStart={gesture?.onTouchStart}
+      data-card-tile={card.number}
       className={cx(
         skin,
         'group/card transition-colors',
@@ -129,7 +147,7 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
         type="button"
         ref={setActivatorNodeRef}
         {...attributes}
-        {...listeners}
+        onKeyDown={gesture?.onKeyDown}
         aria-label={t('board.card.drag', { number: card.number })}
         className={cx(
           'absolute top-0 right-0 flex size-11 items-center justify-center cursor-grab touch-none rounded text-ink-faint md:top-1.5 md:right-1 md:size-6',

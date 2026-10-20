@@ -331,6 +331,24 @@
   }
 
   /*
+   * Référence à une carte du board (`#12`). Un lien dans une phrase plutôt qu'une
+   * puce : le numéro se lit d'abord comme du texte, l'accent et le soulignement au
+   * survol disent qu'il mène quelque part. Le fond reste celui du texte, sinon un
+   * message qui cite dix cartes se couvre de pastilles.
+   */
+  .sg-reading .sg-card-ref {
+    color: var(--sg-accent);
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 0.2em;
+  }
+  .sg-reading .sg-card-ref:hover,
+  .sg-reading .sg-card-ref:focus-visible {
+    text-decoration-style: solid;
+  }
+
+  /*
    * Image du workspace montrée dans le fil. Le bouton est le cadre : il n'apporte ni
    * fond ni police, seulement la bordure, le coin arrondi et le clic qui ouvre le
    * fichier en grand dans le panneau.

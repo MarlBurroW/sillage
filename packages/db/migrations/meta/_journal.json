@@ -330,6 +330,13 @@
       "when": 1792440839004,
       "tag": "0046_memory_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1792481415209,
+      "tag": "0047_card_arrival",
+      "breakpoints": true
     }
   ]
 }
