@@ -24,7 +24,14 @@ extraResources:
 # Sans version : `releases/latest/download/<nom>` mène toujours au dernier paquet, et le
 # site comme le README en font des liens de téléchargement direct.
 artifactName: Sillage-${os}-${arch}.${ext}
-publish: null
+# La mise à jour de l'app (src/updates.ts) lit les releases GitHub. Rien n'est publié
+# d'ici (`--publish never`) : cette section fait écrire app-update.yml dans l'app, et à
+# côté des paquets les latest*.yml que la release publie avec eux.
+publish:
+  provider: github
+  owner: MarlBurroW
+  repo: sillage
+  releaseType: release
 # L'app n'a aucune dépendance native à recompiler pour Electron : celles du serveur
 # tournent sous le Node embarqué, pas sous Electron.
 npmRebuild: false

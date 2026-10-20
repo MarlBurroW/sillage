@@ -158,14 +158,21 @@ jobs:
           pattern: desktop-*
           merge-multiple: true
           path: desktop
+      # Les paquets d'abord, les latest*.yml ensuite : l'app de bureau lit ceux-ci pour se
+      # mettre à jour, et un fichier publié avant ses paquets lui annoncerait une version
+      # qu'elle ne pourrait pas encore télécharger.
       - name: Attach the desktop app to the release
         run: |
           shopt -s nullglob
-          files=(desktop/*)
-          if [ ${#files[@]} -eq 0 ]; then
+          packages=(desktop/Sillage-*)
+          channels=(desktop/latest*.yml)
+          if [ ${#packages[@]} -eq 0 ]; then
             echo "::warning::aucun paquet de bureau à publier"
             exit 0
           fi
-          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --repo "$GITHUB_REPOSITORY"
+          gh release upload "$GITHUB_REF_NAME" "${packages[@]}" --repo "$GITHUB_REPOSITORY"
+          if [ ${#channels[@]} -gt 0 ]; then
+            gh release upload "$GITHUB_REF_NAME" "${channels[@]}" --repo "$GITHUB_REPOSITORY"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

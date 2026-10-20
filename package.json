@@ -37,6 +37,7 @@
     "test:images-ui": "node scripts/image-viewer-ui-check.mjs",
     "test:worktrees-ui": "node scripts/worktree-status-ui-check.mjs",
     "test:desktop-ui": "node scripts/desktop-ui-check.mjs",
+    "test:desktop-update": "node scripts/desktop-update-check.mjs",
     "test:onboarding-ui": "node scripts/onboarding-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
     "db:generate": "pnpm --filter @sillage/db generate",

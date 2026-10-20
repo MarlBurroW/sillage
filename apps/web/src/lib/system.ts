@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UpdateStatus, VersionInfo } from '@sillage/protocol'
 import { api } from './api'
+import { useDesktopUpdate } from './desktop-updates'
 import { useCurrentUser } from './session'
 
 const VERSION_KEY = ['system', 'version']
@@ -23,12 +24,22 @@ export function useVersionInfo() {
  * les autres comptes n'ont pas à être relancés. La barre latérale s'en sert, donc
  * la vérification part dès l'ouverture de l'application et plus seulement quand on
  * visite les réglages ; le cache serveur borne toujours GitHub à une requête par heure.
+ *
+ * L'app de bureau se met à jour seule : elle ne fait signe qu'une fois la version
+ * téléchargée, prête à installer. Quand elle ne peut pas le faire elle-même, ou qu'elle
+ * a échoué, c'est la release publiée qui compte, à télécharger à la main.
  */
 export function useUpdateNotice(): boolean {
   const { data: user } = useCurrentUser()
   const isAdmin = user?.isAdmin === true
   const { data } = useQuery({ ...versionQuery, enabled: isAdmin })
-  return isAdmin && data?.updateAvailable === true
+  const desktop = useDesktopUpdate()
+  if (!isAdmin) return false
+  if (desktop) {
+    const status = desktop.state?.status
+    if (status !== 'unsupported' && status !== 'error') return status === 'ready'
+  }
+  return data?.updateAvailable === true
 }
 
 /** Rafraîchissement forcé (admin) : contourne le cache serveur d'une heure. */

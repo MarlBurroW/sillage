@@ -76,8 +76,11 @@ jobs:
     # L'application de bureau de Linux et de Windows, empaquetée comme en release puis
     # lancée pour de vrai : ce qu'un tag publierait ne se découvre pas cassé le jour de la
     # release. Windows y est parce que ses chemins de code (lanceurs npm, shells) ne
-    # s'éprouvent nulle part ailleurs. Les paquets restent en artefacts du run.
+    # s'éprouvent nulle part ailleurs. Les paquets restent en artefacts du run. La mise à
+    # jour de l'app y est éprouvée aussi ; celle de macOS, par un lancement à la main
+    # (Actions > Desktop > Run workflow, cible darwin-arm64, update-check coché).
     uses: ./.github/workflows/desktop.yml
     with:
       version: v0.0.0-ci
       targets: '["linux-x64", "win-x64"]'
+      update-check: true

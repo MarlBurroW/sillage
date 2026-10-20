@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Compass, ExternalLink, RefreshCw } from 'lucide-react'
-import { DEFAULT_ONBOARDING, type UpdatePhase } from '@sillage/protocol'
+import { DEFAULT_ONBOARDING, type DesktopUpdateUnsupportedReason, type UpdatePhase } from '@sillage/protocol'
 import { Markdown } from '../components/chat/Markdown'
 import { Badge, Banner, Button, Card, CardBody, CardHeader, ConfirmDialog } from '../components/ui'
 import { api } from '../lib/api'
+import { useDesktopUpdate, type DesktopUpdates } from '../lib/desktop-updates'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 import { useUpdateOnboarding, useUserSettings } from '../lib/user-settings'
@@ -24,6 +25,12 @@ const PHASE_LABEL_KEYS: Record<UpdatePhase, MessageKey> = {
   failed: 'about.update.phase.failed',
 }
 
+const UNSUPPORTED_KEYS: Record<DesktopUpdateUnsupportedReason, MessageKey> = {
+  development: 'about.desktop.unsupported.development',
+  package: 'about.desktop.unsupported.package',
+  location: 'about.desktop.unsupported.location',
+}
+
 export function AboutSection() {
   const t = useTranslate()
   const { data: user } = useCurrentUser()
@@ -31,6 +38,7 @@ export function AboutSection() {
   const refresh = useRefreshVersionInfo()
   const startUpdate = useStartUpdate()
   const [confirming, setConfirming] = useState(false)
+  const [confirmingDesktop, setConfirmingDesktop] = useState(false)
   const [tracking, setTracking] = useState(false)
   const { data: status } = useUpdateStatus(tracking)
 
@@ -38,6 +46,14 @@ export function AboutSection() {
   const replay = useUpdateOnboarding()
   const isAdmin = user?.isAdmin ?? false
   const updating = tracking && status !== undefined && status.phase !== 'failed'
+  const desktop = useDesktopUpdate()
+  // La version que l'app de bureau télécharge ou a prête, que GitHub ait déjà répondu au
+  // serveur ou non.
+  const desktopState = desktop?.state
+  const desktopVersion =
+    desktopState && (desktopState.status === 'downloading' || desktopState.status === 'ready' || desktopState.status === 'installing')
+      ? desktopState.version
+      : null
 
   // Une mise à jour peut avoir été lancée depuis un autre appareil : si le
   // serveur en signale une en cours au montage, on s'y accroche.
@@ -113,7 +129,10 @@ export function AboutSection() {
             <div>
               <Button
                 variant="ghost"
-                onClick={() => refresh.mutate()}
+                onClick={() => {
+                  refresh.mutate()
+                  void desktop?.check()
+                }}
                 disabled={refresh.isPending}
               >
                 <RefreshCw size={14} className={refresh.isPending ? 'animate-spin' : undefined} />
@@ -124,21 +143,21 @@ export function AboutSection() {
         </CardBody>
       </Card>
 
-      {info?.updateAvailable ? (
+      {info?.updateAvailable || desktopVersion ? (
         <Card>
           <CardHeader
-            title={t('about.news.title', { version: info.latest ?? '' })}
+            title={t('about.news.title', { version: desktopVersion ?? info?.latest ?? '' })}
             description={t('about.news.description')}
           />
           <CardBody className="flex flex-col gap-4">
-            {info.channel === 'docker' ? (
+            {info?.channel === 'docker' ? (
               <div className="flex flex-col gap-2 text-sm">
                 <p className="text-ink-soft">{t('about.docker.instructions')}</p>
                 <pre className="overflow-x-auto rounded-md bg-surface-high px-3 py-2 font-mono text-xs">
                   docker pull ghcr.io/marlburrow/sillage:{info.latest}
                 </pre>
               </div>
-            ) : info.channel === 'installer' ? (
+            ) : info?.channel === 'installer' ? (
               isAdmin ? (
                 <div>
                   <Button onClick={() => setConfirming(true)} disabled={updating}>
@@ -148,15 +167,19 @@ export function AboutSection() {
               ) : (
                 <p className="text-sm text-ink-faint">{t('about.update.askAdmin')}</p>
               )
-            ) : info.channel === 'desktop' ? (
-              <p className="text-sm text-ink-faint">{t('about.desktop.instructions')}</p>
+            ) : info?.channel === 'desktop' || desktop ? (
+              desktop ? (
+                <DesktopUpdateAction desktop={desktop} onInstall={() => setConfirmingDesktop(true)} />
+              ) : (
+                <p className="text-sm text-ink-faint">{t('about.desktop.instructions')}</p>
+              )
             ) : (
               <p className="text-sm text-ink-faint">{t('about.manual.instructions')}</p>
             )}
 
             {/* Les notes de release sont rédigées en anglais : elles viennent
                 telles quelles de GitHub. */}
-            {info.releases.map((release) => (
+            {info?.releases.map((release) => (
               <article key={release.tag} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
                 <header className="mb-1.5 flex items-baseline justify-between gap-2">
                   <h3 className="text-sm font-semibold">{release.name}</h3>
@@ -216,8 +239,75 @@ export function AboutSection() {
       >
         <p>{t('about.confirm.body')}</p>
       </ConfirmDialog>
+
+      {desktopState?.status === 'ready' ? (
+        <ConfirmDialog
+          open={confirmingDesktop}
+          onOpenChange={setConfirmingDesktop}
+          title={t('about.desktop.confirm.title')}
+          confirmLabel={t('about.desktop.install')}
+          onConfirm={() => {
+            setConfirmingDesktop(false)
+            void desktop?.install()
+          }}
+        >
+          <p>{t('about.desktop.confirm.body', { version: desktopState.version })}</p>
+          {desktopState.installOnQuit ? null : <p>{t('about.desktop.confirm.password')}</p>}
+        </ConfirmDialog>
+      ) : null}
     </div>
   )
+}
+
+/**
+ * Où en est l'app de bureau, qui se met à jour seule : il n'y a d'action à proposer
+ * qu'une fois la version prête, et après un échec.
+ */
+function DesktopUpdateAction({ desktop, onInstall }: { desktop: DesktopUpdates; onInstall: () => void }) {
+  const t = useTranslate()
+  const state = desktop.state
+  if (!state) return null
+  switch (state.status) {
+    case 'unsupported':
+      return <p className="text-sm text-ink-faint">{t(UNSUPPORTED_KEYS[state.reason])}</p>
+    case 'idle':
+    case 'checking':
+      return <p className="text-sm text-ink-faint">{t('about.desktop.pending')}</p>
+    case 'downloading':
+      return (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-sm text-ink-soft">
+            <span>{t('about.desktop.downloading', { version: state.version })}</span>
+            <span className="font-mono text-xs">{state.percent} %</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-sunken">
+            <div className="h-full bg-accent transition-[width]" style={{ width: `${state.percent}%` }} />
+          </div>
+        </div>
+      )
+    case 'ready':
+      return (
+        <div className="flex flex-col items-start gap-3 text-sm">
+          <p className="text-ink-soft">
+            {t(state.installOnQuit ? 'about.desktop.ready' : 'about.desktop.readyPassword', { version: state.version })}
+          </p>
+          <Button onClick={onInstall}>{t('about.desktop.install')}</Button>
+        </div>
+      )
+    case 'installing':
+      return <p className="text-sm text-ink-soft">{t('about.desktop.installing', { version: state.version })}</p>
+    case 'error':
+      return (
+        <div className="flex flex-col items-start gap-2 text-sm">
+          <Banner>{t('about.desktop.failed', { message: state.message })}</Banner>
+          {state.macPermission ? <p className="text-ink-soft">{t('about.desktop.macPermission')}</p> : null}
+          <p className="text-ink-faint">{t('about.desktop.manual')}</p>
+          <Button variant="secondary" onClick={() => void desktop.check()}>
+            {t('about.retry')}
+          </Button>
+        </div>
+      )
+  }
 }
 
 /**

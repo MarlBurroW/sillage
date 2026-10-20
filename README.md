@@ -219,7 +219,7 @@ What differs is where Sillage runs, and where you reach it from.
 | Push notifications | to your phone and other devices | none, in-app toasts only |
 | Webhook automations | yes, from GitHub, CI or any service | no: no address the Internet can reach |
 | Install | Docker, a service on Linux, macOS or WSL2, Helm | the `.dmg`, `.exe`, `.deb` or AppImage of a release |
-| Updates | from the UI, or by pulling a new image | download the new version |
+| Updates | from the UI, or by pulling a new image | automatic, installed when you quit |
 
 Pick the server to follow your agents from anywhere and leave them working; pick the
 desktop app to try Sillage, or to work on the machine where your code lives. Each
@@ -413,8 +413,12 @@ later, prefer the `.deb`: it installs the AppArmor profile the app needs to star
 Windows, SmartScreen asks you to confirm the first run (**More info**, then **Run
 anyway**), and Sillage needs [Git for Windows](https://git-scm.com/download/win).
 
+The app then updates itself: it downloads each new release in the background and
+installs it when you quit, or right away from Settings > About. On macOS, keep it in
+the Applications folder, where it can replace itself.
+
 The [desktop guide](docs/desktop.md) covers what differs from the server, where the
-data lives, and how to uninstall.
+data lives, updates, and how to uninstall.
 
 ## Security model
 
@@ -446,7 +450,8 @@ image on `ghcr.io/marlburrow/sillage`, the desktop app (`.dmg` and `.zip` for ma
 `.exe` installer for Windows, `.deb` and AppImage for Linux x64 and arm64), and a GitHub
 release. The app shows the
 installed version, checks for newer releases, and on installer-based setups can
-update itself from the UI.
+update itself from the UI. The desktop app updates itself from the same releases,
+through the `latest*.yml` files published next to its packages.
 
 ## Repository layout
 

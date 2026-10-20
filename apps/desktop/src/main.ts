@@ -4,6 +4,7 @@ import { stablePort } from './port'
 import { startServer, type RunningServer } from './server'
 import { loginShellEnv, pathKey } from './shell-env'
 import { text } from './texts'
+import { setupUpdates } from './updates'
 
 /**
  * Processus principal de l'application de bureau.
@@ -23,6 +24,8 @@ const BACKGROUND = '#0b0d1c'
 let server: RunningServer | null = null
 let origin = ''
 let quitting = false
+/** De quoi relancer le serveur : après une panne, ou une mise à jour qui n'a pas pu partir. */
+let launchSettings: { env: NodeJS.ProcessEnv; port: number } | null = null
 
 // Un profil jetable pour le contrôle de lancement (scripts/desktop-ui-check.mjs), qui ne
 // touche ni aux projets ni aux réglages de l'utilisateur. Avant toute lecture du chemin.
@@ -65,8 +68,18 @@ async function boot(): Promise<void> {
   const key = pathKey(env)
   env[key] = [env[key], dirname(node)].filter(Boolean).join(delimiter)
   const port = await stablePort(join(userData, 'desktop.json'))
+  launchSettings = { env, port }
 
-  await launch({ env, port })
+  await launch(launchSettings)
+  setupUpdates({
+    userData,
+    logDir: dirname(logFile),
+    isAppUrl,
+    stopServer,
+    restartServer: async () => {
+      if (launchSettings) await relaunchServer(launchSettings)
+    },
+  })
   openWindow()
 }
 
@@ -113,12 +126,23 @@ async function stopped(code: number | null, settings: { env: NodeJS.ProcessEnv; 
     app.quit()
     return
   }
+  await relaunchServer(settings)
+}
+
+async function relaunchServer(settings: { env: NodeJS.ProcessEnv; port: number }): Promise<void> {
   try {
     await launch(settings)
     for (const win of BrowserWindow.getAllWindows()) win.reload()
   } catch (err) {
     fatal(err)
   }
+}
+
+/** Arrête le serveur sans quitter l'app, et sans que son arrêt passe pour une panne. */
+async function stopServer(): Promise<void> {
+  const running = server
+  server = null
+  await running?.stop()
 }
 
 function openWindow(): void {
@@ -130,7 +154,13 @@ function openWindow(): void {
     show: false,
     title: 'Sillage',
     backgroundColor: BACKGROUND,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: true,
+      preload: join(__dirname, 'preload.cjs'),
+    },
   })
   win.once('ready-to-show', () => win.show())
   void win.loadURL(origin)

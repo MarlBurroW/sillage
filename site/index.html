@@ -405,7 +405,7 @@
         <li><h3>Processes in view</h3><p>On Linux, inspect commands and services attached to Sillage, their ports and originating conversations. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/services.md">Detection and limits ↗</a></p></li>
         <li><h3>Each turn, reversible</h3><p>With turn checkpoints on, every turn lists the files it changed and can be reverted to the state before it, with an optional fork of the conversation from that point.</p></li>
         <li><h3>Images, up close</h3><p>Screenshots an agent reads or produces open in a viewer: zoom, pan, rotate, copy as PNG or download the original.</p></li>
-        <li><h3>Updates from the interface</h3><p>See when a release is available and read what changed. Native server installations update from the UI, containers through their image, and the desktop app by downloading the new version.</p></li>
+        <li><h3>Updates from the interface</h3><p>See when a release is available and read what changed. Native server installations update from the UI, containers through their image, and the desktop app updates itself.</p></li>
       </ul>
     </section>
 
@@ -436,7 +436,7 @@
               <li>Opens in its own window, next to your editor, with no account or password.</li>
               <li>Agents work while the app is open and the computer awake.</li>
               <li>One person, one computer: no phone access, no push notifications, no webhooks from the Internet.</li>
-              <li>Each release ships it; a new version replaces the old one.</li>
+              <li>Updates itself: each release downloads in the background and installs when you quit.</li>
             </ul>
             <a class="text-link" href="#install-desktop">Download the app ↓</a>
           </div>
@@ -535,7 +535,7 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
           <p>On Windows, Sillage needs <a href="https://git-scm.com/download/win">Git for Windows</a>, and SmartScreen asks you to confirm the first run (<em>More info</em>, then <em>Run anyway</em>).</p>
           <p>The app is not notarized by Apple yet. On the first launch, allow it in System Settings &gt; Privacy &amp; Security, or from Terminal:</p>
 <pre class="one-line"><code>xattr -dr com.apple.quarantine /Applications/Sillage.app</code></pre>
-          <p>The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md">desktop guide</a> covers what differs from the server, where your data lives and how to uninstall.</p>
+          <p>The app then updates itself from each release. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md">desktop guide</a> covers what differs from the server, where your data lives, updates and how to uninstall.</p>
         </div>
       </div>
     </section>

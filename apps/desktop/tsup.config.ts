@@ -1,9 +1,10 @@
 import { defineConfig } from 'tsup'
 
-// CommonJS : Electron charge ainsi le processus principal sans détour, et un preload en
-// bac à sable, quand l'interface en aura besoin, n'accepte que ce format.
+// CommonJS : Electron charge ainsi le processus principal sans détour, et le preload, en
+// bac à sable, n'accepte que ce format. Les dépendances (electron-updater) sont incluses
+// dans le paquet : l'app n'emporte pas de node_modules.
 export default defineConfig({
-  entry: ['src/main.ts'],
+  entry: ['src/main.ts', 'src/preload.ts'],
   format: ['cjs'],
   target: 'node22',
   platform: 'node',
