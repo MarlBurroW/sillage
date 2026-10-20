@@ -872,7 +872,19 @@ export interface AgentAvailabilityDto {
  */
 export type CliInstallStateDto =
   | { status: 'idle' }
-  | { status: 'running'; version: string }
+  | {
+      status: 'running'
+      version: string
+      /** Début de l'installation, en millisecondes : l'écran en déduit le temps écoulé. */
+      startedAt: number
+      /**
+       * Requêtes au registre npm déjà faites, et le fichier de la dernière. C'est le
+       * seul avancement que npm sait donner sans terminal : pas une proportion, mais
+       * assez pour voir que ça bouge.
+       */
+      fetched: number
+      current: string | null
+    }
   | { status: 'failed'; version: string; error: string }
 
 /** Réponse de `/api/agents`. */

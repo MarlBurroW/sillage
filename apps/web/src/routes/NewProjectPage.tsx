@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom'
 import { slugifyProjectName } from '@sillage/protocol'
 import { ApiRequestError } from '../lib/api'
 import { useCreateProject } from '../lib/projects'
+import { useCapability } from '../lib/instance'
 import { useUserSettings } from '../lib/user-settings'
 import { CloneForm } from '../components/CloneForm'
 import { SampleProjectForm } from '../components/SampleProjectForm'
@@ -125,6 +126,7 @@ export function NewProjectPage() {
  */
 function NewFolderForm() {
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
   const createProject = useCreateProject()
   const navigate = useNavigate()
   const { data: settings } = useUserSettings()
@@ -194,12 +196,14 @@ function NewFolderForm() {
         autoCorrect="off"
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={visibilityOptions}
-      />
+      {sharedProjects ? (
+        <Select
+          label={t('project.settings.visibility')}
+          value={visibility}
+          onChange={setVisibility}
+          options={visibilityOptions}
+        />
+      ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">
@@ -212,6 +216,7 @@ function NewFolderForm() {
 /** Un dossier déjà présent, n'importe où sur la machine : rien n'est créé. */
 function ExistingFolderForm() {
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
   const createProject = useCreateProject()
   const navigate = useNavigate()
   const visibilityOptions = useVisibilityOptions()
@@ -251,12 +256,14 @@ function ExistingFolderForm() {
         hint={t('projects.create.workspacePath.hint')}
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={visibilityOptions}
-      />
+      {sharedProjects ? (
+        <Select
+          label={t('project.settings.visibility')}
+          value={visibility}
+          onChange={setVisibility}
+          options={visibilityOptions}
+        />
+      ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">

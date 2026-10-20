@@ -30,6 +30,13 @@ export interface InstanceCapabilities {
    * apporte la nouvelle version, et un cache ne ferait que servir l'ancienne.
    */
   pwa: boolean
+  /**
+   * Projets partagés entre comptes : le choix privé/partagé à la création et dans les
+   * réglages d'un projet. Sans objet en bureau, où il n'y a qu'un compte : la question
+   * n'aurait pas de réponse utile, et poser un cadenas sur un projet que personne
+   * d'autre ne peut voir n'apprend rien.
+   */
+  sharedProjects: boolean
 }
 
 export interface InstanceInfo {

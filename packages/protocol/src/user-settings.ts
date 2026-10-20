@@ -42,6 +42,15 @@ export interface UserSettingsDto {
    */
   collapsedProjects: string[]
   /**
+   * CLI dont on ne veut plus entendre parler tant qu'ils ne sont pas installés.
+   *
+   * Qui n'utilise que Claude Code n'a pas à voir trois boutons « Installer » à chaque
+   * nouvelle session. Masquer n'est pas désactiver : un CLI masqué qui finit par être
+   * installé réapparaît de lui-même, et la liste se rouvre d'un clic. Au compte, comme
+   * les projets repliés : le choix vaut sur tous ses appareils.
+   */
+  hiddenAgents: AgentKind[]
+  /**
    * Dossier parent proposé à la création d'un projet, `null` tant qu'aucun projet n'a
    * été créé ainsi.
    *
@@ -270,6 +279,7 @@ export const storedUserSettingsSchema = z
     // rien à qui la lit, et la nettoyer demanderait de toucher ce réglage à chaque
     // suppression, y compris pour les comptes qui ne se connectent plus.
     collapsedProjects: z.array(z.string()).default([]).catch([]),
+    hiddenAgents: z.array(agentKindSchema).default([]).catch([]),
     projectsDir: z.string().nullable().default(null).catch(null),
     appearance: appearancePrefsSchema.nullable().default(null).catch(null),
     notifications: notificationPrefsSchema.default(DEFAULT_NOTIFICATION_PREFS).catch(DEFAULT_NOTIFICATION_PREFS),
@@ -280,6 +290,7 @@ export const storedUserSettingsSchema = z
   .catch({
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
     collapsedProjects: [],
+    hiddenAgents: [],
     projectsDir: null,
     appearance: null,
     notifications: DEFAULT_NOTIFICATION_PREFS,
@@ -297,6 +308,8 @@ export const updateUserSettingsBodySchema = z.object({
   agentDefault: agentConfigSchema.optional(),
   /** La liste entière : c'est un état d'affichage, pas un journal d'ouvertures. */
   collapsedProjects: z.array(z.string().uuid()).optional(),
+  /** La liste entière, pour la même raison. */
+  hiddenAgents: z.array(agentKindSchema).optional(),
   /** `null` retire le dossier mémorisé ; absent, il ne bouge pas. */
   projectsDir: z.string().min(1).nullable().optional(),
   /** Remplacée en bloc, comme les projets repliés. */

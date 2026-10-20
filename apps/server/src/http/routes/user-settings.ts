@@ -5,6 +5,7 @@ import {
   writeAppearance,
   writeCollapsedProjects,
   writeComposerLayout,
+  writeHiddenAgents,
   writeNotificationPrefs,
   writeOnboarding,
   writeProjectDefaults,
@@ -35,6 +36,7 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     // écrivent le même document sans jamais parler du réglage de l'autre.
     if (body.agentDefault) writeUserAgentDefault(ctx.db, user.id, body.agentDefault)
     if (body.collapsedProjects) writeCollapsedProjects(ctx.db, user.id, body.collapsedProjects)
+    if (body.hiddenAgents) writeHiddenAgents(ctx.db, user.id, body.hiddenAgents)
     if (body.projectsDir !== undefined) writeProjectsDir(ctx.db, user.id, body.projectsDir)
     if (body.appearance) writeAppearance(ctx.db, user.id, body.appearance)
     if (body.notifications) writeNotificationPrefs(ctx.db, user.id, body.notifications)

@@ -222,6 +222,15 @@ export const fr: Catalog = {
   'agent.install.running': 'Installation de {label} {version}…',
   'agent.install.action': 'Installer {version}',
   'agent.install.retry': 'Réessayer',
+  'agent.install.progress.fetch': 'Téléchargement de {file}',
+  'agent.install.progress.resolving': 'Contact du registre npm…',
+  'agent.install.progress.files': '{count} fichiers reçus',
+  'agent.install.progress.seconds': '{seconds} s',
+  'agent.install.progress.minutes': '{minutes} min {seconds} s',
+  'agent.install.progress.hint': 'Le paquet pèse plusieurs centaines de mégaoctets : comptez quelques minutes. Sillage reste utilisable pendant ce temps.',
+  'agent.install.dismiss': 'Ne plus proposer',
+  'agent.install.hidden': 'Masqués tant qu’ils ne sont pas installés : {labels}.',
+  'agent.install.reveal': 'Afficher',
 
   // Fil de conversation
   'conversation.drop.attach': 'Déposer pour joindre au message',

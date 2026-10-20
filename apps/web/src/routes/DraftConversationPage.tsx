@@ -1,4 +1,4 @@
-import { History, PanelRight, SquareKanban, X } from 'lucide-react'
+import { EyeOff, History, PanelRight, SquareKanban, X } from 'lucide-react'
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -12,6 +12,7 @@ import {
 } from '@sillage/protocol'
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
+import { AgentInstallProgress } from '../components/AgentInstallProgress'
 import { Composer } from '../components/chat/Composer'
 import { AccountChoice } from '../components/chat/AccountChoice'
 import { MobileNavigationButton } from '../components/MobileNavigation'
@@ -20,8 +21,10 @@ import { Banner, Button, IconButton, cx } from '../components/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
 import { useCards } from '../lib/cards'
 import {
+  hiddenAgent,
   useAgentAvailability,
   useAgentInstall,
+  useHiddenAgents,
   unavailableReason,
   versionMismatch,
 } from '../lib/agents'
@@ -118,15 +121,32 @@ const NO_MCP_INVENTORY: McpServerStatus[] = []
 const NO_COMMANDS: SlashCommandDto[] = []
 const NO_SKILLS: AgentSkillDto[] = []
 
-/** Un CLI qui manque : ce qu'il en est, et le bouton pour l'installer d'ici. */
-function InstallRow({ entry }: { entry: AgentAvailabilityDto }) {
-  const install = useAgentInstall(entry, AGENT_LABELS[entry.agent])
+/**
+ * Un CLI qui manque : ce qu'il en est, le bouton pour l'installer d'ici, et celui pour
+ * ne plus se le voir proposer. Pendant l'installation, le rang devient son avancement.
+ */
+function InstallRow({ entry, onDismiss }: { entry: AgentAvailabilityDto; onDismiss: () => void }) {
+  const t = useTranslate()
+  const label = AGENT_LABELS[entry.agent]
+  const install = useAgentInstall(entry, label)
+  if (install.progress) {
+    return (
+      <div className="rounded-lg border border-line p-3">
+        <AgentInstallProgress label={label} version={entry.preferredVersion} progress={install.progress} />
+      </div>
+    )
+  }
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-2">
       <span className="min-w-0 text-xs leading-snug text-ink-faint">{install.status}</span>
-      <Button size="sm" variant="secondary" disabled={install.busy} onClick={install.start}>
-        {install.action}
-      </Button>
+      <span className="flex shrink-0 items-center gap-1">
+        <Button size="sm" variant="secondary" disabled={install.busy} onClick={install.start}>
+          {install.action}
+        </Button>
+        <IconButton label={t('agent.install.dismiss')} size="sm" onClick={onDismiss}>
+          <EyeOff size={14} />
+        </IconButton>
+      </span>
     </div>
   )
 }
@@ -150,6 +170,12 @@ export function DraftConversationPage() {
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
   const { data: availability } = useAgentAvailability()
   const t = useTranslate()
+  // Les CLI masqués par le compte ne sont ni proposés à l'installation ni dans le
+  // choix, tant qu'ils manquent : qui n'utilise que Claude Code n'a pas à les enjamber.
+  const hiddenAgents = useHiddenAgents()
+  const hiddenRows = (availability?.agents ?? []).filter(
+    (entry) => entry.reason !== 'disabled' && hiddenAgent(entry, hiddenAgents.hidden),
+  )
 
   // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
   // une carte grisée, et l'envoi resterait possible puisque le grisage ne bloque que le
@@ -345,7 +371,7 @@ export function DraftConversationPage() {
           <fieldset className="flex flex-col gap-1.5">
             <legend className="mb-1.5 text-xs font-medium text-ink-soft">{t('draft.cli.legend')}</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {AGENTS.map((option) => {
+              {AGENTS.filter((option) => !hiddenRows.some((entry) => entry.agent === option.value)).map((option) => {
                 const selected = option.value === agent
                 const entry = availability?.agents.find((a) => a.agent === option.value)
                 // Indisponible seulement quand le serveur l'a dit. Tant que la sonde n'a
@@ -389,10 +415,20 @@ export function DraftConversationPage() {
             {/* Un rang par CLI manquant. Un CLI désactivé relève de la configuration,
                 son installation ne résoudrait pas son indisponibilité. */}
             {availability?.agents
-              .filter((entry) => !entry.installed && entry.reason !== 'disabled')
+              .filter((entry) => !entry.installed && entry.reason !== 'disabled' && !hiddenAgent(entry, hiddenAgents.hidden))
               .map((entry) => (
-                <InstallRow key={entry.agent} entry={entry} />
+                <InstallRow key={entry.agent} entry={entry} onDismiss={() => hiddenAgents.hide(entry.agent)} />
               ))}
+            {/* Une ligne discrète pour retrouver ce qu'on a masqué : le masque n'est pas
+                une configuration, il ne faut pas aller le défaire dans les réglages. */}
+            {hiddenRows.length > 0 ? (
+              <p className="text-xs text-ink-faint">
+                {t('agent.install.hidden', { labels: hiddenRows.map((entry) => AGENT_LABELS[entry.agent]).join(', ') })}{' '}
+                <button type="button" className="underline hover:text-ink" onClick={hiddenAgents.reveal}>
+                  {t('agent.install.reveal')}
+                </button>
+              </p>
+            ) : null}
           </fieldset>
 
           {/* Juste sous le CLI : c'est la même question, avec quoi la session part. */}

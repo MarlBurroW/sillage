@@ -236,6 +236,15 @@ export const en = {
   'agent.install.running': 'Installing {label} {version}…',
   'agent.install.action': 'Install {version}',
   'agent.install.retry': 'Retry',
+  'agent.install.progress.fetch': 'Downloading {file}',
+  'agent.install.progress.resolving': 'Contacting the npm registry…',
+  'agent.install.progress.files': '{count} files received',
+  'agent.install.progress.seconds': '{seconds} s',
+  'agent.install.progress.minutes': '{minutes} min {seconds} s',
+  'agent.install.progress.hint': 'The package weighs several hundred megabytes: this can take a few minutes. You can keep using Sillage meanwhile.',
+  'agent.install.dismiss': "Don't offer again",
+  'agent.install.hidden': 'Hidden until installed: {labels}.',
+  'agent.install.reveal': 'Show again',
 
   // Fil de conversation
   'conversation.drop.attach': 'Drop to attach to the message',

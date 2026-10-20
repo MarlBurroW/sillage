@@ -104,6 +104,9 @@ try {
   await page.waitForURL(/\/projects\/new$/)
   // La coque de l'application, signe que la session est ouverte.
   await page.getByRole('link', { name: /Paramètres|Settings/ }).first().waitFor({ timeout: 60_000 })
+  // Un seul compte en bureau : la création d'un projet ne demande pas s'il est partagé.
+  await page.getByLabel(/^(Nom|Name)$/).first().waitFor()
+  assert.equal(await page.getByText(/^(Visibilité|Visibility)$/).count(), 0, 'pas de choix privé/partagé en bureau')
 
   const url = new URL(page.url())
   assert.equal(url.hostname, '127.0.0.1', `fenêtre sur ${page.url()}`)
@@ -112,7 +115,7 @@ try {
 
   const instance = await page.evaluate(() => fetch('/api/system/instance').then((response) => response.json()))
   assert.equal(instance.profile, 'desktop')
-  assert.deepEqual(instance.capabilities, { passwordAuth: false, webPush: false, pwa: false })
+  assert.deepEqual(instance.capabilities, { passwordAuth: false, webPush: false, pwa: false, sharedProjects: false })
   const version = await page.evaluate(() => fetch('/api/system/version').then((response) => response.json()))
   assert.equal(version.channel, 'desktop')
 
