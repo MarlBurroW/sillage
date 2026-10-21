@@ -4,6 +4,8 @@ import { AppearanceControls } from '../components/AppearanceControls'
 import { AppearancePresets } from '../components/AppearancePresets'
 import { ReadingPreview } from '../components/ReadingPreview'
 import { SyntaxThemeControls } from '../components/SyntaxThemeControls'
+import { TypingIndicatorControls } from '../components/TypingIndicatorControls'
+import { Logo } from '../components/Logo'
 import { useAppearance } from '../lib/appearance'
 import { LOCALES, LOCALE_LABELS, setLocale, useLocale, usePendingLocale, useTranslate } from '../lib/i18n'
 import { THEMES, THEME_LABELS, useTheme, type Theme } from '../lib/theme'
@@ -125,6 +127,17 @@ export function AppearanceSection() {
             swatches={false}
           />
           <ReadingPreview />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title={t('settings.typingIndicator.title')}
+          description={t('settings.typingIndicator.description')}
+          icon={<Logo size={16} />}
+        />
+        <CardBody>
+          <TypingIndicatorControls />
         </CardBody>
       </Card>
 

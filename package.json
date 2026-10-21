@@ -36,6 +36,7 @@
     "test:decisions-ui": "node scripts/decisions-ui-check.mjs",
     "test:schedule-check-ui": "node scripts/schedule-check-ui-check.mjs",
     "test:images-ui": "node scripts/image-viewer-ui-check.mjs",
+    "test:typing-indicator-ui": "node scripts/typing-indicator-ui-check.mjs",
     "test:worktrees-ui": "node scripts/worktree-status-ui-check.mjs",
     "test:desktop-ui": "node scripts/desktop-ui-check.mjs",
     "test:onboarding-ui": "node scripts/onboarding-ui-check.mjs",
