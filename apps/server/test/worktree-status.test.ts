@@ -10,7 +10,7 @@ import { cards, conversationPaths, conversations, openDatabase, projects, runMig
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { EventLog } from '../src/events/event-log.js'
 import { touchedPaths } from '../src/events/touched-paths.js'
-import { assessWorktree, defaultBase, listWorktrees } from '../src/worktrees/assess.js'
+import { assessWorktree, defaultBase, listWorktrees, parseWorktreeList } from '../src/worktrees/assess.js'
 import { backfillCommandPaths } from '../src/worktrees/backfill.js'
 import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
@@ -72,6 +72,28 @@ async function assess(repo: string, path: string, options: { legacyGit?: boolean
   assert.ok(entry, `arbre ${path} inconnu de git`)
   return assessWorktree(repo, 'main', entry, options)
 }
+
+test('les chemins Git Windows retrouvent le format des chemins enregistrés', () => {
+  const raw = [
+    'worktree C:/Users/André/projet', 'HEAD abc', 'branch refs/heads/main', '',
+    'worktree C:/Users/André/Sillage/worktrees/review-060', 'HEAD def', 'branch refs/heads/review-060', '', '',
+  ].join('\0')
+  const entries = parseWorktreeList(raw, 'win32')
+  assert.equal(entries[1]?.path, String.raw`C:\Users\André\Sillage\worktrees\review-060`)
+  assert.equal(entries[1]?.branch, 'review-060')
+  assert.equal(entries[1]?.prunable, false)
+  assert.equal(entries[0]?.main, true)
+  assert.equal(entries[1]?.main, false)
+})
+
+test('la liste Git conserve les chemins accentués et les caractères spéciaux', async (t) => {
+  const { repo, trees } = repository(t)
+  const path = join(trees, process.platform === 'win32' ? 'André travail' : 'André "travail"\nligne')
+  git(repo, 'worktree', 'add', '-b', 'feat/accents', path, 'main')
+  const entry = (await listWorktrees(repo)).find((tree) => tree.path === path)
+  assert.ok(entry)
+  assert.equal((await assessWorktree(repo, 'main', entry)).state, 'merged')
+})
 
 test('la base est la branche locale que désigne origin/HEAD, sinon main', async (t) => {
   const { repo } = repository(t)

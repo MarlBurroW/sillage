@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, posix, win32 } from 'node:path'
 import type { WorktreeState } from '@sillage/protocol'
 
 /**
@@ -76,15 +76,25 @@ export interface WorktreeEntry {
 export async function listWorktrees(repo: string): Promise<WorktreeEntry[]> {
   let raw: string
   try {
-    raw = await out(repo, ['worktree', 'list', '--porcelain'])
+    raw = await out(repo, ['worktree', 'list', '--porcelain', '-z'])
   } catch {
     return []
   }
 
+  return parseWorktreeList(raw)
+}
+
+/**
+ * Le mode NUL garde les accents et retours à la ligne des chemins intacts. Git
+ * utilise des slashs même sous Windows, alors que les chemins enregistrés par
+ * Sillage viennent de node:path : on les ramène au format natif avant comparaison.
+ */
+export function parseWorktreeList(raw: string, platform: NodeJS.Platform = process.platform): WorktreeEntry[] {
+  const paths = platform === 'win32' ? win32 : posix
   const entries: WorktreeEntry[] = []
-  for (const block of raw.split('\n\n')) {
+  for (const block of raw.split('\0\0')) {
     const fields = new Map<string, string>()
-    for (const field of block.split('\n')) {
+    for (const field of block.split('\0')) {
       if (!field) continue
       const space = field.indexOf(' ')
       if (space === -1) fields.set(field, '')
@@ -93,7 +103,7 @@ export async function listWorktrees(repo: string): Promise<WorktreeEntry[]> {
     const path = fields.get('worktree')
     if (!path) continue
     entries.push({
-      path,
+      path: paths.normalize(path),
       head: fields.get('HEAD') ?? null,
       branch: fields.get('branch')?.replace(/^refs\/heads\//, '') ?? null,
       main: entries.length === 0,
