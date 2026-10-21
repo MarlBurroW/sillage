@@ -19,8 +19,8 @@ export const MAX_DECISION_HOURS = 168
 export const DEFAULT_DECISION_HOURS = 24
 
 /**
- * D'où vient la demande : ce qui a ouvert la session sans personne au clavier, ou, pour
- * `worktree`, Sillage lui-même, qui propose de nettoyer un arbre fusionné et propre.
+ * D'où vient la demande : ce qui a ouvert la session sans personne au clavier.
+ * `worktree` est conservé pour lire les anciennes propositions de nettoyage.
  */
 export const decisionSourceKindSchema = z.enum(['schedule', 'webhook', 'board', 'worktree'])
 export type DecisionSourceKind = z.infer<typeof decisionSourceKindSchema>

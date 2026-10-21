@@ -240,3 +240,46 @@ test('notifications: toast where the app is visible, push elsewhere, nothing whe
   await notifications.dispatch('owner', request)
   assert.equal(pushed.length, 1, 'Turned off in the preferences')
 })
+
+
+test('les anciennes propositions de nettoyage se retirent sans action, les décisions humaines restent', async (t) => {
+  const { db, service, sent, dispatched, changed } = await harness(t)
+  db.update(scheduledTasks).set({ decisionsEnabled: true }).run()
+  const requester = db.select().from(conversations).where(eq(conversations.id, TASK_SESSION)).get()!
+  await service.request(requester, { question: 'Publier la mise à jour ?', options: ['Oui', 'Non'] })
+  const human = service.list('owner', 'pending')[0]!
+  const now = Date.now()
+  for (const [id, status] of [['old-cleanup', 'pending'], ['old-kept', 'answered'], ['old-expired', 'pending']] as const) {
+    db.insert(decisions).values({
+      id, projectId: 'project', userId: 'owner', conversationId: HUMAN_SESSION,
+      sourceKind: 'worktree', sourceLabel: 'feat/done', question: 'Nettoyer ?', context: '',
+      options: '["clean","keep"]', worktreePath: '/a/worktree', status,
+      expiresAt: id === 'old-expired' ? now - 1 : now + 86_400_000, createdAt: now,
+      ...(status === 'answered' ? { answerOption: 'keep', resolvedAt: now, deliveredAt: now } : {}),
+    }).run()
+  }
+  assert.equal(service.pendingCount('owner'), 1, 'Le badge compte seulement les demandes des agents')
+  const notificationsBefore = dispatched.length
+  const changesBefore = changed.length
+  await service.tick()
+  assert.deepEqual(service.list('owner', 'pending').map((row) => row.id), [human.id])
+  for (const id of ['old-cleanup', 'old-expired']) {
+    const closed = service.get('owner', id)
+    assert.equal(closed.status, 'withdrawn')
+    assert.match(closed.withdrawnReason ?? '', /conversation ou la vue Chantiers/)
+    await assert.rejects(service.answer('owner', id, { option: 'clean', text: '' }), /no longer pending/)
+  }
+  assert.equal(service.get('owner', 'old-kept').answer?.option, 'keep', 'Les réponses passées restent lisibles')
+  assert.equal(dispatched.length, notificationsBefore, 'Aucune notification de nettoyage')
+  assert.equal(sent.length, 0, 'Aucune session ne se relance pour un nettoyage')
+  assert.equal(changed.length, changesBefore + 2, 'Les onglets retirent les propositions périmées')
+  await service.tick()
+  assert.equal(changed.length, changesBefore + 2, 'Le retrait ne se répète pas')
+
+  // Un ancien onglet peut répondre avant le premier passage : aucun nettoyage ne part.
+  db.update(decisions).set({ status: 'pending' }).where(eq(decisions.id, 'old-cleanup')).run()
+  await assert.rejects(service.answer('owner', 'old-cleanup', { option: 'clean', text: '' }), /no longer pending/)
+  assert.equal(service.get('owner', 'old-cleanup').status, 'withdrawn')
+  await service.answer('owner', human.id, { option: 'Oui', text: '' })
+  assert.equal(sent.length, 1, 'Une vraie décision relance toujours son agent')
+})

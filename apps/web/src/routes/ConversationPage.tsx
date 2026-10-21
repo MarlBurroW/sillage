@@ -32,6 +32,7 @@ import { ConversationMinimap } from '../components/chat/ConversationMinimap'
 import { PromptSuggestion } from '../components/chat/PromptSuggestion'
 import { QueuedMessages } from '../components/chat/QueuedMessages'
 import { HeldSessionMessages } from '../components/chat/HeldSessionMessages'
+import { ConversationWorktreeBar } from '../components/chat/ConversationWorktreeBar'
 import { WorkspaceLabel } from '../components/chat/WorkspaceLabel'
 import { ThreadSearch } from '../components/chat/ThreadSearch'
 import { TurnActivity } from '../components/chat/TurnActivity'
@@ -927,13 +928,13 @@ export function ConversationPage() {
               >
                 {project?.name}
               </Link>
-              <WorkspaceLabel
+              {!conversation.worktreeId ? <WorkspaceLabel
                 worktreeId={conversation.worktreeId}
                 worktree={worktree}
                 worktreesLoaded={worktrees !== undefined}
                 projectGit={project?.git}
                 projectPath={project?.workspacePath}
-              />
+              /> : null}
             </div>
             <p className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</p>
 
@@ -1056,6 +1057,7 @@ export function ConversationPage() {
             <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
           </IconButton>
         </header>
+        <ConversationWorktreeBar key={conversation.id} conversation={conversation} canClean={project?.isOwner ?? false} />
 
         <InstructionsDialog
           open={instructionsOpen}

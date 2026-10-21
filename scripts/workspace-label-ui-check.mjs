@@ -92,15 +92,17 @@ try {
   }
   const header = (page) => page.locator('header').filter({ has: page.getByRole('button', { name: /^(Ouvrir|Fermer) le panneau$/ }) })
 
-  // Grand écran, fil en worktree : la branche, le point des changements non commités,
+  const worktreeBar = (page) => page.getByRole('region', { name: 'Worktree de la conversation' })
+
+  // Grand écran, fil en worktree : la branche, l'état des changements non commités,
   // et le clic qui ouvre l'onglet Git.
   const desk = await session({ width: 1440, height: 900 }, false)
   await desk.page.goto(`${base}/p/${desk.project.id}/c/${desk.hero.id}`)
-  const label = header(desk.page).getByRole('button', { name: /^Worktree feat\/offline-cache · Branche feat\/offline-cache · changements non commités · / })
+  const label = worktreeBar(desk.page).getByText('feat/offline-cache', { exact: true })
   await label.waitFor()
   assert.equal((await label.innerText()).trim(), 'feat/offline-cache', 'Le nom du worktree n’est pas répété quand il vaut la branche')
   await desk.page.screenshot({ path: join(shots, 'workspace-label-desktop.png'), clip: { x: 0, y: 0, width: 1440, height: 120 } })
-  await label.click()
+  await worktreeBar(desk.page).getByRole('button', { name: 'Voir le Git' }).click()
   const panel = desk.page.locator('[data-panel="workspace"]')
   await panel.getByRole('button', { name: /^Espace de travail/ }).waitFor()
   console.log('OK : branche du worktree affichée, onglet Git ouvert au clic.')
@@ -115,7 +117,7 @@ try {
   const phone = await session({ width: 390, height: 844 }, true)
   await phone.page.goto(`${base}/p/${phone.project.id}/c/${phone.hero.id}`)
   const phoneHeader = header(phone.page)
-  const phoneLabel = phoneHeader.getByRole('button', { name: /^Worktree feat\/offline-cache/ })
+  const phoneLabel = worktreeBar(phone.page).getByText('feat/offline-cache', { exact: true })
   await phoneLabel.waitFor()
   const projectLink = phoneHeader.getByRole('link', { name: 'Nimbus', exact: true })
   const clipped = await projectLink.evaluate((node) => node.scrollWidth > node.clientWidth)
@@ -127,12 +129,17 @@ try {
   await phone.page.screenshot({ path: join(shots, 'workspace-label-phone.png'), clip: { x: 0, y: 0, width: 390, height: 120 } })
   assert.deepEqual(phone.errors, [])
 
-  // Worktree effacé hors de Sillage : l'en-tête le dit au lieu de taire la branche.
+  // Worktree effacé hors de Sillage : la barre le dit une fois le cache git renouvelé.
   const worktrees = await (await desk.context.request.get(`${base}/api/projects/${desk.project.id}/worktrees`)).json()
   const offline = worktrees.find((entry) => entry.name === 'feat/offline-cache')
   await rm(offline.path, { recursive: true, force: true })
+  for (let i = 0; i < 40; i++) {
+    const status = await (await desk.context.request.get(`${base}/api/projects/${desk.project.id}/worktrees/status`)).json()
+    if (status.worktrees.find((entry) => entry.id === offline.id)?.state === 'missing') break
+    await delay(1000)
+  }
   await desk.page.goto(`${base}/p/${desk.project.id}/c/${desk.hero.id}`)
-  await header(desk.page).getByText('Worktree feat/offline-cache introuvable', { exact: true }).waitFor()
+  await worktreeBar(desk.page).getByText('Introuvable', { exact: true }).waitFor()
   console.log('OK : worktree disparu signalé.')
 
   console.log('OK : branche et worktree de l’en-tête vérifiés sur grand écran et au téléphone.')

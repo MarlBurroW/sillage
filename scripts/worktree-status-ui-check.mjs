@@ -18,7 +18,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const data = await mkdtemp(join(tmpdir(), 'sillage-worktree-check-'))
-const shots = join(root, 'docs/audits/2026-10-17-worktrees')
+const shots = join(tmpdir(), 'sillage-contextual-worktrees-ui')
 const processes = []
 let browser
 
@@ -30,8 +30,8 @@ async function freePort() {
   return port
 }
 
-function run(args, cwd, env) {
-  const child = spawn(process.execPath, args, { cwd, env, stdio: 'pipe' })
+function run(args, cwd, env, stdio = 'pipe') {
+  const child = spawn(process.execPath, args, { cwd, env, stdio })
   processes.push(child)
   child.diagnostics = ''
   for (const stream of [child.stdout, child.stderr]) {
@@ -86,7 +86,7 @@ try {
   git(squashed, 'commit', '-m', 'Fix a typo')
   git(repoRoot, 'merge', '--squash', 'fix/squashed-typo')
   git(repoRoot, 'commit', '-m', 'Fix a typo (squashed)')
-  // Un second arbre fusionné, que « À décider » proposera de nettoyer.
+  // Un second arbre fusionné, à nettoyer depuis sa conversation.
   const docs = join(data, 'external', 'nimbus-docs')
   git(repoRoot, 'worktree', 'add', '-b', 'docs/readme', docs, 'main')
   await writeFile(join(docs, 'NOTES.md'), 'notes\n')
@@ -96,6 +96,23 @@ try {
   const gone = join(data, 'external', 'nimbus-gone')
   git(repoRoot, 'worktree', 'add', '-b', 'feat/gone', gone, 'main')
   await rm(gone, { recursive: true, force: true })
+
+  const docsSessionId = '00000000-0000-4000-8000-000000000046'
+  const fixture = run(['--import', 'tsx', '--input-type=module', '-e', `
+    import { randomUUID } from 'node:crypto'
+    import { eq } from 'drizzle-orm'
+    import { openDatabase, projects, worktrees, conversations } from '@sillage/db'
+    import { loadConfig } from './src/config.ts'
+    const { db, sqlite } = openDatabase(loadConfig().paths.database)
+    const project = db.select().from(projects).where(eq(projects.name, 'Nimbus')).get()
+    const source = db.select().from(conversations).where(eq(conversations.projectId, project.id)).get()
+    const worktreeId = randomUUID()
+    db.insert(worktrees).values({ id: worktreeId, projectId: project.id, name: 'docs/readme', path: ${JSON.stringify(docs)}, baseRef: 'main', createdBy: project.ownerId, createdAt: Date.now() }).run()
+    db.insert(conversations).values({ ...source, id: ${JSON.stringify(docsSessionId)}, worktreeId, title: 'Document the forecast cache', status: 'idle', cardId: null, scheduleId: null, archivedAt: null }).run()
+    sqlite.close()
+  `], serverDir, env)
+  const [fixtureCode] = await once(fixture, 'exit')
+  assert.equal(fixtureCode, 0, fixture.diagnostics)
 
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
 
@@ -129,25 +146,38 @@ try {
   assert.ok(desktop.status.worktrees.find((tree) => tree.name === 'feat/offline-cache').conversations.length > 0)
   console.log('OK : états calculés sur la démo.')
 
-  // « À décider » : le calcul a proposé de nettoyer les deux arbres fusionnés. La
-  // réponse « Nettoyer » retire l'arbre et sa branche, sans passer par une session.
+  // Une fusion n'ajoute ni décision ni encombrement dans la barre latérale.
   const { page, errors, project } = desktop
-  await page.goto(`${base}/p/${project.id}/board`)
-  const decided = page.getByRole('region', { name: 'À décider' })
-  await decided.getByRole('button', { name: /docs\/readme est fusionnée et propre : nettoyer \?/ }).click()
-  const decisionDialog = page.getByRole('dialog', { name: 'docs/readme est fusionnée et propre : nettoyer ?' })
-  await decisionDialog.getByText("Rien dans cet arbre que la branche par défaut n'ait déjà.").waitFor()
-  assert.equal(await decisionDialog.getByRole('textbox').count(), 0, 'Pas de note à écrire : aucune session ne la lirait')
-  await decisionDialog.getByRole('radio', { name: 'Nettoyer' }).click()
-  await page.screenshot({ path: join(shots, 'decision-dialog.png') })
-  await decisionDialog.getByRole('button', { name: 'Envoyer' }).click()
-  await decisionDialog.getByText('Répondu par', { exact: false }).waitFor()
-  assert.ok(!existsSync(docs), 'Le dossier est retiré par la réponse')
-  assert.equal(git(repoRoot, 'branch', '--list', 'docs/readme'), '', 'La branche est supprimée par la réponse')
-  await page.screenshot({ path: join(shots, 'decision-answered.png') })
-  await page.keyboard.press('Escape')
-  await decisionDialog.waitFor({ state: 'hidden' })
-  console.log('OK : « À décider » propose et nettoie un arbre fusionné.')
+  const decisions = await (await desktop.context.request.get(`${base}/api/decisions?status=pending&sources=worktree`)).json()
+  assert.deepEqual(decisions.decisions, [])
+  await page.goto(`${base}/p/${project.id}/c/${docsSessionId}`)
+  const worktreeBar = (target) => target.getByRole('region', { name: 'Worktree de la conversation' })
+  await worktreeBar(page).getByText('Fusionné dans main', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('region', { name: 'À décider' }).count(), 0)
+  assert.ok((await worktreeBar(page).boundingBox()).height <= 44, 'Une seule barre compacte')
+  await page.screenshot({ path: join(shots, 'conversation-merged-desktop.png') })
+  const mergedPhone = await session({ width: 390, height: 844 }, true)
+  await mergedPhone.page.goto(`${base}/p/${project.id}/c/${docsSessionId}`)
+  await worktreeBar(mergedPhone.page).getByRole('button', { name: 'Nettoyer', exact: true }).waitFor()
+  await mergedPhone.page.screenshot({ path: join(shots, 'conversation-merged-phone.png') })
+  await mergedPhone.page.setViewportSize({ width: 320, height: 740 })
+  assert.ok(await mergedPhone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+  await mergedPhone.page.setViewportSize({ width: 390, height: 844 })
+  assert.ok(await mergedPhone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+  // Le geste au téléphone ouvre la même confirmation détaillée que la vue Chantiers.
+  await worktreeBar(mergedPhone.page).getByRole('button', { name: 'Nettoyer', exact: true }).click()
+  const phoneDialog = mergedPhone.page.getByRole('dialog', { name: 'Nettoyer docs/readme' })
+  await phoneDialog.getByRole('switch', { name: 'Archiver 1 session' }).waitFor()
+  await phoneDialog.getByRole('button', { name: 'Annuler', exact: true }).click()
+  assert.ok(existsSync(docs), 'Annuler garde le worktree')
+  await worktreeBar(page).getByRole('button', { name: 'Nettoyer', exact: true }).click()
+  const cleanup = page.getByRole('dialog', { name: 'Nettoyer docs/readme' })
+  await cleanup.getByText("Rien ici que la base n'ait déjà.", { exact: true }).waitFor()
+  await cleanup.getByRole('button', { name: 'Nettoyer', exact: true }).click()
+  await cleanup.waitFor({ state: 'hidden' })
+  assert.ok(!existsSync(docs), 'Le dossier est retiré après confirmation')
+  assert.equal(git(repoRoot, 'branch', '--list', 'docs/readme'), '')
+  console.log('OK : worktree dans le fil, nettoyage confirmé, aucune décision automatique.')
 
   // Barre latérale : la session en worktree porte sa branche et son état, pas les autres.
   await page.goto(`${base}/p/${project.id}/board`)
@@ -173,6 +203,15 @@ try {
   const panel = page.locator('[data-panel="workspace"]')
   await panel.getByText('feat/offline-cache', { exact: true }).first().waitFor()
   console.log('OK : la pastille ouvre l’onglet Git.')
+  await worktreeBar(page).getByText('Non commité', { exact: true }).waitFor()
+  assert.equal(await worktreeBar(page).getByRole('button', { name: 'Nettoyer', exact: true }).count(), 0)
+  await worktreeBar(page).getByRole('button', { name: 'Voir le Git', exact: true }).waitFor()
+  // La racine conserve sa branche dans l'en-tête, sans barre supplémentaire.
+  const conversations = await (await desktop.context.request.get(`${base}/api/projects/${project.id}/conversations`)).json()
+  const rootSession = conversations.find((entry) => !entry.worktreeId)
+  await page.goto(`${base}/p/${project.id}/c/${rootSession.id}`)
+  assert.equal(await worktreeBar(page).count(), 0)
+
 
   // Vue Chantiers sur la page projet, atteinte depuis la ligne de la barre latérale.
   await chantiers.click()
@@ -243,9 +282,63 @@ try {
   await phone.page.screenshot({ path: join(shots, 'board-phone.png') })
   assert.deepEqual(phone.errors, [])
   console.log('OK : barre latérale et vue Chantiers au téléphone.')
+  const offlineConversation = conversations.find((entry) => entry.title === 'Add offline caching for forecasts')
+  await phone.page.goto(`${base}/p/${project.id}/c/${offlineConversation.id}`)
+  await worktreeBar(phone.page).getByText('Non commité', { exact: true }).waitFor()
+  await phone.page.screenshot({ path: join(shots, 'conversation-dirty-phone.png') })
+  assert.ok(await phone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+
+  // En Desktop, même origine pour le web et l'API : Vite serait refusé par le WebSocket.
+  const desktopWeb = join(data, 'desktop-web')
+  const build = run([join(webDir, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', desktopWeb], webDir, { ...env, NODE_ENV: 'production' })
+  const [buildCode] = await once(build, 'exit')
+  assert.equal(buildCode, 0, build.diagnostics)
+  // Même code en Desktop, avec la session du lanceur et sans page de connexion.
+  server.kill('SIGTERM')
+  await once(server, 'exit')
+  const deskServer = run(['--import', 'tsx', 'src/main.ts'], serverDir, {
+    ...env, SILLAGE_PROFILE: 'desktop', SILLAGE_HANDSHAKE_FD: '3', SILLAGE_WEB_ROOT: desktopWeb,
+  }, ['pipe', 'pipe', 'pipe', 'pipe'])
+  const handshake = await new Promise((resolve, reject) => {
+    let buffer = ''
+    deskServer.stdio[3].on('data', (chunk) => {
+      buffer += chunk
+      if (buffer.includes('\n')) resolve(JSON.parse(buffer.slice(0, buffer.indexOf('\n'))))
+    })
+    deskServer.once('exit', () => reject(new Error(deskServer.diagnostics)))
+  })
+  const deskBase = `http://127.0.0.1:${handshake.port}`
+  const deskContext = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: 'fr-FR', serviceWorkers: 'block' })
+  await deskContext.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
+  await deskContext.addCookies([{ name: 'sillage_session', value: handshake.session, url: deskBase }])
+  const deskPage = await deskContext.newPage()
+  await deskPage.goto(`${deskBase}/p/${project.id}/c/${offlineConversation.id}`)
+  await worktreeBar(deskPage).getByText('Non commité', { exact: true }).waitFor()
+  const instance = await (await deskContext.request.get(`${deskBase}/api/system/instance`)).json()
+  assert.equal(instance.profile, 'desktop')
+  await deskPage.screenshot({ path: join(shots, 'conversation-desktop-edition.png') })
+  const english = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: 'en-US', serviceWorkers: 'block' })
+  await english.addCookies([{ name: 'sillage_session', value: handshake.session, url: deskBase }])
+  await english.addInitScript(() => { localStorage.setItem('sillage.locale', 'en'); localStorage.setItem('sillage.theme', 'dark') })
+  const englishPage = await english.newPage()
+  await englishPage.goto(`${deskBase}/p/${project.id}/c/${offlineConversation.id}`)
+  await englishPage.getByRole('region', { name: 'Conversation worktree' }).getByText('Uncommitted', { exact: true }).waitFor()
+  await englishPage.getByText('Connected', { exact: true }).waitFor()
+  await englishPage.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+  await englishPage.screenshot({ path: join(shots, 'conversation-dark-english.png') })
+  console.log('OK : barre contextuelle dans l’édition Desktop.')
 } finally {
   await browser?.close()
-  for (const child of processes) child.kill('SIGTERM')
-  await delay(200)
+  await Promise.all(processes.map(async (child) => {
+    if (child.exitCode !== null || child.signalCode !== null) return
+    const stopped = once(child, 'exit')
+    child.stdin?.end()
+    child.kill('SIGTERM')
+    await Promise.race([stopped, delay(2000)])
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL')
+      await stopped
+    }
+  }))
   await rm(data, { recursive: true, force: true })
 }

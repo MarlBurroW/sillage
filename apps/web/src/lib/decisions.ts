@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { decisionSourceKindSchema, type DecisionDto } from '@sillage/protocol'
+import { BASELINE_DECISION_SOURCES, decisionSourceKindSchema, type DecisionDto } from '@sillage/protocol'
 import { api } from './api'
 import { wsClient } from './ws-client'
 
@@ -11,6 +11,8 @@ const decisionsKey = (status: 'pending' | 'all') => ['decisions', status]
  * qu'aux clients qui les nomment (voir `requestedDecisionSources`).
  */
 const SOURCES = `sources=${decisionSourceKindSchema.options.join(',')}`
+// La file et son compteur sont réservés aux agents, même face à un ancien serveur.
+const INBOX_SOURCES = `sources=${BASELINE_DECISION_SOURCES.join(',')}`
 
 /**
  * Les décisions du compte. Relues quand le serveur signale un changement, et toutes les
@@ -19,7 +21,7 @@ const SOURCES = `sources=${decisionSourceKindSchema.options.join(',')}`
 export function useDecisions(status: 'pending' | 'all' = 'pending') {
   return useQuery({
     queryKey: decisionsKey(status),
-    queryFn: async () => (await api.get<{ decisions: DecisionDto[] }>(`/api/decisions?status=${status}&${SOURCES}`)).decisions,
+    queryFn: async () => (await api.get<{ decisions: DecisionDto[] }>(`/api/decisions?status=${status}&${INBOX_SOURCES}`)).decisions,
     staleTime: 15_000,
     refetchInterval: 60_000,
   })

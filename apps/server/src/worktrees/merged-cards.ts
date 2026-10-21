@@ -10,7 +10,7 @@ const OPEN_COLUMNS = ['in_progress', 'review'] as const
 /**
  * Passe en « Terminé » les cartes dont le worktree vient d'être fusionné.
  *
- * Branché sur les calculs d'avancement, comme la proposition de nettoyage : une fusion
+ * Branché sur les calculs d'avancement : une fusion
  * se fait par l'onglet Git, par un agent au shell ou sur la forge puis un pull, et seul
  * l'état de l'arbre les voit toutes. Une carte encore à faire n'est pas touchée (rien
  * n'y a été lancé, ou quelqu'un l'y a remise), ni une carte déjà terminée ou abandonnée.
