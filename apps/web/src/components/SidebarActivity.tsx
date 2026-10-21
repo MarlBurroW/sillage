@@ -59,6 +59,14 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
     .sort((a, b) => b.settledAt - a.settledAt).slice(0, 8)
   // Les attentes précèdent le travail en cours, sans clic pour découvrir les sessions.
   const active = [...awaiting, ...running]
+  const projectNames = new Map(projects.map((project) => [project.id, project.name]))
+  // Le tri stable conserve les attentes en tête au sein de chaque projet.
+  const visible = (view === 'all' ? [...active, ...recent] : view === 'awaiting' ? awaiting : unread)
+    .sort((a, b) => {
+      const aName = projectNames.get(a.conversation.projectId) ?? t('shell.overview.unknown')
+      const bName = projectNames.get(b.conversation.projectId) ?? t('shell.overview.unknown')
+      return aName.localeCompare(bName) || a.conversation.projectId.localeCompare(b.conversation.projectId)
+    })
   const show = (next: View = 'all') => {
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setView(next)
@@ -118,20 +126,8 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
               </button>)}
             </div>
             <div className="min-h-0 overflow-y-auto px-4 py-4 space-y-5">
-              {view !== 'unread' && awaiting.length > 0 && <section aria-label={t('shell.activity.awaiting')}>
-                <h2 className="mb-2 flex items-center gap-2 px-2 text-xs font-semibold text-caution"><MessageCircleQuestion size={14} />{t('shell.overview.awaitingCount', { count: awaiting.length })}</h2>
-                {rows(awaiting)}
-              </section>}
-              {view === 'all' && running.length > 0 && <section aria-label={t('shell.activity.running')}>
-                <h2 className="mb-2 flex items-center gap-2 px-2 text-xs font-semibold text-accent"><RunningDot />{t('shell.overview.runningCount', { count: running.length })}</h2>
-                {rows(running)}
-              </section>}
-              {view === 'unread' && rows(unread)}
-              {(view === 'all' ? active.length === 0 : view === 'awaiting' ? awaiting.length === 0 : unread.length === 0) && <p role="status" className="px-2 py-8 text-center text-sm text-ink-faint">{t(view === 'all' ? 'shell.overview.quiet' : view === 'awaiting' ? 'shell.activity.empty.awaiting' : 'shell.activity.empty.unread')}</p>}
-              {view === 'all' && recent.length > 0 && <section aria-label={t('shell.overview.recent')} className="border-t border-line pt-4" title={t('shell.overview.recentHint')}>
-                <h2 className="mb-2 px-2 text-xs font-semibold text-ink-faint">{t('shell.overview.recent')}</h2>
-                {rows(recent)}
-              </section>}
+              {rows(visible)}
+              {visible.length === 0 && <p role="status" className="px-2 py-8 text-center text-sm text-ink-faint">{t(view === 'all' ? 'shell.overview.quiet' : view === 'awaiting' ? 'shell.activity.empty.awaiting' : 'shell.activity.empty.unread')}</p>}
             </div>
           </Dialog.Content>
         </Dialog.Portal>
@@ -159,7 +155,7 @@ function ActivityRow({ entry, project, onNavigate, compact = false }: { entry: A
       <span className="min-w-0 flex-1">
         <span className={cx('block break-words font-medium leading-snug text-ink', compact ? 'line-clamp-2 text-xs' : 'text-sm')}>{entry.conversation.title}</span>
         <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-ink-faint">
-          <span className="flex min-w-0 items-center gap-1"><ProjectAvatar project={project} className="size-3" /><span className="truncate">{project?.name ?? t('shell.overview.unknown')}</span></span>
+          <span className={cx('flex min-w-0 items-center gap-1', !compact && 'rounded border border-line bg-surface-high px-1.5 py-0.5')}><ProjectAvatar project={project} className="size-3" /><span className="truncate">{project?.name ?? t('shell.overview.unknown')}</span></span>
           {!compact && <span className="sm:hidden">{status}</span>}
           {compact && <span className={entry.running && entry.status !== 'running' ? '' : 'sr-only'}>{status}</span>}
         </span>
