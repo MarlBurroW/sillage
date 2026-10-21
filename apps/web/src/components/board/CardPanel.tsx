@@ -17,6 +17,7 @@ import { Badge, Banner, Button, ConfirmDialog, IconButton, Menu, MenuItem, cx } 
 import { CardAttachments } from './CardAttachments'
 import { CardEditor } from './CardEditor'
 import { CardNotes } from './CardNotes'
+import { CardRelations } from './CardRelations'
 import { COLUMN_TONES, columnLabel } from './columns'
 import { GitHubMark } from './GitHubMark'
 
@@ -229,6 +230,7 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
           </>}
           {updateCard.isError ? <p role="alert" className="text-sm text-critical">{t('board.card.saveError')}</p> : null}
         </div>
+        <CardRelations key={`relations-${card.id}`} card={card} projectId={projectId} onSelect={onSelectCard} />
         <CardAttachments key={card.id} cardId={card.id} projectId={projectId} />
         <CardLinkList title={t('board.card.references')} links={card.references} onSelect={onSelectCard} />
         <CardLinkList title={t('board.card.referencedBy')} links={card.referencedBy} onSelect={onSelectCard} />

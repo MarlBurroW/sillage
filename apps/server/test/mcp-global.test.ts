@@ -76,6 +76,7 @@ test('the global tool list adds list_projects, a project parameter, and drops se
   }
   const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
   assert.deepEqual(byName.list_cards!.inputSchema.required, ['project'])
+  assert.deepEqual(byName.update_card!.inputSchema.required, ['project', 'number'])
   assert.deepEqual(byName.add_card_note!.inputSchema.required, ['project', 'card', 'body'])
   assert.ok(!byName.count_active_sessions!.inputSchema.required)
   assert.ok('project' in byName.read_instructions!.inputSchema.properties)

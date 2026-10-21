@@ -22,6 +22,7 @@ import {
 import {
   MAX_ATTACHMENT_BYTES,
   createCardBodySchema,
+  createCardRelationBodySchema,
   createCardNoteBodySchema,
   parseCardReferences,
   reorderCardsBodySchema,
@@ -36,6 +37,7 @@ import {
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { linkCards, listCardRelations, unlinkCards } from '../../board/card-relations.js'
 
 const MENTION_LIMIT = 20
 
@@ -310,32 +312,35 @@ export function registerCardRoutes(
     return reply.status(201).send(readCard(row.id, id))
   })
 
+  app.get('/api/cards/:id/relations', async (request) => {
+    const user = requireUser(request)
+    const { card } = loadCard((request.params as { id: string }).id, user.id)
+    return listCardRelations(ctx.db, card.projectId, card.number)
+  })
+
+  app.post('/api/cards/:id/relations', async (request) => {
+    const user = requireUser(request)
+    const { card } = loadCard((request.params as { id: string }).id, user.id)
+    const body = createCardRelationBodySchema.parse(request.body)
+    linkCards(ctx.db, card.projectId, card.number, body.target, body.kind)
+    return listCardRelations(ctx.db, card.projectId, card.number)
+  })
+
+  app.delete('/api/cards/:id/relations', async (request, reply) => {
+    const user = requireUser(request)
+    const { card } = loadCard((request.params as { id: string }).id, user.id)
+    const body = createCardRelationBodySchema.parse(request.body)
+    unlinkCards(ctx.db, card.projectId, card.number, body.target, body.kind)
+    return reply.status(204).send()
+  })
+
   app.patch('/api/cards/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = updateCardBodySchema.parse(request.body)
     const { card } = loadCard(id, user.id)
 
-    const patch: Partial<typeof cards.$inferInsert> = {}
-    if (body.title !== undefined) patch.title = body.title
-    if (body.description !== undefined) patch.description = body.description
-    if (body.column !== undefined && body.column !== card.column) {
-      patch.column = body.column
-      // Changer de colonne depuis le détail place la carte en fin de la nouvelle,
-      // faute de geste qui dise où l'y poser.
-      const [last] = ctx.db
-        .select({ position: max(cards.position) })
-        .from(cards)
-        .where(and(eq(cards.projectId, card.projectId), eq(cards.column, body.column)))
-        .all()
-      patch.position = (last?.position ?? 0) + 1
-    }
-
-    if (Object.keys(patch).length > 0) {
-      patch.updatedAt = Date.now()
-      ctx.db.update(cards).set(patch).where(eq(cards.id, id)).run()
-    }
-    if (body.description !== undefined) syncCardReferences(ctx.db, card, body.description)
+    updateCard(ctx.db, card, body)
     // Une carte suivie a changé : la synchronisation compare et envoie à GitHub.
     board?.kick(card.projectId)
 
@@ -613,6 +618,34 @@ export function advanceCardOnLaunch(ctx: AppContext, cardId: string): void {
     .set({ column: 'in_progress', updatedAt: Date.now() })
     .where(and(eq(cards.id, cardId), eq(cards.column, 'todo')))
     .run()
+}
+
+/** Partagée avec les agents pour conserver les références et le placement des cartes. */
+export function updateCard(
+  db: Db,
+  card: CardRow,
+  body: { title?: string; description?: string; column?: CardColumn },
+): void {
+  const patch: Partial<typeof cards.$inferInsert> = {}
+  if (body.title !== undefined) patch.title = body.title
+  if (body.description !== undefined) patch.description = body.description
+  if (body.column !== undefined && body.column !== card.column) {
+    patch.column = body.column
+    // Changer de colonne depuis le détail place la carte en fin de la nouvelle,
+    // faute de geste qui dise où l'y poser.
+    const [last] = db
+      .select({ position: max(cards.position) })
+      .from(cards)
+      .where(and(eq(cards.projectId, card.projectId), eq(cards.column, body.column)))
+      .all()
+    patch.position = (last?.position ?? 0) + 1
+  }
+
+  if (Object.keys(patch).length > 0) {
+    patch.updatedAt = Date.now()
+    db.update(cards).set(patch).where(eq(cards.id, card.id)).run()
+  }
+  if (body.description !== undefined) syncCardReferences(db, card, body.description)
 }
 
 /**

@@ -34,6 +34,8 @@ import {
   taskReplyBodySchema,
   createProjectActionBodySchema,
   updateProjectActionBodySchema,
+  updateCardBodySchema,
+  createCardRelationBodySchema,
   agentKindSchema,
   defaultConfigFor,
   formatSessionMessage,
@@ -62,7 +64,8 @@ import { createWebhook, readSettings, revealSecret, webhookUrl } from '../automa
 import { createConversation } from '../conversations/create.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
-import { advanceCardOnLaunch, createCard } from '../http/routes/cards.js'
+import { advanceCardOnLaunch, createCard, updateCard } from '../http/routes/cards.js'
+import { linkCards, unlinkCards } from '../board/card-relations.js'
 import type { BoardSync } from '../board/board-sync.js'
 import { DecisionRefusal, type DecisionService } from '../decisions/service.js'
 import { createWorktree } from '../http/routes/worktrees.js'
@@ -261,6 +264,14 @@ export class AgentRequests {
         // Une décision est posée au nom d'une session autonome : sans session, personne.
         if (!conversation) throw new Refusal("Cet outil ne sert qu'aux sessions autonomes : hors session, il n'y a pas de décision à demander.")
         this.settle(request.id, await this.decide(request.kind, conversation, payload), false)
+      } else if (request.kind === 'link_cards' || request.kind === 'unlink_cards') {
+        if (!Number.isInteger(payload.number)) throw new Refusal('Le numéro de la carte est requis.')
+        const { target, kind } = createCardRelationBodySchema.parse(payload)
+        const change = request.kind === 'link_cards' ? linkCards : unlinkCards
+        change(this.ctx.db, requester.projectId, payload.number as number, target, kind)
+        this.settle(request.id, request.kind === 'link_cards' ? 'Relation ajoutée.' : 'Relation supprimée.', false)
+      } else if (request.kind === 'update_card') {
+        this.settle(request.id, this.updateCard(requester, payload), false)
       } else if (request.kind === 'create_card') {
         this.settle(request.id, await this.createCard(requester, payload), false)
       } else if (request.kind === 'register_action') {
@@ -862,6 +873,23 @@ export class AgentRequests {
       if (err instanceof DecisionRefusal) throw new Refusal(err.message)
       throw err
     }
+  }
+
+  private updateCard(requester: Requester, payload: Record<string, unknown>): string {
+    if (!Number.isInteger(payload.number)) throw new Refusal('Le numéro de la carte est requis.')
+    const card = this.ctx.db.select().from(cards)
+      .where(and(eq(cards.projectId, requester.projectId), eq(cards.number, payload.number as number))).get()
+    if (!card) throw new Refusal('Aucune carte de ce numéro dans ce projet.')
+    const body = updateCardBodySchema.pick({ title: true, description: true }).parse({
+      title: typeof payload.title === 'string' ? payload.title.trim() : payload.title,
+      description: payload.description,
+    })
+    if (body.title === undefined && body.description === undefined) {
+      throw new Refusal('Donne au moins un titre ou une description à modifier.')
+    }
+    updateCard(this.ctx.db, card, body)
+    this.board?.kick(requester.projectId)
+    return `Carte #${card.number} mise à jour.`
   }
 
   // --- create_card ---------------------------------------------------------------

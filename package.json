@@ -18,6 +18,7 @@
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
     "test:grok-ui": "node scripts/grok-ui-check.mjs",
     "test:grok-accounts-ui": "node scripts/grok-accounts-ui-check.mjs",
+    "test:card-relations-ui": "node scripts/card-relations-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:viewport-ui": "node scripts/viewport-ui-check.mjs",

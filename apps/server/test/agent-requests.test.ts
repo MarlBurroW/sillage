@@ -9,6 +9,8 @@ import { eq } from 'drizzle-orm'
 import {
   agentRequests,
   cardNotes,
+  cardRefs,
+  cardRelations,
   cards,
   conversations,
   openDatabase,
@@ -307,4 +309,70 @@ test('list_models shows the catalog and the defaults a launch would use', async 
   const result = await mcp('parent', 'list_models', { agent: 'codex' })
   assert.match(result.content[0]!.text, /par défaut : modèle gpt-5\.5/)
   assert.match(result.content[0]!.text, /`astra-1` \(Astra\)/)
+})
+
+test('any project session can edit a card and add notes without being attached', async (t) => {
+  const { db, conversation, mcp } = await harness(t)
+  conversation('author')
+  conversation('editor', 'codex')
+  await mcp('author', 'create_card', { title: 'Initial', description: 'À compléter' })
+  await mcp('author', 'create_card', { title: 'Référence' })
+  const edited = await mcp('editor', 'update_card', { number: 1, title: 'Corrigé', description: 'Voir #2' })
+  assert.equal(edited.isError, undefined, edited.content[0]?.text)
+  const card = db.select().from(cards).where(eq(cards.number, 1)).get()!
+  assert.equal(card.title, 'Corrigé')
+  assert.equal(card.description, 'Voir #2')
+  assert.equal(db.select().from(cardRefs).all().length, 1)
+  const noted = await mcp('editor', 'add_card_note', { number: 1, body: 'Complément' })
+  assert.equal(noted.isError, undefined, noted.content[0]?.text)
+  assert.ok(db.select().from(cardNotes).all().some(n => n.body === 'Complément' && n.conversationId === 'editor'))
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'editor')).get()!.cardId, null)
+  const cleared = await mcp('editor', 'update_card', { number: 1, description: '' })
+  assert.equal(cleared.isError, undefined)
+  assert.equal(db.select().from(cardRefs).all().length, 0)
+  assert.equal(db.select().from(cards).where(eq(cards.id, card.id)).get()!.title, 'Corrigé')
+  for (const args of [{ number: 1 }, { number: 1, title: ' ' }, { number: 1, description: 'x'.repeat(20001) }, { number: 999, title: 'Absent' }]) {
+    assert.equal((await mcp('editor', 'update_card', args)).isError, true)
+  }
+  db.insert(projects).values({ id: 'other-project', name: 'Other', workspacePath: '/other', ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  db.insert(cards).values({ id: 'foreign', projectId: 'other-project', number: 99, title: 'Privé', description: '', column: 'todo', position: 1, createdBy: 'owner', createdAt: 1, updatedAt: 1 }).run()
+  assert.equal((await mcp('editor', 'update_card', { number: 99, title: 'Interdit' })).isError, true)
+  assert.equal((await mcp('editor', 'add_card_note', { number: 99, body: 'Interdit' })).isError, true)
+  assert.equal(db.select().from(cards).where(eq(cards.id, 'foreign')).get()!.title, 'Privé')
+  const global = await mcp('', 'update_card', { project: 'project', number: 1, title: 'Global' })
+  assert.equal(global.isError, undefined, global.content[0]?.text)
+})
+
+test('MCP : relations depuis toute session du projet et lecture des deux sens', async t => {
+  const { db, conversation, mcp } = await harness(t)
+  conversation('author')
+  conversation('peer', 'codex')
+  await mcp('author', 'create_card', { title: 'Parent' })
+  await mcp('author', 'create_card', { title: 'Enfant' })
+  const linked = await mcp('peer', 'link_cards', { number: 2, target: 1, kind: 'child' })
+  assert.equal(linked.isError, undefined, linked.content[0]?.text)
+  assert.match((await mcp('peer', 'read_card', { number: 1 })).content[0]!.text, /Contient #2/)
+  assert.match((await mcp('peer', 'read_card', { number: 2 })).content[0]!.text, /Est un sous-ticket de #1/)
+  assert.equal((await mcp('peer', 'link_cards', { number: 1, target: 1, kind: 'blocks' })).isError, true)
+  assert.equal((await mcp('peer', 'link_cards', { number: 1, target: 99, kind: 'related' })).isError, true)
+  const removed = await mcp('', 'unlink_cards', { project: 'project', number: 1, target: 2, kind: 'parent' })
+  assert.equal(removed.isError, undefined, removed.content[0]?.text)
+  assert.equal(db.select().from(cardRelations).all().length, 0)
+})
+
+test('MCP : les erreurs de ciblage indiquent la carte et le paramètre de la session', async t => {
+  const { conversation, mcp } = await harness(t)
+  conversation('editor')
+  await mcp('editor', 'create_card', { title: 'Locale' })
+  for (const [tool, fields] of [['add_card_note', { body: 'Note' }], ['update_issue', { state: 'closed' }]] as const) {
+    const absent = await mcp('editor', tool, { ...fields, number: 99 })
+    assert.equal(absent.isError, true)
+    assert.match(absent.content[0]!.text, /Aucune carte #99/)
+    const invalid = await mcp('editor', tool, { ...fields, number: 'incorrect' })
+    assert.equal(invalid.isError, true)
+    assert.match(invalid.content[0]!.text, /`number`/)
+  }
+  const local = await mcp('editor', 'update_issue', { number: 1, state: 'closed' })
+  assert.equal(local.isError, true)
+  assert.match(local.content[0]!.text, /carte #1 ne suit aucune issue/)
 })

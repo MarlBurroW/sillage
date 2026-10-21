@@ -1,5 +1,5 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CardColumn, CardDto, CardLinkDto, CardNoteDto } from '@sillage/protocol'
+import type { CardColumn, CardDto, CardLinkDto, CardNoteDto, CardRelationDto, CardRelationKind } from '@sillage/protocol'
 import { api } from './api'
 
 const cardsKey = (projectId: string) => ['cards', projectId]
@@ -199,5 +199,28 @@ export function useDeleteCardNote(projectId: string, cardId: string) {
       void queryClient.invalidateQueries({ queryKey: notesKey(cardId) })
       void queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
     },
+  })
+}
+
+const relationsKey = (cardId: string) => ['card-relations', cardId]
+
+export function useCardRelations(cardId: string) {
+  return useQuery({
+    queryKey: relationsKey(cardId),
+    queryFn: () => api.get<CardRelationDto[]>(`/api/cards/${cardId}/relations`),
+    // Les agents peuvent ajouter un lien pendant que le ticket est ouvert.
+    refetchInterval: 15_000,
+  })
+}
+
+export function useChangeCardRelation(cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ remove, ...body }: { target: number; kind: CardRelationKind; remove?: boolean }) => {
+      if (remove) await api.delete<void>(`/api/cards/${cardId}/relations`, body)
+      else await api.post<CardRelationDto[]>(`/api/cards/${cardId}/relations`, body)
+    },
+    // Les deux sens sont visibles : invalider aussi le cache de l’autre ticket.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['card-relations'] }),
   })
 }

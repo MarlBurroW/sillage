@@ -5,6 +5,7 @@ import type {
   BoardNewCards,
   BoardWorkspace,
   CardColumn,
+  StoredCardRelationKind,
   CardNotePublication,
   DecisionSourceKind,
   DecisionStatus,
@@ -273,6 +274,22 @@ export const cardRefs = sqliteTable(
   (t) => [primaryKey({ columns: [t.sourceId, t.targetId] }), index('idx_card_refs_target').on(t.targetId)],
 )
 
+/** Relations explicites, indépendantes des mentions dérivées de la description. */
+export const cardRelations = sqliteTable(
+  'card_relations',
+  {
+    id: text('id').primaryKey(),
+    sourceId: text('source_id').notNull().references(() => cards.id, { onDelete: 'cascade' }),
+    targetId: text('target_id').notNull().references(() => cards.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<StoredCardRelationKind>().notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('idx_card_relations_unique').on(t.sourceId, t.targetId, t.kind),
+    index('idx_card_relations_target').on(t.targetId),
+  ],
+)
+
 /**
  * Ce qu'une session a appris ou fait sur une carte, et que la suivante doit savoir.
  *
@@ -526,6 +543,9 @@ export const agentRequests = sqliteTable(
       enum: [
         'start_session',
         'create_card',
+        'update_card',
+        'link_cards',
+        'unlink_cards',
         'list_models',
         'schedule_task',
         'register_action',

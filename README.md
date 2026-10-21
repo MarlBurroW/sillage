@@ -85,8 +85,10 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 - **A board connected to GitHub.** Keep local cards alongside issues from a linked
   repository, with descriptions, comments, attachments and sessions. Choose whether
   new cards stay local or become issues; labels and issue state map to board columns.
-  Agents can read cards, leave notes, create cards, and close or reopen linked issues
-  through the built-in MCP server. Optional maintenance starts a session for a new
+  Any session in a project can edit its cards and leave notes through the built-in
+  MCP server, as well as create cards and close or reopen linked issues. Link tickets
+  as blockers, related work, duplicates, parent/sub-tickets or replacements from the
+  interface or an agent. Relations appear in both directions and stay local to Sillage. Optional maintenance starts a session for a new
   issue and brings subsequent comments into that issue's session, using your
   instructions, CLI and worktree choice.
 - **Sessions that coordinate.** Through the same server, a session can message

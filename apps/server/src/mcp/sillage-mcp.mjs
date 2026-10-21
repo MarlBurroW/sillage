@@ -5,17 +5,10 @@
  * de toutes les précédentes et le board du projet. Les outils exposés ici ouvrent cette
  * mémoire et cet état, cadrés au projet courant.
  *
- * Les outils qui écrivent le font tous dans un flux ajouté : notes de carte, messages
- * entre sessions, surveillances, cartes neuves et sessions lancées, ces deux dernières
- * par le daemon. Deux exceptions. L'image du projet, qu'un agent pose ou remplace :
- * elle n'est la consigne ni le jugement de personne, et l'utilisateur la reprend d'un
- * clic. Et SILLAGE.md, qu'un agent lit et réécrit comme il le ferait d'un fichier de
- * consignes du dépôt, à la demande de l'utilisateur, qui en voit la dernière main. La frontière est là et pas ailleurs : un agent peut
- * raconter ce qu'il a fait ou prévenir une autre session, il ne peut ni déplacer une
- * carte ni réécrire sa description. Déplacer serait se donner un satisfecit, et la
- * colonne cesserait d'être la position choisie qu'elle est censée rester ; réécrire la
- * description ferait qu'un compte rendu de session efface la consigne qu'il était censé
- * suivre.
+ * Toute session peut modifier les cartes de son projet et leurs relations, sans
+ * rattachement obligatoire. Les notes gardent le fil du travail ; la description
+ * porte l’énoncé courant. Les modifications de contenu et de relations passent par
+ * le daemon pour partager les validations de l’interface.
  *
  * Un message entre sessions n'est que déposé ici. Ce process n'a que la base, il ne
  * tient aucun runner : c'est le daemon qui le remet, en l'injectant dans le tour en
@@ -150,6 +143,9 @@ const MAX_PEER_MESSAGE_CHARS = 4000
 const REQUEST_WAIT_MS = {
   start_session: 90000,
   create_card: 15000,
+  update_card: 15000,
+  link_cards: 15000,
+  unlink_cards: 15000,
   list_models: 30000,
   schedule_task: 30000,
   register_action: 15000,
@@ -411,10 +407,11 @@ const TOOLS = [
   {
     name: 'add_card_note',
     description:
-      "Ajoute une note au fil de la carte que traite cette conversation. Sert à laisser aux sessions suivantes ce qu'elles ne pourront pas redécouvrir seules : ce qui a été fait et où en est le travail, ce qui a été essayé sans marcher et pourquoi, une décision prise en route, une contrainte trouvée dans le code. Appelle cet outil en fin de travail, et avant toute interruption longue. N'y recopie pas ce que le dépôt dit déjà, ni ce que `git log` raconte : une note utile est celle qui aurait fait gagner du temps si on l'avait lue au début. Les notes s'ajoutent et ne s'effacent pas ; elles ne remplacent pas la description de la carte, qui appartient à la personne qui l'a écrite.",
+      "Ajoute une note au fil de n’importe quelle carte de ce projet, sans rattachement obligatoire. Sert à laisser aux sessions suivantes ce qu'elles ne pourront pas redécouvrir seules : ce qui a été fait et où en est le travail, ce qui a été essayé sans marcher et pourquoi, une décision prise en route, une contrainte trouvée dans le code. Appelle cet outil en fin de travail, et avant toute interruption longue. N'y recopie pas ce que le dépôt dit déjà, ni ce que `git log` raconte : une note utile est celle qui aurait fait gagner du temps si on l'avait lue au début. Les notes s'ajoutent et ne s'effacent pas ; pour modifier le titre ou la description, utilise update_card.",
     inputSchema: {
       type: 'object',
       properties: {
+        number: { type: 'integer', description: 'Numéro de la carte du projet. Omis : la carte de cette conversation.' },
         body: {
           type: 'string',
           description:
@@ -432,7 +429,7 @@ const TOOLS = [
   {
     name: 'move_card',
     description:
-      "Change la colonne d'une carte du board. Deux usages : quand l'utilisateur te le demande, sur n'importe quelle carte ; et, de toi-même, pour la carte de cette conversation quand ton travail change d'étape, en « à vérifier » (review) quand tu as fini et qu'une personne doit relire. Ne passe une carte en « terminé » ou « abandonné » de toi-même que si l'utilisateur l'a dit : c'est lui qui juge qu'un travail est clos. Une ligne dans l'activité de la carte garde la trace du déplacement. Sur une carte qui suit une issue GitHub, Sillage reporte la colonne sur l'issue (étiquette, fermeture ou réouverture).",
+      "Change la colonne de n’importe quelle carte du projet, sans rattachement obligatoire. Fais évoluer les cartes concernées par ton travail, en « à vérifier » (review) quand tu as fini et qu'une personne doit relire. Ne passe une carte en « terminé » ou « abandonné » de toi-même que si l'utilisateur l'a dit : c'est lui qui juge qu'un travail est clos. Une ligne dans l'activité de la carte garde la trace du déplacement. Sur une carte qui suit une issue GitHub, Sillage reporte la colonne sur l'issue (étiquette, fermeture ou réouverture).",
     inputSchema: {
       type: 'object',
       properties: {
@@ -453,10 +450,38 @@ const TOOLS = [
       required: ['column'],
     },
   },
+  ...['link_cards', 'unlink_cards'].map((name) => ({
+    name,
+    description: `${name === 'link_cards' ? 'Ajoute' : 'Supprime'} une relation explicite entre deux cartes du projet, sans rattachement obligatoire. Le sens se lit depuis number vers target : blocks = bloque, blocked_by = est bloqué par, related = est lié à, duplicates = est un doublon de, duplicated_by = a pour doublon, parent = contient le sous-ticket, child = est un sous-ticket de, replaces = remplace, replaced_by = est remplacé par. Le lien inverse apparaît automatiquement. Les relations restent locales à Sillage, sans changement de colonne ni synchronisation GitHub. Lis les cartes avant de modifier leurs relations.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        number: { type: 'integer', description: 'Numéro de la carte de départ dans le projet.' },
+        target: { type: 'integer', description: 'Numéro de la carte cible dans le même projet.' },
+        // Doit rester d’accord avec cardRelationKindSchema dans @sillage/protocol.
+        kind: { type: 'string', enum: ['blocks', 'blocked_by', 'related', 'duplicates', 'duplicated_by', 'parent', 'child', 'replaces', 'replaced_by'] },
+      },
+      required: ['number', 'target', 'kind'],
+    },
+  })),
+  {
+    name: 'update_card',
+    description:
+      "Modifie le titre ou la description de n’importe quelle carte de ce projet, sans rattachement obligatoire. Lis la carte avant de la modifier pour préserver les informations utiles. La description fournie remplace le texte entier ; une chaîne vide l’efface. Sur une carte liée à GitHub, les modifications sont aussi synchronisées sur l’issue. Pour ajouter une note, utilise add_card_note ; pour changer de colonne, move_card.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        number: { type: 'integer', description: 'Numéro de la carte dans ce projet.' },
+        title: { type: 'string', description: 'Nouveau titre, non vide (200 caractères au plus).' },
+        description: { type: 'string', description: 'Nouvelle description complète en markdown (20 000 caractères au plus).' },
+      },
+      required: ['number'],
+    },
+  },
   {
     name: 'create_card',
     description:
-      "Ouvre une carte dans la colonne « à faire » du board de ce projet. Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas : un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Tu ne réécris pas une description existante : la consigne appartient à qui l'a écrite. Pour changer la colonne d'une carte, move_card.",
+      "Ouvre une carte dans la colonne « à faire » du board de ce projet. Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas : un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Pour compléter une carte existante, utilise update_card. Pour changer la colonne d'une carte, move_card.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -516,10 +541,11 @@ const TOOLS = [
   {
     name: 'update_issue',
     description:
-      "Ferme ou rouvre l'issue GitHub que suit la carte de cette conversation. Fermée comme terminée, la carte passe en « Terminé » ; comme non prévue, en « Abandonné » ; rouverte, en « À faire ». Sillage l'applique sur GitHub dans les secondes qui suivent. Refusé sur une carte locale.",
+      "Ferme ou rouvre l'issue GitHub que suit une carte de ce projet, sans rattachement obligatoire. Fermée comme terminée, la carte passe en « Terminé » ; comme non prévue, en « Abandonné » ; rouverte, en « À faire ». Sillage l'applique sur GitHub dans les secondes qui suivent. Refusé sur une carte locale.",
     inputSchema: {
       type: 'object',
       properties: {
+        number: { type: 'integer', description: 'Numéro de la carte du projet. Omis : la carte de cette conversation.' },
         state: { type: 'string', enum: ['closed', 'open'], description: 'closed pour fermer, open pour rouvrir.' },
         reason: {
           type: 'string',
@@ -1786,6 +1812,20 @@ function readCard(number) {
     )
     .all(card.id)
 
+  // Les libellés doivent rester d’accord avec CARD_RELATION_INVERSE du protocole.
+  const labels = {
+    blocks: ['Bloque', 'Est bloqué par'], related: ['Est lié à', 'Est lié à'],
+    duplicates: ['Est un doublon de', 'A pour doublon'], parent: ['Contient', 'Est un sous-ticket de'],
+    replaces: ['Remplace', 'Est remplacé par'],
+  }
+  card.relations = db.prepare(
+    `SELECT r.source_id AS sourceId, r.kind, c.number, c.title, c.column
+     FROM card_relations r JOIN cards c ON c.id = CASE WHEN r.source_id = ? THEN r.target_id ELSE r.source_id END
+     WHERE (r.source_id = ? OR r.target_id = ?) AND c.project_id = ? ORDER BY c.number`
+  ).all(card.id, card.id, card.id, PROJECT_ID).map(r => ({
+    ...r, label: labels[r.kind]?.[r.sourceId === card.id ? 0 : 1] ?? r.kind,
+  }))
+
   card.attachments = db.prepare(
     'SELECT filename, mime_type AS mimeType, size_bytes AS sizeBytes, storage_path AS path FROM attachments WHERE card_id = ? ORDER BY created_at'
   ).all(card.id)
@@ -2193,7 +2233,7 @@ function renderCard(card) {
     const labels = JSON.parse(card.issue.labels || '[]')
     parts.push(
       `Issue GitHub #${card.issue.number} (${card.issue.state === 'open' ? 'ouverte' : 'fermée'}${card.issue.author ? `, par @${card.issue.author}` : ''}${labels.length ? `, labels : ${labels.join(', ')}` : ''}) : ${card.issue.url}\n` +
-        "Le titre, la description et les commentaires viennent de GitHub ; les notes « @login » sont des commentaires écrits là-bas. Tes notes restent locales, sauf `github: true` sur add_card_note ; update_issue ferme ou rouvre l'issue.",
+        "Le titre, la description et les commentaires sont synchronisés avec GitHub ; update_card modifie le titre ou la description ; les notes « @login » sont des commentaires écrits là-bas. Tes notes restent locales, sauf `github: true` sur add_card_note ; update_issue ferme ou rouvre l'issue.",
     )
   } else if (card.issue) {
     parts.push(`Venue de l'issue GitHub #${card.issue.number} (${card.issue.url}), détachée : la carte est locale, l'issue n'est plus suivie.`)
@@ -2242,6 +2282,9 @@ function renderCard(card) {
 
   const link = (rows) =>
     rows.map((row) => `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}`).join('\n')
+  if (card.relations.length > 0) {
+    parts.push(`Relations (locales à Sillage) :\n${card.relations.map(r => `- ${r.label} #${r.number} « ${r.title} » (${COLUMN_LABELS[r.column]})`).join('\n')}`)
+  }
   if (card.references.length > 0) parts.push(`Cette carte cite :\n${link(card.references)}`)
   if (card.referencedBy.length > 0) parts.push(`Citée par :\n${link(card.referencedBy)}`)
 
@@ -2418,12 +2461,13 @@ async function requestDaemon(kind, payload) {
 }
 
 /**
- * La carte visée par add_card_note et update_issue : celle de la conversation, ou en
- * mode global celle que `card` désigne.
+ * Le numéro explicite vise une carte du projet ; sans numéro, on garde la carte
+ * de la conversation. En mode global, `card` reste compatible avec les clients.
  */
 function targetCard(args) {
-  if (!GLOBAL) return currentCard()
-  const number = Number.isInteger(args?.card) ? args.card : null
+  const explicit = GLOBAL ? (args?.card ?? args?.number) : args?.number
+  if (!GLOBAL && explicit === undefined) return currentCard()
+  const number = Number.isInteger(explicit) ? explicit : null
   if (number === null) return null
   const card = db
     .prepare('SELECT id, number, title FROM cards WHERE project_id = ? AND number = ?')
@@ -2547,8 +2591,14 @@ async function waitForSession(id, timeoutSeconds) {
 }
 
 const NO_CARD =
-  "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Sillage, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même."
-const NO_SUCH_CARD = 'Le paramètre `card` est requis : le numéro d\'une carte de ce projet, voir list_cards.'
+  "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Donne le numéro de la carte du projet avec `number`, ou rattache la conversation dans l’interface de Sillage."
+function missingTargetCard(args) {
+  const number = GLOBAL ? (args?.card ?? args?.number) : args?.number
+  if (!GLOBAL && number === undefined) return NO_CARD
+  if (Number.isInteger(number)) return `Aucune carte #${number} dans ce projet. Appelle list_cards pour voir celles qui existent.`
+  const parameter = GLOBAL && (args?.card != null || args?.number === undefined) ? 'card' : 'number'
+  return `Le paramètre \`${parameter}\` doit être le numéro entier d’une carte de ce projet, voir list_cards.`
+}
 
 async function callTool(name, args) {
   if (name === 'list_projects') {
@@ -2646,7 +2696,7 @@ async function callTool(name, args) {
     if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
 
     const card = targetCard(args)
-    if (!card) return { ...text(GLOBAL ? NO_SUCH_CARD : NO_CARD), isError: true }
+    if (!card) return { ...text(missingTargetCard(args)), isError: true }
 
     if (args?.github === true) {
       const link = boardLink()
@@ -2716,14 +2766,12 @@ async function callTool(name, args) {
     const state = args?.state === 'open' ? 'open' : args?.state === 'closed' ? 'closed' : null
     if (!state) return { ...text('Le paramètre `state` vaut closed ou open.'), isError: true }
     const card = targetCard(args)
-    if (!card && GLOBAL) return { ...text(NO_SUCH_CARD), isError: true }
-    const issue = card ? cardIssue(card.id) : null
-    if (!card || !issue || issue.detached || !boardLink()) {
+    if (!card) return { ...text(missingTargetCard(args)), isError: true }
+    const issue = cardIssue(card.id)
+    if (!issue || issue.detached || !boardLink()) {
       return {
         ...text(
-          GLOBAL
-            ? `La carte #${card.number} ne suit aucune issue GitHub : il n'y a rien à fermer ni rouvrir.`
-            : "Cette conversation n'est rattachée à aucune carte qui suit une issue GitHub : il n'y a rien à fermer ni rouvrir.",
+          `La carte #${card.number} ne suit aucune issue GitHub : il n'y a rien à fermer ni rouvrir.`,
         ),
         isError: true,
       }
@@ -2885,6 +2933,9 @@ async function callTool(name, args) {
   }
 
   if (
+    name === 'link_cards' ||
+    name === 'unlink_cards' ||
+    name === 'update_card' ||
     name === 'create_card' ||
     name === 'start_session' ||
     name === 'list_models' ||

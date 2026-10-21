@@ -135,3 +135,36 @@ donc sans messages entre sessions.
   et chaque traitement s'abstient de ce qui n'a de sens que pour une session.
 - Tests : `apps/server/test/mcp-global.test.ts`, `mcp-http.test.ts` et le cas global de
   `agent-requests.test.ts`.
+
+### Modifier les cartes du projet
+
+Toute session peut modifier une carte de son projet, même sans y être rattachée :
+`update_card` prend son `number` et le nouveau `title` ou la nouvelle `description`.
+La description remplace le texte entier ; il faut lire la carte avant de la modifier.
+`add_card_note` et `update_issue` acceptent aussi `number` ; sans numéro, ils visent
+la carte rattachée à la conversation. En mode global, leur paramètre `card` est conservé.
+Les modifications des cartes liées à GitHub sont synchronisées sur leurs issues.
+
+### Relier les tickets
+
+`link_cards` ajoute une relation explicite, `unlink_cards` la retire. Tous deux
+prennent `number` (ticket de départ), `target` (ticket cible) et `kind` :
+
+| `kind` | Depuis le ticket de départ | Sens inverse |
+| --- | --- | --- |
+| `blocks` | Bloque | `blocked_by` : est bloqué par |
+| `related` | Est lié à | Identique |
+| `duplicates` | Est un doublon de | `duplicated_by` : a pour doublon |
+| `parent` | Contient le sous-ticket | `child` : est un sous-ticket de |
+| `replaces` | Remplace | `replaced_by` : est remplacé par |
+
+Le sens inverse est aussi accepté à la création et à la suppression. Par exemple,
+`link_cards(number: 12, target: 4, kind: "child")` fait de #12 un sous-ticket de #4.
+`read_card` affiche les relations avec le titre et la colonne des tickets reliés.
+Toute session du projet peut les gérer ; en mode global, préciser aussi `project`.
+
+Les deux tickets doivent appartenir au même projet. Un ticket ne se relie pas à
+lui-même, les doublons de liens sont ignorés, les chaînes circulaires sont refusées
+et un sous-ticket a au plus un parent. Les relations restent locales à Sillage :
+elles ne sont pas publiées sur GitHub, ne ferment aucun doublon et ne déplacent
+aucun ticket. Les mentions `#12` dans le texte restent de simples références.

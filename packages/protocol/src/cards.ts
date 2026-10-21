@@ -81,6 +81,28 @@ export interface CardLinkDto {
   column: CardColumn
 }
 
+/** Les sens inverses sont des vues : une seule relation est persistée. */
+export const cardRelationKindSchema = z.enum([
+  'blocks', 'blocked_by', 'related', 'duplicates', 'duplicated_by',
+  'parent', 'child', 'replaces', 'replaced_by',
+])
+export type CardRelationKind = z.infer<typeof cardRelationKindSchema>
+export type StoredCardRelationKind = 'blocks' | 'related' | 'duplicates' | 'parent' | 'replaces'
+export const CARD_RELATION_INVERSE: Record<CardRelationKind, CardRelationKind> = {
+  blocks: 'blocked_by', blocked_by: 'blocks', related: 'related',
+  duplicates: 'duplicated_by', duplicated_by: 'duplicates',
+  parent: 'child', child: 'parent', replaces: 'replaced_by', replaced_by: 'replaces',
+}
+export const createCardRelationBodySchema = z.object({
+  target: z.number().int().positive(),
+  kind: cardRelationKindSchema,
+})
+export interface CardRelationDto {
+  id: string
+  kind: CardRelationKind
+  card: CardLinkDto
+}
+
 /**
  * Une conversation rattachée, telle que la carte a besoin de la montrer.
  *
