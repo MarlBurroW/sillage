@@ -39,3 +39,5 @@ export * from './automations.js'
 export * from './board-links.js'
 export * from './decisions.js'
 export * from './notifications.js'
+
+export * from './news.js'

@@ -1,3 +1,4 @@
+import { DEFAULT_NEWS_PREFERENCES, newsPreferencesSchema, type NewsPreferences } from './news.js'
 import { z } from 'zod'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { instructionsModeSchema } from './instructions.js'
@@ -35,6 +36,7 @@ export const boardOrderSchema = z.enum(['manual', 'recent', 'oldest'])
 export type BoardOrder = z.infer<typeof boardOrderSchema>
 
 export interface UserSettingsDto {
+  news: NewsPreferences
   agentDefaults: AgentDefaults
   /**
    * Projets repliés dans la sidebar.
@@ -288,6 +290,7 @@ export const appearancePrefsSchema = z.object({
 
 export const storedUserSettingsSchema = z
   .object({
+    news: newsPreferencesSchema.default(DEFAULT_NEWS_PREFERENCES).catch(DEFAULT_NEWS_PREFERENCES),
     agentDefaults: agentDefaultsSchema.catch(DEFAULT_AGENT_DEFAULTS),
     // Jamais purgée des projets supprimés : une liste d'identifiants inconnus ne coûte
     // rien à qui la lit, et la nettoyer demanderait de toucher ce réglage à chaque
@@ -303,6 +306,7 @@ export const storedUserSettingsSchema = z
     projectDefaults: projectDefaultsSchema.default(DEFAULT_PROJECT_DEFAULTS).catch(DEFAULT_PROJECT_DEFAULTS),
   })
   .catch({
+    news: DEFAULT_NEWS_PREFERENCES,
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
     collapsedProjects: [],
     hiddenAgents: [],
