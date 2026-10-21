@@ -237,6 +237,8 @@ export const composerLayoutSchema = z.object({
 export interface AppearancePrefs {
   theme: string | null
   syntax: string | null
+  /** Absent sur les anciens comptes : l’interface utilise le logo Sillage. */
+  typingIndicator?: string | null
   /** Valeurs des curseurs, par nom de réglage (`hue`, `tint`, `readingSize`…). */
   values: Record<string, number>
 }
@@ -281,6 +283,7 @@ export const agentDefaultsSchema = z.object({
 export const appearancePrefsSchema = z.object({
   theme: z.string().max(40).nullable(),
   syntax: z.string().max(40).nullable(),
+  typingIndicator: z.string().max(40).nullable().optional(),
   values: z
     .record(z.string().max(40), z.number().finite())
     .refine((values) => Object.keys(values).length <= 32),
