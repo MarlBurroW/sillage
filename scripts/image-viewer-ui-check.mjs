@@ -33,7 +33,15 @@ async function mount(page) {
     await import('/src/styles/index.css')
     const React = (await import('/node_modules/.vite/deps/react.js')).default
     const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
+    const querySource = await (await fetch('/src/lib/files.ts')).text()
+    const queryModule = querySource.match(/from ["']([^"']*tanstack[^"']+)["']/)[1]
+    const { QueryClient, QueryClientProvider } = await import(queryModule)
+    const composerSource = await (await fetch('/src/components/chat/Composer.tsx')).text()
+    const routerModule = composerSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1]
+    const { MemoryRouter } = await import(routerModule)
     const { Markdown } = await import('/src/components/chat/Markdown.tsx')
+    const { AttachmentTray } = await import('/src/components/chat/AttachmentTray.tsx')
+    const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
     const { ImageGallery } = await import('/src/components/chat/ImageViewer.tsx')
     const { readableView } = await import('/src/components/tools/registry.tsx')
     const canvas = document.createElement('canvas')
@@ -43,12 +51,23 @@ async function mount(page) {
     ctx.fillStyle = '#efc873'; ctx.fillRect(400, 200, 800, 600)
     const src = canvas.toDataURL('image/png')
     const root = document.getElementById('check')
-    createRoot(root).render(React.createElement('main', null,
+    function PendingAttachments() {
+      const [attachments, setAttachments] = React.useState([
+        { id: 'pending-one', filename: 'avant-envoi.png', inlineImage: true, sizeBytes: 1234 },
+        { id: 'pending-doc', filename: 'notes.txt', inlineImage: false, sizeBytes: 50 },
+        { id: 'pending-two', filename: 'autre-image.png', inlineImage: true, sizeBytes: 2345 },
+      ])
+      return React.createElement(TooltipProvider, null,
+        React.createElement('form', { onSubmit: (event) => { event.preventDefault(); window.submitted = true } },
+          React.createElement(AttachmentTray, { attachments, uploading: 0, onRemove: (id) => setAttachments((items) => items.filter((item) => item.id !== id)) })))
+    }
+    createRoot(root).render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(MemoryRouter, null, React.createElement('main', null,
+      React.createElement(PendingAttachments),
       React.createElement(Markdown, { text: `![markdown.png](${src})` }),
       React.createElement(ImageGallery, { images: [{ src, alt: 'generation.png' }, { src: canvas.toDataURL('image/jpeg'), alt: 'photo.jpg' }] }),
       readableView({ name: 'Read', input: { file_path: 'read.png' }, status: 'completed', output: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: src.split(',')[1] } }] }),
       readableView({ name: 'mcp_image', input: {}, status: 'completed', output: { content: [{ type: 'image', mimeType: 'image/png', data: src.split(',')[1] }] } })
-    ))
+    ))))
   })
 }
 
@@ -64,9 +83,29 @@ try {
     const page = await context.newPage()
     page.setDefaultTimeout(10000)
     const errors = []
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => { errors.push(error.message); console.error(error.message) })
     await page.route(`${origin}/`, (route) => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+    await page.route('**/api/attachments/pending-*', (route) => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64') }))
     await mount(page)
+    // La pièce jointe reste dans le brouillon pendant l'aperçu, sans soumettre le formulaire.
+    const pending = page.getByRole('button', { name: 'Agrandir l’image : avant-envoi.png', exact: true })
+    await pending.focus()
+    await page.keyboard.press('Enter')
+    const preview = page.getByRole('dialog')
+    await preview.getByRole('heading', { name: 'avant-envoi.png', exact: true }).waitFor()
+    await preview.getByText('1 × 1', { exact: true }).waitFor()
+    await preview.getByRole('button', { name: 'Image suivante', exact: true }).click()
+    await preview.getByRole('heading', { name: 'autre-image.png', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await preview.waitFor({ state: 'hidden' })
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Agrandir l’image : avant-envoi.png')
+    assert.equal(await page.evaluate(() => !!window.submitted), false)
+    assert.equal(await page.getByText('notes.txt', { exact: true }).count(), 1)
+    await page.getByRole('button', { name: 'Retirer avant-envoi.png', exact: true }).click()
+    await pending.waitFor({ state: 'detached' })
+    await page.getByRole('button', { name: 'Agrandir l’image : autre-image.png', exact: true }).click()
+    await preview.getByRole('heading', { name: 'autre-image.png', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
     const opener = page.getByRole('button', { name: 'Agrandir l’image : generation.png', exact: true })
     console.log(width, 'ouverture')
     await opener.click()

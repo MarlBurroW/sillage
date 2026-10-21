@@ -480,6 +480,8 @@ export const en = {
   'composer.mcp.strict': 'Only use servers declared in Sillage',
   'composer.mcp.strict.hint': 'Claude only: ignores ~/.claude.json and claude.ai connectors. Codex always reads its own config.toml.',
   'composer.send.failed': 'Sending failed.',
+  'composer.attachments.remove': 'Remove {name}',
+  'composer.attachments.uploading': 'Uploading {count}',
   'composer.attachments.max': 'Maximum {max} attachments per message.',
   'composer.attachments.limited': 'Only the first {count} files were kept.',
   'composer.attachments.uploadFailed': 'Could not upload "{name}".',
