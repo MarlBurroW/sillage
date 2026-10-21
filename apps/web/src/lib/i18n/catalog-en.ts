@@ -45,7 +45,6 @@ export const en = {
   "error.news_size": "This feed is too large (2 MB maximum).",
   "error.news_busy": "Too many feed checks. Try again shortly.",
 
-||||||| d40addab
   'settings.typingIndicator.title': "Activity indicator",
   'settings.typingIndicator.description': "The animation shown while the agent thinks, writes or uses tools.",
   'typingIndicator.sillage': "Sillage",

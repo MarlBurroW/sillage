@@ -33,7 +33,6 @@ export const fr: Catalog = {
   "error.news_size": "Ce flux est trop volumineux (2 Mo maximum).",
   "error.news_busy": "Trop de vérifications de flux. Réessayez dans un instant.",
 
-||||||| d40addab
   'settings.typingIndicator.title': "Indicateur d’activité",
   'settings.typingIndicator.description': "L’animation affichée pendant que l’agent réfléchit, écrit ou utilise des outils.",
   'typingIndicator.sillage': "Sillage",
