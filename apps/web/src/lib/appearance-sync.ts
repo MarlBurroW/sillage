@@ -11,9 +11,10 @@ import { api } from './api'
 import { SYNTAX_THEMES, applySyntaxTheme, currentSyntaxTheme, subscribeSyntaxTheme, type SyntaxTheme } from './syntax-theme'
 import { THEMES, applyTheme, currentTheme, subscribeTheme, type Theme } from './theme'
 import { useUserSettings } from './user-settings'
+import { applyTypingIndicator, currentTypingIndicator, resolveTypingIndicator, subscribeTypingIndicator } from './typing-indicator'
 
 /**
- * Thème, palette de code et curseurs d'apparence, enregistrés sur le compte.
+ * Thème, palette de code, indicateur et curseurs d'apparence, enregistrés sur le compte.
  *
  * `localStorage` reste le cache lu par `index.html` avant l'hydratation, sans quoi
  * chaque chargement flasherait les couleurs par défaut. Le compte fait foi : sa copie
@@ -29,7 +30,12 @@ let inFlight = 0
 let adopting = false
 
 function snapshot(): AppearancePrefs {
-  return { theme: currentTheme(), syntax: currentSyntaxTheme(), values: { ...currentAppearance() } }
+  return {
+    theme: currentTheme(),
+    syntax: currentSyntaxTheme(),
+    typingIndicator: currentTypingIndicator(),
+    values: { ...currentAppearance() },
+  }
 }
 
 function schedulePush(): void {
@@ -59,6 +65,8 @@ function push(): void {
 function adopt(prefs: AppearancePrefs): void {
   adopting = true
   try {
+    const typingIndicator = resolveTypingIndicator(prefs.typingIndicator)
+    if (typingIndicator !== currentTypingIndicator()) applyTypingIndicator(typingIndicator)
     // Un nom retiré depuis l'enregistrement est ignoré plutôt qu'appliqué tel quel.
     if (prefs.theme && THEMES.includes(prefs.theme as Theme) && prefs.theme !== currentTheme()) {
       applyTheme(prefs.theme as Theme)
@@ -95,6 +103,7 @@ export function useAppearanceSync(): void {
     const unsubscribe = [
       subscribeTheme(schedulePush),
       subscribeSyntaxTheme(schedulePush),
+      subscribeTypingIndicator(schedulePush),
       subscribeAppearance(schedulePush),
     ]
     return () => {

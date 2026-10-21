@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import './tokens.css';
+@import './typing-indicator.css';
 
 /*
  * Mapping des tokens vers l'espace de nommage Tailwind.
@@ -612,7 +613,6 @@
   color: var(--sg-accent-ink);
 }
 
-/* Vague des points de l'indicateur de tour. */
 /*
  * Barre d'installation d'un CLI : un segment qui balaie la piste, puisque npm ne donne
  * pas de proportion. Immobile pour qui a réduit les animations, le texte à côté suffit.
@@ -629,18 +629,6 @@
     animation: none;
     width: 100%;
     opacity: 0.5;
-  }
-}
-
-@keyframes sg-pulse-dot {
-  0%,
-  100% {
-    opacity: 0.25;
-    transform: scale(0.8);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 
