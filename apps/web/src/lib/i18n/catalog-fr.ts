@@ -465,6 +465,8 @@ export const fr: Catalog = {
   'composer.mcp.strict': "N'utiliser que les serveurs déclarés dans Sillage",
   'composer.mcp.strict.hint': "Claude seulement : ignore ~/.claude.json et les connecteurs claude.ai. Codex lit toujours son propre config.toml.",
   'composer.send.failed': "L'envoi a échoué.",
+  'composer.attachments.remove': 'Retirer {name}',
+  'composer.attachments.uploading': '{count} en cours',
   'composer.attachments.max': 'Maximum {max} pièces jointes par message.',
   'composer.attachments.limited': 'Seuls les {count} premiers fichiers ont été retenus.',
   'composer.attachments.uploadFailed': 'Envoi de « {name} » impossible.',
