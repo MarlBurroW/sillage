@@ -1,5 +1,6 @@
 import {
   Archive,
+  Rss,
   Bell,
   BookOpen,
   ChevronRight,
@@ -65,6 +66,13 @@ export function visibleSections(isAdmin: boolean, capabilities: InstanceCapabili
 
 /** Lue à travers `visibleSections`, qui applique droits et capacités. */
 const SECTIONS: Section[] = [
+  {
+    to: 'veille',
+    group: 'personal',
+    labelKey: 'news.title',
+    descriptionKey: 'news.description',
+    icon: <Rss size={16} />,
+  },
   {
     to: 'compte',
     group: 'personal',

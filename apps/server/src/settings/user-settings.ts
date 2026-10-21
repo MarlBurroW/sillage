@@ -12,6 +12,7 @@ import {
   type OnboardingState,
   type ProjectDefaults,
   type UserSettingsDto,
+  type NewsPreferences,
 } from '@sillage/protocol'
 
 export type UserSettings = UserSettingsDto
@@ -185,4 +186,10 @@ function parseData(data: string | undefined): unknown {
     // prochaine écriture depuis l'interface la remplacera.
     return {}
   }
+}
+
+export function writeNewsPreferences(db: Db, userId: string, news: NewsPreferences): void {
+  const data = JSON.stringify({ ...readUserSettings(db, userId), news })
+  db.insert(userSettings).values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } }).run()
 }

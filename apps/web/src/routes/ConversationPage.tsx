@@ -1,3 +1,4 @@
+import { NewsTicker } from '../components/chat/NewsTicker'
 import { TooltipButton } from '../components/ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
@@ -1295,6 +1296,7 @@ export function ConversationPage() {
               />
     
               {activity ? <TurnActivity label={activity} /> : null}
+              {stream.state.turnRunning ? <NewsTicker key={conversationId} /> : null}
     
               {/* Sous l'indicateur : ce que l'agent n'a pas encore lu. */}
               <QueuedMessages

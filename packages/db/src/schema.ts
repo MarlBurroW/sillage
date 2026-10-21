@@ -1627,3 +1627,11 @@ export type ClaudeAccountRow = typeof claudeAccounts.$inferSelect
 export type CodexAccountRow = typeof codexAccounts.$inferSelect
 export type GrokAccountRow = typeof grokAccounts.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect
+
+/** Cache partagé par URL ; les abonnements restent privés dans les réglages du compte. */
+export const newsFeeds = sqliteTable('news_feeds', {
+  url: text('url').primaryKey(),
+  data: text('data').notNull(),
+  checkedAt: timestamp('checked_at').notNull(),
+  error: text('error'),
+})

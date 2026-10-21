@@ -1,3 +1,4 @@
+import { registerNewsRoutes } from './routes/news.js'
 import { existsSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import compress from '@fastify/compress'
@@ -263,6 +264,7 @@ export async function buildApp(
   registerActionRoutes(app, ctx, sessions, actions)
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx)
+  registerNewsRoutes(app, ctx)
   registerSystemRoutes(app, ctx)
   registerServiceRoutes(app, ctx)
   registerTreeRoutes(app, ctx)

@@ -1,3 +1,4 @@
+import { NewsSettingsPage } from './routes/NewsSettingsPage'
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
@@ -123,6 +124,7 @@ export function App() {
           <Route path="/settings" element={<SettingsLayout />}>
             <Route path="compte" element={<AccountSection />} />
             <Route path="apparence" element={<AppearanceSection />} />
+            <Route path="veille" element={<NewsSettingsPage />} />
             <Route path="notifications" element={<NotificationsSection />} />
             <Route path="cli" element={<CliDefaultsSettingsPage />} />
             <Route path="projets" element={<Navigate to="/projects/new" replace />} />

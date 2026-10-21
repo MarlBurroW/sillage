@@ -647,3 +647,12 @@
   width: 100%;
   max-width: calc(var(--sg-conversation-width) * 1px);
 }
+
+@keyframes news-reveal {
+  from { opacity: 0.3; }
+  to { opacity: 1; }
+}
+.news-headline { animation: news-reveal 250ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .news-headline { animation: none; }
+}
