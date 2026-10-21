@@ -5,7 +5,7 @@ import { parseUnifiedDiff } from '../../../lib/diff'
 import { useGitAction, useGitFileDiff } from '../../../lib/git'
 import { useTranslate } from '../../../lib/i18n'
 import { DiffHunks } from '../../DiffHunks'
-import { ConfirmDialog, IconButton, cx } from '../../ui'
+import { Button, ConfirmDialog, IconButton, cx } from '../../ui'
 import { CHANGE_KINDS, splitPath } from './change-kind'
 import { CommitForm } from './CommitForm'
 import { failureNotice, useGitPane } from './context'
@@ -49,8 +49,8 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
       ) : null}
 
       {repo.conflicted.length > 0 ? (
-        <Group title={t('git.changes.conflicted')} count={repo.conflicted.length} tone="text-critical">
-          {repo.conflicted.map((change) => (
+        <Group title={t('git.changes.conflicted')} changes={repo.conflicted} tone="text-critical">
+          {(change) => (
             <ChangeRow
               key={change.path}
               change={change}
@@ -66,14 +66,14 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
                 </IconButton>
               }
             />
-          ))}
+          )}
         </Group>
       ) : null}
 
       {repo.staged.length > 0 ? (
         <Group
           title={t('git.changes.staged')}
-          count={repo.staged.length}
+          changes={repo.staged}
           actions={
             <IconButton
               label={t('git.changes.unstageAll')}
@@ -85,7 +85,7 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
             </IconButton>
           }
         >
-          {repo.staged.map((change) => (
+          {(change) => (
             <ChangeRow
               key={`${change.path}\0${change.oldPath ?? ''}`}
               change={change}
@@ -101,14 +101,14 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
                 </IconButton>
               }
             />
-          ))}
+          )}
         </Group>
       ) : null}
 
       {repo.unstaged.length > 0 ? (
         <Group
           title={t('git.changes.unstaged')}
-          count={repo.unstaged.length}
+          changes={repo.unstaged}
           actions={
             <>
               <IconButton
@@ -130,7 +130,7 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
             </>
           }
         >
-          {repo.unstaged.map((change) => (
+          {(change) => (
             <ChangeRow
               key={change.path}
               change={change}
@@ -156,7 +156,7 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
                 </>
               }
             />
-          ))}
+          )}
         </Group>
       ) : null}
 
@@ -193,26 +193,69 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
 
 function Group({
   title,
-  count,
+  changes,
   tone,
   actions,
   children,
 }: {
   title: string
-  count: number
+  changes: GitChangeDto[]
   tone?: string
   actions?: ReactNode
-  children: ReactNode
+  children: (change: GitChangeDto) => ReactNode
 }) {
+  const t = useTranslate()
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase()
+    return needle ? changes.filter((change) =>
+      [change.path, change.oldPath].some((path) => path?.toLocaleLowerCase().includes(needle)),
+    ) : changes
+  }, [changes, query])
+  // Borner le rendu avant de créer les lignes et leurs infobulles : plusieurs milliers
+  // de fichiers non suivis ne doivent pas immobiliser toute l'interface.
+  const pageSize = 100
+  const lastPage = Math.max(0, Math.ceil(filtered.length / pageSize) - 1)
+  const currentPage = Math.min(page, lastPage)
+  const start = currentPage * pageSize
   return (
-    <div>
+    <div data-git-change-group>
       <div className="flex items-center gap-1 border-b border-line/60 bg-sunken/40 py-0.5 pr-1 pl-2.5">
         <span className={cx('text-[0.6875rem] font-medium', tone ?? 'text-ink-soft')}>{title}</span>
-        <span className="text-[0.625rem] tabular-nums text-ink-faint">{count}</span>
+        <span className="text-[0.625rem] tabular-nums text-ink-faint">{changes.length}</span>
         <span className="flex-1" />
         {actions}
       </div>
-      {children}
+      {changes.length > pageSize || query ? (
+        <input
+          type="search"
+          aria-label={t('git.changes.search')}
+          placeholder={t('git.changes.search')}
+          value={query}
+          onChange={(event) => { setQuery(event.target.value); setPage(0) }}
+          className="m-2 w-[calc(100%-1rem)] rounded border border-line bg-sunken px-2 py-1 text-xs text-ink"
+        />
+      ) : null}
+      {filtered.slice(start, start + pageSize).map(children)}
+      {filtered.length === 0 ? (
+        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('git.changes.noResults')}</p>
+      ) : null}
+      {filtered.length > pageSize ? (
+        <div className="flex flex-wrap items-center justify-between gap-1 p-2">
+          <span className="text-xs text-ink-faint" aria-live="polite">
+            {t('git.changes.range', { start: start + 1, end: Math.min(start + pageSize, filtered.length), total: filtered.length })}
+          </span>
+          <div className="flex gap-1">
+            <Button size="sm" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
+              {t('git.changes.previous')}
+            </Button>
+            <Button size="sm" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>
+              {t('git.changes.next')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -249,7 +292,7 @@ function ChangeRow({
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          className="flex h-8 min-w-0 flex-1 items-center gap-1.5 py-1 pl-2 text-left"
+          className="flex min-h-8 min-w-0 flex-1 items-center gap-1.5 py-1 pl-2 text-left"
         >
           <ChevronRight
             size={12}
@@ -262,9 +305,9 @@ function ChangeRow({
           >
             {kind.letter}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[0.8125rem]" title={change.path}>
-            <span className="text-ink-faint">{dir}</span>
-            <span className="text-ink-soft">{name}</span>
+          <span className="min-w-0 flex-1 text-[0.8125rem]" title={change.path}>
+            <span className="block truncate text-ink-soft">{name}</span>
+            {dir ? <span className="block truncate text-[0.625rem] text-ink-faint">{dir}</span> : null}
             {change.oldPath ? (
               <span className="text-ink-faint"> · {t('git.changes.renamedFrom', { path: change.oldPath })}</span>
             ) : null}

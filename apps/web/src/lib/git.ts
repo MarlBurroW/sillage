@@ -25,7 +25,7 @@ export function useGitStatus(scope: WorkspaceScope) {
     queryKey: gitKey(scope, 'status'),
     queryFn: () => api.get<GitStatusDto>(`${workspaceApiBase(scope)}/git/status`),
     // Relu à chaque ouverture de l'onglet, à la fin d'un tour, et après chaque action.
-    // Jamais en boucle : un statut lance six processus git.
+    // Jamais en boucle : un statut lance plusieurs processus git.
     staleTime: Infinity,
     refetchOnMount: 'always',
   })
@@ -100,8 +100,30 @@ export function useGitAction<Body = void, Result = void>(
   const refresh = useRefreshGit(scope)
   const method = options.method ?? 'post'
   return useMutation({
-    mutationFn: (body: Body) =>
-      api[method]<Result>(`${workspaceApiBase(scope)}/git/${path}`, body ?? undefined),
+    mutationFn: async (body: Body) => {
+      const url = `${workspaceApiBase(scope)}/git/${path}`
+      const paths = (body as { paths?: string[] } | undefined)?.paths
+      // Les actions globales gardent tous les fichiers, sans dépasser la limite de
+      // l'API ni celle des arguments de Git, notamment sous Windows.
+      if (['stage', 'unstage', 'discard'].includes(path) && paths && (paths.length > 100 || paths.join('').length > 8000)) {
+        let result: Result | undefined
+        let offset = 0
+        while (offset < paths.length) {
+          const batch: string[] = []
+          let length = 0
+          while (offset < paths.length && batch.length < 100) {
+            const file = paths[offset]!
+            if (batch.length > 0 && length + file.length > 8000) break
+            batch.push(file)
+            length += file.length
+            offset += 1
+          }
+          result = await api[method]<Result>(url, { ...body, paths: batch })
+        }
+        return result as Result
+      }
+      return api[method]<Result>(url, body ?? undefined)
+    },
     onSettled: refresh,
   })
 }

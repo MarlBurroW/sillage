@@ -962,3 +962,58 @@ test('routes : validation en 400, états du dépôt en 409, chemin hors dépôt'
   assert.equal(outside.statusCode, 400, outside.body)
   assert.match(outside.json().error.code, /^git_/)
 })
+
+test('diff non suivi : ne pas masquer un fichier disparu par un patch vide', async (t) => {
+  const repo = createRepo(t)
+  await assert.rejects(readFileDiff(repo, 'absent.txt', 'untracked'), GitActionError)
+})
+
+test('diff : format stable malgré les préférences Git, depuis un sous-dossier', async (t) => {
+  const repo = createRepo(t)
+  write(repo, 'nested/échantillon.txt', 'Contenu réel\n')
+  git(repo, 'config', 'color.ui', 'always')
+  git(repo, 'config', 'diff.noprefix', 'true')
+  git(repo, 'config', 'diff.mnemonicPrefix', 'true')
+  const cwd = join(repo, 'nested')
+  const status = await readRepoStatus(cwd)
+  const change = status!.unstaged.find((entry) => entry.path.includes('échantillon'))!
+  assert.ok(change)
+  const diff = await readFileDiff(cwd, change.path, 'untracked')
+  assert.match(diff.patch, /^diff --git /)
+  assert.match(diff.patch, /\+Contenu réel/)
+  assert.ok(!diff.patch.includes('\u001b['))
+  await stage(cwd, [change.path])
+  const staged = await readFileDiff(cwd, change.path, 'staged')
+  assert.match(staged.patch, /\+Contenu réel/)
+})
+
+test('diff non suivi : distinguer le binaire et le fichier vide', async (t) => {
+  const repo = createRepo(t)
+  write(repo, 'image.bin', '\0image')
+  write(repo, 'vide.txt', '')
+  assert.match((await readFileDiff(repo, 'image.bin', 'untracked')).patch, /Binary files/)
+  assert.match((await readFileDiff(repo, 'vide.txt', 'untracked')).patch, /new file mode/)
+})
+
+test('statut depuis un sous-dossier : chemins et compteurs cohérents avec les actions', async (t) => {
+  const repo = createRepo(t)
+  commitFile(repo, 'nested/source.txt', 'avant\n')
+  write(repo, 'nested/source.txt', 'avant\naprès\n')
+  write(repo, 'README.md', 'racine modifiée\n')
+  const cwd = join(repo, 'nested')
+  const status = await readRepoStatus(cwd)
+  const change = status!.unstaged.find((entry) => entry.path === 'source.txt')!
+  assert.ok(change)
+  assert.equal(change.added, 1)
+  assert.ok(status!.unstaged.some((entry) => entry.path === '../README.md'))
+  assert.match((await readFileDiff(cwd, change.path, 'unstaged')).patch, /\+après/)
+  await stage(cwd, [change.path])
+  assert.equal((await readRepoStatus(cwd))!.staged[0]!.path, 'source.txt')
+  await unstage(cwd, [change.path])
+  await discard(cwd, [change.path])
+  assert.equal(read(repo, 'nested/source.txt'), 'avant\n')
+  git(repo, 'mv', 'nested/source.txt', 'nested/destination.txt')
+  const renamed = (await readRepoStatus(cwd))!.staged[0]!
+  assert.equal(renamed.path, 'destination.txt')
+  assert.equal(renamed.oldPath, 'source.txt')
+})

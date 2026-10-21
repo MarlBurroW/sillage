@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -233,6 +233,64 @@ try {
   assert.ok(width, 'Pas de défilement horizontal au téléphone')
   await phone.page.screenshot({ path: '/tmp/sillage-git-phone.png' })
   assert.deepEqual(phone.errors, [])
+
+
+  // Reproduction des milliers de fichiers non suivis : tous restent accessibles,
+  // mais une page seulement crée des lignes, même après une recherche ou une action.
+  const statusUrl = `${base}/api/conversations/${hero.id}/git/status`
+  const { cwd } = await (await page.context().request.get(statusUrl)).json()
+  const bulkDir = join(cwd, 'proposition-classifier')
+  await mkdir(bulkDir, { recursive: true })
+  for (let i = 0; i < 6350; i++) {
+    await writeFile(join(bulkDir, `sample-${String(i).padStart(4, '0')}.txt`), `Contenu ${i}\n`)
+  }
+  for (const [testPage, testPanel, label] of [[page, panel, 'desktop'], [phone.page, mobilePanel, 'phone']]) {
+    let diffRequests = 0
+    testPage.on('request', (request) => { if (request.url().includes('/git/file-diff?')) diffRequests++ })
+    await testPanel.getByRole('button', { name: 'Relire l’état du dépôt', exact: true }).click()
+    const group = testPanel.locator('[data-git-change-group]').filter({ hasText: 'Hors de l’index' })
+    const search = group.getByRole('searchbox', { name: 'Rechercher un fichier modifié…' })
+    await search.waitFor()
+    assert.equal(await group.locator('[data-path]').count(), 100)
+    assert.equal(diffRequests, 0, 'Pas de diff chargé pour les lignes fermées')
+    const first = await group.locator('[data-path]').first().getAttribute('data-path')
+    await group.getByRole('button', { name: 'Suivant', exact: true }).click()
+    assert.notEqual(await group.locator('[data-path]').first().getAttribute('data-path'), first)
+    assert.equal(await group.locator('[data-path]').count(), 100)
+    await group.getByRole('button', { name: 'Précédent', exact: true }).click()
+    assert.equal(await group.locator('[data-path]').first().getAttribute('data-path'), first)
+    await search.fill('sample-6349')
+    const target = group.locator('[data-path="proposition-classifier/sample-6349.txt"]')
+    await target.waitFor()
+    assert.equal(await group.locator('[data-path]').count(), 1)
+    await target.getByRole('button').first().click()
+    await group.getByText('Contenu 6349', { exact: true }).waitFor()
+    await testPage.screenshot({ path: `/var/tmp/sillage-git-large-${label}.png` })
+    assert.ok(await testPanel.evaluate((node) => node.scrollWidth <= node.clientWidth + 1))
+    await search.fill('no-such-file')
+    await group.getByText('Aucun fichier correspondant.', { exact: true }).waitFor()
+    await search.fill('')
+    assert.equal(await group.locator('[data-path]').count(), 100)
+  }
+  // Une action depuis une recherche porte sur le fichier désigné, pas sur sa page.
+  const largeGroup = panel.locator('[data-git-change-group]').filter({ hasText: 'Hors de l’index' })
+  await largeGroup.getByRole('searchbox').fill('sample-6349')
+  const target = largeGroup.locator('[data-path="proposition-classifier/sample-6349.txt"]')
+  await target.hover()
+  await target.getByRole('button', { name: 'Ajouter à l’index', exact: true }).click()
+  await panel.locator('[data-git-change-group]').filter({ hasText: 'Dans l’index' }).getByText('sample-6349.txt', { exact: true }).waitFor()
+  const finalStatus = await (await page.context().request.get(statusUrl)).json()
+  assert.deepEqual(finalStatus.repo.staged.map((change) => change.path), ['proposition-classifier/sample-6349.txt'])
+  // Même pendant une recherche, « tout ajouter » conserve la portée du groupe entier.
+  await largeGroup.getByRole('button', { name: 'Tout ajouter à l’index', exact: true }).click()
+  await largeGroup.waitFor({ state: 'hidden', timeout: 60000 })
+  const allStaged = await (await page.context().request.get(statusUrl)).json()
+  assert.equal(allStaged.repo.unstaged.length, 0)
+  assert.ok(allStaged.repo.staged.length >= 6350)
+  assert.equal(await panel.locator('[data-path]').count(), 100)
+  assert.deepEqual(errors, [])
+  assert.deepEqual(phone.errors, [])
+  console.log('OK : 6 350 fichiers, pagination, recherche, diff et index sur grand écran et téléphone.')
 
   console.log('OK : onglet Git vérifié sur grand écran et au téléphone.')
 } finally {

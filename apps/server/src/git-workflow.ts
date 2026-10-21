@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { stat } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { posix, resolve } from 'node:path'
 import type {
   GitActionDto,
   GitArea,
@@ -408,7 +408,7 @@ async function readOperation(cwd: string): Promise<GitOperation | null> {
 /**
  * L'état complet du dépôt, en une lecture.
  *
- * Six processus git, lancés ensemble : les enchaîner multiplierait d'autant le temps
+ * Les lectures git sont lancées ensemble : les enchaîner multiplierait d'autant le temps
  * d'ouverture de l'onglet. `GIT_OPTIONAL_LOCKS=0` sur le statut : sans lui, `git
  * status` prend le verrou de l'index pour rafraîchir son cache, et entrerait en
  * collision avec un agent en train de commiter.
@@ -420,16 +420,17 @@ export async function readRepoStatus(cwd: string): Promise<GitRepoStatusDto | nu
   if (inside.code !== 0 || inside.stdout.trim() !== 'true') return null
 
   const quiet = { env: { GIT_OPTIONAL_LOCKS: '0' } }
-  const [porcelain, stagedStat, unstagedStat, head, remotes, stashes, operation] =
+  const [porcelain, stagedStat, unstagedStat, head, remotes, stashes, operation, prefix] =
     await Promise.all([
       read(cwd, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'], quiet),
-      exec(cwd, ['diff', '--cached', '--numstat', '-z', '-M'], quiet),
-      exec(cwd, ['diff', '--numstat', '-z', '-M'], quiet),
+      exec(cwd, ['diff', '--cached', '--numstat', '--no-relative', '-z', '-M'], quiet),
+      exec(cwd, ['diff', '--numstat', '--no-relative', '-z', '-M'], quiet),
       // Échoue sur un dépôt sans commit : c'est un état normal, pas une panne.
       exec(cwd, ['log', '-1', '--format=%H%x00%h%x00%s%x00%b']),
       read(cwd, ['remote']),
       exec(cwd, ['rev-list', '--walk-reflogs', '--count', 'refs/stash']),
       readOperation(cwd),
+      read(cwd, ['rev-parse', '--show-prefix']),
     ])
 
   const status = parsePorcelain(porcelain)
@@ -453,6 +454,14 @@ export async function readRepoStatus(cwd: string): Promise<GitRepoStatusDto | nu
     }
   }
 
+  // Le porcelain reste relatif à la racine même lancé depuis un sous-dossier.
+  // Le panneau et ses actions utilisent, eux, le dossier du projet/de la session.
+  const fromCwd = (changes: GitChangeDto[]) => changes.map((change) => ({
+    ...change,
+    path: posix.relative(prefix.replace(/\n$/, ''), change.path),
+    oldPath: change.oldPath === null ? null : posix.relative(prefix.replace(/\n$/, ''), change.oldPath),
+  }))
+
   return {
     branch: status.head,
     detached: status.head === null && status.oid !== null,
@@ -463,9 +472,9 @@ export async function readRepoStatus(cwd: string): Promise<GitRepoStatusDto | nu
     behind: status.behind,
     operation,
     remotes: remotes.split('\n').map((line) => line.trim()).filter(Boolean),
-    staged: withCounts(status.staged, stagedCounts),
-    unstaged: withCounts(status.unstaged, unstagedCounts),
-    conflicted: status.conflicted,
+    staged: fromCwd(withCounts(status.staged, stagedCounts)),
+    unstaged: fromCwd(withCounts(status.unstaged, unstagedCounts)),
+    conflicted: fromCwd(status.conflicted),
     stashCount: stashes.code === 0 ? Number(stashes.stdout.trim()) || 0 : 0,
   }
 }
@@ -487,8 +496,14 @@ export async function readFileDiff(cwd: string, path: string, area: GitArea): Pr
         ? ['diff', '--no-index', '--', '/dev/null', path]
         : ['diff', '-M', '--', path]
 
+  // Les préférences du terminal (couleurs, préfixes, diff externe) ne sont pas
+  // un patch unifié exploitable par l'interface.
+  args.splice(1, 0, '--no-color', '--no-ext-diff', '--no-textconv', '--src-prefix=a/', '--dst-prefix=b/')
   const result = await exec(cwd, args, { env: { GIT_OPTIONAL_LOCKS: '0' } })
-  if (result.code !== 0 && !(area === 'untracked' && result.code === 1)) throw classify(result, args)
+  // --no-index peut aussi sortir en 1 si le fichier est inaccessible. Dans ce cas,
+  // une sortie vide n'est pas un diff vide : il faut remonter l'erreur de Git.
+  const difference = area === 'untracked' && result.code === 1 && result.stdout.length > 0
+  if (result.code !== 0 && !difference) throw classify(result, args)
 
   const truncated = Buffer.byteLength(result.stdout) > MAX_PATCH_BYTES
   return { patch: truncated ? result.stdout.slice(0, MAX_PATCH_BYTES) : result.stdout, truncated }
