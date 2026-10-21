@@ -33,6 +33,15 @@ export const APPEARANCE_SETTINGS = {
    * qu'il y a derrière. Plafonné à 0,6, au-delà le texte cesse d'être lisible plutôt
    * que de devenir doux.
    */
+  // Une même limite garde le fil, le brouillon et la saisie alignés.
+  conversationWidth: {
+    key: 'sillage.conversationWidth',
+    property: '--sg-conversation-width',
+    fallback: 768,
+    min: 768,
+    max: 1600,
+    step: 32,
+  },
   readingSize: {
     key: 'sillage.readingSize',
     property: '--sg-read-size',

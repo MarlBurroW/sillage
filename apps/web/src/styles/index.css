@@ -653,3 +653,9 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* La limite commune suit le réglage sans dépasser le panneau disponible. */
+.sg-conversation-width {
+  width: 100%;
+  max-width: calc(var(--sg-conversation-width) * 1px);
+}

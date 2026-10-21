@@ -111,8 +111,7 @@ export function AppearanceSection() {
         </CardBody>
       </Card>
 
-      {/* Carte à part, et pas un curseur de plus sous les couleurs : ces trois réglages
-          ne touchent qu'au texte des messages, jamais à l'interface autour. */}
+      {/* La largeur et la typographie partagent les réglages de confort de lecture. */}
       <Card>
         <CardHeader
           title={t('settings.reading.title')}
@@ -122,7 +121,7 @@ export function AppearanceSection() {
         <CardBody className="flex flex-col gap-5">
           <AppearanceControls
             appearance={appearance}
-            keys={['readingSize', 'readingLeading', 'readingSoftness', 'messageContrast']}
+            keys={['conversationWidth', 'readingSize', 'readingLeading', 'readingSoftness', 'messageContrast']}
             swatches={false}
           />
           <ReadingPreview />

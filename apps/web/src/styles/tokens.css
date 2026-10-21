@@ -19,6 +19,7 @@
  */
 
 :root {
+  --sg-conversation-width: 768;
   --sg-tint: 0.25;
   --sg-lift: 0;
 

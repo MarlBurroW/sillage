@@ -1250,7 +1250,7 @@ export function ConversationPage() {
                 changement de conversation, ce qui s'efface est le fil précédent. */}
             <div
               className={cx(
-                'mx-auto flex max-w-3xl flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12',
+                'mx-auto flex sg-conversation-width flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12',
                 placed ? 'opacity-100 transition-opacity duration-200' : 'opacity-0',
               )}
             >
@@ -1371,7 +1371,7 @@ export function ConversationPage() {
           <SignalRow
             signals={signals}
             onSelect={() => setPanelOpen(true)}
-            className="mx-auto max-w-3xl px-1.5 pb-2"
+            className="mx-auto sg-conversation-width px-1.5 pb-2"
           />
 
           <Composer

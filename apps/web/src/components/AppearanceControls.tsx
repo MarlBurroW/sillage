@@ -7,6 +7,7 @@ const LABEL_KEYS: Record<AppearanceKey, { title: MessageKey; hint: MessageKey }>
   hue: { title: 'appearance.hue.title', hint: 'appearance.hue.hint' },
   tint: { title: 'appearance.tint.title', hint: 'appearance.tint.hint' },
   lift: { title: 'appearance.lift.title', hint: 'appearance.lift.hint' },
+  conversationWidth: { title: 'appearance.conversationWidth.title', hint: 'appearance.conversationWidth.hint' },
   readingSize: { title: 'appearance.readingSize.title', hint: 'appearance.readingSize.hint' },
   readingLeading: {
     title: 'appearance.readingLeading.title',
@@ -106,6 +107,7 @@ function Slider({
   const spectrum = name === 'hue'
   const number = (input: number) => input.toLocaleString(locale(), { maximumFractionDigits: 2 })
   const display = spectrum ? `${number(value)}°`
+    : name === 'conversationWidth' ? `${number(value)} px`
     : name === 'readingSize' ? `${number(value * 16)} px`
     : name === 'readingLeading' ? `${number(value)} ×`
     : `${value > 0 && name === 'lift' ? '+' : ''}${number(value * 100)} %`

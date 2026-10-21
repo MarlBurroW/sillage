@@ -760,7 +760,7 @@ export function Composer({
         }}
         // `@container` : les réglages se replient selon la largeur du composer, pas
         // celle de la fenêtre, qui ignore la sidebar.
-        className="@container mx-auto max-w-3xl"
+        className="@container mx-auto sg-conversation-width"
       >
         {error ? (
           <p role="alert" className="mb-1.5 px-1 text-xs text-critical">
