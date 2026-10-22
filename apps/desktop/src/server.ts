@@ -51,7 +51,8 @@ export function startServer(options: ServerOptions): RunningServer {
   mkdirSync(options.dataDir, { recursive: true })
   rotate(options.logFile)
   const log = openSync(options.logFile, 'a')
-  const child = spawn(options.node, ['--max-old-space-size=256', join(options.runtime, 'server', 'main.js')], {
+  // Let Node size its heap for the machine; 256 MiB can fail while loading user data.
+  const child = spawn(options.node, [join(options.runtime, 'server', 'main.js')], {
     cwd: options.runtime,
     env: {
       ...options.env,
