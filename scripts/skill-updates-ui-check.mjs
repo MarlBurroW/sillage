@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
 
-// Vrais composants ; les sources simulées reproduisent les mises à jour partielles, sans toucher aux skills installés.
+// Real components; simulated sources reproduce partial updates without touching installed skills.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')

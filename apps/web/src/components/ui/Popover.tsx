@@ -7,24 +7,20 @@ interface PopoverProps {
   onOpenChange: (open: boolean) => void
   trigger: ReactNode
   children: ReactNode
-  /** Nom du panneau : il n'a pas de titre visible permanent. */
+  /** Panel name when no persistent heading is visible. */
   label: string
-  side?: 'top' | 'bottom'
+  side?: 'top' | 'bottom' | 'left' | 'right'
   align?: 'start' | 'end'
   onEscapeKeyDown?: (event: KeyboardEvent) => void
-  /** Radix ramène le focus au déclencheur : à intercepter pour l'envoyer ailleurs. */
+  /** Intercept Radix focus return to send it somewhere besides the trigger. */
   onCloseAutoFocus?: (event: Event) => void
   className?: string
 }
 
 /**
- * Panneau ancré à contenu libre.
- *
- * Distinct de `Menu` : celui-ci porte `role="menu"`, dont la navigation clavier est un
- * roving tabindex réservé aux `menuitem`. Un bouton ordinaire posé dedans n'entre ni
- * dans ce parcours ni dans celui de `Tab`, que Radix traite comme une fermeture, et
- * devient cliquable à la souris seulement. Un panneau qui se navigue a donc besoin
- * d'une coque sans sémantique de menu.
+ * Free-content anchored panel, distinct from Menu whose menuitem-only roving tabindex excludes
+ * ordinary buttons and treats Tab as closure. Navigable panels require a shell without menu
+ * semantics.
  */
 export function Popover({
   open,
@@ -55,8 +51,7 @@ export function Popover({
             'surface rounded-xl border border-line shadow-pop',
             className,
           )}
-          // Hauteur bornée par la place réelle au-dessus du déclencheur, que Radix
-          // mesure : une constante déborderait sur une fenêtre courte.
+          // Bound height by actual above-trigger space measured by Radix; constants overflow short windows.
           style={{ maxHeight: 'var(--radix-popover-content-available-height)' }}
         >
           {children}

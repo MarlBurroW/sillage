@@ -5,20 +5,16 @@ import { parseUnifiedDiff } from '../../../lib/diff'
 import { useGitAction, useGitFileDiff } from '../../../lib/git'
 import { useTranslate } from '../../../lib/i18n'
 import { DiffHunks } from '../../DiffHunks'
-import { ConfirmDialog, IconButton, cx } from '../../ui'
+import { Button, ConfirmDialog, IconButton, cx } from '../../ui'
 import { CHANGE_KINDS, splitPath } from './change-kind'
 import { CommitForm } from './CommitForm'
 import { failureNotice, useGitPane } from './context'
 import { Section, useSectionOpen } from './Section'
 
 /**
- * Ce qui n'est pas commité, en trois groupes : les conflits à résoudre, ce qui est dans
- * l'index, ce qui ne l'est pas encore. Puis le formulaire de commit.
- *
- * Trois groupes et non une liste à cases : l'index est la notion que le workflow git
- * demande de comprendre pour choisir ce qu'un commit emporte, et la montrer telle
- * qu'elle est vaut mieux que de la cacher derrière une abstraction qui finit toujours
- * par fuir (un `git add` d'un agent, un hook qui reformate).
+ * Uncommitted work in conflict, staged, and unstaged groups, followed by commit form. Expose the
+ * actual index rather than checkbox abstractions: users need it to choose commit contents and
+ * abstractions leak through agent git add or formatting hooks.
  */
 export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
   const t = useTranslate()
@@ -27,7 +23,7 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
   const stage = useGitAction<{ paths?: string[] }>(scope, 'stage')
   const unstage = useGitAction<{ paths?: string[] }>(scope, 'unstage')
   const discard = useGitAction<{ paths: string[] }>(scope, 'discard')
-  /** Les changements dont on demande l'abandon, en attente de confirmation. */
+  /** Changes proposed for discard, awaiting confirmation. */
   const [discarding, setDiscarding] = useState<GitChangeDto[] | null>(null)
   const busy = stage.isPending || unstage.isPending || discard.isPending
 
@@ -49,8 +45,8 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
       ) : null}
 
       {repo.conflicted.length > 0 ? (
-        <Group title={t('git.changes.conflicted')} count={repo.conflicted.length} tone="text-critical">
-          {repo.conflicted.map((change) => (
+        <Group title={t('git.changes.conflicted')} changes={repo.conflicted} tone="text-critical">
+          {(change) => (
             <ChangeRow
               key={change.path}
               change={change}
@@ -66,14 +62,14 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
                 </IconButton>
               }
             />
-          ))}
+          )}
         </Group>
       ) : null}
 
       {repo.staged.length > 0 ? (
         <Group
           title={t('git.changes.staged')}
-          count={repo.staged.length}
+          changes={repo.staged}
           actions={
             <IconButton
               label={t('git.changes.unstageAll')}
@@ -85,7 +81,7 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
             </IconButton>
           }
         >
-          {repo.staged.map((change) => (
+          {(change) => (
             <ChangeRow
               key={`${change.path}\0${change.oldPath ?? ''}`}
               change={change}
@@ -101,14 +97,14 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
                 </IconButton>
               }
             />
-          ))}
+          )}
         </Group>
       ) : null}
 
       {repo.unstaged.length > 0 ? (
         <Group
           title={t('git.changes.unstaged')}
-          count={repo.unstaged.length}
+          changes={repo.unstaged}
           actions={
             <>
               <IconButton
@@ -130,7 +126,7 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
             </>
           }
         >
-          {repo.unstaged.map((change) => (
+          {(change) => (
             <ChangeRow
               key={change.path}
               change={change}
@@ -156,7 +152,7 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
                 </>
               }
             />
-          ))}
+          )}
         </Group>
       ) : null}
 
@@ -193,36 +189,75 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
 
 function Group({
   title,
-  count,
+  changes,
   tone,
   actions,
   children,
 }: {
   title: string
-  count: number
+  changes: GitChangeDto[]
   tone?: string
   actions?: ReactNode
-  children: ReactNode
+  children: (change: GitChangeDto) => ReactNode
 }) {
+  const t = useTranslate()
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase()
+    return needle ? changes.filter((change) =>
+      [change.path, change.oldPath].some((path) => path?.toLocaleLowerCase().includes(needle)),
+    ) : changes
+  }, [changes, query])
+  // Bound rendering before rows and tooltips so thousands of untracked files cannot freeze the UI.
+  const pageSize = 100
+  const lastPage = Math.max(0, Math.ceil(filtered.length / pageSize) - 1)
+  const currentPage = Math.min(page, lastPage)
+  const start = currentPage * pageSize
   return (
-    <div>
+    <div data-git-change-group>
       <div className="flex items-center gap-1 border-b border-line/60 bg-sunken/40 py-0.5 pr-1 pl-2.5">
         <span className={cx('text-[0.6875rem] font-medium', tone ?? 'text-ink-soft')}>{title}</span>
-        <span className="text-[0.625rem] tabular-nums text-ink-faint">{count}</span>
+        <span className="text-[0.625rem] tabular-nums text-ink-faint">{changes.length}</span>
         <span className="flex-1" />
         {actions}
       </div>
-      {children}
+      {changes.length > pageSize || query ? (
+        <input
+          type="search"
+          aria-label={t('git.changes.search')}
+          placeholder={t('git.changes.search')}
+          value={query}
+          onChange={(event) => { setQuery(event.target.value); setPage(0) }}
+          className="m-2 w-[calc(100%-1rem)] rounded border border-line bg-sunken px-2 py-1 text-xs text-ink"
+        />
+      ) : null}
+      {filtered.slice(start, start + pageSize).map(children)}
+      {filtered.length === 0 ? (
+        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('git.changes.noResults')}</p>
+      ) : null}
+      {filtered.length > pageSize ? (
+        <div className="flex flex-wrap items-center justify-between gap-1 p-2">
+          <span className="text-xs text-ink-faint" aria-live="polite">
+            {t('git.changes.range', { start: start + 1, end: Math.min(start + pageSize, filtered.length), total: filtered.length })}
+          </span>
+          <div className="flex gap-1">
+            <Button size="sm" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
+              {t('git.changes.previous')}
+            </Button>
+            <Button size="sm" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>
+              {t('git.changes.next')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
 
 /**
- * Un fichier changé, dépliable sur son diff, avec ses actions à droite.
- *
- * Les actions n'apparaissent qu'au survol ou au focus sur grand écran, pour que la
- * liste se lise comme une liste ; au doigt, où il n'y a pas de survol, elles restent
- * visibles.
+ * Changed file expandable to diff, with right-side actions visible on desktop hover/focus and
+ * always on touch.
  */
 function ChangeRow({
   change,
@@ -249,7 +284,7 @@ function ChangeRow({
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          className="flex h-8 min-w-0 flex-1 items-center gap-1.5 py-1 pl-2 text-left"
+          className="flex min-h-8 min-w-0 flex-1 items-center gap-1.5 py-1 pl-2 text-left"
         >
           <ChevronRight
             size={12}
@@ -262,9 +297,9 @@ function ChangeRow({
           >
             {kind.letter}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[0.8125rem]" title={change.path}>
-            <span className="text-ink-faint">{dir}</span>
-            <span className="text-ink-soft">{name}</span>
+          <span className="min-w-0 flex-1 text-[0.8125rem]" title={change.path}>
+            <span className="block truncate text-ink-soft">{name}</span>
+            {dir ? <span className="block truncate text-[0.625rem] text-ink-faint">{dir}</span> : null}
             {change.oldPath ? (
               <span className="text-ink-faint"> · {t('git.changes.renamedFrom', { path: change.oldPath })}</span>
             ) : null}
@@ -291,7 +326,7 @@ function ChangeRow({
   )
 }
 
-/** Le diff d'un fichier, lu quand on le déplie et pas avant. */
+/** Load file diffs only on expansion. */
 function FileDiffBody({ path, area }: { path: string; area: GitArea }) {
   const t = useTranslate()
   const { scope } = useGitPane()

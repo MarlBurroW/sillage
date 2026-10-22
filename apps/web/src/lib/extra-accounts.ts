@@ -6,27 +6,21 @@ import { useCreateGrokAccount, useGrokAccounts } from './grok-accounts'
 import { useUpdateAgentDefault, useUserSettings } from './user-settings'
 
 /**
- * Les comptes supplémentaires d'un CLI, vus d'un écran qui n'est pas celui des réglages.
- *
- * La logique et les données seulement : la liste sous une forme commune aux trois CLI, le
- * compte que l'on vient d'ouvrir pour le connecter, et l'adoption du premier compte ajouté
- * comme compte des nouvelles conversations. La présentation reste à l'appelant, qui n'a
- * pas les mêmes besoins que la page de réglages : la visite montre des badges, pas des
- * cartes à renommer.
- *
- * Les trois CLI n'ont pas le même chemin d'ajout. Claude crée le compte à la fin de son
- * formulaire (jeton collé ou connexion guidée) ; Codex et Grok créent le compte d'abord,
- * puis le connectent dans son home. D'où `begin`, qui ne fait quelque chose que pour ces
- * deux-là, et `codexOpened` / `grokOpened`, le compte à connecter.
+ * Additional CLI accounts for screens outside settings. Supplies logic and data only: a common
+ * three-CLI list, the account opened for connection, and adoption of the first added account for
+ * new conversations. Callers choose presentation; onboarding needs badges rather than renameable
+ * cards. Addition differs: Claude creates accounts after its form (pasted token or guided login),
+ * while Codex and Grok create them first and log in within their home. Thus `begin` acts only for
+ * those two and `codexOpened`/`grokOpened` identify the pending account.
  */
 export type ExtraAccountAgent = 'claude' | 'codex' | 'grok'
 
 export interface ExtraAccountSummary {
   id: string
   label: string
-  /** Connecté, donc utilisable. Un compte Claude l'est dès sa création. */
+  /** Connected and usable. Claude accounts are connected upon creation. */
   ready: boolean
-  /** Celui que les nouvelles conversations de ce CLI prennent. */
+  /** Account used by this CLI's new conversations. */
   isDefault: boolean
 }
 
@@ -34,16 +28,16 @@ export function useExtraAccounts(
   agent: ExtraAccountAgent,
   options: {
     /**
-     * Prendre le premier compte ajouté ici comme compte des nouvelles conversations.
-     * Utile quand le CLI lui-même n'a pas l'air connecté : sans ça, elles partiraient sur
-     * une connexion absente. À couper quand le CLI est connecté, pour ne rien changer.
+     * Use the first account added here for new conversations. Useful when the CLI itself appears
+     * disconnected, avoiding an absent default login. Disable when already connected to preserve
+     * its choice.
      */
     adoptAsDefault: boolean
-    /** Nom donné au compte que `begin` crée. */
+    /** Name given to the account created by `begin`. */
     defaultLabel: string
   },
 ) {
-  // Tous appelés, un seul actif : les hooks ne se choisissent pas selon une condition.
+  // Call all hooks with only one active: hooks cannot be selected conditionally.
   const claude = useClaudeAccounts(agent === 'claude')
   const codex = useCodexAccounts(agent === 'codex')
   const grok = useGrokAccounts(agent === 'grok')
@@ -61,7 +55,7 @@ export function useExtraAccounts(
     isDefault: defaults?.account === account.id,
   }))
 
-  // Les comptes présents à l'arrivée ne sont pas « ajoutés ici ».
+  // Accounts present on entry were not added here.
   const [known, setKnown] = useState<Set<string> | null>(null)
   useEffect(() => {
     if (raw && known === null) setKnown(new Set(raw.map((account) => account.id)))
@@ -84,11 +78,11 @@ export function useExtraAccounts(
 
   return {
     accounts,
-    /** Le compte ajouté pendant cet écran, une fois connecté ; null sinon. */
+    /** Account added on this screen once connected, otherwise null. */
     firstAdded,
     codexOpened,
     grokOpened,
-    /** Crée le compte à connecter (Codex, Grok). Claude passe par son propre formulaire. */
+    /** Create the account to connect (Codex, Grok). Claude uses its own form. */
     begin,
     creating: createCodex.isPending || createGrok.isPending,
     close: () => setOpenedId(null),

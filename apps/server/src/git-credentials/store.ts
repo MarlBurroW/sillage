@@ -10,20 +10,14 @@ export interface GitCredential {
   updatedAt: number
 }
 
-/**
- * Jetons d'accès aux forges git, un par hôte et par utilisateur.
- *
- * Sillage s'en sert pour cloner. Les `fetch` et `push` lancés par un agent ou depuis un
- * terminal ne passent pas par ici : c'est `sillage-git-credential.mjs`, déclaré dans le
- * `.git/config` du dépôt, qui lit les mêmes lignes au moment où git les réclame.
- */
+/** Git forge access tokens, one per host and user. Sillage uses these when cloning. Agent/terminal fetches and pushes instead invoke `sillage-git-credential.mjs` from repository `.git/config`, reading the same rows on demand. */
 export class GitCredentialStore {
   constructor(
     private readonly db: Db,
     private readonly key: Buffer,
   ) {}
 
-  /** Sans les jetons : aucune route ne les rend, comme pour les secrets. */
+  /** Without tokens: no route returns their values, like secrets. */
   list(ownerId: string): GitCredential[] {
     return this.db
       .select({
@@ -38,7 +32,7 @@ export class GitCredentialStore {
       .all()
   }
 
-  /** Écrit ou remplace : un jeton ne se modifie pas partiellement, il se réécrit. */
+  /** Writes or replaces tokens in full; partial edits are unsupported. */
   put(ownerId: string, host: string, username: string, token: string): void {
     const encrypted = encryptValue(this.key, token)
     const now = Date.now()
@@ -84,7 +78,7 @@ export class GitCredentialStore {
     return true
   }
 
-  /** `undefined` si aucun jeton pour cet hôte ; lève si la ligne ne se déchiffre pas. */
+  /** `undefined` without a host token; throws for undecryptable rows. */
   resolve(ownerId: string, host: string): { username: string; token: string } | undefined {
     const row = this.db
       .select()

@@ -1,11 +1,7 @@
 /**
- * Coloration syntaxique, partagée par les blocs de code du markdown et par les
- * payloads des appels d'outils.
- *
- * Aucune détection automatique de langage : sur les extraits courts elle se trompe
- * souvent, et un bloc mal coloré se lit plus mal qu'un bloc sans couleur. Sans langage
- * annoncé, avec un langage inconnu, ou avant que la bibliothèque soit chargée, le code
- * est rendu tel quel.
+ * Syntax highlighting shared by Markdown code blocks and tool payloads. Never autodetect languages:
+ * short snippets are often misidentified and incorrect highlighting is harder to read than none.
+ * With no language, an unknown language, or before the library loads, render code unchanged.
  */
 
 import { useEffect, useState } from 'react'
@@ -16,8 +12,8 @@ let highlighter: Highlighter | null = null
 let loading: Promise<void> | null = null
 
 /**
- * Au-delà, on ne colore plus. Un `Read` sur un gros fichier produit des centaines de
- * kilo-octets, et les colorer bloquerait le fil d'exécution le temps de l'analyse.
+ * Skip highlighting above this size. Reading a large file can return hundreds of kilobytes; parsing
+ * it would block the UI thread.
  */
 const MAX_HIGHLIGHT_BYTES = 100_000
 
@@ -26,10 +22,8 @@ export function isHighlighterReady(): boolean {
 }
 
 /**
- * Charge la coloration et re-rend une fois qu'elle est là.
- *
- * Pour les vues qui colorent beaucoup de fragments courts, comme les lignes d'un diff,
- * où monter un composant complet par fragment coûterait plus cher que la coloration.
+ * Load highlighting and rerender when ready. For views with many short fragments, such as diff
+ * lines, mounting a component per fragment would cost more than highlighting itself.
  */
 export function useHighlighterReady(): boolean {
   const [ready, setReady] = useState(isHighlighterReady)
@@ -50,26 +44,20 @@ export function useHighlighterReady(): boolean {
 }
 
 /**
- * Langage déduit de l'extension du chemin.
- *
- * Ce n'est pas de la détection : l'extension est une donnée du fichier, pas une
- * supposition tirée de son contenu. highlight.js résout les extensions comme alias
- * (`ts`, `py`, `rs`, `yml`...), il n'y a donc aucune table à tenir à jour.
+ * Language from path extension. This is file metadata, not content-based guessing. highlight.js
+ * resolves extensions as aliases (`ts`, `py`, `rs`, `yml`, etc.), requiring no maintained table.
  */
 export function languageFromPath(path: string): string {
   const dot = path.lastIndexOf('.')
   const slash = path.lastIndexOf('/')
-  // Un point situé avant le dernier séparateur appartient à un dossier, pas au fichier.
+  // A dot before the final separator belongs to a directory, not the file.
   if (dot <= slash + 1) return ''
   return path.slice(dot + 1).toLowerCase()
 }
 
 /**
- * Charge la coloration à la demande.
- *
- * La bibliothèque et ses grammaires pèsent une bonne part du bundle : la garder hors du
- * chargement initial évite de la payer sur l'écran de connexion ou sur une conversation
- * sans le moindre bloc de code.
+ * Load highlighting on demand. The library and grammars form a large bundle share: excluding them
+ * from initial load avoids paying for login screens or conversations without code blocks.
  */
 export function loadHighlighter(): Promise<void> {
   if (highlighter) return Promise.resolve()
@@ -80,8 +68,8 @@ export function loadHighlighter(): Promise<void> {
 }
 
 /**
- * `html` n'a de sens que si `applied` vaut vrai. Sinon l'appelant rend la chaîne
- * d'origine comme texte, ce qui laisse React l'échapper au lieu de le faire à la main.
+ * `html` is meaningful only when `applied` is true. Otherwise callers render the original string as
+ * text, letting React escape it rather than doing so manually.
  */
 export function highlight(code: string, language: string): { html: string; applied: boolean } {
   if (!language || code.length > MAX_HIGHLIGHT_BYTES || !highlighter?.getLanguage(language)) {

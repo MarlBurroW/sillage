@@ -1,43 +1,43 @@
-# La marque : L’écho
+# The brand: L’écho
 
-Trois ondes parallèles prolongent un mouvement. Ce dessin a été choisi parmi les
-propositions de logo : il évoque la trace du travail et la continuité des échanges.
+Three parallel waves extend a movement. This design was selected from the logo
+proposals: it evokes the trace of work and continuity of exchanges.
 
 ## Sources
 
-| Fichier | Usage |
+| File | Use |
 | --- | --- |
-| `docs/brand/symbol.svg` | Tracé de référence, sans police, en `currentColor`. |
-| `docs/brand/logo-{noir,blanc,couleur}.svg` | Signatures exportables, lettrage Lato Bold vectorisé (licence jointe). |
-| `docs/brand/wordmark.svg` | En-tête du README, avec sa description. |
-| `apps/web/src/components/Logo.tsx` | Marque dans l’application, suit la couleur du thème. |
-| `apps/web/public/favicon.svg` | Accent par défaut de l’application, variante sombre. |
-| `site/favicon.svg`, `site/index.html` | Marque du site, suit sa palette. |
+| `docs/brand/symbol.svg` | Reference paths, no font, in `currentColor`. |
+| `docs/brand/logo-{noir,blanc,couleur}.svg` | Exportable lockups, outlined Lato Bold lettering (license included). |
+| `docs/brand/wordmark.svg` | README header with its description. |
+| `apps/web/src/components/Logo.tsx` | App brand, follows the theme color. |
+| `apps/web/public/favicon.svg` | Default app accent, dark variant. |
+| `site/favicon.svg`, `site/index.html` | Site brand, follows its palette. |
 
-Les copies SVG autonomes portent les mêmes trois tracés et le même repère 100 × 100.
-Une modification du dessin demande de toutes les mettre à jour.
+Standalone SVG copies carry the same three paths and 100 × 100 view box.
+Changing the design requires updating all of them.
 
-## Couleur et placement
+## Color and placement
 
-L’indigo #535CDA, accent par défaut de l’application, est la couleur de la signature autonome et des icônes d’application.
-Dans les interfaces, `currentColor` conserve la palette du site et les thèmes choisis
-par l’utilisateur. Les favicons suivent la préférence système clair/sombre.
+Indigo #535CDA, the app's default accent, is the color of the standalone lockup
+and app icons. In interfaces, `currentColor` preserves the site's palette and
+user-selected themes. Favicons follow the system light/dark preference.
 
-Conserver autour du symbole une marge d’au moins 10 % de sa largeur. La signature
-horizontale s’utilise à partir de 150 px ; en dessous, préférer le symbole seul.
+Keep a margin of at least 10% of the symbol's width around it. Use the horizontal
+lockup at 150 px and above; below that, prefer the symbol alone.
 
-## Régénérer les PNG
+## Regenerating PNGs
 
-Depuis la racine du dépôt : `node scripts/brand-assets.mjs`.
-Le script utilise Playwright, déjà présent dans les dépendances de développement.
+From the repository root: `node scripts/brand-assets.mjs`.
+The script uses Playwright, already included in development dependencies.
 
-| Fichier | Format | Particularité |
+| File | Size | Detail |
 | --- | --- | --- |
-| `apps/web/public/icon-192.png` | 192 × 192 | Tuile arrondie, manifest et notifications. |
-| `apps/web/public/icon-512.png` | 512 × 512 | Tuile arrondie, manifest. |
-| `apps/web/public/icon-maskable-512.png` | 512 × 512 | Fond plein ; symbole dans le cercle de sécurité de 80 %. |
-| `apps/web/public/apple-touch-icon.png` | 180 × 180 | Fond plein ; iOS applique son propre masque. |
-| `apps/web/public/og.png`, `site/og.png` | 1200 × 630 | Vignette de partage. |
+| `apps/web/public/icon-192.png` | 192 × 192 | Rounded tile, manifest and notifications. |
+| `apps/web/public/icon-512.png` | 512 × 512 | Rounded tile, manifest. |
+| `apps/web/public/icon-maskable-512.png` | 512 × 512 | Solid background; symbol within the 80% safe circle. |
+| `apps/web/public/apple-touch-icon.png` | 180 × 180 | Solid background; iOS applies its own mask. |
+| `apps/web/public/og.png`, `site/og.png` | 1200 × 630 | Social sharing thumbnail. |
 
-Les captures du produit dans `site/screenshots` sont régénérées avec
-`scripts/screenshots.mjs` sur une instance de démonstration isolée.
+Product screenshots in `site/screenshots` are regenerated with
+`scripts/screenshots.mjs` on an isolated demo instance.

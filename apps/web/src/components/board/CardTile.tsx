@@ -1,46 +1,49 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
+import { Clock, GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
+import type { KeyboardEventHandler, MouseEventHandler, TouchEventHandler } from 'react'
 import type { CardDto } from '@sillage/protocol'
+import { relativeDate } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { cx } from '../ui'
 import { GitHubMark } from './GitHubMark'
 
-/** Ce qui tient sous le titre sans transformer la tuile en fiche. */
+/** Content fitting beneath titles without turning tiles into detail sheets. */
 const EXCERPT_MAX = 120
 
 interface CardTileProps {
   card: CardDto
   selected?: boolean
-  /** Rendu dans le calque de glissement : ni tri, ni clic, seulement l'apparence. */
+  /** Drag-overlay rendering: appearance only, no sorting or clicks. */
   disabled?: boolean
   overlay?: boolean
+  /** Arrival-sorted boards show how long cards have occupied their column. */
+  showArrival?: boolean
   onOpen?: () => void
 }
 
 /**
- * Une carte du board.
- *
- * Le corps est un bouton et le glissement a sa poignée, plutôt qu'une tuile qui serait
- * les deux à la fois. Au pointeur, un seuil de déplacement suffirait à distinguer le
- * clic du geste ; au clavier non, la barre d'espace servant aux deux, et une carte
- * qu'on ne peut plus ouvrir sans souris est un recul que l'ergonomie du glissement ne
- * rachète pas.
+ * Board card. Pointer users grab the whole body: small handles were awkward, and sensor thresholds
+ * (6px mouse, touch long-press) distinguish clicks. Keyboard uses Space for both actions, so the
+ * body remains an open button and only the handle starts dragging, preserving mouse-free access.
  */
-export function CardTile({ card, selected = false, overlay = false, disabled = false, onOpen }: CardTileProps) {
+export function CardTile({ card, selected = false, overlay = false, disabled = false, showArrival = false, onOpen }: CardTileProps) {
   const t = useTranslate()
   const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } =
     useSortable({ id: card.id, disabled: overlay || disabled })
+  // dnd-kit types listeners as Function; these come from its three sensors.
+  const gesture = listeners as
+    | { onMouseDown?: MouseEventHandler; onTouchStart?: TouchEventHandler; onKeyDown?: KeyboardEventHandler }
+    | undefined
 
   const excerpt = card.description.trim().replace(/\s+/g, ' ')
   const sessions = card.conversations.length
   const links = card.references.length + card.referencedBy.length
-  // Le worktree de la dernière session dit dans quelle branche le chantier vit, ce qui
-  // est le repère qu'on cherche avant d'en ouvrir une de plus.
+  // Latest-session worktree identifies the working branch before starting another session.
   const branch = card.conversations.findLast((session) => session.worktreeName)?.worktreeName
   const agents = [...new Set(card.conversations.map((session) => session.agent))]
-  // Une carte détachée est redevenue locale : elle ne porte plus la marque.
+  // Detached cards are local again and lose the linked mark.
   const issue = card.external && !card.external.detached ? card.external : null
 
   const body = (
@@ -66,8 +69,14 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
         </p>
       ) : null}
 
-      {sessions > 0 || links > 0 || branch || card.attachmentCount > 0 ? (
+      {sessions > 0 || links > 0 || branch || card.attachmentCount > 0 || showArrival ? (
         <div className="mt-3 flex flex-wrap border-t border-line/60 pt-2.5 items-center gap-x-2.5 gap-y-1 text-[0.6875rem] text-ink-faint">
+          {showArrival ? (
+            <span className="inline-flex items-center gap-1" title={t('board.card.arrived', { when: relativeDate(card.columnEnteredAt) })}>
+              <Clock size={11} />
+              {relativeDate(card.columnEnteredAt)}
+            </span>
+          ) : null}
           {agents.map((agent) => (
             <AgentIcon key={agent} agent={agent} size={11} />
           ))}
@@ -114,10 +123,14 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
+      // Mouse and touch only; keyboard uses the handle as above.
+      onMouseDown={gesture?.onMouseDown}
+      onTouchStart={gesture?.onTouchStart}
+      data-card-tile={card.number}
       className={cx(
         skin,
         'group/card transition-colors',
-        // Le trou laissé par la carte tenue, le calque en portant l'apparence.
+        // Placeholder left by the dragged card; its appearance lives in the overlay.
         isDragging ? 'opacity-40' : 'hover:border-line-strong',
       )}
     >
@@ -129,12 +142,12 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
         type="button"
         ref={setActivatorNodeRef}
         {...attributes}
-        {...listeners}
+        onKeyDown={gesture?.onKeyDown}
         aria-label={t('board.card.drag', { number: card.number })}
         className={cx(
           'absolute top-0 right-0 flex size-11 items-center justify-center cursor-grab touch-none rounded text-ink-faint md:top-1.5 md:right-1 md:size-6',
           'opacity-0 transition-opacity group-hover/card:opacity-100 focus-visible:opacity-100',
-          // Sans survol au doigt, la poignée doit rester visible ou elle n'existe pas.
+          // Touch has no hover, so keep the handle visible.
           '[@media(hover:none)]:opacity-60',
         )}
       >

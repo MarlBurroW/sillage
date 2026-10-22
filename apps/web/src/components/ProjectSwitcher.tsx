@@ -1,7 +1,7 @@
 import { TooltipButton } from './ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Check, ChevronsUpDown, FolderPlus, Layers, Search, SlidersHorizontal, Star, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ProjectDto } from '@sillage/protocol'
 import { useTranslate } from '../lib/i18n'
@@ -11,7 +11,9 @@ import { scoreMatch } from '../lib/search'
 import { ProjectAvatar } from './ProjectAvatar'
 import { cx, IconButton } from './ui'
 
-export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, recent, userId, onNavigate }: {
+export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, recent, userId, onNavigate, actions, nameEditor }: {
+  actions?: ReactNode
+  nameEditor?: ReactNode
   projects: ProjectDto[]
   selected?: ProjectDto
   all: boolean
@@ -27,8 +29,7 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
   const [query, setQuery] = useState('')
   const list = useRef<HTMLDivElement>(null)
   const togglePin = useTogglePin()
-  // Les épingles vivaient dans le navigateur : celles d'avant sont poussées au serveur
-  // une fois, puis la clé locale disparaît pour que la migration ne rejoue pas.
+  // Migrate old browser-local pins to the server once, then remove the local key to prevent replay.
   useEffect(() => {
     if (!userId || projects.length === 0) return
     const storageKey = `sillage.pinnedProjects:${userId}`
@@ -41,9 +42,9 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
         const project = projects.find((entry) => entry.id === id)
         if (project && !project.pinned) togglePin.mutate({ id: project.id, pinned: true })
       }
-    } catch { /* Stockage facultatif. */ }
-    // Une seule passe par compte : relancer à chaque changement de liste réépinglerait.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    } catch { /* Optional storage. */ }
+    // Run once per account: list-change reruns would repin projects.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, projects.length > 0])
   const matches = projects.filter((project) => scoreMatch(project.name, query.trim()) !== null || !query.trim())
   const groups = [
@@ -53,15 +54,15 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
   ]
   return (
     <Dialog.Root open={open} onOpenChange={(value) => { setOpen(value); if (!value) setQuery('') }}>
-      <div className="mb-2 flex items-center gap-1">
-      <Dialog.Trigger asChild>
-        <button type="button" aria-label={t('shell.switcher.choose')} className="flex min-h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-line bg-surface-high px-3 text-left hover:border-ink-faint">
+      <div className="flex min-h-12 items-center gap-1">
+      {nameEditor ?? <Dialog.Trigger asChild>
+        <button type="button" aria-label={t('shell.switcher.choose')} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 text-left hover:bg-surface-high">
           {all ? <Layers size={16} /> : <ProjectAvatar project={selected} className="size-5" />}
-          <span className="min-w-0 flex-1"><span className="block text-[0.625rem] text-ink-faint">{t('shell.switcher.workspace')}</span><span className="block truncate text-sm font-semibold">{all ? t('shell.switcher.all') : selected?.name ?? t('shell.switcher.choose')}</span></span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{all ? t('shell.switcher.all') : selected?.name ?? t('shell.switcher.choose')}</span></span>
           <ChevronsUpDown size={14} className="shrink-0 text-ink-faint" />
         </button>
-      </Dialog.Trigger>
-      {!all && selected && <IconButton label={t('shell.project.settings')} onClick={() => { navigate(`/p/${selected.id}`); onNavigate() }}><SlidersHorizontal size={16} /></IconButton>}
+      </Dialog.Trigger>}
+      {actions ?? (!all && selected && <IconButton label={t('shell.project.settings')} onClick={() => { navigate(`/p/${selected.id}`); onNavigate() }}><SlidersHorizontal size={16} /></IconButton>)}
       </div>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />

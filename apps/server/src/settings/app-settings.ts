@@ -5,20 +5,7 @@ import type { Config } from '../config.js'
 
 export type AppSettings = AppSettingsDto
 
-/**
- * Les réglages d'instance, défauts du `config.toml` compris.
- *
- * La base l'emporte sur le fichier quand la clé y est posée : l'interface est le
- * moyen normal de régler, le fichier reste celui de provisionner une instance neuve.
- *
- * Relu à chaque appel plutôt que gardé en cache : ces réglages se lisent une fois par
- * jour dans une tâche planifiée et à l'ouverture d'un écran, jamais dans un chemin
- * chaud, et un cache aurait à s'invalider depuis l'écriture.
- *
- * Une valeur stockée qui ne passe plus la validation est ignorée au profit du défaut.
- * Le cas ne devrait pas arriver, les routes validant à l'écriture, mais une base
- * éditée à la main ne doit pas pouvoir empêcher le serveur de démarrer.
- */
+/** Instance settings including `config.toml` defaults. Database values override file values: the interface is the normal settings path; files provision new instances. Reread on every call because these settings are used for daily scheduled tasks or screen opening, never hot paths, and caching would require invalidation. Ignore stored values that no longer validate and use defaults: routes validate writes, but manually edited databases must not prevent startup. */
 export function readAppSettings(db: Db, config: Config): AppSettings {
   const days = readValue(db, 'autoArchiveDays')
   const schedule = readValue(db, 'autoArchiveSchedule')
@@ -42,18 +29,13 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
       typeof maxSessions === 'number' && Number.isInteger(maxSessions) && maxSessions >= 1
         ? maxSessions
         : config.limits.maxConcurrentSessions,
-    // La chaîne vide posée en base compte comme un choix : revenir à la déduction par
-    // requête, même si le fichier de configuration en fixe une.
+    // Empty database strings are deliberate choices: infer from each request again,
+    // even if the configuration file specifies an address.
     publicUrl: typeof publicUrl === 'string' ? publicUrl : config.server.publicUrl,
   }
 }
 
-/**
- * Racine publique à mettre dans un lien, ou vide pour la déduire de la requête.
- *
- * Relue à chaque appel, comme le reste : l'adresse se règle dans la visite ou les
- * réglages, et un lien de webhook copié juste après doit déjà la porter.
- */
+/** Public root used in links, or empty to infer it from requests. Reread on every call like other settings: URLs configured in the tour or settings must appear immediately in subsequently copied webhook links. */
 export function publicUrlOf(db: Db, config: Config): string {
   return readAppSettings(db, config).publicUrl
 }
@@ -71,7 +53,7 @@ export function writeAppSettings(db: Db, patch: Partial<AppSettings>): void {
   }
 }
 
-/** La chaîne vide comme défaut : ces réglages n'ont pas de valeur de provisionnement. */
+/** Empty-string defaults: these settings have no provisioning values. */
 function readString(db: Db, key: string): string {
   const value = readValue(db, key)
   return typeof value === 'string' ? value : ''
@@ -84,8 +66,8 @@ function readValue(db: Db, key: string): unknown {
   try {
     return JSON.parse(row.value)
   } catch {
-    // Une valeur illisible vaut absente : le défaut reprend la main, et la prochaine
-    // écriture depuis l'interface la remplacera.
+    // Treat unreadable values as absent: defaults take over and the next
+    // interface write replaces them.
     return undefined
   }
 }

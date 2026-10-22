@@ -3,20 +3,17 @@ import { agentConfigSchema } from './agent-config.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 
 /**
- * Jetons d'API : ce qu'un client machine présente en `Authorization: Bearer`.
+ * API tokens: what a machine client presents in `Authorization: Bearer`.
  *
- * Un jeton n'ouvre que `/api/v1`, et le cookie de session n'ouvre que le reste. La
- * frontière est nette pour que les DTO de l'interface puissent bouger sans devenir un
- * contrat public, et pour qu'un jeton volé n'atteigne jamais l'administration des
- * comptes.
+ * Tokens unlock only `/api/v1`, while session cookies unlock only the rest. This clear boundary
+ * lets UI DTOs evolve without becoming public contracts and prevents stolen tokens from
+ * accessing account administration.
  */
 
 /**
- * `tasks:autonomous` est la portée du mode sans garde-fou : elle seule autorise une
- * configuration où le CLI ne demande rien (`bypassPermissions`, ou `never` +
- * `danger-full-access` côté Codex). Portée dédiée et non simple option, pour qu'un
- * jeton capable d'exécution arbitraire se voie comme tel dans la liste, et se révoque
- * comme tel.
+ * `tasks:autonomous` is the unrestricted-mode scope: only it permits configurations where the
+ * CLI asks nothing (`bypassPermissions`, or Codex `never` + `danger-full-access`). A dedicated
+ * scope rather than an option makes arbitrary-execution tokens visible and revocable as such.
  */
 export const apiScopeSchema = z.enum([
   'projects:read',
@@ -25,29 +22,28 @@ export const apiScopeSchema = z.enum([
   'tasks:write',
   'tasks:autonomous',
   /**
-   * Le serveur MCP de Sillage par HTTP (`POST /api/v1/mcp`), avec les outils d'une
-   * session mais au nom du compte : historique, board, sessions, mémoire, lancements.
-   * Portée à part parce qu'elle ouvre plus que les tâches : les consignes et la mémoire
-   * s'y écrivent.
+   * Sillage's HTTP MCP server (`POST /api/v1/mcp`), with session tools acting on behalf of an
+   * account: history, board, sessions, memory, launches. A separate scope because it exposes
+   * more than tasks: instructions and memory are writable.
    */
   'mcp',
 ])
 export type ApiScope = z.infer<typeof apiScopeSchema>
 
-/** Préfixe en clair, pour qu'un jeton trouvé dans un fichier de configuration se reconnaisse. */
+/** Cleartext prefix to recognize a token found in a configuration file. */
 export const API_TOKEN_PREFIX = 'sillage_pat_'
 
 export interface ApiTokenDto {
   id: string
   label: string
-  /** Premiers caractères du secret, seule partie réaffichable après la création. */
+  /** First characters of the secret, the only part that can be shown again after creation. */
   hint: string
   scopes: ApiScope[]
-  /** Projets autorisés ; vide signifie « tous ceux que son utilisateur voit ». */
+  /** Allowed projects; empty means “all projects its user can see”. */
   projectIds: string[]
   agent: AgentKind
   config: unknown
-  /** URL appelée sur les événements de tâche ; null quand le jeton n'en veut pas. */
+  /** URL called on task events; null if the token requests none. */
   webhookUrl: string | null
   createdAt: number
   lastUsedAt: number | null
@@ -56,10 +52,9 @@ export interface ApiTokenDto {
 }
 
 /**
- * Le secret d'authentification n'est rendu qu'une fois, à la création : seule son
- * empreinte est stockée. Le secret de webhook, lui, sert à signer côté serveur, donc
- * il reste lisible en base ; il n'est montré qu'ici parce qu'après, l'écran n'a plus
- * de raison de l'exposer.
+ * Authentication secret is returned only once, at creation: only its hash is stored. The
+ * webhook secret signs server-side and remains readable in the database; it is shown only here
+ * because the screen has no reason to expose it afterwards.
  */
 export interface CreatedApiTokenDto {
   token: ApiTokenDto
@@ -68,9 +63,8 @@ export interface CreatedApiTokenDto {
 }
 
 /**
- * Le CLI et sa configuration sont obligatoires : c'est ici que se décide avec quoi les
- * agents travailleront, une fois, par quelqu'un qui sait ce qu'il fait. Les tâches se
- * lancent ensuite avec un simple prompt.
+ * CLI and configuration are required: someone who understands the choice decides here, once,
+ * what agents will use. Tasks then launch with just a prompt.
  */
 export const createApiTokenBodySchema = z.object({
   label: z.string().min(1).max(120),
@@ -79,16 +73,16 @@ export const createApiTokenBodySchema = z.object({
   agent: agentKindSchema,
   config: agentConfigSchema,
   expiresAt: z.number().int().positive().nullable().default(null),
-  /** Où livrer les webhooks de tâches. Facultative : le polling reste complet sans. */
+  /** Task webhook destination. Optional: polling remains complete without it. */
   webhookUrl: z.string().url().nullable().default(null),
 })
 
 /**
- * Un jeton ne se modifie pas, il se révoque.
+ * Tokens are revoked, not edited.
  *
- * Élargir des portées ou changer de CLI sans changer le secret laisserait un accès déjà
- * distribué gagner des droits qu'il n'avait pas quand on l'a confié. Recréer coûte un
- * échange de secret, ce qui est précisément le geste attendu.
+ * Expanding scopes or changing CLI without changing the secret would grant distributed access
+ * rights it did not have when issued. Recreating requires exchanging a new secret, exactly the
+ * intended action.
  */
 export const updateApiTokenBodySchema = z.object({
   revoked: z.literal(true),

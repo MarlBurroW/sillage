@@ -11,25 +11,15 @@ import { parseArgs } from 'node:util'
 import { _electron as electron } from 'playwright'
 
 /**
- * La mise à jour de l'app de bureau, de bout en bout. Une app installée, la version A,
- * trouve dans un dossier servi en HTTP une version plus récente, B : elle la télécharge et
- * la montre prête dans « À propos ». Au clic sur « Redémarrer et mettre à jour », elle se
- * ferme, se remplace et se relance en version B.
- *
- * Usage : node scripts/desktop-update-check.mjs --app <exécutable de A> --feed <dossier de B>
- *   - Linux : l'AppImage de A, dans un dossier où elle peut être remplacée, ou l'exécutable
- *     qu'a installé son paquet .deb (/opt/Sillage/sillage), mis à jour par sudo (sous
- *     xvfb-run dans les deux cas) ;
- *   - macOS : Sillage.app/Contents/MacOS/Sillage, l'app décompressée dans un dossier
- *     inscriptible ;
- *   - Windows : le Sillage.exe que l'installeur NSIS de A a installé.
- * Le dossier de B contient ses paquets et le latest*.yml qu'electron-builder a écrits à
- * côté. Le profil de l'app va dans un dossier temporaire (SILLAGE_DESKTOP_USER_DATA).
- *
- * Sous Linux, APPIMAGE=<fichier> fait passer l'exécutable donné pour cette AppImage :
- * l'updater remplace le fichier, et le contrôle vérifie celui-ci. C'est ainsi qu'on
- * l'essaie là où une AppImage ne peut pas garder son bac à sable (Ubuntu 24.04 et plus),
- * en lançant le dossier décompressé, couvert par un profil AppArmor.
+ * End-to-end update check: an installed version A discovers version B in a local
+ * HTTP feed, downloads it, exposes Restart and update in About, and replaces and
+ * relaunches itself after confirmation.
+ * Usage: node scripts/desktop-update-check.mjs --app <executable of A> --feed <B directory>
+ * Use an installed NSIS app on Windows, a writable .app on macOS, or an AppImage /
+ * installed .deb on Linux (under Xvfb). The feed contains packages and latest*.yml.
+ * The check uses a disposable SILLAGE_DESKTOP_USER_DATA directory.
+ * On Linux, APPIMAGE=<file> lets an AppArmor-covered unpacked executable exercise
+ * file replacement where an extracted AppImage cannot retain its sandbox.
  */
 const { values } = parseArgs({ options: { app: { type: 'string' }, feed: { type: 'string' } } })
 if (!values.app || !values.feed) {
@@ -52,8 +42,7 @@ const channelFile =
 const channel = readFileSync(join(feed, channelFile), 'utf8')
 const target = /^version: (.+)$/m.exec(channel)?.[1]?.trim()
 assert.ok(target, `pas de version dans ${channelFile}`)
-// L'AppImage n'a pas de version lisible du dehors : remplacée, elle a l'empreinte que le
-// fichier de canal annonce pour elle.
+// AppImages have no external version field; verify the installed file against the feed hash.
 const appImageSha512 = /- url: \S+\.AppImage\s+sha512: (\S+)/.exec(channel)?.[1]
 
 function sha512(file) {
@@ -67,7 +56,7 @@ function installedVersion() {
     }).trim()
   }
   if (process.platform === 'win32') {
-    // Absent le temps que l'installeur le remplace ; sa version a quatre parties (0.0.2.0).
+    // The executable is briefly absent during replacement; Windows uses four version parts.
     const script = `(Get-Item -LiteralPath '${executable}' -ErrorAction SilentlyContinue).VersionInfo.ProductVersion`
     return execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' })
       .trim()
@@ -78,7 +67,7 @@ function installedVersion() {
   return existsSync(appImage) && sha512(appImage) === appImageSha512 ? target : 'autre'
 }
 
-/** Le paquet .deb qui a installé ce fichier, s'il y en a un. */
+/** Find the .deb owning this executable, if any. */
 function ownerPackage(file) {
   try {
     return execFileSync('dpkg', ['-S', file], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split(':')[0].trim()
@@ -87,15 +76,14 @@ function ownerPackage(file) {
   }
 }
 
-/** Les process de l'app installée, la fenêtre relancée comprise, mais pas ses auxiliaires. */
+/** Find installed application processes, including the relaunched window, excluding helpers. */
 function appProcesses() {
   if (process.platform === 'win32') {
-    // `exit 0` : sans process à lister, PowerShell sortirait en erreur.
+    // PowerShell otherwise exits with an error when there are no matching processes.
     const script = `Get-Process -Name Sillage -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '${executable}' } | ForEach-Object { $_.Id }; exit 0`
     return execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' }).split(/\s+/).filter(Boolean).map(Number)
   }
-  // Sous Linux, l'AppImage relancée tourne depuis son point de montage : c'est le nom du
-  // binaire, `sillage`, qui la désigne. Sous macOS, le chemin de l'exécutable.
+  // AppImages relaunch from a mount point: match the binary name on Linux, the executable on macOS.
   const lines = execFileSync('ps', [bundle ? '-axo' : '-eo', 'pid=,comm=,args='], { encoding: 'utf8' }).split('\n')
   return lines
     .map((line) => /^\s*(\d+)\s+(\S+)\s+(.*)$/.exec(line))
@@ -113,7 +101,7 @@ async function waitFor(what, test, timeoutMs) {
   }
 }
 
-// Le dossier de B, servi comme le serait une release GitHub.
+// Serve version B like a release feed.
 const server = createServer((req, res) => {
   const file = join(feed, decodeURIComponent(new URL(req.url, 'http://feed').pathname))
   if (!file.startsWith(feed + sep) || !existsSync(file) || !statSync(file).isFile()) {
@@ -141,7 +129,7 @@ try {
   app = await electron.launch({
     executablePath: executable,
     env: { ...process.env, SILLAGE_DESKTOP_USER_DATA: userData, SILLAGE_DESKTOP_UPDATE_FEED: feedUrl },
-    // Sans quoi Playwright ajoute `--no-sandbox` sous Linux, et la relance en hériterait.
+    // Otherwise Playwright disables the Linux sandbox, which the relaunched app would inherit.
     chromiumSandbox: true,
     timeout: 120_000,
   })
@@ -154,7 +142,7 @@ try {
   await page.waitForURL(/\/projects\/new$/)
   await page.goto(new URL('/settings/a-propos', page.url()).href)
 
-  // L'app cherche d'elle-même dix secondes après le lancement ; on n'attend pas.
+  // Trigger the startup check immediately instead of waiting ten seconds.
   await page.evaluate(() => window.sillageDesktop.updates.check())
   const seen = []
   const ready = await waitFor(
@@ -178,7 +166,7 @@ try {
 
   await Promise.race([
     exited,
-    delay(120_000).then(() => {
+    delay(120_000, undefined, { ref: false }).then(() => {
       throw new Error("l'app ne s'est pas fermée pour s'installer")
     }),
   ])
@@ -189,7 +177,7 @@ try {
   await waitFor(`app installée en ${target}`, () => installedVersion() === target, 300_000)
   console.log(`app installée en ${target}`)
   if (bundle) {
-    // Le verdict du script d'échange, qui l'écrit juste après avoir mis la nouvelle app en place.
+    // The swap script writes its result immediately after replacement.
     const result = join(userData, 'update-result')
     await waitFor("verdict de l'échange", () => existsSync(result), 30_000)
     assert.equal(readFileSync(result, 'utf8').trim(), 'ok')
@@ -197,7 +185,12 @@ try {
 
   const relaunched = await waitFor('app relancée', () => appProcesses().length > 0 && appProcesses(), 120_000)
   console.log(`app relancée (process ${relaunched.join(', ')})`)
-  console.log('contrôle de mise à jour réussi')
+  await waitFor('relaunched server healthy', async () => {
+    const { port } = JSON.parse(readFileSync(join(userData, 'desktop.json'), 'utf8'))
+    return fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) })
+      .then((response) => response.ok).catch(() => false)
+  }, 120_000)
+  console.log('contrôle de mise à jour réussi (serveur relancé et disponible)')
 } catch (err) {
   await page?.screenshot({ path: join(shots, 'failure.png'), fullPage: true }).catch(() => {})
   const log = join(userData, 'logs', 'updater.log')
@@ -211,7 +204,7 @@ try {
     try {
       process.kill(pid)
     } catch {
-      // Déjà sorti.
+      // Already exited.
     }
   }
   if (process.env.KEEP_DESKTOP_CHECK !== '1') await rm(scratch, { recursive: true, force: true }).catch(() => {})

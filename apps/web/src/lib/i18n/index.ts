@@ -6,20 +6,16 @@ export { LOCALES, LOCALE_LABELS, type Locale } from './catalogs'
 export type { MessageKey } from './catalog-en'
 
 /**
- * Traduction des textes de l'interface.
- *
- * Un catalogue typé plutôt qu'une bibliothèque : Sillage n'a que deux langues, et le
- * compilateur est ici un meilleur garde-fou qu'un runtime. Une clé inconnue ne compile
- * pas, une traduction oubliée non plus, alors qu'un `t('typo')` passerait en silence
- * avec i18next et n'apparaîtrait qu'à l'écran.
- *
- * La langue vit dans le navigateur, pas en base : rien à migrer, et le choix est
- * immédiat. Il est donc à refaire sur chaque appareil, ce qui est le prix assumé.
+ * UI text translation. Use a typed catalog rather than a library: Sillage has only two languages,
+ * and compiler checks are stronger than runtime checks here. Unknown keys and missing translations
+ * fail compilation, whereas i18next would silently accept `t('typo')` until display. Language lives
+ * in the browser rather than the database: no migration and immediate switching, at the accepted
+ * cost of selecting it per device.
  */
 
 const STORAGE_KEY = 'sillage.locale'
 
-/** Repli quand la langue du système n'est pas couverte, et quand une clé manque. */
+/** Fallback when the system language is unsupported or a key is missing. */
 const FALLBACK: Locale = 'en'
 
 function isLocale(value: string | null): value is Locale {
@@ -27,10 +23,8 @@ function isLocale(value: string | null): value is Locale {
 }
 
 /**
- * Langue au premier chargement : celle qu'on a retenue, sinon celle du navigateur.
- *
- * `navigator.language` vaut « fr-FR » ou « en-US » : on ne garde que la sous-étiquette
- * de langue, sans quoi aucun réglage régional ne correspondrait jamais.
+ * Language on first load: saved choice, otherwise browser language. `navigator.language` returns
+ * fr-FR or en-US: keep only the language subtag so regional variants match.
  */
 function detect(): Locale {
   const stored = localStorage.getItem(STORAGE_KEY)
@@ -40,14 +34,14 @@ function detect(): Locale {
 }
 
 /*
- * On démarre sur l'anglais, seul catalogue présent d'emblée, et `initLocale()` bascule
- * sur la langue détectée une fois son catalogue chargé. `current` ne désigne ainsi
- * jamais une langue dont le texte manque : afficher une clé brute est impossible.
+ * Start in English, the only eagerly available catalog, then let `initLocale()` switch to the
+ * detected language after loading its catalog. `current` never names a language whose text is
+ * missing, so raw keys cannot appear.
  */
 let current: Locale = FALLBACK
-/** Langue demandée dont le catalogue est en cours de chargement, pour l'état d'attente. */
+/** Requested language whose catalog is loading, for pending state. */
 let pending: Locale | null = null
-/** Dernière demande : un clic plus récent l'emporte sur un chargement plus lent. */
+/** Latest request: a more recent click wins over a slower load. */
 let requested: Locale = FALLBACK
 const listeners = new Set<() => void>()
 
@@ -57,34 +51,27 @@ function notify(): void {
 
 function apply(next: Locale): void {
   current = next
-  // `lang` sert à la césure, à la synthèse vocale et aux correcteurs du navigateur :
-  // laisser l'ancienne valeur ferait lire du français avec des règles anglaises.
+  // `lang` controls hyphenation, speech synthesis, and browser spellchecking: keeping the previous
+  // value would apply English rules to French text.
   document.documentElement.lang = next
 }
 
 /**
- * Langue courante, utilisable telle quelle comme étiquette `Intl` : les deux catalogues
- * portent des codes qu'`Intl` connaît, donc les dates et les nombres se formatent avec
- * `toLocaleString(locale())` sans table de correspondance.
- *
- * Aucun abonnement séparé n'est nécessaire pour les dates : `useTranslate()` abonne déjà
- * le composant, et un rendu qu'il déclenche les reformate au passage.
+ * Current language, directly usable as an `Intl` locale: both catalog codes are recognized, so
+ * dates and numbers use `toLocaleString(locale())` without a mapping table. Dates need no separate
+ * subscription: `useTranslate()` already subscribes the component and its rerender reformats them.
  */
 export function locale(): Locale {
   return current
 }
 
 /**
- * Charge le catalogue de la langue retenue, à attendre avant le premier rendu.
- *
- * Rendre d'abord puis traduire ferait clignoter l'interface en anglais le temps du
- * téléchargement. Un échec (hors ligne sans précache, chunk introuvable après un
- * déploiement) n'empêche pas de démarrer : on reste en anglais, sans toucher au choix
- * enregistré, qui reprendra au prochain chargement.
- *
- * Le chargement part dès l'import du module (plus bas), et cette fonction rend la même
- * promesse à chaque appel : `main.tsx` l'attend, tandis qu'un composant monté sans
- * passer par lui (bancs Playwright, aperçus) bascule à son arrivée, par `notify`.
+ * Load the selected catalog before the first render. Rendering first would briefly flash English
+ * while downloading. Failure (offline without precache, missing chunk after deployment) does not
+ * prevent startup: keep English and preserve the saved choice for next load. Loading starts on
+ * module import below; this function always returns the same promise. `main.tsx` awaits it, while
+ * components mounted independently (Playwright harnesses, previews) switch through `notify` when it
+ * arrives.
  */
 export function initLocale(): Promise<void> {
   initial ??= loadInitial()
@@ -109,10 +96,8 @@ async function loadInitial(): Promise<void> {
 }
 
 /**
- * Change de langue. Le catalogue est chargé d'abord, et la bascule ne se fait qu'une fois
- * qu'il est là : l'interface passe d'une langue complète à l'autre, sans étape
- * intermédiaire en anglais ni clé brute. Pendant l'attente, `usePendingLocale()` permet
- * de le signaler.
+ * Change language. Load the catalog before switching so the UI moves between complete languages
+ * without intermediate English or raw keys. `usePendingLocale()` exposes the wait.
  */
 export async function setLocale(next: Locale): Promise<void> {
   requested = next
@@ -129,14 +114,14 @@ export async function setLocale(next: Locale): Promise<void> {
     try {
       await loadCatalog(next)
     } catch (error) {
-      // Rien n'est enregistré : l'interface reste dans la langue d'avant, cohérente.
+      // Save nothing: keep the UI consistently in the previous language.
       if (requested === next) {
         pending = null
         notify()
       }
       throw error
     }
-    // Un autre choix a été fait pendant le chargement : c'est lui qui compte.
+    // A newer choice was made during loading; it takes precedence.
     if (requested !== next) return
   }
   pending = null
@@ -152,24 +137,24 @@ function subscribe(listener: () => void): () => void {
   }
 }
 
-/** Valeurs substituables. Les nombres passent par `String` sans mise en forme :
- *  un nombre à afficher se formate avec `Intl` avant d'arriver ici. */
+/**
+ * Substitution values. Numbers pass through `String` without formatting: format display numbers
+ * with `Intl` before passing them here.
+ */
 export type MessageParams = Record<string, string | number>
 
 function interpolate(template: string, params?: MessageParams): string {
   if (!params) return template
   return template.replace(/\{(\w+)\}/g, (whole, name: string) =>
-    // Un paramètre absent laisse son marqueur en place plutôt que d'écrire « undefined » :
-    // c'est visible en relecture, et ça ne fabrique pas une phrase fausse.
+    // Leave missing parameter markers intact rather than writing undefined: visible during review
+    // and avoids inventing a misleading sentence.
     name in params ? String(params[name]) : whole,
   )
 }
 
 /**
- * Traduit une clé dans la langue courante.
- *
- * Hors composant React : à l'intérieur, préférer `useTranslate()`, qui redéclenche le
- * rendu au changement de langue. Celle-ci lit la valeur du moment et ne s'abonne à rien.
+ * Translate a key in the current language outside React. Inside components prefer `useTranslate()`,
+ * which rerenders on language changes. This reads the current value without subscribing.
  */
 export function translate(key: MessageKey, params?: MessageParams): string {
   const catalog = catalogFor(current)
@@ -177,14 +162,10 @@ export function translate(key: MessageKey, params?: MessageParams): string {
 }
 
 /**
- * Traduction abonnée à la langue courante : changer de langue rerend tout ce qui
- * l'utilise, sans avoir à faire remonter la valeur dans un contexte.
- *
- * L'identité de la fonction change avec la langue, et c'est délibéré. Renvoyer
- * `translate` telle quelle serait plus simple mais piégeux : sa référence étant stable,
- * un `useMemo(..., [t])` ne se recalculerait jamais au changement de langue, et les
- * libellés mémoïsés resteraient figés dans l'ancienne. Avec une identité qui bouge,
- * `[t]` suffit, et la règle des dépendances de hooks dit la vérité.
+ * Translation subscribed to the current language: changing it rerenders users without a context
+ * provider. The function deliberately changes identity with language. Returning stable `translate`
+ * would leave `useMemo(..., [t])` unchanged and freeze memoized labels in the previous language. A
+ * changing identity makes `[t]` sufficient and hook dependency rules accurate.
  */
 export function useTranslate(): (key: MessageKey, params?: MessageParams) => string {
   const active = useSyncExternalStore(subscribe, locale, () => FALLBACK)
@@ -198,16 +179,11 @@ export function useTranslate(): (key: MessageKey, params?: MessageParams) => str
 }
 
 /**
- * Traduit une erreur du serveur à partir de son code.
- *
- * Le serveur ne connaît pas la langue de l'utilisateur : il envoie un code, ce que la
- * phrase interpole, et un message anglais. La traduction se fait donc ici, et le message
- * du serveur sert de repli.
- *
- * Ce repli n'est pas une politesse. Le code est une chaîne d'exécution, pas une
- * `MessageKey` : rien ne garantit à la compilation qu'il soit au catalogue, et un code
- * ajouté côté serveur sans sa clé afficherait sinon un identifiant brut. Avec le repli,
- * il affiche une phrase juste, seulement pas traduite.
+ * Translate a server error by code. The server does not know the user's language: it sends a code,
+ * interpolation values, and an English message, which serves as fallback here. The code is a
+ * runtime string rather than a `MessageKey`, so compilation cannot guarantee catalog presence. A
+ * new server code without a matching key would otherwise display a raw identifier; fallback
+ * preserves an accurate, untranslated sentence.
  */
 export function translateError(
   code: string,
@@ -220,7 +196,7 @@ export function translateError(
   return template ? interpolate(template, params) : interpolate(message, params)
 }
 
-/** Langue courante, pour les composants qui affichent ou changent le réglage. */
+/** Current language for components displaying or changing the setting. */
 export function useLocale(): Locale {
   return useSyncExternalStore(subscribe, locale, () => FALLBACK)
 }
@@ -229,10 +205,10 @@ function pendingLocale(): Locale | null {
   return pending
 }
 
-/** Langue dont le catalogue se charge encore après un choix, sinon `null`. */
+/** Language catalog still loading after a selection, otherwise `null`. */
 export function usePendingLocale(): Locale | null {
   return useSyncExternalStore(subscribe, pendingLocale, () => null)
 }
 
-// Pas sous Node : les tests du serveur importent le fold du fil, qui traduit.
+// Skip under Node: server tests import the translating thread fold.
 if (typeof document !== 'undefined') void initLocale()

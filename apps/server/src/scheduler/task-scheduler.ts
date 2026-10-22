@@ -25,32 +25,20 @@ import { launchRefusal } from '../sessions/agent-requests.js'
 import { checkStateDir, firstLine, runCheck } from './check.js'
 import { readCadence } from './tasks.js'
 
-/**
- * Tire les tâches planifiées : à l'heure voulue, ouvre une session neuve dans le projet
- * avec le prompt de la tâche, puis la suit jusqu'à sa fin ou jusqu'à sa durée maximale.
- *
- * Un balayage de la base plutôt qu'un `Cron` armé par tâche, comme le `Scheduler` des
- * ménages : l'état vit dans `next_run_at`, donc une tâche créée, modifiée ou mise en
- * pause par une route ou par l'outil MCP est prise en compte au balayage suivant sans
- * rien avoir à réarmer, et un tir manqué pendant un arrêt du daemon se voit au
- * redémarrage au lieu d'être perdu.
- */
+/** Executes scheduled tasks by opening fresh project sessions with task prompts and monitoring completion or maximum duration. Sweep database state in `next_run_at` rather than arm per-task `Cron` instances like housekeeping `Scheduler`: route/MCP creation, edits and pauses apply on the next sweep without rearming, and runs missed during downtime remain visible after restart. */
 
 const TICK_MS = 5000
 
-/** Résumé du tir précédent recopié dans le prompt du suivant. */
+/** Previous run summary copied into the next prompt. */
 const SUMMARY_MAX_CHARS = 2000
 
 export class TaskScheduler {
   private timer: NodeJS.Timeout | null = null
   private busy = false
   private logger: FastifyBaseLogger | null = null
-  /**
-   * Tâches dont un tir est en train de partir. Le lancement attend le CLI plusieurs
-   * secondes, pendant lesquelles « lancer maintenant » ne doit pas en ouvrir un second.
-   */
+  /** Tasks currently launching runs. CLI startup takes seconds, during which 'run now' must not create duplicates. */
   private readonly firing = new Set<string>()
-  /** Un réveil demandé pendant un balayage : il en faut un autre aussitôt après. */
+  /** Wake requested during a sweep: run another immediately afterward. */
   private again = false
 
   constructor(
@@ -62,8 +50,8 @@ export class TaskScheduler {
 
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
-    // Une vérification coupée par le redémarrage ne finira jamais : son script est mort
-    // avec le process précédent. La laisser en cours bloquerait la tâche pour toujours.
+    // Restart-interrupted checks can never finish because their scripts died with
+    // the previous process. Leaving them running would block tasks forever.
     this.ctx.db
       .update(scheduledRuns)
       .set({ status: 'failed', finishedAt: Date.now(), error: 'Interrompu par un redémarrage de Sillage pendant la vérification.' })
@@ -82,8 +70,8 @@ export class TaskScheduler {
     if (this.busy) return
     this.busy = true
     try {
-      // Les tirs en cours d'abord : un tir qui vient de finir libère la place pour
-      // celui qui attendait derrière lui, dans le même balayage.
+      // Handle active runs first: completed runs release capacity for waiting work
+      // within the same sweep.
       await this.settleRuns(now)
       await this.fireDue(now)
       await this.drainWebhooks()
@@ -98,10 +86,7 @@ export class TaskScheduler {
     }
   }
 
-  /**
-   * Balayage immédiat, pour qu'un appel de webhook retenu parte sans attendre le pas de
-   * cinq secondes. Pendant un balayage, on en redemande un juste après.
-   */
+  /** Immediate sweep so accepted webhooks need not wait five seconds. During a sweep, request another immediately afterward. */
   kick(): void {
     if (this.busy) {
       this.again = true
@@ -110,7 +95,7 @@ export class TaskScheduler {
     void this.tick()
   }
 
-  /** Une session tourne, part, ou un appel attend déjà son tour. */
+  /** Whether sessions run, launch or already have queued calls. */
   isBusy(taskId: string): boolean {
     if (this.firing.has(taskId) || this.openRun(taskId)) return true
     return Boolean(this.ctx.db
@@ -120,11 +105,7 @@ export class TaskScheduler {
       .get())
   }
 
-  /**
-   * « Lancer maintenant ». Ne décale pas le prochain tir prévu : c'est un essai, pas un
-   * changement de cadence. La vérification joue aussi, sauf si on demande de la passer :
-   * c'est ce qui permet d'essayer la tâche entière, script compris.
-   */
+  /** 'Run now' leaves the next scheduled run unchanged: a trial rather than a cadence change. Checks also run unless explicitly skipped, enabling full task testing including scripts. */
   async runNow(taskId: string, options: { skipCheck?: boolean } = {}): Promise<ScheduledRunRow> {
     const task = this.ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, taskId)).get()
     if (!task) throw new HttpError(404, 'schedule_not_found', 'Scheduled task not found.')
@@ -139,7 +120,7 @@ export class TaskScheduler {
     return this.fire(task, 'manual', now, now)
   }
 
-  // --- Tirs à l'heure ------------------------------------------------------------
+  // --- Scheduled runs ------------------------------------------------------------
 
   private async fireDue(now: number): Promise<void> {
     const due = this.ctx.db
@@ -151,7 +132,7 @@ export class TaskScheduler {
           eq(scheduledTasks.enabled, true),
           isNotNull(scheduledTasks.nextRunAt),
           lte(scheduledTasks.nextRunAt, now),
-          // Un projet rangé ne travaille plus : ses tâches attendent son retour.
+          // Archived projects do no work: tasks await their return.
           isNull(projects.archivedAt),
         ),
       )
@@ -162,8 +143,8 @@ export class TaskScheduler {
       const scheduledFor = task.nextRunAt ?? now
 
       if (this.openRun(task.id)) {
-        // `wait` : la tâche reste due, et partira au balayage qui trouvera la place
-        // libre. Une ponctuelle attend toujours, la sauter reviendrait à la perdre.
+        // `wait` leaves tasks due until a sweep finds capacity.
+        // One-shot tasks always wait; skipping would lose them.
         if (task.overlapPolicy === 'wait' || readCadence(task.cadence).kind === 'once') continue
         this.ctx.db
           .insert(scheduledRuns)
@@ -185,8 +166,8 @@ export class TaskScheduler {
       }
 
       if (task.checkScript) {
-        // Pas attendu : un script peut prendre des minutes, et le balayage porte aussi
-        // les autres tâches et les appels de webhook.
+        // Do not await scripts, which may take minutes: sweeps also handle
+        // other tasks and webhook calls.
         this.startChecked(task, 'schedule', scheduledFor, now)
         continue
       }
@@ -194,13 +175,9 @@ export class TaskScheduler {
     }
   }
 
-  // --- Vérification avant le tour --------------------------------------------------
+  // --- Pre-turn checks -----------------------------------------------------------
 
-  /**
-   * Ouvre le tir d'une tâche qui a une vérification : la ligne existe dès maintenant, en
-   * `checking`, pour que l'historique montre qu'il se passe quelque chose et qu'un second
-   * tir ne parte pas par-dessus. Le script et la session suivent sans être attendus.
-   */
+  /** Starts runs for tasks with checks. Create `checking` rows immediately so history shows activity and duplicate runs cannot overlap. Script execution and session startup proceed without awaiting. */
   private startChecked(
     task: ScheduledTaskRow,
     trigger: 'schedule' | 'manual',
@@ -227,8 +204,8 @@ export class TaskScheduler {
       checkStderr: null,
       checkDurationMs: null,
     }
-    // Un script écrit par un agent et pas encore relu ne tourne pas, et le LLM non plus :
-    // la tâche comptait sur lui pour filtrer, la lancer sans reviendrait à l'ignorer.
+    // Unreviewed agent scripts execute neither checks nor LLM turns:
+    // tasks rely on checks for filtering, so bypassing them would ignore that contract.
     if (task.checkApprovedAt === null) {
       run.status = 'skipped'
       run.finishedAt = startedAt
@@ -288,8 +265,8 @@ export class TaskScheduler {
         return
       }
 
-      // La tâche a pu être supprimée ou modifiée pendant que le script tournait : on
-      // lance avec ce qu'elle est maintenant, ou pas du tout.
+      // Tasks may change or disappear during checks:
+      // launch using their current configuration or not at all.
       const current = this.ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, task.id)).get()
       if (!current) return
       const conversationId = await this.openSession(current, run.trigger, run.startedAt, undefined, result.stdout)
@@ -306,13 +283,9 @@ export class TaskScheduler {
     }
   }
 
-  // --- Appels de webhook en attente -----------------------------------------------
+  // --- Pending webhook calls -----------------------------------------------
 
-  /**
-   * Tire les appels retenus, un à la fois par automatisation, du plus ancien au plus
-   * récent. Un appel en attente quand l'automatisation a été mise en pause ne part pas :
-   * on ne reprendrait pas une file d'il y a trois jours au moment de la réactiver.
-   */
+  /** Runs accepted calls oldest first, one per automation. Calls queued when paused must not launch later: reactivation should not replay three-day-old queues. */
   private async drainWebhooks(): Promise<void> {
     const queued = this.ctx.db
       .select({ delivery: automationDeliveries, task: scheduledTasks, archivedAt: projects.archivedAt })
@@ -333,7 +306,7 @@ export class TaskScheduler {
         continue
       }
       if (started.has(task.id) || this.firing.has(task.id) || this.openRun(task.id)) continue
-      // La chaîne a pu s'allonger pendant l'attente : la limite se relit au départ.
+      // Chains may grow while waiting: recheck limits at launch.
       if (delivery.originConversationId) {
         const refusal = launchRefusal(this.ctx.db, delivery.originConversationId)
         if (refusal) {
@@ -354,7 +327,7 @@ export class TaskScheduler {
       .get()
   }
 
-  /** Arme le tir suivant ; une ponctuelle a fait son office et se met en pause. */
+  /** Arms the next run; completed one-shot tasks pause themselves. */
   private advance(task: ScheduledTaskRow, now: number): void {
     const cadence = readCadence(task.cadence)
     const nextRunAt = cadence.kind === 'once' ? null : nextScheduleRun(cadence, now, now)
@@ -369,12 +342,9 @@ export class TaskScheduler {
     task: ScheduledTaskRow,
     trigger: ScheduleRunTrigger,
     scheduledFor: number,
-    /**
-     * L'instant du balayage, et non une seconde lecture de l'horloge : le tir suivant
-     * s'arme depuis la même date que celle qui a jugé celui-ci dû.
-     */
+    /** Sweep timestamp rather than a new clock read: schedule the next run from the same instant used to determine this run was due. */
     startedAt: number,
-    /** L'appel retenu, pour un tir de webhook. */
+    /** Accepted call for webhook runs. */
     delivery?: AutomationDeliveryRow,
   ): Promise<ScheduledRunRow> {
     this.firing.add(task.id)
@@ -396,8 +366,8 @@ export class TaskScheduler {
     }
 
     try {
-      // Avancée avant le lancement : si le CLI refuse de démarrer, la tâche ne doit pas
-      // rester due et retenter toutes les cinq secondes.
+      // Advance before launching: CLI startup failures must not leave tasks due
+      // and retrying every five seconds.
       this.ctx.db.update(scheduledTasks).set({ lastRunAt: startedAt }).where(eq(scheduledTasks.id, task.id)).run()
       if (trigger === 'schedule') this.advance(task, startedAt)
 
@@ -420,13 +390,13 @@ export class TaskScheduler {
     return run
   }
 
-  /** Ouvre la session d'un tir et rend son identifiant. */
+  /** Open a run's session and return its ID. */
   private async openSession(
     task: ScheduledTaskRow,
     trigger: ScheduleRunTrigger,
     startedAt: number,
     delivery?: AutomationDeliveryRow,
-    /** Sortie de la vérification, quand le tir en a joué une. */
+    /** Check output when a check ran. */
     checkOutput?: string,
   ): Promise<string> {
     const config = await this.registry.adapter(task.agent).resolveDefaults(parseAgentConfig(task.config))
@@ -449,8 +419,8 @@ export class TaskScheduler {
       config,
       worktreeId: null,
       cardId: null,
-      // Le nom de la tâche et l'heure : sous sa tâche, c'est la date qui distingue
-      // un tir du précédent, et ailleurs (recherche, favoris) c'est le nom.
+      // Task name and time: under tasks, dates distinguish runs;
+      // elsewhere (search, favorites), names identify them.
       title: `${task.name} · ${stamp(startedAt)}`,
       origin: null,
       scheduleId: task.id,
@@ -463,8 +433,8 @@ export class TaskScheduler {
       },
     })
     if (delivery?.originConversationId) {
-      // La filiation que relisent les limites de chaîne : cette session compte comme
-      // lancée par celle dont l'appel portait la marque.
+      // Ancestry read by chain limits: this session counts as launched
+      // by the session whose marker appeared in the call.
       this.ctx.db.insert(agentRequests).values({
         id: randomUUID(),
         projectId: task.projectId,
@@ -481,7 +451,7 @@ export class TaskScheduler {
     return row.id
   }
 
-  /** Le dernier tir qui a réellement ouvert une session, celui dont le suivant hérite. */
+  /** Latest run actually opening a session, inherited by the next run. */
   private previousRun(taskId: string): ScheduledRunRow | null {
     return (
       this.ctx.db
@@ -490,7 +460,7 @@ export class TaskScheduler {
         .where(
           and(
             eq(scheduledRuns.taskId, taskId),
-            // Un tir écarté ou arrêté par sa vérification n'a rien laissé à transmettre.
+            // Skipped or check-stopped runs leave nothing to pass on.
             isNotNull(scheduledRuns.conversationId),
             notInArray(scheduledRuns.status, ['running', 'checking']),
           ),
@@ -501,15 +471,9 @@ export class TaskScheduler {
     )
   }
 
-  // --- Suivi des tirs en cours ---------------------------------------------------
+  // --- Active run monitoring -----------------------------------------------------
 
-  /**
-   * Clôt les tirs dont la session a fini, et coupe ceux qui débordent.
-   *
-   * « Fini » se lit comme pour `notify_when_done` : plus de tour, de travail de fond ni
-   * de boucle. Une sollicitation en attente n'est pas une fin : personne n'est là pour
-   * y répondre, mais quelqu'un peut passer, et la durée maximale tranchera sinon.
-   */
+  /** Closes completed-session runs and stops overlong ones. Completion matches `notify_when_done`: no turn, background work or loop remains. Pending requests are not completion: humans may still answer, otherwise maximum duration eventually stops them. */
   private async settleRuns(now: number): Promise<void> {
     const open = this.ctx.db
       .select({ run: scheduledRuns, maxDurationMinutes: scheduledTasks.maxDurationMinutes })
@@ -541,9 +505,9 @@ export class TaskScheduler {
         thread.status === 'awaiting_input' ||
         thread.background > 0 ||
         thread.loops > 0
-      // Le dernier mot du journal, pour un fil au repos : entre la création et le
-      // premier statut du CLI, le fil est `idle` sans avoir rien fait, et le prendre
-      // pour fini clôturerait le tir à sa naissance.
+      // Read the last journal event for idle conversations: between creation and the
+      // CLI's first status they are idle without having done anything;
+      // treating that as finished would close runs at birth.
       const dead = thread.status === 'interrupted' || thread.status === 'error'
       const [verdict] = working ? [] : this.log.latest(run.conversationId, ['turn.completed', 'error'], 1)
 
@@ -596,7 +560,7 @@ function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max).trimEnd()}…`
 }
 
-/** Date et heure locales du serveur, compactes : c'est ce qui titre un tir. */
+/** Compact server-local date and time for run titles. */
 function stamp(ts: number): string {
   const date = new Date(ts)
   const pad = (value: number) => String(value).padStart(2, '0')
@@ -612,26 +576,14 @@ const RUN_OUTCOMES: Record<ScheduledRunRow['status'], string> = {
   skipped: 'sauté',
 }
 
-/**
- * Le premier message d'un tir : ce que l'agent doit savoir de sa situation, puis le
- * prompt de la tâche.
- *
- * Rédigé pour le modèle, en français comme le reste de ce que Sillage injecte. Il dit
- * d'abord que personne n'est au clavier : un agent qui pose une question ou attend une
- * permission resterait suspendu jusqu'à la durée maximale, pour rien.
- *
- * Une session neuve ne sait rien du tir précédent. Sa date, son fil et sa dernière
- * réponse sont la continuité minimale ; le reste passe par la mémoire du projet et les
- * cartes. Le prompt peut aussi les citer où il veut par `{{date}}`,
- * `{{previous_run_date}}`, `{{previous_run_url}}` et `{{previous_run_summary}}`.
- */
+/** First run message: agent situation followed by task prompt. Written for the model in French like other Sillage injections. First state that nobody is at the keyboard: questions or permission waits would otherwise hang until maximum duration. Fresh sessions lack previous-run context; its date, conversation link and last answer provide minimal continuity, supplemented by project memory and cards. Prompts may interpolate `{{date}}`, `{{previous_run_date}}`, `{{previous_run_url}}` and `{{previous_run_summary}}` anywhere. */
 export function buildRunPrompt(input: {
   task: Pick<ScheduledTaskRow, 'name' | 'prompt' | 'projectId' | 'maxDurationMinutes'>
   trigger: ScheduleRunTrigger
   firedAt: number
   previous: Pick<ScheduledRunRow, 'startedAt' | 'status' | 'conversationId' | 'summary' | 'error'> | null
   publicUrl: string
-  /** Ce que la vérification a écrit, quand elle a laissé partir ce tour. */
+  /** Check output when it allowed the turn to proceed. */
   checkOutput?: string | null
 }): string {
   const { task, trigger, firedAt, previous, publicUrl } = input
@@ -666,8 +618,8 @@ export function buildRunPrompt(input: {
     header.push("C'est le premier tir de cette tâche.")
   }
 
-  // Ce que la vérification a trouvé est la raison de ce tour : l'agent le reçoit même
-  // si la consigne ne le cite pas, sans doublon si elle le cite.
+  // Check findings justify this turn: include them even when instructions omit
+  // them, avoiding duplication when instructions already include them.
   if (checkOutput && !/\{\{\s*check_output\s*\}\}/.test(task.prompt)) {
     header.push('', 'Le script de vérification de la tâche a laissé partir ce tour. Sa sortie :', '```', checkOutput, '```')
   }

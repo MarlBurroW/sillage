@@ -9,10 +9,11 @@ import { AddAccountCard as ClaudeAddAccountCard } from '../../routes/ClaudeAccou
 import { LoginControls as CodexLoginControls } from '../../routes/CodexAccountsSettingsPage'
 import { LoginControls as GrokLoginControls } from '../../routes/GrokAccountsSettingsPage'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
+import { AgentInstallProgress } from '../AgentInstallProgress'
 import { Badge, Banner, Button, Card } from '../ui'
 import { StepTitle, Tip, Why, useCommit, useGate, type StepProps } from './shell'
 
-/** Comment chaque CLI se connecte lui-même, depuis un terminal de la machine. */
+/** How each CLI logs in from a machine terminal. */
 const CLI_LOGIN: Record<AgentKind, string> = {
   claude: 'claude',
   codex: 'codex login',
@@ -20,7 +21,7 @@ const CLI_LOGIN: Record<AgentKind, string> = {
   grok: 'grok login',
 }
 
-/** Le nom donné au compte que la visite crée pour le connecter. */
+/** Name assigned to accounts created for onboarding login. */
 const EXTRA_LABEL: Record<ExtraAccountAgent, MessageKey> = {
   claude: 'onboarding.agents.claudeLabel',
   codex: 'onboarding.agents.codexLabel',
@@ -28,14 +29,10 @@ const EXTRA_LABEL: Record<ExtraAccountAgent, MessageKey> = {
 }
 
 /**
- * Tes agents : une carte par CLI retenu, avec ce que le serveur en sait.
- *
- * Deux choses à faire comprendre, dans cet ordre : par défaut, une conversation part sur
- * la connexion que le CLI garde lui-même sur la machine, et il n'y a rien à faire si
- * elle existe ; les comptes supplémentaires sont une option, pour un autre abonnement
- * ou une clé API, et le seul chemin de connexion sans terminal. La logique vient des
- * bibliothèques partagées avec les réglages et la page de brouillon ; seule la mise en
- * forme est propre à la visite.
+ * Agent cards show server knowledge for selected CLIs. Explain default machine CLI login first,
+ * requiring nothing if already connected; additional accounts are optional subscriptions/API keys
+ * and the only terminal-free login route. Logic is shared with settings and drafts; presentation is
+ * tour-specific.
  */
 export function AgentsStep({ nav, state, profile }: StepProps) {
   const t = useTranslate()
@@ -60,7 +57,7 @@ export function AgentsStep({ nav, state, profile }: StepProps) {
         </Why>
       ) : null}
 
-      {/* Une carte par CLI : son en-tête dit où il en est, son corps ce qui s'y règle. */}
+      {/* One card per CLI: headings report state, bodies contain settings. */}
       <div className="flex flex-col gap-3">
         {rows.map((entry) => (
           <AgentCard key={entry.agent} entry={entry} />
@@ -82,8 +79,8 @@ function AgentCard({ entry }: { entry: AgentAvailabilityDto }) {
   const t = useTranslate()
   const label = AGENT_LABELS[entry.agent]
   const install = useAgentInstall(entry, label)
-  // Le forfait que la lecture d'usage rapporte, quand elle y arrive : le signe le plus
-  // sûr que le CLI est connecté. Son absence ne prouve pas le contraire.
+  // Usage-reported plans are the strongest login evidence when available, but absence does not
+  // prove disconnection.
   const { data: usage } = useAgentUsage(entry.agent, entry.installed)
   const plan = usage?.plan ?? null
 
@@ -101,12 +98,16 @@ function AgentCard({ entry }: { entry: AgentAvailabilityDto }) {
             <Badge tone="neutral">{entry.reason === 'disabled' ? t('agent.unavailable.disabled') : t('onboarding.agents.missing')}</Badge>
           )}
         </div>
-        {install.offered ? (
+        {install.offered && !install.progress ? (
           <Button size="sm" variant="secondary" icon={<Download size={14} />} disabled={install.busy} onClick={install.start}>
-            {install.running ? install.status : install.action}
+            {install.action}
           </Button>
         ) : null}
       </div>
+      {/* Progress replaces the button: lengthy installation needs more evidence than a disabled control. */}
+      {install.progress ? (
+        <AgentInstallProgress label={label} version={entry.preferredVersion} progress={install.progress} className="px-4 pt-3" />
+      ) : null}
       {install.failed ? (
         <div className="px-4 pt-3">
           <Banner>{install.status}</Banner>
@@ -115,7 +116,7 @@ function AgentCard({ entry }: { entry: AgentAvailabilityDto }) {
 
       {entry.installed ? (
         <div className="divide-y divide-line px-4">
-          {/* D'abord ce qui marche sans rien faire : la connexion du CLI lui-même. */}
+          {/* Start with what works automatically: the CLI's own login. */}
           <Section
             icon={<TerminalSquare size={14} />}
             title={t('onboarding.agents.cli.title')}
@@ -130,8 +131,10 @@ function AgentCard({ entry }: { entry: AgentAvailabilityDto }) {
             )}
           </Section>
 
-          {/* Puis l'option, pour qui en a besoin. OpenCode n'a pas de comptes dans Sillage :
-              il se connecte fournisseur par fournisseur depuis son propre CLI. */}
+          {/*
+           * Then optional accounts for those needing them. OpenCode has no Sillage accounts and
+           * logs into providers through its own CLI.
+           */}
           {entry.agent !== 'opencode' ? <ExtraAccounts agent={entry.agent} cliConnected={plan !== null} /> : null}
         </div>
       ) : null}
@@ -153,14 +156,11 @@ function Section({ icon, title, badge, children, actions }: { icon: ReactNode; t
   )
 }
 
-/**
- * Les comptes supplémentaires d'un CLI : ceux qui existent, en badges, et l'ajout avec le
- * formulaire de connexion des réglages. La logique est dans `useExtraAccounts`.
- */
+/** Additional accounts as badges plus settings login forms. Logic lives in useExtraAccounts. */
 function ExtraAccounts({ agent, cliConnected }: { agent: ExtraAccountAgent; cliConnected: boolean }) {
   const t = useTranslate()
   const extra = useExtraAccounts(agent, { adoptAsDefault: !cliConnected, defaultLabel: t(EXTRA_LABEL[agent]) })
-  // Claude ne crée le compte qu'à la fin de son formulaire : son ouverture est locale.
+  // Claude creates accounts only after form completion, so opening is local.
   const [claudeAdding, setClaudeAdding] = useState(false)
   const form =
     agent === 'claude'

@@ -11,7 +11,7 @@ export function useCurrentUser() {
       try {
         return await api.get<CurrentUser>('/api/auth/me')
       } catch (err) {
-        // Pas de session : ce n'est pas une erreur à afficher, c'est l'état déconnecté.
+        // No session is the logged-out state, not an error to display.
         if (err instanceof ApiRequestError && err.status === 401) return null
         throw err
       }
@@ -36,14 +36,11 @@ export function useLogout() {
     mutationFn: () => api.post<void>('/api/auth/logout'),
     onSuccess: () => {
       /*
-       * L'état déconnecté est posé sur la requête de session, qui reste vivante. Un
-       * `queryClient.clear()` la supprimerait au lieu de la remettre à zéro, et
-       * l'observateur monté dans `App` resterait accroché à l'entrée disparue avec son
-       * dernier résultat : l'application restait sur l'écran connecté, avec un compte
-       * que le serveur ne reconnaissait déjà plus.
-       *
-       * Tout le reste est bien vidé : sans ça, se reconnecter sous un autre compte
-       * afficherait d'abord les projets et les conversations du précédent.
+       * Set logged-out state on the still-live session query. `queryClient.clear()` would remove it
+       * rather than reset it, leaving App's observer attached to a vanished entry with its last
+       * result: the app remained logged in with an account the server no longer recognized. Clear
+       * everything else so logging into another account cannot briefly show the previous account's
+       * projects and conversations.
        */
       queryClient.setQueryData(ME_KEY, null)
       queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== ME_KEY[0] })

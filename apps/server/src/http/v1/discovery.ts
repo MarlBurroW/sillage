@@ -13,10 +13,10 @@ import type { AppContext } from '../context.js'
 import { requireScope } from '../require-user.js'
 
 /**
- * Les deux appels de découverte : ce qu'un client fait une fois, puis met en cache.
+ * The two discovery calls: clients make them once, then cache their results.
  *
- * L'adressage se fait par identifiant et jamais par nom, `projects.name` n'ayant aucune
- * contrainte d'unicité : deux projets homonymes rendraient l'adressage ambigu.
+ * Address by ID, never by name: `projects.name` has no uniqueness constraint, so
+ * identically named projects would make name-based addressing ambiguous.
  */
 export function registerDiscoveryRoutes(
   app: FastifyInstance,
@@ -59,11 +59,11 @@ export function registerDiscoveryRoutes(
           worktrees: trees.map((tree) => ({
             id: tree.id,
             name: tree.name,
-            // Le nom du worktree est sa branche ; `baseRef` ne dit que d'où il part.
+            // A worktree's name is its branch; `baseRef` only identifies its starting point.
             branch: tree.name,
           })),
-          // Ce qu'une tâche obtiendra si elle ne demande rien : le jeton l'emporte sur
-          // le projet, dont le préréglage ne vaut que pour un autre CLI.
+          // Defaults a task gets when it specifies nothing: the token overrides the
+          // project, whose preset only applies to a different CLI.
           defaults: { agent: token.agent, config: tokenConfig },
         }
       }),
@@ -71,11 +71,11 @@ export function registerDiscoveryRoutes(
   })
 
   /**
-   * Ce que chaque CLI accepte en surcharge.
+   * Overrides accepted by each CLI.
    *
-   * Le catalogue est lu sur le CLI installé, donc il peut être injoignable : un agent
-   * absent se dit `available: false` avec une liste vide, plutôt que de faire échouer
-   * l'appel entier pour l'agent que l'appelant n'utilisait pas.
+   * Catalogs come from installed CLIs and may be unreachable. Report missing
+   * agents as `available: false` with an empty list instead of failing the whole
+   * call because of an agent the caller does not use.
    */
   app.get('/api/v1/agents', async (request) => {
     requireScope(request, 'projects:read')

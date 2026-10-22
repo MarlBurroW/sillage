@@ -9,8 +9,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Choix du compte sur la page de nouvelle session, avec l'usage de chaque compte sous son
-// nom. Vrais composants, vraie API, base temporaire ; les vrais CLI sont sondés pour l'usage.
+// New-session account choice, with usage below each account name. Real components/API,
+// temporary database; real CLIs are probed for usage.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -78,13 +78,13 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // Sans compte supplémentaire, rien ne s'ajoute à l'écran.
+  // Without extra accounts, nothing is added to the screen.
   await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
   await page.getByRole('radiogroup', { name: 'Agent' }).or(page.locator('input[name="draft-agent"]').first()).first().waitFor()
   await delay(1500)
   assert.equal(await page.getByRole('radiogroup', { name: 'Compte' }).count(), 0, 'Pas de choix sans compte')
 
-  // Un compte Claude par jeton et un compte Codex connecté par clé.
+  // One token-based Claude account and one key-signed-in Codex account.
   await context.request.post(`${base}/api/claude-accounts`, { data: { label: 'Boulot', token: 'sk-ant-oat01-' + 'x'.repeat(60) } })
   const codex = await (await context.request.post(`${base}/api/codex-accounts`, { data: { label: 'Codex Boîte' } })).json()
   const login = await context.request.post(`${base}/api/codex-accounts/${codex.id}/login`, { data: { type: 'apiKey', apiKey: 'sk-test-bogus' } })
@@ -95,7 +95,7 @@ try {
   await group.waitFor()
   await page.getByRole('radio', { name: /Boulot/ }).getByText(/pas de jauge/).waitFor()
   assert.equal(await page.getByRole('radio', { name: /Connexion du CLI/ }).getAttribute('aria-checked'), 'true')
-  // L'usage de la connexion du CLI arrive sous son option, lu sur le vrai CLI.
+  // Usage for the CLI's sign-in appears below its option, read from the real CLI.
   await page.getByRole('radio', { name: /Connexion du CLI/ }).getByText(/%|Pas de limite|pas pu être lu/).waitFor({ timeout: 40000 })
   console.log('claude CLI hint:', await page.getByRole('radio', { name: /Connexion du CLI/ }).textContent())
   await page.getByRole('radio', { name: /Boulot/ }).click()
@@ -104,8 +104,8 @@ try {
   await delay(400)
   await page.screenshot({ path: '/tmp/sillage-draft-account-claude.png', fullPage: true })
 
-  // Le choix est celui du composer : son réglage « Compte » le reflète.
-  // Codex : le compte connecté se propose avec son usage, la connexion du CLI aussi.
+  // Selection matches the composer: its “Account” setting reflects it.
+  // Codex: signed-in account and CLI sign-in are offered with their usage.
   await page.locator('input[name="draft-agent"][value="codex"]').check()
   await page.getByRole('radio', { name: /Codex Boîte/ }).waitFor()
   await page.getByRole('radio', { name: /Codex Boîte/ }).getByText(/Clé API · facturée/).waitFor()

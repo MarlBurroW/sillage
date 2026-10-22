@@ -3,11 +3,9 @@ import { rawFileUrl } from '../../lib/files-io'
 import type { WorkspaceScope } from '../../lib/workspace-scope'
 
 /**
- * Son ou vidéo du workspace, joué par la balise native.
- *
- * Rien à charger côté client : le navigateur lit le flux en tranches via la route
- * `file/raw`, qui répond aux requêtes `Range`. `preload="metadata"` suffit à afficher
- * la durée sans télécharger le fichier avant qu'on appuie sur lecture.
+ * Native workspace audio/video playback. Stream chunks through Range-supporting file/raw without
+ * client libraries. preload metadata displays duration without downloading full files before
+ * playback.
  */
 export function MediaView({ scope, path, type }: { scope: WorkspaceScope; path: string; type: string }) {
   const src = rawFileUrl(scope, path)

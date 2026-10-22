@@ -4,15 +4,10 @@ import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
 
 /**
- * Catalogue des modèles et des modes de collaboration Codex, lus sur l'app-server.
- *
- * Même contrat que côté Claude : rien n'est codé en dur, et le résultat est mis en
- * cache parce que la sonde démarre un process CLI. Les deux listes sont lues dans la
- * même sonde, pour ne pas payer un second démarrage.
- *
- * Le binaire est résolu à chaque sonde et non retenu à la construction : c'est le seul
- * moyen d'honorer le préfixe où Sillage installe les CLI qu'il gère, et de voir le
- * catalogue d'une version installée pendant que le daemon tourne.
+ * Codex models and collaboration modes queried through app-server. Like Claude, nothing is
+ * hardcoded and cache results because probing starts a CLI. Read both lists in one probe to avoid
+ * extra startup. Resolve binaries on each probe rather than construction to honor Sillage
+ * managed-install prefixes and newly installed CLI versions without daemon restart.
  */
 
 interface Listing {
@@ -36,13 +31,13 @@ export class CodexModelCatalog {
     try {
       await client.initialize(CLIENT_INFO)
 
-      // `model/list` est paginé : s'arrêter à la première page masquerait les modèles
-      // suivants, exactement le genre de troncature silencieuse à éviter.
+      // model/list is paginated: stopping after page one would silently hide
+      // later models, exactly the truncation to avoid.
       const models: Model[] = []
       let cursor: string | null = null
       do {
-        // Annotation explicite : `cursor` est alimenté par la réponse, donc son type
-        // serait circulaire s'il était inféré depuis `page`.
+        // Explicit annotation avoids circular inference because response page
+        // feeds cursor values.
         const page: ModelListResponse = await client.call<ModelListResponse, 'model/list'>('model/list', {
           includeHidden: false,
           cursor,
@@ -52,8 +47,8 @@ export class CodexModelCatalog {
         cursor = page.nextCursor
       } while (cursor)
 
-      // Méthode expérimentale : une version de Codex qui ne la connaît pas ne doit pas
-      // priver l'utilisateur du reste du catalogue, seulement du sélecteur de mode.
+      // Unknown experimental methods must remove only mode selection,
+      // not the rest of the model catalog.
       const modes = await client
         .callExperimental<{ data: CollaborationModeMask[] }>('collaborationMode/list', {})
         .then((response) => response.data)

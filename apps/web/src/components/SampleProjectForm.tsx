@@ -5,18 +5,19 @@ import { useNavigate } from 'react-router-dom'
 import type { ProjectDto } from '@sillage/protocol'
 import { ApiRequestError, api } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
-import { useInstance } from '../lib/instance'
+import { useCapability, useInstance } from '../lib/instance'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
 import { Banner, Button, Select, type SelectOption } from './ui'
 
 /**
- * Le projet d'essai : Sillage écrit un petit dépôt, avec des tests qui échouent exprès,
- * et crée le projet dessus. Il n'y a qu'à dire où. Le dossier des projets déjà mémorisé
- * sert de proposition, sinon `projects` sous le dossier personnel du serveur.
+ * Trial project: Sillage writes a small repository with intentionally failing tests and creates a
+ * project; users choose only location. Suggest remembered project parent or projects under server
+ * home.
  */
 export function SampleProjectForm() {
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { data: settings } = useUserSettings()
@@ -62,7 +63,9 @@ export function SampleProjectForm() {
         hint={t('projects.create.sample.parentDir.hint')}
         required
       />
-      <Select label={t('project.settings.visibility')} value={visibility} onChange={setVisibility} options={visibilityOptions} />
+      {sharedProjects ? (
+        <Select label={t('project.settings.visibility')} value={visibility} onChange={setVisibility} options={visibilityOptions} />
+      ) : null}
       {error ? <Banner>{error}</Banner> : null}
       <Button className="self-start" disabled={pending || !parentDir} onClick={create} icon={<Sparkles size={15} />}>
         {pending ? t('projects.create.pending') : t('projects.create.sample.create')}

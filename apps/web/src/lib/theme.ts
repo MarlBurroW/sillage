@@ -14,18 +14,12 @@ const STORAGE_KEY = 'sillage.theme'
 const listeners = new Set<() => void>()
 
 /**
- * Recopie le canevas résolu dans `theme-color`.
- *
- * iOS peint avec cette couleur les bandes hors viewport d'une application installée,
- * celle de la barre d'état et celle de l'indicateur d'accueil. Écrite en dur dans le
- * document, elle restait au bleu sombre du thème par défaut et jurait sous un thème
- * clair. Le thème et les réglages d'apparence écrivent tous les deux sur `<html>`, un
- * observateur les couvre donc sans qu'aucun des deux ait à connaître cette balise.
- *
- * La balise est remplacée plutôt que réécrite : iOS ne relit pas un `content` modifié en
- * place, et la bande du haut gardait la couleur du lancement jusqu'à ce qu'on referme
- * l'application. L'observateur ne surveille que `<html>`, ce remplacement ne le relance
- * donc pas.
+ * Copy the resolved canvas color into `theme-color`. Installed iOS apps use it for status-bar and
+ * home-indicator strips outside the viewport. A hardcoded value retained the default dark blue and
+ * clashed with light themes. Both theme and appearance write `<html>`, so one observer covers both
+ * without either knowing this tag. Replace the tag rather than changing content: iOS ignores
+ * in-place updates and kept the launch color until app closure. Since only `<html>` is observed,
+ * replacement does not retrigger it.
  */
 export function watchThemeColor(): void {
   const initial = document.querySelector('meta[name="theme-color"]')
@@ -34,8 +28,7 @@ export function watchThemeColor(): void {
 
   const sync = () => {
     const canvas = getComputedStyle(document.documentElement).getPropertyValue('--sg-canvas').trim()
-    // Les curseurs d'apparence tirent une rafale de mutations : on ne remplace la balise
-    // que quand la couleur a réellement bougé.
+    // Appearance sliders emit bursts of mutations: replace the tag only when the color actually changes.
     if (!canvas || canvas === meta.content) return
 
     const next = document.createElement('meta')

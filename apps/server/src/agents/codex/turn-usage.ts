@@ -1,6 +1,6 @@
 import type { ThreadTokenUsageUpdatedNotification, TokenUsageBreakdown } from '@sillage/codex-bindings/v2'
 
-/** Le total natif est cumulatif ; le journal attend la consommation de chaque tour. */
+/** Native totals are cumulative; logs require per-turn usage. */
 export class CodexTurnUsage {
   private previous: TokenUsageBreakdown | null = null
   private turnId: string | null = null

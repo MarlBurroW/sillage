@@ -1,10 +1,9 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * Réglages fins du thème, appliqués sur `<html>` pour que toute l'application suive.
- *
- * `hue` est partagée avec la couleur d'accent, `tint` multiplie la chroma des surfaces
- * sans toucher aux accents, `lift` décale leur luminosité sans toucher au texte.
+ * Fine theme settings applied to `<html>` for the entire app. `hue` is shared with the accent;
+ * `tint` scales surface chroma without changing accents; `lift` shifts surface lightness without
+ * changing text.
  */
 
 export interface AppearanceSetting {
@@ -17,22 +16,28 @@ export interface AppearanceSetting {
 }
 
 export const APPEARANCE_SETTINGS = {
-  // Les défauts sont ceux de tokens.css : teinte 318, ambiance « Discret » (0,25).
+  // Defaults match tokens.css: hue 318 and subdued ambience (0.25).
   hue: { key: 'sillage.hue', property: '--sg-hue', fallback: 318, min: 0, max: 360, step: 1 },
   tint: { key: 'sillage.tint', property: '--sg-tint', fallback: 0.25, min: 0, max: 2.5, step: 0.05 },
-  // Bornes volontairement étroites : au-delà, les surfaces rejoignent le texte et le
-  // contraste s'effondre au lieu de simplement s'éclaircir.
+  // Deliberately narrow bounds: beyond them surfaces approach text colors and contrast collapses
+  // instead of simply getting lighter.
   lift: { key: 'sillage.lift', property: '--sg-lift', fallback: 0, min: -0.06, max: 0.12, step: 0.005 },
 
   /*
-   * Confort de lecture du fil. Ces trois-là ne touchent qu'au texte des messages, pas
-   * à l'interface : agrandir la conversation ne doit pas déplacer la barre latérale.
-   *
-   * `readingSoftness` mélange l'encre vers sa nuance atténuée plutôt que de baisser une
-   * opacité : un texte translucide laisse passer le fond, et le rendu change selon ce
-   * qu'il y a derrière. Plafonné à 0,6, au-delà le texte cesse d'être lisible plutôt
-   * que de devenir doux.
+   * Thread reading comfort. These three settings affect message text only: enlarging conversations
+   * must not move the sidebar. `readingSoftness` blends ink toward its muted shade rather than
+   * reducing opacity, which would let backgrounds show through and change rendering. Cap at 0.6:
+   * beyond it text becomes unreadable rather than soft.
    */
+  // One shared limit keeps the thread, draft, and composer aligned.
+  conversationWidth: {
+    key: 'sillage.conversationWidth',
+    property: '--sg-conversation-width',
+    fallback: 768,
+    min: 768,
+    max: 1600,
+    step: 32,
+  },
   readingSize: {
     key: 'sillage.readingSize',
     property: '--sg-read-size',
@@ -59,10 +64,9 @@ export const APPEARANCE_SETTINGS = {
   },
 
   /*
-   * Écart visuel entre une question et la réponse qui la suit. Il dose la teinte
-   * d'accent posée sur la bulle utilisateur : à zéro elle retrouve la surface neutre
-   * d'origine, au maximum elle se lit comme un bloc coloré. L'alignement et la largeur
-   * ne bougent pas, eux distinguent déjà les deux rôles sans réglage.
+   * Visual separation between a question and the following answer. Controls accent tint on the user
+   * bubble: zero restores the original neutral surface, maximum produces a colored block. Alignment
+   * and width already distinguish roles and do not change.
    */
   messageContrast: {
     key: 'sillage.messageContrast',
@@ -80,13 +84,13 @@ function read({ key, fallback }: AppearanceSetting): number {
   const raw = localStorage.getItem(key)
   if (raw === null) return fallback
   const parsed = Number(raw)
-  // `lift` accepte le zéro et les valeurs négatives : ne filtrer que sur la finitude.
+  // `lift` accepts zero and negative values: check only finiteness.
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
 /*
- * Hors de React : la synchronisation avec le compte réécrit ces valeurs au chargement,
- * et chaque écran qui les affiche doit suivre sans être remonté.
+ * Outside React: account synchronization rewrites these values at load and all displaying screens
+ * must follow without remounting.
  */
 let values = Object.fromEntries(
   Object.entries(APPEARANCE_SETTINGS).map(([name, setting]) => [name, read(setting)]),
@@ -103,8 +107,8 @@ export function subscribeAppearance(listener: () => void): () => void {
 }
 
 /**
- * Pose des valeurs, et retire celles qui reviennent au défaut : un réglage jamais
- * touché ne doit rien laisser dans `localStorage` ni sur `<html>`.
+ * Apply values and remove those returning to defaults: untouched settings should leave nothing in
+ * `localStorage` or on `<html>`.
  */
 export function applyAppearance(next: Partial<Record<AppearanceKey, number>>): void {
   const root = document.documentElement
@@ -127,8 +131,8 @@ export function applyAppearance(next: Partial<Record<AppearanceKey, number>>): v
 const setAppearance = (name: AppearanceKey, value: number) => applyAppearance({ [name]: value })
 
 /**
- * Remise à zéro, bornée aux réglages qu'on a sous les yeux : le bouton posé sous les
- * curseurs de typographie ne doit pas emporter la teinte choisie ailleurs.
+ * Reset only currently visible settings: the button below typography sliders must not remove an
+ * accent chosen elsewhere.
  */
 function resetAppearance(names?: AppearanceKey[]): void {
   const targets = names ?? (Object.keys(APPEARANCE_SETTINGS) as AppearanceKey[])
@@ -140,7 +144,7 @@ export function useAppearance() {
   return { values: current, set: setAppearance, reset: resetAppearance }
 }
 
-/** Couleur résolue d'un token, pour afficher les valeurs réelles à l'écran. */
+/** Resolved token color for displaying actual values. */
 export function resolveToken(token: string): string {
   const probe = document.createElement('span')
   probe.style.color = `var(${token})`

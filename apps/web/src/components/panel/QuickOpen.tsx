@@ -9,7 +9,7 @@ import { useFileSearch } from '../../lib/tree'
 import { useTranslate } from '../../lib/i18n'
 import { Button, IconButton, cx } from '../ui'
 
-/** Ouverture au clavier dans le workspace courant, jamais dans un autre projet. */
+/** Keyboard file opening within the current workspace, never another project. */
 export function QuickOpen({ scope, workspaceLabel, open, onOpenChange, onSelect }: {
   scope: string
   workspaceLabel: string
@@ -70,7 +70,7 @@ export function QuickOpen({ scope, workspaceLabel, open, onOpenChange, onSelect 
           event.preventDefault()
           const root = document.querySelector('[data-panel="workspace"]')
           if (!root) return
-          // La lecture réseau peut terminer après la fermeture de la palette.
+          // Network reads may finish after palette closure.
           const focus = () => {
             const file = Array.from(root.querySelectorAll<HTMLElement>('[data-editor-file]')).find((node) => node.dataset.editorFile === path)
             if (!file) return false

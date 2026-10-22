@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { ArrowUpRight, Check, ChevronRight, Inbox, MessageCircleQuestion, X } from 'lucide-react'
+import { Activity, Check, Inbox, MessageCircleQuestion, X } from 'lucide-react'
 import { NavLink, useMatch } from 'react-router-dom'
 import type { ConversationDto, ConversationStatus, ProjectDto } from '@sillage/protocol'
 import { liveBackground, liveSeq, liveSettledAt, liveStatus, subscribeStatus } from '../lib/conversation-status'
@@ -28,12 +28,11 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   children: ReactNode
 }) {
   const t = useTranslate()
-  const [collapsed, setCollapsed] = useState(false)
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<View>('all')
   const returnFocus = useRef<HTMLElement | null>(null)
   const openId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
-  // Un instantané primitif évite un rendu pour chaque jeton ou métrique reçue.
+  // Primitive snapshots avoid rendering on every received token or metric.
   const snapshot = () => JSON.stringify(conversations.map((entry) => ({
     status: liveStatus(entry.id) ?? entry.status,
     background: liveBackground(entry.id) > 0,
@@ -47,7 +46,7 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
       const state = states[index]!
       const awaiting = state.status === 'awaiting_input'
       const running = !awaiting && (state.status === 'running' || state.background)
-      // Une session archivée qui travaille encore compte bien dans le total global.
+      // Archived sessions still working count in the global total.
       if (conversation.archivedAt && !running && !awaiting) return []
       return [{ conversation, ...state, running, awaiting }]
     })
@@ -57,8 +56,16 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   const unread = entries.filter((entry) => entry.unread)
   const recent = entries.filter((entry) => entry.settledAt > 0 && !entry.running && !entry.awaiting)
     .sort((a, b) => b.settledAt - a.settledAt).slice(0, 8)
-  // Les attentes précèdent le travail en cours, sans clic pour découvrir les sessions.
+  // Show waits before running work without extra clicks to discover sessions.
   const active = [...awaiting, ...running]
+  const projectNames = new Map(projects.map((project) => [project.id, project.name]))
+  // Stable sorting retains waits first within each project.
+  const visible = (view === 'all' ? [...active, ...recent] : view === 'awaiting' ? awaiting : unread)
+    .sort((a, b) => {
+      const aName = projectNames.get(a.conversation.projectId) ?? t('shell.overview.unknown')
+      const bName = projectNames.get(b.conversation.projectId) ?? t('shell.overview.unknown')
+      return aName.localeCompare(bName) || a.conversation.projectId.localeCompare(b.conversation.projectId)
+    })
   const show = (next: View = 'all') => {
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setView(next)
@@ -71,34 +78,14 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
 
   return (
     <>
-      <div className="mb-2 flex shrink-0 flex-col border-b border-line pb-2" role="group" aria-label={t('shell.activity.label')}>
-        <div className="flex items-center gap-1">
-          <IconButton size="sm" label={t(collapsed ? 'shell.overview.expand' : 'shell.overview.collapse')} onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed} aria-controls="global-activity-projects">
-            <ChevronRight size={13} className={cx('transition-transform', !collapsed && 'rotate-90')} />
-          </IconButton>
-          <button type="button" onClick={() => show()} aria-haspopup="dialog" className="flex min-h-11 md:min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md pr-2 text-xs hover:bg-surface-high">
-            <span className="font-semibold text-ink-soft">{t('shell.overview.heading')}</span>
-            <span className={cx('ml-auto flex items-center gap-1.5 rounded-full px-2 py-1 tabular-nums', running.length > 0 ? 'bg-accent-wash text-accent' : 'text-ink-faint')}>
-              {running.length > 0 && <RunningDot />}{t('shell.overview.runningCount', { count: running.length })}
-            </span>
-            <ArrowUpRight size={12} className="shrink-0 text-ink-faint" />
-          </button>
-        </div>
-        {awaiting.length > 0 && <button type="button" onClick={() => show('awaiting')} className="flex min-h-11 md:min-h-9 items-center gap-2 rounded-md px-2 text-xs text-caution hover:bg-surface-high">
-          <MessageCircleQuestion size={14} />{t('shell.overview.awaitingCount', { count: awaiting.length })}<ChevronRight size={12} className="ml-auto" />
-        </button>}
-        {!collapsed && <div id="global-activity-projects" className="max-h-[32dvh] overflow-y-auto">
-          {rows(active.slice(0, 4), true)}
-          {active.length === 0 && <p className="px-2 py-2 text-xs text-ink-faint">{t('shell.overview.quiet')}</p>}
-        </div>}
-        <div className="flex items-center justify-between gap-1 px-1">
-          <button type="button" onClick={() => show()} className="min-h-11 md:min-h-8 rounded px-1 text-left text-[0.6875rem] text-ink-faint hover:bg-surface-high hover:text-ink">
-            {t(!collapsed && active.length > 4 ? 'shell.overview.moreActive' : 'shell.overview.show', { count: active.length - 4 })}
-          </button>
-          <button type="button" onClick={() => show('unread')} aria-label={t('shell.overview.unreadCount', { count: unread.length })} className="flex min-h-11 md:min-h-8 items-center gap-1 rounded px-1 text-xs tabular-nums text-ink-faint hover:bg-surface-high hover:text-ink"><Inbox size={13} />{t('shell.overview.unreadCount', { count: unread.length })}</button>
+      <div className="sidebar-activity" role="group" aria-label={t('shell.activity.label')}>
+        <button type="button" onClick={() => show()} aria-haspopup="dialog" className="sidebar-activity-main"><Activity size={15} /><span><span className="block font-medium text-ink-soft">{t('shell.overview.heading')}</span><span className="mt-1 block text-[0.625rem] text-ink-faint">{t('shell.overview.runningCount', { count: running.length })}</span></span></button>
+        <div className="sidebar-activity-counts">
+          {awaiting.length > 0 && <button type="button" onClick={() => show('awaiting')} className="text-caution">{t('shell.overview.awaitingCount', { count: awaiting.length })}</button>}
+          <button type="button" onClick={() => show('unread')} className="text-ink-faint"><Inbox size={11} />{t('shell.overview.unreadCount', { count: unread.length })}</button>
         </div>
       </div>
-      <div id="sidebar-activity-results" className="min-h-0 flex-1 overflow-y-auto pb-4">{children}</div>
+      <div id="sidebar-activity-results" className="flex min-h-0 flex-1 flex-col">{children}</div>
 
       <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Portal>
@@ -118,20 +105,8 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
               </button>)}
             </div>
             <div className="min-h-0 overflow-y-auto px-4 py-4 space-y-5">
-              {view !== 'unread' && awaiting.length > 0 && <section aria-label={t('shell.activity.awaiting')}>
-                <h2 className="mb-2 flex items-center gap-2 px-2 text-xs font-semibold text-caution"><MessageCircleQuestion size={14} />{t('shell.overview.awaitingCount', { count: awaiting.length })}</h2>
-                {rows(awaiting)}
-              </section>}
-              {view === 'all' && running.length > 0 && <section aria-label={t('shell.activity.running')}>
-                <h2 className="mb-2 flex items-center gap-2 px-2 text-xs font-semibold text-accent"><RunningDot />{t('shell.overview.runningCount', { count: running.length })}</h2>
-                {rows(running)}
-              </section>}
-              {view === 'unread' && rows(unread)}
-              {(view === 'all' ? active.length === 0 : view === 'awaiting' ? awaiting.length === 0 : unread.length === 0) && <p role="status" className="px-2 py-8 text-center text-sm text-ink-faint">{t(view === 'all' ? 'shell.overview.quiet' : view === 'awaiting' ? 'shell.activity.empty.awaiting' : 'shell.activity.empty.unread')}</p>}
-              {view === 'all' && recent.length > 0 && <section aria-label={t('shell.overview.recent')} className="border-t border-line pt-4" title={t('shell.overview.recentHint')}>
-                <h2 className="mb-2 px-2 text-xs font-semibold text-ink-faint">{t('shell.overview.recent')}</h2>
-                {rows(recent)}
-              </section>}
+              {rows(visible)}
+              {visible.length === 0 && <p role="status" className="px-2 py-8 text-center text-sm text-ink-faint">{t(view === 'all' ? 'shell.overview.quiet' : view === 'awaiting' ? 'shell.activity.empty.awaiting' : 'shell.activity.empty.unread')}</p>}
             </div>
           </Dialog.Content>
         </Dialog.Portal>
@@ -159,7 +134,7 @@ function ActivityRow({ entry, project, onNavigate, compact = false }: { entry: A
       <span className="min-w-0 flex-1">
         <span className={cx('block break-words font-medium leading-snug text-ink', compact ? 'line-clamp-2 text-xs' : 'text-sm')}>{entry.conversation.title}</span>
         <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-ink-faint">
-          <span className="flex min-w-0 items-center gap-1"><ProjectAvatar project={project} className="size-3" /><span className="truncate">{project?.name ?? t('shell.overview.unknown')}</span></span>
+          <span className={cx('flex min-w-0 items-center gap-1', !compact && 'rounded border border-line bg-surface-high px-1.5 py-0.5')}><ProjectAvatar project={project} className="size-3" /><span className="truncate">{project?.name ?? t('shell.overview.unknown')}</span></span>
           {!compact && <span className="sm:hidden">{status}</span>}
           {compact && <span className={entry.running && entry.status !== 'running' ? '' : 'sr-only'}>{status}</span>}
         </span>

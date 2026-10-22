@@ -37,9 +37,8 @@ import { buildFileItems, buildMessageItems, buildPaletteItems, type PaletteActio
 import { IconButton, cx } from './ui'
 
 /**
- * Lignes par groupe : de quoi voir plusieurs projets d'un coup d'oeil. Un groupe seul
- * a toute la place, et un groupe déplié montre tout ce qu'il a, dans une limite qui
- * reste lisible.
+ * Rows per group allow several projects at a glance. A lone group gets all available space;
+ * expanded groups show everything up to a readable limit.
  */
 const GROUP_ROWS = 5
 const SOLO_ROWS = 12
@@ -47,7 +46,7 @@ const EXPANDED_ROWS = 40
 
 type Row =
   | { type: 'hit'; key: string; group: string; hit: PaletteHit }
-  /** `next` : le premier résultat qu'il révèle, où la sélection descend. */
+  /** next is the first newly revealed result and receives selection. */
   | { type: 'more'; key: string; group: string; hidden: number; next: string | undefined }
 
 interface Section {
@@ -70,11 +69,8 @@ function layout(groups: readonly PaletteGroup[], expanded: ReadonlySet<string>):
 }
 
 /**
- * Donne le focus à l'éditeur d'un fichier dès qu'il s'affiche.
- *
- * Le panneau peut ne pas être encore là : il se charge à part, et le fichier se lit par
- * le réseau. Sans cette attente, le focus restait sur le bouton de fermeture du panneau,
- * et la première frappe partait ailleurs que dans le fichier qu'on venait de choisir.
+ * Focus a file editor when it appears. The panel loads separately and files arrive over the
+ * network; without waiting, focus stayed on Close and typing missed the chosen file.
  */
 function focusEditorFile(path: string): void {
   const focus = () => {
@@ -96,13 +92,10 @@ function focusEditorFile(path: string): void {
 }
 
 /**
- * Palette de recherche : une saisie, et tout ce qu'on peut rejoindre.
- *
- * Aucun filtre à régler : les résultats de tous types se rangent sous leur projet, le
- * projet courant favorisé, et ce qui n'appartient à aucun projet se range sous
- * « Général ». Taper le nom d'un projet le restreint (« nimbus cache »), taper un type le
- * liste (« skill », « ticket »). Tout ce que l'interface tient déjà en mémoire répond à
- * la frappe ; seuls les fichiers et le contenu des messages passent par le serveur.
+ * Search palette with one input and every destination. No filters to configure: group all types by
+ * project, favor current project, and put unowned items under General. Project names restrict
+ * queries and kind names list that kind. In-memory UI data responds instantly; only files and
+ * message content query the server.
  */
 export function CommandPalette({
   open,
@@ -115,7 +108,7 @@ export function CommandPalette({
   const navigate = useNavigate()
   const listId = useId()
   const list = useRef<HTMLDivElement>(null)
-  /** Fichier choisi, qui doit recevoir le focus à la fermeture plutôt que le déclencheur. */
+  /** Selected file to focus on close instead of the trigger. */
   const chosenFile = useRef<string | null>(null)
   const [query, setQuery] = useState('')
   const [activeKey, setActiveKey] = useState<string | null>(null)
@@ -135,11 +128,11 @@ export function CommandPalette({
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
   const { data: actions } = useActions()
-  // `mutate` est stable, pas l’objet de la mutation : les résultats ne se refont pas à chaque rendu.
+  // mutate is stable, the mutation object is not: avoid rebuilding results every render.
   const { mutate: startAction } = useRunAction()
-  // Dans son projet, l'action tourne là où l'on est (worktree de la conversation
-  // ouverte) ; ailleurs, on rejoint d'abord le projet, dont le panneau montrera le
-  // terminal. Relire ouvre l'onglet Actions, où la commande se lit avant de partir.
+  // Current-project actions run in the current conversation worktree; other projects navigate first
+  // and show terminal output in their panel. Review opens Actions to inspect commands before
+  // execution.
   const runAction = useCallback(
     (action: ProjectActionDto, op: PaletteActionOp) => {
       if (op === 'open') {
@@ -165,13 +158,12 @@ export function CommandPalette({
   const [theme, applyTheme] = useTheme()
 
   const trimmed = query.trim()
-  // La frappe reste fluide pendant que des milliers de résultats se reclassent derrière.
+  // Keep typing responsive while thousands of results rerank.
   const deferred = useDeferredValue(trimmed)
   const files = usePaletteFiles(open ? trimmed : '', currentConversationId)
   const messages = useMessageSearch(open ? trimmed : '')
 
-  // Rouvrir la palette repart d'une page blanche : la recherche précédente répondait à
-  // une intention qui n'est plus celle du moment.
+  // Reopening starts fresh because the previous search represented an earlier intent.
   useEffect(() => {
     if (open) return
     setQuery('')
@@ -179,8 +171,7 @@ export function CommandPalette({
     setExpanded(new Set())
   }, [open])
 
-  // Une autre saisie, d'autres résultats : la sélection et les groupes dépliés
-  // désignaient ceux d'avant.
+  // New queries and results invalidate old selection and expanded groups.
   useEffect(() => {
     setActiveKey(null)
     setExpanded(new Set())
@@ -192,8 +183,8 @@ export function CommandPalette({
     [user?.isAdmin, instance?.capabilities],
   )
 
-  // Fabriqués à l'ouverture seulement : la liste des conversations bouge à chaque
-  // événement d'une session en cours, et la palette fermée n'a rien à en faire.
+  // Build only when opened: conversation lists change on every live event and closed palettes have
+  // no use for updates.
   const items = useMemo(
     () =>
       !open ? [] : buildPaletteItems({
@@ -231,8 +222,7 @@ export function CommandPalette({
         visibleProjects: new Set(visibleProjects.map((project) => project.id)),
       })
     }
-    // Les réponses du serveur peuvent dater d'une frappe : reclassées contre la saisie
-    // du moment, elles ne montrent jamais un résultat qui ne correspond plus.
+    // Server replies may lag a keystroke; rerank against current input so stale nonmatches never appear.
     const searchable = [
       ...items,
       ...(deferred.length >= PALETTE_FILES_MIN_QUERY ? fileItems : []),
@@ -249,7 +239,7 @@ export function CommandPalette({
   const activeIndex = Math.max(0, rows.findIndex((row) => row.key === activeKey))
   const active = rows[activeIndex]
 
-  // La sélection au clavier doit rester visible quand elle sort de la zone affichée.
+  // Keep keyboard selection visible when it leaves the viewport.
   useEffect(() => {
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [active?.key])
@@ -260,9 +250,8 @@ export function CommandPalette({
   )
 
   /**
-   * Un fichier s'ouvre dans le panneau, là où il a été cherché : dans la conversation
-   * ouverte quand il est de son projet, worktree compris ; sinon dans le panneau du
-   * projet, sur sa vue d'accueil habituelle, pour ne pas la changer en passant.
+   * Open files where searched: the open conversation and worktree for its project, otherwise the
+   * project panel on its usual landing page to preserve that preference.
    */
   const openFile = (projectId: string, path: string) => {
     let scope: string
@@ -277,8 +266,7 @@ export function CommandPalette({
     setPanelTab('files')
     setPanelOpen(true)
     chosenFile.current = path
-    // Au doigt, le panneau prend tout l'écran : c'est le fichier qu'on veut voir, pas
-    // l'arborescence qui le cacherait.
+    // Touch panels fill the screen: show the requested file rather than a tree obscuring it.
     if (!wide) setPanelTree(false, false)
   }
 
@@ -296,8 +284,7 @@ export function CommandPalette({
       run(row.hit.item)
       return
     }
-    // Déplier garde la main sur le clavier : la sélection descend sur le premier
-    // résultat révélé, là où l'oeil va.
+    // Expansion retains keyboard control and selects the first revealed result where attention goes.
     setExpanded((current) => new Set([...current, row.group]))
     setActiveKey(row.next ?? null)
   }
@@ -320,13 +307,13 @@ export function CommandPalette({
       event.preventDefault()
       choose(active)
     } else if (event.key === 'Tab' && sections.length > 1) {
-      // Passer d'un projet à l'autre sans traverser leurs lignes une à une.
+      // Move between projects without traversing every row.
       event.preventDefault()
       jumpGroup(event.shiftKey ? -1 : 1)
     }
   }
 
-  // Le serveur doit encore répondre : saisie en attente de son délai, ou requête en vol.
+  // Server results are pending, either debounce or an in-flight request.
   const fetching =
     files.settling ||
     messages.settling ||
@@ -375,8 +362,7 @@ export function CommandPalette({
             />
             {pending && trimmed ? <Loader size={15} className="shrink-0 animate-spin text-ink-faint" /> : null}
 
-            {/* Au doigt la palette occupe tout l'écran : il n'y a ni touche Échap ni
-                voile à toucher à côté, donc rien pour en sortir sans ce bouton. */}
+            {/* Touch palettes fill the screen with no Escape or external backdrop; this button provides the exit. */}
             <IconButton label={t('search.close')} className="sm:hidden" onClick={() => onOpenChange(false)}>
               <X size={18} />
             </IconButton>
@@ -400,8 +386,7 @@ export function CommandPalette({
                   row.type === 'hit' ? (
                     <HitRow
                       key={row.key}
-                      // L'indice et non la clé : une clé de fichier porte son chemin, qui
-                      // peut contenir des espaces, interdits dans un identifiant.
+                      // Use an index rather than a file key containing paths whose spaces are invalid in identifiers.
                       id={`${listId}-${rows.indexOf(row)}`}
                       hit={row.hit}
                       selected={row.key === active?.key}
@@ -436,7 +421,7 @@ export function CommandPalette({
             ) : null}
           </div>
 
-          {/* Les raccourcis n'existent qu'au clavier : au doigt, la ligne ne dirait rien. */}
+          {/* Shortcuts matter only with keyboards; omit meaningless touch hints. */}
           <div className="hidden shrink-0 items-center gap-4 border-t border-line px-3 py-2 text-[0.6875rem] text-ink-faint sm:flex pointer-coarse:hidden">
             <Hint keys="↑ ↓" label={t('search.hint.navigate')} />
             <Hint keys="↵" label={t('search.hint.open')} />
@@ -458,10 +443,7 @@ function Hint({ keys, label }: { keys: string; label: string }) {
   )
 }
 
-/**
- * En-tête de groupe, collé en haut de la liste pendant qu'on fait défiler ses lignes :
- * c'est lui qui dit à quel projet appartient ce qu'on regarde.
- */
+/** Sticky group heading identifies the project while scrolling its results. */
 function GroupHeader({ id, project, current }: { id: string; project: ProjectDto | undefined; current: boolean }) {
   const t = useTranslate()
   return (
@@ -480,7 +462,7 @@ function GroupHeader({ id, project, current }: { id: string; project: ProjectDto
   )
 }
 
-/** Texte dont certaines lettres sont surlignées, celles que la saisie a retenues. */
+/** Text with matching characters highlighted. */
 function Highlighted({ text, positions }: { text: string; positions: readonly number[] }) {
   if (positions.length === 0) return <>{text}</>
   const marked = new Set(positions)
@@ -511,8 +493,7 @@ function Excerpt({ excerpt }: { excerpt: string }) {
     <>
       {splitExcerpt(excerpt).map((part, index) =>
         part.hit ? (
-          // Fond franc plutôt que le lavis d'accent : la ligne sélectionnée porte déjà ce
-          // lavis, et le passage trouvé s'y confondait.
+          // Use solid highlighting rather than accent wash, already present on selected rows and obscuring matches.
           <mark key={index} className="rounded bg-accent/25 px-0.5 font-medium text-ink">
             {part.text}
           </mark>
@@ -526,8 +507,7 @@ function Excerpt({ excerpt }: { excerpt: string }) {
 
 function rowClass(selected: boolean, compact = false) {
   return cx(
-    // La marge haute de défilement laisse la place de l'en-tête collé : sans elle, la
-    // ligne choisie au clavier remonterait dessous.
+    // Top scroll margin reserves sticky-heading space so keyboard selections do not slide underneath.
     'flex w-full cursor-pointer scroll-mt-9 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left',
     compact ? 'min-h-8 text-xs' : 'min-h-10 pointer-coarse:min-h-12',
     selected ? 'bg-accent-wash text-ink' : compact ? 'text-ink-faint' : 'text-ink-soft',
@@ -554,7 +534,7 @@ function HitRow({
       role="option"
       aria-selected={selected}
       onMouseMove={onHover}
-      // Le champ garde le focus : un clic ne doit pas le lui retirer avant d'agir.
+      // Keep input focused: clicking must not blur it before acting.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onSelect}
       className={rowClass(selected)}
@@ -562,9 +542,10 @@ function HitRow({
       <span className="flex size-4 shrink-0 items-center justify-center text-ink-faint">{item.icon}</span>
 
       <span className="min-w-0 flex-1">
-        {/* Le titre garde sa place, c'est le détail qui s'efface : une consigne longue
-            ne doit pas réduire le nom d'une tâche à ses trois premières lettres. Au doigt,
-            le détail passe dessous plutôt que de se réduire à des points de suspension. */}
+        {/*
+         * Preserve title space and truncate details: long instructions must not reduce task names
+         * to three letters. On touch move details below instead of ellipsis.
+         */}
         <span className="flex min-w-0 flex-col sm:flex-row sm:items-baseline sm:gap-2">
           <span className="max-w-full shrink-0 truncate text-sm">
             <Highlighted text={item.title} positions={hit.title} />
@@ -587,7 +568,7 @@ function HitRow({
   )
 }
 
-/** L'ancienneté se calcule à l'affichage : pour mille conversations, seules dix se voient. */
+/** Compute age only at display: of a thousand conversations, only ten are visible. */
 function Aside({ item }: { item: PaletteItem }) {
   const parts = [item.aside, item.at === undefined ? undefined : relativeDate(item.at)].filter(Boolean)
   if (parts.length === 0) return null

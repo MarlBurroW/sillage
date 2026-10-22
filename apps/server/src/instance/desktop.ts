@@ -7,21 +7,10 @@ import { hashPassword } from '../auth/passwords.js'
 import { createSession } from '../auth/sessions.js'
 import { armOnboarding } from '../settings/user-settings.js'
 
-/**
- * Descripteur hérité du lanceur de bureau, par lequel le serveur lui remet son adresse
- * et la session de l'utilisateur. Lu à l'import, comme le profil, avant le ménage de
- * l'environnement.
- */
+/** Desktop launcher descriptor carrying server address and user session. Read at import like the profile, before environment cleanup. */
 const HANDSHAKE_FD = Number(process.env.SILLAGE_HANDSHAKE_FD)
 
-/**
- * Ouvre la session de l'unique utilisateur d'une instance de bureau.
- *
- * Pas de mot de passe : le poste est déjà celui de l'utilisateur. Le compte naît au
- * premier démarrage avec un mot de passe aléatoire que personne ne connaît, ce qui garde
- * la page de connexion fermée. La session repart à chaque lancement et les précédentes
- * tombent avec : un cookie resté sur le disque ne vaut plus rien une fois l'app quittée.
- */
+/** Opens the desktop instance's sole user session. No password because the machine already belongs to the user. Create accounts on first startup with unknowable random passwords, keeping login pages closed. Regenerate sessions each launch and invalidate previous ones so disk cookies stop working after quitting. */
 export async function openDesktopSession(db: Db): Promise<string> {
   const user = (await firstAdmin(db)) ?? (await createLocalUser(db))
   await db.delete(authSessions).where(eq(authSessions.userId, user.id))
@@ -44,16 +33,12 @@ async function createLocalUser(db: Db): Promise<UserRow> {
     createdAt: Date.now(),
   }
   await db.insert(users).values(row)
-  // Premier lancement : la visite s'ouvre dans la fenêtre, sans étape de compte.
+  // First launch opens the tour in the window without an account step.
   armOnboarding(db, row.id)
   return row
 }
 
-/**
- * Remet au lanceur le port d'écoute et la session, sur une ligne JSON, puis ferme le
- * descripteur : la session ne passe ni par le réseau ni par les journaux, et aucun
- * processus enfant n'hérite du canal.
- */
+/** Sends listening port and session to the launcher as one JSON line, then closes the descriptor. Sessions cross neither network nor logs, and child processes inherit no channel. */
 export function announceToLauncher(port: number, session: string): void {
   if (!Number.isInteger(HANDSHAKE_FD) || HANDSHAKE_FD < 3) {
     throw new Error("Profil desktop sans lanceur : SILLAGE_HANDSHAKE_FD doit désigner le canal hérité de l'application.")
@@ -62,14 +47,7 @@ export function announceToLauncher(port: number, session: string): void {
   closeSync(HANDSHAKE_FD)
 }
 
-/**
- * Retire de l'environnement ce que le lanceur n'adressait qu'à ce processus.
- *
- * Agents et terminaux héritent de `process.env` : un Sillage lancé depuis un terminal de
- * l'application se croirait sinon instance de bureau, écrirait dans un descripteur qui
- * n'est pas le sien, et partagerait la base de l'application. Appelé après
- * `loadConfig`, qui a déjà lu ces variables.
- */
+/** Removes launcher environment intended only for this process. Agents and terminals inherit `process.env`; otherwise Sillage started inside an app terminal would think itself desktop, write another process's descriptor and share the app database. Called after `loadConfig` reads those values. */
 export function scrubLauncherEnv(): void {
   for (const name of [
     'SILLAGE_PROFILE',

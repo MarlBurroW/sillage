@@ -18,12 +18,12 @@ import {
 } from '../components/ui'
 
 /**
- * Catalogue du design system. Sert de terrain d'itération : tous les composants sur
- * un écran, dans les trois thèmes, pour juger la cohérence sans avoir à naviguer.
+ * Design-system catalog for iteration: all components on one screen in three themes, allowing
+ * consistency checks without navigation.
  */
 
-// Classes écrites en toutes lettres : Tailwind scanne les fichiers source et ne
-// génère rien pour une classe construite dynamiquement.
+// Write complete class names: Tailwind scans source files and generates nothing
+// for dynamically constructed classes.
 const SURFACES = [
   ['canvas', 'bg-canvas', '--sg-canvas'],
   ['surface', 'bg-surface', '--sg-surface'],
@@ -49,8 +49,8 @@ export function DesignPage() {
   const t = useTranslate()
   const [agent, setAgent] = useState('claude')
   const [text, setText] = useState('')
-  // Remonté ici pour que la lecture des couleurs résolues se rafraîchisse au bougé
-  // du curseur : c'est le rendu de cette page qui interroge les tokens.
+  // Lifted here so resolved colors refresh as the slider moves: this page's render
+  // queries the tokens.
   const appearance = useAppearance()
 
   return (

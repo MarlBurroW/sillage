@@ -8,40 +8,20 @@ import { launchOf } from './launch.js'
 
 const run = promisify(execFile)
 
-/**
- * Résolution et sonde des CLI agents installés sur la machine.
- *
- * Sillage ne transporte plus les binaires : ils viennent du système, donc leur présence
- * et leur version cessent d'être garanties par la release et deviennent une information
- * à afficher. Un CLI absent doit se voir dans l'interface, pas se découvrir à l'échec du
- * premier tour.
- *
- * Deux sources, dans cet ordre : le préfixe où Sillage installe les CLI qu'il gère, puis
- * `process.env.PATH`. Jamais une liste de dossiers écrite en dur : l'unité systemd pose
- * déjà un `PATH` explicite parce que celui d'un service est minimal, et c'est ce même
- * `PATH` que `spawn` consultera. Résoudre ailleurs annoncerait des CLI que le daemon
- * serait incapable de lancer.
- */
+/** Installed agent CLI resolution and probing. System binaries are not release-guaranteed, so expose presence/version and show missing CLIs before first-turn failures. Search Sillage-managed npm prefixes then `process.env.PATH`, never hardcoded directories: systemd already supplies explicit minimal-service PATH and `spawn` uses the same. Other resolution would advertise CLIs the daemon cannot launch. */
 
-/**
- * Ce que `describe` rend : la disponibilité, sans ce qui relève de l'installation.
- * L'état d'une installation en cours appartient à `CliInstaller`, pas au binaire.
- */
+/** `describe` availability data excluding installation state, which belongs to `CliInstaller` rather than binaries. */
 export type CliDescription = Omit<AgentAvailabilityDto, 'preferredVersion' | 'install'>
 
-/** Ce qu'on sait d'un CLI, une fois cherché sur le disque. */
+/** Known CLI information after disk resolution. */
 export type CliStatus =
   | { readonly found: true; readonly path: string; readonly version: string | null }
   | { readonly found: false; readonly reason: 'not_on_path' | 'not_executable' }
 
-/** Durée de validité d'une sonde. Un CLI installé pendant que le daemon tourne
- *  doit finir par apparaître, sans pour autant relancer un process à chaque écran. */
+/** Probe cache lifetime: installations made while daemons run must eventually appear without spawning processes for every screen. */
 const TTL_MS = 60_000
 
-/** Fenêtre laissée au CLI pour annoncer sa version. Au-delà, on le dit présent
- *  mais muet : un binaire lent à démarrer reste utilisable. Plus large sous Windows, où
- *  Defender analyse un binaire fraîchement installé à son premier lancement : Grok y a
- *  dépassé les cinq secondes juste après son installation. */
+/** Time allowed for version announcements. Afterward report present but silent: slow binaries remain usable. Longer on Windows because Defender scans newly installed binaries; Grok exceeded five seconds immediately after installation. */
 const VERSION_TIMEOUT_MS = process.platform === 'win32' ? 20_000 : 5_000
 
 function isExecutable(path: string): boolean {
@@ -53,17 +33,7 @@ function isExecutable(path: string): boolean {
   }
 }
 
-/**
- * Chemin absolu du binaire, ou null s'il est introuvable.
- *
- * Un nom nu est cherché dans le `PATH` comme le ferait `spawn`. Un chemin absolu est
- * pris tel quel : la configuration désigne alors une installation précise, et lui
- * substituer une autre trahirait le réglage.
- *
- * Sous Windows, un nom se complète des extensions de `PATHEXT` (`claude.exe`,
- * `codex.cmd`), et npm pose les lanceurs à la racine de son préfixe plutôt que dans
- * `bin/`. `env` et `platform` ne servent qu'aux tests.
- */
+/** Absolute binary path or null. Search bare names through PATH like `spawn`; absolute paths select specific installations and must not be replaced. Windows adds `PATHEXT` extensions (`claude.exe`, `codex.cmd`), while npm places launchers at prefix roots rather than `bin/`. `env` and `platform` support tests only. */
 export function resolveBinary(
   binary: string,
   managedDir?: string,
@@ -76,16 +46,16 @@ export function resolveBinary(
   const names = windows ? withExtensions(binary, env) : [binary]
   if (paths.isAbsolute(binary)) return names.find(exists) ?? null
 
-  // Un nom contenant un séparateur est un chemin relatif, que `spawn` résoudrait
-  // depuis le répertoire courant du daemon. Ce répertoire n'a rien à voir avec le
-  // workspace des conversations, donc le réglage n'aurait pas de sens : on refuse.
+  // Names containing separators are relative paths `spawn` would resolve from daemon
+  // cwd, unrelated to conversation workspaces,
+  // making these settings meaningless: reject them.
   if (binary.includes('/') || (windows && binary.includes('\\'))) return null
 
-  // Ce que Sillage a installé passe avant le PATH du système. L'ordre suit l'intention :
-  // un CLI n'atterrit ici que parce que quelqu'un l'a demandé depuis l'interface, alors
-  // qu'un CLI du PATH peut n'être là que par accident d'environnement. C'est aussi la
-  // seule façon d'honorer « installer une version précise pour Sillage » quand le
-  // système en porte déjà une autre.
+  // Managed installations precede system PATH, reflecting intent: users requested
+  // them explicitly through interfaces, while PATH CLIs may be accidental.
+  // This is also the only way to honor
+  // 'Sillage uses this specific version' when systems
+  // already have another installed.
   const dirs = managedDir ? [windows ? managedDir : paths.join(managedDir, 'bin')] : []
   dirs.push(...(pathValue(env) ?? '').split(paths.delimiter).filter((dir) => dir.length > 0))
   for (const dir of dirs) {
@@ -95,20 +65,14 @@ export function resolveBinary(
   return null
 }
 
-/**
- * Les noms à essayer pour `binary` sous Windows, dans l'ordre de `PATHEXT` : un nom qui
- * porte déjà une extension connue se cherche tel quel.
- */
+/** Windows candidate names for `binary` in `PATHEXT` order. Names already carrying known extensions are searched unchanged. */
 function withExtensions(binary: string, env: NodeJS.ProcessEnv): string[] {
   const extensions = (pathExt(env) ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
   if (extensions.some((ext) => binary.toLowerCase().endsWith(ext.toLowerCase()))) return [binary]
   return extensions.map((ext) => `${binary}${ext.toLowerCase()}`)
 }
 
-/**
- * `PATH` quelle que soit la casse de sa clé : sous Windows elle s'écrit `Path`, et une
- * copie de `process.env` en objet ordinaire n'est plus insensible à la casse.
- */
+/** Case-insensitive PATH key lookup: Windows uses `Path`, and copying `process.env` into ordinary objects loses case insensitivity. */
 function pathValue(env: NodeJS.ProcessEnv): string | undefined {
   return env.PATH ?? Object.entries(env).find(([key]) => key.toUpperCase() === 'PATH')?.[1]
 }
@@ -117,15 +81,7 @@ function pathExt(env: NodeJS.ProcessEnv): string | undefined {
   return env.PATHEXT ?? Object.entries(env).find(([key]) => key.toUpperCase() === 'PATHEXT')?.[1]
 }
 
-/**
- * Version annoncée par `--version`, réduite au numéro.
- *
- * Les CLI habillent leur version différemment (« 2.1.0 (Claude Code) »,
- * « codex-cli 0.5.1 »), et Sillage n'a pas à connaître chaque format : on retient le
- * premier groupe qui ressemble à une version, et à défaut la ligne telle quelle.
- * Null quand le binaire n'a rien répondu d'exploitable : présent vaut mieux
- * qu'introuvable, même sans numéro.
- */
+/** Version number from `--version`. CLI wrappers differ ('2.1.0 (Claude Code)', 'codex-cli 0.5.1'); retain the first version-like group, otherwise the line. Null for unusable responses: present without version is better than missing. */
 async function probeVersion(binary: string): Promise<string | null> {
   try {
     const launch = launchOf(binary)
@@ -144,20 +100,14 @@ async function probeVersion(binary: string): Promise<string | null> {
 async function probe(binary: string, managedDir: string): Promise<CliStatus> {
   const path = resolveBinary(binary, managedDir)
   if (!path) {
-    // Distinguer les deux cas vaut la peine : un binaire présent mais sans bit
-    // d'exécution se répare d'un `chmod`, une absence demande une installation.
+    // Distinguish missing files from nonexecutable binaries:
+    // one needs installation, the other `chmod`.
     return { found: false, reason: nodePath.isAbsolute(binary) ? 'not_executable' : 'not_on_path' }
   }
   return { found: true, path, version: await probeVersion(path) }
 }
 
-/**
- * Le CLI d'un agent : où il est, quelle version, et s'il est utilisable.
- *
- * Une instance par adaptateur, parce que le cache et la lecture unique en vol
- * appartiennent au CLI et non à l'appelant. Elle porte aussi la mise en forme pour
- * l'API : les deux adaptateurs la recomposeraient à l'identique.
- */
+/** Agent CLI location, version and usability. One instance per adapter because caches and shared in-flight probes belong to CLIs, not callers. Includes API formatting otherwise duplicated across adapters. */
 export class CliBinary {
   private readonly cache: CachedProbe<{ status: CliStatus }>
 
@@ -165,7 +115,7 @@ export class CliBinary {
     private readonly kind: AgentKind,
     readonly configured: string,
     private readonly enabled: boolean,
-    /** Préfixe npm des CLI que Sillage installe lui-même. */
+    /** Managed CLI npm prefix. */
     readonly managedDir: string,
   ) {
     this.cache = new CachedProbe(TTL_MS, async () => ({
@@ -177,22 +127,12 @@ export class CliBinary {
     return (await this.cache.read(force)).status
   }
 
-  /**
-   * Oublie la dernière sonde. À appeler quand on sait que le disque a changé : une
-   * installation qui vient d'aboutir ne doit pas rester « absente » jusqu'au bout du TTL,
-   * sans quoi l'écran re-propose d'installer ce qui vient de l'être.
-   */
+  /** Invalidates probes after known disk changes. Successful installations must not remain absent until TTL expiry or interfaces would offer installation again. */
   invalidate(): void {
     this.cache.invalidate()
   }
 
-  /**
-   * État tel que l'écran le lit.
-   *
-   * Un agent désactivé en configuration n'est pas sondé : lancer un process pour un CLI
-   * que l'utilisateur a explicitement écarté serait du travail pour rien, et « absent »
-   * répondrait à côté de la raison réelle.
-   */
+  /** Screen-visible state. Do not probe configuration-disabled agents: launching explicitly excluded CLIs wastes work, and 'missing' misstates why they are unavailable. */
   async describe(force = false): Promise<CliDescription> {
     const base = { agent: this.kind, binary: this.configured, enabled: this.enabled }
     if (!this.enabled) {
@@ -220,8 +160,8 @@ export class CliBinary {
     return {
       ...base,
       installed: true,
-      // D'où vient le binaire, pour que l'écran puisse le dire : entre un CLI du système
-      // et un que Sillage a posé, l'utilisateur n'a aucun moyen de deviner lequel tourne.
+      // Binary provenance lets users distinguish system CLIs
+      // from Sillage-managed installations.
       managed: status.path.startsWith(this.managedDir),
       path: status.path,
       version: status.version,
@@ -229,13 +169,7 @@ export class CliBinary {
     }
   }
 
-  /**
-   * Chemin absolu à lancer, ou le nom configuré si la résolution échoue.
-   *
-   * Le repli n'est pas une politesse : laisser `spawn` échouer avec son propre `ENOENT`
-   * sur le nom demandé donne un message plus juste qu'une erreur inventée ici, et évite
-   * qu'une résolution ratée à froid empêche un lancement qui aurait marché.
-   */
+  /** Absolute executable path or configured name when resolution fails. Let `spawn` produce its precise `ENOENT` rather than invent errors, and avoid blocking launches that may succeed despite failed cold resolution. */
   async executable(): Promise<string> {
     const status = await this.status()
     return status.found ? status.path : this.configured

@@ -2,16 +2,14 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from './api'
 
 export interface FileMatchDto {
-  /** Chemin relatif au répertoire de travail, tel qu'il s'écrit après le `@`. */
+  /** Working-directory-relative path as written after `@`. */
   path: string
   name: string
 }
 
 /**
- * Fichiers proposés pour une mention.
- *
- * La requête est portée par le projet et non par la conversation : la barre de saisie
- * complète déjà les mentions sur une conversation qui n'existe pas encore.
+ * Files suggested for mentions. Key the query by project rather than conversation: composers
+ * already complete mentions before a conversation exists.
  */
 export function useFileSuggestions(
   projectId: string | undefined,
@@ -29,8 +27,7 @@ export function useFileSuggestions(
       return result.files
     },
     enabled: Boolean(projectId) && query !== null,
-    // La liste des fichiers ne bouge pas à la seconde : inutile de la relire à chaque
-    // frappe sur un préfixe déjà demandé.
+    // File lists do not change every second: avoid rereading on every keystroke for a previously queried prefix.
     staleTime: 15_000,
   })
 }

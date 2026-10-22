@@ -7,11 +7,8 @@ import { useTranslate } from '../../lib/i18n'
 import { Badge, Button, cx } from '../ui'
 
 /**
- * Questions posées par l'agent.
- *
- * Un même envoi peut en porter plusieurs : elles sont toutes affichées et partent
- * ensemble, comme le fait le CLI. Le champ libre est proposé quand le CLI l'accepte,
- * puisqu'aucune liste d'options ne couvre tous les cas.
+ * Agent questions. Display and submit multiple questions together like the CLI. Offer free text
+ * where supported because option lists cannot cover every answer.
  */
 export function QuestionPrompt({
   conversationId,
@@ -36,7 +33,7 @@ export function QuestionPrompt({
 
   const pending = item.status === 'pending'
 
-  /** Réponses telles qu'elles partiront : les choix, plus la saisie libre non vide. */
+  /** Outbound answers: selected choices plus nonempty free text. */
   const collect = (): Record<string, string[]> => {
     const answers: Record<string, string[]> = {}
     for (const question of item.questions) {
@@ -55,8 +52,7 @@ export function QuestionPrompt({
     setChoices((current) => {
       const selected = current[question.id] ?? []
       if (!question.multiSelect) {
-        // Choix unique : resélectionner la même option la désélectionne, sinon on ne
-        // peut plus revenir à « je préfère écrire ma réponse ».
+        // Single-choice reselect toggles off so users can return to writing their own answer.
         return { ...current, [question.id]: selected.includes(label) ? [] : [label] }
       }
       return {
@@ -74,8 +70,7 @@ export function QuestionPrompt({
     try {
       await answerQuestion(conversationId, item.id, status, status === 'answered' ? answers : {})
     } catch (err) {
-      // L'événement `question.resolved` viendra du serveur : on n'anticipe pas l'état
-      // ici, sinon l'affichage cesserait d'être un pur fold du journal.
+      // Await question.resolved from the server rather than predicting state, preserving pure log-fold display.
       setError(err instanceof Error ? err.message : t('question.error.generic'))
       setBusy(false)
     }

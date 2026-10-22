@@ -2,11 +2,9 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
 
 /**
- * Lint volontairement réduit aux règles que le typecheck ne peut pas couvrir.
- *
- * Le compilateur ne voit rien d'un hook appelé après un retour anticipé : c'est une
- * erreur d'exécution qui n'apparaît que dans le navigateur, sous forme d'un message
- * React minifié. Ces deux règles la transforment en échec de build.
+ * Lint deliberately covers only rules beyond typechecking. The compiler misses hooks called after
+ * early returns: runtime failures otherwise appear only as minified React browser errors. These two
+ * rules turn them into build failures.
  */
 export default [
   {

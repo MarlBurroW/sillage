@@ -2,19 +2,15 @@ import { useSyncExternalStore } from 'react'
 import { languageFromPath } from './highlight'
 
 /**
- * Mode d'affichage des fichiers markdown dans l'éditeur : rendu ou source.
- *
- * Une préférence unique et non un état par onglet : on ouvre un `.md` soit pour le lire,
- * soit pour le corriger, et cette intention change rarement d'un fichier à l'autre. La
- * retenir évite de rebasculer à chaque ouverture. Elle est persistée pour la même raison.
- *
- * Hors de React parce que l'en-tête de la conversation la pilote aussi : le raccourci vers
- * les consignes de l'agent ouvre son fichier en rendu, quel que soit le mode courant.
+ * Editor Markdown display mode: preview or source. One preference rather than per-tab state: users
+ * generally open Markdown to read or edit, an intent rarely changing between files. Remember and
+ * persist it to avoid repeated switching. Outside React because the conversation header also
+ * controls it: agent-instruction shortcuts open rendered files regardless of current mode.
  */
 
 export type MarkdownView = 'preview' | 'source'
 
-/** Extensions dont le rendu est proposé. `mdx` en est exclu : c'est du JSX, pas du texte. */
+/** Extensions supporting preview. Exclude `mdx`, which is JSX rather than plain text. */
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown', 'mkd'])
 
 export function isMarkdownPath(path: string): boolean {
@@ -23,8 +19,7 @@ export function isMarkdownPath(path: string): boolean {
 
 const KEY = 'sillage.markdownView'
 
-// Le rendu par défaut : un markdown ouvert depuis l'explorateur est presque toujours de la
-// documentation, qu'on vient lire.
+// Default to preview: Markdown opened from the explorer is usually documentation intended for reading.
 let view: MarkdownView = localStorage.getItem(KEY) === 'source' ? 'source' : 'preview'
 const listeners = new Set<() => void>()
 

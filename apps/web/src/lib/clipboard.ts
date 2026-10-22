@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 
 /**
- * `navigator.clipboard` est réservé aux contextes sécurisés, comme
- * `crypto.randomUUID`. Sur `http://<ip-locale>`, il est absent : sans repli, tous
- * les boutons de copie seraient morts sur mobile.
- *
- * Le repli passe par `execCommand('copy')`, déprécié mais universellement supporté,
- * et c'est la seule façon de copier hors contexte sécurisé.
+ * `navigator.clipboard` requires a secure context, like `crypto.randomUUID`. It is absent over
+ * local-IP HTTP, disabling all copy buttons on mobile without fallback. Use deprecated but
+ * universally supported `execCommand('copy')`, the only way to copy in insecure contexts.
  */
 export async function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
@@ -14,7 +11,7 @@ export async function copyText(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text)
       return true
     } catch {
-      // Permission refusée : on tente quand même le repli ci-dessous.
+      // Permission denied: still try the fallback below.
     }
   }
 
@@ -38,10 +35,8 @@ export async function copyText(text: string): Promise<boolean> {
 export type CopyState = 'idle' | 'copied' | 'failed'
 
 /**
- * Copie et retour visuel éphémère, partagés par tous les boutons de copie.
- *
- * Le retour est indispensable : la copie ne produit aucun effet visible par
- * ailleurs, et un échec silencieux passerait pour un bouton mort.
+ * Copy with brief visual feedback shared by all copy buttons. Feedback is essential because copying
+ * has no other visible effect and silent failure resembles a dead button.
  */
 export function useCopy(): { state: CopyState; copy: (text: string) => void } {
   const [state, setState] = useState<CopyState>('idle')

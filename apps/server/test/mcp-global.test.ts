@@ -9,12 +9,7 @@ import { eq } from 'drizzle-orm'
 import { cardNotes, cards, conversations, openDatabase, projects, runMigrations, users } from '@sillage/db'
 import { EventLog } from '../src/events/event-log.js'
 
-/**
- * Le serveur MCP en mode global : lancé sans projet, au nom d'un compte, par un CLI
- * local branché sur toute l'instance (`docs/mcp.md`). Ce qui passe par le daemon est
- * couvert dans `agent-requests.test.ts` ; ici, la liste d'outils, le choix du projet et
- * les écritures directes.
- */
+/** Global MCP server launched without projects as an account through local CLIs connected to the instance (`docs/mcp.md`). Daemon-backed actions are covered in `agent-requests.test.ts`; these tests cover tool lists, project selection and direct writes. */
 
 interface ToolResult {
   content: { text: string }[]
@@ -54,7 +49,7 @@ async function harness(t: TestContext) {
 test('without a project, the server serves the whole instance in the name of one account', async (t) => {
   const { db, run } = await harness(t)
 
-  // Un seul compte : il va de soi. Deux : il faut le nommer.
+  // One account is implicit; with two, name the account.
   assert.equal(run({}, [{ method: 'ping' }]).status, 0)
   db.insert(users).values({ id: 'other', username: 'other', displayName: 'Other', passwordHash: '', createdAt: 2 }).run()
   const ambiguous = run({}, [{ method: 'ping' }])
@@ -71,11 +66,12 @@ test('the global tool list adds list_projects, a project parameter, and drops se
   const names = tools.map((tool) => tool.name)
 
   assert.equal(names[0], 'list_projects')
-  for (const absent of ['send_session_message', 'broadcast_session_message', 'notify_when_done', 'read_session_messages', 'request_decision']) {
+  for (const absent of ['rename_session', 'send_session_message', 'broadcast_session_message', 'notify_when_done', 'read_session_messages', 'request_decision']) {
     assert.ok(!names.includes(absent), absent)
   }
   const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
   assert.deepEqual(byName.list_cards!.inputSchema.required, ['project'])
+  assert.deepEqual(byName.update_card!.inputSchema.required, ['project', 'number'])
   assert.deepEqual(byName.add_card_note!.inputSchema.required, ['project', 'card', 'body'])
   assert.ok(!byName.count_active_sessions!.inputSchema.required)
   assert.ok('project' in byName.read_instructions!.inputSchema.properties)
@@ -101,7 +97,7 @@ test('each call names its project, by id, name or unambiguous fragment', async (
   assert.equal(call('list_cards', { project: 'gamma' }).isError, undefined)
   assert.match(call('list_sessions', { project: 'alph' }).content[0]!.text, /Session/)
 
-  // Sans projet là où un appel se comprend sans lui.
+  // Omit projects where calls make sense without them.
   assert.match(call('count_active_sessions', {}).content[0]!.text, /1/)
   assert.equal(call('read_instructions', { scope: 'global' }).isError, undefined)
   assert.equal(call('read_instructions', {}).isError, true)
@@ -127,7 +123,7 @@ test('direct writes carry the account, and the card comes from the call', async 
   assert.match(call('read_instructions', { project: 'alpha' }).content[0]!.text, /# Alpha/)
   assert.equal(call('write_instructions', { scope: 'global', content: '# Tous' }).isError, undefined)
 
-  // La mémoire suit le projet de l'appel, sous la racine donnée.
+  // Memory follows each call's project below the supplied root.
   assert.equal(call('write_memory', { project: 'alpha', file: 'note.md', content: '---\nname: note\ndescription: x\n---\nx' }).isError, undefined)
   assert.match(call('read_memory', { project: 'alpha' }).content[0]!.text, new RegExp(join(dir, 'memory', 'projects', 'alpha')))
   assert.match(call('read_memory', { project: 'gamma' }).content[0]!.text, /Mémoire vide/)
@@ -166,7 +162,7 @@ test('read_session and wait_for_session fold the journal into the present state 
   assert.match(state, /Dernier message de la session \(.*\) :\nJe relis la doc\./)
   assert.doesNotMatch(state, /En train d'appeler/)
 
-  // Une fois la question résolue et le tour fini, l'attente rend l'état tout de suite.
+  // Resolved questions and completed turns make waits return state immediately.
   log.append('s1', { type: 'question.resolved', requestId: 'q-1', status: 'answered', answers: {}, decidedBy: 'owner' } as never)
   db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 's1')).run()
   const started = Date.now()
@@ -175,12 +171,12 @@ test('read_session and wait_for_session fold the journal into the present state 
   assert.doesNotMatch(waited, /attend une réponse|Toujours en cours/)
   assert.match(waited, /au repos : message_session la fait reprendre/)
 
-  // Encore en cours à l'échéance : l'état est rendu tel quel, sans erreur.
+  // Still running at deadlines: return current state without errors.
   db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, 's1')).run()
   const timedOut = call('wait_for_session', { project: 'alpha', session: 's1', timeout_seconds: 1 }, env).content[0]!.text
   assert.match(timedOut, /Toujours en cours après 1 s/)
 
-  // Les nouveaux outils n'existent qu'en mode global.
+  // New tools exist only in global mode.
   const scoped = run({ SILLAGE_MCP_PROJECT: 'alpha', SILLAGE_MCP_CONVERSATION: 's1' }, [{ method: 'tools/list' }])
   const names = (JSON.parse(scoped.stdout).result.tools as { name: string }[]).map((tool) => tool.name)
   assert.ok(!names.includes('read_session') && !names.includes('message_session'))

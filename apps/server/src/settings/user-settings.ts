@@ -4,46 +4,35 @@ import {
   DEFAULT_ONBOARDING,
   storedUserSettingsSchema,
   type AgentConfig,
+  type AgentKind,
   type AppearancePrefs,
+  type BoardOrder,
   type ComposerLayout,
   type NotificationPrefs,
   type OnboardingState,
   type ProjectDefaults,
   type UserSettingsDto,
+  type NewsPreferences,
 } from '@sillage/protocol'
 
 export type UserSettings = UserSettingsDto
 
-/**
- * Les réglages d'un compte, défauts du protocole compris.
- *
- * Une seule ligne par compte, la charge étant un objet JSON : ces réglages n'ont ni
- * requête à filtrer ni jointure à faire, et une colonne par réglage ajouté imposerait
- * une migration à chaque nouvelle case à cocher.
- *
- * Relu à chaque appel, comme les réglages d'instance : on y passe à l'ouverture d'un
- * écran ou à la création d'une conversation, jamais dans un chemin chaud.
- */
+/** Account settings including protocol defaults. One JSON row per account: settings need neither filtering nor joins, and individual columns would require migrations for every new checkbox. Reread on every call like instance settings; used when opening screens or creating conversations, never on hot paths. */
 export function readUserSettings(db: Db, userId: string): UserSettings {
   const row = db.select().from(userSettings).where(eq(userSettings.userId, userId)).get()
   return storedUserSettingsSchema.parse(parseData(row?.data))
 }
 
-/**
- * Remplace le défaut d'un CLI sans toucher à celui de l'autre.
- *
- * La ligne est relue avant d'être réécrite : la charge JSON portera d'autres réglages,
- * et un `insert` bâti sur le seul corps de la requête les effacerait.
- */
+/** Replaces one CLI's defaults without affecting the other. Reread before rewriting: JSON will contain other settings, and inserts based solely on request bodies would erase them. */
 export function writeUserAgentDefault(db: Db, userId: string, config: AgentConfig): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({
     ...current,
     agentDefaults: {
       ...current.agentDefaults,
-      // Les répertoires supplémentaires désignent des dossiers d'un projet précis :
-      // les figer dans un défaut de compte les emmènerait dans des conversations qui
-      // n'ont rien à voir.
+      // Additional directories belong to specific projects:
+      // fixing them in account defaults would carry them into
+      // unrelated conversations.
       [config.agent]: { ...config, additionalDirectories: [] },
     },
   })
@@ -54,13 +43,7 @@ export function writeUserAgentDefault(db: Db, userId: string, config: AgentConfi
     .run()
 }
 
-/**
- * Les projets repliés dans la sidebar, remplacés en bloc.
- *
- * La liste entière et non un identifiant à basculer : c'est un état d'affichage que le
- * client connaît déjà en entier, et une bascule côté serveur ferait dépendre le résultat
- * de l'ordre d'arrivée de deux onglets ouverts sur la même sidebar.
- */
+/** Replaces the whole set of collapsed sidebar projects. Send the entire client-known display state rather than an ID to toggle: server-side toggling would make results depend on arrival order from tabs sharing the sidebar. */
 export function writeCollapsedProjects(db: Db, userId: string, projectIds: string[]): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, collapsedProjects: [...new Set(projectIds)] })
@@ -71,12 +54,33 @@ export function writeCollapsedProjects(db: Db, userId: string, projectIds: strin
     .run()
 }
 
-/**
- * L'état de la visite, remplacé en bloc.
- *
- * Appelé aussi à la création d'un compte, pour l'armer : c'est la seule façon pour un
- * compte d'avoir la visite due, les comptes d'avant la visite ne la voyant jamais.
- */
+/** Project board order without affecting other projects. */
+export function writeBoardOrder(db: Db, userId: string, projectId: string, order: BoardOrder): void {
+  const current = readUserSettings(db, userId)
+  const boardOrder = { ...current.boardOrder }
+  // Manual order is the default; storing it would only enlarge the payload.
+  if (order === 'manual') delete boardOrder[projectId]
+  else boardOrder[projectId] = order
+  const data = JSON.stringify({ ...current, boardOrder })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** Replaces the set of CLIs hidden while missing, like collapsed projects. */
+export function writeHiddenAgents(db: Db, userId: string, agents: AgentKind[]): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, hiddenAgents: [...new Set(agents)] })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** Replaces the whole tour state. Also called during account creation to make the tour due: this is the only way to schedule it, so accounts predating the tour never see it. */
 export function writeOnboarding(db: Db, userId: string, onboarding: OnboardingState): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, onboarding })
@@ -87,7 +91,7 @@ export function writeOnboarding(db: Db, userId: string, onboarding: OnboardingSt
     .run()
 }
 
-/** Les défauts des projets à venir, remplacés en bloc. */
+/** Replaces all defaults for future projects. */
 export function writeProjectDefaults(db: Db, userId: string, projectDefaults: ProjectDefaults): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, projectDefaults })
@@ -98,12 +102,12 @@ export function writeProjectDefaults(db: Db, userId: string, projectDefaults: Pr
     .run()
 }
 
-/** La visite due, à sa première étape : ce qu'un compte reçoit en naissant. */
+/** Initial due tour state at its first step, assigned to new accounts. */
 export function armOnboarding(db: Db, userId: string): void {
   writeOnboarding(db, userId, { ...DEFAULT_ONBOARDING, pending: true })
 }
 
-/** Le dossier parent proposé à la prochaine création de projet, ou `null` pour l'oublier. */
+/** Parent directory suggested for the next project, or `null` to forget it. */
 export function writeProjectsDir(db: Db, userId: string, projectsDir: string | null): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, projectsDir })
@@ -114,7 +118,7 @@ export function writeProjectsDir(db: Db, userId: string, projectsDir: string | n
     .run()
 }
 
-/** Thème et curseurs, remplacés en bloc : l'interface envoie toujours l'état complet. */
+/** Replaces theme and sliders together: the interface always sends complete state. */
 export function writeAppearance(db: Db, userId: string, appearance: AppearancePrefs): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, appearance })
@@ -125,7 +129,7 @@ export function writeAppearance(db: Db, userId: string, appearance: AppearancePr
     .run()
 }
 
-/** Les sortes de notifications voulues, remplacées en bloc comme l'apparence. */
+/** Replaces notification preferences together, like appearance. */
 export function writeNotificationPrefs(db: Db, userId: string, notifications: NotificationPrefs): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, notifications })
@@ -136,7 +140,7 @@ export function writeNotificationPrefs(db: Db, userId: string, notifications: No
     .run()
 }
 
-/** Les réglages épinglés sous le composer, par CLI, remplacés en bloc. */
+/** Replaces settings pinned below the composer, per CLI. */
 export function writeComposerLayout(db: Db, userId: string, composerLayout: ComposerLayout): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, composerLayout })
@@ -153,8 +157,14 @@ function parseData(data: string | undefined): unknown {
   try {
     return JSON.parse(data)
   } catch {
-    // Une charge illisible vaut absente : les défauts reprennent la main, et la
-    // prochaine écriture depuis l'interface la remplacera.
+    // Treat unreadable payloads as absent: defaults take over and the next
+    // interface write replaces them.
     return {}
   }
+}
+
+export function writeNewsPreferences(db: Db, userId: string, news: NewsPreferences): void {
+  const data = JSON.stringify({ ...readUserSettings(db, userId), news })
+  db.insert(userSettings).values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } }).run()
 }

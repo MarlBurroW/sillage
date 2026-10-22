@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  Agent launchd utilisateur (macOS), le pendant de sillage.service.tmpl, rendu par
-  install.sh dans ~/Library/LaunchAgents. Les placeholders __NODE__, __NODE_DIR__,
-  __INSTALL_DIR__, __DATA_DIR__, __HOME__, __SHELL__ et __LANG__ y deviennent des valeurs
-  absolues : launchd n'étend ni ~ ni les variables d'environnement.
--->
+<!-- User launchd agent (macOS), counterpart of sillage.service.tmpl, rendered by
+   install.sh into ~/Library/LaunchAgents. Placeholders __NODE__, __NODE_DIR__,
+   __INSTALL_DIR__, __DATA_DIR__, __HOME__, __SHELL__, and __LANG__ become absolute
+   values: launchd expands neither ~ nor environment variables. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -26,36 +24,36 @@
     <string>production</string>
     <key>SILLAGE_WEB_ROOT</key>
     <string>__INSTALL_DIR__/current/web</string>
-    <!-- Comme sous systemd : signale le layout de l'installeur, donc la mise à jour intégrée. -->
+    <!-- Like systemd: identifies installer layout, enabling integrated updates. -->
     <key>SILLAGE_INSTALL_DIR</key>
     <string>__INSTALL_DIR__</string>
-    <!-- Le PATH de launchd s'arrête à /usr/bin:/bin:/usr/sbin:/sbin : ni Homebrew, ni
-         ~/.local/bin, ni les binaires npm globaux, donc aucun CLI agent trouvable. -->
+    <!-- launchd PATH stops at /usr/bin:/bin:/usr/sbin:/sbin: no Homebrew,
+       ~/.local/bin, or global npm binaries, so no discoverable agent CLI. -->
     <key>PATH</key>
     <string>__NODE_DIR__:__HOME__/.local/bin:__HOME__/.npm-global/bin:__HOME__/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <!-- Le shell des terminaux de Sillage, et une locale : launchd n'en pose aucune, et
-         sans elle zsh affiche les accents en séquences d'octets. Repris tous deux du
-         shell qui a lancé l'installeur. -->
+    <!-- Sillage terminal shell and locale: launchd supplies neither; without a locale
+       zsh displays accented characters as byte sequences. Both come from the
+       shell that launched the installer. -->
     <key>SHELL</key>
     <string>__SHELL__</string>
     <key>LANG</key>
     <string>__LANG__</string>
   </dict>
 
-  <!-- Démarre à l'ouverture de session. -->
+  <!-- Start at sign-in. -->
   <key>RunAtLoad</key>
   <true/>
-  <!-- Relancé quelle que soit la sortie : la mise à jour intégrée s'arrête d'elle-même
-       et compte sur cette relance. launchd espace les démarrages d'au moins 10 s, ce
-       qui suffit à contenir un service qui meurt au lancement. -->
+  <!-- Restart regardless of exit: integrated updates stop themselves and rely on
+     restart. launchd spaces launches by at least 10 seconds, containing startup
+     crash loops. -->
   <key>KeepAlive</key>
   <true/>
-  <!-- Sans type, launchd bride le CPU et les E/S du service et de ses enfants, c'est-à-dire
-       des agents et des builds qu'ils lancent. -->
+  <!-- Without type, launchd throttles CPU/I/O of service and children, including
+     agents and their builds. -->
   <key>ProcessType</key>
   <string>Interactive</string>
 
-  <!-- Pas de journal système à consulter comme sous systemd : un fichier, sans rotation. -->
+  <!-- No system journal like systemd: a file without rotation. -->
   <key>StandardOutPath</key>
   <string>__DATA_DIR__/logs/sillage.log</string>
   <key>StandardErrorPath</key>

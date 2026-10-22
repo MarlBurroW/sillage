@@ -1,15 +1,26 @@
-# Hiérarchie de l’activité
+# Activity hierarchy
 
-Le titre de la session devient le premier niveau de lecture ; le projet reste visible sous chaque titre. La barre latérale affiche directement les quatre premières sessions actives, avec les attentes en tête, puis un accès à la liste complète. Le repli global reste disponible.
+The session title becomes the primary reading level; the project stays visible
+below each title. The sidebar directly shows the first four active sessions,
+waiting ones first, then access to the full list. Global collapse remains available.
 
-Dans la vue globale, les sections distinguent les demandes à débloquer, le travail en cours et les fins de tour. Le statut est aligné à droite sur ordinateur et rejoint le projet sous le titre sur téléphone. La sélection utilise un fond neutre et un liseré, pour ne pas concurrencer les attentes. Les couleurs et la police restent celles du thème Sillage.
+In the global view, sections distinguish requests needing input, ongoing work,
+and turn completions. Status aligns right on desktop and joins the project below
+the title on phones. Selection uses a neutral background and edge line to avoid
+competing with waiting states. Colors and font remain those of the Sillage theme.
 
-Vérifications : `NODE_ENV=development pnpm typecheck`, `NODE_ENV=development pnpm test` (142 tests), `NODE_ENV=development pnpm lint`, `NODE_ENV=development node scripts/activity-ui-check.mjs`.
+Checks: `NODE_ENV=development pnpm typecheck`, `NODE_ENV=development pnpm test`
+(142 tests), `NODE_ENV=development pnpm lint`,
+`NODE_ENV=development node scripts/activity-ui-check.mjs`.
 
-Playwright utilise une base temporaire et des statuts simulés : attente prioritaire, accès direct, repli, filtres, fins de tour, arrière-plan, erreurs, ajout d’une session, restauration du focus, absence de débordement horizontal. Captures en 1440 × 900 et 390 × 844, avec thèmes sombre et clair pour la vue globale. Aucun CLI lancé ni redémarrage de production.
+Playwright uses a temporary database and simulated statuses: waiting priority,
+direct access, collapse, filters, turn completions, background, errors, adding a
+session, focus restoration, no horizontal overflow. Screenshots at 1440 × 900
+and 390 × 844, with dark and light themes for the global view. No CLI started or
+production restart.
 
-- [Barre latérale](activity-expanded.png)
-- [Vue globale sombre](activity-overview.png)
-- [Vue globale claire](activity-overview-light.png)
-- [Navigation mobile](activity-mobile.png)
-- [Vue globale mobile](activity-overview-mobile.png)
+- [Sidebar](activity-expanded.png)
+- [Dark global view](activity-overview.png)
+- [Light global view](activity-overview-light.png)
+- [Mobile navigation](activity-mobile.png)
+- [Mobile global view](activity-overview-mobile.png)

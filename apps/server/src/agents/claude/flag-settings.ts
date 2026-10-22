@@ -1,23 +1,7 @@
 import type { Query, Settings } from '@anthropic-ai/claude-agent-sdk'
 import type { ClaudeConfig } from '@sillage/protocol'
 
-/**
- * La couche « flag » des réglages du CLI, celle de `--settings` au lancement et
- * d'`applyFlagSettings` à chaud : ce que la conversation impose par-dessus les fichiers
- * de réglages du poste.
- *
- * Le mode rapide y est toujours écrit, même à faux : c'est la conversation qui décide,
- * pas le `settings.json` de l'utilisateur, et le CLI exige de toute façon que la
- * session le demande (`sdk_opt_in_required`, relevé à la sonde). Ultracode n'est écrit
- * qu'allumé : éteint, il n'a rien à annoncer. Les deux autres clés sont omises quand la
- * configuration ne dit rien, pour laisser le CLI à son défaut.
- *
- * Les règles `deny` de la bibliothèque de skills n'y sont posées qu'au lancement, comme
- * le masque des consignes du dépôt quand le projet tient les siennes dans SILLAGE.md et
- * le dossier de mémoire. `applyFlagSettings` ne retire que les clés qu'on lui passe à
- * `null` : ne jamais nommer `permissions`, `claudeMdExcludes` ni `autoMemoryDirectory`
- * à chaud suffit à les garder.
- */
+/** CLI flag settings from startup `--settings` and live `applyFlagSettings`, overriding host files. Always write fast mode even false so conversations decide rather than settings.json; SDK opt-in is required (`sdk_opt_in_required`, probed). Write Ultracode only when enabled; omit other unspecified keys to retain CLI defaults. Library deny rules, repository instruction masks and memory directories are launch-only. Live `applyFlagSettings` removes only explicitly null keys, so omit `permissions`, `claudeMdExcludes` and `autoMemoryDirectory` to preserve them. */
 export function flagSettings(
   config: ClaudeConfig,
   deny: string[] = [],
@@ -31,28 +15,23 @@ export function flagSettings(
     ...(config.advisorModel ? { advisorModel: config.advisorModel } : {}),
     ...(deny.length > 0 ? { permissions: { deny } } : {}),
     ...(excludes.length > 0 ? { claudeMdExcludes: excludes } : {}),
-    // La mémoire automatique de Claude, rangée chez Sillage pour que Codex la partage et
-    // que l'interface la montre. Claude l'écrit comme la sienne, sans permission.
+    // Claude automatic memory stored by Sillage for Codex sharing and interface display;
+    // Claude writes normally without permission prompts.
     ...(memoryDir ? { autoMemoryDirectory: memoryDir } : {}),
   }
 }
 
-/**
- * La même couche, à chaud, pour passer de `previous` à `next`. `null` retire une clé,
- * donc rend le CLI à son défaut, là où l'omettre laisserait la valeur précédente en
- * place. Le mode rapide ne prend effet qu'au tour suivant, et son état revient par le
- * `result` : sondé, `applyFlagSettings({ fastMode: true })` suffit, sans relancer.
- */
+/** Live flag transition from `previous` to `next`. Null removes keys and restores CLI defaults, whereas omission retains old values. Fast mode applies next turn and reports via `result`; probes confirm `applyFlagSettings({ fastMode: true })` needs no restart. */
 export function liveFlagSettings(
   previous: ClaudeConfig,
   next: ClaudeConfig,
 ): Parameters<Query['applyFlagSettings']>[0] {
-  // Ultracode quand il change : chaque bascule glisse au modèle un avis « Ultracode is
-  // on/off », relevé à la sonde, qu'un autre réglage n'a pas à répéter. `null` l'éteint
-  // en gardant l'effort courant, que la configuration porte de toute façon. Et quand
-  // l'effort change alors qu'il est allumé : depuis 2.1.284, un `effortLevel` qui
-  // déplace le niveau sans la clé `ultracode` l'éteint (sondé sur 2.1.286 et 2.1.291),
-  // pendant que le composer continuerait de l'afficher.
+  // Send Ultracode only on changes: toggles inject 'Ultracode is on/off' model notices
+  // (probed) that unrelated settings need not repeat. Null disables it
+  // while retaining configured effort. Also resend when effort changes while enabled:
+  // since 2.1.284, changing `effortLevel` without resending `ultracode` disables it
+  // (probed 2.1.286 and 2.1.291),
+  // while the composer would still display it as enabled.
   const ultracodeKey =
     next.ultracode !== previous.ultracode || (next.ultracode && next.effort !== previous.effort)
   return {

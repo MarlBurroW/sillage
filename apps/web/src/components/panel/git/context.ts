@@ -3,17 +3,14 @@ import { ApiRequestError } from '../../../lib/api'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 
 /**
- * Ce que l'onglet Git dit à la suite d'une action : un échec, ou le mot de git quand
- * il a quelque chose à dire (« Already up to date. »).
- *
- * Un avis peut proposer un remède : un push rejeté offre de forcer, une branche non
- * fusionnée de la supprimer quand même. C'est la différence avec une erreur affichée
- * telle quelle, qui oblige à retrouver l'action et à deviner l'option.
+ * Git action feedback: failures or useful native messages such as Already up to date. Notices may
+ * offer remedies like force-pushing or deleting unmerged branches, unlike raw errors requiring
+ * users to rediscover actions and options.
  */
 export interface GitNotice {
   tone: 'critical' | 'info' | 'positive'
   text: string
-  /** Code d'erreur du serveur, pour que l'interface reconnaisse le cas. */
+  /** Server error code for UI case recognition. */
   code?: string
   actions?: { label: string; run: () => void }[]
 }
@@ -21,7 +18,7 @@ export interface GitNotice {
 export interface GitPaneContext {
   scope: WorkspaceScope
   notify: (notice: GitNotice | null) => void
-  /** Absent quand aucun éditeur n'est à portée. */
+  /** Absent when no editor is accessible. */
   openFile?: (path: string) => void
 }
 
@@ -34,7 +31,7 @@ export function useGitPane(): GitPaneContext {
   return useContext(GitContext)
 }
 
-/** L'avis critique qu'un échec d'action produit, code compris. */
+/** Critical notice produced by an action failure, including its code. */
 export function failureNotice(error: unknown, fallback: string): GitNotice {
   if (error instanceof ApiRequestError) {
     return { tone: 'critical', text: error.message, code: error.code }

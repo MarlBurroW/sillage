@@ -5,11 +5,9 @@ import { Button } from './Button'
 import { cx } from './cx'
 
 /**
- * Demande de confirmation avant une action qu'on ne devine pas.
- *
- * Le corps explique ce qui va se passer, pas seulement ce qu'on s'apprête à cliquer :
- * une action dont le nom suffit (« Fermer ») n'a rien à faire ici, et une action dont
- * le nom ne suffit pas mérite mieux qu'un « Êtes-vous sûr ? ».
+ * Confirmation for actions with nonobvious consequences. Explain what happens rather than merely
+ * repeating the button. Obvious Close actions need none; consequential actions deserve more than
+ * Are you sure.
  */
 export function ConfirmDialog({
   open,
@@ -26,7 +24,7 @@ export function ConfirmDialog({
   title: string
   confirmLabel: string
   onConfirm: () => void
-  /** `critical` pour ce qui détruit : la couleur doit dire ce que le libellé annonce. */
+  /** Use critical for destructive actions so color reinforces the label. */
   tone?: 'accent' | 'critical'
   busy?: boolean
   children: ReactNode

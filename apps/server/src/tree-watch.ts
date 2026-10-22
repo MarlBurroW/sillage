@@ -1,21 +1,8 @@
 import { watch, type FSWatcher } from 'node:fs'
 
-/**
- * Veille sur les dossiers que l'explorateur affiche.
- *
- * Non récursive, et seulement sur les niveaux dépliés : une veille récursive sur un
- * répertoire de travail poserait une veille inotify par sous-dossier, `node_modules`
- * compris, et épuiserait le quota de la machine sur un seul dépôt. Le client déclare
- * ce qu'il regarde, ce qui borne le coût à ce qui est réellement à l'écran.
- *
- * Les veilles sont partagées par chemin absolu et comptées : deux onglets ouverts sur
- * le même worktree, ou deux conversations qui le partagent, n'en posent qu'une.
- */
+/** Watches explorer-visible directories, nonrecursively and only at expanded levels. Recursive inotify across workspaces including `node_modules` would exhaust machine quotas for one repository. Clients declare viewed directories, bounding cost by visible content. Share and reference-count absolute-path watches across tabs and conversations using the same tree. */
 
-/**
- * Une écriture émet plusieurs événements, et une commande comme `npm install` en émet
- * des milliers. Ce délai les regroupe en une seule relecture du niveau.
- */
+/** Writes emit multiple events and `npm install` emits thousands; debounce into one directory reload. */
 const DEBOUNCE_MS = 250
 
 interface Shared {
@@ -33,13 +20,7 @@ function fire(absolute: string): void {
   for (const listener of entry.listeners) listener()
 }
 
-/**
- * Suit un dossier et rend de quoi cesser de le suivre.
- *
- * Un dossier absent ou illisible rend une veille inerte plutôt qu'une erreur : le
- * client peut demander un niveau qui vient d'être supprimé, et c'est la veille de son
- * parent qui le lui apprendra.
- */
+/** Watches directories and returns unsubscribe functions. Missing or unreadable directories produce inert watches rather than errors: clients may request newly deleted levels whose parent watches report removal. */
 export function watchDirectory(absolute: string, onChange: () => void): () => void {
   let entry = shared.get(absolute)
 
@@ -61,9 +42,9 @@ export function watchDirectory(absolute: string, onChange: () => void): () => vo
       created.timer.unref()
     })
 
-    // Dossier supprimé, ou limite d'inotify atteinte : la veille est morte et ne
-    // reviendra pas. Les abonnés sont prévenus une dernière fois, ce qui leur fait
-    // relire le niveau et découvrir sa disparition.
+    // Deleted directories or exhausted inotify limits permanently kill watches.
+    // Notify subscribers once more so reloading
+    // reveals the disappearance.
     watcher.on('error', () => {
       watcher.close()
       shared.delete(absolute)
@@ -80,8 +61,8 @@ export function watchDirectory(absolute: string, onChange: () => void): () => vo
 
     if (held.timer) clearTimeout(held.timer)
     held.watcher.close()
-    // La veille en cours a pu être remplacée entre-temps après une erreur : ne retirer
-    // que celle qu'on tient.
+    // Errors may have replaced the current watch in the meantime: remove only
+    // the watch still held here.
     if (shared.get(absolute) === held) shared.delete(absolute)
   }
 }

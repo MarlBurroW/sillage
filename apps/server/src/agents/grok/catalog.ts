@@ -7,14 +7,7 @@ import { agentProcessEnv } from '../process-env.js'
 import { GROK_ISOLATION_ENV } from './launch.js'
 import { fields } from './tools.js'
 
-/**
- * Catalogue de Grok Build : ses modèles, leurs efforts et ses commandes en `/`.
- *
- * Lu dans la réponse à `initialize` d'un `grok agent stdio` jetable, qui annonce les
- * modèles du compte connecté (`_meta.modelState`) et les commandes intégrées
- * (`_meta.availableCommands`), sans ouvrir de session : en ouvrir une la laisserait dans
- * l'historique de Grok. Mis en cache parce que chaque lecture démarre un process.
- */
+/** Grok Build models, efforts and slash-command catalog. Read disposable `grok agent stdio` initialization `_meta.modelState` and `_meta.availableCommands` without opening sessions that would persist in history. Cache because every read launches a process. */
 
 export interface GrokModel {
   id: string
@@ -62,7 +55,7 @@ export class GrokCatalog {
   }
 }
 
-/** Commandes de Grok dans la forme commune, telles que l'ACP les annonce. */
+/** Grok commands normalized from ACP announcements. */
 export function toSlashCommands(listed: unknown): SlashCommandDto[] {
   return usableSlashCommands((Array.isArray(listed) ? listed : []).flatMap((entry) => {
     const command = fields(entry)
@@ -88,7 +81,7 @@ function readModels(state: Record<string, unknown>): Omit<GrokListing, 'commands
       name: typeof model.name === 'string' ? model.name : model.modelId,
       description: typeof model.description === 'string' ? model.description : '',
       contextTokens: typeof meta.totalContextTokens === 'number' ? meta.totalContextTokens : null,
-      // Grok les liste du plus haut au plus bas ; le composer les attend dans l'autre sens.
+      // Grok lists highest effort first; composers expect lowest first.
       efforts: efforts
         .filter((effort) => typeof effort.id === 'string')
         .map((effort) => ({

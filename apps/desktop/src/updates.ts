@@ -7,34 +7,29 @@ import type { DesktopUpdateState, DesktopUpdateUnsupportedReason } from '@sillag
 import { UPDATE_CHANNELS } from './ipc'
 import { MacBundleUpdater, bundleIsReplaceable } from './mac-updater'
 
-/** Laisser le serveur et la fenêtre démarrer avant d'aller voir GitHub. */
+/** Let the server and window start before contacting GitHub. */
 const FIRST_CHECK_DELAY_MS = 10_000
-/** Une app de bureau reste ouverte des jours : elle revérifie d'elle-même. */
+/** Desktop apps can stay open for days, so check again periodically. */
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 const LOG_ROTATE_BYTES = 1024 * 1024
 
 export interface UpdateOptions {
   userData: string
   logDir: string
-  /** Seule l'interface de l'app pilote la mise à jour. */
+  /** Only the application UI may control updates. */
   isAppUrl(url: string): boolean
   stopServer(): Promise<void>
-  /** Relance le serveur quand l'installation n'a pas pu partir après son arrêt. */
+  /** Restart the server if installation fails after it has stopped. */
   restartServer(): Promise<void>
 }
 
 /**
- * La mise à jour de l'app de bureau, par electron-updater et les releases GitHub
- * (`publish` dans electron-builder.yml, qui écrit les latest*.yml publiés avec les paquets).
- *
- * L'app cherche au lancement puis toutes les quatre heures, télécharge ce qu'elle trouve,
- * et l'installe en se fermant ; l'écran « À propos » propose aussi de redémarrer tout de
- * suite. Chaque format a son updater : l'installeur NSIS sous Windows, l'AppImage ou le
- * paquet .deb sous Linux, et sous macOS le nôtre (`mac-updater.ts`), Squirrel.Mac refusant
- * une app signée ad hoc. Le journal va dans `updater.log`, à côté de celui du serveur.
- *
- * SILLAGE_DESKTOP_UPDATE_FEED remplace les releases par un dossier servi en HTTP, celui
- * du contrôle de mise à jour (scripts/desktop-update-check.mjs).
+ * Update the entire desktop app from GitHub releases (electron-builder writes the
+ * app-update.yml and latest*.yml metadata). Check on launch and every four hours,
+ * download in the background, and install on quit or from About.
+ * Windows uses NSIS; Linux uses AppImage or .deb. macOS uses our bundle updater
+ * because Squirrel.Mac rejects ad hoc signatures. Logs go beside the server log.
+ * SILLAGE_DESKTOP_UPDATE_FEED overrides GitHub for the end-to-end check.
  */
 export function setupUpdates(options: UpdateOptions): void {
   const resultFile = join(options.userData, 'update-result')
@@ -50,10 +45,9 @@ export function setupUpdates(options: UpdateOptions): void {
   }
 
   const check = async () => {
-    // Une version prête s'installera à la fermeture ; une plus récente sera trouvée au
-    // lancement suivant, sans retélécharger ni réextraire celle-ci toutes les quatre heures.
+    // A ready update installs on quit; discover newer versions at the next launch.
     if (!updater || state.status === 'downloading' || state.status === 'ready' || state.status === 'installing') return
-    // L'échec arrive aussi par l'événement `error`, qui le publie.
+    // The error event publishes failures.
     await updater.checkForUpdates().catch(() => undefined)
   }
 
@@ -61,11 +55,9 @@ export function setupUpdates(options: UpdateOptions): void {
     if (!updater || state.status !== 'ready') return
     publish({ status: 'installing', version: state.version })
     const appImage = updater instanceof AppImageUpdater ? process.env.APPIMAGE : undefined
-    // L'installeur Windows tue, une seconde après son lancement, tout process lancé du
-    // dossier de l'app, serveur compris : celui-ci doit avoir rangé ses sessions avant.
+    // NSIS kills processes in the install directory shortly after starting; stop the server first.
     if (process.platform === 'win32') await options.stopServer()
-    // Relancée par l'updater, la nouvelle AppImage trouverait l'ancienne encore là, et son
-    // verrou d'instance unique : Electron, lui, attend que celle-ci soit sortie.
+    // Electron waits for this instance to exit before relaunching, avoiding the single-instance lock.
     const installed = updater.install(true, appImage === undefined)
     if (!installed) {
       if (process.platform === 'win32') await options.restartServer()
@@ -87,14 +79,12 @@ export function setupUpdates(options: UpdateOptions): void {
 
   if (!updater) return
   updater.logger = fileLogger(join(options.logDir, 'updater.log'))
-  // Le .deb s'installe par dpkg, donc avec le mot de passe de l'administrateur : on ne le
-  // réclame pas à la fermeture, seulement quand l'utilisateur demande la mise à jour.
+  // The .deb requires administrator permission; ask only on explicit installation, never on quit.
   updater.autoInstallOnAppQuit = !(updater instanceof DebUpdater)
   const feed = process.env.SILLAGE_DESKTOP_UPDATE_FEED
   if (feed) {
     updater.setFeedURL({ provider: 'generic', url: feed })
-    // Les blockmaps se retrouvent par le numéro de version dans l'URL, absent d'un dossier
-    // de test : le téléchargement différentiel n'y a rien à comparer.
+    // Test feeds have no versioned URLs for differential blockmap downloads.
     updater.disableDifferentialDownload = true
   }
 
@@ -110,8 +100,7 @@ export function setupUpdates(options: UpdateOptions): void {
   )
   updater.on('error', (err: Error & { code?: string }) => {
     if (state.status === 'ready') return
-    // La release est publiée avant que ses paquets de bureau n'y soient ajoutés : pendant
-    // ce temps, il n'y a simplement rien à installer.
+    // Release packages may still be uploading when the release first appears.
     if (err.code === 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND') {
       publish({ status: 'idle', checkedAt: new Date().toISOString() })
       return
@@ -125,37 +114,33 @@ export function setupUpdates(options: UpdateOptions): void {
 }
 
 function createUpdater(resultFile: string): BaseUpdater | DesktopUpdateUnsupportedReason {
-  // Lancée depuis le dépôt, ou build de CI (0.0.0-dev) : rien de publié à quoi se comparer.
+  // Development builds have no published release to compare against.
   if (!app.isPackaged || !/^\d+\.\d+\.\d+$/.test(app.getVersion())) return 'development'
   if (process.platform === 'win32') {
     const updater = new NsisUpdater()
-    // L'installeur complet est publié, pas l'installeur web qui irait chercher le reste.
+    // We publish the full installer, not a web installer fetching additional packages.
     updater.disableWebInstaller = true
     return updater
   }
   if (process.platform === 'darwin') return bundleIsReplaceable() ? new MacBundleUpdater(resultFile) : 'location'
-  // L'AppImage d'abord : la cible .deb écrit `package-type` dans le dossier qu'elle partage
-  // avec l'AppImage, qui peut donc l'embarquer aussi. Le dossier décompressé (`*-unpacked`),
-  // qui le porte également, n'est installé nulle part.
+  // Check APPIMAGE first: the .deb target writes package-type into the shared package
+  // folder, so AppImages can contain it too. An unpacked directory is not installed.
   if (process.env.APPIMAGE) return new AppImageFileUpdater()
   if (packageType() === 'deb' && !/-unpacked[\\/]/.test(app.getPath('exe'))) return new DebUpdater()
   return 'package'
 }
 
 /**
- * L'AppImage remplacée sans être exécutée. electron-updater lance la nouvelle une fois
- * (APPIMAGE_EXIT_AFTER_INSTALL) pour son contrat de licence, que Sillage n'a pas ; extraite
- * plutôt que montée (APPIMAGE_EXTRACT_AND_RUN, là où FUSE manque), elle liste alors chaque
- * fichier sur sa sortie, qui déborde le tampon d'execFileSync : l'installation passait
- * pour ratée, le fichier déjà remplacé.
+ * Replace the AppImage without running it for a license prompt we do not use.
+ * With APPIMAGE_EXTRACT_AND_RUN, that extra launch can overflow execFileSync output
+ * and report failure after the file was already replaced.
  */
 class AppImageFileUpdater extends AppImageUpdater {
   protected override doInstall(): boolean {
     const appImage = process.env.APPIMAGE
     const update = this.installerPath
     if (!appImage || !isAbsolute(appImage) || !update) throw new Error('No AppImage to replace.')
-    // Copiée à côté d'abord (mv copie d'un système de fichiers à l'autre), puis renommée
-    // d'un coup : l'AppImage n'est jamais à moitié écrite, et l'app en cours garde l'ancienne.
+    // Stage beside the target first, then rename atomically, including across filesystems.
     const staged = `${appImage}.update`
     execFileSync('mv', ['-f', update, staged])
     chmodSync(staged, 0o755)
@@ -173,9 +158,8 @@ function packageType(): string | null {
 }
 
 /**
- * Le verdict du remplacement de l'app sous macOS, que le script d'installation a laissé
- * en se terminant après la fermeture de l'app. Lu une fois : un échec s'affiche au
- * lancement qui suit, puis disparaît à la recherche suivante.
+ * Read the macOS installer result left after the old app exited. Display failures
+ * on next launch; a new check clears them.
  */
 function previousInstall(file: string): DesktopUpdateState | null {
   let result: string
@@ -198,14 +182,14 @@ function fileLogger(file: string): Logger {
   try {
     if (statSync(file).size > LOG_ROTATE_BYTES) renameSync(file, `${file}.1`)
   } catch {
-    // Pas encore de journal.
+    // No log yet.
   }
   const write = (level: string) => (message?: unknown) => {
     const text = message instanceof Error ? (message.stack ?? message.message) : String(message)
     try {
       appendFileSync(file, `${new Date().toISOString()} ${level} ${text}\n`)
     } catch {
-      // Un journal qu'on ne peut pas écrire ne doit pas arrêter la mise à jour.
+      // Logging failures must not interrupt updates.
     }
   }
   return { info: write('info'), warn: write('warn'), error: write('error'), debug: write('debug') }

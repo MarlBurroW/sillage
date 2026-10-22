@@ -1,35 +1,34 @@
 import type { AgentKind } from './events.js'
 
 /**
- * Ce que chaque CLI sait faire, au-delà du contrat commun.
+ * What each CLI can do beyond the shared contract.
  *
- * Source unique, partagée par le serveur et le frontend : l'UI ne propose pas un
- * geste que le CLI refuserait (le bouton n'existe pas plutôt que d'être offert puis
- * refusé), et le serveur garde le refus à l'exécution comme filet. Vérifier une
- * capacité ici plutôt que `agent === 'codex'` : un prochain CLI hérite du bon
- * comportement en remplissant sa ligne, sans chasse aux comparaisons de noms.
+ * Single source shared by server and frontend: the UI does not offer actions the CLI would
+ * reject (the button is absent rather than offered then refused), and the server still rejects
+ * unsupported actions at runtime as a safety net. Check capabilities here rather than `agent
+ * === 'codex'`: future CLIs inherit correct behavior by filling in their row, without hunting
+ * down name comparisons.
  */
 export interface AgentCapabilities {
-  /** Infléchir le tour en cours sans l'interrompre ni en ouvrir un autre. */
+  /** Steer the current turn without interrupting it or opening another. */
   steer: boolean
-  /** Le CLI soumet ses plans à validation avant d'exécuter (`plan.review_requested`). */
+  /** The CLI submits plans for approval before execution (`plan.review_requested`). */
   planReview: boolean
   /**
-   * Le CLI persiste ses sessions locales dans un format que Sillage sait relire :
-   * import de sessions commencées au CLI, et resynchronisation du journal après un
-   * passage par lui.
+   * The CLI persists local sessions in a format Sillage can read: import CLI-started sessions
+   * and resynchronize the journal after using the CLI directly.
    */
   cliSessions: boolean
   /**
-   * Le CLI sait arrêter un travail de fond (`background.updated`) sur demande, par
-   * l'identifiant que la liste porte. La clôture revient par le flux ordinaire, en
-   * `background.updated` sans la tâche arrêtée.
+   * The CLI can stop a background job (`background.updated`) on request by its listed ID.
+   * Completion arrives through the normal stream as `background.updated` without the stopped
+   * job.
    */
   stopBackgroundTask: boolean
   /**
-   * Le CLI sait lister ses commandes en `/` pour un dossier sans qu'une session
-   * tourne : le brouillon d'une conversation les propose avant le premier tour.
-   * Codex n'a pas de commandes en `/` ; ses compétences en `$` arrivent au premier tour.
+   * The CLI can list slash commands for a directory without a running session: conversation
+   * drafts offer them before the first turn. Codex has no slash commands; its `$` skills arrive
+   * on the first turn.
    */
   draftCommands: boolean
 }
@@ -49,9 +48,9 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     stopBackgroundTask: false,
     draftCommands: false,
   },
-  // `steer` vrai, sondé sur opencode 1.18.25 : un `prompt_async` envoyé pendant un tour
-  // est pris à l'étape suivante du même tour, sans passage par `idle`. Le mode plan
-  // d'opencode est un agent qu'on choisit, il ne soumet rien à validation.
+  // `steer` is true, probed on opencode 1.18.25: a `prompt_async` sent during a turn
+  // is consumed at the next step of that turn, without passing through `idle`. opencode's plan mode
+  // is a selectable agent; it submits nothing for approval.
   opencode: {
     steer: true,
     planReview: false,
@@ -59,9 +58,9 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     stopBackgroundTask: false,
     draftCommands: true,
   },
-  // Grok Build parle ACP, plus ses extensions `_x.ai/…` : `interject` glisse un message
-  // dans le tour en cours, `exit_plan_mode` soumet le plan (sondé sur 1.0.62). Ses
-  // commandes en `/` arrivent avec `initialize`, sans session à ouvrir.
+  // Grok Build speaks ACP plus `_x.ai/…` extensions: `interject` inserts a message
+  // into the current turn; `exit_plan_mode` submits the plan (probed on 1.0.62). Its
+  // slash commands arrive with `initialize`, without opening a session.
   grok: {
     steer: true,
     planReview: true,

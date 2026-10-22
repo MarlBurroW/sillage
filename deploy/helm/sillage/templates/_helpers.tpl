@@ -1,10 +1,10 @@
-{{/* Nom court, surchargeable. */}}
+{{/* Short name, overridable. */}}
 {{- define "sillage.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{/* Nom complet des ressources : <release>-<chart>, sans doublon si la release
-     porte déjà le nom du chart. 63 caractères est la limite d'un label. */}}
+{{/* Full resource name: <release>-<chart>, without duplication when release
+     already contains chart name. Labels are limited to 63 characters. */}}
 {{- define "sillage.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
@@ -29,14 +29,14 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
-{{/* Ces labels forment le selector du Deployment : il est immuable, donc rien
-     de variable (version, tag) ne doit y figurer. */}}
+{{/* These labels form the immutable Deployment selector: no changing values
+     (version, tag) may appear here. */}}
 {{- define "sillage.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "sillage.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{/* Nom du PVC d'un volume : celui fourni par l'utilisateur, sinon le nôtre. */}}
+{{/* Volume PVC name: user-supplied name or ours. */}}
 {{- define "sillage.claimName" -}}
 {{- $ctx := .ctx -}}
 {{- $vol := .vol -}}

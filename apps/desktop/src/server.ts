@@ -4,9 +4,9 @@ import { dirname, join } from 'node:path'
 import type { Readable } from 'node:stream'
 
 export interface ServerOptions {
-  /** Le Node embarqué, celui sous lequel l'arbre d'exécution a été installé et vérifié. */
+  /** Bundled Node, under which the runtime was installed and verified. */
   node: string
-  /** L'arbre d'exécution de la release : `server/`, `web/`, `node_modules/`. */
+  /** Release runtime tree: `server/`, `web/`, `node_modules/`. */
   runtime: string
   dataDir: string
   configFile: string
@@ -21,38 +21,38 @@ export interface Handshake {
 }
 
 export interface RunningServer {
-  /** Se résout quand le serveur répond et que la session de l'utilisateur est ouverte. */
+  /** Resolves when the server responds and the user's session is open. */
   ready: Promise<Handshake>
   onExit(listener: (code: number | null) => void): void
   stop(): Promise<void>
 }
 
-/** Au-delà, le journal repart d'un fichier neuf, l'ancien gardé à côté. */
+/** Beyond this size, start a fresh log and keep the old one alongside it. */
 const LOG_ROTATE_BYTES = 10 * 1024 * 1024
-/** Les migrations d'une base ancienne prennent quelques secondes, pas deux minutes. */
+/** Old database migrations take seconds, not two minutes. */
 const READY_TIMEOUT_MS = 120_000
-/** Le temps de ranger les sessions en cours, comme à l'arrêt du service d'un serveur. */
+/** Time to clean up active sessions, as when stopping a server service. */
 const STOP_TIMEOUT_MS = 15_000
 
 /**
- * Lance le serveur de Sillage tel que la release le livre, avec les réglages qu'une
- * installation pose dans son service (`deploy/sillage.plist.tmpl`), plus le profil de
- * bureau.
+ * Start Sillage's release server with installed-service settings
+ * (`deploy/sillage.plist.tmpl`) plus the desktop profile.
  *
- * Le serveur annonce son port et la session de l'utilisateur sur le descripteur 3, un
- * tube réservé à cet échange (`apps/server/src/instance/desktop.ts`) : la session ne
- * passe ni par le réseau ni par le journal, où vont stdout et stderr. Son entrée standard
- * est un tube que l'app ferme pour demander l'arrêt, sous Windows comme ailleurs.
+ * The server announces its port and user session on descriptor 3, a dedicated pipe
+ * (`apps/server/src/instance/desktop.ts`): the session travels through neither the
+ * network nor logs, which receive stdout/stderr. Its stdin is a pipe the app closes
+ * to request shutdown, on Windows and elsewhere.
  *
- * `windowsHide` donne au serveur une console cachée plutôt qu'une fenêtre : les git et les
- * CLI qu'il lance en héritent, au lieu d'ouvrir chacun la sienne.
+ * `windowsHide` gives the server a hidden console instead of a window: spawned git
+ * and CLI processes inherit it rather than opening individual windows.
  */
 export function startServer(options: ServerOptions): RunningServer {
   mkdirSync(dirname(options.logFile), { recursive: true })
   mkdirSync(options.dataDir, { recursive: true })
   rotate(options.logFile)
   const log = openSync(options.logFile, 'a')
-  const child = spawn(options.node, ['--max-old-space-size=256', join(options.runtime, 'server', 'main.js')], {
+  // Let Node size its heap for the machine; 256 MiB can fail while loading user data.
+  const child = spawn(options.node, [join(options.runtime, 'server', 'main.js')], {
     cwd: options.runtime,
     env: {
       ...options.env,
@@ -68,7 +68,7 @@ export function startServer(options: ServerOptions): RunningServer {
     stdio: ['pipe', log, log, 'pipe'],
     windowsHide: true,
   })
-  // Le serveur a sa propre copie du descripteur ; la nôtre ne servirait qu'à fuir.
+  // The server has its own descriptor copy; retaining ours would only leak it.
   closeSync(log)
 
   let exited = false
@@ -103,7 +103,7 @@ export function startServer(options: ServerOptions): RunningServer {
     child.once('error', fail)
     child.once('exit', (code, signal) => fail(new Error(`le serveur s'est arrêté au démarrage (${signal ?? `code ${code}`})`)))
   })
-  // Un rejet après la résolution (l'arrêt normal, plus tard) ne doit rien signaler.
+  // Rejection after resolution (a later normal shutdown) must not report anything.
   ready.catch(() => {})
 
   return {
@@ -126,8 +126,8 @@ export function startServer(options: ServerOptions): RunningServer {
 }
 
 /**
- * Le dernier recours, quand le serveur n'a pas su s'arrêter : sous Windows, `taskkill /T`
- * emporte aussi les CLI qu'il a lancés, que rien d'autre n'arrêterait.
+ * Last resort when the server could not stop: Windows `taskkill /T` also kills
+ * the CLIs it spawned, which nothing else would stop.
  */
 function killTree(pid: number | undefined): void {
   if (pid === undefined) return
@@ -142,6 +142,6 @@ function rotate(file: string): void {
   try {
     if (statSync(file).size > LOG_ROTATE_BYTES) renameSync(file, `${file}.1`)
   } catch {
-    // Pas encore de journal : rien à faire tourner.
+    // No log yet: nothing to rotate.
   }
 }

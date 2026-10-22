@@ -330,6 +330,34 @@
       "when": 1792440839004,
       "tag": "0046_memory_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1792481415209,
+      "tag": "0047_card_arrival",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1792620455167,
+      "tag": "0048_greedy_hawkeye",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1792624015457,
+      "tag": "0049_natural_tenebrous",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1792693107635,
+      "tag": "0050_curved_overlord",
+      "breakpoints": true
     }
   ]
 }

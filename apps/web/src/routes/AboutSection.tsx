@@ -47,16 +47,16 @@ export function AboutSection() {
   const isAdmin = user?.isAdmin ?? false
   const updating = tracking && status !== undefined && status.phase !== 'failed'
   const desktop = useDesktopUpdate()
-  // La version que l'app de bureau télécharge ou a prête, que GitHub ait déjà répondu au
-  // serveur ou non.
+  // Display desktop progress even before the server receives GitHub release information.
   const desktopState = desktop?.state
+  const desktopProblem = desktopState?.status === 'error' || desktopState?.status === 'unsupported'
   const desktopVersion =
     desktopState && (desktopState.status === 'downloading' || desktopState.status === 'ready' || desktopState.status === 'installing')
       ? desktopState.version
       : null
 
-  // Une mise à jour peut avoir été lancée depuis un autre appareil : si le
-  // serveur en signale une en cours au montage, on s'y accroche.
+  // An update may have started on another device: if the server
+  // reports one in progress at mount time, attach to it.
   const probedRef = useRef(false)
   useEffect(() => {
     if (probedRef.current || tracking) return
@@ -66,7 +66,7 @@ export function AboutSection() {
       .then((current) => {
         if (current.phase !== 'idle' && current.phase !== 'failed') setTracking(true)
       })
-      // Serveur injoignable ou session périmée : l'écran reste utilisable sans suivi.
+      // Server unreachable or session expired: the screen remains usable without tracking.
       .catch(() => undefined)
   }, [tracking])
 
@@ -81,7 +81,7 @@ export function AboutSection() {
     <div className="flex flex-col gap-4">
       <SectionHeader title={t('about.title')} description={t('about.description')} />
 
-      {/* La visite se rejoue d'ici : elle rouvre à sa première étape, sans rien défaire. */}
+      {/* Replay onboarding here: reopen at the first step without undoing anything. */}
       <Card>
         <CardHeader title={t('about.tour.title')} description={t('about.tour.description')} />
         <CardBody>
@@ -143,10 +143,12 @@ export function AboutSection() {
         </CardBody>
       </Card>
 
-      {info?.updateAvailable || desktopVersion ? (
+      {info?.updateAvailable || desktopVersion || desktopProblem ? (
         <Card>
           <CardHeader
-            title={t('about.news.title', { version: desktopVersion ?? info?.latest ?? '' })}
+            title={desktopVersion || info?.latest
+              ? t('about.news.title', { version: desktopVersion ?? info?.latest ?? '' })
+              : t('about.desktop.title')}
             description={t('about.news.description')}
           />
           <CardBody className="flex flex-col gap-4">
@@ -177,8 +179,7 @@ export function AboutSection() {
               <p className="text-sm text-ink-faint">{t('about.manual.instructions')}</p>
             )}
 
-            {/* Les notes de release sont rédigées en anglais : elles viennent
-                telles quelles de GitHub. */}
+            {/* Release notes come directly from GitHub, in English. */}
             {info?.releases.map((release) => (
               <article key={release.tag} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
                 <header className="mb-1.5 flex items-baseline justify-between gap-2">
@@ -260,16 +261,20 @@ export function AboutSection() {
 }
 
 /**
- * Où en est l'app de bureau, qui se met à jour seule : il n'y a d'action à proposer
- * qu'une fois la version prête, et après un échec.
+ * Desktop downloads automatically; offer installation when ready or retry on failure.
  */
 function DesktopUpdateAction({ desktop, onInstall }: { desktop: DesktopUpdates; onInstall: () => void }) {
   const t = useTranslate()
   const state = desktop.state
   if (!state) return null
+  const download = (
+    <a href="https://github.com/MarlBurroW/sillage/releases/latest" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
+      {t('about.desktop.download')}<ExternalLink size={14} />
+    </a>
+  )
   switch (state.status) {
     case 'unsupported':
-      return <p className="text-sm text-ink-faint">{t(UNSUPPORTED_KEYS[state.reason])}</p>
+      return <div className="flex flex-col items-start gap-2"><p className="text-sm text-ink-faint">{t(UNSUPPORTED_KEYS[state.reason])}</p>{download}</div>
     case 'idle':
     case 'checking':
       return <p className="text-sm text-ink-faint">{t('about.desktop.pending')}</p>
@@ -302,6 +307,7 @@ function DesktopUpdateAction({ desktop, onInstall }: { desktop: DesktopUpdates; 
           <Banner>{t('about.desktop.failed', { message: state.message })}</Banner>
           {state.macPermission ? <p className="text-ink-soft">{t('about.desktop.macPermission')}</p> : null}
           <p className="text-ink-faint">{t('about.desktop.manual')}</p>
+          {download}
           <Button variant="secondary" onClick={() => void desktop.check()}>
             {t('about.retry')}
           </Button>
@@ -311,9 +317,8 @@ function DesktopUpdateAction({ desktop, onInstall }: { desktop: DesktopUpdates; 
 }
 
 /**
- * Une fois le redémarrage engagé, l'ancien process ne répondra plus : on sonde
- * /api/health (route publique) jusqu'à ce que la nouvelle version réponde, puis
- * on recharge pour servir le frontend fraîchement déployé.
+ * After restart, poll the public health route until the new version responds,
+ * then reload to serve the updated frontend.
  */
 function useRestartWatch(phase: UpdatePhase | undefined, targetVersion: string | null) {
   useEffect(() => {

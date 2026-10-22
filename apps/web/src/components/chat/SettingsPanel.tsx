@@ -19,35 +19,31 @@ import { MODEL_EFFORT_KEYS, pinnedExtras, type SettingGroup } from './ComposerSe
 
 interface SettingsPanelProps {
   groups: SettingGroup[]
-  /** Catégories épinglées sous le composer, dans leur ordre ; sans `onPinnedChange`, ni épingle ni tri. */
+  /** Ordered composer pins; without onPinnedChange omit pinning and sorting. */
   pinned?: string[]
   onPinnedChange?: (next: string[]) => void
   disabled?: boolean
-  /** MCP est un choix multiple, rendu dans sa propre vue. */
+  /** MCP is multi-select and renders its own view. */
   extra?: ReactNode
   feedback?: ReactNode
   onDone: () => void
   onClose: () => void
 }
 
-/** Clé de la vue MCP, qui n'est pas une catégorie à choix unique. */
+/** MCP view key, separate from single-choice categories. */
 const MCP_VIEW = '__mcp'
 
 /**
- * Vue complète, en deux niveaux : une ligne par réglage avec sa valeur, et les options
- * d'un seul réglage à la fois.
- *
- * Tout déplié, le panneau faisait défiler une dizaine de listes pour en changer une ;
- * la liste tient sur un écran et dit déjà où l'on en est. Les réglages à deux états se
- * basculent depuis leur ligne, sans détour par une vue à deux options. Les choix
- * s'appliquent sans fermer le panneau.
+ * Full two-level view: rows show settings and values, then one setting's options at a time. Fully
+ * expanded panels required scrolling ten lists to change one; this overview fits a screen. Toggle
+ * binary settings directly on rows and apply choices without closing.
  */
 export function SettingsPanel({ groups, pinned = [], onPinnedChange, disabled, extra, feedback, onDone, onClose }: SettingsPanelProps) {
   const t = useTranslate()
   const [view, setView] = useState<string | null>(null)
   const list = useRef<HTMLDivElement>(null)
-  // La ligne d'où l'on vient reprend le focus au retour : sans elle, le clavier
-  // repartirait du haut du panneau à chaque réglage consulté.
+  // Restore focus to the originating row on return, or keyboard navigation would restart at the top
+  // for every setting.
   const returnTo = useRef<string | null>(null)
   const open = (key: string) => {
     returnTo.current = key
@@ -60,29 +56,27 @@ export function SettingsPanel({ groups, pinned = [], onPinnedChange, disabled, e
   }, [view])
 
   const detail = view === null || view === MCP_VIEW ? null : groups.find((group) => group.key === view) ?? null
-  // Une catégorie qui disparaît pendant qu'on la regarde (le modèle choisi n'a plus de
-  // niveaux d'effort) ramène à la liste plutôt qu'à une vue vide.
+  // If the current category disappears (such as effort after model changes), return to the list
+  // instead of an empty view.
   useEffect(() => {
     if (view !== null && view !== MCP_VIEW && !detail) setView(null)
   }, [view, detail])
 
   const present = new Set(groups.map((group) => group.key))
-  // Modèle et effort sont toujours sous le composer, dans leur puce commune : ils ne
-  // s'épinglent ni ne se déplacent.
+  // Model and effort always occupy their shared composer chip; they cannot be pinned or reordered.
   const fixed = MODEL_EFFORT_KEYS.flatMap((key) => groups.find((group) => group.key === key) ?? [])
   const pinnedGroups = onPinnedChange ? pinnedExtras(groups, pinned) : []
   const pinnedKeys = new Set([...MODEL_EFFORT_KEYS, ...pinnedGroups.map((group) => group.key)])
   const others = groups.filter((group) => !pinnedKeys.has(group.key))
   const togglePin = onPinnedChange
     ? (key: string) => {
-        // Les clés modèle et effort d'une barre enregistrée avant la puce commune
-        // partent à la première écriture : elles n'ont plus de sens ici.
+        // Remove model/effort keys from older saved bars on first write because they no longer apply here.
         const extras = pinned.filter((item) => !MODEL_EFFORT_KEYS.includes(item))
         onPinnedChange(extras.includes(key) ? extras.filter((item) => item !== key) : [...extras, key])
       }
     : undefined
-  // Le tri ne déplace que les catégories visibles, mais sur la liste entière : une clé
-  // absente en ce moment (Ultracode sur un modèle qui ne le gère pas) garde sa place.
+  // Reorder visible categories within the full list so temporarily absent keys retain position,
+  // such as unsupported Ultracode.
   const move = (from: string, to: string) => {
     if (!onPinnedChange || !present.has(from) || !present.has(to)) return
     onPinnedChange(arrayMove(pinned, pinned.indexOf(from), pinned.indexOf(to)))
@@ -107,8 +101,7 @@ export function SettingsPanel({ groups, pinned = [], onPinnedChange, disabled, e
           action={togglePin && !MODEL_EFFORT_KEYS.includes(detail.key) ? <PinButton group={detail} pinned={pinnedKeys.has(detail.key)} onToggle={togglePin} /> : null} />
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
           {detail.notice ? <p className="mb-2 text-xs text-caution">{detail.notice}</p> : null}
-          {/* Un choix ramène à la liste : c'est là qu'on voit qu'il a pris, et
-              qu'on enchaîne sur le réglage suivant. */}
+          {/* Selection returns to the overview, confirming the applied value and allowing the next setting. */}
           <SettingOptions group={detail} disabled={disabled} compact={detail.key === 'effort' || detail.key === 'mode'}
             onPick={(value) => { detail.onChange(value); back() }} />
         </div>
@@ -150,8 +143,7 @@ export function SettingsPanel({ groups, pinned = [], onPinnedChange, disabled, e
             )}
           </section>
         ) : (
-          // Au téléphone, rien ne s'épingle : modèle et effort, qu'on vient changer
-          // presque chaque fois, sont dépliés en tête plutôt que derrière une ligne.
+          // Phones have no pins: expand frequently adjusted model and effort first instead of hiding them behind rows.
           <InlineModelEffort groups={fixed} disabled={disabled} onOpen={open} />
         )}
         {others.length > 0 || extra ? (
@@ -172,8 +164,7 @@ export function SettingsPanel({ groups, pinned = [], onPinnedChange, disabled, e
                     <span className="min-w-0 flex-1 truncate text-sm text-ink">{t('cliDefaults.mcp.label')}</span>
                     <ChevronRight size={16} className="shrink-0 text-ink-faint" />
                   </button>
-                  {/* Pas d'épingle : MCP est un choix multiple, qui n'a pas sa place dans
-                      une puce. La colonne reste pour garder les chevrons alignés. */}
+                  {/* No pin for multi-select MCP, unsuitable for chips. Retain the column to align chevrons. */}
                   {togglePin ? <span aria-hidden className="size-11 shrink-0" /> : null}
                 </li>
               ) : null}
@@ -186,7 +177,7 @@ export function SettingsPanel({ groups, pinned = [], onPinnedChange, disabled, e
   )
 }
 
-/** Au-delà, la liste des modèles reste derrière sa ligne : elle repousserait tout le reste. */
+/** Beyond this size keep model choices behind their row or they push everything else away. */
 const INLINE_MODELS_MAX = 6
 
 function InlineModelEffort({ groups, disabled, onOpen }: { groups: SettingGroup[]; disabled?: boolean; onOpen: (key: string) => void }) {
@@ -211,7 +202,7 @@ const rowButtonClass = cx(
   'disabled:pointer-events-none disabled:opacity-45',
 )
 
-/** Les réglages épinglés, dans l'ordre de la barre, triables à la poignée ou au clavier. */
+/** Pinned settings in toolbar order, sortable by handle or keyboard. */
 function PinnedList({ groups, disabled, onOpen, onTogglePin, onMove }: {
   groups: SettingGroup[]
   disabled?: boolean
@@ -266,8 +257,7 @@ function SortableRow({ group, disabled, onOpen, onTogglePin, sortable }: {
       className={cx('relative flex items-center', isDragging && 'z-10 rounded-md bg-surface shadow-pop')}
     >
       {sortable ? (
-        // La poignée seule déclenche le glissement : la ligne reste un bouton qu'on
-        // touche pour ouvrir le réglage, et le défilement au doigt reste possible.
+        // Only handles start dragging: rows remain buttons and touch scrolling stays possible.
         <button type="button" ref={setActivatorNodeRef} {...attributes} {...listeners}
           aria-label={t('composer.settings.reorder', { setting: group.label })}
           className="flex h-11 w-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent active:cursor-grabbing"
@@ -280,7 +270,7 @@ function SortableRow({ group, disabled, onOpen, onTogglePin, sortable }: {
   )
 }
 
-/** Une ligne : la catégorie, sa valeur, et de quoi la changer. */
+/** Category row with current value and controls. */
 function SettingRow({ group, disabled, onOpen, onTogglePin, pinned }: {
   group: SettingGroup
   disabled?: boolean
@@ -307,7 +297,7 @@ function SettingRow({ group, disabled, onOpen, onTogglePin, pinned }: {
   return (
     <div className="flex min-w-0 flex-1 items-center">
       {binary ? (
-        // Deux états : la ligne entière est l'interrupteur, sans vue intermédiaire.
+        // Two states: the whole row toggles without an intermediate view.
         <button type="button" role="switch" aria-checked={group.value === group.active} data-setting-row={group.key}
           aria-label={t('composer.settings.quick', { setting: group.label, value })}
           disabled={disabled || !other} onClick={() => { if (other) group.onChange(other.value) }} className={rowButtonClass}
@@ -348,8 +338,7 @@ function PinButton({ group, pinned, onToggle }: { group: SettingGroup; pinned: b
 export function SettingsHeading({ title, onClose, onBack, action }: { title: string; onClose: () => void; onBack?: () => void; action?: ReactNode }) {
   const t = useTranslate()
   const heading = useRef<HTMLHeadingElement>(null)
-  // Entrer dans une vue détail y porte le focus : le bouton qui l'a ouverte vient de
-  // disparaître, et le lecteur d'écran doit savoir où il est arrivé.
+  // Move focus into details because the opening button disappears and screen readers need the new location.
   useEffect(() => {
     if (onBack) heading.current?.focus({ preventScroll: true })
   }, [onBack, title])
@@ -369,13 +358,13 @@ export function SettingsHeading({ title, onClose, onBack, action }: { title: str
   )
 }
 
-/** Flèches pour parcourir ; Entrée/Espace pour choisir, sans fermeture accidentelle. */
+/** Arrows navigate; Enter/Space choose without accidental closure. */
 export function SettingOptions({ group, onPick, disabled = false, compact = false, dense = false }: {
   group: SettingGroup
   onPick: (value: string) => void
   disabled?: boolean
   compact?: boolean
-  /** Lignes serrées, description sur une ligne : pour une longue liste à parcourir d'un coup d'œil. */
+  /** Dense rows with single-line descriptions for glanceable long lists. */
   dense?: boolean
 }) {
   const t = useTranslate()

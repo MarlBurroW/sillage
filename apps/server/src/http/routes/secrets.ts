@@ -8,14 +8,13 @@ import { notFound } from '../errors.js'
 import { requireAdmin } from '../require-user.js'
 
 /**
- * Dépôt de secrets de l'instance.
+ * Instance secret store.
  *
- * Administrateurs seuls, y compris en lecture : même sans les valeurs, la liste des
- * noms décrit ce à quoi cette instance a accès, et n'a pas à être publique.
+ * Administrators only, including reads: even names reveal the resources this
+ * instance can access and need not be public.
  *
- * Aucune route ne rend la valeur d'un secret. Corriger une faute de frappe se fait
- * donc en réécrivant le secret entier, ce qui est le prix à payer pour qu'un jeton ne
- * puisse pas repartir vers un navigateur.
+ * No route returns secret values. Fixing a typo therefore means replacing the
+ * entire secret, the price of ensuring tokens never travel back to browsers.
  */
 export function registerSecretRoutes(
   app: FastifyInstance,
@@ -23,10 +22,10 @@ export function registerSecretRoutes(
   secrets: SecretStore,
 ): void {
   /**
-   * Où chaque secret est employé.
+   * Where each secret is used.
    *
-   * Calculé à la lecture plutôt que tenu à jour : le registre MCP est petit, et un
-   * index dénormalisé se serait désynchronisé au premier serveur modifié.
+   * Computed on read: the MCP registry is small, and a denormalized index would
+   * fall out of sync as soon as a server was modified.
    */
   const usage = (): Map<string, string[]> => {
     const bySecret = new Map<string, string[]>()
@@ -50,9 +49,9 @@ export function registerSecretRoutes(
   })
 
   /**
-   * `PUT` et non `POST` : écrire un secret est idempotent, et remplacer une valeur est
-   * le geste courant, pas l'exception. Un `POST` aurait imposé de distinguer la
-   * création de la mise à jour alors que rien ici ne les différencie.
+   * `PUT` rather than `POST`: writing a secret is idempotent, and replacement is
+   * the common operation. `POST` would require distinguishing creation from
+   * updating when nothing here makes that distinction.
    */
   app.put('/api/secrets', async (request, reply) => {
     requireAdmin(request)
@@ -64,8 +63,8 @@ export function registerSecretRoutes(
   app.delete('/api/secrets/:name', async (request, reply) => {
     requireAdmin(request)
     const { name } = request.params as { name: string }
-    // Validé avant d'atteindre la base : le nom vient de l'URL, et un motif refusé à
-    // l'écriture n'a pas de raison d'être accepté à la suppression.
+    // Validate before reaching the database: the name comes from the URL, and a
+    // pattern rejected on writes has no reason to be accepted on deletion.
     if (!secrets.delete(secretNameSchema.parse(name))) {
       throw notFound('secret_not_found', 'Unknown secret.')
     }

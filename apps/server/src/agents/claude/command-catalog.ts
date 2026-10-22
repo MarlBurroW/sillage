@@ -9,19 +9,14 @@ import { CachedProbeMap } from '../cached-probe.js'
 import { withControlSession } from './control-session.js'
 
 /**
- * Commandes en `/` que le CLI reconnaît dans un dossier donné, sans session.
+ * Slash commands recognized in directory without session.
  *
- * Le runner publie cette liste au premier tour, mais le brouillon d'une conversation
- * n'a pas encore de tour : c'est ici qu'il vient chercher de quoi proposer. La liste
- * dépend du dossier (commandes de projet sous `.claude/commands`, compétences), d'où
- * un cache par répertoire plutôt qu'un seul pour le daemon.
+ * Runner publishes at first turn, but draft has none: probe supplies completion.
+ * Directory-dependent project commands (`.claude/commands`, skills) require per-directory cache.
  *
- * Ce que la sonde voit est un sous-ensemble de ce que le fil publiera : les prompts
- * des serveurs MCP apparaissent comme des commandes `/mcp__<serveur>__<prompt>`, et
- * ces serveurs ne sont connus qu'à la création de la conversation, avec sa
- * configuration. La sonde tourne donc en `strictMcpConfig` sans aucun serveur,
- * pour ne pas non plus annoncer ceux du `~/.claude.json` de la machine, que le fil
- * refuserait ensuite.
+ * Probe sees subset of future thread commands: MCP prompts (`/mcp__<server>__<prompt>`) require
+ * conversation configuration. Use strictMcpConfig without servers to avoid advertising machine
+ * ~/.claude.json servers thread would reject.
  */
 
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -52,7 +47,7 @@ export class ClaudeCommandCatalog {
   }
 }
 
-/** Même mise en forme que le runner : ce que le brouillon propose est ce que le fil proposera. */
+/** Same formatting as runner: draft offers what thread will offer. */
 export function toDto(commands: SlashCommand[]): SlashCommandDto[] {
   return usableSlashCommands(
     commands.map((command) => ({

@@ -72,7 +72,7 @@ function settingsOf(webhook: WebhookAutomationDto): WebhookSettings {
   return { verification, deliveryHeader, conditions, script, subjectPath, markerPaths, maxRunsPerHour }
 }
 
-/** Ce que la session née d'un appel reçoit : son CLI, ses réglages, sa consigne. */
+/** What the session created by a call receives: CLI, settings and instructions. */
 interface SessionDraft {
   agent: AgentKind
   config: AgentConfig
@@ -95,7 +95,7 @@ function sessionOf(task: ScheduledTaskDto): SessionDraft {
   }
 }
 
-/** L'exemple qui ouvre le banc : celui du modèle, sinon le premier qui n'est pas un ping. */
+/** Initial test-bench example: template example, otherwise the first non-ping call. */
 function initialSample(template: WebhookAutomationDto['template']) {
   const samples = automationSamples()
   return samples.find((sample) => template && sample.templates.includes(template) && sample.id !== 'github_ping') ?? samples[0]!
@@ -113,13 +113,12 @@ function sampleCall(id: string): BenchCall {
 }
 
 /**
- * La page d'une automatisation déclenchée par webhook : sa configuration à gauche, en
- * quatre étapes, et un banc d'essai à droite.
+ * Webhook automation page: four-step configuration on the left, test bench on the right.
  *
- * Le banc porte un appel, d'exemple ou réellement reçu, et dit en direct ce que
- * l'automatisation en ferait avec les réglages en cours, brouillon compris : verdict,
- * prompt rendu, script. On règle d'un côté, on vérifie de l'autre, sans rien lancer ;
- * le verdict vient du serveur, qui évaluera le prochain vrai appel de la même façon.
+ * The bench holds a sample or real call and reports what the automation would do with current
+ * settings, including drafts: verdict, rendered prompt and script. Configure on one side,
+ * verify on the other without launching anything. The verdict comes from the server, which
+ * evaluates the next real call identically.
  */
 export function AutomationPage() {
   const { projectId, taskId } = useParams()
@@ -150,8 +149,8 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
   const updateTask = useUpdateSchedule()
   const updateHook = useUpdateWebhook(task.id)
 
-  // Un seul brouillon pour toute la page : les réglages du webhook et ceux de la session,
-  // enregistrés ensemble. C'est ce qui permet de tout essayer avant de rien changer.
+  // One draft for the whole page: webhook and session settings, saved together.
+  // This allows testing everything before changing anything.
   const [baseline, setBaseline] = useState(() => ({ settings: settingsOf(webhook), session: sessionOf(task) }))
   const [settings, setSettings] = useState(baseline.settings)
   const [session, setSession] = useState(baseline.session)
@@ -159,8 +158,8 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
   const sessionDirty = JSON.stringify(session) !== JSON.stringify(baseline.session)
   const dirty = settingsDirty || sessionDirty
 
-  // Un changement venu d'ailleurs (autre onglet, agent) remplace le brouillon tant qu'il
-  // n'a pas été touché ; un brouillon en cours, lui, n'est jamais écrasé.
+  // External changes (another tab or agent) replace untouched drafts; an edited
+  // draft is never overwritten.
   const server = JSON.stringify({ settings: settingsOf(webhook), session: sessionOf(task) })
   useEffect(() => {
     if (dirty) return
@@ -176,11 +175,11 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
   const prompt = session.prompt
   const setPrompt = (value: string) => patchSession({ prompt: value })
 
-  // --- Banc d'essai ---
+  // --- Test bench ---
   const deliveries = useDeliveries(task.id)
   const list = deliveries.data ?? []
   const [bench, setBench] = useState<BenchCall>(() => sampleCall(initialSample(webhook.template).id))
-  // L'utilisateur a choisi ou retouché l'appel du banc : plus rien ne le remplace tout seul.
+  // Once users choose or edit the bench call, nothing replaces it automatically.
   const touched = useRef(false)
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const loading = useDelivery(task.id, loadingId)
@@ -207,8 +206,8 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
     setLoadingId(null)
   }, [loading.data, loadingId])
 
-  // Dès qu'un vrai appel est arrivé, c'est lui qu'on essaie d'abord : il dit ce que le
-  // service envoie vraiment, mieux qu'un exemple.
+  // Once a real call arrives, test that first: it shows what the service actually
+  // sends, better than an example.
   const latest = list.find((row) => row.verdict !== 'unauthorized')
   useEffect(() => {
     if (touched.current || !latest) return
@@ -220,8 +219,8 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
   const event = useMemo(() => benchEvent(call), [call])
   const local = useMemo(() => evaluateConditions(settings.conditions, event), [event, settings.conditions])
 
-  // Essai serveur des réglages en cours sur l'appel du banc : le script et la marque de
-  // session ne s'évaluent que là. Retardé pour ne pas partir à chaque frappe.
+  // Server-side test of current settings against the bench call: scripts and session
+  // markers can only be evaluated there. Debounced to avoid running on each keystroke.
   const { mutate: runTest, data: tested, isPending: testPending, error: testError } = useTestWebhook(task.id)
   const testKey = JSON.stringify({ call, settings, prompt })
   useEffect(() => {
@@ -233,8 +232,8 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
   }, [testKey, runTest])
 
   const promptRef = useRef<HTMLTextAreaElement>(null)
-  // Dernière position du curseur dans le prompt ; sans elle, on ajoute à la fin plutôt
-  // qu'au tout début, où rien n'indique qu'on voulait écrire.
+  // Last cursor position in the prompt; without it, append at the end rather than
+  // the beginning, where nothing indicates an intent to write.
   const cursor = useRef<{ start: number; end: number } | null>(null)
   const remember = () => {
     const area = promptRef.current
@@ -290,7 +289,7 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
         <span className="hidden sm:contents">
           <Badge tone={task.enabled ? 'positive' : 'neutral'}>{t(task.enabled ? 'automation.state.active' : 'automation.state.paused')}</Badge>
         </span>
-        {/* Au téléphone, le geste se réduit à son icône : le nom a besoin de la largeur. */}
+        {/* On phones, reduce the action to its icon: the name needs the width. */}
         <Button
           size="sm"
           variant="ghost"
@@ -348,8 +347,10 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
               </Step>
             </div>
 
-            {/* Le banc reste à l'écran pendant qu'on fait défiler la configuration : c'est
-                lui qui dit ce que chaque réglage change. */}
+            {/*
+             * Keep the bench visible while configuration scrolls: it shows what each setting
+             * changes.
+             */}
             <aside className="min-w-0 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-var(--header-height)-3rem)] lg:self-start lg:overflow-y-auto">
               <TestBench
                 taskId={task.id}
@@ -391,8 +392,8 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
 }
 
 /**
- * Une étape de la page, dans l'ordre où l'on configure : brancher, déclencher, lancer,
- * protéger. Numérotée parce que c'en est une suite, pas pour décorer.
+ * Page step in configuration order: connect, trigger, launch, protect. Numbered to express
+ * sequence, not decoration.
  */
 function Step({ number, title, description, children }: { number: number; title: string; description: string; children: ReactNode }) {
   return (
@@ -411,7 +412,7 @@ function Step({ number, title, description, children }: { number: number; title:
   )
 }
 
-/** Le nom, modifiable sur place : un clic, Entrée pour garder, Échap pour annuler. */
+/** Inline-editable name: click, Enter to save, Escape to cancel. */
 function NameField({ task }: { task: ScheduledTaskDto }) {
   const t = useTranslate()
   const update = useUpdateSchedule()
@@ -455,7 +456,7 @@ function NameField({ task }: { task: ScheduledTaskDto }) {
   )
 }
 
-/** CLI, modèle, effort, permissions, durée et file : la session qu'ouvre chaque appel retenu. */
+/** CLI, model, effort, permissions, duration and queue: the session opened for each accepted call. */
 function SessionCard({
   project,
   session,
@@ -478,7 +479,7 @@ function SessionCard({
         <Select
           label={t('draft.cli.legend')}
           value={session.agent}
-          // Un autre CLI repart de ses défauts : une configuration ne se convertit pas.
+          // Switching CLIs starts from its defaults: configurations cannot be converted.
           onChange={(agent) => onChange({ agent, config: defaultsFor(agent) })}
           options={agentKindSchema.options.map((value) => ({
             value,
@@ -525,7 +526,7 @@ function SessionCard({
   )
 }
 
-// --- Adresse ----------------------------------------------------------------------------
+// --- Address -------------------------------------------------------------------------
 
 function AddressCard({
   task,
@@ -638,7 +639,7 @@ function AddressCard({
   )
 }
 
-// --- Conditions -----------------------------------------------------------------------------
+// --- Conditions ----------------------------------------------------------------------
 
 function ConditionsCard({
   conditions,
@@ -660,9 +661,9 @@ function ConditionsCard({
   )
 }
 
-// --- Script -------------------------------------------------------------------------------
+// --- Script --------------------------------------------------------------------------
 
-/** Le script facultatif : son éditeur seulement, ce qu'il rend se lit dans le banc d'essai. */
+/** Optional script editor only; results appear in the test bench. */
 function ScriptCard({ script, onChange }: { script: string; onChange: (script: string) => void }) {
   const t = useTranslate()
   const enabled = script.trim() !== ''
@@ -690,7 +691,7 @@ function ScriptCard({ script, onChange }: { script: string; onChange: (script: s
   )
 }
 
-// --- Garde-fous ---------------------------------------------------------------------------
+// --- Safeguards ----------------------------------------------------------------------
 
 function GuardsCard({ settings, onChange }: { settings: WebhookSettings; onChange: (change: Partial<WebhookSettings>) => void }) {
   const t = useTranslate()

@@ -22,7 +22,7 @@ export function CardAttachments({ cardId, projectId }: { cardId: string; project
   const upload = useMutation({
     mutationFn: async (selected: File[]) => {
       const failed: string[] = []
-      // Envoi séquentiel : plusieurs vidéos ne saturent pas la mémoire du serveur.
+      // Sequential uploads prevent multiple videos exhausting server memory.
       for (const file of selected) {
         try { await uploadAttachment(file, endpoint) }
         catch (error) { failed.push(`${file.name} : ${error instanceof Error ? error.message : t('board.files.error')}`) }

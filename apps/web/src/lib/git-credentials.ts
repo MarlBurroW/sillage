@@ -3,11 +3,9 @@ import type { GitCredentialListDto, GitRepoListDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
- * Accès aux forges git du compte courant.
- *
- * Comme pour les secrets, aucun hook ne lit un jeton : l'API n'en rend aucun. Ce qui
- * change ici, c'est que le jeton sert à quelque chose de visible, la liste des dépôts,
- * et que cette liste est la seule preuve à l'écran qu'il fonctionne.
+ * Current account's Git forge access. As with secrets, hooks never read tokens because the API
+ * never returns them. Here tokens produce something visible, the repository list, which is the
+ * screen's only proof they work.
  */
 
 const CREDENTIALS_KEY = ['git-credentials']
@@ -28,7 +26,7 @@ export function usePutGitCredential() {
       api.put<void>('/api/git-credentials', input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: CREDENTIALS_KEY })
-      // Le catalogue affiché a été constitué avec le jeton précédent.
+      // The displayed catalog was built using the previous token.
       void queryClient.invalidateQueries({ queryKey: ['git-repos'] })
     },
   })
@@ -47,11 +45,9 @@ export function useDeleteGitCredential() {
 }
 
 /**
- * Dépôts accessibles avec le jeton GitHub, filtrés par la saisie.
- *
- * Le filtrage se fait sur le serveur, sur une liste qu'il garde en cache : c'est ce qui
- * permet d'interroger à chaque frappe sans épuiser le quota de l'API GitHub. Le résultat
- * est donc gardé par requête, chaque frappe étant une clé distincte.
+ * Repositories accessible with the GitHub token, filtered by query. Server-side filtering uses a
+ * cached list, allowing per-keystroke queries without exhausting GitHub API quota. Cache results
+ * per query, with each typed query a separate key.
  */
 export function useGitRepos(query: string, enabled: boolean) {
   return useQuery({
@@ -61,11 +57,10 @@ export function useGitRepos(query: string, enabled: boolean) {
         `/api/git-credentials/${GITHUB_HOST}/repos?q=${encodeURIComponent(query)}`,
       ),
     enabled,
-    // Le cache du serveur est de cinq minutes ; en tenir un plus long ici ne montrerait
-    // qu'une liste plus vieille que celle qu'une nouvelle requête aurait rendue.
+    // Server cache lasts five minutes; a longer client cache would only show older data than a new
+    // query could return.
     staleTime: 60_000,
-    // Le résultat précédent reste affiché pendant la frappe suivante : sans ça, la liste
-    // clignote à vide entre deux lettres.
+    // Keep previous results visible while typing or the list flashes empty between letters.
     placeholderData: (previous) => previous,
   })
 }

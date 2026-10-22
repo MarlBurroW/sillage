@@ -9,9 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Vrais composants, vraie API et vrai CLI Claude, dans une base temporaire : la tâche
-// créée ici tire pour de bon, à la minute. Compter deux tours très courts de quota.
-// Les captures vont dans SCHEDULE_SHOTS, ou dans un dossier temporaire annoncé à la fin.
+// Real components/API and real Claude CLI in a temporary database: this task really
+// fires at the minute. Allow two very short quota turns. Screenshots go to
+// SCHEDULE_SHOTS or a temporary directory announced at completion.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -47,9 +47,9 @@ async function ready(url, child) {
   throw new Error(`Server did not start: ${child.diagnostics}`)
 }
 
-// Vérification avant le tour, de bout en bout : essai du script dans le formulaire,
-// tir écarté par le script, tir lancé avec sa sortie (vrai CLI Claude, un tour court),
-// validation d'un script proposé par un agent, et rendu au téléphone.
+// Pre-turn check end to end: script trial in form, script-skipped firing, firing with
+// script output (real Claude CLI, one short turn), approval of an agent-proposed
+// script, and phone rendering.
 try {
   const apiPort = await freePort()
   const webPort = await freePort()
@@ -91,7 +91,7 @@ try {
     }
     throw new Error(`Timeout: ${label}\n${server.diagnostics}`)
   }
-  /** Remplace le contenu d'un éditeur CodeMirror. */
+  /** Replace CodeMirror editor content. */
   const typeScript = async (scope, text) => {
     const editor = scope.locator('[data-check-section] .cm-content')
     await editor.click()
@@ -105,14 +105,14 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await mkdir(shots, { recursive: true })
 
-  // --- Création, avec un script qui ne trouve rien ---------------------------------
+  // --- Creation with a script that finds nothing ---------------------------------
   await page.goto(`${base}/p/${project.id}/schedules`)
   await page.getByRole('button', { name: 'Nouvelle automatisation', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Nouvelle automatisation', exact: true })
   await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('Veille avec vérification')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
   await dialog.getByRole('button', { name: 'Ajouter une vérification', exact: true }).click()
-  // Le modèle de départ est un vrai script, qui parle du dossier d'état.
+  // Starting template is a real script mentioning the state directory.
   await dialog.locator('[data-check-section] .cm-content').getByText('SILLAGE_STATE_DIR').first().waitFor()
   await typeScript(dialog, 'echo "Rien de neuf"; exit 10')
   await dialog.getByRole('button', { name: 'Tester', exact: true }).click()
@@ -127,7 +127,7 @@ try {
   let task = await mine()
   assert.equal(task.check.approved, true)
 
-  // --- « Lancer maintenant » : le script écarte le tir, sans session ----------------
+  // --- “Run now”: script skips firing without a session --------------------------
   await card.getByRole('button', { name: 'Lancer maintenant', exact: true }).click()
   task = await until('tir écarté', (entry) => entry.runs[0]?.status === 'skipped', 30_000)
   assert.equal(task.runs[0].error, 'Rien de neuf')
@@ -136,7 +136,7 @@ try {
   await card.getByRole('button', { name: /Historique des tirs/ }).click()
   await card.getByText('· rien à faire').waitFor()
 
-  // --- Le script trouve quelque chose : le tour part avec sa sortie -----------------
+  // --- Script finds something: turn starts with its output -----------------------
   await card.getByRole('button', { name: 'Modifier', exact: true }).click()
   const editor = page.getByRole('dialog')
   await typeScript(editor, 'echo "Version 9.9 publiée"')
@@ -151,9 +151,9 @@ try {
   assert.match(text, /Version 9\.9 publiée/)
   await until('tour terminé', (entry) => entry.runs[0]?.status === 'succeeded', 150_000)
 
-  // --- Un script proposé par un agent : validation depuis la conversation ---------
-  // Le formulaire valide d'office ; l'agent passe par `schedule_task`. On simule sa
-  // proposition en base, sur ce serveur jetable, avec l'appel d'outil qui l'a faite.
+  // --- Agent-proposed script: approval from the conversation ---------------------
+  // The form approves automatically; agents use `schedule_task`. Simulate their
+  // proposal in this disposable database, with the tool call that made it.
   const { default: Database } = await import(join(serverDir, 'node_modules/better-sqlite3/lib/index.js'))
   const db = new Database(join(data, 'data', 'sillage.db'))
   const script = 'echo "proposé par un agent"; exit 10'
@@ -173,7 +173,7 @@ try {
   threadEvents.forEach((event, index) => insertEvent.run('agent-thread', index + 1, now + index, event.type, JSON.stringify(event)))
   db.close()
 
-  // La tâche se signale « À valider » sur sa carte, avant même qu'on l'ouvre.
+  // Task card says “Needs approval” even before opening it.
   await page.reload()
   await card.getByText('À valider', { exact: true }).waitFor()
   await card.getByText('Script de vérification à valider').waitFor()
@@ -181,7 +181,7 @@ try {
   task = await until('tir bloqué', (entry) => /en attente de validation/.test(entry.runs[0]?.error ?? ''), 15_000)
   assert.equal(task.runs[0].check, null, 'Un script non validé ne tourne pas')
 
-  // Le raccourci : sous l'appel de l'agent, dans la conversation.
+  // Shortcut: beneath the agent's call in the conversation.
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/p/${project.id}/c/agent-thread`)
   const strip = page.locator('[data-check-approval]')
@@ -205,7 +205,7 @@ try {
   await card.getByText('Script de vérification à valider').waitFor({ state: 'hidden' })
   await page.setViewportSize({ width: 390, height: 844 })
 
-  // --- Le formulaire au téléphone -------------------------------------------------
+  // --- Form on a phone ----------------------------------------------------------
   await card.getByRole('button', { name: 'Modifier', exact: true }).click()
   const mobileForm = page.getByRole('dialog')
   await mobileForm.locator('[data-check-section]').scrollIntoViewIfNeeded()

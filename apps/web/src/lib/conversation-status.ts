@@ -4,46 +4,39 @@ import type { ConversationDto, ConversationMetrics, ConversationStatus } from '@
 import { wsClient } from './ws-client'
 
 /**
- * Statuts poussés par le socket, hors du cache REST.
- *
- * La liste des conversations est une photo prise au chargement : elle ne dit rien des
- * transitions qui suivent, et la pastille « en cours » de la sidebar restait donc
- * figée jusqu'au prochain rafraîchissement, dans un sens comme dans l'autre. Ces
- * statuts-là se superposent à la photo sans la remplacer : le socket ne pousse que ce
- * qui change, il n'a pas de valeur de départ à donner.
+ * Socket-pushed statuses outside the REST cache. The conversation list is a snapshot taken at load
+ * and cannot reflect later transitions, so sidebar running dots used to remain frozen until
+ * refresh. These statuses overlay rather than replace the snapshot: the socket only pushes changes
+ * and has no initial value.
  */
 
 const statuses = new Map<string, ConversationStatus>()
-// Les fins observées restent disponibles quand on change de projet dans la sidebar.
+// Observed completions remain available when switching sidebar projects.
 const settledAt = new Map<string, number>()
 export function liveSettledAt(conversationId: string): number {
   return settledAt.get(conversationId) ?? 0
 }
 /**
- * Travaux de fond par conversation, dans une table à part.
- *
- * Séparée des statuts plutôt que fondue dans un objet : `useSyncExternalStore` compare
- * les instantanés par identité, et un objet recomposé à chaque lecture rendrait sans
- * fin. Deux tables de valeurs primitives évitent le mémo.
+ * Background tasks per conversation in a separate table. Do not merge them into an object:
+ * `useSyncExternalStore` compares snapshot identity, and rebuilding an object on every read would
+ * cause endless rendering. Two tables of primitive values avoid memoization.
  */
 const backgrounds = new Map<string, number>()
-/** Boucles armées par conversation. Table à part pour la même raison. */
+/** Armed loops per conversation. Separate table for the same reason. */
 const loops = new Map<string, number>()
-/** Dernier `seq` connu par conversation, pour le non-lu. Table à part, même raison. */
+/** Latest known `seq` per conversation for unread state. Separate table for the same reason. */
 const seqs = new Map<string, number>()
 /**
- * Relevés de volume par conversation, pour le mode détaillé de la sidebar.
- *
- * Seule table à porter un objet, ce que la comparaison par identité de
- * `useSyncExternalStore` interdit de recomposer à la lecture : l'objet reçu est rangé
- * tel quel, et n'est remplacé que lorsqu'un de ses champs a bougé.
+ * Volume readings per conversation for detailed sidebar mode. The only table holding objects:
+ * `useSyncExternalStore` identity comparison prohibits recreating them on read. Store the received
+ * object unchanged and replace it only when a field changes.
  */
 const metrics = new Map<string, ConversationMetrics>()
 const listeners = new Set<() => void>()
 
 /**
- * Exporté pour les vues qui agrègent plusieurs conversations : elles ne peuvent pas
- * s'abonner ligne par ligne et composent leur propre instantané à partir de `liveSeq`.
+ * Exported for views aggregating conversations: they cannot subscribe per row and build their own
+ * snapshot from `liveSeq`.
  */
 export function subscribeStatus(listener: () => void): () => void {
   listeners.add(listener)
@@ -67,7 +60,7 @@ function sameMetrics(a: ConversationMetrics | undefined, b: ConversationMetrics)
   )
 }
 
-/** Statut temps réel, ou undefined tant qu'aucun n'a été poussé pour ce fil. */
+/** Live status, or undefined until one is pushed for this thread. */
 export function useLiveStatus(conversationId: string): ConversationStatus | undefined {
   return useSyncExternalStore(
     subscribeStatus,
@@ -77,9 +70,8 @@ export function useLiveStatus(conversationId: string): ConversationStatus | unde
 }
 
 /**
- * Nombre de travaux de fond en cours, 0 tant que rien n'a été poussé.
- *
- * Toujours 0 pour une conversation froide : ces travaux vivent dans le process du CLI.
+ * Running background task count, 0 before any push. Always 0 for a cold conversation: these tasks
+ * live in the CLI process.
  */
 export function useLiveBackground(conversationId: string): number {
   return useSyncExternalStore(
@@ -90,10 +82,8 @@ export function useLiveBackground(conversationId: string): number {
 }
 
 /**
- * Nombre de boucles armées, 0 tant que rien n'a été poussé.
- *
- * Toujours 0 pour une conversation froide : une tâche planifiée ne tire que pendant
- * que le CLI tourne.
+ * Armed loop count, 0 before any push. Always 0 for a cold conversation: scheduled tasks fire only
+ * while the CLI runs.
  */
 export function useLiveLoops(conversationId: string): number {
   return useSyncExternalStore(
@@ -104,10 +94,8 @@ export function useLiveLoops(conversationId: string): number {
 }
 
 /**
- * Dernier `seq` notable poussé pour ce fil, 0 tant qu'on n'a rien reçu.
- *
- * Le 0 se lit « rien à dire », pas « journal vide » : l'appelant compare avec le
- * `lastNotableSeq` de la liste REST et garde le plus grand des deux.
+ * Latest notable `seq` pushed for this thread, 0 before receiving anything. Zero means no update,
+ * not an empty log: callers compare it with REST `lastNotableSeq` and keep the larger value.
  */
 export function useLiveSeq(conversationId: string): number {
   return useSyncExternalStore(
@@ -118,10 +106,8 @@ export function useLiveSeq(conversationId: string): number {
 }
 
 /**
- * Derniers relevés poussés, `undefined` tant que rien n'est arrivé pour ce fil.
- *
- * L'appelant garde alors ceux de la liste REST : le socket ne pousse que ce qui change,
- * il n'a pas de valeur de départ à donner.
+ * Latest pushed readings, `undefined` until any arrive for this thread. Callers then retain REST
+ * list values: the socket pushes changes only, with no initial value.
  */
 export function useLiveMetrics(conversationId: string): ConversationMetrics | undefined {
   return useSyncExternalStore(
@@ -131,7 +117,7 @@ export function useLiveMetrics(conversationId: string): ConversationMetrics | un
   )
 }
 
-/** Lecture directe, pour les instantanés composés par les abonnés de `subscribeStatus`. */
+/** Direct read for snapshots composed by `subscribeStatus` subscribers. */
 export function liveSeq(conversationId: string): number {
   return seqs.get(conversationId) ?? 0
 }
@@ -145,18 +131,17 @@ export function liveBackground(conversationId: string): number {
 }
 
 /**
- * Fenêtre où les signaux de liste se regroupent. Un même geste en produit parfois
- * plusieurs : un glissement réécrit l'ordre, l'onglet qui l'a fait relit déjà de son
- * côté. Une seule relecture suffit pour la rafale.
+ * Window for batching list signals. A single gesture can produce several: dragging rewrites order
+ * and the originating tab already rereads. One refetch suffices for the burst.
  */
 const LISTS_REFRESH_DELAY_MS = 150
 
-/** L'indicateur tourne au moins ce temps : plus bref, il clignote sans qu'on le lise. */
+/** Minimum indicator duration: briefer activity would flash too quickly to read. */
 const MIN_REFRESH_MS = 500
 
 /**
- * Branche l'onglet sur le flux de statuts. Monté par la sidebar, qui est la seule vue
- * à afficher des conversations qu'elle n'a pas ouvertes.
+ * Connect the browser tab to the status stream. Mounted by the sidebar, the only view displaying
+ * conversations it has not opened.
  */
 export function useStatusFeed(): void {
   const queryClient = useQueryClient()
@@ -173,13 +158,13 @@ export function useStatusFeed(): void {
         lastNotableSeq,
         metrics: pushed,
       }) => {
-        // Une session créée ailleurs doit rejoindre l'overview sans rechargement.
-        // Le premier statut suffit ; les jetons suivants ne relancent pas la requête.
+        // A session created elsewhere must enter the overview without reload. Its first status is
+        // enough; later tokens do not trigger another query.
         if (!statuses.has(conversationId)) {
           const known = queryClient.getQueryData<ConversationDto[]>(['conversations', 'all'])
           if (known && !known.some((entry) => entry.id === conversationId)) {
             void queryClient.invalidateQueries({ queryKey: ['conversations'] })
-            // Un fil inconnu est peut-être un tir planifié qui vient de partir.
+            // An unknown thread may be a scheduled run that just started.
             void queryClient.invalidateQueries({ queryKey: ['schedules'] })
           }
         }
@@ -196,7 +181,7 @@ export function useStatusFeed(): void {
         const busy = status === 'running' || status === 'awaiting_input' || background > 0
         if (wasBusy && !busy) {
           settledAt.set(conversationId, Date.now())
-          // Un tour fini a pu commiter ou écrire dans un arbre : les chantiers se relisent.
+          // A completed turn may have committed or written in a worktree: reread worktrees.
           void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
         }
         if (busy) settledAt.delete(conversationId)
@@ -204,14 +189,14 @@ export function useStatusFeed(): void {
         backgrounds.set(conversationId, background)
         loops.set(conversationId, loopCount)
         seqs.set(conversationId, lastNotableSeq)
-        // Seulement si le contenu a bougé : ranger l'objet reçu à chaque poussée
-        // rerendrait toute ligne détaillée pour des chiffres identiques.
+        // Only when content changed: storing the object on every push would rerender detailed rows
+        // even for identical readings.
         if (metricsChanged) metrics.set(conversationId, pushed)
         emit()
       },
       onResync: () => {
-        // Ce qui a été poussé avant la coupure ne fait plus autorité : la liste relue
-        // reprend la main, et les prochaines poussées repartent d'elle.
+        // Pre-disconnect pushes are no longer authoritative: the refreshed list takes over and
+        // subsequent pushes build from it.
         statuses.clear()
         settledAt.clear()
         backgrounds.clear()
@@ -230,8 +215,7 @@ export function useStatusFeed(): void {
           void queryClient.invalidateQueries({ queryKey: ['schedules'] })
           void queryClient.invalidateQueries({ queryKey: ['actions'] })
           void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
-          // L'en-tête du fil ouvert aussi : renommé ou supprimé ailleurs, il doit le
-          // montrer sans attendre qu'on en sorte.
+          // The open thread's header must also reflect renames or deletion elsewhere without requiring navigation away.
           void queryClient.invalidateQueries({ queryKey: ['conversation'] })
         }, LISTS_REFRESH_DELAY_MS)
       },
@@ -245,9 +229,9 @@ export function useStatusFeed(): void {
 }
 
 /**
- * Relit ce qui a vieilli, sans rien vider, aux moments où l'on va regarder la liste
- * sans que rien ne l'ait signalé : l'ouverture du tiroir sur téléphone, qui reste monté
- * hors de l'écran et ne se relit donc jamais de lui-même.
+ * Reread stale data without clearing anything when users are about to view the list without an
+ * explicit signal: opening the phone drawer, which stays mounted offscreen and never refreshes
+ * itself.
  */
 export function useRevalidateLists(): () => void {
   const queryClient = useQueryClient()
@@ -258,17 +242,14 @@ export function useRevalidateLists(): () => void {
 }
 
 /**
- * Rafraîchissement demandé à la main, par le bouton ou le geste de la sidebar.
- *
- * Rien de ce qui est affiché n'est cru sur parole : le socket est remplacé par un neuf,
- * ce qui vide les statuts poussés et réabonne le fil ouvert depuis son curseur, puis
- * les listes sont relues. C'est le chemin d'une reconnexion, pris sans attendre d'avoir
- * constaté la coupure.
+ * Manual refresh from the sidebar button or gesture. Trust no displayed data: replace the socket,
+ * clearing pushed statuses and resubscribing the open thread from its cursor, then reread lists.
+ * Follow the reconnect path without waiting to detect a disconnect.
  */
 export function useRefreshLists(): { refreshing: boolean; refresh: () => void } {
   const queryClient = useQueryClient()
   const [refreshing, setRefreshing] = useState(false)
-  // Une ref et non l'état : deux gestes dans le même rendu verraient tous deux `false`.
+  // Use a ref rather than state: two gestures within one render would both see `false`.
   const running = useRef(false)
 
   const refresh = useCallback(() => {
@@ -278,8 +259,8 @@ export function useRefreshLists(): { refreshing: boolean; refresh: () => void } 
 
     const work = async () => {
       await wsClient.resync()
-      // `cancelRefetch: false` : la reconnexion vient de relancer la liste, cette
-      // lecture-là est rejointe plutôt qu'interrompue pour une autre identique.
+      // `cancelRefetch: false`: reconnection just restarted the list query; join that read instead
+      // of interrupting it with an identical one.
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ['conversations'], type: 'active' }, { cancelRefetch: false }),
         queryClient.refetchQueries({ queryKey: ['projects'], type: 'active' }, { cancelRefetch: false }),

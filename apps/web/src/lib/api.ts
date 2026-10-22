@@ -2,12 +2,9 @@ import type { ApiError } from '@sillage/protocol'
 import { translate, translateError } from './i18n'
 
 /**
- * Erreur d'API telle que l'interface l'affiche.
- *
- * Le message est déjà traduit à la construction, et c'est le seul endroit où ça se joue :
- * tous les appels passent par `request`, donc les composants qui affichent `err.message`
- * n'ont rien à savoir de l'i18n. Le `code` reste exposé pour ceux qui distinguent un cas
- * précis plutôt que d'afficher la phrase.
+ * API error as displayed in the UI. Translate at construction in this single location: every call
+ * goes through `request`, so components displaying `err.message` need no i18n knowledge. Keep
+ * `code` exposed for callers handling specific cases instead of displaying text.
  */
 export class ApiRequestError extends Error {
   constructor(
@@ -39,8 +36,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new ApiRequestError(
       response.status,
       error?.code ?? 'unknown',
-      // Une réponse sans corps exploitable (proxy, coupure) n'a ni code ni message : le
-      // statut HTTP est alors tout ce qu'on peut dire honnêtement.
+      // Responses without usable bodies (proxy, disconnect) have neither code nor message: HTTP
+      // status is the only accurate information available.
       error
         ? translateError(error.code, error.message, error.params)
         : translate('error.http', { status: response.status }),
@@ -55,7 +52,6 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
-  // Un corps sur DELETE : la suppression d'une entrée porte un chemin, qui n'a pas à
-  // être encodé dans l'URL alors que les autres opérations du panneau l'envoient ainsi.
+  // DELETE bodies carry entry paths instead of URL-encoding them, consistent with other panel operations.
   delete: <T>(path: string, body?: unknown) => request<T>('DELETE', path, body),
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Serveur de protocole déterministe : aucun modèle, réseau ou accès au vrai compte.
+// Deterministic protocol server without models, networking or real accounts.
 import { appendFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 
@@ -44,7 +44,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       }
       const response = { id, result: { turn } }
       emit(scenario)
-      // Le CLI peut clore le tour AVANT d'accuser réception de turn/start.
+      // CLIs may complete turns BEFORE acknowledging turn/start.
       send(response)
       break
     }
@@ -55,10 +55,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       }
       const text = params.input.find((input) => input.type === 'text')?.text ?? ''
       const turnId = turn.id
-      // `fixture-late:` rejoue le pire cas : les notifications lues avant l'accusé,
-      // comme lorsqu'elles arrivent dans le même bloc de stdout.
+      // `fixture-late:` reproduces worst-case notifications read before acknowledgments,
+      // as when sharing the same stdout chunk.
       if (text.startsWith('fixture-late:')) emit(JSON.parse(text.slice(13)))
-      // Ordre relevé sur 0.163.0 : l'accusé du steer précède la fin des deltas coupés.
+      // Order observed on 0.163.0: steer acknowledgments precede interrupted deltas' end.
       send({ id, result: { turnId } })
       if (text.startsWith('fixture:')) emit(JSON.parse(text.slice(8)))
       break

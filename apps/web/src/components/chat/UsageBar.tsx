@@ -3,14 +3,11 @@ import { translate, useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
- * Une fenêtre de quota, telle que le CLI la déclare. Partagée par le panneau détaillé
- * et par la page de brouillon, qui montrent la même mesure à deux moments.
+ * CLI-reported quota window shared by detailed panels and draft pages showing the same measure at
+ * different moments.
  */
 
-/**
- * Seuils d'alerte. Choix d'affichage, pas une information du CLI : aucun des deux
- * protocoles ne déclare de niveau de gravité exploitable ici.
- */
+/** Display warning thresholds: neither protocol provides usable severity levels. */
 const CAUTION_AT = 0.75
 const CRITICAL_AT = 0.9
 
@@ -21,7 +18,7 @@ function toneFor(utilization: number | null): string {
   return 'bg-accent'
 }
 
-/** Délai restant, à la maille qui se lit : jours, puis heures, puis minutes. */
+/** Readable remaining duration in days, hours, then minutes. */
 function untilReset(resetsAt: number | null): string | null {
   if (resetsAt === null) return null
   const minutes = Math.round((resetsAt - Date.now()) / 60_000)
@@ -33,7 +30,7 @@ function untilReset(resetsAt: number | null): string | null {
   return translate('usage.reset.inDays', { days: Math.round(hours / 24) })
 }
 
-/** Ancienneté de la lecture. Une heure absolue n'apprend rien sur sa fraîcheur. */
+/** Reading age: absolute times do not convey freshness. */
 export function readAge(fetchedAt: number): string {
   const seconds = Math.max(0, Math.round((Date.now() - fetchedAt) / 1000))
   if (seconds < 60) return translate('usage.age.seconds', { seconds })
@@ -60,8 +57,7 @@ export function UsageBar({ window }: { window: UsageWindow }) {
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-high">
         <div
           className={cx('h-full rounded-full transition-[width]', toneFor(window.utilization))}
-          // Un taux inconnu ne dessine rien : une barre vide dirait « zéro », ce qui
-          // serait une affirmation que le CLI n'a pas faite.
+          // Unknown utilization draws nothing: empty bars would falsely claim zero.
           style={{ width: `${Math.min(percent ?? 0, 100)}%` }}
         />
       </div>

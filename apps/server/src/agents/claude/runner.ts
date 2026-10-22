@@ -26,6 +26,7 @@ import {
   type PlanFollowUpOption,
 } from '@sillage/protocol'
 import { failedStatuses } from '../mcp-registry.js'
+import { BUILTIN_MCP_SERVER_ID } from '../mcp-builtin.js'
 import { sdkExecutable } from '../launch.js'
 import { AsyncQueue } from '../async-queue.js'
 import { agentProcessEnv } from '../process-env.js'
@@ -61,33 +62,27 @@ import {
 import { describeFastMode, describePluginErrors, translateSignal } from './signals.js'
 
 /**
- * Messages natifs volontairement ignorés : ils décrivent une progression interne
- * (changements d'état de session) sans rien apporter au fil de conversation. Liste
- * nommée plutôt qu'un `default:` muet, pour qu'un nouveau type de message inconnu
- * soit visible et non avalé. Ce qui n'y figure pas passe par `translateSignal`.
+ * Native messages intentionally ignored: internal progress (session state changes) adds nothing to
+ * thread. Named list instead of silent `default:` keeps unknown new types visible. Others pass
+ * through `translateSignal`.
  */
 const IGNORED_SUBTYPES = new Set(['session_state_changed'])
 
 /**
- * Pas du compteur de réflexion, en tokens estimés.
+ * Thinking-counter step, in estimated tokens.
  *
- * Le CLI en publie un par fragment reçu, soit plusieurs par seconde. Chaque événement
- * étant journalisé, les relayer tous ferait grossir le journal pour une valeur que
- * l'œil ne distingue pas. Ce pas laisse l'indicateur bouger plusieurs fois par seconde
- * sur une réflexion soutenue, et n'écrit qu'une poignée de lignes sur une courte.
+ * CLI publishes once per received chunk, several times per second. Journaling each would grow
+ * history for visually indistinguishable values. This step keeps sustained thinking animated
+ * several times per second while writing only a handful of rows for short thinking.
  */
 const THINKING_TOKENS_STEP = 100
 
-/**
- * Délai laissé au CLI pour refermer lui-même un tour dont on soupçonne qu'il ne
- * produira pas de `result`. Voir `armTurnWatchdog`.
- */
+/** Time allowed for CLI to close turns suspected of producing no `result`. See `armTurnWatchdog`. */
 const TURN_CLOSE_GRACE_MS = 15_000
 
 /**
- * Suites proposées à la validation d'un plan. Les identifiants sont des modes de
- * permission de Claude Code : c'est cet adaptateur qui les propose et qui les
- * revalide au retour, le schéma commun n'y voit que des chaînes opaques.
+ * Plan-approval continuations. IDs are Claude permission modes proposed/revalidated by this
+ * adapter; common schema treats them as opaque strings.
  */
 const PLAN_FOLLOW_UP_OPTIONS: PlanFollowUpOption[] = [
   {
@@ -103,9 +98,8 @@ const PLAN_FOLLOW_UP_OPTIONS: PlanFollowUpOption[] = [
 ]
 
 /**
- * Blocs acceptés dans un message utilisateur, dérivés du type du SDK plutôt que
- * recopiés : la liste des formats d'image admis change avec l'API, et une copie
- * manuelle finirait par diverger sans que rien ne le signale.
+ * Accepted user-message blocks derived from SDK types, not copied: API image formats change, and
+ * manual copies would drift silently.
  */
 type PromptBlock = Exclude<SDKUserMessage['message']['content'], string>[number]
 type InlineImageSource = Extract<
@@ -114,9 +108,8 @@ type InlineImageSource = Extract<
 >
 
 /**
- * Traduit un message et ses pièces jointes vers le protocole du SDK. Les blocs
- * journalisés viennent du module commun ; les images partent en base64, les autres
- * fichiers par leur chemin, seule façon pour l'agent de les ouvrir avec ses outils.
+ * Translate message/attachments to SDK protocol. Journaled blocks come from shared module; images
+ * use base64, other files paths, the only way agents can open them with tools.
  */
 async function buildUserMessage(
   text: string,
@@ -136,8 +129,8 @@ async function buildUserMessage(
       type: 'image',
       source: {
         type: 'base64',
-        // Le type est déjà restreint aux formats acceptés par l'API au moment de
-        // décider `inlineImage` : c'est ce contrôle qui rend ce cast sûr.
+        // Type already restricted to API-supported formats when deciding `inlineImage`, making this
+        // cast safe.
         media_type: attachment.mimeType as InlineImageSource['media_type'],
         data: data.toString('base64'),
       },
@@ -154,52 +147,51 @@ export class ClaudeRunner implements AgentRunner {
   private readonly interactions: PendingInteractions
   private readonly durations = new ToolDurations()
   /**
-   * Écritures en cours, par appel : le chemin visé et son existence avant l'appel.
-   * Le résultat d'outil ne porte ni l'un ni l'autre, il faut donc les retenir.
+   * Pending writes per call: target path and pre-call existence. Tool results contain neither, so
+   * retain them.
    */
   private readonly pendingEdits = new Map<string, { path: string; existed: boolean }>()
   private readonly abort = new AbortController()
   private session: Query | null = null
-  /** Message en cours de réception, par auteur : l'agent principal (null) et chaque sous-agent. */
+  /** Incoming message per author: main agent (null) and each subagent. */
   private readonly streamingMessageIds = new Map<string | null, string>()
-  /** Dernier compteur de réflexion relayé, pour n'en relayer qu'un par `THINKING_TOKENS_STEP`. */
+  /** Last forwarded thinking count, limiting events to one per `THINKING_TOKENS_STEP`. */
   private thinkingTokensSent = 0
-  /** Identifiant natif, requis pour relire le résumé de session. */
+  /** Native ID required to read session summary. */
   private sessionId: string | null = null
-  /** Session et modèle du dernier `session.started` journalisé, pour ne pas le répéter à chaque tour. */
+  /** Session/model from last journaled `session.started`, preventing per-turn repetition. */
   private initSignature: string | null = null
-  /** Les `plugin_errors` du dernier init, pour n'en parler qu'au changement. */
+  /** Last init `plugin_errors`, reported only on change. */
   private pluginErrorsSignature = '[]'
-  /** Dernier état du mode rapide rapporté par le CLI, pour n'en journaliser que les changements. */
+  /** Latest CLI Fast state, journaling changes only. */
   private fastMode: { state: FastModeState; reason: FastModeDisabledReason | null } | null = null
   private stopped = false
-  /** Vrai entre l'ouverture d'un tour et le `result` qui le referme. */
+  /** True from turn opening until closing `result`. */
   private turnOpen = false
-  /** Échéance de clôture d'office, armée quand aucun `result` n'est attendu. */
+  /** Forced-closure deadline armed when no `result` is expected. */
   private turnWatchdog: ReturnType<typeof setTimeout> | null = null
-  /** Suit les changements appliqués à chaud, contrairement à `ctx.config` qui est figé. */
+  /** Tracks live changes unlike frozen `ctx.config`. */
   private config: ClaudeConfig
   /**
-   * La session a été lancée en `bypassPermissions`, donc avec le drapeau qui coupe les
-   * demandes. Retenu à part : `this.config` le perd au premier changement appliqué à
-   * chaud, or c'est le lancement qui décide, pas le réglage courant.
+   * Session launched in `bypassPermissions` with prompts disabled. Kept separately because first
+   * live change removes it from `this.config`; launch state, not current setting, determines
+   * behavior.
    */
   private readonly launchedWithBypass: boolean
   /**
-   * Ce que la session a réellement reçu, pour ne renvoyer `setMcpServers` que sur un
-   * vrai changement. Le SDK relance chaque serveur à l'appel, donc un appel inutile
-   * coupe des connexions qui marchaient.
+   * What session actually received, so `setMcpServers` runs only on real change. SDK restarts every
+   * server per call, making redundant calls disconnect healthy connections.
    */
   private appliedMcpServers: Record<string, McpServerConfig> = {}
-  /** Serveurs qu'on n'a pas pu lancer, à joindre à l'inventaire que le CLI rapporte. */
+  /** Servers that failed to launch, added to CLI-reported inventory. */
   private mcpFailures: McpServerStatus[] = []
   /**
-   * Racines de la bibliothèque de skills reçues au lancement. Les plugins ne sont que des
-   * options de lancement : une autre liste demande de relancer, voir `applyConfig`.
+   * Skill-library roots received at launch. Plugins are launch-only options: changed lists require
+   * restart; see `applyConfig`.
    */
   private skillRoots: string[] = []
 
-  /** Voir `AgentRunner`. `this.config` n'avance qu'après une application réussie. */
+  /** See `AgentRunner`. `this.config` advances only after successful application. */
   get appliedConfig(): AgentConfig {
     return this.config
   }
@@ -217,11 +209,9 @@ export class ClaudeRunner implements AgentRunner {
     this.appliedMcpServers = toSdkMcpServers(resolved.servers)
     this.mcpFailures = failedStatuses(resolved.failures)
 
-    // Par le prompt système et non par le hook `SessionStart`, essayé d'abord : les
-    // hooks s'enregistrent dans la requête d'initialisation, et `SessionStart` est le
-    // premier événement de la session. Le rappel n'a produit aucun effet, vérifié sur
-    // une session neuve qui n'a rien reçu. Le mode `preset` conserve le prompt par
-    // défaut de Claude Code et n'y ajoute que cet appendice.
+    // Use system prompt, not initially tried `SessionStart` hook: hooks register in initialization
+    // request while SessionStart is first event. Callback had no effect, verified on new session
+    // receiving nothing. `preset` retains Claude default prompt and adds only this appendix.
     const overview = this.ctx.projectOverview(config)
     this.skillRoots = this.ctx.skillRoots(config)
     const library = skillLibraryLaunchOptions(this.skillRoots)
@@ -237,11 +227,12 @@ export class ClaudeRunner implements AgentRunner {
         model: config.model,
         effort: config.effort,
         permissionMode: toPermissionMode(config.permissionMode),
-        // Les pièces jointes sont stockées hors du workspace : sans ce dossier
-        // autorisé, l'agent se verrait refuser la lecture des fichiers qu'on lui joint.
-        // Même raison pour les fichiers annexes des skills de la bibliothèque.
-        // Les worktrees créés par la session hors de son cwd : lus au lancement, un arbre
-        // créé en cours de route ne compte qu'à la relance du CLI.
+        // SDK requires this opt-in besides mode; do not depend on installed binary tolerance that
+        // may change after updates.
+        allowDangerouslySkipPermissions: config.permissionMode === 'bypassPermissions',
+        // Attachments live outside workspace: without this allowed directory agents cannot read
+        // attached files. Same for library skill supporting files. Session-created worktrees
+        // outside cwd are read at launch; later trees count only after CLI restart.
         additionalDirectories: [
           ...config.additionalDirectories,
           this.ctx.attachmentsRoot,
@@ -249,11 +240,13 @@ export class ClaudeRunner implements AgentRunner {
           ...(this.ctx.workTrees?.() ?? []),
         ],
         plugins: library.plugins,
-        // Transmis en mémoire, à chaque lancement. Rien n'en est écrit dans
-        // `~/.claude.json` : une conversation reprise dans le CLI natif n'aura donc pas
-        // ces serveurs, ce qui est le prix de ne pas toucher aux fichiers de
-        // l'utilisateur. Relevé par sonde, ce n'est pas déductible de la documentation.
+        // Passed in memory at every launch, never written to `~/.claude.json`: native-CLI resume
+        // therefore lacks these servers, the cost of leaving user files untouched. Established by
+        // probe, not inferable from documentation.
         mcpServers: this.appliedMcpServers,
+        // Only the built-in tool can name this session; it never overrides a human title.
+        allowedTools: resolved.servers.filter((server) => server.id === BUILTIN_MCP_SERVER_ID)
+          .map((server) => `mcp__${server.name}__rename_session`),
         strictMcpConfig: config.strictMcp,
         settings: flagSettings(
           config,
@@ -261,54 +254,47 @@ export class ClaudeRunner implements AgentRunner {
           claudeMdExcludes(this.ctx.maskedInstructionRoots()),
           this.ctx.memoryDir(),
         ),
-        // Plafonds pour une session que personne ne regarde. Options de lancement
-        // seulement : les changer relance le runner, voir `applyConfig`.
+        // Caps for unattended sessions. Launch-only options: changes restart runner; see
+        // `applyConfig`.
         ...(config.maxBudgetUsd === null ? {} : { maxBudgetUsd: config.maxBudgetUsd }),
         ...(config.maxTurns === null ? {} : { maxTurns: config.maxTurns }),
-        // Une suggestion de message suivant par tour, servie après le `result` et
-        // presque gratuite puisqu'elle repart du cache de la conversation. Sans l'option
-        // le CLI n'en émet aucune en mode SDK ; avec, `promptSuggestionEnabled: false`
-        // dans les réglages du poste suffit à les couper.
+        // One next-message suggestion per turn after `result`, nearly free through conversation
+        // cache. Without option CLI emits none in SDK mode; with it, machine
+        // `promptSuggestionEnabled: false` still disables them.
         promptSuggestions: true,
         includePartialMessages: true,
-        // Sans ça le SDK ne transmet des sous-agents que leurs appels d'outils, de
-        // quoi faire battre un compteur mais pas de quoi rendre leur fil : ni
-        // raisonnement, ni messages intermédiaires. Sillage les affiche comme des
-        // conversations à part entière, donc il lui faut tout.
+        // Otherwise SDK forwards only subagent tools, enough for counters but not threads: no
+        // reasoning or intermediate messages. Sillage displays full conversations and needs
+        // everything.
         forwardSubagentText: true,
         abortController: this.abort,
         ...(this.ctx.resumeSessionId ? { resume: this.ctx.resumeSessionId } : {}),
-        // Toujours renseigné, jamais laissé au SDK. Sa résolution interne cherche le
-        // binaire dans le paquet plateforme `@anthropic-ai/claude-agent-sdk-<os>-<arch>`,
-        // que la release ne transporte plus : sans ce chemin, le SDK échouerait sur
-        // « Native CLI binary not found » au lieu d'utiliser le CLI du système.
+        // Always supplied, never left to SDK. Internal resolution searches platform package
+        // `@anthropic-ai/claude-agent-sdk-<os>-<arch>`, no longer shipped: omission causes “Native
+        // CLI binary not found” instead of using system CLI.
         pathToClaudeCodeExecutable: sdkExecutable(this.ctx.binary),
         canUseTool: this.handleToolRequest,
         onElicitation: this.handleElicitation,
-        // Seul canal par lequel le CLI livre les tâches planifiées de la session. Ni
-        // le flux ni le canal de contrôle n'en portent l'état : `CronList` n'existe
-        // que comme outil du modèle, et aucun message ne joue pour les boucles le rôle
-        // que `background_tasks_changed` joue pour le travail de fond.
+        // Only channel delivering session scheduled tasks. Neither stream nor control channel
+        // carries state: `CronList` is model-only, no loop message parallels
+        // `background_tasks_changed`.
         hooks: { Stop: [{ hooks: [this.handleStop] }] },
         stderr: (data) => {
-          // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
-          // perdre rend tout diagnostic impossible.
+          // CLI stderr is not conversation content, but losing it makes diagnosis impossible.
           process.stderr.write(`[claude ${this.conversationId}] ${data}`)
         },
       },
     })
 
-    // Le niveau des travaux de fond appartient au process : le CLI n'en annonce rien
-    // au démarrage, il n'émet qu'aux changements. Sillage pose donc le zéro lui-même,
-    // sans quoi une relecture du journal garderait allumés les travaux du process
-    // précédent, qui sont morts avec lui.
+    // Background state belongs to process: CLI emits changes, nothing at startup. Sillage sets zero
+    // so journal replay cannot retain dead previous-process jobs.
     this.ctx.emit({ type: 'background.updated', tasks: [] })
-    // Même raison pour les boucles, qui meurent elles aussi avec le process. Le hook
-    // les rétablira à la fin du premier tour si le CLI en a restauré à la reprise.
+    // Same for loops, which die with process. Hook restores them after first turn if CLI restored
+    // any on resume.
     this.ctx.emit({ type: 'loops.updated', loops: [] })
     void this.publishMcpStatus()
 
-    // Consommé en tâche de fond : le runner survit à la requête HTTP qui l'a créé.
+    // Consumed in background: runner outlives creating HTTP request.
     void this.consume()
   }
 
@@ -322,9 +308,8 @@ export class ClaudeRunner implements AgentRunner {
       this.ctx.emit({ type: 'session.ended', reason: this.stopped ? 'interrupted' : 'completed' })
       this.ctx.setStatus('idle')
     } catch (err) {
-      // Le statut avant le journal, contrairement au chemin nominal : ce qui vient de
-      // tuer le runner peut être l'écriture du journal elle-même, et une conversation
-      // laissée en `running` sans runner reste affichée « en cours » pour toujours.
+      // Status before journal unlike normal path: journal writes may have killed runner; `running`
+      // without runner would display in progress forever.
       this.ctx.setStatus(this.stopped ? 'idle' : 'error')
       journalDeath(
         this.ctx,
@@ -345,11 +330,10 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Note l'écriture qu'un appel s'apprête à faire.
+   * Record upcoming tool write.
    *
-   * L'existence est relevée maintenant, et de façon synchrone : c'est le seul moment
-   * où elle distingue une création d'une réécriture, et une lecture différée peut se
-   * résoudre après que l'outil a écrit, donc répondre sur un disque déjà modifié.
+   * Check existence synchronously now: only moment distinguishing creation/rewrite. Deferred reads
+   * may resolve after write and observe changed disk.
    */
   private trackEdit(toolCallId: string, name: string, input: unknown): void {
     const path = editedPath(name, input)
@@ -359,14 +343,12 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Ouvre un tour s'il n'y en a pas déjà un.
+   * Open turn if none exists.
    *
-   * Claude Code n'annonce pas le début d'un tour, contrairement à Codex : le SDK émet
-   * `result` à chaque fin, mais rien à l'ouverture. Un tour que Sillage n'a pas
-   * déclenché (reprise de session, relance après un réglage appliqué à chaud) ne
-   * passait donc par aucun `setStatus('running')`, et la conversation restait `idle`
-   * en base pendant tout le travail. Le fil ouvert s'en sortait en repliant son
-   * journal, la liste des conversations n'a pas de journal et n'affichait rien.
+   * Unlike Codex, Claude announces `result` at end but no start. Sillage-uninitiated turns (resume,
+   * restart after live settings) skipped `setStatus('running')`, leaving database idle throughout
+   * work. Open thread recovered by folding journal; conversation list has no journal and showed
+   * nothing.
    */
   private openTurn(): void {
     if (this.turnOpen) return
@@ -377,20 +359,15 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Referme le tour d'office si le CLI ne donne plus signe de vie.
+   * Force-close turn if CLI stops responding.
    *
-   * `openTurn` fait foi pour l'ouverture, mais un `result` fait foi pour la fermeture,
-   * et il ne vient pas toujours. Une commande de barre oblique traitée en local par le
-   * CLI (`/model`, par exemple) répond par sa seule sortie et n'engage aucun tour de
-   * modèle ; une interruption alors qu'aucun tour n'est réellement en cours ne fait rien
-   * remonter non plus. Dans les deux cas la conversation restait occupée pour de bon :
-   * `isBusy` mettait en file tout message suivant, la récolte d'inactivité réarmait au
-   * lieu de récolter, et le fil web gardait son indicateur allumé puisque son
-   * `turnRunning` ne retombe que sur `turn.completed`.
+   * `openTurn` establishes opening, but closing requires `result`, sometimes absent. Local slash
+   * commands (`/model`) emit output without model turns; interruption with no real turn also emits
+   * nothing. Conversation stayed busy: `isBusy` queued all following messages, idle reaper rearmed,
+   * web indicator stayed because `turnRunning` resets only on `turn.completed`.
    *
-   * L'échéance est désarmée par le premier message du CLI, quel qu'il soit : s'il parle,
-   * c'est qu'un tour vit et que son `result` viendra. Codex a le même filet sur son
-   * interruption, pour la même raison.
+   * Any CLI message disarms deadline: speaking implies active turn whose result will follow. Codex
+   * has same interruption fallback for same reason.
    */
   private armTurnWatchdog(stopReason: string): void {
     this.clearTurnWatchdog()
@@ -421,8 +398,7 @@ export class ClaudeRunner implements AgentRunner {
   private translate(message: SDKMessage): void {
     this.clearTurnWatchdog()
 
-    // Tout ce que le CLI raconte de son travail vaut ouverture : ces trois types
-    // portent le texte de l'agent, ses appels d'outil et leurs résultats.
+    // Any CLI work message opens a turn: these three types carry agent text, tools, results.
     if (message.type === 'stream_event' || message.type === 'assistant' || message.type === 'user') {
       this.openTurn()
     }
@@ -430,8 +406,7 @@ export class ClaudeRunner implements AgentRunner {
     switch (message.type) {
       case 'system': {
         if (message.subtype === 'thinking_tokens') {
-          // Le compteur repart à zéro à chaque bloc de réflexion : une valeur plus
-          // basse que la précédente annonce un nouveau bloc, pas un recul.
+          // Counter resets each thinking block: lower values signal a new block, not regression.
           const estimated = message.estimated_tokens
           if (estimated < this.thinkingTokensSent) this.thinkingTokensSent = 0
           if (estimated - this.thinkingTokensSent < THINKING_TOKENS_STEP) return
@@ -453,13 +428,12 @@ export class ClaudeRunner implements AgentRunner {
           return
         }
         if (message.subtype === 'status') {
-          // Le CLI annonce lui-même qu'il compacte, que la compaction ait été demandée
-          // depuis Sillage ou déclenchée toute seule par le seuil d'auto-compaction.
+          // CLI announces compaction whether requested through Sillage or automatic threshold.
           if (message.status === 'compacting') {
             this.ctx.emit({ type: 'context.compaction_started' }, message)
           }
-          // L'échec ne produit aucune frontière de compaction : sans ce relais, le
-          // contexte reste plein et rien ne le dit.
+          // Failure produces no compaction boundary: without forwarding, context stays full
+          // silently.
           if (message.compact_result === 'failed') {
             this.ctx.emit(
               {
@@ -473,11 +447,9 @@ export class ClaudeRunner implements AgentRunner {
           }
           return
         }
-        // Le seul signal que le CLI donne du travail qu'il poursuit hors du tour :
-        // workflows, commandes lancées en fond, sous-agents basculés en arrière-plan.
-        // Rien de tout ça n'apparaît dans le flux des messages, et l'attribution par
-        // `parentToolCallId` ne le voit pas non plus : l'orchestration d'un workflow
-        // se fait au-dessus de ce que le SDK expose en sous-agents.
+        // Only signal for work outside turn: workflows, background commands, backgrounded
+        // subagents. Absent from message stream and `parentToolCallId`: workflow orchestration sits
+        // above SDK subagent exposure.
         if (message.subtype === 'background_tasks_changed') {
           this.ctx.emit(
             {
@@ -498,9 +470,8 @@ export class ClaudeRunner implements AgentRunner {
               type: 'task.started',
               taskId: message.task_id,
               toolCallId: message.tool_use_id ?? null,
-              // `task_type` manque sur les sous-agents lancés par l'outil Task, que le
-              // CLI décrit par leur type d'agent. Le repli garde la même famille que
-              // celle annoncée dans la liste de niveau.
+              // `task_type` absent for Task-launched subagents described by agent type. Fallback
+              // keeps same family as top-level list.
               kind: message.task_type ?? 'local_agent',
               description: message.description,
             },
@@ -542,18 +513,20 @@ export class ClaudeRunner implements AgentRunner {
           return
         }
         if (message.subtype === 'init') {
+          if (message.permissionMode !== toPermissionMode(this.config.permissionMode)) {
+            process.stderr.write(
+              `[claude ${this.conversationId}] permission mode mismatch: requested=${toPermissionMode(this.config.permissionMode)} actual=${message.permissionMode} version=${message.claude_code_version}\n`,
+            )
+          }
           const first = this.sessionId === null
           this.sessionId = message.session_id
           this.ctx.setAgentSessionId(message.session_id)
-          // `slash_commands` de l'init ne porte que des noms. La liste proposée à la
-          // saisie a besoin des descriptions et de la forme des arguments, que seule
-          // cette requête donne.
+          // Init `slash_commands` has names only. Completion needs descriptions/argument shapes,
+          // supplied only by this request.
           if (first) void this.publishSupportedCommands()
-          // Le CLI ré-émet son init à chaque tour, pas seulement au lancement : compté
-          // en base, autant de `session.started` que de tours. Seul le premier vaut
-          // démarrage ; les suivants ne sont journalisés que si la session ou le modèle
-          // ont changé, ce qui est justement ce que le fil doit voir : un `/model`
-          // tapé, un repli, un `/clear` qui a ouvert une autre session.
+          // CLI emits init every turn, not just launch: database counted equal `session.started`
+          // and turns. Only first is startup; later journaled only on session/model changes,
+          // revealing typed `/model`, fallback, `/clear` opening another session.
           const signature = `${message.session_id}\n${message.model}`
           if (signature !== this.initSignature) {
             this.initSignature = signature
@@ -570,8 +543,7 @@ export class ClaudeRunner implements AgentRunner {
             )
           }
           this.publishFastMode(message.fast_mode_state, message.fast_mode_disabled_reason)
-          // Même cadence que `session.started` : l'init revient à chaque tour, l'avis ne
-          // revient que si la liste des échecs a changé.
+          // Like `session.started`: init repeats per turn, notice only when failure list changes.
           const pluginErrors = JSON.stringify(message.plugin_errors ?? [])
           if (pluginErrors !== this.pluginErrorsSignature) {
             this.pluginErrorsSignature = pluginErrors
@@ -580,7 +552,7 @@ export class ClaudeRunner implements AgentRunner {
           }
           return
         }
-        // Le reste des messages système est un signal ou du bruit : `signals.ts` tranche.
+        // Other system messages are signals or noise; `signals.ts` decides.
         this.emitSignal(message)
         return
       }
@@ -588,16 +560,12 @@ export class ClaudeRunner implements AgentRunner {
       case 'stream_event': {
         const event = message.event
 
-        // `message.uuid` identifie l'evenement de flux, pas le message : l'utiliser
-        // comme messageId produit un identifiant different a chaque token. Le seul
-        // identifiant stable est celui de l'API, annonce par message_start et repris
-        // par le message assistant final.
+        // `message.uuid` identifies stream event, not message: messageId would differ per token.
+        // Only stable API ID arrives in message_start and final assistant message.
         //
-        // Le flux de l'agent principal et celui de chaque sous-agent passent par le
-        // même canal, entrelacés. L'identifiant courant est donc retenu par auteur :
-        // un seul suffisait tant qu'un seul agent parlait, mais le `message_start`
-        // d'un sous-agent l'écrasait, et la suite de la réponse principale partait
-        // grossir le message du sous-agent.
+        // Main/subagent streams interleave on same channel, so retain current ID per author. One ID
+        // sufficed for one speaker, but subagent `message_start` overwrote it and subsequent main
+        // text appended to subagent.
         const parentToolCallId = message.parent_tool_use_id
         if (event.type === 'message_start') {
           this.streamingMessageIds.set(parentToolCallId, event.message.id)
@@ -663,13 +631,11 @@ export class ClaudeRunner implements AgentRunner {
       }
 
       case 'user': {
-        // Les messages user émis par le CLI portent les résultats d'outils. Le message
-        // saisi par l'utilisateur, lui, est journalisé par send().
+        // CLI user messages carry tool results; actual user input is journaled by send().
         const content = message.message.content
         if (typeof content === 'string') {
-          // Reste le texte nu, que ni l'un ni l'autre ne produit : c'est une consigne
-          // que le CLI se réinjecte, typiquement une boucle qui vient d'échoir, ou la
-          // sortie d'une commande de barre oblique qu'il a traitée sans le modèle.
+          // Remaining plain text comes from neither: CLI-reinjected instructions, typically due
+          // loops or locally handled slash-command output.
           this.ctx.emit({ type: 'prompt.injected', text: content }, message)
           this.armTurnWatchdog('local_command')
           return
@@ -691,8 +657,7 @@ export class ClaudeRunner implements AgentRunner {
 
           const edit = this.pendingEdits.get(block.tool_use_id)
           this.pendingEdits.delete(block.tool_use_id)
-          // Un appel en échec n'a rien écrit : le journaliser ferait apparaître une
-          // modification qui n'existe pas sur le disque.
+          // Failed calls wrote nothing: journaling edits would show nonexistent disk changes.
           if (edit && block.is_error !== true) {
             this.ctx.emit({
               type: 'file.edited',
@@ -706,10 +671,9 @@ export class ClaudeRunner implements AgentRunner {
       }
 
       case 'result': {
-        // Un tour en échec dit pourquoi avant de se clore. Le CLI a deux façons de le
-        // dire : un sous-type d'erreur avec sa liste de causes, ou un « succès » marqué
-        // `is_error` dont le texte est le message d'erreur lui-même, cas du quota
-        // épuisé. Sans ce relais, le fil s'arrêtait sans un mot dans les deux cas.
+        // Failed turns explain before closing. CLI emits either error subtype with causes or
+        // `is_error` “success” containing error text, such as exhausted quota. Without forwarding
+        // both ended silently.
         if (message.subtype !== 'success') {
           this.ctx.emit(
             {
@@ -738,8 +702,8 @@ export class ClaudeRunner implements AgentRunner {
             costUsd: message.total_cost_usd,
             inputTokens: message.usage.input_tokens,
             outputTokens: message.usage.output_tokens,
-            // Le contexte du CLI passe presque entièrement par le cache : sans ces
-            // deux champs, le total affiché n'a aucun rapport avec la consommation.
+            // CLI context mostly uses cache: without both fields displayed totals do not reflect
+            // usage.
             cacheCreationTokens: message.usage.cache_creation_input_tokens,
             cacheReadTokens: message.usage.cache_read_input_tokens,
           },
@@ -747,11 +711,11 @@ export class ClaudeRunner implements AgentRunner {
         )
         this.turnOpen = false
         this.ctx.setStatus('idle')
-        // Chaque `result` porte l'état du mode rapide, y compris la pause après une
-        // limite atteinte : c'est ici qu'on apprend qu'il a changé en cours de tour.
+        // Each `result` carries Fast state including rate-limit cooldown, revealing mid-turn
+        // changes.
         this.publishFastMode(message.fast_mode_state, message.fast_mode_disabled_reason)
-        // Le contexte n'est connu qu'en interrogeant le CLI : le message `result`
-        // n'en dit rien. Fait après coup pour ne pas retarder la fin du tour.
+        // Context requires CLI query; `result` omits it. Query afterward to avoid delaying turn
+        // completion.
         void this.emitContextUsage()
         return
       }
@@ -767,8 +731,8 @@ export class ClaudeRunner implements AgentRunner {
             rateLimit: {
               type: info.rateLimitType ?? 'unknown',
               status: info.status,
-              // `resetsAt` est en secondes côté CLI, le reste de Sillage compte en
-              // millisecondes : convertir ici évite une date en 1970 dans l'UI.
+              // CLI `resetsAt` uses seconds, Sillage milliseconds: conversion prevents UI dates in
+              // 1970.
               utilization: info.utilization ?? null,
               resetsAt: info.resetsAt === undefined ? null : info.resetsAt * 1000,
             },
@@ -781,27 +745,26 @@ export class ClaudeRunner implements AgentRunner {
       default: {
         const subtype = 'subtype' in message ? String(message.subtype) : message.type
         if (IGNORED_SUBTYPES.has(subtype)) return
-        // Types non traduits, donc non journalisés : le journal est la source
-        // d'affichage (I2), et y écrire un événement que rien ne sait rendre le
-        // ferait grossir sans que personne le lise. Ce qui manquerait à l'écran
-        // devient un événement traduit, dans `signals.ts`, pas une ligne brute de plus.
+        // Untranslated types are not journaled: journal drives display (I2), so unrenderable events
+        // only add unread volume. Missing visible content belongs in translated `signals.ts`, not
+        // another raw row.
         this.emitSignal(message)
         return
       }
     }
   }
 
-  /** Relaie un signal du CLI (voir `signals.ts`) ; ce qui n'en est pas un reste ignoré. */
+  /** Forward CLI signals (see `signals.ts`); ignore nonsignals. */
   private emitSignal(message: SDKMessage): void {
     const event = translateSignal(message)
     if (event) this.ctx.emit(event, message)
   }
 
   /**
-   * Journalise l'état du mode rapide quand il change, et seulement alors.
+   * Journal Fast state only on change.
    *
-   * Le CLI le répète sur chaque `init` et chaque `result` ; un avis par tour dirait la
-   * même chose vingt fois. `undefined` vient d'un CLI qui ne connaît pas la notion.
+   * CLI repeats on every init/result; one notice per turn says same thing twenty times. `undefined`
+   * means CLI does not know feature.
    */
   private publishFastMode(
     state: FastModeState | undefined,
@@ -817,10 +780,7 @@ export class ClaudeRunner implements AgentRunner {
     if (event) this.ctx.emit(event)
   }
 
-  /**
-   * Occupation de la fenêtre de contexte, lue par requête de contrôle. Une erreur ici
-   * ne doit rien casser : c'est un indicateur, pas une étape du tour.
-   */
+  /** Context occupancy through control request. Errors must break nothing: indicator, not turn step. */
   private async emitContextUsage(): Promise<void> {
     if (!this.session) return
     try {
@@ -833,23 +793,20 @@ export class ClaudeRunner implements AgentRunner {
         context: {
           usedTokens: usage.totalTokens,
           maxTokens: usage.maxTokens,
-          // Le CLI donne un pourcentage ; le schéma stocke un ratio de 0 à 1.
+          // CLI provides percentage; schema stores 0–1 ratio.
           ratio: usage.percentage / 100,
         },
       })
     } catch {
-      // Session déjà fermée, ou CLI trop ancien pour cette requête de contrôle.
+      // Session already closed or CLI too old for control request.
     }
   }
 
   /**
-   * Tout ce que le CLI soumet à l'utilisateur passe par ce rappel, y compris ce qui
-   * n'est pas une permission : deux outils y servent en réalité à poser une question
-   * et à faire valider un plan. Les traiter comme des permissions donnerait un
-   * « Autoriser / Refuser » sur une question à choix multiples.
+   * All CLI user prompts pass here, including nonpermissions: two tools ask questions/approve
+   * plans. Treating them as permissions would put Allow/Deny on multiple-choice questions.
    *
-   * Champ défini plutôt que méthode : le SDK appelle la référence telle quelle, sans
-   * la relier à l'instance.
+   * Field instead of method: SDK calls reference without binding instance.
    */
   private readonly handleToolRequest: CanUseTool = (toolName, input, options) => {
     if (toolName === ASK_USER_QUESTION) return this.requestQuestion(input)
@@ -862,10 +819,15 @@ export class ClaudeRunner implements AgentRunner {
     input: Record<string, unknown>,
     options: Parameters<CanUseTool>[2],
   ): Promise<PermissionResult> {
+    // Omit tool arguments: diagnostic logs must not copy commands potentially containing secrets.
+    if (this.config.permissionMode === 'bypassPermissions') {
+      process.stderr.write(
+        `[claude ${this.conversationId}] unexpected permission request: tool=${toolName} mode=bypassPermissions\n`,
+      )
+    }
     /**
-     * Mises à jour de permission proposées par le CLI pour ne plus reposer la
-     * question. Sans les renvoyer, « autoriser pour la session » n'autorise que cet
-     * appel-là et la demande revient à l'identique au suivant.
+     * CLI-proposed permission updates prevent repeat prompts. Without forwarding, “allow for
+     * session” allows only this call and asks identically next time.
      */
     const suggestions = options.suggestions ?? []
 
@@ -874,9 +836,8 @@ export class ClaudeRunner implements AgentRunner {
         {
           toolName,
           input,
-          // Les libellés viennent du CLI, qui sait pourquoi il demande : chemin hors
-          // des dossiers autorisés, règle déclenchée, portée réclamée. Une phrase
-          // reconstruite depuis le nom de l'outil perdrait tout ça.
+          // CLI supplies labels explaining out-of-directory paths, triggered rules, requested
+          // scope. Rebuilding phrases from tool names loses this.
           title: options.title ?? null,
           description: options.description ?? null,
           displayName: options.displayName ?? null,
@@ -885,9 +846,8 @@ export class ClaudeRunner implements AgentRunner {
           if (decision === null) {
             resolve({ behavior: 'deny', message: 'Session terminée avant la réponse.' })
           } else if (decision.decision === 'allowed') {
-            // Une autorisation ponctuelle ne change aucune règle ; au-delà, on renvoie
-            // les mises à jour que le CLI a lui-même proposées, seule façon qu'il
-            // cesse de reposer la question.
+            // One-time approval changes no rules; broader approval returns CLI-proposed updates,
+            // only way to stop repeat prompts.
             resolve({
               behavior: 'allow',
               ...(decision.scope === 'once' ? {} : { updatedPermissions: suggestions }),
@@ -904,14 +864,13 @@ export class ClaudeRunner implements AgentRunner {
     return new Promise<PermissionResult>((resolve) => {
       this.interactions.requestQuestion(toQuestions(input), (answer) => {
         if (answer === null || answer.status === 'cancelled') {
-          // Autoriser sans réponse : le CLI produit alors « The user did not answer
-          // the questions », et le modèle poursuit sans être bloqué. Un refus, lui,
-          // ferait remonter une erreur d'outil pour un geste parfaitement légitime.
+          // Allow without answers: CLI emits “The user did not answer the questions” and model
+          // continues. Denial would turn legitimate cancellation into tool error.
           resolve({ behavior: 'allow' })
         } else {
           resolve({
             behavior: 'allow',
-            // L'entrée d'origine est complétée par la réponse, pas remplacée.
+            // Augment original input with answer rather than replacing it.
             updatedInput: toUpdatedInput(input, answer.answers),
           })
         }
@@ -936,10 +895,8 @@ export class ClaudeRunner implements AgentRunner {
             return
           }
 
-          // Sortir du mode plan ne dit pas comment continuer : sans ce changement de
-          // mode, l'agent retomberait dans celui qui l'a fait planifier et
-          // replanifierait. La valeur vient du client : revalidée ici, un identifiant
-          // inconnu vaut « pas de changement de mode » plutôt qu'un mode inventé.
+          // Leaving plan mode does not choose continuation: without changing mode, agent returns to
+          // planning. Revalidate client value: unknown IDs mean no mode change, not invented modes.
           const parsed = claudePermissionModeSchema.safeParse(review.followUpMode)
           const mode = parsed.success ? parsed.data : null
           resolve({
@@ -954,8 +911,8 @@ export class ClaudeRunner implements AgentRunner {
           })
           if (mode) {
             this.config = { ...this.config, permissionMode: mode }
-            // Persisté tout de suite : le mode adopté doit survivre au runner, sinon
-            // les réglages affichent l'ancien et une reprise repartirait en mode plan.
+            // Persist immediately: mode must outlive runner, otherwise settings show old mode and
+            // resume plans again.
             this.ctx.updateConfig(this.config)
           }
         },
@@ -968,13 +925,12 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Observateur pur : il relève les boucles armées et rend la main sans rien décider.
+   * Pure observer records armed loops and returns without deciding.
    *
-   * La cadence est celle des fins de tour, ce qui suffit ici : une tâche planifiée ne
-   * tire qu'entre deux tours, jamais pendant. Un relevé par fin de tour voit donc tout
-   * ce qui peut changer, au moment où ça change.
+   * Turn-end cadence suffices: scheduled tasks fire only between turns, never during. Each end sees
+   * all possible changes when they happen.
    *
-   * Champ défini plutôt que méthode : le SDK appelle la référence telle quelle.
+   * Field rather than method: SDK calls reference directly.
    */
   private readonly handleStop: HookCallback = async (input) => {
     if (input.hook_event_name === 'Stop') {
@@ -987,35 +943,32 @@ export class ClaudeRunner implements AgentRunner {
           prompt: cron.prompt,
         })),
       })
-      // Un serveur peut tomber ou finir de s'authentifier en cours de session : sans ce
-      // relevé, l'inventaire resterait celui du démarrage.
+      // Servers may fail or finish authentication mid-session; otherwise inventory would remain
+      // startup snapshot.
       void this.publishMcpStatus()
     }
     return { continue: true }
   }
 
   /**
-   * Publie l'inventaire MCP tel que le CLI le voit.
+   * Publish MCP inventory as CLI sees it.
    *
-   * Interrogé plutôt que déduit de ce que Sillage a transmis : c'est la seule façon de
-   * savoir qu'un serveur a échoué à démarrer, et la seule qui montre aussi ceux venus
-   * du disque du CLI, que l'utilisateur subit sans les avoir déclarés ici.
+   * Query rather than infer from supplied config: only way to discover startup failures and servers
+   * loaded from CLI disk that user receives without declaring here.
    */
   private async publishMcpStatus(): Promise<void> {
     const session = this.session
     if (!session) return
 
     try {
-      // Les serveurs écartés faute d'un secret n'ont jamais été transmis au CLI : il
-      // ne peut pas les rapporter, et sans cet ajout ils disparaîtraient au lieu de
-      // s'afficher en échec.
+      // Servers skipped for missing secrets never reached CLI and cannot be reported; add them so
+      // failures remain visible instead of vanishing.
       this.ctx.emit({
         type: 'mcp.updated',
         servers: [...this.mcpFailures, ...fromSdkMcpStatus(await session.mcpServerStatus())],
       })
     } catch (err) {
-      // Un inventaire manquant ne justifie pas de faire tomber la session : la
-      // conversation reste utilisable, seul l'écran d'état est en retard.
+      // Missing inventory must not kill session: conversation works, only status screen lags.
       process.stderr.write(
         `[claude ${this.conversationId}] inventaire MCP indisponible : ${err instanceof Error ? err.message : String(err)}\n`,
       )
@@ -1023,10 +976,9 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Publie les commandes en `/` reconnues par la session.
+   * Publish session-recognized slash commands.
    *
-   * Le CLI en pousse lui-même la liste dès qu'elle bouge ; celle-ci n'est demandée
-   * qu'au démarrage, où rien n'a encore été poussé.
+   * CLI pushes list changes itself; explicitly request only at startup before any push.
    */
   private async publishSupportedCommands(): Promise<void> {
     const session = this.session
@@ -1035,8 +987,8 @@ export class ClaudeRunner implements AgentRunner {
     try {
       this.publishCommands(await session.supportedCommands())
     } catch (err) {
-      // Une liste manquante ne coûte que l'aide à la saisie : une commande tapée en
-      // entier part quand même. Rien qui justifie de faire tomber la session.
+      // Missing list only costs completion: fully typed commands still send. No reason to fail
+      // session.
       process.stderr.write(
         `[claude ${this.conversationId}] commandes indisponibles : ${err instanceof Error ? err.message : String(err)}\n`,
       )
@@ -1048,20 +1000,19 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Élicitation MCP : un serveur réclame une saisie à l'utilisateur.
+   * MCP elicitation: server requests user input.
    *
-   * Canal distinct de `canUseTool` : ce n'est ni une permission d'outil ni une question
-   * de l'agent, mais une demande d'un serveur MCP tierce. Sans ce rappel, le CLI répond
-   * lui-même « decline » et le serveur reçoit un refus que personne n'a formulé.
+   * Separate from `canUseTool`: neither tool permission nor agent question, but third-party MCP
+   * request. Without callback CLI declines automatically, rejecting without user decision.
    *
-   * Champ défini plutôt que méthode : le SDK appelle la référence telle quelle.
+   * Field rather than method: SDK calls reference directly.
    */
   private readonly handleElicitation = (request: ElicitationRequest): Promise<ElicitationResult> => {
     return new Promise<ElicitationResult>((resolve) => {
       this.interactions.requestElicitation(
         {
           serverName: request.serverName,
-          // `mode` est facultatif côté SDK ; le formulaire est le comportement historique.
+          // SDK `mode` optional; form is historical default.
           mode: request.mode === 'url' ? 'url' : 'form',
           message: request.message,
           url: request.url ?? null,
@@ -1070,13 +1021,12 @@ export class ClaudeRunner implements AgentRunner {
         },
         (answer) => {
           if (answer === null) {
-            // `cancel` plutôt que `decline` : le serveur MCP distingue un refus
-            // explicite d'une demande qui n'a jamais atteint personne.
+            // `cancel`, not `decline`: MCP distinguishes explicit refusal from requests reaching
+            // nobody.
             resolve({ action: 'cancel' })
             return
           }
-          // Le contenu n'accompagne qu'une acceptation : MCP ne prévoit rien à
-          // transporter avec un refus ou une annulation.
+          // Only acceptance carries content: MCP defines none for denial/cancellation.
           resolve(
             answer.action === 'accept'
               ? { action: 'accept', content: answer.content }
@@ -1092,10 +1042,8 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   reviewPlan(requestId: string, review: PlanReview): boolean {
-    // Normalisé avant journalisation : la valeur vient du client et le schéma commun
-    // n'y voit qu'une chaîne opaque. Un identifiant que cet adaptateur ne connaît
-    // pas vaut « pas de changement de mode », et c'est cette lecture-là qui doit se
-    // retrouver dans le journal, pas la chaîne inventée.
+    // Normalize before journaling: client value is opaque to shared schema. Unknown IDs mean no
+    // mode change; journal must record that interpretation, not invented string.
     const parsed = claudePermissionModeSchema.safeParse(review.followUpMode)
     return this.interactions.resolvePlanReview(requestId, {
       ...review,
@@ -1108,14 +1056,12 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Les mentions ne sont pas reprises ici : Claude Code développe lui-même les
-   * `@chemin` présents dans le texte, relativement à son répertoire de travail. Le
-   * comportement a été vérifié sur le CLI installé, en posant une question sur un
-   * fichier mentionné avec tous les outils refusés : la réponse est arrivée sans
-   * qu'aucun outil ne soit appelé, donc le contenu était déjà dans le contexte.
+   * No mention handling here: Claude expands `@path` relative to cwd itself. Probed installed CLI
+   * with mentioned-file question and all tools denied: answer arrived without tools, so context
+   * already contained content.
    *
-   * Les compétences non plus : Claude expose les siennes parmi ses commandes en `/`,
-   * qui partent dans le texte. Rien ne les publie ici, donc la liste arrive vide.
+   * No skills either: Claude exposes slash commands sent in text. Nothing publishes them here, so
+   * list arrives empty.
    */
   async send(
     text: string,
@@ -1143,23 +1089,18 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Infléchit le tour en cours.
+   * Steer active turn.
    *
-   * Il n'y a pas de requête dédiée comme le `turn/steer` de Codex : le message part
-   * par le flux ordinaire, et c'est `priority` qui dit au CLI où le poser. `next`
-   * replie le message dans le tour courant, à la prochaine frontière de lot d'outils,
-   * où il arrive au modèle précédé de « The user sent a new message while you were
-   * working ». `later` lui ferait attendre le tour suivant, ce que fait déjà la file.
+   * No dedicated request like Codex `turn/steer`: ordinary stream carries message; `priority`
+   * controls placement. `next` folds into current turn at next tool-batch boundary, prefixed “The
+   * user sent a new message while you were working”. `later` waits for next turn, already handled
+   * by queue.
    *
-   * La valeur est écrite plutôt que laissée au défaut, qui vaut `next` : elle est le
-   * seul écart entre ce geste et `send`, et le lecteur doit pouvoir le voir.
+   * Write explicit `next`, though default: only difference from send, and readers must see it.
    *
-   * Deux limites, relevées à la sonde sur le CLI installé et absentes de la
-   * documentation. Le repli n'a lieu qu'à une frontière de lot d'outils : si l'agent
-   * rédige déjà sa réponse finale sans autre appel, le tour se termine et le message
-   * ouvre le suivant. Et rien dans le flux ne dit laquelle des deux choses s'est
-   * produite, donc `true` affirme que le message est parti dans un tour ouvert, pas
-   * qu'il l'a réorienté.
+   * Two installed-CLI probe limits absent from docs: only tool-batch boundaries fold messages, so
+   * final answers without further calls finish before message starts next turn. Stream never
+   * reports which happened: `true` means sent during open turn, not guaranteed redirection.
    */
   async steer(
     text: string,
@@ -1179,8 +1120,7 @@ export class ClaudeRunner implements AgentRunner {
       parentToolCallId: null,
     })
 
-    // Pas de `openTurn()`, contrairement à `send` : le tour est déjà ouvert, c'est la
-    // condition même du geste, et en ouvrir un second fausserait le compte.
+    // Unlike send, no `openTurn()`: existing turn is precondition; opening another miscounts.
     this.input.push({
       type: 'user',
       message: { role: 'user', content: prompt },
@@ -1195,12 +1135,10 @@ export class ClaudeRunner implements AgentRunner {
   /**
    * Compaction.
    *
-   * Claude n'expose pas de requête de contrôle pour ça : `/compact` est une commande de
-   * barre oblique, que le CLI reconnaît dans un message utilisateur ordinaire. Elle est
-   * donc envoyée par le même canal qu'un message, et produit un tour comme un autre.
+   * Claude exposes no control request: `/compact` is slash command in ordinary user message, using
+   * same channel and producing a turn.
    *
-   * Le message n'est pas journalisé comme contenu utilisateur : ce n'est pas quelque
-   * chose que l'utilisateur a dit à l'agent, c'est une commande adressée au CLI.
+   * Do not journal as user content: command addresses CLI, not something user told agent.
    */
   async compact(): Promise<boolean> {
     if (!this.session) return false
@@ -1217,62 +1155,53 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Requête de contrôle `stopTask` du SDK. Le CLI clôt la tâche puis publie la liste
-   * restante en `background_tasks_changed` : rien à émettre ici, le journal apprend
-   * l'arrêt par le chemin qui lui a appris le lancement.
+   * SDK `stopTask` control request. CLI closes task and publishes remaining
+   * `background_tasks_changed`; nothing to emit here, journal learns stopping through same path as
+   * starting.
    */
   async stopBackgroundTask(taskId: string): Promise<boolean> {
     if (!this.session) return false
     try {
       await this.session.stopTask(taskId)
     } catch {
-      // Course ordinaire : la tâche s'est terminée entre le clic et la requête, le CLI
-      // ne la connaît plus. Même réponse qu'une session absente, pas une erreur.
+      // Normal race: task finished between click/request, CLI no longer knows it. Same as absent
+      // session, not error.
       return false
     }
     return true
   }
 
-  /**
-   * Le SDK expose des requêtes de contrôle pour ces réglages : les changer ne demande
-   * pas de relancer le CLI, donc la session garde son contexte chargé.
-   */
+  /** SDK control requests apply these settings without restarting CLI, preserving loaded context. */
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'claude' || !this.session) return false
 
-    // `strictMcpConfig` n'est qu'une option de lancement : le SDK n'expose aucune
-    // requête de contrôle pour l'inverser. Refuser ici fait redémarrer le runner, qui
-    // repartira en reprise avec la bonne valeur.
+    // `strictMcpConfig` is launch-only; no control request toggles it. Rejection triggers runner
+    // restart/resume with correct value.
     if (config.strictMcp !== this.config.strictMcp) return false
 
-    // Sortir de `bypassPermissions` demande de relancer, au même titre qu'y entrer. Le
-    // contournement est donné au lancement, et `set_permission_mode` ne le reprend pas :
-    // il accepte le nouveau mode sans rien changer, `canUseTool` n'est plus jamais
-    // rappelé, et la conversation continue à tout autoriser sous un réglage qui affiche
-    // le contraire. Contrairement au sens inverse, qui échoue franchement, celui-ci
-    // passait pour appliqué et n'a donc jamais fait repartir le runner.
-    if (this.launchedWithBypass && config.permissionMode !== 'bypassPermissions') return false
+    // Leaving `bypassPermissions` requires restart like entering. Launch grants bypass;
+    // `set_permission_mode` accepts new mode but changes nothing: canUseTool never called,
+    // conversation still allows everything under opposite displayed setting. Unlike reverse
+    // direction failing clearly, this looked applied and never restarted.
+    if (this.launchedWithBypass !== (config.permissionMode === 'bypassPermissions')) return false
 
-    // Les plafonds de budget sont des options de lancement, sans requête de contrôle
-    // pour les changer : même sort que `strictMcp`.
+    // Budget caps are launch-only without control updates, same as strictMcp.
     if (config.maxBudgetUsd !== this.config.maxBudgetUsd || config.maxTurns !== this.config.maxTurns) {
       return false
     }
 
-    // Le compte aussi : le jeton arrive par l'environnement du process, lu au lancement.
+    // Account too: token comes through process environment read at launch.
     if (config.account !== this.config.account) return false
 
-    // Les plugins de la bibliothèque aussi. Comparé sur les racines et non sur le seul
-    // interrupteur : c'est ce que le CLI a reçu qui compte.
+    // Library plugins too. Compare actual received roots, not just toggle.
     if (JSON.stringify(this.ctx.skillRoots(config)) !== JSON.stringify(this.skillRoots)) return false
 
     await this.session.setModel(config.model)
     await this.session.applyFlagSettings(liveFlagSettings(this.config, config))
     await this.session.setPermissionMode(toPermissionMode(config.permissionMode))
 
-    // Comparé sur les serveurs résolus et non sur les identifiants : une entrée du
-    // registre corrigée entre-temps doit repartir, alors que la liste d'identifiants,
-    // elle, n'a pas bougé.
+    // Compare resolved servers, not IDs: registry entries corrected meanwhile must restart even
+    // with identical ID list.
     const resolved = this.ctx.resolveMcpServers(config)
     const desired = toSdkMcpServers(resolved.servers)
     if (JSON.stringify(desired) !== JSON.stringify(this.appliedMcpServers)) {
@@ -1287,9 +1216,9 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Sondé : un skill ajouté à un plugin en cours de session n'est pas vu tant qu'on ne le
-   * demande pas, et `reloadSkills()` suffit, sans toucher au cache de prompt. Le CLI
-   * pousse ensuite `commands_changed`, qui met à jour la liste du composer.
+   * Probed: skills added to running plugins remain unseen until requested; `reloadSkills()`
+   * suffices without invalidating prompt cache. CLI then pushes `commands_changed`, refreshing
+   * composer.
    */
   async reloadSkillLibrary(): Promise<void> {
     if (!this.session || this.skillRoots.length === 0) return
@@ -1297,9 +1226,8 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /**
-   * Claude Code résume la session dès le premier tour et le persiste à côté du
-   * transcript. On le lit par `getSessionInfo`, pas par un hook `SessionStart` : un
-   * hook forke un process à chaque événement, ce que le budget mémoire exclut.
+   * Claude summarizes from first turn and saves beside transcript. Read via `getSessionInfo`, not
+   * SessionStart hook: hooks fork processes per event, excluded by memory budget.
    */
   async suggestedTitle(): Promise<string | null> {
     const sessionId = this.sessionId
@@ -1310,7 +1238,7 @@ export class ClaudeRunner implements AgentRunner {
       const title = info?.customTitle ?? info?.summary ?? null
       return title && title.trim().length > 0 ? title.trim() : null
     } catch {
-      // Un titre absent n'est pas une panne : la conversation garde le sien.
+      // Missing titles are not failures: conversation retains its own.
       return null
     }
   }
@@ -1319,12 +1247,10 @@ export class ClaudeRunner implements AgentRunner {
     await this.session?.interrupt()
     this.ctx.setStatus('idle')
 
-    // Le tour n'est pas refermé ici : le CLI répond à l'interruption d'un tour vivant
-    // par un `result`, qui porte le `turn.completed` sur lequel le fil web raccroche son
-    // indicateur d'activité. Le fermer d'avance ferait taire le statut sans que le fil
-    // le sache, et le geste paraîtrait sans effet, activité et bouton Stop toujours à
-    // l'écran. Quand aucun tour n'était réellement en cours, ce `result` ne vient pas :
-    // c'est le filet qui referme.
+    // Do not close turn here: CLI interruption of live turn returns result, carrying turn.completed
+    // to reset web indicator. Closing early changes status without thread knowing, leaving
+    // activity/Stop visible and action apparently ineffective. Without real active turn no result
+    // arrives; fallback closes it.
     this.armTurnWatchdog('interrupted')
   }
 

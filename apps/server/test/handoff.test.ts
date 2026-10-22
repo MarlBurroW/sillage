@@ -18,10 +18,7 @@ import {
   type HandoffItem,
 } from '../src/conversations/handoff.js'
 
-/**
- * La sélection transférée à un autre CLI : ce qui est gardé, dans quel ordre, et
- * comment ce qui manque est référencé. Rien ici ne lance un CLI.
- */
+/** Selection handed to another CLI: retained content, order and omission references. No CLI launches here. */
 
 const SOURCE = { id: 'src', title: 'Refonte du cache', agent: 'claude' as const }
 
@@ -63,11 +60,11 @@ test('repli : messages du fil principal, outils avec leur sortie, tours interrom
   assert.ok(tool.kind === 'tool')
   assert.equal(tool.output, 'ok')
   assert.equal(tool.input, '{"command":"npm test"}')
-  // Les deux `message.completed` d'un même message sont réunis, la réflexion écartée.
+  // Combine two `message.completed` entries for one message, excluding reasoning.
   const message = items[2]
   assert.ok(message.kind === 'assistant')
   assert.equal(message.text, 'Je regarde\n\nFait.')
-  // Un appel sans fin reste, sans sortie : il dit ce que le tour interrompu faisait.
+  // Unfinished calls remain without output, describing interrupted work.
   const pending = items[4]
   assert.ok(pending.kind === 'tool' && pending.output === '')
 })
@@ -97,18 +94,18 @@ test('sélection : la demande d\'origine, puis la fin du fil, les messages avant
   ]))
   const head = items[0]!
   const last3 = items.slice(-3)
-  // Juste de quoi tenir la demande et les trois derniers messages : pas l'outil.
+  // Budget fits the original request and latest three messages, not the tool.
   const budget = itemBytes(head) + bytesOf(last3) + 10
   const selection = selectHandoff(items, budget)
 
   assert.equal(selection.head, head)
   assert.deepEqual(selection.tail.map((item) => item.kind), ['assistant', 'user', 'assistant'])
   assert.deepEqual(selection.omitted, { messages: 2, fromSeq: 2, toSeq: 3 })
-  // L'outil suit le dernier message omis et précède le premier gardé : il est de la
-  // fenêtre, dont il prépare la réponse, mais ne tient pas.
+  // The tool lies after the last omitted message and before the first retained one:
+  // it prepares that response within the window but does not fit.
   assert.equal(selection.omittedTools, 1)
 
-  // Avec la place de l'outil en plus, il entre, à sa position dans le fil.
+  // With extra tool space, retain it at its original position.
   const wider = selectHandoff(items, budget + itemBytes(items[3]!) + bytesOf(items.slice(1, 3)))
   assert.deepEqual(wider.tail.map((item) => item.kind), ['assistant', 'user', 'tool', 'assistant', 'user', 'assistant'])
   assert.equal(wider.omitted, null)
@@ -149,7 +146,7 @@ test('rendu : la référence vers les messages omis cite la source et le curseur
   assert.match(result.text, /## Agent \(message 4\)\nFin$/)
   assert.equal(result.selected, 2)
   assert.equal(result.omitted, 2)
-  // Le fil compté hors en-tête, et dans le budget.
+  // History counted excluding headers and within budget.
   assert.ok(result.bytes < Buffer.byteLength(result.text))
   assert.ok(result.bytes <= MIN_HANDOFF_TOKENS)
 })

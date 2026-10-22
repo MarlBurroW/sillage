@@ -7,11 +7,7 @@ import type { SessionManager } from '../sessions/session-manager.js'
 
 const PROVISIONAL_TITLE_MAX = 60
 
-/**
- * Titre affiché entre la création et le résumé du CLI, c'est-à-dire le temps du
- * premier tour. Un extrait du message dit déjà de quoi il s'agit, contrairement à un
- * « Nouvelle conversation » identique pour toutes.
- */
+/** Title between creation and CLI summarization, during the first turn. Message excerpts already identify the subject instead of identical 'New conversation' labels. */
 export function provisionalTitle(firstMessage: string | undefined): string {
   const text = firstMessage?.trim().replace(/\s+/g, ' ')
   if (!text) return 'Nouvelle conversation'
@@ -21,33 +17,24 @@ export function provisionalTitle(firstMessage: string | undefined): string {
 }
 
 export interface CreateConversationInput {
-  /**
-   * Identifiant imposé, quand le premier message doit le citer : une session née d'un
-   * webhook reçoit la marque à laisser sur la forge, qui porte son propre identifiant.
-   */
+  /** Explicit ID when the first message must reference it: webhook-created sessions receive the forge marker carrying their own identifier. */
   id?: string
   projectId: string
   userId: string
   agent: AgentKind
-  /** Déjà résolue : les `CLI_DEFAULT` sont remplacés avant l'écriture. */
+  /** Already resolved: replace `CLI_DEFAULT` before writing. */
   config: AgentConfig
   worktreeId: string | null
-  /** Carte traitée, quand la conversation est lancée depuis le board. */
+  /** Target card when launched from the board. */
   cardId: string | null
   title?: string
-  /**
-   * Texte dont tirer le titre provisoire, quand le premier message ne s'y prête pas :
-   * une mission confiée par une autre session commence par son enveloppe balisée.
-   */
+  /** Text for provisional titles when the first message is unsuitable: delegated missions start with a tagged envelope. */
   titleSource?: string
-  /** Jeton d'API à l'origine de la conversation ; null quand elle vient de l'interface. */
+  /** Originating API token; null for interface-created conversations. */
   origin: { tokenId: string; label: string } | null
-  /** Tâche planifiée dont ce fil est un tir ; absent pour toute autre conversation. */
+  /** Scheduled task whose run this conversation represents; absent otherwise. */
   scheduleId?: string
-  /**
-   * Contexte transmis depuis une autre conversation, quand celle-ci la continue dans un
-   * autre CLI : écrit avec la ligne, pour que le premier démarrage du CLI le trouve.
-   */
+  /** Context handed off from another conversation when continuing in another CLI. Write alongside the row so the first CLI start can find it. */
   handoff?: {
     fromConversationId: string
     throughSeq: number
@@ -63,19 +50,14 @@ export interface CreateConversationInput {
   }
 }
 
-/**
- * Crée une conversation et lui envoie son premier message.
- *
- * Partagé entre l'interface et l'API : le vocabulaire diffère mais le geste est le
- * même, et deux copies auraient divergé au premier champ ajouté.
- */
+/** Creates conversations and sends their first message. Shared by interface and API: terminology differs but the action is identical, and duplicated code would diverge at the first added field. */
 export async function createConversation(
   db: Db,
   sessions: SessionManager,
   input: CreateConversationInput,
 ): Promise<ConversationRow> {
-  // Position en tête du projet : c'est l'ordre qu'avait le tri par date, et une
-  // nouvelle conversation en bas de liste passerait inaperçue.
+  // Place first within the project, matching the previous date order:
+  // new conversations at the bottom would go unnoticed.
   const [lowest] = db
     .select({ min: min(conversations.position) })
     .from(conversations)
@@ -91,6 +73,7 @@ export async function createConversation(
     userId: input.userId,
     title: input.title ?? provisionalTitle(input.titleSource ?? input.firstMessage?.text),
     titleSetByUser: input.title !== undefined,
+    titleSetByAgent: false,
     agent: input.agent,
     agentSessionId: null,
     forkedFromId: null,
@@ -126,8 +109,8 @@ export async function createConversation(
   }
 
   if (input.firstMessage) {
-    // Si l'envoi échoue, la conversation ne doit pas rester comme un fil vide :
-    // on la retire et on remonte l'erreur telle quelle.
+    // Failed sends must not leave empty conversations:
+    // remove it and propagate the original error.
     try {
       await sessions.sendMessage(
         row.id,

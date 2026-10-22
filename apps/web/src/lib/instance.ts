@@ -3,12 +3,9 @@ import type { InstanceCapabilities, InstanceInfo } from '@sillage/protocol'
 import { api } from './api'
 
 /**
- * Le profil de l'instance : serveur joint par un navigateur, ou application de bureau.
- *
- * Il ne change pas tant que le serveur tourne, d'où le cache sans fin. `App` l'attend
- * avec la session avant de dessiner quoi que ce soit, ce qui épargne aux écrans un état
- * « pas encore connu » : une action réservée au serveur n'apparaît pas une fraction de
- * seconde dans la fenêtre de bureau.
+ * Instance profile: browser-accessed server or desktop app. Immutable during server lifetime, hence
+ * infinite cache. `App` awaits it alongside session before rendering, avoiding unknown-profile
+ * states and server-only actions briefly appearing in desktop windows.
  */
 export function useInstance() {
   return useQuery({
@@ -20,12 +17,9 @@ export function useInstance() {
 }
 
 /**
- * Une capacité de l'instance. Tester celle-ci plutôt que le profil : voir
- * `InstanceCapabilities`.
- *
- * Tant que le profil n'est pas chargé, ou s'il n'a pas pu l'être, les capacités du
- * serveur font foi : c'est le déploiement historique, et un serveur plus ancien que
- * l'interface (le web déployé à chaud, sans redémarrage) ne connaît pas cette route.
+ * Instance capability: test this rather than profile; see `InstanceCapabilities`. Until profile
+ * loads, or if loading fails, use server capabilities: this is the historical deployment and older
+ * servers behind hot-deployed web clients lack this route.
  */
 export function useCapability(name: keyof InstanceCapabilities): boolean {
   const { data } = useInstance()

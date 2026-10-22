@@ -1,27 +1,36 @@
 import * as RadixTooltip from '@radix-ui/react-tooltip'
-import { createContext, useContext, type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react'
+import { createContext, useContext, useState, type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react'
 import { useMediaQuery } from '../../lib/viewport'
+import { cx } from './cx'
 
 const TooltipEnabled = createContext(true)
 
 export function TooltipProvider({ children }: { children: ReactNode }) {
-  // Le focus automatique des panneaux ne doit pas produire une aide collante au doigt.
+  // Automatic panel focus must not leave sticky touch tooltips.
   const enabled = useMediaQuery('(hover: hover) and (pointer: fine)')
   return <TooltipEnabled.Provider value={enabled}>
     <RadixTooltip.Provider delayDuration={400} skipDelayDuration={150}>{children}</RadixTooltip.Provider>
   </TooltipEnabled.Provider>
 }
 
-/** Le portail évite de couper l'aide dans les panneaux et les listes défilantes. */
-export function Tooltip({ label, children }: { label: string; children: ReactElement }) {
+/** Portals prevent clipping within panels and scrolling lists. */
+export function Tooltip({ label, children, side = 'top', sideOffset = 6, className, disabled }: {
+  label: ReactNode
+  children: ReactElement
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  sideOffset?: number
+  className?: string
+  disabled?: boolean
+}) {
   const enabled = useContext(TooltipEnabled)
+  const [open, setOpen] = useState(false)
   if (!enabled) return children
   return (
-    <RadixTooltip.Root>
+    <RadixTooltip.Root {...(disabled === undefined ? {} : { open: !disabled && open, onOpenChange: (value: boolean) => setOpen(!disabled && value) })}>
       <RadixTooltip.Trigger asChild>{children}</RadixTooltip.Trigger>
       <RadixTooltip.Portal>
-        <RadixTooltip.Content side="top" sideOffset={6} collisionPadding={8}
-          className="surface z-[100] max-w-[min(22rem,calc(100vw-1rem))] rounded-md border border-line px-2.5 py-1.5 text-xs leading-relaxed text-ink shadow-pop">
+        <RadixTooltip.Content side={side} sideOffset={sideOffset} collisionPadding={8}
+          className={cx('surface z-[100] max-w-[min(22rem,calc(100vw-1rem))] rounded-md border border-line px-2.5 py-1.5 text-xs leading-relaxed text-ink shadow-pop', className)}>
           {label}
         </RadixTooltip.Content>
       </RadixTooltip.Portal>
@@ -29,7 +38,7 @@ export function Tooltip({ label, children }: { label: string; children: ReactEle
   )
 }
 
-/** Conserve le style et la ref du bouton, notamment quand il ouvre un menu Radix. */
+/** Preserve button styles and refs, especially Radix menu triggers. */
 export function TooltipButton({ title, ...props }: ComponentPropsWithRef<'button'>) {
   const label = title ?? props['aria-label']
   const button = <button {...props} />

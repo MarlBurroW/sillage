@@ -1,4 +1,4 @@
-import { History, PanelRight, SquareKanban, X } from 'lucide-react'
+import { EyeOff, History, PanelRight, SquareKanban, X } from 'lucide-react'
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -12,6 +12,7 @@ import {
 } from '@sillage/protocol'
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
+import { AgentInstallProgress } from '../components/AgentInstallProgress'
 import { Composer } from '../components/chat/Composer'
 import { AccountChoice } from '../components/chat/AccountChoice'
 import { MobileNavigationButton } from '../components/MobileNavigation'
@@ -20,8 +21,10 @@ import { Banner, Button, IconButton, cx } from '../components/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
 import { useCards } from '../lib/cards'
 import {
+  hiddenAgent,
   useAgentAvailability,
   useAgentInstall,
+  useHiddenAgents,
   unavailableReason,
   versionMismatch,
 } from '../lib/agents'
@@ -43,10 +46,10 @@ const SidePanel = lazy(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
 )
 
-/** Les cartes de choix suivent l'enum du protocole : un CLI ajouté apparaît seul. */
+/** Choice cards follow the protocol enum: newly added CLIs appear automatically. */
 const AGENTS = agentKindSchema.options.map((value) => ({ value, ...AGENT_META[value] }))
 
-/** Jour et heure courts : assez pour situer une session, sans manger la ligne. */
+/** Short date and time: enough to locate a session without consuming the row. */
 function formatDay(ts: number): string {
   return new Date(ts).toLocaleString(locale(), {
     day: 'numeric',
@@ -57,16 +60,14 @@ function formatDay(ts: number): string {
 }
 
 /**
- * Consommation du CLI retenu, avant d'écrire quoi que ce soit.
+ * Selected CLI usage before writing anything.
  *
- * C'est le moment où le choix est encore ouvert : voir qu'une fenêtre est à 95 % ici
- * évite de le découvrir au milieu d'un tour. La lecture est celle du panneau détaillé,
- * et son cache de cinq minutes côté serveur fait qu'ouvrir un brouillon ne démarre pas
- * un CLI à chaque fois.
+ * The choice is still open here: seeing a window at 95% avoids discovering it mid-turn. Uses
+ * the detailed panel's query; the five-minute server cache prevents every draft opening from
+ * starting a CLI.
  *
- * Rien ne s'affiche tant qu'il n'y a rien à montrer : pas de squelette, pas de cadre
- * vide. La sonde met plusieurs secondes à froid, et le brouillon sert d'abord à taper
- * un message, pas à regarder des jauges apparaître.
+ * Display nothing until there is something to show: no skeleton or empty frame. Cold probes
+ * take several seconds, and the draft primarily exists for typing, not watching gauges appear.
  */
 function DraftUsage({
   agent,
@@ -80,11 +81,11 @@ function DraftUsage({
   const t = useTranslate()
   const { data: usage, error } = useAgentUsage(agent, enabled, account)
 
-  // La consommation n'est pas ce qu'on est venu chercher : quand la sonde échoue, une
-  // ligne suffit, alors qu'un bandeau d'erreur crierait plus fort que le formulaire.
+  // Usage is secondary here: one line suffices when probing fails, whereas an error
+  // banner would overshadow the form.
   if (error) return <p className="text-xs text-ink-faint">{t('draft.usage.unavailable')}</p>
-  // Un compte supplémentaire sans jauge : le choix vient d'être fait d'après l'usage, et
-  // une absence muette se lirait comme une panne. La raison est dite sous son option.
+  // Additional account without a gauge: the user just chose based on usage, so silent
+  // absence would look broken. Explain the reason below its option.
   if (!usage || !usage.limitsAvailable || usage.windows.length === 0) return null
 
   return (
@@ -107,26 +108,42 @@ function DraftUsage({
 }
 
 /**
- * Conversation pas encore créée.
+ * Conversation not yet created.
  *
- * Rien n'est écrit en base tant qu'aucun message n'a été envoyé : cliquer sur « + »
- * ne doit pas laisser un fil vide et sans titre dans la liste. La création et le
- * premier message partent ensemble, et c'est ce premier tour qui donne son titre à la
- * conversation.
+ * Nothing is written to the database until a message is sent: clicking “+” must not leave an
+ * empty, untitled thread. Creation and first message are submitted together, and the first turn
+ * supplies the title.
  */
 const NO_MCP_INVENTORY: McpServerStatus[] = []
 const NO_COMMANDS: SlashCommandDto[] = []
 const NO_SKILLS: AgentSkillDto[] = []
 
-/** Un CLI qui manque : ce qu'il en est, et le bouton pour l'installer d'ici. */
-function InstallRow({ entry }: { entry: AgentAvailabilityDto }) {
-  const install = useAgentInstall(entry, AGENT_LABELS[entry.agent])
+/**
+ * Missing CLI: availability, install button and option to stop suggesting it. During
+ * installation, the row becomes its progress display.
+ */
+function InstallRow({ entry, onDismiss }: { entry: AgentAvailabilityDto; onDismiss: () => void }) {
+  const t = useTranslate()
+  const label = AGENT_LABELS[entry.agent]
+  const install = useAgentInstall(entry, label)
+  if (install.progress) {
+    return (
+      <div className="rounded-lg border border-line p-3">
+        <AgentInstallProgress label={label} version={entry.preferredVersion} progress={install.progress} />
+      </div>
+    )
+  }
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-2">
       <span className="min-w-0 text-xs leading-snug text-ink-faint">{install.status}</span>
-      <Button size="sm" variant="secondary" disabled={install.busy} onClick={install.start}>
-        {install.action}
-      </Button>
+      <span className="flex shrink-0 items-center gap-1">
+        <Button size="sm" variant="secondary" disabled={install.busy} onClick={install.start}>
+          {install.action}
+        </Button>
+        <IconButton label={t('agent.install.dismiss')} size="sm" onClick={onDismiss}>
+          <EyeOff size={14} />
+        </IconButton>
+      </span>
     </div>
   )
 }
@@ -140,8 +157,8 @@ export function DraftConversationPage() {
   const sidebarHidden = useSidebarHidden()
   const panel = usePanelPresence()
 
-  // Valeur de départ seulement : le CLI reste modifiable tant que rien n'est envoyé.
-  // Sans ça, le « + » de la sidebar enfermerait sur le CLI du dernier fil.
+  // Initial value only: the CLI remains editable until sending.
+  // Otherwise sidebar “+” would lock the draft to the last thread's CLI.
   const requested = agentKindSchema.safeParse(params.get('agent'))
   const suggested: AgentKind = requested.success
     ? requested.data
@@ -150,15 +167,21 @@ export function DraftConversationPage() {
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
   const { data: availability } = useAgentAvailability()
   const t = useTranslate()
+  // Account-hidden CLIs are neither offered for installation nor selectable while
+  // missing: Claude-only users should not have to skip past them.
+  const hiddenAgents = useHiddenAgents()
+  const hiddenRows = (availability?.agents ?? []).filter(
+    (entry) => entry.reason !== 'disabled' && hiddenAgent(entry, hiddenAgents.hidden),
+  )
 
-  // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
-  // une carte grisée, et l'envoi resterait possible puisque le grisage ne bloque que le
-  // clic : le CLI par défaut est « claude » ou celui du dernier fil du projet, deux
-  // valeurs qui ne savent rien de ce qui est réellement installé.
+  // Suggested CLI falls back to an installed one. Otherwise the form would open on
+  // a disabled card yet still allow sending, since disabling only blocks clicks:
+  // the default is “claude” or the project's last-thread CLI, neither of which
+  // knows what is actually installed.
   //
-  // Un choix explicite n'est jamais réécrit, lui : ni le clic de l'utilisateur, ni le
-  // `?agent=` de l'URL. Basculer sous les doigts de quelqu'un qui vient de désigner un
-  // CLI serait pire que de le laisser voir qu'il manque.
+  // Never replace an explicit choice, whether a click or URL `?agent=`:
+  // switching under someone who just selected a CLI would be worse
+  // than letting them see it is missing.
   const installed = (kind: AgentKind) =>
     availability?.agents.find((a) => a.agent === kind)?.installed !== false
   const fallback = availability?.agents.find((a) => a.installed)?.agent
@@ -169,8 +192,8 @@ export function DraftConversationPage() {
   const blocked = unavailableReason(selectedAvailability)
   const selectedVersionNotice = versionMismatch(selectedAvailability)
 
-  // Une arrivée depuis le board ne compte pas : ni le lancement d'une carte, qui porte
-  // sa référence, ni le bouton de conversation neuve du board, qui le dit.
+  // Arriving from the board does not count: neither a card launch carrying its
+  // reference nor the board's explicitly marked new-conversation button.
   const location = useLocation()
   const fromBoard =
     params.get('card') !== null || (location.state as { from?: string } | null)?.from === 'board'
@@ -180,59 +203,58 @@ export function DraftConversationPage() {
   const { data: projects } = useProjects()
   const project = projects?.find((p) => p.id === projectId)
 
-  // Le board ouvre ce brouillon avec sa carte. Rien n'est rattaché tant que rien n'est
-  // envoyé : c'est une valeur de départ, comme le CLI, et la puce se retire.
+  // The board opens this draft with its card. Nothing is associated until sending:
+  // this is an initial value like the CLI, and the badge can be removed.
   const [detached, setDetached] = useState(false)
   const { data: cards } = useCards(projectId)
   const requestedCard = params.get('card')
   const card = detached ? undefined : cards?.find((entry) => entry.id === requestedCard)
   /**
-   * Le composer lit son texte initial une seule fois, au montage. Le rendre avant que
-   * la carte soit connue le figerait sans sa mention, et la poser après n'y changerait
-   * plus rien : on attend donc la réponse plutôt que de remonter le composant, ce qui
-   * effacerait ce qui aurait été tapé entre-temps.
+   * The composer reads initial text only at mount. Rendering before the card is known would
+   * freeze it without the mention; assigning it later would do nothing. Wait for the response
+   * rather than remounting and losing text typed meanwhile.
    */
   const cardPending = Boolean(requestedCard) && !detached && cards === undefined
 
-  // Le worktree déjà rattaché à la carte, s'il y en a un : reprendre un chantier doit
-  // retomber dans le bon arbre sans y penser. Le plus récent l'emporte, une carte ayant
-  // pu changer de branche en route.
+  // Worktree already associated with the card, if any: resuming work should land in
+  // the right tree automatically. Most recent wins, since the card may have
+  // changed branches along the way.
   const cardWorktree = card?.conversations.findLast((session) => session.worktreeId)?.worktreeId
   const [worktreeId, setWorktreeId] = useState<string | null>(null)
   const [worktreeTouched, setWorktreeTouched] = useState(false)
   const effectiveWorktreeId = worktreeTouched ? worktreeId : (cardWorktree ?? worktreeId)
 
-  // Le préréglage du projet d'abord, les défauts du compte ensuite : un projet qui
-  // nomme ses serveurs MCP ou ses répertoires supplémentaires parle de lui-même, et
-  // c'est plus précis qu'un défaut de compte valable partout. Ceux du protocole tant
-  // que rien n'est chargé : ils ne sont qu'un point de départ le temps d'un
-  // aller-retour, et rien n'est envoyé avant le premier message.
+  // Project preset first, then account defaults: project-specific MCP servers and
+  // extra directories describe that project more precisely than universal account
+  // defaults. Use protocol defaults until loading completes: they are only a
+  // temporary starting point during the round trip, and nothing is sent before
+  // the first message.
   const { data: userSettings } = useUserSettings()
   const defaults =
     project?.defaultConfig[agent] ?? userSettings?.agentDefaults[agent] ?? defaultConfigFor(agent)
-  // Une configuration Claude n'a aucun sens pour Codex : elle est abandonnée dès que
-  // le CLI change, plutôt que conservée et rejetée par le serveur.
+  // Claude configuration is meaningless for Codex: discard it when the CLI changes
+  // rather than retaining it for server rejection.
   const effective = useMemo(
     () => (config?.agent === agent ? config : defaults),
     [config, agent, defaults],
   )
 
-  // Chargées seulement quand le CLI retenu persiste des sessions locales relisibles.
-  // Un worktree écarte la liste : ces sessions vivent dans le dossier racine du projet.
-  const { data: cliSessions } = useClaudeSessions(
+  // Load only when the selected CLI persists readable local sessions.
+  // A worktree hides the list: these sessions live in the project root.
+  const { data: cliSessions, error: cliSessionsError } = useClaudeSessions(
     projectId,
     AGENT_CAPABILITIES[agent].cliSessions && !effectiveWorktreeId,
   )
   const cliSessionList = effectiveWorktreeId ? [] : (cliSessions?.sessions ?? [])
   const importSession = useImportClaudeSession(projectId ?? '')
 
-  // Les commandes en `/` du CLI retenu, lues dans le dossier visé : sans elles, taper
-  // `/` ici n'ouvrait rien, et il fallait un premier tour pour en voir la liste.
+  // Selected CLI's slash commands, read in the target directory: otherwise typing
+  // `/` here showed nothing until after the first turn.
   //
-  // Pas avant de savoir que le CLI est installé (`blocked` vaut aussi null tant que la
-  // disponibilité n'est pas chargée), ni avant de connaître le dossier : une carte
-  // peut désigner un worktree, et sonder la racine en attendant serait un CLI lancé
-  // pour rien. Le composer, de toute façon, n'est pas encore rendu à ce moment-là.
+  // Wait until installation is known (`blocked` is also null before availability
+  // loads) and the directory is known: a card may specify a worktree, so probing
+  // the root meanwhile would launch a CLI needlessly. The composer is not
+  // rendered yet anyway.
   const { data: projectCommands, error: commandsError } = useProjectCommands(
     projectId,
     agent,
@@ -248,8 +270,8 @@ export function DraftConversationPage() {
     navigate(`/p/${projectId}/c/${created.id}`, { replace: true })
   }
 
-  // Le dépôt suit l'état du composer : sans lui (carte en chargement) ou sans CLI,
-  // les fichiers n'auraient nulle part où aller.
+  // Drop handling follows composer state: without it (card loading) or without a CLI,
+  // files have nowhere to go.
   const drop = useFileDrop(!cardPending && blocked === null)
 
   const send = async (
@@ -265,22 +287,24 @@ export function DraftConversationPage() {
       config: effective,
       worktreeId: effectiveWorktreeId,
       cardId: card?.id ?? null,
-      // Le titre de la carte plutôt que l'extrait du message : la conversation traite
-      // un travail nommé, et le CLI n'a plus à en proposer un.
+      // Use the card title rather than a message excerpt: the conversation handles named
+      // work, and the CLI need not suggest a title.
       title: card?.title,
       firstMessage: { clientMessageId: uuidv4(), text, attachmentIds, mentions, skills },
     })
 
-    // `replace` : revenir en arrière ne doit pas ramener sur un brouillon qui n'a
-    // plus lieu d'être.
+    // `replace`: going back must not return to a draft that no longer
+    // has a purpose.
     navigate(`/p/${projectId}/c/${created.id}`, { replace: true })
   }
 
   return (
-    // `relative` : c'est ce conteneur qui ancre le panneau latéral, posé en absolu.
+    // `relative`: this container anchors the absolutely positioned side panel.
     <div className="relative flex h-full flex-col overflow-clip pb-safe" {...drop.handlers}>
-      {/* Même voile que sur une conversation : le composer écoute déjà les dépôts, il
-          manquait seulement une zone qui les lui transmette. */}
+      {/*
+       * Same drop overlay as conversations: the composer already handles drops; it only needed
+       * an area forwarding them.
+       */}
       {drop.dragging ? (
         <div
           className={cx(
@@ -294,8 +318,8 @@ export function DraftConversationPage() {
       <header
         className={cx(
           'flex shrink-0 items-center gap-2 border-b border-line px-2 py-2',
-          // Place réservée au bouton de réaffichage de la navigation, qui se pose dans
-          // ce coin quand la sidebar est repliée.
+          // Space reserved for the show-navigation button in this corner when the
+          // sidebar is collapsed.
           sidebarHidden && 'md:pl-14',
         )}
       >
@@ -307,9 +331,11 @@ export function DraftConversationPage() {
             <span>{project?.name ?? AGENT_LABELS[agent]}</span>
           </div>
         </div>
-        {/* Le board depuis le brouillon : c'est ici qu'on se demande sur quoi partir,
-            et la liste des cartes est la réponse. Le lien manque à cet endroit précis
-            quand on ouvre une conversation avant d'avoir choisi son chantier. */}
+        {/*
+         * Board access from the draft: this is where users choose what to work on, and cards
+         * answer that question. The link is needed when opening a conversation before choosing
+         * a work item.
+         */}
         {projectId ? (
           <Button
             variant="ghost"
@@ -320,8 +346,10 @@ export function DraftConversationPage() {
             {t('draft.board')}
           </Button>
         ) : null}
-        {/* Le panneau opère ici sur le workspace du projet : un terminal, les fichiers
-            ou le diff s'ouvrent avant même qu'une session existe. */}
+        {/*
+         * The panel uses the project workspace: open terminals, files or diffs before any
+         * session exists.
+         */}
         {projectId ? <ActionsLauncher projectId={projectId} size="sm" /> : null}
         {projectId ? (
           <IconButton
@@ -335,23 +363,23 @@ export function DraftConversationPage() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:py-10">
+        <div className="mx-auto flex sg-conversation-width flex-col gap-4 px-4 py-6 md:py-10">
           <div className="mb-2 flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight">{t('draft.title')}</h1>
             <p className="text-sm text-ink-faint">{t('draft.subtitle')}</p>
           </div>
 
-          {/* Radios natifs : choix compact, avec navigation au clavier par flèches. */}
+          {/* Native radio buttons: compact selection with arrow-key navigation. */}
           <fieldset className="flex flex-col gap-1.5">
             <legend className="mb-1.5 text-xs font-medium text-ink-soft">{t('draft.cli.legend')}</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {AGENTS.map((option) => {
+              {AGENTS.filter((option) => !hiddenRows.some((entry) => entry.agent === option.value)).map((option) => {
                 const selected = option.value === agent
                 const entry = availability?.agents.find((a) => a.agent === option.value)
-                // Indisponible seulement quand le serveur l'a dit. Tant que la sonde n'a
-                // pas répondu, la carte reste active : griser par défaut ferait clignoter
-                // le formulaire à chaque ouverture, et bloquerait un choix valide si la
-                // route échouait.
+                // Unavailable only after server confirmation. While probing, the card remains
+                // active: disabling by default would flash on every opening and block valid
+                // choices if the route
+                // failed.
                 const unavailable = unavailableReason(entry)
                 return (
                   <label
@@ -381,25 +409,42 @@ export function DraftConversationPage() {
               })}
             </div>
             {selectedVersionNotice ? <p className="text-xs text-caution">{selectedVersionNotice}</p> : null}
-            {/* Le cas où aucun CLI n'est installé, et celui d'un `?agent=` qui en désigne
-                un absent : les options seules laisseraient l'écran sans explication de ce
-                que la barre de saisie refuse. */}
+            {/*
+             * No installed CLI, or `?agent=` naming a missing one: options alone would not
+             * explain why the composer refuses input.
+             */}
             {blocked ? <Banner>{blocked}</Banner> : null}
 
-            {/* Un rang par CLI manquant. Un CLI désactivé relève de la configuration,
-                son installation ne résoudrait pas son indisponibilité. */}
+            {/*
+             * One row per missing CLI. Disabled CLIs are a configuration issue; installation
+             * would not resolve their unavailability.
+             */}
             {availability?.agents
-              .filter((entry) => !entry.installed && entry.reason !== 'disabled')
+              .filter((entry) => !entry.installed && entry.reason !== 'disabled' && !hiddenAgent(entry, hiddenAgents.hidden))
               .map((entry) => (
-                <InstallRow key={entry.agent} entry={entry} />
+                <InstallRow key={entry.agent} entry={entry} onDismiss={() => hiddenAgents.hide(entry.agent)} />
               ))}
+            {/*
+             * A subtle row restores hidden choices: hiding is not configuration and should not
+             * require visiting settings.
+             */}
+            {hiddenRows.length > 0 ? (
+              <p className="text-xs text-ink-faint">
+                {t('agent.install.hidden', { labels: hiddenRows.map((entry) => AGENT_LABELS[entry.agent]).join(', ') })}{' '}
+                <button type="button" className="underline hover:text-ink" onClick={hiddenAgents.reveal}>
+                  {t('agent.install.reveal')}
+                </button>
+              </p>
+            ) : null}
           </fieldset>
 
-          {/* Juste sous le CLI : c'est la même question, avec quoi la session part. */}
+          {/* Directly below the CLI: the same question, what the session starts with. */}
           <AccountChoice config={effective} onChange={setConfig} enabled={blocked === null} />
 
-          {/* Le 502 de la sonde dit que le CLI n'a pas répondu ; le taire laisserait
-              croire qu'il n'y a simplement aucune commande dans ce dossier. */}
+          {/*
+           * A probe 502 means the CLI did not answer; hiding it would imply this directory
+           * simply has no commands.
+           */}
           {commandsError ? (
             <p className="text-xs text-ink-faint">{t('draft.commands.unavailable')}</p>
           ) : null}
@@ -430,25 +475,25 @@ export function DraftConversationPage() {
           {cardPending ? null : (
             <Composer
               variant="draft"
-              // Le brouillon d'une conversation pas encore créée appartient à son projet :
-              // c'est le seul fil qu'on puisse en désigner avant qu'il existe. Un brouillon
-              // par carte, sinon celui de la création libre écraserait la mention posée ici.
+              // An uncreated conversation's draft belongs to its project: the only thread we can
+              // identify before it exists. Keep one draft per card, otherwise the free-form
+              // creation draft would overwrite the card mention inserted here.
               draftKey={card ? `new:${projectId ?? ''}:card:${card.id}` : `new:${projectId ?? ''}`}
-              // Une phrase et pas le seul numéro : « #5 » tout seul a déjà été lu comme le
-              // cinquième élément d'une liste par un CLI qui ne connaissait pas la carte.
+              // A sentence rather than just the number: a CLI unaware of the card has already
+              // interpreted bare “#5” as the fifth item in a list.
               initialText={card ? `${t('draft.card.prompt', { number: card.number })} ` : ''}
               config={effective}
-              // Rien n'est encore lancé : aucun CLI n'a d'inventaire MCP ni de compétences à
-              // rapporter ; ils arriveront au premier tour. Les commandes en `/`, elles, se
-              // lisent sans session là où le CLI le permet (`draftCommands`). Le composer
-              // écarte lui-même celles que Sillage exécute (`/compact`) : sans fil, pas de
-              // plomberie pour les porter.
+              // Nothing has launched: no CLI has MCP inventory or skills to report; these arrive
+              // on the first turn. Slash commands can be read without a session where supported
+              // (`draftCommands`). The composer filters Sillage-executed commands (`/compact`):
+              // without a thread, there is no
+              // plumbing to support them.
               mcpInventory={NO_MCP_INVENTORY}
               commands={projectCommands?.commands ?? NO_COMMANDS}
               skills={NO_SKILLS}
               status="idle"
-              // Un CLI absent ne se rattrape pas côté serveur : le tour échouerait après
-              // création de la conversation, laissant un fil vide et un message perdu.
+              // Missing CLIs cannot be recovered server-side: the turn would fail after creation,
+              // leaving an empty thread and a lost message.
               disabled={createConversation.isPending || blocked !== null}
               onSend={send}
               onInterrupt={() => {}}
@@ -460,9 +505,22 @@ export function DraftConversationPage() {
 
           <DraftUsage agent={agent} account={usageAccountOf(effective)} enabled={blocked === null} />
 
-          {/* Sessions commencées au CLI dans ce dossier : plutôt qu'une nouvelle
-              conversation, on peut adopter l'une d'elles. Importer ne copie rien,
-              c'est la même session, qui reste reprenable avec `claude --resume`. */}
+          {/*
+           * CLI-started sessions in this directory can be adopted instead of creating a
+           * conversation. Import copies nothing; the same session remains resumable with
+           * `claude --resume`.
+           */}
+          {/*
+           * Report a failed list load: otherwise the error looks indistinguishable from “no
+           * sessions”.
+           */}
+          {AGENT_CAPABILITIES[agent].cliSessions && !effectiveWorktreeId && cliSessionsError ? (
+            <Banner>
+              {cliSessionsError instanceof Error
+                ? cliSessionsError.message
+                : t('draft.cliSessions.error')}
+            </Banner>
+          ) : null}
           {AGENT_CAPABILITIES[agent].cliSessions && cliSessionList.length > 0 ? (
             <details className="rounded-lg border border-line px-3 pb-2">
               <summary className="cursor-pointer py-3 text-xs font-medium text-ink-soft">

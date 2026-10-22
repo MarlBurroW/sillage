@@ -41,7 +41,7 @@ import { SessionManager } from './sessions/session-manager.js'
 import { TerminalManager } from './terminals/terminal-manager.js'
 import { backfillCommandPaths } from './worktrees/backfill.js'
 import { WorktreeCleanup } from './worktrees/cleanup.js'
-import { watchMergedWorktrees } from './worktrees/merge-watch.js'
+import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
 
 async function main(): Promise<void> {
@@ -58,60 +58,60 @@ async function main(): Promise<void> {
   purgeIdempotencyKeys(db)
 
   const log = new EventLog(db)
-  // Partagé entre le gestionnaire de sessions et les routes : les adaptateurs portent
-  // les caches de catalogue et de quota, qui ne doivent exister qu'une fois.
+  // Shared by session managers and routes: adapters own catalog and quota caches,
+  // which must exist only once.
   const registry = createAgentRegistry(config)
-  // La clé vit à côté de la base, pas dedans : c'est ce qui fait qu'une base copiée
-  // seule ne livre pas les secrets qu'elle contient.
+  // Keys live beside databases rather than inside them, so copying databases alone
+  // does not reveal their secrets.
   const encryptionKey = loadOrCreateKey(config.paths.data)
   const secrets = new SecretStore(db, encryptionKey)
   const gitCredentials = new GitCredentialStore(db, encryptionKey)
   const claudeGauges = new ClaudeAccountGauges(config.paths.claudeAccounts)
   const claudeAccounts = new ClaudeAccountStore(db, encryptionKey, claudeGauges)
-  // La connexion guidée pilote le CLI, résolu comme pour les conversations.
+  // Guided login drives the CLI resolved identically to conversations.
   const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable(), claudeGauges)
   const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(config.paths.codexAccounts) }
-  // La connexion d'un compte Codex lance l'app-server du CLI, résolu comme pour les
-  // conversations : le binaire que Sillage gère passe avant celui du PATH.
+  // Codex account login starts the CLI app-server using conversation resolution:
+  // Sillage-managed binaries take precedence over PATH binaries.
   const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, () => registry.adapter('codex').cli.executable())
   const grokAccounts = { store: new GrokAccountStore(db), homes: new GrokAccountHomes(config.paths.grokAccounts) }
   const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, () => registry.adapter('grok').cli.executable())
   const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts)
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
-  // Boutons des projets : commandes jouées dans un terminal ou une unité systemd.
+  // Project buttons execute commands in terminals or systemd units.
   const actions = new ActionRunner(db, config, terminals)
   const recovered = sessions.recoverInterrupted()
   const webhooks = new WebhookService(db, log, sessions, config.server.publicUrl)
-  // Construit avant l'application, dont les routes remettent ou écartent un message
-  // retenu, mais démarré après elle, faute de logger avant.
+  // Construct before the application whose routes deliver or dismiss held messages,
+  // but start afterward because the logger does not exist earlier.
   const relay = new SessionRelay(db, sessions, log)
   const push = new PushService(db, config.paths.data, config.server.publicUrl)
-  // Toast sur l'appareil où l'application est visible, notification système ailleurs.
+  // Toast on visible-app devices; system notifications elsewhere.
   const notifications = new Notifications(db, push)
-  // Ce que demandent les sessions autonomes à un humain, sans se bloquer.
-  // L'avancement des worktrees, par projet, invalidé à chaque fin de tour.
+  // Human decisions requested by autonomous sessions without blocking.
+  // Project worktree progress invalidated at every turn completion.
   const worktreeStatus = new WorktreeStatusService(db, log)
   const decisions = new DecisionService({ db, config }, sessions, notifications)
-  // Nettoyer un chantier ferme ses terminaux et range ses sessions ; une fusion détectée
-  // le propose dans « À décider ».
+  // Cleaning work closes terminals and archives sessions; detected merges
+  // propose cleanup in 'To decide'.
   const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, (id) => sessions.dropCheckpoints(id))
-  watchMergedWorktrees(db, worktreeStatus, decisions, worktreeCleanup)
-  // Board relié aux issues GitHub : lit le dépôt, renvoie les changements faits ici, et
-  // ouvre les sessions de maintenance qu'une issue ou un commentaire déclenche.
+  watchMergedCards(db, worktreeStatus)
+  // GitHub issue-linked board reads repositories, publishes local changes,
+  // and opens maintenance sessions triggered by issues or comments.
   const board = new BoardSync({ db, config }, gitCredentials, fetch, new BoardResponder({ db, config }, sessions, registry))
-  // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
+  // Session launches and cards requested by agents through MCP.
   const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board, decisions, log, worktreeStatus)
-  // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
+  // User- or agent-scheduled tasks executed in fresh sessions.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 
-  // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
+  // Otherwise uploads never sent would accumulate indefinitely.
   const orphans = await attachments.purgeOrphans()
 
-  // Appels des webhooks d'automatisation : il décide, le planificateur tire.
+  // Automation webhooks decide whether to run; the scheduler executes.
   const automations = new AutomationReceiver({ db, config }, encryptionKey, tasks, push)
-  // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
-  // démarré après elle, faute de logger avant.
+  // Construct before the application exposing its rescheduling route,
+  // but start after the logger exists.
   const scheduler = new Scheduler()
   const app = await buildApp(
     { db, config },
@@ -147,37 +147,37 @@ async function main(): Promise<void> {
   if (recovered.length > 0) {
     app.log.info({ recovered: recovered.length }, 'conversations marquees interrompues apres redemarrage')
   }
-  // Après buildApp pour que le logger existe, avant listen pour ne rien manquer :
-  // chaque tâche d'API tuée par le redémarrage doit le dire à son appelant.
+  // After buildApp for logging, before listen to miss nothing:
+  // every API task killed by restart must notify its caller.
   webhooks.start()
   webhooks.sessionEnded(recovered)
 
   registerMaintenanceJobs(scheduler, { db, attachments, log: app.log, config })
   scheduler.start(app.log)
-  // Après `recoverInterrupted` : les statuts lus pour choisir entre inflexion et relance
-  // doivent décrire les runners de ce process, pas ceux du précédent.
+  // After `recoverInterrupted`: statuses choosing steering versus restart
+  // must describe this process's runners rather than the previous process's.
   relay.start(app.log)
   agentRequests.start(app.log)
-  // Après `recoverInterrupted` aussi : un tir coupé par le redémarrage doit se lire
-  // « interrompu », pas « en cours » jusqu'à sa durée maximale.
+  // Also after `recoverInterrupted`: restart-interrupted runs must show
+  // 'interrupted' instead of 'running' until their maximum duration.
   tasks.start(app.log)
   board.start(app.log)
   decisions.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
 
-  // L'application de bureau attend cette annonce pour ouvrir sa fenêtre : le serveur
-  // répond déjà, et la session de l'utilisateur est prête à poser en cookie.
+  // Desktop waits for this announcement before opening windows: servers already
+  // respond and user sessions are ready for cookies.
   if (INSTANCE_PROFILE === 'desktop') {
     const address = app.server.address()
     const port = typeof address === 'object' && address ? address.port : config.server.port
     announceToLauncher(port, await openDesktopSession(db))
   }
 
-  // Le lanceur du helper git décrit le Node et la release de ce process : réécrit à
-  // chaque démarrage, il suit les mises à jour sans que les dépôts clonés aient à changer.
-  // Puis les dépôts clonés avant lui passent au lanceur. Après listen et sans l'attendre :
-  // un git par projet n'a pas à retarder l'ouverture du serveur.
+  // Git helper launchers describe this process's Node and release. Rewrite every
+  // startup to follow upgrades without changing cloned repositories.
+  // Then migrate older clones to launchers. After listen, without awaiting:
+  // one git process per project must not delay server opening.
   try {
     installCredentialLauncher(config.paths)
     const workspaces = db.select({ path: projects.workspacePath }).from(projects).all().map((row) => row.path)
@@ -187,19 +187,19 @@ async function main(): Promise<void> {
       })
       .catch((err: unknown) => app.log.warn({ err }, 'mise a jour du helper git des depots impossible'))
   } catch (err) {
-    // Installation incomplète (pas de `.mjs`) : le serveur sert quand même, sans helper.
+    // Incomplete installations without `.mjs` still serve without helpers.
     app.log.warn({ err }, 'lanceur du helper git non installe')
   }
 
-  // Deux demandes d'arrêt peuvent se croiser (un signal, puis l'app de bureau qui ferme
-  // l'entrée standard) : la seconde ne doit pas refermer ce que la première a fermé.
+  // Shutdown requests may overlap (signals followed by desktop closing stdin):
+  // the second must not close resources already closed by the first.
   let stopping = false
   const shutdown = async (signal: string) => {
     if (stopping) return
     stopping = true
     app.log.info({ signal }, 'arrêt en cours')
-    // Avant stopAll, qui expire les sollicitations : les statuts disent encore ce qui
-    // était en vol, et les livraisons persistées partiront au prochain démarrage.
+    // Before stopAll expires requests: statuses still identify in-flight work,
+    // and persisted deliveries will send at next startup.
     webhooks.shutdownFlush()
     webhooks.stop()
     scheduler.stop()
@@ -216,9 +216,9 @@ async function main(): Promise<void> {
   }
   process.on('SIGINT', () => void shutdown('SIGINT'))
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
-  // L'app de bureau demande l'arrêt en fermant l'entrée standard : sous Windows, il n'y a
-  // pas de signal à envoyer, et tuer le serveur laisserait les CLI des sessions orphelins.
-  // L'entrée se ferme aussi quand l'app disparaît sans prévenir : le serveur part avec elle.
+  // Desktop requests shutdown by closing stdin: Windows has no appropriate signal,
+  // and killing servers would orphan session CLIs.
+  // Stdin also closes on unexpected app death, taking the server with it.
   if (INSTANCE_PROFILE === 'desktop') {
     process.stdin.on('end', () => void shutdown('launcher'))
     process.stdin.resume()

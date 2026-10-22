@@ -7,36 +7,25 @@ import '@xterm/xterm/css/xterm.css'
 import { translate, useTranslate } from '../../lib/i18n'
 
 /**
- * Un terminal, relié à son pty par la socket dédiée.
- *
- * **Le copier/coller est le point qui décide si un shell web est utilisable**, et c'est
- * précisément ce qui ne marche pas ailleurs. `Ctrl+C` doit rester `SIGINT` : c'est la
- * seule façon d'arrêter une commande, et la remplacer par « copier » rendrait le
- * terminal inutilisable. La copie se fait donc à la sélection, comme dans PuTTY, avec
- * `Ctrl+Shift+C` en geste explicite ; le collage par `Ctrl+V` et par le clic droit.
- *
- * La contrainte qui a tout dicté : l'instance s'ouvre aussi par son adresse LAN en
- * HTTP, où `navigator.clipboard` n'existe pas (contexte non sécurisé). Chaque geste a
- * donc un chemin qui ne dépend pas de cette API.
+ * Terminal connected to its PTY through a dedicated socket. Copy/paste determines web-shell
+ * usability. Ctrl+C must retain SIGINT, the only way to interrupt commands; replacing it with copy
+ * would break shells. Copy on selection like PuTTY, with explicit Ctrl+Shift+C; paste using Ctrl+V
+ * or right-click. LAN HTTP access lacks navigator.clipboard, so every gesture needs a path
+ * independent of it.
  */
 
-/** Le pty vit côté serveur : sa taille suit la vue, mais pas à chaque pixel du geste. */
+/** The server PTY follows view size, but not every pixel of a resize gesture. */
 const RESIZE_DEBOUNCE_MS = 120
 
 /**
- * Jetons de l'application, **résolus** avant d'être passés à xterm.
- *
- * Un `var(--...)` ne peut pas traverser : xterm mesure la cellule en écrivant la
- * police dans un contexte de mesure, où la fonction `var()` n'existe pas. La mesure
- * échoue alors en silence, `FitAddon` refuse de proposer des dimensions, et le
- * terminal reste figé à sa taille de départ quelle que soit la largeur disponible.
+ * Resolve app tokens before passing to xterm. CSS var() cannot work in xterm's font measurement
+ * context; silent failure prevents FitAddon dimensions and freezes initial terminal size regardless
+ * of available space.
  */
 /**
- * Écrit dans le presse-papiers, y compris hors contexte sécurisé.
- *
- * Le repli passe par un textarea hors écran et `execCommand('copy')`, qui reste le
- * seul chemin en HTTP et fonctionne tant qu'on est dans un geste utilisateur. Il vole
- * le focus le temps de la copie : l'appelant doit le rendre au terminal.
+ * Write to clipboard even in insecure contexts. Fallback uses an offscreen textarea and
+ * execCommand(copy), the only HTTP path, requiring a user gesture. It steals focus briefly, so
+ * callers restore terminal focus.
  */
 function copyText(text: string) {
   if (navigator.clipboard) {
@@ -73,7 +62,7 @@ function readTokens(root: HTMLElement) {
 export function TerminalView({
   projectId,
   terminalId,
-  /** Change quand l'onglet devient visible : xterm ne peut pas se dimensionner caché. */
+  /** Changes when the tab becomes visible: hidden xterm cannot measure itself. */
   visible,
 }: {
   projectId: string
@@ -84,12 +73,8 @@ export function TerminalView({
   const host = useRef<HTMLDivElement>(null)
   const fit = useRef<FitAddon | null>(null)
   /**
-   * Visibilité courante, dans une ref plutôt que lue depuis la fermeture de l'effet.
-   *
-   * Le terminal se monte pendant le rendu où la sélection d'onglet n'est pas encore
-   * faite, donc avec `visible` à faux. Capturé, ce faux ne changeait plus jamais : le
-   * redimensionnement sortait en silence, et le terminal restait figé à sa largeur de
-   * départ quelle que soit la place disponible.
+   * Current visibility in a ref rather than an effect closure. Initial mount precedes tab selection
+   * and captures false; retaining it made resizing silently exit forever and froze initial width.
    */
   const shown = useRef(visible)
   shown.current = visible
@@ -104,8 +89,7 @@ export function TerminalView({
     const terminal = new Terminal({
       fontFamily: tokens.fontFamily,
       fontSize: 13,
-      // Un curseur qui clignote redessine le canevas en continu, y compris quand le
-      // panneau est ouvert et qu'on ne s'en sert pas.
+      // Blinking cursors continuously redraw canvas even when the panel is open but unused.
       cursorBlink: false,
       convertEol: false,
       scrollback: 5000,
@@ -156,7 +140,7 @@ export function TerminalView({
 
     const typed = terminal.onData((data) => send({ t: 'input', data }))
 
-    /** Renvoie faux pour que xterm n'envoie pas la touche au pty. */
+    /** Return false to prevent xterm sending the key to the PTY. */
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown' || !event.ctrlKey) return true
 
@@ -170,17 +154,15 @@ export function TerminalView({
         return false
       }
       /**
-       * `Ctrl+V` (et `Ctrl+Shift+V`) : rendre la main au navigateur sans
-       * `preventDefault`. Son collage natif atteint le textarea de xterm, qui
-       * transmet au pty ; c'est le seul chemin qui marche aussi en HTTP, où
-       * `readText` n'existe pas. Le `Ctrl+V` littéral (0x16) des shells se perd,
-       * compromis assumé pour que le geste universel colle.
+       * Ctrl+V and Ctrl+Shift+V return control to the browser without preventDefault. Native paste
+       * reaches xterm's textarea and PTY, working over HTTP without readText. Deliberately
+       * sacrifice literal shell Ctrl+V (0x16) for universal paste behavior.
        */
       if (key === 'v') return false
       return true
     })
 
-    /** La sélection copie d'elle-même, comme dans PuTTY. */
+    /** Copy automatically on selection like PuTTY. */
     const onMouseUp = () => {
       const selection = terminal.getSelection()
       if (selection) {
@@ -191,9 +173,8 @@ export function TerminalView({
     parent.addEventListener('mouseup', onMouseUp)
 
     /**
-     * Le clic droit colle, comme dans un terminal Windows ou un PuTTY. Sans
-     * `navigator.clipboard`, on laisse venir le menu du navigateur plutôt que
-     * d'avaler le clic sans rien faire.
+     * Right-click pastes like Windows terminals or PuTTY. Without navigator.clipboard, retain the
+     * browser menu instead of swallowing clicks without action.
      */
     const onContextMenu = (event: MouseEvent) => {
       if (!navigator.clipboard) return
@@ -215,23 +196,21 @@ export function TerminalView({
       parent.removeEventListener('mouseup', onMouseUp)
       parent.removeEventListener('contextmenu', onContextMenu)
       typed.dispose()
-      // Une socket fermée avant d'avoir abouti lève `error` après coup : sans ce
-      // détachement, celle d'un montage défait (StrictMode, onglet changé vite)
-      // écrasait l'état de la suivante par « connexion impossible ».
+      // Sockets closed before connection later emit error: detach handlers or StrictMode/unmounted
+      // sockets can overwrite successor state with connection failure.
       socket.onmessage = null
       socket.onerror = null
       socket.close()
       terminal.dispose()
       fit.current = null
     }
-    // `visible` est délibérément hors des dépendances : le mettre reconstruirait le
-    // terminal à chaque bascule d'onglet, et le shell repartirait d'un écran vide.
-    // C'est `shown` qui en porte la valeur courante.
+    // Deliberately exclude visible from dependencies: otherwise tab switches rebuild terminals and
+    // clear shell screens. shown holds current visibility.
   }, [projectId, terminalId])
 
   /**
-   * Devenir visible est le seul moment où la taille peut enfin être mesurée : dans un
-   * conteneur masqué, la largeur vaut zéro et `FitAddon` ne propose rien.
+   * Becoming visible finally permits size measurement: hidden containers have zero width and
+   * FitAddon returns no dimensions.
    */
   useEffect(() => {
     if (visible) fit.current?.fit()
@@ -252,8 +231,7 @@ export function TerminalView({
         </p>
       ) : null}
 
-      {/* `sg-terminal` rétablit la sélection de texte, que la coque désactive pendant
-          les gestes de glissement : sans elle, on ne peut rien copier. */}
+      {/* sg-terminal restores text selection disabled by shell dragging; without it copying is impossible. */}
       <div ref={host} className="sg-terminal min-h-0 min-w-0 flex-1 bg-sunken p-1.5" />
 
       <p className="shrink-0 border-t border-line px-2.5 py-1 text-[0.625rem] text-ink-faint">

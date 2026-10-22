@@ -10,15 +10,9 @@ import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
 import { armOnboarding } from '../../settings/user-settings.js'
 
-/**
- * Administration des comptes.
- *
- * Sillage fonctionne en cercle de confiance : un administrateur peut créer et
- * supprimer des comptes, mais tous les agents tournent sous le même utilisateur
- * système. Cet écran gère l'accès à l'instance, pas des privilèges d'exécution.
- */
+/** Account administration. Sillage assumes a trusted circle: administrators can create and delete accounts, but all agents run as the same system user. This screen manages instance access, not execution privileges. */
 export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void {
-  /** Comptages groupés : une requête par ressource, pas trois par utilisateur. */
+  /** Grouped counts: one query per resource rather than three per user. */
   const tallyBy = <T extends { userId: string; total: number }>(rows: T[]): Map<string, number> =>
     new Map(rows.map((row) => [row.userId, row.total]))
 
@@ -60,7 +54,7 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     }))
   }
 
-  /** Une instance sans administrateur n'est plus administrable par personne. */
+  /** An instance without administrators can no longer be administered. */
   const assertAnotherAdminRemains = (userId: string): void => {
     const [others] = ctx.db
       .select({ total: count() })
@@ -104,19 +98,13 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
         createdAt: Date.now(),
       })
       .run()
-    // Le compte invité prend possession de lui-même à sa première connexion.
+    // Invited users take ownership of their account on first login.
     armOnboarding(ctx.db, id)
 
     return reply.status(201).send({ ok: true })
   })
 
-  /**
-   * Modification d'un compte.
-   *
-   * Deux usages dans une seule route : son propre compte, ou celui d'un autre quand on
-   * est administrateur. Les séparer donnerait deux chemins à garder cohérents pour la
-   * même écriture ; c'est ici la cible qui décide de ce qui est permis.
-   */
+  /** Edits an account. One route supports editing one's own account or another account as an administrator. Keeping both writes together avoids duplicate paths that could diverge; the target determines permissions. */
   app.patch('/api/users/:id', async (request) => {
     const actor = requireUser(request)
     const { id } = request.params as { id: string }
@@ -144,12 +132,12 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     }
 
     if (body.isAdmin !== undefined && body.isAdmin !== target.isAdmin) {
-      // Se donner le rôle soi-même viderait la distinction de tout sens.
+      // Self-assignment of roles would make the distinction meaningless.
       if (!actor.isAdmin) {
         throw forbidden('role_change_forbidden', 'Only an administrator can change a role.')
       }
-      // Se retirer soi-même le droit d'administrer donne un écran qu'on ne peut plus
-      // rouvrir : c'est une erreur assez coûteuse pour valoir un refus explicite.
+      // Removing one's own administration rights would make this screen inaccessible:
+      // that mistake is costly enough to warrant an explicit rejection.
       if (isSelf && !body.isAdmin) {
         throw forbidden(
           'self_demote_forbidden',
@@ -161,8 +149,8 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     }
 
     if (body.password !== undefined) {
-      // Changer son propre mot de passe exige le mot de passe courant : sans ça, un
-      // écran resté déverrouillé suffit à prendre le compte définitivement.
+      // Changing one's password requires the current password; otherwise an unlocked
+      // screen would suffice to take over the account permanently.
       if (isSelf) {
         if (!body.currentPassword) {
           throw badRequest('current_password_required', 'Enter your current password.')
@@ -177,10 +165,10 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     if (Object.keys(patch).length === 0) return { ok: true }
     ctx.db.update(users).set(patch).where(eq(users.id, id)).run()
 
-    // Un mot de passe changé doit fermer les sessions ouvertes ailleurs, sinon la
-    // réinitialisation ne reprend le contrôle de rien. Pour son propre compte, la
-    // session courante survit : se déconnecter soi-même en changeant son mot de passe
-    // serait une punition, pas une protection.
+    // Password changes must close other sessions or resetting would regain no control.
+    // For one's own account, preserve the current session:
+    // logging users out when changing their password would be punishment
+    // rather than protection.
     if (patch.passwordHash) {
       const current = request.cookies[SESSION_COOKIE]
       const keep = current ? sessionTokenHash(current) : null
@@ -206,8 +194,8 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     const target = listUsers().find((entry) => entry.id === id)
     if (!target) throw notFound('user_not_found', 'User not found.')
 
-    // Les clés étrangères vers `users` ne sont pas en cascade : la suppression
-    // échouerait au niveau de la base. On l'explique au lieu de la laisser planter.
+    // Foreign keys referencing `users` do not cascade: deletion would fail in the
+    // database. Explain the restriction rather than let it fail unexpectedly.
     if (target.ownedProjects > 0 || target.ownedConversations > 0) {
       throw conflict(
         'user_owns_resources',

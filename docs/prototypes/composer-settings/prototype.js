@@ -1,4 +1,4 @@
-// Maquette autonome : données illustratives, aucune requête vers Sillage ou un CLI.
+// Standalone mockup: illustrative data, no requests to Sillage or a CLI.
 const icons = {
   sparkles: '<path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z"/>',
   brain: '<path d="M12 5a3 3 0 0 0-5.7-1A4 4 0 0 0 3 10a4 4 0 0 0 1 7 4 4 0 0 0 8 1Zm0 0a3 3 0 0 1 5.7-1A4 4 0 0 1 21 10a4 4 0 0 1-1 7 4 4 0 0 1-8 1M7 9l-1 3m11-3 1 3M8 17l-1-2m9 2 1-2"/>',
@@ -15,8 +15,8 @@ const icons = {
 const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 document.querySelectorAll('[data-icon]').forEach((node) => { node.innerHTML = icon(node.dataset.icon); });
 
-// Les modèles et niveaux sont des exemples de présentation, pas un catalogue réel.
-// L'intégration utilisera useAgentSettings : options et repli viennent déjà du CLI.
+// Models/levels are presentation examples, not a real catalog. Integration will
+// use useAgentSettings: options and fallback already come from CLI.
 const effortOptions = [
   { value: 'low', label: 'Faible', hint: 'Un effort de réflexion limité.' },
   { value: 'medium', label: 'Moyen', hint: 'Un effort de réflexion intermédiaire.' },
@@ -143,8 +143,8 @@ function openDialog(view, trigger, keyboard) {
 function closeDialog() { dialog.close(); }
 dialog.addEventListener('close', () => {
   document.querySelectorAll('[data-open]').forEach((button) => button.setAttribute('aria-expanded', 'false'));
-  // Sur téléphone, rendre le focus au bouton évite de faire surgir le clavier.
-  // Sur ordinateur, une saisie déjà commencée reprend à la même sélection.
+  // Phone: returning focus to button avoids opening keyboard. Desktop: existing
+  // typing resumes at same selection.
   if (returnToWriting && !touchLayout.matches && !openingWithKeyboard) {
     $('message').focus({ preventScroll: true });
     $('message').setSelectionRange(...selection);
@@ -156,7 +156,7 @@ dialog.addEventListener('click', (event) => {
 });
 dialog.addEventListener('keydown', (event) => {
   if (event.key !== 'Tab') return;
-  // Le dialog natif peut passer par la barre du navigateur à la fin du parcours.
+  // Native dialog may pass through browser bar at end of keyboard path.
   const stops = [...dialog.querySelectorAll('button:not([disabled])')].filter((node) => node.tabIndex >= 0 && node.getClientRects().length > 0);
   const edge = event.shiftKey ? stops[0] : stops.at(-1);
   if (document.activeElement !== edge) return;
@@ -202,7 +202,7 @@ $('dialog-body').addEventListener('click', (event) => {
   }
 });
 
-// Flèches : parcourir les choix ; Entrée/Espace : sélectionner et fermer le raccourci.
+// Arrows: navigate choices; Enter/Space: select and close shortcut.
 $('dialog-body').addEventListener('keydown', (event) => {
   const button = event.target.closest('[data-group]');
   if (!button || !['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;

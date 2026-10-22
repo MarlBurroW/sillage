@@ -24,15 +24,7 @@ import { hashPassword } from '../auth/passwords.js'
 import { loadConfig } from '../config.js'
 import { migrationsFolder, runPendingMigrations } from '../migrations.js'
 
-/**
- * Peuple une instance dédiée aux captures d'écran du site : un compte, deux projets,
- * des conversations aux journaux rejouables et un board de cartes, le tout en anglais.
- *
- * À lancer sur un SILLAGE_DATA_DIR qui n'est PAS celui de la production : le script
- * vide les tables avant d'écrire. Il peut tourner avant ou après le démarrage du
- * serveur ; après, les statuts « running » et « awaiting_input » survivent jusqu'au
- * prochain redémarrage, ce qui est exactement la fenêtre des captures.
- */
+/** Seeds dedicated site-screenshot instances with one account, two projects, replayable conversations and cards, all in English. Use SILLAGE_DATA_DIR outside production: clears tables before writing. Can run before or after server startup; afterward running/waiting statuses survive until restart, exactly the screenshot window. */
 
 const DEMO_USERNAME = 'alex'
 const DEMO_PASSWORD = 'sillage-demo'
@@ -75,7 +67,7 @@ function writeTree(root: string, files: Record<string, string>): void {
   }
 }
 
-/** Le dépôt Nimbus : une PWA météo, assez de fichiers pour que l'explorateur vive. */
+/** Nimbus weather PWA repository with enough files for useful explorer views. */
 function createNimbusRepo(root: string): void {
   if (existsSync(root)) return
   mkdirSync(root, { recursive: true })
@@ -222,7 +214,7 @@ export async function fetchForecast(city: string): Promise<Forecast> {
   git(root, 'commit', '-m', 'Bootstrap Nimbus weather app')
 }
 
-/** L'autre projet de la sidebar : un service backend, deux commits suffisent. */
+/** The other sidebar project: a backend service needing only two commits. */
 function createAtlasRepo(root: string): void {
   if (existsSync(root)) return
   mkdirSync(root, { recursive: true })
@@ -278,7 +270,7 @@ export async function searchPlaces(query: string): Promise<Place[]> {
   git(root, 'commit', '-m', 'Bootstrap Atlas API')
 }
 
-/** Le site de documentation, troisième projet de la sidebar. */
+/** Documentation site, third sidebar project. */
 function createDocsRepo(root: string): void {
   if (existsSync(root)) return
   mkdirSync(root, { recursive: true })
@@ -328,10 +320,7 @@ Open http://localhost:4321 and add your first city.
   git(root, 'commit', '-m', 'Bootstrap the docs site')
 }
 
-/**
- * Une branche de plus dans un vrai worktree : celle de la carte « à vérifier », avec
- * un commit non mergé pour que le board affiche un état de merge parlant.
- */
+/** Another branch in a real worktree for the review card, with an unmerged commit so merge status is meaningful. */
 function createRadarWorktree(repoRoot: string, worktreePath: string): void {
   if (existsSync(worktreePath)) return
   mkdirSync(join(worktreePath, '..'), { recursive: true })
@@ -355,10 +344,7 @@ export function tilesToPrefetch(center: { x: number; y: number }, zoom: number) 
   git(worktreePath, 'commit', '-m', 'Prefetch radar tiles around the viewport')
 }
 
-/**
- * La branche du chantier « offline cache », dans un vrai worktree git : le board en
- * dérive l'état de merge, donc la branche doit exister et porter un commit non mergé.
- */
+/** Offline-cache work branch in a real git worktree: boards derive merge state, requiring an existing branch with an unmerged commit. */
 function createOfflineCacheWorktree(repoRoot: string, worktreePath: string): void {
   if (existsSync(worktreePath)) return
   mkdirSync(join(worktreePath, '..'), { recursive: true })
@@ -389,8 +375,8 @@ function readAll(): Record<string, Forecast> {
   })
   git(worktreePath, 'add', '-A')
   git(worktreePath, 'commit', '-m', 'Cache the last forecast per city')
-  // Le reste du chantier reste non commité : la vue git du panneau montre ainsi un
-  // vrai diff de travail, cohérent avec ce que la conversation du hero raconte.
+  // Leave remaining work uncommitted so Git panels show real working diffs
+  // consistent with the hero conversation.
   writeTree(worktreePath, {
     'src/lib/forecast.ts': `import { lastKnownForecast } from './forecast-cache'
 
@@ -447,7 +433,7 @@ export function ForecastCard({ forecast, showAge }: { forecast: Forecast; showAg
 }
 
 interface SeededEvent {
-  /** Décalage en secondes par rapport au début de la conversation. */
+  /** Seconds relative to conversation start. */
   at: number
   event: SillageEvent
 }
@@ -476,7 +462,7 @@ async function main(): Promise<void> {
   const { db, sqlite } = openDatabase(config.paths.database)
   runPendingMigrations(db, migrationsFolder())
 
-  // Idempotent : on repart de zéro à chaque exécution, l'instance est jetable.
+  // Idempotent: recreate from scratch each run because instances are disposable.
   await db.delete(events)
   await db.delete(permissionRequests)
   await db.delete(conversationReads)
@@ -589,7 +575,7 @@ async function main(): Promise<void> {
     },
   ])
 
-  // ---- Cartes du board Nimbus -------------------------------------------------
+  // ---- Nimbus board cards -------------------------------------------------
 
   const cardRows = [
     { number: 1, title: 'Severe weather alerts', column: 'todo', position: 0, description: 'Push a notification when Open-Meteo flags a warning for a saved city. Needs a settings toggle per city.' },
@@ -621,7 +607,7 @@ async function main(): Promise<void> {
       updatedAt: now - 86400e3,
     })
   }
-  // Le backlink de la description de la carte 10, qui cite #2.
+  // Backlink from card 10's description referencing #2.
   await db.insert(cardRefs).values({ sourceId: cardIds.get(10)!, targetId: cardIds.get(2)! })
 
   const atlasCardRows = [
@@ -656,16 +642,16 @@ async function main(): Promise<void> {
     config: Record<string, unknown>
     status: 'idle' | 'running' | 'awaiting_input' | 'interrupted'
     ageDays: number
-    /** Durée totale du fil en secondes, pour étaler les horodatages. */
+    /** Total conversation duration in seconds for distributing timestamps. */
     spanSec: number
     costUsd: number
     inputTokens: number
     outputTokens: number
     contextUsed?: number
     contextMax?: number
-    /** Laisser du non-lu sur ce fil, pour montrer l'indicateur. */
+    /** Leave unread content to demonstrate the indicator. */
     unread?: boolean
-    /** Tir d'une tâche planifiée : le fil sort de la liste et se range sous elle. */
+    /** Scheduled-task run: remove from ordinary lists and group under its task. */
     scheduleId?: string
     events: SeededEvent[]
   }
@@ -1163,10 +1149,7 @@ All 6 forecast tests pass, including the two new offline cases.`,
     { at: 16, event: { type: 'turn.completed', stopReason: 'success', costUsd: 0.0632, inputTokens: 9, outputTokens: 720, cacheCreationTokens: 3600, cacheReadTokens: 18400 } },
   ]
 
-  /**
-   * Journal minimal mais rejouable : un tour complet avec au plus un appel d'outil.
-   * Suffisant pour les fils que les captures ne font qu'apercevoir dans la sidebar.
-   */
+  /** Minimal replayable journal: a complete turn with at most one tool call, sufficient for conversations only glimpsed in sidebar screenshots. */
   function simpleThread(input: {
     agent: 'claude' | 'codex'
     model: string
@@ -1263,10 +1246,7 @@ All 6 forecast tests pass, including the two new offline cases.`,
     return thread
   }
 
-  /**
-   * Un tir de la veille hebdomadaire des CLI : le prompt tel que le planificateur
-   * l'enveloppe, puis le compte rendu court que le tir suivant recevra.
-   */
+  /** Weekly CLI-watch run: scheduler-wrapped prompt followed by the brief report inherited by the next run. */
   const watchEvents = (date: string, previous: string | null, reply: string): SeededEvent[] => [
     {
       at: 0,
@@ -1319,7 +1299,7 @@ Check the installed CLIs against their latest releases: run \`claude --version\`
   ]
 
   const watchTaskId = randomUUID()
-  /** Date d'un tir passé, à 9 h, telle que le titre et le prompt l'écrivent. */
+  /** Past run date at 9 a.m. as written in titles and prompts. */
   const watchDate = (ageDays: number) => `${new Date(now - ageDays * 86400e3).toISOString().slice(0, 10)} 09:00`
 
   const seeds: ConversationSeed[] = [
@@ -1461,7 +1441,7 @@ Check the installed CLIs against their latest releases: run \`claude --version\`
           file: { path: 'src/lib/radar-prefetch.ts', action: 'created' },
         },
         assistant:
-          'Prefetching is in: `tilesToPrefetch` computes the ring around the viewport and the map layer warms those tiles on idle. Panning one screen in any direction no longer shows blanks. Worth a review pass on mobile, where the tile budget is tighter.',
+          'Prefetching is in: `tilesToPrefetch` computes the ring around the viewport and the map layer warms those tiles on idle. Panning one screen in any direction no longer shows blanks.\n\n| Viewport | Ring tiles | Warm-up |\n|---|---|---|\n| Phone (390×844) | 12 | 180 ms |\n| Tablet (1024×768) | 20 | 310 ms |\n| Desktop (1440×900) | 28 | 420 ms |\n\nWorth a review pass on mobile, where the tile budget is tighter, before closing #4. Card #10 can reuse the same tile cache; the old #42 idea is gone.',
         costUsd: 0.3418,
         outputTokens: 2450,
       }),
@@ -1709,7 +1689,7 @@ Check the installed CLIs against their latest releases: run \`claude --version\`
     })
   }
 
-  // La veille hebdomadaire des CLI : la tâche, et un tir par fil rangé sous elle.
+  // Weekly CLI watch: task and one run per conversation grouped under it.
   const watchRuns = await db.select().from(conversations).where(eq(conversations.scheduleId, watchTaskId))
   const nextMonday = (() => {
     const date = new Date(now)
@@ -1717,8 +1697,8 @@ Check the installed CLIs against their latest releases: run \`claude --version\`
     date.setHours(9, 0, 0, 0)
     return date.getTime()
   })()
-  // Les tirs sont datés de 9 h, comme le motif les prévoit ; les fils, eux, portent
-  // l'heure du seed, que la page ne montre pas.
+  // Runs are dated 9 a.m. to match schedules; conversations use seed time,
+  // which pages do not display.
   const atNine = (ts: number) => new Date(ts).setHours(9, 0, 0, 0)
   await db.insert(scheduledTasks).values({
     id: watchTaskId,
@@ -1755,7 +1735,7 @@ Check the installed CLIs against their latest releases: run \`claude --version\`
     })),
   )
 
-  // La demande de permission en attente, telle que le serveur l'aurait posée.
+  // Pending permission request in server-produced form.
   const settingsConversation = await db.select().from(conversations)
   const settingsRow = settingsConversation.find((c) => c.title === 'Refactor settings storage')
   if (settingsRow) {
@@ -1770,7 +1750,7 @@ Check the installed CLIs against their latest releases: run \`claude --version\`
     })
   }
 
-  // Une note de session sur la carte du chantier en cours.
+  // Session note on the active work card.
   await db.insert(cardNotes).values({
     id: randomUUID(),
     cardId: cardIds.get(2)!,

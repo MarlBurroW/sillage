@@ -4,12 +4,11 @@ import { additionDiff } from '../../diff-lines.js'
 import { toWorkspacePath } from '../paths.js'
 
 /**
- * Les outils d'opencode, ramenés aux noms et aux champs du journal (invariant I3).
+ * Normalize opencode tools to journal names/fields (I3).
  *
- * opencode nomme ses outils en minuscules et leurs champs en camelCase (`read` et
- * `filePath`), là où le journal porte ceux de Claude Code (`Read` et `file_path`), que
- * les vues du web et l'invite de permission savent déjà lire. La traduction se fait
- * ici, à la source ; le payload natif reste intact dans `raw`.
+ * Lowercase tools/camelCase fields (read,filePath) map to Claude-style journal names
+ * (Read,file_path), already understood by web/permissions. Translate at source, preserve native raw
+ * payload.
  */
 
 type Fields = Record<string, unknown>
@@ -22,7 +21,7 @@ function text(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-/** Renomme les clés connues, et garde les autres telles quelles plutôt que de les perdre. */
+/** Rename known keys, preserve unknown ones instead of losing them. */
 function rename(input: Fields, names: Record<string, string>): Fields {
   return Object.fromEntries(Object.entries(input).map(([key, value]) => [names[key] ?? key, value]))
 }
@@ -44,16 +43,14 @@ const BUILTIN: Record<string, { name: string; input: (input: Fields) => Fields }
   apply_patch: { name: 'ApplyPatch', input: (input) => rename(input, { patchText: 'patch' }) },
 }
 
-/** L'outil `question` n'a pas de carte : la question elle-même en tient lieu. */
+/** question tool has no card: question itself replaces it. */
 export const QUESTION_TOOL = 'question'
 
 /**
- * Nom et entrée d'un appel, tels que le journal les porte.
+ * Journal call name/input.
  *
- * opencode préfixe les outils d'un serveur MCP par son nom (`sillage_read_card`) : le
- * préfixe redevient le `serveur/outil` que publient les deux autres adaptateurs. Seuls
- * les serveurs connus comptent, pour ne pas couper un outil intégré qui porterait un
- * tiret bas.
+ * opencode prefixes MCP tools with server (sillage_read_card): restore server/tool used by other
+ * adapters. Only known servers to avoid splitting built-ins containing underscores.
  */
 export function describeTool(
   tool: string,
@@ -72,9 +69,8 @@ export function describeTool(
 }
 
 /**
- * Ce qu'une demande de permission montre. La clé `permission` d'opencode est une
- * famille d'outils (`edit` couvre `edit`, `write` et `apply_patch`), et le détail est
- * dans `metadata`.
+ * Permission display. opencode permission identifies tool family (edit covers
+ * edit/write/apply_patch); metadata contains details.
  */
 export function describePermission(
   permission: string,
@@ -102,15 +98,15 @@ export function describePermission(
 interface PatchedFile {
   path: string
   action: 'created' | 'modified' | 'deleted'
-  /** Diff unifié du fichier quand opencode le fournit. */
+  /** Unified file diff when supplied by opencode. */
   diff: string | null
 }
 
 /**
- * Les fichiers qu'un appel terminé a touchés, lus dans ses métadonnées.
+ * Completed-call touched files from metadata.
  *
- * `edit` et `write` en touchent un, `apply_patch` plusieurs. Les trois formes sont
- * tolérantes : un champ absent rend une liste vide plutôt qu'une modification inventée.
+ * edit/write touch one, apply_patch several. All tolerate missing fields with empty lists instead
+ * of invented edits.
  */
 function patchedFiles(part: ToolPart): PatchedFile[] {
   if (part.state.status !== 'completed') return []
@@ -124,7 +120,7 @@ function patchedFiles(part: ToolPart): PatchedFile[] {
 
   if (part.tool === 'write') {
     const path = text(meta.filepath) ?? text(input.filePath)
-    // `exists` dit si le fichier était là avant l'écriture.
+    // exists indicates file existed before write.
     return path ? [{ path, action: meta.exists === false ? 'created' : 'modified', diff: null }] : []
   }
 
@@ -141,7 +137,7 @@ function patchedFiles(part: ToolPart): PatchedFile[] {
   return []
 }
 
-/** Les `file.edited` d'un appel terminé. */
+/** Completed-call file.edited events. */
 export function fileEdits(part: ToolPart, cwd: string): SillageEvent[] {
   return patchedFiles(part).map((file) => ({
     type: 'file.edited',
@@ -152,8 +148,8 @@ export function fileEdits(part: ToolPart, cwd: string): SillageEvent[] {
 }
 
 /**
- * Le diff d'opencode ouvre sur un en-tête `Index:` à chemins absolus. Seules ses
- * sections sont reprises, sous l'en-tête git que l'affichage attend.
+ * opencode diff starts Index: with absolute paths. Retain sections under display-expected git
+ * header.
  */
 function toGitPatch(path: string, diff: string): string | null {
   const start = diff.indexOf('\n@@')
@@ -161,7 +157,7 @@ function toGitPatch(path: string, diff: string): string | null {
   return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}${diff.slice(start)}`
 }
 
-/** Ce qu'un appel a fait d'un fichier, reconstitué depuis la part native journalisée. */
+/** Reconstruct file effect from journaled native part. */
 export function describeEdit(completedRaw: unknown, cwd: string, path: string): EditDiffDto {
   const part = (completedRaw as { part?: ToolPart } | null)?.part
   const file = part?.type === 'tool'
@@ -171,8 +167,7 @@ export function describeEdit(completedRaw: unknown, cwd: string, path: string): 
   const patch = file?.diff ? toGitPatch(path, file.diff) : null
   if (patch) return { path, kind: 'patch', patch, content: '', partial: false, reason: null }
 
-  // `write` ne donne pas de diff, seulement le contenu écrit : une création se rend en
-  // entier, une réécriture se montre telle qu'elle est après coup.
+  // write supplies content only, no diff: creation displays complete; rewrite shows final content.
   const content = part ? fields(part.state.input).content : undefined
   if (file && part?.tool === 'write' && typeof content === 'string') {
     return file.action === 'created'

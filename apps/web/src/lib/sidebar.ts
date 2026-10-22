@@ -1,12 +1,9 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * État de la navigation latérale, partagé hors de React.
- *
- * Le repli est lu par la coque, qui le referme, et par les vues qui ont un en-tête :
- * le bouton de réaffichage se pose par-dessus leur coin haut-gauche, et sans place
- * réservée il recouvrirait leur contenu. Un magasin plutôt qu'un contexte, comme pour
- * le thème : ces vues ne sont pas dans la même branche que la sidebar.
+ * Side navigation state shared outside React. Collapse is read by the shell and header-bearing
+ * views: the restore button overlays their top-left corner and needs reserved space. Use a store
+ * rather than context, as with theme, because these views are not in the sidebar's branch.
  */
 
 const HIDDEN_KEY = 'sillage.sidebarHidden'
@@ -14,8 +11,8 @@ const WIDTH_KEY = 'sillage.sidebarWidth'
 const DETAILED_KEY = 'sillage.sidebarDetailed'
 
 /**
- * En deçà, un titre de conversation ne tient plus sur une ligne utile ; au-delà, la
- * navigation prend plus de place que ce qu'elle sert à atteindre.
+ * Below this width conversation titles lack useful line space; above it navigation occupies more
+ * space than its destinations.
  */
 const MIN_WIDTH = 200
 const MAX_WIDTH = 480
@@ -45,12 +42,9 @@ export function setSidebarHidden(next: boolean): void {
 }
 
 /**
- * Détail des lignes de conversation : compté, pesé, contexte et modèle sous le titre.
- *
- * Un seul interrupteur pour toute la liste, et non un repli par ligne : ce mode sert à
- * comparer des conversations entre elles, ce qu'un dépliage à la ligne interdit. Il vit
- * dans ce magasin plutôt qu'en état de la sidebar parce que la coque et le tiroir mobile
- * rendent la liste depuis deux branches différentes.
+ * Detailed conversation rows: counts, usage, context, and model beneath the title. One switch for
+ * the whole list allows comparison, unlike per-row expansion. Stored here because shell and mobile
+ * drawer render the list from separate branches.
  */
 export function useSidebarDetailed(): boolean {
   return useSyncExternalStore(
@@ -68,13 +62,9 @@ export function setSidebarDetailed(next: boolean): void {
 }
 
 /**
- * Largeur sur grand écran, publiée en variable CSS plutôt que remontée en état React.
- *
- * Le glissement émet un événement par image : re-rendre la coque et toute la liste des
- * conversations à chacun rendrait la poignée pâteuse. `persist` n'est vrai qu'en fin de
- * geste, une écriture par image dans `localStorage` étant synchrone.
- *
- * Renvoie la largeur réellement retenue, bornes appliquées.
+ * Desktop width published as a CSS variable rather than React state. Dragging emits an event per
+ * frame; rerendering the shell and all conversations each time would lag. `persist` is true only on
+ * release because `localStorage` writes are synchronous. Returns the actual clamped width.
  */
 export function setSidebarWidth(px: number, persist: boolean): number {
   const width = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, px)))
@@ -83,10 +73,7 @@ export function setSidebarWidth(px: number, persist: boolean): number {
   return width
 }
 
-/**
- * Rétablit la largeur choisie. Sans valeur enregistrée, rien n'est écrit : la largeur
- * par défaut reste celle de la feuille de style, au lieu d'en exister une seconde ici.
- */
+/** Restore chosen width. Without a saved value, write nothing: CSS remains the sole source of the default. */
 export function restoreSidebarWidth(): void {
   const stored = Number(localStorage.getItem(WIDTH_KEY))
   if (Number.isFinite(stored) && stored > 0) setSidebarWidth(stored, false)

@@ -1,9 +1,8 @@
 import { cx } from '../ui'
 
 /**
- * Boutons de la barre du composer. Au doigt sur ordinateur, 44 px ; à la souris,
- * 32 px. Au téléphone, 36 px à l'œil pour tenir sur une ligne, et une marge invisible
- * qui rend au doigt ses 44 px.
+ * Composer buttons: 44px for desktop touch, 32px mouse. Phones use 36px visible buttons to fit one
+ * line with invisible padding retaining 44px touch targets.
  */
 export function toolButtonClass(narrow: boolean): string {
   return cx(

@@ -2,9 +2,9 @@ import { useSyncExternalStore } from 'react'
 import type { InAppNotification } from '@sillage/protocol'
 
 /**
- * Les toasts de l'application : une décision, ou un CLI qui attend ailleurs. Le serveur
- * ne les envoie qu'aux onglets visibles ; ils restent jusqu'à ce qu'on les traite ou les
- * écarte, une demande n'étant pas une information qu'on laisse filer en cinq secondes.
+ * App toasts for decisions or CLIs awaiting input elsewhere. The server sends only to visible tabs;
+ * retain until handled or dismissed because requests must not disappear like five-second
+ * informational messages.
  */
 
 export interface Toast {
@@ -20,7 +20,7 @@ function emit(): void {
   for (const listener of listeners) listener()
 }
 
-/** La clé de ce que le toast annonce : la même décision ou conversation n'en garde qu'un. */
+/** Key identifying the announced item: keep only one toast per decision or conversation. */
 function keyOf(notification: InAppNotification): string {
   return notification.kind === 'decision' ? `decision:${notification.decisionId}` : `cli:${notification.conversationId}`
 }
@@ -36,7 +36,7 @@ export function dismissToast(id: string): void {
   emit()
 }
 
-/** Une décision tranchée ailleurs n'a plus de toast à montrer. */
+/** A decision resolved elsewhere no longer needs a toast. */
 export function dismissDecisionToasts(keep: Set<string>): void {
   const next = toasts.filter((toast) => toast.notification.kind !== 'decision' || keep.has(toast.notification.decisionId))
   if (next.length !== toasts.length) {

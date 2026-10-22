@@ -26,10 +26,8 @@ import { HowItWorks, INSTRUCTIONS_HELP } from './HowItWorks'
 import { Banner, Button, ChoiceList, ConfirmDialog, IconButton, Select, cx, type Choice } from '../ui'
 
 /**
- * Éditeur d'une partie de consignes : du markdown, un aperçu, un bouton d'enregistrement.
- *
- * Le brouillon suit la version serveur tant qu'on n'y a pas touché : une consigne qu'un
- * agent écrit pendant que la page est ouverte apparaît, sans écraser une saisie en cours.
+ * Instructions editor with Markdown, preview, and Save. Drafts follow server versions until edited
+ * so agent additions appear without overwriting ongoing input.
  */
 export function MarkdownEditor({
   value,
@@ -56,7 +54,7 @@ export function MarkdownEditor({
   const text = draft ?? value
   const dirty = draft !== null && draft !== value
 
-  // Enregistré : le brouillon redevient la version serveur.
+  // After saving the draft once again matches the server version.
   useEffect(() => {
     if (draft !== null && draft === value) setDraft(null)
   }, [draft, value])
@@ -154,7 +152,7 @@ function AuthorLine({ author, updatedAt }: { author: InstructionsAuthorDto | nul
   )
 }
 
-/** La partie globale, commune à tous les projets de l'instance. */
+/** Global section shared by all instance projects. */
 export function GlobalInstructions() {
   const t = useTranslate()
   const { data } = useGlobalInstructions()
@@ -179,11 +177,9 @@ export function GlobalInstructions() {
 }
 
 /**
- * La partie projet : où elle vit, et son contenu selon ce choix.
- *
- * En mode dépôt avec des fichiers déjà là, le passage dans Sillage est proposé ici et
- * nulle part ailleurs : c'est l'endroit où l'on vient relire ses consignes, et rien ne
- * presse un projet qui marche tel qu'il est.
+ * Project section: storage location and corresponding content. Offer migration from existing
+ * repository files only here, where users review instructions; working projects need no pressure to
+ * migrate.
  */
 export function ProjectInstructions({ projectId }: { projectId: string }) {
   const t = useTranslate()
@@ -259,7 +255,7 @@ export function ProjectInstructions({ projectId }: { projectId: string }) {
   )
 }
 
-/** Le fichier du dépôt, édité sans passer par l'éditeur : `AGENTS.md` par défaut. */
+/** Repository file edited outside the file editor, defaulting to AGENTS.md. */
 function RepoFileEditor({ projectId, data }: { projectId: string; data: ProjectInstructionsDto }) {
   const t = useTranslate()
   const write = useWriteRepoInstructions(projectId)
@@ -292,7 +288,7 @@ function RepoFileEditor({ projectId, data }: { projectId: string; data: ProjectI
         {!file ? <span className="text-xs text-ink-faint">{t('instructions.repo.create')}</span> : null}
       </div>
       <MarkdownEditor
-        // Une clé par fichier : changer d'onglet ne doit pas emporter le brouillon de l'autre.
+        // Key per file so tab switching preserves other drafts.
         key={path}
         value={file?.content ?? ''}
         canEdit={data.canEdit}
@@ -308,9 +304,8 @@ function RepoFileEditor({ projectId, data }: { projectId: string; data: ProjectI
 }
 
 /**
- * Les deux parties de SILLAGE.md depuis une conversation, sans la quitter.
- *
- * Le projet d'abord : c'est ce qu'on vient relire en travaillant dessus.
+ * Both SILLAGE.md sections without leaving a conversation. Project first because it is the context
+ * users review while working.
  */
 export function InstructionsDialog({
   open,
@@ -375,13 +370,13 @@ export function InstructionsDialog({
   )
 }
 
-/** Le choix proposé à la création ; `auto` laisse le serveur regarder le dossier. */
+/** Creation-time choice; auto lets the server inspect the directory. */
 export type InstructionsModeChoice = InstructionsMode | 'auto'
 
 /**
- * Le choix d'un formulaire de création : le défaut du compte, jusqu'à ce qu'on en
- * prenne un autre. Les réglages arrivent après le premier rendu, d'où le suivi : sans
- * lui, le formulaire montrerait « selon le dossier » alors que le compte dit autre chose.
+ * Creation form choice follows account defaults until explicitly changed. Settings arrive after
+ * initial render, requiring synchronization or the form would wrongly display directory-based
+ * defaults.
  */
 export function useInstructionsModeChoice(): [InstructionsModeChoice, (next: InstructionsModeChoice) => void] {
   const defaults = useProjectDefaults()
@@ -411,7 +406,7 @@ export function InstructionsModeSelect({
   )
 }
 
-/** Ce que l'API attend : rien pour `auto`. */
+/** API value: omit for auto. */
 export function instructionsModeField(choice: InstructionsModeChoice) {
   return choice === 'auto' ? {} : { instructionsMode: choice }
 }

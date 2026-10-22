@@ -1,8 +1,7 @@
 /**
- * Ce qu'une entrée représente : un agent ou un terminal (`launcher`), ce qu'il a lancé
- * avec toute sa descendance (`command`), un outil d'agent tel qu'un serveur MCP
- * (`helper`), ou un processus dont le lanceur a disparu, encore tenu par le service
- * systemd de Sillage (`detached`).
+ * Entry kind: an agent or terminal (`launcher`), a launched command and all descendants
+ * (`command`), an agent tool such as an MCP server (`helper`), or a process whose launcher
+ * disappeared but remains held by Sillage's systemd service (`detached`).
  */
 export type ServiceKind = 'launcher' | 'command' | 'helper' | 'detached'
 
@@ -11,26 +10,26 @@ export interface ServiceProcessSummary {
   count: number
 }
 
-/** Processus encore rattachés à l'exécution de Sillage, avec ou sans port. */
+/** Processes still associated with Sillage's execution, with or without ports. */
 export interface ServiceDto {
   id: string
   kind: ServiceKind
   pid: number
   name: string
-  /** Ligne de commande abrégée : enrobage du CLI retiré, chemins réduits, secrets masqués. */
+  /** Shortened command line: CLI wrapper removed, paths shortened, secrets masked. */
   command: string | null
   parentPid: number
   parentName: string | null
-  /** Le lanceur sous lequel ranger une commande ou un outil. */
+  /** Launcher under which a command or tool is grouped. */
   launcherPid: number | null
   stopsWithSillage: boolean
   cwd: string | null
   ports: number[]
   startedAt: number
   memoryBytes: number
-  /** L'entrée et tout ce qui en descend. */
+  /** The entry and all its descendants. */
   processCount: number
-  /** Les descendants par nom, du plus nombreux au plus rare. */
+  /** Descendants grouped by name, most to least numerous. */
   processes: ServiceProcessSummary[]
   projectId: string | null
   projectName: string | null
@@ -41,20 +40,20 @@ export interface ServiceDto {
 }
 
 /**
- * App permanente : une unité systemd utilisateur `sillage-app-*`, créée par un agent
- * pour ce qui doit rester en ligne au-delà d'une session.
+ * Persistent app: a `sillage-app-*` user systemd unit created by an agent for services that
+ * must outlive a session.
  */
 export interface ServiceAppDto {
-  /** L'unité et son invocation : relancée entre-temps, ce n'est plus la même. */
+  /** Unit and invocation: if restarted since, it is no longer the same instance. */
   id: string
   unit: string
-  /** Vide quand systemd l'a déduite de la commande, qu'elle recopierait. */
+  /** Empty when systemd inferred it from the command, which it would duplicate. */
   description: string
-  /** L'exécutable seul, comme le nom d'un processus. */
+  /** Executable only, like a process name. */
   executable: string | null
-  /** Ligne de commande abrégée, secrets masqués, comme pour un processus. */
+  /** Shortened command line with secrets masked, as for processes. */
   command: string | null
-  /** `ActiveState` de systemd. */
+  /** systemd `ActiveState`. */
   state: 'active' | 'activating' | 'deactivating' | 'reloading' | 'failed' | 'inactive' | (string & {})
   subState: string
   result: string
@@ -63,7 +62,7 @@ export interface ServiceAppDto {
   cwd: string | null
   startedAt: number | null
   memoryBytes: number | null
-  /** Relancée à l'ouverture de la session utilisateur, donc après un redémarrage. */
+  /** Restarted when the user session opens, including after a reboot. */
   enabled: boolean
   transient: boolean
   projectId: string | null
@@ -73,7 +72,7 @@ export interface ServiceAppDto {
   origin: 'agent' | 'terminal' | 'unknown'
   canStop: boolean
   canRestart: boolean
-  /** Retirer de la liste une app en échec (`reset-failed`). */
+  /** Remove a failed app from the list (`reset-failed`). */
   canReset: boolean
 }
 

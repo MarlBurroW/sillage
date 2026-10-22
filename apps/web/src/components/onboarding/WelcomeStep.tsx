@@ -9,14 +9,13 @@ import { CardGrid, ChoiceCard, Question, StepTitle, useCommit, useGate, type Ste
 const ALL_AGENTS: AgentKind[] = ['claude', 'codex', 'opencode', 'grok']
 
 /**
- * Bienvenue : ce que Sillage est, en trois lignes, puis les questions qui décident de
- * la suite. Les réponses partent au compte à chaque clic : la liste des étapes, à
- * gauche, suit sans attendre.
+ * Welcome explains Sillage briefly then asks questions determining next steps. Save answers on
+ * every click so the step list updates immediately.
  */
 export function WelcomeStep({ nav, state, setAnswers, profile, user }: StepProps) {
   const t = useTranslate()
   const { data: availability } = useAgentAvailability()
-  // Un CLI coupé dans la configuration n'a rien à faire dans la question.
+  // Exclude configuration-disabled CLIs from the question.
   const offered = availability ? availability.agents.filter((entry) => entry.enabled).map((entry) => entry.agent) : ALL_AGENTS
   const installed = availability ? availability.agents.filter((entry) => entry.enabled && entry.installed).map((entry) => entry.agent) : []
   const answers = state.answers
@@ -24,16 +23,15 @@ export function WelcomeStep({ nav, state, setAnswers, profile, user }: StepProps
   useGate(nav, { canContinue: true, laterAllowed: false, skipAllowed: true })
   useCommit(nav, null)
 
-  // Tant qu'on n'a pas répondu, ce que la machine porte déjà vaut réponse : un CLI
-  // installé sur le serveur est un CLI dont on se sert.
+  // Until answered, infer usage from installed server CLIs.
   const agentsEmpty = answers.agents.length === 0
   const agentsChosen = answers.agentsChosen
   const installedKey = installed.join(',')
   useEffect(() => {
     if (agentsChosen || !agentsEmpty || installedKey === '') return
     setAnswers({ agents: installedKey.split(',') as AgentKind[] })
-    // `setAnswers` change à chaque rendu : la liste des installés suffit à décider.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // setAnswers changes every render; installed CLI inventory suffices for this decision.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentsChosen, agentsEmpty, installedKey])
 
   const toggleAgent = (agent: AgentKind) =>

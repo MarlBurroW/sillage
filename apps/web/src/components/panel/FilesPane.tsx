@@ -10,17 +10,11 @@ import { EditorPane } from './EditorPane'
 import { FileTree } from './FileTree'
 
 /**
- * Arborescence et éditeur dans la même vue.
- *
- * Deux onglets exclusifs auparavant, ce qui obligeait à quitter l'arbre pour voir le
- * fichier ouvert : de là venaient le double clic, garde-fou contre une navigation qui
- * coûtait cher, et l'impression d'empiler des onglets dans des onglets.
- *
- * Sous `NARROW_PX` de large, les deux ne tiennent plus côte à côte : la colonne passe
- * par-dessus l'éditeur et se referme dès qu'un fichier est choisi. C'est le cas au
- * doigt, où le panneau occupe l'écran entier.
+ * Tree and editor together. Formerly separate tabs forced leaving the tree to view files, requiring
+ * defensive double-clicking and feeling like nested tabs. Below NARROW_PX they cannot fit side by
+ * side: overlay the tree and close it on file selection, as on fullscreen touch panels.
  */
-/** À tenir en accord avec les seuils `@min-[35rem]` et `@max-[35rem]` ci-dessous. */
+/** Keep aligned with the 35rem min/max container-query thresholds below. */
 const NARROW_PX = 560
 
 export function FilesPane({ scope }: { scope: string }) {
@@ -35,9 +29,8 @@ export function FilesPane({ scope }: { scope: string }) {
   useEffect(restoreTreeWidth, [])
 
   /**
-   * Mesuré au moment du clic plutôt que suivi en état : la largeur ne sert qu'à
-   * décider si l'ouverture doit refermer la colonne, et l'observer en continu
-   * re-rendrait l'arborescence à chaque glissement de la poignée.
+   * Measure on click rather than continuous state: width only decides whether to close the column;
+   * observation would rerender the tree every resize frame.
    */
   const closeIfOverlaid = () => {
     const width = host.current?.getBoundingClientRect().width ?? 0
@@ -45,12 +38,9 @@ export function FilesPane({ scope }: { scope: string }) {
   }
 
   /**
-   * La colonne commence au bord gauche du cadre : l'abscisse du pointeur moins ce bord
-   * est la largeur voulue, sans décalage à mémoriser au début du geste.
-   *
-   * Le cadre est remesuré à chaque événement plutôt qu'au début du glissement : le
-   * panneau qui le porte a sa propre poignée, et une fenêtre redimensionnée en cours de
-   * geste laisserait sinon la colonne se caler sur une place qui n'existe plus.
+   * Column starts at container left, so pointer x minus that edge is width. Remeasure on every
+   * event because the parent panel resizes independently and window changes during dragging could
+   * invalidate initial space.
    */
   const handle = resizeHandle({
     widthAt: (clientX) => clientX - (host.current?.getBoundingClientRect().left ?? 0),
@@ -59,7 +49,7 @@ export function FilesPane({ scope }: { scope: string }) {
       setTreeWidth(width, host.current?.getBoundingClientRect().width ?? 0, persist),
   })
 
-  // `relative` : c'est ce cadre qui ancre la colonne quand elle se pose au-dessus.
+  // Relative positioning anchors overlaid tree columns to this frame.
   return (
     <div ref={host} className="@container relative flex min-h-0 min-w-0 flex-1">
       {treeOpen ? (
@@ -67,11 +57,9 @@ export function FilesPane({ scope }: { scope: string }) {
           ref={column}
           className={cx(
             'min-h-0 shrink-0 overflow-auto border-r border-line py-1',
-            // Colonne à côté de l'éditeur quand la place existe, sinon calque au-dessus.
-            // `bg-surface` seulement dans ce second cas : une colonne opaque posée sur
-            // le panneau y dessinerait un rectangle plus clair sans raison.
-            // La largeur est bornée en CSS et pas seulement au glissement : un panneau
-            // rétréci après coup laisserait sinon une colonne trop large pour lui.
+            // Place beside the editor when space permits, otherwise overlay. Add surface background
+            // only when overlaid, avoiding an unexplained lighter rectangle otherwise. Clamp width
+            // in CSS too for panels shrunk after dragging.
             '@min-[35rem]:w-[min(var(--tree-width,15rem),60%)]',
             '@max-[35rem]:absolute @max-[35rem]:inset-y-0 @max-[35rem]:left-0 @max-[35rem]:z-10',
             '@max-[35rem]:w-full @max-[35rem]:bg-surface @max-[35rem]:shadow-card',
@@ -86,9 +74,10 @@ export function FilesPane({ scope }: { scope: string }) {
         </div>
       ) : null}
 
-      {/* Poignée seulement quand la colonne est posée à côté de l'éditeur : par-dessus,
-          elle n'a aucune place à partager, et au doigt elle tomberait au milieu de
-          l'écran sur un geste de défilement. */}
+      {/*
+       * Handles only beside editors: overlays share no space and touch handles would intercept
+       * scrolling mid-screen.
+       */}
       {treeOpen ? (
         <div
           role="separator"
@@ -106,8 +95,10 @@ export function FilesPane({ scope }: { scope: string }) {
         />
       ) : null}
 
-      {/* `min-w-0` : sans lui, un enfant flex se dimensionne sur son contenu, et
-          l'éditeur imposait sa largeur au panneau au lieu de défiler dedans. */}
+      {/*
+       * min-w-0 prevents flex content sizing from forcing editor width onto the panel instead of
+       * scrolling internally.
+       */}
       <div className={cx('min-h-0 min-w-0 flex-1', treeOpen && '@max-[35rem]:invisible')}>
         <EditorPane scope={scope} />
       </div>

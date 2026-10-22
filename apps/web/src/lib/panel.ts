@@ -1,19 +1,16 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 
 /**
- * État du panneau latéral droit, partagé hors de React.
- *
- * Même forme que `sidebar.ts`, et pour la même raison : l'en-tête de la conversation
- * porte le bouton d'ouverture, le panneau vit à côté du fil, et faire descendre
- * l'information par les props traverserait la vue entière pour un booléen.
+ * Right-side panel state shared outside React. Same structure and rationale as `sidebar.ts`: the
+ * conversation header holds the toggle while the panel lives beside the thread, so passing props
+ * would cross the entire view for a single boolean.
  */
 
 const OPEN_KEY = 'sillage.panelOpen'
 /**
- * Clé distincte de l'ancienne `sillage.panelWidth` : la largeur ne veut plus dire la
- * même chose. Elle réglait une colonne prise au fil, où l'on avait intérêt à être
- * étroit ; elle règle maintenant une feuille posée dessus, qui ne lui coûte rien.
- * Reprendre l'ancienne valeur aurait rouvert le panneau aussi étroit qu'avant.
+ * Separate key from the old `sillage.panelWidth`: width now describes an overlay sheet rather than
+ * a column taking space from the thread. Reusing the old preference would reopen it just as narrow
+ * as before, without benefiting the thread.
  */
 const WIDTH_KEY = 'sillage.sheetWidth'
 const DOCKED_WIDTH_KEY = 'sillage.panelDockedWidth'
@@ -21,10 +18,10 @@ const EXPANDED_KEY = 'sillage.panelExpanded'
 const TREE_KEY = 'sillage.panelTree'
 const TREE_WIDTH_KEY = 'sillage.treeWidth'
 
-/** En deçà, l'arborescence et l'éditeur ne tiennent plus côte à côte. */
+/** Below this width the tree and editor no longer fit side by side. */
 const MIN_WIDTH = 280
 
-/** Ce qui reste du fil derrière le panneau, pour qu'il garde une prise. */
+/** Thread space left visible behind the panel so it remains accessible. */
 const MIN_THREAD = 160
 
 function maxWidth(): number {
@@ -32,11 +29,9 @@ function maxWidth(): number {
 }
 
 /**
- * Largeur d'ouverture, faute de préférence enregistrée.
- *
- * Large d'emblée : le panneau se pose au-dessus du fil au lieu de lui prendre sa
- * colonne, donc l'étroitesse ne rend plus rien au fil. Il lui faut la place d'un
- * explorateur et d'un éditeur à côté, sinon l'onglet Fichiers n'a pas de sens.
+ * Opening width when no preference is saved. Start wide: the panel overlays the thread instead of
+ * taking its column, so narrowness no longer benefits the thread. It needs room for both explorer
+ * and editor or the Files tab has little purpose.
  */
 function defaultWidth(): number {
   return Math.min(1040, Math.round(window.innerWidth * 0.72))
@@ -57,7 +52,7 @@ export function setPanelExpanded(next: boolean): void {
   for (const notify of listeners) notify()
 }
 
-/** La place réelle après la sidebar décide si le fil et les changements tiennent. */
+/** Actual space remaining after the sidebar determines whether the thread and changes fit. */
 export function usePanelLayout() {
   const [width, setWidth] = useState(0)
   const isExpanded = useSyncExternalStore(subscribe, () => expanded, () => false)
@@ -83,19 +78,14 @@ export function usePanelOpen(): boolean {
 }
 
 /**
- * Durée de la transition d'ouverture, à tenir en accord avec la classe du panneau.
- *
- * Elle sert aussi à retarder le démontage : sans ce délai, fermer retirerait le
- * panneau du document avant que l'animation ait pu se jouer.
+ * Opening transition duration; keep in sync with the panel class. Also delays unmounting, which
+ * would otherwise remove the panel before its exit animation plays.
  */
 export const PANEL_TRANSITION_MS = 200
 
 /**
- * Présence du panneau dans le document, distincte de son état ouvert.
- *
- * Le panneau reste monté le temps de sortir de l'écran, puis disparaît : il tient des
- * terminaux vivants et des requêtes d'arborescence, qu'on ne veut pas garder derrière
- * un panneau fermé.
+ * Panel presence in the document, separate from its open state. It stays mounted while sliding out,
+ * then disappears: live terminals and tree requests should not remain behind a closed panel.
  */
 export function usePanelPresence(): { mounted: boolean; open: boolean } {
   const open = usePanelOpen()
@@ -124,11 +114,9 @@ export function setPanelOpen(next: boolean): void {
 export type PanelTab = 'files' | 'git' | 'history' | 'terminals' | 'actions' | 'agents' | 'mcp'
 
 /**
- * Onglet affiché et sous-agent consulté.
- *
- * Ici plutôt que dans le panneau, parce que le fil les pilote : ouvrir un fichier
- * depuis un diff bascule sur les fichiers, et cliquer un sous-agent dans le bandeau doit
- * ouvrir le panneau, choisir l'onglet et désigner lequel, en un seul geste.
+ * Displayed tab and selected subagent. Stored here because the thread controls them: opening a diff
+ * file switches to Files, and clicking a banner subagent must open the panel, choose its tab, and
+ * select the subagent in one action.
  */
 let tab: PanelTab = 'files'
 let subAgentId: string | null = null
@@ -144,20 +132,18 @@ export function usePanelTab(): PanelTab {
 export function setPanelTab(next: PanelTab): void {
   if (next === tab) return
   tab = next
-  // Cliquer l'onglet se lit comme « montre-moi les sous-agents », pas « rouvre celui
-  // que je consultais » : la sélection ne survit donc pas à un passage par un autre
-  // onglet, alors qu'elle survit à un aller-retour dans le fil. Même doctrine pour le
-  // tour consulté dans l'onglet Git : revenir sur Git montre le dépôt, pas le tour.
+  // Clicking the tab means show subagents rather than reopen the previously viewed one: selection
+  // survives thread navigation but not switching tabs. Likewise, returning to Git shows the
+  // repository rather than the previously selected turn.
   subAgentId = null
   checkpointKey = null
   for (const listener of listeners) listener()
 }
 
 /**
- * Tour dont l'onglet Git montre les changements, désigné depuis le fil.
- *
- * Ici pour la même raison que le sous-agent : le geste part du fil et doit ouvrir le
- * panneau, choisir l'onglet et désigner le tour d'un coup.
+ * Turn whose changes the Git tab displays, selected from the thread. Stored here for the same
+ * reason as subagent selection: a single thread action must open the panel, choose the tab, and
+ * select the turn.
  */
 let checkpointKey: string | null = null
 
@@ -169,7 +155,7 @@ export function usePanelCheckpoint(): string | null {
   )
 }
 
-/** Montre les changements d'un tour dans l'onglet Git, panneau ouvert. */
+/** Show a turn's changes in the Git tab with the panel open. */
 export function showCheckpoint(key: string): void {
   setPanelOpen(true)
   tab = 'git'
@@ -185,8 +171,8 @@ export function clearCheckpoint(): void {
 }
 
 /**
- * Terminal à mettre devant à la prochaine liste qui le contient : une action vient de
- * l'ouvrir, et le panneau des terminaux, qui tient sa sélection, doit la suivre.
+ * Terminal to select when it next appears in the list: an action just opened it, and the terminal
+ * panel must update its own selection accordingly.
  */
 let focusedTerminal: string | null = null
 
@@ -198,7 +184,7 @@ export function useFocusedTerminal(): string | null {
   )
 }
 
-/** Ouvre le panneau sur un terminal donné, depuis n'importe où dans la vue. */
+/** Open the panel on a specific terminal from anywhere in the view. */
 export function showTerminal(id: string): void {
   focusedTerminal = id
   tab = 'terminals'
@@ -206,12 +192,12 @@ export function showTerminal(id: string): void {
   for (const listener of listeners) listener()
 }
 
-/** Le panneau des terminaux a pris la sélection en compte. */
+/** The terminal panel has applied the requested selection. */
 export function clearFocusedTerminal(): void {
   focusedTerminal = null
 }
 
-/** L'appel de spawn du sous-agent consulté, ou null pour la liste. */
+/** Spawning call of the selected subagent, or null for the list. */
 export function useSelectedSubAgent(): string | null {
   return useSyncExternalStore(
     subscribe,
@@ -220,19 +206,19 @@ export function useSelectedSubAgent(): string | null {
   )
 }
 
-/** Ouvre le panneau sur le fil d'un sous-agent, depuis n'importe où dans la vue. */
+/** Open the panel on a subagent thread from anywhere in the view. */
 export function showSubAgent(id: string): void {
   subAgentId = id
   tab = 'agents'
-  // Après les deux affectations : `setPanelOpen` prévient les abonnés, qui doivent
-  // trouver l'onglet et la sélection déjà en place.
+  // After both assignments: `setPanelOpen` notifies subscribers, which must find the tab and
+  // selection already set.
   setPanelOpen(true)
   for (const listener of listeners) listener()
 }
 
 /**
- * Revient à la liste. Appelé aussi au changement de conversation : un appel de spawn
- * n'existe que dans son fil, et le garder sélectionné afficherait un fil vide.
+ * Return to the list. Also called on conversation changes: a spawning call exists only in its own
+ * thread, so retaining the selection would display an empty thread.
  */
 export function clearSubAgent(): void {
   if (subAgentId === null) return
@@ -241,11 +227,9 @@ export function clearSubAgent(): void {
 }
 
 /**
- * Largeur du panneau, publiée en variable CSS.
- *
- * Comme pour la sidebar : un glissement émet un événement par image, et re-rendre
- * l'arborescence à chacun rendrait la poignée pâteuse. `localStorage` n'est écrit
- * qu'au relâchement.
+ * Panel width published as a CSS variable. As with the sidebar, dragging emits an event per frame;
+ * rerendering the tree each time would make resizing sluggish. Write `localStorage` only on
+ * release.
  */
 export function setPanelWidth(px: number, persist: boolean): number {
   const width = Math.round(Math.min(maxWidth(), Math.max(MIN_WIDTH, px)))
@@ -269,11 +253,9 @@ export function setDockedPanelWidth(px: number, persist: boolean): number {
 }
 
 /**
- * Colonne de l'arborescence, dans l'onglet Fichiers.
- *
- * Un réglage et non un onglet : l'arbre et l'éditeur sont la même vue, et la replier
- * rend sa largeur à l'éditeur sans changer de contexte. Sur un panneau étroit, la
- * colonne passe par-dessus l'éditeur et se referme dès qu'un fichier est choisi.
+ * Tree column in the Files tab. A setting rather than a tab: tree and editor form one view, and
+ * collapsing the tree gives space back to the editor without switching context. In a narrow panel
+ * it overlays the editor and closes when a file is selected.
  */
 let treeOpen = localStorage.getItem(TREE_KEY) !== '0'
 
@@ -286,9 +268,8 @@ export function usePanelTree(): boolean {
 }
 
 /**
- * `persist` à faux pour la fermeture automatique d'un panneau étroit : c'est la place
- * disponible qui l'impose, pas un choix, et l'enregistrer laisserait l'arborescence
- * repliée au retour sur un écran large.
+ * Set `persist` to false for automatic narrow-panel closure: available space imposes it rather than
+ * user choice. Saving it would keep the tree collapsed on returning to a large screen.
  */
 export function setPanelTree(next: boolean, persist = true): void {
   if (next === treeOpen) return
@@ -297,31 +278,27 @@ export function setPanelTree(next: boolean, persist = true): void {
   for (const listener of listeners) listener()
 }
 
-/** En deçà, il ne reste plus de place pour un nom de fichier à côté de son icône. */
+/** Below this width a filename no longer fits beside its icon. */
 const MIN_TREE_WIDTH = 150
 
-/** Ce qui reste à l'éditeur : moins, et une ligne de code ne se lit plus. */
+/** Space reserved for the editor: any less makes a code line unreadable. */
 const MIN_EDITOR_WIDTH = 220
 
-/** Largeur d'origine de la colonne, celle qu'elle avait avant d'être réglable. */
+/** Original column width before it became adjustable. */
 const DEFAULT_TREE_WIDTH = 240
 
 /**
- * Part maximale du cadre que la colonne peut prendre.
- *
- * À tenir en accord avec le `min(var(--tree-width,15rem),60%)` de `FilesPane`. Les deux
- * bornes doivent dire la même chose : la classe CSS protège l'éditeur quand le panneau
- * a été rétréci après coup, celle-ci empêche d'enregistrer une largeur plus grande que
- * ce qui est affiché, qui ferait sauter la colonne au prochain élargissement.
+ * Maximum fraction of the container the column may occupy. Keep in sync with `FilesPane`'s
+ * `min(var(--tree-width,15rem),60%)`. CSS protects the editor when the panel shrinks afterward;
+ * this limit prevents saving a width larger than displayed, which would make the column jump when
+ * widened again.
  */
 const MAX_TREE_SHARE = 0.6
 
 /**
- * Largeur de la colonne de l'arborescence, publiée en variable CSS.
- *
- * `available` est la largeur du cadre qui porte la colonne et l'éditeur, et non celle
- * de la fenêtre : le panneau qui les contient se redimensionne lui-même, donc la place
- * à partager n'est connue que de lui.
+ * Tree column width published as a CSS variable. `available` is the width of the tree/editor
+ * container, not the window: the enclosing panel resizes independently and alone knows the
+ * available space.
  */
 export function setTreeWidth(px: number, available: number, persist: boolean): number {
   const max = Math.max(
@@ -337,9 +314,8 @@ export function setTreeWidth(px: number, available: number, persist: boolean): n
 export function restoreTreeWidth(): void {
   const stored = Number(localStorage.getItem(TREE_WIDTH_KEY))
   const width = Number.isFinite(stored) && stored > 0 ? stored : DEFAULT_TREE_WIDTH
-  // Sans borne haute, contrairement au glissement : la place disponible est celle du
-  // panneau, qui n'est pas encore posé. C'est la classe CSS de la colonne qui empêche
-  // une largeur enregistrée au large d'écraser l'éditeur sur un panneau étroit.
+  // Unlike dragging, no upper bound here: the panel has not been laid out yet. The column's CSS
+  // prevents a width saved on a large screen from squeezing the editor in a narrow panel.
   document.documentElement.style.setProperty(
     '--tree-width',
     `${Math.max(MIN_TREE_WIDTH, width)}px`,

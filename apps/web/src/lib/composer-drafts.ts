@@ -1,25 +1,18 @@
 import type { AttachmentDto } from '@sillage/protocol'
 
 /**
- * Message en cours de rédaction, par conversation.
- *
- * Le composer est remonté par sa clé quand la conversation change : sans mémoire
- * extérieure, passer d'un fil à l'autre effaçait le texte tapé et la liste des pièces
- * jointes déjà téléversées, sans rien annoncer.
- *
- * Hors de React parce que le brouillon doit survivre au démontage du composant, ce
- * qui est précisément ce qui se produit à chaque changement de fil.
- *
- * Volontairement non persisté : les pièces jointes ne sont ici que des identifiants
- * de fichiers téléversés, que le serveur ramasse comme orphelins ; un brouillon relu
- * après un redémarrage désignerait des fichiers disparus et l'envoi échouerait.
+ * Message drafts per conversation. The composer remounts by key on conversation changes; without
+ * external memory, switching erased entered text and uploaded attachments without warning. Store
+ * outside React to survive those unmounts. Deliberately not persisted: attachment IDs refer to
+ * uploaded files the server eventually collects as orphans, so restored drafts after restart could
+ * reference missing files and fail to send.
  */
 export interface ComposerDraft {
   text: string
   attachments: AttachmentDto[]
-  /** Chemins choisis dans la liste des mentions, à distinguer des `@` tapés à la main. */
+  /** Paths selected from mention suggestions, distinct from manually typed `@` references. */
   mentions: string[]
-  /** Compétences choisies dans la liste, par leur nom. */
+  /** Skills selected from suggestions by name. */
   skills: string[]
 }
 
@@ -32,8 +25,8 @@ export function readDraft(key: string): ComposerDraft {
 }
 
 export function saveDraft(key: string, draft: ComposerDraft): void {
-  // Un brouillon vide n'en est pas un : le retenir ferait grossir la table au fil des
-  // conversations visitées, et masquerait le `initialText` d'un fork.
+  // An empty draft is not a draft: retaining it grows the table with every visited conversation and
+  // masks fork `initialText`.
   if (draft.text.length === 0 && draft.attachments.length === 0) {
     drafts.delete(key)
     return

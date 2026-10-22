@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-/** Parcours réel de l'éditeur, dans le workspace de démonstration temporaire du test UI. */
+/** Real editor walkthrough in UI test temporary demo workspace. */
 export async function checkEditor({ page, context, base, project }) {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${base}/p/${project.id}/board`)
@@ -108,7 +108,7 @@ export async function checkEditor({ page, context, base, project }) {
   await waitClean()
   assert.equal((await read()).content, draftC)
 
-  // Une relecture lente ne doit pas effacer le texte tapé après son déclenchement.
+  // Slow rereads must not erase text typed after they started.
   await code.fill(draftA)
   let readRelease, readSent
   const readGate = new Promise((resolve) => { readRelease = resolve })
@@ -128,7 +128,7 @@ export async function checkEditor({ page, context, base, project }) {
   await waitClean()
   console.log('OK : conflit réel avec le disque, rechargement effectif, choix explicite du brouillon et relecture lente sans perte.')
 
-  // Quand le navigateur refuse le stockage, l'interface doit annoncer sa vraie limite.
+  // When browser denies storage, interface must report its actual limitation.
   await page.evaluate(() => {
     window.uiOriginalSetItem = Storage.prototype.setItem
     Storage.prototype.setItem = function (key, value) {

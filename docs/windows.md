@@ -166,9 +166,9 @@ Remove-Item "$([Environment]::GetFolderPath('Programs'))\Sillage.lnk", "$([Envir
 `wsl --shutdown` stops the keeper if it still runs. Your projects and the agents'
 credentials (`~/.claude`, `~/.codex`, `~/.local/share/opencode`) are left in place.
 
-## Accès depuis un autre appareil
+## Access from another device
 
-Pour retrouver Sillage sur un téléphone, Windows et WSL doivent rester actifs.
-Le [guide d’accès distant](remote-access.md) décrit Tailscale côté Windows, HTTPS
-et les consignes à donner aux agents pour partager des prévisualisations accessibles
-par le VPN. Installer Sillage ne configure pas cet accès automatiquement.
+To access Sillage from a phone, Windows and WSL must stay running.
+The [remote-access guide](remote-access.md) covers Tailscale on Windows, HTTPS,
+and instructions for agents to share previews reachable through the VPN.
+Installing Sillage does not configure this access automatically.

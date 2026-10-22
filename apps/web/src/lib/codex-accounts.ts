@@ -3,15 +3,13 @@ import type { CodexAccount, CodexAccountListDto, CodexLoginStatusDto } from '@si
 import { api } from './api'
 
 /**
- * Comptes Codex supplémentaires du compte courant.
- *
- * La connexion est menée par Codex côté serveur : ici on la lance, on affiche le code
- * à saisir, et on relit l'état jusqu'à ce qu'elle aboutisse. Aucun hook ne voit de
- * secret : seule la clé API part, à l'aller.
+ * Additional Codex accounts for the current user. Codex handles login server-side: start it here,
+ * display the code, and poll until complete. Hooks never see secrets; only API keys are sent
+ * outbound.
  */
 
 const ACCOUNTS_KEY = ['codex-accounts']
-/** Hors de `ACCOUNTS_KEY`, pour la même raison que côté Claude : voir `claude-accounts.ts`. */
+/** Outside `ACCOUNTS_KEY` for the same reason as Claude; see `claude-accounts.ts`. */
 const loginKey = (id: string) => ['codex-login', id]
 
 export function useCodexAccounts(enabled = true) {
@@ -49,8 +47,8 @@ export function useDeleteCodexAccount() {
 }
 
 /**
- * L'état de la connexion d'un compte, relu toutes les deux secondes tant qu'un code
- * attend d'être saisi : c'est le serveur qui apprend la fin, par l'app-server.
+ * Account login state polled every two seconds while awaiting code entry. The server detects
+ * completion through app-server.
  */
 export function useCodexLoginStatus(id: string, watch: boolean) {
   const queryClient = useQueryClient()
@@ -58,8 +56,8 @@ export function useCodexLoginStatus(id: string, watch: boolean) {
     queryKey: loginKey(id),
     queryFn: async () => {
       const status = await api.get<CodexLoginStatusDto>(`/api/codex-accounts/${encodeURIComponent(id)}/login`)
-      // C'est la relecture qui apprend que Codex a fini, le code d'appareil se saisissant
-      // ailleurs : la carte doit passer à « Connecté » sans recharger la page.
+      // Polling detects Codex completion because device codes are entered elsewhere: the card must
+      // show Connected without reload.
       if (status.state === 'done') {
         void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
         void queryClient.invalidateQueries({ queryKey: ['usage'] })
@@ -78,14 +76,14 @@ export function useStartCodexLogin(id: string) {
       api.post<CodexLoginStatusDto>(`/api/codex-accounts/${encodeURIComponent(id)}/login`, input),
     onSuccess: (status) => {
       queryClient.setQueryData(loginKey(id), status)
-      // Une clé API connecte tout de suite : la liste doit le montrer sans attendre.
+      // API keys connect immediately: update the list without waiting.
       void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
       void queryClient.invalidateQueries({ queryKey: ['usage'] })
     },
   })
 }
 
-/** Annule une attente de code, ou déconnecte un compte prêt : la même route pour les deux. */
+/** Cancel a pending code or disconnect a ready account through the same route. */
 export function useStopCodexLogin(id: string) {
   const queryClient = useQueryClient()
   return useMutation({

@@ -25,7 +25,7 @@ async function harness(t: TestContext) {
   for (const id of ['owner', 'other']) {
     db.insert(users).values({ id, username: id, displayName: id, passwordHash: '', createdAt: 1 }).run()
   }
-  // Le home de l'utilisateur, que les homes des comptes reprennent par liens.
+  // User home linked into account homes.
   const userHome = join(dir, 'user-grok')
   mkdirSync(join(userHome, 'sessions'), { recursive: true })
   writeFileSync(join(userHome, 'config.toml'), '[cli]\n')
@@ -88,7 +88,7 @@ test('connexion par code d’appareil : URL et code lus sur la sortie de grok lo
   assert.equal(ready.plan, 'X Premium')
   assert.ok(homes.connected(account.id))
 
-  // Déconnexion : `grok logout` est joué dans le home du compte, puis sa connexion retirée.
+  // Logout runs `grok logout` in account homes, then removes authentication.
   await login.logout(account.id)
   assert.equal(homes.connected(account.id), false)
   assert.equal(readFileSync(join(homes.path(account.id), 'logout.log'), 'utf8'), 'logout\n')
@@ -126,7 +126,7 @@ test('consommation : enveloppe de crédits de la période, dépassement à la de
     windows: [{ id: 'credits', label: 'Crédits · 7 jours', utilization: 0.08, resetsAt: Date.parse('2026-10-19T22:23:39Z') }],
     credits: { label: 'À la demande', utilization: 0.25, detail: '5.00 $ sur 20.00 $', enabled: true },
   })
-  // Un compte sans abonnement (clé API) n'a pas d'enveloppe : rien à montrer.
+  // Accounts without subscriptions (API keys) have no allowance to display.
   assert.deepEqual(toGrokUsage({ config: {} }), { agent: 'grok', plan: null, limitsAvailable: false, windows: [], credits: null })
 })
 

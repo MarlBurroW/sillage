@@ -4,15 +4,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Copie le jeu d'icônes de fichiers dans `public/`.
- *
- * Les 1250 SVG sont servis en statique plutôt qu'importés par le bundle : les inclure
- * ajouterait 240 Ko compressés au panneau pour des icônes dont on n'en affiche qu'une
- * poignée à la fois. Ici, chacune est demandée à l'usage et mise en cache par le
- * navigateur, et le paquet ne porte que la table de correspondance.
- *
- * Le précache du service worker ne les prend pas (`globPatterns` ne liste pas les
- * SVG) : les précacher ferait télécharger 1250 fichiers à chaque mise à jour.
+ * Copy file icons into `public/`. Serve the 1250 SVGs statically rather than adding 240 KB
+ * compressed to the panel bundle for icons shown only a few at a time. Request them on demand and
+ * let the browser cache them; bundle only the lookup table. Service-worker precache excludes them
+ * (`globPatterns` omits SVGs) to avoid downloading 1250 files for every update.
  */
 
 const require = createRequire(import.meta.url)
@@ -21,8 +16,7 @@ const web = join(dirname(fileURLToPath(import.meta.url)), '..')
 const source = join(dirname(require.resolve('material-icon-theme/package.json')), 'icons')
 const target = join(web, 'public/file-icons')
 
-// Repartir d'un dossier propre : une icône retirée de la bibliothèque ne doit pas
-// survivre indéfiniment dans `public/`.
+// Start with a clean directory so removed library icons do not survive indefinitely in `public/`.
 await rm(target, { recursive: true, force: true })
 await mkdir(target, { recursive: true })
 await cp(source, target, { recursive: true })

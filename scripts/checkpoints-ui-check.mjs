@@ -10,8 +10,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Les points de reprise d'un tour sur la démo : vrai serveur, vrai git, base temporaire.
-// Un tour est joué sans agent par `checkpoint-demo.ts`, captures et fichiers compris.
+// Demo turn checkpoints: real server/git, temporary database. `checkpoint-demo.ts`
+// plays a turn without an agent, including snapshots and files.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -95,7 +95,7 @@ try {
     return { context, page, errors, project }
   }
 
-  // Grand écran : le repère sous le tour, l'onglet Git filtré, le diff, la restauration.
+  // Desktop: marker below turn, filtered Git tab, diff, restoration.
   const { page, errors, project } = await session({ width: 1440, height: 900 }, false)
   const strip = page.locator(`[data-checkpoint="${turn.key}"]`)
   await strip.scrollIntoViewIfNeeded()
@@ -111,7 +111,7 @@ try {
   const paths = await rows.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-path')).sort())
   assert.deepEqual(paths, ['CHANGELOG.md', 'README.md', 'src/lib/forecast.ts'])
 
-  // Le diff d'un fichier, lu depuis les captures.
+  // File diff read from snapshots.
   const readmeRow = panel.locator('.group\\/change[data-path="README.md"]')
   await readmeRow.getByRole('button').first().click()
   await panel.locator('table').first().waitFor()
@@ -119,11 +119,11 @@ try {
   console.log('OK : onglet Git filtré sur le tour, diff lisible.')
   await page.screenshot({ path: '/tmp/sillage-checkpoints-desktop.png' })
 
-  // Retour au dépôt : l'onglet Git ordinaire revient.
+  // Return to repository: ordinary Git tab returns.
   await panel.getByRole('button', { name: 'Retour au dépôt', exact: true }).click()
   await panel.getByText('Changements du tour', { exact: true }).waitFor({ state: 'hidden' })
 
-  // Restaurer depuis le fil, après confirmation.
+  // Restore from thread after confirmation.
   await strip.getByRole('button', { name: "Revenir à l'état d'avant ce tour", exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByText("Revenir à l'état d'avant ce tour ?", { exact: true }).waitFor()
@@ -137,7 +137,7 @@ try {
   console.log('OK : workspace ramené à l’état d’avant le tour.')
   assert.deepEqual(errors, [])
 
-  // Téléphone : le repère tient dans 390 px, le panneau filtré aussi.
+  // Phone: marker and filtered panel fit 390 px.
   const phone = await session({ width: 390, height: 844 }, true)
   const phoneStrip = phone.page.locator(`[data-checkpoint="${turn.key}"]`)
   await phoneStrip.scrollIntoViewIfNeeded()

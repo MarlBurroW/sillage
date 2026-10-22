@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-/** Régression : une conversation ouverte charge aussi l'objet des fichiers de consignes. */
+/** Regression: opening conversation also loads instruction-files object. */
 export async function checkFavorites({ page, context, base, project, hero }) {
   await page.setViewportSize({ width: 1440, height: 900 })
   const url = `${base}/p/${project.id}/c/${hero.id}`
@@ -49,8 +49,8 @@ export async function checkFavorites({ page, context, base, project, hero }) {
   await heading.waitFor()
   assert.equal(await favorites.locator(`a[href="/p/${project.id}/c/${hero.id}"]`).count(), 1)
 
-  // Retirer depuis les favoris fait disparaître la ligne avant la réponse :
-  // l'erreur doit rester portée par la sidebar et permettre de réessayer.
+  // Removing from favorites hides row before response: sidebar must retain error
+  // and allow retry.
   const failure = route => route.fulfill({ status: 503, json: { error: { code: 'ui_favorite_failure', message: 'Simulated favorite failure' } } })
   await page.route(endpoint, failure)
   await favoriteStar.click()

@@ -1,13 +1,12 @@
 name: Desktop
 
-# L'application de bureau : l'arbre d'exécution de la release, le Node qui l'a construit et
-# Electron, empaquetés pour chaque plateforme, puis lancés pour de vrai. Appelé par
-# release.yml à chaque tag (toutes les cibles) et par la CI (Linux x64 et Windows x64). Une fois ce
-# fichier sur main, on peut aussi le lancer à la main pour une branche (Actions > Desktop
-# > Run workflow) : les paquets restent alors en artefacts du run, rien n'est publié.
+# Desktop app: release runtime, Node that built it, Electron, packaged for each
+# platform then launched for real. Called by release.yml on tags (all targets)
+# and CI (Linux x64/Windows x64). Once on main, also manually runnable for branches
+# (Actions > Desktop > Run workflow): packages remain artifacts, nothing published.
 #
-# Pas encore de signature Apple : l'app macOS est signée ad hoc, et Gatekeeper demande de
-# l'autoriser à la première ouverture.
+# No Apple signing yet: macOS app is ad hoc signed, Gatekeeper requires
+# authorization on first open.
 
 on:
   workflow_call:
@@ -58,12 +57,12 @@ permissions:
   contents: read
 
 env:
-  # electron-builder télécharge son propre Electron ; celui du paquet npm ne sert qu'à
-  # lancer l'app depuis le dépôt.
+  # electron-builder downloads its own Electron; npm package binary only
+  # launches app from repository.
   ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-  # Dans une PR, electron-builder saute toute signature, ad hoc comprise : l'app macOS
-  # en sortirait non signée, ce qu'un Mac Apple Silicon refuse. La signature ad hoc ne
-  # demande aucun secret, rien ne s'oppose à la forcer.
+  # In PRs electron-builder skips all signing, including ad hoc: macOS app would
+  # be unsigned, which Apple Silicon refuses. Ad hoc signing needs no secret,
+  # so it can be forced.
   CSC_FOR_PULL_REQUEST: 'true'
 
 jobs:
@@ -72,10 +71,9 @@ jobs:
       fail-fast: false
       matrix:
         target: ${{ fromJSON(inputs.targets) }}
-    # Runners natifs, comme les archives de la release : les modules natifs embarqués
-    # sont compilés pour la plateforme qui les lance. ubuntu-22.04 fixe la glibc de
-    # référence et laisse le bac à sable de Chromium créer ses namespaces sans profil
-    # AppArmor, ce que le lancement réel de l'app demande.
+    # Native runners, like release archives: bundled native modules compile for
+    # target platform. ubuntu-22.04 fixes baseline glibc and allows Chromium sandbox
+    # namespaces without AppArmor profile, required for real app launch.
     runs-on: >-
       ${{ matrix.target == 'darwin-arm64' && 'macos-15'
         || matrix.target == 'linux-arm64' && 'ubuntu-22.04-arm'
@@ -87,27 +85,26 @@ jobs:
           || startsWith(matrix.target, 'win') && 'win32'
           || 'linux' }}
       ARCH: ${{ endsWith(matrix.target, 'arm64') && 'arm64' || 'x64' }}
-    # Le bash de Git for Windows aussi sous Windows : les étapes sont écrites pour lui.
+    # Use Git for Windows bash on Windows too: steps are written for it.
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-      # Ce Node installe l'arbre d'exécution et voyage avec l'app, à la version près
-      # (scripts/desktop-stage.mjs) : l'app livre le couple que ce job a vérifié.
+      # This Node installs runtime and ships with app at the exact version
+      # (scripts/desktop-stage.mjs): app delivers the pair verified by this job.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-      # Les scripts du dépôt sont écrits pour sh (`mkdir -p`, `cp -r`), que pnpm lancerait
-      # sinon dans cmd.exe.
+      # Repository scripts use sh (`mkdir -p`, `cp -r`); pnpm would otherwise use cmd.exe.
       - name: Run package scripts with Git Bash
         if: runner.os == 'Windows'
         run: pnpm config set script-shell 'C:\Program Files\Git\bin\bash.exe'
-      # Sous Windows, sans scripts d'installation : better-sqlite3 et node-pty y chargent leurs
-      # binaires précompilés, et le `node-gyp rebuild` qu'impose le binding.gyp de
-      # better-sqlite3 échoue sur un Visual Studio trop récent pour lui.
+      # Windows skips install scripts: better-sqlite3/node-pty load prebuilt binaries,
+      # and better-sqlite3 binding.gyp forces `node-gyp rebuild`, which fails on
+      # Visual Studio versions too recent for it.
       - run: pnpm install --frozen-lockfile ${{ runner.os == 'Windows' && '--ignore-scripts' || '' }}
       - run: pnpm build
         env:
@@ -127,13 +124,13 @@ jobs:
       - name: Verify the macOS signature
         if: env.PLATFORM == 'darwin'
         run: codesign --verify --deep --strict --verbose=2 apps/desktop/release/mac-arm64/Sillage.app
-      # L'app empaquetée, lancée pour de vrai : serveur, session, écrans du profil de
-      # bureau, garde d'origine, arrêt. Sous Linux, linux-unpacked est l'étape que
-      # l'AppImage et le .deb emballent, et l'écran vient de Xvfb.
+      # Really launch packaged app: server, session, desktop-profile screens, origin
+      # guard, shutdown. Linux linux-unpacked is what AppImage/.deb wrap; Xvfb
+      # provides display.
       - name: Launch check
         env:
-          # Sous Windows, le contrôle installe au moins Codex par le npm embarqué : c'est là
-          # que les lanceurs npm (`.cmd`) demandent d'être lus plutôt que lancés.
+          # Windows check installs at least Codex through bundled npm: npm `.cmd`
+          # launchers must be read rather than executed here.
           SILLAGE_CHECK_INSTALL: ${{ inputs.install-check || (runner.os == 'Windows' && 'codex' || '') }}
         run: |
           if [ "$PLATFORM" = darwin ] || [ "$PLATFORM" = win32 ]; then
@@ -143,15 +140,13 @@ jobs:
           else
             echo "::warning::xvfb-run absent du runner, lancement non vérifié"
           fi
-      # La mise à jour de l'app, de bout en bout : deux versions empaquetées pour l'occasion,
-      # la première installée comme le ferait un utilisateur, qui trouve la seconde dans un
-      # dossier servi en HTTP, la télécharge, se remplace et se relance
-      # (scripts/desktop-update-check.mjs). Le .deb n'y est pas : son installation demande
-      # le mot de passe de l'administrateur.
+      # Package and install two versions, then verify discovery, download, replacement
+      # and relaunch using a local HTTP feed. The .deb needs administrator permission
+      # and is checked separately.
       - name: Update check
         if: inputs.update-check
         env:
-          # FUSE n'est pas garanti sur le runner : l'AppImage s'extrait au lieu de se monter.
+          # Runners may lack FUSE; extract the AppImage instead of mounting it.
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: |
           case "$PLATFORM" in

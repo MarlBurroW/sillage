@@ -6,11 +6,8 @@ import { useUpdateUser } from '../lib/users'
 import { Banner, Button, Field } from './ui'
 
 /**
- * Édition d'un compte : identifiant, nom affiché, mot de passe.
- *
- * Le même formulaire sert pour son propre compte et, côté administration, pour celui
- * d'un autre. La seule différence tient au mot de passe : pour soi, l'actuel est exigé,
- * parce qu'un écran resté déverrouillé suffirait sinon à prendre le compte.
+ * Account editing shared by self-service and administration: identifier, name, password.
+ * Self-service requires the current password so unlocked screens cannot allow account takeover.
  */
 export function AccountForm({
   userId,
@@ -50,8 +47,7 @@ export function AccountForm({
     updateUser.mutate(
       {
         id: userId,
-        // Seuls les champs réellement modifiés partent : envoyer l'identifiant
-        // inchangé déclencherait une vérification d'unicité contre soi-même.
+        // Send only changed fields: unchanged identifiers would trigger uniqueness checks against themselves.
         ...(form.username !== username ? { username: form.username.trim() } : {}),
         ...(form.displayName !== displayName ? { displayName: form.displayName.trim() } : {}),
         ...(changingPassword

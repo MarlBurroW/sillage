@@ -7,7 +7,7 @@ interface Origin {
   conversationId: string | null
 }
 
-/** Un identifiant opaque hérité par les enfants ; le registre survit au daemon. */
+/** Opaque ID inherited by children; the registry survives the daemon. */
 export class ProcessOrigins {
   private readonly entries = new Map<string, Origin>()
   private readonly directory: string
@@ -23,7 +23,7 @@ export class ProcessOrigins {
           (origin.conversationId === null || typeof origin.conversationId === 'string')) {
           this.entries.set(file.slice(0, -5), origin)
         }
-      } catch { /* Une entrée illisible ne doit pas empêcher les agents de démarrer. */ }
+      } catch { /* Unreadable entries must not prevent agent startup. */ }
     }
   }
 
@@ -46,7 +46,7 @@ export class ProcessOrigins {
     return token ? this.byToken(token) : null
   }
 
-  /** Le jeton déjà extrait, tel que l'environnement d'une unité systemd le donne. */
+  /** Already-extracted origin token as supplied by unit environments. */
   byToken(token: string): Origin | null {
     return this.entries.get(token) ?? null
   }

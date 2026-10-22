@@ -24,14 +24,10 @@ import { GROK_ISOLATION_ENV } from './launch.js'
 import { GrokRunner } from './runner.js'
 import { describeEdit } from './tools.js'
 
-/**
- * L'installeur officiel (`curl -fsSL https://x.ai/cli/install.sh | bash`) pose le
- * binaire ici et n'ajoute ce dossier qu'au PATH du shell interactif : un daemon ne l'y
- * voit pas.
- */
+/** Official installer (`curl -fsSL https://x.ai/cli/install.sh | bash`) places binaries here and updates only interactive-shell PATH, invisible to daemons. */
 const INSTALLER_BINARY = join(homedir(), '.grok/bin', process.platform === 'win32' ? 'grok.exe' : 'grok')
 
-/** Le nom configuré, ou le chemin de l'installeur quand ce nom ne mène nulle part. */
+/** Configured name, falling back to installer paths when unresolved. */
 function configuredBinary(binary: string, managedDir: string): string {
   if (resolveBinary(binary, managedDir) !== null || binary !== 'grok') return binary
   try {
@@ -42,7 +38,7 @@ function configuredBinary(binary: string, managedDir: string): string {
   }
 }
 
-/** Rang du dernier prompt à garder dans la branche, null pour tout garder. */
+/** Last prompt ordinal retained in forks; null retains everything. */
 interface GrokForkCut {
   targetPromptIndex: number | null
 }
@@ -52,11 +48,7 @@ export class GrokAdapter implements AgentAdapter {
   readonly label = 'Grok Build'
   readonly binary: string
   readonly capabilities = AGENT_CAPABILITIES.grok
-  /**
-   * L'ACP en version 1, avec les extensions `_x.ai/…` de Grok Build, sondé sur 1.0.62.
-   * Le `raw` des événements est le `session/update` reçu, ou la réponse au
-   * `session/prompt` pour une clôture de tour.
-   */
+  /** ACP v1 with Grok Build `_x.ai/…` extensions, probed on 1.0.62. Event `raw` is incoming `session/update`, or `session/prompt` responses for turn completion. */
   readonly rawFormat = 'grok-acp@v1'
   readonly cli: CliBinary
 
@@ -74,11 +66,7 @@ export class GrokAdapter implements AgentAdapter {
     return new GrokRunner(ctx)
   }
 
-  /**
-   * Le point de coupe est un rang de tour : Grok numérote les prompts de la session à
-   * partir de zéro, et chaque tour de Sillage en est un (la compaction et les messages
-   * glissés en cours de tour n'en ouvrent pas). Null pour tout garder.
-   */
+  /** Cut points are prompt ordinals: Grok numbers from zero, and each Sillage turn corresponds to one prompt. Compaction and mid-turn steering do not create prompts. Null retains all. */
   forkCut(log: EventLog, conversationId: string, throughSeq: number): GrokForkCut {
     const turns = log.countByType(conversationId, 'turn.completed', throughSeq)
     if (turns.kept === turns.total) return { targetPromptIndex: null }
@@ -88,11 +76,7 @@ export class GrokAdapter implements AgentAdapter {
     return { targetPromptIndex: turns.kept - 1 }
   }
 
-  /**
-   * `_x.ai/session/fork` copie la session sur disque, tronquée après le prompt désigné,
-   * sur un process jetable : la branche se reprend ensuite comme n'importe quelle
-   * session. Comme chez Codex, le fork ne revient pas sur les fichiers déjà écrits.
-   */
+  /** `_x.ai/session/fork` copies disk sessions truncated after specified prompts through disposable processes. Resume forks normally afterward. Like Codex, forks do not restore written files. */
   async fork(target: ForkTarget, cut: unknown): Promise<string> {
     const { targetPromptIndex } = cut as GrokForkCut
     const client = new AcpClient({
@@ -146,16 +130,12 @@ export class GrokAdapter implements AgentAdapter {
     return { commands: listing.commands, fetchedAt: listing.fetchedAt }
   }
 
-  /**
-   * Consommation de l'abonnement par `_x.ai/billing` : une enveloppe de crédits par
-   * semaine ou par mois. Sans connexion (ou sur une clé API), Grok refuse la lecture :
-   * `limitsAvailable: false` le dit sans que ce soit une panne.
-   */
+  /** Subscription usage through `_x.ai/billing`: weekly/monthly credit allowances. Unauthenticated/API-key reads are rejected normally; report `limitsAvailable: false` rather than failure. */
   usage(force: boolean): Promise<AgentUsage> {
     return this.usageReader.read(force)
   }
 
-  /** `credential` est ici le `GROK_HOME` du compte, voir `GrokAccountHomes`. */
+  /** credential is this account's GROK_HOME; see GrokAccountHomes. */
   usageForAccount(accountId: string, credential: string, force: boolean): Promise<AgentUsage> {
     return this.usageReader.readForAccount(accountId, credential, force)
   }

@@ -1,44 +1,43 @@
 import { z } from 'zod'
 
 /**
- * SILLAGE.md : des consignes tenues par Sillage et injectées dans le prompt système des
- * deux CLI, une partie globale et une par projet.
+ * SILLAGE.md: Sillage-managed instructions injected into both CLIs' system prompts, with global
+ * and per-project sections.
  *
- * Un projet garde ses consignes soit dans Sillage, soit dans son dépôt. En mode
- * `sillage`, les `CLAUDE.md` et `AGENTS.md` du workspace sont masqués aux CLI sans être
- * touchés sur le disque : les garder lus en plus doublerait les consignes. En mode
- * `repo`, la partie projet est le fichier du dépôt, que les CLI lisent d'eux-mêmes, et
- * Sillage n'y ajoute rien. La partie globale vaut dans les deux cas.
+ * A project keeps instructions either in Sillage or its repository. In `sillage` mode,
+ * workspace `CLAUDE.md` and `AGENTS.md` are hidden from CLIs without touching disk; reading
+ * both would duplicate instructions. In `repo` mode, CLIs read the repository file themselves
+ * and Sillage adds nothing to the project section. Global instructions apply in both modes.
  */
 export const instructionsModeSchema = z.enum(['sillage', 'repo'])
 export type InstructionsMode = z.infer<typeof instructionsModeSchema>
 
 /**
- * Fichiers de consignes reconnus à la racine d'un workspace, dans l'ordre de préférence.
- * `AGENTS.md` d'abord : Codex et Claude Code le lisent tous deux (sondé sur Claude Code
- * 2.1.286), alors que Codex ignore `CLAUDE.md`.
+ * Recognized instruction files at the workspace root, in preference order. `AGENTS.md` first:
+ * both Codex and Claude Code read it (probed on Claude Code 2.1.286), while Codex ignores
+ * `CLAUDE.md`.
  */
 export const REPO_INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md'] as const
 export const repoInstructionFileSchema = z.enum(REPO_INSTRUCTION_FILES)
 export type RepoInstructionFile = z.infer<typeof repoInstructionFileSchema>
 
 /**
- * Plafond d'une partie de SILLAGE.md. Elle entre dans le contexte de chaque session : au
- * delà, elle pèse plus qu'elle n'oriente. Un `CLAUDE.md` copieux importé tient dedans.
+ * Size limit for a SILLAGE.md section. It enters every session's context; beyond this it weighs
+ * more than it guides. Even a substantial imported `CLAUDE.md` fits.
  */
 export const MAX_INSTRUCTIONS_CHARS = 40_000
 
-/** Plafond d'écriture d'un fichier de consignes du dépôt depuis l'interface. */
+/** Write limit for repository instruction files edited through the UI. */
 export const MAX_REPO_INSTRUCTIONS_CHARS = 200_000
 
-/** Dernière main sur une partie de SILLAGE.md. */
+/** Last editor of a SILLAGE.md section. */
 export type InstructionsAuthorDto =
   | { kind: 'user'; name: string }
   | { kind: 'session'; conversationId: string; projectId: string | null; title: string | null }
 
 export interface InstructionsDto {
   content: string
-  /** Null tant que personne n'y a rien écrit. */
+  /** Null until someone writes content. */
   updatedAt: number | null
   author: InstructionsAuthorDto | null
   canEdit: boolean
@@ -50,11 +49,11 @@ export interface RepoInstructionFileDto {
 }
 
 export interface ProjectInstructionsDto extends InstructionsDto {
-  /** Le mode en vigueur, résolu d'après le dossier pour un projet d'avant le réglage. */
+  /** Effective mode, resolved from the directory for projects predating the setting. */
   mode: InstructionsMode
-  /** Faux quand le mode n'a jamais été choisi et vient d'être déduit du dossier. */
+  /** False if the mode was never chosen and was just inferred from the directory. */
   modeChosen: boolean
-  /** Les fichiers de consignes présents à la racine du workspace, lus tels quels. */
+  /** Instruction files at the workspace root, read verbatim. */
   repoFiles: RepoInstructionFileDto[]
 }
 

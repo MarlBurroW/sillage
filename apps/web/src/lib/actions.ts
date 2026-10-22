@@ -14,11 +14,9 @@ import { showTerminal } from './panel'
 export const ACTIONS_KEY = ['actions']
 
 /**
- * Toutes les actions visibles, tous projets confondus : le panneau filtre son projet,
- * la palette les propose toutes.
- *
- * Relue périodiquement : un agent en propose une sans passer par une route que le
- * socket signalerait, et l'état d'un service change sans qu'on y touche.
+ * All visible actions across projects: the panel filters its project while the palette offers
+ * everything. Poll because agents propose actions without a socket-signaled route and service
+ * states change independently.
  */
 export function useActions() {
   return useQuery({
@@ -72,8 +70,8 @@ export function useDeleteAction() {
 }
 
 /**
- * Lancer, piloter un service ou suivre son journal. Ce qui ouvre un terminal le met
- * devant : cliquer un bouton sans voir sa sortie donnerait l'impression qu'il n'a rien fait.
+ * Launch, control a service, or follow its logs. Bring newly opened terminals forward: clicking
+ * without seeing output would appear to do nothing.
  */
 export function useRunAction() {
   const invalidate = useInvalidate()
@@ -101,17 +99,16 @@ export function useRunAction() {
 const RUNNING_STATES = ['active', 'activating', 'reloading']
 
 /**
- * Ce qu'une action est en ce moment, lu de la même façon par le panneau, le lanceur
- * de l'en-tête et la palette : sans ce calcul commun, l'un proposerait « Lancer » pendant
- * que l'autre montre le service en marche.
+ * Current action state shared by panel, header launcher, and palette: common derivation prevents
+ * one offering Launch while another shows the service running.
  */
 export interface ActionView {
-  /** Un service qui tourne, ou une tâche dont la commande n'est pas finie. */
+  /** A running service or a task whose command has not finished. */
   live: boolean
   failed: boolean
-  /** Le geste principal, celui du disque et de la palette. */
+  /** Primary action for the circular button and palette. */
   primary: 'review' | 'run' | 'stop' | 'output'
-  /** Adresse à ouvrir, quand le service tourne et qu'elle est connue. */
+  /** Address to open when the service is running and it is known. */
   href: string | null
 }
 
@@ -126,12 +123,12 @@ export function actionView(action: ProjectActionDto): ActionView {
   return { live, failed, primary, href: service && live ? resolveActionUrl(action.url, service.ports) : null }
 }
 
-/** La phrase d'état d'une action, sous son libellé. */
+/** Action status sentence beneath its label. */
 export function describeActionState(action: ProjectActionDto, t: (key: MessageKey, params?: MessageParams) => string): string {
   const { service, lastRun } = action
   const view = actionView(action)
-  // Les badges disent déjà « à relire », « en marche », « en échec » : la phrase
-  // donne ce qu'ils ne peuvent pas dire, d'où vient l'action, où elle écoute, quoi faire.
+  // Badges already convey review, running, and failure: the sentence supplies origin, listening
+  // address, and next action.
   if (action.status === 'proposed') {
     return t('actions.state.proposedIn', { title: action.agentConversationTitle ?? t('actions.proposedInGone') })
   }

@@ -14,8 +14,8 @@ import type {
 import { api } from './api'
 
 /**
- * Sources de la bibliothèque de skills. Rafraîchir une source change ce que la
- * bibliothèque sait de ses mises à jour : toute écriture invalide les deux racines.
+ * Skill library sources. Refreshing a source changes known updates, so every write invalidates both
+ * roots.
  */
 
 const ROOT = ['skill-sources']
@@ -46,7 +46,7 @@ export function useSourcePreview(id: string | null, path: string | null) {
   })
 }
 
-/** Recherche sur skills.sh, à partir de deux caractères. */
+/** Search skills.sh from two characters onward. */
 export function useSkillSearch(query: string) {
   const trimmed = query.trim()
   return useQuery({
@@ -57,7 +57,7 @@ export function useSkillSearch(query: string) {
   })
 }
 
-/** Le diff d'une mise à jour, relu à chaque ouverture : la source a pu bouger. */
+/** Update diff reread on every opening because the source may have changed. */
 export function useSkillUpdate(id: string, enabled: boolean) {
   return useQuery({
     queryKey: [...LIBRARY, 'update', id],
@@ -102,7 +102,7 @@ export const useInstallSourceSkill = () =>
 export const useApplySkillUpdate = () =>
   useSourceMutation((id: string) => api.post<LibrarySkillDto>(`/api/skill-library/${id}/update`))
 
-/** Les sept premiers caractères, comme git les affiche. */
+/** First seven characters, as displayed by Git. */
 export function shortCommit(commit: string | null): string {
   return commit ? commit.slice(0, 7) : ''
 }

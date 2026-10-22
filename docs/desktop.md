@@ -116,8 +116,8 @@ message. Your data stays where it is.
 - **Linux:** the AppImage is replaced in place. The `.deb` is installed only when you
   click **Restart and update**, since it asks for your administrator password.
 
-Up to version 0.21.0, the app did not update itself: download the next version once, by
-hand. The updater keeps its log in `logs/updater.log`, next to the server's.
+Versions through 0.24.2 do not include the updater: install the first release that
+includes it manually once. The updater keeps its log in `logs/updater.log`, next to the server's.
 
 ## Uninstall
 
@@ -141,3 +141,8 @@ quitting stops the server. On Linux it needs a display, for example `xvfb-run`.
 finds a newer one in a folder served over HTTP (`SILLAGE_DESKTOP_UPDATE_FEED`), downloads
 it, then replaces and relaunches itself. The workflow runs it with `update-check`, on
 two versions it packages for the purpose; the CI does so on Linux and Windows.
+
+`pnpm test:desktop-updates-ui` checks About in both editions at desktop and phone
+widths with deterministic update states (build the web app first).
+`pnpm test:desktop-mac-install` checks bundle replacement and rollback with injected
+rename failures on a Unix host; it also runs shellcheck on the installer script.

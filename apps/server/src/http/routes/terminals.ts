@@ -9,18 +9,7 @@ import { HttpError } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { visibleProject } from './projects.js'
 
-/**
- * Cycle de vie des terminaux. La sortie, elle, passe par la socket dédiée.
- *
- * Scopés au projet, pas à la conversation : un pty est un process qui vit dans un
- * répertoire, et la session ne fait que fournir ce répertoire par défaut à
- * l'ouverture. La liste est unique par projet, donc rien ne se cache derrière une
- * conversation archivée.
- *
- * Tout compte qui voit le projet peut en ouvrir un, comme le reste du panneau. C'est
- * un choix assumé et documenté : un terminal exécute des commandes arbitraires sous le
- * compte Unix du daemon, donc sur toute la machine et pas seulement sur le workspace.
- */
+/** Terminal lifecycle; output uses a dedicated socket. Project-scoped rather than conversation-scoped: a pty is a process in a directory, and conversations merely supply the default directory when opening one. One list per project ensures archived conversations hide nothing. Any project viewer may open terminals, like the rest of the panel. This deliberate, documented choice allows arbitrary commands as the daemon's Unix user across the whole machine, beyond the workspace. */
 export function registerTerminalRoutes(
   app: FastifyInstance,
   ctx: AppContext,
@@ -33,7 +22,7 @@ export function registerTerminalRoutes(
     return project
   }
 
-  /** Traduit le refus du gestionnaire en réponse HTTP, sans réécrire son message. */
+  /** Translates manager rejections to HTTP responses without rewriting messages. */
   const wrap = <T>(action: () => T): T => {
     try {
       return action()
@@ -58,8 +47,8 @@ export function registerTerminalRoutes(
     const project = guard(id, user.id)
     const body = openTerminalBodySchema.parse(request.body ?? {})
 
-    // Depuis une session, le shell s'ouvre là où l'agent travaille, worktree compris ;
-    // depuis la vue projet, dans le workspace.
+    // From a session, open the shell where its agent works, including worktrees;
+    // from the project view, use the workspace.
     let cwd = project.workspacePath
     if (body.conversationId) {
       const row = ctx.db
@@ -72,8 +61,8 @@ export function registerTerminalRoutes(
       }
       cwd = sessions.workingDirectory(body.conversationId)
     } else if (body.cwd && body.cwd !== project.workspacePath) {
-      // Relance d'un shell interrompu : le répertoire demandé doit encore exister dans
-      // le projet, un chemin libre ouvrirait un shell n'importe où au nom du projet.
+      // Restarting interrupted shells requires the requested directory to still exist
+      // inside the project; unrestricted paths would open shells anywhere on its behalf.
       const worktree = ctx.db
         .select({ id: worktrees.id })
         .from(worktrees)

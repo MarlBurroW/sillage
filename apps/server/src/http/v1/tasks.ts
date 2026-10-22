@@ -53,12 +53,12 @@ export function registerTaskRoutes(
     taskToDto(log, row, publicBaseUrl(ctx, request))
 
   /**
-   * La liste applique les deux filtres du jeton, jamais un seul.
+   * Lists apply both token filters, never just one.
    *
-   * L'appartenance du fil ne suffit pas : un jeton restreint à un projet et confié à un
-   * tiers rendrait sinon, en `scope=user`, le titre et le dernier message de toutes les
-   * conversations de son propriétaire, alors que `GET /tasks/:id` les refuse. C'est la
-   * liste qui aurait tort.
+   * Conversation ownership alone is insufficient: a project-restricted token
+   * shared with a third party would otherwise reveal titles and last messages
+   * from all its owner's conversations under `scope=user`, even though
+   * `GET /tasks/:id` rejects them. The list must enforce the same restrictions.
    */
   const listTasks = (
     request: FastifyRequest,
@@ -94,10 +94,10 @@ export function registerTaskRoutes(
   }
 
   /**
-   * Lance une tâche.
+   * Starts a task.
    *
-   * Un prompt suffit : le CLI, le modèle et l'effort viennent du jeton, du projet ou
-   * des défauts du CLI, dans cet ordre.
+   * A prompt suffices: CLI, model and effort come from the token, project or
+   * CLI defaults, in that order.
    */
   app.post('/api/v1/projects/:id/tasks', async (request, reply) => {
     const { token, user } = requireScope(request, 'tasks:write')
@@ -106,13 +106,13 @@ export function registerTaskRoutes(
     const project = loadProjectForToken(ctx, token, user.id, id)
 
     /**
-     * L'idempotence ne peut pas s'appuyer sur la déduplication des envois, qui vit en
-     * mémoire sur cinq minutes : un agent qui réessaie plus tard ouvrirait une seconde
-     * conversation. La clé est facultative, mais rejouée telle quelle si elle revient.
+     * Idempotency cannot rely on the five-minute in-memory send deduplication:
+     * a later retry would create another conversation. The key is optional but
+     * repeated keys return the original result.
      *
-     * Elle se réserve avant la création, et non après : la création lance un CLI, donc
-     * dure des secondes, et deux appels partis en même temps se seraient tous deux crus
-     * seuls. Le perdant de la course lit la réservation au lieu d'ouvrir un second fil.
+     * Reserve before creation, which launches a CLI and takes seconds; otherwise
+     * simultaneous calls would both assume they were first. The losing caller
+     * reads the reservation instead of opening another conversation.
      */
     const header = request.headers['idempotency-key']
     const idempotencyKey = typeof header === 'string' && header.length > 0 ? header : null
@@ -166,7 +166,7 @@ export function registerTaskRoutes(
         agent,
         config,
         worktreeId: body.worktreeId,
-        // Le board appartient à l'interface : l'API machine ne rattache pas de carte.
+        // The board belongs to the interface: the machine API does not attach cards.
         cardId: null,
         title: body.title,
         origin: { tokenId: token.id, label: token.label },
@@ -179,8 +179,8 @@ export function registerTaskRoutes(
         },
       })
 
-      // Après la création : les options référencent la conversation, et une création
-      // échouée ne doit pas laisser une ligne orpheline.
+      // After creation: options reference the conversation, and failed creation
+      // must not leave an orphaned row.
       ctx.db
         .insert(apiTaskOptions)
         .values({
@@ -191,8 +191,8 @@ export function registerTaskRoutes(
         .run()
       webhooks.trackMessage(row.id, clientMessageId)
     } catch (err) {
-      // Une réservation qui n'a rien créé doit disparaître, sinon la même clé resterait
-      // bloquée en « création en cours » et l'appelant ne pourrait plus réessayer.
+      // Remove reservations that created nothing, otherwise the same key stays stuck
+      // in 'creating' and the caller can never retry.
       if (idempotencyKey) {
         ctx.db
           .delete(apiIdempotency)
@@ -227,7 +227,7 @@ export function registerTaskRoutes(
     })
   })
 
-  /** Vue transverse : ce que l'appelant a lancé, tous projets confondus. */
+  /** Cross-project view of everything launched by the caller. */
   app.get('/api/v1/tasks', async (request) => {
     const { token, user } = requireScope(request, 'tasks:read')
     const query = taskListQuerySchema.parse(request.query)
@@ -248,10 +248,10 @@ export function registerTaskRoutes(
   })
 
   /**
-   * Le journal, pour qui veut le détail que la vue repliée ne donne pas.
+   * Journal for callers needing details omitted from the folded view.
    *
-   * Les deltas sont exclus par défaut : ils arrivent au token et noieraient un client
-   * qui interroge, sans rien dire de plus que l'appel d'outil qui les produit.
+   * Deltas are excluded by default: token-level entries would overwhelm polling
+   * clients without adding information beyond the tool call producing them.
    */
   app.get('/api/v1/tasks/:id/events', async (request) => {
     const { token, user } = requireScope(request, 'tasks:read')
@@ -263,10 +263,10 @@ export function registerTaskRoutes(
       ? new Set(query.types.split(',').map((type) => type.trim()).filter(Boolean))
       : null
 
-    // Une page est lue puis filtrée : le curseur avance sur ce qui a été lu, sinon un
-    // fil bavard ferait boucler l'appelant sur un `nextAfter` immobile. Une entrée de
-    // plus est demandée pour savoir s'il en reste, plutôt que de le déduire d'une page
-    // pleine, ce qui annoncerait une suite inexistante à chaque fin ronde.
+    // Read a page before filtering it: advance over everything read, otherwise a
+    // verbose conversation would leave callers looping on an unchanged `nextAfter`.
+    // Request one extra entry to determine whether more remain; a full page alone
+    // would incorrectly promise another page whenever the total is an exact multiple.
     const page = log.read(id, query.after, query.limit + 1)
     const hasMore = page.length > query.limit
     const read = hasMore ? page.slice(0, query.limit) : page
@@ -283,7 +283,7 @@ export function registerTaskRoutes(
     return payload
   })
 
-  /** Relance une tâche, ou la reprend après un arrêt : le contexte du CLI est retrouvé. */
+  /** Restarts a task or resumes it after stopping, restoring the CLI context. */
   app.post('/api/v1/tasks/:id/messages', async (request, reply) => {
     const { token, user } = requireScope(request, 'tasks:write')
     const { id } = request.params as { id: string }
@@ -292,18 +292,18 @@ export function registerTaskRoutes(
 
     const clientMessageId = randomUUID()
     await sessions.sendMessage(id, clientMessageId, body.prompt, [], [])
-    // Rendu à l'appelant ET retenu pour la corrélation : le webhook `task.completed`
-    // du tour qui suivra portera ce même identifiant.
+    // Return this to the caller AND retain it for correlation: the next turn's
+    // `task.completed` webhook carries the same identifier.
     webhooks.trackMessage(id, clientMessageId)
     return reply.status(202).send({ accepted: true, clientMessageId })
   })
 
   /**
-   * Infléchit le tour en cours.
+   * Steers the current turn.
    *
-   * Une inflexion n'existe que pendant un tour, et un appelant machine perd la course :
-   * il lit `running`, envoie, et le tour vient de finir. `onMissedTurn: queue` bascule
-   * alors en message ordinaire, pour que le texte ne se perde pas.
+   * Steering only exists during a turn, and machine callers can lose the race:
+   * they read `running`, send, and the turn has just ended. `onMissedTurn: queue`
+   * then falls back to an ordinary message so the text is not lost.
    */
   app.post('/api/v1/tasks/:id/steer', async (request, reply) => {
     const { token, user } = requireScope(request, 'tasks:write')
@@ -331,8 +331,8 @@ export function registerTaskRoutes(
   })
 
   /**
-   * Arrête le tour en cours. La tâche se reprend par un simple message : le CLI
-   * redémarre sur sa session native, avec son contexte.
+   * Stops the current turn. A simple message resumes the task: the CLI restarts
+   * its native session with the existing context.
    */
   app.post('/api/v1/tasks/:id/interrupt', async (request, reply) => {
     const { token, user } = requireScope(request, 'tasks:write')
@@ -340,18 +340,18 @@ export function registerTaskRoutes(
     loadTaskForToken(ctx, token, user.id, id)
 
     await sessions.interrupt(id)
-    // Le service n'émet rien si l'auteur est le jeton d'origine : il le sait déjà.
+    // Emit nothing when the author is the original token: it already knows.
     webhooks.taskStopped(id, { kind: 'token', id: token.id, label: token.label })
     return reply.status(202).send({ accepted: true })
   })
 
   /**
-   * Répond à une sollicitation, les quatre types par la même route.
+   * Answers a request, using one route for all four types.
    *
-   * C'est le gain d'ergonomie principal de la v1 : un client machine n'a pas à choisir
-   * entre quatre chemins REST selon la nature de la demande. Le corps déclare le type
-   * attendu et un désaccord est un refus, pas une interprétation : répondre
-   * `permission` à ce qui est devenu une question ne doit jamais passer.
+   * This is v1's main usability gain: machine clients need not choose among four
+   * REST paths. The body declares the expected type; mismatches are rejected
+   * rather than interpreted. A `permission` response must never answer a request
+   * that has become a question.
    */
   app.post('/api/v1/tasks/:id/replies/:requestId', async (request) => {
     const { token, user } = requireScope(request, 'tasks:write')
@@ -370,9 +370,9 @@ export function registerTaskRoutes(
       })
     }
 
-    // L'id de l'utilisateur, comme un clic dans l'interface : `permission_requests`
-    // référence `users.id`, et un jeton emprunte l'identité de son propriétaire sans en
-    // créer une seconde. Le marqueur d'origine de la tâche dit déjà qu'un agent pilote.
+    // Use the user ID, as an interface click would: `permission_requests` references
+    // `users.id`, and tokens borrow their owner's identity rather than create another.
+    // The task origin marker already records that an agent is driving it.
     const decidedBy = user.id
     let resolved: boolean
     switch (body.kind) {
@@ -407,8 +407,8 @@ export function registerTaskRoutes(
     }
 
     if (!resolved) {
-      // Le journal la dit ouverte mais le runner est mort entre-temps : même langage
-      // que les routes de l'interface.
+      // The journal still says open but the runner has died: use the same response
+      // as the interface routes.
       throw badRequest('reply_expired', 'This request has expired, the session has ended.')
     }
     return { ok: true }

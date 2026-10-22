@@ -34,19 +34,17 @@ import {
 import { useCurrentUser } from '../lib/session'
 
 /**
- * Registre des serveurs MCP.
+ * MCP server registry.
  *
- * Les arguments, les variables d'environnement et les en-têtes se saisissent en lignes
- * ajoutées une à une, et non dans un bloc de texte à découper. Le bloc de texte se
- * collait bien depuis une documentation, mais il demandait de tenir un format dans sa
- * tête, et une ligne mal séparée disparaissait sans rien dire.
+ * Arguments, environment variables and headers use individually added rows instead of a text
+ * block to parse. Text blocks pasted well from documentation but required remembering a format,
+ * and malformed lines silently disappeared.
  */
 
 /**
- * Une ligne de liste porte un identifiant propre.
+ * Each row has its own ID.
  *
- * Sans lui, la clé de rendu serait l'indice, et supprimer une ligne du milieu ferait
- * glisser le focus et l'état des champs suivants d'un cran.
+ * Index keys would shift focus and subsequent field state when deleting a middle row.
  */
 interface Row {
   id: string
@@ -74,7 +72,7 @@ const EMPTY_FORM: FormState = {
   headers: [],
 }
 
-/** Habillage commun aux champs d'une ligne, la largeur restant propre à chacun. */
+/** Shared row-field styling, with each field retaining its own width. */
 const ROW_INPUT =
   'tap-target min-w-0 rounded-md border border-line bg-sunken px-3 font-mono text-sm text-ink ' +
   'outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus:border-accent'
@@ -86,10 +84,9 @@ const errorOf = (error: unknown): string | null =>
   error instanceof ApiRequestError ? error.message : null
 
 /**
- * Les lignes sans nom sont ignorées plutôt que refusées : une ligne fraîchement
- * ajoutée est vide par construction, et faire échouer l'envoi pour elle serait plus
- * pénible qu'utile. Deux lignes de même nom se départagent par la dernière, comme le
- * ferait le CLI qui reçoit la table.
+ * Ignore unnamed rows instead of rejecting them: newly added rows are initially empty, so
+ * failing submission would hinder more than help. Duplicate names use the last row, matching
+ * the receiving CLI's table behavior.
  */
 const toRecord = (rows: Row[]): Record<string, string> =>
   Object.fromEntries(
@@ -99,7 +96,7 @@ const toRecord = (rows: Row[]): Record<string, string> =>
 const fromRecord = (pairs: Record<string, string>): Row[] =>
   Object.entries(pairs).map(([key, value]) => ({ ...emptyRow(), key, value }))
 
-/** Les arguments n'ont pas de nom : la valeur seule est saisie, dans `value`. */
+/** Arguments have no names: only their value is entered in `value`. */
 const toValues = (rows: Row[]): string[] =>
   rows.map((row) => row.value.trim()).filter((value) => value.length > 0)
 
@@ -172,9 +169,11 @@ export function McpSettingsPage() {
       <SectionHeader title={t('mcp.section.title')} description={t('mcp.section.description')} />
 
       <Banner tone="info">{t('mcp.banner')}</Banner>
-      {/* Deux sens du même mot : ici, des serveurs que Sillage donne aux agents ; sous
-          « API et MCP », celui que Sillage expose lui-même. Le dire évite de chercher
-          ici comment brancher un Codex extérieur. */}
+      {/*
+       * Two meanings of MCP: here, servers Sillage provides to agents; under “API and MCP”, the
+       * server Sillage exposes. Explain this so users do not search here for external Codex
+       * connections.
+       */}
       <p className="text-sm text-ink-faint">
         {t('mcp.ownServer')}{' '}
         <NavLink to="/settings/api" className="text-accent hover:underline">
@@ -184,7 +183,7 @@ export function McpSettingsPage() {
       {isAdmin ? null : <Banner>{t('mcp.readonly')}</Banner>}
 
       <section className="flex flex-col gap-2">
-        {/* Liste vide : c'est l'état vide qui porte le bouton, pas l'en-tête. */}
+        {/* Empty list: the empty state carries the button, not the header. */}
         <ListHeading
           title={t('mcp.existing.title')}
           count={servers.length}
@@ -230,7 +229,7 @@ export function McpSettingsPage() {
   )
 }
 
-/** Partagé par la création et l'édition : les deux éditent la même chose. */
+/** Shared by creation and editing: both edit the same data. */
 function TransportFields({
   form,
   onChange,
@@ -238,7 +237,7 @@ function TransportFields({
 }: {
   form: FormState
   onChange: (form: FormState) => void
-  /** Pour le formulaire qu'on vient d'ouvrir : la main va au premier champ. */
+  /** Focus the first field of the newly opened form. */
   autoFocus?: boolean
 }) {
   const t = useTranslate()
@@ -319,19 +318,20 @@ function TransportFields({
         </>
       )}
 
-      {/* Dans le formulaire et non en tête de page : c'est au moment de taper une
-          valeur qu'on décide de la mettre en clair ou derrière un secret. */}
+      {/*
+       * Inside the form, not the page header: choosing cleartext versus a secret happens while
+       * entering a value.
+       */}
       <Banner tone="caution">{t('mcp.secrets')}</Banner>
     </>
   )
 }
 
 /**
- * Liste de lignes ajoutées à la demande.
+ * Rows added on demand.
  *
- * Sans `keyPlaceholder`, la ligne n'a qu'une valeur : c'est le cas des arguments, qui
- * sont une suite et non une table. Le même composant sert les deux pour que la
- * mécanique d'ajout et de retrait ne soit pas écrite deux fois.
+ * Without `keyPlaceholder`, rows contain only values, as for ordered arguments rather than a
+ * map. One component handles both to avoid duplicating add/remove behavior.
  */
 function RowList({
   label,
@@ -416,8 +416,8 @@ function ServerCard({ server, canEdit }: { server: McpServer; canEdit: boolean }
   const [confirming, setConfirming] = useState(false)
 
   const startEditing = () => {
-    // Repart de l'enregistrement et non du dernier brouillon : rouvrir l'édition après
-    // avoir annulé doit montrer ce qui est enregistré, pas ce qu'on avait abandonné.
+    // Restart from the saved record, not the last draft: reopening after cancellation
+    // must show saved values, not abandoned edits.
     setForm(toForm(server))
     setEditing(true)
   }
@@ -439,9 +439,10 @@ function ServerCard({ server, canEdit }: { server: McpServer; canEdit: boolean }
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{server.name}</span>
               <Badge>{server.transport.type}</Badge>
-              {/* L'interrupteur dit déjà l'état à qui peut le changer ; la pastille
-                  reste pour les autres, et seulement quand il y a quelque chose à
-                  signaler. */}
+              {/*
+               * The switch already shows state to users who can change it; retain badges for
+               * others only when there is something to report.
+               */}
               {!server.enabled ? <Badge>{t('mcp.state.disabled')}</Badge> : null}
             </div>
             <p className="truncate font-mono text-xs text-ink-faint">
@@ -457,9 +458,10 @@ function ServerCard({ server, canEdit }: { server: McpServer; canEdit: boolean }
                 label={t('mcp.toggle.label', { name: server.name })}
                 onCheckedChange={(enabled) => updateServer.mutate({ id: server.id, enabled })}
               />
-              {/* Au doigt, la largeur manque pour un bouton de plus à côté de la
-                  commande : « Modifier » passe dans le menu. Le formulaire ouvert
-                  porte son propre « Annuler », inutile d'en afficher deux. */}
+              {/*
+               * On touch screens, no room for another button beside the command: move “Edit”
+               * into the menu. The open form has its own “Cancel”, so do not duplicate it.
+               */}
               {editing ? null : (
                 <Button
                   size="sm"

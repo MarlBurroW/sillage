@@ -16,8 +16,8 @@ export function useUpdateAppSettings() {
   return useMutation({
     mutationFn: (patch: Partial<AppSettingsDto>) =>
       api.patch<AppSettingsDto>('/api/settings', patch),
-    // La route rend l'état complet : le poser directement évite le clignotement d'un
-    // aller-retour de plus sur un écran qui n'a qu'un champ.
+    // The route returns complete state: set it directly to avoid another round-trip flash on a
+    // single-field screen.
     onSuccess: (settings) => queryClient.setQueryData(APP_SETTINGS_KEY, settings),
   })
 }
@@ -26,8 +26,7 @@ export function useRunArchivePass() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => api.post<ArchiveRunDto>('/api/settings/archiving/run', {}),
-    // Le passage vide la sidebar de ce qu'il range : sans invalidation, les fils
-    // archivés y resteraient jusqu'au prochain chargement.
+    // Archiving removes threads from the sidebar: invalidate or they would remain until reload.
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
   })
 }

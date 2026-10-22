@@ -6,15 +6,12 @@ import { subAgentLabel } from '../../lib/subagents'
 import { cx } from '../ui'
 import { ToolStatusIcon, formatDuration } from './ToolCall'
 
-/** Une seconde : au-delà le chronomètre paraît figé, en deçà il ne dit rien de plus. */
+/** One second: slower ticks look frozen, faster ones add no information. */
 const TICK_MS = 1000
 
 /**
- * Temps écoulé depuis le lancement, réévalué tant que le sous-agent tourne.
- *
- * Un chronomètre qui avance est le signal le plus direct qu'il se passe encore
- * quelque chose : la durée n'est publiée par le CLI qu'à la fin de l'appel, donc
- * jusque-là c'est à l'affichage de la tenir.
+ * Elapsed time recalculated while running. Moving timers directly convey liveness; CLI duration
+ * arrives only on completion so display must maintain it meanwhile.
  */
 function useElapsed(startedAt: number, running: boolean): number {
   const [now, setNow] = useState(() => Date.now())
@@ -29,10 +26,8 @@ function useElapsed(startedAt: number, running: boolean): number {
 }
 
 /**
- * Une ligne de sous-agent, dans le bandeau du fil comme dans la liste du panneau.
- *
- * Les deux montrent la même chose et mènent au même endroit : un seul composant, pour
- * qu'un sous-agent se reconnaisse à l'identique d'une vue à l'autre.
+ * Subagent row shared by thread banners and panel lists. Identical content and destinations need
+ * one recognizable component.
  */
 export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: () => void }) {
   const running = agent.status === 'running'
@@ -53,8 +48,10 @@ export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: ()
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium text-ink">{subAgentLabel(agent)}</span>
         <span className="truncate text-[0.6875rem] text-ink-faint">
-          {/* Le type dit quel agent travaille, l'activité ce qu'il fait à l'instant :
-              les deux tiennent sur la ligne et se complètent. */}
+          {/*
+           * Type identifies the working agent; activity says what it is doing now. Both fit and
+           * complement each other.
+           */}
           {agent.activity ? `${agent.type} · ${agent.activity}` : agent.type}
         </span>
       </span>

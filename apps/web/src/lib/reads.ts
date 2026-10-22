@@ -5,26 +5,22 @@ import { api } from './api'
 import { liveSeq, subscribeStatus } from './conversation-status'
 
 /**
- * Il s'est passé quelque chose dans ce fil depuis la dernière visite du compte.
- *
- * Les deux `seq` sont retenus par leur maximum : celui de la liste REST date de son
- * chargement, celui du socket ne couvre que ce qui a été poussé depuis. Aucun des deux
- * n'est complet à lui seul.
+ * Something happened in this thread since the account's last visit. Take the maximum of the REST
+ * and socket sequences: the former dates from list loading, the latter covers only subsequent
+ * pushes. Neither is complete alone.
  */
 export function isUnread(conversation: ConversationDto, pushedSeq: number): boolean {
   return Math.max(conversation.lastNotableSeq, pushedSeq) > conversation.lastReadSeq
 }
 
 /**
- * Vrai si l'une de ces conversations a du nouveau.
- *
- * Instantané booléen plutôt qu'abonnement par ligne : un projet replié n'affiche aucune
- * ligne et n'a donc personne pour s'abonner à sa place. La valeur étant primitive,
- * `useSyncExternalStore` ne rend que lorsqu'elle bascule vraiment.
+ * Whether any of these conversations has updates. Use a boolean snapshot instead of per-row
+ * subscriptions: collapsed projects render no rows to subscribe for them. A primitive value makes
+ * `useSyncExternalStore` render only when it changes.
  */
 export function useHasUnread(
   conversations: ConversationDto[],
-  /** Le fil ouvert, qui ne compte pas : on est dedans. */
+  /** The open thread does not count because the user is already reading it. */
   openConversationId?: string,
 ): boolean {
   const snapshot = () =>
@@ -35,17 +31,15 @@ export function useHasUnread(
 }
 
 /**
- * Un tour en cours pousse un `seq` toutes les quelques dizaines de millisecondes. Le
- * curseur part donc à intervalle fixe plutôt qu'à chaque changement : une conversation
- * longue produirait autant d'allers-retours que de jetons.
+ * A running turn pushes a `seq` every few dozen milliseconds. Send read cursors at fixed intervals
+ * rather than on each change, avoiding one round trip per token in long conversations.
  */
 const MARK_INTERVAL_MS = 2000
 
 /**
- * Écrit dans le cache plutôt que d'invalider : la seule chose qui a changé est un entier
- * que le serveur vient de confirmer, et relire toute la liste pour lui ferait clignoter
- * la sidebar à chaque tour. La clé partielle attrape la liste globale comme celles par
- * projet, qui portent les mêmes objets.
+ * Write the cache rather than invalidate: only a server-confirmed integer changed, and rereading
+ * the whole list would flash the sidebar every turn. The partial key matches both global and
+ * per-project lists holding the same objects.
  */
 function applyReadCursor(
   queryClient: QueryClient,
@@ -58,23 +52,21 @@ function applyReadCursor(
 }
 
 /**
- * Tient à jour le curseur de lecture du fil ouvert.
- *
- * Quitter la page en plein tour n'envoie volontairement rien de plus : ce qui arrive
- * après le départ s'est bien produit pendant qu'on regardait ailleurs, et doit donc
- * revenir en non lu. Le dernier envoi date d'au plus `MARK_INTERVAL_MS`, ce qui borne
- * ce qu'on redécouvre à la poignée de secondes précédant la sortie.
+ * Maintain the open thread's read cursor. Deliberately send nothing extra when leaving mid-turn:
+ * content arriving afterward occurred while looking elsewhere and must become unread. The last send
+ * is at most `MARK_INTERVAL_MS` old, bounding rediscovered content to the few seconds before
+ * leaving.
  */
 export function useTrackRead(conversationId: string | undefined, lastSeq: number): void {
   const queryClient = useQueryClient()
 
-  // Le `seq` vit dans une ref : l'intervalle est monté une fois par conversation et doit
-  // voir la valeur courante, pas celle capturée à sa création.
+  // Keep `seq` in a ref: the interval mounts once per conversation and must read the current value,
+  // not the captured initial one.
   const seqRef = useRef(lastSeq)
   seqRef.current = lastSeq
 
-  // L'envoi aussi, pour que l'effet qui suit l'avancement du fil déclenche celui que la
-  // conversation courante a installé, sans être remonté à chaque `seq`.
+  // Keep the sender in a ref too, so the progress effect invokes the current conversation's sender
+  // without remounting on every `seq`.
   const sendRef = useRef<() => void>(() => {})
 
   useEffect(() => {
@@ -85,15 +77,15 @@ export function useTrackRead(conversationId: string | undefined, lastSeq: number
     let attemptedAt = 0
 
     const send = async () => {
-      // Un onglet en arrière-plan continue de battre. Sans ce test, laisser Sillage
-      // ouvert sur une conversation pendant qu'un agent y travaille la marquerait lue
-      // en continu, et c'est exactement la situation que le non-lu doit couvrir.
+      // Background tabs keep ticking. Without this check, leaving Sillage open while an agent works
+      // would mark the conversation read continuously, precisely the situation unread tracking must
+      // cover.
       if (document.visibilityState !== 'visible') return
 
       const seq = seqRef.current
       if (inFlight || seq <= confirmed) return
-      // Le premier envoi part sans attendre, les suivants s'espacent : un tour en cours
-      // pousse un `seq` toutes les quelques dizaines de millisecondes.
+      // Send immediately first, then space subsequent sends: running turns push a `seq` every few
+      // dozen milliseconds.
       if (attemptedAt > 0 && Date.now() - attemptedAt < MARK_INTERVAL_MS) return
 
       inFlight = true
@@ -103,8 +95,8 @@ export function useTrackRead(conversationId: string | undefined, lastSeq: number
           `/api/conversations/${conversationId}/read`,
           { seq },
         )
-        // Avancé sur la réponse et non sur l'envoi : un POST perdu doit être rejoué au
-        // battement suivant, sinon la conversation reste non lue pour toute la visite.
+        // Advance on response rather than send: retry a lost POST on the next tick or the
+        // conversation would stay unread for the whole visit.
         confirmed = result.lastReadSeq
         applyReadCursor(queryClient, conversationId, result.lastReadSeq)
       } catch (error) {
@@ -119,9 +111,9 @@ export function useTrackRead(conversationId: string | undefined, lastSeq: number
     return () => clearInterval(timer)
   }, [conversationId, queryClient])
 
-  // Ouvrir un fil doit l'éteindre tout de suite, pas au prochain battement : le journal
-  // d'une longue conversation met plusieurs pages à arriver, et attendre en plus deux
-  // secondes après la dernière donnait une ligne qui reste en gras sans raison visible.
+  // Opening a thread must clear unread immediately rather than on the next tick: long histories
+  // require several pages, and an extra two seconds after the last page left the row bold for no
+  // visible reason.
   useEffect(() => {
     sendRef.current()
   }, [lastSeq])

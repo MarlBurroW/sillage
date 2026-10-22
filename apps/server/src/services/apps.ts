@@ -7,45 +7,33 @@ import { summarizeCommand } from './command-line.js'
 import type { ProcessOrigins } from './origins.js'
 import { listeningSockets } from './processes.js'
 
-/**
- * Apps permanentes : les unités systemd utilisateur `sillage-app-*`.
- *
- * Une commande lancée en fond par un agent est temporaire (Claude Code l'arrête au bout
- * de son délai, et elle meurt avec la session). Ce qui doit rester en ligne passe par
- * une unité systemd que l'agent nomme avec ce préfixe, comme le demande la partie
- * globale de SILLAGE.md. Elle sort du service Sillage par construction, pour lui
- * survivre : la vue des processus ne la voit donc pas, d'où cette liste à part.
- *
- * Le préfixe dit seulement « Sillage peut montrer et arrêter ceci ». L'attribution à un
- * projet suit la même règle que les processus : le jeton `SILLAGE_PROCESS_ORIGIN` que
- * l'agent transmet à l'unité (`--setenv=SILLAGE_PROCESS_ORIGIN`), jamais le dossier.
- */
+/** Persistent apps are `sillage-app-*` user systemd units. Agent background commands are temporary (Claude Code stops them on timeout and they die with sessions). Persistent services use this prefix as global SILLAGE.md requires. They intentionally live outside Sillage's service to survive it, so the process view cannot see them and needs this separate list. The prefix permits Sillage to display and stop units; project attribution uses inherited `SILLAGE_PROCESS_ORIGIN` (`--setenv=SILLAGE_PROCESS_ORIGIN`), never directories. */
 
 export const APP_UNIT_PATTERN = 'sillage-app-*'
-/** Ce que l'API accepte de piloter : le préfixe, et rien qui ressemble à une option. */
+/** Unit names the API may control: required prefix and nothing resembling an option. */
 const APP_UNIT = /^sillage-app-[A-Za-z0-9_.@-]+\.service$/
 
 export interface ServiceApp {
-  /** L'unité et son invocation : une unité relancée entre la liste et le clic n'est plus la même. */
+  /** Unit and invocation: restarting between listing and clicking creates a different instance. */
   id: string
   unit: string
-  /** Écrite par l'auteur d'un fichier d'unité ; vide pour celle que `systemd-run` déduit de la commande. */
+  /** Unit-file author description; empty for descriptions `systemd-run` derives from commands. */
   description: string
-  /** Nom de l'exécutable seul, comme le nom d'un processus. */
+  /** Executable basename, like a process name. */
   executable: string | null
-  /** Ligne de commande abrégée, secrets masqués, comme pour un processus. */
+  /** Abbreviated command with secrets redacted, like process commands. */
   command: string | null
-  /** `ActiveState` de systemd : active, activating, deactivating, reloading, failed, inactive. */
+  /** systemd ActiveState: active, activating, deactivating, reloading, failed, inactive. */
   state: string
   subState: string
-  /** `Result` de systemd, qui nomme la cause d'un échec (`exit-code`, `signal`…). */
+  /** systemd `Result` identifying failure causes (`exit-code`, `signal`…). */
   result: string
   mainPid: number | null
   ports: number[]
   cwd: string | null
   startedAt: number | null
   memoryBytes: number | null
-  /** Activée au démarrage de la session utilisateur : elle reviendra après un arrêt et un redémarrage. */
+  /** Enabled at user-session startup, so it returns after stopping and restarting. */
   enabled: boolean
   transient: boolean
   origin: ReturnType<ProcessOrigins['resolve']>
@@ -54,7 +42,7 @@ export interface ServiceApp {
 const systemctl = (args: string[]) =>
   promisify(execFile)('systemctl', ['--user', '--no-pager', ...args], { timeout: 5000 })
 
-/** Les blocs de `systemctl show`, une unité par bloc, séparés par une ligne vide. */
+/** `systemctl show` blocks, one unit per block separated by blank lines. */
 export function parseShow(output: string): Record<string, string>[] {
   return output.split(/\n\s*\n/).filter((block) => block.trim()).map((block) => {
     const properties: Record<string, string> = {}
@@ -66,26 +54,22 @@ export function parseShow(output: string): Record<string, string>[] {
   })
 }
 
-/** Le jeton d'origine posé par `--setenv` ou `Environment=`, lisible même unité arrêtée. */
+/** Origin token set with `--setenv` or `Environment=`, readable even for stopped units. */
 export function originToken(environment: string): string | null {
   return /(?:^|\s)"?SILLAGE_PROCESS_ORIGIN=([0-9a-f-]{36})/.exec(environment)?.[1] ?? null
 }
 
-/** Le nom de l'exécutable d'`ExecStart`. */
+/** Executable name from `ExecStart`. */
 export function executableName(execStart: string): string | null {
   return basename(/path=(\S+) ;/.exec(execStart)?.[1] ?? '') || null
 }
 
-/** Les arguments d'`ExecStart` ; systemd les joint par des espaces, sans les citer. */
+/** `ExecStart` arguments joined by systemd with spaces and no quoting. */
 export function execStartArgv(execStart: string): string[] {
   return (/argv\[\]=(.*?) ; ignore_errors=/.exec(execStart)?.[1] ?? '').split(' ').filter(Boolean)
 }
 
-/**
- * La description générée par `systemd-run` recopie les arguments sans masquer les
- * secrets. Les anciens systemd n'ajoutent pas « [systemd-run] » : on reconnaît aussi
- * la commande d'ExecStart, avec son chemin résolu ou son nom d'origine.
- */
+/** Descriptions generated by `systemd-run` repeat arguments without redacting secrets. Older systemd versions omit '[systemd-run]', so also recognize the ExecStart command by resolved path or original name. */
 export function authoredDescription(description: string, execStart = ''): string {
   if (description.startsWith('[systemd-run]')) return ''
   const executable = /path=(\S+) ;/.exec(execStart)?.[1]
@@ -96,7 +80,7 @@ export function authoredDescription(description: string, execStart = ''): string
   return description
 }
 
-/** Valeur numérique de systemd, nulle quand il ne la suit pas (`[not set]`, 2^64 - 1). */
+/** Numeric systemd value, null when untracked (`[not set]`, 2^64 - 1). */
 function counter(value: string | undefined): number | null {
   if (!value || !/^\d+$/.test(value) || value === '18446744073709551615') return null
   return Number(value)
@@ -117,7 +101,7 @@ async function cgroupPorts(controlGroup: string, sockets: Map<string, number>): 
   return [...ports].sort((a, b) => a - b)
 }
 
-/** Vide sans gestionnaire systemd utilisateur : rien à montrer n'est pas une erreur. */
+/** Empty without a user systemd manager: having nothing to display is not an error. */
 export async function scanServiceApps(origins: ProcessOrigins): Promise<ServiceApp[]> {
   let names: string[]
   try {
@@ -141,7 +125,7 @@ export async function scanServiceApps(origins: ProcessOrigins): Promise<ServiceA
     const running = ['active', 'activating', 'deactivating', 'reloading'].includes(unit.ActiveState ?? '')
     const mainPid = counter(unit.MainPID) || null
     const token = originToken(unit.Environment ?? '')
-    // Repli sur l'environnement du processus principal, qu'un `EnvironmentFile=` aurait garni.
+    // Fall back to the main process environment populated by possible `EnvironmentFile=`.
     const environ = !token && mainPid ? await readFile(`/proc/${mainPid}/environ`, 'utf8').catch(() => '') : ''
     const monotonic = counter(unit.ActiveEnterTimestampMonotonic)
     apps.push({
@@ -155,7 +139,7 @@ export async function scanServiceApps(origins: ProcessOrigins): Promise<ServiceA
       result: unit.Result ?? '',
       mainPid,
       ports: running ? await cgroupPorts(unit.ControlGroup ?? '', sockets) : [],
-      // `!` ou `-` en tête sont des modificateurs de systemd, pas une partie du chemin.
+      // Leading `!` or `-` are systemd modifiers, not path components.
       cwd: unit.WorkingDirectory?.replace(/^[!-]+/, '') || null,
       startedAt: running && monotonic ? Math.round(bootTime + monotonic / 1000) : null,
       memoryBytes: running ? counter(unit.MemoryCurrent) : null,
@@ -167,25 +151,17 @@ export async function scanServiceApps(origins: ProcessOrigins): Promise<ServiceA
   return apps.sort((a, b) => a.unit.localeCompare(b.unit))
 }
 
-/**
- * Arrêter, relancer, ou retirer de la liste une app en échec (`reset-failed`). Le nom
- * est revérifié ici même si la route l'a trouvé dans la liste : c'est la dernière
- * barrière avant `systemctl`, appelé sans shell.
- */
+/** Stops, restarts or removes failed apps from the list (`reset-failed`). Revalidate names here even when routes found them in the list: the last barrier before invoking `systemctl` without a shell. */
 export async function controlServiceApp(unit: string, action: ServiceAppAction): Promise<void> {
   if (!APP_UNIT.test(unit)) throw new Error(`Not a Sillage app unit: ${unit}`)
-  // Sans attendre la fin : une app peut mettre jusqu'à son `TimeoutStopSec` à s'arrêter,
-  // et la liste, rafraîchie toutes les 5 secondes, dira où elle en est.
+  // Do not await completion: apps may take `TimeoutStopSec` to stop, and the list's
+  // five-second refresh reports progress.
   await systemctl(action === 'reset' ? ['reset-failed', unit] : ['--no-block', action, unit])
 }
 
 let userManager: Promise<boolean> | null = null
 
-/**
- * Un gestionnaire systemd utilisateur répond-il ? Non sous macOS, ni dans un conteneur
- * sans systemd : les actions `service` y retombent dans un terminal. Demandé une fois
- * par process, la réponse ne change pas sans redémarrage de la machine.
- */
+/** Checks whether a user systemd manager responds. On macOS and containers without systemd, `service` actions fall back to terminals. Query once per process because the answer cannot change without a machine restart. */
 export function serviceAppsAvailable(): Promise<boolean> {
   if (process.platform !== 'linux') return Promise.resolve(false)
   userManager ??= systemctl(['show-environment']).then(() => true, () => false)
@@ -198,28 +174,21 @@ export interface ServiceAppLaunch {
   cwd: string
   shell: string
   command: string
-  /** L'origine (`SILLAGE_PROCESS_ORIGIN`) : c'est elle qui rattache l'app au projet dans Services. */
+  /** Origin (`SILLAGE_PROCESS_ORIGIN`) linking apps to projects in Services. */
   env: Record<string, string>
 }
 
-/**
- * Démarre une commande comme unité transitoire `sillage-app-*`, hors du cgroup du
- * daemon : elle lui survit, et le plafond mémoire du service ne s'applique pas à elle.
- *
- * Relancée sur échec, mais pas indéfiniment : un serveur qui ne trouve pas son port
- * s'arrête au bout de quatre essais en une minute et reste `failed`, lisible dans
- * Services, au lieu de boucler en silence.
- */
+/** Starts commands as transient `sillage-app-*` units outside the daemon cgroup, surviving it and avoiding its memory limit. Restart on failure with bounds: servers unable to bind ports stop after four attempts in a minute and remain visibly `failed` in Services instead of silently looping. */
 export async function startServiceApp(launch: ServiceAppLaunch): Promise<void> {
   if (!APP_UNIT.test(launch.unit)) throw new Error(`Not a Sillage app unit: ${launch.unit}`)
-  // Une unité transitoire en échec reste chargée et bloquerait le nom.
+  // Failed transient units stay loaded and would block the name.
   await systemctl(['reset-failed', launch.unit]).catch(() => undefined)
   await promisify(execFile)('systemd-run', [
     '--user',
     `--unit=${launch.unit}`,
     `--description=${launch.description}`,
     `--working-directory=${launch.cwd}`,
-    // Le PATH du daemon : sans lui, l'unité n'a que celui, minimal, du gestionnaire.
+    // Pass the daemon PATH; otherwise units inherit only the manager's minimal PATH.
     '--setenv=PATH',
     ...Object.entries(launch.env).map(([key, value]) => `--setenv=${key}=${value}`),
     '-p', 'Restart=on-failure',

@@ -12,25 +12,9 @@ import type { JournalEntry, WebhookFailureReason, WebhookPayload } from '@sillag
 import type { EventLog } from '../events/event-log.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 
-/**
- * Livraison des webhooks de tâches, et surveillance des échéances de réponse.
- *
- * Le service écoute le journal entier et ne retient que ce qui concerne une tâche
- * d'API dont le jeton (ou la tâche) déclare une URL. Chaque livraison est écrite en
- * base avant le premier essai : un redémarrage reprend ce qui n'est pas parti, parce
- * qu'une notification perdue est précisément ce que l'appelant ne peut pas détecter.
- *
- * Un webhook part toujours, qu'un humain regarde le fil ou non : ne surtout pas
- * hériter du filtre `isWatched` des notifications push, écrit pour épargner un humain
- * déjà devant son écran, ce qu'un appelant machine n'est jamais.
- */
+/** Task webhook delivery and response-deadline monitoring. Listen to all journal events but retain only API tasks whose token or task declares a URL. Persist deliveries before their first attempt so restarts retry unsent notifications, whose loss callers cannot detect. Always deliver regardless of humans viewing conversations: never inherit push `isWatched` filtering, designed for humans already at their screens rather than machine callers. */
 
-/**
- * Reprise exponentielle : 30 s puis ×4 à chaque échec, plafonnée à six heures
- * (30 s, 2 min, 8 min, 32 min, ~2 h, 6 h, 6 h), soit une quinzaine d'heures de
- * couverture. Après le dernier essai, la livraison est abandonnée en gardant sa trace
- * et sa dernière erreur.
- */
+/** Exponential retries: start at 30 s, multiply by four, cap at six hours (30 s, 2 min, 8 min, 32 min, ~2 h, 6 h, 6 h), covering about fifteen hours. After the final attempt, abandon delivery while retaining its record and latest error. */
 const RETRY_BASE_MS = 30 * 1000
 const RETRY_FACTOR = 4
 const RETRY_CAP_MS = 6 * 60 * 60 * 1000
@@ -42,7 +26,7 @@ function retryDelayMs(attempts: number): number | null {
 }
 const SCAN_INTERVAL_MS = 15 * 1000
 const REQUEST_TIMEOUT_MS = 10 * 1000
-/** Fenêtre de rejeu côté consommateur, portée par l'horodatage de la signature. */
+/** Consumer replay window carried by signature timestamps. */
 
 type PendingKind = 'permission' | 'question' | 'plan' | 'elicitation'
 
@@ -72,20 +56,16 @@ export class WebhookService {
   private unsubscribe: (() => void) | null = null
   private timer: NodeJS.Timeout | null = null
   private scanning = false
-  /** Échéances armées, par requestId. Perdues au redémarrage, comme les sollicitations. */
+  /** Armed deadlines by requestId, lost on restart like requests themselves. */
   private readonly deadlines = new Map<string, NodeJS.Timeout>()
-  /**
-   * Dernier message envoyé par l'API par conversation, pour corréler le
-   * `task.completed` qui en résultera. En mémoire : après un redémarrage la
-   * corrélation vaut null, ce que le contrat du payload annonce.
-   */
+  /** Latest API message per conversation for correlating subsequent `task.completed`. In memory: after restart correlation is null, as the payload contract specifies. */
   private readonly lastClientMessage = new Map<string, string>()
 
   constructor(
     private readonly db: Db,
     private readonly log: EventLog,
     private readonly sessions: SessionManager,
-    /** `server.publicUrl` de la configuration ; vide, le lien du payload reste relatif. */
+    /** Configured `server.publicUrl`; empty leaves payload links relative. */
     private readonly publicUrl: string,
   ) {}
 
@@ -103,15 +83,12 @@ export class WebhookService {
     this.deadlines.clear()
   }
 
-  /** Appelé par les routes v1 à chaque envoi, pour corréler le tour qui suivra. */
+  /** Called by v1 routes on every send to correlate the next turn. */
   trackMessage(conversationId: string, clientMessageId: string): void {
     this.lastClientMessage.set(conversationId, clientMessageId)
   }
 
-  /**
-   * Un arrêt demandé par quelqu'un d'autre que le jeton d'origine. Sans livraison
-   * pour le jeton qui a lui-même interrompu : il le sait déjà.
-   */
+  /** Stops requested by someone other than the originating token. No delivery when that token interrupted itself: it already knows. */
   taskStopped(conversationId: string, by: { kind: 'user' | 'token'; id: string; label: string }): void {
     const target = this.targetFor(conversationId)
     if (!target) return
@@ -123,11 +100,7 @@ export class WebhookService {
     })
   }
 
-  /**
-   * Le service a redémarré et `recoverInterrupted` a clos les tâches en vol : chaque
-   * déploiement orphelinerait en silence ce que l'appelant avait lancé si rien ne
-   * partait ici.
-   */
+  /** The service restarted and `recoverInterrupted` closed in-flight tasks. Without notifications here, every deployment would silently orphan callers' launched work. */
   sessionEnded(conversationIds: string[]): void {
     for (const id of conversationIds) {
       const target = this.targetFor(id)
@@ -140,13 +113,7 @@ export class WebhookService {
     }
   }
 
-  /**
-   * Le pendant du précédent pour l'arrêt propre : un SIGTERM passe par `stopAll`, qui
-   * expire les sollicitations avant que le prochain démarrage ait quoi que ce soit à
-   * récupérer. Les livraisons sont écrites maintenant, pendant que la base répond
-   * encore, et partiront à la reprise : c'est précisément ce que la persistance permet.
-   * À appeler avant `stopAll`, tant que les statuts disent encore ce qui était en vol.
-   */
+  /** Graceful-shutdown counterpart: SIGTERM calls `stopAll`, expiring requests before startup recovery. Persist deliveries while the database still responds and send after restart, exactly what persistence enables. Call before `stopAll` while statuses still identify in-flight work. */
   shutdownFlush(): void {
     const inFlight = this.db
       .select({ id: conversations.id })
@@ -172,8 +139,8 @@ export class WebhookService {
 
     if (type in REQUESTED_TYPES) {
       const requested = entry.event as { requestId: string }
-      // L'échéance s'arme même sans URL de webhook : elle protège les places de
-      // session, pas la notification.
+      // Arm deadlines even without webhook URLs: they protect session capacity,
+      // not notifications.
       const blocking = !(entry.event.type === 'question.requested' && entry.event.blocking === false)
       if (blocking) this.armDeadline(entry.conversationId, requested.requestId)
       if (target) {
@@ -201,11 +168,11 @@ export class WebhookService {
     if (!target) return
 
     if (type === 'turn.completed') {
-      // Un tour refermé en laissant des travaux de fond n'est pas une fin : le CLI
-      // sera re-réveillé à leur aboutissement et un autre tour suivra. Livrer ici
-      // ferait conclure l'appelant trop tôt (constaté au premier essai réel), et une
-      // livraison dont le contenu serait « ignorez-moi » ne vaut pas ses tokens : on
-      // se tait, la livraison du tour final dira la vraie fin.
+      // Turns closing with background work are not finished: the CLI wakes when that
+      // work completes and starts another turn. Delivering here
+      // would make callers conclude prematurely (observed in the first real trial);
+      // 'ignore this' deliveries waste tokens, so
+      // stay silent and let final-turn delivery report the actual end.
       const backgroundJobs = this.backgroundJobCount(entry.conversationId)
       if (backgroundJobs > 0) return
 
@@ -223,8 +190,8 @@ export class WebhookService {
       return
     }
 
-    // `error` : seuls les cas qui tuent la tâche valent une livraison. Une erreur
-    // récupérable se lira dans le journal, comme dans l'interface.
+    // `error`: deliver only failures terminating tasks. Recoverable errors remain
+    // in journals as in the interface.
     const error = entry.event as { code?: string; message?: string; recoverable?: boolean }
     if (error.recoverable === false || error.code === 'runner_failed') {
       this.enqueue(target, {
@@ -236,7 +203,7 @@ export class WebhookService {
     }
   }
 
-  // Échéances
+  // Deadlines
 
   private armDeadline(conversationId: string, requestId: string): void {
     const seconds = this.deadlineFor(conversationId)
@@ -258,7 +225,7 @@ export class WebhookService {
     this.deadlines.delete(requestId)
   }
 
-  /** Échéance d'une conversation, en secondes. 0 pour une conversation hors API. */
+  /** Conversation deadline in seconds; 0 outside API tasks. */
   private deadlineFor(conversationId: string): number {
     const options = this.db
       .select({ replyDeadlineSec: apiTaskOptions.replyDeadlineSec })
@@ -268,15 +235,10 @@ export class WebhookService {
     return options?.replyDeadlineSec ?? 0
   }
 
-  /**
-   * Personne n'a répondu à temps : on refuse la sollicitation, on interrompt pour
-   * libérer la place de session, et on le dit. « Aussi longtemps qu'il le faut » a été
-   * écrit pour un humain qui revient devant son écran ; un appelant machine peut ne
-   * jamais revenir.
-   */
+  /** Nobody answered before the deadline: reject requests, interrupt to release session capacity, and notify callers. 'As long as needed' suits humans returning to screens; machine callers may never return. */
   private async expireReply(conversationId: string, requestId: string): Promise<void> {
-    // Null, comme `expireAll` : personne n'a décidé, et `permission_requests.decided_by`
-    // référence `users.id`, donc toute autre valeur casserait la contrainte.
+    // Null like `expireAll`: nobody decided, and `permission_requests.decided_by`
+    // references `users.id`, so any other value violates its constraint.
     const decidedBy = null
     const refused =
       this.sessions.resolvePermission(conversationId, requestId, {
@@ -312,9 +274,9 @@ export class WebhookService {
     })
   }
 
-  // Livraison
+  // Delivery
 
-  /** Cible d'une conversation : la tâche d'API avec une URL déclarée, sinon rien. */
+  /** Conversation target: API tasks declaring a URL, otherwise none. */
   private targetFor(conversationId: string): TaskTarget | null {
     const row = this.db
       .select({ conversation: conversations, token: apiTokens, options: apiTaskOptions })
@@ -337,12 +299,7 @@ export class WebhookService {
     }
   }
 
-  /**
-   * Travaux de fond encore ouverts, d'après le dernier `background.updated`.
-   *
-   * Le CLI publie la liste entière à chaque changement : la dernière entrée du journal
-   * est donc l'état courant, sans rien à apparier.
-   */
+  /** Open background work from the latest `background.updated`. CLIs publish full lists on every change, so the last journal entry is current state without pairing events. */
   private backgroundJobCount(conversationId: string): number {
     const [latest] = this.log.latest(conversationId, ['background.updated'], 1)
     if (!latest) return 0
@@ -391,7 +348,7 @@ export class WebhookService {
     void this.deliverDue()
   }
 
-  /** Tente toutes les livraisons échues. Une seule passe à la fois. */
+  /** Attempts all due deliveries, one pass at a time. */
   private async deliverDue(): Promise<void> {
     if (this.scanning) return
     this.scanning = true
@@ -461,7 +418,7 @@ export class WebhookService {
       }
     }
 
-    // Échec : on reprend selon le barème, ou on abandonne en gardant la trace.
+    // On failure, retry according to schedule or abandon while retaining the record.
     const nextDelay = retryDelayMs(attempts + 1)
     this.db
       .update(webhookDeliveries)

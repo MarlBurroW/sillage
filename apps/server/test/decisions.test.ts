@@ -99,7 +99,7 @@ async function harness(t: TestContext) {
 test('decisions: offered only to allowed autonomous sessions, one at a time, answered back as a message', async (t) => {
   const { db, service, sent, dispatched, ask, tools } = await harness(t)
 
-  // L'outil n'existe que là où la source le permet.
+  // Tools exist only where sources permit them.
   assert.ok(!tools(TASK_SESSION).includes('request_decision'), 'Off by default')
   assert.ok(!tools(HUMAN_SESSION).includes('request_decision'))
   db.update(scheduledTasks).set({ decisionsEnabled: true, decisionMaxHours: 12 }).run()
@@ -109,7 +109,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
   assert.ok(tools(BOARD_SESSION).includes('request_decision'))
   assert.ok(!tools(HUMAN_SESSION).includes('request_decision'), 'A session opened by a person asks in the thread')
 
-  // Refus : session humaine, choix par défaut hors des options.
+  // Reject human sessions and defaults absent from options.
   assert.equal((await ask(HUMAN_SESSION, 'request_decision', { question: 'Push?' })).isError, true)
   assert.equal((await ask(TASK_SESSION, 'request_decision', { question: 'Push?', options: ['Yes', 'No'], default: 'Maybe' })).isError, true)
 
@@ -136,7 +136,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
 
   assert.equal((await ask(TASK_SESSION, 'request_decision', { question: 'Another one?' })).isError, true, 'One pending at a time')
 
-  // Réponse : la session reçoit le message, la décision est tranchée et remise.
+  // Responses become session messages; decisions resolve and deliver.
   await assert.rejects(service.answer('owner', row.id, { option: 'Perhaps', text: '' }), /not offered/)
   const answered = await service.answer('owner', row.id, { option: 'Yes', text: 'But tag a release first.' })
   assert.equal(answered.status, 'answered')
@@ -146,7 +146,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
   assert.ok(db.select().from(decisions).get()!.deliveredAt)
   await assert.rejects(service.answer('owner', row.id, { option: 'No', text: '' }), /no longer pending/)
 
-  // Échéance : le choix par défaut part à la session.
+  // Deadlines deliver default choices to sessions.
   await ask(TASK_SESSION, 'request_decision', { question: 'Release now?', options: ['Yes', 'No'], default: 'No' })
   const second = db.select().from(decisions).where(eq(decisions.status, 'pending')).get()!
   db.update(decisions).set({ expiresAt: Date.now() - 1 }).where(eq(decisions.id, second.id)).run()
@@ -155,7 +155,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
   assert.match(sent.at(-1)!.text, /expiré sans réponse[\s\S]*« No »/)
   assert.equal(service.get('owner', second.id).answer?.option, 'No')
 
-  // Retrait par l'agent, et retrait quand la session est archivée.
+  // Agent withdrawal and withdrawal when sessions are archived.
   await ask(TASK_SESSION, 'request_decision', { question: 'Bump the version?' })
   const withdrawn = await ask(TASK_SESSION, 'withdraw_decision', { reason: 'A newer comment answered it.' })
   assert.equal(withdrawn.isError, false)
@@ -167,7 +167,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
   assert.equal(service.list('owner', 'pending').length, 0)
   assert.equal(sent.length, before, 'Nothing is delivered to an archived session')
 
-  // Maintenance du board : la décision s'inscrit dans le fil de la carte.
+  // Board maintenance decisions appear in card threads.
   await ask(BOARD_SESSION, 'request_decision', { question: 'Label it as a duplicate?', options: ['Yes', 'No'] })
   const board = service.list('owner', 'pending')[0]!
   assert.equal(board.source.kind, 'board')
@@ -239,4 +239,47 @@ test('notifications: toast where the app is visible, push elsewhere, nothing whe
   db.insert(await import('@sillage/db').then((module) => module.userSettings)).values({ userId: 'owner', data: JSON.stringify({ notifications: { decision: true, cliRequest: false, turnCompleted: true } }) }).run()
   await notifications.dispatch('owner', request)
   assert.equal(pushed.length, 1, 'Turned off in the preferences')
+})
+
+
+test('les anciennes propositions de nettoyage se retirent sans action, les décisions humaines restent', async (t) => {
+  const { db, service, sent, dispatched, changed } = await harness(t)
+  db.update(scheduledTasks).set({ decisionsEnabled: true }).run()
+  const requester = db.select().from(conversations).where(eq(conversations.id, TASK_SESSION)).get()!
+  await service.request(requester, { question: 'Publier la mise à jour ?', options: ['Oui', 'Non'] })
+  const human = service.list('owner', 'pending')[0]!
+  const now = Date.now()
+  for (const [id, status] of [['old-cleanup', 'pending'], ['old-kept', 'answered'], ['old-expired', 'pending']] as const) {
+    db.insert(decisions).values({
+      id, projectId: 'project', userId: 'owner', conversationId: HUMAN_SESSION,
+      sourceKind: 'worktree', sourceLabel: 'feat/done', question: 'Nettoyer ?', context: '',
+      options: '["clean","keep"]', worktreePath: '/a/worktree', status,
+      expiresAt: id === 'old-expired' ? now - 1 : now + 86_400_000, createdAt: now,
+      ...(status === 'answered' ? { answerOption: 'keep', resolvedAt: now, deliveredAt: now } : {}),
+    }).run()
+  }
+  assert.equal(service.pendingCount('owner'), 1, 'Le badge compte seulement les demandes des agents')
+  const notificationsBefore = dispatched.length
+  const changesBefore = changed.length
+  await service.tick()
+  assert.deepEqual(service.list('owner', 'pending').map((row) => row.id), [human.id])
+  for (const id of ['old-cleanup', 'old-expired']) {
+    const closed = service.get('owner', id)
+    assert.equal(closed.status, 'withdrawn')
+    assert.match(closed.withdrawnReason ?? '', /conversation ou la vue Chantiers/)
+    await assert.rejects(service.answer('owner', id, { option: 'clean', text: '' }), /no longer pending/)
+  }
+  assert.equal(service.get('owner', 'old-kept').answer?.option, 'keep', 'Les réponses passées restent lisibles')
+  assert.equal(dispatched.length, notificationsBefore, 'Aucune notification de nettoyage')
+  assert.equal(sent.length, 0, 'Aucune session ne se relance pour un nettoyage')
+  assert.equal(changed.length, changesBefore + 2, 'Les onglets retirent les propositions périmées')
+  await service.tick()
+  assert.equal(changed.length, changesBefore + 2, 'Le retrait ne se répète pas')
+
+  // Old tabs may answer before the first pass: no cleanup starts.
+  db.update(decisions).set({ status: 'pending' }).where(eq(decisions.id, 'old-cleanup')).run()
+  await assert.rejects(service.answer('owner', 'old-cleanup', { option: 'clean', text: '' }), /no longer pending/)
+  assert.equal(service.get('owner', 'old-cleanup').status, 'withdrawn')
+  await service.answer('owner', human.id, { option: 'Oui', text: '' })
+  assert.equal(sent.length, 1, 'Une vraie décision relance toujours son agent')
 })

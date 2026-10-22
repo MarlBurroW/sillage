@@ -20,15 +20,12 @@ import { Banner, Button, ChoiceList, IconButton, Select, cx } from '../ui'
 import { AccountChoice } from './AccountChoice'
 
 /**
- * Continuer la conversation avec un autre CLI.
- *
- * Trois choix, les mêmes qu'au brouillon : le CLI, son modèle, le compte. Le CLI
- * courant n'est pas proposé, le fork existe pour ça. L'étendue du contexte transféré
- * se règle ici et nulle part ailleurs : c'est au moment de passer la main qu'on sait
- * si la suite a besoin de tout le fil ou seulement de sa fin.
+ * Continue with another CLI using draft-equivalent CLI/model/account choices. Omit current CLI
+ * because forking serves that purpose. Configure transfer extent only here when users know whether
+ * continuation needs the whole thread or just its end.
  */
 
-/** Budgets proposés, en jetons : le défaut au milieu, les bornes du serveur aux bouts. */
+/** Token budgets with default centered and server bounds at ends. */
 const BUDGETS = [8_000, 16_000, 32_000, 64_000] as const
 const DEFAULT_BUDGET = 16_000
 
@@ -50,8 +47,7 @@ export function HandoffDialog({
 
   const others = agentKindSchema.options.filter((agent) => agent !== source.agent)
   const [chosen, setChosen] = useState<AgentKind | null>(null)
-  // Le premier CLI installé parmi les autres, tant que rien n'est choisi : ouvrir le
-  // dialogue sur une option grisée obligerait à un clic de plus pour rien.
+  // Initially select the first other installed CLI rather than requiring extra clicks from a disabled option.
   const agent =
     chosen ??
     others.find((candidate) => unavailableReason(availability?.agents.find((a) => a.agent === candidate)) === null) ??
@@ -63,8 +59,7 @@ export function HandoffDialog({
     () => project?.defaultConfig[agent] ?? userSettings?.agentDefaults[agent] ?? defaultConfigFor(agent),
     [project, userSettings, agent],
   )
-  // Comme au brouillon : une configuration faite pour un CLI est abandonnée dès qu'on
-  // en choisit un autre.
+  // Like drafts, discard configuration when switching CLIs.
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const effective = config?.agent === agent ? config : defaults
 

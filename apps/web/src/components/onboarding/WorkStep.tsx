@@ -12,15 +12,14 @@ import { CardGrid, ChoiceCard, Question, StepTitle, Tip, useCommit, useGate, typ
 
 const ALL_AGENTS: AgentKind[] = ['claude', 'codex', 'opencode', 'grok']
 
-/** Les catégories qui comptent ici : le modèle et son effort, les garde-fous, le budget. */
+/** Relevant categories: model, effort, safeguards, budget. */
 const DETAIL_KEYS = ['model', 'effort', 'approval', 'sandbox', 'budget']
 const isDetailGroup = (group: SettingGroup) => DETAIL_KEYS.includes(group.key) || group.key.startsWith('permission')
 
 /**
- * Comment l'agent travaille : le réflexe de permission, écrit aussitôt dans les défauts
- * de chaque CLI retenu, et, replié dessous, les mêmes réglages que la page des défauts,
- * CLI par CLI, pour qui veut aller plus loin. Les points de reprise se règlent par
- * projet, et la visite n'en crée pas : elle dit seulement qu'ils existent d'office.
+ * Agent working policy applied immediately to selected CLI defaults, with detailed per-CLI defaults
+ * collapsed below. Checkpoints are configured per project and not created by onboarding; explain
+ * their default availability only.
  */
 export function WorkStep({ nav, state, setAnswers }: StepProps) {
   const t = useTranslate()
@@ -33,8 +32,7 @@ export function WorkStep({ nav, state, setAnswers }: StepProps) {
   useGate(nav, { canContinue: true, laterAllowed: true, skipAllowed: true })
   useCommit(nav, null)
 
-  // Appliqué au clic, pas à « Continuer » : le volet détaillé lit les défauts du compte,
-  // et doit voir le choix rapide dès qu'il est fait.
+  // Apply on click rather than Continue because detail panels must immediately reflect quick-policy choices.
   const choose = (next: PermissionChoice) => {
     setAnswers({ permission: next })
     if (!settings) return
@@ -68,8 +66,10 @@ export function WorkStep({ nav, state, setAnswers }: StepProps) {
         {choice === 'bypass' ? <Banner tone="info">{t('onboarding.work.permission.bypass.warning')}</Banner> : null}
       </Question>
 
-      {/* Replié, mais en pleine largeur : le choix rapide suffit à la plupart, et les
-          cartes sondent chaque CLI ; le volet doit pourtant se voir de qui en a besoin. */}
+      {/*
+       * Collapsed but full-width: quick choices suffice for most, detailed cards probe CLIs, yet
+       * the option remains discoverable.
+       */}
       <div className="flex flex-col gap-3">
         <button
           type="button"
@@ -101,8 +101,10 @@ export function WorkStep({ nav, state, setAnswers }: StepProps) {
         ) : null}
       </div>
 
-      {/* Une ligne, pas une carte : les points de reprise se règlent par projet, la visite
-          ne fait que dire qu'ils existent, et qu'ils sont là d'office. */}
+      {/*
+       * A row rather than a card: checkpoints are project settings; onboarding only explains their
+       * default availability.
+       */}
       <p className="flex gap-2 text-xs leading-relaxed text-ink-faint">
         <History size={14} className="mt-0.5 shrink-0 text-positive" aria-hidden />
         <span>
@@ -114,9 +116,8 @@ export function WorkStep({ nav, state, setAnswers }: StepProps) {
 }
 
 /**
- * Les défauts d'un CLI, en détail : les catégories du composeur, celles qui comptent
- * ici, rendues en listes déroulantes serrées. Un composant par CLI parce que chaque
- * fournisseur sonde le CLI qu'il décrit, et qu'un hook ne se répète pas dans une boucle.
+ * Detailed CLI defaults using relevant composer categories as compact selects. One component per
+ * CLI because providers probe their CLI and hooks cannot run in loops.
  */
 function AgentDefaultsCard({ config, onChange }: { config: AgentConfig; onChange: (config: AgentConfig) => void }) {
   const t = useTranslate()

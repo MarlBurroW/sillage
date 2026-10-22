@@ -5,9 +5,8 @@ import { useProjectDefaults, useUpdateProjectDefaults } from '../../lib/user-set
 import { CardGrid, ChoiceCard, Question, StepTitle, Tip, Why, useCommit, useGate, type StepProps } from './shell'
 
 /**
- * Consignes et mémoire : où elles vivent pour les projets à venir de ce compte, dans
- * Sillage ou chez chaque CLI. Deux défauts de compte, écrits au clic ; chaque projet
- * peut ensuite en décider autrement depuis sa page.
+ * Instruction and memory storage defaults for this account's future projects: Sillage or each CLI.
+ * Save both on click; projects may override on their pages.
  */
 export function MemoryStep({ nav, state }: StepProps) {
   const t = useTranslate()

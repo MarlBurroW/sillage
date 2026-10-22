@@ -3,7 +3,7 @@ import { answerDecisionBodySchema, requestedDecisionSources } from '@sillage/pro
 import type { DecisionService } from '../../decisions/service.js'
 import { requireUser } from '../require-user.js'
 
-/** Les décisions du compte : celles qui attendent, l'historique, et la réponse. */
+/** Account decisions: pending items, history and responses. */
 export function registerDecisionRoutes(app: FastifyInstance, decisions: DecisionService): void {
   app.get('/api/decisions', async (request) => {
     const user = requireUser(request)
@@ -15,8 +15,8 @@ export function registerDecisionRoutes(app: FastifyInstance, decisions: Decision
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const { sources } = request.query as { sources?: string }
-    // Introuvable plutôt qu'affichée de travers : un ancien onglet ouvert depuis un toast
-    // dit « décision introuvable » au lieu de planter.
+    // Report not found rather than render invalid data: an old tab opened from a toast
+    // says 'decision not found' instead of crashing.
     return decisions.get(user.id, id, requestedDecisionSources(sources))
   })
 

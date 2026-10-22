@@ -1,3 +1,6 @@
+import { Logo } from '../Logo'
+import { useToolStyle, type ToolStyle } from '../../lib/tool-style'
+import { toolLabel, toolOrigin, toolPreview, toolIntent, INTENT_LABELS } from '../../lib/tool-presentation'
 import {
   Bot,
   ChevronRight,
@@ -17,7 +20,7 @@ import {
   SquareTerminal,
   Wrench,
 } from 'lucide-react'
-import { memo, useState, type ReactNode } from 'react'
+import { memo, useCallback, useLayoutEffect, useState, type ReactNode } from 'react'
 import { isSpawnTool, type ToolOutputDto } from '@sillage/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
@@ -31,13 +34,11 @@ import { ScheduleApprovalStrip } from './ScheduleApprovalStrip'
 import { isSillageTool } from '../../lib/sillage-tools'
 
 /**
- * Rendu d'un appel d'outil, et d'une suite d'appels repliée derrière une ligne.
- *
- * Les deux vivent dans le même module parce qu'un groupe déplié rend des appels :
- * les séparer donnerait un cycle d'imports pour rien.
+ * Render tool calls and collapsed sequences. Share a module because expanded groups render calls;
+ * separating them would create needless import cycles.
  */
 
-/** Icône par outil. Le rendu détaillé, lui, passe par le registre de vues (`tools/`). */
+/** Tool icons; detailed rendering uses the tools view registry. */
 const TOOL_ICONS: Record<string, ReactNode> = {
   Bash: <SquareTerminal size={14} />,
   Read: <FileText size={14} />,
@@ -54,22 +55,17 @@ const TOOL_ICONS: Record<string, ReactNode> = {
   ExitPlanMode: <ListChecks size={14} />,
 }
 
-/** `mono` distingue un fragment de code d'une phrase : les deux ne se lisent pas pareil. */
+/** mono distinguishes code fragments from prose, which require different reading styles. */
 interface ToolSummary {
   text: string
   mono: boolean
 }
 
 /**
- * Résumé d'une ligne.
- *
- * La description passe avant tout le reste : elle dit ce que l'appel cherche à faire,
- * là où la commande ou le chemin ne disent que comment. Claude Code en joint une à ses
- * appels `Bash` et à ses sous-agents, et elle vaut mieux qu'un `sed -n '334,364p'`
- * tronqué au milieu. Elle n'est pas garantie pour autant : Codex n'en produit aucune,
- * et le repli sur le paramètre identifiant reprend alors la main.
- *
- * La commande, elle, ne disparaît pas : elle reste sous l'entrée de l'appel déplié.
+ * Single-line summary. Prefer descriptions: they explain purpose rather than commands or paths
+ * explaining mechanics. Claude Code supplies them for Bash and subagents, more informative than
+ * truncated sed ranges. Codex provides none, so fall back to identifying parameters. Commands
+ * remain visible beneath expanded input.
  */
 function summarize(name: string, input: unknown): ToolSummary | null {
   if (typeof input !== 'object' || input === null) return null
@@ -85,7 +81,7 @@ function summarize(name: string, input: unknown): ToolSummary | null {
       ? ['command']
       : name === 'WebFetch' || name === 'WebSearch'
         ? ['url', 'query']
-        : ['file_path', 'path', 'pattern', 'prompt']
+        : ['file_path', 'path', 'file', 'title', 'query', 'pattern', 'prompt', 'card_number', 'conversation_id']
 
   for (const key of candidates) {
     const value = fields[key]
@@ -95,11 +91,8 @@ function summarize(name: string, input: unknown): ToolSummary | null {
 }
 
 /**
- * L'issue d'un appel, en une icône.
- *
- * « Interrompu » n'est pas un échec : l'appel n'a simplement jamais rendu sa réponse,
- * le CLI ayant été coupé. Le confondre avec une erreur ferait chercher une cause qui
- * n'existe pas.
+ * Call outcome icon. Interrupted is not failure: the CLI stopped before returning. Treating it as
+ * an error would prompt investigation of a nonexistent cause.
  */
 export function ToolStatusIcon({ status }: { status: ToolItem['status'] }) {
   if (status === 'running') return <Loader size={13} className="shrink-0 animate-spin text-accent" />
@@ -109,11 +102,8 @@ export function ToolStatusIcon({ status }: { status: ToolItem['status'] }) {
 }
 
 /**
- * Une durée, à la précision qu'elle mérite.
- *
- * Les minutes sont nommées plutôt que comptées en secondes : un sous-agent tourne
- * couramment plusieurs minutes, et « 185.0 s » demande une conversion mentale à
- * chaque coup d'œil.
+ * Duration at suitable precision. Name minutes instead of accumulating seconds: multi-minute
+ * subagents are common and 185.0 s requires repeated mental conversion.
  */
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms} ms`
@@ -123,7 +113,7 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`
 }
 
-/** Langage du fichier que l'appel déclare, quand il en déclare un. */
+/** File language declared by the call, when available. */
 function languageOfInput(input: unknown): string {
   if (typeof input !== 'object' || input === null) return ''
   const fields = input as Record<string, unknown>
@@ -132,12 +122,9 @@ function languageOfInput(input: unknown): string {
 }
 
 /**
- * Un payload d'outil, avec le langage à lui appliquer.
- *
- * La sortie est tantôt du JSON, tantôt du texte : le contenu d'un fichier, la sortie
- * d'une commande. Colorer une sortie de commande comme du JSON la rendrait illisible,
- * donc `fallback` ne sert qu'aux chaînes, et seulement quand l'appel dit de quel
- * fichier elles viennent.
+ * Tool payload and applicable language. Outputs may be JSON or plain file/command text;
+ * JSON-highlighting command output harms readability. Fallback applies only to strings whose source
+ * file is declared.
  */
 function asPayload(value: unknown, fallback = ''): { content: string; language: string } {
   if (value === null || value === undefined) return { content: '', language: '' }
@@ -146,17 +133,15 @@ function asPayload(value: unknown, fallback = ''): { content: string; language: 
 }
 
 /**
- * La sortie à afficher : celle du journal, ou le corps complet une fois arrivé.
- *
- * `undefined` tant que la requête n'a pas répondu, ce que `OutputSlot` distingue d'une
- * sortie réellement vide.
+ * Output to display: log output or loaded full body. Undefined until the query returns, distinct
+ * from genuinely empty output in OutputSlot.
  */
 function outputOf(tool: ToolItem, full: ToolOutputDto | undefined): unknown {
   if (tool.outputBytes === null) return tool.output
   return full ? full.output : undefined
 }
 
-/** La sortie, son chargement, ou l'échec de celui-ci. */
+/** Output, loading state, or loading failure. */
 function OutputSlot({
   ready,
   error,
@@ -191,47 +176,57 @@ function OutputSlot({
 export const ToolCall = memo(function ToolCall({
   tool,
   conversationId,
+  variant,
+  onOpenChange,
 }: {
   tool: ToolItem
   conversationId: string
+  variant?: ToolStyle
+  onOpenChange?: (id: string, open: boolean) => void
 }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const [raw, setRaw] = useState(false)
   const summary = summarize(tool.name, tool.input)
+  const [preferredStyle] = useToolStyle()
+  const style = variant ?? preferredStyle
+  const origin = toolOrigin(tool.name)
+  const label = toolLabel(tool.name)
+  const statusLabel = t(tool.status === 'running' ? 'toolStyle.pending' : tool.status === 'done' ? 'toolStyle.done' : tool.status === 'failed' ? 'toolStyle.failed' : 'toolStyle.stopped')
 
-  // Une sortie volumineuse n'est pas transférée avec le fil : la relecture n'en rend
-  // qu'un aperçu, et le corps complet se demande ici, à l'ouverture de la carte.
+  // Large output is omitted from thread transfers: replay supplies only a preview and the full body
+  // loads when this card opens.
   const previewed = tool.outputBytes !== null
   const full = useToolOutput(conversationId, tool.id, open && previewed)
   const ready = !previewed || full.data !== undefined
   const output = outputOf(tool, full.data)
-  // Les vues lisibles lisent `tool.output` et distinguent une chaîne d'un tableau de
-  // blocs : les nourrir avec l'aperçu ferait clignoter une image cassée avant le vrai
-  // contenu, d'où l'attente du corps complet plutôt qu'un rendu intermédiaire.
+  // Readable views distinguish strings and block arrays in tool.output: previews could briefly show
+  // broken images, so wait for the full body rather than render an intermediate state.
   const readable = open && ready ? readableView({ ...tool, output }) : null
 
   return (
     <div
       className={cx(
-        'rounded-md border bg-surface/60 text-sm',
+        `sg-tool sg-tools-${style} sg-tool-${origin.kind} sg-tool-${tool.status} text-sm`,
         tool.status === 'failed' ? 'border-critical/40' : 'border-line',
       )}
+      data-tool-id={tool.id}
+      data-thread-anchor={`tool-${tool.id}`}
     >
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        title={`${label} — ${statusLabel}${summary ? ` — ${summary.text}` : ''}`}
+        onClick={() => { setOpen(!open); onOpenChange?.(tool.id, !open) }}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
+        className="sg-tool-heading flex w-full items-center gap-2 text-left"
       >
         <ChevronRight
           size={14}
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
-        <span className="shrink-0 text-ink-faint">
-          {TOOL_ICONS[tool.name] ?? <Wrench size={14} />}
-        </span>
-        <span className="shrink-0 font-medium text-ink">{tool.name}</span>
+        {origin.kind === 'sillage' ? <Logo size={16} className="shrink-0 text-accent" /> : origin.kind === 'mcp' ? <span className="sg-mcp-mark">MCP</span> : <span className="sg-native-icon shrink-0 text-ink-faint">{TOOL_ICONS[tool.name] ?? <Wrench size={14} />}</span>}
+        <span className="sg-tool-label min-w-0 truncate font-medium">{label}</span>
+        {origin.kind === 'mcp' ? <span className="sg-tool-server" title={origin.server}>{origin.server}</span> : null}
         {summary ? (
           <span
             className={cx('min-w-0 flex-1 truncate text-xs text-ink-faint', summary.mono && 'font-mono')}
@@ -243,7 +238,7 @@ export const ToolCall = memo(function ToolCall({
           <span className="flex-1" />
         )}
 
-        <ToolStatusIcon status={tool.status} />
+        <span className="shrink-0" role="img" aria-label={statusLabel}><ToolStatusIcon status={tool.status} /></span>
         {tool.durationMs !== null ? (
           <span className="shrink-0 text-[0.6875rem] text-ink-faint">
             {formatDuration(tool.durationMs)}
@@ -251,8 +246,10 @@ export const ToolCall = memo(function ToolCall({
         ) : null}
       </button>
 
+      {style === 'cards' && !open ? <div className="sg-tool-preview" title={toolPreview(tool)}>{toolPreview(tool)}</div> : null}
       {open ? (
-        <div className="flex flex-col gap-2 border-t border-line px-2.5 py-2">
+        <div className="sg-tool-detail flex flex-col gap-2 border-t border-line px-2.5 py-2">
+          <span className="break-all text-xs text-ink-faint">{t('toolStyle.rawName', { name: tool.name })}</span>
           {readable ? <ViewSwitch raw={raw} onChange={setRaw} /> : null}
 
           {readable && !raw ? (
@@ -273,8 +270,7 @@ export const ToolCall = memo(function ToolCall({
         </div>
       ) : null}
 
-      {/* Le fil du sous-agent est ailleurs, dans le panneau : sans ce passage, la
-          seule façon d'y arriver serait de le retrouver dans une liste. */}
+      {/* Subagent threads live in the panel: this shortcut avoids finding them manually in a list. */}
       {isSpawnTool(tool.name) ? (
         <button
           type="button"
@@ -295,11 +291,9 @@ export const ToolCall = memo(function ToolCall({
 })
 
 /**
- * Bascule entre la vue lisible et le payload natif.
- *
- * Le brut n'est pas un mode dégradé qu'on cacherait : c'est ce que le CLI a réellement
- * envoyé, et la seule façon de vérifier qu'une vue ne ment pas ou de retrouver un champ
- * qu'elle a jugé secondaire. Il reste donc à un clic, sur chaque appel.
+ * Toggle readable view and native payload. Raw is not a hidden degraded mode: it is the actual CLI
+ * data and the only way to verify views or find omitted secondary fields. Keep it one click away on
+ * every call.
  */
 function ViewSwitch({ raw, onChange }: { raw: boolean; onChange: (raw: boolean) => void }) {
   const t = useTranslate()
@@ -357,92 +351,95 @@ function Payload({
   )
 }
 
-/** Au-delà, l'énumération des noms d'outils déborde de la ligne. */
+/** Beyond this length tool names overflow the row. */
 const NAMES_SHOWN = 3
 
 function summarizeNames(tools: ToolItem[]): string {
-  const names = [...new Set(tools.map((tool) => tool.name))]
+  const names = [...new Set(tools.map((tool) => toolLabel(tool.name)))]
   const shown = names.slice(0, NAMES_SHOWN).join(', ')
   return names.length > NAMES_SHOWN ? `${shown}, +${names.length - NAMES_SHOWN}` : shown
 }
 
 /**
- * Suite d'appels d'outils terminés, repliée derrière une ligne.
- *
- * Les échecs sont comptés dans l'en-tête : replier ne doit jamais faire disparaître
- * une erreur du champ de vision.
- *
- * La comparaison porte sur le contenu du tableau, pas sur son identité : `buildRows`
- * regroupe à chaque appel, donc à chaque lot de deltas, et rend un tableau neuf pour
- * des appels inchangés. Comparé par référence, le `memo` ratait toujours et chaque
- * groupe du fil se redessinait seize fois par seconde pendant un tour.
+ * Collapsed sequence of completed calls. Count failures in the heading so collapse never hides
+ * errors. Compare array contents rather than identity: buildRows creates new grouping arrays each
+ * delta batch, causing reference-based memoization to miss and redraw every group sixteen times per
+ * second.
  */
-const ToolCallGroupInner = function ToolCallGroup({
-  tools,
-  conversationId,
+export const ToolCallGroup = memo(function ToolCallGroup({
+  tools, conversationId, complete = true, mayCollapse = true, variant,
 }: {
   tools: ToolItem[]
   conversationId: string
+  complete?: boolean
+  mayCollapse?: boolean
+  variant?: ToolStyle
 }) {
   const t = useTranslate()
-  const [open, setOpen] = useState(false)
-
+  const [preferredStyle] = useToolStyle()
+  const style = variant ?? preferredStyle
+  const eligible = complete && tools.length >= 2
+  const [collapsed, setCollapsed] = useState(eligible && mayCollapse)
+  const [manual, setManual] = useState(false)
+  const [pinnedIntent, setPinnedIntent] = useState(false)
+  const [opened, setOpened] = useState<Set<string>>(() => new Set())
+  const onOpenChange = useCallback((id: string, open: boolean) => {
+    setOpened((previous) => {
+      const next = new Set(previous)
+      if (open) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+  // Le lecteur garde la main : une ouverture manuelle ou une lecture plus haut bloque le repli.
+  useLayoutEffect(() => {
+    if (eligible && mayCollapse && !manual && !pinnedIntent && opened.size === 0) setCollapsed(true)
+  }, [eligible, mayCollapse, manual, pinnedIntent, opened.size])
+  const folded = eligible && collapsed
+  const header = folded || manual
   const failed = tools.filter((tool) => tool.status === 'failed').length
+  const interrupted = tools.filter((tool) => tool.status === 'interrupted').length
   const total = tools.reduce((sum, tool) => sum + (tool.durationMs ?? 0), 0)
+  const sillage = tools.filter((tool) => toolOrigin(tool.name).kind === 'sillage').length
+  const external = tools.filter((tool) => toolOrigin(tool.name).kind === 'mcp').length
+  const servers = [...new Set(tools.map((tool) => toolOrigin(tool.name)).filter((origin) => origin.kind === 'mcp').map((origin) => origin.server))].join(', ')
 
-  return (
-    <div className="rounded-md border border-line bg-surface/60 text-sm">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
-      >
-        <ChevronRight
-          size={14}
-          className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
-        />
-        <Wrench size={14} className="shrink-0 text-ink-faint" />
-        <span className="shrink-0 font-medium text-ink">
-          {t(
-            tools.length > 1 ? 'toolcall.group.count.other' : 'toolcall.group.count.one',
-            { count: tools.length },
-          )}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink-faint">
-          {summarizeNames(tools)}
-        </span>
+  return <div className={`sg-tool-sequence sg-tools-${style}`} data-thread-anchor={`tools-${tools[0]?.id}`} data-tool-sequence data-folded={folded}>
+    {header ? <button type="button" className="sg-tool-group-heading" aria-expanded={!folded}
+      onClick={() => { setManual(true); setCollapsed(!folded) }}>
+      <ChevronRight size={14} className={cx('shrink-0 text-ink-faint', !folded && 'rotate-90')} />
+      <span className="shrink-0 font-medium">{t(tools.length > 1 ? 'toolcall.group.count.other' : 'toolcall.group.count.one', { count: tools.length })}</span>
+      <span className="min-w-0 flex-1 truncate text-xs text-ink-faint" title={summarizeNames(tools)}>{summarizeNames(tools)}</span>
+      {sillage ? <span className="sg-origin-badge text-accent" title={t('toolStyle.origin.sillage', { count: sillage })}><Logo size={16} />{sillage}</span> : null}
+      {external ? <span className="sg-origin-badge" title={servers} aria-label={`${t('toolStyle.origin.mcp', { count: external })}: ${servers}`}><span className="sg-mcp-mark">MCP</span>{external}</span> : null}
+      {failed > 0 ? <span className="shrink-0 text-xs text-critical">{t(failed > 1 ? 'toolcall.group.failed.other' : 'toolcall.group.failed.one', { count: failed })}</span> : null}
+      {interrupted > 0 ? <span className="shrink-0 text-xs text-ink-faint" title={t('toolStyle.interrupted', { count: interrupted })}><CircleSlash size={13} />{interrupted}</span> : null}
+      {total > 0 ? <span className="sg-tool-duration text-[0.6875rem] text-ink-faint">{formatDuration(total)}</span> : null}
+    </button> : null}
+    {!folded ? <div className="sg-tool-list">
+      {style === 'intent' ? intentSections(tools).map((section) => <IntentSection key={section[0]!.id} label={t(INTENT_LABELS[toolIntent(section[0]!)])} count={section.length} onInteract={() => setPinnedIntent(true)}>
+        {section.map((tool) => <ToolCall key={tool.id} tool={tool} conversationId={conversationId} variant={style} onOpenChange={onOpenChange} />)}
+      </IntentSection>) : tools.map((tool) => <ToolCall key={tool.id} tool={tool} conversationId={conversationId} variant={style} onOpenChange={onOpenChange} />)}
+    </div> : null}
+  </div>
+}, (previous, next) => previous.conversationId === next.conversationId && previous.complete === next.complete && previous.mayCollapse === next.mayCollapse && previous.variant === next.variant && previous.tools.length === next.tools.length && previous.tools.every((tool, index) => tool === next.tools[index]))
 
-        {failed > 0 ? (
-          <span className="shrink-0 text-[0.6875rem] font-medium text-critical">
-            {t(
-              failed > 1 ? 'toolcall.group.failed.other' : 'toolcall.group.failed.one',
-              { count: failed },
-            )}
-          </span>
-        ) : null}
-        {total > 0 ? (
-          <span className="shrink-0 text-[0.6875rem] text-ink-faint">{formatDuration(total)}</span>
-        ) : null}
-      </button>
-
-      {open ? (
-        <div className="flex flex-col gap-1.5 border-t border-line p-1.5">
-          {tools.map((tool) => (
-            <ToolCall key={tool.id} tool={tool} conversationId={conversationId} />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
+/** Des catégories locales, sans générer de titres ni prétendre connaître l’intention du modèle. */
+function intentSections(tools: ToolItem[]): ToolItem[][] {
+  const sections: ToolItem[][] = []
+  for (const tool of tools) {
+    const last = sections.at(-1)
+    if (last && toolIntent(last[0]!) === toolIntent(tool)) last.push(tool)
+    else sections.push([tool])
+  }
+  return sections
 }
-
-export const ToolCallGroup = memo(
-  ToolCallGroupInner,
-  (prev, next) =>
-    prev.conversationId === next.conversationId &&
-    prev.tools.length === next.tools.length &&
-    // Le fold remplace l'objet d'un appel qui change : la comparaison par référence
-    // sur chaque élément est donc exacte, sans avoir à comparer champ par champ.
-    prev.tools.every((tool, index) => tool === next.tools[index]),
-)
+function IntentSection({ label, count, onInteract, children }: { label: string; count: number; onInteract: () => void; children: ReactNode }) {
+  const [open, setOpen] = useState(true)
+  return <div>
+    <button type="button" className="sg-tool-intent flex w-full items-center gap-2 text-left" aria-expanded={open} onClick={() => { onInteract(); setOpen(!open) }}>
+      <ChevronRight size={12} className={cx(open && 'rotate-90')} /><span className="flex-1">{label}</span><span className="text-ink-faint">{count}</span>
+    </button>
+    <div hidden={!open} className={open ? 'sg-tool-list' : undefined}>{children}</div>
+  </div>
+}

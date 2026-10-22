@@ -16,15 +16,15 @@ import type { MessageKey, MessageParams } from './i18n'
 import { SCHEDULES_KEY } from './schedules'
 
 /**
- * Le webhook d'une automatisation : son journal d'appels, ses réglages, son secret.
- * La tâche elle-même (nom, CLI, prompt) passe par `lib/schedules`, comme une planifiée.
+ * Automation webhook: call log, settings, and secret. Task details (name, CLI, prompt) use
+ * `lib/schedules` like scheduled tasks.
  */
 
 const deliveriesKey = (taskId: string) => ['automation-deliveries', taskId]
 
 /**
- * Le journal, relu souvent tant que la page est ouverte : on y attend le premier appel
- * qu'on vient de provoquer depuis GitHub, et il doit apparaître sans recharger.
+ * Poll the log while the page is open: users expect their first GitHub-triggered call to appear
+ * without reload.
  */
 export function useDeliveries(taskId: string) {
   return useQuery({
@@ -43,7 +43,7 @@ export function useDelivery(taskId: string, deliveryId: string | null) {
   })
 }
 
-/** Le secret ne se lit qu'à la demande : il n'a pas à traîner dans le cache de la page. */
+/** Read secrets only on demand: do not leave them in the page cache. */
 export function useRevealSecret(taskId: string) {
   return useMutation({
     mutationFn: () => api.get<{ secret: string }>(`/api/schedules/${taskId}/webhook/secret`),
@@ -79,8 +79,8 @@ export function useReplayDelivery(taskId: string) {
 }
 
 /**
- * Essai côté serveur d'un appel du banc : le script et la marque de session ne
- * s'évaluent que là. Rien n'est lancé ni écrit au journal.
+ * Server-side trial of a test-bench call: only the server evaluates the script and session marker.
+ * Launch nothing and write no log entry.
  */
 export function useTestWebhook(taskId: string) {
   return useMutation({
@@ -97,7 +97,7 @@ export const TEMPLATE_LABELS: Record<AutomationTemplateId, { title: MessageKey; 
   gitlab_generic: { title: 'automation.template.gitlab', description: 'automation.template.gitlabHint', name: 'automation.template.gitlabName' },
 }
 
-/** Les opérateurs de condition en clair, dans l'ordre du sélecteur. */
+/** Readable condition operators in selector order. */
 export const OPERATOR_LABELS: { value: AutomationOperator; label: MessageKey }[] = [
   { value: 'equals', label: 'automation.op.equals' },
   { value: 'not_equals', label: 'automation.op.notEquals' },
@@ -109,7 +109,7 @@ export const OPERATOR_LABELS: { value: AutomationOperator; label: MessageKey }[]
   { value: 'missing', label: 'automation.op.missing' },
 ]
 
-/** La commande curl qui enverrait cet appel pour de vrai, signée par le serveur. */
+/** Server-signed curl command that would send this call for real. */
 export function useWebhookCurl(taskId: string) {
   return useMutation({
     mutationFn: (input: { headers: Record<string, string>; body: string }) =>
@@ -140,19 +140,19 @@ const REASON_KEYS: Record<DeliveryReason['code'], MessageKey> = {
   text: 'automation.reason.text',
 }
 
-/** La raison d'un verdict en clair, dans la langue de l'interface. */
+/** Readable verdict reason in the UI language. */
 export function describeReason(reason: DeliveryReason, t: (key: MessageKey, params?: MessageParams) => string): string {
   if (reason.code === 'script_skip' && !reason.params?.reason) return t('automation.reason.scriptSkipDefault')
   if (reason.code === 'filter_rule' && !reason.params?.actual) return t('automation.reason.filterRuleAbsent', reason.params)
   return t(REASON_KEYS[reason.code], reason.params)
 }
 
-/** L'adresse complète : sans `publicUrl` configurée, le serveur la rend relative. */
+/** Full address: without configured `publicUrl`, the server returns a relative URL. */
 export function absoluteHookUrl(url: string): string {
   return url.startsWith('/') ? `${window.location.origin}${url}` : url
 }
 
-/** En-têtes écrits un par ligne, `nom: valeur`, comme dans une requête HTTP. */
+/** Headers written one per line as `name: value`, like an HTTP request. */
 export function parseHeaders(text: string): { headers: Record<string, string>; invalid: number } {
   const headers: Record<string, string> = {}
   let invalid = 0
@@ -169,8 +169,8 @@ export function parseHeaders(text: string): { headers: Record<string, string>; i
 }
 
 /**
- * En-têtes d'un appel reçu, sans ceux que le transport a ajoutés (proxy, compression) :
- * ils ne disent rien de l'appel et noieraient ceux qu'on vient modifier.
+ * Received-call headers excluding transport additions (proxy, compression), which say nothing about
+ * the call and obscure editable ones.
  */
 const TRANSPORT_HEADERS = /^(host|content-length|connection|accept|accept-encoding|via|x-real-ip|x-forwarded-.*|cf-.*|cdn-loop|true-client-ip)$/
 
@@ -181,7 +181,7 @@ export function formatHeaders(headers: Record<string, string>): string {
     .join('\n')
 }
 
-/** L'appel du banc tel que conditions et explorateur le lisent, comme le serveur le construit. */
+/** Test-bench call as read by conditions and explorer, matching server construction. */
 export function benchEvent(call: WebhookCall): AutomationEvent {
   let payload: unknown = null
   const trimmed = call.body.trim()

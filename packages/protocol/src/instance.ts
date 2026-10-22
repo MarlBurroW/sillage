@@ -1,48 +1,51 @@
-// Comment l'instance est déployée, et ce que ce déploiement permet.
+// How the instance is deployed and what that deployment supports.
 
 /**
- * - `server` : le daemon d'un serveur (installeur, Docker, checkout de dev), joint par un
- *   navigateur, souvent depuis une autre machine ;
- * - `desktop` : lancé par l'application de bureau sur le poste de son unique utilisateur,
- *   et affiché dans sa fenêtre.
+ * - `server`: server daemon (installer, Docker, development checkout), accessed through a
+ * browser, often from another machine.
+ * - `desktop`: launched by the desktop app on its sole user's workstation and displayed in its
+ * window.
  */
 export type InstanceProfile = 'server' | 'desktop'
 
 /**
- * Ce que le déploiement permet, déduit du profil par le serveur.
+ * Deployment capabilities derived server-side from the profile.
  *
- * Les écrans testent une capacité, jamais le profil, comme ils testent `AgentCapabilities`
- * plutôt que le nom d'un CLI : une prochaine variante (la fenêtre de bureau branchée sur
- * un serveur distant, par exemple) hérite du bon comportement en déclarant les siennes.
+ * Screens check capabilities, never profiles, just as they check `AgentCapabilities` instead of
+ * CLI names: future variants (such as a desktop window connected to a remote server) inherit
+ * correct behavior by declaring their capabilities.
  */
 export interface InstanceCapabilities {
   /**
-   * Comptes à mot de passe : page de connexion, déconnexion, changement de mot de passe
-   * et gestion des utilisateurs. Absents en bureau, où le lanceur ouvre lui-même la
-   * session de l'unique utilisateur.
+   * Password accounts: login, logout, password changes and user management. Absent on Desktop,
+   * where the launcher opens the sole user's session itself.
    */
   passwordAuth: boolean
-  /** Notifications Web Push vers les appareils de l'utilisateur. */
+  /** Web Push notifications to the user's devices. */
   webPush: boolean
   /**
-   * Application web installable : service worker, mise en cache hors ligne et invitation
-   * à recharger quand une version est déployée. En bureau, c'est l'application qui
-   * apporte la nouvelle version, et un cache ne ferait que servir l'ancienne.
+   * Installable web app: service worker, offline caching and reload prompts when a version is
+   * deployed. On Desktop, the app delivers updates; a cache would merely serve the old version.
    */
   pwa: boolean
+  /**
+   * Projects shared between accounts: private/shared choice at creation and in project
+   * settings. Irrelevant on Desktop with its single account: the question has no useful answer,
+   * and a lock on a project nobody else can see conveys nothing.
+   */
+  sharedProjects: boolean
 }
 
 export interface InstanceInfo {
   profile: InstanceProfile
   capabilities: InstanceCapabilities
   /**
-   * Vrai tant que la base n'a aucun compte : l'interface ouvre alors la visite sur la
-   * création du premier compte au lieu de la page de connexion. Toujours faux en bureau,
-   * où le lanceur crée le compte lui-même.
+   * True while the database has no account: the UI opens first-account onboarding instead of
+   * login. Always false on Desktop, where the launcher creates the account.
    */
   needsSetup: boolean
-  /** Nom de la machine, pour dire à l'utilisateur où Sillage vient de démarrer. */
+  /** Machine name, telling the user where Sillage just started. */
   hostname: string
-  /** Dossier personnel du compte système qui fait tourner Sillage : là où ranger les projets. */
+  /** Home directory of the system account running Sillage, where projects can be stored. */
   homeDir: string
 }

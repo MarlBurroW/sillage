@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-// Le vrai hook reprend après le curseur lu, même si les deltas ont été fusionnés.
+// Real hook resumes after read cursor even when deltas were merged.
 export async function checkJournalCache(page) {
   const result = await page.evaluate(async () => {
     const React = (await import('/node_modules/.vite/deps/react.js')).default

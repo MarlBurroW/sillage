@@ -24,7 +24,7 @@ const SERVICES: Record<PushServiceKind, string> = {
   other: '—',
 }
 
-/** Le système et le navigateur, lus dans l'en-tête de l'appareil qui s'est abonné. */
+/** Operating system and browser from the subscribed device's user agent. */
 export function describeDevice(userAgent: string | null): string {
   if (!userAgent) return '?'
   const os = /iPhone/.test(userAgent)
@@ -52,7 +52,7 @@ export function describeDevice(userAgent: string | null): string {
   return browser ? `${browser} · ${os}` : os
 }
 
-/** Sur iPhone, les notifications n'existent que pour l'application ajoutée à l'écran d'accueil. */
+/** iPhone notifications require a home-screen-installed app. */
 function iosOutsideHomeScreen(): boolean {
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent)
   const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
@@ -60,11 +60,8 @@ function iosOutsideHomeScreen(): boolean {
 }
 
 /**
- * Les notifications : cet appareil, tous ceux du compte, un essai, et ce qui notifie.
- *
- * L'abonnement vaut par appareil : le même compte sur un téléphone et sur un ordinateur
- * a deux abonnements distincts. L'état affiché est celui de cet appareil, pas du compte :
- * un abonnement ailleurs ne dit rien de celui-ci.
+ * Notifications for this device, account devices, tests, and preferences. Subscriptions belong to
+ * devices, not accounts; another device's subscription says nothing about this one.
  */
 export function PushControls() {
   const availability = pushAvailability()
@@ -84,8 +81,8 @@ export function PushControls() {
 }
 
 /**
- * L'abonnement de cet appareil seul, pour la visite : la liste des appareils et l'essai
- * n'ont de sens qu'une fois plusieurs appareils abonnés.
+ * This-device subscription only for onboarding: full device lists and tests become useful with
+ * multiple devices.
  */
 export function PushEnrol() {
   const availability = pushAvailability()

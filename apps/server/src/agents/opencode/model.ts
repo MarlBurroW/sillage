@@ -1,7 +1,6 @@
 /**
- * Un modèle opencode s'écrit `fournisseur/modèle`. Seule la première barre sépare :
- * l'identifiant du modèle en contient souvent d'autres (`openrouter/anthropic/claude…`).
- * Null pour la sentinelle « défaut du CLI » ou une chaîne sans fournisseur.
+ * opencode model is provider/model. Only first slash separates; model IDs often contain more
+ * (openrouter/anthropic/claude…). Null for CLI-default sentinel or providerless string.
  */
 export function parseModel(value: string): { providerID: string; modelID: string } | null {
   const slash = value.indexOf('/')

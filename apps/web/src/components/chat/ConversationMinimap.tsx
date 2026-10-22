@@ -5,25 +5,17 @@ import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
- * Réglette des tours, à gauche du fil.
- *
- * Un trait par échange, ceux visibles à l'écran mis en évidence, et le survol montre
- * le début des deux messages. Sur une conversation longue, c'est le seul moyen de
- * situer où on se trouve sans faire défiler à l'aveugle.
- *
- * Les traits sont répartis uniformément plutôt que proportionnellement à la hauteur
- * du contenu : un tour de trois lignes et un tour de trois écrans comptent pareil
- * quand on cherche à retrouver un échange.
- *
- * Au-delà de ce que la hauteur permet, la réglette n'affiche plus toute la
- * conversation mais une fenêtre glissante autour de la position courante. Tasser les
- * traits jusqu'à les coller donnait une cible de clic inatteignable et une bouillie
- * illisible ; le pas reste donc constant et c'est le contenu qui défile.
+ * Turn rail left of the thread: one marker per exchange, highlighting visible turns and previewing
+ * both messages on hover. Locates position in long conversations without blind scrolling. Space
+ * markers uniformly rather than by content height because short and long turns are equally
+ * meaningful navigation targets. When height is insufficient, use a sliding window around current
+ * position rather than shrinking markers into unusable targets. Keep spacing constant and scroll
+ * content instead.
  */
-/** Écart vertical entre deux traits. */
+/** Vertical marker spacing. */
 const TICK_PITCH_PX = 15
 
-/** En dessous, la fenêtre ne situe plus rien : mieux vaut déborder un peu du plafond. */
+/** Below this capacity the window conveys no location; slight overflow is preferable. */
 const MIN_WINDOW = 8
 
 export function ConversationMinimap({
@@ -41,15 +33,14 @@ export function ConversationMinimap({
   const nav = useRef<HTMLElement>(null)
   const [capacity, setCapacity] = useState(0)
 
-  // La hauteur du `nav` est menée par le nombre de tours et le plafond CSS, jamais par
-  // la capacité qu'on en déduit : la mesure ne peut pas se réalimenter.
+  // Nav height follows turn count and CSS cap, never derived capacity, preventing measurement feedback loops.
   useLayoutEffect(() => {
     const node = nav.current
     if (!node) return
 
     const observer = new ResizeObserver(([entry]) => {
-      // Le tableau d'entrées est typé comme pouvant être vide : on n'observe qu'un
-      // noeud, mais rien dans le type ne le dit, et un accès nu ne compile pas.
+      // Entry arrays may be empty by type even though only one node is observed, so direct access
+      // fails compilation.
       if (!entry) return
       setCapacity(Math.max(MIN_WINDOW, Math.floor(entry.contentRect.height / TICK_PITCH_PX)))
     })
@@ -57,8 +48,8 @@ export function ConversationMinimap({
     return () => observer.disconnect()
   }, [])
 
-  // Gardé d'un rendu à l'autre : entre deux synchronisations du défilement, aucun tour
-  // n'est marqué visible et la fenêtre sauterait au début du fil.
+  // Retain across renders: between scroll synchronizations no turn is visible and the window would
+  // jump to the beginning.
   const lastStart = useRef(0)
 
   const start = useMemo(() => {
@@ -81,7 +72,7 @@ export function ConversationMinimap({
     return next
   }, [capacity, turns, visibleIds])
 
-  // Un seul tour ne se situe pas : la réglette n'apporterait rien.
+  // A lone turn needs no rail.
   if (turns.length < 2) return null
 
   const end = capacity > 0 ? Math.min(start + capacity, turns.length) : turns.length
@@ -93,22 +84,19 @@ export function ConversationMinimap({
       aria-label={t('minimap.nav.label')}
       className={cx(
         'pointer-events-none absolute top-1/2 left-5 z-10 hidden -translate-y-1/2',
-        // Seuil aligné sur la gouttière que le fil réserve à cette largeur : au-delà,
-        // la réglette a sa place garantie sans jamais chevaucher le texte.
+        // Match the thread's reserved gutter breakpoint so the rail never overlaps text.
         '@min-[40rem]:flex',
       )}
       /**
-       * Hauteur menée par le nombre de tours, plafonnée à la place disponible : le pas
-       * reste constant tant que ça tient. Une hauteur fixe, elle, écartait les traits
-       * d'autant plus que l'écran était grand.
+       * Height follows turn count up to available space, keeping constant spacing. Fixed height
+       * spread markers further apart on larger screens.
        */
       style={{ height: `min(90%, ${turns.length * TICK_PITCH_PX}px)` }}
     >
       <ul className="pointer-events-auto flex h-full flex-col justify-between">
         {shown.map((turn, index) => {
           const visible = visibleIds.has(turn.id)
-          // Les traits d'extrémité s'estompent du côté où la conversation continue :
-          // c'est ce qui distingue une fenêtre glissante d'une réglette complète.
+          // Fade edge markers where the conversation continues to distinguish sliding windows from complete rails.
           const faded =
             (start > 0 && index < 2) || (end < turns.length && index >= shown.length - 2)
 
@@ -129,15 +117,14 @@ export function ConversationMinimap({
                 />
               </button>
 
-              {/* Infobulle en CSS pur : un positionnement calculé en JavaScript se
-                  recalculerait à chaque delta reçu pendant qu'un tour est en cours. */}
+              {/* Pure-CSS tooltip: JavaScript positioning would recalculate on every live delta. */}
               <div
                 className={cx(
                   'invisible absolute top-1/2 left-full z-20 ml-1 w-72 -translate-y-1/2 opacity-0',
                   'surface rounded-lg border border-line p-2.5 shadow-pop transition-opacity',
                   'group-hover/tick:visible group-hover/tick:opacity-100',
-                  // `:focus-visible` et pas `:focus-within` : un clic laisse le focus sur le
-                  // bouton, et l'infobulle restait affichée après le saut.
+                  // Use focus-visible rather than focus-within: mouse clicks retain button focus
+                  // and would leave tooltips open after navigation.
                   'group-has-[:focus-visible]/tick:visible group-has-[:focus-visible]/tick:opacity-100',
                 )}
               >

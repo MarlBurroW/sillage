@@ -32,8 +32,11 @@ import {
   agentConfigSchema,
   automationConditionsSchema,
   taskReplyBodySchema,
+  renameSessionBodySchema,
   createProjectActionBodySchema,
   updateProjectActionBodySchema,
+  updateCardBodySchema,
+  createCardRelationBodySchema,
   agentKindSchema,
   defaultConfigFor,
   formatSessionMessage,
@@ -60,9 +63,11 @@ import type { AgentRegistry } from '../agents/registry.js'
 import type { EventLog } from '../events/event-log.js'
 import { createWebhook, readSettings, revealSecret, webhookUrl } from '../automations/webhooks.js'
 import { createConversation } from '../conversations/create.js'
+import { adoptSessionTitle } from '../conversations/title.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
-import { advanceCardOnLaunch, createCard } from '../http/routes/cards.js'
+import { advanceCardOnLaunch, createCard, updateCard } from '../http/routes/cards.js'
+import { linkCards, unlinkCards } from '../board/card-relations.js'
 import type { BoardSync } from '../board/board-sync.js'
 import { DecisionRefusal, type DecisionService } from '../decisions/service.js'
 import { createWorktree } from '../http/routes/worktrees.js'
@@ -73,57 +78,31 @@ import { readUserSettings } from '../settings/user-settings.js'
 import { resolveConversationCwd } from '../workspace.js'
 import type { SessionManager } from './session-manager.js'
 
-/**
- * Traite les demandes que les sessions adressent au daemon par le serveur MCP :
- * lancer une autre session, créer une carte, planifier une tâche, lire le catalogue des
- * modèles.
- *
- * Le serveur MCP n'a que la base. Il dépose la demande et attend que ce balayage y
- * écrive le résultat ; plus court que celui du relais, parce qu'ici un agent est
- * suspendu à la réponse.
- *
- * Toutes les réponses sont du texte rédigé pour le modèle, en français comme le reste
- * des outils : c'est lui qui les lit, et une erreur doit lui dire quoi corriger.
- */
+/** Handles MCP daemon requests: session launches, cards, scheduling and model catalogs. MCP only has database access, deposits requests and waits for this sweep to write results. Sweep faster than relays because agents await replies. Responses are model-facing French like other tools; errors explain corrections. */
 
 const POLL_MS = 500
 
-/**
- * Au-delà, une demande n'est plus traitée : le serveur MCP qui l'attendait a rendu la
- * main depuis longtemps, et lancer une session dont personne n'a l'identifiant serait
- * pire que ne rien lancer.
- */
+/** Ignore requests older than this: their MCP callers returned long ago, and launching sessions whose IDs nobody receives would be worse than doing nothing. */
 const STALE_MS = 5 * 60 * 1000
 
-/**
- * Profondeur maximale d'une chaîne de lancements : l'utilisateur ouvre une session, qui
- * en lance une, qui peut en lancer une dernière. Au-delà, chaque étage s'éloigne d'une
- * personne qui regarde, et c'est ainsi qu'un essaim se forme sans que personne l'ait voulu.
- */
+/** Maximum launch-chain depth: human sessions launch one session, which may launch one final session. Further levels drift from human oversight and create unintended swarms. */
 export const MAX_LAUNCH_DEPTH = 2
 
-/** Lancements réussis par session et par heure. */
+/** Successful launches per session per hour. */
 export const LAUNCHES_PER_HOUR = 6
 
-/** Une mission plus longue tient dans un fichier que la mission cite. */
+/** Longer missions belong in files referenced by mission prompts. */
 export const MAX_LAUNCH_PROMPT_CHARS = 20000
 
 const HOUR_MS = 60 * 60 * 1000
 
-/**
- * Cadence la plus serrée qu'un agent peut poser. L'interface descend plus bas, mais là
- * une personne a choisi : une tâche à la minute créée sur un malentendu brûlerait un
- * quota entier avant que quiconque la voie.
- */
+/** Minimum agent-created schedule interval. Interfaces allow tighter intervals because humans choose them; misunderstood per-minute tasks could consume quotas before discovery. */
 export const MIN_AGENT_SCHEDULE_MINUTES = 15
 
-/** Tâches par projet au-delà desquelles un agent n'en ajoute plus. */
+/** Per-project task cap beyond which agents cannot add more. */
 export const MAX_AGENT_SCHEDULES_PER_PROJECT = 20
 
-/**
- * Remplace les `{param}` d'un message d'erreur HTTP : les erreurs des fonctions
- * partagées avec les routes sont écrites pour l'API, le modèle les lit telles quelles.
- */
+/** Interpolates HTTP error `{param}` placeholders because shared route errors are API-oriented but models read them verbatim. */
 function describeError(err: unknown): string {
   if (err instanceof HttpError) {
     return err.message.replace(/\{(\w+)\}/g, (_, key: string) => String(err.params?.[key] ?? key))
@@ -133,14 +112,14 @@ function describeError(err: unknown): string {
 
 class Refusal extends Error {}
 
-/** Doit rester d'accord avec `createWorktreeBodySchema` du protocole : le nom sert aussi de dossier. */
+/** Must match protocol `createWorktreeBodySchema`: names also become directories. */
 function assertWorktreeName(name: string): void {
   if (!/^[A-Za-z0-9._/-]+$/.test(name) || name.split('/').includes('..') || name.startsWith('/') || name.endsWith('/')) {
     throw new Refusal(`Nom de worktree invalide « ${name} » : lettres, chiffres, . _ - / seulement, comme une branche git.`)
   }
 }
 
-/** L'état d'un arbre dit à un agent, avec ce qu'il implique pour lui. */
+/** Agent-facing worktree state with its implications. */
 const WORKTREE_STATE_WORDS = {
   missing: 'introuvable (dossier disparu)',
   dirty: 'non commité',
@@ -148,16 +127,7 @@ const WORKTREE_STATE_WORDS = {
   merged: 'fusionné, rien à garder (à nettoyer)',
 } as const
 
-/**
- * Qui demande : une session, ou un compte sans session.
- *
- * Le second cas est celui d'un CLI local branché sur toute l'instance par le serveur
- * MCP en mode global (`docs/mcp.md`) : la demande porte un `user_id` et pas de
- * conversation. Il a l'`id` vide, pas de worktree ni de tâche d'origine, et tout ce qui
- * tient à une session (chaîne de lancements, note de provenance, décision) ne s'y
- * applique pas. Un `Pick` et non la ligne entière, pour que le type dise ce que les
- * traitements lisent vraiment.
- */
+/** Requester is a session or an account without sessions. Global MCP local clients (`docs/mcp.md`) supply `user_id` instead of conversations, with empty `id`, no worktree/task ancestry and no session-specific launch chains, provenance notes or decisions. Use `Pick` rather than whole rows so types expose only fields actually read. */
 type Requester = Pick<ConversationRow, 'id' | 'projectId' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'>
 
 interface StartSessionPayload {
@@ -179,17 +149,17 @@ export class AgentRequests {
     private readonly ctx: AppContext,
     private readonly sessions: SessionManager,
     private readonly registry: AgentRegistry,
-    /** Absent des tests qui n'en ont pas l'usage : `run_action` y est alors refusé. */
+    /** Optional in unrelated tests; absent means `run_action` is rejected. */
     private readonly actions?: ActionRunner,
-    /** Clé des secrets de signature des webhooks ; sans elle, `create_automation` est refusé. */
+    /** Webhook signing-secret key; absent means `create_automation` is rejected. */
     private readonly encryptionKey?: Buffer,
-    /** Board relié à GitHub ; sans lui, `create_card` reste local. */
+    /** GitHub board connection; absent keeps `create_card` local. */
     private readonly board?: BoardSync,
-    /** Décisions des sessions autonomes ; sans lui, `request_decision` est refusé. */
+    /** Autonomous-session decisions; absent means `request_decision` is rejected. */
     private readonly decisions?: DecisionService,
-    /** Journal, pour retrouver la sollicitation ouverte que `reply_session` résout. */
+    /** Journal for finding open requests resolved by `reply_session`. */
     private readonly log?: EventLog,
-    /** Avancement des worktrees ; sans lui, `list_worktrees` est refusé. */
+    /** Worktree progress; absent means `list_worktrees` is rejected. */
     private readonly worktreeStatus?: WorktreeStatusService,
   ) {}
 
@@ -255,12 +225,28 @@ export class AgentRequests {
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
         this.settle(request.id, text, false, launchedId)
+      } else if (request.kind === 'rename_session') {
+        if (!conversation) throw new Refusal("Cet outil ne renomme que ta propre session, pas une session désignée de l'extérieur.")
+        const { title } = renameSessionBodySchema.parse(payload)
+        const result = adoptSessionTitle(this.ctx.db, this.sessions.statusBus, conversation.id, title, 'agent')
+        if (result === 'missing') throw new Refusal("Cette session n'existe plus.")
+        this.settle(request.id, result === 'protected'
+          ? "Le titre a été choisi par l'utilisateur : il est conservé. Ne réessaie pas de le renommer."
+          : `Titre de ta session : « ${title} ».`, false)
       } else if (request.kind === 'schedule_task') {
         this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
       } else if (request.kind === 'request_decision' || request.kind === 'withdraw_decision') {
-        // Une décision est posée au nom d'une session autonome : sans session, personne.
+        // Decisions require autonomous session identities: without sessions, none.
         if (!conversation) throw new Refusal("Cet outil ne sert qu'aux sessions autonomes : hors session, il n'y a pas de décision à demander.")
         this.settle(request.id, await this.decide(request.kind, conversation, payload), false)
+      } else if (request.kind === 'link_cards' || request.kind === 'unlink_cards') {
+        if (!Number.isInteger(payload.number)) throw new Refusal('Le numéro de la carte est requis.')
+        const { target, kind } = createCardRelationBodySchema.parse(payload)
+        const change = request.kind === 'link_cards' ? linkCards : unlinkCards
+        change(this.ctx.db, requester.projectId, payload.number as number, target, kind)
+        this.settle(request.id, request.kind === 'link_cards' ? 'Relation ajoutée.' : 'Relation supprimée.', false)
+      } else if (request.kind === 'update_card') {
+        this.settle(request.id, this.updateCard(requester, payload), false)
       } else if (request.kind === 'create_card') {
         this.settle(request.id, await this.createCard(requester, payload), false)
       } else if (request.kind === 'register_action') {
@@ -293,12 +279,7 @@ export class AgentRequests {
     }
   }
 
-  /**
-   * Le demandeur d'une demande sans session : le compte qu'elle nomme.
-   *
-   * Le CLI par défaut est Claude, comme pour un projet neuf dans l'interface ; le client
-   * global passe `agent` quand il en veut un autre, et sa description le lui dit.
-   */
+  /** Sessionless requester account named in the request. Default CLI is Claude like new interface projects; global clients specify `agent` for another, as descriptions explain. */
   private principal(request: AgentRequestRow): Requester {
     if (!request.userId) throw new Refusal("La demande ne vient d'aucune session ni d'aucun compte : Sillage ne sait pas pour qui agir.")
     const user = this.ctx.db.select().from(users).where(eq(users.id, request.userId)).get()
@@ -359,8 +340,8 @@ export class AgentRequests {
       origin: null,
       firstMessage: {
         clientMessageId: randomUUID(),
-        // Lancée par un compte et non par une session : la mission arrive nue, comme si
-        // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
+        // Account-launched missions arrive bare like user input,
+        // without provenance notes referencing nonexistent sessions.
         text: requester.id
           ? formatSessionMessage({
               kind: 'launch',
@@ -393,13 +374,7 @@ export class AgentRequests {
     return { text: lines.filter(Boolean).join('\n'), launchedId: row.id }
   }
 
-  /**
-   * Garde-fous d'un lancement : profondeur de la chaîne et cadence.
-   *
-   * La chaîne se remonte par les demandes elles-mêmes, qui gardent la session née de
-   * chacune : pas de colonne à ajouter aux conversations pour une question que seul ce
-   * module pose.
-   */
+  /** Launch depth and rate safeguards. Walk ancestry through requests retaining created session IDs, avoiding conversation columns needed solely by this module. */
   private assertLaunchAllowed(requester: Requester, requestId: string): void {
     const refusal = launchRefusal(this.ctx.db, requester.id, requestId)
     if (refusal) throw new Refusal(refusal.message)
@@ -414,15 +389,7 @@ export class AgentRequests {
     return parsed.data
   }
 
-  /**
-   * La configuration d'une session lancée : celle que l'interface proposerait pour ce
-   * CLI dans ce projet, préréglage du projet puis défauts du compte, avec le modèle et
-   * l'effort demandés par-dessus.
-   *
-   * Rien d'autre n'est réglable par l'agent, et surtout pas les permissions : une
-   * session lancée par une autre n'a pas plus de latitude que celle que l'utilisateur
-   * aurait ouverte d'un clic.
-   */
+  /** Launched-session configuration matches interface proposals: project presets then account defaults for the selected CLI, overridden by requested model and effort. Agents cannot change other settings, especially permissions; delegated sessions gain no more latitude than human one-click launches. */
   private async launchConfig(
     agent: AgentKind,
     project: ProjectRow,
@@ -457,16 +424,16 @@ export class AgentRequests {
       config = { ...config, model: model?.value ?? requestedModel }
     }
 
-    // Le modèle effectif, une fois les défauts résolus : c'est lui qui dit quels
-    // niveaux d'effort existent.
+    // Effective model after defaults resolution determines which
+    // effort levels are available.
     config = await this.registry.adapter(agent).resolveDefaults(config)
 
     const model = catalog.find((entry) => entry.value === config.model) ?? catalog.find((entry) => entry.isDefault)
     const efforts = model?.efforts.map((entry) => entry.value) ?? []
     const current = effortOf(config)
     if (!requestedEffort && model?.defaultEffort && efforts.length > 0 && !efforts.includes(current)) {
-      // Le modèle demandé ne connaît pas l'effort des défauts : son propre défaut, comme
-      // le fait le sélecteur de l'interface, plutôt qu'un lancement qui échouerait.
+      // Requested models use their own default effort rather than inherited defaults,
+      // matching interface selection and avoiding invalid launches.
       config = withEffort(config, model.defaultEffort)
     }
 
@@ -487,13 +454,7 @@ export class AgentRequests {
     return parsed.data
   }
 
-  /**
-   * Où travaille la session lancée.
-   *
-   * Par défaut dans le même arbre que celle qui lance : c'est ce qu'on attend pour
-   * « continue ça dans une autre session ». Un bug sans rapport mérite souvent son
-   * worktree, que l'agent nomme ; `@root` désigne la racine du projet.
-   */
+  /** Launched-session working location. Default to the launcher's tree for 'continue this elsewhere'. Unrelated bugs often deserve named worktrees; `@root` selects project roots. */
   private async launchTree(
     requester: Requester,
     project: ProjectRow,
@@ -519,20 +480,7 @@ export class AgentRequests {
 
   // --- create_worktree, list_worktrees ---------------------------------------------
 
-  /**
-   * Crée un worktree pour la session qui le demande, au même endroit et de la même façon
-   * que l'interface, puis l'y rattache.
-   *
-   * Le rattachement passe par `conversation_paths`, comme une écriture dans l'arbre, et
-   * jamais par `conversations.worktree_id` : ce dernier décide du cwd à la reprise, et
-   * Claude range ses transcripts par dossier de travail, si bien qu'une session dont on
-   * changerait le cwd après coup ne se retrouverait plus. Le cwd reste donc où il est,
-   * et l'agent travaille dans l'arbre par chemins absolus.
-   *
-   * Une branche neuve part de la branche par défaut du projet et non de HEAD : la
-   * session qui demande est souvent dans l'arbre principal, resté sur une autre branche
-   * que celle qu'on croit.
-   */
+  /** Creates worktrees identically to the interface then attaches requesting sessions through `conversation_paths`, never `conversations.worktree_id`. The latter controls resume cwd, and changing it would lose Claude transcripts organized by working directory. Keep cwd and use absolute paths for worktree edits. New branches start from project default branches, not HEAD: requesting sessions often inhabit main trees left on unexpected branches. */
   private async createWorktreeFor(requester: Requester, project: ProjectRow, payload: Record<string, unknown>): Promise<string> {
     const branch = typeof payload.branch === 'string' ? payload.branch.trim() : ''
     if (!branch) throw new Refusal('Le paramètre `branch` est requis : le nom de la branche, par exemple `fix/titre-tronque`.')
@@ -550,7 +498,7 @@ export class AgentRequests {
       origin = 'Il existait déjà : Sillage te le rend tel quel.'
     } else {
       const requested = typeof payload.base === 'string' ? payload.base.trim() : ''
-      // Passée telle quelle à `git worktree add` : un tiret en tête serait lu comme une option.
+      // Passed unchanged to `git worktree add`: leading hyphens would become options.
       if (requested && (!/^[A-Za-z0-9._/@{}^~-]+$/.test(requested) || requested.startsWith('-'))) {
         throw new Refusal(`Base invalide « ${requested} » : un nom de branche, de tag ou de commit.`)
       }
@@ -588,12 +536,7 @@ export class AgentRequests {
       .join('\n')
   }
 
-  /**
-   * Les arbres du projet et leur avancement, tels que la vue Chantiers les montre.
-   *
-   * Attend un calcul à jour plutôt que de rendre la liste périmée que l'interface
-   * accepte : un agent qui demande s'il peut reprendre un arbre décide sur la réponse.
-   */
+  /** Project trees and progress as shown in Worktrees. Await fresh calculations rather than return interface-acceptable stale lists because agents make reuse decisions from answers. */
   private async listWorktrees(requester: Requester, project: ProjectRow): Promise<string> {
     if (!this.worktreeStatus) throw new Refusal("L'avancement des worktrees n'est pas disponible ici.")
     const list = await this.worktreeStatus.current(project)
@@ -652,14 +595,7 @@ export class AgentRequests {
 
   // --- schedule_task -------------------------------------------------------------
 
-  /**
-   * Crée une tâche planifiée, comme le ferait le formulaire de l'interface.
-   *
-   * Même latitude qu'un lancement : le modèle et l'effort se choisissent, les
-   * permissions restent celles des défauts du projet. Elles comptent davantage ici,
-   * personne n'étant là pendant les tirs, et la réponse les rappelle pour que l'agent
-   * le dise à l'utilisateur.
-   */
+  /** Creates scheduled tasks like interface forms. Model/effort choices remain available but permissions retain project defaults, especially important for unattended runs. Responses repeat them so agents can inform users. */
   private async scheduleTask(
     requester: Requester,
     project: ProjectRow,
@@ -758,12 +694,7 @@ export class AgentRequests {
 
   // --- create_automation ---------------------------------------------------------
 
-  /**
-   * Une automatisation déclenchée par webhook, avec les bornes de `schedule_task` : pas
-   * depuis une session elle-même née d'une automatisation, et un plafond par projet.
-   * Le secret de signature est rendu à l'agent, qui en a besoin pour brancher le
-   * webhook chez l'appelant (`gh api repos/…/hooks`).
-   */
+  /** Webhook automation with `schedule_task` limits: no creation by automation-born sessions and project caps. Return signing secrets because agents need them to configure caller webhooks (`gh api repos/…/hooks`). */
   private async createAutomation(
     requester: Requester,
     project: ProjectRow,
@@ -864,12 +795,26 @@ export class AgentRequests {
     }
   }
 
+  private updateCard(requester: Requester, payload: Record<string, unknown>): string {
+    if (!Number.isInteger(payload.number)) throw new Refusal('Le numéro de la carte est requis.')
+    const card = this.ctx.db.select().from(cards)
+      .where(and(eq(cards.projectId, requester.projectId), eq(cards.number, payload.number as number))).get()
+    if (!card) throw new Refusal('Aucune carte de ce numéro dans ce projet.')
+    const body = updateCardBodySchema.pick({ title: true, description: true }).parse({
+      title: typeof payload.title === 'string' ? payload.title.trim() : payload.title,
+      description: payload.description,
+    })
+    if (body.title === undefined && body.description === undefined) {
+      throw new Refusal('Donne au moins un titre ou une description à modifier.')
+    }
+    updateCard(this.ctx.db, card, body)
+    this.board?.kick(requester.projectId)
+    return `Carte #${card.number} mise à jour.`
+  }
+
   // --- create_card ---------------------------------------------------------------
 
-  /**
-   * Toujours en « à faire » : une carte ouverte par un agent est une proposition, pas
-   * un travail engagé. Elle avance quand une session la prend, comme toute autre.
-   */
+  /** Always create todo cards: agent ideas are proposals rather than started work. Advance when sessions take them, like other cards. */
   private async createCard(requester: Requester, payload: Record<string, unknown>): Promise<string> {
     const title = typeof payload.title === 'string' ? payload.title.trim() : ''
     const description = typeof payload.description === 'string' ? payload.description.trim() : ''
@@ -877,8 +822,8 @@ export class AgentRequests {
     if (title.length > 200) throw new Refusal('Titre trop long (200 caractères au plus).')
     if (description.length > 20000) throw new Refusal('Description trop longue (20 000 caractères au plus).')
 
-    // Le réglage du board décide, sauf demande explicite de l'agent, qui ne la fait que
-    // si l'utilisateur la lui a donnée : l'outil le lui dit.
+    // Board settings decide unless agents explicitly request otherwise based on
+    // user instructions, as tool descriptions require.
     const link = this.board?.link(requester.projectId)
     if (payload.github === true && !link) {
       throw new Refusal("Ce board n'est pas relié à GitHub : la carte ne peut être que locale. Recommence sans `github`.")
@@ -894,9 +839,9 @@ export class AgentRequests {
             requester.id ? { agent: requester.agent, conversationId: requester.id } : undefined,
           )
         : createCard(this.ctx.db, requester.projectId, requester.userId, fields)
-    // La provenance se lit dans le fil de la carte, avec un lien vers la session : la
-    // description reste celle que l'agent a rédigée, et la personne qui la reprendra
-    // sait d'où elle vient. Une carte ouverte au nom d'un compte porte déjà son auteur.
+    // Provenance lives in card threads with session links, preserving agent-written
+    // descriptions while showing origins to subsequent users.
+    // Account-created cards already identify their authors.
     if (requester.id) {
       this.ctx.db
         .insert(cardNotes)
@@ -928,15 +873,12 @@ export class AgentRequests {
       const row = loadAction(this.ctx.db, id)
       if (row.projectId === requester.projectId) return row
     } catch {
-      // Même réponse qu'une action d'un autre projet.
+      // Same response as for another project's action.
     }
     throw new Refusal(`Aucune action \`${id}\` dans ce projet : list_actions donne les identifiants.`)
   }
 
-  /**
-   * Créée ou modifiée en `proposed` : l'utilisateur relit la commande avant que son
-   * premier clic la lance. Renommer ou redécrire un bouton relu ne change pas son statut.
-   */
+  /** Create/edit as `proposed` so users review commands before clicking to launch. Renaming or redescribing reviewed buttons does not change status. */
   private registerAction(requester: Requester, payload: Record<string, unknown>): string {
     const fields = Object.fromEntries(
       ['label', 'description', 'kind', 'command', 'subdir', 'url']
@@ -965,17 +907,13 @@ export class AgentRequests {
     return `Action « ${row.label} » supprimée${row.kind === 'service' ? ', et son service arrêté' : ''}.`
   }
 
-  /**
-   * Lance l'action dans le worktree de la session qui demande. Permis même pour une
-   * action encore proposée : l'agent pourrait exécuter la même commande dans son shell,
-   * la relecture protège le clic de l'utilisateur, pas l'agent de lui-même.
-   */
+  /** Runs actions in requester worktrees, even proposed actions: agents could run identical shell commands already. Review protects user clicks rather than agents from themselves. */
   private async runAction(requester: Requester, payload: Record<string, unknown>): Promise<string> {
     if (!this.actions) throw new Refusal('Les actions ne sont pas disponibles sur ce serveur.')
     const row = this.projectAction(requester, payload.id)
     const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester), requester.id || null)
     if (result.service) {
-      // Un temps pour qu'un échec immédiat (port pris, commande introuvable) se voie.
+      // Wait briefly to observe immediate failures (occupied ports, missing commands).
       if (!result.alreadyRunning) await new Promise((resolve) => setTimeout(resolve, 2000))
       const fresh = await this.actions.toDto(row)
       return describeRun(row.label, result, fresh.service)
@@ -983,17 +921,9 @@ export class AgentRequests {
     return describeRun(row.label, result, null)
   }
 
-  // --- gestes sur une session existante -------------------------------------------
+  // --- Existing-session operations -----------------------------------------------
 
-  /**
-   * Ce qu'un client hors session fait à une session, comme l'utilisateur le ferait
-   * dans l'interface : lui écrire, infléchir son tour, l'arrêter, répondre à ce qu'elle
-   * demande. Réservé aux demandeurs sans session : une session qui veut parler à une
-   * autre a send_session_message, qui signe et remet le message dans les formes.
-   *
-   * La cible est une conversation du projet de la demande, qui appartient au compte :
-   * les mêmes bornes que `loadTaskForToken` côté API.
-   */
+  /** Sessionless clients act like interface users: send, steer, stop and answer requests. Sessions instead use signed send_session_message delivery. Targets must belong to the request project and account, matching API `loadTaskForToken` boundaries. */
   private async actOnSession(
     kind: 'message_session' | 'steer_session' | 'interrupt_session' | 'reply_session',
     requester: Requester,
@@ -1027,8 +957,8 @@ export class AgentRequests {
       throw new Refusal(`Message trop long (${body.length} caractères, ${MAX_LAUNCH_PROMPT_CHARS} au plus).`)
     }
     if (kind === 'steer_session') {
-      // Une inflexion n'existe que pendant un tour, et l'appelant perd souvent la
-      // course : le texte repart alors en message ordinaire plutôt que de se perdre.
+      // Steering exists only during active turns and callers often lose the
+      // race: fall back to an ordinary message rather than losing the text.
       const steered = await this.sessions.steer(target.id, randomUUID(), body, [], [])
       if (steered) return `Tour de « ${target.title} » infléchi : le CLI lit le message dans le tour en cours.`
       await this.sessions.sendMessage(target.id, randomUUID(), body, [], [])
@@ -1041,7 +971,7 @@ export class AgentRequests {
       : `Message remis à « ${target.title} » : elle reprend, comme si l'utilisateur l'avait tapé dans Sillage. wait_for_session puis read_session pour voir sa réponse.`
   }
 
-  /** Répond à la sollicitation ouverte, selon sa nature, comme la route `replies` de l'API. */
+  /** Answers open requests according to type, like API `replies` routes. */
   private async replyToSession(target: ConversationRow, requester: Requester, payload: Record<string, unknown>): Promise<string> {
     if (!this.log) throw new Refusal('Les réponses aux sollicitations ne sont pas disponibles sur ce serveur.')
     const requestId = typeof payload.request_id === 'string' ? payload.request_id.trim() : ''
@@ -1114,12 +1044,7 @@ export class AgentRequests {
   }
 }
 
-/**
- * La cadence telle qu'un agent la donne : exactement un de `every_minutes`, `cron`, `at`.
- *
- * Trois paramètres à plat plutôt qu'un objet discriminé : c'est la forme qu'un modèle
- * remplit sans se tromper, et celle de `CronCreate` qu'il connaît déjà.
- */
+/** Agent cadence: exactly one of `every_minutes`, `cron`, `at`. Flat parameters rather than discriminated objects match familiar `CronCreate` and reduce model mistakes. */
 function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence {
   const given = ['every_minutes', 'cron', 'at'].filter(
     (key) => payload[key] !== undefined && payload[key] !== null && payload[key] !== '',
@@ -1175,10 +1100,7 @@ function nameModel(model: AgentModelDto): string {
   return model.displayName && model.displayName !== model.value ? `${model.value} (${model.displayName})` : model.value
 }
 
-/**
- * Trouve le modèle que l'agent désigne, souvent du nom qu'a dit l'utilisateur
- * (« Astra », « opus ») plutôt que de son identifiant exact.
- */
+/** Finds models by agent-supplied names, often user labels such as 'Astra' or 'opus' instead of exact IDs. */
 export function matchModel(catalog: AgentModelDto[], wanted: string): AgentModelDto | null {
   const needle = wanted.toLowerCase()
   const exact = catalog.find((model) => model.value.toLowerCase() === needle)
@@ -1188,17 +1110,12 @@ export function matchModel(catalog: AgentModelDto[], wanted: string): AgentModel
   const partial = catalog.filter(
     (model) => model.value.toLowerCase().includes(needle) || model.displayName.toLowerCase().includes(needle),
   )
-  // Un seul candidat, ou rien : deviner entre deux modèles serait choisir à la place
-  // de l'utilisateur.
+  // Require unique candidates: guessing between models would choose on behalf
+  // of the user.
   return partial.length === 1 ? (partial[0] ?? null) : null
 }
 
-/**
- * `max` vaut le niveau de ce nom s'il existe (Codex en propose un, sous `ultra`), et
- * sinon le plus haut du modèle : l'utilisateur dit « effort max » sans savoir qu'un
- * modèle donné s'arrête à `xhigh`. Les catalogues listent les niveaux du plus bas au
- * plus haut.
- */
+/** `max` selects a literal level when available (Codex has one below `ultra`), otherwise the model maximum. Users request maximum effort without knowing models may stop at `xhigh`. Catalog levels run lowest to highest. */
 export function matchEffort(efforts: string[], wanted: string): string | null {
   if (efforts.includes(wanted)) return wanted
   if (wanted === 'max' || wanted === 'maximum') return efforts.at(-1) ?? null
@@ -1207,14 +1124,14 @@ export function matchEffort(efforts: string[], wanted: string): string | null {
 }
 
 function withEffort(config: AgentConfig, effort: string): AgentConfig {
-  // Le schéma refuse plus bas un niveau que Claude ne connaît pas : le transtypage ne
-  // sert qu'à passer la chaîne jusque-là.
+  // Schemas reject unsupported Claude levels later; the cast merely passes
+  // the string through to validation.
   if (config.agent === 'claude') return { ...config, effort: effort as typeof config.effort }
   if (config.agent === 'codex' || config.agent === 'grok') return { ...config, reasoningEffort: effort }
   return { ...config, variant: effort }
 }
 
-/** L'effort sous le nom que chaque CLI lui donne : la variante, chez opencode. */
+/** Effort named according to each CLI, including opencode variants. */
 function effortOf(config: AgentConfig): string {
   if (config.agent === 'claude') return config.effort
   if (config.agent === 'opencode') return config.variant
@@ -1269,14 +1186,7 @@ function describeRun(
   return `« ${label} » lancé dans un terminal du panneau, sous les yeux de l'utilisateur. Tu n'en lis pas la sortie : pour l'exploiter toi-même, exécute la commande dans ton shell.`
 }
 
-/**
- * Pourquoi la session `from` ne peut plus en lancer d'autre, ou null si elle le peut :
- * trop profonde dans une chaîne de lancements, ou trop de lancements dans l'heure.
- *
- * Partagée avec les webhooks : un appel qui porte la marque d'une session compte comme
- * un lancement fait par elle (`webhook_launch`), et les mêmes limites s'appliquent, que
- * la chaîne passe par `start_session` ou par une issue ouverte sur GitHub.
- */
+/** Why `from` cannot launch more sessions, or null: excessive chain depth or hourly launches. Shared with webhooks: session-marked calls count as its `webhook_launch`, applying identical limits whether chains use start_session or GitHub issues. */
 export function launchRefusal(
   db: AppContext['db'],
   from: string,
@@ -1297,8 +1207,8 @@ export function launchRefusal(
   if (depth >= MAX_LAUNCH_DEPTH) {
     return {
       reason: { code: 'chain_depth', params: { depth, max: MAX_LAUNCH_DEPTH } },
-      // Le message va à l'agent, en français comme tout ce que Sillage lui écrit ; la
-      // raison codée va à l'interface, qui la traduit.
+      // Agent messages use French like all Sillage model-facing text;
+      // coded reasons go to interfaces for translation.
       message: `Refusé : cette session a elle-même été lancée par une session qui l'avait été (${depth} niveaux). Au-delà de ${MAX_LAUNCH_DEPTH}, plus de lancement en chaîne. Crée plutôt une carte avec create_card, ou propose à l'utilisateur de lancer la session lui-même.`,
     }
   }

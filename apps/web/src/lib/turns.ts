@@ -1,15 +1,15 @@
 import { parseSessionMessage } from '@sillage/protocol'
 import type { ChatItem, MessageItem } from './chat-fold'
 
-/** Un tour de conversation, tel que la réglette de repères le représente. */
+/** Conversation turn represented by turn navigation. */
 export interface TurnMarker {
-  /** Identifiant du message utilisateur : sert aussi d'ancre dans le fil. */
+  /** User message ID, also serving as the thread anchor. */
   id: string
   user: string
   assistant: string
 }
 
-/** Assez pour reconnaître un tour au survol, sans transformer l'infobulle en pavé. */
+/** Enough to recognize a hovered turn without creating an oversized tooltip. */
 const EXCERPT_LENGTH = 140
 
 function excerpt(message: MessageItem): string {
@@ -17,12 +17,11 @@ function excerpt(message: MessageItem): string {
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join(' ')
-  // Un message d'une autre session se résume par son expéditeur et son corps, pas par
-  // ses balises ni par la note adressée au modèle.
+  // Summarize messages from another session by sender and body, excluding tags and model-facing notes.
   const peer = message.role === 'user' ? parseSessionMessage(raw) : null
   const text = (peer ? `[${peer.title || peer.from}] ${peer.body}` : raw)
-    // Le tampon de streaming complète le texte tant que le message n'est pas fini,
-    // sinon le tour en cours apparaîtrait vide dans la réglette.
+    // Streaming buffers complete text until the message finishes; otherwise current turns appear
+    // empty in navigation.
     .concat(message.streamingText)
     .replace(/\s+/g, ' ')
     .trim()
@@ -31,19 +30,17 @@ function excerpt(message: MessageItem): string {
 }
 
 /**
- * Découpe le fil en tours : chaque message utilisateur en ouvre un, et la première
- * réponse de l'assistant qui suit lui est rattachée.
- *
- * Les appels d'outils et les demandes de permission sont ignorés : la réglette sert
- * à retrouver un échange, pas à détailler ce qui s'est passé dedans.
+ * Split the thread into turns: every user message opens one and receives the following first
+ * assistant reply. Ignore tool calls and permission requests: navigation locates exchanges rather
+ * than detailing their internals.
  */
 export function buildTurns(items: ChatItem[]): TurnMarker[] {
   const turns: TurnMarker[] = []
 
   for (const item of items) {
     if (item.kind !== 'message') continue
-    // Ce qu'écrit un sous-agent vit dans le panneau, pas dans le fil : le citer comme
-    // réponse du tour renverrait vers un texte absent à l'ancre.
+    // Subagent text lives in the panel, not the thread: citing it as the turn reply would target
+    // text absent from the anchor.
     if (item.parentToolCallId) continue
 
     if (item.role === 'user') {

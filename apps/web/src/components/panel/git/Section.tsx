@@ -3,12 +3,9 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { cx } from '../../ui'
 
 /**
- * Une section dépliable de l'onglet Git.
- *
- * L'onglet empile ce qu'un client git montre en colonnes : les changements, les
- * branches, les stashs, les commits. Dans un panneau qui fait parfois 390 px de large,
- * tout ouvrir d'un coup noierait ce qu'on cherche ; chaque section se replie, et retient
- * son état d'une ouverture à l'autre.
+ * Collapsible Git section. Stack the changes/branches/stashes/commits that desktop Git clients
+ * place in columns. Sometimes only 390px wide, the panel needs independent remembered collapse
+ * state to avoid overwhelming users.
  */
 export function Section({
   title,
@@ -19,11 +16,11 @@ export function Section({
   children,
 }: {
   title: string
-  /** Décompte à côté du titre. Zéro n'affiche rien. */
+  /** Count beside title; zero displays nothing. */
   count?: number
   open: boolean
   onToggle: () => void
-  /** Boutons propres à la section, à droite du titre. Toujours visibles, repliée ou non. */
+  /** Section buttons right of title, visible whether collapsed or expanded. */
   actions?: ReactNode
   children: ReactNode
 }) {
@@ -68,10 +65,8 @@ function readStates(): Record<string, boolean> {
 }
 
 /**
- * Ouverture d'une section, retenue entre les sessions.
- *
- * Partagée entre toutes les portées : qui replie les branches le fait par goût, pas pour
- * un dépôt en particulier.
+ * Persist section state across sessions and scopes: collapsing branches expresses preference rather
+ * than repository-specific behavior.
  */
 export function useSectionOpen(name: string, fallback: boolean): [boolean, () => void] {
   const [open, setOpen] = useState(() => readStates()[name] ?? fallback)
@@ -83,7 +78,7 @@ export function useSectionOpen(name: string, fallback: boolean): [boolean, () =>
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(states))
     } catch {
-      /* Un stockage plein n'empêche pas de plier la section pour cette fois. */
+      /* Full storage must not prevent collapsing for the current visit. */
     }
   }, [name, open])
 

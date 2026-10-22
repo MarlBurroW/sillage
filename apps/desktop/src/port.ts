@@ -3,12 +3,12 @@ import { createServer } from 'node:net'
 import { dirname } from 'node:path'
 
 /**
- * Le port du serveur local, choisi une fois et gardé dans les réglages de l'app.
+ * Local server port, chosen once and kept in app settings.
  *
- * L'origine de la page (`http://127.0.0.1:<port>`) porte le stockage local du navigateur :
- * brouillons, préférences d'affichage, panneaux ouverts. Un port tiré à chaque lancement
- * les ferait repartir de zéro. Il n'est remplacé que s'il est pris, par un autre
- * programme ou par une installation serveur de Sillage sur le même poste.
+ * The page origin (`http://127.0.0.1:<port>`) owns browser local storage: drafts,
+ * display preferences, open panels. Choosing a new port each launch would reset
+ * them. Replace it only when occupied by another program or a Sillage server
+ * installation on the same machine.
  */
 export async function stablePort(file: string): Promise<number> {
   const saved = readSavedPort(file)

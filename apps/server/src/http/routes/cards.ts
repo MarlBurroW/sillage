@@ -22,6 +22,7 @@ import {
 import {
   MAX_ATTACHMENT_BYTES,
   createCardBodySchema,
+  createCardRelationBodySchema,
   createCardNoteBodySchema,
   parseCardReferences,
   reorderCardsBodySchema,
@@ -36,25 +37,24 @@ import {
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { linkCards, listCardRelations, unlinkCards } from '../../board/card-relations.js'
 
 const MENTION_LIMIT = 20
 
 /**
- * Le board : les cartes d'un projet, c'est-à-dire le travail à faire, distinct des
- * conversations qui l'exécutent.
+ * Board cards represent project work, separate from the conversations doing it.
  *
- * Ce fichier ne dérive rien. La colonne d'une carte est une position choisie, écrite
- * par un geste et par lui seul ; l'activité se lit sur les conversations rattachées et
- * l'état de merge dans git, tous deux hors de cette table. Une seule transition
- * automatique existe dans tout le chantier, `todo` vers `in_progress` au lancement
- * d'une session, et elle vit dans la route de création de conversation parce que c'est
- * l'envoi du message qui la déclenche, pas l'observation d'une session active.
+ * This file derives no state. A card's column is a deliberate position changed
+ * only by an action; activity comes from attached conversations and merge status
+ * from git, both outside this table. The sole automatic transition, `todo` to
+ * `in_progress` on session launch, lives in conversation creation because sending
+ * a message triggers it, not observing an active session.
  */
 export function registerCardRoutes(
   app: FastifyInstance,
   ctx: AppContext,
   store: AttachmentStore,
-  /** Absent des tests qui n'en ont pas l'usage : le board ne se relie alors à rien. */
+  /** Optional in tests that do not use it; the board remains disconnected. */
   board?: BoardSync,
 ): void {
   const loadProject = (projectId: string, userId: string): ProjectRow => {
@@ -73,10 +73,10 @@ export function registerCardRoutes(
   }
 
   /**
-   * Assemble les cartes d'un projet en un petit nombre de requêtes.
+   * Assembles project cards with a small number of queries.
    *
-   * Les conversations et les références se lisent en bloc plutôt que carte par carte :
-   * un board de trente cartes ferait autrement quatre-vingt-dix requêtes pour un écran.
+   * Read conversations and references in bulk rather than per card: otherwise
+   * a thirty-card board would require ninety queries for one screen.
    */
   const buildDtos = (projectId: string, rows: CardRow[]): CardDto[] => {
     if (rows.length === 0) return []
@@ -225,6 +225,9 @@ export function registerCardRoutes(
       createdByName: authors.get(row.createdBy) ?? '',
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      // Cards created before the migration and never touched have none:
+      // their creation time remains their arrival time.
+      columnEnteredAt: row.columnEnteredAt ?? row.createdAt,
       conversations: sessions.get(row.id) ?? [],
       noteCount: notes.get(row.id) ?? 0,
       attachmentCount: files.get(row.id) ?? 0,
@@ -258,11 +261,10 @@ export function registerCardRoutes(
   })
 
   /**
-   * Cartes citables, pour l'autocomplétion `#` du composer.
+   * Referencable cards for composer `#` completion.
    *
-   * Distincte de la liste du board : celle-ci porte les sessions et les backlinks de
-   * chaque carte, poids inutile pour une liste déroulante qui n'affiche qu'un numéro
-   * et un titre.
+   * Separate from the board list, which includes each card's sessions and
+   * backlinks: unnecessary weight for a dropdown showing only numbers and titles.
    */
   app.get('/api/projects/:id/cards/mentions', async (request) => {
     const user = requireUser(request)
@@ -279,8 +281,8 @@ export function registerCardRoutes(
           ? eq(cards.projectId, id)
           : and(
               eq(cards.projectId, id),
-              // Le numéro se cherche par préfixe et le titre par sous-chaîne : taper
-              // « 1 » veut dire la carte 1, pas toutes celles dont le numéro contient un 1.
+              // Match numbers by prefix and titles by substring: entering '1' means card 1,
+              // not every card whose number contains a 1.
               sql`(${cards.title} LIKE ${`%${query}%`} COLLATE NOCASE
                    OR CAST(${cards.number} AS TEXT) LIKE ${`${query}%`})`,
             ),
@@ -298,7 +300,7 @@ export function registerCardRoutes(
     const { github, ...body } = createCardBodySchema.parse(request.body)
     loadProject(id, user.id)
 
-    // Le réglage du board décide, sauf choix explicite ; sans board relié, tout est local.
+    // Board settings decide unless explicitly overridden; disconnected boards are local.
     const link = board?.link(id)
     const row =
       board && link && (github ?? link.newCards === 'github')
@@ -307,33 +309,36 @@ export function registerCardRoutes(
     return reply.status(201).send(readCard(row.id, id))
   })
 
+  app.get('/api/cards/:id/relations', async (request) => {
+    const user = requireUser(request)
+    const { card } = loadCard((request.params as { id: string }).id, user.id)
+    return listCardRelations(ctx.db, card.projectId, card.number)
+  })
+
+  app.post('/api/cards/:id/relations', async (request) => {
+    const user = requireUser(request)
+    const { card } = loadCard((request.params as { id: string }).id, user.id)
+    const body = createCardRelationBodySchema.parse(request.body)
+    linkCards(ctx.db, card.projectId, card.number, body.target, body.kind)
+    return listCardRelations(ctx.db, card.projectId, card.number)
+  })
+
+  app.delete('/api/cards/:id/relations', async (request, reply) => {
+    const user = requireUser(request)
+    const { card } = loadCard((request.params as { id: string }).id, user.id)
+    const body = createCardRelationBodySchema.parse(request.body)
+    unlinkCards(ctx.db, card.projectId, card.number, body.target, body.kind)
+    return reply.status(204).send()
+  })
+
   app.patch('/api/cards/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = updateCardBodySchema.parse(request.body)
     const { card } = loadCard(id, user.id)
 
-    const patch: Partial<typeof cards.$inferInsert> = {}
-    if (body.title !== undefined) patch.title = body.title
-    if (body.description !== undefined) patch.description = body.description
-    if (body.column !== undefined && body.column !== card.column) {
-      patch.column = body.column
-      // Changer de colonne depuis le détail place la carte en fin de la nouvelle,
-      // faute de geste qui dise où l'y poser.
-      const [last] = ctx.db
-        .select({ position: max(cards.position) })
-        .from(cards)
-        .where(and(eq(cards.projectId, card.projectId), eq(cards.column, body.column)))
-        .all()
-      patch.position = (last?.position ?? 0) + 1
-    }
-
-    if (Object.keys(patch).length > 0) {
-      patch.updatedAt = Date.now()
-      ctx.db.update(cards).set(patch).where(eq(cards.id, id)).run()
-    }
-    if (body.description !== undefined) syncCardReferences(ctx.db, card, body.description)
-    // Une carte suivie a changé : la synchronisation compare et envoie à GitHub.
+    updateCard(ctx.db, card, body)
+    // A tracked card changed: synchronization compares and sends updates to GitHub.
     board?.kick(card.projectId)
 
     return readCard(id, card.projectId)
@@ -344,9 +349,9 @@ export function registerCardRoutes(
     const { id } = request.params as { id: string }
     const { card, project } = loadCard(id, user.id)
 
-    // Le propriétaire du projet range chez lui ; l'auteur peut défaire ce qu'il vient
-    // de créer. Un tiers du cercle de confiance édite les cartes mais n'en supprime
-    // pas, la suppression emportant les backlinks que d'autres ont posés.
+    // Project owners manage their own board; authors can undo what they created.
+    // Other trusted collaborators may edit cards but cannot delete them, because
+    // deletion also removes backlinks created by others.
     if (project.ownerId !== user.id && card.createdBy !== user.id) {
       throw forbidden(
         'card_delete_forbidden',
@@ -354,15 +359,15 @@ export function registerCardRoutes(
       )
     }
 
-    // L'issue reste sur GitHub ; elle quitte seulement ce board, et n'y revient pas à
-    // la synchronisation suivante.
+    // The issue stays on GitHub; it only leaves this board and does not return on
+    // the next synchronization.
     const issue = board?.issueOf(id)
     if (board && issue && !issue.detached) board.hideIssue(card.projectId, issue.number)
 
     await store.removeForCards([id])
     writeTransaction(ctx.db, (tx) => {
-      // Les conversations survivent à leur carte et redeviennent ordinaires : elles
-      // portent du travail réel, que le rangement du board n'a pas à emporter.
+      // Conversations outlive their cards and become ordinary conversations again:
+      // they contain real work that organizing the board must not discard.
       tx.update(conversations).set({ cardId: null }).where(eq(conversations.cardId, id)).run()
       tx.delete(cards).where(eq(cards.id, id)).run()
     })
@@ -370,7 +375,7 @@ export function registerCardRoutes(
     return reply.status(204).send()
   })
 
-  /** Publier une carte locale comme issue, ou rattacher une carte détachée à la sienne. */
+  /** Publishes a local card as an issue, or reconnects a detached card to its issue. */
   app.post('/api/cards/:id/publish', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -380,7 +385,7 @@ export function registerCardRoutes(
     return readCard(id, card.projectId)
   })
 
-  /** La carte redevient locale ; l'issue reste sur GitHub et n'est plus suivie. */
+  /** Makes the card local again; the issue remains on GitHub and is no longer tracked. */
   app.post('/api/cards/:id/unlink', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -407,7 +412,7 @@ export function registerCardRoutes(
     const content = await file.toBuffer().catch(() => null)
     if (!content || file.file.truncated) throw badRequest('file_too_large', 'File is too large.')
     if (!content.byteLength) throw badRequest('empty_file', 'File is empty.')
-    // Recontrôler après la lecture : le ticket peut avoir disparu pendant l'envoi.
+    // Check again after reading: the ticket may have disappeared during the request.
     loadCard(id, user.id)
     const dto = await store.save({ userId: user.id, cardId: id,
       filename: basename(file.filename).slice(0, 200) || 'fichier', content })
@@ -465,12 +470,12 @@ export function registerCardRoutes(
 
     const note = ctx.db.select().from(cardNotes).where(eq(cardNotes.id, id)).get()
     if (!note) throw notFound('card_note_not_found', 'Note not found.')
-    // La lecture du projet suffit à supprimer : les notes d'agent n'ont pas d'auteur
-    // humain à protéger, et une note fausse doit pouvoir partir sans passer par son
-    // propriétaire, qui est parfois un process mort depuis des jours.
+    // Project read access suffices to delete: agent notes have no human author to
+    // protect, and incorrect notes must be removable without their owner, which
+    // may be a process that died days ago.
     loadCard(note.cardId, user.id)
-    // Un commentaire qui vit sur GitHub s'y supprime : effacé ici seulement, il
-    // reviendrait à sa prochaine modification, et le fil mentirait entre-temps.
+    // Delete GitHub comments on GitHub: deleting only locally would make them return
+    // on their next edit and leave the conversation misleading in the meantime.
     if (note.externalId !== null) {
       throw conflict('card_note_on_github', 'This note lives on GitHub; delete it there.')
     }
@@ -509,9 +514,9 @@ export function registerCardRoutes(
       }
     }
 
-    // Une colonne réécrite doit l'être en entier. Un envoi partiel laisserait les
-    // cartes omises avec leurs anciennes positions, donc intercalées au hasard parmi
-    // les nouvelles, et le board afficherait un ordre que personne n'a demandé.
+    // Rewrite whole columns: partial updates would leave omitted cards at their old
+    // positions, interleaved arbitrarily among new positions, and display an order
+    // that nobody requested.
     const touched = new Set(body.columns.map((group) => group.column))
     for (const [cardId, column] of known) {
       if (touched.has(column) && !placed.has(cardId)) {
@@ -531,9 +536,9 @@ export function registerCardRoutes(
             column: group.column,
             position: index,
           }
-          // Un changement de colonne est un mouvement dans le workflow, pas un simple
-          // rangement : il vaut modification. Une réorganisation verticale n'en est
-          // pas une et ne doit pas faire remonter toute la colonne en « modifiée ».
+          // Changing columns moves a card through the workflow and counts as a modification.
+          // Reordering vertically is organization only and must not mark an entire column
+          // as recently modified.
           if (known.get(cardId) !== group.column) patch.updatedAt = now
           tx.update(cards).set(patch).where(eq(cards.id, cardId)).run()
         })
@@ -546,11 +551,11 @@ export function registerCardRoutes(
 }
 
 /**
- * Le fil d'une carte, du plus ancien au plus récent.
+ * Card thread, oldest first.
  *
- * Le titre de la conversation auteure est joint plutôt que son seul identifiant : une
- * note dit ce qu'une session a fait, et « quelle session » se lit par son titre. La
- * jointure est gauche parce que la note lui survit.
+ * Join the author conversation's title rather than just its ID: notes describe
+ * a session's work, and its title identifies that session. Use a left join
+ * because notes outlive their conversations.
  */
 export function readNotes(ctx: AppContext, cardId: string): CardNoteDto[] {
   const rows = ctx.db
@@ -589,7 +594,7 @@ export function readNotes(ctx: AppContext, cardId: string): CardNoteDto[] {
         : {
             kind: 'agent' as const,
             agent: row.agent ?? 'claude',
-            // Null quand la conversation a été supprimée : la note reste, son lien non.
+            // Null when the conversation was deleted: keep the note without its link.
             conversationId: row.conversationTitle === null ? null : row.conversationId,
             conversationTitle: row.conversationTitle ?? '',
           },
@@ -597,12 +602,11 @@ export function readNotes(ctx: AppContext, cardId: string): CardNoteDto[] {
 }
 
 /**
- * Passe une carte de `todo` à `in_progress` au lancement de sa première session.
+ * Moves a card from `todo` to `in_progress` when its first session starts.
  *
- * Déclenchée par l'envoi du premier message, jamais par la détection d'une session
- * active : la colonne est une position choisie, et seul un geste la change. Une carte
- * déjà plus loin dans le workflow ne recule pas — relancer une session sur une carte
- * en relecture n'annule pas la relecture.
+ * Triggered by the first message, never by detecting an active session: columns
+ * are deliberately chosen positions changed only by actions. Cards further
+ * along never move backward; restarting a session during review does not undo it.
  */
 export function advanceCardOnLaunch(ctx: AppContext, cardId: string): void {
   ctx.db
@@ -612,11 +616,39 @@ export function advanceCardOnLaunch(ctx: AppContext, cardId: string): void {
     .run()
 }
 
+/** Shared with agents to preserve card references and placement. */
+export function updateCard(
+  db: Db,
+  card: CardRow,
+  body: { title?: string; description?: string; column?: CardColumn },
+): void {
+  const patch: Partial<typeof cards.$inferInsert> = {}
+  if (body.title !== undefined) patch.title = body.title
+  if (body.description !== undefined) patch.description = body.description
+  if (body.column !== undefined && body.column !== card.column) {
+    patch.column = body.column
+    // Changing columns in the detail view appends to the destination column:
+    // no gesture specifies another position.
+    const [last] = db
+      .select({ position: max(cards.position) })
+      .from(cards)
+      .where(and(eq(cards.projectId, card.projectId), eq(cards.column, body.column)))
+      .all()
+    patch.position = (last?.position ?? 0) + 1
+  }
+
+  if (Object.keys(patch).length > 0) {
+    patch.updatedAt = Date.now()
+    db.update(cards).set(patch).where(eq(cards.id, card.id)).run()
+  }
+  if (body.description !== undefined) syncCardReferences(db, card, body.description)
+}
+
 /**
- * Crée une carte en fin de colonne, avec ses backlinks.
+ * Creates a card at the end of a column with its backlinks.
  *
- * Partagée entre la route du board et les demandes des agents (`create_card`) : le
- * numéro et la position se calculent de la même façon, et deux copies auraient divergé.
+ * Shared by board routes and agent requests (`create_card`) so number and position
+ * calculations stay consistent rather than diverge across two implementations.
  */
 export function createCard(
   db: Db,
@@ -636,8 +668,8 @@ function insertCard(
   body: { title: string; description: string; column: CardColumn },
 ): CardRow {
   const now = Date.now()
-  // Numéro et position se calculent dans la transaction qui insère : deux créations
-  // simultanées y liraient sinon le même maximum et se disputeraient l'unicité.
+  // Calculate number and position within the insert transaction; otherwise two
+  // simultaneous creations could read the same maximum and violate uniqueness.
   return writeTransaction(db, (tx) => {
     const [highest] = tx
       .select({ number: max(cards.number) })
@@ -657,12 +689,14 @@ function insertCard(
       title: body.title,
       description: body.description,
       column: body.column,
-      // En fin de colonne : une idée neuve n'est pas prioritaire par le seul fait
-      // d'être neuve, et s'insérer en tête déclasserait ce qui a déjà été trié.
+      // Append to the column: new ideas do not automatically take priority, and
+      // inserting first would demote work already sorted.
       position: (last?.position ?? 0) + 1,
       createdBy: userId,
       createdAt: now,
       updatedAt: now,
+      columnEnteredAt: now,
+      doneByMerge: null,
     }
     tx.insert(cards).values(created).run()
     return created
@@ -670,18 +704,17 @@ function insertCard(
 }
 
 /**
- * Réécrit les backlinks d'une carte d'après sa description.
+ * Rewrites a card's backlinks from its description.
  *
- * Un `#12` qui ne désigne aucune carte du projet n'est pas une erreur : il reste dans
- * le texte et ne produit simplement pas de lien. Refuser l'enregistrement pour une
- * référence morte ferait d'une faute de frappe un blocage, alors que la description
- * est de la prose avant d'être une structure.
+ * A `#12` referencing no card in this project is not an error: preserve its text
+ * without producing a link. Rejecting saves for dead references would let a typo
+ * block editing, although descriptions are prose before they are structure.
  */
 export function syncCardReferences(db: Db, card: CardRow, description: string): void {
   const numbers = parseCardReferences(description)
-  // Dans le texte d'une issue, `#15` est l'issue 15 du dépôt, pas la carte 15 : la
-  // description part sur GitHub et c'est là qu'elle se lit. La référence vise donc la
-  // carte qui suit cette issue, s'il y en a une.
+  // In issue text, `#15` means repository issue 15, not card 15: descriptions are
+  // published and read on GitHub. Resolve the reference to the card tracking that
+  // issue, if any.
   const issue = db
     .select({ repo: cardIssues.repo })
     .from(cardIssues)
@@ -709,7 +742,7 @@ export function syncCardReferences(db: Db, card: CardRow, description: string): 
               .all()
         )
           .map((row) => row.id)
-          // Une carte qui se cite elle-même n'apprend rien à personne.
+          // A card referencing itself conveys nothing useful.
           .filter((id) => id !== card.id)
 
   writeTransaction(db, (tx) => {
@@ -722,7 +755,7 @@ export function syncCardReferences(db: Db, card: CardRow, description: string): 
   })
 }
 
-/** Vérifie qu'une carte existe dans ce projet, avant de lui rattacher une conversation. */
+/** Checks that a card exists in this project before attaching a conversation. */
 export function assertCardInProject(ctx: AppContext, cardId: string, projectId: string): void {
   const row = ctx.db
     .select({ id: cards.id })
@@ -732,7 +765,7 @@ export function assertCardInProject(ctx: AppContext, cardId: string, projectId: 
   if (!row) throw notFound('card_not_found', 'Card not found.')
 }
 
-/** La carte d'une conversation, pour la puce qui ramène au board depuis le fil. */
+/** Conversation card for the chip linking back to the board. */
 export function readCardLink(ctx: AppContext, cardId: string | null): CardLinkDto | null {
   if (!cardId) return null
   const row = ctx.db

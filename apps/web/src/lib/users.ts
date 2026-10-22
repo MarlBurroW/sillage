@@ -32,7 +32,7 @@ export interface UpdateUserInput {
   displayName: string
   isAdmin: boolean
   password: string
-  /** Exigé pour changer son propre mot de passe, ignoré par un administrateur. */
+  /** Required to change one's own password, ignored for administrators. */
   currentPassword: string
 }
 
@@ -43,8 +43,8 @@ export function useUpdateUser() {
       api.patch<{ ok: true }>(`/api/users/${id}`, patch),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: USERS_KEY })
-      // Le compte courant est lu par une autre requête : modifier son propre profil
-      // doit rafraîchir l'en-tête et la sidebar, pas seulement la liste d'admin.
+      // The current account has a separate query: editing one's profile must refresh the header and
+      // sidebar as well as the admin list.
       void queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
     },
   })

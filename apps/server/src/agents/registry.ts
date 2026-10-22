@@ -18,13 +18,13 @@ import type { AgentRunner, RunnerContext } from './types.js'
 
 export class ForkError extends Error {}
 
-/** Session native à brancher. L'exécutable, lui, appartient à l'adaptateur. */
+/** Native session to fork; executables belong to adapters. */
 export interface ForkTarget {
   agentSessionId: string
   cwd: string
 }
 
-/** Ce qu'il faut à un adaptateur pour reconstituer l'effet d'un appel d'outil. */
+/** Adapter inputs for reconstructing tool-call effects. */
 export interface DescribeEditArgs {
   log: EventLog
   conversationId: string
@@ -33,77 +33,34 @@ export interface DescribeEditArgs {
   path: string
 }
 
-/**
- * Tout ce qu'un CLI apporte à Sillage, réuni derrière une seule porte (invariant I3).
- *
- * Le reste du serveur ne branche jamais sur le type d'agent : il demande l'adaptateur
- * au registre et lui parle. Ajouter un CLI, c'est écrire une implémentation de cette
- * interface et l'inscrire dans `createAgentRegistry`, sans toucher aux routes, au
- * gestionnaire de sessions ni au journal.
- */
+/** Single interface for everything CLIs provide (invariant I3). Other server code never branches by agent type: request adapters from registries. Add CLIs by implementing this interface and registering in `createAgentRegistry`, without changing routes, session managers or journals. */
 export interface AgentAdapter {
   readonly kind: AgentKind
-  /** Nom du CLI tel qu'on le montre dans les messages d'erreur. */
+  /** CLI name displayed in errors. */
   readonly label: string
-  /**
-   * Exécutable du CLI, tel que la configuration le déclare. Ne jamais réécrire en dur
-   * le nom du binaire : sous systemd le PATH est minimal, et pointer sur un chemin
-   * absolu est la seule façon fiable de lancer un CLI installé dans ~/.local/bin.
-   */
+  /** Configured CLI executable. Never hardcode binary names: systemd PATH is minimal, so absolute paths reliably reach ~/.local/bin installations. */
   readonly binary: string
-  /**
-   * Le CLI sur la machine : résolution sur le PATH, présence et version. Sillage ne
-   * transporte plus les binaires, donc l'absence est un état normal que l'interface
-   * doit pouvoir montrer.
-   */
+  /** Installed CLI presence/version through PATH resolution. System binaries are not bundled, so absence is normal and must be visible in interfaces. */
   readonly cli: CliBinary
-  /**
-   * Capacités annoncées, tirées de la table partagée du protocole : l'UI s'en sert
-   * pour ne pas proposer un geste refusé, le runner garde le refus comme filet.
-   */
+  /** Capabilities from the shared protocol table prevent interfaces offering rejected actions; runners retain rejection as a safeguard. */
   readonly capabilities: AgentCapabilities
-  /**
-   * Provenance estampillée sur les payloads natifs journalisés
-   * (« codex-app-server@v2 », « opencode-server@v1 », « grok-acp@v1 »...). À bumper quand le protocole du CLI change de
-   * forme : c'est ce qui permettra de relire un vieux `raw` avec le bon lecteur.
-   */
+  /** Provenance stamped on native journal payloads ('codex-app-server@v2', 'opencode-server@v1', 'grok-acp@v1'…). Bump when native protocol shapes change so old `raw` can use the correct reader. */
   readonly rawFormat: string
   createRunner(ctx: RunnerContext): AgentRunner
-  /**
-   * Point de coupe natif d'un fork, lu depuis le journal. Opaque hors de
-   * l'adaptateur : Claude coupe à une entrée de transcript, Codex retire des tours
-   * entiers, et un prochain CLI aura sa propre représentation.
-   */
+  /** Journal-derived native fork cut point, opaque outside adapters: transcript entries for Claude, whole-turn rollback for Codex, future CLIs' own representations. */
   forkCut(log: EventLog, conversationId: string, throughSeq: number): unknown
-  /**
-   * Branche la session native au point de coupe et retourne l'identifiant de la
-   * branche, prête à être reprise. Aucun runner requis : le fork travaille sur ce que
-   * le CLI a persisté.
-   */
+  /** Forks persisted native sessions at cut points and returns resumable branch IDs. No runner required because the CLI already persisted data. */
   fork(target: ForkTarget, cut: unknown): Promise<string>
-  /** Payload de la route `/api/agents/:agent/models`, lu sur le CLI installé. */
+  /** `/api/agents/:agent/models` payload read from installed CLIs. */
   models(): Promise<AgentModelsDto>
   usage(force: boolean): Promise<AgentUsage>
-  /**
-   * La même lecture pour un compte supplémentaire de Sillage. `credential` est ce qui
-   * désigne le compte au CLI : un jeton pour Claude (`ClaudeAccountStore`), un
-   * `CODEX_HOME` pour Codex (`CodexAccountHomes`). Absente chez les CLI qui n'en
-   * tiennent pas.
-   */
+  /** Same catalog read for additional accounts. `credential` identifies accounts to CLIs: Claude tokens (`ClaudeAccountStore`), Codex `CODEX_HOME` (`CodexAccountHomes`). Optional for CLIs without additional accounts. */
   usageForAccount?(accountId: string, credential: string, force: boolean): Promise<AgentUsage>
-  /**
-   * Commandes en `/` que le CLI reconnaît dans ce dossier, sans qu'une session tourne.
-   * Sert le brouillon, où rien n'est encore lancé ; un CLI sans commandes en `/`
-   * répond vide. `force` court-circuite le cache, pour un bouton de rafraîchissement.
-   */
+  /** Recognized slash commands in directories without running sessions, serving drafts. Unsupported CLIs return empty lists; `force` bypasses caches for refresh buttons. */
   commands(cwd: string, force: boolean): Promise<ProjectCommandsDto>
-  /**
-   * Remplace les `CLI_DEFAULT` d'une configuration par ce que le CLI annonce
-   * réellement. Si le catalogue est injoignable, la sentinelle reste : le CLI
-   * appliquera son propre défaut au lancement, ce qui reste juste.
-   */
+  /** Replaces `CLI_DEFAULT` with actual CLI announcements. Unreachable catalogs leave sentinels so CLIs apply their own startup defaults correctly. */
   resolveDefaults(config: AgentConfig): Promise<AgentConfig>
-  /** Effet d'un appel d'outil sur un fichier, reconstitué depuis le payload natif. */
+  /** File effects reconstructed from native tool payloads. */
   describeEdit(args: DescribeEditArgs): EditDiffDto
 }
 
@@ -116,19 +73,18 @@ export class AgentRegistry {
 
   adapter(kind: AgentKind): AgentAdapter {
     const adapter = this.adapters.get(kind)
-    // Impossible tant que le registre couvre l'enum AgentKind : ce garde ne sert
-    // qu'à transformer un oubli d'inscription en panne franche plutôt que silencieuse.
+    // Impossible while the registry covers AgentKind; this guard turns missing
+    // registrations into explicit failures rather than silent ones.
     if (!adapter) throw new Error(`Aucun adaptateur inscrit pour le CLI « ${kind} ».`)
     return adapter
   }
 
-  /** Variante tolérante pour les paramètres d'URL, où le nom vient du client. */
+  /** Tolerant URL-parameter lookup for client-provided names. */
   find(kind: string): AgentAdapter | null {
     return this.adapters.get(kind as AgentKind) ?? null
   }
 
-  /** Tous les adaptateurs inscrits, y compris ceux dont le CLI est désactivé : leur
-   *  état fait partie de ce que l'écran doit montrer. */
+  /** All registered adapters including configuration-disabled CLIs, whose state must still display. */
   all(): AgentAdapter[] {
     return [...this.adapters.values()]
   }

@@ -13,17 +13,7 @@ import type { AppContext } from '../context.js'
 import { badRequest, notFound } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
 
-/**
- * Dictée vocale : l'audio du navigateur part chez le fournisseur configuré, au format
- * OpenAI, et revient en texte prêt à poser dans le composer.
- *
- * Deux mécanismes relèvent la qualité au-delà du Whisper brut. Le paramètre `prompt`
- * de la transcription reçoit un lexique du projet (`stt/lexicon.ts`) plus la branche
- * courante, ce qui évite les massacres phonétiques sur les noms propres. Puis une
- * passe de nettoyage par un modèle de chat, si elle est configurée, restaure les
- * graphies exactes et retire les hésitations. Chacun de ces étages est facultatif et
- * son échec est silencieux : une dictée brute vaut toujours mieux qu'une erreur.
- */
+/** Voice dictation sends browser audio to the configured OpenAI-compatible provider and returns composer-ready text. Two optional stages improve on raw Whisper: the transcription `prompt` receives the project lexicon (`stt/lexicon.ts`) and current branch to avoid phonetic corruption of proper names; a configured chat model then restores exact spellings and removes hesitations. Failures in either stage are silent because raw dictation is preferable to an error. */
 export function registerSttRoutes(
   app: FastifyInstance,
   ctx: AppContext,
@@ -57,7 +47,7 @@ export function registerSttRoutes(
       { content, filename: file.filename || 'dictation.webm', mimeType: file.mimetype },
       {
         prompt: spokenBias(lexicon, branch),
-        // Deux lettres ou rien : la valeur vient du client et part chez le fournisseur.
+        // Two letters or nothing: client input is forwarded to the provider.
         language: language && /^[a-z]{2}$/.test(language) ? language : undefined,
       },
     )
@@ -69,12 +59,7 @@ export function registerSttRoutes(
     return { text: cleaned ?? trimmed }
   })
 
-  /**
-   * Vérification de la configuration depuis l'écran de réglages : le même chemin
-   * qu'une vraie dictée, sur un court échantillon généré par le navigateur, plus un
-   * appel au modèle de nettoyage, que la transcription d'un audio muet n'exerce pas.
-   * Toute défaillance sort en erreur traduite, comme pour une dictée.
-   */
+  /** Settings-screen configuration check: follows a real dictation path with a short browser-generated sample, plus a cleanup model call that silent audio transcription would not exercise. Failures return translated errors, as dictation does. */
   app.post('/api/stt/test', async (request): Promise<{ cleanupTested: boolean }> => {
     requireAdmin(request)
 
@@ -101,7 +86,7 @@ export function registerSttRoutes(
   })
 }
 
-/** Réglages résolus en client prêt à appeler, avec les refus qui vont avec. */
+/** Resolves settings into a ready-to-call client, including appropriate rejections. */
 function resolveProvider(
   ctx: AppContext,
   secrets: SecretStore,
@@ -133,7 +118,7 @@ function textField(fields: Record<string, Multipart | Multipart[] | undefined>, 
   return single.value || null
 }
 
-/** Même règle de visibilité que partout : un projet refusé répond « introuvable ». */
+/** The same visibility rule as elsewhere: inaccessible projects are 'not found'. */
 function workspaceOf(
   ctx: AppContext,
   projectId: string | null,
@@ -148,17 +133,14 @@ function workspaceOf(
   return { projectId: project.id, path: project.workspacePath }
 }
 
-/**
- * Lecture directe de `.git/HEAD` plutôt qu'un process git : on est sur le chemin d'une
- * dictée, et une branche illisible (dépôt absent, HEAD détachée, worktree) vaut null.
- */
+/** Read `.git/HEAD` directly instead of spawning git on the dictation path. Unreadable branches (missing repository, detached HEAD, worktree) yield null. */
 async function currentBranch(workspace: { path: string }): Promise<string | null> {
   const head = await readFile(join(workspace.path, '.git', 'HEAD'), 'utf8').catch(() => null)
   const match = head ? /^ref: refs\/heads\/(.+)$/m.exec(head.trim()) : null
   return match?.[1] ?? null
 }
 
-/** Le biais envoyé à Whisper : le lexique parlé, complété de la branche courante. */
+/** Whisper bias: spoken lexicon plus the current branch. */
 function spokenBias(lexicon: Lexicon | null, branch: string | null): string | undefined {
   const parts = [lexicon?.spoken, branch ? `Nous travaillons sur la branche ${branch}.` : null]
   const bias = parts.filter(Boolean).join(' ')
@@ -189,8 +171,8 @@ async function cleanup(
     .join('\n\n')
 
   const cleaned = (await chat(CLEANUP_SYSTEM, prompt)).trim()
-  // Une réponse vide ou démesurée trahit un modèle qui a fait autre chose que
-  // corriger : la transcription brute reprend la main.
+  // An empty or oversized response indicates the model did something other than
+  // correction: fall back to raw transcription.
   if (cleaned.length === 0 || cleaned.length > transcript.length * 3 + 200) return null
   return cleaned
 }

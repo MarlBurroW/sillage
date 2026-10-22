@@ -1,21 +1,9 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-/**
- * La connexion qui sert de jauge à un abonnement Claude.
- *
- * Le jeton de `claude setup-token` ne porte que la portée `user:inference` : le CLI
- * tient alors les limites du forfait pour inapplicables et ne les lit pas (sondé sur
- * 2.1.296). Une connexion `claude auth login` porte `user:profile`, mais elle vit dans
- * un dossier de configuration, et donner ce dossier aux sessions séparerait leurs
- * transcripts et leur mémoire de ceux que Sillage lit dans `~/.claude`.
- *
- * D'où un dossier par compte, `<données>/claude-accounts/<id>`, qui ne sert qu'aux
- * lectures d'usage : le CLI y est lancé avec `CLAUDE_CONFIG_DIR`, y lit sa connexion et
- * la renouvelle lui-même quand elle expire. Les sessions gardent le jeton.
- */
+/** Authentication used for Claude subscription gauges. setup-token carries only `user:inference`, making CLI subscription limits inapplicable and unread (probed 2.1.296). auth login carries `user:profile` but lives in configuration directories; giving those to sessions would separate transcripts and memory from Sillage's `~/.claude` reads. Use per-account `<data>/claude-accounts/<id>` only for usage reads, with `CLAUDE_CONFIG_DIR`; CLIs read and refresh their own authentication there while sessions retain tokens. */
 
-/** Ce qu'une connexion du CLI laisse dans son dossier et qui doit être gardé. */
+/** CLI authentication files that must be retained. */
 const KEPT = ['.credentials.json', '.claude.json']
 
 export class ClaudeAccountGauges {
@@ -25,15 +13,12 @@ export class ClaudeAccountGauges {
     return join(this.root, accountId)
   }
 
-  /** Vrai quand le dossier porte une connexion à lire. */
+  /** Whether directories contain readable authentication. */
   has(accountId: string): boolean {
     return existsSync(join(this.path(accountId), '.credentials.json'))
   }
 
-  /**
-   * Le courriel du compte connecté, tel que le CLI l'a écrit : c'est ce qui permet de
-   * voir qu'on a bien autorisé le même compte que celui du jeton.
-   */
+  /** Connected account email as written by the CLI, allowing users to verify they authorized the token's account. */
   email(accountId: string): string | null {
     try {
       const config = JSON.parse(readFileSync(join(this.path(accountId), '.claude.json'), 'utf8')) as {
@@ -50,12 +35,7 @@ export class ClaudeAccountGauges {
     return this.has(accountId) ? { email: this.email(accountId) } : null
   }
 
-  /**
-   * Reprend la connexion faite dans un dossier jetable. Rien n'est écrit dans le dossier
-   * du compte tant qu'elle n'a pas abouti : une connexion ratée ne doit pas défaire la
-   * précédente. Copié puis renommé, pour qu'une lecture ne tombe jamais sur un dossier
-   * à moitié écrit.
-   */
+  /** Adopts authentication from disposable directories. Write nothing to account directories until success so failed logins preserve previous credentials. Copy then rename to prevent reads of partial directories. */
   adopt(accountId: string, staging: string): void {
     if (!existsSync(join(staging, '.credentials.json'))) {
       throw new Error("La connexion n'a pas laissé d'identifiants dans son dossier.")

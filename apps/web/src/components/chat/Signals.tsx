@@ -14,11 +14,8 @@ import type { Signal, SignalFamily, SignalKind } from '../../lib/signals'
 import { cx } from '../ui'
 
 /**
- * Le rendu commun des signaux d'une conversation.
- *
- * Une seule table d'icônes et de couleurs pour toutes les surfaces : c'est ce qui rend
- * la cohérence structurelle plutôt que conventionnelle. Ajouter un signal se fait ici
- * et dans `buildSignals`, et il apparaît partout du même coup.
+ * Shared conversation-signal rendering. One icon/color table makes consistency structural across
+ * surfaces. Add signals here and in buildSignals to expose them everywhere.
  */
 
 const ICONS: Record<SignalKind, LucideIcon> = {
@@ -34,7 +31,7 @@ const ICONS: Record<SignalKind, LucideIcon> = {
   error: AlertTriangle,
 }
 
-/** La couleur appartient à la famille, jamais au signal : c'est la règle de la palette. */
+/** Colors belong to families, never individual signals: the palette rule. */
 const TEXT: Record<SignalFamily, string> = {
   working: 'text-accent',
   scheduled: 'text-loop',
@@ -50,8 +47,8 @@ const DOT: Record<SignalFamily, string> = {
 }
 
 /**
- * Seul ce qui tourne vraiment clignote. Une boucle armée attend, une erreur ne bouge
- * plus, et une attente de réponse ne gagne rien à s'agiter.
+ * Animate only actual activity. Armed loops wait, errors are stationary, and awaiting answers needs
+ * no movement.
  */
 function pulses(signal: Signal): boolean {
   return signal.family === 'working'
@@ -87,20 +84,19 @@ export function SignalChip({ signal, onClick }: { signal: Signal; onClick?: () =
 }
 
 /**
- * Les signaux dont le détail existe ailleurs. Le panneau latéral, onglet Agents, tient
- * déjà la liste des sous-agents avec leur fil et celle des travaux de fond. Les autres
- * n'ont rien de plus à montrer qu'une infobulle.
+ * Signals with detail destinations: Agents panel already lists subagent threads and background
+ * work. Other signals have nothing beyond tooltips.
  */
 const OPENS_PANEL = new Set<SignalKind>(['subagents', 'background'])
 
-/** Rangée de signaux. Ne rend rien quand il n'y en a aucun, plutôt qu'une ligne vide. */
+/** Signal row renders nothing when empty instead of a blank line. */
 export function SignalRow({
   signals,
   onSelect,
   className,
 }: {
   signals: Signal[]
-  /** Appelé pour les signaux qui mènent quelque part. Les autres restent inertes. */
+  /** Called for navigable signals; others stay inert. */
   onSelect?: (kind: SignalKind) => void
   className?: string
 }) {
@@ -119,7 +115,7 @@ export function SignalRow({
   )
 }
 
-/** Le même vocabulaire réduit à un point, là où il n'y a de place que pour ça. */
+/** Same vocabulary reduced to one dot where space is limited. */
 export function SignalDot({ signal }: { signal: Signal }) {
   return (
     <span

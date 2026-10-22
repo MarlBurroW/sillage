@@ -3,11 +3,11 @@ import type { ModeKind } from '@sillage/codex-bindings'
 import type { AskForApproval, SandboxMode } from '@sillage/codex-bindings/v2'
 
 /**
- * Réglages d'une conversation, par CLI.
+ * Conversation settings, per CLI.
  *
- * Volontairement non unifiés : le mode de permission de Claude et le couple
- * approbation/sandbox de Codex sont des concepts différents. L'UI affiche le
- * vocabulaire natif de chaque CLI plutôt que d'inventer une abstraction qui mentirait.
+ * Deliberately not unified: Claude's permission mode and Codex's approval/sandbox pair are
+ * different concepts. The UI uses each CLI's native vocabulary instead of inventing a
+ * misleading abstraction.
  */
 
 export const claudePermissionModeSchema = z.enum([
@@ -23,22 +23,20 @@ export type ClaudePermissionMode = z.infer<typeof claudePermissionModeSchema>
 export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 
 /**
- * Monte le serveur MCP de Sillage, qui ouvre à l'agent l'historique du projet.
+ * Mounts Sillage's MCP server, giving the agent access to project history.
  *
- * Vrai par défaut : c'est ce que la plateforme apporte de plus qu'un lancement direct du
- * CLI. Décochable par conversation pour le sujet où cette mémoire n'aide pas, et
- * coupable pour l'instance entière dans `config.toml`. Commun aux deux CLI, le serveur
- * ne devant rien à l'un ni à l'autre.
+ * Enabled by default: this is what the platform adds over launching the CLI directly. Can be
+ * disabled per conversation when this memory is unhelpful, or instance-wide in `config.toml`.
+ * Shared by both CLIs, as the server depends on neither.
  */
 const sillageMcpSchema = z.boolean().default(true)
 
 /**
- * Livre la bibliothèque de skills de Sillage, globale et du projet, à la session.
+ * Delivers Sillage's global and project skill library to the session.
  *
- * Un seul interrupteur, pas un par skill : un skill qu'on n'invoque pas ne coûte que sa
- * description dans le contexte. Coupable pour l'instance dans `config.toml`. Côté
- * Claude, le changer relance la session, les plugins n'étant que des options de
- * lancement ; Codex l'applique à chaud.
+ * One switch, not one per skill: an uninvoked skill costs only its description in context. Can
+ * be disabled instance-wide in `config.toml`. Changing it restarts Claude sessions because
+ * plugins are launch-time options; Codex applies it live.
  */
 const skillLibrarySchema = z.boolean().default(true)
 
@@ -48,78 +46,74 @@ export const claudeConfigSchema = z.object({
   effort: claudeEffortSchema,
   permissionMode: claudePermissionModeSchema,
   additionalDirectories: z.array(z.string()).default([]),
-  /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
+  /** MCP registry server IDs enabled for this conversation. */
   mcpServers: z.array(z.string()).default([]),
   sillageMcp: sillageMcpSchema,
   skillLibrary: skillLibrarySchema,
   /**
-   * Ignore les serveurs déclarés sur le disque du CLI (`~/.claude.json`, `.mcp.json`,
-   * connecteurs claude.ai) pour ne garder que ceux de Sillage.
+   * Ignores servers declared in CLI files (`~/.claude.json`, `.mcp.json`, claude.ai
+   * connectors), keeping only Sillage's servers.
    *
-   * Faux par défaut : activer l'isolation d'office ferait disparaître sans prévenir des
-   * serveurs que l'utilisateur a déclarés lui-même. Propre à Claude, Codex n'ayant pas
-   * d'équivalent : son `config.toml` et son `codex_apps` intégré restent de toute façon.
+   * Disabled by default: automatic isolation would silently hide servers the user configured.
+   * Claude-specific; Codex has no equivalent, and its `config.toml` and built-in `codex_apps`
+   * remain anyway.
    */
   strictMcp: z.boolean().default(false),
   /**
-   * Mode rapide de Claude Code : même modèle, réponses plus rapides, facturées à part.
+   * Claude Code fast mode: the same model with faster replies, billed separately.
    *
-   * Sur un abonnement, l'usage part en crédits d'usage, hors quota du forfait, et le
-   * premier tour en mode rapide repaie le contexte entier à ce tarif, une fois par
-   * conversation : c'est un réglage à poser au départ plutôt qu'à bascule. Seuls
-   * certains modèles le gèrent (`supportsFastMode` dans le catalogue) ; l'activer sur
-   * un autre fait basculer le CLI sur Opus. C'est le SDK qui doit opter : un `/fast`
-   * tapé dans une session headless répond « non disponible », relevé à la sonde.
+   * On a subscription, usage draws on usage credits outside plan quotas. The first fast-mode
+   * turn repays the entire context at that rate, once per conversation, so this is best chosen
+   * at the start rather than toggled. Only some models support it (`supportsFastMode` in the
+   * catalog); enabling it on another switches the CLI to Opus. The SDK must opt in: probing
+   * showed that `/fast` in a headless session replies “unavailable”.
    */
   fastMode: z.boolean().default(false),
   /**
-   * Ultracode de Claude Code : orchestration par workflows multi-agents sur chaque
-   * tâche de fond, le coût en tokens n'étant plus une contrainte. Le mot-clé
-   * « ultracode » dans un message n'en ouvre qu'un tour ; ce réglage le tient pour
-   * toute la session. Propre à la session, jamais écrit dans les fichiers du CLI.
-   * Depuis Claude Code 2.1.284, il n'impose plus l'effort `xhigh` et tient à tout
-   * niveau, mais le CLI ne l'ouvre toujours qu'aux modèles qui gèrent `xhigh` (sondé
-   * sur 2.1.296 : ouvert à Haiku 5.5, refusé à Haiku 4.5 et Sonnet 4.6).
+   * Claude Code Ultracode: multi-agent workflow orchestration for every background task,
+   * treating token cost as unconstrained. The “ultracode” keyword enables it for one turn; this
+   * setting holds for the entire session. Session-local, never written to CLI files. Since
+   * Claude Code 2.1.284 it no longer forces `xhigh` effort and works at any level, but the CLI
+   * still limits it to models supporting `xhigh` (probed on 2.1.296: available to Haiku 5.5,
+   * rejected for Haiku 4.5 and Sonnet 4.6).
    */
   ultracode: z.boolean().default(false),
   /**
-   * Style de sortie du CLI (`Concise`, `Explanatory`…), parmi ceux que le catalogue
-   * annonce. Vide pour laisser le style par défaut.
+   * CLI output style (`Concise`, `Explanatory`, etc.) from the catalog. Empty leaves the
+   * default style.
    */
   outputStyle: z.string().default(''),
   /**
-   * Modèle conseiller (`/advisor`), que le modèle principal peut consulter en cours de
-   * tâche. Vide pour ne pas en donner : chaque consultation est un appel de plus.
+   * Advisor model (`/advisor`) the primary model can consult during work. Empty disables it:
+   * each consultation is an additional call.
    */
   advisorModel: z.string().default(''),
   /**
-   * Garde-fous d'une session que personne ne regarde, pensés pour l'API de tâches :
-   * coût cumulé en dollars et nombre d'appels de modèle au-delà desquels le CLI
-   * referme le tour en erreur (`error_max_budget_usd`, `error_max_turns`). Comptés par
-   * process : une session relancée pour un réglage repart de zéro. `null` ne plafonne
-   * rien, ce qui est le défaut d'une conversation humaine ; le composer ne les montre
-   * pas.
+   * Safeguards for unattended sessions, designed for the task API: cumulative dollar cost and
+   * model-call count beyond which the CLI closes the turn with an error
+   * (`error_max_budget_usd`, `error_max_turns`). Counted per process: restarting a session for
+   * a setting change resets them. `null` imposes no limit, the default for human conversations;
+   * the composer does not expose them.
    */
   maxBudgetUsd: z.number().positive().nullable().default(null),
   maxTurns: z.number().int().positive().nullable().default(null),
   /**
-   * Compte Claude de Sillage dont le jeton est passé à la session, `null` pour la
-   * connexion du CLI (`/login`). Un identifiant et non le jeton : la configuration
-   * voyage jusqu'au navigateur, le jeton reste chiffré en base. Le changer relance la
-   * session, le CLI ne lisant son jeton qu'au lancement.
+   * Sillage Claude account whose token is passed to the session; `null` uses CLI login
+   * (`/login`). An ID rather than the token: configuration reaches the browser while the token
+   * stays encrypted in the database. Changing it restarts the session because the CLI reads its
+   * token only at launch.
    */
   account: z.string().nullable().default(null),
 })
 export type ClaudeConfig = z.infer<typeof claudeConfigSchema>
 
 /**
- * Les valeurs Codex ci-dessous ne sont pas choisies par Sillage : elles doivent
- * refléter `@sillage/codex-bindings`, généré par le binaire installé. Les
- * assertions de type en fin de fichier échouent à la compilation si elles divergent,
- * ce qui rend impossible une recopie approximative comme celle qui traînait ici.
+ * The Codex values below are not chosen by Sillage: they must match `@sillage/codex-bindings`,
+ * generated by the installed binary. Type assertions at the end of this file fail compilation
+ * if they diverge, preventing the approximate copies previously kept here.
  */
 
-/** Variante objet de `AskForApproval`, qui règle chaque garde-fou séparément. */
+/** Object variant of `AskForApproval`, configuring each safeguard separately. */
 export const codexGranularApprovalSchema = z.object({
   granular: z.object({
     sandbox_approval: z.boolean(),
@@ -135,8 +129,8 @@ export const codexApprovalNameSchema = z.enum(['untrusted', 'on-request', 'never
 export type CodexApprovalName = z.infer<typeof codexApprovalNameSchema>
 
 /**
- * Fidèle au protocole : c'est ce schéma que l'assertion de dérive compare à
- * `AskForApproval` généré. Il ne doit accepter que ce que Codex accepte.
+ * Faithful to the protocol: the drift assertion compares this schema with generated
+ * `AskForApproval`. It must accept only what Codex accepts.
  */
 export const codexApprovalSchema = z.union([
   codexApprovalNameSchema,
@@ -144,16 +138,15 @@ export const codexApprovalSchema = z.union([
 ])
 
 /**
- * Ce que Sillage accepte dans une configuration de conversation : le protocole, plus
- * la sentinelle `CLI_DEFAULT`.
+ * What Sillage accepts in conversation configuration: the protocol plus the `CLI_DEFAULT`
+ * sentinel.
  *
- * `thread/start` et `turn/start` déclarent `approvalPolicy` nullable, et un null y
- * signifie « applique la politique configurée dans le CLI ». La sentinelle exprime
- * exactement cet état, au même titre que pour le modèle et l'effort.
+ * `thread/start` and `turn/start` declare nullable `approvalPolicy`; null means “use the
+ * CLI-configured policy”. The sentinel expresses exactly that, as it does for model and effort.
  *
- * `on-failure`, déprécié de longue date, a disparu du protocole avec Codex 0.146. Les
- * conversations écrites avant le retrait le portent encore en base : elles se relisent
- * sur `on-request`, le plus proche, plutôt que de devenir illisibles.
+ * Long-deprecated `on-failure` disappeared from the protocol in Codex 0.146. Older
+ * conversations still store it: read it as the closest option, `on-request`, rather than making
+ * them unreadable.
  */
 export const codexApprovalConfigSchema = z.preprocess(
   (value) => (value === 'on-failure' ? 'on-request' : value),
@@ -167,27 +160,26 @@ export const codexSandboxSchema = z.enum([
 ])
 
 /**
- * `ReasoningEffort` est une chaîne libre dans le protocole : les niveaux réellement
- * acceptés dépendent du modèle et sont annoncés par `model/list`
- * (`supportedReasoningEfforts`). Toute énumération figée ici serait une invention.
+ * `ReasoningEffort` is a free-form string in the protocol: supported levels depend on the model
+ * and are reported by `model/list` (`supportedReasoningEfforts`). Any fixed enumeration here
+ * would be invented.
  */
 export const codexEffortSchema = z.string()
 
 /**
- * Mode de collaboration Codex, l'équivalent du mode Plan de Claude.
+ * Codex collaboration mode, equivalent to Claude's Plan mode.
  *
- * Ce n'est pas une invention de Sillage : le mode est porté par `turn/start`, derrière
- * la capacité `experimentalApi`, et c'est lui qui décide des outils accessibles au
- * modèle. En `default`, `request_user_input` est refusé par le routeur du CLI, donc
- * l'agent ne peut pas poser de question à choix : il se rabat sur une liste écrite
- * dans sa réponse.
+ * Not a Sillage invention: `turn/start` carries it behind the `experimentalApi` capability, and
+ * it determines model-accessible tools. In `default`, the CLI router rejects
+ * `request_user_input`, so the agent cannot ask a multiple-choice question and falls back to a
+ * written list in its reply.
  */
 export const codexModeSchema = z.enum(['plan', 'default'])
 export type CodexMode = z.infer<typeof codexModeSchema>
 
 export const codexConfigSchema = z.object({
   agent: z.literal('codex'),
-  /** Vide signifie « modèle par défaut du CLI », résolu à la création. */
+  /** Empty means “CLI default model”, resolved at creation. */
   model: z.string(),
   reasoningEffort: codexEffortSchema,
   collaborationMode: codexModeSchema.default('default'),
@@ -196,33 +188,32 @@ export const codexConfigSchema = z.object({
   webSearch: z.boolean().default(false),
   profile: z.string().nullable().default(null),
   additionalDirectories: z.array(z.string()).default([]),
-  /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
+  /** MCP registry server IDs enabled for this conversation. */
   mcpServers: z.array(z.string()).default([]),
   sillageMcp: sillageMcpSchema,
   skillLibrary: skillLibrarySchema,
   /**
-   * Compte Codex de Sillage dont le home est donné à la session (`CODEX_HOME`), `null`
-   * pour la connexion du CLI. Même raison d'être que `ClaudeConfig.account` ; le
-   * changer relance l'app-server, qui ne lit son home qu'au lancement.
+   * Sillage Codex account whose home is passed to the session (`CODEX_HOME`); `null` uses CLI
+   * login. Same purpose as `ClaudeConfig.account`; changing it restarts the app-server, which
+   * reads its home only at launch.
    */
   account: z.string().nullable().default(null),
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
 
 /**
- * Règle d'opencode pour une famille d'outils : demander, laisser faire, refuser.
+ * opencode rule for a tool family: ask, allow or deny.
  *
- * La chaîne vide est la sentinelle `CLI_DEFAULT` : Sillage ne pose alors aucune règle
- * et celle de l'`opencode.json` de l'utilisateur s'applique (à défaut, opencode laisse
- * faire). Les valeurs sont celles de `PermissionActionConfig` dans l'OpenAPI.
+ * The empty string is the `CLI_DEFAULT` sentinel: Sillage sets no rule and the user's
+ * `opencode.json` rule applies (otherwise opencode allows it). Values come from OpenAPI
+ * `PermissionActionConfig`.
  */
 export const opencodePermissionSchema = z.enum(['', 'ask', 'allow', 'deny'])
 export type OpencodePermission = z.infer<typeof opencodePermissionSchema>
 
 /**
- * Les familles d'outils que Sillage règle. opencode en connaît d'autres (`read`,
- * `task`, `skill`…) : elles gardent la règle du CLI, les exposer toutes ferait un écran
- * de réglages que personne ne lit.
+ * Tool families configured by Sillage. opencode knows others (`read`, `task`, `skill`, etc.);
+ * they retain CLI rules, since exposing everything would create a settings screen nobody reads.
  */
 export const opencodePermissionsSchema = z.object({
   edit: opencodePermissionSchema.default('ask'),
@@ -233,22 +224,22 @@ export type OpencodePermissions = z.infer<typeof opencodePermissionsSchema>
 
 export const opencodeConfigSchema = z.object({
   agent: z.literal('opencode'),
-  /** `fournisseur/modèle`, tel qu'opencode l'écrit. Vide : le défaut du CLI. */
+  /** `provider/model`, as written by opencode. Empty uses the CLI default. */
   model: z.string(),
   /**
-   * Variante du modèle (`low`, `high`, `max`…), l'équivalent de l'effort chez les deux
-   * autres. Chaîne libre : chaque modèle annonce les siennes dans le catalogue.
+   * Model variant (`low`, `high`, `max`, etc.), equivalent to effort in the other two CLIs.
+   * Free-form string: each model lists its variants in the catalog.
    */
   variant: z.string().default(''),
   /**
-   * Agent primaire d'opencode qui mène le tour : `build`, `plan`, ou un agent déclaré
-   * par l'utilisateur. C'est le pendant du `collaborationMode` de Codex, à ceci près
-   * que la liste est ouverte. Nommé ainsi parce que `agent` est déjà le discriminant.
+   * Primary opencode agent leading the turn: `build`, `plan`, or a user-defined agent.
+   * Equivalent to Codex's `collaborationMode`, but with an open-ended list. Named this way
+   * because `agent` is already the discriminant.
    */
   primaryAgent: z.string().default('build'),
   permissions: opencodePermissionsSchema.default({}),
   additionalDirectories: z.array(z.string()).default([]),
-  /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
+  /** MCP registry server IDs enabled for this conversation. */
   mcpServers: z.array(z.string()).default([]),
   sillageMcp: sillageMcpSchema,
   skillLibrary: skillLibrarySchema,
@@ -256,36 +247,34 @@ export const opencodeConfigSchema = z.object({
 export type OpencodeConfig = z.infer<typeof opencodeConfigSchema>
 
 /**
- * Modes de Grok Build, tels que son ACP les connaît (sondé sur 1.0.62) : `default`
- * demande avant d'écrire ou d'exécuter, `auto` laisse un classifieur trancher,
- * `bypassPermissions` est son `yoloMode`, `plan` son mode de session qui interdit
- * d'écrire jusqu'à la validation du plan. Le `--permission-mode` du TUI en connaît
- * d'autres (`acceptEdits`, `dontAsk`), que l'ACP ne relaie pas.
+ * Grok Build modes exposed by ACP (probed on 1.0.62): `default` asks before writing or
+ * executing, `auto` lets a classifier decide, `bypassPermissions` is its `yoloMode`, and `plan`
+ * forbids writes until plan approval. The TUI's `--permission-mode` supports others
+ * (`acceptEdits`, `dontAsk`) not relayed by ACP.
  */
 export const grokPermissionModeSchema = z.enum(['default', 'auto', 'plan', 'bypassPermissions'])
 export type GrokPermissionMode = z.infer<typeof grokPermissionModeSchema>
 
 export const grokConfigSchema = z.object({
   agent: z.literal('grok'),
-  /** Identifiant du catalogue de Grok (`grok-4.6`…). Vide : le défaut du CLI. */
+  /** Grok catalog ID (`grok-4.6`, etc.). Empty uses the CLI default. */
   model: z.string(),
   /**
-   * Effort de raisonnement, parmi ceux que le modèle annonce (`low` → `xhigh` sur
-   * grok-4.6, sans `xhigh` sur grok-4.5). Chaîne libre pour la même raison que chez
-   * Codex : la liste dépend du modèle.
+   * Reasoning effort from the model's supported levels (`low` → `xhigh` on grok-4.6, no `xhigh`
+   * on grok-4.5). Free-form for the same reason as Codex: the list depends on the model.
    */
   reasoningEffort: z.string().default(''),
   permissionMode: grokPermissionModeSchema.default('default'),
-  /** Recherche web et lecture de pages, que Grok ouvre d'office (`--disable-web-search`). */
+  /** Web search and page reading, enabled by Grok by default (`--disable-web-search`). */
   webSearch: z.boolean().default(true),
   additionalDirectories: z.array(z.string()).default([]),
-  /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
+  /** MCP registry server IDs enabled for this conversation. */
   mcpServers: z.array(z.string()).default([]),
   sillageMcp: sillageMcpSchema,
   skillLibrary: skillLibrarySchema,
   /**
-   * Compte Grok de Sillage dont le home est donné à la session (`GROK_HOME`), `null` pour
-   * la connexion du CLI. Le changer relance le process, qui ne lit son home qu'au lancement.
+   * Sillage Grok account whose home is passed to the session (`GROK_HOME`); `null` uses CLI
+   * login. Changing it restarts the process, which reads its home only at launch.
    */
   account: z.string().nullable().default(null),
 })
@@ -300,11 +289,11 @@ export const agentConfigSchema = z.discriminatedUnion('agent', [
 export type AgentConfig = z.infer<typeof agentConfigSchema>
 
 /**
- * Chaîne vide = « laisser le CLI décider ». Le serveur la remplace par le modèle et
- * l'effort réellement annoncés par le CLI au moment de créer la conversation.
+ * Empty string = “let the CLI decide”. At conversation creation, the server replaces it with
+ * the model and effort actually reported by the CLI.
  *
- * Écrire ici un identifiant au jugé (`gpt-5-codex`, qui n'existe pas) donne une
- * conversation qui échoue au lancement, des mois après la faute.
+ * Guessing an ID here (`gpt-5-codex`, which does not exist) produces a conversation that fails
+ * at launch months after the mistake.
  */
 export const CLI_DEFAULT = ''
 
@@ -348,8 +337,8 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   model: CLI_DEFAULT,
   variant: CLI_DEFAULT,
   primaryAgent: 'build',
-  // opencode laisse tout faire par défaut. Sillage part de « demander » pour ce qui
-  // écrit ou exécute, comme le mode manuel de Claude et le `on-request` de Codex.
+  // opencode allows everything by default. Sillage starts with “ask” for tools that
+  // write or execute, like Claude's manual mode and Codex's `on-request`.
   permissions: { edit: 'ask', bash: 'ask', webfetch: CLI_DEFAULT },
   additionalDirectories: [],
   mcpServers: [],
@@ -361,7 +350,7 @@ export const DEFAULT_GROK_CONFIG: GrokConfig = {
   agent: 'grok',
   model: CLI_DEFAULT,
   reasoningEffort: CLI_DEFAULT,
-  // Le mode qui demande avant d'écrire ou d'exécuter, comme les défauts des trois autres.
+  // The mode that asks before writing or executing, matching the other three defaults.
   permissionMode: 'default',
   webSearch: true,
   additionalDirectories: [],
@@ -372,15 +361,15 @@ export const DEFAULT_GROK_CONFIG: GrokConfig = {
 }
 
 /**
- * Garde-fou de compilation : si `pnpm codex:types` fait apparaître une nouvelle
- * variante d'approbation ou de sandbox, ces alias deviennent `never` et le typecheck
- * échoue. C'est ce qui empêche les schémas Zod ci-dessus de mentir sur le protocole.
+ * Compile-time safeguard: if `pnpm codex:types` introduces a new approval or sandbox variant,
+ * these aliases become `never` and typechecking fails. This prevents the Zod schemas above from
+ * misrepresenting the protocol.
  */
 type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
 
 /**
- * `false` et non `never` : `never extends true` est vrai, donc une assertion bâtie
- * sur `never` passerait toujours et ne servirait à rien.
+ * `false`, not `never`: `never extends true` is true, so an assertion based on `never` would
+ * always pass and be useless.
  */
 type AssertTrue<T extends true> = T
 
@@ -393,20 +382,19 @@ export type SandboxMatchesProtocol = AssertTrue<
 export type ModeMatchesProtocol = AssertTrue<Exactly<z.infer<typeof codexModeSchema>, ModeKind>>
 
 /**
- * Relit une configuration stockée en base.
+ * Reads a configuration stored in the database.
  *
- * Passer par le schéma plutôt que par un cast : ses valeurs par défaut rattrapent les
- * conversations écrites avant l'ajout d'un réglage. Sans ça, le champ manquant partait
- * `undefined` au CLI, qui rejetait le tour, longtemps après la mise à jour qui l'a
- * introduit.
+ * Use the schema rather than a cast: its defaults cover conversations saved before a setting
+ * was added. Otherwise the missing field reached the CLI as `undefined`, which rejected the
+ * turn long after the update introducing it.
  */
 export function parseAgentConfig(stored: string): AgentConfig {
   return agentConfigSchema.parse(JSON.parse(stored))
 }
 
 /**
- * Table plutôt que ternaire : un CLI ajouté à l'enum sans sa ligne ici ne compile
- * pas, là où le ternaire binaire lui aurait attribué les défauts Codex en silence.
+ * A table instead of a ternary: adding a CLI to the enum without a row here fails compilation,
+ * whereas a binary ternary would silently give it Codex defaults.
  */
 export const DEFAULT_CONFIGS: Record<AgentConfig['agent'], AgentConfig> = {
   claude: DEFAULT_CLAUDE_CONFIG,

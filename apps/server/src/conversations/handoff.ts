@@ -1,42 +1,21 @@
 import type { AgentKind, JournalEntry, SillageEvent } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
 
-/**
- * Transfert d'une conversation vers un autre CLI.
- *
- * Pas un résumé écrit par un agent, mais une sélection budgétée du fil, sur le modèle
- * des « portable handoffs » de T3 Code : les messages retenus gardent leur texte entier,
- * leur ordre et leur rôle, et ce qui ne tient pas est remplacé par une référence que le
- * nouvel agent relit avec `read_conversation` du serveur MCP de Sillage. La sélection
- * se fait sur le journal normalisé, donc elle ne sait pas quel CLI a produit le fil.
- *
- * Le texte rendu part dans le canal de consignes de chaque CLI (prompt système chez
- * Claude, `developerInstructions` chez Codex, `system` chez opencode) et y reste pour
- * toute la vie de la conversation, comme l'historique d'un fil ordinaire. La nouvelle
- * demande de l'utilisateur, elle, est son premier message, jamais raccourci.
- */
+/** Conversation handoff to another CLI. A budgeted history selection inspired by T3 Code's portable handoffs rather than an agent-written summary: retained messages keep their full text, order and roles; omitted content is referenced for rereading with Sillage MCP's `read_conversation`. Selection uses the normalized journal without knowing the source CLI. Inject text into each CLI's instruction channel (Claude system prompt, Codex `developerInstructions`, opencode `system`) for the conversation lifetime, like ordinary history. The user's new request is the first message and is never shortened. */
 
-/** Budget par défaut et bornes, en jetons, comme T3 Code. */
+/** Default budget and limits in tokens, matching T3 Code. */
 export const DEFAULT_HANDOFF_TOKENS = 16_000
 export const MIN_HANDOFF_TOKENS = 1_000
 export const MAX_HANDOFF_TOKENS = 64_000
 
-/**
- * Un octet par jeton : un compte prudent, qui surestime d'un facteur trois à quatre sur
- * du texte courant. Compter juste demanderait le tokenizer du modèle cible, et le
- * transfert doit tenir quel que soit celui-ci.
- */
+/** One byte per token conservatively overestimates ordinary text by three to four times. Exact counts require the target model tokenizer, but transfers must fit any target. */
 const BYTES_PER_TOKEN = 1
 
-/**
- * Part d'un appel d'outil : son entrée et sa sortie, coupées. Les résultats de
- * commandes situent le travail, mais une sortie de 20 ko n'oriente pas mieux que ses
- * premières lignes, et prendrait la place d'un message entier.
- */
+/** Tool-call share: truncated input and output. Command results provide context, but 20 KB of output adds little beyond its opening lines while displacing entire messages. */
 const TOOL_INPUT_MAX = 400
 const TOOL_OUTPUT_MAX = 1_200
 
-/** Pages du journal relues pour bâtir la sélection : celles de la relecture du fil. */
+/** Journal pages read for selection, matching conversation replay pages. */
 const PAGE_ROWS = 5000
 const PAGE_BYTES = 16_000_000
 
@@ -50,7 +29,7 @@ export class HandoffError extends Error {
   }
 }
 
-/** Un élément du fil, tel que la sélection le pèse. */
+/** Conversation element as measured by selection. */
 export type HandoffItem =
   | { kind: 'user' | 'assistant'; seq: number; text: string }
   | {
@@ -61,17 +40,17 @@ export type HandoffItem =
       output: string
       isError: boolean
     }
-  /** Fin de tour sans réponse : le travail qui précède est partiel. */
+  /** Turn ending without a response: preceding work is partial. */
   | { kind: 'interrupted'; seq: number; reason: string }
 
 export interface HandoffSelection {
-  /** La demande d'origine, premier message de l'utilisateur. */
+  /** Original request, the first user message. */
   head: HandoffItem | null
-  /** Les derniers échanges, dans l'ordre, sans trou autre que des appels d'outils. */
+  /** Latest exchanges in order, with no gaps except tool calls. */
   tail: HandoffItem[]
-  /** Messages entre la demande et la fin retenue, à relire par référence. */
+  /** Messages between the original request and retained ending, available by reference. */
   omitted: { messages: number; fromSeq: number; toSeq: number } | null
-  /** Appels d'outils écartés à l'intérieur de la fenêtre retenue, faute de place. */
+  /** Tool calls omitted within the retained window because of the budget. */
   omittedTools: number
 }
 
@@ -89,7 +68,7 @@ export interface HandoffResult {
   omitted: number
 }
 
-/** Ramène le budget demandé dans les bornes, et l'absence au défaut. */
+/** Clamps requested budgets to limits and uses the default when absent. */
 export function clampHandoffTokens(requested: number | undefined): number {
   if (requested === undefined || !Number.isFinite(requested)) return DEFAULT_HANDOFF_TOKENS
   return Math.min(MAX_HANDOFF_TOKENS, Math.max(MIN_HANDOFF_TOKENS, Math.floor(requested)))
@@ -109,7 +88,7 @@ function stringify(value: unknown): string {
   }
 }
 
-/** La sortie d'un outil telle que l'agent l'a vue : le texte des blocs, ou le JSON. */
+/** Tool output as the agent saw it: block text or JSON. */
 function toolOutputText(output: unknown): string {
   if (Array.isArray(output)) {
     const texts = output
@@ -123,15 +102,7 @@ function toolOutputText(output: unknown): string {
   return stringify(output)
 }
 
-/**
- * Replie le journal en éléments du fil principal.
- *
- * Un message assistant arrive en plusieurs `message.completed` (réflexion, puis appels
- * d'outils) : ses textes sont réunis sous le premier `seq`. Les sous-agents sont
- * ignorés, leur travail revenant par le résultat de l'appel qui les a lancés. Un appel
- * d'outil se pose à la place de son `tool.completed`, qui seul porte la sortie ; un
- * appel sans fin (tour interrompu) reste, sans sortie.
- */
+/** Folds the journal into main-conversation elements. Assistant responses span several `message.completed` entries (reasoning then tools); combine text under the first `seq`. Ignore subagents because their work returns through launching tool results. Place tool calls at `tool.completed`, the only event carrying output; unfinished calls from interrupted turns remain without output. */
 export function collectHandoffItems(entries: Iterable<JournalEntry>): HandoffItem[] {
   const items: HandoffItem[] = []
   const messages = new Map<string, Extract<HandoffItem, { kind: 'user' | 'assistant' }>>()
@@ -196,31 +167,19 @@ export function collectHandoffItems(entries: Iterable<JournalEntry>): HandoffIte
   return items
 }
 
-/** Octets qu'un élément pèsera une fois rendu. */
+/** Bytes an element occupies when rendered. */
 export function itemBytes(item: HandoffItem): number {
   return Buffer.byteLength(renderItem(item)) + 2
 }
 
-/**
- * Choisit ce qui tient dans le budget.
- *
- * Trois priorités, dans l'ordre : la demande d'origine, parce que des conclusions sans
- * énoncé se lisent de travers ; les derniers messages, en remontant depuis la fin sans
- * sauter de message, pour que la fenêtre reste un fil lisible ; puis les appels
- * d'outils de cette fenêtre, les plus récents d'abord, avec ce qu'il reste. Les tours
- * interrompus comptent comme des messages : quelques octets qui changent la lecture de
- * ce qui précède.
- *
- * `budgetBytes` est ce qui reste après l'en-tête et la référence : l'appelant les a
- * déjà déduits.
- */
+/** Selects content fitting the budget. Priorities: original request, since conclusions without context mislead; latest messages backward without skipping, preserving a readable conversation; then newest tool calls within that window using remaining space. Interrupted turns count as messages because a few bytes alter interpretation of preceding work. `budgetBytes` excludes header and reference costs already deducted by the caller. */
 export function selectHandoff(items: HandoffItem[], budgetBytes: number): HandoffSelection {
   const headIndex = items.findIndex((item) => item.kind === 'user')
   const head = headIndex >= 0 ? items[headIndex]! : null
   let remaining = budgetBytes - (head ? itemBytes(head) : 0)
   if (remaining < 0) throw new HandoffError('handoff_too_large', 'The original request alone exceeds the handoff budget.')
 
-  // Les messages (et interruptions) après la demande, du plus récent au plus ancien.
+  // Messages and interruptions after the request, newest first.
   const rest = items.slice(headIndex + 1)
   let windowStart = rest.length
   for (let i = rest.length - 1; i >= 0; i--) {
@@ -232,11 +191,11 @@ export function selectHandoff(items: HandoffItem[], budgetBytes: number): Handof
     windowStart = i
   }
 
-  // Les outils entre le dernier message omis et la fenêtre appartiennent au tour qui
-  // ouvre celle-ci : ils en font partie. Sans message omis, c'est tout le fil.
+  // Tools between the last omitted message and the window belong to the turn that
+  // opens that window. Without omitted messages, include the entire thread.
   while (windowStart > 0 && rest[windowStart - 1]!.kind === 'tool') windowStart--
 
-  // Les outils de la fenêtre, les plus récents d'abord.
+  // Tools within the window, newest first.
   const keptTools = new Set<number>()
   let omittedTools = 0
   for (let i = rest.length - 1; i >= windowStart; i--) {
@@ -287,7 +246,7 @@ function renderItem(item: HandoffItem): string {
   }
 }
 
-/** L'en-tête, qui dit d'où vient ce fil et comment relire ce qui manque. */
+/** Header identifying the source conversation and how to reread omissions. */
 export function renderHandoffHeader(source: HandoffSource, target: AgentKind): string {
   return [
     `# Suite d'une conversation menée avec ${AGENT_NAMES[source.agent]}`,
@@ -302,7 +261,7 @@ function renderOmitted(source: HandoffSource, omitted: NonNullable<HandoffSelect
   return `[${omitted.messages} message(s) omis ici, du message ${omitted.fromSeq} au message ${omitted.toSeq}. Pour les relire : read_conversation avec id="${source.id}" et before=${before}, puis remonter avec la valeur de \`before\` que l'outil annonce.]`
 }
 
-/** Le texte entier, prêt à injecter. */
+/** Complete text ready for injection. */
 export function renderHandoff(source: HandoffSource, target: AgentKind, selection: HandoffSelection): string {
   const parts = [renderHandoffHeader(source, target), '## Fil d\'origine']
   if (selection.head) parts.push(renderItem(selection.head))
@@ -317,15 +276,7 @@ export function renderHandoff(source: HandoffSource, target: AgentKind, selectio
   return parts.join('\n\n')
 }
 
-/**
- * Bâtit le transfert d'une conversation.
- *
- * Le budget porte sur le fil transmis : la référence y est comptée avant les messages,
- * parce qu'elle est ce qui reste quand rien d'autre ne tient, et un transfert qui ne
- * pourrait même pas dire où relire échoue plutôt que de partir muet. L'en-tête, lui,
- * est un coût fixe hors budget, comme les consignes : le compter ferait du budget
- * minimal un budget vide.
- */
+/** Builds a conversation handoff. The transferred history budget counts the reference before messages: it survives when nothing else fits, and transfers unable even to reference omitted history fail instead of going silent. Headers have fixed overhead outside the budget, like instructions; counting them would empty the minimum budget. */
 export function buildHandoff(
   items: HandoffItem[],
   source: HandoffSource,
@@ -335,7 +286,7 @@ export function buildHandoff(
   if (items.length === 0) throw new HandoffError('handoff_empty', 'This conversation has no message to carry over.')
 
   const budgetBytes = budgetTokens * BYTES_PER_TOKEN
-  // La référence au pire : tous les messages omis, numéros à six chiffres.
+  // Worst-case reference: all messages omitted, six-digit numbers.
   const reference = renderOmitted(source, { messages: items.length, fromSeq: 999_999, toSeq: 999_999 }, 999_999)
   const fixed = Buffer.byteLength(reference) + 64
   if (fixed > budgetBytes) {
@@ -353,7 +304,7 @@ export function buildHandoff(
   }
 }
 
-/** Les éléments d'une conversation, lus par pages comme la relecture du fil. */
+/** Conversation elements read in pages like conversation replay. */
 export function readHandoffItems(log: EventLog, conversationId: string): HandoffItem[] {
   const entries: JournalEntry[] = []
   let after = 0

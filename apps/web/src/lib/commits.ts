@@ -3,37 +3,33 @@ import type { CommitDiffDto, CommitListDto } from '@sillage/protocol'
 import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
-/** Commits chargés d'un coup, et pas à pas ensuite. */
+/** Initial commit batch size and subsequent load step. */
 export const COMMIT_PAGE = 30
 
 /**
- * Les derniers commits de la branche du répertoire consulté.
- *
- * `limit` grandit au lieu de paginer par décalage : la liste entière est relue, ce qui
- * évite de recoller des pages qui ont pu bouger entre deux lectures. Un commit vient
- * s'ajouter en tête à chaque `git commit` de l'agent, et un rebase peut réécrire tout
- * ce qu'on avait déjà. Relire cent lignes de `git log` ne coûte rien.
+ * Latest commits on the viewed directory's branch. Grow `limit` rather than offset pagination:
+ * rereading avoids stitching pages that may shift between reads. Agent commits prepend entries and
+ * rebases rewrite existing ones. Rereading a hundred `git log` lines is cheap.
  */
 export function useCommits(scope: WorkspaceScope, limit: number, all = false) {
   return useQuery({
     queryKey: ['commits', scope, limit, all],
-    // Charger la suite ne doit ni vider le graphe ni faire perdre la position de lecture.
+    // Loading more must neither empty the graph nor lose reading position.
     placeholderData: (previous, query) =>
       query?.queryKey[1] === scope && query.queryKey[3] === all ? previous : undefined,
     queryFn: () => api.get<CommitListDto>(`${workspaceApiBase(scope)}/commits?limit=${limit}&all=${all}`),
-    // Comme le diff : relu à l'ouverture de l'onglet et à la fin d'un tour, jamais en
-    // boucle. Chaque lecture lance un process git.
+    // Like diffs: reread on tab opening and turn completion, never poll. Every read starts a Git process.
     staleTime: Infinity,
     refetchOnMount: 'always',
   })
 }
 
-/** Le diff d'un commit, demandé seulement quand on le déplie. */
+/** Commit diff requested only on expansion. */
 export function useCommitDiff(scope: WorkspaceScope, hash: string, enabled: boolean) {
   return useQuery({
     queryKey: ['commit-diff', scope, hash],
     queryFn: () => api.get<CommitDiffDto>(`${workspaceApiBase(scope)}/commits/${hash}/diff`),
-    // Un commit est immuable : une fois lu, il n'y a plus de raison d'y revenir.
+    // Commits are immutable: once read, there is no reason to refetch.
     staleTime: Infinity,
     enabled,
   })

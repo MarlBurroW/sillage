@@ -1,10 +1,7 @@
 /**
- * L’écho : trois ondes parallèles prolongent le mouvement.
- * `currentColor` préserve la teinte choisie dans les réglages.
- *
- * Le tracé de référence vit dans `docs/brand/symbol.svg`. Les copies autonomes
- * (favicons, site, signatures) doivent rester identiques ; les PNG se régénèrent
- * avec `node scripts/brand-assets.mjs`.
+ * The Echo: three parallel waves extend the motion. currentColor preserves selected hues. Reference
+ * path lives in docs/brand/symbol.svg; standalone favicon/site/signature copies must match.
+ * Regenerate PNGs with node scripts/brand-assets.mjs.
  */
 export function Logo({ size = 20, className }: { size?: number; className?: string }) {
   return (

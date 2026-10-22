@@ -4,7 +4,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { sillageEventSchema } from '@sillage/protocol'
 import { describeFastMode, describePluginErrors, translateSignal } from '../src/agents/claude/signals.js'
 
-/** Les champs communs à tout message du SDK, que les cas ne répètent pas. */
+/** Common SDK message fields omitted from individual cases. */
 const base = { uuid: '00000000-0000-0000-0000-000000000000', session_id: 'session' } as const
 
 const message = (fields: Record<string, unknown>): SDKMessage =>
@@ -82,7 +82,7 @@ test('ce qui n’est pas un signal reste ignoré', () => {
 })
 
 test('le mode rapide ne parle qu’aux changements qui concernent la conversation', () => {
-  // L'état de toutes les conversations qui ne l'ont pas demandé : rien à dire.
+  // State for conversations that did not request it: nothing to report.
   assert.equal(describeFastMode('off', 'sdk_opt_in_required', false, null), null)
   assert.equal(describeFastMode('off', null, false, 'off'), null)
 
@@ -99,7 +99,7 @@ test('le mode rapide ne parle qu’aux changements qui concernent la conversatio
   assert.match(blocked?.message ?? '', /crédits d’usage/)
   assert.deepEqual(blocked?.details, { reason: 'extra_usage_disabled' })
 
-  // Un motif que le CLI ajouterait demain s'affiche par sa clé plutôt que de disparaître.
+  // Future CLI reasons display their keys rather than disappear.
   assert.match(describeFastMode('off', 'brand_new_reason' as never, true, null)?.message ?? '', /brand_new_reason/)
 
   const stopped = describeFastMode('off', 'sdk_opt_in_required', false, 'on')

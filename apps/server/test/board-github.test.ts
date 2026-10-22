@@ -35,7 +35,7 @@ interface FakeIssue {
 }
 interface FakeComment { id: number; issue: number; body: string; user: string; created: number; updated: number }
 
-/** Un GitHub en mémoire : juste les routes que le board appelle, avec `since` et la pagination. */
+/** In-memory GitHub implementing only board-used routes, including `since` and pagination. */
 function fakeGitHub() {
   const issues = new Map<number, FakeIssue>()
   const comments: FakeComment[] = []
@@ -158,7 +158,7 @@ async function harness(t: TestContext) {
   const github = fakeGitHub()
   const ctx = { db, config: {} as Config }
   const credentials = { resolve: (userId: string) => (userId === 'owner' ? { username: 'x', token: 'secret' } : undefined) }
-  // Les sessions de maintenance ne partent pas ici : on relève ce qui les aurait ouvertes.
+  // Do not launch maintenance sessions here; record potential triggers instead.
   const events: MaintenanceEvent[] = []
   const board = new BoardSync(ctx, credentials, github.fetcher, {
     respond: async (event) => {
@@ -205,11 +205,11 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   github.add({ number: 6, title: 'Crash in safe mode', body: 'Probably the same root cause as #1.' })
   github.comment(1, 'Same here on Linux')
 
-  // Une carte locale avant la liaison : elle le reste.
+  // Existing local cards stay local after connecting boards.
   const local = (await app.inject({ method: 'POST', url: '/api/projects/project/cards', payload: { title: 'Internal refactor' } })).json() as CardDto
   assert.equal(local.external, null)
 
-  // Seul le propriétaire relie ; un compte sans identifiant GitHub ne le pourrait pas.
+  // Only owners connect; accounts without GitHub credentials cannot.
   assert.equal((await app.inject({ method: 'PUT', url: '/api/projects/project/board-link', payload: LINK, headers: { 'x-user': 'other' } })).statusCode, 403)
   const linked = await app.inject({ method: 'PUT', url: '/api/projects/project/board-link', payload: LINK })
   assert.equal(linked.statusCode, 200, linked.body)
@@ -217,7 +217,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
 
   const cards = await cardsOf()
   assert.deepEqual(cards.map((card) => card.external?.number ?? null).sort(), [1, 2, 4, 6, null], 'Open issues, recently closed ones, no PR, no old closed issue')
-  // Dans une issue, `#1` est l'issue 1, pas la carte locale 1.
+  // In issues, `#1` means issue 1 rather than local card 1.
   const safeMode = cards.find((card) => card.external?.number === 6)!
   assert.deepEqual(safeMode.references.map((ref) => ref.title), ['Crash on start'])
   assert.equal((await byIssue(2))?.column, 'in_progress')
@@ -229,7 +229,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   assert.equal(imported.length, 1)
   assert.deepEqual(imported[0]!.author, { kind: 'github', login: 'stranger' })
 
-  // Sillage → GitHub : colonne, titre.
+  // Sillage to GitHub: column and title.
   await app.inject({ method: 'PATCH', url: `/api/cards/${crash.id}`, payload: { column: 'review', title: 'Crash on start (macOS)' } })
   await board.syncNow('project')
   assert.deepEqual(github.issues.get(1)!.labels, ['review'])
@@ -239,7 +239,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   assert.equal(github.issues.get(1)!.state, 'closed')
   assert.deepEqual(github.issues.get(1)!.labels, [], 'The review label leaves when the card is done')
 
-  // GitHub → Sillage : réouverture, commentaire, label.
+  // GitHub → Sillage: reopening, comments and labels.
   github.edit(1, { state: 'open', state_reason: null, closed: null })
   github.comment(1, 'Still happening in 2.0')
   github.edit(2, { labels: ['review'] })
@@ -249,7 +249,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   assert.equal((await byIssue(2))?.column, 'review')
   assert.equal((await notesOf(crash.id)).length, 2)
 
-  // Une note d'utilisateur publiée ; une note GitHub ne se supprime pas ici.
+  // Published user notes; GitHub notes cannot be deleted here.
   const posted = await app.inject({ method: 'POST', url: `/api/cards/${crash.id}/notes`, payload: { body: 'Thanks, fixed in 2.1', publish: true } })
   assert.equal(posted.statusCode, 201, posted.body)
   await board.syncNow('project')
@@ -260,7 +260,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/card-notes/${thread[0]!.id}` })).statusCode, 409)
   assert.equal((await app.inject({ method: 'POST', url: `/api/cards/${local.id}/notes`, payload: { body: 'x', publish: true } })).statusCode, 409)
 
-  // Un agent : note locale par défaut, publiée signée sur demande ; carte locale ou issue.
+  // Agents default to local notes, publishing signed versions on request; local cards or issues.
   db.insert(conversations).values({ id: '11111111-2222-4333-8444-555555555555', projectId: 'project', userId: 'owner', title: 'Triage', agent: 'claude', config: '{}', status: 'running', cardId: crash.id, createdAt: 1, updatedAt: 1 }).run()
   const session = '11111111-2222-4333-8444-555555555555'
   const listing = mcp('list_cards', {})
@@ -269,7 +269,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   assert.match(mcp('read_card', { number: crash.number }).text, /@stranger sur GitHub/)
   assert.equal(mcp('add_card_note', { body: 'Root cause in loader.ts' }, session).isError, false)
   assert.equal(mcp('add_card_note', { body: 'Could you share your config?', github: true }, session).isError, false)
-  // update_issue : la colonne change, le passage suivant ferme l'issue sur GitHub.
+  // update_issue changes columns; the next pass closes GitHub issues.
   assert.equal(mcp('update_issue', { state: 'closed', reason: 'not_planned' }, session).isError, false)
   assert.equal(mcp('update_issue', { state: 'closed' }).isError, true, 'A session without card cannot close anything')
   await board.syncNow('project')
@@ -300,13 +300,13 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   assert.match(issue.body ?? '', /^Explain each key\.\n\n_Written by an AI agent\._\n<!-- sillage:session=/)
   const docs = (await byIssue(issue.number))!
   assert.equal(docs.description, 'Explain each key.', 'The card shows the text without signature or marker')
-  // La modifier ici garde la signature et la marque sur GitHub.
+  // Editing here preserves GitHub signatures and markers.
   await app.inject({ method: 'PATCH', url: `/api/cards/${docs.id}`, payload: { description: 'Explain every key.' } })
   await board.syncNow('project')
   assert.equal(splitMarker(github.issues.get(issue.number)!.body, DEFAULT_BOARD_LINK_SETTINGS.signature).body, 'Explain every key.')
   assert.match(github.issues.get(issue.number)!.body ?? '', /_Written by an AI agent\._\n<!-- sillage:session=/)
 
-  // Réglage « tout sur GitHub » : une carte créée à la main devient une issue.
+  // 'Everything on GitHub' makes manually created cards into issues.
   await app.inject({ method: 'PUT', url: '/api/projects/project/board-link', payload: { ...LINK, newCards: 'github' } })
   const created = (await app.inject({ method: 'POST', url: '/api/projects/project/cards', payload: { title: 'From the board', column: 'in_progress' } })).json() as CardDto
   assert.ok(created.external)
@@ -314,7 +314,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   const forcedLocal = (await app.inject({ method: 'POST', url: '/api/projects/project/cards', payload: { title: 'Private note', github: false } })).json() as CardDto
   assert.equal(forcedLocal.external, null)
 
-  // Publier une carte locale ; la détacher ; la supprimer la masque.
+  // Publish local cards, detach them, then hide them on deletion.
   const publish = await app.inject({ method: 'POST', url: `/api/cards/${local.id}/publish` })
   assert.equal(publish.statusCode, 200, publish.body)
   const refactor = publish.json() as CardDto
@@ -329,7 +329,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   assert.equal((await cardsOf()).find((card) => card.id === refactor.id)?.title, 'Internal refactor', 'A detached card is left alone')
   assert.equal(await byIssue(4), undefined, 'A hidden issue does not come back')
 
-  // Un refus définitif de GitHub : la carte reprend l'état de l'issue, l'erreur s'affiche.
+  // Permanent GitHub rejections restore issue state to cards and display errors.
   github.denyPatch(2)
   const dark = (await byIssue(2))!
   await app.inject({ method: 'PATCH', url: `/api/cards/${dark.id}`, payload: { column: 'done' } })
@@ -339,7 +339,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   assert.equal(state.link.lastError, 'board_github_forbidden')
   assert.equal(state.link.hiddenCount, 1)
 
-  // Délier : les cartes GitHub sans travail local partent, celles qui en portent restent.
+  // Disconnecting removes GitHub cards without local work and retains others.
   const unlinked = await app.inject({ method: 'DELETE', url: '/api/projects/project/board-link' })
   assert.equal(unlinked.statusCode, 200, unlinked.body)
   const after = await cardsOf()
@@ -364,7 +364,7 @@ test('maintenance triggers: new issues and comments without the Sillage marker, 
   github.comment(1, 'Still broken', 'stranger')
   github.comment(1, 'Me too, from my own account', 'me')
   github.comment(1, `Fixed in main\n${marker}`, 'me')
-  // Un vieux commentaire qu'on découvre parce qu'il vient d'être modifié.
+  // Old comments discovered only because they were recently modified.
   github.comment(1, 'Edited long after', 'stranger', Date.now() - 86_400_000)
   await board.syncNow('project')
 
@@ -374,7 +374,7 @@ test('maintenance triggers: new issues and comments without the Sillage marker, 
   assert.deepEqual(comments, ['Still broken', 'Me too, from my own account'])
   assert.equal(events.filter((event) => event.kind === 'comment').length, 1, 'One batch per issue')
 
-  // Ce que Sillage publie lui-même ne revient pas comme nouveau.
+  // Sillage's own publications never return as new work.
   events.length = 0
   const old = (await byIssue(1))!
   await app.inject({ method: 'POST', url: `/api/cards/${old.id}/notes`, payload: { body: 'Thanks!', publish: true } })
@@ -382,7 +382,7 @@ test('maintenance triggers: new issues and comments without the Sillage marker, 
   await board.syncNow('project')
   assert.deepEqual(events, [])
 
-  // Déclencheurs coupés : plus rien.
+  // Disabled triggers launch nothing.
   await app.inject({ method: 'PUT', url: '/api/projects/project/board-link', payload: LINK })
   github.comment(1, 'Anyone?', 'stranger')
   await board.syncNow('project')
@@ -433,7 +433,7 @@ test('maintenance sessions: one per issue, comments follow it, archive restarts,
   assert.equal(await responder.respond({ kind: 'comment', link: link(), issue: issue(), comments: [comment('Hello?')] }), 'messaged')
   assert.equal(sent.at(-1)!.steer, true)
 
-  // Archivée : le commentaire suivant ouvre une session neuve, sans signature visible.
+  // Archived: the next comment opens a fresh session without visible signatures.
   db.update(conversations).set({ archivedAt: Date.now() }).where(eq(conversations.id, conversation.id)).run()
   assert.equal(await responder.respond({ kind: 'comment', link: link(), issue: issue(), comments: [comment('Ping')] }), 'limited', 'Three per hour at most')
   db.update(boardLinks).set({ maxSessionsPerHour: 10 }).run()

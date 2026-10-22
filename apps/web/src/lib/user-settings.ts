@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { DEFAULT_PROJECT_DEFAULTS, type AgentConfig, type ComposerLayout, type NotificationPrefs, type OnboardingState, type ProjectDefaults, type UserSettingsDto } from '@sillage/protocol'
+import { DEFAULT_PROJECT_DEFAULTS, type AgentConfig, type AgentKind, type BoardOrder, type ComposerLayout, type NotificationPrefs, type OnboardingState, type ProjectDefaults, type UserSettingsDto } from '@sillage/protocol'
 import { api } from './api'
 
 const USER_SETTINGS_KEY = ['user-settings']
 
-/** `enabled` pour les écrans montés avant la session : sans compte, la route répondrait 401. */
+/** Use `enabled` for screens mounted before login: the route returns 401 without an account. */
 export function useUserSettings(enabled = true) {
   return useQuery({
     queryKey: USER_SETTINGS_KEY,
@@ -13,13 +13,13 @@ export function useUserSettings(enabled = true) {
   })
 }
 
-/** Les défauts des projets à venir, ceux du protocole tant que le compte n'est pas lu. */
+/** Defaults for future projects, using protocol defaults until the account loads. */
 export function useProjectDefaults(): ProjectDefaults {
   const { data } = useUserSettings()
   return data?.projectDefaults ?? DEFAULT_PROJECT_DEFAULTS
 }
 
-/** Les deux défauts, remplacés en bloc et appliqués sans attendre : ce sont des cartes qu'on clique. */
+/** Replace both defaults atomically and apply immediately because they are clickable cards. */
 export function useUpdateProjectDefaults() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -38,8 +38,55 @@ export function useUpdateProjectDefaults() {
 }
 
 /**
- * L'état de la visite, remplacé en bloc et appliqué sans attendre : l'étape suivante
- * doit s'afficher au clic, pas après l'aller-retour qui la mémorise.
+ * Board column order and its updater. Apply immediately so the board reorders on click, reverting
+ * on server rejection.
+ */
+export function useBoardOrder(projectId: string | undefined): [BoardOrder, (order: BoardOrder) => void] {
+  const queryClient = useQueryClient()
+  const { data } = useUserSettings()
+  const update = useMutation({
+    mutationFn: (order: BoardOrder) => api.patch<UserSettingsDto>('/api/me/settings', { boardOrder: { projectId, order } }),
+    onMutate: async (order) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous && projectId) {
+        queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, boardOrder: { ...previous.boardOrder, [projectId]: order } })
+      }
+      return { previous }
+    },
+    onError: (_error, _order, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+  const order = (projectId && data?.boardOrder[projectId]) || 'manual'
+  return [order, (next) => update.mutate(next)]
+}
+
+/**
+ * Replace hidden CLIs atomically and apply immediately: rows disappear on click and return
+ * unchanged if rejected.
+ */
+export function useUpdateHiddenAgents() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (hiddenAgents: AgentKind[]) => api.patch<UserSettingsDto>('/api/me/settings', { hiddenAgents }),
+    onMutate: async (hiddenAgents) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous) queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, hiddenAgents })
+      return { previous }
+    },
+    onError: (_error, _agents, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+}
+
+/**
+ * Replace onboarding state atomically and apply immediately: show the next step on click instead of
+ * waiting for the persistence round trip.
  */
 export function useUpdateOnboarding() {
   const queryClient = useQueryClient()
@@ -58,7 +105,7 @@ export function useUpdateOnboarding() {
   })
 }
 
-/** Le défaut d'un CLI, remplacé en bloc : la route ne fusionne pas champ par champ. */
+/** Replace a CLI's defaults atomically: the route does not merge individual fields. */
 export function useUpdateAgentDefault() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -69,11 +116,9 @@ export function useUpdateAgentDefault() {
 }
 
 /**
- * Les projets repliés dans la sidebar.
- *
- * Appliqué localement avant la réponse : un chevron qui attend un aller-retour réseau
- * pour tourner donne une sidebar molle, alors que le repli est un geste qu'on répète.
- * La réponse du serveur fait ensuite foi, comme pour toute mutation.
+ * Collapsed sidebar projects. Apply locally before the reply: waiting a round trip to rotate a
+ * frequently used chevron makes the sidebar feel sluggish. The server reply is authoritative as
+ * with every mutation.
  */
 export function useUpdateCollapsedProjects() {
   const queryClient = useQueryClient()
@@ -92,8 +137,7 @@ export function useUpdateCollapsedProjects() {
     },
 
     onError: (_error, _ids, context) => {
-      // Le serveur n'a pas pris le repli : l'affichage doit redevenir ce qu'il connaît,
-      // sinon un projet resterait fermé chez soi et ouvert au rechargement suivant.
+      // Server rejected the collapse: restore known state or the project would be closed now and reopen on reload.
       if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
     },
 
@@ -101,7 +145,7 @@ export function useUpdateCollapsedProjects() {
   })
 }
 
-/** Les sortes de notifications voulues, remplacées en bloc et appliquées sans attendre. */
+/** Replace requested notification types atomically and apply immediately. */
 export function useUpdateNotificationPrefs() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -120,9 +164,8 @@ export function useUpdateNotificationPrefs() {
 }
 
 /**
- * Les réglages épinglés sous le composer, remplacés en bloc et appliqués sans attendre :
- * une puce qui apparaît après un aller-retour réseau donnerait l'impression que
- * l'épingle n'a pas pris.
+ * Replace composer-pinned settings atomically and apply immediately: chips appearing a round trip
+ * later would make pinning look unsuccessful.
  */
 export function useUpdateComposerLayout() {
   const queryClient = useQueryClient()

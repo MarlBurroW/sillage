@@ -1,11 +1,10 @@
-# Empaquetage de l'application de bureau.
+# Desktop application packaging.
 #
-# Rien n'y est recompilé : `stage/` reçoit l'arbre d'exécution de la release et le Node
-# qui l'a construit (scripts/desktop-stage.mjs), et l'app les lance comme le service
-# d'une installation. La version vient du tag, passée par la CI
-# (-c.extraMetadata.version).
+# Nothing is recompiled here: `stage/` receives the release runtime and the Node
+# that built it (scripts/desktop-stage.mjs); the app launches them like an installed
+# service. CI passes the version from the tag (-c.extraMetadata.version).
 
-# Même famille que le label launchd de l'installeur macOS.
+# Same family as the macOS installer's launchd label.
 appId: io.github.marlburrow.sillage
 productName: Sillage
 copyright: Copyright © MarlBurroW
@@ -15,25 +14,23 @@ directories:
 files:
   - dist/**
   - package.json
-# `stage/` entier plutôt que `stage/sillage` : electron-builder écarte toujours le
-# node_modules placé à la racine d'une source copiée, et le serveur ne démarrerait pas.
-# Un niveau plus bas, il passe.
+# Use all of `stage/`, not `stage/sillage`: electron-builder always excludes
+# node_modules at the root of a copied source, which would prevent server startup.
+# One level down, it is included.
 extraResources:
   - from: stage
     to: .
-# Sans version : `releases/latest/download/<nom>` mène toujours au dernier paquet, et le
-# site comme le README en font des liens de téléchargement direct.
+# No version: `releases/latest/download/<name>` always points to the latest package,
+# so both the site and README can use direct download links.
 artifactName: Sillage-${os}-${arch}.${ext}
-# La mise à jour de l'app (src/updates.ts) lit les releases GitHub. Rien n'est publié
-# d'ici (`--publish never`) : cette section fait écrire app-update.yml dans l'app, et à
-# côté des paquets les latest*.yml que la release publie avec eux.
+# Generate app-update.yml and latest*.yml for GitHub discovery. Publishing is handled
+# by the release workflow, after all packages are uploaded (`--publish never` here).
 publish:
   provider: github
   owner: MarlBurroW
   repo: sillage
   releaseType: release
-# L'app n'a aucune dépendance native à recompiler pour Electron : celles du serveur
-# tournent sous le Node embarqué, pas sous Electron.
+# Server native dependencies run under bundled Node, not Electron.
 npmRebuild: false
 
 mac:
@@ -41,38 +38,38 @@ mac:
     - dmg
     - zip
   category: public.app-category.developer-tools
-  # Signature ad hoc en attendant celle du compte développeur : sans signature du tout,
-  # un Mac Apple Silicon refuse de lancer l'app. Le runtime durci exigerait une
-  # dérogation de validation des bibliothèques avec une signature ad hoc.
+  # Ad hoc signature until a developer account signs it: without any signature,
+  # Apple Silicon Macs refuse to launch. Hardened runtime would require a library
+  # validation exception with an ad hoc signature.
   identity: '-'
   hardenedRuntime: false
   extendInfo:
-    # Demandée par macOS dès que la dictée ouvre le micro ; sans elle, l'app est tuée.
+    # Required by macOS when dictation opens the microphone; without it the app is killed.
     NSMicrophoneUsageDescription: Sillage uses the microphone for dictation.
 
 win:
-  # Installeur NSIS par utilisateur (AppData\Local\Programs), sans droits
-  # d'administrateur. Pas encore de signature : SmartScreen avertit au premier lancement.
+  # Per-user NSIS installer (AppData\Local\Programs), without administrator rights.
+  # Not signed yet: SmartScreen warns at first launch.
   target:
     - nsis
 
 linux:
-  # Le .deb installe un profil AppArmor : depuis Ubuntu 24.04, sans lui, le bac à sable
-  # de Chromium ne peut plus créer ses namespaces et l'app s'arrête au lancement.
-  # L'AppImage, qui n'installe rien, ne s'ouvre pas sur ces systèmes sans ce profil.
+  # The .deb installs an AppArmor profile: since Ubuntu 24.04, Chromium's sandbox
+  # cannot create its namespaces without it and the app exits at launch.
+  # AppImage installs nothing and cannot open on these systems without this profile.
   target:
     - deb
     - AppImage
   category: Development
   executableName: sillage
-  # Le .deb exige un mainteneur, faute de quoi electron-builder demande un e-mail
-  # d'auteur, qui serait publié dans chaque paquet.
+  # The .deb requires a maintainer; otherwise electron-builder asks for an author
+  # email, which would be published in every package.
   maintainer: MarlBurroW (https://github.com/MarlBurroW/sillage)
   synopsis: Agentic development platform for Claude Code, Codex, OpenCode and Grok
 
 deb:
-  # Les dépendances d'electron-builder (getDefaultDepends, FpmTarget.js), plus git, sans
-  # lequel Sillage ne clone, ne compare ni ne crée de worktree.
+  # electron-builder dependencies (getDefaultDepends, FpmTarget.js), plus git,
+  # without which Sillage cannot clone, compare, or create worktrees.
   depends:
     - libgtk-3-0
     - libnotify4

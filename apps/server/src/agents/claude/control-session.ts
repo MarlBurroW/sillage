@@ -3,18 +3,14 @@ import { AsyncQueue } from '../async-queue.js'
 import { sdkExecutable } from '../launch.js'
 
 /**
- * Une session Claude ouverte le temps d'une requête de contrôle, puis refermée.
+ * Open Claude session for a control request, then close.
  *
- * `supportedModels()`, `supportedCommands()`, `usage…()` exigent un process CLI
- * vivant, mais aucun message n'est envoyé : la file d'entrée reste vide, le CLI
- * démarre, répond, s'arrête, sans consommer ni tokens ni quota. Le squelette
- * (file, abandon, délai, fermeture) était recopié dans chaque catalogue ; il est ici
- * pour que la prochaine correction du cycle de vie ne soit à faire qu'une fois.
+ * `supportedModels()`, `supportedCommands()`, `usage…()` need live CLI but no messages: empty input
+ * queue, start/respond/stop without tokens or quota. Shared queue/abort/timeout/cleanup skeleton
+ * prevents repeating lifecycle fixes across catalogs.
  *
- * Le process coûte ~400 Mo le temps de la sonde. Un plafond global borne ce que
- * plusieurs sondes simultanées peuvent lancer : le sélecteur de worktree du brouillon
- * fait changer le dossier sondé à chaque clic, et sans ce garde-fou chaque clic
- * lancerait son CLI en parallèle des précédents.
+ * Process costs ~400 MB while probing. Global cap bounds simultaneous launches: draft worktree
+ * clicks change probed cwd, otherwise every click starts another parallel CLI.
  */
 
 const DEFAULT_TIMEOUT_MS = 20_000
@@ -22,18 +18,16 @@ const MAX_CONCURRENT = 2
 
 interface ControlSessionOptions {
   /**
-   * Toujours renseigné, jamais laissé au SDK : sa résolution interne cherche le
-   * binaire du paquet plateforme `@anthropic-ai/claude-agent-sdk-<os>-<arch>`, que
-   * la release ne transporte plus. Sans ce chemin la sonde échoue en quelques
-   * millisecondes sur « Native CLI binary not found », et l'agent paraît absent
-   * alors que son CLI est installé.
+   * Always supplied instead of SDK resolution, which searches platform package
+   * `@anthropic-ai/claude-agent-sdk-<os>-<arch>` no longer shipped. Without path, probe fails
+   * “Native CLI binary not found” in milliseconds, falsely suggesting missing installed agent.
    */
   executable: () => Promise<string>
   cwd: string
-  /** Préfixe de la sortie d'erreur relayée : `[claude <tag>]`. */
+  /** Forwarded stderr prefix: `[claude <tag>]`. */
   tag: string
   timeoutMs?: number
-  /** Options de lancement propres à la sonde, en plus du socle commun. */
+  /** Probe-specific launch options beyond common base. */
   options?: Omit<Options, 'cwd' | 'abortController' | 'pathToClaudeCodeExecutable' | 'stderr'>
 }
 
@@ -54,8 +48,7 @@ export async function withControlSession<T>(
         cwd,
         abortController: abort,
         pathToClaudeCodeExecutable: sdkExecutable(await executable()),
-        // La sortie d'erreur du CLI est la seule explication d'une sonde ratée : la
-        // jeter ne laisse au serveur qu'un 502 sans motif.
+        // CLI stderr alone explains probe failure: discarding leaves unexplained 502.
         stderr: (data) => process.stderr.write(`[claude ${tag}] ${data}`),
       },
     })
@@ -67,8 +60,8 @@ export async function withControlSession<T>(
     try {
       return await fn(session)
     } catch (err) {
-      // Le SDK ne dit que « Query closed before response received » quand on
-      // l'abandonne : le lecteur du 502 doit savoir que c'est le délai qui a parlé.
+      // SDK only says “Query closed before response received” on abort: 502 readers must know
+      // timeout caused it.
       if (timedOut) {
         throw new Error(`Claude CLI did not answer within ${Math.round(timeoutMs / 1000)}s`)
       }
@@ -83,7 +76,7 @@ export async function withControlSession<T>(
   }
 }
 
-/** Sémaphore minimal : les demandes au-delà du plafond attendent leur tour. */
+/** Minimal semaphore: requests above cap wait their turn. */
 let running = 0
 const waiting: Array<() => void> = []
 

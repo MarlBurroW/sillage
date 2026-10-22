@@ -35,18 +35,12 @@ import { forbidden, notFound } from '../errors.js'
 import { createHmac } from 'node:crypto'
 import { requireUser } from '../require-user.js'
 
-/** Préfixe des adresses publiques, exempté de l'authentification par session. */
+/** Public address prefix, exempt from session authentication. */
 export const HOOKS_PREFIX = '/api/hooks/'
 
-/**
- * Le webhook des automatisations : l'adresse publique qui reçoit les appels, et ce que
- * l'interface en lit et en règle.
- *
- * Mêmes droits que les tâches planifiées : lire pour qui voit le projet, régler (et voir
- * le secret) pour qui a créé l'automatisation ou possède le projet.
- */
+/** Automation webhooks: the public receiving endpoint and interface reads and settings. Same permissions as scheduled tasks: project viewers can read; creators or project owners can configure and see the secret. */
 export function registerAutomationRoutes(app: FastifyInstance, ctx: AppContext, receiver: AutomationReceiver): void {
-  // Lue à chaque appel : la configuration peut manquer au moment de l'enregistrement.
+  // Read on every call: configuration may be missing at registration time.
   const publicUrl = () => publicUrlOf(ctx.db, ctx.config)
 
   const loadProject = (projectId: string, userId: string) => {
@@ -83,11 +77,7 @@ export function registerAutomationRoutes(app: FastifyInstance, ctx: AppContext, 
     return row
   }
 
-  /**
-   * Le corps brut, n'importe quel type de contenu : la signature se vérifie octet pour
-   * octet, et un appelant peut envoyer du JSON, un formulaire ou du texte. Encapsulé
-   * pour que ce lecteur ne s'applique qu'ici.
-   */
+  /** Raw body of any content type: signatures are checked byte for byte, and callers may send JSON, forms or text. Encapsulated so this parser applies only here. */
   void app.register(async (scope) => {
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', { parseAs: 'buffer' }, (_request, body, done) => done(null, body))
@@ -143,11 +133,7 @@ export function registerAutomationRoutes(app: FastifyInstance, ctx: AppContext, 
     return { webhook: webhookToDto(hook, publicUrl()), secret: revealSecret(receiver.key, hook) }
   })
 
-  /**
-   * Essaie des réglages, enregistrés ou en cours d'édition, sur un appel du journal ou
-   * saisi dans le banc d'essai : verdict, conditions une à une, script, et le message tel
-   * que la session le recevrait. Rien n'est lancé ni écrit.
-   */
+  /** Tests saved or edited settings against a journal entry or test-bench input: verdict, individual conditions, script and the message the session would receive. Nothing is launched or written. */
   app.post('/api/schedules/:id/webhook/test', async (request): Promise<WebhookTestResult> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -179,8 +165,8 @@ export function registerAutomationRoutes(app: FastifyInstance, ctx: AppContext, 
         { ...event, vars: decision.vars, subject: decision.subject ?? '', date: '', delivery_id: deliveryId ?? '' },
         { keepMissing: true },
       ),
-      // Le message entier, en-tête compris : c'est ce que l'agent lira. L'identifiant de
-      // session n'existe pas encore, sa place est marquée.
+      // The full message including its header is what the agent will read. No session
+      // ID exists yet, so mark its placeholder.
       message: buildWebhookPrompt({
         task: { name: task.name, prompt: template, maxDurationMinutes: task.maxDurationMinutes },
         delivery: {
@@ -199,11 +185,7 @@ export function registerAutomationRoutes(app: FastifyInstance, ctx: AppContext, 
     }
   })
 
-  /**
-   * La commande curl qui enverrait cet appel pour de vrai, déjà signée : de quoi éprouver
-   * le chemin HTTP complet sans calculer de HMAC à la main. Signée ici parce que le
-   * navigateur n'a pas toujours `crypto.subtle` (une page servie en http hors localhost).
-   */
+  /** Already-signed curl command for sending this call for real: exercises the complete HTTP path without manually calculating HMAC. Sign here because browsers do not always have `crypto.subtle` (HTTP pages outside localhost). */
   app.post('/api/schedules/:id/webhook/curl', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -228,7 +210,7 @@ export function registerAutomationRoutes(app: FastifyInstance, ctx: AppContext, 
     return { command: lines.join(' \\\n') }
   })
 
-  /** Rejoue un appel du journal comme s'il arrivait : il passe tous les garde-fous. */
+  /** Replays a journal call as if newly received, applying every safeguard. */
   app.post('/api/schedules/:id/webhook/replay', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

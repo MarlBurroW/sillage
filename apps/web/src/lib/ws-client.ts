@@ -14,24 +14,22 @@ import { decodeScope, projectScope, type WorkspaceScope } from './workspace-scop
 export interface StreamListener {
   onEvent(seq: number, ts: number, event: SillageEvent): void
   /**
-   * `appliedConfig` est la configuration sous laquelle le CLI tourne, `null` à froid.
-   * Elle diverge de celle enregistrée tant qu'un réglage inapplicable en vol attend son
-   * redémarrage. Voir le message `status` du protocole.
+   * `appliedConfig` is the configuration currently used by the CLI, or `null` before startup. It
+   * differs from the saved configuration while a setting that cannot change live awaits a restart.
+   * See the protocol's `status` message.
    */
   onStatus(status: ConversationStatus, warm: boolean, appliedConfig: AgentConfig | null): void
-  /** Titre proposé par le CLI après le premier tour. */
+  /** Title suggested by the CLI after the first turn. */
   onTitle(title: string): void
-  /** Retard trop important pour le socket : recharger par la route REST. */
+  /** Socket lag is too large: reload through the REST route. */
   onCatchupNeeded(): void
   onConnectionChange(connected: boolean): void
 }
 
 /**
- * Suivi des statuts de l'onglet entier, indépendant du fil ouvert.
- *
- * Le serveur pousse le statut de toutes les conversations lisibles ; cet abonné les
- * reçoit sans avoir à s'abonner au journal de chacune, ce qui coûterait un rejeu
- * d'événements pour une seule pastille.
+ * Track statuses for the entire browser tab independently of the open thread. The server pushes
+ * statuses for all readable conversations; this subscriber receives them without subscribing to
+ * every log, which would require event replay for a single dot.
  */
 export interface StatusUpdate {
   conversationId: string
@@ -39,66 +37,59 @@ export interface StatusUpdate {
   warm: boolean
   background: number
   loops: number
-  /** Dernier `seq` qui valait qu'on prévienne, d'où se déduit ce qui reste à lire. */
+  /** Latest `seq` worth notifying about, used to derive unread state. */
   lastNotableSeq: number
-  /** Relevés de volume, pour le mode détaillé de la sidebar. */
+  /** Volume readings for detailed sidebar mode. */
   metrics: ConversationMetrics
 }
 
 export interface StatusWatcher {
   onStatus(update: StatusUpdate): void
   /**
-   * Socket rétabli après une coupure. Les transitions survenues pendant celle-ci n'ont
-   * été poussées à personne : ce qui est affiché doit être relu à la source.
+   * Socket restored after a disconnect. Transitions during the outage were not pushed to anyone:
+   * reload displayed data from its source.
    */
   onResync(): void
-  /** Un projet ou une conversation a été ajouté, retiré ou modifié ailleurs. */
+  /** A project or conversation was added, removed, or edited elsewhere. */
   onListsChanged(): void
 }
 
 const MAX_BACKOFF_MS = 15_000
 
 /**
- * Délai laissé au serveur pour répondre au ping d'un retour au premier plan.
- *
- * Court : pendant ce temps, l'écran montre peut-être des statuts périmés, alors qu'un
- * faux positif ne coûte qu'une reconnexion.
+ * Time allowed for a server pong after returning to the foreground. Keep it short: displayed
+ * statuses may be stale during this time, while a false positive only costs a reconnect.
  */
 const PROBE_TIMEOUT_MS = 3_000
 
-/** Au-delà, `resync` rend la main même sans socket : le serveur est injoignable. */
+/** After this delay, `resync` yields even without a socket: the server is unreachable. */
 const RESYNC_TIMEOUT_MS = 5_000
 
 /**
- * Les niveaux de l'arborescence se montent en cascade au dépliage. Ce délai laisse la
- * cascade retomber avant de déclarer l'ensemble, plutôt qu'un message par niveau.
+ * Tree levels mount in a cascade when expanded. Let it settle before declaring the full set instead
+ * of sending one message per level.
  */
 const TREE_WATCH_FLUSH_MS = 50
 
 /**
- * Client WebSocket unique de l'onglet.
- *
- * Il ne porte aucun état métier : le journal reste la source de vérité (invariant I2).
- * Sa seule responsabilité est de garder un curseur par conversation et de se
- * réabonner à partir de ce curseur après une coupure, pour que rien ne soit perdu ni
- * reçu deux fois.
+ * Single WebSocket client for the browser tab. Contains no business state: the log remains the
+ * source of truth (invariant I2). Its only responsibility is keeping a cursor per conversation and
+ * resubscribing from that cursor after a disconnect so nothing is lost or received twice.
  */
 class WsClient {
   private socket: WebSocket | null = null
   private readonly listeners = new Map<string, Set<StreamListener>>()
   private readonly cursors = new Map<string, number>()
   private readonly statusWatchers = new Set<StatusWatcher>()
-  /** Toasts poussés par le serveur pour cet onglet, quand il est visible. */
+  /** Server-pushed toasts for this browser tab while visible. */
   private readonly notifyListeners = new Set<(notification: InAppNotification) => void>()
   private readonly decisionListeners = new Set<() => void>()
-  /** L'abonnement push de cet appareil, déclaré au serveur avec la visibilité. */
+  /** This device's push subscription, sent to the server with visibility state. */
   private pushEndpoint: string | null = null
   /**
-   * Dossiers suivis sur le disque, comptés par conversation.
-   *
-   * Comptés et non listés : le même chemin peut être demandé deux fois, par deux
-   * panneaux ouverts sur la même conversation comme par le double montage du mode
-   * strict de React, et le premier départ ne doit pas emporter la veille de l'autre.
+   * Watched disk directories, reference-counted per conversation. The same path can be requested
+   * twice by panels on the same conversation or React strict-mode double mounting; the first
+   * unsubscribe must not remove the other's watch.
    */
   private readonly treePaths = new Map<WorkspaceScope, Map<string, number>>()
   private readonly treeListeners = new Set<(scope: WorkspaceScope, path: string) => void>()
@@ -108,24 +99,22 @@ class WsClient {
   private heartbeatTimer: number | null = null
   private lastBeatAt = 0
   /**
-   * Messages reçus depuis le chargement, quels qu'ils soient : chacun prouve que le
-   * socket vit. Un compteur plutôt qu'une heure, pour qu'une réponse arrivée dans la
-   * même milliseconde que le ping ne passe pas pour un silence.
+   * Count all messages received since load: each proves socket liveness. Use a counter rather than
+   * a timestamp so a reply arriving in the same millisecond as a ping is not mistaken for silence.
    */
   private received = 0
   private probeTimer: number | null = null
   private probeDeadline = 0
   private readonly openWaiters = new Set<() => void>()
   private disposed = false
-  /** Distingue la première ouverture d'une reprise, seule à devoir resynchroniser. */
+  /** Distinguish first connection from reconnection, which alone requires resynchronization. */
   private opened = false
 
   constructor() {
-    // Un socket tué par la mise en veille du téléphone ne déclenche pas toujours
-    // 'close' : il se dit ouvert et ne reçoit plus rien, statuts compris. Chaque retour
-    // au premier plan le met donc à l'épreuve, au lieu de ne rétablir que ce qui s'est
-    // déclaré fermé. `resume` est le dégel d'un onglet par Chrome Android, `pageshow`
-    // le retour d'une page gardée en cache par le navigateur.
+    // A socket killed by phone sleep may never emit 'close': it claims to be open but receives
+    // nothing, including statuses. Test it on every foreground return rather than reconnecting only
+    // explicitly closed sockets. `resume` is Chrome Android thawing a tab; `pageshow` restores a
+    // page from browser cache.
     const wake = () => this.check()
     window.addEventListener('online', wake)
     window.addEventListener('pageshow', wake)
@@ -135,8 +124,8 @@ class WsClient {
       this.sendPresence()
     })
     window.addEventListener('pagehide', () => this.sendPresence(false))
-    // L'abonnement de l'appareil, s'il existe : c'est ce qui permet au serveur de ne pas
-    // lui pousser de notification système pendant que l'application est sous les yeux.
+    // The device subscription, if any, lets the server avoid pushing a system notification while
+    // the app is visible.
     if ('serviceWorker' in navigator) {
       void navigator.serviceWorker
         .getRegistration()
@@ -146,13 +135,13 @@ class WsClient {
     }
   }
 
-  /** Après un abonnement ou un désabonnement de cet appareil. */
+  /** After this device subscribes or unsubscribes. */
   setPushEndpoint(endpoint: string | null): void {
     this.pushEndpoint = endpoint
     this.sendPresence()
   }
 
-  /** Visible ou non, et l'abonnement de l'appareil : de quoi choisir entre toast et notification. */
+  /** Visibility and device subscription provide enough information to choose between toast and notification. */
   private sendPresence(visible = document.visibilityState === 'visible'): void {
     if (this.isOpen) this.send({ t: 'presence', visible, endpoint: this.pushEndpoint })
   }
@@ -171,7 +160,7 @@ class WsClient {
     return this.socket?.readyState === WebSocket.OPEN
   }
 
-  /** Plus personne n'attend rien : inutile de tenir ou de rétablir le socket. */
+  /** No subscribers remain: there is no need to keep or reconnect the socket. */
   private get idle(): boolean {
     return this.listeners.size === 0 && this.statusWatchers.size === 0 && this.treePaths.size === 0
   }
@@ -186,8 +175,8 @@ class WsClient {
     if (!existing) this.listeners.set(conversationId, set)
     set.add(listener)
 
-    // Le curseur ne recule jamais : un second abonné arrivant avec un curseur plus
-    // ancien ne doit pas provoquer un rejeu pour les autres.
+    // The cursor never moves backward: a second subscriber with an older cursor must not trigger
+    // replay for others.
     const current = this.cursors.get(conversationId) ?? -1
     if (afterSeq > current) this.cursors.set(conversationId, afterSeq)
 
@@ -208,10 +197,9 @@ class WsClient {
   }
 
   /**
-   * Suit les statuts de toutes les conversations lisibles, sans abonnement à un fil.
-   *
-   * Ouvre le socket à lui seul : la sidebar est visible sur des pages où aucune
-   * conversation n'est ouverte, et devait pourtant y rester à jour.
+   * Track statuses for all readable conversations without subscribing to a thread. This alone opens
+   * the socket: the sidebar remains visible on pages without an open conversation and must stay
+   * current there too.
    */
   watchStatuses(watcher: StatusWatcher): () => void {
     this.statusWatchers.add(watcher)
@@ -222,10 +210,9 @@ class WsClient {
   }
 
   /**
-   * Demande que ce dossier soit suivi sur le disque tant que l'appelant l'affiche.
-   *
-   * Le serveur ne suit que ce qui est déclaré ici : une veille par dossier déplié, et
-   * rien de récursif. Voir `tree-watch.ts` côté serveur.
+   * Watch this directory on disk while the caller displays it. The server watches only paths
+   * declared here: one watch per expanded directory, with no recursion. See server-side
+   * `tree-watch.ts`.
    */
   watchTree(scope: WorkspaceScope, path: string): () => void {
     const paths = this.treePaths.get(scope) ?? new Map<string, number>()
@@ -242,13 +229,12 @@ class WsClient {
 
       if (count > 1) held.set(path, count - 1)
       else held.delete(path)
-      // La portée reste inscrite avec un ensemble vide : c'est ce qui fait partir
-      // le message qui libère les dernières veilles du serveur.
+      // Keep the scope registered with an empty set so the message releasing its last server watches is sent.
       this.scheduleTreeFlush()
     }
   }
 
-  /** Prévenu quand un dossier suivi a bougé sur le disque. */
+  /** Notify when a watched directory changes on disk. */
   onTreeChanged(listener: (scope: WorkspaceScope, path: string) => void): () => void {
     this.treeListeners.add(listener)
     return () => {
@@ -266,10 +252,9 @@ class WsClient {
 
   private sendTreeWatches(): void {
     for (const [scope, paths] of this.treePaths) {
-      // Tronqué ici et pas seulement borné côté serveur : au-delà de la limite, le
-      // message entier serait refusé et l'arborescence perdrait toutes ses veilles au
-      // lieu des seules surnuméraires. Un explorateur déplié à ce point retombe sur ce
-      // qu'il avait avant : la fin de tour et le bouton de rafraîchissement.
+      // Truncate here as well as enforcing a server limit: beyond the limit the entire message
+      // would be rejected, losing every tree watch rather than just extras. An explorer expanded
+      // this far falls back to turn-end refresh and the refresh button.
       const watched = [...paths.keys()].slice(0, MAX_WATCHED_PATHS)
       const { kind, id } = decodeScope(scope)
       this.send({ t: 'watch-tree', scope: kind, id, paths: watched })
@@ -277,7 +262,7 @@ class WsClient {
     }
   }
 
-  /** Rétablit un socket fermé, met à l'épreuve un socket qui se dit ouvert. */
+  /** Reconnect a closed socket and test one claiming to be open. */
   check(): void {
     if (this.idle) return
     if (this.isOpen) this.probe(PROBE_TIMEOUT_MS)
@@ -285,9 +270,9 @@ class WsClient {
   }
 
   /**
-   * Repart d'un socket neuf, comme après une coupure : les fils rattrapent leur retard
-   * par leur curseur, les statuts sont vidés puis relus. Résolu à l'ouverture, ou après
-   * `RESYNC_TIMEOUT_MS` si le serveur ne répond pas.
+   * Start from a fresh socket as after a disconnect: threads catch up using cursors; statuses are
+   * cleared and reread. Resolves on connection or after `RESYNC_TIMEOUT_MS` if the server does not
+   * respond.
    */
   resync(): Promise<void> {
     return new Promise((resolve) => {
@@ -302,7 +287,7 @@ class WsClient {
     })
   }
 
-  /** Curseur courant, utilisé après un rechargement REST pour se réaligner. */
+  /** Current cursor, used to realign after a REST reload. */
   setCursor(conversationId: string, seq: number): void {
     const current = this.cursors.get(conversationId) ?? -1
     if (seq > current) this.cursors.set(conversationId, seq)
@@ -320,12 +305,11 @@ class WsClient {
       for (const [conversationId, afterSeq] of this.cursors) {
         this.send({ t: 'subscribe', conversationId, afterSeq })
       }
-      // Le serveur a libéré les veilles de la connexion tombée : elles sont redéclarées
-      // en entier, l'ensemble vivant côté client étant la référence.
+      // The server released watches from the lost connection: redeclare all of them using the
+      // client's live set as the reference.
       this.sendTreeWatches()
       this.sendPresence()
-      // Les fils rattrapent leur retard par leur curseur ; les statuts n'ont pas de
-      // journal derrière eux et doivent être relus autrement.
+      // Threads catch up using cursors; statuses have no backing log and must be reread separately.
       if (this.opened) {
         for (const watcher of this.statusWatchers) watcher.onResync()
       }
@@ -348,7 +332,7 @@ class WsClient {
       this.scheduleReconnect()
     }
 
-    // 'error' est toujours suivi de 'close', qui porte déjà la reconnexion.
+    // 'error' is always followed by 'close', which already handles reconnection.
     socket.onerror = () => socket.close()
   }
 
@@ -360,8 +344,8 @@ class WsClient {
       return
     }
 
-    // Avant le filtre par abonné : l'explorateur suit une conversation dont le fil n'a
-    // pas d'abonnement au journal, le panneau se lisant sans session démarrée.
+    // Before subscriber filtering: the explorer watches a conversation without a thread log
+    // subscription, since the panel is readable before a session starts.
     if (message.t === 'tree-changed') {
       const scope = message.scope === 'project' ? projectScope(message.id) : message.id
       for (const listener of this.treeListeners) listener(scope, message.path)
@@ -408,8 +392,8 @@ class WsClient {
         return
       }
       case 'status': {
-        // `?? null` et non le champ brut : un serveur d'avant ce champ ne l'envoie pas,
-        // et le web se déploie sans redémarrage, donc devant lui pendant un moment.
+        // Use `?? null` rather than the raw field: older servers omit it, and the web app can be
+        // deployed ahead of them without restarting the server.
         for (const listener of listeners) {
           listener.onStatus(message.status, message.warm, message.appliedConfig ?? null)
         }
@@ -454,12 +438,9 @@ class WsClient {
   }
 
   /**
-   * Abandonne le socket courant et en ouvre un neuf.
-   *
-   * `close()` seul ne suffit pas : sur une connexion morte, la fermeture attend une
-   * réponse qui ne viendra pas, et 'close' peut tarder des dizaines de secondes. Le
-   * socket est donc détaché avant d'être fermé, et la suite est celle d'une coupure
-   * ordinaire.
+   * Discard the current socket and open a fresh one. `close()` alone is insufficient: on a dead
+   * connection it waits for a reply that never arrives, delaying 'close' by tens of seconds. Detach
+   * the socket before closing it, then follow the normal disconnect path.
    */
   private recycle(): void {
     const socket = this.socket
@@ -482,13 +463,10 @@ class WsClient {
   }
 
   /**
-   * Envoie un ping et tient le socket pour mort si rien n'est revenu dans le délai.
-   *
-   * Le verdict compte les messages reçus plutôt que de se fier à la ponctualité du
-   * minuteur : en arrière-plan, le navigateur retarde les minuteurs, parfois d'une
-   * minute, et la réponse a pu arriver bien avant qu'il se déclenche. Une épreuve déjà
-   * en cours et plus proche de son terme est gardée : un battement ordinaire ne doit pas
-   * repousser le verdict d'un retour au premier plan.
+   * Send a ping and consider the socket dead if nothing returns within the deadline. Count received
+   * messages rather than trusting timer punctuality: browsers delay background timers, sometimes by
+   * a minute, and a response may have arrived long before the timer fires. Keep an existing earlier
+   * deadline so a regular heartbeat cannot postpone a foreground liveness verdict.
    */
   private probe(timeoutMs: number): void {
     const before = this.received
@@ -515,10 +493,9 @@ class WsClient {
     this.stopHeartbeat()
     this.lastBeatAt = Date.now()
     this.heartbeatTimer = window.setInterval(() => {
-      // Un battement très en retard trahit une mise en veille de la machine, que
-      // `visibilitychange` ne signale pas si l'onglet est resté au premier plan :
-      // portable refermé puis rouvert. Le verdict tombe alors vite, comme au retour
-      // d'un téléphone, plutôt qu'au battement suivant.
+      // A very late heartbeat indicates machine sleep, which `visibilitychange` misses if the tab
+      // stayed foregrounded, such as closing and reopening a laptop. Reach a verdict quickly as on
+      // phone resume instead of waiting for the next heartbeat.
       const late = Date.now() - this.lastBeatAt > HEARTBEAT_INTERVAL_MS * 2
       this.lastBeatAt = Date.now()
       this.probe(late ? PROBE_TIMEOUT_MS : HEARTBEAT_INTERVAL_MS)

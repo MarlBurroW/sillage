@@ -1,17 +1,8 @@
 import type { SkillCompatNote } from '@sillage/protocol'
 
-/**
- * Ce qu'un skill fera différemment selon le CLI qui le charge.
- *
- * Les deux CLI suivent le même format, mais chacun lit des champs que l'autre ignore.
- * Un skill écrit pour l'un marche donc chez l'autre, sauf sur ces points, que l'interface
- * signale plutôt que de laisser découvrir à l'usage.
- */
+/** CLI-specific skill behavior. Both CLIs share the format but interpret different fields. Skills generally work in either CLI except for these differences, disclosed by the interface rather than discovered through use. */
 
-/**
- * Champs du frontmatter que Claude Code interprète et que Codex ignore.
- * `argument-hint` n'y est pas : il relève de la substitution d'arguments, notée à part.
- */
+/** Frontmatter fields interpreted by Claude Code but ignored by Codex. Excludes `argument-hint`, which belongs to separately reported argument substitution. */
 const CLAUDE_ONLY_FIELDS = [
   'allowed-tools',
   'disable-model-invocation',
@@ -22,7 +13,7 @@ const CLAUDE_ONLY_FIELDS = [
   'hooks',
 ]
 
-/** `$ARGUMENTS`, ou `$0`, `$1`… : Claude les remplace, Codex les laisse au modèle. */
+/** `$ARGUMENTS`, `$0`, `$1`…: Claude substitutes these; Codex leaves them to the model. */
 const ARGUMENTS_PLACEHOLDER = /\$(ARGUMENTS\b|\d)/
 
 const SCRIPT_EXTENSIONS = /\.(sh|bash|zsh|py|js|mjs|cjs|ts|rb|pl|ps1)$/i

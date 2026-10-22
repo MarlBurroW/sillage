@@ -1,16 +1,15 @@
 import { z } from 'zod'
 
 /**
- * Les compétences qu'un CLI met à disposition de la session.
+ * Skills a CLI makes available to the session.
  *
- * Codex les publie par `skills/list` et les référence en `$nom`. Ce n'est pas une
- * commande : rien ne s'exécute côté client, la compétence rejoint le message comme un
- * élément d'entrée à part entière (`{type:'skill'}`), au même titre qu'une mention de
- * fichier. Claude, lui, expose les siennes parmi ses commandes en `/` et ne publie
- * rien ici.
+ * Codex publishes them through `skills/list` and references them as `$name`. These are not
+ * commands: nothing executes client-side. Skills join the message as first-class inputs
+ * (`{type:'skill'}`), like file mentions. Claude exposes skills among slash commands and
+ * publishes nothing here.
  */
 export const agentSkillSchema = z.object({
-  /** Sans le `$`, tel que le CLI le nomme, et seule clé de résolution à l'envoi. */
+  /** Without `$`, as named by the CLI; the only resolution key on send. */
   name: z.string(),
   description: z.string(),
 })
@@ -18,7 +17,7 @@ export const agentSkillSchema = z.object({
 export type AgentSkillDto = z.infer<typeof agentSkillSchema>
 
 /**
- * Plafond des compétences d'un message, aligné sur celui des mentions et pour la même
- * raison : chacune injecte un document entier dans le contexte.
+ * Maximum skills per message, matching the mention limit for the same reason: each injects a
+ * whole document into context.
  */
 export const MAX_SKILLS_PER_MESSAGE = 20

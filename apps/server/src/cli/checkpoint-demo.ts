@@ -8,15 +8,7 @@ import { loadConfig } from '../config.js'
 import { EventLog } from '../events/event-log.js'
 import { resolveConversationCwd } from '../workspace.js'
 
-/**
- * Joue un tour capturé sur la conversation de démo « Add offline caching for forecasts »,
- * sans agent : les deux captures sont réelles, les fichiers sont réellement changés
- * dans le worktree, et le journal reçoit la même suite d'événements qu'un vrai tour.
- *
- * Sert à `scripts/checkpoints-ui-check.mjs`, qui vérifie l'interface sur un serveur
- * jetable : le passage Playwright n'a pas à attendre un vrai CLI pour voir le repère
- * de fin de tour, l'onglet Git filtré et la restauration.
- */
+/** Replays a captured 'Add offline caching for forecasts' demo turn without agents: snapshots are real, worktree files change, and journals receive normal turn events. Used by `scripts/checkpoints-ui-check.mjs` on disposable servers so Playwright can verify completion markers, filtered Git tabs and restoration without real CLI waits. */
 async function main(): Promise<void> {
   const config = loadConfig()
   if (config.paths.data === join(process.env.HOME ?? '', '.local/share/sillage')) {
@@ -46,7 +38,7 @@ async function main(): Promise<void> {
   })
   log.append(conversation.id, { type: 'turn.started' })
 
-  // Le travail du tour : un fichier créé, un modifié, un supprimé.
+  // Turn work: one created file, one modified and one deleted.
   const edits: { path: string; action: 'created' | 'modified' | 'deleted'; content: string | null }[] = [
     { path: 'CHANGELOG.md', action: 'created', content: '# Changelog\n\n- Cache forecasts offline.\n' },
     { path: 'README.md', action: 'modified', content: '# Nimbus\n\nWeather, now with an offline cache.\n' },

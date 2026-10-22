@@ -10,25 +10,18 @@ import type { InstallOptions } from 'electron-updater/out/BaseUpdater'
 
 const execFileAsync = promisify(execFile)
 
-/** Ce qu'electron-updater ne déclare pas mais que ses propres updaters utilisent. */
+/** The downloader used internally by electron-updater, missing from its public types. */
 interface Downloader {
   download(url: URL, destination: string, options: unknown): Promise<string>
 }
 
 /**
- * La mise à jour sous macOS, sans Squirrel.Mac.
- *
- * Le MacUpdater d'electron-updater confie la nouvelle version à Squirrel.Mac, qui exige
- * que sa signature satisfasse l'exigence désignée de l'app en place. Une signature ad hoc,
- * la nôtre tant qu'il n'y a pas de certificat Developer ID, ne désigne que l'empreinte de
- * son propre binaire : aucune version suivante ne la satisfait, et Squirrel les refuse
- * toutes.
- *
- * Celui-ci garde d'electron-updater la recherche, le téléchargement et le contrôle du zip
- * (SHA-512 de latest-mac.yml). Il extrait lui-même l'app à côté et vérifie son identifiant,
- * sa version et sa signature ; puis, Sillage fermé, un script détaché met la nouvelle app
- * à la place de l'ancienne et la relance. Le script laisse son verdict dans `resultFile`,
- * que l'app relit au lancement suivant : c'est là qu'un échec se voit.
+ * Squirrel.Mac requires the new app to satisfy the installed app's designated
+ * signature requirement. Our ad hoc signature identifies only its own binary,
+ * so no later release can satisfy it until we have a Developer ID certificate.
+ * Keep electron-updater discovery, downloading and SHA-512 validation, then
+ * extract and check bundle identity, version and signature ourselves. A detached
+ * script replaces the bundle after exit and records its result for next launch.
  */
 export class MacBundleUpdater extends BaseUpdater {
   private staged: string | null = null
@@ -40,7 +33,7 @@ export class MacBundleUpdater extends BaseUpdater {
   protected override doDownloadUpdate(options: DownloadUpdateOptions): Promise<string[]> {
     const { provider, info } = options.updateInfoAndProvider
     const zips = provider.resolveFiles(info).filter((file) => file.url.pathname.endsWith('.zip'))
-    // Un zip par architecture, si un jour il y en a deux : `Sillage-mac-arm64.zip`.
+    // Select the architecture-specific zip if more than one becomes available.
     const fileInfo = zips.find((file) => file.url.pathname.endsWith(`-${process.arch}.zip`)) ?? (zips.length === 1 ? zips[0] : undefined)
     if (!fileInfo) throw new Error(`The update to ${info.version} has no archive for macOS ${process.arch}.`)
     const http = (this as unknown as { httpExecutor: Downloader }).httpExecutor
@@ -52,7 +45,7 @@ export class MacBundleUpdater extends BaseUpdater {
     })
   }
 
-  /** L'app n'est annoncée prête qu'une fois extraite et vérifiée. */
+  /** Only announce readiness once extraction and verification succeed. */
   protected override dispatchUpdateDownloaded(event: UpdateDownloadedEvent): void {
     this.stage(event.downloadedFile, event.version).then(
       (bundle) => {
@@ -60,7 +53,7 @@ export class MacBundleUpdater extends BaseUpdater {
         super.dispatchUpdateDownloaded(event)
       },
       (err: unknown) => {
-        // Le zip en cache resservirait tel quel à la recherche suivante : on le jette.
+        // Discard the invalid cached zip so the next check can download it again.
         void this.downloadedUpdateHelper?.clear()
         this.dispatchError(err instanceof Error ? err : new Error(String(err)))
       },
@@ -77,8 +70,7 @@ export class MacBundleUpdater extends BaseUpdater {
     const name = readdirSync(dir).find((entry) => entry.endsWith('.app'))
     if (!name) throw new Error('The update archive holds no app.')
     const bundle = join(dir, name)
-    // Téléchargé par l'app, le zip ne porte pas de quarantaine ; s'il en portait une, ditto
-    // la recopierait, et Gatekeeper bloquerait la relance.
+    // ditto preserves quarantine attributes, which could prevent the replacement from launching.
     await execFileAsync('xattr', ['-dr', 'com.apple.quarantine', bundle]).catch(() => undefined)
     const [id, runningId, staged] = await Promise.all([
       plistValue(bundle, 'CFBundleIdentifier'),
@@ -108,15 +100,14 @@ export class MacBundleUpdater extends BaseUpdater {
   }
 }
 
-/** Le paquet .app en cours d'exécution, d'après le chemin de son exécutable. */
+/** Locate the running .app bundle from its executable. */
 export function runningBundle(): string {
   return resolve(app.getPath('exe'), '..', '..', '..')
 }
 
 /**
- * Vrai si l'app peut se remplacer là où elle est. Elle ne le peut pas lancée depuis son
- * image disque, ni dans la copie en lecture seule où Gatekeeper isole une app ouverte
- * hors du dossier Applications sans y avoir été déplacée.
+ * Disk images and Gatekeeper-translocated copies cannot replace themselves.
+ * Check both the bundle and its parent before offering an update.
  */
 export function bundleIsReplaceable(bundle = runningBundle()): boolean {
   if (!bundle.endsWith('.app') || bundle.includes('/AppTranslocation/')) return false
@@ -135,11 +126,8 @@ async function plistValue(bundle: string, key: string): Promise<string> {
 }
 
 /**
- * Attend que Sillage soit fermé, serveur compris, puis échange les deux apps. Deux
- * renommages dans le même dossier : l'app n'est absente que l'instant qui les sépare, et
- * un échec du second remet l'ancienne en place. La relance, demandée, rouvre l'app qui est
- * en place, nouvelle ou ancienne ; l'ancienne, quelques centaines de Mo, ne s'efface
- * qu'ensuite.
+ * Wait for the app and server to exit before replacement. Restore the old bundle
+ * if installation fails; retain the backup if restoration fails too.
  */
 const INSTALL_SCRIPT = `#!/bin/sh
 pid=$1 app=$2 staged=$3 relaunch=$4 result=$5
@@ -154,21 +142,27 @@ while kill -0 "$pid" 2>/dev/null; do
 done
 swap() {
   old="$app.previous"
-  rm -rf "$old"
+  if [ -e "$old" ]; then
+    echo "A previous application backup already exists at $old." > "$result"
+    return
+  fi
   if ! error=$(mv "$app" "$old" 2>&1); then
     echo "$error" > "$result"
     return
   fi
   if ! error=$(mv "$staged" "$app" 2>&1); then
-    mv "$old" "$app"
+    if ! mv "$old" "$app"; then
+      echo "$error; restore failed, previous application retained at $old." > "$result"
+      return
+    fi
     echo "$error" > "$result"
     return
   fi
   echo ok > "$result"
+  rm -rf "$old"
 }
 swap
 if [ "$relaunch" = 1 ]; then
   open "$app"
 fi
-rm -rf "$app.previous"
 `

@@ -1,13 +1,10 @@
 import type { ConversationDto, WorktreeState } from '@sillage/protocol'
+import { Check, CircleHelp, GitPullRequestArrow, Pencil, TriangleAlert } from 'lucide-react'
 import { useTranslate } from '../lib/i18n'
-import { setPanelOpen, setPanelTab } from '../lib/panel'
 import { useConversationWorktree } from '../lib/worktrees'
 import { cx } from './ui'
 
-/**
- * Couleur d'un état de chantier, partagée entre la ligne de la barre latérale et la
- * vue des chantiers pour que le même mot ait la même teinte partout.
- */
+/** Worktree-state colors shared by sidebar and worktree overview so identical states have identical hues. */
 export const WORKTREE_STATE_COLOR: Record<WorktreeState, string> = {
   missing: 'bg-critical',
   dirty: 'bg-caution',
@@ -22,21 +19,27 @@ export const WORKTREE_STATE_TONE: Record<WorktreeState, 'critical' | 'caution' |
   merged: 'positive',
 }
 
-/**
- * Le repère d'état d'un arbre : un carré plein, sans arrondi, pour ne pas se confondre
- * avec les points de signal de la ligne, qui parlent de l'instant et non de l'arbre.
- */
+export type WorktreePreviewState = WorktreeState | 'unknown'
+export const WORKTREE_STATE_TEXT: Record<WorktreePreviewState, string> = {
+  missing: 'text-critical', dirty: 'text-caution', unmerged: 'text-accent',
+  merged: 'text-positive', unknown: 'text-ink-faint',
+}
+const STATE_ICONS = { missing: TriangleAlert, dirty: Pencil, unmerged: GitPullRequestArrow, merged: Check, unknown: CircleHelp }
+
+/** The row and its explanation share the same glyph, including unavailable Git state. */
+export function WorktreeStateIcon({ state }: { state: WorktreePreviewState }) {
+  const Icon = STATE_ICONS[state]
+  return <Icon size={15} aria-hidden className={cx('shrink-0', WORKTREE_STATE_TEXT[state])} />
+}
+
+/** Solid square with sharp corners distinguishes tree state from circular current-activity signals. */
 export function WorktreeStateMark({ state, className }: { state: WorktreeState; className?: string }) {
   return <span aria-hidden className={cx('size-1.5 shrink-0', WORKTREE_STATE_COLOR[state], className)} />
 }
 
 /**
- * La branche et l'état de l'arbre d'une session, sous son titre dans la barre latérale.
- *
- * Rien pour une session de l'arbre principal : c'est l'absence qui fait ressortir les
- * autres d'un coup d'œil. Le clic ouvre l'onglet Git du fil, la suite naturelle de la
- * question « où en est cet arbre ». Pas un bouton : la ligne est déjà un lien, et un
- * bouton dedans serait invalide ; le lien navigue, et le geste choisit l'onglet.
+ * Session branch and tree state beneath sidebar titles, omitted for main-tree sessions so others
+ * stand out. The enclosing session link owns navigation; this label must not also open the panel.
  */
 export function WorktreeTag({ conversation }: { conversation: Pick<ConversationDto, 'id' | 'projectId'> }) {
   const t = useTranslate()
@@ -49,11 +52,7 @@ export function WorktreeTag({ conversation }: { conversation: Pick<ConversationD
       role="note"
       aria-label={t('shell.conversation.worktree', { name: tree.name, state })}
       title={`${tree.name} · ${state}\n${tree.path}`}
-      onClick={() => {
-        setPanelTab('git')
-        setPanelOpen(true)
-      }}
-      className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4 text-ink-faint hover:text-ink-soft"
+      className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4 text-ink-faint"
     >
       <WorktreeStateMark state={tree.state} />
       <span className="min-w-0 truncate font-mono">{tree.name}</span>

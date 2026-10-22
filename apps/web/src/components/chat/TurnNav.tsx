@@ -4,19 +4,13 @@ import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
- * Navigation d'un tour à l'autre.
- *
- * La réglette latérale ne s'affiche qu'au-delà d'une certaine largeur et demande de
- * viser un trait de deux pixels : au doigt, elle ne sert à rien. Ces deux flèches
- * couvrent le même besoin partout, et restent utiles au clavier sur grand écran.
- *
- * Le placement appartient à l'appelant : les flèches se posent juste au-dessus de la
- * barre de saisie, dont la hauteur varie, et non au milieu du fil où elles
- * recouvraient les messages.
+ * Turn navigation. Desktop rails require space and targeting two-pixel markers, unusable on touch.
+ * Arrows cover the same need everywhere and support desktop keyboards. Callers place them above the
+ * variable-height composer rather than mid-thread where they obscured messages.
  */
 export function TurnNav({ count, onStep }: { count: number; onStep: (direction: -1 | 1) => void }) {
   const t = useTranslate()
-  // Un seul tour ne se parcourt pas.
+  // A lone turn needs no navigation.
   if (count < 2) return null
 
   return (

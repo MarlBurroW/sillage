@@ -54,11 +54,11 @@ import { shortCommit } from '../lib/skill-sources'
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)
 
 /**
- * Un skill de la bibliothèque, en pleine largeur : les instructions et les fichiers
- * annexes demandent plus de place que la colonne des réglages.
+ * Full-width library skill: instructions and supporting files need more room than the settings
+ * column.
  *
- * Lisible par tous ceux qui voient la portée, modifiable par qui peut y écrire : le
- * global par un administrateur, un projet par son propriétaire.
+ * Readable by everyone who can see the scope, editable by those who can write: administrators
+ * globally, project owners within projects.
  */
 export function SkillEditorPage() {
   const t = useTranslate()
@@ -76,7 +76,7 @@ export function SkillEditorPage() {
       />
     )
   }
-  // Remonté à chaque skill : les brouillons d'un skill ne doivent pas suivre dans le suivant.
+  // Remount for each skill: drafts must not carry over to the next.
   return <SkillEditor key={skill.id} skill={skill} permissions={permissions} />
 }
 
@@ -98,7 +98,7 @@ function SkillEditor({
   const update = useUpdateLibrarySkill()
   const remove = useDeleteLibrarySkill()
   const canWrite = permissions.canWrite(skill.scope, skill.projectId)
-  /** Les champs touchés seulement : ce qui n'a pas été modifié suit l'enregistrement. */
+  /** Only touched fields: unmodified fields follow the saved record. */
   const [draft, setDraft] = useState<Partial<Draft>>({})
   const editor = useEditorRevision(skill.body, draft.body !== undefined)
   const [dialog, setDialog] = useState<'duplicate' | 'move' | 'delete' | 'update' | null>(null)
@@ -121,7 +121,7 @@ function SkillEditor({
     update.mutate({ id: skill.id, ...changes }, { onSuccess: () => setDraft({}) })
   }
 
-  /** Abandonne les brouillons ; l'éditeur, qui ne lit son texte qu'au montage, repart. */
+  /** Discard drafts; restart the editor, which reads text only at mount. */
   const discard = () => {
     setDraft({})
     editor.reset()
@@ -143,8 +143,10 @@ function SkillEditor({
         {backLabel}
       </Link>
 
-      {/* La largeur minimale du titre renvoie les boutons à la ligne au doigt, plutôt
-          que d'écraser la phrase d'invocation dans une colonne de trois mots. */}
+      {/*
+       * Minimum title width wraps buttons on touch screens instead of squeezing invocation text
+       * into a three-word-wide column.
+       */}
       <header className="flex flex-wrap items-start gap-3">
         <div className="flex min-w-64 flex-1 flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
@@ -283,7 +285,7 @@ function SkillEditor({
   )
 }
 
-/** Ce que le skill fera différemment chez l'un des deux CLI. */
+/** How this skill behaves differently between the two CLIs. */
 function CompatCard({ notes }: { notes: SkillCompatNote[] }) {
   const t = useTranslate()
   return (
@@ -361,7 +363,7 @@ function CopyDialog({
   )
 }
 
-/** Changer de portée change aussi qui le voit : toutes les conversations, ou un projet. */
+/** Changing scope also changes visibility: all conversations or one project. */
 function MoveDialog({
   open,
   onClose,

@@ -19,7 +19,7 @@ import {
   MAX_DECISION_OPTION_CHARS,
   MAX_DECISION_OPTIONS,
   MAX_DECISION_QUESTION_CHARS,
-  WORKTREE_DECISION_OPTIONS,
+  BASELINE_DECISION_SOURCES,
   decisionSourceKindSchema,
   type DecisionDto,
   type DecisionSourceKind,
@@ -29,14 +29,14 @@ import { HttpError } from '../http/errors.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 
-/** Échéances et remises en retard : la précision de la minute suffit. */
+/** Minute precision suffices for deadlines and delayed deliveries. */
 const TICK_MS = 30_000
 const HOUR_MS = 3_600_000
 
-/** Refus adressé à l'agent : le texte lui est rendu tel quel. */
+/** Agent-facing rejections returned verbatim. */
 export class DecisionRefusal extends Error {}
 
-/** La source autonome d'une session : ce qui l'a ouverte, et ce qu'elle permet. */
+/** Autonomous session source: what launched it and what it permits. */
 export interface DecisionSource {
   kind: DecisionSourceKind
   label: string
@@ -60,42 +60,11 @@ function stamp(ms: number): string {
   return `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
 
-/**
- * Les décisions demandées par les sessions autonomes.
- *
- * Une session ouverte par une personne pose ses questions dans le fil, où quelqu'un les
- * lit ; une tâche planifiée, une automatisation ou la maintenance du board n'a personne
- * en face. Elle dépose ici sa demande sans se bloquer, termine son tour ou continue, et
- * la réponse lui revient en message : c'est ce qui survit aux redémarrages, là où une
- * demande native du CLI meurt avec son process.
- */
-/** Ce qu'il advient d'un « Nettoyer » : fait, ou refusé parce que l'arbre a changé depuis. */
-export type WorktreeCleanOutcome = 'cleaned' | 'stale'
-
-/** Une proposition de nettoyage d'arbre, telle que la vue des chantiers la détecte. */
-export interface WorktreeProposal {
-  projectId: string
-  userId: string
-  /** La session la plus récente de l'arbre, ou '' s'il n'en a aucune. */
-  conversationId: string
-  branch: string
-  path: string
-  base: string
-  sessions: number
-}
-
-/** Une proposition de nettoyage attend une semaine : l'arbre ne périme pas. */
-const WORKTREE_DECISION_HOURS = 168
-
+/** Decisions requested by autonomous sessions. Human-opened sessions ask in conversations with someone reading; scheduled tasks, automations and board maintenance have nobody present. They deposit requests without blocking and finish or continue turns; answers return as messages, surviving restarts unlike native CLI requests that die with processes. */
 export class DecisionService {
   private timer: NodeJS.Timeout | null = null
   private logger: FastifyBaseLogger | null = null
   private ticking = false
-  /**
-   * Le nettoyage, branché après coup : il dépend des terminaux et des sessions, que le
-   * service des décisions n'a pas à connaître. Sans lui, « Nettoyer » est refusé.
-   */
-  private cleanWorktree: ((row: DecisionRow) => Promise<WorktreeCleanOutcome>) | null = null
 
   constructor(
     private readonly ctx: AppContext,
@@ -115,11 +84,7 @@ export class DecisionService {
     this.timer = null
   }
 
-  /**
-   * La source autonome d'une conversation, ou null pour une session ouverte par une
-   * personne. Lue sur la conversation elle-même (tâche) ou sur l'issue qu'elle suit
-   * (maintenance) : rien qu'un agent puisse déclarer de lui-même.
-   */
+  /** Autonomous conversation source, or null for human-opened sessions. Read task association from conversations or maintenance association from tracked issues; agents cannot self-declare it. */
   sourceOf(conversation: Pick<ConversationRow, 'id' | 'scheduleId' | 'projectId'>): DecisionSource | null {
     if (conversation.scheduleId) {
       const task = this.ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, conversation.scheduleId)).get()
@@ -154,7 +119,7 @@ export class DecisionService {
     }
   }
 
-  // --- Gestes de l'agent (par le serveur MCP, via `agent_requests`) ----------------
+  // --- Agent actions (through the MCP server and agent_requests) ----------------
 
   async request(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
     const source = this.sourceOf(requester)
@@ -248,92 +213,9 @@ export class DecisionService {
     return `Demande retirée (« ${pending.question} »).`
   }
 
-  // --- Propositions de nettoyage (par la vue des chantiers) ------------------------
+  // --- User actions ------------------------------------------------------
 
-  setWorktreeCleaner(clean: (row: DecisionRow) => Promise<WorktreeCleanOutcome>): void {
-    this.cleanWorktree = clean
-  }
-
-  /**
-   * Propose de nettoyer un arbre fusionné et propre, une seule fois par arbre : une
-   * réponse « Garder », ou une échéance, vaut pour la suite. Seul un retrait (l'arbre a
-   * bougé entre-temps) laisse la question se reposer quand il redevient fusionné.
-   */
-  async proposeWorktreeCleanup(proposal: WorktreeProposal): Promise<boolean> {
-    const asked = this.ctx.db
-      .select({ id: decisions.id })
-      .from(decisions)
-      .where(
-        and(
-          eq(decisions.projectId, proposal.projectId),
-          eq(decisions.worktreePath, proposal.path),
-          inArray(decisions.status, ['pending', 'answered', 'expired']),
-        ),
-      )
-      .get()
-    if (asked) return false
-
-    const now = Date.now()
-    const row: DecisionRow = {
-      id: randomUUID(),
-      projectId: proposal.projectId,
-      conversationId: proposal.conversationId,
-      userId: proposal.userId,
-      sourceKind: 'worktree',
-      sourceLabel: proposal.branch,
-      taskId: null,
-      cardId: null,
-      // En français comme le reste de ce que le serveur écrit (notifications) ;
-      // l'interface, elle, recompose la question et les choix dans la langue du lecteur.
-      question: `${proposal.branch} est fusionnée et propre : nettoyer ?`,
-      context: [
-        `Rien dans l'arbre que ${proposal.base} n'ait déjà.`,
-        `Nettoyer retire l'arbre (${proposal.path}), supprime la branche, archive ${proposal.sessions} session(s) et arrête ce qui y tourne.`,
-      ].join('\n\n'),
-      options: JSON.stringify(WORKTREE_DECISION_OPTIONS),
-      defaultOption: null,
-      expiresAt: now + WORKTREE_DECISION_HOURS * HOUR_MS,
-      status: 'pending',
-      answerOption: null,
-      answerText: null,
-      answeredBy: null,
-      resolvedAt: null,
-      withdrawnReason: null,
-      deliveredAt: null,
-      worktreePath: proposal.path,
-      createdAt: now,
-    }
-    this.ctx.db.insert(decisions).values(row).run()
-    await this.announce(row)
-    return true
-  }
-
-  /** Retire la proposition en attente pour un arbre qui a bougé ou disparu. */
-  withdrawWorktreeProposal(projectId: string, path: string, reason: string): void {
-    const pending = this.ctx.db
-      .select()
-      .from(decisions)
-      .where(and(eq(decisions.projectId, projectId), eq(decisions.worktreePath, path), eq(decisions.status, 'pending')))
-      .get()
-    if (pending) this.close(pending, { status: 'withdrawn', withdrawnReason: reason, deliveredAt: Date.now() })
-  }
-
-  /** Les arbres d'un projet qui ont une proposition en attente. */
-  pendingWorktreeProposals(projectId: string): string[] {
-    return this.ctx.db
-      .select({ path: decisions.worktreePath })
-      .from(decisions)
-      .where(and(eq(decisions.projectId, projectId), eq(decisions.sourceKind, 'worktree'), eq(decisions.status, 'pending')))
-      .all()
-      .flatMap((row) => (row.path ? [row.path] : []))
-  }
-
-  // --- Gestes de l'utilisateur ------------------------------------------------------
-
-  /**
-   * `sources` : celles que le client sait afficher (voir `requestedDecisionSources`).
-   * Toutes par défaut, comme pour `get` : seule la route restreint.
-   */
+  /** `sources`: kinds the client can display (see `requestedDecisionSources`). Defaults to all like `get`; only routes restrict it. */
   list(
     userId: string,
     status: 'pending' | 'all',
@@ -356,7 +238,7 @@ export class DecisionService {
     return this.toDtos(rows)
   }
 
-  /** Toutes les sources par défaut : seul un client qui lit pour afficher en restreint la liste. */
+  /** All sources by default; only display clients restrict lists. */
   get(userId: string, id: string, sources: readonly DecisionSourceKind[] = decisionSourceKindSchema.options): DecisionDto {
     const row = this.ctx.db.select().from(decisions).where(eq(decisions.id, id)).get()
     if (!row || row.userId !== userId || !sources.includes(row.sourceKind)) {
@@ -369,18 +251,18 @@ export class DecisionService {
     return this.ctx.db
       .select({ id: decisions.id })
       .from(decisions)
-      .where(and(eq(decisions.userId, userId), eq(decisions.status, 'pending')))
+      .where(and(eq(decisions.userId, userId), eq(decisions.status, 'pending'), inArray(decisions.sourceKind, [...BASELINE_DECISION_SOURCES])))
       .all().length
   }
 
   async answer(userId: string, id: string, body: { option: string | null; text: string }): Promise<DecisionDto> {
     const row = this.ctx.db.select().from(decisions).where(eq(decisions.id, id)).get()
     if (!row || row.userId !== userId) throw new HttpError(404, 'decision_not_found', 'Decision not found.')
-    if (row.status !== 'pending') throw new HttpError(409, 'decision_closed', 'This decision is no longer pending.')
+    if (row.sourceKind === 'worktree' && row.status === 'pending') this.retireWorktreeProposal(row)
+    if (row.status !== 'pending' || row.sourceKind === 'worktree') throw new HttpError(409, 'decision_closed', 'This decision is no longer pending.')
     if (body.option !== null && !parseOptions(row.options).includes(body.option)) {
       throw new HttpError(400, 'decision_unknown_option', 'This option was not offered.')
     }
-    if (row.sourceKind === 'worktree') return this.answerWorktree(userId, row, body)
     const closed = this.close(row, {
       status: 'answered',
       answerOption: body.option,
@@ -391,40 +273,18 @@ export class DecisionService {
     return this.get(userId, id)
   }
 
-  /**
-   * La réponse à une proposition de nettoyage n'est remise à personne : elle agit. Le
-   * nettoyage se fait avant de clore, pour qu'un échec laisse la question ouverte ; un
-   * arbre qui a bougé depuis la question retire la proposition au lieu de nettoyer.
-   */
-  private async answerWorktree(userId: string, row: DecisionRow, body: { option: string | null; text: string }): Promise<DecisionDto> {
-    if (body.option !== 'clean' && body.option !== 'keep') {
-      throw new HttpError(400, 'decision_option_required', 'Choose one of the options.')
-    }
-    if (body.option === 'clean') {
-      if (!this.cleanWorktree) throw new HttpError(409, 'worktree_clean_unavailable', 'Cleaning up is not available.')
-      const outcome = await this.cleanWorktree(row)
-      if (outcome === 'stale') {
-        this.close(row, { status: 'withdrawn', withdrawnReason: "L'arbre a changé depuis la question : rien n'a été nettoyé.", deliveredAt: Date.now() })
-        throw new HttpError(409, 'worktree_not_merged', 'This worktree changed since the question: nothing was cleaned up.')
-      }
-    }
+  /** Old proposals remain readable without actions or agent restarts. */
+  private retireWorktreeProposal(row: DecisionRow): void {
     this.close(row, {
-      status: 'answered',
-      answerOption: body.option,
-      answerText: body.text || null,
-      answeredBy: userId,
+      status: 'withdrawn',
+      withdrawnReason: 'Le nettoyage se fait désormais depuis la conversation ou la vue Chantiers.',
       deliveredAt: Date.now(),
     })
-    return this.get(userId, row.id)
   }
 
-  // --- Passages ---------------------------------------------------------------------
+  // --- Processing passes ---------------------------------------------------------------------
 
-  /**
-   * Échéances, demandes devenues caduques (session archivée ou supprimée) et remises
-   * restées en souffrance, par exemple parce que le daemon a redémarré entre la réponse
-   * et la remise.
-   */
+  /** Handles deadlines, obsolete requests (archived/deleted sessions) and pending deliveries, such as daemon restarts between answering and delivery. */
   async tick(): Promise<void> {
     if (this.ticking) return
     this.ticking = true
@@ -443,15 +303,15 @@ export class DecisionService {
               .map((row) => [row.id, row.archivedAt]),
       )
       for (const row of pending) {
-        // Une proposition de nettoyage ne dépend d'aucune session : la vue des chantiers
-        // la retire quand l'arbre bouge, et l'échéance la clôt sans rien remettre.
+        // Older versions deposited cleanup proposals here: remove them at startup
+        // without touching trees or agent requests.
         if (row.sourceKind === 'worktree') {
-          if (row.expiresAt <= now) this.close(row, { status: 'expired', deliveredAt: now })
+          this.retireWorktreeProposal(row)
           continue
         }
         const archivedAt = alive.get(row.conversationId)
         if (archivedAt === undefined || archivedAt !== null) {
-          // Archiver une session, c'est la ranger : sa demande n'attend plus personne.
+          // Archiving puts sessions away; their requests no longer await anyone.
           this.close(row, { status: 'withdrawn', withdrawnReason: null, deliveredAt: now })
         } else if (row.expiresAt <= now) {
           await this.deliver(this.close(row, { status: 'expired' }))
@@ -478,7 +338,7 @@ export class DecisionService {
     return closed
   }
 
-  /** La réponse, ou l'échéance, part à la session : c'est ce message qui la relance. */
+  /** Answers or deadlines become session messages, waking agents. */
   private async deliver(row: DecisionRow): Promise<void> {
     if (row.sourceKind === 'worktree') {
       this.ctx.db.update(decisions).set({ deliveredAt: Date.now() }).where(eq(decisions.id, row.id)).run()
@@ -489,7 +349,7 @@ export class DecisionService {
       try {
         await this.sessions.sendMessage(row.conversationId, randomUUID(), this.message(row))
       } catch (err) {
-        // Le passage suivant réessaie ; la décision, elle, est tranchée.
+        // Retry delivery next pass; decisions themselves are already resolved.
         this.logger?.warn({ err, decision: row.id }, 'réponse de décision non remise')
         return
       }
@@ -521,7 +381,7 @@ export class DecisionService {
       .join('\n')
   }
 
-  /** Pour une session de maintenance, la décision s'inscrit aussi dans le fil de la carte. */
+  /** Maintenance-session decisions also appear in card threads. */
   private noteOnCard(row: DecisionRow): void {
     const answer =
       row.status === 'expired'
@@ -542,7 +402,7 @@ export class DecisionService {
       .run()
   }
 
-  /** Notification et toast : une décision attend, c'est tout l'intérêt de la prévenir. */
+  /** Notifications and toasts announce pending decisions, the purpose of notifying users. */
   private async announce(row: DecisionRow): Promise<void> {
     const project = this.ctx.db.select({ name: projects.name }).from(projects).where(eq(projects.id, row.projectId)).get()
     this.notifications.decisionsChanged(row.userId)
@@ -593,7 +453,7 @@ export class DecisionService {
         ? []
         : this.ctx.db.select({ id: users.id, name: users.displayName }).from(users).where(inArray(users.id, answerers)).all().map((row) => [row.id, row.name]),
     )
-    // Le numéro de la carte, pas celui de l'issue : c'est lui qui ouvre la carte au board.
+    // Card numbers, not issue numbers, open board cards.
     const cardNumbers = new Map(
       this.ctx.db
         .select({ cardId: cards.id, number: cards.number })

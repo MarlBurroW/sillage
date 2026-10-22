@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +10,8 @@ import { eq } from 'drizzle-orm'
 import {
   agentRequests,
   cardNotes,
+  cardRefs,
+  cardRelations,
   cards,
   conversations,
   openDatabase,
@@ -22,6 +25,8 @@ import { EventLog } from '../src/events/event-log.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests, LAUNCHES_PER_HOUR, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
+import { adoptSessionTitle } from '../src/conversations/title.js'
+import { projectOverview } from '../src/agents/overview.js'
 
 const model = (value: string, displayName: string, efforts: string[], isDefault = false): AgentModelDto => ({
   value,
@@ -63,8 +68,12 @@ async function harness(t: TestContext) {
 
   const sent: { to: string; text: string }[] = []
   const gestures: string[] = []
+  const titleEvents: { conversationId: string; title: string }[] = []
+  const statusBus = new EventEmitter()
+  statusBus.on('title', (event) => titleEvents.push(event))
   let steerWorks = false
   const sessions = {
+    statusBus,
     async sendMessage(to: string, _id: string, text: string) {
       sent.push({ to, text })
     },
@@ -88,7 +97,7 @@ async function harness(t: TestContext) {
   const registry = {
     adapter: (agent: string) => ({
       models: async () => ({ models: CATALOG[agent] }),
-      // Le CLI remplace le modèle vide par le sien, comme le vrai adaptateur.
+      // CLI substitutes its model for empty model names, like the real adapter.
       resolveDefaults: async (config: AgentConfig) =>
         config.model ? config : { ...config, model: CATALOG[agent]?.[0]?.value ?? '' },
     }),
@@ -97,10 +106,7 @@ async function harness(t: TestContext) {
   const log = new EventLog(db)
   const requests = new AgentRequests({ db, config }, sessions, registry, undefined, undefined, undefined, undefined, log)
 
-  /**
-   * Appelle un outil sur le vrai serveur MCP, pendant que le daemon balaie. `from` vide :
-   * le serveur en mode global, au nom du compte `owner`, avec le projet en paramètre.
-   */
+  /** Calls the real MCP server while the daemon sweeps. Empty `from` uses global mode as `owner`, with the project passed explicitly. */
   const mcp = async (from: string, name: string, args: object) => {
     const env = from
       ? { SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: from }
@@ -121,8 +127,69 @@ async function harness(t: TestContext) {
     return JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
   }
 
-  return { db, conversation, mcp, sent, gestures, log, setSteer: (value: boolean) => { steerWorks = value } }
+  return { db, conversation, mcp, sent, gestures, log, statusBus, titleEvents, setSteer: (value: boolean) => { steerWorks = value } }
 }
+
+test('an agent names only its own session and broadcasts the title without changing its activity', async (t) => {
+  const { db, conversation, mcp, titleEvents, statusBus } = await harness(t)
+  conversation('self')
+  conversation('peer')
+  const before = db.select().from(conversations).where(eq(conversations.id, 'self')).get()!
+  const renamed = await mcp('self', 'rename_session', { title: '  Refonte de la sidebar  ' })
+  assert.equal(renamed.isError, undefined, renamed.content[0]?.text)
+  const current = db.select().from(conversations).where(eq(conversations.id, 'self')).get()!
+  assert.equal(current.title, 'Refonte de la sidebar')
+  assert.equal(current.titleSetByAgent, true)
+  assert.equal(current.titleSetByUser, false)
+  assert.equal(current.updatedAt, before.updatedAt)
+  assert.deepEqual(titleEvents, [{ conversationId: 'self', title: current.title }])
+  assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Native CLI summary', 'cli'), 'protected')
+  await mcp('self', 'rename_session', { title: current.title })
+  assert.equal(titleEvents.length, 1)
+
+  for (const args of [{ title: '' }, { title: 'x'.repeat(61) }, { title: 'Two\nlines' }, { title: 'Bad\u0000title' }, { title: 'Peer', session: 'peer' }]) {
+    assert.equal((await mcp('self', 'rename_session', args)).isError, true, JSON.stringify(args))
+  }
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'peer')).get()?.title, 'Session peer')
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'self')).get()?.title, current.title)
+  const changedSubject = await mcp('self', 'rename_session', { title: 'Corriger la connexion' })
+  assert.equal(changedSubject.isError, undefined)
+  assert.equal(titleEvents.at(-1)?.title, 'Corriger la connexion')
+  assert.equal((await mcp('', 'rename_session', { project: 'project', title: 'Global' })).isError, true)
+})
+
+test('human titles win over both explicit agent titles and delayed native CLI suggestions', async (t) => {
+  const { db, conversation, mcp, statusBus, titleEvents } = await harness(t)
+  conversation('self')
+  assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Native summary', 'cli'), 'updated')
+  // Claiming an identical provisional title must still protect it from native summaries.
+  await mcp('self', 'rename_session', { title: 'Native summary' })
+  assert.equal(db.select().from(conversations).get()?.titleSetByAgent, true)
+  db.update(conversations).set({ title: 'Mon titre personnel', titleSetByUser: true, titleSetByAgent: false }).run()
+  titleEvents.length = 0
+  const denied = await mcp('self', 'rename_session', { title: 'Agent title' })
+  assert.equal(denied.isError, undefined)
+  assert.match(denied.content[0]!.text, /choisi par l'utilisateur/)
+  assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Late CLI summary', 'cli'), 'protected')
+  assert.equal(db.select().from(conversations).get()?.title, 'Mon titre personnel')
+  assert.deepEqual(titleEvents, [])
+  assert.equal(adoptSessionTitle(db, statusBus, 'deleted', 'Late summary', 'cli'), 'missing')
+})
+
+test('every CLI receives a naming instruction, respecting manual titles and disabled MCP', async (t) => {
+  const { db, conversation, statusBus } = await harness(t)
+  conversation('self')
+  const overview = (sillageMcp = true) => projectOverview(db, { projectId: 'project', conversationId: 'self', sillageMcp }) ?? ''
+  for (const agent of ['claude', 'codex', 'opencode', 'grok'] as const) {
+    db.update(conversations).set({ agent }).run()
+    assert.match(overview(), /appelle `rename_session`/)
+  }
+  assert.doesNotMatch(overview(false), /rename_session/)
+  adoptSessionTitle(db, statusBus, 'self', 'Refonte de la sidebar', 'agent')
+  assert.match(overview(), /Conserve-le tant que le sujet principal ne change pas/)
+  db.update(conversations).set({ titleSetByUser: true }).run()
+  assert.doesNotMatch(overview(), /rename_session/)
+})
 
 test('matchModel finds a model by the name the user says, and never guesses between two', () => {
   assert.equal(matchModel(CATALOG.codex!, 'Astra')?.value, 'astra-1')
@@ -160,7 +227,7 @@ test('start_session launches a session with the requested CLI, model and effort'
   assert.equal(config.model, 'astra-1')
   assert.equal(config.agent === 'codex' && config.reasoningEffort, 'high')
 
-  // La mission arrive enveloppée, signée par la session qui l'a confiée.
+  // Missions arrive enveloped and signed by delegating sessions.
   const envelope = parseSessionMessage(sent[0]!.text)
   assert.equal(sent[0]!.to, launched.id)
   assert.equal(envelope?.kind, 'launch')
@@ -236,7 +303,7 @@ test('a global MCP client launches sessions and opens cards in the name of its a
   const launched = db.select().from(conversations).where(eq(conversations.id, request.launchedConversationId!)).get()!
   assert.equal(launched.userId, 'owner')
   assert.equal(launched.agent, 'codex')
-  // Pas de session d'origine : la mission arrive nue, sans enveloppe qui renverrait à rien.
+  // Without source sessions, missions arrive bare rather than with dangling envelopes.
   assert.equal(sent[0]!.text, 'Relire la doc.')
   assert.equal(parseSessionMessage(sent[0]!.text), null)
 
@@ -261,9 +328,9 @@ test('a global MCP client writes to, steers, interrupts and answers its own sess
     createdAt: 1, updatedAt: Date.now(),
   }).run()
 
-  // Depuis une session, ces gestes sont refusés : elle a send_session_message.
+  // Sessions cannot use these actions: they have send_session_message.
   assert.equal((await mcp('busy-one', 'message_session', { session: 'idle-one', body: 'x' })).isError, true)
-  // La session d'un autre compte n'existe pas pour ce client.
+  // Other accounts' sessions do not exist for this client.
   assert.equal((await mcp('', 'message_session', { project: 'project', session: 'theirs', body: 'x' })).isError, true)
   assert.equal((await mcp('', 'message_session', { project: 'project', session: 'idle-one', body: '' })).isError, true)
 
@@ -285,7 +352,7 @@ test('a global MCP client writes to, steers, interrupts and answers its own sess
   assert.match((await mcp('', 'interrupt_session', { project: 'project', session: 'busy-one' })).content[0]!.text, /interrompu/)
   assert.equal(gestures.at(-1), 'interrupt busy-one')
 
-  // Sans sollicitation ouverte, rien à répondre ; avec, la réponse prend la forme de la demande.
+  // Without open requests there is nothing to answer; otherwise responses follow request types.
   assert.equal((await mcp('', 'reply_session', { project: 'project', session: 'busy-one', decision: 'allowed' })).isError, true)
   log.append('busy-one', { type: 'permission.requested', requestId: 'perm-1', toolName: 'Bash', input: { command: 'rm -rf dist' } } as never)
   const wrong = await mcp('', 'reply_session', { project: 'project', session: 'busy-one', answers: { q: ['x'] } })
@@ -307,4 +374,70 @@ test('list_models shows the catalog and the defaults a launch would use', async 
   const result = await mcp('parent', 'list_models', { agent: 'codex' })
   assert.match(result.content[0]!.text, /par défaut : modèle gpt-5\.5/)
   assert.match(result.content[0]!.text, /`astra-1` \(Astra\)/)
+})
+
+test('any project session can edit a card and add notes without being attached', async (t) => {
+  const { db, conversation, mcp } = await harness(t)
+  conversation('author')
+  conversation('editor', 'codex')
+  await mcp('author', 'create_card', { title: 'Initial', description: 'À compléter' })
+  await mcp('author', 'create_card', { title: 'Référence' })
+  const edited = await mcp('editor', 'update_card', { number: 1, title: 'Corrigé', description: 'Voir #2' })
+  assert.equal(edited.isError, undefined, edited.content[0]?.text)
+  const card = db.select().from(cards).where(eq(cards.number, 1)).get()!
+  assert.equal(card.title, 'Corrigé')
+  assert.equal(card.description, 'Voir #2')
+  assert.equal(db.select().from(cardRefs).all().length, 1)
+  const noted = await mcp('editor', 'add_card_note', { number: 1, body: 'Complément' })
+  assert.equal(noted.isError, undefined, noted.content[0]?.text)
+  assert.ok(db.select().from(cardNotes).all().some(n => n.body === 'Complément' && n.conversationId === 'editor'))
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'editor')).get()!.cardId, null)
+  const cleared = await mcp('editor', 'update_card', { number: 1, description: '' })
+  assert.equal(cleared.isError, undefined)
+  assert.equal(db.select().from(cardRefs).all().length, 0)
+  assert.equal(db.select().from(cards).where(eq(cards.id, card.id)).get()!.title, 'Corrigé')
+  for (const args of [{ number: 1 }, { number: 1, title: ' ' }, { number: 1, description: 'x'.repeat(20001) }, { number: 999, title: 'Absent' }]) {
+    assert.equal((await mcp('editor', 'update_card', args)).isError, true)
+  }
+  db.insert(projects).values({ id: 'other-project', name: 'Other', workspacePath: '/other', ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  db.insert(cards).values({ id: 'foreign', projectId: 'other-project', number: 99, title: 'Privé', description: '', column: 'todo', position: 1, createdBy: 'owner', createdAt: 1, updatedAt: 1 }).run()
+  assert.equal((await mcp('editor', 'update_card', { number: 99, title: 'Interdit' })).isError, true)
+  assert.equal((await mcp('editor', 'add_card_note', { number: 99, body: 'Interdit' })).isError, true)
+  assert.equal(db.select().from(cards).where(eq(cards.id, 'foreign')).get()!.title, 'Privé')
+  const global = await mcp('', 'update_card', { project: 'project', number: 1, title: 'Global' })
+  assert.equal(global.isError, undefined, global.content[0]?.text)
+})
+
+test('MCP : relations depuis toute session du projet et lecture des deux sens', async t => {
+  const { db, conversation, mcp } = await harness(t)
+  conversation('author')
+  conversation('peer', 'codex')
+  await mcp('author', 'create_card', { title: 'Parent' })
+  await mcp('author', 'create_card', { title: 'Enfant' })
+  const linked = await mcp('peer', 'link_cards', { number: 2, target: 1, kind: 'child' })
+  assert.equal(linked.isError, undefined, linked.content[0]?.text)
+  assert.match((await mcp('peer', 'read_card', { number: 1 })).content[0]!.text, /Contient #2/)
+  assert.match((await mcp('peer', 'read_card', { number: 2 })).content[0]!.text, /Est un sous-ticket de #1/)
+  assert.equal((await mcp('peer', 'link_cards', { number: 1, target: 1, kind: 'blocks' })).isError, true)
+  assert.equal((await mcp('peer', 'link_cards', { number: 1, target: 99, kind: 'related' })).isError, true)
+  const removed = await mcp('', 'unlink_cards', { project: 'project', number: 1, target: 2, kind: 'parent' })
+  assert.equal(removed.isError, undefined, removed.content[0]?.text)
+  assert.equal(db.select().from(cardRelations).all().length, 0)
+})
+
+test('MCP : les erreurs de ciblage indiquent la carte et le paramètre de la session', async t => {
+  const { conversation, mcp } = await harness(t)
+  conversation('editor')
+  await mcp('editor', 'create_card', { title: 'Locale' })
+  for (const [tool, fields] of [['add_card_note', { body: 'Note' }], ['update_issue', { state: 'closed' }]] as const) {
+    const absent = await mcp('editor', tool, { ...fields, number: 99 })
+    assert.equal(absent.isError, true)
+    assert.match(absent.content[0]!.text, /Aucune carte #99/)
+    const invalid = await mcp('editor', tool, { ...fields, number: 'incorrect' })
+    assert.equal(invalid.isError, true)
+    assert.match(invalid.content[0]!.text, /`number`/)
+  }
+  const local = await mcp('editor', 'update_issue', { number: 1, state: 'closed' })
+  assert.equal(local.isError, true)
+  assert.match(local.content[0]!.text, /carte #1 ne suit aucune issue/)
 })

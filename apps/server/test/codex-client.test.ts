@@ -29,7 +29,7 @@ test('ids RPC chaîne et numérique, annulation native sans réponse tardive', a
   await client.callExperimental('fixture/emit', { requests: [0, 'string-id', 'cancelled'].map((id) => ({ id, method: 'question', params: {} })) })
   await client.callExperimental('fixture/emit', { notifications: [{ method: 'serverRequest/resolved', params: { requestId: 'cancelled', threadId: 'root' } }] })
   release({ answer: 'late' })
-  await client.callExperimental('fixture/emit', {}) // Barrière après les écritures.
+  await client.callExperimental('fixture/emit', {}) // Barrier after writes.
   assert.deepEqual(ids, [0, 'string-id', 'cancelled'])
   const answers = (await files.records()).filter((record) => record.result)
   assert.deepEqual(answers.map((record) => record.id), [0, 'string-id'])

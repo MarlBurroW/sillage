@@ -57,27 +57,11 @@ import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-/**
- * Bornes d'une page de relecture (`EventLog.readForReplay`).
- *
- * Une page coûte un aller-retour, et le client les enchaîne l'une après l'autre : à 500
- * événements, la conversation la plus lourde en demandait 147. La borne en octets porte
- * sur les payloads lus en base, et c'est elle qui tient la mémoire du daemon ; celle en
- * lignes borne le listage qui la précède.
- *
- * 16 Mo et pas davantage : rejouées dans un tas contraint, les conversations les plus
- * lourdes de la base passent sous 96 Mo avec cette borne, quand les anciennes pages de 500
- * événements en demandaient plus de 128. Une page plus grande gagnerait quelques
- * allers-retours sur cette marge, et le daemon porte aussi les sessions en cours.
- */
+/** Replay page limits (`EventLog.readForReplay`). Every page costs a round trip and clients load sequentially; 500-event pages required 147 requests for the largest conversation. Byte limits bound database payloads and daemon memory; row limits bound the preceding listing. Keep the cap at 16 MB: the largest conversations replay below 96 MB in a constrained heap, whereas old 500-event pages exceeded 128 MB. Larger pages save a few round trips at the expense of memory also needed by active sessions. */
 const PAGE_ROWS = 5000
 const PAGE_BYTES = 16_000_000
 
-/**
- * `lastReadSeq`, `card` et `favorite` sont passés plutôt que relus ici : les routes de
- * liste les ramènent en une jointure, et une lecture par ligne rendrait la sidebar
- * quadratique.
- */
+/** Pass `lastReadSeq`, `card` and `favorite` instead of rereading: list routes fetch them in one join, while reading each row would make sidebar work quadratic. */
 export function conversationToDto(
   row: ConversationRow,
   userId: string,
@@ -128,13 +112,7 @@ export function registerConversationRoutes(
   attachments: AttachmentStore,
   webhooks: WebhookService,
 ): void {
-  /**
-   * Résout les pièces jointes à envoyer, dans l'ordre choisi par le client.
-   *
-   * Un identifiant inconnu, appartenant à quelqu'un d'autre ou déjà envoyé fait
-   * échouer l'ensemble : envoyer un message amputé d'un de ses fichiers serait pire
-   * qu'un refus, l'utilisateur croirait l'agent en possession de tout.
-   */
+  /** Resolves outgoing attachments in client-selected order. Unknown IDs, other users' files and already-sent files reject the whole request: silently omitting files would be worse, since users would assume the agent received everything. */
   const resolveAttachments = (userId: string, ids: string[]): OutgoingAttachment[] => {
     if (ids.length === 0) return []
 
@@ -158,7 +136,7 @@ export function registerConversationRoutes(
       }
     })
   }
-  /** Curseur de lecture d'un compte. 0 quand il n'a jamais ouvert le fil. */
+  /** Account read cursor, zero before the thread was ever opened. */
   const readCursor = (conversationId: string, userId: string): number => {
     const row = ctx.db
       .select({ lastReadSeq: conversationReads.lastReadSeq })
@@ -173,7 +151,7 @@ export function registerConversationRoutes(
     return row?.lastReadSeq ?? 0
   }
 
-  /** Ce fil est-il un favori de ce compte. Pour les lectures unitaires seulement. */
+  /** Whether this conversation is a favorite for this account. Individual reads only. */
   const isFavorite = (conversationId: string, userId: string): boolean =>
     ctx.db
       .select({ conversationId: conversationFavorites.conversationId })
@@ -186,7 +164,7 @@ export function registerConversationRoutes(
       )
       .get() !== undefined
 
-  /** Lecture : propriétaire du projet ou projet partagé. Écriture : propriétaire du fil. */
+  /** Read: project owner or shared project. Write: conversation owner. */
   const loadReadable = async (conversationId: string, userId: string) => {
     const row = ctx.db
       .select({ conversation: conversations, ownerId: projects.ownerId, visibility: projects.visibility })
@@ -210,10 +188,7 @@ export function registerConversationRoutes(
     return conversation
   }
 
-  /**
-   * Toutes les conversations visibles, tous projets confondus. La sidebar les affiche
-   * groupées sous leur projet : une requête plutôt qu'une par projet.
-   */
+  /** All visible conversations across projects. The sidebar groups them by project; one request replaces one per project. */
   app.get('/api/conversations', async (request) => {
     const user = requireUser(request)
 
@@ -246,9 +221,9 @@ export function registerConversationRoutes(
           eq(conversationFavorites.userId, user.id),
         ),
       )
-      // Les archivées comprises, la sidebar les rangeant elle-même dans sa section
-      // repliée. Deux requêtes séparées coûteraient un aller-retour à chaque dépliage,
-      // et un désarchivage ne pourrait plus se voir sans recharger les deux.
+      // Include archived conversations: the sidebar places them in its collapsed section.
+      // Separate queries would add a round trip on every expansion and require reloading
+      // both lists to see unarchiving.
       .where(or(eq(projects.ownerId, user.id), eq(projects.visibility, 'shared')))
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
@@ -340,8 +315,8 @@ export function registerConversationRoutes(
     if (body.worktreeId) assertWorktreeBelongs(ctx, id, body.worktreeId)
     if (body.cardId) assertCardInProject(ctx, body.cardId, id)
 
-    // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
-    // base : la conversation garde ensuite une configuration explicite et stable.
+    // Resolve `CLI_DEFAULT` from CLI announcements before database writes:
+    // conversations then retain explicit, stable settings.
     const config = await registry.adapter(body.agent).resolveDefaults(body.config)
 
     const firstMessage = body.firstMessage
@@ -363,27 +338,23 @@ export function registerConversationRoutes(
       },
     })
 
-    // Rattachées seulement après un envoi réussi : si le CLI refuse, la conversation
-    // a été supprimée et les fichiers restent réutilisables pour une nouvelle tentative.
+    // Attach only after successful sends: when the CLI rejects, the conversation is
+    // deleted and files remain available for retry.
     if (firstMessage) attachments.claim(firstMessage.attachmentIds, row.id)
 
-    // La seule transition automatique du board, et elle tient à ce qu'elle suit un
-    // geste : c'est l'envoi qui vient de réussir, pas la découverte d'une session en
-    // train de tourner. Une carte plus avancée que `todo` ne recule pas.
+    // The board's sole automatic transition follows an action:
+    // the send just succeeded, rather than merely detecting a running session.
+    // Cards beyond `todo` never move backward.
     if (body.cardId) advanceCardOnLaunch(ctx, body.cardId)
 
-    // Curseur à zéro : le client marque la conversation lue en s'y installant, comme
-    // pour n'importe quelle autre. La devancer ici mentirait sur ce qui est en base.
+    // Start the cursor at zero: clients mark conversations read when opening them,
+    // as usual. Advancing it early would misrepresent database state.
     return reply
       .status(201)
       .send(conversationToDto(row, user.id, 0, readCardLink(ctx, body.cardId), false))
   })
 
-  /**
-   * Ordre manuel des conversations d'un projet. Le client envoie la liste complète
-   * telle qu'elle doit s'afficher : réécrire les positions en bloc évite les trous et
-   * les égalités qu'un déplacement unitaire finirait par produire.
-   */
+  /** Manual conversation order within a project. Clients send the complete intended list; rewriting positions together avoids gaps and ties caused by individual moves. */
   app.post('/api/projects/:id/conversations/order', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -403,8 +374,8 @@ export function registerConversationRoutes(
         .all()
         .map((row) => row.id),
     )
-    // Un identifiant étranger au projet déplacerait une conversation d'ailleurs :
-    // on refuse l'ensemble plutôt que d'appliquer un ordre partiel.
+    // An ID outside the project would move another project's conversation:
+    // reject the whole request rather than apply a partial order.
     const intruder = body.ids.find((conversationId) => !known.has(conversationId))
     if (intruder) {
       throw badRequest(
@@ -426,14 +397,7 @@ export function registerConversationRoutes(
     return { ok: true }
   })
 
-  /**
-   * Branche une conversation à un point du fil.
-   *
-   * Lecture suffisante sur la source : brancher une conversation partagée est une
-   * lecture, et la branche appartient à celui qui la crée. L'ordre des opérations
-   * compte : la session est forkée d'abord, parce que c'est la seule étape qui peut
-   * échouer pour une raison extérieure, et rien ne doit rester en base si elle échoue.
-   */
+  /** Forks a conversation at a point in its history. Source read access suffices: forking shared conversations is a read, and forks belong to their creator. Order matters: fork the native session first, the only step susceptible to external failures, so failure leaves nothing in the database. */
   app.post('/api/conversations/:id/fork', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -465,15 +429,16 @@ export function registerConversationRoutes(
       userId: user.id,
       title: body.title ?? `${source.title} (branche)`,
       titleSetByUser: body.title !== undefined,
+      titleSetByAgent: false,
       agentSessionId,
       forkedFromId: source.id,
-      // La branche est ouverte depuis l'interface, par une personne : hériter du
-      // marqueur d'origine de la source lui attribuerait un jeton qui n'y est pour rien.
+      // People open forks through the interface: inheriting source origin markers
+      // would incorrectly attribute them to an unrelated token.
       createdByTokenId: null,
       originLabel: null,
       scheduleId: null,
       status: 'idle',
-      // Le journal est recopié juste après, qui posera le vrai compteur.
+      // The journal is copied immediately afterward and sets the real counter.
       lastSeq: 0,
       pinned: false,
       position: (lowest?.min ?? 0) - 1,
@@ -483,14 +448,14 @@ export function registerConversationRoutes(
     }
     ctx.db.insert(conversations).values(row).run()
 
-    // Sans cette copie, la branche s'afficherait vide alors que l'agent, lui, se
-    // souvient de tout l'historique conservé (invariant I2).
+    // Without this copy the fork would appear empty while the agent
+    // remembers the entire retained history (invariant I2).
     const copied = log.copyThrough(id, row.id, body.throughSeq)
-    // Les repères de tour recopiés doivent mener aux mêmes captures.
+    // Copied turn markers must reference the same snapshots.
     await sessions.inheritCheckpoints(id, row.id)
 
-    // Une branche d'une suite reste une suite : le contexte transmis arrive par le
-    // prompt système à chaque démarrage, et la branche le perdrait sans sa propre ligne.
+    // Forks of continuations remain continuations: context arrives through the system
+    // prompt on every start and would be lost without a dedicated row.
     const handoff = ctx.db
       .select()
       .from(conversationHandoffs)
@@ -500,7 +465,7 @@ export function registerConversationRoutes(
       ctx.db.insert(conversationHandoffs).values({ ...handoff, conversationId: row.id }).run()
     }
 
-    // Le fork hérite du rattachement : c'est le même travail exploré autrement.
+    // Forks inherit card attachment: they explore the same work differently.
     return reply
       .status(201)
       .send(
@@ -514,14 +479,7 @@ export function registerConversationRoutes(
       )
   })
 
-  /**
-   * Continue une conversation dans un autre CLI.
-   *
-   * Même droit de lecture que le fork : continuer un fil partagé est une lecture, et la
-   * suite appartient à qui l'ouvre. Rien n'est envoyé au CLI ici : la sélection est
-   * écrite avec la conversation, et c'est le premier message, la nouvelle demande, qui
-   * lancera la session avec ce contexte dans son prompt système.
-   */
+  /** Continues a conversation in another CLI. Read permission matches forks: continuing shared conversations is a read, and the new conversation belongs to its creator. Nothing is sent to the CLI here: save the selection with the conversation; the first new request starts a session with this context in its system prompt. */
   app.post('/api/conversations/:id/handoff', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -552,8 +510,8 @@ export function registerConversationRoutes(
       userId: user.id,
       agent: body.agent,
       config,
-      // Même arbre et même chantier : c'est le même travail, poursuivi avec un autre
-      // outil.
+      // Same tree and work: the same task continued with another
+      // tool.
       worktreeId: source.worktreeId,
       cardId: source.cardId,
       title: body.title ?? source.title,
@@ -571,7 +529,7 @@ export function registerConversationRoutes(
       .send(conversationToDto(row, user.id, 0, readCardLink(ctx, row.cardId), false))
   })
 
-  /** Ce qu'une suite a reçu de sa source, pour que l'utilisateur voie ce que l'agent sait. */
+  /** Context received from the source, allowing users to see what the agent knows. */
   app.get('/api/conversations/:id/handoff', async (request): Promise<HandoffDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -605,19 +563,16 @@ export function registerConversationRoutes(
     )
   })
 
-  /**
-   * Avance le curseur de lecture. Ouvert à tout lecteur, y compris sur un fil qu'il ne
-   * peut pas écrire : savoir ce qu'on a lu n'est pas une modification de la conversation.
-   */
+  /** Advances the read cursor. Any reader may do so, including without write access: tracking what one has read does not modify the conversation. */
   app.post('/api/conversations/:id/read', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = markReadBodySchema.parse(request.body)
     const conversation = await loadReadable(id, user.id)
 
-    // Borné au journal de cette conversation-là : un client qui suit plusieurs fils
-    // envoie forcément un jour le `seq` du précédent, et un curseur au-delà de ce qui
-    // existe déclarerait lu d'avance tout ce que la conversation produira ensuite.
+    // Bound to this conversation's journal: clients following several conversations
+    // will eventually send the previous one's `seq`; a cursor beyond existing entries
+    // would prematurely mark all future output as read.
     const seq = Math.min(body.seq, conversation.lastSeq)
     const now = Date.now()
     ctx.db
@@ -625,9 +580,9 @@ export function registerConversationRoutes(
       .values({ conversationId: id, userId: user.id, lastReadSeq: seq, updatedAt: now })
       .onConflictDoUpdate({
         target: [conversationReads.conversationId, conversationReads.userId],
-        // Le `max` est porté par la base et non par une lecture préalable : deux onglets
-        // qui marquent en même temps ne peuvent alors pas se faire reculer l'un l'autre,
-        // quel que soit l'ordre d'arrivée.
+        // Let the database calculate `max` rather than preread it: concurrent tabs cannot
+        // move each other's cursor backward,
+        // regardless of arrival order.
         set: {
           lastReadSeq: sql`max(excluded.last_read_seq, ${conversationReads.lastReadSeq})`,
           updatedAt: now,
@@ -638,14 +593,7 @@ export function registerConversationRoutes(
     return { lastReadSeq: readCursor(id, user.id) }
   })
 
-  /**
-   * Pose ou retire le signet du compte appelant.
-   *
-   * Ouvert à tout lecteur, comme le curseur de lecture et pour la même raison : marquer
-   * un fil qu'on ne peut pas écrire n'est pas une modification de la conversation.
-   * Idempotent des deux côtés — marquer deux fois vaut marquer, et le client n'a pas à
-   * connaître l'état d'avant pour envoyer son geste.
-   */
+  /** Adds or removes the caller's bookmark. Any reader may do so for the same reason as read cursors: bookmarking does not modify conversations. Both operations are idempotent, so clients need not know the previous state. */
   app.put('/api/conversations/:id/favorite', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -697,13 +645,7 @@ export function registerConversationRoutes(
     }
   })
 
-  /**
-   * Sortie complète d'un appel d'outil.
-   *
-   * La relecture d'historique ne rend qu'un aperçu des sorties volumineuses, pour ne pas
-   * transférer des mégaoctets que personne n'ouvre. La carte de l'appel demande ici le
-   * corps entier, et seulement quand on la déplie.
-   */
+  /** Full tool-call output. History replay returns previews of large outputs to avoid transferring megabytes nobody opens. Tool cards request full bodies here only when expanded. */
   app.get('/api/conversations/:id/tools/:toolCallId/output', async (request): Promise<ToolOutputDto> => {
     const user = requireUser(request)
     const { id, toolCallId } = request.params as { id: string; toolCallId: string }
@@ -714,13 +656,7 @@ export function registerConversationRoutes(
     return { toolCallId, output: found.output }
   })
 
-  /**
-   * Ce qu'un appel d'outil a fait d'un fichier, pour l'historique du panneau.
-   *
-   * Reconstitué depuis le payload natif conservé dans le journal (invariant I3 : la
-   * lecture est faite par l'adaptateur du CLI concerné). Un tour passé n'a pas de
-   * diff git à interroger, le disque ayant continué d'évoluer depuis.
-   */
+  /** File changes made by a tool call, for panel history. Reconstructed from the native payload retained in the journal (invariant I3: the relevant CLI adapter reads it). Past turns have no git diff to query because disk state has continued changing. */
   app.get('/api/conversations/:id/edits/:toolCallId', async (request): Promise<EditDiffDto> => {
     const user = requireUser(request)
     const { id, toolCallId } = request.params as { id: string; toolCallId: string }
@@ -746,17 +682,18 @@ export function registerConversationRoutes(
     if (body.title !== undefined) {
       patch.title = body.title.trim()
       patch.titleSetByUser = true
+      patch.titleSetByAgent = false
     }
     if (body.pinned !== undefined) patch.pinned = body.pinned
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
-    // Un fil rangé n'a plus de tour à défaire : ses captures quittent le dépôt.
+    // Archived conversations have no turns left to undo: remove their snapshots from git.
     if (body.archived === true && conversation.archivedAt === null) void sessions.dropCheckpoints(id)
 
     if (body.cardId !== undefined) {
       if (body.cardId) assertCardInProject(ctx, body.cardId, conversation.projectId)
       patch.cardId = body.cardId
-      // Rattacher après coup ne fait pas avancer la carte : le geste dit « cette
-      // session traitait déjà ce travail », il ne lance rien.
+      // Attaching later does not advance the card: the action says this session already
+      // worked on this task, rather than launching anything.
     }
 
     if (body.config !== undefined) {
@@ -770,8 +707,8 @@ export function registerConversationRoutes(
       ctx.db.update(conversations).set(patch).where(eq(conversations.id, id)).run()
     }
 
-    // Le SDK applique modèle, effort et mode de permission à chaud : la session garde
-    // son contexte. Le repli par redémarrage est géré, et signalé, par le gestionnaire.
+    // The SDK applies model, effort and permission-mode changes live, preserving session
+    // context. The manager handles and reports fallback restarts.
     if (body.config !== undefined) await sessions.reloadConfig(id)
 
     return { ok: true }
@@ -781,11 +718,11 @@ export function registerConversationRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     await loadWritable(id, user.id)
-    // Les captures git d'abord, tant que la ligne dit encore où est le dépôt.
+    // Remove git snapshots first while the row still identifies the repository.
     await sessions.dropCheckpoints(id)
-    // Les fichiers d'abord : la cascade de la base n'efface que les lignes.
+    // Remove files first: database cascades only delete rows.
     await attachments.removeForConversations([id])
-    // L'index de recherche est une table virtuelle : aucune cascade ne l'atteint.
+    // The search index is a virtual table, unreachable by cascades.
     dropConversation(ctx.db, id)
     ctx.db.delete(conversations).where(eq(conversations.id, id)).run()
     return reply.status(204).send()
@@ -797,8 +734,8 @@ export function registerConversationRoutes(
     const body = sendMessageBodySchema.parse(request.body)
     const conversation = await loadWritable(id, user.id)
 
-    // Écrire dans un fil rangé le ressort de l'archive : sinon il repart au travail
-    // tout en restant invisible, et son activité ne se signale nulle part.
+    // Writing in archived conversations unarchives them; otherwise they would resume
+    // work invisibly without activity being reported anywhere.
     if (conversation.archivedAt !== null) {
       ctx.db.update(conversations).set({ archivedAt: null }).where(eq(conversations.id, id)).run()
     }
@@ -810,13 +747,7 @@ export function registerConversationRoutes(
     return reply.status(202).send({ accepted: true })
   })
 
-  /**
-   * Infléchit le tour en cours.
-   *
-   * Distinct de `/messages`, qui met en file pendant un tour : les deux gestes ne
-   * produisent pas le même résultat, et lequel s'applique doit rester le choix de
-   * l'utilisateur. Un refus est donc rendu tel quel plutôt que replié sur la file.
-   */
+  /** Steers the current turn. Distinct from `/messages`, which queues during turns: these actions produce different results and users must choose which applies. Return rejections unchanged rather than falling back to the queue. */
   app.post('/api/conversations/:id/steer', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -843,7 +774,7 @@ export function registerConversationRoutes(
     return reply.status(202).send({ accepted: true })
   })
 
-  /** Demande à l'agent de résumer la conversation pour libérer du contexte. */
+  /** Asks the agent to summarize the conversation to free context. */
   app.post('/api/conversations/:id/compact', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -855,11 +786,7 @@ export function registerConversationRoutes(
     return reply.status(202).send({ accepted: true })
   })
 
-  /**
-   * Arrête un travail de fond (commande, workflow, surveillance) sans toucher au tour.
-   * La clôture n'est pas dans la réponse : elle revient par le journal, dans le
-   * `background.updated` suivant.
-   */
+  /** Stops background work (command, workflow, watch) without affecting the turn. Completion is not in the response: it arrives through the journal's next `background.updated` event. */
   app.post('/api/conversations/:id/background/:taskId/stop', async (request, reply) => {
     const user = requireUser(request)
     const { id, taskId } = request.params as { id: string; taskId: string }
@@ -879,8 +806,8 @@ export function registerConversationRoutes(
     const { id } = request.params as { id: string }
     await loadWritable(id, user.id)
     await sessions.interrupt(id)
-    // Une tâche lancée par un jeton et arrêtée ici laisserait son appelant suspendu à
-    // une complétion qui ne viendra jamais : le webhook `task.stopped` le lui dit.
+    // Stopping token-created tasks here would leave callers waiting forever for
+    // completion: `task.stopped` webhooks notify them.
     webhooks.taskStopped(id, { kind: 'user', id: user.id, label: user.displayName })
     return reply.status(204).send()
   })
@@ -901,18 +828,14 @@ export function registerConversationRoutes(
       decidedBy: user.id,
     })
     if (!resolved) {
-      // La session a pu s'arrêter entre l'affichage et le clic : le dire explicitement
-      // plutôt que de laisser l'UI attendre une réponse qui ne viendra pas.
+      // Sessions may stop between rendering and clicking: say so explicitly rather
+      // than leave the UI waiting for a response that will never arrive.
       throw badRequest('permission_expired', 'This request has expired, the session has ended.')
     }
     return { ok: true }
   })
 
-  /**
-   * Réponse à une question de l'agent. Contrairement aux permissions, l'état ne vit
-   * que dans le runner : c'est le journal qui garde la trace, et une demande qui n'y
-   * est plus en attente n'a plus personne pour l'écouter.
-   */
+  /** Answers an agent question. Unlike permissions, state lives only in the runner: the journal retains its trace, and requests no longer pending there have nobody listening. */
   app.post('/api/conversations/:id/questions/:requestId', async (request) => {
     const user = requireUser(request)
     const { id, requestId } = request.params as { id: string; requestId: string }
@@ -930,7 +853,7 @@ export function registerConversationRoutes(
     return { ok: true }
   })
 
-  /** Retire de la file un message qui n'est pas encore parti au CLI. */
+  /** Removes a queued message not yet sent to the CLI. */
   app.delete('/api/conversations/:id/queue/:queueId', async (request, reply) => {
     const user = requireUser(request)
     const { id, queueId } = request.params as { id: string; queueId: string }
@@ -942,12 +865,7 @@ export function registerConversationRoutes(
     return reply.status(204).send()
   })
 
-  /**
-   * Fait passer un message en attente dans le tour en cours.
-   *
-   * Le pendant de `DELETE` sur la même entrée : le message est déjà écrit et déjà en
-   * file, ce geste ne fait que choisir quand l'agent le lit.
-   */
+  /** Sends a pending message into the current turn. Counterpart to `DELETE` on the same entry: the message is already written and queued; this only chooses when the agent reads it. */
   app.post('/api/conversations/:id/queue/:queueId/steer', async (request, reply) => {
     const user = requireUser(request)
     const { id, queueId } = request.params as { id: string; queueId: string }
@@ -1002,7 +920,7 @@ export function registerConversationRoutes(
   })
 }
 
-/** Statut et avancement courants, pour l'instantané envoyé à l'abonnement WebSocket. */
+/** Current status and progress for the WebSocket subscription snapshot. */
 export function readConversationState(
   ctx: AppContext,
   conversationId: string,
@@ -1029,7 +947,7 @@ export function readConversationState(
   }
 }
 
-/** Conversations visibles par un utilisateur, pour l'abonnement WebSocket. */
+/** Conversations visible to a user for WebSocket subscriptions. */
 export function canReadConversation(ctx: AppContext, conversationId: string, userId: string): boolean {
   const row = ctx.db
     .select({ ownerId: projects.ownerId, visibility: projects.visibility })

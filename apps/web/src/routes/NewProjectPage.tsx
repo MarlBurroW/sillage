@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom'
 import { slugifyProjectName } from '@sillage/protocol'
 import { ApiRequestError } from '../lib/api'
 import { useCreateProject } from '../lib/projects'
+import { useCapability } from '../lib/instance'
 import { useUserSettings } from '../lib/user-settings'
 import { CloneForm } from '../components/CloneForm'
 import { SampleProjectForm } from '../components/SampleProjectForm'
@@ -57,7 +58,7 @@ function useVisibilityOptions(): SelectOption<Visibility>[] {
 
 export function NewProjectPage() {
   const t = useTranslate()
-  // Le cas courant en premier : un projet qui démarre n'a qu'un nom à donner.
+  // Common case first: a new project needs only a name.
   const [mode, setMode] = useState<CreateMode>('new')
 
   const MODE_OPTIONS: Choice<CreateMode>[] = [
@@ -79,7 +80,7 @@ export function NewProjectPage() {
       hint: t('projects.create.mode.clone.hint'),
       icon: <GitBranch size={15} />,
     },
-    // Pour essayer sans risque : un petit dépôt que Sillage écrit lui-même.
+    // Safe trial: a small repository written by Sillage itself.
     {
       value: 'sample',
       label: t('projects.create.mode.sample'),
@@ -117,14 +118,14 @@ export function NewProjectPage() {
 }
 
 /**
- * Le raccourci : un nom, et le dossier suit.
+ * Shortcut: enter a name and derive the directory.
  *
- * Le nom de dossier est déduit du nom du projet tant qu'on ne l'a pas repris à la main,
- * et le dossier parent est celui de la dernière création. Dans le cas courant, il n'y a
- * donc qu'un champ à remplir.
+ * Directory name follows project name until manually edited; parent directory comes from the
+ * last creation. The common case therefore requires only one field.
  */
 function NewFolderForm() {
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
   const createProject = useCreateProject()
   const navigate = useNavigate()
   const { data: settings } = useUserSettings()
@@ -136,8 +137,8 @@ function NewFolderForm() {
   const [visibility, setVisibility] = useState<Visibility>('private')
   const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
 
-  // Les réglages arrivent après le premier rendu : le dossier mémorisé ne s'impose que
-  // sur un champ encore vide, jamais par-dessus une saisie.
+  // Settings arrive after first render: apply the remembered directory only to
+  // an empty field, never over user input.
   useEffect(() => {
     if (settings?.projectsDir) setParentDir((current) => current || settings.projectsDir!)
   }, [settings?.projectsDir])
@@ -194,12 +195,14 @@ function NewFolderForm() {
         autoCorrect="off"
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={visibilityOptions}
-      />
+      {sharedProjects ? (
+        <Select
+          label={t('project.settings.visibility')}
+          value={visibility}
+          onChange={setVisibility}
+          options={visibilityOptions}
+        />
+      ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">
@@ -209,9 +212,10 @@ function NewFolderForm() {
   )
 }
 
-/** Un dossier déjà présent, n'importe où sur la machine : rien n'est créé. */
+/** An existing directory anywhere on the machine: nothing is created. */
 function ExistingFolderForm() {
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
   const createProject = useCreateProject()
   const navigate = useNavigate()
   const visibilityOptions = useVisibilityOptions()
@@ -251,12 +255,14 @@ function ExistingFolderForm() {
         hint={t('projects.create.workspacePath.hint')}
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={visibilityOptions}
-      />
+      {sharedProjects ? (
+        <Select
+          label={t('project.settings.visibility')}
+          value={visibility}
+          onChange={setVisibility}
+          options={visibilityOptions}
+        />
+      ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">

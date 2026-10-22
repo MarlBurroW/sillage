@@ -24,7 +24,7 @@ test('la relecture ignore le rejeu API sans perdre les messages ni les sous-agen
     assert.deepEqual(await readTranscript('/workspace', 'missing'), [])
     const childDir = join(file.replace(/\.jsonl$/, ''), 'subagents')
     await mkdir(childDir, { recursive: true })
-    // La dernière ligne valide compte aussi quand le CLI n'a pas encore écrit le saut de ligne.
+    // The final valid line counts even before the CLI writes its newline.
     await writeFile(join(childDir, 'agent-child.jsonl'), [...replay, message].map(x => JSON.stringify(x)).join('\n'))
     const threads = await readSubAgentTranscripts('/workspace', 'session', [spawn])
     assert.deepEqual(threads.get('call'), [message])

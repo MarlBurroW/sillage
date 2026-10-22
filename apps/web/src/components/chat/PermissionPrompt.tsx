@@ -31,8 +31,7 @@ export function PermissionPrompt({
     try {
       await decidePermission(conversationId, permission.id, decision, scope)
     } catch (err) {
-      // L'événement `permission.resolved` viendra du serveur : on n'anticipe pas
-      // l'état ici, sinon l'affichage cesserait d'être un pur fold du journal.
+      // Await permission.resolved from the server instead of predicting state, preserving pure log-fold display.
       setError(err instanceof Error ? err.message : t('permission.error.generic'))
       setBusy(false)
     }
@@ -52,8 +51,7 @@ export function PermissionPrompt({
       <div className="flex items-start gap-2.5">
         <ShieldQuestion size={16} className="mt-0.5 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
-          {/* Le titre du CLI décrit l'action et sa raison ; le repli reconstruit une
-              phrase à partir du seul nom de l'outil, faute de mieux. */}
+          {/* CLI titles explain action and reason; fallback reconstructs a phrase from the tool name alone. */}
           <p className="text-sm font-medium">
             {permission.title ??
               (permission.status === 'pending'
@@ -113,8 +111,8 @@ export function PermissionPrompt({
 }
 
 /**
- * Ce qui identifie réellement l'appel : la commande, le chemin, l'URL. À défaut, l'entrée
- * complète en JSON. Le langage suit, pour ne pas colorer une commande comme du JSON.
+ * Call identity: command, path, or URL, otherwise full input JSON. Carry language to avoid
+ * JSON-highlighting commands.
  */
 function summarizeInput(input: unknown): { content: string; language: string } | null {
   if (input === null || input === undefined) return null

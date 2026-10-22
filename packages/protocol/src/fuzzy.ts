@@ -1,48 +1,46 @@
 /**
- * Correspondance floue, à la façon des palettes de commandes : « cmdpal » retrouve
- * « CommandPalette.tsx », « offline cach » retrouve « Add offline caching ».
+ * Fuzzy matching like command palettes: “cmdpal” finds “CommandPalette.tsx”; “offline cach”
+ * finds “Add offline caching”.
  *
- * Partagée par la palette, qui classe ce qu'elle a en mémoire, et par le serveur, qui
- * présélectionne les fichiers des projets : deux classements différents feraient écarter
- * par le serveur un fichier que la palette aurait mis en tête.
+ * Shared by the palette ranking in-memory items and the server preselecting project files:
+ * different rankings could make the server discard a file the palette would place first.
  */
 
 export interface FuzzyMatch {
-  /** Plus haut vaut mieux. Ne se compare qu'à un autre score de la même saisie. */
+  /** Higher is better. Comparable only with scores for the same query. */
   score: number
-  /** Indices retenus dans le texte d'origine, croissants : de quoi surligner. */
+  /** Matched positions in the original text, ascending, for highlighting. */
   positions: number[]
 }
 
 /**
- * Au-delà, l'alignement optimal coûte plus qu'il ne rapporte : un texte long se contente
- * du premier alignement venu, ce qui ne change que l'ordre des ex aequo.
+ * Beyond this, optimal alignment costs more than it is worth: long text uses the first
+ * available alignment, affecting only tie ordering.
  */
 const ALIGN_MAX_TEXT = 256
 const MAX_TOKEN = 64
 const MAX_TOKENS = 8
 
-/** Points d'une lettre retenue, puis primes de début de mot et de lettres qui se suivent. */
+/** Points per matched letter, then bonuses for word starts and consecutive letters. */
 const BASE = 1
 const WORD_START = 2
 const CONSECUTIVE = 3
 const TEXT_START = 1
 
 /**
- * Coût d'un saut entre deux lettres retenues, qui croît avec la distance. Sauter vers un
- * début de mot coûte peu, c'est taper des initiales ; sauter plus loin dans le même mot
- * coûte davantage. Atterrir au milieu d'un autre mot est exclu : « power » ne doit pas
- * retrouver « Ap*p*r*o*valsRevie*wer* » en piochant une lettre par mot.
+ * Cost of a gap between matched letters, increasing with distance. Jumps to word starts are
+ * cheap, matching initials; jumps farther within a word cost more. Landing inside another word
+ * is forbidden: “power” must not match “Ap*p*r*o*valsRevie*wer*” by picking letters from each
+ * word.
  */
 const GAP_OPEN = 0.5
 const GAP_PER_CHAR = 0.2
 const GAP_PER_CHAR_TO_WORD = 0.05
 
 /**
- * Moyenne exigée par lettre de la saisie, plus haute dans un texte long. En deçà, les
- * lettres sont trouvées mais si dispersées que la correspondance ne dit plus rien ; une
- * lettre seule doit au moins ouvrir un mot. Un long nom en camelCase offre toujours
- * assez de débuts de mot pour composer n'importe quoi, d'où l'exigence qui croît.
+ * Required average per query letter, higher for longer text. Below it, matches are too
+ * scattered to mean anything; a single letter must at least start a word. Long camelCase names
+ * offer enough word starts to assemble almost anything, hence the growing requirement.
  */
 function minimumPerLetter(length: number): number {
   return 1.2 + Math.min(length, 60) * 0.015
@@ -51,11 +49,11 @@ function minimumPerLetter(length: number): number {
 const SEPARATORS = new Set(' \t\n-_./\\:,;()[]{}#@\'"`·›|+&')
 
 /**
- * Casse et accents retirés, un caractère pour un caractère : les positions trouvées
- * dans le texte replié doivent désigner les mêmes lettres dans le texte affiché.
+ * Case and accents removed one character at a time: positions in folded text must identify the
+ * same letters in displayed text.
  */
 export function foldForMatch(text: string): string {
-  // Le cas courant, sans accent, se replie d'un coup sans changer de longueur.
+  // The common unaccented case folds in one step without changing length.
   if (/^[\x00-\x7f]*$/.test(text)) return text.toLowerCase()
   let folded = ''
   for (let index = 0; index < text.length; index += 1) {
@@ -66,9 +64,8 @@ export function foldForMatch(text: string): string {
 }
 
 /**
- * Mots de la saisie, chacun cherché séparément : l'ordre des mots ne compte pas. Une
- * barre oblique sépare aussi, comme dans VS Code : « web/pal » cherche `web` dans le
- * dossier et `pal` dans le nom du fichier.
+ * Query words searched independently: word order does not matter. Slashes also separate, as in
+ * VS Code: “web/pal” searches for `web` in the directory and `pal` in the filename.
  */
 export function fuzzyTokens(query: string): string[] {
   return query
@@ -80,8 +77,7 @@ export function fuzzyTokens(query: string): string[] {
 }
 
 /**
- * Début de mot : après un séparateur, ou sur la bosse d'un nom en camelCase. C'est là
- * qu'on vise quand on tape des initiales.
+ * Word start: after a separator or at a camelCase boundary. This is where initials aim.
  */
 function isWordStart(text: string, index: number): boolean {
   if (index === 0) return true
@@ -95,7 +91,7 @@ function letterScore(text: string, index: number): number {
   return BASE + (isWordStart(text, index) ? WORD_START : 0) + (index === 0 ? TEXT_START : 0)
 }
 
-/** Un début de mot sépare-t-il ces deux positions ? */
+/** Does a word start separate these positions? */
 function crossesWord(text: string, from: number, to: number): boolean {
   for (let index = from + 1; index <= to; index += 1) {
     if (isWordStart(text, index)) return true
@@ -109,8 +105,8 @@ function gapCost(text: string, from: number, to: number): number {
 }
 
 /**
- * Départage des correspondances de même qualité : la plus proche du début, puis la plus
- * courte. Plafonné pour ne jamais valoir une lettre de mieux placée.
+ * Tie-breaking equal-quality matches: earliest, then shortest. Capped so it never outweighs a
+ * better-placed letter.
  */
 function tieBreak(first: number, length: number): number {
   return -Math.min(first, 30) * 0.02 - Math.min(length, 200) * 0.002
@@ -122,8 +118,8 @@ function accept(score: number, positions: number[], length: number): FuzzyMatch 
 }
 
 /**
- * Les lettres de `token` apparaissent-elles dans l'ordre ? Filtre avant tout calcul, que
- * le serveur emploie aussi pour écarter d'un coup les milliers de chemins hors course.
+ * Do `token` letters appear in order? Pre-calculation filter also used by the server to discard
+ * thousands of irrelevant paths at once.
  */
 export function containsInOrder(folded: string, token: string): boolean {
   let at = 0
@@ -136,8 +132,8 @@ export function containsInOrder(folded: string, token: string): boolean {
 }
 
 /**
- * Tables de l'alignement, réutilisées d'un appel à l'autre : une frappe en aligne des
- * centaines, et autant d'allocations nourriraient le ramasse-miettes pour rien.
+ * Alignment tables reused across calls: a keystroke aligns hundreds of items; allocating each
+ * time would needlessly feed the garbage collector.
  */
 let bestTable = new Float64Array(0)
 let fromTable = new Int32Array(0)
@@ -153,26 +149,24 @@ function tables(size: number): { best: Float64Array; from: Int32Array } {
 }
 
 /**
- * Façon de chercher un mot dans un champ.
+ * How to search for a word in a field.
  *
- * - `fuzzy` : lettres dans l'ordre, où qu'elles soient. Pour un identifiant court, nom de
- *   fichier ou de skill, où « cmdpal » doit retrouver « CommandPalette ».
- * - `words` : un morceau d'un seul tenant n'importe où, puis des sauts vers des débuts de
- *   mot seulement. Pour une phrase, où les lettres éparpillées se trouvent toujours et ne
- *   disent rien, mais où « aocf » doit retrouver « Add offline caching for ».
- * - `strict` : un seul morceau d'un seul tenant. Pour une description, ou un nom de projet
- *   porté en contexte.
+ * - `fuzzy`: letters in order, anywhere. For short identifiers, filenames or skill names where
+ * “cmdpal” must find “CommandPalette”.
+ * - `words`: a contiguous segment anywhere, then jumps only to word starts. For sentences,
+ * where scattered letters always match but mean nothing, while “aocf” should find “Add offline
+ * caching for”.
+ * - `strict`: one contiguous segment. For descriptions or project names shown as context.
  */
 export type FuzzyMode = 'fuzzy' | 'words' | 'strict'
 
 /**
- * Meilleur alignement par programmation dynamique : le premier venu, lettre après
- * lettre, retient le premier « p » de « apps/web/CommandPalette » et rate la bosse de
- * « Palette ». `best[j][i]` vaut le meilleur score des `j + 1` premières lettres quand
- * la dernière tombe sur `i`.
+ * Best alignment by dynamic programming: a greedy letter-by-letter alignment takes the first
+ * “p” in “apps/web/CommandPalette” and misses the “Palette” boundary. `best[j][i]` is the best
+ * score for the first `j + 1` letters when the last lands at `i`.
  *
- * Le coût d'un saut étant affine en sa longueur, le meilleur départ se tient à jour au
- * fil de la ligne, un par pente : l'ensemble reste linéaire par lettre de la saisie.
+ * Since gap cost is affine in gap length, the best starting point is maintained along the row,
+ * one per slope, keeping the whole algorithm linear per query letter.
  */
 function align(text: string, folded: string, token: string, words: boolean): FuzzyMatch | null {
   const n = folded.length
@@ -187,8 +181,8 @@ function align(text: string, folded: string, token: string, words: boolean): Fuz
     const previous = (j - 1) * n
     let towardWord = -Infinity
     let towardWordFrom = -1
-    // Départs d'un saut au milieu d'un mot : depuis ce même mot seulement, d'où la
-    // remise à zéro à chaque début de mot.
+    // Starting points for a jump inside a word must belong to that same word, hence
+    // the reset at each word start.
     let midWord = -Infinity
     let midWordFrom = -1
     let wordStart = 0
@@ -200,7 +194,7 @@ function align(text: string, folded: string, token: string, words: boolean): Fuz
         midWord = -Infinity
         midWordFrom = -1
       }
-      // Départs possibles d'un saut vers `i` : toutes les positions jusqu'à `i - 2`.
+      // Possible jump starts towards `i`: all positions through `i - 2`.
       if (i >= 2) {
         const k = i - 2
         const candidate = best[previous + k] as number
@@ -252,7 +246,7 @@ function align(text: string, folded: string, token: string, words: boolean): Fuz
   return accept(score, positions, n)
 }
 
-/** Premier alignement venu, pour les textes trop longs pour l'alignement optimal. */
+/** First available alignment for text too long for optimal alignment. */
 function greedy(text: string, folded: string, token: string, words: boolean): FuzzyMatch | null {
   const positions: number[] = []
   let score = 0
@@ -260,8 +254,8 @@ function greedy(text: string, folded: string, token: string, words: boolean): Fu
   for (const char of token) {
     const last = positions.at(-1)
     let found = folded.indexOf(char, at)
-    // Mêmes sauts permis que dans l'alignement : vers un début de mot, ou plus loin dans
-    // le même mot quand le mode le permet.
+    // Same permitted jumps as in alignment: to a word start, or farther within
+    // the same word when the mode allows it.
     while (last !== undefined && found !== -1 && found !== last + 1 && !isWordStart(text, found) && (words || crossesWord(text, last, found))) {
       found = folded.indexOf(char, found + 1)
     }
@@ -276,8 +270,7 @@ function greedy(text: string, folded: string, token: string, words: boolean): Fu
 }
 
 /**
- * Occurrence d'un seul tenant, la mieux placée : un début de mot plutôt qu'un milieu,
- * puis la plus proche du début.
+ * Best-placed contiguous occurrence: word starts before interiors, then earliest.
  */
 function contiguous(text: string, folded: string, token: string): FuzzyMatch | null {
   let start = -1
@@ -298,7 +291,7 @@ function contiguous(text: string, folded: string, token: string): FuzzyMatch | n
   return accept(score, positions, folded.length)
 }
 
-/** Un mot de la saisie, déjà replié par `fuzzyTokens`, contre un texte. */
+/** One query word, already folded by `fuzzyTokens`, matched against text. */
 export function fuzzyMatch(
   text: string,
   token: string,
@@ -313,24 +306,24 @@ export function fuzzyMatch(
 
 export interface FuzzyField {
   text: string
-  /** Part du score que ce champ transmet : le titre compte plus que la description. */
+  /** Score contribution of this field: titles count more than descriptions. */
   weight: number
   mode?: FuzzyMode
-  /** Repli du texte, quand l'appelant le garde d'une frappe à l'autre. */
+  /** Folded text, when callers retain it across keystrokes. */
   folded?: string
 }
 
 export interface FieldsMatch {
   score: number
-  /** Positions trouvées, par champ, dans l'ordre des champs donnés. */
+  /** Matched positions per field, in the supplied field order. */
   positions: number[][]
-  /** Champs qui ont porté au moins un mot de la saisie. */
+  /** Fields matching at least one query word. */
   matched: boolean[]
 }
 
 /**
- * Tous les mots doivent se trouver, chacun dans le champ où il vaut le plus : « nimbus
- * cache » trouve une conversation de Nimbus dont le titre parle de cache.
+ * Every word must match, each in its best-scoring field: “nimbus cache” finds a Nimbus
+ * conversation whose title mentions caching.
  */
 export function matchFields(fields: readonly FuzzyField[], tokens: readonly string[]): FieldsMatch | null {
   const positions = fields.map((): number[] => [])
@@ -358,7 +351,7 @@ export function matchFields(fields: readonly FuzzyField[], tokens: readonly stri
     positions[bestField]?.push(...bestPositions)
   }
 
-  // Deux mots peuvent retenir les mêmes lettres : « ca cach » dans « caching ».
+  // Two words can match the same letters: “ca cach” in “caching”.
   const unique = positions.map((list) => [...new Set(list)].sort((a, b) => a - b))
   return { score, positions: unique, matched }
 }

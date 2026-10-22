@@ -2,7 +2,7 @@ import { ShieldAlert } from 'lucide-react'
 import type { SettingGroup } from '../chat/ComposerSettings'
 import { Select } from '../ui'
 
-/** Une catégorie de réglage en liste déroulante, comme sur l'écran des défauts du compte. */
+/** Settings category as a select, matching account defaults. */
 export function GroupField({ group }: { group: SettingGroup }) {
   const selected = group.options.find((option) => option.value === group.value)
   return (

@@ -5,11 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { CliBinary } from '../src/agents/cli-binary.js'
 
-/**
- * Un CLI posé pendant que la sonde est en cache doit être vu dès qu'on l'invalide.
- * C'est ce que fait l'installation depuis l'interface : sans ça, l'écran re-proposait
- * « Installer » pendant une minute après une installation réussie.
- */
+/** CLIs installed while presence probes are cached must appear immediately after invalidation. Interface installation does this; otherwise 'Install' remained offered for a minute after success. */
 test("un CLI installé après la sonde apparaît dès que la sonde est invalidée", async () => {
   const managed = mkdtempSync(join(tmpdir(), 'sillage-cli-'))
   const cli = new CliBinary('codex', 'sillage-test-absent-cli', true, managed)
@@ -21,7 +17,7 @@ test("un CLI installé après la sonde apparaît dès que la sonde est invalidé
   writeFileSync(path, '#!/bin/sh\necho codex-cli 9.9.9\n')
   chmodSync(path, 0o755)
 
-  // Toujours en cache : la sonde ne relit pas le disque d'elle-même.
+  // Still cached: probes do not reread disk by themselves.
   assert.equal((await cli.status()).found, false)
 
   cli.invalidate()

@@ -8,16 +8,13 @@ import {
   type ApiTokenDto,
 } from '@sillage/protocol'
 
-/**
- * Le secret fait 32 octets d'aléa : assez d'entropie pour qu'un SHA-256 suffise, là où
- * un mot de passe exigerait Argon2. C'est le même raisonnement que pour les sessions.
- */
+/** Secrets contain 32 random bytes: enough entropy for SHA-256 where passwords need Argon2, following the session-token rationale. */
 const SECRET_BYTES = 32
-/** Assez pour distinguer deux jetons dans une liste, trop peu pour aider à en deviner un. */
+/** Enough to distinguish listed tokens, too little to help guess them. */
 const HINT_LENGTH = 6
-/** Écrire la date d'usage à chaque requête ferait une écriture par appel pour rien. */
+/** Writing last-use dates on every request would add a pointless write per call. */
 const LAST_USED_THROTTLE_MS = 60 * 1000
-/** Durée pendant laquelle une clé d'idempotence protège encore d'un doublon. */
+/** Duration for which idempotency keys prevent duplicate requests. */
 const KEY_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 function hashSecret(secret: string): string {
@@ -57,11 +54,7 @@ export interface NewApiToken {
   webhookUrl: string | null
 }
 
-/**
- * Retourne le secret d'authentification en clair, qui n'existera plus nulle part après
- * cet appel. Le secret de webhook est lui toujours généré, même sans URL : une tâche
- * peut en déclarer une plus tard, et il faut alors un secret déjà connu de l'appelant.
- */
+/** Returns plaintext authentication secrets, unavailable anywhere afterward. Always generate webhook secrets even without URLs: tasks may add URLs later and need a secret already known to callers. */
 export function createApiToken(db: Db, input: NewApiToken): { row: ApiTokenRow; secret: string } {
   const random = randomBytes(SECRET_BYTES).toString('base64url')
   const secret = `${API_TOKEN_PREFIX}${random}`
@@ -89,12 +82,7 @@ export function createApiToken(db: Db, input: NewApiToken): { row: ApiTokenRow; 
   return { row, secret }
 }
 
-/**
- * Résout un `Authorization: Bearer` en jeton et en utilisateur.
- *
- * Un jeton révoqué ou expiré est traité comme inconnu : l'appelant reçoit la même
- * réponse dans les trois cas, et n'apprend rien de la base en tâtonnant.
- */
+/** Resolves `Authorization: Bearer` into tokens and users. Revoked, expired and unknown tokens receive identical responses, revealing nothing to probing callers. */
 export function resolveApiToken(db: Db, secret: string): ApiTokenIdentity | null {
   if (!secret.startsWith(API_TOKEN_PREFIX)) return null
 
@@ -118,7 +106,7 @@ export function resolveApiToken(db: Db, secret: string): ApiTokenIdentity | null
   return { token: row.token, user: row.user }
 }
 
-/** Le secret arrive en `Authorization: Bearer <secret>`, casse de l'en-tête indifférente. */
+/** Secrets arrive as `Authorization: Bearer <secret>`; header casing is irrelevant. */
 export function bearerSecret(header: string | undefined): string | null {
   if (!header) return null
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim())
@@ -134,14 +122,7 @@ export function listApiTokens(db: Db, userId: string): ApiTokenRow[] {
     .all()
 }
 
-/**
- * Retire les clés d'idempotence trop vieilles pour servir.
- *
- * Une clé ne protège que le temps où un appelant peut encore réessayer ; passé une
- * semaine, elle ne fait plus que grossir la table. Une réservation restée sans
- * conversation part avec, sinon un serveur tué pendant une création bloquerait sa clé
- * en « création en cours » à jamais.
- */
+/** Deletes idempotency keys too old to help. After a week, retries are no longer relevant and keys only inflate storage. Also remove reservations without conversations so interrupted creation cannot leave keys permanently 'creating'. */
 export function purgeIdempotencyKeys(db: Db): void {
   db.delete(apiIdempotency).where(lt(apiIdempotency.createdAt, Date.now() - KEY_TTL_MS)).run()
 }

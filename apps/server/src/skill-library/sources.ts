@@ -19,26 +19,18 @@ import { compatNotes } from './compat.js'
 import { parseSkillMarkdown } from './frontmatter.js'
 import { contentHash, listFiles, readDirectory, type SkillLibrary, type SourceCatalogReader } from './store.js'
 
-/**
- * Sources de la bibliothèque de skills : des dépôts git, clonés en profondeur 1 dans le
- * cache, d'où l'on installe.
- *
- * Le clone est un miroir et rien d'autre : rafraîchir le remet sur la ref suivie, quoi
- * qu'on y ait laissé. Le catalogue (les dossiers qui portent un `SKILL.md`, avec
- * l'empreinte de chacun) se calcule une fois par commit et se garde à côté du clone,
- * parce qu'un dépôt comme anthropics/skills embarque des fichiers lourds à relire.
- */
+/** Skill library sources are git repositories shallow-cloned into the installation cache. Clones are mirrors: refreshing resets them to the tracked ref regardless of local leftovers. Catalogs of `SKILL.md` directories and fingerprints are computed once per commit and stored beside clones because repositories such as anthropics/skills contain expensive large files. */
 
 const execFileAsync = promisify(execFile)
 
-/** Un clone de profondeur 1 tient en secondes ; au-delà, le réseau ou le dépôt cloche. */
+/** Depth-1 clones take seconds; longer durations indicate network or repository trouble. */
 const GIT_TIMEOUT_MS = 120_000
 
-/** Les skills se rangent à un ou deux niveaux d'un dépôt ; plus bas, c'est autre chose. */
+/** Skills normally live one or two levels into repositories; deeper entries are something else. */
 const MAX_DEPTH = 4
 
 export interface CatalogEntry {
-  /** Dossier du skill relatif à la racine du dépôt, vide quand le dépôt est le skill. */
+  /** Skill directory relative to repository root; empty when the repository itself is the skill. */
   path: string
   name: string
   description: string
@@ -55,9 +47,9 @@ interface Catalog {
 class GitFailure extends Error {}
 
 export class SkillSources implements SourceCatalogReader {
-  /** Catalogues relus, par source. Null : la source n'a jamais été récupérée. */
+  /** Loaded catalogs per source; null means never fetched. */
   private readonly catalogs = new Map<string, Catalog | null>()
-  /** Un rafraîchissement en cours par source : un second appel attend le premier. */
+  /** One refresh per source at a time: concurrent calls await the first. */
   private readonly refreshing = new Map<string, Promise<SkillSourceRow>>()
 
   constructor(
@@ -113,7 +105,7 @@ export class SkillSources implements SourceCatalogReader {
     return row
   }
 
-  /** Changer d'URL, de ref ou de dossier rend le clone et son catalogue caducs. */
+  /** Changing URL, ref, or directory invalidates clone and catalog. */
   update(row: SkillSourceRow, patch: UpdateSkillSourceBody): SkillSourceRow {
     const url = patch.url === undefined ? row.url : normalizeSourceUrl(patch.url).url
     if (url !== row.url) this.assertFreeUrl(url)
@@ -134,17 +126,13 @@ export class SkillSources implements SourceCatalogReader {
     return next
   }
 
-  /** Les skills installés depuis cette source restent, leur provenance aussi. */
+  /** Installed skills and their provenance remain when sources are removed. */
   remove(row: SkillSourceRow): void {
     this.forget(row.id)
     this.db.delete(skillSources).where(eq(skillSources.id, row.id)).run()
   }
 
-  /**
-   * Clone la source, ou la remet au dernier commit de sa ref, puis refait son catalogue.
-   * `env` porte les identifiants git de qui déclenche : c'est ce qui ouvre un dépôt
-   * privé d'équipe.
-   */
+  /** Clones sources or resets them to the latest tracked-ref commit, then rebuilds catalogs. `env` supplies the requester's git credentials for private team repositories. */
   refresh(row: SkillSourceRow, env: NodeJS.ProcessEnv): Promise<SkillSourceRow> {
     const running = this.refreshing.get(row.id)
     if (running) return running
@@ -153,7 +141,7 @@ export class SkillSources implements SourceCatalogReader {
     return task
   }
 
-  /** Voir `SourceCatalogReader`. Une source désactivée ne signale pas de mise à jour. */
+  /** See `SourceCatalogReader`. Disabled sources do not report updates. */
   hashOf(sourceId: string, path: string): string | null {
     const source = this.db.select({ enabled: skillSources.enabled }).from(skillSources).where(eq(skillSources.id, sourceId)).get()
     if (!source?.enabled) return null
@@ -173,7 +161,7 @@ export class SkillSources implements SourceCatalogReader {
     return { ...entry, commit: catalog.commit }
   }
 
-  /** Les fichiers d'un skill de la source, tels que le dernier rafraîchissement les a laissés. */
+  /** Source skill files as left by the latest refresh. */
   files(row: SkillSourceRow, path: string): Map<string, Uint8Array> {
     this.entry(row, path)
     return readDirectory(join(this.cloneDir(row.id), path))
@@ -185,14 +173,7 @@ export class SkillSources implements SourceCatalogReader {
     return { path, commit, main: readFileSync(join(dir, SKILL_MAIN_FILE), 'utf8'), files: listFiles(dir) }
   }
 
-  /**
-   * Ce qu'appliquer la mise à jour changerait, en diff unifié : le skill installé à
-   * gauche, la source à droite, nom de la bibliothèque compris.
-   *
-   * Les deux versions sont posées côte à côte dans la zone de transit sous les noms
-   * `installed` et `source`, que le diff retire ensuite de ses chemins : l'interface
-   * affiche `SKILL.md`, pas un chemin absolu du serveur.
-   */
+  /** Unified update diff: installed skill on the left, source on the right, including the library name. Stage both versions as `installed` and `source`, then strip those prefixes from paths so the interface shows `SKILL.md` rather than absolute server paths. */
   async updatePatch(library: SkillLibrary, row: LibrarySkillRow, files: Map<string, Uint8Array>): Promise<string> {
     const scratch = library.scratch()
     try {
@@ -247,7 +228,7 @@ export class SkillSources implements SourceCatalogReader {
       try {
         catalog = JSON.parse(readFileSync(this.catalogFile(id), 'utf8')) as Catalog
       } catch {
-        // Jamais récupérée, ou cache vidé : la source se rafraîchit pour revenir.
+        // Never fetched or cache cleared: refresh the source to restore it.
       }
       this.catalogs.set(id, catalog)
     }
@@ -267,7 +248,7 @@ export class SkillSources implements SourceCatalogReader {
     }
   }
 
-  /** Les identifiants préconfigurés contiennent un `:`, d'où un nom de dossier dérivé. */
+  /** Preconfigured IDs contain `:`, so derive directory names. */
   private cloneDir(id: string): string {
     return join(this.root, id.replace(/[^A-Za-z0-9_-]/g, '_'))
   }
@@ -277,11 +258,7 @@ export class SkillSources implements SourceCatalogReader {
   }
 }
 
-/**
- * L'URL à cloner et un nom lisible. `owner/repo` vaut pour GitHub : c'est la forme que
- * skills.sh et les README emploient. Un chemin local est refusé, comme pour le clone
- * d'un projet : la bibliothèque n'a pas à copier un dossier quelconque du serveur.
- */
+/** Clone URL and readable name. `owner/repo` means GitHub, matching skills.sh and READMEs. Reject local paths as for project cloning: the library must not copy arbitrary server directories. */
 export function normalizeSourceUrl(input: string): { url: string; name: string } {
   const trimmed = input.trim()
   if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trimmed)) {
@@ -297,15 +274,12 @@ export function normalizeSourceUrl(input: string): { url: string; name: string }
   return { url: remote.url, name: segments.slice(-2).join('/') || remote.repo }
 }
 
-/** `https://github.com/A/b.git` et `https://github.com/a/b` désignent le même dépôt. */
+/** `https://github.com/A/b.git` and `https://github.com/a/b` identify the same repository. */
 export function comparableUrl(url: string): string {
   return url.trim().toLowerCase().replace(/\.git$/, '').replace(/\/$/, '')
 }
 
-/**
- * Les dossiers qui portent un `SKILL.md`, sous le sous-dossier choisi. On ne descend pas
- * dans un skill trouvé, ni dans `.git`, `node_modules` ou un dossier caché.
- */
+/** Directories containing `SKILL.md` below the chosen subdirectory. Never descend into discovered skills, `.git`, `node_modules` or hidden directories. */
 function scanCatalog(repo: string, subpath: string | null): CatalogEntry[] {
   const base = subpath ? join(repo, subpath) : repo
   if (!existsSync(base)) throw new Error(`The folder ${subpath} does not exist in the repository.`)
@@ -350,7 +324,7 @@ async function git(args: string[], options: { cwd?: string; env?: NodeJS.Process
   try {
     const { stdout } = await execFileAsync('git', args, {
       cwd: options.cwd,
-      // Sans terminal, un git qui veut demander un mot de passe doit échouer, pas attendre.
+      // Without a terminal, git password prompts must fail rather than wait.
       env: { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: '0' },
       timeout: GIT_TIMEOUT_MS,
       maxBuffer: 16 * 1024 * 1024,
@@ -362,7 +336,7 @@ async function git(args: string[], options: { cwd?: string; env?: NodeJS.Process
   }
 }
 
-/** `git diff --no-index` sort en 1 quand il y a des différences : ce n'est pas un échec. */
+/** `git diff --no-index` exits 1 for differences; this is not failure. */
 async function diffNoIndex(cwd: string, left: string, right: string): Promise<string> {
   try {
     await execFileAsync('git', ['diff', '--no-index', '--no-color', '--no-ext-diff', '--no-renames', '--', left, right], {

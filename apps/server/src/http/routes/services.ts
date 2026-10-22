@@ -21,10 +21,7 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
     }).finally(() => { pending = undefined })
   }
 
-  /**
-   * Le projet et la conversation d'une origine, ou null si l'utilisateur ne doit pas
-   * voir l'entrée : un projet privé d'un autre, ou une origine inconnue hors admin.
-   */
+  /** Origin project and conversation, or null when the user must not see it: another user's private project, or unknown origins for non-administrators. */
   const attribution = (userId: string, isAdmin: boolean) => {
     const allProjects = ctx.db.select().from(projects).all()
     const allConversations = new Map(ctx.db.select({
@@ -54,20 +51,14 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
         projectId: project?.id ?? null, projectName: project?.name ?? null,
         conversationId: linked?.id ?? null, conversationTitle: linked?.title ?? null,
         origin: entry.origin ? entry.origin.conversationId ? 'agent' : 'terminal' : 'unknown',
-        // Un lanceur se pilote depuis sa conversation ou son terminal ; un outil d'agent
-        // (serveur MCP) arrêté ici casserait la conversation sans rien libérer d'utile.
+        // Control launchers through their conversation or terminal. Stopping agent tools
+        // (MCP servers) here would break conversations without freeing useful resources.
         canStop: !!entry.origin && !!project && (entry.kind === 'command' || entry.kind === 'detached'),
       }]
     })
   }
 
-  /**
-   * Les apps suivent la visibilité des processus. Une seule différence : sans origine
-   * connue, l'admin peut aussi les piloter. Le préfixe `sillage-app-` est en soi une
-   * déclaration (« Sillage peut l'arrêter »), et l'admin a de toute façon la main sur
-   * les unités de la machine ; un agent qui a oublié de transmettre son jeton ne doit
-   * pas laisser une app impossible à arrêter depuis l'interface.
-   */
+  /** Apps follow process visibility, except administrators may also control apps with unknown origins. The `sillage-app-` prefix explicitly declares that Sillage may stop them, and administrators already control machine units. Forgetting to pass an origin token must not leave an app impossible to stop through the interface. */
   const visibleApps = (apps: ServiceApp[], userId: string, isAdmin: boolean): ServiceAppDto[] => {
     const attribute = attribution(userId, isAdmin)
     return apps.flatMap((entry): ServiceAppDto[] => {
@@ -85,8 +76,8 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
         conversationId: conversation?.id ?? null, conversationTitle: conversation?.title ?? null,
         origin: entry.origin ? entry.origin.conversationId ? 'agent' : 'terminal' : 'unknown',
         canStop: manageable && running,
-        // Une unité transitoire arrêtée est déchargée par systemd : elle ne revient
-        // jamais dans la liste inactive, seule une unité en échec reste relançable.
+        // Stopped transient units are unloaded by systemd and never appear in the inactive
+        // list again; only failed units remain restartable.
         canRestart: manageable && entry.state !== 'deactivating',
         canReset: manageable && entry.state === 'failed',
       }]

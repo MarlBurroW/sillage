@@ -1,18 +1,13 @@
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 
 /**
- * Poignée de largeur, partagée par la sidebar, le panneau latéral, le tiroir de carte
- * et la colonne de l'explorateur.
- *
- * Ces quatre-là ne diffèrent que par la façon dont l'abscisse du pointeur devient une
- * largeur : la sidebar part du bord gauche de la fenêtre, le panneau et le tiroir du
- * bord droit, la colonne de l'explorateur du bord gauche de son conteneur. Tout le
- * reste, l'écoute posée sur la fenêtre plutôt que sur la poignée, le curseur et la
- * sélection neutralisés le temps du geste, l'enregistrement au seul relâchement, était
- * recopié à l'identique.
+ * Width handle shared by the sidebar, side panel, card drawer, and explorer column. Only
+ * pointer-position-to-width mapping differs: window left for sidebar, window right for panel and
+ * drawer, container left for explorer. Window listeners, temporary cursor and text-selection
+ * suppression, and persistence only on release were otherwise duplicated identically.
  */
 
-/** Pas du réglage au clavier : assez fin pour ajuster, assez gros pour arriver. */
+/** Keyboard adjustment step: fine enough for precision, large enough for practical movement. */
 const KEY_STEP_PX = 16
 
 export interface ResizeHandle {
@@ -25,13 +20,13 @@ export function resizeHandle({
   current,
   apply,
 }: {
-  /** Largeur voulue quand le pointeur est à cette abscisse. */
+  /** Desired width at this pointer x-coordinate. */
   widthAt: (clientX: number) => number
-  /** Largeur actuelle, que le clavier ajuste faute de pointeur. `null` si illisible. */
+  /** Current width adjusted by keyboard when no pointer exists. `null` if unreadable. */
   current: () => number | null
   /**
-   * `persist` est faux pendant le glissement : un geste émet un événement par image, et
-   * écrire dans `localStorage` à chacune rendrait la poignée pâteuse.
+   * `persist` is false during dragging: a gesture emits one event per frame and writing
+   * `localStorage` every frame would make resizing sluggish.
    */
   apply: (width: number, persist: boolean) => void
 }): ResizeHandle {
@@ -48,12 +43,11 @@ export function resizeHandle({
         document.body.style.removeProperty('user-select')
       }
 
-      // Sur la fenêtre et non sur la poignée : le pointeur la quitte dès la première
-      // image d'un glissement rapide, et le geste doit continuer de suivre.
+      // Listen on the window rather than the handle: a fast drag leaves the handle on its first
+      // frame and must continue tracking.
       window.addEventListener('pointermove', move)
       window.addEventListener('pointerup', stop)
-      // Sans ça, le glissement sélectionne le texte au passage et le curseur redevient
-      // une flèche dès qu'on quitte la poignée.
+      // Otherwise dragging selects underlying text and the cursor becomes an arrow outside the handle.
       document.body.style.cursor = 'col-resize'
       document.body.style.userSelect = 'none'
     },
@@ -66,9 +60,9 @@ export function resizeHandle({
       if (width === null) return
 
       event.preventDefault()
-      // Le sens vient de `widthAt` : une poignée posée sur un bord droit élargit vers la
-      // droite, une poignée posée sur un bord gauche vers la gauche. Le déduire évite
-      // d'avoir à le redire à chaque appel, et d'oublier de l'inverser.
+      // Infer direction from `widthAt`: right-edge handles expand rightward, left-edge handles
+      // leftward. Deriving it avoids repeating the direction at every call site and forgetting to
+      // reverse it.
       const step = widthAt(1) > widthAt(0) ? arrow * KEY_STEP_PX : -arrow * KEY_STEP_PX
       apply(width + step, true)
     },

@@ -1,5 +1,6 @@
 import {
   Archive,
+  Rss,
   Bell,
   BookOpen,
   ChevronRight,
@@ -29,17 +30,15 @@ import { useMediaQuery } from '../lib/viewport'
 import { cx } from '../components/ui'
 
 /**
- * Réglages, rangés par catégorie.
+ * Settings grouped by category.
  *
- * Une page unique empilait des cartes sans rapport les unes sous les autres, et chaque
- * réglage ajouté allongeait le défilement. Les catégories sont des routes : elles se
- * partagent, se mettent en favori, et le bouton retour du téléphone les traverse.
+ * A single page stacked unrelated cards, lengthening with each setting. Categories are routes:
+ * shareable, bookmarkable, and navigable with the phone back button.
  *
- * Deux dispositions pour un seul arbre de routes. Sur grand écran, la liste est une
- * colonne posée à gauche et la section vit à côté. Au doigt, la liste est la page :
- * `/settings` la montre seule, et ouvrir une catégorie la remplace, avec un retour vers
- * la liste. C'est le motif liste-détail habituel, et il évite d'entasser une colonne de
- * navigation dans une largeur qui n'en a pas.
+ * Two layouts share one route tree. On large screens the list occupies a left column beside the
+ * section. On touch screens the list is the page: `/settings` shows it alone; opening a
+ * category replaces it with a back link. This familiar list-detail pattern avoids squeezing a
+ * navigation column into insufficient width.
  */
 interface Section {
   to: string
@@ -48,13 +47,13 @@ interface Section {
   descriptionKey: MessageKey
   icon: ReactNode
   adminOnly?: boolean
-  /** Capacité de l'instance sans laquelle la catégorie n'a pas d'objet. */
+  /** Instance capability required for this category to make sense. */
   requires?: keyof InstanceCapabilities
 }
 
 /**
- * Les catégories que cet utilisateur voit sur cette instance. Partagée avec la palette
- * de recherche, qui ne doit pas proposer une catégorie que la page cache.
+ * Categories visible to this user on this instance. Shared with search, which must not suggest
+ * categories hidden by the page.
  */
 export function visibleSections(isAdmin: boolean, capabilities: InstanceCapabilities | undefined): Section[] {
   return SECTIONS.filter(
@@ -63,8 +62,15 @@ export function visibleSections(isAdmin: boolean, capabilities: InstanceCapabili
   )
 }
 
-/** Lue à travers `visibleSections`, qui applique droits et capacités. */
+/** Read through `visibleSections`, which enforces permissions and capabilities. */
 const SECTIONS: Section[] = [
+  {
+    to: 'veille',
+    group: 'personal',
+    labelKey: 'news.title',
+    descriptionKey: 'news.description',
+    icon: <Rss size={16} />,
+  },
   {
     to: 'compte',
     group: 'personal',
@@ -211,13 +217,14 @@ export function SettingsLayout() {
   const { data: instance } = useInstance()
   const sections = visibleSections(Boolean(user?.isAdmin), instance?.capabilities)
   const onIndex = pathname === '/settings' || pathname === '/settings/'
-  // Doit rester aligné sur `md:` de Tailwind, qui commande les deux dispositions.
+  // Must match Tailwind `md:`, which controls both layouts.
   const wide = useMediaQuery('(min-width: 48rem)')
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 md:flex-row md:gap-8 md:p-8">
-      {/* La liste disparaît au doigt dès qu'une section est ouverte : les deux
-          ensemble ne tiennent pas dans la largeur d'un téléphone. */}
+      {/*
+       * On touch screens, hide the list when a section opens: both cannot fit a phone's width.
+       */}
       <nav className={cx('shrink-0 md:w-56', !onIndex && 'hidden md:block')}>
         <h1 className="mb-3 px-1 text-lg font-semibold tracking-tight">{t('settings.title')}</h1>
         {GROUPS.map((group) => {
@@ -246,8 +253,10 @@ export function SettingsLayout() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{t(section.labelKey)}</span>
-                        {/* La description n'aide qu'au doigt, où la liste est la page entière
-                            et où rien d'autre ne dit ce qu'une catégorie contient. */}
+                        {/*
+                         * Descriptions help only on touch screens, where the list fills the
+                         * page and nothing else explains category contents.
+                         */}
                         <span className="block text-xs text-ink-faint md:hidden">
                           {t(section.descriptionKey)}
                         </span>
@@ -261,8 +270,10 @@ export function SettingsLayout() {
           )
         })}
 
-        {/* Sans repère de version, « je ne vois pas la correction » ne se tranche pas :
-            rien à l'écran ne dit quelle version tourne réellement. */}
+        {/*
+         * Without a version indicator, “I cannot see the fix” is impossible to resolve: nothing
+         * shows the actual running version.
+         */}
         <p className="mt-4 px-2.5 text-[0.6875rem] text-ink-faint">
           {t('settings.buildInfo', { version: __APP_VERSION__ })}{' '}
           <time dateTime={__BUILD_TIME__}>{new Date(__BUILD_TIME__).toLocaleString(locale())}</time>
@@ -270,17 +281,18 @@ export function SettingsLayout() {
       </nav>
 
       <div className={cx('min-w-0 flex-1', onIndex && 'hidden md:block')}>
-        {/* Sur grand écran, arriver sur `/settings` sans section afficherait une colonne
-            vide : la première prend la main. La redirection est conditionnée à la
-            largeur réelle et non à une classe `hidden` : un élément caché en CSS reste
-            monté, et la liste du téléphone se serait redirigée toute seule. */}
+        {/*
+         * On large screens, `/settings` without a section would show an empty column: select
+         * the first. Redirect based on actual width, not CSS `hidden`: hidden elements stay
+         * mounted and would redirect the phone list too.
+         */}
         {onIndex ? wide ? <Navigate to={sections[0]?.to ?? 'a-propos'} replace /> : null : <Outlet />}
       </div>
     </div>
   )
 }
 
-/** Retour vers la liste, au doigt seulement : ailleurs la colonne est déjà visible. */
+/** Back to the list on touch layouts only; elsewhere the column is already visible. */
 export function SectionHeader({
   title,
   description,
@@ -288,7 +300,7 @@ export function SectionHeader({
 }: {
   title: string
   description?: string
-  /** Posé à côté du titre : un statut qui qualifie la section entière, pas une carte. */
+  /** Beside the title: status applies to the whole section, not a card. */
   badge?: ReactNode
 }) {
   const t = useTranslate()
@@ -311,12 +323,10 @@ export function SectionHeader({
 }
 
 /**
- * En-tête d'une liste de réglages : son titre, combien d'entrées, et l'action qui en
- * ajoute une.
+ * Settings-list header: title, entry count and add action.
  *
- * La liste vient avant le formulaire : on ouvre un registre pour voir ce qu'il contient
- * bien plus souvent que pour y ajouter, et un formulaire toujours déplié en tête
- * repoussait ce qu'on venait voir sous le pli de l'écran.
+ * List before form: users open registries to inspect contents more often than to add entries. A
+ * permanently expanded top form pushed what they came to see below the fold.
  */
 export function ListHeading({
   title,

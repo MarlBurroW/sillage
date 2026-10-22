@@ -7,7 +7,7 @@ import { cx } from './cx'
 export interface SelectOption<T extends string> {
   value: T
   label: string
-  /** Affichée dans la liste et dans le déclencheur une fois l'option choisie. */
+  /** Displayed in choices and the trigger after selection. */
   icon?: ReactNode
   hint?: string
   disabled?: boolean
@@ -24,9 +24,8 @@ interface SelectProps<T extends string> {
 }
 
 /**
- * Select applicatif, pas le natif : il porte des icônes et une ligne d'aide par
- * option, ce que `<option>` ne sait pas faire. Radix fournit la navigation clavier,
- * le rôle listbox et le comportement tactile.
+ * App select rather than native: icons and help lines need capabilities absent from option tags.
+ * Radix supplies keyboard navigation, listbox semantics, and touch behavior.
  */
 export function Select<T extends string>({
   value,
@@ -46,10 +45,9 @@ export function Select<T extends string>({
 
       <RadixSelect.Root
         value={value}
-        // Radix interdit la chaîne vide comme valeur d'option, donc une émission vide
-        // ne peut correspondre à aucun choix de l'utilisateur : elle vient du select
-        // natif caché que Radix maintient pour l'intégration aux formulaires. La
-        // laisser remonter écrase le réglage par une valeur que le serveur refuse.
+        // Radix forbids empty option values, so empty emissions cannot be user choices; they come
+        // from its hidden native form-integration select. Ignore them or they overwrite settings
+        // with server-rejected values.
         onValueChange={(v) => {
           if (v !== '') onChange(v as T)
         }}

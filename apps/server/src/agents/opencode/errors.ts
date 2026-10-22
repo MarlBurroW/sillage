@@ -5,15 +5,14 @@ type ErrorEvent = Extract<SillageEvent, { type: 'error' }>
 
 export type SessionError = NonNullable<EventOf<'session.error'>['properties']['error']>
 
-/** Un tour interrompu n'est pas une panne : opencode le dit pourtant par une erreur. */
+/** Interrupted turns are not failures, though opencode reports errors. */
 export function isAbort(error: SessionError): boolean {
   return error.name === 'MessageAbortedError'
 }
 
 /**
- * Codes qui ont déjà une traduction côté web. Les autres erreurs d'opencode prennent
- * leur nom en snake_case (`ContextOverflowError` devient `context_overflow`), et une
- * panne sans précision reste `turn_failed`, pour être tout de même affichée.
+ * Codes already translated by web. Other errors get snake_case names (ContextOverflowError →
+ * context_overflow); unspecified failures remain turn_failed so they display.
  */
 const RENAMED: Record<string, string> = {
   ProviderAuthError: 'provider_unauthorized',
@@ -32,10 +31,7 @@ export function opencodeErrorCode(name: string): string {
   return code || 'turn_failed'
 }
 
-/**
- * Événement `error` d'une panne de tour. Toujours `recoverable` : la session survit à
- * son tour, et le message suivant en ouvre un nouveau.
- */
+/** Turn-failure error event. Always recoverable: session survives turn, next message starts another. */
 export function describeSessionError(error: SessionError): ErrorEvent {
   const data = error.data as { message?: unknown } | undefined
   return {

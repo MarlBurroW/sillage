@@ -1,11 +1,7 @@
 /**
- * Lecture des payloads d'outils.
- *
- * Ces payloads traversent le journal sans schéma (I3 ne normalise que l'enveloppe, pas
- * ce que chaque outil met dedans) : un renderer ne peut rien tenir pour acquis, ni la
- * présence d'un champ, ni son type. Ces accesseurs rendent `null` au lieu de lever, ce
- * qui laisse au renderer le choix de se rabattre sur la vue brute plutôt que de casser
- * le fil entier.
+ * Read tool payloads. They cross the log without schemas (I3 normalizes envelopes only), so
+ * renderers cannot assume field presence or types. Accessors return null rather than throw,
+ * allowing raw-view fallback instead of breaking the whole thread.
  */
 
 export function fields(value: unknown): Record<string, unknown> | null {
@@ -18,7 +14,7 @@ export function text(value: unknown, key: string): string | null {
   return typeof found === 'string' && found.length > 0 ? found : null
 }
 
-/** Une valeur simple ramenée à son affichage, quel que soit son type d'origine. */
+/** Display form of a primitive regardless of original type. */
 export function scalar(value: unknown, key: string): string | null {
   const found = fields(value)?.[key]
   if (typeof found === 'number' || typeof found === 'boolean') return String(found)
@@ -35,13 +31,9 @@ export function list(value: unknown, key: string): unknown[] | null {
 }
 
 /**
- * La sortie d'un appel ramenée à du texte.
- *
- * Claude Code rend le contenu d'un `tool_result`, qui est soit une chaîne, soit une
- * suite de blocs dont seuls les blocs texte nous intéressent (une image de capture
- * d'écran n'a rien à faire dans un `<pre>`). Codex rend directement la sortie agrégée
- * de la commande. Tout le reste n'est pas du texte et rend `null` : c'est le signal
- * qu'il faut une vue spécialisée, ou la vue brute.
+ * Tool output as text. Claude Code supplies tool_result content as a string or blocks, retaining
+ * only text blocks because screenshots do not belong in pre tags. Codex supplies aggregate command
+ * output directly. Other forms return null to request a specialized or raw view.
  */
 export function outputText(output: unknown): string | null {
   if (typeof output === 'string') return output
@@ -61,7 +53,7 @@ export interface ImageBlock {
   data: string
 }
 
-/** Images des sorties Claude et MCP ; le texte voisin reste rendu séparément. */
+/** Images from Claude and MCP outputs; neighboring text renders separately. */
 export function imageBlocks(output: unknown): ImageBlock[] {
   const content = Array.isArray(output) ? output : fields(output)?.content
   if (!Array.isArray(content)) return []
@@ -80,7 +72,7 @@ export function imageBlock(output: unknown): ImageBlock | null {
   return imageBlocks(output)[0] ?? null
 }
 
-/** Lignes non vides d'une sortie, pour les outils qui en produisent une par résultat. */
+/** Nonempty output lines for tools returning one result per line. */
 export function outputLines(output: unknown): string[] | null {
   const raw = outputText(output)
   if (raw === null) return null
@@ -88,17 +80,13 @@ export function outputLines(output: unknown): string[] | null {
   return lines.length > 0 ? lines : null
 }
 
-/** `     12\tcontenu` : la gouttière que `cat -n` place devant chaque ligne. */
+/** The cat -n gutter preceding every line, such as numbered tab-separated content. */
 const GUTTER = /^\s*\d+\t/
 
 /**
- * Retire le numérotage que Claude Code ajoute au contenu qu'il lit, et rend `null`
- * si la sortie n'en porte pas.
- *
- * Toutes les lignes doivent le porter : une sortie où seules quelques-unes commencent
- * par un nombre n'est pas numérotée, elle parle de nombres. Ce numérotage est un
- * artefact d'affichage du CLI, pas le contenu du fichier ; le laisser empêche de
- * colorer le code et de le copier tel quel. La vue brute, elle, le conserve.
+ * Strip Claude Code's read-output numbering, returning null when absent. Every line must match:
+ * partial numeric prefixes indicate content discussing numbers. Numbering is CLI presentation
+ * rather than file content and prevents useful highlighting/copying. Raw views retain it.
  */
 export function stripLineNumbers(content: string): string | null {
   const lines = content.split('\n')

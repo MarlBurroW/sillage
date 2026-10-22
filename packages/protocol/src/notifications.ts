@@ -2,12 +2,12 @@ import { z } from 'zod'
 import type { DecisionSourceKind } from './decisions.js'
 
 /**
- * Ce que Sillage signale hors de la conversation regardée : une notification système
- * sur les appareils abonnés, un toast dans l'application ouverte. Jamais les deux sur
- * le même appareil : celui où l'application est visible reçoit le toast.
+ * What Sillage reports outside the currently viewed conversation: a system notification on
+ * subscribed devices or a toast in the open app. Never both on one device: the device with a
+ * visible app gets the toast.
  */
 
-/** Les sortes de notifications, que chaque compte peut couper séparément. */
+/** Notification kinds, individually disableable by each account. */
 export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted'])
 export type NotificationKind = z.infer<typeof notificationKindSchema>
 
@@ -20,12 +20,11 @@ export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { decision: true, cliRequest: true, turnCompleted: true }
 
-/** Ce qu'un CLI attend, pour le libellé d'un toast. */
+/** What a CLI is waiting for, used in toast labels. */
 export type CliRequestKind = 'permission' | 'question' | 'elicitation' | 'plan'
 
 /**
- * Un toast. Le texte se compose côté client, dans sa langue : le serveur n'envoie que
- * des faits.
+ * A toast. Text is composed client-side in the user's language: the server sends only facts.
  */
 export type InAppNotification =
   | {
@@ -33,7 +32,7 @@ export type InAppNotification =
       decisionId: string
       question: string
       sourceLabel: string
-      /** Facultatif pour un client plus récent que le serveur, le temps d'un déploiement. */
+      /** Optional for clients newer than the server during deployment. */
       sourceKind?: DecisionSourceKind
       projectName: string
     }
@@ -43,11 +42,11 @@ export type InAppNotification =
       conversationId: string
       projectId: string
       conversationTitle: string
-      /** Ce qui est demandé, en une ligne : l'outil et sa commande, la question posée. */
+      /** Requested action in one line: tool and command, or the question asked. */
       detail: string | null
     }
 
-/** Service de push d'un abonnement, lu dans son adresse : il dit quel appareil c'est. */
+/** Subscription push service inferred from its address, indicating the device type. */
 export type PushServiceKind = 'apple' | 'google' | 'mozilla' | 'microsoft' | 'other'
 
 export interface PushDeviceDto {
@@ -57,7 +56,7 @@ export interface PushDeviceDto {
   createdAt: number
 }
 
-/** Un délai pour avoir le temps de fermer l'application avant que la notification parte. */
+/** Delay allowing time to close the app before the notification is sent. */
 export const MAX_PUSH_TEST_DELAY_SECONDS = 60
 export const pushTestBodySchema = z.object({
   delaySeconds: z.number().int().min(0).max(MAX_PUSH_TEST_DELAY_SECONDS),
@@ -66,9 +65,9 @@ export const pushTestBodySchema = z.object({
 export interface PushDeliveryDto {
   endpoint: string
   service: PushServiceKind
-  /** `sent` : accepté par le service de push ; ce qui suit ne dépend plus de Sillage. */
+  /** `sent`: accepted by the push service; subsequent delivery is outside Sillage's control. */
   outcome: 'sent' | 'failed' | 'removed'
-  /** Code HTTP et motif du refus, tels que le service les a donnés. */
+  /** HTTP status and rejection reason as returned by the service. */
   status: number | null
   reason: string | null
 }
@@ -76,6 +75,6 @@ export interface PushDeliveryDto {
 export interface PushTestDto {
   id: string
   sendAt: number
-  /** Null tant que l'envoi n'a pas eu lieu. */
+  /** Null until sending has occurred. */
   deliveries: PushDeliveryDto[] | null
 }

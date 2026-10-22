@@ -1,21 +1,20 @@
 import { z } from 'zod'
 
 /**
- * Serveurs MCP déclarés dans Sillage.
+ * MCP servers registered in Sillage.
  *
- * Un seul modèle pour les deux CLI, parce que la déclaration est la même partout : un
- * transport, de quoi joindre le serveur, et de quoi l'authentifier. Ce qui diffère est
- * la façon de l'appliquer, pas de le décrire, et cette divergence vit dans les runners.
+ * One model for both CLIs because declarations are identical: transport, connection and
+ * authentication details. Application differs, not description; those differences live in
+ * runners.
  *
- * Le modèle suit `McpServerConfigForProcessTransport` du SDK Claude, la seule variante
- * sérialisable de son union : les serveurs `sdk` portent une instance en mémoire et ne
- * peuvent ni se stocker ni se transporter.
+ * Follows Claude SDK `McpServerConfigForProcessTransport`, the only serializable part of its
+ * union: `sdk` servers contain in-memory instances and cannot be stored or transported.
  */
 
 /**
- * Le nom voyage jusqu'au CLI, qui en préfixe les outils qu'il expose
- * (`mcp__<nom>__<outil>`). Un espace ou un point y casse la résolution d'outil côté
- * modèle, d'où la contrainte ici plutôt qu'un nettoyage silencieux à l'écriture.
+ * The name reaches the CLI, which prefixes exposed tools with it (`mcp__<name>__<tool>`).
+ * Spaces or dots break model-side tool resolution, hence validation here rather than silent
+ * cleanup on write.
  */
 export const mcpServerNameSchema = z
   .string()
@@ -24,17 +23,17 @@ export const mcpServerNameSchema = z
   .regex(/^[a-zA-Z0-9_-]+$/)
 
 /**
- * Nom du serveur MCP que Sillage monte lui-même dans chaque conversation.
+ * Name of the MCP server Sillage mounts in every conversation.
  *
- * Réservé : une entrée du registre qui porterait ce nom prendrait sa place dans la
- * table que les deux CLI construisent par nom, et le remplacerait en silence.
+ * Reserved: a registry entry with this name would silently replace it in the name-keyed table
+ * built by both CLIs.
  */
 export const BUILTIN_MCP_SERVER_NAME = 'sillage'
 
 /**
- * Vérifié à l'écriture du registre et non dans `mcpServerNameSchema` : le schéma relit
- * aussi les lignes déjà en base, et une entrée créée avant la réserve doit rester
- * lisible pour pouvoir être renommée plutôt que de rendre la table inexploitable.
+ * Checked on registry writes, not in `mcpServerNameSchema`: the schema also reads existing
+ * rows. Entries predating the reservation must remain readable for renaming rather than making
+ * the table unusable.
  */
 export function isReservedMcpServerName(name: string): boolean {
   return name.toLowerCase() === BUILTIN_MCP_SERVER_NAME
@@ -45,14 +44,14 @@ const stdioTransportSchema = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).default([]),
   /**
-   * S'ajoute à l'environnement du serveur Sillage, ne le remplace pas : un serveur MCP
-   * garde `HOME` et `PATH` sans qu'on ait à les recopier ici. Relevé sur les deux CLI.
+   * Adds to, rather than replaces, the Sillage server environment: MCP servers retain `HOME`
+   * and `PATH` without copying them here. Verified on both CLIs.
    */
   env: z.record(z.string()).default({}),
 })
 
 const httpTransportSchema = z.object({
-  /** `sse` est le transport historique, encore servi par des serveurs existants. */
+  /** `sse` is the legacy transport, still used by existing servers. */
   type: z.enum(['http', 'sse']),
   url: z.string().url(),
   headers: z.record(z.string()).default({}),
@@ -68,9 +67,8 @@ export const mcpServerSchema = z.object({
   id: z.string(),
   name: mcpServerNameSchema,
   /**
-   * Désactivé globalement : le serveur reste déclaré et gardé, mais n'est transmis à
-   * aucun CLI. Évite d'avoir à le supprimer puis à le ressaisir pour l'éteindre le
-   * temps d'un diagnostic.
+   * Globally disabled: the server stays registered but is passed to no CLI. Avoids deleting and
+   * re-entering it just to disable it during diagnostics.
    */
   enabled: z.boolean(),
   transport: mcpTransportSchema,
@@ -80,17 +78,17 @@ export const mcpServerSchema = z.object({
 export type McpServer = z.infer<typeof mcpServerSchema>
 
 /**
- * État d'un serveur tel que le CLI le rapporte.
+ * Server state as reported by the CLI.
  *
- * Vocabulaire unifié à partir des deux protocoles, qui ne décrivent pas la même chose :
- * Claude publie un statut par serveur, Codex publie un état de démarrage d'un côté et
- * un état d'authentification de l'autre. Les runners réduisent l'un et l'autre à ceci.
+ * Vocabulary unified from two protocols that describe different things: Claude publishes
+ * per-server status; Codex publishes startup and authentication states separately. Runners
+ * reduce both to this shape.
  */
 export const mcpServerStateSchema = z.enum([
   'pending',
   'connected',
   'failed',
-  /** Le serveur répond mais réclame une authentification que Sillage ne sait pas mener. */
+  /** Server responds but requires authentication Sillage cannot perform. */
   'needs-auth',
   'disabled',
 ])
@@ -100,15 +98,14 @@ export const mcpServerStatusSchema = z.object({
   name: z.string(),
   state: mcpServerStateSchema,
   /**
-   * Outils réellement annoncés par le serveur, pas ceux qu'on espérait. C'est le seul
-   * moyen pour l'utilisateur de vérifier qu'un serveur fait ce qu'il croit.
+   * Tools actually advertised by the server, not those expected. The only way users can verify
+   * that a server does what they think it does.
    */
   tools: z.array(z.string()).default([]),
   error: z.string().nullable().default(null),
   /**
-   * Serveur venu du disque du CLI (`~/.claude.json`, `config.toml`, connecteurs
-   * claude.ai) et non de Sillage. L'interface doit le montrer sans proposer de
-   * l'éditer : Sillage n'en est pas propriétaire.
+   * Server from CLI files (`~/.claude.json`, `config.toml`, claude.ai connectors), not Sillage.
+   * The UI must show it without offering edits: Sillage does not own it.
    */
   external: z.boolean().default(false),
 })

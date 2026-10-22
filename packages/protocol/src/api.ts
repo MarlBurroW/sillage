@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { agentConfigSchema, type CodexMode } from './agent-config.js'
-// Import de type seulement, dans les deux sens : `cards.ts` a besoin du statut de
-// conversation et ce fichier de la puce de carte. Rien n'en subsiste à l'exécution,
-// donc aucun cycle de module.
+// Type-only imports in both directions: `cards.ts` needs conversation status,
+// and this file needs the card badge. Nothing survives at runtime,
+// so there is no module cycle.
 import type { CardColumn, CardLinkDto } from './cards.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
@@ -38,7 +38,7 @@ export interface CurrentUser {
   isAdmin: boolean
 }
 
-// Administration des comptes
+// Account administration
 
 const PASSWORD_MIN = 8
 
@@ -54,12 +54,12 @@ export const createUserBodySchema = z.object({
 })
 
 /**
- * Le premier compte, créé depuis la visite quand la base n'en a aucun. Administrateur
- * d'office, comme en ligne de commande : personne d'autre ne pourrait le promouvoir.
+ * First account, created by onboarding when the database has none. Automatically an
+ * administrator, as on the command line: nobody else could promote it.
  */
 export const setupAccountBodySchema = createUserBodySchema.omit({ isAdmin: true })
 
-/** Même contrainte qu'à la création : l'identifiant sert de nom de connexion. */
+/** Same constraint as creation: the identifier is the login name. */
 const usernameSchema = z
   .string()
   .min(1)
@@ -72,9 +72,8 @@ export const updateUserBodySchema = z
     displayName: z.string().min(1).max(120),
     isAdmin: z.boolean(),
     /**
-     * Réinitialisation par un administrateur : déconnecte le compte partout.
-     * Pour son propre compte, `currentPassword` est exigé et la session courante est
-     * conservée.
+     * An administrator reset signs the account out everywhere. For one's own account,
+     * `currentPassword` is required and the current session is retained.
      */
     password: z.string().min(PASSWORD_MIN, `Au moins ${PASSWORD_MIN} caractères.`).max(256),
     currentPassword: z.string().min(1).max(256),
@@ -87,34 +86,34 @@ export interface UserDto {
   displayName: string
   isAdmin: boolean
   createdAt: number
-  /** Sessions ouvertes : dit si le compte est réellement utilisé quelque part. */
+  /** Open sessions: indicates whether the account is actually used anywhere. */
   activeSessions: number
   /**
-   * Ressources qui empêchent la suppression. Les clés étrangères de `users` ne sont
-   * pas en cascade : effacer un compte qui possède des projets casserait la base.
+   * Resources preventing deletion. `users` foreign keys do not cascade: deleting an account
+   * that owns projects would break the database.
    */
   ownedProjects: number
   ownedConversations: number
 }
 
-// Projets
+// Projects
 
 const projectCreationFields = {
   name: z.string().min(1).max(120),
   visibility: projectVisibilitySchema.default('private'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null),
-  /** Absent : le dépôt s'il porte déjà un `AGENTS.md` ou un `CLAUDE.md`, Sillage sinon. */
+  /** Absent: the repository if it already contains `AGENTS.md` or `CLAUDE.md`; otherwise Sillage. */
   instructionsMode: instructionsModeSchema.optional(),
-  /** Absent : le défaut du compte. */
+  /** Absent: the account default. */
   memoryMode: memoryModeSchema.optional(),
 }
 
 /**
- * Deux façons de désigner le workspace d'un projet.
+ * Two ways to specify a project's workspace.
  *
- * `workspacePath` pointe sur un dossier qui existe déjà, n'importe où sur la machine.
- * `parentDir` + `directory` demandent au serveur de créer le dossier : c'est le cas
- * courant d'un projet qui démarre de zéro, où l'on n'a rien d'autre qu'un nom.
+ * `workspacePath` points to an existing directory anywhere on the machine. `parentDir` +
+ * `directory` ask the server to create it: the usual case when starting a project from scratch
+ * with only a name.
  */
 export const createProjectBodySchema = z.union([
   z.object({ ...projectCreationFields, workspacePath: z.string().min(1) }),
@@ -126,8 +125,8 @@ export const createProjectBodySchema = z.union([
 ])
 
 /**
- * Le projet d'essai de la visite : Sillage écrit un petit dépôt dans `parentDir` et crée
- * le projet dessus. Le nom du dossier est à lui, pour qu'on le reconnaisse et le retire.
+ * Onboarding sample project: Sillage writes a small repository under `parentDir` and creates a
+ * project for it. Its distinctive directory name makes it easy to recognize and remove.
  */
 export const createSampleProjectBodySchema = z.object({
   parentDir: z.string().min(1),
@@ -135,11 +134,11 @@ export const createSampleProjectBodySchema = z.object({
 })
 
 /**
- * Nom de dossier tiré d'un nom de projet : `Mon Projet Été` devient `mon-projet-ete`.
+ * Directory name derived from a project name: `Mon Projet Été` becomes `mon-projet-ete`.
  *
- * Minuscules, sans accent ni caractère qu'un shell voudrait échapper. Ce n'est qu'une
- * proposition : le champ reste modifiable, et le serveur vérifie de son côté que le nom
- * envoyé est un simple nom de dossier.
+ * Lowercase, without accents or characters requiring shell escaping. Only a suggestion: the
+ * field remains editable, and the server independently checks that the submitted value is a
+ * simple directory name.
  */
 export function slugifyProjectName(name: string): string {
   return name
@@ -153,14 +152,14 @@ export function slugifyProjectName(name: string): string {
 export const updateProjectBodySchema = z
   .object({
     name: z.string().min(1).max(120),
-    /** Prend effet au prochain lancement de runner, pas sur ceux déjà en cours. */
+    /** Takes effect on the next runner launch, not on already running ones. */
     workspacePath: z.string().min(1),
     visibility: projectVisibilitySchema,
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
     /**
-     * Le préréglage d'un seul CLI, nommé explicitement plutôt que déduit du
-     * discriminant : `config` à `null` retire le préréglage, et il faut bien dire
-     * lequel. Celui de l'autre CLI garde sa valeur, comme pour les défauts de compte.
+     * Preset for a single explicitly named CLI, rather than inferred from the discriminant:
+     * `config: null` removes a preset, so the CLI must be specified. Other CLI presets retain
+     * their values, as with account defaults.
      */
     defaultConfig: z
       .object({ agent: agentKindSchema, config: agentConfigSchema.nullable() })
@@ -173,19 +172,18 @@ export const updateProjectBodySchema = z
   })
   .partial()
 
-/** Ordre manuel des projets dans la sidebar, du haut vers le bas. */
+/** Manual sidebar project order, top to bottom. */
 export const reorderProjectsBodySchema = z.object({
   ids: z.array(z.string().uuid()).min(1),
 })
 
 /**
- * Plafond d'une image de projet. Elle s'affiche en quelques dizaines de pixels et vit en
- * base : le navigateur réduit ce qu'il envoie, et un agent qui en pose une plus lourde
- * se voit demander de la réduire.
+ * Project image size limit. Displayed at a few dozen pixels and stored in the database: the
+ * browser downsizes uploads, and an agent supplying a larger image is asked to shrink it.
  */
 export const MAX_PROJECT_IMAGE_BYTES = 1024 * 1024
 
-/** Reconnus au contenu, jamais à l'extension. */
+/** Recognized by content, never by extension. */
 export const PROJECT_IMAGE_TYPES = [
   'image/png',
   'image/jpeg',
@@ -195,16 +193,16 @@ export const PROJECT_IMAGE_TYPES = [
 ] as const
 
 export interface ProjectImageDto {
-  /** Versionnée : une image remplacée change d'URL, le cache n'a rien à invalider. */
+  /** Versioned: replacing an image changes its URL, requiring no cache invalidation. */
   url: string
-  /** Posée par un agent en attendant un vrai logo. */
+  /** Set by an agent pending a real logo. */
   provisional: boolean
 }
 
 export interface ProjectDto {
   id: string
   name: string
-  /** Null tant que personne, ni un agent, n'en a posé une : la couleur reste le repère. */
+  /** Null until a person or agent sets one: color remains the visual marker. */
   image: ProjectImageDto | null
   workspacePath: string
   ownerId: string
@@ -216,42 +214,42 @@ export interface ProjectDto {
   archivedAt: number | null
   createdAt: number
   conversationCount: number
-  /** Préréglages du projet, socle des conversations qui s'y ouvrent. */
+  /** Project presets, the baseline for conversations opened within it. */
   defaultConfig: ProjectAgentDefaults
-  /** Null pour un projet d'avant le réglage : le mode se résout alors d'après le dossier. */
+  /** Null for projects predating the setting: resolve the mode from the directory. */
   instructionsMode: InstructionsMode | null
-  /** Points de reprise git par tour (voir `checkpoints.ts` côté serveur). */
+  /** Git checkpoints per turn (see server-side `checkpoints.ts`). */
   turnCheckpoints: boolean
-  /** Où vit la mémoire des agents de ce projet (voir `memory.ts`). */
+  /** Where this project's agent memory lives (see `memory.ts`). */
   memoryMode: MemoryMode
-  /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
+  /** Live shells in the project, indicating a terminal is still running. */
   activeTerminals: number
   /**
-   * Cartes du board par colonne, pour le résumer dans la navigation sans charger ses
-   * cartes. Une colonne vide est absente plutôt qu'à zéro.
+   * Board card counts per column, summarizing it in navigation without loading cards. Empty
+   * columns are absent rather than zero.
    */
   cardCounts: Partial<Record<CardColumn, number>>
-  /** Épinglé en tête du sélecteur par le compte appelant : un repère personnel. */
+  /** Pinned to the top of the picker by the calling account: a personal marker. */
   pinned: boolean
-  /** État du dépôt git, null si le workspace n'est pas un dépôt. */
+  /** Git repository state; null if the workspace is not a repository. */
   git: { branch: string; isDirty: boolean } | null
 }
 
-// Pièces jointes
+// Attachments
 
 export const MAX_ATTACHMENTS_PER_MESSAGE = 5
 
 /**
- * Plafond des mentions d'un message. Chacune injecte un fichier entier dans le
- * contexte : au-delà, un message consomme la fenêtre à lui seul.
+ * Maximum mentions per message. Each injects an entire file into context: beyond this, one
+ * message would consume the whole window.
  */
 export const MAX_MENTIONS_PER_MESSAGE = 20
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 
 /**
- * Types d'image que l'API Claude accepte en ligne. Le reste part comme fichier :
- * une image dans un format non listé serait refusée par le modèle.
+ * Image types accepted inline by the Claude API. Everything else is sent as a file: an unlisted
+ * image format would be rejected by the model.
  */
 export const INLINE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const
 
@@ -261,32 +259,30 @@ export interface AttachmentDto {
   mimeType: string
   sizeBytes: number
   createdAt: number
-  /** Vrai si le fichier sera transmis au modèle comme image plutôt que comme chemin. */
+  /** True if the file will be passed to the model as an image rather than a path. */
   inlineImage: boolean
 }
 
 /**
- * Un message peut n'être que des pièces jointes, d'où le texte facultatif. En
- * revanche il doit porter au moins l'un des deux : sans ça, un envoi accidentel
- * créerait un tour vide auquel l'agent n'a rien à répondre.
+ * A message can contain only attachments, hence optional text. It must contain at least one of
+ * the two, otherwise an accidental send would create an empty turn with nothing for the agent
+ * to answer.
  */
 const messagePayloadSchema = z
   .object({
-    /** Généré par le client, rejoué à l'identique en cas de renvoi réseau (I5). */
+    /** Client-generated, replayed unchanged on network retries (I5). */
     clientMessageId: z.string().uuid(),
     text: z.string().default(''),
     attachmentIds: z.array(z.string().uuid()).max(MAX_ATTACHMENTS_PER_MESSAGE).default([]),
     /**
-     * Chemins mentionnés avec `@`, relatifs au répertoire de travail, tels qu'ils
-     * apparaissent dans le texte. Le serveur les résout en chemins absolus et chaque
-     * CLI les transmet à sa façon.
+     * Paths mentioned with `@`, relative to the working directory, as they appear in the text.
+     * The server resolves absolute paths and each CLI passes them in its own way.
      */
     mentions: z.array(z.string().min(1)).max(MAX_MENTIONS_PER_MESSAGE).default([]),
     /**
-     * Compétences invoquées avec `$`, par leur nom seul. Le chemin ne vient pas du
-     * client : le runner résout le nom sur l'inventaire qu'il a lui-même publié, et
-     * ignore ce qu'il ne reconnaît pas, plutôt que de laisser désigner un fichier
-     * arbitraire à faire lire au CLI.
+     * Skills invoked with `$`, by name only. Paths never come from the client: the runner
+     * resolves names against its own published inventory and ignores unknown names, rather than
+     * allowing arbitrary files to be fed to the CLI.
      */
     skills: z.array(z.string().min(1)).max(MAX_SKILLS_PER_MESSAGE).default([]),
   })
@@ -302,25 +298,24 @@ export const createConversationBodySchema = z.object({
   config: agentConfigSchema,
   worktreeId: z.string().nullable().default(null),
   /**
-   * Carte que la conversation traite, quand elle est lancée depuis le board.
+   * Card handled by the conversation when launched from the board.
    *
-   * Le rattachement se pose ici, à l'envoi, et non à l'ouverture du brouillon : tant
-   * que rien n'est envoyé, il n'y a pas de conversation à rattacher.
+   * The association is set here, on send, not when opening a draft: until something is sent, no
+   * conversation exists to associate.
    */
   cardId: z.string().uuid().nullable().default(null),
   title: z.string().min(1).max(200).optional(),
   /**
-   * Premier message, envoyé dans la foulée de la création.
+   * First message, sent immediately after creation.
    *
-   * L'UI ne crée pas de conversation tant que rien n'a été écrit : sans ça, chaque
-   * clic laisse un fil vide et sans titre dans la liste. Passer le message ici rend
-   * l'opération atomique, plutôt que de risquer une conversation créée dont l'envoi
-   * échoue.
+   * The UI creates no conversation until something is written: otherwise every click would
+   * leave an empty, untitled thread. Passing the message here makes the operation atomic rather
+   * than risking a created conversation whose first send fails.
    */
   firstMessage: messagePayloadSchema.optional(),
 })
 
-/** Ordre manuel des conversations d'un projet, du haut vers le bas. */
+/** Manual conversation order within a project, top to bottom. */
 export const reorderConversationsBodySchema = z.object({
   ids: z.array(z.string().uuid()).min(1),
 })
@@ -330,9 +325,9 @@ export const updateConversationBodySchema = z
     title: z.string().min(1).max(200),
     pinned: z.boolean(),
     archived: z.boolean(),
-    /** Prend effet au message suivant : le runner est relancé en reprise. */
+    /** Takes effect on the next message: the runner restarts in resume mode. */
     config: agentConfigSchema,
-    /** Rattache la conversation à une carte du même projet, ou l'en détache avec `null`. */
+    /** Associates the conversation with a card in the same project, or detaches it with `null`. */
     cardId: z.string().uuid().nullable(),
   })
   .partial()
@@ -340,17 +335,17 @@ export const updateConversationBodySchema = z
 export const sendMessageBodySchema = messagePayloadSchema
 
 /**
- * Infléchissement du tour en cours. Même charge utile qu'un envoi : c'est le même
- * message, seul son moment de prise en compte change.
+ * Steering the current turn. Same payload as a send: the message is identical; only when it is
+ * taken into account changes.
  */
 export const steerBodySchema = messagePayloadSchema
 
 /**
- * Fork d'une conversation à un point du fil.
+ * Forks a conversation at a point in the thread.
  *
- * `throughSeq` est le dernier événement du journal conservé dans la branche. La coupe
- * s'exprime en événements et non en tours, parce que c'est ce que le client voit ;
- * le serveur en déduit ce que chaque CLI attend.
+ * `throughSeq` is the last journal event retained in the branch. The cut is expressed in
+ * events, not turns, because that is what the client sees; the server derives what each CLI
+ * expects.
  */
 export const forkConversationBodySchema = z.object({
   throughSeq: z.number().int().nonnegative(),
@@ -358,12 +353,11 @@ export const forkConversationBodySchema = z.object({
 })
 
 /**
- * Suite d'une conversation dans un autre CLI.
+ * Continues a conversation in another CLI.
  *
- * Le CLI cible et sa configuration, comme à la création ; le budget en jetons de la
- * sélection d'historique, ramené dans les bornes du serveur. Pas de premier message :
- * la nouvelle demande s'écrit dans la suite, une fois ouverte, et n'est jamais mêlée au
- * contexte transféré.
+ * Target CLI and configuration, as at creation, plus the history selection's token budget
+ * clamped to server limits. No first message: the new request is written in the continuation
+ * after opening it, never mixed into transferred context.
  */
 export const handoffConversationBodySchema = z.object({
   agent: agentKindSchema,
@@ -372,7 +366,7 @@ export const handoffConversationBodySchema = z.object({
   budgetTokens: z.number().int().positive().optional(),
 })
 
-/** Ce qui a été transmis à une suite, pour l'afficher. */
+/** What was transferred to a continuation, for display. */
 export interface HandoffDto {
   fromConversationId: string
   throughSeq: number
@@ -388,10 +382,10 @@ export const permissionDecisionBodySchema = z.object({
 })
 
 /**
- * Réponse à une question posée par l'agent.
+ * Answer to an agent's question.
  *
- * Les valeurs sont libres et non contraintes aux options proposées : les deux CLI
- * acceptent une réponse « autre », saisie au clavier.
+ * Values are free-form, not limited to suggested options: both CLIs accept a typed “other”
+ * answer.
  */
 export const questionAnswerBodySchema = z.object({
   status: z.enum(['answered', 'cancelled']),
@@ -399,9 +393,8 @@ export const questionAnswerBodySchema = z.object({
 })
 
 /**
- * Réponse à une élicitation MCP. Les valeurs ne sont validées ici que sur leur forme :
- * la conformité au schéma demandé est vérifiée par le serveur MCP lui-même, qui en est
- * l'auteur.
+ * Answer to an MCP elicitation. Only value shapes are validated here: the requesting MCP server
+ * validates compliance with its own schema.
  */
 export const elicitationAnswerBodySchema = z.object({
   action: elicitationActionSchema,
@@ -411,46 +404,42 @@ export const elicitationAnswerBodySchema = z.object({
 export const planDecisionBodySchema = z.object({
   decision: z.enum(['approved', 'rejected']),
   /**
-   * Comment poursuivre après validation : l'`id` d'une option annoncée par
-   * `plan.review_requested`. Null laisse le mode courant en place. Opaque ici,
-   * validé par l'adaptateur qui a proposé les options.
+   * How to proceed after approval: an option `id` from `plan.review_requested`. Null preserves
+   * the current mode. Opaque here; validated by the adapter that offered the options.
    */
   followUpMode: z.string().nullable().default(null),
 })
 
 /**
- * Le client annonce jusqu'où il a lu. Le serveur ne fait jamais reculer le curseur :
- * deux onglets ouverts sur le même fil arrivent avec des seq différents, et le plus
- * lent ne doit pas rallumer ce que l'autre vient d'éteindre.
+ * The client reports how far it has read. The server never moves the cursor backwards: two tabs
+ * on the same thread report different seq values, and the slower one must not mark content
+ * unread after the other cleared it.
  */
 export const markReadBodySchema = z.object({ seq: z.number().int().min(0) })
 
 /**
- * De quoi juger le poids d'une conversation sans l'ouvrir.
+ * Metrics for assessing a conversation's size without opening it.
  *
- * Relevées en base et non repliées depuis le journal : la sidebar en affiche pour toutes
- * les conversations à la fois, et replier chaque journal pour les obtenir coûterait le
- * prix de tout l'historique. Partagées entre la liste REST et la poussée de statut, qui
- * doivent dire la même chose.
+ * Read from the database rather than folded from the journal: the sidebar displays them for all
+ * conversations at once, and folding every journal would cost a full-history read. Shared by
+ * REST listings and status pushes, which must agree.
  */
 export interface ConversationMetrics {
   /**
-   * Tours du fil principal, un par message de l'utilisateur : les traits de la réglette
-   * de repères. Les messages de l'agent en sont exclus, il en produit un par appel
-   * d'outil et le compte décrirait ses étapes.
+   * Main-thread turns, one per user message: marks on the navigation ruler. Agent messages are
+   * excluded because each tool call produces one, which would count steps instead.
    *
-   * Le tour au sens du découpage du fil, distinct de l'événement `turn.started` : les
-   * deux ne coïncident pas toujours.
+   * A turn in thread segmentation, distinct from `turn.started`: they do not always coincide.
    */
   turnCount: number
-  /** Poids du journal sur disque, en octets. */
+  /** Journal size on disk, in bytes. */
   journalBytes: number
   /**
-   * Occupation de la fenêtre de contexte au dernier relevé du CLI, null tant qu'il n'en
-   * a rien dit. Distincte des jetons cumulés : elle se vide à chaque compaction.
+   * Context-window usage last reported by the CLI; null before any report. Separate from
+   * cumulative tokens: it resets at every compaction.
    */
   context: { usedTokens: number; maxTokens: number } | null
-  /** Modèle de la dernière session ouverte, null avant le premier lancement. */
+  /** Model of the latest opened session; null before the first launch. */
   model: string | null
 }
 
@@ -459,34 +448,33 @@ export interface ConversationDto {
   projectId: string
   worktreeId: string | null
   /**
-   * Carte que cette conversation traite, null quand elle n'en traite aucune.
+   * Card handled by this conversation, or null.
    *
-   * Résolue à la lecture plutôt que figée comme l'origine : le titre d'une carte se
-   * corrige, et le fil doit en montrer la version courante.
+   * Resolved on read rather than frozen like the origin: card titles can be corrected, and the
+   * thread must show the current version.
    */
   card: CardLinkDto | null
   userId: string
   title: string
-  /** Vrai si l'utilisateur a renommé : le CLI ne proposera plus de titre. */
+  /** True if the user renamed it: the CLI will no longer suggest a title. */
   titleSetByUser: boolean
   agent: AgentKind
-  /** Conversation d'origine si celle-ci est une branche. Null sinon. */
+  /** Original conversation if this is a fork; otherwise null. */
   forkedFromId: string | null
-  /** Conversation que celle-ci continue dans un autre CLI. Null sinon. */
+  /** Conversation this one continues in another CLI; otherwise null. */
   handoffFromId: string | null
   config: unknown
   status: ConversationStatus
   lastSeq: number
   /**
-   * Dernier `seq` qui valait qu'on prévienne le lecteur. Toujours inférieur ou égal à
-   * `lastSeq` : le journal avance aussi pour des écritures de service, qui ne signalent
-   * rien à personne.
+   * Last `seq` worth notifying the reader about. Always at most `lastSeq`: the journal also
+   * advances for service writes that notify nobody.
    */
   lastNotableSeq: number
   /**
-   * Jusqu'où le compte appelant a lu, comme `isOwner` : dérivé du demandeur, pas de la
-   * conversation. En dessous de `lastNotableSeq`, il s'est passé quelque chose qui le
-   * concerne depuis sa dernière visite.
+   * How far the calling account has read, like `isOwner`: derived from the requester, not the
+   * conversation. Below `lastNotableSeq` means something relevant has happened since their last
+   * visit.
    */
   lastReadSeq: number
   costUsd: number
@@ -495,9 +483,8 @@ export interface ConversationDto {
   metrics: ConversationMetrics
   pinned: boolean
   /**
-   * Signet du compte appelant, comme `lastReadSeq` et `isOwner` : dérivé du demandeur,
-   * pas de la conversation. Deux comptes qui voient le même fil partagé n'ont pas les
-   * mêmes favoris.
+   * Calling account's bookmark, like `lastReadSeq` and `isOwner`: derived from the requester,
+   * not the conversation. Two accounts viewing the same shared thread need not share favorites.
    */
   favorite: boolean
   position: number
@@ -506,15 +493,15 @@ export interface ConversationDto {
   updatedAt: number
   isOwner: boolean
   /**
-   * Jeton d'API qui a lancé la conversation ; null quand elle vient de l'interface.
+   * API token that launched the conversation; null when created in the UI.
    *
-   * Le libellé est figé à la création plutôt que résolu à la lecture : une conversation
-   * ne doit pas perdre son origine parce qu'on a fait le ménage dans ses jetons.
+   * The label is frozen at creation rather than resolved on read: cleaning up tokens must not
+   * erase a conversation's origin.
    */
   origin: { tokenId: string | null; label: string } | null
   /**
-   * Tâche planifiée dont un tir a ouvert ce fil, null pour une conversation ordinaire.
-   * La sidebar s'en sert pour le sortir de la liste principale et le ranger sous sa tâche.
+   * Scheduled task whose run opened this thread; null for ordinary conversations. The sidebar
+   * uses it to group the thread under its task rather than in the main list.
    */
   scheduleId: string | null
 }
@@ -522,33 +509,32 @@ export interface ConversationDto {
 export interface JournalPageDto {
   entries: { seq: number; ts: number; event: unknown }[]
   /**
-   * Curseur de la page suivante : dernier `seq` **lu**, que son événement ait été rendu,
-   * fusionné dans un autre ou écarté parce que la suite du journal le rend caduc. Les
-   * deltas d'une page sont regroupés par message, donc la dernière entrée rendue porte le
-   * `seq` du premier fragment de son groupe et non celui du dernier lu : s'en servir comme
-   * curseur ferait relire la page indéfiniment. Une page peut aussi n'avoir aucune entrée
-   * et faire avancer le curseur.
+   * Next-page cursor: last `seq` **read**, whether its event was returned, merged into another,
+   * or discarded as superseded by later journal events. Page deltas are grouped by message, so
+   * the last returned entry has its group's first-fragment `seq`, not the last one read; using
+   * it as cursor would reread the page forever. A page can also contain no entries yet advance
+   * the cursor.
    *
-   * Facultatif parce que le web s'échange sans redémarrage et le serveur non : le temps
-   * d'un déploiement, ce client parle à un serveur qui l'ignore. Le serveur le renvoie
-   * toujours.
+   * Optional because the web frontend can be replaced without a restart, unlike the server:
+   * during deployment, this client may talk to a server unaware of it. The server always
+   * returns it.
    */
   nextAfter?: number
-  /** Dernier seq connu du serveur : sert de curseur d'abonnement au WebSocket. */
+  /** Latest seq known to the server, used as the WebSocket subscription cursor. */
   lastSeq: number
 }
 
 // Worktrees
 
 export const createWorktreeBodySchema = z.object({
-  /** Nom de branche. Sert aussi de nom de dossier, d'où la restriction. */
+  /** Branch name. Also used as directory name, hence the restriction. */
   name: z
     .string()
     .min(1)
     .max(100)
     .regex(/^[A-Za-z0-9._\/-]+$/, 'Caractères autorisés : lettres, chiffres, . _ - /')
-    // Le nom sert aussi à construire un chemin sur disque : `..` doit être refusé
-    // ici, et pas seulement par git qui ne le rejette que par effet de bord.
+    // The name also builds a disk path: reject `..`
+    // here, not only through git's incidental rejection.
     .refine((name) => !name.split('/').includes('..'), 'Le nom ne peut pas contenir « .. »')
     .refine((name) => !name.startsWith('/') && !name.endsWith('/'), 'Nom de branche invalide'),
   baseRef: z.string().min(1).default('HEAD'),
@@ -561,39 +547,39 @@ export interface WorktreeDto {
   path: string
   baseRef: string
   createdAt: number
-  /** Null si le dossier a disparu du disque en dehors de Sillage. */
+  /** Null if the directory disappeared from disk outside Sillage. */
   git: { branch: string; isDirty: boolean } | null
-  /** Nombre de conversations qui l'utilisent, pour prévenir avant suppression. */
+  /** Number of conversations using it, for the deletion warning. */
   conversationCount: number
 }
 
 /**
- * État d'un arbre par rapport à la branche par défaut du projet, du plus urgent au plus
- * anodin : introuvable, du travail non commité que la base n'a pas, des commits que la
- * base n'a pas, rien que la base n'ait déjà (donc à nettoyer).
+ * Worktree state relative to the project's default branch, from most urgent to least: missing,
+ * uncommitted work absent from base, commits absent from base, nothing base does not already
+ * have (ready for cleanup).
  */
 export type WorktreeState = 'missing' | 'dirty' | 'unmerged' | 'merged'
 
-/** Comment une conversation tient à un arbre : son cwd, ou des fichiers qu'elle y a écrits. */
+/** How a conversation is associated with a worktree: its cwd or files it wrote there. */
 export type WorktreeLink = 'worktree' | 'edited'
 
 export interface WorktreeStatusDto {
-  /** Null pour un arbre que git connaît mais que Sillage n'a pas créé. */
+  /** Null for a worktree known to git but not created by Sillage. */
   id: string | null
-  /** Branche, ou nom de l'entrée en base quand la branche est perdue. */
+  /** Branch, or database entry name when the branch is missing. */
   name: string
   path: string
   branch: string | null
-  /** Vrai pour un arbre créé au shell, hors de Sillage. */
+  /** True for a worktree created from the shell outside Sillage. */
   external: boolean
   state: WorktreeState
-  /** Commits propres à la branche, et commits de la base qu'elle n'a pas. */
+  /** Branch-only commits and base commits it lacks. */
   ahead: number
   behind: number
-  /** Fichiers suivis modifiés, et fichiers non suivis. */
+  /** Modified tracked files and untracked files. */
   modified: number
   untracked: number
-  /** La fusion dans la base produirait un conflit. */
+  /** Merging into base would produce a conflict. */
   conflicts: boolean
   lastCommitAt: number | null
   lastEditAt: number | null
@@ -601,35 +587,35 @@ export interface WorktreeStatusDto {
 }
 
 export interface WorktreeStatusListDto {
-  /** Branche de comparaison ; null hors dépôt ou sans aucune branche. */
+  /** Comparison branch; null outside a repository or with no branches. */
   base: string | null
   computedAt: number
-  /** Faux quand la liste rendue date du calcul précédent, le suivant étant en cours. */
+  /** False when returning the previous calculation's list while the next is running. */
   fresh: boolean
   worktrees: WorktreeStatusDto[]
 }
 
 /**
- * Ce que « Nettoyer » ferait d'un arbre, lu avant de confirmer : rien ne disparaît en
- * silence, la confirmation liste ce qui serait perdu et ce qui s'arrêterait.
+ * What “Clean up” would do to a worktree, read before confirmation: nothing disappears
+ * silently; the confirmation lists what would be lost and stopped.
  */
 export interface WorktreeCleanupPlanDto {
   path: string
   name: string
   branch: string | null
   state: WorktreeState
-  /** Travail qui partirait avec l'arbre : non commité, non suivi, commits propres à la branche. */
+  /** Work lost with the tree: uncommitted changes, untracked files, branch-only commits. */
   modified: number
   untracked: number
   ahead: number
-  /** Vrai si la branche peut être supprimée : elle existe et n'est pas la base. */
+  /** True if the branch can be deleted: it exists and is not the base. */
   branchDeletable: boolean
-  /** Sessions rattachées encore actives, à archiver. */
+  /** Still-active associated sessions to archive. */
   conversations: { id: string; title: string }[]
-  /** Services et démos dont le répertoire est dans l'arbre. */
+  /** Services and demos whose directory lies in the worktree. */
   services: { id: string; label: string; kind: 'app' | 'process' }[]
   terminals: number
-  /** Carte traitée par une session rattachée, pas encore terminée. */
+  /** Unfinished card handled by an associated session. */
   card: { id: string; number: number; title: string } | null
 }
 
@@ -653,38 +639,37 @@ export interface DiffFileDto {
   removed: number
 }
 
-/** Un commit de la branche courante, tel que `git log` le rend. */
+/** A commit on the current branch, as returned by `git log`. */
 export interface CommitDto {
-  /** Parents dans l’ordre Git ; le premier poursuit la branche. */
+  /** Parents in Git order; the first continues the branch. */
   parents: string[]
-  /** Hash complet : c'est lui qui sert de clé et qu'on redemande pour le diff. */
+  /** Full hash: used as the key and requested again for the diff. */
   hash: string
   shortHash: string
   subject: string
   author: string
   /**
-   * Horodatage du commit, en millisecondes.
+   * Commit timestamp in milliseconds.
    *
-   * Une date et non l'ancienneté que git sait rendre : `%cr` sort dans la langue du
-   * serveur, et se fige au moment de la requête.
+   * An absolute date rather than git's relative age: `%cr` uses the server's language and
+   * freezes at request time.
    */
   ts: number
   /**
-   * Références posées sur ce commit : branches locales, branches distantes, tags
-   * (`tag: v1.0`). Ce que `%D` rend, sans la flèche `HEAD -> ` : le commit courant
-   * est signalé à part.
+   * References on this commit: local branches, remote branches, tags (`tag: v1.0`). What `%D`
+   * returns, without the `HEAD -> ` arrow: the current commit is marked separately.
    */
   refs: string[]
 }
 
 export interface CommitListDto {
-  /** Null si le répertoire de travail n'est pas un dépôt git, vide s'il n'a aucun commit. */
+  /** Null if the working directory is not a git repository; empty if it has no commits. */
   commits: CommitDto[] | null
-  /** Vrai s'il reste des commits plus anciens à demander. */
+  /** True if older commits remain to be requested. */
   hasMore: boolean
 }
 
-/** Ce qu'un commit a changé, dans la même forme que le diff du répertoire de travail. */
+/** What a commit changed, in the same shape as the working-directory diff. */
 export interface CommitDiffDto {
   files: DiffFileDto[]
   patch: string
@@ -698,18 +683,17 @@ export const commitListQuerySchema = z.object({
 })
 
 /**
- * Un hash, et rien d'autre : la référence part sur la ligne de commande de git, où
- * `--all` ou `HEAD~5` n'auraient rien à faire.
+ * A hash and nothing else: the reference goes on git's command line, where `--all` or `HEAD~5`
+ * would not belong.
  */
 export const commitHashSchema = z.string().regex(/^[0-9a-f]{7,40}$/)
 
-// Sessions Claude Code existantes sur le disque
+// Claude Code sessions already on disk
 
 /**
- * Une session commencée avec le CLI Claude Code dans le dossier du projet, pas encore
- * rattachée à une conversation Sillage. L'import n'en fait pas une copie : Sillage
- * retient l'identifiant natif et reconstruit son journal depuis le transcript, puis
- * chaque tour reprend la même session côté CLI.
+ * A session started with the Claude Code CLI in the project directory, not yet linked to a
+ * Sillage conversation. Import does not copy it: Sillage records its native ID and rebuilds its
+ * journal from the transcript, then each turn resumes that same CLI session.
  */
 export interface ClaudeSessionDto {
   sessionId: string
@@ -723,14 +707,14 @@ export interface ClaudeSessionsDto {
   sessions: ClaudeSessionDto[]
 }
 
-/** Résultat d'une resynchronisation : nombre d'événements repris du transcript. */
+/** Resync result: number of events recovered from the transcript. */
 export interface ClaudeSyncDto {
   imported: number
 }
 
-// Capacités des CLI
+// CLI capabilities
 
-/** Un niveau d'effort accepté par un modèle. Le libellé vient de l'adaptateur. */
+/** An effort level accepted by a model. The label comes from the adapter. */
 export interface AgentEffortDto {
   value: string
   label: string
@@ -738,29 +722,29 @@ export interface AgentEffortDto {
 }
 
 /**
- * Un modèle tel que le CLI installé le déclare, sous une forme commune aux CLI.
- * Rien n'est codé en dur côté Sillage : une mise à jour du CLI fait apparaître ses
- * nouveaux modèles sans rebuild, et l'UI construit les mêmes sélecteurs pour tous.
+ * A model reported by the installed CLI, in a shared shape. Nothing is hardcoded in Sillage:
+ * CLI updates expose new models without rebuilding, and the UI builds the same pickers for all
+ * of them.
  */
 export interface AgentModelDto {
-  /** Identifiant à passer au CLI : un alias (`sonnet`) ou un id complet. */
+  /** ID to pass to the CLI: an alias (`sonnet`) or a full ID. */
   value: string
   displayName: string
   description: string
-  /** Complément affiché (id canonique derrière un alias...), quand le CLI le donne. */
+  /** Extra displayed detail (canonical ID behind an alias, etc.), when provided by the CLI. */
   hint: string | null
   isDefault: boolean
-  /** Vide si le modèle ne gère pas les niveaux d'effort. */
+  /** Empty if the model does not support effort levels. */
   efforts: AgentEffortDto[]
-  /** Repli quand le niveau de la conversation n'existe pas sur ce modèle. */
+  /** Fallback when the conversation's effort level does not exist on this model. */
   defaultEffort: string | null
-  /** Le modèle accepte le mode rapide de Claude Code. Toujours faux chez Codex. */
+  /** The model supports Claude Code fast mode. Always false for Codex. */
   supportsFastMode: boolean
 }
 
 /**
- * Un sous-agent que le CLI sait lancer, à citer en `@nom` dans un message. Les intégrés
- * (`Explore`, `Plan`…) et ceux du projet (`.claude/agents/`) arrivent par le même canal.
+ * A sub-agent the CLI can launch, referenced as `@name` in a message. Built-ins (`Explore`,
+ * `Plan`, etc.) and project agents (`.claude/agents/`) arrive through the same channel.
  */
 export interface AgentInfoDto {
   name: string
@@ -768,34 +752,33 @@ export interface AgentInfoDto {
 }
 
 /**
- * Le mode rapide vu du compte, avant toute conversation : disponible ou non, et
- * pourquoi pas. `sdk_opt_in_required` est l'état normal d'un compte qui y a droit,
- * puisque c'est la session qui doit demander le mode ; il vaut donc « disponible ».
+ * Account-level fast mode availability, before any conversation: whether available and, if not,
+ * why. `sdk_opt_in_required` is normal for an eligible account, since the session must request
+ * the mode; it therefore means “available”.
  */
 export interface FastModeAvailabilityDto {
   available: boolean
-  /** Motif d'indisponibilité tel que le CLI le nomme, null quand c'est disponible. */
+  /** Unavailability reason as named by the CLI; null when available. */
   reason: string | null
 }
 
 /**
- * Nature du compte Claude, telle que le CLI la déclare.
+ * Claude account type, as reported by the CLI.
  *
- * Elle décide de ce que l'UI a le droit d'afficher : sur un abonnement, le coût
- * calculé par le CLI est un équivalent API et ne correspond à aucune facturation.
- * C'est le quota qui décrit la ressource réellement consommée.
+ * Determines what the UI may display: on subscriptions, CLI-calculated cost is an API
+ * equivalent, not an actual charge. Quota describes the resource actually consumed.
  */
 export interface ClaudeAccountDto {
-  /** Par exemple « Claude Max ». Null quand la facturation est à l'usage. */
+  /** For example, “Claude Max”. Null for usage-based billing. */
   subscriptionType: string | null
   organization: string | null
-  /** Vrai si un abonnement couvre l'usage, donc si afficher un montant tromperait. */
+  /** True if a subscription covers usage, making a monetary amount misleading. */
   billedBySubscription: boolean
 }
 
 /**
- * Un mode de collaboration proposé par Codex, tel que `collaborationMode/list` le
- * déclare. Le nom affiché vient du CLI : Sillage ne traduit pas « Plan » en autre chose.
+ * A Codex collaboration mode, as reported by `collaborationMode/list`. The displayed name comes
+ * from the CLI: Sillage does not translate “Plan” into something else.
  */
 export interface CodexModeDto {
   mode: CodexMode
@@ -803,84 +786,92 @@ export interface CodexModeDto {
 }
 
 /**
- * Un mode de conduite du tour, tel que le CLI le nomme : mode de collaboration chez
- * Codex, agent primaire chez opencode (`build`, `plan`, ou un agent de l'utilisateur).
- * `mode` est une chaîne parce que la liste d'opencode est ouverte ; `CodexModeDto` en
- * est le cas fermé.
+ * Turn execution mode as named by the CLI: Codex collaboration mode or opencode primary agent
+ * (`build`, `plan`, or a user-defined agent). `mode` is a string because opencode's list is
+ * open-ended; `CodexModeDto` is the closed-set case.
  */
 export interface AgentModeDto {
   mode: string
   label: string
-  /** Description donnée par le CLI, quand il en a une. */
+  /** CLI-provided description, if any. */
   hint?: string | null
 }
 
-/** Réponse de `/api/agents/:agent/models`, la même forme quel que soit le CLI. */
+/** Response from `/api/agents/:agent/models`, with the same shape for every CLI. */
 export interface AgentModelsDto {
   models: AgentModelDto[]
   /**
-   * Modes de collaboration (Codex) ou agents primaires (opencode) ; vide quand le CLI
-   * n'en annonce pas.
+   * Collaboration modes (Codex) or primary agents (opencode); empty if unreported.
    */
   modes: AgentModeDto[]
-  /** Nature du compte quand le CLI la déclare (Claude) ; null sinon. */
+  /** Account type when reported by the CLI (Claude); otherwise null. */
   account: ClaudeAccountDto | null
-  /** Styles de sortie que le CLI propose (Claude) ; vide quand il n'en a pas. */
+  /** CLI output styles (Claude); empty if none. */
   outputStyles: string[]
-  /** Disponibilité du mode rapide sur le compte (Claude) ; null pour un CLI sans cette notion. */
+  /** Account fast-mode availability (Claude); null for CLIs without this concept. */
   fastMode: FastModeAvailabilityDto | null
-  /** Sous-agents nommés que le CLI sait lancer ; vide quand il n'en annonce pas. */
+  /** Named sub-agents the CLI can launch; empty if unreported. */
   agents: AgentInfoDto[]
   fetchedAt: number
 }
 
 /**
- * Ce que Sillage trouve d'un CLI sur la machine, pour un agent donné.
+ * What Sillage finds for an agent's CLI on the machine.
  *
- * L'écran s'en sert pour ne pas proposer un agent que le serveur ne saurait pas lancer :
- * le CLI n'est plus embarqué dans la release, donc son absence est un état normal et
- * doit se lire, pas se découvrir à l'échec du premier tour.
+ * The screen uses this to avoid offering agents the server cannot launch: CLIs are no longer
+ * bundled with releases, so absence is normal and must be visible before the first turn fails.
  *
- * `version` peut être null sur un CLI pourtant présent : un binaire qui ne répond pas à
- * `--version` reste utilisable, et le dire introuvable serait faux.
+ * `version` may be null even when the CLI exists: a binary that does not answer `--version`
+ * remains usable, so reporting it missing would be wrong.
  */
 export interface AgentAvailabilityDto {
   agent: AgentKind
-  /** Nom ou chemin déclaré en configuration, à montrer quand la résolution échoue. */
+  /** Configured name or path, shown when resolution fails. */
   binary: string
-  /** Faux quand la configuration désactive l'agent : rien n'a alors été sondé. */
+  /** False when configuration disables the agent: nothing was probed. */
   enabled: boolean
   installed: boolean
-  /** Vrai quand c'est Sillage qui l'a installé, faux quand il vient du PATH système. */
+  /** True when installed by Sillage; false when found through the system PATH. */
   managed: boolean
-  /** Chemin absolu réellement lancé ; null quand introuvable. */
+  /** Absolute path actually launched; null when not found. */
   path: string | null
   version: string | null
-  /** Pourquoi l'agent est indisponible ; null quand il l'est. */
+  /** Why the agent is unavailable; null when available. */
   reason: 'disabled' | 'not_on_path' | 'not_executable' | null
-  /** Version que Sillage vise pour cette release, et que l'installation poserait. */
+  /** Version targeted by this Sillage release and used by installation. */
   preferredVersion: string
   install: CliInstallStateDto
 }
 
 /**
- * Installation en cours ou dernier échec, pour un agent.
+ * Current installation or latest failure for an agent.
  *
- * `idle` couvre aussi bien « jamais tenté » que « terminé » : une installation réussie
- * se lit dans `installed` et `version`, pas ici. Un état qui resterait « réussi » après
- * coup dirait la même chose deux fois, et pourrait la dire autrement.
+ * `idle` covers both “never attempted” and “finished”: successful installation is reflected by
+ * `installed` and `version`, not here. A persistent “success” state would duplicate that
+ * information and could contradict it.
  */
 export type CliInstallStateDto =
   | { status: 'idle' }
-  | { status: 'running'; version: string }
+  | {
+      status: 'running'
+      version: string
+      /** Installation start time in milliseconds, used by the screen to derive elapsed time. */
+      startedAt: number
+      /**
+       * Completed npm registry requests and the latest file. This is the only progress npm
+       * exposes without a terminal: not a percentage, but enough to show activity.
+       */
+      fetched: number
+      current: string | null
+    }
   | { status: 'failed'; version: string; error: string }
 
-/** Réponse de `/api/agents`. */
+/** Response from `/api/agents`. */
 export interface AgentAvailabilityListDto {
   agents: AgentAvailabilityDto[]
 }
 
-// Explorateur de dossiers
+// Directory explorer
 
 export const browseQuerySchema = z.object({
   path: z.string().optional(),
@@ -895,48 +886,48 @@ export const mkdirBodySchema = z.object({
 export interface FsEntryDto {
   name: string
   path: string
-  /** Le dossier contient un .git : utile pour repérer une racine de projet. */
+  /** The directory contains a .git: useful for spotting a project root. */
   isGitRepo: boolean
-  /** Lecture refusée : l'entrée est listée mais on ne peut pas y descendre. */
+  /** Read denied: the entry is listed but cannot be entered. */
   readable: boolean
 }
 
 export interface FsListingDto {
   path: string
-  /** null à la racine du système de fichiers. */
+  /** null at the filesystem root. */
   parent: string | null
   entries: FsEntryDto[]
   isGitRepo: boolean
-  /** Le listing a été tronqué : le dossier contient plus d'entrées que la limite. */
+  /** Listing truncated: the directory contains more entries than the limit. */
   truncated: boolean
-  /** Points de départ proposés dans l'UI. */
+  /** Starting locations suggested in the UI. */
   roots: { label: string; path: string }[]
 }
 
-// Notifications push
+// Push notifications
 
 /**
- * Contenu d'une notification, tel que le service worker le reçoit.
+ * Notification payload as received by the service worker.
  *
- * Volontairement minimal : le service worker n'a pas de session, il ne peut donc rien
- * aller relire. Tout ce qu'il affiche doit tenir ici.
+ * Deliberately minimal: the service worker has no session and cannot fetch additional data.
+ * Everything it displays must fit here.
  */
 export interface PushPayload {
   title: string
   body: string
-  /** Chemin à ouvrir au clic, relatif à l'origine. */
+  /** Path opened on click, relative to the origin. */
   url: string
   /**
-   * Regroupe les notifications d'une même conversation : une seule reste affichée,
-   * plutôt qu'une pile qui répète la même information.
+   * Groups notifications from one conversation: only one remains displayed instead of a stack
+   * repeating the same information.
    */
   tag: string
   /**
-   * Ce qu'annonce la notification, pour que le service worker en compose le titre dans
-   * la langue de l'appareil ; `title` reste le repli.
+   * What the notification announces, so the service worker can compose a title in the device
+   * language; `title` remains the fallback.
    */
   kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'test'
-  /** Décisions en attente, pour la pastille sur l'icône de l'application installée. */
+  /** Pending decisions, for the installed app icon badge. */
   badge?: number
 }
 
@@ -948,17 +939,17 @@ export const pushSubscribeBodySchema = z.object({
 export const pushUnsubscribeBodySchema = z.object({ endpoint: z.string().url() })
 
 export interface PushStatusDto {
-  /** Clé publique VAPID de l'instance, requise par le navigateur pour s'abonner. */
+  /** Instance VAPID public key, required by the browser to subscribe. */
   publicKey: string
-  /** Vrai si ce compte a déjà au moins un appareil abonné. */
+  /** True if this account already has at least one subscribed device. */
   subscribed: boolean
 }
 
-// Explorateur de fichiers du panneau latéral
+// Side-panel file explorer
 
 /**
- * État git d'une entrée. Sur un dossier, il est dérivé de ce qu'il contient : sans ça,
- * il faudrait tout déplier pour trouver ce qui a changé.
+ * Entry git state. For directories, derived from contents: otherwise every directory would need
+ * expanding to find changes.
  */
 export const fileStateSchema = z.enum([
   'modified',
@@ -970,27 +961,27 @@ export const fileStateSchema = z.enum([
 export type FileState = z.infer<typeof fileStateSchema>
 
 export const treeQuerySchema = z.object({
-  /** Relatif au répertoire de travail. Vide pour la racine. */
+  /** Relative to the working directory. Empty for the root. */
   path: z.string().max(1024).default(''),
 })
 
 export interface TreeEntryDto {
   name: string
-  /** Chemin relatif au répertoire de travail, seul identifiant utilisé par l'UI. */
+  /** Path relative to the working directory, the UI's only identifier. */
   path: string
   isDirectory: boolean
-  /** Absent quand le fichier est inchangé, ou quand le workspace n'est pas un dépôt. */
+  /** Absent if the file is unchanged or the workspace is not a repository. */
   state?: FileState
 }
 
 export interface TreeListingDto {
   path: string
   entries: TreeEntryDto[]
-  /** Faux hors dépôt git : l'explorateur n'affiche alors aucune couleur. */
+  /** False outside a git repository: the explorer then displays no colors. */
   versioned: boolean
   /**
-   * Chemin absolu du répertoire de travail. L'explorateur ne connaît que des chemins
-   * relatifs, et « Copier le chemin » doit rendre celui que le shell comprend.
+   * Absolute working-directory path. The explorer knows only relative paths, but “Copy path”
+   * must return a shell-usable path.
    */
   root: string
 }
@@ -1002,19 +993,18 @@ export const treeSearchQuerySchema = z.object({
 export interface TreeSearchDto {
   entries: TreeEntryDto[]
   /**
-   * Vrai quand la marche s'est arrêtée avant d'avoir tout vu, faute de quoi une
-   * recherche sur un gros dépôt afficherait « aucun résultat » là où il y en avait
-   * simplement plus loin.
+   * True when traversal stopped before seeing everything; otherwise searches in large
+   * repositories would show “no results” when matches simply lay further on.
    */
   truncated: boolean
 }
 
 /**
- * Un nom d'entrée, et rien d'autre.
+ * An entry name and nothing else.
  *
- * Les séparateurs sont refusés ici plutôt que plus loin : un nom est un nom, et
- * laisser passer `../x` ferait reposer tout le bornage sur la seule normalisation de
- * chemin. `.` et `..` sont refusés pour la même raison.
+ * Reject separators here rather than later: a name is a name, and allowing `../x` would make
+ * containment depend solely on path normalization. `.` and `..` are rejected for the same
+ * reason.
  */
 const entryNameSchema = z
   .string()
@@ -1026,16 +1016,16 @@ const entryNameSchema = z
   .refine((name) => name !== '.' && name !== '..', { message: 'Nom réservé.' })
 
 export const createEntryBodySchema = z.object({
-  /** Dossier parent, relatif au répertoire de travail. Vide pour la racine. */
+  /** Parent directory relative to the working directory. Empty for the root. */
   parent: z.string().max(1024).default(''),
   name: entryNameSchema,
   kind: z.enum(['file', 'directory']),
 })
 
 /**
- * Renommer et déplacer sont la même opération : seul le chemin de destination change.
- * En faire deux routes obligerait l'interface à décider laquelle appeler à partir du
- * chemin, ce que le serveur fait déjà mieux.
+ * Rename and move are the same operation: only the destination path changes. Separate routes
+ * would force the UI to decide which to call from the path, something the server already
+ * handles better.
  */
 export const moveEntryBodySchema = z.object({
   from: z.string().min(1).max(1024),
@@ -1045,9 +1035,9 @@ export const moveEntryBodySchema = z.object({
 export const deleteEntryBodySchema = z.object({ path: z.string().min(1).max(1024) })
 
 /**
- * Copie d'une entrée dans un dossier. Seul le dossier de destination est donné : le
- * serveur choisit le nom, et suffixe « copy » plutôt que d'écraser ce qui s'y trouve,
- * ce qui fait aussi de la copie sur place une duplication.
+ * Copies an entry into a directory. Only the destination directory is supplied: the server
+ * chooses the name and adds “copy” rather than overwriting, making an in-place copy a
+ * duplicate.
  */
 export const copyEntryBodySchema = z.object({
   from: z.string().min(1).max(1024),
@@ -1055,14 +1045,14 @@ export const copyEntryBodySchema = z.object({
 })
 
 /**
- * Entrées réunies dans une même archive. Assez pour une sélection faite à la main ;
- * au-delà, l'URL qui les porte dépasserait ce que le serveur HTTP accepte.
+ * Entries combined into one archive. Enough for a manual selection; beyond this, the URL
+ * carrying them would exceed HTTP server limits.
  */
 export const MAX_ARCHIVE_PATHS = 200
 
 /**
- * Entrées à télécharger en `.zip`, en paramètre répété (`?path=a&path=b`) : le
- * téléchargement passe par un lien, donc par un `GET` sans corps.
+ * Entries to download as `.zip`, in a repeated parameter (`?path=a&path=b`): downloads use a
+ * link, hence a bodyless `GET`.
  */
 export const archiveQuerySchema = z.object({
   path: z
@@ -1072,36 +1062,33 @@ export const archiveQuerySchema = z.object({
 })
 
 /**
- * Plafond d'un fichier déposé dans l'explorateur.
+ * Size limit for files dropped into the explorer.
  *
- * Sans commune mesure avec celui d'une pièce jointe : celle-ci part dans le contexte du
- * modèle, un fichier déposé ne fait qu'atterrir sur le disque du workspace, où un pack
- * d'assets ou une archive de projet a sa place. Le contenu est écrit en flux, donc la
- * taille ne coûte rien en mémoire — ce plafond n'est qu'un garde-fou pour qu'un dossier
- * lâché par mégarde ne puisse pas remplir le disque du serveur.
+ * Unlike attachments, which enter model context, dropped files only land on workspace disk,
+ * where asset packs and project archives belong. Content is streamed, so size costs no memory;
+ * this limit merely prevents an accidentally dropped directory from filling the server disk.
  */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024
 
 /**
- * Fichiers retenus d'un même dépôt. Un dossier lâché sur l'arborescence peut en
- * contenir des dizaines de milliers (un `node_modules` déposé par mégarde) : au-delà de
- * ce seuil, l'envoi est refusé en bloc plutôt qu'entamé puis abandonné.
+ * Files accepted from a single drop. A directory dropped onto the tree may contain tens of
+ * thousands (an accidental `node_modules`): above this threshold, reject the whole upload
+ * rather than starting and abandoning it.
  */
 export const MAX_UPLOAD_FILES = 200
 
-/** Chemin de destination d'un fichier déposé, relatif au répertoire de travail. */
+/** Dropped file destination, relative to the working directory. */
 export const uploadQuerySchema = z.object({ path: z.string().min(1).max(1024) })
 
-// Fichiers du panneau
+// Panel files
 
-/** Au-delà, l'éditeur rame et le contenu ne se lit plus : refus explicite. */
+/** Beyond this, the editor slows down and content becomes unreadable: reject explicitly. */
 export const MAX_EDITABLE_BYTES = 2 * 1024 * 1024
 
 /**
- * Extensions rendues comme images plutôt que comme texte, et le type servi pour
- * chacune. Liste fermée et partagée : le serveur y lit le type à renvoyer, le client
- * y lit s'il doit afficher une image. Deviner d'après le contenu ferait rendre
- * n'importe quel binaire dans une balise `img`.
+ * Extensions rendered as images rather than text, with their served types. A closed, shared
+ * list: the server reads the response type and the client decides whether to display an image.
+ * Content-based guessing could render arbitrary binaries in an `img` tag.
  */
 export const VIEWABLE_IMAGE_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -1114,22 +1101,20 @@ export const VIEWABLE_IMAGE_TYPES: Record<string, string> = {
 }
 
 /**
- * Documents binaires affichés par le navigateur lui-même, dans un cadre.
+ * Binary documents displayed by the browser itself in a frame.
  *
- * Séparés des images parce qu'ils ne se servent pas pareil : une image est rendue
- * inerte par une politique de sécurité stricte, alors qu'un PDF est confié à la visionneuse
- * intégrée, qui a besoin de ses propres ressources pour s'afficher.
+ * Separate from images because serving differs: a strict security policy makes images inert,
+ * whereas PDFs go to the built-in viewer, which needs its own resources to render.
  */
 export const VIEWABLE_DOCUMENT_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
 }
 
 /**
- * Sons et vidéos, joués par les balises natives du navigateur.
+ * Audio and video played with native browser elements.
  *
- * Le serveur les sert en flux avec prise en charge des requêtes `Range` : sans elle,
- * la barre de lecture ne permet pas de sauter, et une vidéo de plusieurs centaines de
- * Mo serait lue entière avant le premier octet joué.
+ * The server streams them with `Range` request support: without it, seeking would not work and
+ * a video hundreds of MB long would be read entirely before playback starts.
  */
 export const VIEWABLE_MEDIA_TYPES: Record<string, string> = {
   mp3: 'audio/mpeg',
@@ -1153,14 +1138,14 @@ export function isAudioType(type: string): boolean {
 }
 
 /**
- * Modèles 3D, rendus dans le navigateur par un visualiseur WebGL.
+ * 3D models rendered in the browser by a WebGL viewer.
  *
- * Ces fichiers ne sont jamais interprétés par le navigateur lui-même : ils sont lus
- * par script. Les formats sans type officiel sont servis en `octet-stream`, ce qui
- * garantit qu'une navigation directe vers l'URL télécharge au lieu d'afficher.
+ * The browser never interprets these files directly; scripts read them. Formats without an
+ * official type are served as `octet-stream`, ensuring direct navigation downloads rather than
+ * displays them.
  *
- * `bin` et `mtl` ne s'ouvrent pas seuls : ce sont les ressources annexes d'un `gltf`
- * éclaté ou d'un `obj`, que le visualiseur va chercher à côté du fichier principal.
+ * `bin` and `mtl` cannot open alone: they are supporting resources for split `gltf` or `obj`
+ * models, fetched beside the main file by the viewer.
  */
 export const VIEWABLE_MODEL_TYPES: Record<string, string> = {
   glb: 'model/gltf-binary',
@@ -1172,18 +1157,17 @@ export const VIEWABLE_MODEL_TYPES: Record<string, string> = {
   bin: 'application/octet-stream',
 }
 
-/** Extensions que le visualiseur 3D sait ouvrir comme fichier principal. */
+/** Extensions the 3D viewer can open as a main file. */
 export const OPENABLE_MODEL_EXTENSIONS = new Set(['glb', 'gltf', 'obj', 'fbx', 'stl'])
 
 export const filePathQuerySchema = z.object({ path: z.string().min(1).max(1024) })
 
 /**
- * Chemins dont le fil demande s'ils désignent un fichier, pour n'en rendre cliquables
- * que ceux qui existent.
+ * Paths the thread checks for existing files so only valid ones become clickable.
  *
- * Groupé par message : un message cite couramment une dizaine de chemins, et autant
- * d'allers-retours pour afficher un lien coûterait plus que le lien ne rapporte. Le
- * plafond suit `MAX_RESULTS` de la recherche de fichiers, pour la même raison.
+ * Batched per message: a message commonly mentions ten paths, and that many round trips just to
+ * display links would cost more than the links are worth. The limit follows file-search
+ * `MAX_RESULTS` for the same reason.
  */
 export const filesExistBodySchema = z.object({
   paths: z.array(z.string().min(1).max(1024)).max(50),
@@ -1193,12 +1177,11 @@ export interface FileContentDto {
   path: string
   content: string
   /**
-   * Empreinte du fichier sur le disque au moment de la lecture (taille et date de
-   * modification). Renvoyée à l'enregistrement : c'est elle qui détecte qu'un agent a
-   * écrit dans le fichier entre-temps.
+   * File fingerprint on disk at read time (size and modification time). Returned on save to
+   * detect an agent writing the file in the meantime.
    */
   fingerprint: string
-  /** Extension en minuscules, dont l'UI déduit le mode de coloration. */
+  /** Lowercase extension used by the UI to choose syntax highlighting. */
   extension: string
 }
 
@@ -1206,31 +1189,31 @@ export const fileWriteBodySchema = z.object({
   path: z.string().min(1).max(1024),
   content: z.string(),
   /**
-   * Empreinte reçue à la lecture. `null` force l'écriture : c'est le choix explicite
-   * d'écraser, pris après qu'un conflit a été montré.
+   * Fingerprint received on read. `null` forces the write: an explicit overwrite choice made
+   * after showing a conflict.
    */
   fingerprint: z.string().nullable(),
 })
 
-// Modification d'un fichier par un appel d'outil
+// File modification by a tool call
 
 export const editDiffQuerySchema = z.object({ path: z.string().min(1).max(1024) })
 
 /**
- * Ce qu'un appel d'outil a fait d'un fichier, reconstitué depuis le payload natif
- * conservé dans le journal.
+ * What a tool call did to a file, reconstructed from the native payload retained in the
+ * journal.
  *
- * Trois formes, parce que les deux CLI n'en disent pas autant :
- * - `patch` : un diff unifié, complet côté Codex, limité à l'extrait remplacé côté
- *   Claude quand l'appel est une édition ponctuelle (`partial`) ;
- * - `content` : le contenu écrit, sans point de comparaison. Une écriture entière
- *   côté Claude ne dit pas ce qu'il y avait avant, et l'inventer serait pire ;
- * - `unavailable` : rien d'exploitable, avec la raison affichée plutôt qu'un vide.
+ * Three forms, because the two CLIs report different amounts:
+ * - `patch`: a unified diff, complete for Codex, limited to the replaced excerpt for a targeted
+ * Claude edit (`partial`).
+ * - `content`: written contents without a comparison point. A full Claude write does not reveal
+ * previous contents; inventing them would be worse.
+ * - `unavailable`: nothing usable, with a displayed reason rather than an empty space.
  */
 /**
- * Sortie complète d'un appel d'outil, demandée quand la relecture n'en a rendu qu'un
- * aperçu. `output` garde la forme exacte du journal, chaîne ou blocs de contenu, sans
- * quoi les vues lisibles et l'affichage des images ne sauraient plus la lire.
+ * Full tool-call output, requested when replay returned only a preview. `output` preserves the
+ * exact journal shape, string or content blocks, so readable views and image rendering can
+ * still consume it.
  */
 export interface ToolOutputDto {
   toolCallId: string
@@ -1242,25 +1225,25 @@ export interface EditDiffDto {
   kind: 'patch' | 'content' | 'unavailable'
   patch: string
   content: string
-  /** Vrai quand le diff ne couvre qu'un extrait : ses numéros de ligne y sont relatifs. */
+  /** True when the diff covers only an excerpt: line numbers are relative to it. */
   partial: boolean
   reason: string | null
 }
 
-// Recherche
+// Search
 
-/** Nombre de messages rapportés par requête : la palette n'en affiche pas plus. */
+/** Messages returned per query: the palette displays no more than this. */
 export const SEARCH_RESULT_LIMIT = 20
 
-/** Sous ce nombre de caractères, la recherche de contenu n'est pas lancée. */
+/** Content search does not run below this character count. */
 export const SEARCH_MIN_QUERY = 3
 
 /**
- * Bornes d'un passage trouvé dans un extrait.
+ * Bounds of a match within an excerpt.
  *
- * L'extrait arrive avec les correspondances encadrées par deux caractères de contrôle
- * plutôt que par du balisage : rendre du HTML venu de la base demanderait de lui faire
- * confiance, alors que ces bornes se découpent en texte pur.
+ * Matches arrive bracketed by two control characters rather than markup: rendering
+ * database-supplied HTML would require trusting it, whereas these bounds can be split as plain
+ * text.
  */
 export const SEARCH_MARK_OPEN = '\u0001'
 export const SEARCH_MARK_CLOSE = '\u0002'
@@ -1270,14 +1253,14 @@ export interface SearchMessageDto {
   projectId: string
   conversationTitle: string
   agent: AgentKind
-  /** Position du message dans le journal : c'est elle qui ouvre le fil au bon endroit. */
+  /** Message position in the journal, used to open the thread at the right place. */
   seq: number
   role: 'user' | 'assistant'
   ts: number
   excerpt: string
 }
 
-// Serveurs MCP
+// MCP servers
 
 export const createMcpServerBodySchema = z.object({
   name: mcpServerNameSchema,
@@ -1296,26 +1279,24 @@ export const updateMcpServerBodySchema = z
 export interface McpServerListDto {
   servers: McpServer[]
   /**
-   * L'instance monte le serveur MCP de Sillage dans les conversations.
+   * The instance mounts Sillage's MCP server in conversations.
    *
-   * Porté par cette liste plutôt que par un point d'entrée de capacités : c'est la même
-   * question que celle des serveurs déclarés, posée au même moment, et le composeur a
-   * besoin des deux réponses pour dessiner un seul contrôle. À faux, l'entrée disparaît
-   * de l'interface au lieu d'y rester grisée.
+   * Included in this list rather than a capabilities endpoint: it answers the same question as
+   * registered servers at the same time, and the composer needs both answers for one control.
+   * When false, the entry disappears rather than remaining disabled.
    */
   sillageServer: boolean
 }
 
-// Erreurs
+// Errors
 
-/** Toutes les erreurs d'API partagent cette forme, pour un affichage uniforme côté UI. */
+/** All API errors share this shape for uniform UI display. */
 /**
- * Forme unique des erreurs de l'API.
+ * Single API error shape.
  *
- * Le `code` est ce que l'interface traduit ; `params` porte ce que la phrase interpole ;
- * `message` est le repli anglais écrit par le serveur, affiché tel quel quand le code
- * n'est pas connu du catalogue. Ce repli est ce qui garantit qu'un code oublié montre
- * une phrase lisible et non un identifiant.
+ * The UI translates `code`; `params` contains interpolation values; `message` is the
+ * server-written English fallback, displayed verbatim when the catalog lacks the code. This
+ * ensures a missing code still shows a readable sentence rather than an identifier.
  */
 export interface ApiError {
   error: {

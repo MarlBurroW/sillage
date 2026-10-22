@@ -3,11 +3,8 @@ import { ApiRequestError, api } from './api'
 import { translate } from './i18n'
 
 /**
- * Téléverse un fichier et retourne sa fiche.
- *
- * Passe par `fetch` directement plutôt que par le client JSON : un envoi multipart
- * doit laisser le navigateur composer lui-même son en-tête `content-type`, frontière
- * comprise.
+ * Upload a file and return metadata. Use `fetch` directly rather than the JSON client: multipart
+ * uploads must let the browser build the content-type header including its boundary.
  */
 export async function uploadAttachment(file: File, endpoint = '/api/attachments'): Promise<AttachmentDto> {
   if (file.size > MAX_ATTACHMENT_BYTES) {
@@ -44,7 +41,7 @@ export async function uploadAttachment(file: File, endpoint = '/api/attachments'
   return parsed as AttachmentDto
 }
 
-/** Retire une pièce jointe qui n'a pas encore été envoyée. */
+/** Remove an attachment not yet sent. */
 export function discardAttachment(id: string): Promise<void> {
   return api.delete<void>(`/api/attachments/${id}`)
 }
@@ -52,8 +49,7 @@ export function discardAttachment(id: string): Promise<void> {
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} o`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} ko`
-  // Les gigaoctets ne servent pas aux pièces jointes, plafonnées à 20 Mo, mais aux
-  // fichiers déposés dans l'explorateur : « 4300.5 Mo » ne se lit pas.
+  // Gigabytes serve explorer uploads rather than attachments capped at 20 MB: a 4300.5 MB label is unreadable.
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} Mo`
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} Go`
 }

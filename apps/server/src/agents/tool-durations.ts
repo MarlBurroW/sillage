@@ -1,8 +1,7 @@
 /**
- * Durée des appels d'outils, mesurée entre leur annonce et leur résultat.
+ * Tool duration measured from announcement to result.
  *
- * Mesure de repli quand le CLI ne transmet pas sa durée ; elle vaut zéro
- * quand l'ouverture n'a pas été vue (reprise de session, résultat orphelin).
+ * Fallback when CLI omits duration, zero if start unseen (resume, orphan result).
  */
 export class ToolDurations {
   private readonly startedAt = new Map<string, number>()

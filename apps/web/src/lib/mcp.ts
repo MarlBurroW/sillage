@@ -3,12 +3,9 @@ import type { McpServer, McpServerListDto, McpTransport } from '@sillage/protoco
 import { api } from './api'
 
 /**
- * Registre des serveurs MCP, partagé par toute l'instance.
- *
- * En lecture pour tout le monde, parce que le composeur doit pouvoir proposer les
- * serveurs qu'une conversation peut activer. En écriture pour les administrateurs
- * seuls, le serveur le fait respecter : déclarer un serveur MCP décrit une commande
- * que les CLI lanceront sous l'utilisateur système du serveur.
+ * Instance-wide MCP server registry. Everyone can read so composers can offer servers for
+ * conversations to enable. Only administrators can write, enforced server-side: declaring an MCP
+ * server describes a command CLIs execute as the server's system user.
  */
 
 const MCP_KEY = ['mcp', 'servers']
@@ -53,11 +50,9 @@ export function useDeleteMcpServer() {
 }
 
 /**
- * Résumé lisible d'un transport, pour la liste des serveurs.
- *
- * La commande et l'URL sont ce qui distingue deux serveurs au premier coup d'oeil, bien
- * plus que leur nom. Les variables d'environnement n'y figurent pas : elles portent des
- * secrets et n'ont rien à faire dans une ligne de liste.
+ * Readable transport summary for the server list. Commands and URLs distinguish servers at a glance
+ * better than names. Omit environment variables because they contain secrets and do not belong in
+ * list rows.
  */
 export function describeTransport(transport: McpTransport): string {
   return transport.type === 'stdio'

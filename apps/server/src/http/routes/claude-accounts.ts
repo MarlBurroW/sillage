@@ -14,14 +14,14 @@ import { HttpError, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
- * Comptes Claude supplémentaires de l'utilisateur courant.
+ * Additional Claude accounts belonging to the current user.
  *
- * Par compte Sillage et non par instance, comme les credentials git : un jeton de
- * `setup-token` ou une clé API engage l'abonnement ou la facture de quelqu'un.
- * Chacun ne voit et ne modifie que les siens, administrateur compris.
+ * Per Sillage account rather than instance, like git credentials: `setup-token`
+ * tokens and API keys charge someone's subscription or bill. Each user can see
+ * and modify only their own accounts, including administrators.
  *
- * Aucune route ne rend un secret. Il se remplace entier quand il expire, au bout d'un
- * an pour un jeton, ce qui est le geste courant.
+ * No route returns secrets. Expired secrets are replaced in full, ordinarily
+ * after a year for tokens.
  */
 export function registerClaudeAccountRoutes(
   app: FastifyInstance,
@@ -47,9 +47,9 @@ export function registerClaudeAccountRoutes(
   })
 
   /**
-   * Connexion guidée d'un abonnement : lance `claude setup-token`, rend l'URL à
-   * ouvrir ; le code que la page affiche revient par la route suivante, et le compte
-   * naît quand le CLI a imprimé le jeton.
+   * Guided subscription login: runs `claude setup-token` and returns the URL to
+   * open. The displayed code comes back through the next route; the account is
+   * created when the CLI prints its token.
    */
   app.post('/api/claude-accounts/login', async (request, reply): Promise<ClaudeLoginStatusDto> => {
     const user = requireUser(request)
@@ -84,8 +84,8 @@ export function registerClaudeAccountRoutes(
   })
 
   /**
-   * Jauge d'un abonnement existant : une connexion `claude auth login`, suivie comme la
-   * connexion guidée, par les routes `/login/:loginId`. Une clé API n'a pas de forfait.
+   * Usage gauge for an existing subscription: `claude auth login`, tracked by
+   * `/login/:loginId` like guided login. API keys have no subscription allowance.
    */
   app.post('/api/claude-accounts/:id/gauge', async (request, reply): Promise<ClaudeLoginStatusDto> => {
     const user = requireUser(request)
@@ -120,9 +120,9 @@ export function registerClaudeAccountRoutes(
   })
 
   /**
-   * Les conversations qui désignaient ce compte gardent son identifiant : elles
-   * repartiront sur la connexion du CLI, avec un avis dans le fil, plutôt que d'être
-   * injouables. Les retoucher ici reviendrait à réécrire des configurations une à une.
+   * Conversations targeting this account retain its ID: they fall back to CLI
+   * authentication with a notice rather than becoming unusable. Updating them
+   * here would mean rewriting individual configurations.
    */
   app.delete('/api/claude-accounts/:id', async (request, reply) => {
     const user = requireUser(request)

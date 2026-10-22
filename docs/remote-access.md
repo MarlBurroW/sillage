@@ -61,7 +61,7 @@ sleep is not. Do not assume closing a laptop lid leaves it available.
 Keep Sillage's default loopback listener and run on its host:
 
 ```bash
-# Garder Sillage privé tout en donnant une adresse HTTPS aux autres appareils.
+# Keep Sillage private while providing an HTTPS address to other devices.
 tailscale serve --bg --https=443 7317
 tailscale serve status
 ```

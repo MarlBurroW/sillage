@@ -3,31 +3,19 @@ import { SKILL_MAIN_FILE } from '@sillage/protocol'
 import { badRequest } from '../http/errors.js'
 import { assertSkillFilePath } from './validate.js'
 
-/**
- * Archives de skills : le `.zip` d'un dossier, ou le `.skill` que produit
- * `package_skill.py` dans anthropics/skills, qui est un zip sous un autre nom.
- *
- * Le dossier d'un navigateur arrive aussi par ici, zippé côté client : un seul chemin
- * d'import, donc un seul endroit où vérifier ce qui entre.
- */
+/** Skill archives: directory `.zip` files or `.skill` files from anthropics/skills' `package_skill.py`, which are renamed ZIPs. Browser directory uploads also arrive here, zipped client-side: one import path means one place to validate incoming content. */
 
-/** Un skill tient en quelques fichiers ; au-delà, c'est un dépôt entier déposé par erreur. */
+/** Skills occupy a few files; larger uploads are likely accidental whole repositories. */
 const MAX_FILES = 500
-/** Taille décompressée totale, vérifiée avant de décompresser : contre la bombe zip. */
+/** Total uncompressed size checked before extraction to prevent ZIP bombs. */
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024
 
-/** Déchets d'archiveurs, qu'aucun skill ne veut voir arriver dans son dossier. */
+/** Archiver debris that should never enter skill directories. */
 const IGNORED = /(^|\/)(__MACOSX|\.DS_Store)(\/|$)/
 
 class ArchiveTooLarge extends Error {}
 
-/**
- * Les fichiers du skill, en chemins relatifs à son dossier.
- *
- * `SKILL.md` est attendu à la racine de l'archive, ou dans un unique dossier de premier
- * niveau, comme quand on zippe le dossier lui-même. Chaque chemin repasse par
- * `assertSkillFilePath` : c'est ce qui arrête une entrée `../../.bashrc`.
- */
+/** Skill files relative to their directory. Expect `SKILL.md` at archive root or under a single top-level directory, as when zipping the directory itself. Validate every path with `assertSkillFilePath` to reject entries such as `../../.bashrc`. */
 export function readSkillArchive(data: Uint8Array): Map<string, Uint8Array> {
   let count = 0
   let total = 0
@@ -73,7 +61,7 @@ export function readSkillArchive(data: Uint8Array): Map<string, Uint8Array> {
   return files
 }
 
-/** Le skill dans un dossier à son nom : dézippé, il redonne un dossier de skill. */
+/** Skill inside its named directory, producing a skill folder when extracted. */
 export function writeSkillArchive(name: string, files: Map<string, Uint8Array>): Uint8Array {
   const zippable: Zippable = {}
   for (const [path, content] of files) zippable[`${name}/${path}`] = content

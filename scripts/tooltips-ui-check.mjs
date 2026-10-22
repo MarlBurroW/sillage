@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Vrais composants et vraie API, dans une base temporaire. Aucun CLI n'est activé.
+// Real components and API, temporary database. No CLI enabled.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -68,7 +68,7 @@ try {
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
-    // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
+    // Browser PDF viewer does not expose application storage.
     if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')
   }, new URL(base).origin)
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
@@ -124,7 +124,7 @@ try {
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
   await phone.getByRole('button', { name: 'Fermer la navigation', exact: true }).tap()
   await phone.getByRole('button', { name: 'Fermer la navigation', exact: true }).waitFor({ state: 'hidden' })
-  // Attendre la fin du glissement, même si le panneau est déjà aria-hidden.
+  // Wait for sliding to finish even when the panel is already aria-hidden.
   await delay(300)
   await phone.screenshot({ path: '/tmp/sillage-tooltips-mobile.png' })
   await mobile.close()

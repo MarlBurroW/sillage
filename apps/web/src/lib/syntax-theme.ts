@@ -2,14 +2,10 @@ import type { MessageKey } from './i18n'
 import { useSyncExternalStore } from 'react'
 
 /**
- * Palette de coloration syntaxique, indépendante du thème de l'interface.
- *
- * Elle ne redéfinit que les sept jetons `--sg-syn-*` : le reste de l'interface ne
- * bouge pas. Les valeurs vivent dans `tokens.css`, comme tous les autres jetons ;
- * ce module ne fait que poser l'attribut qui les sélectionne.
- *
- * Le thème contrasté garde sa propre palette quoi qu'il arrive : son contraste est sa
- * raison d'être, et une palette d'ambiance l'annulerait.
+ * Syntax palette independent of the UI theme. Overrides only seven `--sg-syn-*` tokens, leaving the
+ * rest unchanged. Values live in `tokens.css` like other tokens; this module only sets their
+ * selecting attribute. High-contrast theme always retains its own palette because an ambient
+ * palette would defeat its purpose.
  */
 
 export const SYNTAX_THEMES = [
@@ -53,8 +49,8 @@ export function subscribeSyntaxTheme(listener: () => void): () => void {
 }
 
 export function applySyntaxTheme(next: SyntaxTheme): void {
-  // La palette par défaut est celle qui vit dans `:root[data-theme=...]` : elle
-  // s'obtient en retirant l'attribut, pas en dupliquant ses valeurs.
+  // The default palette lives in `:root[data-theme=...]`: remove the attribute rather than
+  // duplicate its values.
   if (next === 'sillage') delete document.documentElement.dataset.syntax
   else document.documentElement.dataset.syntax = next
 

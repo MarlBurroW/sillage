@@ -9,10 +9,8 @@ import { agentProcessEnv } from '../process-env.js'
 import { describeWindow } from './quota.js'
 
 /**
- * Consommation du compte Codex, lue par `account/rateLimits/read`.
- *
- * L'app-server est nettement plus léger qu'une session Claude, mais la lecture reste
- * mise en cache : elle démarre quand même un process.
+ * Codex account usage through account/rateLimits/read. App-server is much lighter than Claude
+ * sessions but still starts a process, so cache readings.
  */
 
 function toWindow(
@@ -28,7 +26,7 @@ function toWindow(
     id,
     label: prefix ? `${prefix} · ${label}` : label,
     utilization: window.usedPercent / 100,
-    // Le protocole compte en secondes, tout le reste de Sillage en millisecondes.
+    // The protocol uses seconds; the rest of Sillage uses milliseconds.
     resetsAt: window.resetsAt === null ? null : window.resetsAt * 1000,
   }
 }
@@ -39,8 +37,8 @@ function toCredits(snapshot: RateLimitSnapshot): AgentUsage['credits'] {
 
   return {
     label: 'Crédits',
-    // L'app-server donne un solde, pas un taux : inventer un pourcentage supposerait
-    // un plafond que le protocole ne transmet pas.
+    // App-server reports balances rather than rates: invented percentages would require
+    // a ceiling the protocol never supplies.
     utilization: null,
     detail: credits.unlimited ? 'illimités' : `solde ${credits.balance}`,
     enabled: credits.hasCredits,
@@ -55,8 +53,8 @@ function normalize(response: GetAccountRateLimitsResponse): Omit<AgentUsage, 'fe
 
   const windows: UsageWindow[] = []
   for (const [limitId, snapshot] of entries) {
-    // Le préfixe ne sert qu'à distinguer plusieurs compteurs : avec un seul, il
-    // n'apporterait qu'un mot de plus à lire.
+    // Prefixes distinguish multiple counters; with one they would
+    // only add another word to read.
     const prefix = entries.length > 1 ? limitId : ''
     const primary = toWindow(`${limitId}:primary`, prefix, snapshot, snapshot.primary)
     const secondary = toWindow(`${limitId}:secondary`, prefix, snapshot, snapshot.secondary)
@@ -75,7 +73,7 @@ function normalize(response: GetAccountRateLimitsResponse): Omit<AgentUsage, 'fe
 
 export class CodexUsageReader {
   private readonly cached = new CachedProbe(USAGE_CACHE_TTL_MS, () => this.probe())
-  /** Une sonde par compte supplémentaire, dans le home du compte. */
+  /** One probe per additional account within its home. */
   private readonly byAccount = new CachedProbeMap<Omit<AgentUsage, 'fetchedAt'>>(
     USAGE_CACHE_TTL_MS,
     (accountId) => {
@@ -92,7 +90,7 @@ export class CodexUsageReader {
     return this.cached.read(force)
   }
 
-  /** La consommation du compte dont on passe le `CODEX_HOME`. */
+  /** Usage for the account identified by the supplied CODEX_HOME. */
   async readForAccount(accountId: string, home: string, force = false): Promise<AgentUsage> {
     this.homes.set(accountId, home)
     try {

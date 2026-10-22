@@ -12,10 +12,7 @@ import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerMcpRoutes } from '../src/http/v1/mcp.js'
 
-/**
- * Le pont HTTP du serveur MCP : un vrai process du serveur par session, derrière le
- * jeton d'API. Les outils eux-mêmes sont couverts dans `mcp-global.test.ts`.
- */
+/** MCP HTTP bridge: one real server process per API-token-protected session. Tools themselves are covered by `mcp-global.test.ts`. */
 
 async function harness(t: TestContext, scopes: ApiScope[] = ['mcp'], projectIds: string[] = []) {
   const dir = await mkdtemp(join(tmpdir(), 'sillage-mcp-http-'))
@@ -82,7 +79,7 @@ test('MCP HTTP : initialize ouvre une session au nom du compte, bornée à ce qu
   assert.doesNotMatch(projects, /theirs/)
   assert.equal((await h.call(session, 'list_cards', { project: 'theirs' })).isError, true)
 
-  // Une notification n'attend pas de réponse.
+  // Notifications expect no responses.
   const notified = await h.post({ jsonrpc: '2.0', method: 'notifications/initialized' }, session)
   assert.equal(notified.statusCode, 202)
 
@@ -114,7 +111,7 @@ test('MCP HTTP : portée, session et corps sont exigés', async (t) => {
 
   const session = await scoped.initialize()
   const other = await harness(t)
-  // Une session ne se présente qu'avec le jeton qui l'a ouverte.
+  // Sessions accept only tokens that opened them.
   assert.equal((await other.post({ jsonrpc: '2.0', id: 1, method: 'ping' }, session)).statusCode, 404)
   assert.equal((await scoped.remove(session, 'Bearer wrong')).statusCode, 401)
 })

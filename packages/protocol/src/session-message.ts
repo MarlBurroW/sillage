@@ -1,34 +1,33 @@
 /**
- * L'enveloppe d'un message qu'une session envoie à une autre.
+ * Envelope of a message from one session to another.
  *
- * Elle voyage dans le texte même du message utilisateur et non dans un champ du
- * protocole : c'est le seul canal qu'ont les deux CLI, et le seul qui survive à tout ce
- * que traverse un message, du journal rejoué au transcript natif d'une session reprise
- * ou forkée. Le serveur l'écrit, l'interface la reconnaît pour afficher le message
- * comme venant d'une session et non de l'utilisateur ; les deux passent par ce module,
- * pour que le format n'ait qu'une définition.
+ * Carried in the user-message text rather than a protocol field: this is the only channel both
+ * CLIs have, and the only one surviving the entire message journey, from journal replay to the
+ * native transcript of resumed or forked sessions. The server writes it; the UI recognizes it
+ * to show a session message rather than a user message. Both use this module so the format has
+ * one definition.
  *
- * Des balises plutôt qu'un en-tête en prose : le modèle les lit aussi bien, et une
- * analyse qui dépendrait d'une phrase casserait à la première retouche de sa formulation.
+ * Tags rather than a prose header: models read them equally well, while parsing a sentence
+ * would break at the first wording change.
  */
 
 const TAG = 'sillage-session-message'
 
 /**
- * `message` d'une session à une autre, `broadcast` annoncé à toutes celles qui
- * travaillent, `done` déposé par Sillage quand une session surveillée a fini, `launch`
- * la mission d'une session qu'une autre vient de lancer, en premier message de son fil.
+ * `message` between sessions; `broadcast` to all working sessions; `done` deposited by Sillage
+ * when a watched session finishes; `launch` carrying the mission as the first message of a
+ * session started by another.
  */
 export type SessionMessageKind = 'message' | 'broadcast' | 'done' | 'launch'
 
 export interface SessionMessageEnvelope {
   kind: SessionMessageKind
-  /** Conversation expéditrice ; pour `done`, celle qui a fini. */
+  /** Sending conversation; for `done`, the one that finished. */
   from: string
-  /** Son titre au moment de l'envoi. */
+  /** Its title at send time. */
   title: string
   agent: string
-  /** Identifiant du message, à passer en `reply_to` pour répondre. */
+  /** Message ID, passed as `reply_to` when replying. */
   messageId: string
   body: string
 }
@@ -40,11 +39,11 @@ const unescape = (value: string) =>
   value.replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
 
 /**
- * Le texte remis au destinataire.
+ * Text delivered to the recipient.
  *
- * La note qui suit l'enveloppe s'adresse au modèle seul : elle dit qui parle, sans quoi
- * il prendrait la demande d'une voisine pour une consigne de l'utilisateur, et comment
- * répondre, pour qu'il n'ait rien à chercher. L'interface ne l'affiche pas.
+ * The note after the envelope addresses only the model: it identifies the speaker, preventing
+ * another session's request being mistaken for user instructions, and explains how to reply
+ * without searching. The UI hides it.
  */
 export function formatSessionMessage(envelope: SessionMessageEnvelope): string {
   const { kind, from, title, agent, messageId, body } = envelope
@@ -71,12 +70,12 @@ const NOTES: Record<SessionMessageKind, (envelope: SessionMessageEnvelope) => st
 const OPENING = new RegExp(`^<${TAG}((?:\\s+\\w+="[^"]*")*)>\\n`)
 const ATTRIBUTE = /(\w+)="([^"]*)"/g
 
-/** L'enveloppe d'un message utilisateur, ou null si ce n'en est pas une. */
+/** Envelope from a user message, or null if absent. */
 export function parseSessionMessage(text: string): SessionMessageEnvelope | null {
   const opening = OPENING.exec(text)
   if (!opening) return null
 
-  // La dernière fermeture et non la première : le corps peut citer la balise.
+  // Use the last closing tag, not the first: the body may quote it.
   const closing = text.lastIndexOf(`\n</${TAG}>`)
   if (closing < opening[0].length - 1) return null
 

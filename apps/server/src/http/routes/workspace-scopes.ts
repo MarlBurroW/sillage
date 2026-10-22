@@ -2,10 +2,10 @@ import type { Db } from '@sillage/db'
 import { conversationWorkspace, projectWorkspace } from '../../workspace.js'
 
 /**
- * Les routes du panneau (arborescence, fichiers, git) existent en deux portées : par
- * conversation, où le répertoire est celui du fil, worktree compris, et par projet, où
- * c'est le workspace. Même logique, même contrôle d'accès, seul le résolveur change :
- * chaque module les enregistre en boucle sur cette liste plutôt qu'en deux copies.
+ * Panel routes (tree, files, git) have two scopes: conversations use their own
+ * directory, including worktrees; projects use the workspace. Logic and access
+ * checks are shared; only the resolver differs. Each module registers routes
+ * over this list instead of maintaining duplicate implementations.
  */
 export interface WorkspaceScope {
   base: string

@@ -59,11 +59,7 @@ import { registerGitActionRoutes } from '../src/http/routes/git-actions.js'
 import { EventLog } from '../src/events/event-log.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
-/**
- * Le module recopie `process.env` dans chaque git qu'il lance : sans ce cloisonnement, la
- * configuration de la machine (identité, `commit.gpgsign`, `pull.rebase`, helpers) et les
- * variables d'identité de la session décideraient du résultat des tests.
- */
+/** The module copies `process.env` to each git command. Isolate host identity, `commit.gpgsign`, `pull.rebase`, helpers and session identity variables so they cannot determine test results. */
 const isolation = mkdtempSync(join(tmpdir(), 'sillage-git-isolation-'))
 writeFileSync(join(isolation, 'gitconfig'), '')
 process.env.GIT_CONFIG_NOSYSTEM = '1'
@@ -82,9 +78,9 @@ for (const name of [
 }
 after(() => rmSync(isolation, { recursive: true, force: true }))
 
-// Outils
+// Tools
 
-/** Un git synchrone pour préparer et vérifier : seules les fonctions testées passent par le module. */
+/** Synchronous git for setup and verification; only tested functions use the module. */
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 }
@@ -119,7 +115,7 @@ function identify(repo: string): void {
   git(repo, 'config', 'user.email', 'testeur@example.com')
 }
 
-/** Un dépôt vide sur `main`, identité posée, sans aucun commit. */
+/** Empty repository on `main` with configured identity and no commits. */
 function initRepo(t: TestContext, name = 'repo'): string {
   const repo = join(tempDir(t), name)
   mkdirSync(repo)
@@ -128,7 +124,7 @@ function initRepo(t: TestContext, name = 'repo'): string {
   return repo
 }
 
-/** Le point de départ de presque tous les scénarios : un dépôt avec un premier commit. */
+/** Starting point for most scenarios: repository with an initial commit. */
 function createRepo(t: TestContext): string {
   const repo = initRepo(t)
   write(repo, 'README.md', 'Bonjour\n')
@@ -144,10 +140,7 @@ function commitFile(repo: string, file: string, content: string, message = `Modi
   return head(repo)
 }
 
-/**
- * Un remote sur le disque, déclaré `origin`. Le réseau n'apporterait rien au test : git
- * pousse et tire vers un dépôt nu local avec le même code que vers un serveur.
- */
+/** Disk remote named `origin`. Networking adds no value: git uses the same push/pull code for local bare repositories as servers. */
 function createRemote(t: TestContext, repo: string): string {
   const dir = tempDir(t)
   const bare = join(dir, 'remote.git')
@@ -176,7 +169,7 @@ const byPath = (changes: GitChangeDto[]): Record<string, GitChangeDto> =>
 const summary = (changes: GitChangeDto[]): [string, string][] =>
   changes.map((change) => [change.path, change.kind])
 
-/** L'échec attendu, avec son code : `assert.rejects` seul ne dirait pas quel code est arrivé. */
+/** Expected failure with code: `assert.rejects` alone would not identify which code arrived. */
 async function rejectsWithCode(promise: Promise<unknown>, code: string): Promise<GitActionError> {
   let caught: unknown
   try {
@@ -189,7 +182,7 @@ async function rejectsWithCode(promise: Promise<unknown>, code: string): Promise
   return caught
 }
 
-// État
+// State
 
 test('état : null hors d’un dépôt', async (t) => {
   assert.equal(await readRepoStatus(tempDir(t)), null)
@@ -207,7 +200,7 @@ test('état : index et répertoire de travail distingués, renommage et compteur
   write(repo, 'README.md', 'Bonjour\nSalut\n')
   write(repo, 'notes.txt', 'brouillon\n')
   git(repo, 'mv', 'a.txt', 'b.txt')
-  // Même fichier des deux côtés : une version dans l'index, une autre encore dans l'arbre.
+  // Same file in both areas: one version staged, another in the working tree.
   write(repo, 'both.txt', 'deux\n')
   git(repo, 'add', 'both.txt')
   write(repo, 'both.txt', 'deux\ntrois\n')
@@ -272,10 +265,10 @@ test('diff par fichier : index, répertoire de travail et fichier non suivi', as
 
   const unstaged = await readFileDiff(repo, 'README.md', 'unstaged')
   assert.match(unstaged.patch, /\n\+Salut\n/)
-  // README.md n'a rien dans l'index : la zone « staged » est vide pour lui, sans erreur.
+  // README.md is absent from the index: its staged area is empty without errors.
   assert.equal((await readFileDiff(repo, 'README.md', 'staged')).patch, '')
 
-  // git sort en 1 dès qu'un fichier diffère de /dev/null : c'est le résultat attendu, pas un échec.
+  // Git exits 1 for differences against /dev/null: expected results rather than failures.
   const untracked = await readFileDiff(repo, 'notes.txt', 'untracked')
   assert.match(untracked.patch, /\nnew file mode 100644\n/)
   assert.match(untracked.patch, /\n\+brouillon\n/)
@@ -303,7 +296,7 @@ test('index : stage et unstage, par chemin ou en entier, suppressions comprises'
 
   await unstage(repo, ['b.txt'])
   assert.deepEqual(stagedNames(repo), ['a.txt', 'c.txt', 'd.txt'])
-  // Le répertoire de travail n'a pas bougé : retirer de l'index n'est pas abandonner.
+  // Working directories remain unchanged: unstaging does not discard edits.
   assert.equal(read(repo, 'b.txt'), 'b2\n')
 
   await unstage(repo)
@@ -341,13 +334,13 @@ test('index : discard ramène à l’index, restaure un fichier supprimé, effac
   write(repo, 'reste.txt', 'reste\n')
 
   await discard(repo, ['f.txt', 'g.txt', 'u.txt', 'dossier/v.txt'])
-  // La version de l'index, pas celle de HEAD : ce qui a été ajouté reste acquis.
+  // Restore index versions rather than HEAD: staged work remains preserved.
   assert.equal(read(repo, 'f.txt'), 'v2\n')
   assert.deepEqual(stagedNames(repo), ['f.txt'])
   assert.equal(read(repo, 'g.txt'), 'g\n')
   assert.equal(existsSync(join(repo, 'u.txt')), false)
   assert.equal(existsSync(join(repo, 'dossier/v.txt')), false)
-  // Un non suivi qui n'était pas demandé n'est pas emporté avec les autres.
+  // Unrequested untracked files remain untouched.
   assert.equal(read(repo, 'reste.txt'), 'reste\n')
 })
 
@@ -367,7 +360,7 @@ test('commit : message gardé tel quel, stageAll, amend', async (t) => {
   assert.deepEqual([result.conflicts, result.summary], [false, null])
   assert.equal(git(repo, 'log', '-1', '--format=%B').trimEnd(), message.trimEnd())
 
-  // stageAll : une modification et un fichier non suivi partent sans passer par stage.
+  // stageAll includes modified and untracked files without explicit stage calls.
   write(repo, 'a.txt', 'a2\n')
   write(repo, 'nouveau.txt', 'n\n')
   const all = await commit(repo, 'Tout d’un geste', { amend: false, stageAll: true })
@@ -375,7 +368,7 @@ test('commit : message gardé tel quel, stageAll, amend', async (t) => {
   const afterAll = await statusOf(repo)
   assert.deepEqual([afterAll.staged, afterAll.unstaged], [[], []])
 
-  // amend : autant de commits qu'avant, le dernier remplacé.
+  // amend retains commit counts while replacing the latest commit.
   const count = Number(line(repo, 'rev-list', '--count', 'HEAD'))
   write(repo, 'oubli.txt', 'o\n')
   git(repo, 'add', 'oubli.txt')
@@ -391,13 +384,13 @@ test('commit : rien à commiter et identité absente ont chacun leur code', asyn
   const repo = createRepo(t)
   await rejectsWithCode(commit(repo, 'Rien', { amend: false, stageAll: false }), 'git_nothing_to_commit')
 
-  // Une modification non ajoutée ne suffit pas non plus.
+  // Unstaged modifications alone are insufficient too.
   write(repo, 'README.md', 'Bonjour\nmodifié\n')
   await rejectsWithCode(commit(repo, 'Rien dans l’index', { amend: false, stageAll: false }), 'git_nothing_to_commit')
 
-  // Sans identité. La configuration globale est vide, mais sur un hôte dont le nom porte
-  // un domaine git s'en forgerait une : `useConfigOnly` l'en empêche, comme le ferait un
-  // hôte sans domaine.
+  // No identity. Global configuration is empty, but domain-bearing hostnames let git
+  // invent identities. `useConfigOnly` prevents this,
+  // matching hosts without domains.
   const anonymous = join(tempDir(t), 'anonyme')
   mkdirSync(anonymous)
   git(anonymous, 'init', '-q', '-b', 'main')
@@ -424,18 +417,18 @@ test('branches : courante, worktrees, amont avec avance et retard, branches dist
   const worktree = join(tempDir(t), 'ailleurs')
   git(repo, 'worktree', 'add', '-q', worktree, 'ailleurs')
 
-  // `origin/HEAD` existe dès qu'on le demande : un alias, que la liste doit écarter.
+  // `origin/HEAD` exists on request: aliases must be excluded from branch lists.
   git(repo, 'remote', 'set-head', 'origin', '-a')
   assert.equal(line(repo, 'rev-parse', '--verify', 'refs/remotes/origin/HEAD').length, 40)
 
-  // main : deux commits poussés, un retiré localement, un nouveau par-dessus → 1 devant, 1 derrière.
+  // main: two pushed commits, one removed locally then a new one added → 1 ahead, 1 behind.
   commitFile(repo, 'un.txt', '1\n')
   commitFile(repo, 'deux.txt', '2\n')
   git(repo, 'push', '-q')
   git(repo, 'reset', '-q', '--hard', 'HEAD~1')
   commitFile(repo, 'trois.txt', '3\n')
 
-  // feature : sa branche distante disparaît → « gone ».
+  // feature loses its remote branch and becomes gone.
   git(repo, 'push', '-q', 'origin', '--delete', 'feature')
   git(repo, 'fetch', '-q', '--prune')
 
@@ -466,7 +459,7 @@ test('branches : courante, worktrees, amont avec avance et retard, branches dist
   assert.equal(remote[0]?.hash, line(repo, 'rev-parse', '--short', 'origin/main'))
   assert.equal(remote[0]?.subject, 'Modifie deux.txt')
 
-  // Une branche prise par un autre worktree ne peut pas être extraite ici.
+  // Branches checked out in other worktrees cannot be checked out here.
   await rejectsWithCode(checkout(repo, 'ailleurs'), 'git_branch_in_worktree')
 })
 
@@ -491,7 +484,7 @@ test('branches : création, extraction locale, distante et détachée, suppressi
   await checkout(repo, 'main')
   assert.equal(currentBranch(repo), 'main')
 
-  // Une branche qui n'existe plus que chez origin : la locale naît et la suit.
+  // Remote-only branches create tracking local counterparts.
   git(repo, 'branch', 'distante')
   git(repo, 'push', '-q', 'origin', 'distante')
   git(repo, 'branch', '-D', 'distante')
@@ -499,21 +492,21 @@ test('branches : création, extraction locale, distante et détachée, suppressi
   assert.equal(currentBranch(repo), 'distante')
   assert.equal(line(repo, 'rev-parse', '--abbrev-ref', 'distante@{upstream}'), 'origin/distante')
 
-  // Un commit : HEAD détachée, et l'état le dit.
+  // Commits detach HEAD, reflected in state.
   await checkout(repo, first)
   const detached = await statusOf(repo)
   assert.deepEqual([detached.detached, detached.branch, detached.head?.hash], [true, null, first])
 
   await rejectsWithCode(checkout(repo, 'inexistante'), 'git_unknown_ref')
 
-  // Un fichier modifié que l'extraction écraserait : refusée, rien n'est perdu.
+  // Reject checkouts overwriting modified files, preserving work.
   await checkout(repo, 'main')
   write(repo, 'deux.txt', 'modifié\n')
   await rejectsWithCode(checkout(repo, 'depuis-le-premier'), 'git_dirty_worktree')
   assert.equal(read(repo, 'deux.txt'), 'modifié\n')
   git(repo, 'checkout', '-q', '--', 'deux.txt')
 
-  // Suppression : une branche non fusionnée est refusée, puis forcée.
+  // Deletion rejects unmerged branches unless forced.
   git(repo, 'switch', '-q', '-c', 'non-fusionnee')
   commitFile(repo, 'nf.txt', 'nf\n')
   git(repo, 'switch', '-q', 'main')
@@ -529,7 +522,7 @@ test('branches : création, extraction locale, distante et détachée, suppressi
   assert.equal(branchExists(repo, 'sans-extraction'), false)
 })
 
-// Fusion
+// Merge
 
 test('fusion : conflit, abandon, reprise après résolution, avance rapide', async (t) => {
   const repo = createRepo(t)
@@ -555,7 +548,7 @@ test('fusion : conflit, abandon, reprise après résolution, avance rapide', asy
   await rejectsWithCode(continueOperation(repo), 'git_no_operation')
 
   assert.equal((await merge(repo, 'cote')).conflicts, true)
-  // Conclure sans avoir résolu : git refuse de commiter, le dépôt reste en fusion.
+  // Continuing before resolution cannot commit and leaves merges pending.
   const unresolved = await continueOperation(repo)
   assert.equal(unresolved.conflicts, true)
   assert.equal((await statusOf(repo)).operation, 'merge')
@@ -569,7 +562,7 @@ test('fusion : conflit, abandon, reprise après résolution, avance rapide', asy
   assert.deepEqual(line(repo, 'log', '-1', '--format=%P').split(' '), [before, side])
   assert.equal(read(repo, 'conflit.txt'), 'résolu\n')
 
-  // Avance rapide : pas de commit de fusion, et git dit ce qu'il a fait.
+  // Fast-forward produces no merge commits and git explains the operation.
   git(repo, 'switch', '-q', '-c', 'rapide')
   const tip = commitFile(repo, 'rapide.txt', 'r\n')
   git(repo, 'switch', '-q', 'main')
@@ -590,7 +583,7 @@ test('remote : push publie et relie, fetch, pull en avance rapide, rejet, diverg
   const bare = createRemote(t, repo)
   const base = head(repo)
 
-  // Sans amont : la branche est publiée sous son nom et reliée.
+  // Without upstreams, publish branches under their names and establish tracking.
   const published = await push(repo, { force: false, remote: undefined }, env)
   assert.equal(published.conflicts, false)
   assert.match(published.summary ?? '', /origin\/main/)
@@ -598,13 +591,13 @@ test('remote : push publie et relie, fetch, pull en avance rapide, rejet, diverg
   assert.deepEqual([status.upstream, status.ahead, status.behind], ['origin/main', 0, 0])
   assert.equal(line(bare, 'rev-parse', 'main'), base)
 
-  // Un remote nommé explicitement, pour une seconde branche.
+  // Explicit remote for another branch.
   git(repo, 'switch', '-q', '-c', 'seconde')
   await push(repo, { force: false, remote: 'origin' }, env)
   assert.equal((await statusOf(repo)).upstream, 'origin/seconde')
   git(repo, 'switch', '-q', 'main')
 
-  // Un second clone avance : fetch le voit, pull suit en avance rapide.
+  // A second clone advances: fetch detects it and pull fast-forwards.
   const clone = cloneRemote(t, bare)
   const remoteCommit = commitFile(clone, 'clone.txt', '1\n')
   git(clone, 'push', '-q')
@@ -621,12 +614,12 @@ test('remote : push publie et relie, fetch, pull en avance rapide, rejet, diverg
   assert.equal(pulled.conflicts, false)
   assert.equal(head(repo), remoteCommit)
 
-  // Prune : une branche distante supprimée disparaît au fetch suivant.
+  // Prune removes deleted remote branches on the next fetch.
   git(clone, 'push', '-q', 'origin', '--delete', 'ephemere')
   await fetch(repo, env)
   assert.equal((await readBranches(repo)).remote.some((branch) => branch.name === 'origin/ephemere'), false)
 
-  // Les deux côtés avancent : push rejeté, pull sans stratégie refusé, pull en rebase passe.
+  // Both sides advance: reject push and strategyless pull; rebasing pull succeeds.
   git(clone, 'switch', '-q', 'main')
   const theirs = commitFile(clone, 'clone.txt', '2\n')
   git(clone, 'push', '-q')
@@ -642,7 +635,7 @@ test('remote : push publie et relie, fetch, pull en avance rapide, rejet, diverg
   assert.equal(pushed.conflicts, false)
   assert.equal(line(bare, 'rev-parse', 'main'), head(repo))
 
-  // Un commit réécrit : refusé sans forcer, accepté avec (force-with-lease).
+  // Rewritten commits reject ordinary push but accept force-with-lease.
   git(repo, 'commit', '-q', '--amend', '-m', 'Local, réécrit')
   await rejectsWithCode(push(repo, { force: false, remote: undefined }, env), 'git_push_rejected')
   const forced = await push(repo, { force: true, remote: undefined }, env)
@@ -680,7 +673,7 @@ test('stash : empiler, lister, appliquer, dépiler, jeter, et le compteur suit',
 
   write(repo, 'README.md', 'Bonjour\nstash 2\n')
   await stashPush(repo, 'second', false)
-  // Sans message, git en forge un avec la branche et le commit : la branche en est extraite.
+  // Without messages, git generates branch/commit text from which branches are extracted.
   write(repo, 'README.md', 'Bonjour\nstash 3\n')
   await stashPush(repo, undefined, false)
   assert.equal((await statusOf(repo)).stashCount, 3)
@@ -694,7 +687,7 @@ test('stash : empiler, lister, appliquer, dépiler, jeter, et le compteur suit',
   stashes = await readStashes(repo)
   assert.deepEqual(stashes.map((stash) => [stash.index, stash.message]), [[0, 'second'], [1, 'premier']])
 
-  // apply garde le stash, le fichier non suivi revient aussi.
+  // apply retains stashes and restores untracked files too.
   const applied = await stashApply(repo, 1, false)
   assert.equal(applied.conflicts, false)
   assert.equal(read(repo, 'README.md'), 'Bonjour\nstash 1\n')
@@ -709,7 +702,7 @@ test('stash : empiler, lister, appliquer, dépiler, jeter, et le compteur suit',
   assert.deepEqual((await readStashes(repo)).map((stash) => stash.message), ['premier'])
   assert.equal((await statusOf(repo)).stashCount, 1)
 
-  // Rien à mettre de côté n'est pas une erreur.
+  // Nothing to stash is not an error.
   git(repo, 'checkout', '-q', '--', 'README.md')
   assert.deepEqual(await stashPush(repo, 'vide', true), { summary: 'No local changes to save', conflicts: false })
   assert.equal((await statusOf(repo)).stashCount, 1)
@@ -728,7 +721,7 @@ test('commits : revert ajoute l’inverse, reset soft, mixed et hard', async (t)
   assert.equal(existsSync(join(repo, 'r.txt')), false)
   assert.match(line(repo, 'log', '-1', '--format=%s'), /^Revert "Ajoute r\.txt"/)
 
-  // Un revert qui ne s'applique pas proprement laisse un conflit, que l'abandon efface.
+  // Conflicting reverts leave conflicts removed by aborting.
   const changed = commitFile(repo, 's.txt', 'v2\n')
   commitFile(repo, 's.txt', 'v3\n')
   const conflicting = await revertCommit(repo, changed)
@@ -740,7 +733,7 @@ test('commits : revert ajoute l’inverse, reset soft, mixed et hard', async (t)
   assert.equal((await statusOf(repo)).operation, null)
   assert.equal(read(repo, 's.txt'), 'v3\n')
 
-  // reset vers `base` depuis un HEAD où s.txt vaut v3.
+  // Reset to `base` from HEAD where s.txt contains v3.
   const tip = head(repo)
   await resetTo(repo, base, 'soft')
   assert.equal(head(repo), base)
@@ -764,7 +757,7 @@ test('commits : revert ajoute l’inverse, reset soft, mixed et hard', async (t)
   assert.deepEqual([status.staged, status.unstaged], [[], []])
   assert.equal(read(repo, 's.txt'), 'v1\n')
 
-  // Un hash que le dépôt ne connaît pas : git ne le dit pas d'une façon classée, le détail le nomme.
+  // Unknown hashes produce unclassified git errors whose details name the hash.
   await assert.rejects(
     resetTo(repo, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', 'hard'),
     (err: unknown) => err instanceof GitActionError && /deadbeef/.test(err.detail),
@@ -772,7 +765,7 @@ test('commits : revert ajoute l’inverse, reset soft, mixed et hard', async (t)
   assert.equal(head(repo), base)
 })
 
-// Dépôt
+// Repository
 
 test('dépôt : init crée un dépôt sur main, et refuse un dossier déjà dans un dépôt', async (t) => {
   const dir = tempDir(t)
@@ -782,14 +775,14 @@ test('dépôt : init crée un dépôt sur main, et refuse un dossier déjà dans
   assert.deepEqual([status.branch, status.unborn, status.head], ['main', true, null])
   await rejectsWithCode(initRepository(dir), 'git_already_repository')
 
-  // Un sous-dossier d'un dépôt : pas de sous-dépôt que rien n'a demandé.
+  // Subdirectories of repositories must not become unsolicited subrepositories.
   const nested = join(createRepo(t), 'sous-dossier')
   mkdirSync(nested)
   await rejectsWithCode(initRepository(nested), 'git_already_repository')
   assert.equal(existsSync(join(nested, '.git')), false)
 })
 
-// Sérialisation
+// Serialization
 
 test('sérialisation : une action à la fois par dépôt, l’échec de l’une ne bloque pas la suivante', async () => {
   const order: string[] = []
@@ -804,7 +797,7 @@ test('sérialisation : une action à la fois par dépôt, l’échec de l’une 
     order.push('b:fin')
     return 'b'
   })
-  // Un autre dépôt n'attend pas le premier.
+  // Other repositories do not await the first.
   const elsewhere = serialized('/depot/b', async () => {
     order.push('c:début')
     return 'c'
@@ -843,8 +836,8 @@ async function harness(t: TestContext) {
     request.user = db.select().from(users).where(eq(users.id, 'owner')).get()
   })
   registerErrorHandler(app)
-  // Les routes périment l'avancement des chantiers après chaque action : un service
-  // réel sur cette base, qui n'est jamais lu ici.
+  // Routes invalidate worktree progress after each action: use a real service
+  // on this database without reading it here.
   registerGitActionRoutes(
     app,
     { db, config: { paths: { data: dir, database: join(dir, 'test.sqlite') } } as Config },
@@ -864,7 +857,7 @@ test('routes : état, stage sans corps, commit, branches, stash', async (t) => {
   assert.equal(body.cwd, repo)
   assert.deepEqual([body.repo?.branch, body.repo?.head?.hash], ['main', head(repo)])
 
-  // La portée conversation mène au même dépôt ; un projet inconnu reste introuvable.
+  // Conversation scope reaches the same repository; unknown projects remain not found.
   const viaConversation = await app.inject({ url: '/api/conversations/conversation/git/status' })
   assert.equal(viaConversation.json<GitStatusDto>().cwd, repo)
   const unknown = await app.inject({ url: '/api/projects/nope/git/status' })
@@ -924,7 +917,7 @@ test('routes : un dossier sans dépôt a un état null, puis init en fait un', a
 test('routes : validation en 400, états du dépôt en 409, chemin hors dépôt', async (t) => {
   const { repo, app } = await harness(t)
 
-  // Un nom qui ressemble à une option n'atteint jamais git.
+  // Option-like names never reach git.
   const option = await app.inject({ method: 'POST', url: '/api/projects/project/git/checkout', payload: { ref: '--help' } })
   assert.equal(option.statusCode, 400, option.body)
   assert.equal(option.json().error.code, 'validation_failed')
@@ -938,7 +931,7 @@ test('routes : validation en 400, états du dépôt en 409, chemin hors dépôt'
   assert.equal(none.statusCode, 400)
   assert.equal(none.json().error.code, 'validation_failed')
 
-  // Un état du dépôt que l'interface sait proposer de résoudre : 409, avec ce que git a dit.
+  // Remediable repository state returns 409 with git's explanation.
   git(repo, 'switch', '-q', '-c', 'non-fusionnee')
   commitFile(repo, 'nf.txt', 'nf\n')
   git(repo, 'switch', '-q', 'main')
@@ -952,13 +945,68 @@ test('routes : validation en 400, états du dépôt en 409, chemin hors dépôt'
   const forced = await app.inject({ method: 'DELETE', url: '/api/projects/project/git/branches', payload: { name: 'non-fusionnee', force: true } })
   assert.equal(forced.statusCode, 204, forced.body)
 
-  // Rien à commiter décrit la requête, pas un état à résoudre : 400.
+  // Nothing to commit describes requests rather than remediable state: 400.
   const nothing = await app.inject({ method: 'POST', url: '/api/projects/project/git/commit', payload: { message: 'Rien' } })
   assert.equal(nothing.statusCode, 400)
   assert.equal(nothing.json().error.code, 'git_nothing_to_commit')
 
-  // Hors du dépôt : git refuse le pathspec, et son refus sort avec un code git.
+  // Outside repositories, git rejects pathspecs with git error codes.
   const outside = await app.inject({ method: 'POST', url: '/api/projects/project/git/discard', payload: { paths: ['../ailleurs.txt'] } })
   assert.equal(outside.statusCode, 400, outside.body)
   assert.match(outside.json().error.code, /^git_/)
+})
+
+test('diff non suivi : ne pas masquer un fichier disparu par un patch vide', async (t) => {
+  const repo = createRepo(t)
+  await assert.rejects(readFileDiff(repo, 'absent.txt', 'untracked'), GitActionError)
+})
+
+test('diff : format stable malgré les préférences Git, depuis un sous-dossier', async (t) => {
+  const repo = createRepo(t)
+  write(repo, 'nested/échantillon.txt', 'Contenu réel\n')
+  git(repo, 'config', 'color.ui', 'always')
+  git(repo, 'config', 'diff.noprefix', 'true')
+  git(repo, 'config', 'diff.mnemonicPrefix', 'true')
+  const cwd = join(repo, 'nested')
+  const status = await readRepoStatus(cwd)
+  const change = status!.unstaged.find((entry) => entry.path.includes('échantillon'))!
+  assert.ok(change)
+  const diff = await readFileDiff(cwd, change.path, 'untracked')
+  assert.match(diff.patch, /^diff --git /)
+  assert.match(diff.patch, /\+Contenu réel/)
+  assert.ok(!diff.patch.includes('\u001b['))
+  await stage(cwd, [change.path])
+  const staged = await readFileDiff(cwd, change.path, 'staged')
+  assert.match(staged.patch, /\+Contenu réel/)
+})
+
+test('diff non suivi : distinguer le binaire et le fichier vide', async (t) => {
+  const repo = createRepo(t)
+  write(repo, 'image.bin', '\0image')
+  write(repo, 'vide.txt', '')
+  assert.match((await readFileDiff(repo, 'image.bin', 'untracked')).patch, /Binary files/)
+  assert.match((await readFileDiff(repo, 'vide.txt', 'untracked')).patch, /new file mode/)
+})
+
+test('statut depuis un sous-dossier : chemins et compteurs cohérents avec les actions', async (t) => {
+  const repo = createRepo(t)
+  commitFile(repo, 'nested/source.txt', 'avant\n')
+  write(repo, 'nested/source.txt', 'avant\naprès\n')
+  write(repo, 'README.md', 'racine modifiée\n')
+  const cwd = join(repo, 'nested')
+  const status = await readRepoStatus(cwd)
+  const change = status!.unstaged.find((entry) => entry.path === 'source.txt')!
+  assert.ok(change)
+  assert.equal(change.added, 1)
+  assert.ok(status!.unstaged.some((entry) => entry.path === '../README.md'))
+  assert.match((await readFileDiff(cwd, change.path, 'unstaged')).patch, /\+après/)
+  await stage(cwd, [change.path])
+  assert.equal((await readRepoStatus(cwd))!.staged[0]!.path, 'source.txt')
+  await unstage(cwd, [change.path])
+  await discard(cwd, [change.path])
+  assert.equal(read(repo, 'nested/source.txt'), 'avant\n')
+  git(repo, 'mv', 'nested/source.txt', 'nested/destination.txt')
+  const renamed = (await readRepoStatus(cwd))!.staged[0]!
+  assert.equal(renamed.path, 'destination.txt')
+  assert.equal(renamed.oldPath, 'source.txt')
 })

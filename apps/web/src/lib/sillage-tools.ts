@@ -1,15 +1,13 @@
 /**
- * Les outils du serveur MCP de Sillage, sous le nom que chaque CLI leur donne.
- *
- * Le même appel s'appelle `mcp__sillage__schedule_task` chez Claude, `sillage/schedule_task`
- * chez Codex (`serveur/outil`, voir `codex/item-events.ts`) et `sillage_schedule_task`
- * chez OpenCode. Reconnaître l'outil, c'est reconnaître les trois.
+ * Sillage MCP tools under each CLI's naming convention. The same call is
+ * `mcp__sillage__schedule_task` in Claude, `sillage/schedule_task` in Codex (`server/tool`, see
+ * `codex/item-events.ts`), and `sillage_schedule_task` in OpenCode. Recognize all three.
  */
 export function isSillageTool(name: string, tool: string): boolean {
   return name === `mcp__sillage__${tool}` || name === `sillage/${tool}` || name === `sillage_${tool}`
 }
 
-/** L'identifiant de tâche que `schedule_task` rend dans sa réponse : « … créée, id <uuid>. » */
+/** Task ID returned by `schedule_task` in its creation response: id followed by a UUID. */
 export function scheduledTaskIdOf(output: string | null): string | null {
   return output?.match(/créée, id ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/)?.[1] ?? null
 }

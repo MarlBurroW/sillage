@@ -6,10 +6,8 @@ import { cx } from '../ui'
 import { editorHighlight, editorTheme, loadLanguage } from '../panel/editor-setup'
 
 /**
- * Un petit éditeur de code pour la page d'une automatisation (script, corps d'un appel
- * d'essai) : CodeMirror avec le thème de l'éditeur du panneau. Volontairement plus simple
- * que `CodeEditor`, fait pour des fichiers et leurs sessions : ici un seul texte, tenu
- * par la page.
+ * Small automation editor for scripts and trial payloads, using CodeMirror with panel-editor theme.
+ * Simpler than file/session CodeEditor: one page-owned text value.
  */
 export function ScriptEditor({
   value,
@@ -22,11 +20,11 @@ export function ScriptEditor({
   value: string
   onChange: (value: string) => void
   label: string
-  /** Nom de fichier dont l'extension choisit la coloration : `automation.js`, `payload.json`. */
+  /** Filename extension selecting highlighting, such as automation.js or payload.json. */
   language?: string
   /**
-   * Hauteur au-delà de laquelle l'éditeur défile en lui-même. Posée sur l'éditeur et non
-   * sur son conteneur : CodeMirror ne défile que si c'est lui qui est borné.
+   * Height above which the editor itself scrolls. Set on CodeMirror rather than its wrapper because
+   * only a bounded editor scrolls.
    */
   maxHeight?: string
   className?: string
@@ -38,7 +36,7 @@ export function ScriptEditor({
 
   useEffect(() => {
     if (!host.current) return
-    // La grammaire se charge à part : l'éditeur s'ouvre tout de suite, en clair, puis se colore.
+    // Grammar loads separately: show plain text immediately, then highlight.
     const grammar = new Compartment()
     const editor = new EditorView({
       parent: host.current,
@@ -70,12 +68,12 @@ export function ScriptEditor({
       editor.destroy()
       view.current = null
     }
-    // Monté une fois : la valeur suivante vient de l'éditeur lui-même, la repousser à
-    // chaque frappe ferait sauter le curseur.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Mount once: subsequent values come from editor input and pushing every keystroke back would
+    // jump the cursor.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Une valeur changée de l'extérieur (réglages annulés, modèle chargé) remplace le texte.
+  // External value changes (reset settings, loaded templates) replace text.
   useEffect(() => {
     const editor = view.current
     if (!editor || editor.state.doc.toString() === value) return

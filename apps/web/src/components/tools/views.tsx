@@ -12,25 +12,19 @@ import { Code, Empty, Plain, Section } from './parts'
 import { fields, flag, imageBlocks, list, outputLines, outputText, scalar, stripLineNumbers, text } from './payload'
 
 /**
- * Rendu lisible d'un appel d'outil.
- *
- * Une vue rend ce que l'appel a fait, pas la forme sous laquelle le CLI l'a dit : une
- * commande shell colorée plutôt qu'un objet JSON, une liste de tâches cochées plutôt
- * qu'un tableau d'objets, un diff plutôt que deux chaînes échappées. Elle rend `null`
- * quand le payload ne correspond pas à ce qu'elle sait lire, et le registre se rabat
- * alors sur la vue générique, puis sur la vue brute (`registry.tsx`).
- *
- * Le payload natif reste consultable en entier dans tous les cas : une vue a le droit
- * de choisir ce qu'elle montre, jamais d'être la seule chose qu'on puisse consulter.
+ * Readable tool-call views show the action rather than native encoding: highlighted shell commands,
+ * checked task lists, or diffs rather than JSON objects and escaped strings. Return null for
+ * unknown payloads so registry.tsx falls back to generic then raw views. Full native payload always
+ * remains accessible: views may choose what to show but never be the only available representation.
  */
 export type ToolView = (tool: ToolItem) => ReactNode
 
-/** Vrai tant que la sortie n'existe pas encore : il n'y a pas de bloc vide à afficher. */
+/** True before output exists: do not show an empty block. */
 function pending(tool: ToolItem): boolean {
   return tool.status === 'running'
 }
 
-/** La sortie définitive ou le tampon que le CLI transmet pendant l'exécution. */
+/** Final output or live CLI execution buffer. */
 function TextOutput({ tool, label = translate('tool.output.label') }: { tool: ToolItem; label?: string }) {
   if (pending(tool) && tool.output == null) return null
 
@@ -102,8 +96,7 @@ const read: ToolView = (tool) => {
       ) : stripped === null ? (
         <Plain content={content} />
       ) : (
-        // Numéroté par le CLI : la gouttière retirée, on retrouve du code, donc de la
-        // coloration et un copier-coller utilisable.
+        // Remove CLI line-number gutters to recover highlightable code and useful copy/paste.
         <Code content={stripped} language={languageFromPath(path)} />
       )}
     </Section>
@@ -111,9 +104,8 @@ const read: ToolView = (tool) => {
 }
 
 /**
- * `view_image` de Codex. Le runner joint l'image en base64 à la sortie, dans la forme
- * du `Read` d'image de Claude Code ; quand il n'a pas pu la lire, seul le chemin reste
- * et la vue le dit plutôt que de laisser un JSON nu.
+ * Codex view_image. The runner attaches base64 images in Claude Read format; if reading failed,
+ * explain the remaining path instead of exposing bare JSON.
  */
 const viewImage: ToolView = (tool) => {
   const path = text(tool.input, 'path')
@@ -146,12 +138,9 @@ const write: ToolView = (tool) => {
 }
 
 /**
- * Une édition, sous les deux formes que les CLI en donnent.
- *
- * Claude Code transmet l'extrait remplacé et son remplaçant, sans état antérieur du
- * fichier : les deux sont affichés côte à côte plutôt que maquillés en diff complet,
- * dont les numéros de ligne seraient inventés. Codex transmet un vrai diff unifié par
- * fichier, qui se rend comme n'importe quel diff.
+ * Edits in both CLI forms. Claude Code supplies old/new excerpts without previous file state, shown
+ * side by side rather than fabricating a full diff with invented line numbers. Codex provides real
+ * per-file unified diffs rendered normally.
  */
 const edit: ToolView = (tool) => {
   const changes = list(tool.input, 'changes')
@@ -181,7 +170,7 @@ const edit: ToolView = (tool) => {
   )
 }
 
-/** Nature d'un changement Codex, dans le vocabulaire qu'il emploie lui-même. */
+/** Codex change kind in its native vocabulary. */
 const CHANGE_LABELS: Record<string, MessageKey> = {
   add: 'tool.change.created',
   delete: 'tool.change.deleted',
@@ -199,9 +188,10 @@ function CodexChanges({ changes }: { changes: unknown[] }) {
 
         return (
           <Section key={`${path}-${index}`} label={label} hint={path}>
-            {/* Un `update` porte un diff unifié auquel il ne manque que l'en-tête qui
-                dit de quel fichier il parle ; un ajout ou une suppression porte le
-                contenu brut, qui n'a rien à comparer. */}
+            {/*
+             * Updates contain unified diffs missing only file headers; additions/deletions contain
+             * raw contents with nothing to compare.
+             */}
             {kind === 'update' ? (
               <div className="overflow-hidden rounded-md border border-line bg-sunken">
                 {parseUnifiedDiff(`diff --git a/${path} b/${path}\n${diff}`).map((file) => (
@@ -218,7 +208,7 @@ function CodexChanges({ changes }: { changes: unknown[] }) {
   )
 }
 
-/** Recherches dont la sortie est une liste de résultats, un par ligne. */
+/** Searches returning one result per output line. */
 function matchesView(inputLabelKey: MessageKey, keys: string[]): ToolView {
   return (tool) => {
     const query = keys.map((key) => text(tool.input, key)).find((value) => value !== null)
@@ -257,7 +247,7 @@ function matchesView(inputLabelKey: MessageKey, keys: string[]): ToolView {
   }
 }
 
-/** Icône et teinte par état d'une tâche, dans l'ordre où l'agent les traverse. */
+/** Task-state icon and tone in progression order. */
 interface TodoState {
   icon: ReactNode
   tone: string
@@ -301,7 +291,7 @@ const todos: ToolView = (tool) => {
   )
 }
 
-/** Le rapport d'un sous-agent est du markdown : il se lit comme un message, pas comme un log. */
+/** Subagent reports are Markdown messages, not logs. */
 const subAgent: ToolView = (tool) => {
   const prompt = text(tool.input, 'prompt')
   if (prompt === null) return null
@@ -373,12 +363,9 @@ const plan: ToolView = (tool) => {
 }
 
 /**
- * Vue de repli, pour les outils sans vue dédiée : les serveurs MCP, ceux qu'un CLI
- * ajoutera demain, ceux dont le payload ne correspond pas à ce que leur vue attendait.
- *
- * Les champs courts tiennent dans une liste de définitions, ce qui donne d'un coup
- * d'œil les paramètres de l'appel ; les longs et les structurés prennent chacun leur
- * bloc. Un JSON indenté disait déjà tout cela, mais en obligeant à le lire.
+ * Fallback for tools without dedicated views: MCP, future CLI tools, and unexpected payloads. Short
+ * fields fit definition lists for glanceable parameters; long or structured fields get blocks.
+ * Indented JSON contained the same information but required reading it all.
  */
 export const genericView: ToolView = (tool) => {
   const input = fields(tool.input)
@@ -428,7 +415,7 @@ export const genericView: ToolView = (tool) => {
   )
 }
 
-/** Assez court pour tenir sur une ligne de liste, sans passer par un bloc à part. */
+/** Short enough for a list row without its own block. */
 function isShort(value: unknown): boolean {
   if (value === null || typeof value === 'object') return false
   const rendered = String(value)
@@ -436,11 +423,8 @@ function isShort(value: unknown): boolean {
 }
 
 /**
- * Les vues par nom d'outil.
- *
- * Les noms sont ceux du journal, donc déjà normalisés par les adaptateurs : Codex
- * publie ses exécutions de commande sous `Bash` et ses changements de fichier sous
- * `Edit` (I3). `Task` et `Agent` désignent le même outil selon la version du CLI.
+ * Views by normalized log tool name: adapters map Codex execution to Bash and file changes to Edit
+ * (I3). Task and Agent identify the same tool depending on CLI version.
  */
 export const VIEWS: Record<string, ToolView> = {
   Bash: bash,

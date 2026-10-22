@@ -1,131 +1,131 @@
-# SILLAGE.md : des consignes communes à Claude, Codex, OpenCode et Grok Build
+# SILLAGE.md: shared instructions for Claude, Codex, OpenCode, and Grok Build
 
-Des consignes tenues par Sillage et injectées dans le prompt système de chaque session,
-quel que soit son CLI : une partie **globale** (administrateurs) et une par **projet**
-(propriétaire). Éditables depuis la page du projet, les réglages (`/settings/consignes`)
-et l'en-tête d'une conversation, sans passer par l'éditeur de fichiers.
+Instructions managed by Sillage and injected into every session's system prompt,
+regardless of its CLI: a **global** section (administrators) and a **project** section
+(owner). Editable from the project page, settings (`/settings/consignes`), and a
+conversation's header without using the file editor.
 
-## Où vivent les consignes d'un projet
+## Where project instructions live
 
-Chaque projet a un mode, choisi à la création (`instructionsMode`) et modifiable ensuite :
+Each project has a mode chosen at creation (`instructionsMode`), which can change later:
 
-- **`sillage`** : le texte est en base (table `instructions`) et injecté à chaque CLI. Les
-  `CLAUDE.md`, `CLAUDE.local.md` et `AGENTS.md` du workspace et du worktree sont masqués
-  aux agents, sans être touchés sur le disque : les garder lus doublerait les consignes.
-- **`repo`** : la partie projet est le `AGENTS.md` (ou `CLAUDE.md`) du dépôt, que les CLI
-  lisent d'eux-mêmes. L'interface édite ce fichier directement, `AGENTS.md` par défaut.
-  Sillage n'injecte que la partie globale.
+- **`sillage`**: text is stored in the database (`instructions` table) and injected
+  into every CLI. Workspace and worktree `CLAUDE.md`, `CLAUDE.local.md`, and
+  `AGENTS.md` files are hidden from agents without touching them on disk: leaving
+  them readable would duplicate instructions.
+- **`repo`**: the project section is the repository's `AGENTS.md` (or `CLAUDE.md`),
+  which CLIs read themselves. The interface edits that file directly, defaulting
+  to `AGENTS.md`. Sillage injects only the global section.
 
-Sans choix à la création, le serveur regarde le dossier : `repo` s'il porte déjà un de
-ces fichiers, `sillage` sinon. Les projets d'avant le réglage n'ont pas de mode (null) et
-gardent ce comportement résolu à la volée ; la première écriture de contenu Sillage fixe
-leur mode à `sillage`, pour qu'un `AGENTS.md` apparu ensuite ne le fasse pas taire.
+Without a choice at creation, the server inspects the directory: `repo` if it
+already contains one of these files, `sillage` otherwise. Projects predating the
+setting have no mode (null) and keep this dynamically resolved behavior; the first
+write of Sillage content fixes their mode to `sillage`, so a later `AGENTS.md`
+does not silence it.
 
-La migration d'un projet existant n'est proposée que dans son panneau de consignes : un
-bouton importe le texte des fichiers du dépôt et bascule en mode `sillage` d'un geste.
-Les fichiers restent dans le dépôt ; revenir au mode `repo` les réactive.
+Migrating an existing project is offered only in its instructions panel: one
+button imports repository files' text and switches to `sillage` mode. Files stay
+in the repository; switching back to `repo` reactivates them.
 
-## Ce que les sondes ont établi
+## What the probes established
 
-Sondé le 2026-10-05 sur Claude Code 2.1.286 et codex-cli 0.157.1.
+Probed on 2026-10-05 with Claude Code 2.1.286 and codex-cli 0.157.1.
 
-- Claude Code lit `AGENTS.md` à la racine comme `CLAUDE.md`.
-- Le réglage `claudeMdExcludes` (flag settings) masque les deux. Les motifs doivent être
-  bornés au dossier : `**/CLAUDE.md` sans racine masquerait aussi `~/.claude/CLAUDE.md`.
-- Côté Codex, `project_doc_max_bytes = 0` coupe les `AGENTS.md` du projet ; celui de
-  `CODEX_HOME` reste lu.
+- Claude Code reads root `AGENTS.md` like `CLAUDE.md`.
+- The `claudeMdExcludes` setting (settings flag) hides both. Patterns must be scoped
+  to the directory: `**/CLAUDE.md` without a root would also hide `~/.claude/CLAUDE.md`.
+- For Codex, `project_doc_max_bytes = 0` disables project `AGENTS.md` files;
+  the one in `CODEX_HOME` is still read.
 
-Sondé le 2026-10-05 sur opencode 1.18.25.
+Probed on 2026-10-05 with opencode 1.18.25.
 
-- OpenCode lit le `AGENTS.md` du projet, et à défaut son `CLAUDE.md`.
-- `OPENCODE_DISABLE_PROJECT_CONFIG=1` coupe les deux. C'est le seul interrupteur : il
-  coupe aussi l'`opencode.json` et le dossier `.opencode/` du projet. Les consignes
-  passent par le champ `system` de chaque message.
+- OpenCode reads the project's `AGENTS.md`, falling back to its `CLAUDE.md`.
+- `OPENCODE_DISABLE_PROJECT_CONFIG=1` disables both. It is the only switch: it also
+  disables the project's `opencode.json` and `.opencode/` directory. Instructions
+  use each message's `system` field.
 
-Sondé le 2026-10-17 sur Grok Build 1.0.62.
+Probed on 2026-10-17 with Grok Build 1.0.62.
 
-- Grok lit `AGENTS.md`, `Agents.md`, `AGENT.md`, `CLAUDE.md` et `Claude.md` de chaque
-  dossier entre la racine du dépôt et le dossier de travail, plus ceux de `~/.grok`, et
-  ceux de `~/.claude` tant que `GROK_CLAUDE_AGENTS_ENABLED` n'est pas coupé (Sillage le
-  coupe toujours).
-- Le seul interrupteur est le profil d'agent : `_meta.agentProfile` avec
-  `agentsMd: false` à la création et à la reprise de la session. Il ne retire au prompt
-  système que le paragraphe sur la vérification au navigateur.
-- Les consignes passent par `_meta.rules` de `session/new`, ajouté au prompt système dans
-  un bloc `<human_rules>`. Le champ `systemPrompt` de l'ACP et l'option `--rules` sont
-  ignorés par `grok agent`.
+- Grok reads `AGENTS.md`, `Agents.md`, `AGENT.md`, `CLAUDE.md`, and `Claude.md` in every
+  directory between the repository root and working directory, plus those in
+  `~/.grok` and `~/.claude` until `GROK_CLAUDE_AGENTS_ENABLED` is disabled (Sillage
+  always disables it).
+- The only switch is the agent profile: `_meta.agentProfile` with `agentsMd: false`
+  at session creation and resume. It removes only the browser-verification
+  paragraph from the system prompt.
+- Instructions use `session/new`'s `_meta.rules`, appended to the system prompt in
+  a `<human_rules>` block. ACP's `systemPrompt` field and the `--rules` option are
+  ignored by `grok agent`.
 
-## Les agents peuvent y écrire
+## Agents can write to it
 
-Le serveur MCP `sillage` traite SILLAGE.md comme un fichier : `read_instructions` le lit,
-`edit_instructions` remplace un passage exact (comme l'outil Edit, `old_text` vide pour
-ajouter à la fin), `write_instructions` le réécrit entièrement. Partie projet en mode
-`sillage` seulement, partie globale en écriture pour une conversation d'administrateur.
-Chaque écriture se fait dans une transaction sur la version courante, et l'interface
-affiche la dernière main (personne ou session). En mode `repo`, les outils renvoient
-l'agent vers le fichier du dépôt, qu'il modifie avec ses propres outils.
+The `sillage` MCP server treats SILLAGE.md as a file: `read_instructions` reads it,
+`edit_instructions` replaces an exact passage (like Edit, with empty `old_text`
+to append), and `write_instructions` rewrites it entirely. Project section only
+in `sillage` mode; global section writable from an administrator's conversation.
+Every write runs in a transaction on the current version, and the interface shows
+who last edited it (person or session). In `repo` mode, tools point agents to the
+repository file, which they edit with their own tools.
 
-## Quand une modification prend effet
+## When changes take effect
 
-Au lancement d'une session pour Claude et Codex. Claude enregistre son prompt système au
-premier échange et le rejoue tel quel à la reprise : une session déjà ouverte garde la
-version reçue jusqu'à sa prochaine compaction. OpenCode, qui les reçoit avec chaque
-message, voit une modification dès le suivant. Grok Build les reçoit à la création de la
-session et les garde toute sa vie : une reprise relit le prompt système enregistré. Le mode, lui, est lu au lancement du
-runner.
+At session launch for Claude and Codex. Claude records its system prompt on the
+first exchange and replays it unchanged on resume: an already open session keeps
+the received version until its next compaction. OpenCode receives instructions
+with each message and sees changes on the next one. Grok Build receives them at
+session creation and keeps them for its lifetime: resume rereads the saved system
+prompt. The mode itself is read when the runner launches.
 
-## Donner aux agents des liens accessibles à distance
+## Giving agents remotely accessible links
 
-Si le navigateur est sur un autre appareil, les liens de prévisualisation doivent
-utiliser le nom VPN de la machine qui exécute les agents. Le
-[guide d’accès distant](remote-access.md#teach-agents-to-share-reachable-preview-links)
-fournit un modèle à adapter dans les consignes globales ou celles du projet :
-nom réel de la machine, ports autorisés, HTTPS, vérification et nettoyage.
-Ces consignes guident les agents ; elles ne configurent pas le VPN elles-mêmes.
+If the browser is on another device, preview links must use the VPN name of the
+machine running the agents. The
+[remote-access guide](remote-access.md#teach-agents-to-share-reachable-preview-links)
+provides a template to adapt in global or project instructions: actual machine
+name, allowed ports, HTTPS, verification, and cleanup. These instructions guide
+agents; they do not configure the VPN themselves.
 
-## Recette
+## Acceptance checks
 
-`apps/server/test/instructions.test.ts` couvre routes, modes, migration et l'outil MCP.
-La recette avec de vrais CLI a tourné sur un serveur jetable (`/tmp/smd-e2e`, port 7402) :
-9 vérifications sur 9, injection globale et projet, masque en mode `sillage`, mode
-`repo` intact, consigne retenue par Claude reçue par la session Codex suivante.
+`apps/server/test/instructions.test.ts` covers routes, modes, migration, and the MCP
+tool. Checks with real CLIs ran on a disposable server (`/tmp/smd-e2e`, port 7402):
+9 out of 9 passed, covering global and project injection, hiding in `sillage` mode,
+unchanged `repo` mode, and an instruction saved by Claude reaching the next Codex session.
 
-# Mémoire du projet
+# Project memory
 
-À côté des consignes, qui sont des règles données aux agents, la mémoire est ce qu'ils
-retiennent d'eux-mêmes : un index `MEMORY.md` et une note par fichier, au format de la
-mémoire automatique de Claude Code. Un dossier par projet, `<data>/memory/projects/<id>`,
-partagé par tous les CLI et par tous les worktrees du projet.
+Alongside instructions, which are rules given to agents, memory is what they retain
+themselves: a `MEMORY.md` index and one note per file, in Claude Code's automatic
+memory format. One directory per project, `<data>/memory/projects/<id>`, shared by
+all CLIs and all project worktrees.
 
-- **Claude** reçoit ce dossier en `autoMemoryDirectory` (flag settings) et s'en sert
-  comme de sa mémoire native : il charge l'index au démarrage et écrit ses notes sans
-  demander de permission, même en mode par défaut. Rien n'est plus écrit dans
-  `~/.claude/projects/<dossier>/memory`.
-- **Codex** n'a pas d'équivalent (sa fonction `memories` extrait des souvenirs des fils
-  passés, en arrière-plan). Il reçoit l'index et le chemin du dossier dans ses
-  instructions développeur, lit les notes par `cat`, et écrit par les outils MCP
-  `read_memory`, `write_memory` et `delete_memory`, son bac à sable ne pouvant écrire hors
-  du workspace. `write_memory` ajoute seul la ligne d'index d'une note nouvelle.
-- **OpenCode** est traité comme Codex : l'index et le chemin du dossier arrivent avec
-  chaque message, dans son prompt système, et il écrit par les mêmes outils MCP.
-- **Grok Build** aussi, à ceci près que l'index arrive une fois, dans les `rules` de la
-  création de session. Sa propre mémoire entre sessions (`~/.grok/memory-v2`) n'est pas
-  touchée.
-- **Interface** : une carte « Mémoire » sur la page du projet liste les notes, les ouvre
-  en édition et les supprime avec leur ligne d'index.
-- **Mode natif** (`memoryMode = 'native'`, réglé sur la carte Mémoire) : Sillage ne tient
-  plus de dossier pour ce projet. Claude garde sa mémoire habituelle dans `~/.claude`, par
-  dossier de travail ; Codex, OpenCode et Grok la leur ; aucun index n'est injecté et les
-  outils MCP de mémoire ne sont pas annoncés. Le défaut des projets à venir, comme celui du
-  mode des consignes, est un réglage du compte (`projectDefaults`), posé par la visite de
-  première ouverture.
+- **Claude** receives this directory through `autoMemoryDirectory` (settings flag)
+  and uses it as native memory: it loads the index at startup and writes notes
+  without requesting permission, even in default mode. Nothing is written to
+  `~/.claude/projects/<directory>/memory` anymore.
+- **Codex** has no equivalent (its `memories` feature extracts memories from past
+  threads in the background). It receives the index and directory path in its
+  developer instructions, reads notes with `cat`, and writes through the MCP tools
+  `read_memory`, `write_memory`, and `delete_memory`, since its sandbox cannot write
+  outside the workspace. `write_memory` adds a new note's index entry automatically.
+- **OpenCode** is handled like Codex: the index and directory path arrive with every
+  message in its system prompt, and it writes through the same MCP tools.
+- **Grok Build** too, except the index arrives once, in session creation `rules`.
+  Its own cross-session memory (`~/.grok/memory-v2`) is untouched.
+- **Interface**: a “Memory” card on the project page lists notes, opens them for
+  editing, and deletes them along with their index entries.
+- **Native mode** (`memoryMode = 'native'`, set on the Memory card): Sillage no
+  longer manages a directory for this project. Claude keeps its usual memory in
+  `~/.claude` per working directory; Codex, OpenCode, and Grok keep their own.
+  No index is injected, and memory MCP tools are not advertised. The default for
+  future projects, like the instruction-mode default, is an account setting
+  (`projectDefaults`) set by the first-run tour.
 
-Au premier lancement, la mémoire que Claude tenait pour la racine du workspace est
-copiée dans le dossier encore vide, une seule fois (trace `.imported-from.json`).
-L'original reste en place. Celle des worktrees, que Claude rangeait par dossier, n'est
-pas reprise.
+At first launch, the memory Claude kept for the workspace root is copied into the
+still-empty directory once (recorded in `.imported-from.json`). The original stays
+in place. Worktree memory, which Claude stored by directory, is not imported.
 
-Sondé le 2026-10-05 sur Claude Code 2.1.286 : `autoMemoryDirectory` redirige lecture et
-écriture, et rien n'est écrit dans le dossier par défaut. Recette avec de vrais CLI :
-8 vérifications sur 8, import, écriture par Claude lue par Codex, écriture par Codex
-(`write_memory`) lue par Claude.
+Probed on 2026-10-05 with Claude Code 2.1.286: `autoMemoryDirectory` redirects reads
+and writes, with nothing written to the default directory. Checks with real CLIs:
+8 out of 8 passed, covering import, a Claude write read by Codex, and a Codex write
+(`write_memory`) read by Claude.

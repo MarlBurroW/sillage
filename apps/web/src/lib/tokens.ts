@@ -1,8 +1,6 @@
 /**
- * Un nombre de tokens, au plus court qui reste lisible.
- *
- * La jauge de contexte garde sa propre version, sans décimale : elle écrit dans un
- * cercle de quatorze pixels, où « 12,3 k » ne tient pas.
+ * Shortest readable token count. The context gauge keeps its own integer version: its
+ * fourteen-pixel circle cannot fit decimal counts.
  */
 export function formatTokens(count: number): string {
   if (count < 1000) return String(count)

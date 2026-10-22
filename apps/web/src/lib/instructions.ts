@@ -9,10 +9,8 @@ import type {
 import { api } from './api'
 
 /**
- * SILLAGE.md : la partie globale et celle d'un projet.
- *
- * Relu à chaque ouverture plutôt que gardé longtemps : un agent peut y avoir ajouté une
- * consigne par les outils MCP depuis la dernière visite.
+ * SILLAGE.md global and project sections. Reread on every opening instead of long caching because
+ * agents may have added instructions through MCP since the last visit.
  */
 const GLOBAL_KEY = ['instructions', 'global']
 const projectKey = (projectId: string) => ['instructions', 'project', projectId]
@@ -47,7 +45,7 @@ export function useUpdateProjectInstructions(projectId: string) {
       api.patch<ProjectInstructionsDto>(`/api/projects/${projectId}/instructions`, body),
     onSuccess: (data) => {
       queryClient.setQueryData(projectKey(projectId), data)
-      // Le mode figure aussi sur le projet.
+      // The mode is also present on the project.
       void queryClient.invalidateQueries({ queryKey: ['projects'] })
     },
   })
@@ -63,9 +61,8 @@ export function useWriteRepoInstructions(projectId: string) {
 }
 
 /**
- * Le texte qu'importe la migration : les fichiers du dépôt à la suite de ce que SILLAGE.md
- * porte déjà. Deux fichiers au contenu identique, comme un `AGENTS.md` qui n'est qu'un
- * lien vers `CLAUDE.md`, ne comptent qu'une fois.
+ * Migration import text: repository files appended to existing SILLAGE.md content. Identical files,
+ * such as AGENTS.md linking to CLAUDE.md, count only once.
  */
 export function mergedForImport(current: string, files: RepoInstructionFileDto[]): string {
   const seen = new Set<string>()

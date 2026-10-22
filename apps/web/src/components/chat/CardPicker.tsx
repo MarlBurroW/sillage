@@ -5,12 +5,7 @@ import { columnLabel } from '../board/columns'
 import { cx } from '../ui'
 import { useTranslate } from '../../lib/i18n'
 
-/**
- * Liste des cartes proposées après un `#`.
- *
- * Posée au-dessus de la zone de saisie comme celle des fichiers, et pour la même
- * raison : sur téléphone, le clavier virtuel occupe tout le bas de l'écran.
- */
+/** Card suggestions after #, above input like files because phone keyboards cover the bottom. */
 export function CardPicker({
   cards,
   active,
@@ -52,8 +47,7 @@ export function CardPicker({
             type="button"
             role="option"
             aria-selected={index === active}
-            // `onMouseDown` : un `onClick` laisserait d'abord le champ perdre le focus,
-            // ce qui referme la liste avant que la sélection soit prise en compte.
+            // Use mousedown: click blurs input and closes the list before selection.
             onMouseDown={(event) => {
               event.preventDefault()
               onPick(card)

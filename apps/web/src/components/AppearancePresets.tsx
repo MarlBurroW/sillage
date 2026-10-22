@@ -9,7 +9,7 @@ const PRESETS = [
   { name: 'neutral', tint: 0 },
 ] as const
 
-/** Seule la dose de couleur change : la teinte et le confort de lecture restent personnels. */
+/** Change only color intensity: hue and reading comfort remain personal. */
 export function AppearancePresets({ appearance, theme }: {
   appearance: ReturnType<typeof useAppearance>
   theme: Theme

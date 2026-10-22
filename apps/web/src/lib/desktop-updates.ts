@@ -3,15 +3,14 @@ import type { DesktopBridge, DesktopUpdateState } from '@sillage/protocol'
 
 declare global {
   interface Window {
-    /** Posé par le preload de l'app de bureau (apps/desktop/src/preload.ts), absent ailleurs. */
+    /** Provided by the desktop preload; absent in browsers. */
     sillageDesktop?: DesktopBridge
   }
 }
 
 const bridge = typeof window === 'undefined' ? undefined : window.sillageDesktop
 
-// Un seul abonnement pour toute l'interface : l'état vit dans le processus principal, ici
-// on n'en garde que la dernière copie reçue.
+// Share one subscription across the UI; the main process owns the state.
 let current: DesktopUpdateState | null = null
 const listeners = new Set<() => void>()
 
@@ -22,7 +21,7 @@ function receive(state: DesktopUpdateState): void {
 
 if (bridge) {
   bridge.updates.subscribe(receive)
-  // Un changement arrivé entre-temps est plus récent que cette réponse.
+  // An event received in the meantime is newer than this response.
   void bridge.updates.state().then((state) => {
     if (current === null) receive(state)
   })
@@ -34,16 +33,16 @@ function subscribe(listener: () => void): () => void {
 }
 
 export interface DesktopUpdates {
-  /** Null le temps que le processus principal réponde. */
+  /** Null until the main process responds. */
   state: DesktopUpdateState | null
   check(): Promise<void>
-  /** Ferme l'app, installe la version prête et la rouvre. */
+  /** Quit, install the ready version and relaunch. */
   install(): Promise<void>
 }
 
 /**
- * La mise à jour de l'app de bureau, que son processus principal mène seul ; null hors de
- * l'app, dans un navigateur, où c'est le serveur qui se met à jour (`useVersionInfo`).
+ * Desktop updates are owned by the main process. Browsers use server updates
+ * (`useVersionInfo`), so this hook returns null outside the app.
  */
 export function useDesktopUpdate(): DesktopUpdates | null {
   const state = useSyncExternalStore(subscribe, () => current, () => null)

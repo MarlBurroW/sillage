@@ -27,8 +27,8 @@ async function harness(t: TestContext) {
   const store = new CodexAccountStore(db)
   const homes = new CodexAccountHomes(join(dir, 'codex-accounts'))
 
-  // Le service de connexion sans app-server : il note ce qu'on lui demande et joue
-  // l'issue que le test choisit.
+  // Login service without an app-server: records requests and simulates
+  // the outcome chosen by this test.
   const calls: string[] = []
   let status: CodexLoginStatusDto = { state: 'idle', verificationUrl: null, userCode: null, error: null }
   const login = {
@@ -72,7 +72,7 @@ test('comptes Codex : par utilisateur, connexion par code ou clé, déconnexion'
   assert.equal((await app.inject({ method: 'POST', url: '/api/codex-accounts', payload: { label: 'Boulot' } })).statusCode, 409)
   assert.equal((await app.inject({ url: `/api/codex-accounts/${account.id}/login`, headers: { 'x-user': 'other' } })).statusCode, 404)
 
-  // Code d'appareil : la réponse dit quoi faire, le statut le répète.
+  // Device codes: responses provide instructions, repeated by status.
   const device = await app.inject({ method: 'POST', url: `/api/codex-accounts/${account.id}/login`, payload: { type: 'deviceCode' } })
   assert.equal(device.statusCode, 200, device.body)
   assert.equal(device.json<CodexLoginStatusDto>().userCode, 'ABCD-1234')
@@ -80,7 +80,7 @@ test('comptes Codex : par utilisateur, connexion par code ou clé, déconnexion'
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/codex-accounts/${account.id}/login` })).statusCode, 204)
   assert.deepEqual(calls, [`device:${account.id}`, `cancel:${account.id}`])
 
-  // Clé API : fait au retour, le compte devient prêt.
+  // API keys: ready by return, account becomes usable.
   calls.length = 0
   const keyed = await app.inject({ method: 'POST', url: `/api/codex-accounts/${account.id}/login`, payload: { type: 'apiKey', apiKey: 'sk-test' } })
   assert.equal(keyed.statusCode, 200, keyed.body)
@@ -91,7 +91,7 @@ test('comptes Codex : par utilisateur, connexion par code ou clé, déconnexion'
   assert.deepEqual(calls, [`apikey:${account.id}:sk-test`])
   assert.ok(!JSON.stringify((await app.inject('/api/codex-accounts')).json()).includes('sk-test'))
 
-  // Déconnexion d'un compte prêt, puis renommage et suppression par le seul propriétaire.
+  // Ready-account logout, then owner-only rename and deletion.
   calls.length = 0
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/codex-accounts/${account.id}/login` })).statusCode, 204)
   assert.equal(store.find('owner', account.id)!.status, 'pending')
@@ -120,8 +120,8 @@ test('home Codex d’un compte : tout est lié au home de l’utilisateur, sauf 
   assert.ok(!existsSync(join(home, 'auth.json')), 'La connexion de l’utilisateur ne passe pas au compte')
   assert.equal(homes.connected('acct'), false)
 
-  // Une entrée née plus tard chez l'utilisateur est reprise ; ce que Codex a écrit dans
-  // le home du compte y reste.
+  // New user-home entries are linked later; Codex-created account-home entries
+  // remain local.
   mkdirSync(join(userHome, 'memories'))
   writeFileSync(join(home, 'history.jsonl'), '')
   writeFileSync(join(userHome, 'history.jsonl'), 'user')

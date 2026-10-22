@@ -10,15 +10,12 @@ import { CatalogDialog } from './CatalogDialog'
 import { LocalSkillsDialog } from './LocalSkillsDialog'
 import { DescriptionField, NameField, SkillDialog } from './SkillDialog'
 
-/** Ce qu'un import refusé pour son nom permet de rattraper en en choisissant un autre. */
+/** Import data recoverable by choosing another name after name rejection. */
 const RENAMEABLE = new Set(['skill_name_taken', 'skill_name_invalid', 'skill_directory_exists'])
 
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)
 
-/**
- * Les quatre façons de faire entrer un skill dans une portée : l'écrire, importer une
- * archive, importer un dossier, ou reprendre un skill déjà présent sur la machine.
- */
+/** Four ways to add skills: write, import archive, import directory, or adopt existing machine skills. */
 export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; projectId: string | null }) {
   const t = useTranslate()
   const navigate = useNavigate()
@@ -28,7 +25,7 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
   const [creating, setCreating] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const [cataloging, setCataloging] = useState(false)
-  /** Fichiers d'un import refusé pour son nom, gardés pour réessayer sous un autre. */
+  /** Retain files after name rejection for retry with another name. */
   const [renaming, setRenaming] = useState<File[] | null>(null)
   const [name, setName] = useState('')
 
@@ -80,7 +77,7 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
       </Menu>
 
       <input ref={archiveInput} type="file" accept=".zip,.skill" hidden onChange={picked} />
-      {/* `webkitdirectory` n'est pas typé par React, d'où l'attribut posé à la main. */}
+      {/* React lacks webkitdirectory typing, so set the attribute manually. */}
       <input ref={folderInput} type="file" hidden onChange={picked} {...{ webkitdirectory: '' }} />
 
       {importSkill.isError && renaming === null ? <Banner>{errorOf(importSkill.error)}</Banner> : null}

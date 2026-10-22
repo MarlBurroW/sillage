@@ -1,30 +1,30 @@
 import { z } from 'zod'
 
 /**
- * Mémoire d'un projet : les notes que les agents prennent eux-mêmes, au format de la
- * mémoire automatique de Claude Code (`MEMORY.md` en index, une note par fichier).
+ * Project memory: notes agents take themselves in Claude Code auto-memory format (`MEMORY.md`
+ * index, one note per file).
  *
- * À distinguer de SILLAGE.md : les consignes sont des règles qu'on donne aux agents, la
- * mémoire est ce qu'ils ont appris en route. Claude l'écrit nativement, Sillage ne fait
- * que déplacer son dossier (`autoMemoryDirectory`) ; Codex la reçoit en début de session
- * et l'écrit par les outils MCP de Sillage.
+ * Distinct from SILLAGE.md: instructions are rules given to agents; memory is what they learned
+ * along the way. Claude writes it natively; Sillage only relocates its directory
+ * (`autoMemoryDirectory`). Codex receives it at session start and writes through Sillage MCP
+ * tools.
  */
 export const MEMORY_INDEX_FILE = 'MEMORY.md'
 
 /**
- * Où vit la mémoire d'un projet : dans Sillage (`sillage`), un dossier par projet commun
- * aux CLI et aux worktrees, ou chez chaque CLI (`native`), Claude dans son `~/.claude`
- * par dossier de travail, les autres avec la leur, sans que Sillage en voie rien.
+ * Project memory location: Sillage (`sillage`), one directory per project shared across CLIs
+ * and worktrees, or each CLI (`native`), with Claude using per-working-directory memory in
+ * `~/.claude` and other CLIs using their own, invisible to Sillage.
  */
 export const memoryModeSchema = z.enum(['sillage', 'native'])
 export type MemoryMode = z.infer<typeof memoryModeSchema>
 
-/** Un nom de note : un fichier markdown à plat, sans chemin. */
+/** Note name: a flat markdown filename without a path. */
 export const memoryFileSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.md$/, 'Expected a flat markdown file name.')
 
-/** Plafond d'une note écrite depuis l'interface ou par un agent. */
+/** Size limit for a note written through the UI or by an agent. */
 export const MAX_MEMORY_FILE_CHARS = 100_000
 
 export interface MemoryFileDto {
@@ -35,11 +35,11 @@ export interface MemoryFileDto {
 
 export interface ProjectMemoryDto {
   mode: MemoryMode
-  /** Le dossier sur le disque, que Claude écrit et que Codex lit ; vide en mode natif. */
+  /** On-disk directory written by Claude and read by Codex; empty in native mode. */
   dir: string
-  /** `MEMORY.md` d'abord, puis les notes par nom. */
+  /** `MEMORY.md` first, then notes by name. */
   files: MemoryFileDto[]
-  /** Dossier de la mémoire Claude importée au premier lancement, s'il y en a eu un. */
+  /** Directory of Claude memory imported at first launch, if any. */
   importedFrom: { dir: string; at: number } | null
   canEdit: boolean
 }

@@ -31,7 +31,7 @@ async function harness(t: TestContext) {
   })
   registerErrorHandler(app)
   const ctx = { db, config: { paths: { data: dir } } as Config }
-  // Seule la création de projet est exercée : les autres collaborateurs ne sont jamais appelés.
+  // Exercise project creation only; other collaborators are never invoked.
   registerProjectRoutes(app, ctx, {} as AttachmentStore, {} as CloneJobs, { aliveCount: () => 0 } as unknown as TerminalManager)
   registerUserSettingsRoutes(app, ctx)
   t.after(() => app.close())
@@ -64,12 +64,12 @@ test('création : nouveau dossier créé dans le parent, et parent mémorisé', 
   const settings = await app.inject({ url: '/api/me/settings' })
   assert.equal(settings.json().projectsDir, parent)
 
-  // Un second projet du même nom vise un dossier maintenant occupé : refusé, rien n'est écrasé.
+  // Another same-named project targets occupied directories: reject without overwriting.
   await mkdir(join(parent, 'mon-projet', 'src'))
   const duplicate = await create({ name: 'Mon Projet', parentDir: parent, directory: 'mon-projet' })
   assert.equal(duplicate.statusCode, 409)
 
-  // Un dossier existant mais vide est accepté, comme un mkdir fait d'avance.
+  // Existing empty directories are allowed, like a preliminary mkdir.
   await mkdir(join(parent, 'vide'))
   const empty = await create({ name: 'Vide', parentDir: parent, directory: 'vide' })
   assert.equal(empty.statusCode, 201, empty.body)

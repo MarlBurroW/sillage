@@ -3,18 +3,14 @@ import type { EditDiffDto } from '@sillage/protocol'
 import { additionDiff, unifiedDiff } from '../../diff-lines.js'
 
 /**
- * Modifications de fichiers déduites des appels d'outils de Claude Code.
+ * File changes inferred from Claude Code tools.
  *
- * Le SDK déclare bien un hook `FileChanged` (chemin + `add`/`change`/`unlink`), qui
- * serait la source idéale puisqu'il vient du CLI lui-même. Sondé sur 0.3.220 avec le
- * `watchPaths` que `SessionStart` permet de renvoyer : il ne tire jamais, y compris
- * sur des fichiers écrits dans le cwd annoncé par le CLI. On reste donc sur les
- * outils, avec la limite que ça implique : une écriture faite par `Bash`
- * (`echo > f`, `sed -i`) ne produit aucune modification ici. L'état courant du panneau,
- * lui, la voit, puisqu'il vient de git.
+ * Ideal SDK FileChanged hook (path + add/change/unlink) never fired in 0.3.220 probes with
+ * SessionStart watchPaths, even announced cwd. Keep tools, accepting Bash writes (`echo > f`, `sed
+ * -i`) absent here. Current panel git state still sees them.
  */
 
-/** Outils qui écrivent, et le champ où chacun déclare son chemin. */
+/** Writing tools and their path fields. */
 const PATH_FIELDS: Record<string, string> = {
   Write: 'file_path',
   Edit: 'file_path',
@@ -22,12 +18,10 @@ const PATH_FIELDS: Record<string, string> = {
 }
 
 /**
- * Ce que l'appel a fait du fichier, reconstitué depuis son payload natif.
+ * Reconstruct tool file effect from native payload.
  *
- * Claude ne transmet pas d'état antérieur : une écriture entière (`Write`) donne le
- * contenu écrit et rien à quoi le comparer, alors qu'une édition ponctuelle (`Edit`)
- * porte l'extrait remplacé et le remplaçant, dont un diff se calcule vraiment. La
- * distinction est affichée telle quelle plutôt que maquillée en diff complet.
+ * Claude supplies no previous state: Write gives content without comparison; Edit gives old/new
+ * excerpts allowing real diff. Show distinction rather than disguising as full diff.
  */
 export function describeEdit(
   startedRaw: unknown,
@@ -58,7 +52,7 @@ export function describeEdit(
 
   const written = input.content ?? input.new_source
   if (typeof written === 'string') {
-    // Une création n'a pas d'avant : tout est ajouté, et le diff est alors complet.
+    // Creation has no before: everything added, so diff is complete.
     if (action === 'created') {
       return { path, kind: 'patch', patch: additionDiff(path, written), content: '', partial: false, reason: null }
     }
@@ -88,17 +82,13 @@ export function editedPath(toolName: string, input: unknown): string | null {
 }
 
 /**
- * Vrai si le fichier existe déjà.
+ * Whether file already exists.
  *
- * Observé au **début** de l'appel, seul moment où la réponse distingue une création
- * d'une réécriture : une fois l'outil passé, le fichier existe dans les deux cas.
- * Lire le message de retour du CLI (« File created successfully ») marcherait aussi,
- * mais reviendrait à coder en dur une phrase anglaise qu'il peut reformuler.
+ * Observe at call start, only time distinguishing creation/rewrite: afterward both exist. Parsing
+ * “File created successfully” would hardcode mutable CLI wording.
  *
- * Synchrone, et c'est le point : une lecture différée peut se résoudre après que
- * l'outil a écrit, et répond alors sur un disque déjà modifié. Un `stat` local coûte
- * quelques microsecondes, là où la version asynchrone demandait en plus de garder
- * l'appel en vie le temps de la réponse.
+ * Synchronous deliberately: delayed reads may resolve after write. Local stat costs microseconds;
+ * async version also required retaining call until response.
  */
 export function fileExists(path: string): boolean {
   try {

@@ -48,24 +48,22 @@ import { SkillsControl } from './SkillsControl'
 import { CardPicker } from './CardPicker'
 import { MentionPicker } from './MentionPicker'
 
-/** Le `@...` en cours de saisie, repéré autour du curseur. */
-/** Sous cette largeur de barre, le composer prend sa forme de téléphone. */
+/** The `@...` mention around the cursor. */
+/** Below this toolbar width, use the phone composer layout. */
 const NARROW_BAR_PX = 480
-/** L'écart `gap-1` de la barre, pour mesurer la place des réglages épinglés. */
+/** Toolbar gap-1 spacing used to measure pinned settings. */
 const BAR_GAP_PX = 4
 
 interface MentionToken {
   query: string
-  /** Position du `@` lui-même, pour remplacer le jeton entier à la sélection. */
+  /** Position of the @ itself for replacing the whole token on selection. */
   start: number
   end: number
 }
 
 /**
- * Mention dans laquelle se trouve le curseur, ou null.
- *
- * Le `@` doit ouvrir un mot : sans cette contrainte, une adresse de courriel ou un
- * identifiant collé déclencherait la liste des fichiers en plein milieu d'un mot.
+ * Mention containing the cursor, or null. Require @ at a word start or email addresses and pasted
+ * identifiers would open file suggestions mid-word.
  */
 function mentionAt(value: string, caret: number): MentionToken | null {
   const match = /(?:^|\s)@([^\s@]*)$/.exec(value.slice(0, caret))
@@ -75,11 +73,9 @@ function mentionAt(value: string, caret: number): MentionToken | null {
 }
 
 /**
- * La carte `#...` en cours de saisie, ou null.
- *
- * Même contrainte de début de mot que le `@` : sans elle, une couleur hexadécimale ou
- * une ancre d'URL collée ouvrirait la liste des cartes en plein milieu d'un mot. La
- * requête accepte autre chose que des chiffres, le serveur cherchant aussi par titre.
+ * Card # mention being typed, or null. Same word-start rule as @ so hex colors and pasted URL
+ * fragments do not open cards mid-word. Accept nonnumeric queries too because the server searches
+ * titles.
  */
 function cardAt(value: string, caret: number): MentionToken | null {
   const match = /(?:^|\s)#([^\s#]*)$/.exec(value.slice(0, caret))
@@ -88,22 +84,19 @@ function cardAt(value: string, caret: number): MentionToken | null {
   return { query, start: caret - query.length - 1, end: caret }
 }
 
-/** Le `/commande` ou le `$compétence` en cours de saisie, repéré autour du curseur. */
+/** Slash command or dollar skill currently surrounding the cursor. */
 interface SigilToken {
   sigil: '/' | '$'
   query: string
-  /** Position du sigle lui-même, pour remplacer le jeton entier à la sélection. */
+  /** Prefix position for replacing the whole token on selection. */
   start: number
   end: number
 }
 
 /**
- * Jeton dans lequel se trouve le curseur, ou null.
- *
- * Les deux sigles n'ont pas la même portée, parce que ce qu'ils désignent ne se place
- * pas au même endroit. Une commande occupe le message entier et n'est reconnue qu'en
- * tête de champ, sinon un `/` ouvrirait la liste au milieu d'un chemin. Une compétence
- * se cite dans une phrase, comme une mention, et s'accepte donc à tout début de mot.
+ * Token containing the cursor, or null. Prefixes have different scopes: commands occupy the whole
+ * message and match only at the field start so path slashes do not open suggestions. Skills occur
+ * within sentences like mentions and match any word start.
  */
 function sigilAt(value: string, caret: number): SigilToken | null {
   const before = value.slice(0, caret)
@@ -119,34 +112,34 @@ function sigilAt(value: string, caret: number): SigilToken | null {
   return null
 }
 
-/** Nom de repli pour un fichier collé qui n'en porte pas. */
+/** Fallback filename for nameless pasted files. */
 function defaultPastedName(mimeType: string): string {
   const extension = mimeType.split('/')[1]?.split('+')[0] ?? 'bin'
   return `collage.${extension}`
 }
 
-/** Au-delà, le champ défile au lieu de manger la conversation. */
+/** Beyond this height scroll the field instead of consuming the conversation. */
 const MAX_TEXTAREA_PX = 200
 
 interface ComposerProps {
   config: AgentConfig
   status: ConversationStatus
   disabled: boolean
-  /** Inventaire MCP de la session, pour dire ce qui est réellement chargé. */
+  /** Session MCP inventory identifying what is actually loaded. */
   mcpInventory: McpServerStatus[]
   /**
-   * Configuration sous laquelle le CLI tourne, `null` à froid. Ce qui y diffère de
-   * `config` est un réglage choisi qui attend le redémarrage de la session.
+   * Running CLI configuration, null before startup. Differences from config are selected settings
+   * awaiting restart.
    */
   appliedConfig?: AgentConfig | null
   /**
-   * Les commandes en `/` que le CLI de la session reconnaît, vide tant qu'il n'a rien
-   * publié. La liste ne s'ouvre pas dans ce cas, plutôt que d'annoncer un vide.
+   * Slash commands recognized by the session CLI, empty until published. Keep suggestions closed
+   * then rather than announcing an empty list.
    */
   commands: SlashCommandDto[]
   /**
-   * Les compétences en `$` que le CLI met à disposition, vide quand il n'en publie pas.
-   * Codex seul en publie : Claude expose les siennes parmi ses commandes.
+   * Dollar skills published by the CLI, empty when unsupported. Only Codex publishes these; Claude
+   * includes skills among commands.
    */
   skills: AgentSkillDto[]
   onSend(
@@ -156,23 +149,20 @@ interface ComposerProps {
     skills: string[],
   ): Promise<void>
   /**
-   * Exécute une commande que Sillage traite lui-même plutôt que de la transmettre au
-   * CLI comme du texte (`NATIVE_SLASH_COMMANDS`).
-   *
-   * Absent quand l'appelant n'a pas cette plomberie, un fil pas encore créé par
-   * exemple : la commande part alors au CLI comme n'importe quel message.
+   * Execute commands handled by Sillage rather than sending text to the CLI
+   * (`NATIVE_SLASH_COMMANDS`). Absent without that plumbing, such as before thread creation, where
+   * commands become normal CLI messages.
    */
   onCommand?(name: string): Promise<void>
   onInterrupt(): void
   onConfigChange(config: AgentConfig): void
   configError?: string
   onConfigRetry?: () => void
-  /** Occupation de la fenêtre de contexte, absente tant qu'aucun tour n'a eu lieu. */
+  /** Context window usage, absent before any turn. */
   context?: ContextState | null
   /**
-   * Infléchit le tour en cours, là où le CLI le permet.
-   *
-   * Absent sinon : le bouton ne s'affiche pas plutôt que d'être proposé puis refusé.
+   * Steer the running turn where supported. Otherwise absent: omit the button instead of offering
+   * then rejecting it.
    */
   onSteer?(
     text: string,
@@ -181,32 +171,23 @@ interface ComposerProps {
     skills: string[],
   ): Promise<void>
   /**
-   * Contenu de départ du champ.
-   *
-   * Utilisé après un fork : la branche s'ouvre avec le message qu'on vient de couper,
-   * prêt à être reformulé. Lu une seule fois, le composant étant remonté par sa clé
-   * quand la conversation change.
+   * Initial field content after forks: open with the cut message ready to rephrase. Read once
+   * because conversation changes remount the keyed component.
    */
   initialText?: string
-  /** Zone de saisie plus haute, intégrée à l'écran de démarrage. */
+  /** Taller input integrated into the start screen. */
   variant?: 'thread' | 'draft'
   /**
-   * Identité du brouillon conservé entre deux montages.
-   *
-   * L'identifiant de la conversation, ou celui du projet pour un fil pas encore créé :
-   * ce qui est en train d'être écrit doit revenir à l'endroit où on l'a laissé, et pas
-   * ailleurs.
+   * Draft identity retained across mounts: conversation ID, or project ID before thread creation.
+   * Restore text exactly where it was left, not elsewhere.
    */
   draftKey: string
-  /** Projet et worktree consultés pour compléter les mentions `@`. */
+  /** Project and worktree used for @ completion. */
   projectId?: string
   worktreeId?: string | null
   /**
-   * Bande d'état affichée juste sous le champ.
-   *
-   * Rendue ici plutôt qu'à côté par l'appelant : la marge basse est la même quel que
-   * soit ce qui suit, et la répartir entre deux composants revenait à ce que personne
-   * ne la possède, avec le texte collé au bord pour résultat.
+   * Status strip immediately below the field. Render here rather than beside it in callers so one
+   * component owns consistent bottom spacing instead of leaving text against the edge.
    */
   footer?: ReactNode
 }
@@ -235,10 +216,8 @@ export function Composer({
   footer,
 }: ComposerProps) {
   const t = useTranslate()
-  // `t` lui-même ne change jamais de référence : c'est la langue qu'il faut suivre
-  // pour recalculer les options mémoïsées qui l'appellent.
-  // Lu une seule fois au montage : à partir de là c'est l'état local qui fait foi, et
-  // c'est lui qui réalimente le brouillon.
+  // Follow language to recalculate memoized translated options. Read initial draft once at mount;
+  // afterward local state is authoritative and updates the retained draft.
   const [restored] = useState(() => readDraft(draftKey))
   const [text, setText] = useState(restored.text || initialText)
   const [sending, setSending] = useState(false)
@@ -248,22 +227,17 @@ export function Composer({
   const [token, setToken] = useState<MentionToken | null>(null)
   const [cardToken, setCardToken] = useState<MentionToken | null>(null)
   const [sigil, setSigil] = useState<SigilToken | null>(null)
-  // Partagé par les listes : leurs jetons s'excluent, aucune position du curseur ne
-  // pouvant ouvrir un `@`, un `/` et un `$` à la fois.
+  // Shared by suggestion lists: tokens are mutually exclusive, since no cursor position opens @, /,
+  // and $ simultaneously.
   const [active, setActive] = useState(0)
   /**
-   * Chemins réellement choisis dans la liste. Un `@quelquechose` tapé à la main n'en
-   * fait pas partie : rien ne garantit qu'il désigne un fichier, et Codex refuse une
-   * mention qui ne pointe nulle part. Claude, lui, développe de toute façon les `@`
-   * du texte tout seul.
+   * Paths actually selected from suggestions. Manually typed mentions are excluded: existence is
+   * unproven and Codex rejects nonexistent targets. Claude expands text @ references itself anyway.
    */
   const [mentioned, setMentioned] = useState<Set<string>>(() => new Set(restored.mentions))
   /**
-   * Compétences réellement choisies dans la liste, par leur nom.
-   *
-   * Même distinction que pour les mentions : un `$quelquechose` tapé à la main n'en
-   * fait pas partie, rien ne garantissant qu'il désigne une compétence publiée. Le
-   * runner écarte de toute façon un nom qu'il ne reconnaît pas.
+   * Skills actually selected from suggestions by name. As with mentions, typed dollar text is
+   * excluded because it may not identify a published skill. The runner also rejects unknown names.
    */
   const [invoked, setInvoked] = useState<Set<string>>(() => new Set(restored.skills))
   const textarea = useRef<HTMLTextAreaElement>(null)
@@ -278,17 +252,16 @@ export function Composer({
     disabled,
   })
 
-  // Les réglages épinglés sous le texte, propres au CLI de cette conversation. Tant que
-  // le compte n'a pas répondu, la barre garde le défaut du protocole : mieux qu'une
-  // barre vide le temps d'un aller-retour.
+  // Settings pinned beneath text for this conversation's CLI. Until account loading completes, use
+  // protocol defaults rather than an empty toolbar during the round trip.
   const { data: userSettings } = useUserSettings()
   const layout = userSettings?.composerLayout ?? DEFAULT_COMPOSER_LAYOUT
   const updateLayout = useUpdateComposerLayout()
   const pinned = layout[config.agent]
   const setPinned = (next: string[]) => updateLayout.mutate({ ...layout, [config.agent]: next })
 
-  // Largeur de la barre plutôt que de la fenêtre, qui ignore la sidebar et le panneau :
-  // en dessous, c'est la barre de téléphone, sur une ligne et sans épingles.
+  // Measure toolbar width rather than window width, which ignores sidebar and panel: below this
+  // breakpoint use a single-line phone bar without pins.
   const bar = useRef<HTMLDivElement>(null)
   const prefs = useRef<HTMLDivElement>(null)
   const lead = useRef<HTMLDivElement>(null)
@@ -300,8 +273,8 @@ export function Composer({
     if (!node || !prefs.current || !lead.current || !trail.current) return
     const width = node.clientWidth
     setNarrow(width < NARROW_BAR_PX)
-    // La largeur naturelle des puces ne dépend pas du repli (elles ne rétrécissent pas) :
-    // la comparer à la place libre ne fait pas osciller la barre entre deux états.
+    // Chip natural widths do not change with collapse because they do not shrink, preventing
+    // oscillation when compared with available space.
     const chips = [...prefs.current.children] as HTMLElement[]
     const natural = chips.reduce((sum, chip) => sum + chip.offsetWidth, 0) + BAR_GAP_PX * Math.max(0, chips.length - 1)
     const free = width - lead.current.offsetWidth - trail.current.offsetWidth - BAR_GAP_PX * 2
@@ -314,11 +287,10 @@ export function Composer({
     observer.observe(node)
     return () => observer.disconnect()
   }, [measureBar])
-  // Une épingle, une valeur plus longue ou un compte MCP changent la place prise.
+  // Pins, longer values, and MCP counts change occupied space.
   useLayoutEffect(measureBar)
 
-  // Hauteur suivant le contenu, plafonnée : sur mobile, un champ qui pousse la
-  // conversation hors de l'écran rend la saisie inutilisable.
+  // Grow with content up to a cap: mobile fields pushing conversations offscreen make input unusable.
   useEffect(() => {
     const node = textarea.current
     if (!node) return
@@ -326,8 +298,8 @@ export function Composer({
     node.style.height = `${Math.min(node.scrollHeight, MAX_TEXTAREA_PX)}px`
   }, [text])
 
-  // Le brouillon suit la saisie plutôt que le démontage : un composant démonté par un
-  // changement de route ne peut plus lire son état au moment où il disparaît.
+  // Persist drafts during editing rather than unmounting: a component removed by routing can no
+  // longer read its state while disappearing.
   useEffect(() => {
     saveDraft(draftKey, {
       text,
@@ -350,7 +322,7 @@ export function Composer({
   )
   const cardSuggestions = cardToken ? (cardMatches ?? []) : []
 
-  /** Remplace le jeton en cours par le chemin choisi, puis rend la main au champ. */
+  /** Replace the current token with the selected path and return focus to the field. */
   const pickMention = (file: FileMatchDto) => {
     const node = textarea.current
     if (!token || !node) return
@@ -361,8 +333,7 @@ export function Composer({
     setText(next)
     setMentioned((current) => new Set(current).add(file.path))
     setToken(null)
-    // Après le rendu : replacer le curseur avant que React ait réécrit la valeur le
-    // ferait sauter en fin de champ.
+    // After rendering: restoring the cursor before React writes the value would jump it to the end.
     requestAnimationFrame(() => {
       node.focus()
       node.setSelectionRange(caret, caret)
@@ -370,10 +341,8 @@ export function Composer({
   }
 
   /**
-   * Remplace le jeton en cours par la carte choisie.
-   *
-   * Seul le numéro est écrit : c'est lui que le serveur sait relire, et coller le titre
-   * dans le message figerait un libellé que la carte peut encore corriger.
+   * Replace the current token with the selected card. Write only its number, which the server can
+   * resolve; inserting titles would freeze text that may later change.
    */
   const pickCard = (card: CardLinkDto) => {
     const node = textarea.current
@@ -392,13 +361,9 @@ export function Composer({
   }
 
   /**
-   * Fichier référencé depuis l'explorateur.
-   *
-   * Ajouté en fin de texte et non au curseur : le geste part de l'autre colonne de la
-   * page, où le champ n'a pas le focus et où sa position d'insertion n'a plus de sens.
-   * Le chemin rejoint aussi les mentions retenues, comme s'il avait été choisi dans la
-   * liste : c'est bien un fichier du répertoire de travail, et Codex refuse une mention
-   * qui ne pointe nulle part.
+   * File referenced from the explorer. Append rather than insert at the cursor: focus is in another
+   * column and the old insertion point is meaningless. Also retain it as a selected mention because
+   * it is a real workspace file and Codex rejects nonexistent targets.
    */
   const referenceFile = useCallback((path: string) => {
     setMentioned((current) => new Set(current).add(path))
@@ -417,11 +382,9 @@ export function Composer({
   useComposerReferences(referenceFile)
 
   /**
-   * Suggestion de message suivant, acceptée sous le fil.
-   *
-   * Posée à la place d'une saisie vide, à la suite d'une saisie commencée : un tap ne
-   * doit jamais effacer ce qu'on écrivait, et la suggestion est un message entier, pas
-   * un fragment à glisser au curseur.
+   * Next-message suggestion accepted beneath the thread. Replace empty input or append to existing
+   * text: a tap must never erase writing, and the suggestion is a whole message rather than a
+   * cursor fragment.
    */
   useComposerPrefill((suggested) => {
     setText((current) =>
@@ -436,8 +399,8 @@ export function Composer({
   })
 
   /**
-   * Texte dicté, posé au curseur avec l'espacement d'une frappe : la dictée arrive
-   * pendant que le champ a pu être réédité, c'est donc l'état courant qui fait foi.
+   * Insert dictated text at the cursor with typing-style spacing. The field may have changed while
+   * dictating, so current state is authoritative.
    */
   const insertDictation = useCallback((spoken: string) => {
     const node = textarea.current
@@ -462,22 +425,21 @@ export function Composer({
     onText: insertDictation,
     onError: setError,
   })
-  // Le micro reste visible quand rien n'est configuré : un bouton absent ne dit pas
-  // que la fonction existe, la dialog explique et mène aux réglages.
+  // Keep the microphone visible when unconfigured: absence hides the feature; a dialog explains and
+  // links to settings.
   const [sttNotice, setSttNotice] = useState(false)
   const navigate = useNavigate()
 
-  // Le dépôt vise le fil, pas le champ : c'est ici que les fichiers atterrissent, avec
-  // les mêmes bornes et les mêmes erreurs qu'un collage ou qu'un choix au sélecteur.
+  // Drops target the thread rather than the field: files land here with the same limits and errors
+  // as paste or file selection.
   useComposerDrops((files) => {
     if (disabled) return
     void addFiles(files)
     textarea.current?.focus()
   })
 
-  // Sans `onCommand`, une commande native partirait au CLI comme du texte : autant ne
-  // pas la proposer. C'est ici et non chez chaque appelant que la règle vit, pour
-  // qu'un prochain composer sans plomberie n'ait pas à la recopier.
+  // Without onCommand native commands would reach the CLI as text, so omit them. Centralize this
+  // rule here rather than requiring every future composer caller to copy it.
   const offered = useMemo(
     () => (onCommand ? commands : commands.filter((c) => !NATIVE_SLASH_COMMANDS.has(c.name))),
     [commands, onCommand],
@@ -487,8 +449,8 @@ export function Composer({
     const position = caret ?? value.length
     setToken(mentionAt(value, position))
     setCardToken(cardAt(value, position))
-    // Un sigle dont le CLI n'a rien publié n'ouvre pas de liste : mieux vaut ne rien
-    // proposer que d'annoncer un vide à chaque `$` d'une commande shell citée.
+    // Prefixes without published CLI entries open no list: better offer nothing than announce
+    // emptiness for every dollar sign in a cited shell command.
     const found = sigilAt(value, position)
     const available = found?.sigil === '/' ? offered.length > 0 : skills.length > 0
     setSigil(found && available ? found : null)
@@ -501,7 +463,7 @@ export function Composer({
       ? matchCommands(offered, sigil.query)
       : matchSkills(skills, sigil.query)
 
-  /** Remplace le jeton en cours par l'entrée choisie, prête à recevoir sa suite. */
+  /** Replace the current token with the selected entry, ready for further input. */
   const pickEntry = ({ name }: PickerEntry) => {
     const node = textarea.current
     if (!sigil || !node) return
@@ -512,24 +474,21 @@ export function Composer({
     setText(next)
     if (sigil.sigil === '$') setInvoked((current) => new Set(current).add(name))
     setSigil(null)
-    // Après le rendu : replacer le curseur avant que React ait réécrit la valeur le
-    // ferait sauter en fin de champ.
+    // After rendering: restoring the cursor before React writes the value would jump it to the end.
     requestAnimationFrame(() => {
       node.focus()
       node.setSelectionRange(caret, caret)
     })
   }
 
-  // Envoyer reste possible pendant un tour : le serveur met alors le message en file
-  // et l'affiche sous l'indicateur d'activité, plutôt que de refuser la saisie.
+  // Sending remains possible during turns: the server queues messages beneath activity instead of
+  // rejecting input.
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !sending && !disabled
 
   /**
-   * Envoie le contenu du champ par l'action donnée.
-   *
-   * Le champ est vidé d'abord, quel que soit le geste : le message réapparaîtra par le
-   * journal, seule source d'affichage du fil. En cas d'échec il est rendu tel quel,
-   * pièces jointes et mentions comprises, avec la cause affichée.
+   * Send field contents through the supplied action. Clear first for every gesture: messages
+   * reappear through the log, the thread's sole display source. On failure restore text,
+   * attachments, and mentions unchanged and display the cause.
    */
   const submit = async (
     action: (
@@ -543,8 +502,8 @@ export function Composer({
 
     const value = text.trim()
     const sent = attachments
-    // Une mention ou une compétence effacée du texte depuis sa sélection ne doit plus
-    // partir : c'est le texte qui fait foi, pas ce qui a été cliqué.
+    // Mentions or skills deleted from text after selection must not be sent: current text is
+    // authoritative, not previous clicks.
     const paths = [...mentioned].filter((path) => value.includes(`@${path}`))
     const invocations = [...invoked].filter((name) => value.includes(`$${name}`))
 
@@ -564,8 +523,7 @@ export function Composer({
         invocations,
       )
     } catch (err) {
-      // Un envoi qui échoue en silence donne un bouton mort : le contenu est rendu et
-      // la cause affichée, quelle qu'elle soit.
+      // Silent send failures look like dead buttons: restore contents and display every failure cause.
       setText(value)
       setAttachments(sent)
       setMentioned(new Set(paths))
@@ -577,14 +535,10 @@ export function Composer({
   }
 
   /**
-   * Envoi ordinaire, ou exécution par Sillage quand le message se réduit à l'une des
-   * commandes dont il possède déjà la plomberie.
-   *
-   * Deux cas repassent la main au CLI, qui sait de toute façon lire ses propres
-   * commandes. Des arguments, que la plomberie maison ne transporte pas : `/compact`
-   * accepte des consignes de résumé dont la route de Sillage n'a que faire, et les
-   * perdre en silence serait pire que de laisser passer la ligne entière. Une pièce
-   * jointe, qui n'aurait nulle part où aller.
+   * Normal send or Sillage execution when the message is exactly a supported native command. Return
+   * control to the CLI for arguments, which local routes cannot preserve (such as compact summary
+   * instructions), or attachments, which otherwise have nowhere to go. Passing the full line is
+   * preferable to silently dropping data.
    */
   const send = () => {
     const parsed = parseSlashCommand(text)
@@ -626,18 +580,14 @@ export function Composer({
   }
 
   const removeAttachment = (id: string) => {
-    // Retiré de l'écran d'abord : le fichier téléversé qui subsisterait côté serveur
-    // est de toute façon ramassé comme orphelin.
+    // Remove onscreen first: leftover server uploads are collected as orphans anyway.
     setAttachments((current) => current.filter((entry) => entry.id !== id))
     void discardAttachment(id).catch(() => {})
   }
 
   /**
-   * Collage d'un fichier, typiquement une capture d'écran.
-   *
-   * Le presse-papiers peut porter du texte et des fichiers en même temps : on ne
-   * détourne le collage que s'il contient réellement des fichiers, sinon coller du
-   * texte cesserait de fonctionner.
+   * Paste files, typically screenshots. Clipboards can contain both text and files: intercept only
+   * when files actually exist or ordinary text pasting would break.
    */
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const files = Array.from(event.clipboardData.files)
@@ -646,17 +596,15 @@ export function Composer({
     event.preventDefault()
     void addFiles(
       files.map((file) =>
-        // Certains navigateurs collent un fichier sans nom : sans ce repli, la
-        // pièce jointe s'afficherait et partirait à l'agent sans intitulé.
+        // Some browsers paste nameless files: the fallback prevents unlabeled attachments in both UI and agent input.
         file.name ? file : new File([file], defaultPastedName(file.type), { type: file.type }),
       ),
     )
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    // La liste ouverte capte d'abord les touches de navigation et de validation :
-    // sinon Entrée enverrait le message au lieu d'insérer l'entrée sélectionnée. Les
-    // deux jetons s'excluant, une seule liste est ouverte à la fois.
+    // Open lists capture navigation and confirmation first or Enter would send instead of insert.
+    // Mutually exclusive tokens allow only one list at a time.
     const listed = sigil
       ? entries.length
       : cardToken
@@ -702,8 +650,8 @@ export function Composer({
       }
     }
 
-    // Entrée envoie, Maj+Entrée passe à la ligne. Sur mobile le clavier virtuel
-    // envoie un retour à la ligne classique, donc la saisie multiligne reste possible.
+    // Enter sends; Shift+Enter inserts a newline. Mobile keyboards send ordinary newlines,
+    // preserving multiline editing.
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
       void send()
@@ -750,17 +698,16 @@ export function Composer({
   )
 
   return (
-    // L'encoche est portée par la page (`pb-safe`), pas ici : deux `env()` empilés
-    // creuseraient un vide de deux encoches.
+    // The page owns the safe-area inset (pb-safe): adding another here would reserve it twice.
     <div className={cx('shrink-0', variant === 'thread' && 'px-3 pt-1 pb-6')}>
       <form
         onSubmit={(event) => {
           event.preventDefault()
           void send()
         }}
-        // `@container` : les réglages se replient selon la largeur du composer, pas
-        // celle de la fenêtre, qui ignore la sidebar.
-        className="@container mx-auto max-w-3xl"
+        // Container queries collapse settings according to composer width rather than window width,
+        // which ignores the sidebar.
+        className="@container mx-auto sg-conversation-width"
       >
         {error ? (
           <p role="alert" className="mb-1.5 px-1 text-xs text-critical">
@@ -774,8 +721,7 @@ export function Composer({
 
         {configFeedback}
 
-        {/* Un seul bloc porte le cadre : le champ et sa barre d'outils forment un
-            objet unique, qui s'illumine quand la saisie a le focus. */}
+        {/* One frame surrounds field and toolbar as a single object illuminated by input focus. */}
         <div className="surface flex flex-col gap-1 rounded-xl border border-line p-1.5 shadow-float">
           <AttachmentTray
             attachments={attachments}
@@ -821,8 +767,7 @@ export function Composer({
             <DictationStrip analyser={dictation.analyser} onStop={() => void dictation.toggle()} />
           ) : null}
 
-          {/* Masqué et non démonté pendant la dictée : le nœud garde la position du
-              curseur, là où le texte transcrit viendra s'insérer. */}
+          {/* Hide rather than unmount during dictation to preserve cursor insertion position. */}
           <textarea
             ref={textarea}
             value={text}
@@ -830,8 +775,8 @@ export function Composer({
               setText(event.target.value)
               syncToken(event.target.value, event.target.selectionStart)
             }}
-            // Le curseur peut entrer dans un `@` déjà écrit, ou en sortir, sans que le
-            // texte change : la liste doit suivre le curseur, pas seulement la frappe.
+            // The cursor can enter or leave existing @ mentions without text changes: suggestions
+            // follow cursor movement too.
             onSelect={(event) =>
               syncToken(event.currentTarget.value, event.currentTarget.selectionStart)
             }
@@ -854,8 +799,7 @@ export function Composer({
           />
 
           <div ref={bar} className={cx('flex items-center gap-1', split && 'flex-wrap')}>
-                        {/* Pas de `capture` : iOS propose alors lui-même l'appareil photo, la
-                photothèque et les fichiers, ce qu'un `capture` forcé interdirait. */}
+                        {/* Omit capture so iOS offers camera, library, and files instead of restricting selection. */}
             <input
               ref={filePicker}
               type="file"
@@ -863,13 +807,11 @@ export function Composer({
               hidden
               onChange={(event) => {
                 void addFiles(Array.from(event.target.files ?? []))
-                // Réinitialisé pour que rejoindre deux fois le même fichier
-                // déclenche bien un second `change`.
+                // Reset so selecting the same file twice triggers a second change event.
                 event.target.value = ''
               }}
             />
-            {/* Les réglages épinglés qui ne tiennent plus à côté des outils prennent leur
-                propre ligne au-dessus, plutôt que d'écraser les valeurs. */}
+            {/* Pinned settings that no longer fit beside tools get a separate line above rather than squeezing values. */}
             <div ref={prefs}
               className={cx('flex min-w-0 items-center gap-1', split ? 'order-first basis-full flex-wrap border-b border-line pb-1' : 'order-2')}>
               <ComposerQuickSettings {...settingsProps} />
@@ -890,12 +832,11 @@ export function Composer({
               <SkillsControl projectId={projectId} config={config} skills={skills} commands={commands} inputRef={textarea} narrow={narrow} />
               {context ? <span className="flex items-center px-1"><ContextMeter context={context} compact={narrow} /></span> : null}
               {narrow ? null : <ComposerSettingsButton {...settingsProps} />}
-              {/* Les deux boutons coexistent pendant un tour : on doit pouvoir arrêter
-                  l'agent sans perdre le message qu'on vient de taper, et l'envoyer sans
-                  avoir à l'arrêter. */}
-              {/* Infléchir n'est proposé que pendant un tour, et seulement là où le CLI
-                  sait le faire : le message est pris en compte immédiatement, au lieu
-                  d'attendre la fin comme le fait la file. */}
+              {/* Both buttons coexist during turns: stop agents without losing typed messages, or send without stopping. */}
+              {/*
+               * Offer steering only during turns and for supporting CLIs: handle immediately rather
+               * than queue until completion.
+               */}
               {running && onSteer && canSend ? (
                 <TooltipButton
                   type="button"
@@ -928,8 +869,7 @@ export function Composer({
                 </TooltipButton>
               ) : null}
 
-              {/* Au téléphone, le micro et l'envoi se partagent la même place : on dicte
-                  un champ vide, on envoie un champ rempli. */}
+              {/* Phone microphone and send share space: dictate empty fields, send filled ones. */}
               {narrow && !canSend ? dictate : null}
               <TooltipButton
                 type="submit"
@@ -941,9 +881,8 @@ export function Composer({
                   narrow ? 'relative size-9 before:absolute before:-inset-1 before:content-[""]' : 'size-11 md:size-9 pointer-coarse:size-11',
                   'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',
                   'disabled:pointer-events-none disabled:opacity-35',
-                  // Pendant un tour, le bouton d'arrêt reste l'action principale : celui-ci
-                  // ne s'affiche que s'il y a réellement quelque chose à mettre en file.
-                  // Au téléphone, il laisse aussi sa place au micro tant que rien n'est écrit.
+                  // During turns Stop stays primary: show queueing only when there is content to
+                  // queue. On phones leave room for the microphone while input is empty.
                   (running || narrow) && !canSend && 'hidden',
                 )}
               >

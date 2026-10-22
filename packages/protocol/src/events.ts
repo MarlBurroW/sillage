@@ -5,11 +5,11 @@ import { slashCommandSchema } from './commands.js'
 import { agentSkillSchema } from './skills.js'
 
 /**
- * Schéma d'événements normalisé (invariant I3 de la spec).
+ * Normalized event schema (spec invariant I3).
  *
- * Chaque adaptateur de CLI traduit son flux natif vers ces événements. Le frontend
- * ne connaît que ce schéma et ignore quel CLI est derrière. Le payload natif brut est
- * conservé à part, dans la colonne `events.raw`, pour les renderers spécialisés.
+ * Each CLI adapter translates its native stream into these events. The frontend knows only this
+ * schema, regardless of the underlying CLI. Raw native payloads are retained separately in
+ * `events.raw` for specialized renderers.
  */
 
 export const agentKindSchema = z.enum(['claude', 'codex', 'opencode', 'grok'])
@@ -22,8 +22,8 @@ export const contentBlockSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('thinking'), text: z.string() }),
   z.object({ type: z.literal('image'), mimeType: z.string(), url: z.string() }),
   /**
-   * Pièce jointe non affichable en ligne. Le chemin transmis à l'agent n'apparaît pas
-   * ici : le fil montre le fichier, pas son emplacement sur le disque du serveur.
+   * Attachment that cannot display inline. The path passed to the agent is absent here: the
+   * thread shows the file, not its location on server disk.
    */
   z.object({
     type: z.literal('file'),
@@ -48,15 +48,15 @@ export const contentBlockSchema = z.discriminatedUnion('type', [
 export type ContentBlock = z.infer<typeof contentBlockSchema>
 
 /**
- * Appel d'outil dont l'événement descend, quand il vient d'un sous-agent : c'est
- * l'appel qui a lancé ce sous-agent. Null pour tout ce que produit l'agent principal.
+ * Parent tool call for events from a sub-agent: the call that launched it. Null for main-agent
+ * output.
  *
- * Défaut à null plutôt que champ requis : le journal est rejoué indéfiniment (I2), et
- * les événements écrits avant l'ajout de ce champ doivent continuer à se relire.
+ * Defaults to null rather than being required: the journal is replayed indefinitely (I2), and
+ * events written before this field existed must remain readable.
  */
 const parentToolCallIdSchema = z.string().nullable().default(null)
 
-/** Une option proposée par le CLI dans une demande de permission. */
+/** An option offered by the CLI in a permission request. */
 export const permissionOptionSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -65,44 +65,43 @@ export const permissionOptionSchema = z.object({
 })
 export type PermissionOption = z.infer<typeof permissionOptionSchema>
 
-/** Un choix proposé pour une question posée par l'agent. */
+/** A choice offered for an agent question. */
 export const questionOptionSchema = z.object({
   label: z.string(),
   description: z.string(),
-  /** Aperçu facultatif : maquette, extrait de code, exemple de configuration. */
+  /** Optional preview: mockup, code excerpt or configuration example. */
   preview: z.string().nullable().default(null),
 })
 export type QuestionOption = z.infer<typeof questionOptionSchema>
 
 /**
- * Une question posée par l'agent, normalisée entre les deux CLI.
+ * An agent question, normalized across both CLIs.
  *
- * Claude passe par l'outil `AskUserQuestion`, Codex par la requête
- * `item/tool/requestUserInput`. Les deux décrivent la même chose : un intitulé, des
- * options, et la façon d'y répondre.
+ * Claude uses `AskUserQuestion`, Codex uses `item/tool/requestUserInput`. Both describe the
+ * same thing: a title, options and how to answer.
  */
 export const agentQuestionSchema = z.object({
-  /** Clé de la réponse. Codex la fournit, Claude utilise l'intitulé lui-même. */
+  /** Answer key. Codex supplies it; Claude uses the title itself. */
   id: z.string(),
   header: z.string(),
   question: z.string(),
-  /** Plusieurs options peuvent être retenues à la fois. */
+  /** Multiple options may be selected together. */
   multiSelect: z.boolean().default(false),
-  /** Une réponse libre est acceptée en plus des options proposées. */
+  /** Free-form answers are accepted alongside suggested options. */
   allowOther: z.boolean().default(false),
-  /** La saisie ne doit pas s'afficher en clair. */
+  /** Input must not be displayed in cleartext. */
   secret: z.boolean().default(false),
-  /** Vide quand seule une réponse libre est attendue. */
+  /** Empty when only a free-form answer is expected. */
   options: z.array(questionOptionSchema).default([]),
 })
 export type AgentQuestion = z.infer<typeof agentQuestionSchema>
 
 /**
- * Une façon de poursuivre après validation d'un plan, proposée par l'adaptateur.
+ * A continuation option after plan approval, offered by the adapter.
  *
- * Comme `permission.requested.suggestions` : c'est le CLI qui sait quels modes il
- * accepte ensuite, pas le schéma commun. `id` est opaque pour le journal et l'UI, et
- * n'a de sens que pour l'adaptateur qui l'a émis (un mode de permission chez Claude).
+ * Like `permission.requested.suggestions`: the CLI, not the shared schema, knows which modes it
+ * accepts next. `id` is opaque to the journal and UI, meaningful only to the emitting adapter
+ * (a permission mode for Claude).
  */
 export const planFollowUpOptionSchema = z.object({
   id: z.string(),
@@ -112,13 +111,12 @@ export const planFollowUpOptionSchema = z.object({
 export type PlanFollowUpOption = z.infer<typeof planFollowUpOptionSchema>
 
 /**
- * Un travail qui continue en dehors du tour : workflow, sous-agent passé en fond,
- * commande lancée en tâche de fond, surveillance d'un service.
+ * Work continuing outside the turn: a workflow, background sub-agent or command, or service
+ * monitoring.
  *
- * `kind` reste une chaîne libre plutôt qu'une énumération : le CLI en ajoute au fil
- * des versions et retombe sur son discriminant brut pour ceux qu'il ne nomme pas.
- * L'UI traduit ceux qu'elle connaît et affiche les autres tels quels, au lieu de
- * refuser un événement dont le seul tort serait d'être récent.
+ * `kind` stays a free-form string rather than an enum: CLIs add kinds across versions and fall
+ * back to raw discriminants for unnamed ones. The UI translates known kinds and displays
+ * unknown ones verbatim rather than rejecting an event merely for being new.
  */
 export const backgroundTaskSchema = z.object({
   id: z.string(),
@@ -128,17 +126,15 @@ export const backgroundTaskSchema = z.object({
 export type BackgroundTask = z.infer<typeof backgroundTaskSchema>
 
 /**
- * Une tâche planifiée qui rouvrira la session d'elle-même : `/loop`, qu'il tourne à
- * intervalle fixe ou à cadence choisie par l'agent. Les deux passent par le même
- * registre côté CLI, le second s'y inscrivant comme tâche à tir unique réarmée à
- * chaque tour.
+ * A scheduled task that reopens the session itself: `/loop`, at a fixed interval or an
+ * agent-chosen cadence. Both use the same CLI registry; the latter registers as a one-shot task
+ * rearmed each turn.
  *
- * `schedule` est une expression cron à cinq champs, interprétée dans le fuseau du
- * serveur. Elle ne donne pas la date du prochain tir : le CLI ajoute une gigue qui va
- * jusqu'à la moitié de l'intervalle, donc l'affichage montre la cadence et le dernier
- * réveil observé plutôt qu'un compte à rebours qui mentirait.
+ * `schedule` is a five-field cron expression interpreted in the server's timezone. It does not
+ * give the next run time: CLI jitter can reach half the interval, so display cadence and last
+ * observed wakeup rather than a misleading countdown.
  *
- * `prompt` est tronqué à 1000 caractères par le CLI, avec un marqueur en fin de chaîne.
+ * The CLI truncates `prompt` to 1000 characters with an end marker.
  */
 export const loopSchema = z.object({
   id: z.string(),
@@ -148,7 +144,7 @@ export const loopSchema = z.object({
 })
 export type Loop = z.infer<typeof loopSchema>
 
-/** Un fichier changé par un tour, entre les deux captures. Null pour un binaire. */
+/** A file changed by a turn between the two snapshots. Null for binary files. */
 export const checkpointFileSchema = z.object({
   path: z.string(),
   oldPath: z.string().nullable().default(null),
@@ -159,7 +155,7 @@ export const checkpointFileSchema = z.object({
 export type CheckpointFile = z.infer<typeof checkpointFileSchema>
 
 export const sillageEventSchema = z.discriminatedUnion('type', [
-  // Cycle de vie
+  // Lifecycle
   z.object({
     type: z.literal('session.started'),
     agent: agentKindSchema,
@@ -180,16 +176,15 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     inputTokens: z.number(),
     outputTokens: z.number(),
     /**
-     * L'essentiel du contexte d'un CLI transite par le cache : ne compter que
-     * `inputTokens` donne un total sans rapport avec la consommation réelle (2 contre
-     * 33 231 sur un tour observé). Défaut à 0 pour les événements journalisés avant
-     * l'ajout de ces champs.
+     * Most CLI context comes through cache: counting only `inputTokens` produces totals
+     * unrelated to actual consumption (2 versus 33,231 on an observed turn). Defaults to 0 for
+     * events journaled before these fields existed.
      */
     cacheCreationTokens: z.number().default(0),
     cacheReadTokens: z.number().default(0),
   }),
 
-  // Contenu
+  // Content
   z.object({
     type: z.literal('message.started'),
     messageId: z.string(),
@@ -202,9 +197,9 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     parentToolCallId: parentToolCallIdSchema,
   }),
   /**
-   * Un même `messageId` peut recevoir plusieurs `message.completed` successifs : les
-   * CLI livrent un message assistant par morceaux (réflexion, puis appels d'outils).
-   * Le fold de rendu ajoute les blocs à la suite, il ne les remplace pas.
+   * One `messageId` can receive successive `message.completed` events: CLIs deliver assistant
+   * messages in pieces (reasoning, then tool calls). Rendering folds append blocks rather than
+   * replacing them.
    */
   z.object({
     type: z.literal('message.completed'),
@@ -220,26 +215,24 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     parentToolCallId: parentToolCallIdSchema,
   }),
   /**
-   * Taille de la réflexion en cours, en tokens estimés.
+   * Size of ongoing reasoning in estimated tokens.
    *
-   * Accompagne `thinking.delta` frame par frame quand la pensée est révélée, et le
-   * remplace entièrement quand le modèle la cache : le flux ne porte alors plus rien
-   * qui distingue un agent qui réfléchit d'un agent bloqué, et ce compteur est sa
-   * seule preuve de vie.
+   * Accompanies `thinking.delta` frame by frame when reasoning is exposed, and replaces it
+   * entirely when hidden: the stream otherwise cannot distinguish a thinking agent from a stuck
+   * one, so this counter is its only sign of life.
    *
-   * `estimatedTokens` est une estimation du CLI, remise à zéro à chaque bloc de
-   * réflexion : elle sert à faire bouger un indicateur, pas à compter la facture, que
-   * `turn.completed` seul arrête.
+   * `estimatedTokens` is a CLI estimate reset for every reasoning block: it animates an
+   * indicator, not billing, which only `turn.completed` finalizes.
    *
-   * Sans identifiant de message ni de fil : le CLI n'en attache pas, cette progression
-   * appartient au tour et non à une bulle.
+   * No message or thread ID: the CLI attaches neither; this progress belongs to the turn, not a
+   * bubble.
    */
   z.object({
     type: z.literal('thinking.progress'),
     estimatedTokens: z.number(),
   }),
 
-  // Outils
+  // Tools
   z.object({
     type: z.literal('tool.started'),
     toolCallId: z.string(),
@@ -264,15 +257,14 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     isError: z.boolean(),
     durationMs: z.number(),
     /**
-     * Taille réelle de la sortie, présente seulement quand `output` n'a pas été
-     * transmise. Une relecture d'historique retire les sorties volumineuses pour ne pas
-     * transférer des mégaoctets que personne ne lit ; la carte de l'appel demande le
-     * corps complet à l'ouverture. Jamais posé sur le direct, qui livre tout.
+     * Actual output size, present only when `output` was omitted. History replay removes large
+     * outputs to avoid transferring unread megabytes; the tool-call card requests the full body
+     * when opened. Never set on live events, which deliver everything.
      */
     outputBytes: z.number().optional(),
   }),
 
-  // Interaction requise
+  // Interaction required
   z.object({
     type: z.literal('permission.requested'),
     requestId: z.string(),
@@ -280,12 +272,12 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     input: z.unknown(),
     suggestions: z.array(permissionOptionSchema),
     /**
-     * Libellés rédigés par le CLI lui-même. Ils décrivent l'action bien mieux qu'une
-     * phrase reconstruite depuis le nom de l'outil, qui ne sait rien du contexte
-     * (chemin hors des dossiers autorisés, règle déclenchée, portée demandée).
+     * Labels written by the CLI itself. They describe the action better than text reconstructed
+     * from a tool name, which lacks context (path outside allowed directories, triggered rule,
+     * requested scope).
      *
-     * Nullables et facultatifs : le journal est rejoué indéfiniment (I2), et les
-     * événements écrits avant l'ajout de ces champs doivent continuer à se relire.
+     * Nullable and optional: the journal is replayed indefinitely (I2), so events written
+     * before these fields existed must remain readable.
      */
     title: z.string().nullable().optional(),
     description: z.string().nullable().optional(),
@@ -299,56 +291,55 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     decidedBy: z.string().nullable(),
   }),
 
-  // Questions posées par l'agent
+  // Agent questions
   z.object({
     type: z.literal('question.requested'),
     requestId: z.string(),
     questions: z.array(agentQuestionSchema),
-    /** Absent dans les anciens journaux : la question bloque alors le tour. */
+    /** Absent in older journals: the question then blocks the turn. */
     blocking: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('question.resolved'),
     requestId: z.string(),
     status: z.enum(['answered', 'cancelled', 'expired']),
-    /** Réponses retenues, par identifiant de question. */
+    /** Selected answers by question ID. */
     answers: z.record(z.string(), z.array(z.string())).default({}),
     decidedBy: z.string().nullable(),
   }),
 
   /**
-   * Message écrit pendant qu'un tour est déjà en cours.
+   * Message written while a turn is already running.
    *
-   * Il n'est pas transmis au CLI tout de suite : poussé en cours de tour, il se mêle
-   * au contexte du tour courant, ce qui a été observé sur le CLI installé (la réponse
-   * au second message est sortie avant la fin du premier, puis une seconde fois). La
-   * file vit donc côté serveur, et ces deux événements la rendent visible.
+   * Not sent to the CLI immediately: messages pushed mid-turn mix into that turn's context, as
+   * observed on the installed CLI (the second reply appeared before the first finished, then
+   * appeared again). The queue therefore lives server-side, with these two events making it
+   * visible.
    */
   z.object({
     type: z.literal('message.queued'),
     queueId: z.string(),
     text: z.string(),
-    /** Nombre de pièces jointes, pour l'afficher sans exposer leur contenu. */
+    /** Attachment count, displayed without exposing their contents. */
     attachmentCount: z.number().default(0),
   }),
   z.object({
     type: z.literal('message.dequeued'),
     queueId: z.string(),
     /**
-     * `sent` : le message part au CLI et devient un message ordinaire du fil.
-     * `steered` : il y part aussi, mais dans le tour en cours plutôt qu'au suivant.
+     * `sent`: the message goes to the CLI and becomes a normal thread message.
+     * `steered`: also sent, but into the current turn rather than the next.
      */
     reason: z.enum(['sent', 'steered', 'cancelled', 'expired']),
   }),
 
   /**
-   * Message d'une autre session que Sillage n'a pas remis.
+   * A message from another session that Sillage has not delivered.
    *
-   * Le relais relance une session au repos pour lui remettre un message, sauf quand un
-   * échange tourne en rond ou qu'elle a déjà été trop relancée sans personne : il le
-   * retient alors, et ces deux événements le rendent visible, pour qu'une personne le
-   * remette ou l'écarte au lieu qu'il attende en silence. `text` est l'enveloppe
-   * complète, voir `parseSessionMessage`.
+   * The relay wakes idle sessions to deliver messages, unless an exchange loops or the
+   * recipient has been woken too often unattended. It then holds the message; these two events
+   * make that visible so a person can deliver or discard it instead of leaving it silently
+   * waiting. `text` is the full envelope; see `parseSessionMessage`.
    */
   z.object({
     type: z.literal('session_message.held'),
@@ -359,23 +350,23 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('session_message.released'),
     messageId: z.string(),
-    /** `delivered` remis au CLI, `read` lu par l'outil, `discarded` écarté, `expired` trop vieux. */
+    /** `delivered` sent to the CLI, `read` read by the tool, `discarded` dismissed, `expired` too old. */
     reason: z.enum(['delivered', 'read', 'discarded', 'expired']),
   }),
 
-  // Saisie réclamée par un serveur MCP (elicitation/create)
+  // Input requested by an MCP server (elicitation/create)
   z.object({
     type: z.literal('elicitation.requested'),
     requestId: z.string(),
-    /** Serveur MCP à l'origine de la demande, à afficher : il n'est pas de confiance. */
+    /** Requesting MCP server, displayed because it is untrusted. */
     serverName: z.string(),
     /**
-     * `form` attend une saisie, `url` demande d'ouvrir une page (authentification).
-     * Codex a un troisième mode, `openai/form`, normalisé ici comme un formulaire.
+     * `form` requests input, `url` asks to open a page (authentication). Codex's third mode,
+     * `openai/form`, is normalized as a form here.
      */
     mode: z.enum(['form', 'url']),
     message: z.string(),
-    /** Renseignée en mode `url` uniquement. */
+    /** Populated only in `url` mode. */
     url: z.string().nullable().default(null),
     fields: z.array(elicitationFieldSchema).default([]),
     title: z.string().nullable().default(null),
@@ -383,22 +374,21 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('elicitation.resolved'),
     requestId: z.string(),
-    /** `expired` n'existe pas dans MCP : c'est la clôture d'une demande sans réponse. */
+    /** `expired` does not exist in MCP: it closes an unanswered request. */
     status: z.enum(['accept', 'decline', 'cancel', 'expired']),
     content: elicitationContentSchema.default({}),
     decidedBy: z.string().nullable(),
   }),
 
-  // Validation d'un plan avant passage à l'exécution
+  // Plan approval before execution
   z.object({
     type: z.literal('plan.review_requested'),
     requestId: z.string(),
-    /** Le plan, en markdown, tel que l'agent le propose. */
+    /** The plan in markdown, as proposed by the agent. */
     plan: z.string(),
     /**
-     * Suites possibles après validation, fournies par l'adaptateur. Défaut vide pour
-     * les événements journalisés avant l'ajout du champ : l'UI propose alors une
-     * validation sans changement de mode.
+     * Post-approval continuations supplied by the adapter. Defaults to empty for older journal
+     * events: the UI then offers approval without changing modes.
      */
     followUpOptions: z.array(planFollowUpOptionSchema).default([]),
   }),
@@ -407,57 +397,52 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     requestId: z.string(),
     decision: z.enum(['approved', 'rejected', 'expired']),
     /**
-     * Suite adoptée quand le plan est accepté : l'`id` d'une option proposée. C'est ce
-     * qui distingue « valide et poursuis en demandant » de « valide et laisse
-     * écrire ». Chaîne opaque ici : c'est l'adaptateur émetteur qui la valide, le
-     * schéma commun n'a pas à connaître les modes de permission d'un CLI.
+     * Continuation selected on approval: a suggested option's `id`. Distinguishes “approve and
+     * keep asking” from “approve and allow writes”. Opaque here: the emitting adapter validates
+     * it; the shared schema need not know a CLI's permission modes.
      */
     followUpMode: z.string().nullable().default(null),
     decidedBy: z.string().nullable(),
   }),
 
   /**
-   * Le résumé du contexte a commencé.
+   * Context summarization has started.
    *
-   * Sans ce repère, une compaction se présente comme un tour ordinaire : l'agent
-   * paraît réfléchir alors qu'il réécrit sa mémoire, ce qui peut durer bien plus
-   * longtemps qu'une réponse et n'en produira aucune.
+   * Without this marker, compaction looks like an ordinary turn: the agent appears to think
+   * while rewriting its memory, which can take much longer than a reply and produces none.
    *
-   * Aucun des deux CLI n'annonce d'avancement chiffré : l'événement dit qu'une
-   * compaction est en cours, et c'est tout ce qu'ils permettent d'affirmer.
+   * Neither CLI reports numeric progress: the event says compaction is underway, all that can
+   * be asserted.
    */
   z.object({ type: z.literal('context.compaction_started') }),
 
   /**
-   * L'agent a modifié un fichier du workspace.
+   * The agent modified a workspace file.
    *
-   * Événement normalisé plutôt qu'une déduction côté client à partir des noms
-   * d'outils : c'est exactement ce que l'invariant I3 impose, et les deux CLI le
-   * disent différemment (outils `Write`/`Edit` chez Claude, items `fileChange` chez
-   * Codex). L'historique des modifications devient ainsi dérivable du seul journal,
-   * donc rejouable et identique pour les deux.
+   * A normalized event instead of client-side inference from tool names, as invariant I3
+   * requires: CLIs report this differently (Claude `Write`/`Edit` tools, Codex `fileChange`
+   * items). Edit history can thus be derived solely from the journal, replayed identically for
+   * both.
    *
-   * `toolCallId` rattache la modification à l'appel qui l'a produite, pour que
-   * l'historique puisse renvoyer au fil.
+   * `toolCallId` associates the edit with its originating call so history can link back to the
+   * thread.
    */
   z.object({
     type: z.literal('file.edited'),
     toolCallId: z.string(),
-    /** Relatif au répertoire de travail quand il en fait partie, absolu sinon. */
+    /** Relative to the working directory when inside it; otherwise absolute. */
     path: z.string(),
     action: z.enum(['created', 'modified', 'deleted']),
   }),
 
   /**
-   * Le contexte vient d'être résumé.
+   * Context has just been summarized.
    *
-   * Journalisé parce que rien d'autre ne le montre : le fil ne perd aucun message,
-   * mais la mémoire de l'agent, elle, a changé. Sans ce repère, une réponse qui ignore
-   * un détail donné plus haut paraît inexplicable.
+   * Journaled because nothing else reveals it: the thread loses no messages, but the agent's
+   * memory changed. Without a marker, replies ignoring earlier details seem inexplicable.
    *
-   * `preTokens` et `postTokens` sont nullables : Claude les fournit, l'item de Codex
-   * ne porte qu'un identifiant. Inventer un chiffre serait pire que de ne pas
-   * l'afficher.
+   * `preTokens` and `postTokens` are nullable: Claude supplies them, whereas Codex's item has
+   * only an ID. Inventing a number would be worse than omitting it.
    */
   z.object({
     type: z.literal('context.compacted'),
@@ -467,17 +452,15 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Les travaux de fond vivants ont changé : un workflow a démarré, une commande
-   * lancée en tâche de fond s'est terminée, un sous-agent est passé en arrière-plan.
+   * Active background work changed: a workflow started, a background command finished, or a
+   * sub-agent moved to the background.
    *
-   * Sémantique de remplacement, et non d'incrément : chaque événement porte la liste
-   * complète, l'état d'affichage se remplace au lieu de s'apparier. C'est ce qui
-   * distingue ce travail-là du reste du journal, où un début et une fin se répondent.
-   * Un événement manqué ne peut donc pas laisser un indicateur allumé pour toujours.
+   * Replacement, not incremental, semantics: every event carries the complete list, replacing
+   * display state rather than pairing events. Unlike the rest of the journal, starts and ends
+   * need not match; missing an event cannot leave an indicator permanently active.
    *
-   * Sans ça, un workflow tourne pendant plusieurs minutes sans que rien ne l'affiche :
-   * le tour se termine, le fil passe au repos, et des fichiers changent sous les yeux
-   * de l'utilisateur dans une session qui se dit inactive.
+   * Otherwise a workflow runs for minutes with no indication: the turn ends, the thread becomes
+   * idle, yet files change before the user's eyes in a supposedly inactive session.
    */
   z.object({
     type: z.literal('background.updated'),
@@ -485,17 +468,14 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * L'inventaire MCP de la session a changé : un serveur s'est connecté, a échoué, ou
-   * réclame une authentification.
+   * The session's MCP inventory changed: a server connected, failed or requests authentication.
    *
-   * Même sémantique de remplacement que `background.updated` : le CLI publie l'état de
-   * tous ses serveurs à la fois, jamais un delta. La liste contient aussi les serveurs
-   * venus du disque du CLI, marqués `external`, parce que l'utilisateur les subit au
-   * même titre que les siens et doit pouvoir les voir échouer.
+   * Same replacement semantics as `background.updated`: the CLI publishes all server states
+   * together, never a delta. The list includes servers from CLI files marked `external`,
+   * because users experience those failures too and must see them.
    *
-   * Sans ça, un serveur mal configuré échoue en silence : l'agent n'a simplement pas
-   * l'outil attendu, et rien ne distingue ce cas d'un modèle qui a choisi de ne pas
-   * s'en servir.
+   * Otherwise a misconfigured server fails silently: the agent simply lacks the expected tool,
+   * indistinguishable from a model choosing not to use it.
    */
   z.object({
     type: z.literal('mcp.updated'),
@@ -503,14 +483,13 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Les commandes en `/` que le CLI reconnaît pour cette session.
+   * Slash commands recognized by the CLI for this session.
    *
-   * Même sémantique de remplacement que `mcp.updated` : le CLI republie la liste
-   * entière dès qu'elle bouge, et elle bouge en cours de session, une compétence
-   * pouvant être découverte quand l'agent descend dans un sous-répertoire.
+   * Same replacement semantics as `mcp.updated`: the CLI republishes the whole list whenever it
+   * changes, including during a session when a skill is discovered in a subdirectory.
    *
-   * Déjà réduite à ce que Sillage sait proposer : le filtrage se fait à la source, où
-   * l'on sait de quel CLI vient la liste.
+   * Already limited to commands Sillage can offer: filtering happens at the source, where the
+   * CLI is known.
    */
   z.object({
     type: z.literal('commands.updated'),
@@ -518,11 +497,11 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Les compétences que le CLI met à disposition de la session, référencées en `$`.
+   * Skills the CLI makes available to the session, referenced with `$`.
    *
-   * Même sémantique de remplacement que `commands.updated`, et même volatilité : le
-   * CLI surveille les fichiers de compétences et signale qu'ils ont bougé. Publié par
-   * Codex seul, Claude exposant les siennes parmi ses commandes en `/`.
+   * Same replacement semantics and volatility as `commands.updated`: the CLI watches skill
+   * files and reports changes. Published only by Codex; Claude exposes skills among slash
+   * commands.
    */
   z.object({
     type: z.literal('skills.updated'),
@@ -530,16 +509,14 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Les boucles armées pour cette session, relevées à la fin de chaque tour.
+   * Loops armed for this session, sampled at the end of every turn.
    *
-   * Même sémantique de remplacement que `background.updated`, et pour une raison plus
-   * forte encore : le CLI n'annonce ni la création ni la fin d'une boucle, il répond
-   * seulement quand on lui demande la liste. Une boucle expirée disparaît donc sans
-   * rien émettre, et seul le relevé suivant la fait tomber.
+   * Same replacement semantics as `background.updated`, for an even stronger reason: the CLI
+   * announces neither loop creation nor completion, only answering list requests. An expired
+   * loop disappears without an event; only the next sample removes it.
    *
-   * Sans ça une conversation qui se réveille toute seule est indiscernable d'une
-   * conversation terminée, et le tour qu'elle ouvre s'affiche comme si l'utilisateur
-   * l'avait écrit.
+   * Otherwise a self-waking conversation looks finished, and its new turn appears
+   * user-authored.
    */
   z.object({
     type: z.literal('loops.updated'),
@@ -547,12 +524,12 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Une consigne est entrée dans la session sans que Sillage l'ait envoyée : le CLI l'a
-   * réinjectée lui-même, une boucle arrivée à échéance étant le cas courant.
+   * An instruction entered the session without Sillage sending it: the CLI reinjected it,
+   * usually for a due loop.
    *
-   * Reconnue à ce que le CLI la livre en texte, là où les messages de Sillage sont
-   * toujours des blocs et ceux du CLI des résultats d'outils. C'est ce que compte le
-   * nombre d'itérations d'une boucle, faute de compteur côté CLI.
+   * Recognized because the CLI delivers text, while Sillage messages are always blocks and CLI
+   * messages are tool results. This drives loop iteration counts because the CLI supplies no
+   * counter.
    */
   z.object({
     type: z.literal('prompt.injected'),
@@ -560,31 +537,29 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Un travail vient d'être enregistré par le CLI.
+   * The CLI just registered a job.
    *
-   * Complète la liste de niveau sur un point qu'elle ne porte pas : l'appel d'outil
-   * d'où vient le travail. C'est lui qui permet de distinguer un sous-agent que le fil
-   * suit déjà d'un travail que plus personne ne regarde, les deux étant annoncés dans
-   * la même liste.
+   * Adds what the state list omits: the originating tool call. It distinguishes a sub-agent
+   * already followed in the thread from work no longer being watched, although both appear in
+   * the same list.
    */
   z.object({
     type: z.literal('task.started'),
     taskId: z.string(),
-    /** Nul pour un travail que le harnais lance de lui-même, sans passer par un outil. */
+    /** Null for work launched directly by the harness without a tool. */
     toolCallId: z.string().nullable().default(null),
     kind: z.string(),
     description: z.string(),
   }),
 
   /**
-   * Un travail a avancé.
+   * A job made progress.
    *
-   * Émis à chaque appel d'outil du travail, ce qui suffit à le décrire : un agent qui
-   * n'appelle rien est en train de réfléchir, et le dernier outil reste alors ce qu'on
-   * peut dire de plus juste sur ce qu'il fait.
+   * Emitted on every tool call in that job, enough to describe activity: an agent making no
+   * calls is thinking, so the latest tool remains the most accurate description of its work.
    *
-   * `activity` est la description que le CLI donne du moment présent, pas un cumul :
-   * chaque événement remplace le précédent.
+   * `activity` is the CLI's description of the present moment, not a cumulative log: each event
+   * replaces the previous one.
    */
   z.object({
     type: z.literal('task.progress'),
@@ -597,12 +572,11 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Un travail s'est arrêté, avec ce qu'il en reste.
+   * A job stopped, with its outcome.
    *
-   * `summary` est le compte rendu du CLI. Pour un travail que le fil suivait, il
-   * double le résultat de l'appel d'outil ; pour un travail de fond, c'est la seule
-   * réponse à « qu'a-t-il fait pendant ce temps », la liste de niveau se contentant
-   * de le retirer.
+   * `summary` is the CLI's report. For work followed in the thread, it duplicates the tool
+   * result; for background work, it is the only answer to “what did it do meanwhile?”, since
+   * the state list merely removes it.
    */
   z.object({
     type: z.literal('task.completed'),
@@ -610,26 +584,26 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     status: z.enum(['completed', 'failed', 'stopped']),
     summary: z.string(),
     durationMs: z.number().nullable().default(null),
-    /** Travail d'entretien, que le CLI demande de ne pas montrer dans le fil. */
+    /** Maintenance work the CLI asks not to display in the thread. */
     ambient: z.boolean().default(false),
   }),
 
-  // Métadonnées
+  // Metadata
   z.object({
     type: z.literal('agent.notice'),
-    /** Identifiant stable pour remplacer un état répété dans le rendu. */
+    /** Stable identifier for replacing repeated state in rendering. */
     id: z.string().optional(),
     code: z.string(),
     message: z.string(),
     level: z.enum(['info', 'warning']),
-    /** Détails repliables, utiles aussi pour les événements d'un CLI plus récent. */
+    /** Collapsible details, also useful for events from newer CLIs. */
     details: z.unknown().optional(),
   }),
   /**
-   * Le message suivant que le CLI prédit, un par tour, après le `result`.
+   * Next message predicted by the CLI, once per turn after `result`.
    *
-   * Remplacé et jamais complété : une suggestion ne vaut que pour le tour qui vient,
-   * et le rendu l'efface dès qu'un message part, quel qu'il soit.
+   * Replaced, never appended: a suggestion applies only to the next turn and is cleared as soon
+   * as any message is sent.
    */
   z.object({
     type: z.literal('suggestion.updated'),
@@ -640,9 +614,9 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     items: z.array(z.object({ text: z.string(), status: planStatusSchema })),
   }),
   /**
-   * `costUsd` est le coût API équivalent calculé par le CLI. Sur un compte par
-   * abonnement il ne correspond à aucune facturation : c'est `rateLimit` qui décrit
-   * la ressource réellement consommée. L'UI choisit lequel afficher selon le compte.
+   * `costUsd` is the API-equivalent cost calculated by the CLI. On subscription accounts it is
+   * not an actual charge: `rateLimit` describes the consumed resource. The UI chooses which to
+   * display according to the account.
    */
   z.object({
     type: z.literal('usage.updated'),
@@ -650,18 +624,18 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     inputTokens: z.number(),
     outputTokens: z.number(),
     /**
-     * Les deux champs ci-dessous sont tolérants : le journal est rejoué indéfiniment
-     * (invariant I2), donc un événement écrit avant l'ajout d'un champ doit continuer
-     * à se relire. Sans ces défauts, un ancien `usage.updated` produisait un `NaN`.
+     * The two fields below are tolerant: the journal replays indefinitely (invariant I2), so
+     * events predating a field must remain readable. Without these defaults, older
+     * `usage.updated` events produced `NaN`.
      *
-     * Occupation de la fenêtre de contexte. C'est la ressource qui décide quand une
-     * conversation devra être compactée, indépendante du quota de facturation.
+     * Context-window usage determines when a conversation needs compaction, independently of
+     * billing quota.
      */
     context: z
       .object({
         usedTokens: z.number(),
         maxTokens: z.number(),
-        /** De 0 à 1, tel que le CLI le calcule quand il le fournit. */
+        /** From 0 to 1, as calculated by the CLI when provided. */
         ratio: z.number(),
       })
       .nullable()
@@ -670,12 +644,11 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
       .object({
         type: z.string(),
         status: z.enum(['allowed', 'allowed_warning', 'rejected']).default('allowed'),
-        /** Part du quota consommée, de 0 à 1. Absente si le CLI ne la donne pas. */
+        /** Consumed quota fraction, from 0 to 1. Absent if not reported by the CLI. */
         utilization: z.number().nullish().default(null),
         /**
-         * Remise à zéro de la fenêtre, en millisecondes. Les événements anciens la
-         * portent en secondes : tout horodatage sous 1e12 est antérieur à 2001, donc
-         * nécessairement des secondes. La conversion est idempotente.
+         * Window reset time in milliseconds. Older events store seconds: any timestamp below
+         * 1e12 predates 2001, so must be seconds. Conversion is idempotent.
          */
         resetsAt: z
           .number()
@@ -689,12 +662,11 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
       .optional(),
   }),
   /**
-   * Points de reprise d'un tour : l'état du workspace capturé avant et après.
+   * Turn checkpoints: workspace state captured before and after.
    *
-   * Deux événements et non un, parce que ce sont deux moments : `checkpoint.started`
-   * précède le message de l'utilisateur, et `checkpoint.completed` arrive quand la
-   * capture d'après est finie, c'est-à-dire après `turn.completed` et peut-être après
-   * le message suivant. La clé les relie, et désigne les refs git de la capture.
+   * Two events because these are distinct moments: `checkpoint.started` precedes the user
+   * message; `checkpoint.completed` arrives after the final snapshot, after `turn.completed`
+   * and possibly the next message. Their key links them and identifies the snapshot's git refs.
    */
   z.object({
     type: z.literal('checkpoint.started'),
@@ -703,16 +675,16 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('checkpoint.completed'),
     key: z.string(),
-    /** `failed` : la capture d'après n'a pas pu être faite, `reason` dit pourquoi. */
+    /** `failed`: the final snapshot could not be captured; `reason` explains why. */
     status: z.enum(['ready', 'failed']),
     reason: z.string().nullable().default(null),
     files: z.array(checkpointFileSchema).default([]),
-    /** Vrai quand la liste a été coupée : le diff complet reste lisible par l'API. */
+    /** True when the list was truncated: the full diff remains available through the API. */
     truncated: z.boolean().default(false),
-    /** Fichiers apportés par un pull, une fusion ou un rebase pendant le tour, écartés. */
+    /** Excluded files introduced by a pull, merge or rebase during the turn. */
     excluded: z.number().default(0),
   }),
-  /** Le workspace a été ramené à l'état d'avant ce tour, à la demande de l'utilisateur. */
+  /** Workspace restored to its state before this turn at the user's request. */
   z.object({
     type: z.literal('checkpoint.restored'),
     key: z.string(),
@@ -721,7 +693,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('diff.updated'),
-    /** Diff unifié natif, lorsqu'il est fourni. */
+    /** Native unified diff, when provided. */
     patch: z.string().optional(),
     files: z.array(
       z.object({ path: z.string(), added: z.number(), removed: z.number() }),
@@ -738,7 +710,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
 export type SillageEvent = z.infer<typeof sillageEventSchema>
 export type SillageEventType = SillageEvent['type']
 
-/** Un événement tel qu'il sort du journal : le payload plus sa position et sa date. */
+/** An event read from the journal: payload plus position and timestamp. */
 export interface JournalEntry {
   conversationId: string
   seq: number

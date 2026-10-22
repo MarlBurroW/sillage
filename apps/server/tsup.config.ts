@@ -2,8 +2,8 @@ import { execSync } from 'node:child_process'
 import { defineConfig } from 'tsup'
 
 /**
- * La CI de release fournit SILLAGE_VERSION depuis le tag git. En build local,
- * `git describe` donne un identifiant traçable ; hors dépôt (archive), `dev`.
+ * Release CI supplies SILLAGE_VERSION from the git tag. Local builds use
+ * `git describe` for a traceable identifier, or `dev` outside a repository (archive).
  */
 function resolveVersion(): string {
   if (process.env.SILLAGE_VERSION) return process.env.SILLAGE_VERSION.replace(/^v/, '')
@@ -32,8 +32,8 @@ export default defineConfig({
   define: {
     'process.env.SILLAGE_VERSION': JSON.stringify(resolveVersion()),
   },
-  // Les modules natifs doivent rester externes, esbuild ne sait pas les embarquer.
+  // Native modules must remain external because esbuild cannot bundle them.
   external: ['better-sqlite3', '@node-rs/argon2'],
-  // Les paquets du monorepo n'exposent que du TypeScript : il faut les compiler ici.
+  // Monorepo packages expose only TypeScript, so they must be compiled here.
   noExternal: ['@sillage/codex-bindings', '@sillage/db', '@sillage/opencode-bindings', '@sillage/protocol'],
 })

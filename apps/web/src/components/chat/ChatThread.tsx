@@ -14,36 +14,32 @@ import { ToolCall, ToolCallGroup } from './ToolCall'
 import { TurnChanges } from './TurnChanges'
 
 /**
- * Ce qui reste à montrer sous le titre traduit d'une erreur écrite par Sillage. Son
- * message, complet pour les lecteurs du journal sans catalogue (planificateur, webhooks),
- * redirait le titre ; et les journaux d'avant le portent en français.
+ * Additional content beneath translated Sillage error titles. Full messages serve log readers
+ * without catalogs (scheduler, webhooks) but would repeat the title; older logs contain French
+ * text.
  */
 const ERROR_DETAILS: Record<string, (message: string) => string> = {
   daemon_restarted: () => '',
-  // Seule la raison, entre parenthèses en fin de phrase, apprend quelque chose. Celle
-  // que Sillage rédige se traduit ; une erreur du CLI reste telle qu'il l'a écrite.
+  // Only the final parenthesized reason adds information. Translate Sillage-authored reasons;
+  // preserve native CLI errors.
   config_applied_by_restart: (message) => {
     const reason = /\(([^]*)\)\.?$/.exec(message)?.[1] ?? message
     return LIVE_CHANGE_REFUSED.has(reason) ? translate('error.config_applied_by_restart.live') : reason
   },
 }
-/** La raison de `restartForConfig`, en anglais et telle que l'écrivaient les journaux d'avant. */
+/** restartForConfig reason in English matching earlier logs. */
 const LIVE_CHANGE_REFUSED = new Set(['the CLI cannot apply this change live', 'le CLI ne gère pas ce changement à chaud'])
 
 /**
- * Rendu d'un fil de conversation.
- *
- * Le même composant sert au fil principal et à celui d'un sous-agent : ce sont les
- * mêmes événements, et les rendre différemment ferait de la vue d'un sous-agent une
- * seconde implémentation à tenir en accord avec la première.
- *
- * Ce que la page apporte en plus (ancres de tours, mise en évidence, fork) est
- * optionnel : le panneau n'a ni réglette ni bouton de fork à proposer.
+ * Conversation thread shared by main agent and subagents: identical events should not require two
+ * rendering implementations. Page additions (turn anchors, highlighting, forks) are optional
+ * because panels offer no rail or fork button.
  */
 export function ChatThread({
   rows,
   conversationId,
   canDecide = false,
+  mayCollapseTools = true,
   onFork,
   flashedId = null,
   anchors,
@@ -54,25 +50,26 @@ export function ChatThread({
   rows: ChatRow[]
   conversationId: string
   /**
-   * Autorise à répondre aux sollicitations. Faux par défaut, et par défaut sur une
-   * conversation partagée en lecture : les prompts s'affichent alors sans agir.
+   * Allow responding to prompts. False by default, including read-only shared conversations, where
+   * prompts render without actions.
    */
+  mayCollapseTools?: boolean
   canDecide?: boolean
-  /** Absent quand le fil n'est pas forkable, un sous-agent n'ayant pas d'existence propre. */
+  /** Absent when threads cannot fork because subagents have no independent entity. */
   onFork?: (message: MessageItem) => void
-  /** Message que l'on vient d'atteindre, signalé le temps qu'on le repère. */
+  /** Recently reached message highlighted briefly for orientation. */
   flashedId?: string | null
-  /** Position des messages utilisateur, tenue à jour pour la réglette des tours. */
+  /** User-message positions kept current for turn navigation. */
   anchors?: RefObject<Map<string, HTMLElement>>
-  /** Points de reprise des tours, absents sur le fil d'un sous-agent. */
+  /** Turn checkpoints absent on subagent threads. */
   checkpoints?: TurnCheckpoint[]
   onShowChanges?: (checkpoint: TurnCheckpoint) => void
   onRestoreCheckpoint?: (checkpoint: TurnCheckpoint) => void
 }) {
   const t = useTranslate()
 
-  // Le repère d'un tour se pose à sa fin : juste avant le message utilisateur suivant,
-  // ou sous le dernier élément du fil. Le tour est reconnu par le message qui l'ouvre.
+  // Place turn markers at their ends, before the next user message or after the final item.
+  // Identify turns by their opening message.
   const byOpener = new Map<string, TurnCheckpoint>()
   for (const checkpoint of checkpoints ?? []) {
     if (checkpoint.openerId) byOpener.set(checkpoint.openerId, checkpoint)
@@ -111,7 +108,7 @@ export function ChatThread({
 
   function renderRow(row: ChatRow) {
         if (row.kind === 'tool-group') {
-          return <ToolCallGroup key={row.key} tools={row.tools} conversationId={conversationId} />
+          return <ToolCallGroup key={row.key} tools={row.tools} complete={row.complete} mayCollapse={mayCollapseTools} conversationId={conversationId} />
         }
         if (row.kind === 'tool') {
           return <ToolCall key={row.key} tool={row.tool} conversationId={conversationId} />
@@ -120,9 +117,8 @@ export function ChatThread({
         const item = row.item
         switch (item.kind) {
           case 'message':
-            // `data-seq` sur les deux rôles : un résultat de recherche peut viser une
-            // réponse de l'agent. L'ancre de tour, elle, ne concerne que les messages
-            // utilisateur, qui délimitent les tours dans la réglette.
+            // data-seq applies to both roles because search may target agent replies. Turn anchors
+            // apply only to user messages delimiting navigation turns.
             return (
               <div
                 key={item.id}
@@ -133,8 +129,7 @@ export function ChatThread({
                     ? (node) => {
                         if (!node) return
                         anchors.current.set(item.id, node)
-                        // Corps en bloc : `Map.delete` renvoie un booléen, or React
-                        // attend une fonction de nettoyage sans valeur de retour.
+                        // Use a block body: Map.delete returns boolean while React requires cleanup functions returning nothing.
                         return () => {
                           anchors.current.delete(item.id)
                         }
@@ -185,9 +180,8 @@ export function ChatThread({
               />
             )
           case 'error': {
-            // Le code seul est traduit : le message du CLI porte le détail que le
-            // catalogue ne peut pas connaître, comme l'heure de retour d'un quota.
-            // Un code sans clé n'a pas de titre, et le message se suffit.
+            // Translate only the code: CLI messages contain details catalogs cannot know, such as
+            // quota reset times. Unknown codes have no title and rely on the message.
             const title = translateError(item.code, '')
             const detail = ERROR_DETAILS[item.code]
             const message = title && detail ? detail(item.message) : item.message

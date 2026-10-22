@@ -13,19 +13,17 @@ export type SqliteHandle = InstanceType<typeof Database>
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
 /**
- * Transaction d'écriture, à préférer partout à `db.transaction`.
+ * Write transaction; prefer this to `db.transaction` everywhere.
  *
- * `BEGIN IMMEDIATE` plutôt que le `BEGIN` différé de better-sqlite3 : une transaction
- * différée commence en lecture et ne demande le verrou d'écriture qu'à sa première
- * modification. Si un autre écrivain a committé entre-temps, SQLite refuse la montée
- * en écriture par un `SQLITE_BUSY_SNAPSHOT` immédiat, sans passer par le busy handler.
- * Le `busy_timeout` ne joue donc pas, et l'appelant reçoit « database is locked » alors
- * qu'il aurait suffi d'attendre. Prendre le verrou dès le départ rend l'attente
- * possible, au prix d'un verrou tenu un peu plus longtemps.
+ * Use `BEGIN IMMEDIATE` rather than better-sqlite3's deferred `BEGIN`: a deferred transaction
+ * starts as a reader and requests the write lock only on its first mutation. If another writer
+ * has committed meanwhile, SQLite rejects the upgrade immediately with `SQLITE_BUSY_SNAPSHOT`,
+ * bypassing the busy handler. `busy_timeout` therefore has no effect, and the caller gets
+ * “database is locked” when waiting would have sufficed. Taking the lock up front allows
+ * waiting, at the cost of holding it slightly longer.
  *
- * Le cas s'est produit en vrai : le serveur MCP écrit une note de carte pendant que le
- * runner journalise le tour, l'écriture du journal a échoué et la session est morte
- * en plein travail.
+ * This happened in production: the MCP server wrote a card note while the runner was journaling
+ * a turn. The journal write failed and the session died mid-task.
  */
 export function writeTransaction<T>(db: Db, body: (tx: Tx) => T): T {
   return db.transaction(body, { behavior: 'immediate' })
@@ -35,7 +33,7 @@ export function openDatabase(file: string): { db: Db; sqlite: SqliteHandle } {
   mkdirSync(dirname(file), { recursive: true })
 
   const sqlite = new Database(file)
-  // WAL pour que les lectures du journal ne bloquent pas les écritures du daemon.
+  // WAL keeps journal reads from blocking daemon writes.
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('synchronous = NORMAL')
   sqlite.pragma('busy_timeout = 5000')

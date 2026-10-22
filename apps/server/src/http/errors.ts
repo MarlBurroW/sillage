@@ -2,16 +2,14 @@ import type { FastifyError, FastifyInstance } from 'fastify'
 import { ZodError } from 'zod'
 
 /**
- * Erreur destinée au client, sous la forme `{ code, params?, message }`.
+ * Client-facing error shaped as `{ code, params?, message }`.
  *
- * Le `code` est ce que l'interface traduit ; le `message` est écrit en anglais et sert
- * de repli lisible, pour les logs et pour ce qui appelle l'API hors de l'interface. Le
- * serveur ne connaît donc jamais la langue de l'utilisateur, ce qui vaut aussi pour le
- * WebSocket, où aucune préférence ne transite.
+ * The interface translates `code`; the English `message` is a readable fallback
+ * for logs and external API callers. The server never needs the user's language,
+ * including over WebSocket, which carries no language preference.
  *
- * `params` porte ce que le message interpole. Sans lui, la traduction côté client ne
- * pourrait pas reconstruire une phrase qui nomme un fichier ou un agent, et devrait se
- * rabattre sur une formule vague.
+ * `params` supplies interpolated values. Without it, client translations could
+ * not name files or agents and would have to fall back to vague wording.
  */
 export class HttpError extends Error {
   constructor(
@@ -32,12 +30,12 @@ export const badRequest = (code: string, message: string, params?: Params) =>
 export const unauthorized = () => new HttpError(401, 'unauthorized', 'Authentication required.')
 
 /**
- * `code` est obligatoire sur ces deux-là, et ce n'est pas une formalité.
+ * `code` is mandatory for these two errors for a reason.
  *
- * Ils partageaient auparavant un code unique pour 12 et 11 situations distinctes, du
- * « seul le propriétaire peut supprimer ce projet » au « worktree introuvable ». Un
- * client qui traduit par code les aurait toutes écrasées en une phrase générique, donc
- * moins informative que le français en dur qu'on remplace.
+ * They previously shared one code across 12 and 11 distinct situations, from
+ * owner-only project deletion to missing worktrees. Code-based translation
+ * would flatten them into a generic sentence less informative than the hardcoded
+ * French being replaced.
  */
 export const forbidden = (code: string, message: string, params?: Params) =>
   new HttpError(403, code, message, params)
@@ -47,10 +45,9 @@ export const conflict = (code: string, message: string, params?: Params) =>
   new HttpError(409, code, message, params)
 
 /**
- * Toutes les erreurs sortent sous la forme { error: { code, message } } pour que
- * l'UI n'ait qu'un seul chemin d'affichage.
+ * All errors use { error: { code, message } } so the UI needs only one display path.
  */
-/** Routes dont le corps ne doit jamais atterrir dans les journaux. */
+/** Routes whose request bodies must never appear in logs. */
 const SENSITIVE_ROUTES = ['/api/auth/login']
 
 function redactBody(url: string, body: unknown): unknown {
@@ -62,10 +59,10 @@ function redactBody(url: string, body: unknown): unknown {
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((err: FastifyError, request, reply) => {
     if (err instanceof HttpError) {
-      // Un 5xx décrit une panne, pas une faute du client : sans cette ligne, l'échec
-      // d'une sonde d'agent ne laissait aucune trace côté serveur. Le message porte
-      // l'explication du CLI (binaire absent, non authentifié, trop lent) ; le 502 seul
-      // ne dit rien. Les 4xx restent silencieux : ils sont attendus et fréquents.
+      // A 5xx describes a failure rather than a client mistake: without this line,
+      // failed agent probes left no server trace. The message contains the CLI's
+      // explanation (missing binary, unauthenticated, too slow); 502 alone says nothing.
+      // Keep 4xx responses silent: they are expected and frequent.
       if (err.statusCode >= 500) {
         request.log.error({ err, code: err.code, params: err.params }, err.message)
       }
@@ -83,16 +80,16 @@ export function registerErrorHandler(app: FastifyInstance): void {
         .map((i) => `${i.path.join('.') || 'corps'}: ${i.message}`)
         .join(', ')
 
-      // Le message renvoyé au client dit quel champ est en cause, jamais la valeur
-      // reçue. Sans le corps rejeté côté serveur, un refus de validation est
-      // indiagnosticable : on ne sait pas ce que le client a réellement envoyé.
+      // The client response identifies the offending field, never the received value.
+      // Without the rejected body in server logs, validation failures cannot be
+      // diagnosed: the client's actual input would be unknown.
       request.log.warn(
         { issues: err.issues, body: redactBody(request.url, request.body) },
         'requête rejetée par la validation',
       )
 
-      // `detail` part aussi en paramètre : la traduction de `validation_failed`
-      // l'interpole, et sans lui l'utilisateur lit « Requête invalide : {detail} ».
+      // Also pass `detail` as a parameter: the `validation_failed` translation
+      // interpolates it; otherwise users see 'Invalid request: {detail}'.
       return reply
         .status(400)
         .send({ error: { code: 'validation_failed', message: detail, params: { detail } } })

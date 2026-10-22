@@ -33,24 +33,13 @@ export interface ReceiveResult {
   body: { delivery?: string; verdict: DeliveryVerdict | 'not_found'; reason?: DeliveryReason | null }
 }
 
-/**
- * Reçoit les appels des webhooks et décide de leur sort, dans cet ordre : signature,
- * rejeu, pause, conditions et script, chaîne de lancements, disjoncteur, place libre.
- *
- * Il ne lance rien lui-même. Un appel retenu entre dans la file (`queued`) et le
- * planificateur le tire au balayage, qu'il réveille : GitHub abandonne un appel au bout
- * de dix secondes, et ouvrir une session attend le CLI plus que ça.
- *
- * Les garde-fous qui suivent les conditions sont hors de portée du script : un script
- * qui rend toujours « lancer » fait sauter le disjoncteur, il ne fait pas tourner une
- * boucle.
- */
+/** Receives webhook calls and decides their outcome in order: signature, replay, pause, conditions and script, launch chain, circuit breaker, available capacity. Launches nothing directly: accepted calls become `queued` and wake the scheduler to run them on its sweep. GitHub abandons calls after ten seconds, while opening CLI sessions takes longer. Safeguards after conditions are outside script control: scripts always returning 'launch' trip the circuit breaker rather than sustain loops. */
 export class AutomationReceiver {
   private logger: FastifyBaseLogger | null = null
 
   constructor(
     private readonly ctx: AppContext,
-    /** Clé de chiffrement des secrets de signature, que les routes partagent. */
+    /** Encryption key for signature secrets, shared with routes. */
     readonly key: Buffer,
     private readonly tasks: TaskScheduler,
     private readonly push: PushService,
@@ -84,7 +73,7 @@ export class AutomationReceiver {
     return this.process(task, hook, settings, event, deliveryId)
   }
 
-  /** Rejoue un appel du journal comme s'il venait d'arriver, signature et rejeu exceptés. */
+  /** Replays a journal call as newly received, except for signature and replay checks. */
   async replay(task: ScheduledTaskRow, hook: AutomationWebhookRow, delivery: AutomationDeliveryRow): Promise<ReceiveResult> {
     return this.process(task, hook, readSettings(hook), eventOf(delivery), null)
   }
@@ -101,8 +90,8 @@ export class AutomationReceiver {
       body: { delivery: row.id, verdict: row.verdict as DeliveryVerdict, reason: row.reason ? (JSON.parse(row.reason) as DeliveryReason) : null },
     })
 
-    // Un rejeu de l'appelant (GitHub retente un appel resté sans réponse) : même
-    // identifiant de livraison déjà accepté, rien à refaire.
+    // Caller retry (GitHub retries unanswered requests): an already-accepted delivery
+    // ID requires no further action.
     if (deliveryId) {
       const seen = this.ctx.db
         .select({ id: automationDeliveries.id })
@@ -128,8 +117,8 @@ export class AutomationReceiver {
       return respond(this.record(task, settings, event, deliveryId, decision.verdict, decision.reason, extras))
     }
 
-    // Un appel marqué par une session compte comme un lancement fait par elle : les
-    // limites de `start_session` s'y appliquent, profondeur et débit.
+    // Calls marked by a session count as launches by that session:
+    // `start_session` depth and rate limits apply.
     if (decision.originConversationId) {
       const refusal = launchRefusal(this.ctx.db, decision.originConversationId)
       if (refusal) return respond(this.record(task, settings, event, deliveryId, 'chain_refused', refusal.reason, extras))
@@ -157,8 +146,8 @@ export class AutomationReceiver {
       return respond(this.record(task, settings, event, deliveryId, 'busy', { code: 'busy' }, extras))
     }
 
-    // Deux appels en attente sur le même sujet : seul le plus récent compte, il décrit
-    // l'état actuel de l'issue ou de la PR.
+    // Two pending calls on the same subject: retain only the newest, which describes
+    // the issue or PR's current state.
     if (decision.subject) {
       const waiting = this.ctx.db
         .select({ id: automationDeliveries.id })
@@ -201,10 +190,7 @@ export class AutomationReceiver {
     })
   }
 
-  /**
-   * Met l'automatisation en pause et prévient son auteur. La remise en route est un
-   * geste humain : un disjoncteur qui se réarmerait seul laisserait la boucle reprendre.
-   */
+  /** Pauses automation and notifies its author. Resuming requires human action: self-resetting circuit breakers would let loops restart. */
   private trip(task: ScheduledTaskRow, hook: AutomationWebhookRow, max: number): void {
     const now = Date.now()
     this.ctx.db.update(automationWebhooks).set({ trippedAt: now }).where(eq(automationWebhooks.taskId, hook.taskId)).run()

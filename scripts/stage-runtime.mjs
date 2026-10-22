@@ -1,19 +1,18 @@
 /**
- * Assemble l'arbre d'exécution distribué, commun au tarball de release et à
- * l'image Docker :
+ * Assemble the distributed runtime tree shared by release tarballs and Docker:
  *
  *   out/
- *   ├── VERSION               version publiée (X.Y.Z)
- *   ├── package.json          dépendances d'exécution seules, sans le workspace
- *   ├── server/               bundle du daemon (main.js, cli/, migrations/)
- *   ├── web/                  frontend buildé
- *   ├── deploy/               modèles du service (systemd, launchd), config d'exemple
- *   └── install.sh            pour que l'archive sache se réinstaller
+ *   ├── VERSION               published version (X.Y.Z)
+ *   ├── package.json          runtime dependencies only, without workspace
+ *   ├── server/               daemon bundle (main.js, cli/, migrations/)
+ *   ├── web/                  built frontend
+ *   ├── deploy/               service templates (systemd, launchd), example config
+ *   └── install.sh            lets the archive reinstall itself
  *
- * Le bundle tsup laisse toutes les dépendances runtime externes (modules natifs
- * et SDK Claude en tête) : l'appelant doit ensuite lancer `npm install
- * --omit=dev` dans `out/` pour matérialiser node_modules sur l'architecture
- * cible. Usage : node scripts/stage-runtime.mjs <outdir>
+ * tsup leaves all runtime dependencies external (especially native modules and
+ * Claude SDK): the caller must then run `npm install --omit=dev` in `out/` to
+ * materialize node_modules on the target architecture.
+ * Usage: node scripts/stage-runtime.mjs <outdir>
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -62,9 +61,9 @@ writeFileSync(
       version,
       private: true,
       type: 'module',
-      // Reprend l'exigence de la racine dans l'arbre distribue : un `npm rebuild` ou un
-      // `npm install` lance sous un Node trop vieux doit le dire, plutot que de laisser
-      // decouvrir l'incompatibilite au premier crash.
+      // Carry the root requirement into the distributed tree: `npm rebuild` or
+      // `npm install` under an old Node should report it rather than revealing
+      // incompatibility through the first crash.
       engines: { node: '>=22.14' },
       dependencies,
     },

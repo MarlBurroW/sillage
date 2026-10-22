@@ -10,14 +10,12 @@ import { CachedProbe } from '../cached-probe.js'
 import { withControlSession } from './control-session.js'
 
 /**
- * Catalogue Claude : modèles, compte, styles de sortie, sous-agents et disponibilité du
- * mode rapide, lus depuis le CLI installé plutôt que codés en dur.
+ * Claude catalog: models, account, output styles, subagents, Fast availability read from installed
+ * CLI, not hardcoded.
  *
- * `supportedModels()` et `accountInfo()` sont des requêtes de contrôle (voir
- * `withControlSession`) : aucun message n'est envoyé, donc ni tokens ni quota
- * consommés. Le reste vient de la réponse d'initialisation, que le SDK a déjà reçue
- * en ouvrant la session. Le process coûte ~400 Mo le temps de la sonde, d'où le cache
- * et le fait que tout soit lu d'un coup.
+ * `supportedModels()`/`accountInfo()` are control requests (`withControlSession`): no model
+ * messages, tokens, quota. Other data comes from already-received initialization. Process costs
+ * ~400 MB during probe, hence caching and one combined read.
  */
 
 const CACHE_TTL_MS = 60 * 60 * 1000
@@ -25,12 +23,12 @@ const CACHE_TTL_MS = 60 * 60 * 1000
 interface Listing {
   models: ModelInfo[]
   account: AccountInfo | null
-  /** Tels que le CLI les nomme, `default` compris. */
+  /** Native CLI names, including `default`. */
   outputStyles: string[]
   agents: AgentInfo[]
   /**
-   * Le mode rapide vu du compte, avant qu'une session ne le demande. `state` reste null
-   * sur un CLI qui ne connaît pas la notion, ce qui est différent de « off ».
+   * Account Fast state before session requests it. `state` stays null on unaware CLIs, distinct
+   * from off.
    */
   fastMode: { state: FastModeState | null; reason: FastModeDisabledReason | null }
 }
@@ -39,9 +37,8 @@ export class ClaudeModelCatalog {
   private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
 
   /**
-   * Le binaire est résolu à chaque sonde, jamais retenu à la construction : c'est ce qui
-   * fait honorer le préfixe des CLI que Sillage installe lui-même, et le réglage
-   * `agents.claude.binary`, y compris pour un CLI installé pendant que le daemon tourne.
+   * Resolve binary per probe, never at construction: honors Sillage-installed CLI prefix and
+   * agents.claude.binary, including installation while daemon runs.
    */
   constructor(private readonly executable: () => Promise<string>) {}
 
@@ -54,10 +51,10 @@ export class ClaudeModelCatalog {
       { executable: this.executable, cwd: homedir(), tag: 'catalog' },
       async (session) => {
         const models = await session.supportedModels()
-        // Le compte est secondaire : son absence ne doit pas priver l'UI des modèles.
+        // Account is secondary: absence must not remove model list.
         const account = await session.accountInfo().catch(() => null)
-        // Même statut pour le reste : un CLI qui ne sait pas répondre laisse des listes
-        // vides, et les réglages correspondants n'apparaissent simplement pas.
+        // Same for others: unsupported CLI requests leave empty lists and hide corresponding
+        // settings.
         const init = await session.initializationResult().catch(() => null)
         return {
           models,

@@ -1,9 +1,9 @@
 import { app } from 'electron'
 
 /**
- * Les quelques phrases du processus principal. Elles restent hors du catalogue de
- * l'application web (`apps/web/src/lib/i18n`) : elles s'affichent justement quand le
- * serveur, qui sert l'interface et ce catalogue, ne répond pas.
+ * The main process's few messages stay outside the web application's catalog
+ * (`apps/web/src/lib/i18n`): they appear precisely when the server serving that
+ * interface and catalog is not responding.
  */
 const MESSAGES = {
   en: {

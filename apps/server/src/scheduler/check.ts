@@ -13,29 +13,21 @@ import { gitBash } from '../platform/shells.js'
 import { killTree } from '../platform/process-tree.js'
 import { serviceAppsAvailable } from '../services/apps.js'
 
-/**
- * La vérification d'une tâche planifiée : un script joué par le daemon avant le tour
- * LLM, qui décide par son code de sortie s'il y a quelque chose à faire.
- *
- * Un exécutable et non un bac à sable : une vérification utile lance une commande, lit
- * un fichier, appelle le réseau, et un bac à sable qui permet tout cela ne protège plus
- * rien. La garde est ailleurs : le script vient de la base, et celui qu'un agent écrit
- * ne tourne pas avant qu'une personne l'ait validé.
- */
+/** Scheduled-task checks run scripts before LLM turns, using exit codes to decide whether work exists. Executables rather than sandboxes: useful checks run commands, read files and access networks, making permissive sandboxes pointless. Protection comes from stored scripts and mandatory human approval before agent-written scripts execute. */
 
-/** Ce que l'erreur standard garde, pour le débogage seulement. */
+/** Retained stderr for debugging only. */
 const MAX_STDERR_CHARS = 4000
 
-/** Après le délai, le temps laissé au script pour se terminer proprement. */
+/** Grace period for scripts to exit cleanly after timeout. */
 const KILL_GRACE_MS = 3000
 
 export interface CheckContext {
   taskId: string
   taskName: string
   projectId: string
-  /** Dossier de travail du script : la racine du projet. */
+  /** Script working directory: project root. */
   cwd: string
-  /** Dossier propre à la tâche, conservé d'un tir à l'autre. */
+  /** Task-specific directory retained between runs. */
   stateDir: string
   firedAt: number
   trigger: 'schedule' | 'manual' | 'test'
@@ -43,7 +35,7 @@ export interface CheckContext {
   timeoutMs: number
 }
 
-/** Le dossier d'état d'une tâche, sous les données de Sillage et jamais dans le dépôt. */
+/** Task state directory under Sillage data, never inside repositories. */
 export function checkStateDir(dataDir: string, taskId: string): string {
   return join(dataDir, 'schedule-state', taskId)
 }
@@ -54,13 +46,7 @@ export function verdictOf(exitCode: number | null, timedOut: boolean): ScheduleC
   return exitCode === CHECK_SKIP_EXIT_CODE ? 'skip' : 'error'
 }
 
-/**
- * Joue le script et rend son verdict. Ne lève jamais : un script introuvable, un délai
- * dépassé ou un shell absent deviennent un verdict `error` lisible dans l'historique.
- *
- * Un essai (`trigger: 'test'`) travaille sur une copie du dossier d'état : un script qui
- * y note la dernière version vue ferait sinon écarter le vrai tir suivant.
- */
+/** Runs checks and returns verdicts without throwing: missing scripts, timeouts and absent shells become historical `error` verdicts. Trials (`trigger: 'test'`) use copied state directories so recording latest versions cannot suppress subsequent real runs. */
 export async function runCheck(script: string, context: CheckContext): Promise<ScheduleCheckResultDto> {
   const started = Date.now()
   const workdir = await mkdtemp(join(tmpdir(), 'sillage-check-'))
@@ -75,7 +61,7 @@ export async function runCheck(script: string, context: CheckContext): Promise<S
     const file = join(workdir, 'check')
     await writeFile(file, script, { mode: 0o700 })
     await chmod(file, 0o700)
-    // Sans shebang, le script est du shell : c'est ce qu'on écrit le plus souvent ici.
+    // Without shebangs, interpret as shell, the usual script format here.
     let command: string[]
     try {
       command = checkCommand(script, file)
@@ -96,8 +82,8 @@ export async function runCheck(script: string, context: CheckContext): Promise<S
       SILLAGE_PREVIOUS_RUN_STATUS: context.previous?.status ?? '',
     })
 
-    // Hors du cgroup du daemon quand systemd le permet : un script qui s'emballe en
-    // mémoire ne doit pas geler Sillage, qui partage son plafond avec les sessions.
+    // Run outside daemon cgroups when systemd supports it: runaway script memory
+    // must not freeze Sillage, which shares limits with sessions.
     const argv = (await serviceAppsAvailable())
       ? ['systemd-run', '--user', '--scope', '--quiet', '--collect', `--description=Sillage check: ${context.taskName}`, '--', ...command]
       : command
@@ -136,8 +122,8 @@ function execute(
       })
     }
 
-    // Un groupe de processus à lui : le délai doit emporter les commandes que le script
-    // a lancées, pas seulement le shell (voir `killTree`, qui s'en passe sous Windows).
+    // Use dedicated process groups: timeouts must terminate spawned commands as well
+    // as shells (see `killTree`, which uses another approach on Windows).
     const child = spawn(argv[0]!, argv.slice(1), {
       cwd,
       env,
@@ -155,7 +141,7 @@ function execute(
       killer = setTimeout(() => kill('SIGKILL'), KILL_GRACE_MS)
     }, timeoutMs)
 
-    // On garde un peu plus que le plafond pour savoir qu'il a été dépassé.
+    // Retain slightly beyond the cap to detect overflow.
     child.stdout.on('data', (chunk: Buffer) => {
       if (stdout.length <= MAX_CHECK_OUTPUT_CHARS) stdout += chunk.toString()
     })
@@ -167,11 +153,7 @@ function execute(
   })
 }
 
-/**
- * La commande qui exécute le script. Sous Windows, le bash de Git for Windows tient lieu
- * de `/bin/sh` et suit aussi le shebang d'un script qui en a un ; sans lui, rien ne
- * saurait exécuter ce script, et le dire vaut mieux qu'un échec obscur.
- */
+/** Script execution command. On Windows, Git for Windows bash replaces `/bin/sh` and honors shebangs when present; without it scripts cannot run, deserving clear errors rather than obscure failures. */
 function checkCommand(script: string, file: string): string[] {
   const shebang = script.startsWith('#!')
   if (process.platform !== 'win32') return shebang ? [file] : ['/bin/sh', file]
@@ -184,7 +166,7 @@ function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}\n[… tronqué]`
 }
 
-/** La première ligne non vide, pour la raison affichée dans l'historique. */
+/** First nonempty line, used as the reason displayed in history. */
 export function firstLine(text: string): string | null {
   const line = text.split('\n').map((entry) => entry.trim()).find(Boolean)
   return line ? line.slice(0, 300) : null

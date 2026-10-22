@@ -6,26 +6,23 @@ import { toWorkspacePath } from '../paths.js'
 import { editedPath } from './file-edits.js'
 
 /**
- * Lecture et traduction d'un transcript de session Claude Code.
+ * Read/translate Claude Code session transcripts.
  *
- * Le CLI persiste chaque session en JSONL sous
- * `$CLAUDE_CONFIG_DIR/projects/<slug-du-cwd>/<sessionId>.jsonl`. Importer une session
- * commencée hors de Sillage demande de reconstruire le journal depuis ce fichier
- * (invariant I2 : le journal est la seule source d'affichage), avec la même
- * traduction que le flux vivant de `ClaudeRunner.translate`.
+ * CLI saves JSONL under `$CLAUDE_CONFIG_DIR/projects/<cwd-slug>/<sessionId>.jsonl`. Importing
+ * externally started sessions reconstructs journal from this file (I2: only display source),
+ * matching live ClaudeRunner.translate.
  *
- * Ce n'est pas une copie : le CLI relit toujours le fichier complet à la reprise,
- * Sillage n'en tire que son affichage. Les `raw` conservent l'entrée de transcript,
- * dont l'`uuid` sert de point de coupe à un fork ultérieur (invariant I3).
+ * Not a copy: CLI still rereads full file on resume, Sillage derives display only. `raw` retains
+ * entries including uuid for later fork cuts (I3).
  */
 
 /**
- * Provenance des `raw` issus d'un transcript relu sur disque, par opposition au flux
- * vivant du SDK : mêmes formes aujourd'hui, mais deux sources qui peuvent diverger.
+ * Provenance of disk-transcript raw payloads versus live SDK stream: same shapes today, sources may
+ * diverge.
  */
 export const TRANSCRIPT_RAW_FORMAT = 'claude-transcript@1'
 
-/** Ce que le journal reçoit pour une entrée traduite. */
+/** Journal input for one translated entry. */
 export interface TranslatedEvent {
   ts: number
   event: SillageEvent
@@ -46,9 +43,8 @@ export interface TranscriptEntry {
 }
 
 /**
- * Emplacement du fichier de session, tel que le CLI l'écrit : chaque caractère
- * non alphanumérique du cwd devient un tiret. Le SDK ne fournit pas de lecture du
- * transcript (seulement `listSessions`/`getSessionInfo`), d'où cette résolution.
+ * CLI session-file location: each nonalphanumeric cwd character becomes hyphen. SDK provides
+ * listSessions/getSessionInfo but no transcript reader, hence this resolution.
  */
 export function transcriptPath(cwd: string, sessionId: string): string {
   const configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
@@ -56,7 +52,7 @@ export function transcriptPath(cwd: string, sessionId: string): string {
   return join(configDir, 'projects', slug, `${sessionId}.jsonl`)
 }
 
-/** Les entrées du transcript, ou une liste vide si le fichier n'existe pas. */
+/** Transcript entries, or empty list if file absent. */
 export function readTranscript(cwd: string, sessionId: string): Promise<TranscriptEntry[]> {
   return readJsonl(transcriptPath(cwd, sessionId))
 }
@@ -73,26 +69,25 @@ async function readJsonl(path: string): Promise<TranscriptEntry[]> {
 
   const entries: TranscriptEntry[] = []
   try {
-    // Depuis 2.1.300, le rejeu du CLI duplique prompts et outils. Lire en flux évite
-    // de garder le fichier entier en mémoire en plus des entrées utiles à l'affichage.
+    // Since 2.1.300 CLI replay duplicates prompts/tools. Streaming avoids holding full file
+    // alongside display-relevant entries.
     for await (const line of file.readLines()) {
-      // Sondé sur 2.1.301 : ces lignes commencent par le type. L'ancrage empêche
-      // d'écarter un message qui ne ferait que citer ce format dans son contenu.
+      // Probed on 2.1.301: lines start with type. Anchoring avoids discarding messages merely
+      // quoting this format.
       if (/^\s*\{\s*"type"\s*:\s*"api-request(?:-shape|-blob)?"\s*[,}]/.test(line)) continue
       try {
         const parsed: unknown = JSON.parse(line)
         if (typeof parsed !== 'object' || parsed === null) continue
         const entry = parsed as TranscriptEntry
-        // Le filtre reste juste si une future version déplace la propriété type.
+        // Filter remains correct if future versions move type property.
         if (typeof entry.type === 'string' && REQUEST_REPLAY_TYPES.has(entry.type)) continue
         entries.push(entry)
       } catch {
-        // Une ligne tronquée (écriture en cours au moment de la lecture) n'invalide
-        // pas le reste du fichier.
+        // Truncated lines from concurrent writes do not invalidate rest of file.
       }
     }
   } catch {
-    // Comme un fichier absent, une lecture impossible ne fournit aucun historique.
+    // Unreadable files provide no history, like absent files.
     return []
   } finally {
     await file.close()
@@ -101,12 +96,11 @@ async function readJsonl(path: string): Promise<TranscriptEntry[]> {
 }
 
 /**
- * Les fils de sous-agents de la session, indexés par l'appel qui les a lancés.
+ * Session subagent threads indexed by launching call.
  *
- * Le CLI les écrit à part, dans `<sessionId>/subagents/agent-<agentId>.jsonl`, sans y
- * répéter l'appel d'origine : le lien passe par l'`agentId` que le transcript principal
- * joint au résultat de l'appel `Task`. Sans cette relecture, une conversation
- * resynchronisée perd tout ce que ses sous-agents ont fait.
+ * CLI writes separate `<sessionId>/subagents/agent-<agentId>.jsonl` without original call; main
+ * transcript Task result carries agentId link. Without reading these, resync loses all subagent
+ * work.
  */
 export async function readSubAgentTranscripts(
   cwd: string,
@@ -116,17 +110,16 @@ export async function readSubAgentTranscripts(
   const dir = join(transcriptPath(cwd, sessionId).replace(/\.jsonl$/, ''), 'subagents')
   const threads = new Map<string, TranscriptEntry[]>()
 
-  // Un sous-agent peut en lancer un autre, et l'appel ne figure alors que dans le
-  // fichier du premier : la découverte repart donc de chaque fil relu, jusqu'à ce
-  // qu'aucun nouveau ne se présente.
+  // Subagents may spawn others, calls appearing only in first child file: recursively discover from
+  // every read thread until none remain.
   let frontier = entries
   while (frontier.length > 0) {
     const found: TranscriptEntry[] = []
     for (const [agentId, toolCallId] of spawnedAgents(frontier)) {
       if (threads.has(toolCallId)) continue
       const parsed = await readJsonl(join(dir, `agent-${agentId}.jsonl`))
-      // Un sous-agent encore en cours, ou d'une version de CLI qui n'écrivait pas ces
-      // fichiers, ne laisse rien : le reste de l'import n'en dépend pas.
+      // Still-running subagents or older CLIs may leave no file; rest of import does not depend on
+      // it.
       if (parsed.length === 0) continue
       threads.set(toolCallId, parsed)
       found.push(...parsed)
@@ -138,13 +131,10 @@ export async function readSubAgentTranscripts(
 }
 
 /**
- * Les sous-agents lancés depuis ces entrées, de leur `agentId` vers l'appel qui les a
- * lancés.
+ * Spawned subagents mapped from agentId to launching call.
  *
- * L'`agentId` est porté par l'entrée, l'identifiant d'appel par un bloc : une entrée
- * qui groupe plusieurs résultats ne permet donc pas de dire lequel est l'appel de
- * sous-agent, et rien ne vaut mieux qu'un rattachement au hasard, qui rendrait tout un
- * fil invisible sans rien signaler.
+ * Entry carries agentId, blocks carry call ID: grouped results cannot identify which spawned
+ * subagent. No link beats random linkage making whole thread silently invisible.
  */
 function spawnedAgents(entries: TranscriptEntry[]): Map<string, string> {
   const spawned = new Map<string, string>()
@@ -169,23 +159,21 @@ function entryTs(entry: TranscriptEntry): number {
 }
 
 /**
- * Les commandes locales (`/compact`, `/model`...) sont enregistrées comme des messages
- * utilisateur balisés : ce sont des ordres au CLI, pas des choses dites à l'agent.
+ * Local `/compact`, `/model` commands are stored as tagged user messages: commands to CLI, not
+ * agent speech.
  */
 function isLocalCommand(text: string): boolean {
   return text.startsWith('<command-') || text.startsWith('<local-command-')
 }
 
 /**
- * Marqueur écrit par le CLI quand un tour est coupé, sous les formes
- * `[Request interrupted by user]` et `[Request interrupted by user for tool use]`.
+ * CLI interruption markers: `[Request interrupted by user]` and `[Request interrupted by user for
+ * tool use]`.
  *
- * Le transcript l'enregistre comme un message utilisateur, mais personne ne l'a écrit :
- * c'est la trace de l'interruption. Repris tel quel, il apparaissait dans le fil comme
- * une chose que l'utilisateur aurait dite, une fois de plus à chaque interruption.
+ * Transcript stores user messages nobody wrote: interruption traces. Replaying literally displayed
+ * fake user speech each interruption.
  *
- * Ancré aux deux bouts : un message qui cite le marqueur pour en parler, lui, est bien
- * un message.
+ * Anchored both ends: messages discussing markers remain genuine messages.
  */
 const INTERRUPT_MARKER = /^\[Request interrupted by user[^\]]*\]$/
 
@@ -196,16 +184,13 @@ interface ToolUse {
 }
 
 /**
- * Traduit les entrées d'un transcript en événements de journal.
+ * Translate transcript entries into journal events.
  *
- * Miroir de `ClaudeRunner.translate`, aux différences près du format persisté : les
- * frontières de tour viennent de `system/turn_duration` (le message `result` du flux
- * n'est pas écrit dans le fichier), et les compteurs de tokens ne sont pas repris,
- * le transcript ne portant pas les totaux par tour.
+ * Mirrors ClaudeRunner.translate except persisted format: turn boundaries from system/turn_duration
+ * (stream result not written), no token totals because transcript lacks per-turn counts.
  *
- * `sidechains` porte les fils de sous-agents, indexés par l'appel qui les a lancés.
- * Leurs événements sont fusionnés par horodatage : le CLI les écrit dans des fichiers
- * séparés, mais ils appartiennent au même journal que le fil principal.
+ * `sidechains` holds call-indexed subagent threads. Merge events by timestamp: separate CLI files
+ * belong to same main journal.
  */
 export function translateTranscript(
   entries: TranscriptEntry[],
@@ -220,8 +205,8 @@ export function translateTranscript(
     events.push(...translateThread(sideEntries, cwd, toolCallId).events)
   }
 
-  // Tri stable : deux événements de même horodatage gardent l'ordre dans lequel leur
-  // fil les a produits, ce que la milliseconde du transcript ne suffit pas à départager.
+  // Stable sort preserves each thread’s equal-timestamp order; transcript millisecond resolution
+  // cannot distinguish them.
   const order = new Map(events.map((event, index) => [event, index]))
   events.sort((a, b) => a.ts - b.ts || (order.get(a) ?? 0) - (order.get(b) ?? 0))
 
@@ -229,10 +214,9 @@ export function translateTranscript(
 }
 
 /**
- * Un fil et un seul : le principal (`thread` nul) ou celui d'un sous-agent.
+ * Exactly one thread: main (null thread) or subagent.
  *
- * Les frontières de tour et les compactions n'appartiennent qu'au fil principal : un
- * sous-agent travaille *dans* un tour, il n'en ouvre pas.
+ * Only main owns turn boundaries/compactions: subagents work inside turns, never open them.
  */
 function translateThread(
   entries: TranscriptEntry[],
@@ -245,9 +229,8 @@ function translateThread(
   let inTurn = false
 
   for (const entry of entries) {
-    // Les versions de CLI qui écrivaient les tours de sous-agent en ligne dans le
-    // fichier principal les marquent ainsi. Repris comme fil principal, le prompt du
-    // sous-agent s'afficherait comme une chose que l'utilisateur aurait dite.
+    // Older CLIs mark inline subagent turns this way. Treating as main would show subagent prompts
+    // as user speech.
     if (thread === null && entry.isSidechain === true) continue
     const ts = entryTs(entry)
 
@@ -331,8 +314,7 @@ function translateThread(
                 type: 'file.edited',
                 toolCallId: block.tool_use_id,
                 path: toWorkspacePath(cwd, path),
-                // L'existence antérieure du fichier n'est plus observable après coup :
-                // c'est le résultat conservé par le CLI qui dit si c'était une création.
+                // Previous existence no longer observable: saved CLI result identifies creation.
                 action: entry.toolUseResult?.type === 'create' ? 'created' : 'modified',
               },
             })
@@ -352,8 +334,7 @@ function translateThread(
             : ''
       if (!text.trim() || isLocalCommand(text) || INTERRUPT_MARKER.test(text.trim())) continue
 
-      // Un sous-agent n'ouvre pas de tour : il travaille dans celui de son parent,
-      // et le sien ferait clignoter l'indicateur d'activité du fil principal.
+      // Subagents work inside parent turn; opening their own would flicker main activity.
       if (!inTurn && thread === null) {
         events.push({ ts, event: { type: 'turn.started' } })
         inTurn = true
@@ -373,11 +354,11 @@ function translateThread(
     }
 
     if (entry.type === 'system' && thread === null) {
-      // Sans condition sur `inTurn` : une resynchronisation peut reprendre au milieu
-      // d'un tour dont l'ouverture est déjà au journal, et sa clôture doit passer.
+      // No inTurn condition: resync may begin mid-turn whose start is already journaled; closure
+      // must pass.
       if (entry.subtype === 'turn_duration') {
-        // Le transcript ne porte ni coût ni totaux de tokens par tour : les compteurs
-        // repartent de zéro pour la partie importée, plutôt que d'inventer des chiffres.
+        // Transcript lacks per-turn costs/tokens: imported counters start zero instead of invented
+        // figures.
         events.push({
           ts,
           event: {
@@ -405,12 +386,11 @@ function translateThread(
         })
       }
     }
-    // Tout le reste (mode, last-prompt, file-history-*, attachment...) est un état
-    // interne du CLI sans traduction dans le fil.
+    // Everything else (mode, last-prompt, file-history-*, attachment...) is internal CLI state
+    // without thread translation.
   }
 
-  // Un transcript qui s'arrête en plein tour vient d'une session interrompue : sans
-  // clôture, le fil rejoué garderait l'indicateur d'activité allumé.
+  // Mid-turn transcript ending means interrupted session; close it or replay keeps activity lit.
   if (inTurn) {
     const last = events.at(-1)
     events.push({ ts: last?.ts ?? Date.now(), event: { type: 'session.ended', reason: 'interrupted' } })

@@ -22,8 +22,6 @@ import {
   CalendarClock,
   ChevronRight,
   FolderPlus,
-  ListTree,
-  MessagesSquare,
   LogOut,
   MoreHorizontal,
   Palette,
@@ -47,7 +45,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
-import type { ConversationDto, ConversationMetrics, ProjectDto, ScheduledTaskDto } from '@sillage/protocol'
+import type { ConversationDto, ProjectDto, ScheduledTaskDto } from '@sillage/protocol'
 import {
   useAllConversations,
   useArchiveConversation,
@@ -71,7 +69,9 @@ import { useUpdateCollapsedProjects, useUserSettings } from '../lib/user-setting
 import { useAppearanceSync } from '../lib/appearance-sync'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { SignalDot } from './chat/Signals'
-import { WorktreeTag } from './WorktreeTag'
+import { SessionPreview } from './SessionPreview'
+import { compactRelativeDate, relativeDate } from '../lib/dates'
+import '../styles/sidebar.css'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import { useWorktreeStatuses, worktreeCounts } from '../lib/worktrees'
@@ -88,14 +88,10 @@ import { ProjectSwitcher } from './ProjectSwitcher'
 import { useProjectVisits } from '../lib/project-visits'
 import {
   restoreSidebarWidth,
-  setSidebarDetailed,
   setSidebarHidden,
   setSidebarWidth,
-  useSidebarDetailed,
   useSidebarHidden,
 } from '../lib/sidebar'
-import { formatBytes } from '../lib/attachments'
-import { formatTokens } from '../lib/tokens'
 import { useFileDropGuard } from '../lib/file-drop'
 import { useTranslate } from '../lib/i18n'
 import { resizeHandle } from '../lib/resize-handle'
@@ -114,6 +110,10 @@ import { PullToRefresh } from './PullToRefresh'
 import {
   Banner,
   Button,
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSwatch,
   IconButton,
   Menu,
   MenuItem,
@@ -124,15 +124,20 @@ import {
   cx,
 } from './ui'
 
-/** Le raccourci porte la touche que la plateforme utilise réellement. */
+/**
+ * Touch has no right click and long-press already starts row dragging: omit context menus; the
+ * always-visible ellipsis button suffices.
+ */
+function useContextMenuEnabled(): boolean {
+  return !useMediaQuery('(pointer: coarse)')
+}
+
+/** Display the modifier key actually used by the platform. */
 const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
 
 /**
- * Neutralise le clic qui suit immédiatement un glisser-déposer.
- *
- * L'écouteur est posé en phase de capture pour passer avant le lien, et retiré au
- * tour de boucle suivant : si le glissement n'a produit aucun clic, il ne doit surtout
- * pas manger le clic légitime d'après.
+ * Suppress the click immediately following drag-and-drop. Capture before links, then remove on the
+ * next event-loop tick: if no click follows the drag, never swallow the next legitimate one.
  */
 function swallowNextClick(): void {
   const swallow = (event: MouseEvent) => {
@@ -145,11 +150,8 @@ function swallowNextClick(): void {
 }
 
 /**
- * Champ de renommage, ouvert par double-clic sur le nom.
- *
- * Le texte est sélectionné à l'ouverture : renommer part presque toujours d'un nom
- * proposé par le CLI qu'on remplace, et le curseur posé en fin de ligne obligeait à
- * tout effacer à la main.
+ * Rename field opened by double-clicking the name. Select text on opening because users usually
+ * replace a CLI-suggested name; an end-position cursor forced manual deletion.
  */
 function RenameInput({
   value,
@@ -181,8 +183,8 @@ function RenameInput({
 }
 
 /**
- * Souris : un seuil de déplacement, pour que le clic sur un lien reste un clic.
- * Tactile : un appui long, sinon le glissement volerait le défilement de la liste.
+ * Mouse uses a movement threshold so link clicks remain clicks. Touch uses long-press so dragging
+ * does not steal list scrolling.
  */
 function useDragSensors() {
   return useSensors(
@@ -192,8 +194,8 @@ function useDragSensors() {
 }
 
 /**
- * Desktop : sidebar persistante. Mobile : la même sidebar en tiroir plein écran.
- * Un seul composant de navigation, deux présentations.
+ * Desktop has a persistent sidebar; mobile presents the same navigation component as a full-screen
+ * drawer.
  */
 export function AppShell() {
   useDecisionsLive()
@@ -241,8 +243,7 @@ export function AppShell() {
     }
   }, [wide, hidden])
 
-  // Raccourci global : la palette doit s'ouvrir depuis n'importe quelle vue, y compris
-  // avec le curseur dans la barre de saisie.
+  // Global shortcut: open the palette from any view, including while the composer has focus.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return
@@ -255,8 +256,8 @@ export function AppShell() {
   }, [])
 
   /**
-   * La sidebar commence au bord gauche de la fenêtre : l'abscisse du pointeur est donc
-   * la largeur voulue, sans décalage à mémoriser au début du geste.
+   * Sidebar starts at the window's left edge, so pointer x is the desired width with no initial
+   * offset to retain.
    */
   const handle = resizeHandle({
     widthAt: (clientX) => clientX,
@@ -266,11 +267,8 @@ export function AppShell() {
 
   return (
     /**
-     * Calque fixe de l'application, dimensionné par `.app-layer`.
-     *
-     * À l'ouverture du clavier, il se cale sur le viewport visuel et remonte de
-     * `--sg-viewport-top` : le clavier pousse tout vers le haut au lieu de recouvrir la
-     * barre de saisie.
+     * Fixed app layer sized by app-layer. With the keyboard open it follows the visual viewport and
+     * offsets by viewport-top, moving above the keyboard instead of hiding the composer.
      */
     <MobileNavigationContext.Provider value={() => setNavOpen(true)}>
     <div className="app-layer flex overflow-hidden text-ink">
@@ -303,26 +301,19 @@ export function AppShell() {
           }
         }}
         className={cx(
-          // `absolute` et non `fixed` : le repère est le calque ci-dessus, donc le
-          // tiroir suit le viewport visuel au lieu de passer sous le clavier.
-          // Pleine largeur sur mobile : à 16.5rem, un titre de conversation était coupé
-          // au bout de quelques mots. Le tiroir se recouvre de toute façon, rien ne
-          // reste à voir derrière lui.
+          // Absolute rather than fixed: reference the app layer above so the drawer follows the
+          // visual viewport. Fill mobile width because 16.5rem truncated titles after a few words;
+          // nothing behind the overlay needs to remain visible.
           'absolute inset-y-0 left-0 z-30 w-full shrink-0',
           'md:w-[var(--sidebar-desktop-width)]',
           'surface border-r border-line pt-safe',
-          // Sur mobile, la sidebar est en surimpression : une translation suffit à la
-          // faire entrer et sortir. Sur grand écran elle occupe une colonne du flex,
-          // donc c'est la marge qui doit se refermer, sinon translater ne ferait que
-          // laisser un vide de sa largeur.
-          // `translate` et non `transform` : Tailwind v4 pose les utilitaires de
-          // translation sur la propriété CSS `translate`, qui est distincte. Une
-          // transition déclarée sur `transform` ne portait donc sur rien, et le
-          // tiroir sautait d'un bord à l'autre sur mobile.
+          // Mobile overlays need only translation to enter and leave. Desktop occupies a flex
+          // column, so collapse its margin or translation would leave empty space. Transition
+          // translate rather than transform: Tailwind v4 uses the separate CSS translate property,
+          // so transform transitions did nothing and mobile drawers jumped.
           'transition-[translate,margin] duration-200 ease-out',
-          // `md:left-auto` : en `sticky`, un `left: 0` réépingle l'élément au bord du
-          // viewport et annule visuellement la marge négative du repli, alors même
-          // que la place, elle, est bien rendue.
+          // md:left-auto prevents sticky left:0 pinning the element to the viewport and visually
+          // canceling negative collapse margins even though space was released.
           'md:relative md:h-full md:translate-x-0',
           navOpen ? 'translate-x-0' : '-translate-x-full',
           hidden ? 'md:-ml-[var(--sidebar-desktop-width)]' : 'md:ml-0',
@@ -338,9 +329,10 @@ export function AppShell() {
           }}
         />
 
-        {/* Poignée de largeur, sur le bord droit. Retirée quand la sidebar est repliée :
-            elle se retrouverait sinon au bord gauche de la vue, par-dessus le bouton de
-            réaffichage, à redimensionner quelque chose d'invisible. */}
+        {/*
+         * Right-edge resize handle hidden when collapsed, or it would sit over the restore button
+         * resizing an invisible sidebar.
+         */}
         {hidden ? null : (
           <div
             role="separator"
@@ -351,8 +343,8 @@ export function AppShell() {
             onKeyDown={handle.onKeyDown}
             className={cx(
               'absolute inset-y-0 -right-1 z-10 hidden w-2 cursor-col-resize md:block',
-              // Le trait n'apparaît qu'au survol : au repos, la bordure de la sidebar
-              // suffit, et une seconde ligne permanente la doublerait.
+              // Show the resize line only on hover: the sidebar border already suffices at rest and
+              // a permanent extra line would double it.
               'after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2',
               'after:transition-colors hover:after:bg-accent focus-visible:after:bg-accent',
               'outline-none',
@@ -370,13 +362,13 @@ export function AppShell() {
       ) : null}
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
-      {/* Monter l'invite enregistre le service worker : sans PWA, ni l'un ni l'autre. */}
+      {/* Mounting the prompt registers the service worker: without PWA, mount neither. */}
       {pwa ? <UpdatePrompt /> : null}
 
-      {/* Aucune gouttière : le bouton de réaffichage se pose dans le coin haut-gauche,
-          et ce sont les vues qui ont un en-tête qui lui réservent sa place
-          (`useSidebarHidden`). Une colonne décalée de sa largeur laissait une bande vide
-          sur toute la hauteur de l'écran. */}
+      {/*
+       * No gutter: restore buttons overlay top-left corners and header views reserve space with
+       * useSidebarHidden. Offsetting the entire column left an empty full-height strip.
+       */}
       <div
         inert={!wide && navOpen}
         className={cx('flex min-w-0 flex-1 flex-col', contextualHeader && 'pt-safe md:pt-0')}
@@ -394,14 +386,12 @@ export function AppShell() {
         </header>
         ) : null}
 
-        {/* Le calque racine ne défile plus : chaque vue porte son propre défilement.
-            Les pages de réglages n'en gèrent aucun, il leur est donné ici. */}
+        {/* The root layer never scrolls: views own scrolling. Supply it here for settings pages without their own. */}
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>
-      {/* Hors de la colonne principale : une décision s'ouvre et un toast apparaît
-          par-dessus n'importe quelle vue, sidebar comprise. */}
+      {/* Outside the main column so decisions and toasts overlay every view including sidebar. */}
       <DecisionDialog />
       <Toaster />
     </div>
@@ -427,14 +417,14 @@ function Sidebar({
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
-  // Les tirs planifiés ne comptent pas dans l'activité : une tâche qui tourne toute
-  // seule n'est pas une session qu'on suit, et sa section dit déjà où elle en est.
+  // Exclude scheduled runs from activity: autonomous tasks are not followed sessions and their own
+  // section already reports state.
   const attended = useMemo(() => conversations?.filter((entry) => !entry.scheduleId), [conversations])
-  // Une seule mutation pour les deux apparitions d'un favori. Son erreur reste
-  // visible même si le retrait optimiste fait disparaître la ligne des favoris.
+  // One mutation for both favorite appearances. Keep errors visible even if optimistic removal
+  // hides the favorite row.
   const toggleFavorite = useToggleFavorite()
   const logout = useLogout()
-  // Sans mot de passe, une déconnexion ne laisserait qu'une page de connexion sans issue.
+  // Without a password, logout would leave an unusable login page.
   const passwordAuth = useCapability('passwordAuth')
   const updateNotice = useUpdateNotice()
   const navigate = useNavigate()
@@ -447,16 +437,14 @@ function Sidebar({
   const visibleProjects = allProjects ? projects : projects?.filter((project) => project.id === selectedProject?.id)
   const reorder = useReorderProjects()
   const sensors = useDragSensors()
-  const detailed = useSidebarDetailed()
   useStatusFeed()
   const { refreshing, refresh } = useRefreshLists()
   const nav = useRef<HTMLElement>(null)
 
   /**
-   * Le repli vient du compte, pas du navigateur : on referme un projet parce qu'on n'y
-   * travaille pas en ce moment, ce qui reste vrai d'un poste à l'autre. Tout est
-   * déplié tant que les réglages n'ont pas répondu — l'inverse ferait clignoter la
-   * liste fermée à chaque chargement.
+   * Collapse follows the account rather than browser: a project is collapsed because it is not
+   * current work, across devices. Start expanded until settings load to avoid a closed-list flash
+   * on every load.
    */
   const { data: settings } = useUserSettings()
   const setCollapsedProjects = useUpdateCollapsedProjects()
@@ -471,30 +459,28 @@ function Sidebar({
   }
 
   /**
-   * Pendant qu'on déplace un projet, toutes les conversations sont repliées.
-   *
-   * Sans ça, un projet qui en porte trente rend la liste plus haute que l'écran et le
-   * glissement devient impraticable. Le repli est temporaire et n'écrase pas les
-   * projets que l'utilisateur avait lui-même repliés.
+   * Temporarily collapse all conversations while dragging projects. Projects with thirty
+   * conversations exceed screen height and make dragging impractical. Preserve user-selected
+   * collapsed state separately.
    */
   const [dragging, setDragging] = useState(false)
 
   /**
-   * Les signets du compte, tous projets confondus. Les archivés compris : mettre un fil
-   * de côté puis le laisser se ranger n'est pas une raison de le perdre de vue, et
-   * c'est justement là qu'un raccourci sert.
+   * Account bookmarks across all projects, including archived threads: automatic archiving should
+   * not hide deliberately saved conversations, precisely where shortcuts help.
    */
   const favorites = useMemo(
     () => (conversations ?? []).filter((entry) => entry.favorite),
     [conversations],
   )
-  const [favoritesOpen, setFavoritesOpen] = useState(true)
+  const [favoritesOpen, setFavoritesOpen] = useState(false)
+  const [editingProject, setEditingProject] = useState(false)
+  const updateSelectedProject = useUpdateProject()
 
   const onDragEnd = (event: DragEndEvent) => {
     setDragging(false)
-    // Un glissement se termine par un `mouseup` sur le lien du projet, donc le
-    // navigateur émet un clic juste après : sans l'avaler, réordonner ouvrirait le
-    // projet déplacé.
+    // Dragging ends with mouseup on the project link, causing a browser click: suppress it or
+    // reordering opens the moved project.
     swallowNextClick()
 
     const { active, over } = event
@@ -509,60 +495,44 @@ function Sidebar({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex h-[var(--header-height)] shrink-0 items-center gap-2 px-4">
-        <Logo size={20} className="text-accent" />
-        <span className="text-[0.9375rem] font-semibold tracking-tight">Sillage</span>
-        {/* Enveloppes plutôt que `hidden` sur le bouton : `IconButton` pose déjà un
-            `inline-flex`, et entre deux utilitaires de display c'est l'ordre du CSS
-            généré qui tranche, pas celui de la chaîne de classes. Les deux boutons
-            s'affichaient donc côte à côte sur mobile. */}
-        <span className="ml-auto md:hidden">
-          <IconButton label={t('shell.nav.close')} onClick={onClose}>
-            <X size={18} />
-          </IconButton>
-        </span>
-        <span className="ml-auto hidden md:block">
-          <IconButton label={t('shell.nav.collapse')} onClick={onCollapse}>
-            <PanelLeftClose size={18} />
-          </IconButton>
-        </span>
+    <div className="sidebar-layout">
+      <div className="sidebar-brand">
+        <Logo size={21} className="text-accent" /><span className="text-[0.9375rem] font-semibold tracking-tight">Sillage</span>
+        <span className="ml-auto md:hidden"><IconButton label={t('shell.nav.close')} onClick={onClose}><X size={18} /></IconButton></span>
+        <span className="ml-auto hidden md:block"><IconButton label={t('shell.nav.collapse')} onClick={onCollapse}><PanelLeftClose size={18} /></IconButton></span>
       </div>
-
-      <div className="shrink-0 px-2 pb-1">
-        {/* Le raccourci n'existe pas au doigt : sans cette entrée, la recherche serait
-            inatteignable depuis un téléphone. */}
-        <button
-          type="button"
-          onClick={onSearch}
-          className={cx(
-            'flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm',
-            'text-ink-soft transition-colors hover:bg-surface-high hover:text-ink',
-          )}
-        >
-          <Search size={15} className="shrink-0" />
-          <span className="flex-1">{t('shell.search')}</span>
-          <kbd className="hidden shrink-0 rounded border border-line px-1 text-[0.625rem] text-ink-faint md:block">
-            {SEARCH_HINT}
-          </kbd>
-        </button>
-      </div>
-
-      {toggleFavorite.isError ? <div className="shrink-0 px-2 pb-2">
-        <Banner>
-          <span className="block">{t('shell.favorites.error')}</span>
-          <span className="mt-1 block text-xs">{toggleFavorite.error.message}</span>
-          <span className="mt-1 flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={() => {
-              if (toggleFavorite.variables) toggleFavorite.mutate(toggleFavorite.variables)
-            }}>{t('editor.retry')}</Button>
-            <IconButton size="sm" label={t('common.close')} onClick={() => toggleFavorite.reset()}><X size={14} /></IconButton>
-          </span>
-        </Banner>
-      </div> : null}
-
-      <div className="shrink-0 px-2">
+      <button type="button" onClick={onSearch} className="sidebar-search">
+        <Search size={15} /><span className="flex-1 text-left">{t('shell.search')}</span><kbd className="hidden text-[0.625rem] md:block">{SEARCH_HINT}</kbd>
+      </button>
+      {toggleFavorite.isError && <div className="shrink-0 px-2 pb-2"><Banner>
+        <span className="block">{t('shell.favorites.error')}</span><span className="mt-1 block text-xs">{toggleFavorite.error.message}</span>
+        <span className="mt-1 flex items-center gap-1"><Button variant="ghost" size="sm" onClick={() => { if (toggleFavorite.variables) toggleFavorite.mutate(toggleFavorite.variables) }}>{t('editor.retry')}</Button><IconButton size="sm" label={t('common.close')} onClick={() => toggleFavorite.reset()}><X size={14} /></IconButton></span>
+      </Banner></div>}
+      <nav ref={nav} className="sidebar-navigation" aria-label={t('shell.nav.label')}>
+        <PullToRefresh target={nav} refreshing={refreshing} onRefresh={refresh} />
+        <SidebarActivity conversations={attended} projects={projects} onNavigate={onNavigate}>
+          <div className="sidebar-global-links">
+            <button type="button" className="sidebar-global-link" onClick={() => setFavoritesOpen(value => !value)} aria-expanded={favoritesOpen} aria-controls="sidebar-favorites"><Star size={14} /><span>{t('shell.favorites.heading')}</span><span className="ml-auto tabular-nums text-ink-faint">{favorites.length}</span></button>
+            <SidebarDecisions onNavigate={onNavigate} />
+          </div>
+          {favoritesOpen && <div id="sidebar-favorites" className="sidebar-favorites"><ul>
+            {favorites.map(conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={false} onNavigate={onNavigate} />)}
+            {!favorites.length && <li className="px-3 py-3 text-xs text-ink-faint">{t('shell.favorites.empty')}</li>}
+          </ul></div>}
+          <div className="sidebar-project-switcher">
         <ProjectSwitcher onNavigate={onNavigate} key={user?.id ?? ''} userId={user?.id ?? ''} projects={projects ?? []} selected={selectedProject}
+          nameEditor={editingProject && selectedProject ? <RenameInput value={selectedProject.name} onCancel={() => setEditingProject(false)} onCommit={(draft) => {
+            setEditingProject(false)
+            const name = draft.trim()
+            if (name && name !== selectedProject.name) updateSelectedProject.mutate({ id: selectedProject.id, name })
+          }} className="h-9 min-w-0 flex-1 rounded border border-accent bg-sunken px-2 text-sm outline-none" /> : undefined}
+          actions={<Menu trigger={<IconButton label={selectedProject && !allProjects ? t('shell.project.actions', { name: selectedProject.name }) : t('shell.projects.heading')} size="sm"><MoreHorizontal size={16} /></IconButton>}>
+            {!allProjects && selectedProject?.isOwner && <ProjectMenuItems variant="dropdown" project={selectedProject} onRename={() => setEditingProject(true)} onNavigate={onNavigate} />}
+            {!allProjects && selectedProject && !selectedProject.isOwner && <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => { navigate(`/p/${selectedProject.id}`); onNavigate() }}>{t('shell.project.settings')}</MenuItem>}
+            {!allProjects && selectedProject && <MenuSeparator />}
+            <MenuItem icon={<RefreshCw size={14} />} disabled={refreshing} onSelect={refresh}>{t('shell.refresh')}</MenuItem>
+            <MenuItem icon={<FolderPlus size={14} />} onSelect={() => { navigate('/projects/new'); onNavigate() }}>{t('shell.projects.add')}</MenuItem>
+          </Menu>}
           all={allProjects} recent={visits.map((entry) => entry.projectId)} onAll={() => setAllProjects(true)}
           onSelect={(project, fallback) => {
             setAllProjects(false)
@@ -572,72 +542,8 @@ function Sidebar({
             navigate(visit && valid ? visit.path : fallback)
             onNavigate()
           }} />
-      </div>
-      <nav ref={nav} className="relative min-h-0 flex flex-1 flex-col px-2">
-        <PullToRefresh target={nav} refreshing={refreshing} onRefresh={refresh} />
-        <SidebarDecisions onNavigate={onNavigate} />
-        <SidebarActivity conversations={attended} projects={projects} onNavigate={onNavigate}>
-        {/* Au-dessus des projets et transverse : c'est ce qui fait l'intérêt d'un
-            signet, atteindre un fil sans se rappeler d'où il vient. La conversation
-            reste listée dans son projet, elle n'est pas déplacée ici. */}
-        {favorites.length > 0 ? (
-          <div className="mb-1">
-            <button
-              type="button"
-              onClick={() => setFavoritesOpen((current) => !current)}
-              aria-expanded={favoritesOpen}
-              className="flex w-full items-center gap-1 py-1 pr-1 pl-1.5 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft"
-            >
-              <ChevronRight
-                size={11}
-                className={cx('shrink-0 transition-transform', favoritesOpen && 'rotate-90')}
-              />
-              <span className="flex-1 text-left">{t('shell.favorites.heading')}</span>
-              <span className="tabular-nums">{favorites.length}</span>
-            </button>
-            {favoritesOpen ? (
-              <ul className="flex flex-col gap-px">
-                {favorites.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    conversation={conversation}
-                    toggleFavorite={toggleFavorite}
-                    draggable={false}
-                    onNavigate={onNavigate}
-                  />
-                ))}
-              </ul>
-            ) : null}
           </div>
-        ) : null}
-
-        <div className="flex items-center justify-between py-1 pr-1 pl-2.5">
-          <span className="text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
-            {t(allProjects ? 'shell.projects.heading' : 'shell.switcher.project')}
-          </span>
-          <span className="flex items-center">
-            {/* Le geste existe aussi au doigt, en tirant la liste vers le bas. Le bouton
-                reste pour la souris, et pour qui ignore le geste. */}
-            <IconButton label={t('shell.refresh')} size="sm" onClick={refresh} aria-busy={refreshing}>
-              <RefreshCw size={15} className={cx(refreshing && 'animate-spin')} />
-            </IconButton>
-            {/* Un seul interrupteur pour toute la liste : le mode sert à comparer des
-                conversations entre elles, ce qu'un dépliage ligne à ligne interdit. */}
-            <IconButton
-              label={detailed ? t('shell.conversations.detail.hide') : t('shell.conversations.detail.show')}
-              size="sm"
-              onClick={() => setSidebarDetailed(!detailed)}
-              className={detailed ? 'text-accent' : undefined}
-            >
-              <ListTree size={15} />
-            </IconButton>
-            <Tooltip label={t('shell.projects.add')}><NavLink to="/projects/new" onClick={onNavigate} aria-label={t('shell.projects.add')}
-              className="inline-flex size-11 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink md:size-7 pointer-coarse:size-11">
-                <FolderPlus size={15} />
-            </NavLink></Tooltip>
-          </span>
-        </div>
-
+          <div className="sidebar-project-area">
         {projects && projects.length > 0 ? (
           <DndContext
             sensors={sensors}
@@ -654,7 +560,7 @@ function Sidebar({
               items={projects.map((project) => project.id)}
               strategy={verticalListSortingStrategy}
             >
-              <ul className="flex flex-col gap-2">
+              <ul className={cx('sidebar-projects', !allProjects && 'sidebar-projects-focused')}>
                 {visibleProjects?.map((project) => (
                   <ProjectGroup
                     key={project.id}
@@ -664,9 +570,8 @@ function Sidebar({
                     schedules={(schedules ?? []).filter((task) => task.projectId === project.id)}
                     focused={!allProjects}
                     open={!allProjects || (!dragging && !collapsed.has(project.id))}
-                    // Le repli voulu par l'utilisateur, que `open` ne dit pas : un
-                    // glissement ferme tous les projets, et le report du non-lu
-                    // s'allumerait partout le temps du déplacement.
+                    // User-requested collapse, which open alone cannot express: dragging closes all
+                    // projects and would otherwise light every unread aggregate during the gesture.
                     collapsed={allProjects && collapsed.has(project.id)}
                     onToggle={() => toggle(project.id)}
                     onNavigate={onNavigate}
@@ -678,35 +583,15 @@ function Sidebar({
         ) : (
           <p className="px-2.5 py-1 text-sm text-ink-faint">{t('shell.projects.empty')}</p>
         )}
+          </div>
         </SidebarActivity>
       </nav>
-
-      <div className="shrink-0 border-t border-line p-2 pb-safe">
-        <SidebarRow to="/services" onClick={onNavigate}>
-          <Server size={16} className="shrink-0" />
-          <span>{t('services.title')}</span>
-        </SidebarRow>
-        <SidebarRow to="/settings" end={false} onClick={onNavigate}>
-          <span className="relative shrink-0">
-            <Settings size={16} />
-            {updateNotice ? <UpdateDot /> : null}
-          </span>
-          <span className="truncate">{t('shell.settings.label')}</span>
-          {updateNotice ? <span className="sr-only">{t('about.badge.updateAvailable')}</span> : null}
-        </SidebarRow>
-        {passwordAuth ? (
-          <button
-            type="button"
-            onClick={() => logout.mutate()}
-            className={cx(
-              'flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm',
-              'text-ink-faint transition-colors hover:bg-surface-high hover:text-ink',
-            )}
-          >
-            <LogOut size={16} className="shrink-0" />
-            {t('shell.logout')}
-          </button>
-        ) : null}
+      <div className="sidebar-utilities pb-safe">
+        <SidebarRow to="/services" onClick={onNavigate}><Server size={15} /><span>{t('services.title')}</span></SidebarRow>
+        <SidebarRow to="/settings" end={false} onClick={onNavigate}><span className="relative"><Settings size={15} />{updateNotice && <UpdateDot />}</span><span>{t('shell.settings.label')}</span>{updateNotice && <span className="sr-only">{t('about.badge.updateAvailable')}</span>}</SidebarRow>
+        {passwordAuth && <Menu trigger={<button type="button" className="sidebar-account" aria-label={t('shell.account.menu')}>{user?.username.slice(0, 1).toLocaleUpperCase()}</button>}>
+          <MenuLabel>{user?.username}</MenuLabel><MenuItem icon={<LogOut size={14} />} onSelect={() => logout.mutate()}>{t('shell.logout')}</MenuItem>
+        </Menu>}
       </div>
     </div>
   )
@@ -715,12 +600,12 @@ function Sidebar({
 interface ProjectGroupProps {
   project: ProjectDto
   toggleFavorite: FavoriteMutation
-  /** Actives et rangées mêlées : le groupe fait lui-même la coupure. */
+  /** Active and archived together: the group separates them itself. */
   conversations: ConversationDto[]
   schedules: ScheduledTaskDto[]
   open: boolean
   focused?: boolean
-  /** Replié par l'utilisateur, indépendamment de la fermeture forcée par un glissement. */
+  /** User-collapsed independently of temporary drag closure. */
   collapsed: boolean
   onToggle: () => void
   onNavigate: () => void
@@ -738,39 +623,40 @@ function ProjectGroup({
   onNavigate,
 }: ProjectGroupProps) {
   const t = useTranslate()
-  const navigate = useNavigate()
   const updateProject = useUpdateProject()
   const reorder = useReorderConversations(project.id)
-  // Les tirs planifiés sortent des deux listes, actives comme rangées : ils vivent sous
-  // leur tâche, dans la section « Planifiées ».
+  // Exclude scheduled runs from active and archived lists: they live beneath their task in Scheduled.
   const active = useMemo(() => conversations.filter((c) => !c.archivedAt && !c.scheduleId), [conversations])
   const archived = useMemo(() => conversations.filter((c) => c.archivedAt && !c.scheduleId), [conversations])
   const scheduled = useMemo(() => conversations.filter((c) => c.scheduleId), [conversations])
   const [archiveOpen, setArchiveOpen] = useState(false)
-  // Le clic rouvre le projet là où on l'a laissé : au board pour ceux qui s'y pilotent,
-  // sur une conversation neuve pour les autres.
+  // Reopen the project's remembered view: board where used, otherwise a new conversation.
   const view = useProjectView(project.id)
-  // Replié, le projet répond pour ses lignes : sans ce report, un agent qui finit son
-  // tour dans un projet fermé ne se signalerait nulle part. Le fil ouvert en est exclu
-  // comme il l'est de sa propre ligne, sinon replier le projet qu'on lit l'allumerait
-  // à chaque fin de tour, le temps que le curseur reparte.
+  // Collapsed projects aggregate row unread state so completed turns remain visible. Exclude the
+  // open thread as its own row does, or collapsing its project would flash unread at every turn end
+  // until the cursor is sent.
   const openConversationId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
   const hasUnread = useHasUnread(active, openConversationId)
 
+  const contextMenu = useContextMenuEnabled()
   const [showAll, setShowAll] = useState(false)
-  const visibleActive = focused && !showAll
-    ? active.filter((entry, index) => index < 10 || entry.id === openConversationId || entry.favorite)
-    : active
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filter, setFilter] = useState('')
+  const filterInput = useRef<HTMLInputElement>(null)
+  const { data: treeStatus } = useWorktreeStatuses(project.id)
+  const query = filter.trim().toLocaleLowerCase()
+  const matching = active.filter(entry => !query || entry.title.toLocaleLowerCase().includes(query)
+    || treeStatus?.worktrees.some(tree => tree.conversations.some(link => link.id === entry.id) && `${tree.name} ${tree.branch ?? ''}`.toLocaleLowerCase().includes(query)))
+  const visibleActive = focused && !showAll && !query
+    ? matching.filter((entry, index) => index < 10 || entry.id === openConversationId || entry.favorite)
+    : matching
   const [editing, setEditing] = useState(false)
 
   const sensors = useDragSensors()
 
   /**
-   * Le projet est déplaçable, mais seul son en-tête sert de poignée.
-   *
-   * Les listeners posés sur l'élément entier engloberaient la liste des conversations,
-   * qui a son propre contexte de glissement : un appui sur une conversation
-   * démarrerait les deux déplacements à la fois.
+   * Projects are draggable only by their header. Whole-element listeners would include conversation
+   * lists with their own drag context and start both drags on conversation presses.
    */
   const {
     attributes,
@@ -789,8 +675,7 @@ function ProjectGroup({
   }
 
   const onDragEnd = (event: DragEndEvent) => {
-    // Un glissement se termine par un `mouseup` sur le lien, donc le navigateur émet
-    // un clic juste après : sans l'avaler, réordonner ouvrirait la conversation.
+    // Dragging ends with mouseup on the link, causing a click: suppress it or reordering opens the conversation.
     swallowNextClick()
 
     const { active: dragged, over } = event
@@ -805,20 +690,18 @@ function ProjectGroup({
   }
 
   return (
-    <li
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cx(isDragging && 'shadow-float z-10 rounded-md bg-surface-high opacity-90')}
-    >
-      {/* Le fond est porté par la ligne entière, pas par le lien : sinon les boutons
-          d'action se retrouvent visuellement hors de l'élément survolé. */}
+    <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cx('sidebar-project', focused && 'sidebar-project-focused', isDragging && 'relative z-10 bg-surface-high opacity-90')}>
+      {!focused && <>
+      <ContextMenu
+        disabled={!contextMenu || !project.isOwner || editing}
+        trigger={
       <div
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
-        // Le projet porte le nom en gras et à pleine encre, la conversation en plus
-        // petit et en encre atténuée : sans cet écart, les deux niveaux de la
-        // navigation se lisaient comme une seule liste plate.
+        // Projects use bold full ink; conversations use smaller muted text. Without this hierarchy
+        // both navigation levels looked like one flat list.
         className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11"
       >
         {!focused && <TooltipButton
@@ -846,9 +729,8 @@ function ProjectGroup({
           <NavLink
             to={projectViewPath(project.id, view)}
             onClick={onNavigate}
-            // Renommer au double-clic, comme dans un explorateur de fichiers. Le premier
-            // clic navigue quand même : c'est le prix d'un lien, et ouvrir le projet
-            // qu'on renomme n'a rien de gênant.
+            // Double-click rename like file explorers. The first click still navigates, an
+            // acceptable consequence of a link when renaming its project.
             onDoubleClick={(event) => {
               event.preventDefault()
               if (project.isOwner) setEditing(true)
@@ -858,16 +740,14 @@ function ProjectGroup({
           >
             <ProjectAvatar project={project} />
             <span className="truncate">{project.name}</span>
-            {/* Uniquement replié : déplié, ce sont les lignes elles-mêmes qui le disent,
-                et le point ferait doublon avec ce qu'on a déjà sous les yeux. */}
+            {/* Only when collapsed: expanded rows already display these signals, making the dot redundant. */}
             {collapsed && hasUnread ? (
               <span
                 title={t('shell.project.unread')}
                 className="size-1.5 shrink-0 rounded-full bg-ink"
               />
             ) : null}
-            {/* Un shell tourne quelque part dans le projet : c'est le repère qui évite
-                d'oublier un serveur de dev lancé depuis une session refermée depuis. */}
+            {/* A project shell is running: reminder for development servers left behind closed sessions. */}
             {project.activeTerminals > 0 ? (
               <SquareTerminal
                 size={12}
@@ -875,8 +755,7 @@ function ProjectGroup({
                 aria-label={t('shell.project.terminals')}
               />
             ) : null}
-            {/* Seul le partage est signalé : le privé est le cas normal, et le marquer
-                mettrait un cadenas sur presque toutes les lignes. */}
+            {/* Mark only shared projects: private is normal and locks on nearly every row add no information. */}
             {project.visibility === 'shared' ? (
               <Users
                 size={12}
@@ -899,198 +778,54 @@ function ProjectGroup({
               </IconButton>
             }
           >
-            <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
-              {t('shell.rename')}
-            </MenuItem>
-            <MenuItem
-              icon={<SquareKanban size={14} />}
-              onSelect={() => {
-                onNavigate()
-                navigate(`/p/${project.id}/board`)
-              }}
-            >
-              {t('shell.project.board')}
-            </MenuItem>
-            <MenuItem
-              icon={<CalendarClock size={14} />}
-              onSelect={() => {
-                onNavigate()
-                navigate(`/p/${project.id}/schedules`)
-              }}
-            >
-              {t('schedule.title')}
-            </MenuItem>
-            <MenuItem
-              icon={<SlidersHorizontal size={14} />}
-              onSelect={() => {
-                onNavigate()
-                navigate(`/p/${project.id}`)
-              }}
-            >
-              {t('shell.project.settings')}
-            </MenuItem>
-            <MenuSeparator />
-            <MenuLabel>
-              <span className="flex items-center gap-1.5">
-                <Palette size={11} /> {t('shell.color')}
-              </span>
-            </MenuLabel>
-            <MenuSwatchRow>
-              {PROJECT_COLORS.map((entry) => (
-                <MenuSwatch
-                  key={entry.value ?? 'default'}
-                  color={entry.value}
-                  label={t(entry.label)}
-                  selected={project.color === entry.value}
-                  onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
-                />
-              ))}
-            </MenuSwatchRow>
+            <ProjectMenuItems variant="dropdown" project={project} onRename={() => setEditing(true)} onNavigate={onNavigate} />
           </Menu>
         ) : null}
       </div>
-
-      {open ? (
-        <ul className="mt-1 mb-2 ml-3 flex flex-col gap-px border-l border-line pl-1.5">
-          {/* Vu seul, le projet se lit en sections au même format, en-tête en petites
-              capitales : Board, Sessions, Planifiées (les archivées ferment la marche).
-              Le Board n'a pas de lignes à montrer ici, son en-tête est donc un simple
-              lien vers sa page, comme celui des Planifiées.
-
-              Parmi tous les projets, ces en-têtes coûteraient deux lignes par projet
-              déplié : la vue d'ensemble garde la densité, et le projet ne montre que la
-              ligne d'ajout et ses sessions. Le Board reste au menu du projet. */}
-          {focused ? (
-            <>
-              <li>
-                <NavLink
-                  to={`/p/${project.id}/board`}
-                  onClick={onNavigate}
-                  className={({ isActive }) => cx(
-                    'flex min-h-11 items-center gap-1.5 rounded px-1 text-[0.6875rem] font-semibold tracking-wider uppercase transition-colors hover:text-ink-soft md:min-h-7 pointer-coarse:min-h-11',
-                    isActive ? 'text-ink' : 'text-ink-faint',
-                  )}
-                >
-                  <SquareKanban size={11} className="shrink-0" />
-                  <span className="flex-1">{t('shell.project.board')}</span>
-                  <BoardCounts counts={project.cardCounts} />
-                </NavLink>
-              </li>
-              <WorktreesLine projectId={project.id} onNavigate={onNavigate} />
-              <li className="mt-2 flex h-7 items-center gap-1.5 px-1 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
-                <MessagesSquare size={11} className="shrink-0" />
-                <span className="flex-1">{t('shell.project.sessions')}</span>
-                <span className="tabular-nums">{active.length}</span>
-              </li>
-            </>
-          ) : null}
-          {/* L'ajout ouvre la liste qu'il alimente, comme « Nouvelle tâche planifiée »
-              ouvre la sienne. */}
-          <li>
-            <NavLink
-              to={`/p/${project.id}/c/new`}
-              onClick={onNavigate}
-              className={({ isActive }) => cx(
-                'flex min-h-11 items-center gap-2 rounded-md px-2 text-[0.8125rem] transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11',
-                isActive ? 'bg-surface-high text-ink' : 'text-ink-faint',
-              )}
-            >
-              <Plus size={13} className="shrink-0" />{t('shell.project.newSession')}
-            </NavLink>
-          </li>
-          {active.length > 0 ? (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-              onDragEnd={onDragEnd}
-              // Annuler par Échap relâche aussi la souris sur le lien : même
-              // traitement, sinon l'annulation ouvre la conversation.
-              onDragCancel={swallowNextClick}
-            >
-              <SortableContext
-                items={visibleActive.map((entry) => entry.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {visibleActive.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    conversation={conversation}
-                    toggleFavorite={toggleFavorite}
-                    onNavigate={onNavigate}
-                  />
-                ))}
+        }
+      >
+        <ProjectMenuItems variant="context" project={project} onRename={() => setEditing(true)} onNavigate={onNavigate} />
+      </ContextMenu>
+      </>}
+      {open && <div className={cx('sidebar-project-content', !focused && 'sidebar-project-nested')}>
+          <ul className="sidebar-project-links">
+            <li><NavLink to={`/p/${project.id}/board`} onClick={onNavigate} className={({ isActive }) => cx('sidebar-project-link', isActive && 'sidebar-current')}><SquareKanban size={14} /><span className="flex-1">{t('shell.project.board')}</span><BoardCounts counts={project.cardCounts} /></NavLink></li>
+            <WorktreesLine projectId={project.id} onNavigate={onNavigate} />
+            {focused && <li><NavLink to={`/p/${project.id}/schedules`} onClick={onNavigate} className={({ isActive }) => cx('sidebar-project-link', isActive && 'sidebar-current')}><CalendarClock size={14} /><span className="flex-1">{t('schedule.sidebar.heading')}</span><span className="text-[0.625rem] text-ink-faint">{schedules.length}</span></NavLink></li>}
+          </ul>
+        {focused && <>
+          <div className="sidebar-sessions-heading"><span>{t('shell.project.sessions')}<span className="ml-2 text-[0.625rem] font-normal tabular-nums text-ink-faint">{active.length}</span></span>
+            <IconButton label={t('shell.sessions.filter')} size="sm" aria-expanded={filterOpen} onClick={() => { setFilterOpen(value => !value); setFilter(''); if (!filterOpen) requestAnimationFrame(() => filterInput.current?.focus()) }}><Search size={14} /></IconButton>
+            <Tooltip label={t('shell.project.newSession')}><NavLink to={`/p/${project.id}/c/new`} onClick={onNavigate} aria-label={t('shell.project.newSession')} className="sidebar-add-session"><Plus size={16} /></NavLink></Tooltip>
+          </div>
+          {filterOpen && <div className="sidebar-session-filter"><Search size={14} /><input ref={filterInput} type="search" value={filter} onChange={event => setFilter(event.target.value)} aria-label={t('shell.sessions.search')} placeholder={t('shell.sessions.search')} /><IconButton label={t('shell.sessions.clear')} size="sm" onClick={() => { setFilter(''); filterInput.current?.focus() }}><X size={13} /></IconButton></div>}
+        </>}
+        <div className="sidebar-session-scroll" data-sidebar-session-scroll={project.id}>
+          <ul className="flex flex-col gap-px">
+            {!focused && <li><NavLink to={`/p/${project.id}/c/new`} onClick={onNavigate} className="sidebar-new-session"><Plus size={14} />{t('shell.project.newSession')}</NavLink></li>}
+            {active.length > 0 ? <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis, restrictToParentElement]} onDragEnd={onDragEnd} onDragCancel={swallowNextClick}>
+              <SortableContext items={visibleActive.map(entry => entry.id)} strategy={verticalListSortingStrategy}>
+                {visibleActive.map(conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={!query} onNavigate={onNavigate} />)}
               </SortableContext>
-            </DndContext>
-          ) : (
-            <li className="px-2 py-1.5 text-xs text-ink-faint">{t('shell.conversations.empty')}</li>
-          )}
-
-          {focused && (active.length > visibleActive.length || showAll) && <li>
-            <button type="button" onClick={() => setShowAll((value) => !value)} className="min-h-9 w-full rounded px-2 text-left text-xs text-ink-soft hover:bg-surface-high">
-              {t(showAll ? 'shell.switcher.less' : 'shell.switcher.more', { count: active.length })}
-            </button>
-          </li>}
-
-          <SidebarSchedules
-            projectId={project.id}
-            tasks={schedules}
-            conversations={scheduled}
-            focused={focused}
-            onNavigate={onNavigate}
-            renderRun={(conversation) => (
-              <ConversationRow
-                key={conversation.id}
-                conversation={conversation}
-                toggleFavorite={toggleFavorite}
-                draggable={false}
-                onNavigate={onNavigate}
-              />
-            )}
-          />
-
-          {/* Repliée et en fin de liste : ce qui est rangé doit rester atteignable sans
-              revenir peser sur ce qu'on a sous les yeux. Hors des contextes de
-              glissement au-dessus, les archivées n'ayant pas d'ordre à défendre. */}
-          {archived.length > 0 ? (
-            <li>
-              <button
-                type="button"
-                onClick={() => setArchiveOpen((current) => !current)}
-                aria-expanded={archiveOpen}
-                className="flex h-7 w-full items-center gap-1 rounded px-1 text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink-soft"
-              >
-                <ChevronRight
-                  size={11}
-                  className={cx('shrink-0 transition-transform', archiveOpen && 'rotate-90')}
-                />
-                {t('shell.conversations.archived', { count: String(archived.length) })}
-              </button>
-              {archiveOpen ? (
-                <ul className="flex flex-col gap-px">
-                  {archived.map((conversation) => (
-                    <ConversationRow
-                      key={conversation.id}
-                      conversation={conversation}
-                      toggleFavorite={toggleFavorite}
-                      onNavigate={onNavigate}
-                    />
-                  ))}
-                </ul>
-              ) : null}
-            </li>
-          ) : null}
-        </ul>
-      ) : null}
+            </DndContext> : <li className="px-3 py-3 text-xs text-ink-faint">{t('shell.conversations.empty')}</li>}
+            {query && !visibleActive.length && <li role="status" className="px-3 py-3 text-xs text-ink-faint">{t('shell.sessions.noResults')}</li>}
+            {focused && !query && (active.length > visibleActive.length || showAll) && <li><button type="button" onClick={() => setShowAll(value => !value)} className="min-h-11 w-full rounded px-3 text-left text-xs text-ink-faint hover:bg-surface-high">{t(showAll ? 'shell.switcher.less' : 'shell.switcher.more', { count: active.length })}</button></li>}
+            {!focused && <SidebarSchedules projectId={project.id} tasks={schedules} conversations={scheduled} focused={false} onNavigate={onNavigate} renderRun={conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={false} onNavigate={onNavigate} />} />}
+          </ul>
+        </div>
+        {archived.length > 0 && <div className="sidebar-archives">
+          <button type="button" onClick={() => setArchiveOpen(value => !value)} aria-expanded={archiveOpen} aria-controls={`sidebar-archives-${project.id}`}><Archive size={14} /><span>{t('shell.conversations.archived', { count: String(archived.length) })}</span><ChevronRight size={12} className={cx('ml-auto', archiveOpen && 'rotate-90')} /></button>
+          {archiveOpen && <ul id={`sidebar-archives-${project.id}`}>{archived.map(conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={false} onNavigate={onNavigate} />)}</ul>}
+        </div>}
+      </div>}
     </li>
   )
 }
 
 /**
- * Le board résumé en face de son en-tête, en mots plutôt qu'en pastilles : des
- * couleurs demanderaient une légende. On n'en garde que deux nombres, le travail
- * ouvert (tout sauf les sorties, repliées aussi sur le board) et, en ambre, ce qui
- * attend une relecture : la seule file qui réclame quelqu'un.
+ * Board summary beside the project heading uses words rather than color dots requiring a legend.
+ * Keep two counts: open work (excluding terminal columns also collapsed on boards), and amber
+ * review-needed work, the only queue requiring attention.
  */
 function BoardCounts({ counts }: { counts: ProjectDto['cardCounts'] }) {
   const t = useTranslate()
@@ -1111,10 +846,9 @@ function BoardCounts({ counts }: { counts: ProjectDto['cardCounts'] }) {
 }
 
 /**
- * Les chantiers en face du projet, au même format que le board : ce qui attend encore
- * (non commité, à fusionner, introuvable) et, en ambre, ce qui n'attend que d'être
- * nettoyé. Absent tant que le projet n'a pas d'arbre hors du principal : la ligne ne
- * vaut que par ce qu'elle compte.
+ * Worktree summary beside projects in the board's format: remaining work (uncommitted, unmerged,
+ * missing) and amber cleanup-only trees. Omit when no extra trees exist because the row matters
+ * only through its count.
  */
 function WorktreesLine({ projectId, onNavigate }: { projectId: string; onNavigate: () => void }) {
   const t = useTranslate()
@@ -1126,9 +860,9 @@ function WorktreesLine({ projectId, onNavigate }: { projectId: string; onNavigat
       <NavLink
         to={`/p/${projectId}#worktrees`}
         onClick={onNavigate}
-        className="flex min-h-11 items-center gap-1.5 rounded px-1 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft md:min-h-7 pointer-coarse:min-h-11"
+        className="sidebar-project-link"
       >
-        <FolderGit2 size={11} className="shrink-0" />
+        <FolderGit2 size={14} className="shrink-0" />
         <span className="flex-1">{t('shell.project.worktrees')}</span>
         <span className="shrink-0 font-medium tracking-normal normal-case tabular-nums">
           {pending > 0
@@ -1154,30 +888,26 @@ function ConversationRow({
   toggleFavorite: FavoriteMutation
   onNavigate: () => void
   /**
-   * Faux dans la section des favoris, qui vit hors de tout contexte de glissement :
-   * l'ordre y est celui de la liste, et une ligne déplaçable sans conteneur pour la
-   * recevoir n'aurait nulle part où tomber.
+   * False in Favorites, outside drag contexts: order follows the list and a draggable row would
+   * have no drop container.
    */
   draggable?: boolean
 }) {
   const t = useTranslate()
   const rename = useRenameConversation()
-  const remove = useDeleteConversation()
-  const setArchived = useArchiveConversation()
   const isArchived = conversation.archivedAt !== null
-  const navigate = useNavigate()
   const openMatch = useMatch('/p/:projectId/c/:conversationId')
-  const projectView = useProjectView(conversation.projectId)
+  const contextMenu = useContextMenuEnabled()
   const [editing, setEditing] = useState(false)
-  // Le statut du socket prime sur celui de la liste, qui date de son chargement.
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [contextOpen, setContextOpen] = useState(false)
+  // Socket status takes precedence over the load-time list snapshot.
   const status = useLiveStatus(conversation.id) ?? conversation.status
   const background = useLiveBackground(conversation.id)
   const loops = useLiveLoops(conversation.id)
   const pushedSeq = useLiveSeq(conversation.id)
-  const detailed = useSidebarDetailed()
-  // Même arbitrage que le statut : ce que le socket a poussé prime sur la liste, qui
-  // date de son chargement. Rien n'a encore été poussé pour un fil froid, et les
-  // chiffres de la liste sont alors les bons.
+  // Same precedence as status: pushed values override the load-time list. Cold threads have no
+  // pushes yet, so list readings remain correct.
   const metrics = useLiveMetrics(conversation.id) ?? conversation.metrics
   const signals = useMemo(
     () => buildSidebarSignals({ status, background, loops }),
@@ -1189,10 +919,8 @@ function ConversationRow({
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: conversation.id,
-    // Renommer place un champ de saisie dans la ligne : la rendre déplaçable
-    // pendant ce temps rendrait la sélection de texte impossible. Rangée ou en
-    // favori, la ligne vit hors de tout contexte de glissement et n'a rien à y
-    // inscrire.
+    // Renaming adds an input, so disable dragging to permit text selection. Archived and favorite
+    // rows are outside drag contexts and register nothing.
     disabled: !sortable || editing,
   })
 
@@ -1221,131 +949,84 @@ function ConversationRow({
 
   const isActive = openMatch?.params.conversationId === conversation.id
   /*
-    Le non-lu se dit par l'encre et la graisse, pas par un troisième point : la ligne en
-    tient deux au plus, et une pastille de plus ferait concurrence à des signaux qui,
-    eux, parlent de l'instant. Un fil qui a du nouveau remonte simplement de l'encre
-    atténuée à l'encre pleine.
-
-    Le fil ouvert en est exclu sans attendre le serveur : on est dedans, et le curseur
-    ne part qu'à la seconde suivante.
-  */
+   * Convey unread through ink and weight rather than a third dot: rows hold at most two, and
+   * another would compete with current-state signals. New content simply promotes muted text to
+   * full ink. Exclude the open thread immediately without awaiting the server because its read
+   * cursor is sent later.
+   */
   const unread = !isActive && isUnread(conversation, pushedSeq)
 
   return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      // Une ligne non déplaçable reste navigable : les attributs du hook désactivé
-      // porteraient aria-disabled sur tous ses liens et boutons, favoris compris.
-      {...(sortable ? attributes : {})}
-      {...(sortable ? listeners : {})}
-      className={cx(
-        'group/row flex rounded-md pr-1 transition-colors',
-        'min-h-11 items-center',
-        isDragging ? 'shadow-float z-10 bg-surface-high opacity-90' : '',
-        isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
-        /*
-          Le titre monte d'un cran quand la ligne porte son relevé, qui reste à l'encre
-          atténuée : sans cela les deux se lisaient à la même encre et la ligne n'avait
-          plus de tête. C'est le titre qu'on remonte plutôt que le relevé qu'on enfonce,
-          l'encre atténuée étant le plancher de l'échelle. Le non-lu garde l'encre pleine
-          et la graisse, donc son écart au lu ne se referme pas.
-        */
-        isActive || unread ? 'text-ink' : detailed ? 'text-ink-soft' : 'text-ink-faint',
-      )}
-    >
-      <NavLink
-        to={`/p/${conversation.projectId}/c/${conversation.id}`}
-        title={conversation.title}
-        onClick={onNavigate}
-        onDoubleClick={(event) => {
-          event.preventDefault()
-          if (conversation.isOwner) setEditing(true)
-        }}
-        className={cx(
-          'flex min-w-0 flex-1 flex-col justify-center px-2 text-[0.8125rem]',
-          'py-2',
-        )}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 text-ink-faint">
-            <AgentIcon agent={conversation.agent} size={13} />
+    <ContextMenu disabled={!contextMenu} onOpenChange={setContextOpen} trigger={
+      <li ref={setNodeRef} style={style} {...(sortable ? attributes : {})} {...(sortable ? listeners : {})}
+        data-sidebar-session={conversation.id}
+        className={cx('group/row sidebar-session', isDragging && 'relative z-10 bg-surface-high opacity-90', isActive && 'sidebar-current', unread && 'sidebar-unread')}>
+        <SessionPreview conversation={conversation} metrics={metrics} signals={signals} disabled={menuOpen || contextOpen} trigger={
+          <NavLink to={`/p/${conversation.projectId}/c/${conversation.id}`} onClick={onNavigate}
+            onDoubleClick={event => { event.preventDefault(); if (conversation.isOwner) setEditing(true) }}
+            className="sidebar-session-link">
+            <AgentIcon agent={conversation.agent} size={16} />
+            <span className="sidebar-session-title">{conversation.title}</span>
+            {conversation.favorite && <Star size={10} aria-label={t('shell.favorites.heading')} className="shrink-0 text-ink-faint" />}
+            <span className="sidebar-session-signals">{present && <SignalDot signal={present} />}{loop && <SignalDot signal={loop} />}</span>
+          </NavLink>}>
+          <span className="sidebar-session-actions">
+            <time className="sidebar-session-age" dateTime={new Date(conversation.updatedAt).toISOString()} title={relativeDate(conversation.updatedAt)}>{compactRelativeDate(conversation.updatedAt)}</time>
+            <Menu onOpenChange={setMenuOpen} trigger={<button type="button" aria-label={t('shell.conversation.actions')} className="sidebar-session-menu" onPointerDown={event => event.stopPropagation()}><MoreHorizontal size={15} /></button>}>
+              <ConversationMenuItems variant="dropdown" conversation={conversation} toggleFavorite={toggleFavorite} onRename={() => setEditing(true)} />
+            </Menu>
           </span>
-          <span className={cx('line-clamp-2 break-words', unread && 'font-medium')}>{conversation.title}</span>
-          {/*
-            Deux points au plus, et jamais davantage : l'état présent, et la boucle.
-            Le premier est le plus grave de ce qui se passe maintenant ; la seconde parle
-            de ce qui arrivera, donc elle ne lui fait pas concurrence et s'affiche à côté,
-            y compris pendant un tour.
+        </SessionPreview>
+      </li>}>
+      <ConversationMenuItems variant="context" conversation={conversation} toggleFavorite={toggleFavorite} onRename={() => setEditing(true)} />
+    </ContextMenu>
+  )
+}
 
-            La pastille d'origine les précède sans leur faire concurrence : elle ne dit pas
-            un état mais une provenance, elle ne change jamais, et elle s'efface au survol
-            pour rendre la place aux actions de la ligne.
-          */}
-          <span className="ml-auto flex shrink-0 items-center gap-1">
-            {conversation.origin ? (
-              <span
-                title={t('shell.conversation.origin', { label: conversation.origin.label })}
-                className="rounded-full bg-accent-wash px-1 py-px text-[0.5625rem] font-semibold uppercase tracking-wide text-accent"
-              >
-                {t('shell.conversation.api')}
-              </span>
-            ) : null}
-            {present ? <SignalDot signal={present} /> : null}
-            {loop ? <SignalDot signal={loop} /> : null}
-          </span>
-        </span>
-        {/* Hors de l'arbre principal, la ligne dit où : branche et état de l'arbre.
-            Rien sinon, c'est le contraste qui fait repérer les sessions en worktree. */}
-        <WorktreeTag conversation={conversation} />
-        {detailed ? <ConversationMetricsLine metrics={metrics} /> : null}
-      </NavLink>
+/**
+ * Conversation actions shared by ellipsis dropdown and row context menu: one list, two Radix
+ * primitives with separate entries, like explorer actions.
+ */
+function ConversationMenuItems({
+  variant,
+  conversation,
+  toggleFavorite,
+  onRename,
+}: {
+  variant: 'context' | 'dropdown'
+  conversation: ConversationDto
+  toggleFavorite: FavoriteMutation
+  onRename: () => void
+}) {
+  const t = useTranslate()
+  const remove = useDeleteConversation()
+  const setArchived = useArchiveConversation()
+  const isArchived = conversation.archivedAt !== null
+  const navigate = useNavigate()
+  const openMatch = useMatch('/p/:projectId/c/:conversationId')
+  const projectView = useProjectView(conversation.projectId)
+  const Item = variant === 'context' ? ContextMenuItem : MenuItem
+  const Separator = variant === 'context' ? ContextMenuSeparator : MenuSeparator
 
-      {/* Le signet posé reste visible. L'ajout passe par le menu pour rendre au titre
-          la place d'un bouton auparavant invisible. Disponible sur les fils partagés. */}
-      {conversation.favorite ? (
-      <IconButton
-        label={t('shell.conversation.unfavorite')}
-        disabled={toggleFavorite.isPending}
-        size="sm"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={() =>
-          toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })
-        }
-        className="self-center text-accent hover:text-accent"
-      >
-        <Star size={14} className={conversation.favorite ? 'fill-current' : undefined} />
-      </IconButton>
-      ) : null}
-
-        <Menu
-          trigger={
-            <IconButton
-              label={t('shell.conversation.actions')}
-              size="sm"
-              className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
-            >
-              <MoreHorizontal size={15} />
-            </IconButton>
-          }
-        >
-          <MenuItem icon={<Star size={14} />} disabled={toggleFavorite.isPending} onSelect={() => toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })}>
-            {conversation.favorite ? t('shell.conversation.unfavorite') : t('shell.conversation.favorite')}
-          </MenuItem>
-          {conversation.isOwner ? (
-          <>
-          <MenuSeparator />
-          <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
+  return (
+    <>
+      <Item icon={<Star size={14} />} disabled={toggleFavorite.isPending} onSelect={() => toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })}>
+        {conversation.favorite ? t('shell.conversation.unfavorite') : t('shell.conversation.favorite')}
+      </Item>
+      {conversation.isOwner ? (
+        <>
+          <Separator />
+          <Item icon={<Pencil size={14} />} onSelect={onRename}>
             {t('shell.rename')}
-          </MenuItem>
-          <MenuItem
+          </Item>
+          <Item
             icon={isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
             onSelect={() => setArchived.mutate({ id: conversation.id, archived: !isArchived })}
           >
             {isArchived ? t('shell.conversation.unarchive') : t('shell.conversation.archive')}
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem
+          </Item>
+          <Separator />
+          <Item
             icon={<Trash2 size={14} />}
             tone="critical"
             onSelect={() => {
@@ -1353,9 +1034,8 @@ function ConversationRow({
                 return
               const wasOpen = openMatch?.params.conversationId === conversation.id
               remove.mutate(conversation.id, {
-                // Ne quitter la vue que si c'est bien celle qu'on vient de supprimer,
-                // et retomber là où ce projet s'ouvre d'habitude : un repli de secours
-                // n'a pas à décider de sa page d'accueil.
+                // Leave the view only if it is the deleted conversation, falling back to the
+                // project's usual landing view rather than choosing a new home preference.
                 onSuccess: () => {
                   if (wasOpen) navigate(projectViewPath(conversation.projectId, projectView))
                 },
@@ -1363,47 +1043,69 @@ function ConversationRow({
             }}
           >
             {t('shell.delete')}
-          </MenuItem>
-          </>
-          ) : null}
-        </Menu>
-    </li>
+          </Item>
+        </>
+      ) : null}
+    </>
   )
 }
 
-/**
- * Le relevé de volume, sous le titre.
- *
- * Ni bordure ni fond : c'est un prolongement de la ligne, pas un panneau posé dedans.
- * Les chiffres restent sur une seule ligne et disparaissent par la droite plutôt que de
- * passer à la suivante, l'ordre allant du plus parlant au plus accessoire.
- */
-function ConversationMetricsLine({ metrics }: { metrics: ConversationMetrics }) {
+/** Project actions shared by ellipsis button and heading context menu. */
+function ProjectMenuItems({
+  variant,
+  project,
+  onRename,
+  onNavigate,
+}: {
+  variant: 'context' | 'dropdown'
+  project: ProjectDto
+  onRename: () => void
+  onNavigate: () => void
+}) {
   const t = useTranslate()
-  const { context } = metrics
+  const navigate = useNavigate()
+  const updateProject = useUpdateProject()
+  const Item = variant === 'context' ? ContextMenuItem : MenuItem
+  const Separator = variant === 'context' ? ContextMenuSeparator : MenuSeparator
+  const Swatch = variant === 'context' ? ContextMenuSwatch : MenuSwatch
+  const go = (path: string) => {
+    onNavigate()
+    navigate(path)
+  }
 
   return (
-    <span className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden pl-[21px] text-[0.6875rem] whitespace-nowrap text-ink-faint tabular-nums">
-      <span title={t('shell.conversation.turnsTitle')}>
-        {t('shell.conversation.turns', { count: metrics.turnCount })}
-      </span>
-      <span title={t('shell.conversation.sizeTitle')}>{formatBytes(metrics.journalBytes)}</span>
-      {context && context.maxTokens > 0 ? (
-        <span
-          title={t('shell.conversation.contextTitle', {
-            used: formatTokens(context.usedTokens),
-            max: formatTokens(context.maxTokens),
-          })}
-        >
-          {Math.round((context.usedTokens / context.maxTokens) * 100)} %
+    <>
+      <Item icon={<Pencil size={14} />} onSelect={onRename}>
+        {t('shell.rename')}
+      </Item>
+      <Item icon={<SquareKanban size={14} />} onSelect={() => go(`/p/${project.id}/board`)}>
+        {t('shell.project.board')}
+      </Item>
+      <Item icon={<CalendarClock size={14} />} onSelect={() => go(`/p/${project.id}/schedules`)}>
+        {t('schedule.title')}
+      </Item>
+      <Item icon={<SlidersHorizontal size={14} />} onSelect={() => go(`/p/${project.id}`)}>
+        {t('shell.project.settings')}
+      </Item>
+      <Separator />
+      {/* Labels and rows are plain blocks shared by both primitives. */}
+      <MenuLabel>
+        <span className="flex items-center gap-1.5">
+          <Palette size={11} /> {t('shell.color')}
         </span>
-      ) : null}
-      {metrics.model ? (
-        <span className="truncate" title={t('shell.conversation.modelTitle')}>
-          {metrics.model}
-        </span>
-      ) : null}
-    </span>
+      </MenuLabel>
+      <MenuSwatchRow>
+        {PROJECT_COLORS.map((entry) => (
+          <Swatch
+            key={entry.value ?? 'default'}
+            color={entry.value}
+            label={t(entry.label)}
+            selected={project.color === entry.value}
+            onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
+          />
+        ))}
+      </MenuSwatchRow>
+    </>
   )
 }
 

@@ -20,10 +20,10 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
+import { ArrowDownUp, Check, ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type BoardLinkDto, type CardColumn, type CardDto } from '@sillage/protocol'
+import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type BoardLinkDto, type BoardOrder, type CardColumn, type CardDto } from '@sillage/protocol'
 import { BoardLinkDialog } from '../components/board/BoardLinkDialog'
 import { GitHubMark } from '../components/board/GitHubMark'
 import { NewCardDialog } from '../components/board/NewCardDialog'
@@ -31,7 +31,9 @@ import { CardPanel } from '../components/board/CardPanel'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
-import { Button, EmptyState, IconButton, cx } from '../components/ui'
+import { Button, EmptyState, IconButton, Menu, MenuItem, cx } from '../components/ui'
+import { CardRefContext } from '../lib/card-refs'
+import { useBoardOrder } from '../lib/user-settings'
 import { useBoardLink } from '../lib/board-link'
 import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { translateError, useTranslate } from '../lib/i18n'
@@ -42,22 +44,37 @@ import { useSidebarHidden } from '../lib/sidebar'
 import { useMediaQuery } from '../lib/viewport'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 
-/** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
+/** Same breakpoint as the shell: beyond it, sidebar and columns fit side by side. */
 const WIDE = '(min-width: 768px)'
 
 const SidePanel = lazy(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
 )
 
-/** Ordre des cartes par colonne, la forme sur laquelle le glissement travaille. */
+/** Card ordering per column, the representation used during dragging. */
 type Layout = Map<CardColumn, string[]>
 
-function layoutOf(cards: CardDto[]): Layout {
+/** Sort a column by the chosen order, with card number breaking ties. */
+const ORDERINGS: Record<BoardOrder, (a: CardDto, b: CardDto) => number> = {
+  manual: (a, b) => a.position - b.position,
+  recent: (a, b) => b.columnEnteredAt - a.columnEnteredAt || b.number - a.number,
+  oldest: (a, b) => a.columnEnteredAt - b.columnEnteredAt || a.number - b.number,
+}
+
+function layoutOf(cards: CardDto[], order: BoardOrder): Layout {
   const grouped: Layout = new Map(CARD_COLUMNS.map((column) => [column, []]))
-  for (const card of [...cards].sort((a, b) => a.position - b.position)) {
+  for (const card of [...cards].sort(ORDERINGS[order])) {
     grouped.get(card.column)?.push(card.id)
   }
   return grouped
+}
+
+/**
+ * A click on empty board space closes the card drawer. Cards switch the drawer instead;
+ * controls have their own actions.
+ */
+function isEmptyBoardClick(target: EventTarget): boolean {
+  return target instanceof Element && !target.closest('button, a, input, textarea, select, label, [data-card-tile], [role="menu"]')
 }
 
 function columnOf(layout: Layout, cardId: string): CardColumn | undefined {
@@ -68,29 +85,28 @@ function columnOf(layout: Layout, cardId: string): CardColumn | undefined {
 }
 
 /**
- * Ce que le pointeur survole, avec un repli sur le recouvrement des rectangles.
+ * What the pointer hovers over, falling back to rectangle overlap.
  *
- * `pointerWithin` seul est le plus juste quand le pointeur est sur une cible, et ne
- * rend rien du tout quand il passe entre deux colonnes : le geste paraît alors mort
- * dans les gouttières. Le repli garde une cible dans ces creux.
+ * `pointerWithin` is most accurate over a target but returns nothing between columns, making
+ * dragging feel dead in gutters. The fallback retains a target in those gaps.
  */
 const collisionDetection: CollisionDetection = (args) => {
   const under = pointerWithin(args)
   return under.length > 0 ? under : rectIntersection(args)
 }
 
-/** La colonne visée par un survol : soit une carte, soit le fond d'une colonne. */
+/** Column targeted by a hover: either a card or the column background. */
 function targetColumn(layout: Layout, overId: string): CardColumn | undefined {
   if (CARD_COLUMNS.includes(overId as CardColumn)) return overId as CardColumn
   return columnOf(layout, overId)
 }
 
-/** D'où vient une carte, pour le filtre d'un board relié. Une carte détachée est locale. */
+/** Card origin for connected-board filtering. Detached cards are local. */
 type CardSource = 'all' | 'local' | 'github'
 const isGitHubCard = (card: CardDto) => card.external !== null && !card.external.detached
 
 function matchesCard(card: CardDto, query: string): boolean {
-  // `#18` trouve la carte 18, et sur un board relié l'issue 18 : on cite les deux.
+  // `#18` finds card 18 and, on connected boards, issue 18: both numbers are cited.
   if (query.startsWith('#')) {
     const digits = query.slice(1)
     return String(card.number).startsWith(digits) || (card.external !== null && String(card.external.number).startsWith(digits))
@@ -112,6 +128,7 @@ export function BoardPage() {
   const link = linkState?.link ?? null
   const { data: cards, isPending, isError, refetch } = useCards(projectId, link !== null)
   const reorder = useReorderCards(projectId ?? '')
+  const [order, setOrder] = useBoardOrder(projectId)
 
   useRememberProjectView(projectId, 'board')
 
@@ -120,30 +137,29 @@ export function BoardPage() {
   const [linking, setLinking] = useState(false)
   const [source, setSource] = useState<CardSource>('all')
   const search = query.trim().toLocaleLowerCase()
-  // Le filtre de provenance n'a de sens que sur un board relié ; délié, il ne doit
-  // pas cacher des cartes sans que rien à l'écran ne le dise.
+  // Origin filtering only makes sense on connected boards; after unlinking, it must
+  // not hide cards without any visible explanation.
   const from: CardSource = link ? source : 'all'
   const matches = (card: CardDto) =>
     matchesCard(card, search) && (from === 'all' || (from === 'github') === isGitHubCard(card))
   const filtering = Boolean(search) || from !== 'all'
   const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
   /**
-   * Visibles d'emblée : le board dit où en est le projet, et masquer ce qui est fini
-   * en cache la moitié. Le repli reste offert pour retrouver de la place quand le
-   * cimetière devient long.
+   * Visible initially: the board shows project progress, and hiding completed work conceals
+   * half the picture. Collapsing remains available when the graveyard grows long.
    */
   const [showClosed, setShowClosed] = useState(true)
   /**
-   * Disposition pendant le geste, nulle au repos.
+   * Layout during dragging; null at rest.
    *
-   * Le glissement doit se voir avant d'être lâché : sans cet état, une carte tirée vers
-   * une autre colonne y reste invisible jusqu'au relâchement, et on tire à l'aveugle.
+   * Dragging must be visible before release: without this state, cards remain invisible in the
+   * target column until dropped, making the gesture blind.
    */
   const [dragging, setDragging] = useState<{ id: string; layout: Layout } | null>(null)
   const sensors = useSensors(
-    // Un seuil de déplacement, pour qu'un clic sur une carte reste un clic.
+    // Movement threshold keeps a card click a click.
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
-    // Un appui long, sinon le glissement volerait le défilement de la colonne.
+    // Long press, otherwise dragging would steal column scrolling.
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
@@ -152,7 +168,7 @@ export function BoardPage() {
     () => new Map((cards ?? []).map((card) => [card.id, card])),
     [cards],
   )
-  const settled = useMemo(() => layoutOf(cards ?? []), [cards])
+  const settled = useMemo(() => layoutOf(cards ?? [], order), [cards, order])
   const layout = dragging?.layout ?? settled
 
   const project = projects?.find((entry) => entry.id === projectId)
@@ -161,9 +177,8 @@ export function BoardPage() {
   const openNumber = Number(params.get('carte'))
   const openCard = (cards ?? []).find((card) => card.number === openNumber) ?? null
   /**
-   * Le tiroir reste monté le temps de sortir de l'écran, comme le panneau d'outils
-   * d'une conversation : le démonter à la fermeture le ferait disparaître d'un coup,
-   * sans que l'animation ait pu se jouer.
+   * Keep the drawer mounted while it slides out, like conversation tool panels: unmounting
+   * immediately would make it disappear before the animation runs.
    */
   const [lingering, setLingering] = useState<CardDto | null>(openCard)
   useEffect(() => {
@@ -187,10 +202,10 @@ export function BoardPage() {
   }
 
   /**
-   * Traversée d'une colonne à l'autre, jouée pendant le geste.
+   * Cross-column movement during dragging.
    *
-   * Seul le changement de colonne se traite ici : réordonner dans la même colonne à
-   * chaque survol ferait vibrer la liste sous le curseur, alors que le lâcher suffit.
+   * Only column changes are handled here: reordering within one column on every hover would
+   * make the list jitter under the pointer, while drop-time handling suffices.
    */
   const onDragOver = (event: DragOverEvent) => {
     const { active, over } = event
@@ -228,11 +243,14 @@ export function BoardPage() {
     const to = CARD_COLUMNS.includes(String(over.id) as CardColumn)
       ? ids.length - 1
       : ids.indexOf(String(over.id))
-    const ordered = from === -1 || to === -1 || from === to ? ids : arrayMove(ids, from, to)
+    // Arrival-sorted columns cannot be manually reordered: only moves between
+    // columns matter. Reordering in place would silently rewrite manual order,
+    // leaving it scrambled when switching back.
+    const ordered = from === -1 || to === -1 || from === to || order !== 'manual' ? ids : arrayMove(ids, from, to)
 
-    // Seules les colonnes dont le contenu a changé sont réécrites, et chacune en
-    // entier : le serveur refuse une colonne partielle, qui laisserait les cartes
-    // omises intercalées au hasard parmi les nouvelles.
+    // Only columns whose contents changed are rewritten, each in full:
+    // the server rejects partial columns, which would leave cards
+    // omitted cards randomly interspersed among the new ones.
     const changed: CardColumnOrder[] = []
     for (const [key, before] of settled) {
       const after = key === column ? ordered : (snapshot.layout.get(key) ?? [])
@@ -253,9 +271,9 @@ export function BoardPage() {
   const shown = wide ? [...open, ...(showClosed || filtering ? CARD_CLOSED_COLUMNS.filter((column) => column !== 'abandoned' || (layout.get(column)?.length ?? 0) > 0) : [])] : [visibleColumn]
 
   return (
-    // `h-full` et non `flex-1` : le conteneur de la coque défile, donc il n'impose
-    // aucune hauteur à ses enfants, et les colonnes s'arrêtaient à leur contenu au
-    // lieu de descendre jusqu'en bas. `relative` porte le tiroir, posé en absolu.
+    // `h-full`, not `flex-1`: the shell container scrolls and therefore imposes
+    // no height on children; columns stopped at their contents instead of reaching
+    // the bottom. `relative` anchors the absolutely positioned drawer.
     <div className="relative flex h-full min-h-0 flex-col overflow-clip">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
@@ -287,8 +305,10 @@ export function BoardPage() {
               <span className="hidden lg:inline">{t('board.github.connect')}</span>
             </Button>
           ) : null}
-          {/* Libellé court au téléphone : l'en-tête y tient alors sur deux lignes, au lieu
-              de laisser le bouton du panneau seul sur une troisième. */}
+          {/*
+           * Short label on phones keeps the header to two lines instead of leaving the panel
+           * button alone on a third.
+           */}
           <Button icon={<Plus size={16} />} aria-label={t('board.create.title')} onClick={() => setCreating(true)}>
             <span className="sm:hidden">{t('board.create.short')}</span>
             <span className="hidden sm:inline">{t('board.create.title')}</span>
@@ -306,15 +326,17 @@ export function BoardPage() {
           <Button
             variant="ghost"
             size="sm"
-            // `from` : partir d'ici vers une conversation ne doit pas faire du brouillon
-            // la page d'accueil du projet, alors qu'on venait justement du board.
+            // `from`: navigating from here to a conversation must not make its draft the
+            // project home page when the user came from the board.
             onClick={() => navigate(`/p/${projectId}/c/new`, { state: { from: 'board' } })}
           >
             <span className="hidden sm:inline">{t('board.newConversation')}</span>
             <span className="sm:hidden">{t('board.newConversation.short')}</span>
           </Button>
-          {/* Le panneau opère ici sur le workspace du projet : un terminal, les
-              fichiers ou le diff s'ouvrent sans avoir à entrer dans une session. */}
+          {/*
+           * The panel uses the project workspace: open terminals, files or diffs without
+           * entering a session.
+           */}
           <ActionsLauncher projectId={projectId} size="sm" />
           <IconButton
             label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
@@ -361,7 +383,21 @@ export function BoardPage() {
               ))}
             </div>
           ) : null}
-          <p className="hidden text-xs text-ink-faint lg:block">{t(search ? 'board.searchHint' : 'board.hint')}</p>
+          <Menu
+            align="start"
+            trigger={
+              <Button variant="ghost" size="sm" icon={<ArrowDownUp size={14} />} aria-label={t('board.order.label')}>
+                <span className="hidden sm:inline">{t(`board.order.${order}`)}</span>
+              </Button>
+            }
+          >
+            {(['manual', 'recent', 'oldest'] as const).map((value) => (
+              <MenuItem key={value} icon={<Check size={14} className={value === order ? '' : 'invisible'} />} onSelect={() => setOrder(value)}>
+                {t(`board.order.${value}`)}
+              </MenuItem>
+            ))}
+          </Menu>
+          <p className="hidden text-xs text-ink-faint lg:block">{t(search ? 'board.searchHint' : order === 'manual' ? 'board.hint' : 'board.hint.arrival')}</p>
           {reorder.isError ? <p role="alert" className="text-sm text-critical">{t('board.moveError')}</p> : null}
         </div>
         {filtering && !(cards ?? []).some(matches) ? <p role="status" className="px-5 pt-4 text-sm text-ink-faint">{t('board.noResults')}</p> : null}
@@ -369,8 +405,8 @@ export function BoardPage() {
           <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-2 py-1.5">
             {CARD_COLUMNS.map((column) => {
               const count = (layout.get(column) ?? []).filter((id) => { const card = byId.get(id); return card && matches(card) }).length
-              // Les colonnes de sortie ne se proposent au doigt que si elles ont
-              // quelque chose : trois onglets utiles valent mieux que cinq.
+              // On touch screens, offer exit columns only when they contain something:
+              // three useful tabs are better than five.
               if (count === 0 && CARD_CLOSED_COLUMNS.includes(column)) return null
               return (
                 <button
@@ -395,16 +431,23 @@ export function BoardPage() {
 
         <DndContext
           sensors={sensors}
-          // Ni `closestCenter` ni `closestCorners` : une colonne est une grande cible et
-          // une carte une petite, et comparer leurs centres fait gagner la colonne
-          // alors que le pointeur est posé sur une carte.
+          // Neither `closestCenter` nor `closestCorners`: columns are large targets and
+          // cards small ones; comparing centers makes columns win even when the pointer
+          // is directly over a card.
           collisionDetection={collisionDetection}
           onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDragEnd={onDragEnd}
           onDragCancel={() => setDragging(null)}
         >
-          <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto p-3 md:p-5">
+          <div
+            className="flex min-h-0 flex-1 gap-4 overflow-x-auto p-3 md:p-5"
+            // Clicking outside closes the drawer like leaving a window. The keyboard already
+            // has Escape; on phones the drawer fills the screen.
+            onClick={(event) => {
+              if (openCard && isEmptyBoardClick(event.target)) showCard(null)
+            }}
+          >
             {shown.map((column) => (
               <BoardColumn
                 key={column}
@@ -416,13 +459,16 @@ export function BoardPage() {
                 projectId={projectId}
                 link={link}
                 openNumber={openCard?.number ?? null}
+                showArrival={order !== 'manual'}
                 onOpenCard={(card) => showCard(card.number)}
               />
             ))}
           </div>
 
-          {/* La carte suit le pointeur au lieu de se déformer sur place : sans calque,
-              le geste ne rend pas ce qu'on tient, seulement un trou à l'origine. */}
+          {/*
+           * The card follows the pointer rather than deforming in place: without an overlay,
+           * dragging shows only a hole at the origin, not the held card.
+           */}
           <DragOverlay dropAnimation={null}>
             {held ? <CardTile card={held} overlay /> : null}
           </DragOverlay>
@@ -436,6 +482,7 @@ export function BoardPage() {
         setCreating(false); setQuery(''); setVisibleColumn(card.column); showCard(card.number)
       }} />
       {lingering ? (
+        <CardRefContext.Provider value={projectId}>
         <CardPanel
           key={lingering.id}
           card={lingering}
@@ -445,6 +492,7 @@ export function BoardPage() {
           onClose={() => showCard(null)}
           onSelectCard={showCard}
         />
+        </CardRefContext.Provider>
       ) : null}
 
       {panel.mounted ? (
@@ -464,9 +512,11 @@ function BoardColumn({
   onOpenCard,
   filtered,
   link,
+  showArrival,
 }: {
   column: CardColumn
   filtered: boolean
+  showArrival: boolean
   link: BoardLinkDto | null
   cards: CardDto[]
   projectId: string
@@ -477,8 +527,8 @@ function BoardColumn({
   const createCard = useCreateCard(projectId)
   const [title, setTitle] = useState('')
   const [adding, setAdding] = useState(false)
-  // La colonne est elle-même une cible : sans elle, une colonne vide n'aurait aucune
-  // carte à survoler et ne pourrait plus rien recevoir.
+  // The column itself is a drop target: otherwise an empty column has no card
+  // to hover over and cannot receive anything.
   const { setNodeRef, isOver } = useDroppable({ id: column, disabled: filtered })
 
   const submit = () => {
@@ -507,8 +557,8 @@ function BoardColumn({
       <div
         ref={setNodeRef}
         className={cx(
-          // Une hauteur minimale même vide : une bande de deux pixels n'est pas une
-          // cible qu'on peut viser au pointeur.
+          // Minimum height even when empty: a two-pixel strip is not a target
+          // that can be aimed at with a pointer.
           'flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto rounded-md px-2 pb-2 transition-colors',
           isOver && 'bg-accent-wash/40',
         )}
@@ -532,8 +582,10 @@ function BoardColumn({
               }}
               className="w-full resize-none bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
             />
-            {/* L'ajout rapide suit le réglage du board : qu'il crée une issue publique
-                doit se lire avant d'appuyer sur Entrée, pas après. */}
+            {/*
+             * Quick add follows board settings: creating a public issue must be clear before
+             * pressing Enter, not afterwards.
+             */}
             {link?.newCards === 'github' ? (
               <p className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
                 <GitHubMark size={11} />
@@ -569,6 +621,7 @@ function BoardColumn({
               card={card}
               disabled={filtered}
               selected={card.number === openNumber}
+              showArrival={showArrival}
               onOpen={() => onOpenCard(card)}
             />
           ))}

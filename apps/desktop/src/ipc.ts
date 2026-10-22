@@ -1,6 +1,5 @@
 /**
- * Les canaux entre le processus principal et le preload. Dans un module à part : le
- * preload n'embarque qu'eux, et non electron-updater avec le reste de `updates.ts`.
+ * Keep IPC names separate so the preload does not bundle electron-updater.
  */
 export const UPDATE_CHANNELS = {
   state: 'sillage:updates:state',

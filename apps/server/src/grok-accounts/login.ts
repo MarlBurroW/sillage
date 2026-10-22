@@ -11,25 +11,12 @@ import { agentProcessEnv } from '../agents/process-env.js'
 import type { GrokAccountHomes } from './homes.js'
 import type { GrokAccountStore } from './store.js'
 
-/**
- * Connexion d'un compte Grok supplémentaire, par Grok lancé dans son home.
- *
- * Tout passe par Grok : c'est lui qui mène l'échange avec xAI, écrit `auth.json` dans le
- * home du compte et le rafraîchira ensuite. Sillage ne voit ni jeton ni clé après coup.
- *
- * Par code d'appareil, `grok login --device-auth` (sondé sur 1.0.62) : sans terminal, il
- * écrit l'URL `https://accounts.x.ai/oauth2/device?user_code=…` et le code, attend la
- * confirmation, puis « ✓ Signed in as <courriel> » et rend 0. Le flux navigateur est
- * écarté pour la même raison que chez Codex : son retour vise le serveur, injoignable.
- *
- * Par clé API, la méthode ACP `xai.api_key` : Grok lit `XAI_API_KEY` et l'enregistre dans
- * l'`auth.json` du home (`store_api_key` dans ses sources).
- */
+/** Additional Grok account login through Grok launched in its home. Grok handles xAI exchanges, writes `auth.json` and refreshes it later; Sillage subsequently sees neither tokens nor keys. Device login uses `grok login --device-auth` (probed on 1.0.62): without a terminal it prints `https://accounts.x.ai/oauth2/device?user_code=…` and a code, waits for confirmation, then prints '✓ Signed in as <email>' and exits 0. Browser login is excluded for Codex's same reason: redirects target the unreachable server. API-key login uses ACP `xai.api_key`; Grok reads `XAI_API_KEY` and stores it in the home's `auth.json` (`store_api_key` in its source). */
 
-/** Au-delà, la connexion en attente est abandonnée : personne n'a saisi le code. */
+/** Abandon pending logins after this timeout when nobody enters the code. */
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
 
-/** Ce que `grok login` met à écrire l'URL et le code avant qu'on renonce. */
+/** Time allowed for `grok login` to print its URL and code. */
 const START_TIMEOUT_MS = 30_000
 
 interface PendingLogin {
@@ -41,7 +28,7 @@ interface PendingLogin {
 
 type LoginOutcome = { state: 'done' } | { state: 'failed'; error: string }
 
-/** Retire les séquences de couleur et d'effacement de ligne qu'écrit le CLI. */
+/** Removes CLI color and line-clearing sequences. */
 function plain(text: string): string {
   return text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
 }
@@ -71,10 +58,7 @@ export class GrokLoginService {
     return agentProcessEnv({ ...GROK_ISOLATION_ENV, GROK_HOME: home, ...extra })
   }
 
-  /**
-   * Par code d'appareil : rend l'URL et le code dès que Grok les a écrits, et garde le
-   * process jusqu'à sa fin. Une connexion déjà en cours sur ce compte est reprise.
-   */
+  /** Device login returns URL and code as soon as Grok prints them, retaining the process until completion. Reuse in-progress logins for the same account. */
   async startDeviceCode(accountId: string): Promise<GrokLoginStatusDto> {
     if (this.pending.has(accountId)) return this.status(accountId)
     this.outcomes.delete(accountId)
@@ -115,7 +99,7 @@ export class GrokLoginService {
         clearTimeout(startTimer)
         const pending = this.pending.get(accountId)
         if (!pending || pending.child !== child) {
-          // Mort avant d'avoir donné son code : la raison est dans ce qu'il a écrit.
+          // Process died before printing its code: output explains why.
           reject(new Error(output.trim().split('\n').slice(-2).join(' ') || `grok login a rendu ${code}.`))
           return
         }
@@ -130,7 +114,7 @@ export class GrokLoginService {
     return this.status(accountId)
   }
 
-  /** Par clé API : Grok l'écrit dans l'`auth.json` du home, et répond tout de suite. */
+  /** API-key login: Grok writes the home's `auth.json` and responds immediately. */
   async loginWithApiKey(accountId: string, apiKey: string): Promise<void> {
     await this.cancel(accountId)
     const home = this.homes.ensure(accountId)
@@ -154,7 +138,7 @@ export class GrokLoginService {
     this.outcomes.set(accountId, { state: 'done' })
   }
 
-  /** Relit la formule de l'abonnement, qui peut changer après la connexion. */
+  /** Rereads subscription plans, which may change after login. */
   async refresh(accountId: string): Promise<void> {
     const account = this.store.findById(accountId)
     if (!account?.authMode) return
@@ -162,10 +146,7 @@ export class GrokLoginService {
     this.store.setIdentity(accountId, { authMode: account.authMode, email: account.email, plan: usage.plan })
   }
 
-  /**
-   * Déconnecte le home : `grok logout` révoque la session, puis l'`auth.json` du compte,
-   * le seul fichier qui lui soit propre avec ses caches, est retiré quoi que dise Grok.
-   */
+  /** Logs out the home: `grok logout` revokes the session, then remove account `auth.json` regardless of Grok's result; only it and caches are account-specific. */
   async logout(accountId: string): Promise<void> {
     await this.cancel(accountId)
     const home = this.homes.ensure(accountId)
@@ -193,7 +174,7 @@ export class GrokLoginService {
   async forget(accountId: string): Promise<void> {
     await this.cancel(accountId)
     this.outcomes.delete(accountId)
-    // Sans suivre les liens : `rm` n'entre pas dans la cible d'un lien symbolique.
+    // Do not follow links: `rm` never enters symlink targets.
     await rm(this.homes.path(accountId), { recursive: true, force: true })
   }
 
@@ -217,7 +198,7 @@ export class GrokLoginService {
     clearTimeout(pending.timer)
     this.store.setIdentity(accountId, { authMode: 'grok', email, plan: null })
     this.outcomes.set(accountId, { state: 'done' })
-    // La formule se lit après coup : son échec ne défait pas une connexion réussie.
+    // Read plans afterward: failures must not undo successful logins.
     await this.refresh(accountId).catch(() => {})
   }
 }

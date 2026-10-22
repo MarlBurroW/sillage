@@ -32,7 +32,7 @@ async function server(t: TestContext, cwd: string, environment: Record<string, s
   const program = options.noPort
     ? "setInterval(() => {}, 1000); process.send({ port: null })"
     : "const net = require('node:net'); const server = net.createServer(); server.listen(0, '127.0.0.1', () => process.send({ port: server.address().port }))"
-  // Un porteur comme le CLI, puis sa commande : les deux ont des rôles distincts.
+  // CLI-like carrier followed by its command: distinct roles.
   const child = spawn(process.execPath, ['-e', `
     const { spawn } = require('node:child_process');
     const worker = spawn(process.execPath, ['-e', ${JSON.stringify(program)}], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env: ${options.clearEnv ? '{}' : 'process.env'} });
@@ -51,7 +51,7 @@ async function server(t: TestContext, cwd: string, environment: Record<string, s
     try {
       const current = processIdentity(await readFile(`/proc/${message.pid}/stat`, 'utf8'))
       if (identity.start === current.start) process.kill(message.pid, 'SIGTERM')
-    } catch { /* Déjà arrêté par le test. */ }
+    } catch { /* Already stopped by the test. */ }
     if (child.exitCode === null && child.signalCode === null) child.kill()
     await exited
   })
@@ -183,8 +183,8 @@ test('un vrai serveur tmux ne suffit pas à rattacher ses tâches, même avec le
   const script = join(dir, 'worker.cjs')
   await writeFile(script, `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`)
   t.after(async () => {
-    // Conserver le socket jusqu'à kill-server : les hooks after tournent dans
-    // l'ordre d'enregistrement, pas en pile comme les destructeurs.
+    // Keep sockets until kill-server: after hooks run in registration order,
+    // not destructor stack order.
     await exec('tmux', ['-S', socket, 'kill-server']).catch(() => {})
     await rm(dir, { recursive: true, force: true })
   })
@@ -323,7 +323,7 @@ test('apps : unité réelle, ports, origine, visibilité et arrêt par l’API',
   await exec('systemd-run', ['--user', '--collect', `--unit=${tracked}`, `--setenv=SILLAGE_PROCESS_ORIGIN=${token}`, `--working-directory=${dir}`, process.execPath, '-e', listen])
   await exec('systemd-run', ['--user', '--collect', `--unit=${orphan}`, process.execPath, '-e', 'setInterval(() => {}, 1000)'])
 
-  // Le port n'est ouvert qu'une fois le processus lancé : quelques scans au plus.
+  // Ports open only after process launch: at most a few scans.
   let app = (await scanServiceApps(origins)).find((entry) => entry.unit === tracked)
   for (let attempt = 0; attempt < 30 && !app?.ports.length; attempt++) {
     await delay(100)
@@ -368,7 +368,7 @@ test('apps : unité réelle, ports, origine, visibilité et arrêt par l’API',
   assert.equal((await act('other', owned[0]!.id, 'stop')).statusCode, 404)
   assert.equal((await act('owner', owned[0]!.id, 'explode')).statusCode, 404)
   assert.equal((await act('owner', owned[0]!.id, 'reset')).statusCode, 409, 'Rien à retirer sur une app en marche')
-  // Relancée, l'app change d'invocation : un clic sur l'ancienne liste ne la vise plus.
+  // Restarted apps have new invocations: clicks on stale lists no longer target them.
   assert.equal((await act('owner', owned[0]!.id, 'restart')).statusCode, 202)
   let restarted = (await apps('owner'))[0]
   for (let attempt = 0; attempt < 50 && restarted?.id === owned[0]!.id; attempt++) {
@@ -379,7 +379,7 @@ test('apps : unité réelle, ports, origine, visibilité et arrêt par l’API',
   assert.equal((await act('owner', owned[0]!.id, 'stop')).statusCode, 404)
   assert.equal((await act('owner', restarted.id, 'stop')).statusCode, 202)
   assert.equal((await act('admin', adminView[0]!.id, 'stop')).statusCode, 202)
-  // `--no-block` : l'arrêt suit la réponse ; une unité transitoire arrêtée disparaît.
+  // `--no-block`: stopping follows responses; stopped transient units disappear.
   for (let attempt = 0; attempt < 50 && (await apps('admin')).length + (await apps('owner')).length > 0; attempt++) await delay(100)
   assert.deepEqual([...await apps('owner'), ...await apps('admin')], [])
   assert.equal((await act('owner', restarted.id, 'stop')).statusCode, 404)

@@ -10,7 +10,7 @@ import type { PushService } from '../../push/push-service.js'
 import { notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-/** L'adresse par laquelle le navigateur joint l'instance, telle qu'il la voit. */
+/** Address the browser uses to reach this instance, as seen by that browser. */
 function originOf(request: FastifyRequest): string | undefined {
   const origin = request.headers.origin
   if (typeof origin === 'string' && origin) return origin
@@ -19,12 +19,7 @@ function originOf(request: FastifyRequest): string | undefined {
   return typeof host === 'string' ? `${String(proto).split(',')[0]}://${host}` : undefined
 }
 
-/**
- * Abonnement aux notifications.
- *
- * L'abonnement appartient au couple compte + appareil : le même navigateur connecté
- * sous un autre compte produit un endpoint distinct, et rien ne fuit de l'un à l'autre.
- */
+/** Notification subscription. Owned by the account/device pair: the same browser signed into another account creates a different endpoint, preventing leakage between accounts. */
 export function registerPushRoutes(app: FastifyInstance, push: PushService): void {
   app.get('/api/push', async (request): Promise<PushStatusDto> => {
     const user = requireUser(request)
@@ -50,7 +45,7 @@ export function registerPushRoutes(app: FastifyInstance, push: PushService): voi
     return reply.status(204).send()
   })
 
-  /** Une notification d'essai, après un délai pour avoir le temps de fermer l'application. */
+  /** Test notification delayed to allow closing the application first. */
   app.post('/api/push/test', async (request) => {
     const user = requireUser(request)
     const body = pushTestBodySchema.parse(request.body)

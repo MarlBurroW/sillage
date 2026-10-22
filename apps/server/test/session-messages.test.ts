@@ -42,7 +42,7 @@ async function harness(t: TestContext) {
     return JSON.parse(run.stdout).result as { content: { text: string }[]; isError?: boolean }
   }
 
-  // Le gestionnaire factice ne retient que les gestes du relais.
+  // Fake managers record relay actions only.
   const calls: { kind: 'steer' | 'send'; to: string; text: string }[] = []
   let steerWorks = true
   const sessions = {
@@ -93,7 +93,7 @@ test('a message is steered into a running session, and the reply wakes the idle 
   const first = db.select().from(sessionMessages).get()!
   assert.equal(first.deliveredVia, 'steer')
   assert.ok(calls[0].text.includes(`reply_to="${first.id}"`))
-  // L'interface doit pouvoir rendre à la bulle son expéditeur et son seul corps.
+  // Interfaces must recover bubble senders and body content separately.
   assert.deepEqual(parseSessionMessage(calls[0].text), {
     kind: 'message', from: 'a', title: 'Session a', agent: 'claude', messageId: first.id,
     body: 'Je touche à `schema.ts`, ne le modifie pas.',
@@ -106,7 +106,7 @@ test('a message is steered into a running session, and the reply wakes the idle 
   const reply = db.select().from(sessionMessages).where(eq(sessionMessages.toConversationId, 'a')).get()!
   assert.equal(reply.deliveredVia, 'wake')
 
-  // Déjà remis : un second balayage ne refait rien.
+  // Already delivered: another sweep does nothing.
   await relay.sweep()
   assert.equal(calls.length, 2)
 
@@ -124,7 +124,7 @@ test('wakes are capped, held messages show in the thread once, and the tool read
   await relay.sweep()
   assert.equal(calls.length, 6)
 
-  // L'expéditeur l'apprend à l'envoi, pas après coup.
+  // Senders learn during send, not afterward.
   const warned = mcp('a', 'send_session_message', { to: 'b', body: 'message 6' }).content[0].text
   assert.match(warned, /ne la relancera pas/)
   mcp('a', 'send_session_message', { to: 'b', body: 'message 7' })
@@ -185,7 +185,7 @@ test('a broadcast reaches only the sessions at work, and never wakes one', async
 
   const reply = mcp('a', 'broadcast_session_message', { body: 'Je redémarre Sillage dans 2 min.' }).content[0].text
   assert.match(reply, /2 session/)
-  // `c` a fini entre l'annonce et la remise.
+  // `c` completed between announcement and delivery.
   setStatus('c', 'idle')
   await relay.sweep()
 

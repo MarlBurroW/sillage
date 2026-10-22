@@ -18,16 +18,15 @@ import { CatalogDialog } from './CatalogDialog'
 
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)
 
-/** Ce que le catalogue ouvre : une source, et le skill à montrer d'emblée s'il y en a un. */
+/** Catalog destination: source and optional initial skill. */
 interface Browsing {
   sourceId: string
   skillName: string | null
 }
 
 /**
- * Les dépôts d'où la bibliothèque s'installe. Les déclarer et les rafraîchir revient aux
- * administrateurs ; parcourir un catalogue est ouvert à tous, pour installer dans les
- * projets qu'on possède.
+ * Repositories supplying library skills. Administrators declare and refresh sources; everyone can
+ * browse to install within owned projects.
  */
 export function SkillSourcesSection({ isAdmin }: { isAdmin: boolean }) {
   const t = useTranslate()
@@ -161,7 +160,7 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
   )
 }
 
-/** Déclarer une source, puis la récupérer d'office : une source vide ne sert à rien. */
+/** Declare then fetch sources immediately because empty sources are useless. */
 function AddSourceForm({ onDone }: { onDone: (sourceId: string | null) => void }) {
   const t = useTranslate()
   const create = useCreateSkillSource()
@@ -211,17 +210,14 @@ function AddSourceForm({ onDone }: { onDone: (sourceId: string | null) => void }
 }
 
 /**
- * Trouver un skill sur skills.sh et l'installer. Un skill s'installe depuis une source,
- * qui suit ses mises à jour : son dépôt en devient une au passage, sans étape à part, et
- * le catalogue s'ouvre sur le skill choisi.
- *
- * Masquée quand l'annuaire ne répond pas comme prévu : son API n'est pas documentée, et
- * rien ici ne dépend de l'utilisateur.
+ * Find skills on skills.sh and install. Skills come from update-tracked sources, so automatically
+ * register their repository and open its catalog at the chosen skill. Hide when the undocumented
+ * directory API misbehaves because users cannot fix it.
  */
 function SkillsShSearch({ onOpen }: { onOpen: (browsing: Browsing) => void }) {
   const t = useTranslate()
   const [query, setQuery] = useState('')
-  // Une requête par pause de frappe, pas une par lettre : l'annuaire n'est pas à nous.
+  // Debounce requests: the external directory is not ours.
   const [settled, setSettled] = useState('')
   useEffect(() => {
     const timer = setTimeout(() => setSettled(query), 300)
@@ -231,7 +227,7 @@ function SkillsShSearch({ onOpen }: { onOpen: (browsing: Browsing) => void }) {
   const { data: declared } = useSkillSources()
   const create = useCreateSkillSource()
   const refresh = useRefreshSkillSource()
-  /** Le résultat dont le dépôt est en cours de récupération. */
+  /** Result whose repository is being fetched. */
   const [pending, setPending] = useState<string | null>(null)
 
   if (data && !data.available) return null
@@ -243,8 +239,7 @@ function SkillsShSearch({ onOpen }: { onOpen: (browsing: Browsing) => void }) {
     const known = sourceOf(result)
     const show = (sourceId: string) => onOpen({ sourceId, skillName: result.name })
     if (known?.lastCommit) return show(known.id)
-    // Le catalogue ne liste que les sources récupérées : il ne s'ouvre qu'une fois le
-    // dépôt cloné, et l'erreur s'affiche ici sinon.
+    // Catalogs list fetched sources only: open after clone completion, otherwise display the error here.
     const retrieve = (sourceId: string) =>
       refresh.mutate(sourceId, {
         onSuccess: () => show(sourceId),
@@ -276,7 +271,7 @@ function SkillsShSearch({ onOpen }: { onOpen: (browsing: Browsing) => void }) {
               const source = sourceOf(result)
               return (
                 <li key={keyOf(result)} className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-surface-high">
-                  {/* Nom, puis dépôt et audience : sur une ligne, au doigt, ils se chevauchaient. */}
+                  {/* Name then repository/audience on separate lines to prevent touch overlap. */}
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate font-mono text-sm">{result.name}</span>
                     <span className="truncate text-xs text-ink-faint">

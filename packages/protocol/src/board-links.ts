@@ -4,17 +4,16 @@ import { agentKindSchema } from './events.js'
 import { DEFAULT_DECISION_HOURS, MAX_DECISION_HOURS } from './decisions.js'
 
 /**
- * Un board relié à une source externe : les issues d'un dépôt GitHub y deviennent des
- * cartes, à côté des cartes locales, qui le restent.
+ * A board linked to an external source: GitHub repository issues become cards alongside local
+ * cards, which stay local.
  *
- * GitHub fait foi pour ce qui vient de lui (titre, description, état, commentaires) ;
- * Sillage n'y ajoute que ce qu'il est seul à savoir, les sessions et les notes locales.
- * Les nouvelles cartes restent locales, sauf si le board dit le contraire.
+ * GitHub is authoritative for its content (title, description, state, comments); Sillage adds
+ * only what it alone knows: sessions and local notes. New cards stay local unless the board
+ * specifies otherwise.
  *
- * La maintenance (sessions ouvertes par une issue ou un commentaire) ne décide rien à la
- * place de l'utilisateur : Sillage fournit le déclencheur, le contexte et la marque qui
- * reconnaît ce qu'il a publié ; ce que fait l'agent, et comment il répond, vient des
- * instructions écrites ici.
+ * Maintenance (sessions opened by an issue or comment) makes no decisions for the user: Sillage
+ * supplies the trigger, context and marker identifying its publications. Agent actions and
+ * replies follow the instructions written here.
  */
 
 export const MAX_BOARD_LABEL_CHARS = 50
@@ -22,7 +21,7 @@ export const MAX_BOARD_INSTRUCTIONS_CHARS = 8000
 export const MAX_BOARD_SIGNATURE_CHARS = 300
 export const MAX_BOARD_SESSIONS_PER_HOUR = 100
 
-/** `owner/nom`, comme GitHub l'écrit. */
+/** `owner/name`, as written by GitHub. */
 export const githubRepoSchema = z
   .string()
   .trim()
@@ -32,18 +31,18 @@ export const boardNewCardsSchema = z.enum(['local', 'github'])
 export type BoardNewCards = z.infer<typeof boardNewCardsSchema>
 
 /**
- * Qui parle sur GitHub : `developer`, l'agent écrit comme le développeur, sans rien de
- * visible ; `ai`, chaque publication d'agent se termine par la signature choisie. La
- * marque de session, invisible, est posée dans les deux cas.
+ * Who speaks on GitHub: `developer` means the agent writes as the developer without visible
+ * attribution; `ai` appends the chosen signature to every agent publication. The invisible
+ * session marker is added in both cases.
  */
 export const boardIdentitySchema = z.enum(['developer', 'ai'])
 export type BoardIdentity = z.infer<typeof boardIdentitySchema>
 
-/** Un commentaire pendant que la session travaille : il attend la fin du tour, ou l'infléchit. */
+/** A comment arriving while the session works: wait until the turn ends, or steer it. */
 export const boardCommentDeliverySchema = z.enum(['queue', 'steer'])
 export type BoardCommentDelivery = z.infer<typeof boardCommentDeliverySchema>
 
-/** Où travaille la session d'une issue : son worktree `issue-<n>`, ou l'arbre principal. */
+/** Where an issue session works: its `issue-<n>` worktree or the main tree. */
 export const boardWorkspaceSchema = z.enum(['worktree', 'root'])
 export type BoardWorkspace = z.infer<typeof boardWorkspaceSchema>
 
@@ -53,39 +52,38 @@ const instructions = z.string().max(MAX_BOARD_INSTRUCTIONS_CHARS)
 export const boardLinkSettingsSchema = z
   .object({
     repo: githubRepoSchema,
-    /** Ne montrer que les issues qui portent ce label ; vide pour toutes. */
+    /** Only show issues carrying this label; empty shows all. */
     labelFilter: label,
-    /** Les issues fermées depuis moins de ce nombre de jours restent visibles. */
+    /** Issues closed within this many days remain visible. */
     closedDays: z.number().int().min(0).max(365),
-    /** Où vont les cartes créées sur ce board, par une personne ou un agent. */
+    /** Destination of cards created on this board by a person or agent. */
     newCards: boardNewCardsSchema,
-    /** Label qui place une issue ouverte dans « en cours ». */
+    /** Label placing an open issue in “in progress”. */
     progressLabel: label,
-    /** Label qui place une issue ouverte dans « à vérifier ». */
+    /** Label placing an open issue in “review”. */
     reviewLabel: label,
 
-    /** Une issue ouverte sur GitHub, hors Sillage, ouvre une session sur sa carte. */
+    /** An issue opened on GitHub outside Sillage opens a session on its card. */
     onIssue: z.boolean(),
     issueInstructions: instructions,
-    /** Un commentaire écrit sur GitHub, hors Sillage, arrive dans la session de son issue. */
+    /** A comment written on GitHub outside Sillage reaches its issue's session. */
     onComment: z.boolean(),
     commentInstructions: instructions,
     commentDelivery: boardCommentDeliverySchema,
-    /** Ton, langue, ce qu'on promet : commun aux deux déclencheurs. */
+    /** Tone, language and commitments, shared by both triggers. */
     replyStyle: instructions,
     identity: boardIdentitySchema,
     signature: z.string().trim().max(MAX_BOARD_SIGNATURE_CHARS),
-    /** CLI et réglages des sessions de maintenance ; null : ceux du projet pour ce CLI. */
+    /** CLI and settings for maintenance sessions; null uses project settings for that CLI. */
     sessionAgent: agentKindSchema,
     sessionConfig: agentConfigSchema.nullable(),
     workspace: boardWorkspaceSchema,
     /**
-     * Sessions ouvertes et commentaires transmis par heure, au plus. Ne sert que si une
-     * publication échappe à la marque (un agent qui l'oublie avec `gh`) : la boucle
-     * s'arrête là.
+     * Maximum sessions opened and comments forwarded per hour. Needed only if a publication
+     * lacks a marker (an agent forgetting it with `gh`): this stops the loop.
      */
     maxSessionsPerHour: z.number().int().min(1).max(MAX_BOARD_SESSIONS_PER_HOUR),
-    /** Les sessions de maintenance peuvent demander une décision, attendue au plus ce délai. */
+    /** Maintenance sessions may request a decision, waiting at most this long. */
     decisionsEnabled: z.boolean(),
     decisionMaxHours: z.number().int().min(1).max(MAX_DECISION_HOURS),
   })
@@ -123,22 +121,22 @@ export interface BoardLinkDto extends BoardLinkSettings {
   projectId: string
   provider: 'github'
   url: string
-  /** Compte dont l'identifiant GitHub sert à lire et écrire, et qui possède les sessions. */
+  /** Account whose GitHub credential reads and writes, and which owns the sessions. */
   userId: string
   userName: string
-  /** Issues retirées du board à la main, que la synchronisation laisse de côté. */
+  /** Issues manually removed from the board and skipped by sync. */
   hiddenCount: number
   lastSyncedAt: number | null
-  /** Code de la dernière erreur de synchronisation, traduit par l'interface. */
+  /** Latest sync error code, translated by the UI. */
   lastError: string | null
   syncing: boolean
 }
 
-/** Ce que l'écran de liaison propose avant qu'un board soit relié. */
+/** What the linking screen offers before a board is connected. */
 export interface BoardLinkStateDto {
   link: BoardLinkDto | null
-  /** Dépôt déduit de l'`origin` du dépôt local, quand c'est GitHub. */
+  /** Repository inferred from the local repository's `origin`, when it is GitHub. */
   suggestedRepo: string | null
-  /** Le compte courant a un identifiant pour github.com : sans lui, rien ne se relie. */
+  /** Current account has a github.com credential: linking requires it. */
   hasCredential: boolean
 }

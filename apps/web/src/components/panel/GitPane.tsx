@@ -17,7 +17,7 @@ import { OperationBanner, RepoHeader } from './git/RepoHeader'
 import { StashesSection } from './git/StashesSection'
 import { TurnChangesView } from './git/TurnChangesView'
 
-/** Le graphe garde sa place pendant que l’on inspecte un commit ou prépare le suivant. */
+/** Keep the graph in place while inspecting commits or preparing the next. */
 export function GitPane({
   scope,
   conversationId,
@@ -27,7 +27,7 @@ export function GitPane({
   onOpenFile,
 }: {
   scope: string
-  /** Absente en vue projet : il n'y a alors pas de tour à montrer. */
+  /** Absent in project views without turns to display. */
   conversationId?: string
   checkpoints?: TurnCheckpoint[]
   canRestore?: boolean
@@ -39,19 +39,19 @@ export function GitPane({
   const status = useGitStatus(scope)
   const refresh = useRefreshGit(scope)
   const [notice, setNotice] = useState<GitNotice | null>(null)
-  // Le tour désigné depuis le fil, s'il appartient bien à cette conversation.
+  // Thread-selected turn if it belongs to this conversation.
   const checkpointKey = usePanelCheckpoint()
   const checkpoint = conversationId ? (checkpoints.find((entry) => entry.key === checkpointKey) ?? null) : null
   const [restoring, setRestoring] = useState<TurnCheckpoint | null>(null)
 
-  // Un tour qui se termine a pu commiter, changer de branche, tout réécrire : on relit.
+  // Completed turns may commit, switch branches, or rewrite everything: reread.
   const wasRunning = useRef(turnRunning)
   useEffect(() => {
     if (wasRunning.current && !turnRunning) refresh()
     wasRunning.current = turnRunning
   }, [turnRunning, refresh])
 
-  // Un succès n'a pas à rester affiché : il s'efface seul. Un échec attend d'être lu.
+  // Success clears automatically; failure waits to be read.
   useEffect(() => {
     if (!notice || notice.tone === 'critical') return
     const timer = setTimeout(() => setNotice(null), 6000)
@@ -62,8 +62,7 @@ export function GitPane({
 
   return (
     <GitContext.Provider value={{ scope, notify: setNotice, openFile: onOpenFile }}>
-      {/* `@container` : l'auteur d'un commit et les dates ne s'affichent que si la ligne
-          a la place, qui dépend de la largeur du panneau et non de celle de la fenêtre. */}
+      {/* Container queries show authors and dates only if panel rows, rather than windows, have space. */}
       <div className="git-workspace @container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-safe">
         {status.isPending ? (
           <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">
@@ -148,7 +147,7 @@ export function GitPane({
   )
 }
 
-/** Ce qu'une action a donné, avec ses remèdes quand il y en a. */
+/** Action outcome with available remedies. */
 function Notice({ notice, onDismiss }: { notice: GitNotice; onDismiss: () => void }) {
   const t = useTranslate()
   return (
@@ -185,9 +184,8 @@ function Notice({ notice, onDismiss }: { notice: GitNotice; onDismiss: () => voi
 }
 
 /**
- * Le répertoire n'est pas un dépôt : on le dit, et on propose d'en faire un. Un
- * projet créé depuis Sillage sans clone en est là, et c'est le premier geste qu'on
- * ferait dans un terminal.
+ * Explain non-Git directories and offer initialization, the natural first terminal action for
+ * projects created without cloning.
  */
 function NotARepository({ scope }: { scope: string }) {
   const t = useTranslate()

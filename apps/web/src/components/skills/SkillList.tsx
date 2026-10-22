@@ -4,10 +4,7 @@ import type { LibrarySkillDto, LocalSkillOrigin } from '@sillage/protocol'
 import { translate, useTranslate, type MessageKey } from '../../lib/i18n'
 import { Badge } from '../ui'
 
-/**
- * Liste des skills de la bibliothèque. Chaque ligne mène à l'éditeur, qui porte les
- * actions : la liste se parcourt, elle ne s'édite pas.
- */
+/** Library list navigates to editors owning actions: browse here rather than editing. */
 export function SkillList({ skills, showScope = false }: { skills: LibrarySkillDto[]; showScope?: boolean }) {
   return (
     <ul className="flex flex-col gap-2">
@@ -44,7 +41,7 @@ function SkillRow({ skill, showScope }: { skill: LibrarySkillDto; showScope: boo
   )
 }
 
-/** Ce qu'on doit savoir d'un skill sans l'ouvrir : où il vit, s'il est livré, s'il cloche. */
+/** Skill summary: location, delivery state, and issues. */
 export function SkillBadges({ skill, showScope }: { skill: LibrarySkillDto; showScope: boolean }) {
   const t = useTranslate()
   return (
@@ -72,7 +69,7 @@ const ORIGIN_KEYS: Record<LocalSkillOrigin, MessageKey> = {
   'agents-repo': 'skills.origin.agents-repo',
 }
 
-/** D'où vient un skill trouvé sur la machine, et donc quel CLI le voit aujourd'hui. */
+/** Machine skill origin indicating which CLI currently sees it. */
 export function originLabel(origin: LocalSkillOrigin): string {
   return translate(ORIGIN_KEYS[origin])
 }

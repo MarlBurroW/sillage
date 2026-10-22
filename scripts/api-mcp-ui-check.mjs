@@ -9,8 +9,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Vérifie que les réglages présentent l'API et le serveur MCP côte à côte, qu'un jeton MCP
-// se crée sans les champs propres aux tâches, puis que ce jeton ouvre le vrai serveur MCP.
+// Check settings show API/MCP side by side, create an MCP token without task-only
+// fields, then open the real MCP server with that token.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -75,12 +75,12 @@ try {
     await page.setViewportSize(viewport)
     await page.goto(`${base}/settings/api`)
     await page.getByRole('heading', { name: 'API et serveur MCP' }).waitFor()
-    // Les deux portes, chacune avec son adresse.
+    // Both entry points, each with its address.
     await page.getByRole('heading', { name: 'API REST', exact: true }).waitFor()
     await page.getByRole('heading', { name: 'Serveur MCP', exact: true }).waitFor()
     assert.ok(await page.getByText(`${base}/api/v1`, { exact: true }).isVisible())
     assert.ok(await page.getByText(`${base}/api/v1/mcp`, { exact: true }).first().isVisible())
-    // Sur la carte MCP, le guide replié porte un emplacement à la place du jeton.
+    // Collapsed guide on MCP card contains a placeholder instead of token.
     await page.getByText('Brancher un client MCP', { exact: true }).click()
     assert.ok(await page.getByText('Authorization: Bearer <jeton>', { exact: true }).isVisible())
     await page.screenshot({ path: join(shots, `${name}-surfaces.png`), fullPage: true })
@@ -89,10 +89,10 @@ try {
     await page.getByRole('heading', { name: 'Nouveau jeton MCP' }).waitFor()
     assert.ok(await page.getByRole('checkbox', { name: /^mcp/ }).isChecked())
     assert.equal(await page.getByRole('checkbox', { name: /tasks:write/ }).isChecked(), false)
-    // Sans portée de tâches, ni CLI ni webhook : ils ne régleraient rien.
+    // Without task scope, no CLI/webhook: they would configure nothing.
     assert.equal(await page.getByText('Ni CLI ni modèle à choisir', { exact: false }).isVisible(), true)
     assert.equal(await page.getByRole('textbox', { name: 'URL de webhook' }).count(), 0)
-    // Cocher une portée de tâches les fait revenir.
+    // Selecting task scope brings them back.
     await page.getByRole('checkbox', { name: /tasks:write/ }).check()
     assert.equal(await page.getByRole('textbox', { name: 'URL de webhook' }).count(), 1)
     await page.getByRole('checkbox', { name: /tasks:write/ }).uncheck()
@@ -108,22 +108,22 @@ try {
   const token = await tokenResponse.json()
   assert.deepEqual(token.token.scopes, ['mcp'])
   assert.equal(token.token.webhookUrl, null)
-  // Le jeton se montre avec le guide de branchement, valable pour tout client MCP.
+  // Token appears with connection guide applicable to every MCP client.
   const reveal = page.locator('.surface', { has: page.getByRole('heading', { name: 'Votre jeton', exact: true }) })
   await reveal.getByText('Sillage parle le protocole MCP standard', { exact: false }).waitFor()
   assert.ok(await reveal.getByText(`Authorization: Bearer ${token.secret}`, { exact: true }).isVisible())
   assert.ok(await reveal.getByText('HTTP « streamable »', { exact: false }).isVisible())
-  // Les exemples sont repliés, puis portent le jeton une fois ouverts.
+  // Examples start collapsed and contain token once opened.
   await reveal.getByText('Exemples', { exact: true }).click()
   assert.ok(await reveal.getByText(`http_headers = { "Authorization" = "Bearer ${token.secret}" }`, { exact: false }).isVisible())
   assert.ok(await reveal.getByText('"mcpServers"', { exact: false }).isVisible())
   await page.screenshot({ path: join(shots, 'phone-secret.png'), fullPage: true })
-  // Le CLI ne règle que les tâches : un jeton MCP seul n'en affiche pas.
+  // CLI controls only tasks: MCP-only tokens show none.
   assert.equal(await page.locator('main').getByText('claude', { exact: true }).count(), 0)
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.screenshot({ path: join(shots, 'desktop-secret.png'), fullPage: true })
 
-  // Le jeton ouvre le vrai serveur MCP, et rien d'autre.
+  // Token opens real MCP server and nothing else.
   const headers = { authorization: `Bearer ${token.secret}` }
   const rpc = (body, session) => context.request.post(`${base}/api/v1/mcp`, { headers: { ...headers, ...(session ? { 'mcp-session-id': session } : {}) }, data: body })
   const init = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'check', version: '0' } } })
@@ -134,9 +134,9 @@ try {
   assert.match(listed.result.content[0].text, /projet\(s\)/)
   assert.equal((await context.request.get(`${base}/api/v1/projects`, { headers })).status(), 403)
 
-  // Depuis les serveurs donnés aux agents, un renvoi vers celui de Sillage.
+  // Link from agent-provided servers to Sillage's server.
   await page.goto(`${base}/settings/mcp`)
-  // Le lien du paragraphe, pas celui de la navigation des réglages, qui porte le même nom.
+  // Use paragraph link, not same-named settings-navigation link.
   const pointer = page.locator('p', { hasText: 'Ce sont des serveurs que vos agents utilisent' })
   await pointer.waitFor()
   await pointer.getByRole('link', { name: 'API et MCP' }).click()

@@ -1,20 +1,7 @@
 import { getQuickJS, type QuickJSWASMModule } from 'quickjs-emscripten'
 import { scriptDecisionSchema, type AutomationEvent, type DeliveryReason } from '@sillage/protocol'
 
-/**
- * Le script facultatif d'une automatisation, exécuté dans QuickJS compilé en
- * WebAssembly.
- *
- * Le script arrive par l'interface, d'un compte qui n'est pas forcément
- * l'administrateur, et lit un corps venu d'Internet ; il tourne dans le daemon. `node:vm`
- * ne l'isolerait pas (la documentation de Node le dit), `isolated-vm` demanderait un
- * module natif à compiler sur chaque plateforme. QuickJS n'a ni réseau, ni fichiers, ni
- * `process`, et se borne en mémoire et en temps : une boucle infinie est interrompue,
- * un tableau qui enfle échoue en « out of memory ».
- *
- * Un runtime neuf par exécution : un script qui a épuisé sa mémoire laisse le sien dans
- * un état incertain, et en recréer un coûte une fraction de milliseconde.
- */
+/** Optional automation scripts run in QuickJS compiled to WebAssembly. Scripts arrive through the interface, potentially from non-administrators, and process Internet-supplied bodies inside the daemon. `node:vm` provides no isolation (as Node documents), while `isolated-vm` requires native compilation on every platform. QuickJS exposes no networking, files or `process`, and enforces memory and time limits: infinite loops are interrupted and growing arrays fail with 'out of memory'. Create a fresh runtime for each execution because exhausted runtimes may be in an uncertain state and recreation costs a fraction of a millisecond. */
 
 const MEMORY_BYTES = 16 * 1024 * 1024
 const STACK_BYTES = 512 * 1024
@@ -24,22 +11,19 @@ const MAX_LOG_LINES = 50
 let quickjs: Promise<QuickJSWASMModule> | null = null
 
 export interface ScriptOutcome {
-  /** La décision validée : null pour ignorer l'appel. */
+  /** Validated decision: null means ignore the call. */
   decision:
     | { kind: 'skip'; reason: string | null }
     | { kind: 'launch'; subject: string | null; vars: Record<string, unknown> }
-  /** Ce qui a fait échouer le script, en code : l'interface en fait une phrase. */
+  /** Script failure code, translated into a sentence by the interface. */
   error: DeliveryReason | null
-  /** Ce que rendait le script, tel quel, pour le testeur. */
+  /** Raw script return value for the test bench. */
   raw: unknown
   logs: string[]
   durationMs: number
 }
 
-/**
- * `export default function (event) { … }` devient une affectation globale : le script
- * s'évalue comme un script ordinaire, sans chargeur de modules à fournir.
- */
+/** Turns `export default function (event) { … }` into a global assignment so evaluation works as an ordinary script without a module loader. */
 function prepare(source: string): string {
   const rewritten = source.replace(/^\s*export\s+default\s+/m, 'globalThis.__decide = ')
   return rewritten === source ? `${source}\n;globalThis.__decide = globalThis.__decide ?? (typeof decide === 'function' ? decide : undefined)` : rewritten
@@ -65,7 +49,7 @@ export async function runAutomationScript(source: string, event: AutomationEvent
   })
 
   try {
-    // `console.log` remonte dans le testeur : c'est le seul débogueur du script.
+    // Surface `console.log` in the test bench: it is the script's only debugger.
     const log = vm.newFunction('log', (...args) => {
       if (logs.length < MAX_LOG_LINES) {
         logs.push(args.map((arg) => {

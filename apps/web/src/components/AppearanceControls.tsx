@@ -7,6 +7,7 @@ const LABEL_KEYS: Record<AppearanceKey, { title: MessageKey; hint: MessageKey }>
   hue: { title: 'appearance.hue.title', hint: 'appearance.hue.hint' },
   tint: { title: 'appearance.tint.title', hint: 'appearance.tint.hint' },
   lift: { title: 'appearance.lift.title', hint: 'appearance.lift.hint' },
+  conversationWidth: { title: 'appearance.conversationWidth.title', hint: 'appearance.conversationWidth.hint' },
   readingSize: { title: 'appearance.readingSize.title', hint: 'appearance.readingSize.hint' },
   readingLeading: {
     title: 'appearance.readingLeading.title',
@@ -23,21 +24,19 @@ const LABEL_KEYS: Record<AppearanceKey, { title: MessageKey; hint: MessageKey }>
 }
 
 /**
- * Réglages fins du thème : teinte, intensité, luminosité.
- *
- * Le hook vit chez l'appelant plutôt qu'ici : la page de design affiche les valeurs
- * sRGB résolues et doit donc se redessiner au bougé du curseur, ce qu'un état interne
- * au composant ne déclencherait pas.
+ * Fine theme controls: hue, intensity, lightness. Callers own hooks because the design page
+ * displays resolved sRGB values and must redraw on slider movement, which internal component state
+ * would not trigger.
  */
 export function AppearanceControls({
   appearance,
-  /** Curseurs à afficher : tous les thèmes ne réagissent pas aux mêmes réglages. */
+  /** Visible sliders: themes do not react identically to every setting. */
   keys = ['hue', 'tint', 'lift'],
   swatches = true,
 }: {
   appearance: ReturnType<typeof useAppearance>
   keys?: AppearanceKey[]
-  /** La bande de surfaces ne dit rien des réglages de typographie. */
+  /** Surface strips convey nothing about typography settings. */
   swatches?: boolean
 }) {
   const { values, set, reset } = appearance
@@ -54,10 +53,10 @@ export function AppearanceControls({
         />
       ))}
 
-      {/* Aperçu vivant : les curseurs s'appliquent à <html>, ces surfaces suivent donc
-          en direct, comme le reste de l'application. Il ne s'affiche que pour les
-          réglages de couleur : sous des curseurs de typographie, une bande de surfaces
-          ne montrerait rien de ce qu'ils changent. */}
+      {/*
+       * Live preview follows html-applied sliders like the rest of the app. Show only for color
+       * settings because surface strips reveal no typography changes.
+       */}
       <div className="flex items-center gap-2">
         {swatches ? (
           <div className="flex flex-1 overflow-hidden rounded-md border border-line">
@@ -79,11 +78,9 @@ export function AppearanceControls({
 }
 
 /**
- * Roue des teintes en fond du curseur, aux mêmes luminosité et chroma que l'accent
- * réel : choisir sa couleur à vue plutôt qu'en balayant le curseur à l'aveugle.
- *
- * Les arrêts sont calculés une fois : `oklch()` n'interpole pas dans un dégradé CSS,
- * un `linear-gradient` de deux teintes traverserait le gris au lieu du spectre.
+ * Hue-wheel slider background matches real accent lightness/chroma for visual selection. Compute
+ * stops once because CSS oklch gradients do not interpolate hue as needed; two-stop gradients would
+ * cross gray rather than the spectrum.
  */
 const HUE_STOPS = Array.from({ length: 13 }, (_, index) => {
   const hue = (index * 360) / 12
@@ -106,6 +103,7 @@ function Slider({
   const spectrum = name === 'hue'
   const number = (input: number) => input.toLocaleString(locale(), { maximumFractionDigits: 2 })
   const display = spectrum ? `${number(value)}°`
+    : name === 'conversationWidth' ? `${number(value)} px`
     : name === 'readingSize' ? `${number(value * 16)} px`
     : name === 'readingLeading' ? `${number(value)} ×`
     : `${value > 0 && name === 'lift' ? '+' : ''}${number(value * 100)} %`

@@ -8,30 +8,12 @@ import {
 } from '@sillage/protocol'
 import type { SecretStore } from '../secrets/store.js'
 
-/**
- * Lecture du registre MCP pour le compte des runners.
- *
- * Les conversations ne stockent que des identifiants : un serveur renommé ou
- * reconfiguré vaut pour toutes celles qui l'utilisent, sans réécrire leur config.
- * Le revers est qu'un identifiant peut désigner un serveur supprimé, cas traité ici
- * plutôt que dans chaque runner.
- *
- * C'est aussi ici que les `{{secret.NOM}}` sont remplacés. La substitution ne se fait
- * qu'au dernier moment, dans le process qui lance le CLI : les valeurs déchiffrées ne
- * sont jamais écrites en base, ne passent pas par le journal et ne remontent pas au
- * navigateur.
- */
+/** Runner MCP registry reads. Conversations retain IDs, so renaming/reconfiguration applies globally without rewriting settings; handle deleted IDs here instead of per runner. Substitute `{{secret.NOM}}` only immediately before CLI launch: decrypted values never enter databases, journals or browsers. */
 
 export interface ResolvedMcpServers {
-  /** Prêts à partir au CLI, secrets substitués. */
+  /** Ready for CLIs with secrets substituted. */
   servers: McpServer[]
-  /**
-   * Écartés faute d'un secret, à afficher en échec dans l'inventaire.
-   *
-   * Écartés plutôt que transmis avec un en-tête vide : un serveur distant répondrait
-   * alors un 401 que rien ne relie au secret manquant, et le diagnostic se ferait à
-   * l'aveugle.
-   */
+  /** Servers excluded for missing secrets, displayed failed in inventory. Exclude rather than transmit empty headers, which would produce unexplained remote 401 errors and obscure diagnosis. */
   failures: { name: string; error: string }[]
 }
 
@@ -46,7 +28,7 @@ export function rowToMcpServer(row: McpServerRow): McpServer {
   }
 }
 
-/** Substitue dans chaque valeur d'une table, en cumulant les secrets introuvables. */
+/** Substitutes all map values while collecting missing secrets. */
 function applyToValues(
   pairs: Record<string, string>,
   resolve: (name: string) => string | undefined,
@@ -76,14 +58,7 @@ function withSecrets(
   return { server: { ...server, transport: resolved }, missing: [...missing] }
 }
 
-/**
- * Serveurs à transmettre au CLI pour une conversation.
- *
- * Silencieux sur les identifiants inconnus et sur les serveurs désactivés : ce sont des
- * états normaux, pas des erreurs. Une conversation qui référence un serveur supprimé
- * doit démarrer, pas échouer, sans quoi supprimer une entrée du registre casserait
- * toutes les conversations qui s'en servaient.
- */
+/** Conversation servers delivered to CLIs. Silently ignore unknown IDs and disabled servers as normal states: deleting registry entries must not break referencing conversations. */
 export function resolveMcpServers(
   db: Db,
   store: SecretStore,
@@ -97,9 +72,9 @@ export function resolveMcpServers(
   const servers: McpServer[] = []
   const failures: ResolvedMcpServers['failures'] = []
 
-  // Ordonné selon la configuration, pas selon la base : deux serveurs qui exposent un
-  // outil de même nom se départagent par cet ordre, qui doit rester celui que
-  // l'utilisateur a choisi.
+  // Order by configuration rather than database: duplicate tool names resolve
+  // according to the order
+  // chosen by the user.
   for (const id of ids) {
     const row = byId.get(id)
     if (!row || !row.enabled) continue
@@ -118,12 +93,7 @@ export function resolveMcpServers(
   return { servers, failures }
 }
 
-/**
- * Serveurs écartés, sous la forme que l'inventaire attend.
- *
- * `external: false` : ce sont bien des serveurs de Sillage, c'est justement pour ça
- * qu'ils doivent se corriger depuis l'écran des secrets.
- */
+/** Excluded servers in inventory form. `external: false` because these belong to Sillage and must be fixed through Secrets settings. */
 export function failedStatuses(failures: ResolvedMcpServers['failures']): McpServerStatus[] {
   return failures.map((failure) => ({
     name: failure.name,
@@ -134,15 +104,15 @@ export function failedStatuses(failures: ResolvedMcpServers['failures']): McpSer
   }))
 }
 
-/** Secrets référencés par une entrée du registre, pour dire où un secret sert. */
+/** Secrets referenced by registry entries for usage lookup. */
 export function secretsUsedBy(row: McpServerRow): string[] {
   const transport = mcpTransportSchema.parse(JSON.parse(row.transport))
   const values = transport.type === 'stdio' ? transport.env : transport.headers
 
   const used = new Set<string>()
   for (const value of Object.values(values)) {
-    // La substitution sert ici de lecteur : elle rend les noms non résolus, ce qui est
-    // exactement la liste cherchée quand rien n'est résolu.
+    // Use substitution as a reader: unresolved names are precisely the desired list
+    // when nothing resolves.
     for (const name of applySecrets(value, () => undefined).missing) used.add(name)
   }
   return [...used]

@@ -2,11 +2,9 @@ import type { DecisionDto, DecisionSourceKind } from '@sillage/protocol'
 import type { translate } from '../../lib/i18n'
 
 /**
- * Les mots d'une décision, dans la langue du lecteur.
- *
- * Une demande d'agent s'affiche telle qu'il l'a écrite. Une proposition de nettoyage
- * d'arbre vient de Sillage, qui ne connaît pas la langue du lecteur : le serveur garde
- * des clés de choix (`clean`, `keep`) et la branche, et c'est ici qu'on les rédige.
+ * Decision wording in reader language. Preserve agent-written requests. Sillage cleanup proposals
+ * store choice keys (clean, keep) and branch because servers lack reader locale; translate them
+ * here.
  */
 type Source = { source: Pick<DecisionDto['source'], 'kind' | 'label' | 'worktreePath'> }
 
@@ -27,7 +25,7 @@ export function decisionOption(decision: Source, option: string, t: typeof trans
   return option
 }
 
-/** Le toast n'a que la question, la source et son nom : assez pour la recomposer. */
+/** Toasts carry only question, source, and name, enough to reconstruct text. */
 export function toastQuestion(
   notification: { question: string; sourceLabel: string; sourceKind?: DecisionSourceKind },
   t: typeof translate,

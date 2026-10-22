@@ -24,20 +24,14 @@ import {
 import { processOrigins } from '../services/origins.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 
-/**
- * Actions de projet : stockage, et exécution dans un terminal ou une unité systemd.
- *
- * Partagé entre les routes et les demandes des agents (`register_action`,
- * `run_action`) : les deux doivent refuser la même chose, et un agent ne doit pas
- * pouvoir faire passer pour relue une commande qu'il vient d'écrire.
- */
+/** Project action storage and execution in terminals or systemd units. Shared by routes and agent requests (`register_action`, `run_action`) so both reject identical cases and agents cannot mark newly written commands reviewed. */
 
-/** Nom d'unité tiré de l'identifiant seul : renommer l'action ne perd pas l'unité qui tourne. */
+/** Derive unit names solely from IDs so renaming actions does not lose running units. */
 export function actionUnit(actionId: string): string {
   return `sillage-app-action-${actionId.slice(0, 8)}.service`
 }
 
-/** Le terminal de lecture du journal d'un service se range sous cette clé, à part de l'action. */
+/** Service-log terminals use this separate key, outside the action's own terminal. */
 const logsKey = (actionId: string) => `${actionId}:logs`
 
 export function listActionRows(db: Db, projectIds: string[]): ProjectActionRow[] {
@@ -56,7 +50,7 @@ export function loadAction(db: Db, actionId: string): ProjectActionRow {
   return row
 }
 
-/** `agentConversationId` null : créée depuis l'interface, donc relue d'office. */
+/** Null `agentConversationId` means interface-created and implicitly reviewed. */
 export function createAction(
   db: Db,
   projectId: string,
@@ -92,11 +86,7 @@ export function createAction(
   return row
 }
 
-/**
- * Une modification par l'interface vaut relecture. Par un agent, elle remet l'action
- * en `proposed` dès qu'elle touche à ce qui s'exécute : renommer un bouton ne change
- * rien au risque, changer sa commande si.
- */
+/** Interface edits count as review. Agent edits reset actions to `proposed` whenever executable content changes: renaming buttons leaves risk unchanged, changing commands does not. */
 export function updateAction(
   db: Db,
   row: ProjectActionRow,
@@ -113,7 +103,7 @@ export function updateAction(
     url: patch.url === undefined ? row.url : patch.url || null,
     updatedAt: Date.now(),
   }
-  // L'URL compte avec ce qui s'exécute : c'est un lien qu'on suivra sans le relire.
+  // URLs count as executable content because users follow links without rereading them.
   const executionChanged =
     next.kind !== row.kind || next.command !== row.command || next.subdir !== row.subdir || next.url !== row.url
   if (agentConversationId) {
@@ -177,7 +167,7 @@ export class ActionRunner {
     return process.env.SHELL || '/bin/sh'
   }
 
-  /** L'état des unités, lu en une passe pour toute la liste. */
+  /** Unit states read in one pass for the whole list. */
   private async serviceStates(rows: ProjectActionRow[]): Promise<Map<string, ProjectActionServiceState>> {
     const states = new Map<string, ProjectActionServiceState>()
     if (!rows.some((row) => row.kind === 'service') || !(await serviceAppsAvailable())) return states
@@ -225,7 +215,7 @@ export class ActionRunner {
     return (await this.toDtos([row]))[0]!
   }
 
-  /** Le dossier d'exécution : le worktree donné, plus le sous-dossier de l'action. */
+  /** Execution directory: supplied worktree plus action subdirectory. */
   private async cwdFor(row: ProjectActionRow, base: string): Promise<string> {
     const cwd = row.subdir ? join(base, row.subdir) : base
     const isDir = await stat(cwd).then((s) => s.isDirectory(), () => false)
@@ -235,10 +225,7 @@ export class ActionRunner {
     return cwd
   }
 
-  /**
-   * Lance l'action. Une exécution qui tourne encore est rendue telle quelle plutôt que
-   * doublée : deux serveurs de dev se disputeraient le port, deux suites de tests la base.
-   */
+  /** Launches actions. Return existing active runs rather than duplicate them: dev servers would compete for ports, test suites for databases. */
   async run(row: ProjectActionRow, base: string, conversationId: string | null): Promise<ProjectActionRunResult> {
     const cwd = await this.cwdFor(row, base)
     const origin = processOrigins(this.config.paths.data).environment(row.projectId, conversationId)
@@ -281,7 +268,7 @@ export class ActionRunner {
     }
   }
 
-  /** Arrêter ou relancer un service ; repli sur son terminal sans systemd. */
+  /** Stops or restarts services, falling back to terminals without systemd. */
   async control(row: ProjectActionRow, op: ServiceActionControl, base: string): Promise<ProjectActionRunResult> {
     if (row.kind !== 'service') throw conflict('action_not_service', 'Only service actions can be stopped or restarted.')
     if (await serviceAppsAvailable()) {
@@ -299,7 +286,7 @@ export class ActionRunner {
     return this.run(row, previous?.cwd ?? base, null)
   }
 
-  /** Le journal d'un service, suivi dans un terminal du panneau. */
+  /** Service journal followed in a panel terminal. */
   async logs(row: ProjectActionRow, base: string): Promise<ProjectActionRunResult> {
     if (row.kind !== 'service' || !(await serviceAppsAvailable())) {
       throw conflict('action_no_logs', 'Only services run by systemd have a journal.')
@@ -315,7 +302,7 @@ export class ActionRunner {
     return { terminal, service: null, alreadyRunning: false }
   }
 
-  /** À la suppression : une unité orpheline tournerait sans bouton pour l'arrêter. */
+  /** On deletion, stop units that would otherwise run without a stop button. */
   async forget(row: ProjectActionRow): Promise<void> {
     if (row.kind === 'service' && (await serviceAppsAvailable())) {
       await controlServiceApp(actionUnit(row.id), 'stop').catch(() => undefined)

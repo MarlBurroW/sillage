@@ -7,45 +7,44 @@ import { agentKindSchema, type AgentKind } from './events.js'
 import { automationTemplateIdSchema, webhookSettingsSchema, type WebhookAutomationDto } from './automations.js'
 
 /**
- * Tâches planifiées : un prompt que le daemon rejoue à cadence fixe, chaque tir dans
- * une session neuve.
+ * Scheduled tasks: a prompt replayed by the daemon at a fixed cadence, each run in a fresh
+ * session.
  *
- * Les bornes sont ici plutôt que dans le serveur parce que le formulaire les affiche et
- * que l'outil MCP `schedule_task` doit refuser la même chose que la route.
+ * Limits live here rather than on the server because the form displays them and the
+ * `schedule_task` MCP tool must reject the same inputs as the route.
  */
 
-/** En deçà, un tir n'a pas fini que le suivant arrive : c'est une boucle, pas une tâche. */
+/** Below this, the next run arrives before the last finishes: a loop, not a task. */
 export const MIN_SCHEDULE_INTERVAL_MINUTES = 1
-/** Un an : au-delà, c'est une date qu'on veut, pas un intervalle. */
+/** One year: beyond this, use a date rather than an interval. */
 export const MAX_SCHEDULE_INTERVAL_MINUTES = 366 * 24 * 60
 
 export const MIN_SCHEDULE_DURATION_MINUTES = 1
 export const MAX_SCHEDULE_DURATION_MINUTES = 24 * 60
-/** Assez pour un audit, trop peu pour qu'un agent égaré coûte une nuit. */
+/** Enough for an audit, too short for a wandering agent to consume a whole night. */
 export const DEFAULT_SCHEDULE_DURATION_MINUTES = 30
 
 export const MAX_SCHEDULE_NAME_CHARS = 120
-/** Même plafond qu'une mission de `start_session` : au-delà, un fichier que le prompt cite. */
+/** Same limit as a `start_session` mission: beyond this, use a file referenced by the prompt. */
 export const MAX_SCHEDULE_PROMPT_CHARS = 20000
 
 /**
- * Vérification avant le tour : un script que le daemon joue avant d'ouvrir la session,
- * pour ne réveiller le LLM que quand il y a quelque chose à faire.
+ * Pre-turn check: a script the daemon runs before opening the session, waking the LLM only when
+ * there is work to do.
  *
- * Le contrat tient dans le code de sortie : `0` lance le tour, `CHECK_SKIP_EXIT_CODE`
- * l'écarte sans session, tout autre code est une erreur. Un code dédié au « rien à
- * faire » plutôt que `1` : un script qui plante sort souvent en 1, et sa panne passerait
- * pour un « rien de neuf » silencieux.
+ * The contract is the exit code: `0` starts the turn, `CHECK_SKIP_EXIT_CODE` skips it without a
+ * session, and any other code is an error. A dedicated “nothing to do” code rather than `1`:
+ * crashes commonly exit 1, and must not silently look like “nothing new”.
  */
 export const CHECK_SKIP_EXIT_CODE = 10
 export const MAX_CHECK_SCRIPT_CHARS = 20000
 export const MIN_CHECK_TIMEOUT_SECONDS = 5
 export const DEFAULT_CHECK_TIMEOUT_SECONDS = 120
 export const MAX_CHECK_TIMEOUT_SECONDS = 1800
-/** Ce que la sortie standard peut apporter au prompt ; au-delà, elle est tronquée. */
+/** Maximum stdout contribution to the prompt; truncated beyond this. */
 export const MAX_CHECK_OUTPUT_CHARS = 20000
 
-/** Vide ou null retire la vérification : un champ vidé dans le formulaire veut dire « aucune ». */
+/** Empty or null removes the check: clearing the form field means “none”. */
 export const checkScriptSchema = z
   .string()
   .max(MAX_CHECK_SCRIPT_CHARS)
@@ -54,11 +53,11 @@ export const checkScriptSchema = z
 export const checkTimeoutSchema = z.number().int().min(MIN_CHECK_TIMEOUT_SECONDS).max(MAX_CHECK_TIMEOUT_SECONDS)
 
 /**
- * Quand une tâche tire.
+ * When a task runs.
  *
- * Trois formes et non le seul motif cron : « toutes les 6 heures » se compte depuis le
- * dernier tir, ce qu'un motif ne sait pas dire, et une date unique n'a pas de motif du
- * tout. Les heures d'un motif se lisent dans le fuseau du serveur.
+ * Three forms rather than cron alone: “every 6 hours” counts from the previous run, which a
+ * cron expression cannot express; a one-time date has no cron expression at all. Cron times use
+ * the server timezone.
  */
 export const scheduleCadenceSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -67,25 +66,24 @@ export const scheduleCadenceSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('cron'), expression: cronScheduleSchema }),
   z.object({ kind: z.literal('once'), at: z.number().int().positive() }),
-  // Pas d'heure : la tâche part quand son webhook reçoit un appel qui passe ses
-  // conditions. Sa configuration vit à part, voir `automations.ts`.
+  // No scheduled time: the task runs when its webhook receives a call passing its
+  // conditions. Configuration lives separately; see `automations.ts`.
   z.object({ kind: z.literal('webhook') }),
 ])
 export type ScheduleCadence = z.infer<typeof scheduleCadenceSchema>
 
 /**
- * Sort d'un tir qui arrive pendant que le précédent tourne encore : `skip` le laisse
- * passer, `wait` le fait partir dès que la place est libre. Jamais deux en parallèle :
- * ils travailleraient le même arbre.
+ * A run due while the previous one is active: `skip` drops it, `wait` starts it when the slot
+ * frees up. Never two in parallel: they would work in the same tree.
  */
 export const scheduleOverlapPolicySchema = z.enum(['skip', 'wait'])
 export type ScheduleOverlapPolicy = z.infer<typeof scheduleOverlapPolicySchema>
 
-/** `fresh` : une session neuve par tir. Le mode continu viendra s'ajouter ici. */
+/** `fresh`: a new session per run. Continuous mode will be added here later. */
 export const scheduleExecutionModeSchema = z.enum(['fresh'])
 export type ScheduleExecutionMode = z.infer<typeof scheduleExecutionModeSchema>
 
-/** `checking` : la vérification tourne, ou la session démarre juste derrière elle. */
+/** `checking`: the check is running, or its subsequent session is starting. */
 export const scheduleRunStatusSchema = z.enum(['checking', 'running', 'succeeded', 'failed', 'timed_out', 'skipped'])
 export type ScheduleRunStatus = z.infer<typeof scheduleRunStatusSchema>
 
@@ -107,10 +105,10 @@ export const createScheduledTaskBodySchema = z.object({
   enabled: z.boolean().default(true),
   checkScript: checkScriptSchema.default(null),
   checkTimeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
-  /** L'agent peut demander une décision, et elle attend au plus ce délai. Éteint par défaut. */
+  /** The agent may request a decision, waiting at most this long. Disabled by default. */
   decisionsEnabled: z.boolean().default(false),
   decisionMaxHours: z.number().int().min(1).max(MAX_DECISION_HOURS).default(DEFAULT_DECISION_HOURS),
-  /** Pour une cadence `webhook` : le modèle de départ et des réglages qui le complètent. */
+  /** For `webhook` cadence: starting template and supplemental settings. */
   webhook: z
     .object({
       template: automationTemplateIdSchema.optional(),
@@ -119,7 +117,7 @@ export const createScheduledTaskBodySchema = z.object({
     .optional(),
 })
 
-/** Tout est facultatif : la pause n'envoie que `enabled`. */
+/** All optional: pausing sends only `enabled`. */
 export const updateScheduledTaskBodySchema = z
   .object({
     name: z.string().trim().min(1).max(MAX_SCHEDULE_NAME_CHARS),
@@ -142,9 +140,9 @@ export const updateScheduledTaskBodySchema = z
   .partial()
 
 /**
- * Essai d'un script sans rien lancer, tel qu'il est dans le formulaire, avant même
- * d'être enregistré. `taskId` le joue sur une copie de l'état de cette tâche ; sans
- * lui, sur un état vide, comme un premier tir.
+ * Tests the script as currently entered in the form without launching anything, even before
+ * saving. `taskId` tests against a copy of that task's state; without it, use empty state like
+ * a first run.
  */
 export const testScheduleCheckBodySchema = z.object({
   script: z.string().min(1).max(MAX_CHECK_SCRIPT_CHARS),
@@ -153,31 +151,31 @@ export const testScheduleCheckBodySchema = z.object({
 })
 
 /**
- * Validation du script proposé par un agent. Le texte relu est renvoyé : s'il a changé
- * entre l'affichage et le clic, on refuse plutôt que de valider ce qu'on n'a pas lu.
+ * Approval of an agent-proposed script. The reviewed text is returned: if it changed between
+ * display and click, reject rather than approve unseen text.
  */
 export const approveScheduleCheckBodySchema = z.object({
   script: z.string().min(1).max(MAX_CHECK_SCRIPT_CHARS),
 })
 
-/** « Lancer maintenant », avec ou sans la vérification. */
+/** “Run now”, with or without the check. */
 export const runScheduleBodySchema = z.object({ skipCheck: z.boolean().default(false) }).default({})
 
-/** Verdict tiré du code de sortie : la seule chose que le daemon interprète. */
+/** Verdict derived from the exit code, the only thing the daemon interprets. */
 export type ScheduleCheckVerdict = 'launch' | 'skip' | 'error'
 
 export interface ScheduleCheckResultDto {
   verdict: ScheduleCheckVerdict
-  /** Null quand le script n'a pas fini : délai dépassé, ou impossible à lancer. */
+  /** Null if the script did not finish: timed out or could not start. */
   exitCode: number | null
   timedOut: boolean
-  /** Ce que le prompt reçoit, tronqué à `MAX_CHECK_OUTPUT_CHARS`. */
+  /** What the prompt receives, truncated to `MAX_CHECK_OUTPUT_CHARS`. */
   stdout: string
   stderr: string
   durationMs: number
 }
 
-/** Ce que la vérification a donné pour un tir. */
+/** Check outcome for a run. */
 export interface ScheduledRunCheckDto {
   exitCode: number | null
   stdout: string
@@ -188,7 +186,7 @@ export interface ScheduledRunCheckDto {
 export interface ScheduledRunDto {
   id: string
   taskId: string
-  /** Null quand le tir n'a rien lancé, ou que son fil a été supprimé depuis. */
+  /** Null if the run launched nothing or its thread was later deleted. */
   conversationId: string | null
   trigger: ScheduleRunTrigger
   status: ScheduleRunStatus
@@ -196,17 +194,17 @@ export interface ScheduledRunDto {
   startedAt: number
   finishedAt: number | null
   error: string | null
-  /** Null quand le tir n'a pas joué de vérification. */
+  /** Null if the run performed no check. */
   check: ScheduledRunCheckDto | null
 }
 
-/** La vérification d'une tâche, telle que l'interface la montre et la fait valider. */
+/** Task check as displayed and submitted for approval by the UI. */
 export interface ScheduledTaskCheckDto {
   script: string
   timeoutSeconds: number
-  /** Faux tant qu'un script écrit par un agent n'a pas été relu : les tirs sont écartés. */
+  /** False until an agent-written script is reviewed: runs are skipped. */
   approved: boolean
-  /** Conversation de l'agent qui l'a proposé ; null quand il vient de l'interface. */
+  /** Conversation of the proposing agent; null when created in the UI. */
   proposedBy: string | null
 }
 
@@ -224,30 +222,30 @@ export interface ScheduledTaskDto {
   maxDurationMinutes: number
   enabled: boolean
   lastRunAt: number | null
-  /** Null quand plus rien n'est prévu : en pause, ou ponctuelle déjà tirée. */
+  /** Null if nothing remains scheduled: paused, or a completed one-time task. */
   nextRunAt: number | null
   createdAt: number
   updatedAt: number
-  /** Les derniers tirs, du plus récent au plus ancien. */
+  /** Latest runs, newest first. */
   runs: ScheduledRunDto[]
-  /** Réglages du webhook, pour une tâche que déclenche un appel ; null sinon. */
+  /** Webhook settings for a call-triggered task; otherwise null. */
   webhook: WebhookAutomationDto | null
-  /** Le script joué avant chaque tour ; null sans vérification. */
+  /** Script run before each turn; null without a check. */
   check: ScheduledTaskCheckDto | null
-  /** L'agent peut demander une décision humaine, avec ce délai maximal. */
+  /** The agent may request a human decision with this maximum wait. */
   decisionsEnabled: boolean
   decisionMaxHours: number
 }
 
 /**
- * Prochain tir d'une cadence après `after`, ou null s'il n'y en a plus.
+ * Next cadence occurrence after `after`, or null if none remains.
  *
- * Partagé entre le daemon, qui arme, et le formulaire, qui montre ce qu'il va armer :
- * deux calculs finiraient par annoncer une heure et tirer à une autre.
+ * Shared by the daemon, which schedules it, and the form, which previews it: separate
+ * calculations would eventually show one time and trigger at another.
  *
- * `lastRunAt` ne sert qu'à l'intervalle, qui se compte depuis le tir précédent. Sans
- * lui, le premier tir attend un intervalle entier : une tâche « toutes les 6 heures »
- * qui partirait à la création surprendrait, et « lancer maintenant » existe pour ça.
+ * `lastRunAt` applies only to intervals, counted from the previous run. Without it, the first
+ * run waits a full interval: running an “every 6 hours” task immediately at creation would
+ * surprise users; “run now” exists for that.
  */
 export function nextScheduleRun(
   cadence: ScheduleCadence,
@@ -259,7 +257,7 @@ export function nextScheduleRun(
   if (cadence.kind === 'interval') {
     const step = cadence.minutes * 60_000
     const next = (lastRunAt ?? after) + step
-    // Un daemon resté arrêté plusieurs intervalles ne rattrape pas les tirs manqués.
+    // A daemon stopped for several intervals does not catch up missed runs.
     return next > after ? next : after + step
   }
   try {

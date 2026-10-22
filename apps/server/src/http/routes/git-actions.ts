@@ -56,14 +56,14 @@ import { workspaceScopes } from './workspace-scopes.js'
 import type { WorktreeStatusService } from '../../worktrees/status-service.js'
 
 /**
- * Le workflow git de l'onglet Git : état détaillé du dépôt, puis les gestes dessus.
+ * Git tab workflow: detailed repository state and operations on it.
  *
- * Deux portées, conversation et projet, comme le reste du panneau (voir
- * `workspace-scopes.ts`). Les droits sont ceux du panneau : qui voit le projet agit
- * sur son dépôt, comme il le ferait déjà depuis un terminal du panneau.
+ * Conversation and project scopes match the rest of the panel (see
+ * `workspace-scopes.ts`). Panel permissions apply: project viewers may act on
+ * its repository, just as they can through a panel terminal.
  *
- * Les actions d'un même dépôt sont sérialisées : git refuse de travailler à deux, et
- * un double clic ne doit pas finir en « index.lock exists ».
+ * Serialize operations per repository: git cannot run competing writes, and
+ * double clicks must not end in 'index.lock exists'.
  */
 export function registerGitActionRoutes(
   app: FastifyInstance,
@@ -71,9 +71,9 @@ export function registerGitActionRoutes(
   worktreeStatus: WorktreeStatusService,
 ): void {
   /**
-   * Le helper de credentials de Sillage, pour les commandes qui parlent au remote.
-   * Introuvable sur une installation incomplète : on s'en passe plutôt que d'interdire
-   * un push qui passerait par les credentials du dépôt lui-même.
+   * Sillage credential helper for commands communicating with remotes.
+   * Missing in incomplete installations: proceed without it rather than block
+   * pushes that could use the repository's own credentials.
    */
   const remoteEnv = (userId: string): NodeJS.ProcessEnv => {
     try {
@@ -112,8 +112,8 @@ export function registerGitActionRoutes(
     })
 
     /**
-     * Une action sur le dépôt de la portée : résolution du répertoire, sérialisation,
-     * traduction des erreurs. Le corps de chaque route ne dit plus que le geste.
+     * Scoped repository operation: resolve its directory, serialize operations
+     * and translate errors. Route bodies then express only the operation itself.
      */
     const action = <T>(
       path: string,
@@ -130,7 +130,7 @@ export function registerGitActionRoutes(
           const result = await guard(() =>
             serialized(cwd, () => handler(cwd, request.body, user.id)),
           )
-          // Commit, fusion, branche : l'avancement des chantiers a pu changer.
+          // Commits, merges and branches may change worktree progress.
           worktreeStatus.invalidateForCwd(cwd)
           if (result === undefined) return reply.status(options.status ?? 204).send()
           return result
@@ -186,7 +186,7 @@ export function registerGitActionRoutes(
     action('stash/pop', (cwd, body) => stashApply(cwd, gitStashIndexBodySchema.parse(body).index, true))
     action('stash/drop', (cwd, body) => stashDrop(cwd, gitStashIndexBodySchema.parse(body).index))
 
-    // Dépôt
+    // Repository
     action('init', (cwd) => initRepository(cwd))
 
     // Commits
@@ -199,8 +199,8 @@ export function registerGitActionRoutes(
 }
 
 /**
- * Codes qui décrivent un état du dépôt plutôt qu'une requête fautive : l'interface y
- * répond par un remède (forcer, stasher, choisir rebase ou merge), d'où le 409.
+ * Codes describing repository state rather than invalid requests: the interface
+ * offers remedies (force, stash, choose rebase or merge), hence status 409.
  */
 const STATE_CODES = new Set([
   'git_index_locked',
@@ -211,14 +211,14 @@ const STATE_CODES = new Set([
   'git_unmerged_paths',
 ])
 
-/** Les erreurs de git sortent avec leur code et le texte de git en paramètre. */
+/** Git errors retain their code with git's text passed as a parameter. */
 async function guard<T>(task: () => Promise<T>): Promise<T> {
   try {
     return await task()
   } catch (err) {
     if (err instanceof HttpError) throw err
-    // Les corps sont validés dans l'action, donc ici : un refus de validation doit rester
-    // `validation_failed`, pas devenir un échec de git.
+    // Bodies are validated inside the action here: validation failures must remain
+    // `validation_failed` rather than become git failures.
     if (err instanceof ZodError) throw err
     if (err instanceof GitActionError) {
       const make = STATE_CODES.has(err.code) ? conflict : badRequest

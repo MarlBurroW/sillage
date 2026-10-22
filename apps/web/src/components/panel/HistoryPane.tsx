@@ -11,17 +11,15 @@ import { HighlightedCode } from '../chat/HighlightedCode'
 import { cx } from '../ui'
 import { ACTIONS, SectionTitle } from './diff-parts'
 
-/** Heure seule : l'historique ne couvre qu'une conversation, jamais plusieurs jours d'affilée. */
+/** Time only: history covers one conversation rather than successive days. */
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })
 }
 
 /**
- * Ce que l'agent a écrit dans cette conversation, tour par tour.
- *
- * Dérivé du journal, et non du dépôt : c'est un passé, pas un état. Le disque a pu
- * changer depuis, l'agent peut avoir commité, et rien de ce qui est listé ici n'est
- * forcément encore vrai. L'onglet Git répond à l'autre question.
+ * Agent-written changes by turn, derived from the log rather than repository. This is history, not
+ * current state: disk may have changed and commits may exist. Git answers the current-state
+ * question.
  */
 export function HistoryPane({
   conversationId,
@@ -30,7 +28,7 @@ export function HistoryPane({
 }: {
   conversationId: string
   turns: EditTurn[]
-  /** Bascule sur les fichiers : ouvrir un onglet sans le montrer paraît sans effet. */
+  /** Switch to Files: opening unseen tabs appears ineffective. */
   onOpenFile: (path: string) => void
 }) {
   const t = useTranslate()
@@ -45,7 +43,7 @@ export function HistoryPane({
         </PanelEmptyState>
       ) : null}
 
-      {/* Le plus récent en tête : c'est le tour dont on vient de voir le résultat. */}
+      {/* Newest first: the turn whose result users just saw. */}
       {[...turns].reverse().map((turn) => (
         <HistoryTurn
           key={turn.id}
@@ -109,11 +107,9 @@ function HistoryTurn({
 }
 
 /**
- * Un fichier touché pendant un tour passé, dépliable sur ses modifications.
- *
- * Le diff ne peut pas venir de git : le disque a continué d'évoluer depuis. Il est
- * reconstitué depuis le payload natif de chaque appel, ce qui limite ce qu'on peut en
- * dire (voir `EditDiffDto`), mais reste la seule source fidèle à ce moment-là.
+ * Past-turn file expandable to changes. Git cannot provide historical tool state after further disk
+ * changes; reconstruct native call payloads, limited by EditDiffDto but the only faithful source
+ * for that moment.
  */
 function HistoryFile({
   conversationId,
@@ -151,8 +147,7 @@ function HistoryFile({
         >
           {file.path}
         </span>
-        {/* Le décompte n'apparaît que s'il y a plusieurs passes : afficher « 1 » sur
-            chaque ligne n'apprendrait rien. */}
+        {/* Count only multiple passes; repeated ones add no information. */}
         {file.toolCallIds.length > 1 ? (
           <span className="shrink-0 text-[0.625rem] text-ink-faint">
             {t('changes.file.passes', { count: file.toolCallIds.length })}
@@ -172,8 +167,7 @@ function HistoryFile({
             />
           ))}
 
-          {/* Un fichier supprimé n'a plus rien à ouvrir : l'action disparaît plutôt
-              que d'ouvrir un onglet en erreur. */}
+          {/* Deleted files have nothing to open: omit actions instead of opening failing tabs. */}
           {file.action === 'deleted' ? null : (
             <button
               type="button"
@@ -189,7 +183,7 @@ function HistoryFile({
   )
 }
 
-/** Une modification, telle que le payload de son appel permet de la reconstituer. */
+/** An edit reconstructed from its call payload. */
 function EditDiff({
   conversationId,
   toolCallId,
@@ -199,7 +193,7 @@ function EditDiff({
   conversationId: string
   toolCallId: string
   path: string
-  /** Rang de la passe, quand le fichier a été repris plusieurs fois dans le tour. */
+  /** Pass number when files are edited repeatedly in one turn. */
   rank: number | null
 }) {
   const t = useTranslate()
@@ -241,8 +235,7 @@ function EditDiff({
         <DiffHunks key={entry.path} hunks={entry.hunks} path={path} />
       ))}
 
-      {/* Un contenu écrit reste du code : il se colore comme le reste, même sans
-          diff auquel le comparer. */}
+      {/* Written content is still code and receives highlighting without a comparison diff. */}
       {data.kind === 'content' ? (
         <HighlightedCode
           code={data.content}

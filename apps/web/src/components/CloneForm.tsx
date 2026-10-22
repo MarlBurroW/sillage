@@ -13,15 +13,14 @@ import {
 } from './instructions/Instructions'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
+import { useCapability } from '../lib/instance'
 import { RepoCombobox } from './RepoCombobox'
 import { Banner, Button, Field, Select, type SelectOption } from './ui'
 
 /**
- * Nom de dossier que git choisirait pour cette URL, vide tant qu'elle n'en est pas une.
- *
- * Le champ reste modifiable ensuite : deux dépôts homonymes chez deux propriétaires
- * différents ne peuvent pas cohabiter dans le même dossier parent, et c'est à
- * l'utilisateur de trancher, pas à Sillage de renommer dans son dos.
+ * Directory name Git would choose for the URL, empty until valid. Remains editable because
+ * same-named repositories from different owners cannot share a parent directory; users decide
+ * rather than Sillage silently renaming.
  */
 function directoryFromUrl(url: string): string {
   return parseRemoteUrl(url)?.repo ?? ''
@@ -29,6 +28,7 @@ function directoryFromUrl(url: string): string {
 
 export function CloneForm() {
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
   const { data: credentials } = useGitCredentials()
   const savedHosts = credentials?.credentials.map((entry) => entry.host) ?? []
   const hasGitHub = savedHosts.includes(GITHUB_HOST)
@@ -45,8 +45,7 @@ export function CloneForm() {
   const { data: job } = useCloneJob(jobId)
   const { data: settings } = useUserSettings()
 
-  // Même dossier de rangement que pour un projet créé de zéro, proposé sans écraser
-  // une saisie déjà faite.
+  // Offer the same parent directory as newly created projects without overwriting existing input.
   useEffect(() => {
     if (settings?.projectsDir) setParentDir((current) => current || settings.projectsDir!)
   }, [settings?.projectsDir])
@@ -66,7 +65,7 @@ export function CloneForm() {
     },
   ]
 
-  /** Les deux champs dérivés suivent l'URL tant que l'utilisateur ne les a pas repris. */
+  /** Both derived fields follow URL until manually edited. */
   const applyUrl = (next: string) => {
     const derived = directoryFromUrl(next)
     if (directory === directoryFromUrl(url)) setDirectory(derived)
@@ -119,8 +118,7 @@ export function CloneForm() {
         <div className="h-1.5 overflow-hidden rounded-full bg-sunken">
           <div
             className="h-full bg-accent transition-[width]"
-            // Sans pourcentage, git en est à une phase qu'il ne chiffre pas : une barre
-            // à zéro laisserait croire que rien ne se passe.
+            // Without percentages Git is in an unmeasured phase: a zero bar would misleadingly imply no activity.
             style={{ width: `${job.percent ?? 5}%` }}
           />
         </div>
@@ -131,11 +129,9 @@ export function CloneForm() {
   const startError = startClone.error instanceof ApiRequestError ? startClone.error.message : null
 
   /**
-   * Hôte visé, quand ce qui est saisi ressemble déjà à une URL.
-   *
-   * Sert à dire avant l'envoi qu'un dépôt privé de cet hôte sera refusé. Un dépôt public
-   * se clone sans jeton, donc l'avertissement ne bloque rien et ne prétend pas savoir si
-   * le dépôt est privé : personne ne peut le savoir avant d'essayer.
+   * Target host once input resembles a URL, warning before submission when private repositories
+   * lack access. Public repositories need no token, so warnings never block or claim to know
+   * privacy before trying.
    */
   const targetHost = parseRemoteUrl(url)?.host ?? null
   const missingCredential = targetHost
@@ -186,19 +182,23 @@ export function CloneForm() {
         autoCorrect="off"
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={VISIBILITY_OPTIONS}
-      />
+      {sharedProjects ? (
+        <Select
+          label={t('project.settings.visibility')}
+          value={visibility}
+          onChange={setVisibility}
+          options={VISIBILITY_OPTIONS}
+        />
+      ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
 
       {job?.error ? (
         <Banner>
           {translateError(job.error.code, job.error.message)}{' '}
-          {/* L'échec d'authentification est le seul dont la réparation est à un clic
-              d'ici : y mener vaut mieux que de laisser chercher dans les réglages. */}
+          {/*
+           * Authentication is the only failure fixable one click away: link directly instead of
+           * making users search settings.
+           */}
           {job.error.code === 'clone_auth_failed' ? (
             <Link to="/settings/git" className="underline">
               {t('clone.private.link')}

@@ -13,11 +13,10 @@ import { badRequest } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
 
 /**
- * Réglages de l'instance.
+ * Instance settings.
  *
- * Lecture ouverte à tout compte connecté, à la différence des secrets : le délai
- * d'archivage décrit un comportement que chacun subit sur ses propres fils, et le
- * cacher à qui n'administre pas ne protégerait rien.
+ * Any signed-in account can read them, unlike secrets: archival delays affect
+ * everyone's conversations, and hiding them from non-administrators protects nothing.
  */
 export function registerSettingsRoutes(
   app: FastifyInstance,
@@ -34,22 +33,22 @@ export function registerSettingsRoutes(
     const body = updateAppSettingsBodySchema.parse(request.body)
 
     writeAppSettings(ctx.db, body)
-    // Rendu relu plutôt que reconstruit depuis le corps : un champ absent garde sa
-    // valeur, et l'écran a besoin de l'état complet, pas de ce qu'il vient d'envoyer.
+    // Reread rather than rebuild the response from the body: absent fields retain their
+    // value, and the screen needs the complete state rather than its submitted patch.
     const settings = readAppSettings(ctx.db, ctx.config)
 
-    // Le délai se relit à chaque passage, mais le motif décide de quand ce passage a
-    // lieu : sans réarmement, la nouvelle valeur attendrait le prochain redémarrage.
+    // The delay is reread on each pass, but the schedule determines when passes run:
+    // without rescheduling, the new value would wait until the next restart.
     scheduler.reschedule(ARCHIVE_JOB, settings.autoArchiveSchedule)
 
     return settings
   })
 
   /**
-   * Le passage d'archivage, tout de suite.
+   * Runs an archival pass immediately.
    *
-   * Un réglage dont l'effet n'arrive que le lendemain se règle à l'aveugle : lancer le
-   * passage est le seul moyen de voir ce que le délai retenu range vraiment.
+   * A setting whose effect appears tomorrow is configured blindly: running a pass
+   * is the only way to see what the selected delay actually archives.
    */
   app.post('/api/settings/archiving/run', async (request): Promise<ArchiveRunDto> => {
     requireAdmin(request)

@@ -1,148 +1,143 @@
 # Sillage
 
-Plateforme de développement agentique self-hosted et multi-CLI.
+Self-hosted, multi-CLI agentic development platform.
 
-Le sillage, c'est la trace qu'un navire laisse derrière lui. Ici, c'est le journal
-ordonné et rejouable de tout ce que font tes agents, et c'est aussi la propriété
-technique centrale du produit : rien de ce qui se passe n'est perdu si le réseau tombe.
+A sillage is the wake a ship leaves behind. Here, it is the ordered, replayable
+journal of everything your agents do, and the product's central technical
+property: nothing that happens is lost when the network drops.
 
 ---
 
-## 0. Décisions verrouillées
+## 0. Locked decisions
 
-| Sujet | Décision |
+| Topic | Decision |
 |---|---|
-| Nom | Sillage |
-| Modèle multi-utilisateur | Cercle de confiance : comptes séparés, ressources partageables, pas d'isolation système |
-| Credentials CLI | Ceux de l'hôte (`~/.claude`, `~/.codex`), partagés par tous les utilisateurs |
+| Name | Sillage |
+| Multi-user model | Trusted circle: separate accounts, shareable resources, no system isolation |
+| CLI credentials | Host credentials (`~/.claude`, `~/.codex`), shared by all users |
 | Backend | Node 22 + TypeScript + Fastify |
-| Frontend | React 19 + Vite + Tailwind, PWA installable |
-| Base | SQLite (WAL) via Drizzle ORM |
-| Déploiement | Unité systemd sur la machine hôte (installeur fourni) ; image Docker en option |
-| CLI cibles v1 | Claude Code 2.1.x, Codex 0.142.x |
+| Frontend | React 19 + Vite + Tailwind, installable PWA |
+| Database | SQLite (WAL) through Drizzle ORM |
+| Deployment | Systemd unit on host machine (installer provided); optional Docker image |
+| v1 target CLIs | Claude Code 2.1.x, Codex 0.142.x |
 
-### Docker : optionnel, pas isolant
+### Docker: optional, not isolation
 
-Décision initiale : pas de Docker, parce que les agents ont besoin d'un accès direct au
-système de fichiers de l'hôte (les workspaces sont des dossiers réels), aux credentials
-de l'hôte, à `git` et aux clés SSH. Tout cela reste vrai : l'image Docker publiée depuis
-la 0.1 n'apporte aucune isolation, elle monte credentials et projets depuis l'hôte. Elle
-existe parce qu'elle simplifie l'installation (pas de Node à gérer, CLIs agents posés
-depuis l'interface), pas pour cloisonner. Le déploiement de référence reste le daemon systemd sous
-ton compte utilisateur, désormais posé par `install.sh` avec un layout versionné
-(`app/releases/vX.Y.Z` + lien `current`) qui permet la mise à jour depuis l'UI.
+Initial decision: no Docker because agents need direct host-file-system access
+(workspaces are real directories), host credentials, `git`, and SSH keys. This
+remains true: the Docker image published since 0.1 provides no isolation, mounting
+credentials and projects from the host. It exists to simplify installation
+(no Node to manage, agent CLIs installed through the interface), not to isolate.
+The reference deployment remains a systemd daemon under your user account, now
+installed by `install.sh` with a versioned layout (`app/releases/vX.Y.Z` + `current`
+link) enabling UI updates.
 
-### Pourquoi pas Rust
+### Why not Rust
 
-Les deux protocoles à consommer sont livrés typés en TypeScript et changent à chaque
-release de CLI :
+Both consumed protocols ship TypeScript types and change with every CLI release:
 
-- Claude Code : `@anthropic-ai/claude-agent-sdk`, qui encapsule le protocole de contrôle
-  bidirectionnel (frames `control_request` / `control_response` sur stdin/stdout). Ce
-  protocole n'est pas documenté publiquement et c'est le seul moyen d'obtenir une vraie
-  demande de permission interactive.
-- Codex : `codex app-server generate-ts -o <dir>` génère les bindings depuis le binaire
-  installé.
+- Claude Code: `@anthropic-ai/claude-agent-sdk`, wrapping the bidirectional control
+  protocol (`control_request` / `control_response` frames over stdin/stdout).
+  This protocol is not publicly documented and is the only way to get real
+  interactive permission requests.
+- Codex: `codex app-server generate-ts -o <dir>` generates bindings from the
+  installed binary.
 
-Réécrire et resuivre les deux à la main en Rust coûterait environ 50 Mo de RSS gagnés,
-face à 450 Mo consommés par une seule session `claude`. Le mauvais côté du compromis.
+Rewriting and tracking both manually in Rust would save about 50 MB RSS against
+450 MB used by one `claude` session. The wrong tradeoff.
 
-### Contrainte machine à respecter
+### Machine constraint to respect
 
-Ryzen 3 3300U, 4 cœurs, 15,6 Go de RAM dont environ 10 déjà occupés en permanence.
-Règles qui en découlent, non négociables :
+Ryzen 3 3300U, 4 cores, 15.6 GB RAM, about 10 GB already permanently occupied.
+The resulting rules are nonnegotiable:
 
-1. Aucun transcript en mémoire. Les événements sont écrits en base au fil de l'eau,
-   le client les relit depuis la base.
-2. `--max-old-space-size=256` sur le daemon.
-3. Aucun hook CLI qui forke un process par événement.
-4. Le frontend est buildé et servi en statique par Fastify, pas de serveur Node front.
-5. Un plafond configurable de sessions agent simultanées (défaut : 3), avec file d'attente
-   au-delà. Une session Claude coûte 400 à 500 Mo, c'est le seul poste qui compte.
-
----
-
-## 1. Non-objectifs
-
-Explicitement hors périmètre, pour éviter la dérive :
-
-- Pas d'exécution d'agents dans le cloud ni sur des machines distantes. Sillage pilote
-  les CLI installés sur son propre hôte.
-- Pas de sandboxing des agents. On s'en remet aux modes de permission des CLI.
-- Pas d'éditeur de code intégré. Sillage est un client de conversation, pas un IDE.
-- Pas de facturation, quotas ou reporting de coûts par utilisateur en v1 (le coût total
-  par conversation est affiché, sans agrégation).
-- Pas de collaboration temps réel à plusieurs sur une même conversation en v1. Deux
-  utilisateurs peuvent regarder, un seul est propriétaire et envoie les messages.
+1. No transcript in memory. Events are written to the database as they arrive;
+   clients read them from the database.
+2. `--max-old-space-size=256` on the daemon.
+3. No CLI hook forking a process per event.
+4. Frontend built and served statically by Fastify, no frontend Node server.
+5. Configurable concurrent-agent-session limit (default: 3), queued beyond it.
+   A Claude session costs 400–500 MB, the only significant item.
 
 ---
 
-## 2. Invariants d'architecture
+## 1. Non-goals
 
-Ce sont les quatre règles qui répondent directement aux défauts d'Omnigent.
+Explicitly outside scope to prevent drift:
 
-### I1. Le process agent est découplé du transport
-
-Un WebSocket qui tombe ne doit jamais interrompre un agent, ni faire perdre un octet de
-sa sortie. Le daemon supervise les process agent ; les clients ne font que s'abonner à un
-journal. Fermer l'onglet, verrouiller son téléphone, passer du wifi à la 4G : aucun effet
-sur l'exécution.
-
-### I2. Le journal d'événements est la source de vérité
-
-Chaque conversation possède une séquence d'événements strictement croissante
-(`seq`, entier, sans trou). Tout ce que produit un agent y est appendé avant d'être
-diffusé. Le client stocke le dernier `seq` reçu ; à la reconnexion il envoie ce curseur
-et reçoit le delta. L'UI n'a donc jamais besoin de deviner ce qu'elle a manqué.
-
-Corollaire : le rendu du chat est une fonction pure du journal. Rejouer le journal depuis
-zéro doit produire exactement l'écran courant. Toute donnée d'affichage qui ne vient pas
-du journal est un bug.
-
-### I3. Un schéma d'événements unique, indépendant du CLI
-
-L'UI ne sait jamais si elle parle à Claude ou à Codex. Chaque CLI a un adaptateur qui
-traduit son flux natif vers le schéma commun (section 5). Ajouter Gemini CLI, Amp ou
-autre revient à écrire un adaptateur, sans toucher au frontend ni à la base.
-
-Le payload natif brut de chaque événement est conservé dans une colonne à part. Un
-renderer spécialisé (section 12.5) peut s'en servir plus tard sans qu'on ait à
-re-normaliser quoi que ce soit.
-
-### I4. Un projet n'appartient à aucun CLI
-
-Le CLI est une propriété de la conversation (`conversations.agent`), jamais du projet.
-Un même projet porte simultanément des conversations Claude et des conversations Codex,
-qui partagent son workspace et ses worktrees. Rien dans l'UI ne doit laisser croire
-l'inverse : pas de choix de CLI à la création d'un projet, pas de filtrage des projets
-par CLI.
-
-Corollaire : quand un troisième CLI arrive, aucun projet existant n'a besoin d'être
-modifié ou recréé. Le sélecteur de CLI d'une nouvelle conversation se pré-remplit avec
-celui de la dernière conversation du projet, valeur dérivée des données plutôt que
-réglage à maintenir.
-
-### I5. Idempotence des envois
-
-Le client génère un `client_message_id` (UUID) pour chaque message envoyé. Un renvoi
-après timeout réseau avec le même identifiant est ignoré côté serveur. Sans ça, sur
-mobile, un message part deux fois dès que le réseau hésite.
+- No cloud or remote-machine agent execution. Sillage drives CLIs installed on
+  its own host.
+- No agent sandboxing. Rely on CLI permission modes.
+- No integrated code editor. Sillage is a conversation client, not an IDE.
+- No per-user billing, quotas, or cost reporting in v1 (total conversation cost
+  is shown without aggregation).
+- No real-time multi-user collaboration on one conversation in v1. Two users can
+  watch, but one owner sends messages.
 
 ---
 
-## 3. Topologie des process
+## 2. Architectural invariants
+
+These are the four rules directly addressing Omnigent's shortcomings.
+
+### I1. Agent process is decoupled from transport
+
+A dropped WebSocket must never interrupt agents or lose one byte of output.
+Daemon supervises agent processes; clients merely subscribe to a journal.
+Closing tabs, locking phones, switching Wi-Fi to 4G: no effect on execution.
+
+### I2. Event journal is the source of truth
+
+Each conversation has a strictly increasing event sequence (`seq`, integer,
+without gaps). Everything agents produce is appended before broadcasting.
+Client stores latest received `seq`; on reconnect it sends this cursor and
+receives the delta. UI never needs to guess what it missed.
+
+Corollary: chat rendering is a pure function of the journal. Replaying from zero
+must produce exactly the current screen. Display data not coming from the
+journal is a bug.
+
+### I3. One CLI-independent event schema
+
+UI never knows whether it is talking to Claude or Codex. Each CLI has an adapter
+translating native stream to common schema (section 5). Adding Gemini CLI, Amp,
+or another means writing an adapter without touching frontend or database.
+
+Every event's raw native payload is kept in a separate column. Specialized
+renderers (section 12.5) can use it later without renormalization.
+
+### I4. Projects belong to no CLI
+
+CLI is a conversation property (`conversations.agent`), never a project property.
+One project simultaneously holds Claude and Codex conversations sharing its
+workspace/worktrees. Nothing in UI should imply otherwise: no CLI choice at
+project creation, no project filtering by CLI.
+
+Corollary: adding a third CLI requires no existing project changes or recreation.
+New-conversation CLI selector defaults to the project's last conversation's CLI,
+derived from data rather than another setting to maintain.
+
+### I5. Idempotent sending
+
+Client generates `client_message_id` (UUID) per sent message. Retries after network
+timeouts using the same ID are ignored server-side. Otherwise, mobile messages
+send twice whenever the network falters.
+
+---
+
+## 3. Process topology
 
 ```
-                    navigateur (desktop / PWA mobile)
+                    browser (desktop / mobile PWA)
                               │  HTTPS + WSS
                               ▼
       ┌──────────────────────────────────────────────┐
-      │  sillage-daemon  (Node 22, un seul process)  │
+      │  sillage-daemon  (Node 22, one process)       │
       │                                              │
-      │   Fastify  ──  routes REST + WS + statique   │
-      │   SessionManager  ── supervise les runners   │
-      │   EventLog  ── append SQLite + fan-out       │
-      │   PtyManager  ── terminaux node-pty          │
+      │   Fastify  ──  REST + WS + static routes      │
+      │   SessionManager  ── runner supervision       │
+      │   EventLog  ── SQLite append + fan-out        │
+      │   PtyManager  ── node-pty terminals           │
       └───────┬───────────────────────┬──────────────┘
               │ child_process         │ child_process
       ┌───────▼────────┐      ┌───────▼─────────┐
@@ -152,34 +147,33 @@ mobile, un message part deux fois dès que le réseau hésite.
       └────────────────┘      └─────────────────┘
 ```
 
-Un seul process Node. Les runners sont des enfants directs, pas des workers Node
-supplémentaires (chaque worker coûterait 40 Mo pour rien).
+One Node process. Runners are direct children, not extra Node workers (each would
+waste 40 MB).
 
-**Cycle de vie d'un runner.** Un runner est démarré au premier message d'une conversation
-et reste vivant tant que la conversation est « active ». Il est arrêté :
+**Runner lifecycle.** A runner starts on a conversation's first message and stays
+alive while it is “active”. It stops:
 
-- sur demande explicite (bouton Stop),
-- après `idle_timeout` sans message (défaut : 30 minutes), pour libérer les 450 Mo,
-- à l'arrêt du daemon.
+- on explicit request (Stop button),
+- after `idle_timeout` without messages (default: 30 minutes), freeing 450 MB,
+- on daemon shutdown.
 
-Quand un runner arrêté reçoit un nouveau message, il est relancé en mode reprise
-(`--resume <session_id>` pour Claude, `thread/resume` pour Codex). L'utilisateur ne voit
-pas la différence : la conversation continue. C'est ce qui rend le plafond de sessions
-simultanées acceptable.
+When a stopped runner receives a new message, it relaunches in resume mode
+(`--resume <session_id>` for Claude, `thread/resume` for Codex). User sees no
+difference: conversation continues. This makes the concurrent-session cap acceptable.
 
-**Reprise après crash du daemon.** Au démarrage, le daemon marque toutes les conversations
-en état `running` comme `interrupted` et appende un événement `error` explicite dans leur
-journal. Aucune conversation ne reste bloquée dans un état « en cours » mensonger.
+**Daemon crash recovery.** At startup, daemon marks all `running` conversations
+`interrupted` and appends explicit `error` events to their journals. None remains
+stuck in a misleading “in progress” state.
 
 ---
 
-## 4. Modèle de données
+## 4. Data model
 
-SQLite en mode WAL, `synchronous = NORMAL`, `busy_timeout = 5000`. Un seul fichier
-`sillage.db` dans le répertoire de données.
+SQLite WAL, `synchronous = NORMAL`, `busy_timeout = 5000`. One `sillage.db` file
+in the data directory.
 
 ```sql
--- Utilisateurs et sessions d'authentification
+-- Users and authentication sessions
 
 CREATE TABLE users (
   id            TEXT PRIMARY KEY,          -- uuid
@@ -191,35 +185,35 @@ CREATE TABLE users (
 );
 
 CREATE TABLE auth_sessions (
-  token_hash  TEXT PRIMARY KEY,            -- sha256 du token de cookie
+  token_hash  TEXT PRIMARY KEY,            -- sha256 of cookie token
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at  INTEGER NOT NULL,
   expires_at  INTEGER NOT NULL,
   user_agent  TEXT
 );
 
--- Projets
+-- Projects
 
 CREATE TABLE projects (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
-  workspace_path TEXT NOT NULL,            -- chemin absolu, vérifié à la création
+  workspace_path TEXT NOT NULL,            -- absolute path, checked at creation
   owner_id      TEXT NOT NULL REFERENCES users(id),
   visibility    TEXT NOT NULL,             -- 'private' | 'shared'
-  color         TEXT,                      -- accent d'UI, optionnel
-  default_config TEXT,                     -- JSON : préréglages de la barre d'options
+  color         TEXT,                      -- optional UI accent
+  default_config TEXT,                     -- JSON: option-bar presets
   archived_at   INTEGER,
   created_at    INTEGER NOT NULL
 );
 
--- Worktrees git rattachés à un projet
+-- Git worktrees attached to a project
 
 CREATE TABLE worktrees (
   id          TEXT PRIMARY KEY,
   project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  name        TEXT NOT NULL,               -- nom de branche
-  path        TEXT NOT NULL,               -- chemin absolu du worktree
-  base_ref    TEXT NOT NULL,               -- ref de départ
+  name        TEXT NOT NULL,               -- branch name
+  path        TEXT NOT NULL,               -- absolute worktree path
+  base_ref    TEXT NOT NULL,               -- starting ref
   created_by  TEXT NOT NULL REFERENCES users(id),
   created_at  INTEGER NOT NULL,
   removed_at  INTEGER,
@@ -231,12 +225,12 @@ CREATE TABLE worktrees (
 CREATE TABLE conversations (
   id              TEXT PRIMARY KEY,
   project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  worktree_id     TEXT REFERENCES worktrees(id),   -- NULL = racine du projet
+  worktree_id     TEXT REFERENCES worktrees(id),   -- NULL = project root
   user_id         TEXT NOT NULL REFERENCES users(id),
   title           TEXT NOT NULL,
   agent           TEXT NOT NULL,           -- 'claude' | 'codex'
-  agent_session_id TEXT,                   -- id natif, pour --resume / thread/resume
-  config          TEXT NOT NULL,           -- JSON AgentConfig, voir section 6/7
+  agent_session_id TEXT,                   -- native ID for --resume / thread/resume
+  config          TEXT NOT NULL,           -- JSON AgentConfig, see section 6/7
   status          TEXT NOT NULL,           -- 'idle'|'running'|'awaiting_input'|'interrupted'|'error'
   last_seq        INTEGER NOT NULL DEFAULT 0,
   cost_usd        REAL NOT NULL DEFAULT 0,
@@ -250,20 +244,20 @@ CREATE TABLE conversations (
 
 CREATE INDEX idx_conv_project ON conversations(project_id, updated_at DESC);
 
--- Le journal. Table la plus sollicitée.
+-- Journal. Most heavily used table.
 
 CREATE TABLE events (
   conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   seq             INTEGER NOT NULL,
   ts              INTEGER NOT NULL,
-  type            TEXT NOT NULL,           -- discriminant, voir section 5
-  payload         TEXT NOT NULL,           -- JSON normalisé
-  raw             TEXT,                    -- JSON natif du CLI, pour les renderers futurs
+  type            TEXT NOT NULL,           -- discriminant, see section 5
+  payload         TEXT NOT NULL,           -- normalized JSON
+  raw             TEXT,                    -- native CLI JSON for future renderers
   PRIMARY KEY (conversation_id, seq)
 ) WITHOUT ROWID;
 
--- Index de recherche. Table dérivée du journal (invariant I2), reconstructible par
--- rejeu : elle ne porte aucune information que `events` n'aurait pas.
+-- Search index. Derived from journal (invariant I2), rebuildable through replay:
+-- contains no information absent from `events`.
 CREATE VIRTUAL TABLE search_messages USING fts5(
   text,
   conversation_id UNINDEXED,
@@ -273,12 +267,12 @@ CREATE VIRTUAL TABLE search_messages USING fts5(
   tokenize = 'unicode61 remove_diacritics 2'
 );
 
--- Demandes de permission en attente
+-- Pending permission requests
 
 CREATE TABLE permission_requests (
   id              TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  seq             INTEGER NOT NULL,        -- l'événement permission.requested associé
+  seq             INTEGER NOT NULL,        -- associated permission.requested event
   tool_name       TEXT NOT NULL,
   input           TEXT NOT NULL,           -- JSON
   status          TEXT NOT NULL,           -- 'pending'|'allowed'|'denied'|'expired'
@@ -290,7 +284,7 @@ CREATE TABLE permission_requests (
 
 CREATE INDEX idx_perm_pending ON permission_requests(conversation_id, status);
 
--- Pièces jointes
+-- Attachments
 
 CREATE TABLE attachments (
   id              TEXT PRIMARY KEY,
@@ -298,46 +292,46 @@ CREATE TABLE attachments (
   filename        TEXT NOT NULL,
   mime_type       TEXT NOT NULL,
   size_bytes      INTEGER NOT NULL,
-  storage_path    TEXT NOT NULL,           -- sous le répertoire de données
+  storage_path    TEXT NOT NULL,           -- under data directory
   created_at      INTEGER NOT NULL
 );
 
--- Préférences par utilisateur (défauts des CLI, etc.)
+-- Per-user preferences (CLI defaults, etc.)
 
 CREATE TABLE user_settings (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   data    TEXT NOT NULL                    -- JSON
 );
 
--- Bibliothèque de skills, livrée aux CLI comme des skills natifs (docs/skill-library.md).
--- Le contenu vit sur le disque, sous <data>/skill-library, et fait foi : la table ne
--- porte que la portée, l'activation et la provenance.
+-- Skill library, delivered to CLIs as native skills (docs/skill-library.md).
+-- Content on disk under <data>/skill-library is authoritative: table contains
+-- only scope, enabled state, and provenance.
 
 CREATE TABLE library_skills (
   id             TEXT PRIMARY KEY,         -- uuid
   scope          TEXT NOT NULL,            -- global | project
-  project_id     TEXT REFERENCES projects(id) ON DELETE CASCADE,  -- null en global
-  name           TEXT NOT NULL,            -- nom du dossier, unique sur global + un projet
+  project_id     TEXT REFERENCES projects(id) ON DELETE CASCADE,  -- null for global
+  name           TEXT NOT NULL,            -- directory name, unique across global + one project
   enabled        INTEGER NOT NULL DEFAULT 1,
   source_id      TEXT REFERENCES skill_sources(id) ON DELETE SET NULL,
   source_path    TEXT,
   source_commit  TEXT,
-  source_hash    TEXT,                     -- empreinte dans la source, avant renommage
-  installed_hash TEXT,                     -- empreinte à l'installation
+  source_hash    TEXT,                     -- source fingerprint before renaming
+  installed_hash TEXT,                     -- fingerprint at installation
   created_by     TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at     INTEGER NOT NULL,
   updated_at     INTEGER NOT NULL
 );
 
--- Dépôts git d'où la bibliothèque s'installe. Deux sources préconfigurées,
--- insérées par la migration : anthropics/skills et openai/skills.
+-- Git repositories supplying library skills. Two preconfigured sources,
+-- inserted by migration: anthropics/skills and openai/skills.
 
 CREATE TABLE skill_sources (
   id              TEXT PRIMARY KEY,
   name            TEXT NOT NULL,
-  url             TEXT NOT NULL,           -- tout ce que git clone accepte
-  ref             TEXT,                    -- null : branche par défaut
-  subpath         TEXT,                    -- null : tout le dépôt
+  url             TEXT NOT NULL,           -- anything accepted by git clone
+  ref             TEXT,                    -- null: default branch
+  subpath         TEXT,                    -- null: entire repository
   builtin         INTEGER NOT NULL DEFAULT 0,
   enabled         INTEGER NOT NULL DEFAULT 1,
   last_commit     TEXT,
@@ -348,26 +342,25 @@ CREATE TABLE skill_sources (
 );
 ```
 
-**Rétention.** `events` grossit vite (les deltas de texte sont nombreux). Deux mesures :
+**Retention.** `events` grows quickly (many text deltas). Two measures:
 
-1. Les événements `message.delta` et `thinking.delta` sont compactés dans l'événement
-   `message.completed` correspondant dès que le message est terminé, puis supprimés. Le
-   journal historique ne contient donc que des messages entiers ; seule la conversation
-   en cours porte des deltas.
-2. Une tâche de maintenance quotidienne supprime les événements des conversations
-   archivées depuis plus de 90 jours (durée configurable), et exécute un `VACUUM`
-   hebdomadaire.
+1. `message.delta` and `thinking.delta` events compact into the corresponding
+   `message.completed` when the message finishes, then are deleted. Historical
+   journal therefore contains complete messages only; only active conversations
+   contain deltas.
+2. Daily maintenance deletes events from conversations archived more than
+   90 days ago (configurable), with weekly `VACUUM`.
 
 ---
 
-## 5. Protocole d'événements normalisé
+## 5. Normalized event protocol
 
-Défini une fois en Zod dans `packages/protocol`, importé par le serveur et par le front.
-C'est le contrat de I3.
+Defined once in Zod in `packages/protocol`, imported by server and frontend.
+This is I3's contract.
 
 ```ts
 type SillageEvent =
-  // Cycle de vie
+  // Lifecycle
   | { type: 'session.started';   agent: AgentKind; agentSessionId: string;
                                  model: string; cwd: string; tools: string[] }
   | { type: 'session.ended';     reason: 'completed' | 'interrupted' | 'error' }
@@ -375,24 +368,24 @@ type SillageEvent =
   | { type: 'turn.completed';    stopReason: string; costUsd: number;
                                  inputTokens: number; outputTokens: number }
 
-  // Contenu
+  // Content
   | { type: 'message.started';   messageId: string; role: 'user' | 'assistant' }
   | { type: 'message.delta';     messageId: string; text: string }
   | { type: 'message.completed'; messageId: string; role: 'user' | 'assistant';
                                  blocks: ContentBlock[] }
   | { type: 'thinking.delta';    messageId: string; text: string }
 
-  // Outils
+  // Tools
   | { type: 'tool.started';      toolCallId: string; name: string;
                                  input: unknown; parentToolCallId?: string }
   | { type: 'tool.output_delta'; toolCallId: string; chunk: string }
   | { type: 'tool.completed';    toolCallId: string; output: unknown;
                                  isError: boolean; durationMs: number }
 
-  // Interaction requise
+  // Required interaction
   | { type: 'permission.requested'; requestId: string; toolName: string;
                                     input: unknown; suggestions: PermissionOption[];
-                                    // Libellés rédigés par le CLI lui-même
+                                    // Labels written by the CLI itself
                                     title: string | null; description: string | null;
                                     displayName: string | null }
   | { type: 'permission.resolved';  requestId: string;
@@ -410,7 +403,7 @@ type SillageEvent =
                                      followUpMode: ClaudePermissionMode | null;
                                      decidedBy: string | null }
 
-  // Métadonnées
+  // Metadata
   | { type: 'plan.updated';      items: { text: string; status: PlanStatus }[] }
   | { type: 'usage.updated';     costUsd: number; inputTokens: number;
                                  outputTokens: number;
@@ -421,259 +414,242 @@ type SillageEvent =
                                  recoverable: boolean }
 ```
 
-`ContentBlock` couvre `text`, `thinking`, `image`, `file`, `tool_use`, `tool_result`. Le
-champ `parentToolCallId` désigne l'appel qui a lancé le sous-agent auteur de
-l'événement : c'est lui qui sépare le fil principal des fils de sous-agents.
+`ContentBlock` covers `text`, `thinking`, `image`, `file`, `tool_use`, `tool_result`.
+`parentToolCallId` identifies the call that launched the subagent producing an
+event: this separates the main thread from subagent threads.
 
-### 5.1 Sollicitations de l'utilisateur
+### 5.1 User prompts
 
-Trois formes d'interaction bloquent un tour, et elles ne se confondent pas :
+Three interactions block a turn and must stay distinct:
 
-| Forme | Claude Code | Codex |
+| Form | Claude Code | Codex |
 | --- | --- | --- |
-| Permission d'outil | rappel `canUseTool` | `item/*/requestApproval` |
-| Question à choix | outil `AskUserQuestion` | `item/tool/requestUserInput` |
-| Validation de plan | outil `ExitPlanMode` | aucun équivalent |
-| Élicitation MCP | rappel `onElicitation` | `mcpServer/elicitation/request` |
+| Tool permission | `canUseTool` callback | `item/*/requestApproval` |
+| Choice question | `AskUserQuestion` tool | `item/tool/requestUserInput` |
+| Plan approval | `ExitPlanMode` tool | no equivalent |
+| MCP elicitation | `onElicitation` callback | `mcpServer/elicitation/request` |
 
-Les deux outils de Claude passent par le même rappel `canUseTool` que les permissions,
-mais la réponse attendue n'est pas « autorisé » ou « refusé » : pour `AskUserQuestion`
-elle voyage dans `updatedInput.answers`, sous une clé qui est l'intitulé de la question.
-Ce comportement n'est pas documenté dans les types du SDK ; il a été relevé en observant
-le CLI installé, et la forme de l'entrée est ancrée par une assertion de compilation
-(`apps/server/src/agents/claude/prompts.ts`).
+Both Claude tools use the same `canUseTool` callback as permissions, but expected
+answers are not “allowed”/“denied”: for `AskUserQuestion` they travel in
+`updatedInput.answers`, keyed by question title. This behavior is undocumented in
+SDK types; it was observed on the installed CLI, and input shape is anchored by
+a compile-time assertion (`apps/server/src/agents/claude/prompts.ts`).
 
-`AgentQuestion` normalise les deux protocoles : `id`, `header`, `question`,
-`multiSelect`, `allowOther`, `secret`, `options[]`. Ce que le protocole ne transporte pas
-n'est pas inventé : Codex n'a pas de choix multiple ni d'aperçu d'option, ces champs y
-valent donc `false` et `null`.
+`AgentQuestion` normalizes both protocols: `id`, `header`, `question`, `multiSelect`,
+`allowOther`, `secret`, `options[]`. Nothing absent from the protocol is invented:
+Codex lacks multi-select and option previews, so these fields are `false`/`null`.
 
-Valider un plan implique de choisir comment la suite s'exécute (`followUpMode`) : sortir
-du mode plan sans changer de mode ferait retomber l'agent dans celui qui l'a fait
-planifier, et il replanifierait au lieu d'agir.
+Plan approval requires choosing how execution continues (`followUpMode`): leaving
+plan mode without changing modes would return to the mode that requested planning,
+making the agent plan again rather than act.
 
-**Élicitations MCP.** Un serveur MCP peut réclamer une saisie à l'utilisateur
-(`elicitation/create`). Ce n'est ni l'agent ni le CLI qui demande, mais un tiers branché
-sur la session : le nom du serveur est donc affiché, et les trois réponses du protocole
-(`accept`, `decline`, `cancel`) sont proposées.
+**MCP elicitations.** MCP servers may request user input (`elicitation/create`).
+The requester is neither agent nor CLI but a connected third party, so the server
+name is displayed and all three protocol responses (`accept`, `decline`, `cancel`)
+are offered.
 
-Contrairement aux autres formes, le contrat est ici **identique des deux côtés**, parce
-que ni Claude ni Codex ne l'a inventé : c'est MCP. Le `requestedSchema` est un JSON
-Schema plat limité à des primitives, que Claude transmet brut et que Codex type. Un seul
-analyseur (`packages/protocol/src/elicitation.ts`) le normalise donc en cinq formes de
-champ (texte, nombre, booléen, choix, choix multiple), et il n'appartient à aucun
-adaptateur. La réponse est la même des deux côtés : une action, plus un contenu quand
-elle vaut `accept`.
+Unlike other forms, this contract is **identical on both sides** because neither
+Claude nor Codex invented it: it is MCP. `requestedSchema` is flat JSON Schema
+limited to primitives, passed raw by Claude and typed by Codex. One parser
+(`packages/protocol/src/elicitation.ts`), belonging to neither adapter, normalizes
+it into five field shapes (text, number, boolean, single-select, multi-select).
+Response is identical on both sides: action plus content for `accept`.
 
-L'analyseur est tolérant par construction : un champ dont le type n'est pas reconnu est
-ignoré plutôt que rendu au hasard, et un schéma illisible laisse le message et les
-boutons d'action. Un champ mal deviné produirait une réponse fausse que le serveur MCP
-accepterait sans le savoir.
+Parser is tolerant by design: unknown field types are ignored rather than guessed;
+unreadable schemas leave the message/action buttons. Misguessed fields would
+produce wrong responses unknowingly accepted by the MCP server.
 
-Les bindings Codex servent de source typée pour trois assertions de compilation : les
-actions doivent correspondre exactement, et chaque variante de champ doit trouver preneur
-dans l'une des formes reconnues. Vérifié en retirant une variante : le typecheck échoue.
-Une réserve à connaître, relevée sur le CLI installé : les serveurs MCP **en processus**
-du SDK (`createSdkMcpServer`) ne peuvent pas éliciter, le transport répond
-`-32601 Method not found`. Seuls les serveurs stdio le peuvent, ce qui est la forme
-réelle d'un serveur MCP.
+Codex bindings supply types for three compile-time assertions: actions must match
+exactly, and every field variant must fit a recognized shape. Removing a variant
+was verified to fail typecheck. One installed-CLI caveat: SDK **in-process** MCP
+servers (`createSdkMcpServer`) cannot elicit; transport returns
+`-32601 Method not found`. Only stdio servers can, the actual MCP server form.
 
-Une demande sans réponse ne doit jamais rester ouverte. Deux garde-fous : le runner clôt
-ses demandes en attente quand il s'arrête, et le gestionnaire de sessions relit le journal
-au démarrage pour clore celles qu'un daemon tué net a laissées derrière lui
-(`EventLog.openPrompts`).
+Unanswered requests must never remain open. Two guards: runners close pending
+requests on stop, and session manager rereads the journal at startup to close
+those left by a forcibly killed daemon (`EventLog.openPrompts`).
 
-**Règle de traduction.** Un adaptateur qui rencontre un événement natif qu'il ne sait pas
-traduire ne le laisse pas tomber en silence : il l'écrit avec `type: 'error'` en mode non
-bloquant seulement s'il est significatif, sinon il l'ignore explicitement via une liste
-d'exclusion nommée dans le code. Pas de `default:` muet.
+**Translation rule.** Adapters encountering untranslatable native events never
+silently drop them: write nonblocking `type: 'error'` if meaningful, otherwise
+explicitly ignore through a named exclusion list. No silent `default:`.
 
 ---
 
-## 6. Adaptateur Claude Code
+## 6. Claude Code adapter
 
-### Lancement
+### Launch
 
-Via `@anthropic-ai/claude-agent-sdk` en mode streaming input, ce qui donne le callback
-`canUseTool` et la possibilité d'envoyer des messages successifs sans relancer le process.
+Through `@anthropic-ai/claude-agent-sdk` in streaming-input mode, providing
+`canUseTool` and successive messages without process restarts.
 
-Ce que ça implique, vérifié empiriquement sur la version 2.1.220 : en `--print` sans
-stdin actif, `--permission-mode manual` **refuse** l'outil et renvoie un `tool_result`
-en erreur ("Claude requested permissions to write to X, but you haven't granted it yet"),
-sans jamais demander quoi que ce soit. Le canal bidirectionnel n'est donc pas une
-optimisation, c'est la condition pour avoir un bouton Autoriser.
+Empirically checked on 2.1.220: `--print` without active stdin and
+`--permission-mode manual` **denies** tools, returning error `tool_result`
+("Claude requested permissions to write to X, but you haven't granted it yet")
+without asking anything. Bidirectional control is therefore required for an Allow
+button, not merely an optimization.
 
-Options passées :
+Options passed:
 
-| Réglage UI | Flag / option SDK | Valeurs |
+| UI setting | Flag / SDK option | Values |
 |---|---|---|
-| Modèle | `--model` | `opus`, `sonnet`, `haiku`, `fable`, ou id complet. Liste récupérée dynamiquement, avec repli sur une liste en dur |
+| Model | `--model` | `opus`, `sonnet`, `haiku`, `fable`, or full ID. Dynamically fetched list, hardcoded fallback |
 | Effort | `--effort` | `low`, `medium`, `high`, `xhigh`, `max` |
-| Mode de permission | `--permission-mode` | `manual`, `auto`, `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions` |
-| Répertoire de travail | `cwd` | chemin du worktree, ou du projet |
-| Dossiers additionnels | `--add-dir` | multi |
-| Mode rapide | `settings: { fastMode }` puis `applyFlagSettings` à chaud | booléen ; proposé seulement sur les modèles `supportsFastMode` et si le compte y a droit |
-| Style de réponse | `settings: { outputStyle }` puis `applyFlagSettings` | un des `available_output_styles` de l'init, vide pour le défaut |
-| Conseiller | `settings: { advisorModel }` puis `applyFlagSettings` | un modèle du catalogue, vide pour aucun |
-| Plafonds | `maxBudgetUsd`, `maxTurns` | options de lancement, API de tâches seulement ; les changer relance le runner |
-| Suggestions | `promptSuggestions: true` | fixe ; `promptSuggestionEnabled: false` dans les réglages du poste les coupe |
-| Reprise | `--resume <uuid>` | via `agent_session_id` |
-| Id imposé | `--session-id <uuid>` | on impose le nôtre à la création |
-| Sortie | `--output-format stream-json --include-partial-messages` | fixe |
-| Entrée | `--input-format stream-json` | fixe |
+| Permission mode | `--permission-mode` | `manual`, `auto`, `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions` |
+| Working directory | `cwd` | worktree or project path |
+| Additional directories | `--add-dir` | multiple |
+| Fast mode | `settings: { fastMode }` then live `applyFlagSettings` | boolean; only offered on `supportsFastMode` models and eligible accounts |
+| Output style | `settings: { outputStyle }` then `applyFlagSettings` | one of init's `available_output_styles`, empty for default |
+| Advisor | `settings: { advisorModel }` then `applyFlagSettings` | catalog model, empty for none |
+| Caps | `maxBudgetUsd`, `maxTurns` | launch options, task API only; changes restart runner |
+| Suggestions | `promptSuggestions: true` | fixed; machine `promptSuggestionEnabled: false` disables them |
+| Resume | `--resume <uuid>` | through `agent_session_id` |
+| Forced ID | `--session-id <uuid>` | impose our ID at creation |
+| Output | `--output-format stream-json --include-partial-messages` | fixed |
+| Input | `--input-format stream-json` | fixed |
 
-`bypassPermissions` est marqué en rouge dans l'UI avec une confirmation explicite, et
-n'est pas mémorisable comme défaut de projet.
+`bypassPermissions` is red in UI, requires explicit confirmation, and cannot be
+saved as a project default.
 
-Le mode rapide, sondé sur le CLI 2.1.263 : `initializationResult()` le rapporte `off`
-avec le motif `sdk_opt_in_required`, et `applyFlagSettings({ fastMode: true })` le passe
-à `on` sans relancer. C'est donc la session qui doit le demander, un `/fast` tapé
-répondant « non disponible » ; son état revient sur chaque `init` et chaque `result`
-(`fast_mode_state`, dont la pause `cooldown` après une limite), et le runner n'en
-journalise que les changements, en `agent.notice` à identifiant stable. Même sonde pour
-le style de réponse : `applyFlagSettings({ outputStyle: 'Concise' })` change
-`output_style` à chaud. Les deux passent par la couche « flag » des réglages, celle de
-`--settings`, que la conversation impose par-dessus les fichiers du poste.
+Fast mode, probed on CLI 2.1.263: `initializationResult()` reports `off` with
+`sdk_opt_in_required`; `applyFlagSettings({ fastMode: true })` switches `on`
+without restart. Session must request it; typed `/fast` says “unavailable”. State
+returns on each `init`/`result` (`fast_mode_state`, including post-limit `cooldown`),
+and runner journals only changes as stable-ID `agent.notice`. Same probe for
+output style: `applyFlagSettings({ outputStyle: 'Concise' })` changes
+`output_style` live. Both use the flag settings layer (`--settings`), overriding
+machine files for the conversation.
 
-Ce que l'opt-in ne garantit pas : que l'API accepte la requête rapide. Sur un compte
-sans crédits d'usage, elle la refuse, le CLI repasse en vitesse normale pour ce tour
-et le dit dans une `notification` par tour (« Fast mode disabled · usage credits
-exhausted »), relayée en `agent.notice` ; l'état reste `on`. Vérifié par
-`pnpm --filter @sillage/server claude:probe`, qui rejoue toute la chaîne en trois
-tours et coûte deux vrais tours plus un au tarif rapide.
+Opt-in does not guarantee API acceptance. Accounts without usage credits get
+rejected; CLI falls back to normal speed for that turn and reports a per-turn
+`notification` (“Fast mode disabled · usage credits exhausted”), forwarded as
+`agent.notice`; state remains `on`. Verified with
+`pnpm --filter @sillage/server claude:probe`, replaying the chain in three turns,
+costing two real turns plus one at Fast rates.
 
-### Traduction des événements
+### Event translation
 
-| Natif | Normalisé |
+| Native | Normalized |
 |---|---|
-| `system/init` | `session.started` (on y lit `session_id`, `tools`, `cwd`, `model`) |
-| `stream_event` avec `content_block_delta` type `text_delta` | `message.delta` |
-| `stream_event` avec `thinking_delta` | `thinking.delta` |
-| `assistant` avec bloc `tool_use` | `tool.started` |
-| `user` avec bloc `tool_result` | `tool.completed` |
-| `assistant` final | `message.completed` |
-| appel de `canUseTool` | `permission.requested`, la promesse est résolue par la réponse HTTP de l'UI |
+| `system/init` | `session.started` (reads `session_id`, `tools`, `cwd`, `model`) |
+| `stream_event` with `content_block_delta` type `text_delta` | `message.delta` |
+| `stream_event` with `thinking_delta` | `thinking.delta` |
+| `assistant` with `tool_use` block | `tool.started` |
+| `user` with `tool_result` block | `tool.completed` |
+| final `assistant` | `message.completed` |
+| `canUseTool` call | `permission.requested`, promise resolved by UI HTTP response |
 | `result` | `turn.completed` + `usage.updated` |
-| `rate_limit_event` | `usage.updated` (champ `rateLimit`) |
-| `system/thinking_tokens` | `thinking.progress`, un pas sur cent tokens |
-| `system/notification`, `api_retry`, `model_refusal_*`, `permission_denied`, `informational` | `agent.notice` (voir `signals.ts`) : avis du CLI, tentatives d'API, refus du modèle, refus automatiques, messages de hooks |
-| `prompt_suggestion` | `suggestion.updated`, le message suivant prédit |
-| `conversation_reset` | `agent.notice` ; le `session_id` suivant arrive par l'init du tour d'après |
-| `system/session_state_changed` | ignoré (liste d'exclusion : bruit de progression) |
+| `rate_limit_event` | `usage.updated` (`rateLimit` field) |
+| `system/thinking_tokens` | `thinking.progress`, one step per hundred tokens |
+| `system/notification`, `api_retry`, `model_refusal_*`, `permission_denied`, `informational` | `agent.notice` (see `signals.ts`): CLI notices, API retries, model refusals, automatic denials, hook messages |
+| `prompt_suggestion` | `suggestion.updated`, predicted next message |
+| `conversation_reset` | `agent.notice`; next `session_id` arrives in next turn's init |
+| `system/session_state_changed` | ignored (exclusion list: progress noise) |
 
-`system/init` arrive à chaque tour, pas seulement au lancement (compté en base : autant
-d'inits que de tours). Le runner n'en journalise un `session.started` que si la session
-ou le modèle ont changé, ce qui est justement ce que le fil doit voir : un `/model`
-tapé, un repli, un `/clear`. Les commandes ne sont demandées qu'au premier.
+`system/init` arrives every turn, not only at launch (database count: as many inits
+as turns). Runner journals `session.started` only on session/model changes,
+precisely what the thread needs: typed `/model`, fallback, `/clear`. Commands are
+requested only on the first init.
 
-Les sous-agents (`parent_tool_use_id` non nul) sont conservés et portent cet identifiant
-jusqu'au journal. L'option `forwardSubagentText` est activée : sans elle le SDK ne
-transmet que leurs appels d'outils, de quoi faire battre un compteur mais pas de quoi
-rendre leur fil, ni raisonnement ni messages intermédiaires.
+Subagents (nonnull `parent_tool_use_id`) are kept with that ID through to the
+journal. `forwardSubagentText` is enabled: otherwise SDK sends only tool calls,
+enough for a counter but not their reasoning/intermediate-message thread.
 
-Le transcript relu sur disque les range à part, dans
-`<sessionId>/subagents/agent-<agentId>.jsonl`, sans y répéter l'appel d'origine : le lien
-passe par l'`agentId` que le transcript principal joint au résultat de l'appel `Task`.
-L'import relit ces fichiers, en repartant de chaque fil relu pour trouver les sous-agents
-imbriqués, et fusionne leurs événements par horodatage. Ils ne portent ni frontière de
-tour ni compaction : un sous-agent travaille *dans* le tour de son parent, il n'en ouvre
-pas.
+Disk transcripts store them separately in
+`<sessionId>/subagents/agent-<agentId>.jsonl`, without repeating the origin call:
+linkage uses `agentId` attached to the main transcript's `Task` result. Import
+reads these files, recursively finding nested subagents from each thread, merging
+events by timestamp. They carry no turn boundary or compaction: subagents work
+*inside* the parent turn, not their own.
 
-À la resynchronisation, le découpage au point commun ne leur convient pas, leur
-chronologie étant la leur, et l'`uuid` non plus : la plupart de leurs entrées ne laissent
-aucun `raw` qui en porte un, si bien qu'elles paraîtraient neuves à chaque passage. C'est
-donc tout ou rien, par sous-agent : dès qu'un appel a laissé la moindre trace au journal,
-son fil est tenu pour importé.
+During resync, cutting at a common point does not fit their separate chronology,
+nor does `uuid`: most entries leave no `raw` containing one, so they would appear
+new each time. Import is all-or-nothing per subagent: once a call leaves any trace
+in the journal, its thread is considered imported.
 
 ---
 
-## 7. Adaptateur Codex
+## 7. Codex adapter
 
-### Lancement
+### Launch
 
-Via `codex app-server` (JSON-RPC sur stdio). Les types sont générés depuis le binaire
-installé et commités :
+Through `codex app-server` (JSON-RPC over stdio). Types generated from installed
+binary and committed:
 
 ```
 codex app-server generate-ts -o packages/protocol/src/codex/
 ```
 
-Un script `pnpm codex:types` régénère et un test de CI échoue si le fichier généré
-diffère du commité, ce qui signale une montée de version de Codex à traiter.
+`pnpm codex:types` regenerates; CI fails when generated files differ from committed
+content, flagging a Codex version bump to address.
 
-### Méthodes utilisées
+### Methods used
 
-Relevées dans le schéma de la version 0.142.2 :
+Recorded from version 0.142.2 schema:
 
-**Client vers serveur :** `thread/start`, `thread/resume`, `thread/list`, `thread/read`,
+**Client to server:** `thread/start`, `thread/resume`, `thread/list`, `thread/read`,
 `thread/fork`, `thread/archive`, `thread/name/set`, `turn/start`, `turn/interrupt`,
-`turn/steer`, `thread/compact/start`, `model/list`, `config/read`, et
-`collaborationMode/list` (voir ci-dessous).
+`turn/steer`, `thread/compact/start`, `model/list`, `config/read`, and
+`collaborationMode/list` (see below).
 
-### Mode de collaboration
+### Collaboration mode
 
-Codex a l'équivalent du mode Plan de Claude, et il ne se limite pas à une consigne : c'est
-le **routeur d'outils du CLI** qui décide, en fonction du mode, de ce que le modèle peut
-appeler. En `default`, `request_user_input` est refusé, si bien qu'une demande de choix
-retombe en liste écrite dans la réponse. C'est ce qui expliquait qu'un agent Codex réponde
-« je dois être en mode plan pour ça ».
+Codex has Claude Plan mode's equivalent, more than instructions: the **CLI tool
+router** determines allowed model tools by mode. In `default`, `request_user_input`
+is rejected, making choice requests fall back to prose lists. This explained
+Codex saying “I need plan mode for that”.
 
-Le chemin a été trouvé en sondant le binaire installé, aucune documentation ne le décrivant :
+Found by probing installed binary; no documentation described the path:
 
-- `initialize` doit déclarer la capacité **`experimentalApi`**. Sans elle, `turn/start`
-  répond `collaborationMode requires experimentalApi capability` ;
-- `collaborationMode/list` renvoie les préréglages (`Plan`, `Default`), avec leur nom
-  d'affichage. La liste vient donc du CLI, elle n'est pas écrite dans Sillage ;
-- `turn/start.collaborationMode` porte le mode, tour par tour, comme le modèle et le
-  sandbox. `thread/settings/updated` le confirme en retour.
+- `initialize` must declare **`experimentalApi`** capability. Otherwise `turn/start`
+  returns `collaborationMode requires experimentalApi capability`;
+- `collaborationMode/list` returns presets (`Plan`, `Default`) with display names.
+  Thus the list comes from CLI, not hardcoded in Sillage;
+- `turn/start.collaborationMode` carries mode per turn like model/sandbox.
+  `thread/settings/updated` confirms it.
 
-Ce qui a été essayé et **ne marche pas** : `config.collaboration_mode` à
-`thread/start`, `developerInstructions` avec le prompt de mode Plan, et l'injection d'un
-message développeur par `thread/inject_items`. Dans les trois cas le routeur reste en
-`Default mode`.
+Tried and **not working**: `config.collaboration_mode` at `thread/start`,
+`developerInstructions` with Plan-mode prompt, developer-message injection via
+`thread/inject_items`. All leave router in `Default mode`.
 
-`collaborationMode/list` et le champ de `turn/start` ne sont pas exportés par
-`generate-ts` : ils passent par un `callExperimental` nommé pour rester visible, et le
-type du champ est ajouté par intersection à partir de `CollaborationMode`, qui, lui, est
-généré. Rien n'est retranscrit à la main. Une version de Codex qui ne connaîtrait pas
-`collaborationMode/list` fait simplement disparaître le sélecteur, plutôt que d'offrir un
-réglage sans effet.
+`collaborationMode/list` and `turn/start` field are not exported by `generate-ts`:
+they use explicitly named `callExperimental`, and the field type is intersected
+from generated `CollaborationMode`. Nothing manually transcribed. Codex versions
+without `collaborationMode/list` simply hide the selector instead of offering an
+ineffective setting.
 
-Vérifié de bout en bout sur les deux modes, à travers Sillage : en `plan`, la même demande
-produit un `question.requested` normalisé et l'interface affiche des boutons de choix ; en
-`default`, elle produit une liste en texte. La réponse renvoyée au CLI clôt bien la
-demande (`question.resolved`), et le tour se termine ensuite.
+Verified end to end through Sillage in both modes: `plan` produces normalized
+`question.requested` with choice buttons; `default` produces a text list. Sending
+answers back closes requests (`question.resolved`), then the turn ends.
 
-**Serveur vers client (notifications) :** `thread/started`, `thread/status/changed`,
+**Server to client (notifications):** `thread/started`, `thread/status/changed`,
 `item/started`, `item/completed`, `item/agentMessage/delta`,
 `item/reasoning/textDelta`, `item/reasoning/summaryTextDelta`,
 `item/commandExecution/outputDelta`, `item/fileChange/patchUpdated`,
 `item/mcpToolCall/progress`, `turn/started`, `turn/completed`, `turn/diff/updated`,
 `turn/plan/updated`, `thread/tokenUsage/updated`, `account/rateLimits/updated`.
 
-**Serveur vers client (requêtes, à répondre) :** `item/commandExecution/requestApproval`,
+**Server to client (requests requiring answers):** `item/commandExecution/requestApproval`,
 `item/fileChange/requestApproval`, `item/permissions/requestApproval`,
 `item/tool/requestUserInput`.
 
-Ces trois requêtes d'approbation se mappent exactement sur `permission.requested`, comme
-`canUseTool` côté Claude. C'est ce qui rend l'UI de permission unique pour les deux CLI.
+All three approval requests map exactly to `permission.requested`, like Claude's
+`canUseTool`. This gives both CLIs one permission UI.
 
-### Réglages exposés
+### Exposed settings
 
-| Réglage UI | Paramètre Codex | Valeurs |
+| UI setting | Codex parameter | Values |
 |---|---|---|
-| Modèle | `model` | via `model/list` |
-| Effort de raisonnement | `-c model_reasoning_effort` | `minimal`, `low`, `medium`, `high` |
-| Approbation | `askForApproval` | `untrusted`, `on-request`, `never` |
+| Model | `model` | through `model/list` |
+| Reasoning effort | `-c model_reasoning_effort` | `minimal`, `low`, `medium`, `high` |
+| Approval | `askForApproval` | `untrusted`, `on-request`, `never` |
 | Sandbox | `sandbox` | `read-only`, `workspace-write`, `danger-full-access` |
-| Recherche web | `--search` | booléen |
-| Répertoire | `cwd` | worktree ou projet |
-| Profil | `-p/--profile` | liste depuis `$CODEX_HOME` |
+| Web search | `--search` | boolean |
+| Directory | `cwd` | worktree or project |
+| Profile | `-p/--profile` | list from `$CODEX_HOME` |
 
-L'UI présente Claude et Codex avec le même formulaire, les champs non pertinents étant
-simplement absents. Elle ne prétend pas que les deux CLI ont les mêmes concepts : le mode
-de permission Claude et le couple approbation/sandbox de Codex sont affichés tels quels,
-avec leur vocabulaire natif.
+UI presents both CLIs in the same form, simply omitting irrelevant fields. It does
+not pretend they share concepts: Claude permission mode and Codex approval/sandbox
+pair appear with native vocabulary.
 
 ---
 
@@ -681,8 +657,8 @@ avec leur vocabulaire natif.
 
 ### REST
 
-Toutes les routes sont sous `/api`, authentifiées par cookie de session
-(`HttpOnly`, `SameSite=Lax`, `Secure` si HTTPS).
+All routes live under `/api`, authenticated by session cookie (`HttpOnly`,
+`SameSite=Lax`, `Secure` with HTTPS).
 
 ```
 POST   /api/auth/login              { username, password } -> Set-Cookie
@@ -690,18 +666,18 @@ POST   /api/auth/logout
 GET    /api/auth/me
 
 GET    /api/projects
-POST   /api/projects                { name, workspacePath, visibility }   dossier existant
-                                    { name, parentDir, directory, visibility }   dossier créé, parent mémorisé
-POST   /api/projects/order          { ids[] }   ordre manuel de la sidebar
+POST   /api/projects                { name, workspacePath, visibility }   existing directory
+                                    { name, parentDir, directory, visibility }   created directory, remembered parent
+POST   /api/projects/order          { ids[] }   manual sidebar order
 PATCH  /api/projects/:id
 DELETE /api/projects/:id
 GET    /api/projects/:id/branches           git branch --list
-GET    /api/projects/:id/files              ?q=&worktreeId=  autocomplétion des mentions
+GET    /api/projects/:id/files              ?q=&worktreeId=  mention autocomplete
 GET    /api/projects/:id/worktrees
 POST   /api/projects/:id/worktrees          { name, baseRef }
 DELETE /api/worktrees/:id                   { force?: boolean }
 
-GET    /api/conversations                   toutes les conversations visibles
+GET    /api/conversations                   all visible conversations
 GET    /api/projects/:id/conversations      ?archived=
 POST   /api/projects/:id/conversations      { agent, config, worktreeId?, firstMessage? }
 POST   /api/projects/:id/conversations/order { ids[] }
@@ -712,91 +688,89 @@ GET    /api/conversations/:id/events        ?after=<seq>&limit=500
 
 POST   /api/conversations/:id/messages      { clientMessageId, text,
                                               attachmentIds[], mentions[] }
-POST   /api/conversations/:id/fork           { throughSeq, title? } -> branche
-POST   /api/conversations/:id/steer          infléchit le tour en cours
+POST   /api/conversations/:id/fork           { throughSeq, title? } -> branch
+POST   /api/conversations/:id/steer          steers active turn
 POST   /api/conversations/:id/interrupt
 POST   /api/conversations/:id/compact
 POST   /api/conversations/:id/permissions/:requestId  { decision, scope }
 POST   /api/conversations/:id/questions/:requestId    { status, answers }
 POST   /api/conversations/:id/elicitations/:requestId { action, content }
-DELETE /api/conversations/:id/queue/:queueId          retire un message en attente
-POST   /api/conversations/:id/queue/:queueId/steer    l'injecte dans le tour en cours
+DELETE /api/conversations/:id/queue/:queueId          removes queued message
+POST   /api/conversations/:id/queue/:queueId/steer    injects it into active turn
 POST   /api/conversations/:id/plans/:requestId        { decision, followUpMode }
 
 POST   /api/attachments                     multipart -> { id, filename, ... }
 GET    /api/attachments/:id
 
-GET    /api/push                            clé publique VAPID + état d'abonnement
+GET    /api/push                            VAPID public key + subscription state
 POST   /api/push/subscribe                  { endpoint, keys }
 POST   /api/push/unsubscribe                { endpoint }
 
-GET    /api/search?q=                       messages contenant la requête, visibilité appliquée
-GET    /api/palette/catalog                 tickets et skills de tous les projets visibles
-GET    /api/palette/files                   ?q=&conversationId=  fichiers de tous les projets visibles
+GET    /api/search?q=                       messages matching query, visibility enforced
+GET    /api/palette/catalog                 tickets and skills from all visible projects
+GET    /api/palette/files                   ?q=&conversationId=  files from all visible projects
 
-Les routes du panneau existent en deux portées : `/api/conversations/:id/...` opère sur
-le répertoire du fil, worktree compris, et `/api/projects/:id/...` sur le workspace du
-projet, pour le panneau des vues Board et brouillon. Mêmes chemins, même contrôle
-d'accès, seul le répertoire résolu change.
+Panel routes have two scopes: `/api/conversations/:id/...` uses thread directory,
+including worktree, while `/api/projects/:id/...` uses project workspace for Board
+and draft panels. Same paths and access checks, only resolved directory differs.
 
-GET    .../tree?path=                       un niveau du workspace, avec l'état git par entrée
-GET    /api/conversations/:id/edits/:toolCallId?path=   ce qu'un appel a fait d'un fichier
-POST   .../entries                          { parent, name, kind } -> crée un fichier ou un dossier
-POST   .../entries/move                     { from, to } -> renomme ou déplace
+GET    .../tree?path=                       one workspace level, per-entry git status
+GET    /api/conversations/:id/edits/:toolCallId?path=   what a call did to a file
+POST   .../entries                          { parent, name, kind } -> creates a file or directory
+POST   .../entries/move                     { from, to } -> renames or moves
 DELETE .../entries                          { path }
-GET    .../file?path=                       contenu texte d'un fichier, avec son empreinte disque
-GET    .../file/raw                         contenu brut : images, PDF, audio/vidéo (Range), modèles 3D
-PUT    .../file                             { path, content, fingerprint } -> 409 si le disque a bougé
-GET    .../commits?limit=                   derniers commits de la branche, avec leurs références
-GET    .../commits/:hash/diff               ce qu'un commit a changé
-GET    .../git/status                       index, répertoire de travail, conflits, amont, opération en cours
-GET    .../git/file-diff?path=&area=        diff d'un fichier, dans l'index ou le répertoire de travail
-GET    .../git/branches                     branches locales (avance, worktree) et distantes
-GET    .../git/stashes                      stashs du dépôt
-POST   .../git/stage | unstage              { paths? } -> tout le répertoire sans chemins
-POST   .../git/discard                      { paths } -> version de l'index, ou suppression si non suivi
+GET    .../file?path=                       file text content with disk fingerprint
+GET    .../file/raw                         raw content: images, PDF, audio/video (Range), 3D models
+PUT    .../file                             { path, content, fingerprint } -> 409 if disk changed
+GET    .../commits?limit=                   latest branch commits with references
+GET    .../commits/:hash/diff               what a commit changed
+GET    .../git/status                       index, working directory, conflicts, upstream, active operation
+GET    .../git/file-diff?path=&area=        file diff in index or working directory
+GET    .../git/branches                     local (ahead, worktree) and remote branches
+GET    .../git/stashes                      repository stashes
+POST   .../git/stage | unstage              { paths? } -> entire directory if no paths
+POST   .../git/discard                      { paths } -> index version, or deletion if untracked
 POST   .../git/commit                       { message, amend?, stageAll? } -> { hash, shortHash }
 POST   .../git/branches                     { name, from?, checkout? }
 DELETE .../git/branches                     { name, force? }
-POST   .../git/checkout                     { ref } -> branche locale, distante (suivie) ou commit (détaché)
-POST   .../git/merge                        { ref } -> { conflicts } ; un conflit n'est pas une erreur
-POST   .../git/abort | continue             l'opération en cours (merge, rebase, cherry-pick, revert)
-POST   .../git/fetch | pull | push          pull { rebase? }, push { force? } en --force-with-lease
+POST   .../git/checkout                     { ref } -> local branch, remote (tracking), commit (detached)
+POST   .../git/merge                        { ref } -> { conflicts } ; conflict is not an error
+POST   .../git/abort | continue             active operation (merge, rebase, cherry-pick, revert)
+POST   .../git/fetch | pull | push          pull { rebase? }, push { force? } using --force-with-lease
 POST   .../git/stash                        { message?, includeUntracked? }
 POST   .../git/stash/apply | pop | drop     { index }
 POST   .../git/revert                       { hash }
 POST   .../git/reset                        { hash, mode: soft | mixed | hard }
 
-GET    /api/agents                          capacités et modèles disponibles par CLI
-GET    /api/health                          état du daemon, sessions actives, RSS
+GET    /api/agents                          per-CLI capabilities and available models
+GET    /api/health                          daemon state, active sessions, RSS
 
-WS     /api/ws                              journal et statuts, multiplexé
-GET    /api/projects/:id/terminals          terminaux ouverts du projet
-POST   /api/projects/:id/terminals          { conversationId? | cwd? } -> ouvre un shell ; le cwd
-                                            vient de la session (worktree compris), d'un worktree
-                                            du projet, ou du workspace par défaut
+WS     /api/ws                              multiplexed journal and statuses
+GET    /api/projects/:id/terminals          open project terminals
+POST   /api/projects/:id/terminals          { conversationId? | cwd? } -> opens shell; cwd comes from session
+                                            (including worktree), a project worktree,
+                                            or default workspace
 PATCH  /api/projects/:id/terminals/:tid     { title }
 DELETE /api/projects/:id/terminals/:tid
 
-WS     /api/projects/:id/terminal?terminalId=   pty, socket dédiée (section 10)
+WS     /api/projects/:id/terminal?terminalId=   pty, dedicated socket (section 10)
 ```
 
-`GET /api/conversations/:id/events` est la route de rattrapage. Elle est paginée et
-utilisée aussi bien au chargement initial (depuis `after=0`) qu'après une longue coupure.
+`GET /api/conversations/:id/events` is the catch-up route. Paginated, used for
+initial loading (`after=0`) and after long disconnections.
 
 ### WebSocket
 
-Une seule connexion par onglet, sur `/api/ws`. Multiplexée : un client peut suivre
-plusieurs conversations.
+One connection per tab at `/api/ws`, multiplexed so clients can follow several
+conversations.
 
-`status` fait exception à l'abonnement : il part pour toute conversation lisible par le
-compte, abonnée ou non. La sidebar affiche des lignes qu'elle n'a pas ouvertes et n'a
-pas de journal à replier pour en déduire l'état ; l'abonner au flux de chacune ferait
-rejouer autant de journaux pour une pastille. Le droit de lecture est revérifié à chaque
-poussée, et la reprise après coupure relit la liste plutôt que d'attendre la prochaine
-transition.
+`status` bypasses subscriptions: sent for every conversation readable by the
+account, subscribed or not. Sidebar shows unopened rows without journals to fold
+for state; subscribing to every stream would replay that many journals for a dot.
+Read access is rechecked on every push, and reconnection rereads the list instead
+of waiting for the next transition.
 
-Client vers serveur :
+Client to server:
 
 ```ts
 { t: 'subscribe',   conversationId: string, afterSeq: number }
@@ -804,7 +778,7 @@ Client vers serveur :
 { t: 'ping' }
 ```
 
-Serveur vers client :
+Server to client:
 
 ```ts
 { t: 'event',   conversationId: string, seq: number, ts: number,
@@ -814,129 +788,118 @@ Serveur vers client :
 { t: 'pong' }
 ```
 
-**Séquence de reconnexion.** Le client garde en mémoire (et en IndexedDB) le dernier `seq`
-par conversation. À la reconnexion il renvoie `subscribe` avec ce curseur. Si le retard
-dépasse 500 événements, le serveur répond `catchup` et le client bascule sur la route REST
-paginée plutôt que de recevoir un déluge sur le socket.
+**Reconnection sequence.** Client keeps latest `seq` per conversation in memory
+(and IndexedDB), then sends `subscribe` with that cursor on reconnect. Beyond
+500 missed events, server returns `catchup`, switching client to paginated REST
+rather than flooding the socket.
 
-Heartbeat applicatif toutes les 25 secondes (`ping`/`pong`), reconnexion automatique avec
-backoff exponentiel plafonné à 15 secondes, et reconnexion immédiate sur les événements
-`online` et `visibilitychange` du navigateur. C'est ce dernier point qui fait la
-différence sur mobile, où le socket est tué dès que l'écran s'éteint.
+Application heartbeat every 25 seconds (`ping`/`pong`), automatic reconnect with
+exponential backoff capped at 15 seconds, immediate reconnect on browser `online`
+and `visibilitychange`. The latter matters on mobile, where screen-off kills sockets.
 
 ---
 
 ## 9. Worktrees
 
-À la création d'une conversation, trois choix :
+Three choices when creating a conversation:
 
-1. **Racine du projet.** L'agent travaille directement dans `workspace_path`.
-2. **Worktree existant.** Liste des worktrees connus du projet, avec leur branche.
-3. **Nouveau worktree.** Nom de branche et ref de base. Sillage exécute
-   `git worktree add <path> -b <name> <baseRef>` avec `<path>` sous
-   `<données>/worktrees/<project_id>/<name>`.
+1. **Project root.** Agent works directly in `workspace_path`.
+2. **Existing worktree.** Known project worktrees with branches.
+3. **New worktree.** Branch name and base ref. Sillage runs
+   `git worktree add <path> -b <name> <baseRef>` with `<path>` under
+   `<data>/worktrees/<project_id>/<name>`.
 
-On ne délègue pas à `claude --worktree`, parce que Codex ne l'a pas et que Sillage doit
-savoir où sont les worktrees pour les lister et les nettoyer. La gestion est donc côté
-Sillage, identique pour les deux CLI.
+Do not delegate to `claude --worktree`: Codex lacks it, and Sillage must know
+worktree locations to list/clean them. Management belongs to Sillage, identical
+for both CLIs.
 
-La suppression d'un worktree affiche d'abord le résultat de `git status --porcelain` dans
-ce worktree. S'il y a des modifications non commitées, la suppression exige une
-confirmation explicite. Les conversations rattachées à un worktree supprimé passent en
-lecture seule au lieu d'être effacées.
+Deleting a worktree first displays its `git status --porcelain`. Uncommitted
+changes require explicit confirmation. Attached conversations become read-only
+instead of being deleted.
 
 ---
 
-## 10. Mode terminal
+## 10. Terminal mode
 
-Un terminal réel, pas une émulation de commandes. `node-pty` côté serveur, `xterm.js`
-côté client avec l'addon `fit`.
+Real terminal, not command emulation. `node-pty` server-side, `xterm.js` client-side
+with `fit` addon.
 
-**Ce que ce terminal n'est pas.** Il n'affiche pas l'interface du CLI. Le process agent
-est lancé par le SDK en mode headless (`--input-format stream-json --output-format
-stream-json`, stdio en tuyaux) : il ne dessine rien, il n'y a aucune image à mirroir. Un
-« switch CLI / Web » supposerait de lancer le vrai TUI dans un pty et d'en tirer les
-données structurées par des hooks, c'est-à-dire de remplacer les invariants I2 et I3 par
-un buffer d'écran. Écarté.
+**What this terminal is not.** It does not show the CLI interface. Agent processes
+launch headless through SDK (`--input-format stream-json --output-format
+stream-json`, piped stdio): nothing is drawn, no screen to mirror. A “CLI / Web”
+switch would require launching real TUI in a pty and deriving structured data
+through hooks, replacing I2/I3 with a screen buffer. Rejected.
 
-**État.** Le pty, sa socket et le composant `xterm` sont écrits et vérifiés, mais la vue
-n'est pas montée : la bascule sous la barre de saisie laissait croire à ce switch. Le
-terminal réapparaîtra dans le panneau latéral d'outils, avec l'explorateur de fichiers
-colorés par état git, l'édition à onglets et l'historique des modifications de l'agent.
+**Status.** Pty, socket, and `xterm` component are written and checked, but view
+is not mounted: its toggle below input misleadingly suggested this switch.
+Terminal will return in the tools side panel with git-colored explorer,
+tabbed editing, and agent change history.
 
-- Les terminaux appartiennent au **projet**, pas à la conversation : un pty est un
-  process qui vit dans un répertoire, et l'indexer par session rendait introuvable un
-  serveur lancé dans le shell d'une conversation archivée. Ouvert depuis une session,
-  le shell prend son répertoire (worktree compris) ; depuis la vue projet, le workspace.
-  La liste est unique par projet, chaque onglet dit où son shell tourne, et la sidebar
-  marque les projets où un shell est vivant.
-- Un PTY survit à la déconnexion du client (même invariant I1), avec un tampon des
-  128 derniers Ko rejoué à la reconnexion : fermer un onglet n'interrompt pas une
-  commande en cours.
-- Fermeture automatique après `limits.ptyIdleTimeoutMin` sans activité (60 min par
-  défaut), mais seulement au prompt : un shell qui a un process enfant en cours (un
-  serveur de dev, un build) n'est pas inactif, et l'échéance se remet.
-- Les process ne survivent pas au redémarrage du daemon, choix assumé contre la pente
-  tmux. Les métadonnées et le dernier écran, si (`<data>/terminals/`) : l'entrée
-  réapparaît marquée « interrompue », lisible, avec une relance dans le même cwd.
-- Socket dédiée (`/api/projects/:id/terminal`), distincte de celle du journal : la
-  sortie d'un shell n'est pas du contenu de conversation, elle n'est jamais persistée
-  en base, et son débit ferait passer les événements du fil derrière des kilo-octets de
-  sortie de compilation.
-- Sur mobile, une barre de touches auxiliaires : `Échap`, `Tab`, `Ctrl+C`, `Ctrl+D` et
-  les flèches. Sans ça, impossible de compléter un chemin ou d'interrompre une commande.
+- Terminals belong to the **project**, not conversation: pty is a process living
+  in a directory; session indexing made servers in archived conversations' shells
+  unfindable. Opened from session, shell uses its directory (including worktree);
+  from project view, workspace. One list per project, tabs identify shell location,
+  sidebar marks projects with live shells.
+- PTYs survive client disconnection (I1) with the latest 128 KB buffered for replay:
+  closing a tab does not interrupt commands.
+- Automatic closure after `limits.ptyIdleTimeoutMin` inactivity (default 60 min),
+  only at prompt: shells with running children (dev server, build) are not idle
+  and reset the deadline.
+- Processes do not survive daemon restart, an intentional choice against tmux
+  complexity. Metadata and last screen do (`<data>/terminals/`): entries reappear
+  marked “interrupted”, readable, restartable in same cwd.
+- Dedicated socket (`/api/projects/:id/terminal`), separate from journal: shell
+  output is not conversation content, never stored in database, and its throughput
+  would put thread events behind kilobytes of build output.
+- Mobile helper keys: `Escape`, `Tab`, `Ctrl+C`, `Ctrl+D`, arrows. Otherwise path
+  completion and command interruption would be impossible.
 
-### 10.1 Copier-coller
+### 10.1 Copy/paste
 
-C'est le point qui rate sur la plupart des terminaux web, et il rate pour deux raisons
-cumulées, toutes deux vérifiées dans un vrai navigateur en `http://` sur le réseau local :
+Most web terminals fail here for two combined reasons, both checked in a real
+browser over local-network `http://`:
 
-- `navigator.clipboard` n'existe pas hors contexte sécurisé. Toute copie doit passer par
-  le repli `execCommand('copy')`, et **aucune lecture** du presse-papiers n'est possible.
-- xterm pose `user-select: none` sur ses lignes et gère la sélection lui-même, ce qui rend
-  l'appui long sans effet sur téléphone.
+- `navigator.clipboard` is absent outside secure contexts. Copy must use
+  `execCommand('copy')` fallback; clipboard **reading is impossible**.
+- xterm sets `user-select: none` on rows and manages selection itself, making
+  phone long-press ineffective.
 
-D'où le traitement retenu, chaque geste ayant un chemin qui ne dépend pas de
-`navigator.clipboard` :
+Selected approach gives each gesture a path independent of `navigator.clipboard`:
 
-- une règle CSS rend les lignes de xterm sélectionnables nativement (`.sg-terminal`), donc
-  le geste du système redevient disponible ;
-- **sélectionner copie**, comme dans PuTTY, avec `Ctrl+Shift+C` en geste explicite ; le
-  repli hors contexte sécurisé est un textarea hors écran et `execCommand('copy')` ;
-- **`Ctrl+V` colle** en rendant la main au collage natif du navigateur, que xterm reçoit
-  par son textarea, seule voie qui marche partout ; le `Ctrl+V` littéral (0x16) est
-  sacrifié. Le clic droit colle via `readText` quand l'API existe, sinon il laisse venir
-  le menu du navigateur.
+- CSS makes xterm rows natively selectable (`.sg-terminal`), restoring system gestures;
+- **selecting copies**, like PuTTY, with explicit `Ctrl+Shift+C`; insecure-context
+  fallback uses an offscreen textarea and `execCommand('copy')`;
+- **`Ctrl+V` pastes** through native browser paste received by xterm's textarea,
+  the only universally working route; literal `Ctrl+V` (0x16) is sacrificed.
+  Right-click pastes through `readText` when available, otherwise opens browser menu.
 
-Le terminal donne un shell complet sous ton compte utilisateur. C'est assumé et cohérent
-avec le modèle « cercle de confiance », et écrit tel quel dans le README.
+Terminal provides a full shell under your user account. Intentional and consistent
+with the trusted-circle model, stated explicitly in README.
 
 ---
 
 ## 11. Remote control
 
-**Écarté, après vérification.** Remote Control n'est pas atteignable depuis une session
-SDK headless, et un interrupteur qui ne ferait rien serait pire que son absence.
+**Rejected after verification.** Remote Control is unreachable from headless SDK
+sessions; an ineffective switch would be worse than none.
 
-Ce qui a été mesuré sur le CLI installé :
+Measured on installed CLI:
 
-- `extraArgs: { 'remote-control': '<nom>' }` est **accepté sans erreur** : la session
-  démarre et répond normalement. Mais aucun process n'apparaît (272 avant, 272 après) et
-  le daemon local (`~/.claude/daemon.log`) n'enregistre rien. Le drapeau est ignoré.
-- `applyFlagSettings({ remoteControlAtStartup: true })` est accepté et observable :
-  `initializationResult()` passe `remote_control_auto_enable` de `false` à `true`. Mais
-  le nom dit ce qu'il fait, et aucun pont ne démarre pour la session déjà lancée.
+- `extraArgs: { 'remote-control': '<name>' }` is **accepted without error**:
+  session starts/responds normally. But no process appears (272 before/after),
+  local daemon (`~/.claude/daemon.log`) records nothing. Flag is ignored.
+- `applyFlagSettings({ remoteControlAtStartup: true })` is accepted/observable:
+  `initializationResult()` changes `remote_control_auto_enable` from `false` to
+  `true`. But it does what the name says; no bridge starts for an existing session.
 
-C'est cohérent avec ce qu'est la fonctionnalité : Remote Control relie une session
-**interactive** (le TUI) à claude.ai pour qu'une autre application la pilote. Une session
-headless n'a pas de TUI à relier.
+Consistent with the feature: Remote Control connects an **interactive** TUI session
+to claude.ai for another application to drive. Headless sessions have no TUI to connect.
 
-Le champ `remoteControl` a donc été retiré de `ClaudeConfig` : une configuration qui ne
-produit aucun effet est du poids mort. Le rajouter le jour où le SDK exposerait un pont
-coûte trois lignes.
+`remoteControl` was therefore removed from `ClaudeConfig`: ineffective configuration
+is dead weight. Adding it back if SDK exposes a bridge costs three lines.
 
-Côté Codex, `codex remote-control` gère un **daemon app-server** entier, pas une session :
-c'est un mode de déploiement alternatif, pas un réglage par conversation.
+Codex `codex remote-control` manages an entire **app-server daemon**, not a session:
+an alternative deployment mode, not per-conversation setting.
 
 ---
 
@@ -946,406 +909,344 @@ c'est un mode de déploiement alternatif, pas un réglage par conversation.
 
 ```
 /login
-/                       redirection vers le dernier projet, ou l'accueil
-/p/:projectId           liste des conversations du projet
-/p/:projectId/c/:convId vue conversation (Chat | Terminal | Diff)
-/settings               profil, thème, densité
-/settings/projects      gestion des projets
-/settings/users         admin uniquement
+/                       redirect to last project or home
+/p/:projectId           project conversation list
+/p/:projectId/c/:convId conversation view (Chat | Terminal | Diff)
+/settings               profile, theme, density
+/settings/projects      project management
+/settings/users         admin only
 ```
 
-### 12.2 Structure d'écran
+### 12.2 Screen structure
 
-Desktop : sidebar rétractable, zone de conversation. Les conversations sont listées sous
-leur projet, dans un ordre manuel plutôt que par date : projets et conversations portent
-chacun une colonne `position`, réécrite en bloc par le glisser-déposer. Réécrire toutes
-les positions d'un coup évite les trous et les égalités qu'un déplacement unitaire
-finirait par produire.
+Desktop: collapsible sidebar and conversation area. Conversations list under
+projects in manual rather than chronological order: both have a `position` column
+rewritten in bulk by drag/drop. Rewriting all positions avoids gaps/ties eventually
+caused by individual moves.
 
-Le repli de la sidebar est conservé d'une session à l'autre (`localStorage`), et laisse un
-bouton de réaffichage dans le coin haut-gauche. Ce bouton a d'abord eu sa gouttière, une
-colonne décalée de sa largeur : elle laissait une bande vide sur toute la hauteur de
-l'écran pour un bouton haut de 40 px. Ce sont maintenant les vues qui ont un en-tête qui
-lui réservent sa place, dans cet en-tête, où il se lit comme un contrôle de la barre plutôt
-que comme un objet flottant. Les autres vues centrent leur contenu et le laissent passer.
+Sidebar collapse persists across sessions (`localStorage`), leaving a top-left
+restore button. Initially it had a dedicated gutter, a column its width: a full-height
+empty strip for a 40 px button. Views with headers now reserve space inside their
+header, making it a toolbar control instead of floating object. Other views center
+content and let it pass.
 
-Le repli est publié par un petit magasin (`lib/sidebar.ts`) plutôt que par un contexte :
-les vues qui doivent le connaître ne sont pas dans la même branche que la sidebar, et le
-faire descendre par les props aurait traversé toute la coque pour une classe CSS.
+Collapse is published by a small store (`lib/sidebar.ts`) instead of context:
+views needing it are not in the sidebar branch, and prop drilling would cross
+the whole shell for a CSS class.
 
-**Largeur ajustable à la poignée**, sur le bord droit et sur grand écran seulement. La
-sidebar commence au bord gauche de la fenêtre, donc l'abscisse du pointeur *est* la largeur
-voulue : rien à mémoriser au début du geste. La valeur est écrite dans une variable CSS
-plutôt que remontée en état React, comme la hauteur du viewport visuel : le glissement émet
-un événement par image, et re-rendre la liste des conversations à chacun rendrait la
-poignée pâteuse. `localStorage` n'est écrit qu'au relâchement. Les flèches gauche et droite
-font la même chose au clavier, par pas de 16 px, sans quoi le réglage n'existerait qu'à la
-souris. Bornes : 200 px, en deçà desquels un titre ne tient plus, et 480 px.
+**Handle-adjustable width**, right edge, desktop only. Sidebar starts at window
+left, so pointer x *is* desired width: no initial gesture state needed. Value
+writes to CSS variable rather than React state, like visual viewport height:
+drag emits an event per frame, and rerendering conversation list each time would
+make the handle sluggish. `localStorage` writes only on release. Left/right arrows
+do the same in 16 px steps, otherwise resizing would be mouse-only. Bounds:
+200 px, below which titles cannot fit, and 480 px.
 
-Le tiroir mobile garde la largeur de base (`--sidebar-width`), la poignée n'agissant que sur
-`--sidebar-desktop-width` : une largeur choisie au clavier peut dépasser celle d'un
-téléphone, et un tiroir en surimpression n'a de toute façon rien à ajuster.
+Mobile drawer keeps base width (`--sidebar-width`); handle changes only
+`--sidebar-desktop-width`: keyboard-selected widths may exceed a phone, and
+an overlay drawer has nothing to adjust anyway.
 
-**Renommer se fait au double-clic** sur le nom, en plus de l'entrée de menu. Le nom actuel
-est présélectionné à l'ouverture du champ : renommer part presque toujours d'un titre
-proposé par le CLI qu'on remplace en entier, et un curseur posé en fin de ligne obligeait à
-tout effacer à la main. Le premier des deux clics navigue quand même, puisque la cible est
-un lien ; ouvrir ce qu'on renomme n'a rien de gênant.
+**Double-click names to rename**, alongside menu entry. Current name is preselected:
+usually replacing an entire CLI-proposed title, while an end-of-line cursor forced
+manual deletion. First click still navigates because target is a link; opening
+what one renames is harmless.
 
-**Deux niveaux, deux traitements typographiques.** Le projet porte son nom en gras et à
-pleine encre, la conversation en plus petit et en encre atténuée. Avec le même corps et la
-même couleur pour les deux, l'indentation restait le seul indice de hiérarchie et la
-navigation se lisait comme une liste plate. La conversation ouverte repasse à pleine encre,
-la sélection primant sur le rang.
+**Two levels, two typographic treatments.** Projects are bold/full ink;
+conversations smaller/muted. Same size/color left indentation as the only hierarchy
+cue, making navigation look flat. Open conversation returns to full ink because
+selection outranks hierarchy.
 
-Mobile : pas de sidebar. Un en-tête compact avec le nom de la conversation et un bouton
-qui ouvre la liste en plein écran. Les métadonnées du fil (modèle, worktree, provenance,
-consommation) y sont repliées derrière un chevron : quatre pastilles écrasées dans 390 px
-ne se lisent plus, et ce sont des repères qu'on consulte de temps en temps.
+Mobile: no sidebar. Compact header with conversation name and a button opening
+fullscreen list. Thread metadata (model, worktree, provenance, usage) collapses
+behind chevron: four squeezed chips are unreadable at 390 px and consulted only
+occasionally.
 
-**L'application est un calque fixe dimensionné sur le viewport visuel**, remonté de
-`visualViewport.offsetTop`, et le document lui-même ne défile jamais (`overflow: hidden`
-sur `html` et `body`). À l'ouverture du clavier, tout est donc compressé et poussé vers le
-haut, au lieu que la barre de saisie passe dessous : `100dvh` continue de valoir la
-hauteur de l'écran entier, et `visualViewport` est la seule mesure qui suive le clavier.
-Chaque vue porte alors son propre défilement, puisque le document n'en a plus.
+**Application is a fixed layer sized to visual viewport**, shifted upward by
+`visualViewport.offsetTop`; document itself never scrolls (`overflow: hidden` on
+`html`/`body`). Keyboard opening compresses/pushes everything upward rather than
+covering input: `100dvh` remains full-screen height, and only `visualViewport`
+follows keyboard. Each view therefore owns its scrolling.
 
-**Les encoches de l'appareil passent par des variables** (`--sg-safe-top`,
-`--sg-safe-bottom`), alimentées par `env()`, plutôt que par des appels directs. Deux
-raisons, toutes deux tirées d'un défaut réel : une barre de hauteur fixe doit pouvoir
-*ajouter* l'encoche à sa hauteur, ce qu'une classe utilitaire ne sait pas faire ; et ces
-valeurs valent zéro dans un navigateur mais pas dans une PWA installée, donc les nommer
-permet de rejouer la géométrie d'un iPhone sur un poste de développement au lieu de
-découvrir le décalage une fois l'application installée.
+**Device notches use variables** (`--sg-safe-top`, `--sg-safe-bottom`) fed by `env()`,
+not direct calls. Two reasons from real defects: fixed-height bars must *add* notch
+to height, impossible with a utility alone; values are zero in browser but nonzero
+in installed PWA, so naming enables replaying iPhone geometry on dev machines
+instead of discovering offsets after installation.
 
-**Une barre de hauteur fixe qui descend sous l'encoche ne se fait pas avec `pt-safe`.**
-`h-[var(--header-height)]` et `pt-safe` sur le même élément ne se combinent pas : la boîte
-garde ses 52 px, le contenu est poussé de 59 px, et il déborde donc *sous* la barre, où la
-vue le recouvre. C'est ce qui cassait l'en-tête dans la PWA installée, et restait invisible
-au navigateur où l'encoche vaut zéro. La classe `header-bar` ajoute l'encoche à la hauteur
-au lieu de la retrancher au contenu.
+**Fixed-height bars extending under notches cannot use `pt-safe`.**
+`h-[var(--header-height)]` and `pt-safe` on one element do not combine: box stays
+52 px, content shifts 59 px, overflowing *below* bar where view covers it. This
+broke installed-PWA header but remained invisible in browsers with zero notch.
+`header-bar` adds notch to height instead of subtracting from content.
 
-Une encoche ne se réserve **qu'une fois, par l'élément qui touche réellement le bord** :
-le panneau du workspace, même en plein écran, se pose sous l'en-tête de la coque qui a déjà
-pris l'encoche haute, donc il ne la reprend pas. La réserver deux fois creusait 59 px de
-vide au milieu de l'écran.
+Reserve a notch **once, by the element actually touching the edge**: workspace
+panel, even fullscreen, sits below shell header already reserving top notch,
+so must not reserve it again. Double reservation created 59 px of blank space
+mid-screen.
 
-**La hauteur du calque n'est imposée que quand le clavier est ouvert.** Elle venait
-systématiquement de `visualViewport.height` ; une PWA installée rapporte un viewport visuel
-plus court que l'écran sans qu'aucun clavier ne soit là, ce qui laissait une bande vide
-sous la barre de saisie. En dessous de 120 px d'écart, la mesure est retirée et `100dvh`
-fait foi ; au-delà, c'est le clavier, et le calque se réduit comme avant.
+**Layer height is imposed only while keyboard is open.** It previously always
+used `visualViewport.height`; installed PWAs report shorter visual viewport without
+keyboard, leaving blank strip below input. Below 120 px difference, remove measure
+and use `100dvh`; beyond it, keyboard shrinks the layer as before.
 
-**Aucun zoom à la mise au point d'un champ.** iOS zoome sur toute saisie dont le texte
-fait moins de 16 px, et ne dézoome jamais : la page reste décalée avec un défilement
-horizontal parasite. Deux protections, parce qu'aucune ne suffit seule : `maximum-scale=1`
-dans le meta viewport, et une taille de 16 px imposée aux champs sur pointeur grossier.
-Cette règle est écrite **hors de toute couche CSS** : les tailles de texte viennent
-d'utilitaires Tailwind, et une règle placée dans `@layer base` leur céderait la place.
+**No zoom on field focus.** iOS zooms input text below 16 px and never zooms back,
+leaving shifted pages and unwanted horizontal scrolling. Two protections because
+neither suffices: viewport `maximum-scale=1`, plus 16 px fields on coarse pointers.
+Rule lives **outside all CSS layers**: Tailwind utilities set text sizes, overriding
+rules placed in `@layer base`.
 
-**Navigation entre tours.** Deux flèches à droite du fil sautent d'un message utilisateur
-au suivant, et le message atteint se signale par un anneau qui s'estompe. La cible est
-calculée à partir de la **position de défilement**, pas de l'ensemble des tours visibles :
-après un saut, le tour précédent reste visible puisque sa région s'étend jusqu'au message
-suivant, et partir du premier visible ramenait donc toujours au même endroit. La réglette
-latérale (section 12.2bis) ne s'affiche qu'au-delà de 40rem et demande de viser un trait
-de deux pixels : au doigt, elle ne sert à rien. Chaque contrôle a sa gouttière réservée
-dans le fil, sinon il recouvre la fin des lignes.
+**Turn navigation.** Two arrows right of thread jump between user messages;
+reached message gets a fading ring. Target derives from **scroll position**, not
+visible turns: after jumping, previous turn stays visible because its region extends
+to next message; starting from first visible always returned to same place.
+Side ruler (section 12.2bis) appears only above 40rem and requires targeting a
+two-pixel line, useless by touch. Each control reserves its gutter, otherwise
+covering line endings.
 
-**Une transition de translation porte sur `translate`, pas sur `transform`.** Tailwind v4
-pose ses utilitaires de translation sur la propriété CSS `translate`, qui est distincte :
-une transition déclarée sur `transform` ne porte sur rien, et le tiroir saute d'un bord à
-l'autre. Vérifié en traçant la position image par image plutôt qu'en lisant les classes.
+**Translation transitions target `translate`, not `transform`.** Tailwind v4
+translation utilities use distinct CSS `translate`; transitions on `transform`
+do nothing, making drawers jump edge to edge. Verified by tracing positions frame
+by frame, not reading classes.
 
-### 12.3 Composition de la barre de saisie
+### 12.3 Composer structure
 
-Une ligne de saisie multi-lignes, plus une rangée de contrôles compacts qui restent
-accessibles au pouce :
+Multiline input plus compact controls accessible to the thumb:
 
-- Sélecteur de modèle
-- Sélecteur d'effort
-- Sélecteur de mode de permission (Claude) ou mode de collaboration, approbation et
-  sandbox (Codex)
-- Bouton pièce jointe
-- Jauge d'occupation de la fenêtre de contexte
-- Bouton d'envoi, qui devient Stop pendant l'exécution
+- Model selector
+- Effort selector
+- Permission-mode selector (Claude), or collaboration mode, approval, sandbox (Codex)
+- Attachment button
+- Context-window occupancy gauge
+- Send button becoming Stop during execution
 
-**Les réglages se replient quand la barre est étroite.** En dessous de 34rem de largeur de
-composer, les sélecteurs laissent place à un unique bouton qui ouvre une feuille ancrée en
-bas, où ils reprennent leur forme de champ, cette fois nommés. Le bouton porte l'état de
-**tous** les réglages, pas seulement du modèle (« Sonnet · Moyen · Demander ») : replier ne
-doit pas revenir à cacher, sinon il faut ouvrir la feuille pour savoir dans quel mode on
-travaille. Le texte se tronque quand il dépasse, ce qui garde l'ordre utile en tête.
-Sur téléphone, les quatre pastilles de Codex occupaient toute la barre et repoussaient
-l'envoi hors du champ visible. Le seuil est mesuré sur le composer (`@container`) et non
-sur la fenêtre : c'est sa largeur qui décide, et elle dépend aussi de la sidebar. Un même
-descripteur rend les deux formes, sinon la version repliée dérive de l'autre. Un réglage
-qui retire un garde-fou teinte le bouton, faute de quoi il disparaîtrait de la vue.
+**Settings collapse when composer is narrow.** Below 34rem composer width, selectors
+become one button opening a bottom sheet with named fields. Button shows **all**
+setting states, not only model (“Sonnet · Medium · Ask”): collapse must not hide
+state, forcing sheet opening to know work mode. Overflow text truncates, keeping
+useful order first. Four Codex chips previously consumed phone bar, pushing Send
+offscreen. Threshold uses composer (`@container`), not window: width also depends
+on sidebar. One descriptor renders both forms to prevent drift. Settings removing
+guardrails tint the button so they remain visible.
 
-**File d'attente.** Écrire pendant qu'un tour est en cours ne bloque pas la saisie : le
-message est mis en file **côté serveur** et affiché sous l'indicateur d'activité, où sa
-position dit ce qu'il est, c'est-à-dire ce que l'agent n'a pas encore lu. Il part seul à
-la fin du tour, un à la fois, et peut être retiré avant son départ.
+**Queue.** Typing during a turn does not block input: message queues **server-side**
+and displays below activity indicator, its position explaining that agent has not
+read it yet. Messages send automatically at turn end, one at a time, removable
+before sending.
 
-La file vit côté serveur et non dans le CLI, parce qu'un message poussé en cours de tour
-y est repris tout de suite. C'est exactement ce que fait le geste d'inflexion décrit plus
-bas, et ce n'est pas ce qu'on attend d'un envoi ordinaire : le déterminisme vient donc de
-Sillage, et le comportement par défaut est identique pour les deux CLI.
+Queue lives server-side, not CLI: messages pushed mid-turn are consumed immediately
+there. That is precisely steering below, not ordinary sending. Sillage therefore
+provides determinism and identical defaults for both CLIs.
 
-Elle est en mémoire : un message qui n'a jamais atteint le CLI n'a pas à survivre à un
-redémarrage. Le journal, lui, porte de quoi les clore proprement à la reprise
-(`EventLog.openQueuedMessages`), sans quoi le fil rejoué les afficherait pour toujours
-comme en attente.
+Queue is in memory: messages never reaching CLI need not survive restart. Journal
+still records enough for clean recovery closure (`EventLog.openQueuedMessages`),
+otherwise replay would show them queued forever.
 
-**Infléchir le tour en cours.** Le message est pris en compte **immédiatement**, à
-l'intérieur du tour déjà commencé, au lieu d'attendre sa fin comme le fait la file. Les
-deux CLI le permettent, par deux mécanismes sans rapport.
+**Steer active turn.** Message is taken **immediately** inside existing turn,
+rather than waiting like queue. Both CLIs support it through unrelated mechanisms.
 
-| | Mécanisme | Repli garanti |
+| | Mechanism | Guaranteed folding into turn |
 | --- | --- | --- |
-| Codex | `turn/steer` avec `expectedTurnId` | oui |
-| Claude Code | `priority: 'next'` sur le message poussé dans le flux | non |
+| Codex | `turn/steer` with `expectedTurnId` | yes |
+| Claude Code | `priority: 'next'` on streamed message | no |
 
-Côté Codex, `expectedTurnId` est une précondition du protocole : si le tour s'est terminé
-entre l'affichage du bouton et le clic, la requête échoue, ce qui est le comportement
-voulu. Un tour de type `review` ou `compact` refuse le steering
-(`activeTurnNotSteerable`).
+Codex `expectedTurnId` is a protocol precondition: if turn ended between button
+display and click, request fails as intended. `review`/`compact` turns reject
+steering (`activeTurnNotSteerable`).
 
-Côté Claude Code, il n'y a pas de requête dédiée : le message part par le flux ordinaire,
-et `priority` dit au CLI où le poser. La valeur `next`, qui est aussi le défaut, replie le
-message dans le tour courant à la prochaine frontière de lot d'outils, où il arrive au
-modèle précédé de « The user sent a new message while you were working ». La valeur
-`later` lui fait attendre le tour suivant. Deux limites en découlent : le repli n'a lieu
-qu'à une frontière de lot d'outils, donc un agent qui rédige déjà sa réponse finale
-termine son tour et le message ouvre le suivant ; et rien dans le flux ne dit laquelle des
-deux choses s'est produite. Le champ est exporté sans commentaire par le SDK et la
-documentation décrit encore une file strictement séquentielle : `pnpm steer:probe` est ce
-qui a relevé le comportement, et ce qui permettra de le revérifier au prochain bump.
+Claude has no dedicated request: ordinary message stream carries it, `priority`
+determines placement. `next` (also default) folds it into current turn at next
+tool-batch boundary, prefixed to model with “The user sent a new message while you
+were working”. `later` waits for next turn. Two limits: folding only at tool-batch
+boundaries means final-answer drafting completes before a new turn opens; stream
+never says which happened. SDK exports field without comment and documentation
+still describes strictly sequential queue: `pnpm steer:probe` established behavior
+and can recheck it at next bump.
 
-Les deux gestes ne produisent pas le même résultat, donc lequel s'applique reste le choix
-de l'utilisateur : la file est l'action par défaut, infléchir est explicite, et un refus
-est rendu tel quel (`steer_unavailable`) plutôt que replié sur la file dans le dos de
-l'utilisateur. Le geste se propose à deux endroits, et le second est le principal : un
-bouton dans le composer tant que le message est en cours de frappe, et une action
-**Infléchir maintenant** sur chaque message déjà en file. Le premier seul ne suffisait
-pas, puisqu'il dépend du texte présent dans la zone de saisie et disparaît donc au moment
-même où l'envoi le vide. Un message sorti de la file par ce geste est clos par
-`message.dequeued` avec la raison `steered`, distincte de `sent`.
+The gestures differ, so user chooses: queue defaults, steering explicit, refusals
+shown as `steer_unavailable` instead of secretly queuing. Offered in two places,
+second primary: composer button while typing, and **Steer now** on each queued
+message. First alone was insufficient because it depended on draft text and vanished
+as sending cleared input. Steering dequeues with `message.dequeued` reason
+`steered`, distinct from `sent`.
 
-Sortir un message de la file demande un aller-retour vers le CLI, pendant lequel il ne
-doit pas rester exposé au `flushQueue` d'une fin de tour : il est retiré avant l'appel et
-remis à sa place exacte si le CLI refuse.
+Dequeuing needs a CLI round trip; message must not remain exposed to turn-end
+`flushQueue`: remove before call, restore exact position on rejection.
 
-Vérifié de bout en bout contre de vrais CLI. Codex : un tour lancé sur les marées,
-infléchi vers les volcans en cours de route, produit **un seul** `turn.started`, deux
-messages utilisateur dans le fil, une réponse qui parle bien de volcans, et **aucun**
-`message.queued` ; le tour garde son identifiant, et l'app-server renvoie le message en
-écho sous forme d'item `userMessage`, que le traducteur ignore déjà pour ne pas l'écrire
-deux fois. Claude : un tour parti sur trois commandes lentes, infléchi pendant la
-première, s'arrête après elle et répond le mot demandé, pour **un seul** `turn.started` et
-**un seul** `turn.completed`.
+Verified end to end with real CLIs. Codex: turn about tides steered to volcanoes
+produces **one** `turn.started`, two user messages, volcano response, **no**
+`message.queued`; same turn ID, app-server echoes `userMessage` item, already
+ignored by translator to avoid duplicates. Claude: turn planned for three slow
+commands, steered during first, stops afterward and answers requested word,
+with **one** `turn.started` and **one** `turn.completed`.
 
-**Le brouillon survit au changement de conversation.** Le composer est remonté par sa
-clé quand la conversation change : le texte tapé et les pièces jointes déjà téléversées
-sont donc gardés hors de React (`lib/composer-drafts.ts`), indexés par conversation, et
-retrouvés au retour. Un fil pas encore créé range le sien sous son projet, seul repère
-disponible avant qu'il existe.
+**Draft survives conversation changes.** Composer remounts by conversation key,
+so text and uploaded attachments live outside React (`lib/composer-drafts.ts`),
+indexed per conversation and restored on return. Uncreated threads use project
+as only available key.
 
-Le brouillon n'est pas persisté d'une session à l'autre : les pièces jointes n'y sont
-que des identifiants de fichiers téléversés, que le serveur ramasse comme orphelins, et
-un brouillon relu après un redémarrage désignerait des fichiers disparus.
+Drafts do not persist across sessions: attachments are uploaded-file IDs reclaimed
+as orphans server-side, so post-restart drafts would reference missing files.
 
-**Bande d'état sous la barre de saisie.** Elle porte les deux informations que l'en-tête
-ne donne pas : l'état de la liaison, et si un process CLI tourne encore pour cette
-conversation (`warm`). Ce second point n'est pas déductible du statut : une conversation
-au repos peut avoir gardé sa session chargée ou l'avoir laissée expirer, et le prochain
-message coûte alors le redémarrage du CLI et le rechargement de son contexte.
+**Status strip below input.** Shows two facts absent from header: connection state,
+and whether a CLI process remains running for this conversation (`warm`). Status
+alone cannot reveal the latter: idle conversations may keep loaded sessions or
+let them expire, making next message pay CLI restart/context reload costs.
 
-Les changements de réglage prennent effet au prochain message et sont écrits dans
-`conversations.config`. Un changement de modèle en cours de conversation est visible dans
-le fil sous forme de séparateur discret.
+Settings take effect next message and write to `conversations.config`. Mid-thread
+model changes appear as discreet separators.
 
-**Mentions `@`.** Taper `@` ouvre une liste de fichiers du répertoire de travail
-(`GET /api/projects/:id/files`), avec correspondance par sous-séquence : `wsx` retrouve
-`web/src/index.tsx`. La recherche s'appuie sur `git ls-files --cached --others
---exclude-standard`, avec un parcours de repli hors dépôt. Elle est faite par Sillage et
-non déléguée à un CLI : il faudrait sinon un process lancé rien que pour compléter une
-saisie, et rien ne serait proposé sur une conversation pas encore démarrée.
+**`@` mentions.** Typing `@` opens working-directory files
+(`GET /api/projects/:id/files`) with subsequence matching: `wsx` finds
+`web/src/index.tsx`. Search uses `git ls-files --cached --others --exclude-standard`,
+with nonrepository traversal fallback. Sillage performs it rather than CLI:
+otherwise completion would need a process and offer nothing before conversations start.
 
-Les deux CLI injectent la mention différemment, d'où une couche d'abstraction : le chemin
-voyage à côté du texte, et chaque runner l'applique à sa façon.
+Both CLIs inject mentions differently, hence an abstraction: paths travel beside
+text, each runner applies them its way.
 
-- **Claude Code** développe lui-même les `@chemin` restés dans le texte. Vérifié sur le
-  CLI installé en posant une question sur un fichier mentionné avec tous les outils
-  refusés : la réponse est arrivée sans qu'aucun outil ne soit appelé.
-- **Codex** attend un élément d'entrée `mention` distinct (`UserInput`), et ne développe
-  rien tout seul.
+- **Claude Code** expands text `@path` itself. Installed-CLI check asked about
+  mentioned file with all tools denied: response arrived without tools.
+- **Codex** expects separate `mention` input (`UserInput`) and expands nothing itself.
 
-Seuls les chemins réellement choisis dans la liste sont transmis : un `@quelquechose`
-tapé à la main ne désigne pas forcément un fichier, et Codex refuse une mention qui ne
-pointe nulle part. Le serveur résout ensuite chaque chemin et refuse tout ce qui sort du
-répertoire de travail.
+Only list-selected paths are sent: manually typed `@something` need not be a file,
+and Codex rejects nonexistent mentions. Server resolves paths, rejecting anything
+outside working directory.
 
-### 12.4 Rendu du contenu
+### 12.4 Content rendering
 
-- Markdown via `markdown-it`, `html: false` : le HTML brut du modèle est échappé, pas
-  interprété.
-- Le document est découpé en segments : les blocs de code et les tableaux deviennent des
-  composants React qui portent leur barre d'outils, tout le reste reste le HTML de
-  markdown-it. Les recréer à la main dans le DOM après coup ne tient plus dès qu'il y a
-  un état à gérer.
-- Blocs de code : coloration syntaxique (`highlight.js`, chargée à la demande), bascule de
-  retour à la ligne **par bloc**, copie, téléchargement avec une extension déduite du
-  langage. Aucune détection automatique de langage : sur les extraits courts elle se
-  trompe souvent, et un bloc mal coloré se lit plus mal qu'un bloc sans couleur.
-- La palette de coloration est définie avec les tokens de thème, pas importée d'une
-  feuille toute faite qui ignorerait les thèmes clair, sombre et contrasté.
-- Tableaux : pleine largeur, défilement horizontal porté par l'enveloppe pour que les
-  colonnes restent alignées, et export CSV conforme à la RFC 4180.
-- Listes de tâches `- [ ]` / `- [x]` rendues en vraies cases à cocher, désactivées.
-- Le fil n'est pas virtualisé : chaque élément est mémoïsé et le fold renouvelle
-  uniquement les objets modifiés, ce qui suffit et évite les sauts de défilement qu'une
-  virtualisation introduit sur du contenu de hauteur variable.
-- Les deltas de texte sont appliqués par lots de 60 ms, pas un `setState` par token. Sur
-  un téléphone, un rendu par token fait chuter le framerate.
+- Markdown through `markdown-it`, `html: false`: model raw HTML is escaped, not interpreted.
+- Document splits into segments: code blocks/tables become React components owning
+  toolbars; everything else remains markdown-it HTML. Recreating them manually
+  afterward in DOM stops working once state is involved.
+- Code blocks: on-demand `highlight.js`, **per-block** wrapping, copy, download
+  with language-derived extension. No automatic language detection: short snippets
+  often misclassify, and wrong highlighting is worse than none.
+- Highlight palette uses theme tokens, not a premade stylesheet ignoring light,
+  dark, and contrast themes.
+- Tables: full width, wrapper horizontal scrolling keeps columns aligned,
+  RFC 4180-compliant CSV export.
+- Task lists `- [ ]` / `- [x]` render as real disabled checkboxes.
+- Thread is not virtualized: each item memoized, fold renews only changed objects,
+  sufficient without variable-height virtualization scroll jumps.
+- Text deltas apply in 60 ms batches, not per-token `setState`, which drops phone framerate.
 
-### 12.4bis Consommation du compte
+### 12.4bis Account usage
 
-Un bouton **Utilisation** dans l'en-tête de conversation ouvre l'équivalent de
-`/usage` : les jauges de quota du compte, pas celles de la conversation.
+A header **Usage** button opens the equivalent of `/usage`: account quota gauges,
+not conversation gauges.
 
 | | Source | Nature |
 | --- | --- | --- |
-| Claude Code | requête de contrôle `get_usage` | fenêtres nommées + fenêtres par modèle |
-| Codex | `account/rateLimits/read` | compteurs par `limit_id` |
+| Claude Code | `get_usage` control request | named and per-model windows |
+| Codex | `account/rateLimits/read` | counters by `limit_id` |
 
-**Le format normalisé est une liste, jamais un jeu de champs nommés.** La sonde du CLI
-installé renvoie aujourd'hui `five_hour`, `seven_day`, `seven_day_opus`,
-`seven_day_sonnet`, `seven_day_oauth_apps`, plus une dizaine de clés encore nulles aux
-noms de code (`tangelo`, `iguana_necktie`, `cinder_cove`...), et un tableau
-`model_scoped` où la sortie de Fable a fait apparaître sa propre jauge. Figer une liste
-côté Sillage obligerait à rebuilder à chaque nouveauté et masquerait en silence tout ce
-qui n'aurait pas été prévu.
+**Normalized format is a list, never named fields.** Installed-CLI probe currently
+returns `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`,
+`seven_day_oauth_apps`, about ten still-null code-name keys (`tangelo`,
+`iguana_necktie`, `cinder_cove`...), and `model_scoped`, where Fable's release added
+its own gauge. Fixing a list would require rebuilds for every addition and silently
+hide unforeseen ones.
 
-La lecture parcourt donc tout ce qui est là, retient ce qui a la forme d'une fenêtre
-(un taux, une date de remise à zéro), ignore le reste sans le nommer, et affiche une clé
-inconnue avec son nom d'origine plutôt que de l'écarter. Les libellés des fenêtres par
-modèle viennent du serveur, déjà rédigés.
+Reading traverses everything, retains window-shaped values (rate, reset date),
+ignores the rest without naming it, displays unknown keys with original names
+instead of discarding them. Model-window labels come already written from server.
 
-L'API du SDK s'appelle `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` et sa
-documentation annonce que la forme peut changer sans préavis : la normalisation ne
-présume donc rien et ne peut pas échouer sur un champ manquant. Une panne de cette sonde
-ne prive l'UI que de la consommation.
+SDK API is `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET`; documentation
+warns shape may change without notice, so normalization presumes nothing and cannot
+fail for missing fields. Probe failure removes only usage from UI.
 
-Deux choix d'affichage, qui ne sont pas des données du CLI : les seuils d'alerte (75 %
-et 90 %), et le fait qu'un taux inconnu ne dessine aucune barre plutôt qu'une barre vide,
-qui affirmerait un zéro que le CLI n'a pas déclaré. Les montants de crédits ne sont
-affichés que si le payload transmet son échelle décimale : afficher 4250 pour 42,50 €
-serait pire que de ne rien afficher.
+Two display choices not from CLI: alert thresholds (75%/90%), and unknown rates
+rendering no bar instead of empty bars falsely asserting zero. Credit amounts
+appear only when payload supplies decimal scale: showing 4250 for €42.50 would
+be worse than showing nothing.
 
-Chaque lecture démarre un process CLI, d'où un cache d'une minute côté serveur et un
-bouton de rafraîchissement explicite qui le court-circuite.
+Each read starts a CLI process, hence one-minute server cache and explicit refresh
+button bypassing it.
 
-### 12.5 Rendu des appels d'outils
+### 12.5 Tool-call rendering
 
-Un bandeau replié par appel, avec l'icône de l'outil, son nom, un résumé d'une ligne (le
-chemin pour `Read`, la commande pour `Bash`) et l'état (en cours, réussi, échoué, durée).
-Déplié : une vue lisible de l'appel, et le payload natif à un clic.
+One collapsed strip per call: icon, name, one-line summary (`Read` path, `Bash`
+command), state (running/succeeded/failed/duration). Expanded: readable call view,
+native payload one click away.
 
-**Ce que dit la ligne repliée.** La **description** de l'appel passe avant tout le reste :
-elle dit ce que l'appel cherche à faire, là où la commande ou le chemin ne disent que
-comment. Claude Code en joint une à ses appels `Bash` et à ses sous-agents, et « Read
-commands section context » vaut mieux qu'un `sed -n '334,364p' CLAUDE.md` tronqué au
-milieu, ou qu'un prompt de sous-agent de trois lignes. Elle n'est pas garantie pour
-autant : Codex n'en produit aucune, et le repli sur le paramètre identifiant (commande,
-chemin, motif) reprend alors la main. Une phrase se rend en police de texte, un fragment
-de code en police à chasse fixe. La commande n'est jamais perdue : elle reste sous
-l'entrée de l'appel déplié.
+**What collapsed rows say.** Call **description** takes precedence: it states intent,
+while command/path only explain how. Claude includes descriptions on Bash/subagents;
+“Read commands section context” beats truncated `sed -n '334,364p' CLAUDE.md` or
+three-line subagent prompts. Not guaranteed: Codex produces none, so identifying
+parameter (command/path/pattern) takes over. Sentences use text font, code fragments
+monospace. Command is never lost: it stays below expanded call input.
 
-**Séparation des fils.** Un fil ne montre que ce que son auteur a produit. Tout ce qui
-porte un `parentToolCallId` sort du fil principal : mêlé aux réponses de l'agent, le
-travail d'un sous-agent s'y lit comme si c'était lui qui parlait, et deux sous-agents en
-parallèle deviennent indémêlables. Le fil principal ne garde donc que l'appel de spawn,
-qui garde toujours sa ligne propre et ne rejoint jamais un groupe replié : c'est le seul
-repère disant qu'un pan entier du travail s'est fait ailleurs. La consigne et le rapport
-restent dans sa carte, à un clic, avec un passage vers le fil complet (section 12.11).
+**Thread separation.** Threads show only their author's work. Anything with
+`parentToolCallId` leaves main thread: mixed with agent replies it appears to be
+the parent's speech, and parallel subagents become inseparable. Main thread keeps
+only spawn call, always its own row, never a collapsed group: only marker that a
+whole part happened elsewhere. Instructions/report stay in its card, one click
+away, with access to full thread (section 12.11).
 
-**Bandeau des sous-agents en cours.** Posé entre le fil et la barre de saisie, hors du
-flux de défilement. Un sous-agent tourne pendant des minutes, et le fil principal
-n'avance pas pendant ce temps : placé dans le flux, l'indicateur partait hors de l'écran
-dès qu'on remontait lire ce qui précède, et la conversation avait alors toutes les
-apparences d'une session au repos. C'est le défaut qui a motivé tout ce découpage : le
-seul signe de vie restant était le compteur d'outils d'un groupe replié. Le bandeau se
-déplie sur la liste des sous-agents actifs, et chaque ligne ouvre son fil.
+**Running-subagent strip.** Between thread and input, outside scroll flow.
+Subagents run for minutes while main thread stays still: in-flow indicators left
+screen when scrolling upward, making conversation look idle. This defect motivated
+the split: only remaining sign of life was collapsed-group tool count. Strip
+expands to active subagents; each row opens its thread.
 
-**Regroupement.** Une suite d'appels terminés se replie en une ligne, qui compte les
-appels et les échecs : replier ne doit jamais faire disparaître une erreur du champ de
-vision. Un appel en cours garde sa propre ligne, à sa place chronologique, et rejoint le
-groupe une fois terminé. Les éléments qui n'affichent rien (un message d'agent ne portant
-que des `tool_use`) ne coupent pas la suite.
+**Grouping.** Consecutive completed calls collapse into one row counting calls
+and failures: collapsing must never hide errors. Active calls keep individual
+chronological rows and join group on completion. Nonrendered items (agent messages
+containing only `tool_use`) do not break sequences.
 
-Le groupe ne se dissout pas pendant qu'un appel tourne derrière lui. La règle précédente,
-qui dépliait la suite entière tant qu'un de ses appels n'était pas terminé, coûtait deux
-défauts pour un gain nul : la suite se dépliait puis se repliait à chaque appel, pour la
-durée exacte de celui-ci, ce qui faisait sursauter le fil sans qu'aucune règle soit
-lisible depuis l'écran ; et un groupe ouvert à la main se refermait au passage, puisque sa
-ligne disparaissait et que le composant perdait son état d'ouverture. Ce qu'on veut voir
-pendant qu'un appel tourne, c'est cet appel-là, pas les dix qui l'ont précédé.
+Groups do not dissolve while a later call runs. Previous rule expanding entire
+sequence until all calls finished caused two defects with no benefit: expansion/
+collapse on every call made thread jump with no readable rule; manually opened
+groups closed because disappearing rows lost component open state. Users need
+current call, not its ten predecessors.
 
-**Un appel resté ouvert est clos à la fin du tour ou de la session**, avec un statut
-« interrompu » distinct de l'échec : le CLI coupé n'envoie pas le résultat des appels en
-vol, et sans ce filet ils restaient « en cours » pour toujours, y compris après
-rechargement. Un `Task` dans cet état annonçait un sous-agent au travail, chronomètre à
-l'appui, des jours après. Un `tool.completed` en retard reprend la main sans condition.
+**Open calls close at turn/session end** with “interrupted”, distinct from failure:
+interrupted CLI sends no in-flight results, otherwise calls stay running forever,
+even after reload. A `Task` once advertised an active subagent with timer days
+later. Late `tool.completed` takes over unconditionally.
 
-**Renderers.** Un registre `Map<toolName, ToolView>` donne à chaque outil un rendu qui
-dit ce qu'il a fait plutôt que sous quelle forme le CLI l'a dit : une commande shell
-colorée et sa sortie pour `Bash`, le contenu lu débarrassé de la gouttière `cat -n` pour
-`Read`, l'extrait remplacé et son remplaçant pour un `Edit` de Claude, un vrai diff en
-lignes pour un `Edit` de Codex, une liste de tâches cochées pour `TodoWrite`, la consigne
-et le rapport en markdown pour un sous-agent.
+**Renderers.** `Map<toolName, ToolView>` gives tools views explaining what happened,
+not CLI representation: highlighted shell command/output for `Bash`, content without
+`cat -n` gutter for `Read`, replaced/replacement snippets for Claude `Edit`, real
+line diff for Codex `Edit`, checked task list for `TodoWrite`, Markdown instructions/
+report for subagents.
 
-Trois niveaux, du plus précis au plus sûr : la vue dédiée, une vue générique qui met en
-forme n'importe quel payload (champs courts en liste, champs longs en blocs), et le brut.
-Le repli est décidé par la vue à l'exécution, pas par la seule présence du nom dans la
-table : rien ne garantit qu'un outil nommé `Edit` porte les champs qu'`Edit` porte
-d'habitude, et un CLI peut en changer d'une version à l'autre. Une vue qui ne reconnaît
-pas ce qu'on lui donne rend `null` plutôt que de deviner. C'est aussi ce qui fait tenir
-la promesse « tous les outils » sans table à maintenir : un serveur MCP inconnu tombe
-sur la vue générique, jamais sur rien.
+Three levels, precise to safe: dedicated view, generic payload formatting (short
+fields in lists, long fields in blocks), raw. Views choose fallback at runtime,
+not merely name presence: `Edit` is not guaranteed its usual fields, and CLI
+versions may change them. Unrecognized input returns `null`, never guesses.
+This supports “all tools” without maintained tables: unknown MCP server gets
+generic view, never nothing.
 
-**Le brut reste à un clic.** Une bascule *Lisible / Brut* sur chaque appel déplié rend
-l'entrée et la sortie telles qu'elles sont en base. Ce n'est pas un mode dégradé qu'on
-cacherait : c'est la seule façon de vérifier qu'une vue ne ment pas, et de retrouver un
-champ qu'elle a jugé secondaire. Une vue a le droit de choisir ce qu'elle montre, jamais
-d'être la seule chose qu'on puisse consulter.
+**Raw is one click away.** *Readable / Raw* toggle on expanded calls shows stored
+input/output. Not a degraded mode to hide: only way to verify views and retrieve
+fields considered secondary. Views may choose what they show, never be the only
+consultable representation.
 
-**Coloration des payloads.** L'entrée est du JSON, colorée comme tel. La sortie est
-tantôt du JSON, tantôt du texte, et rien n'est deviné : une chaîne n'est colorée que si
-l'appel déclare de quel fichier elle vient, auquel cas l'extension du chemin donne le
-langage (highlight.js résout `ts`, `py`, `rs`... comme alias, il n'y a pas de table à
-tenir). Une sortie de commande reste donc en clair. Au-delà de 100 Ko, la coloration est
-abandonnée : analyser un gros fichier lu bloquerait le fil d'exécution.
+**Payload highlighting.** Input is JSON and highlighted accordingly. Output may
+be JSON or text; nothing guessed: strings highlight only if call declares source
+file, whose extension supplies language (highlight.js resolves `ts`, `py`, `rs`...
+aliases, no maintained table). Command output stays plain. Above 100 KB, skip
+highlighting: parsing large read files would block thread execution.
 
-Rien de tout cela n'a demandé de migration : le payload natif est conservé en base (I3),
-donc une vue ajoutée aujourd'hui s'applique aux conversations d'hier.
+No migration required: native payload stays in database (I3), so newly added views
+apply to yesterday's conversations.
 
-### 12.6 Design et thèmes
+### 12.6 Design and themes
 
-**La marque : L’écho.** Trois ondes pleines et parallèles prolongent un mouvement :
-la trace du travail et la continuité des échanges.
+**Brand: L’écho.** Three solid parallel waves extend a movement: trace of work,
+continuity of exchanges.
 
-Dans l’interface, le symbole est tracé en `currentColor` et suit la teinte choisie dans
-les réglages. Les icônes autonomes le portent en blanc sur une tuile indigo #535CDA, l’accent par défaut de l’application.
+Interface symbol uses `currentColor`, following selected hue. Standalone icons
+show white symbol on indigo #535CDA tile, default app accent.
 
-Le tracé existe forcément en plusieurs exemplaires, parce qu'un favicon et un en-tête de
-README sont chargés comme des images et n'héritent d'aucun jeton : `docs/brand/README.md`
-tient la liste et la règle de mise à jour.
+Paths necessarily have several copies because favicons/README headers load as
+images inheriting no tokens: `docs/brand/README.md` records copies and update rules.
 
-Registre visuel : épuré, dégradés très légers, hiérarchie portée par l'espacement et la
-typographie plutôt que par les bordures et les ombres.
+Visual language: clean, very light gradients, hierarchy through spacing/typography
+rather than borders/shadows.
 
-Tout passe par des variables CSS, aucune couleur en dur dans les composants :
+Everything uses CSS variables, no hardcoded component colors:
 
 ```css
 :root {
@@ -1354,710 +1255,565 @@ Tout passe par des variables CSS, aucune couleur en dur dans les composants :
   --accent, --accent-fg, --accent-subtle
   --border-subtle, --border-strong
   --success, --warning, --danger
-  --gradient-canvas         /* le fond de l'application */
-  --gradient-surface        /* le dégradé signature, appliqué aux surfaces élevées */
+  --gradient-canvas         /* application background */
+  --gradient-surface        /* signature gradient on elevated surfaces */
   --radius-sm/md/lg, --shadow-sm/md
   --font-sans, --font-mono
 }
 ```
 
-Un thème est un objet JSON de ces variables. Trois thèmes livrés (clair, sombre, sombre
-contrasté), et un thème personnalisé stocké dans `user_settings`. Le thème est appliqué
-par un attribut `data-theme` sur `<html>`, injecté avant l'hydratation pour éviter le
-flash de thème clair au chargement.
+Themes are JSON objects of these variables. Three supplied (light, dark,
+high-contrast dark), plus custom theme in `user_settings`. `data-theme` on `<html>`
+applies before hydration to prevent light-theme loading flash.
 
-**Fond de l'application.** Deux halos très diffus posés sur une base légèrement
-dégradée. Le halo du bas emprunte une teinte décalée de 45°, comme le dégradé d'accent :
-c'est ce qui donne sa profondeur au fond sans qu'il devienne une couleur en soi. Les
-trois réglages d'apparence continuent de le piloter, `hue` orientant les halos, `tint`
-dosant leur chroma et `lift` ne bougeant que la base, pour ne pas éclaircir les halos en
-même temps que les surfaces.
+**App background.** Two diffuse halos over slightly graded base. Bottom halo hue
+shifts 45°, like accent gradient, adding depth without becoming a color itself.
+Three appearance controls still drive it: `hue` directs halos, `tint` controls
+chroma, `lift` changes only base so halos do not brighten along with surfaces.
 
-Le thème contrasté n'en porte aucun : il tient sa lisibilité de surfaces strictement
-plates, et `--sg-gradient-canvas` y vaut `none`. La règle garde un `background-color` en
-dessous, qui sert alors de fond réel.
+Contrast theme has none: readability comes from strictly flat surfaces;
+`--sg-gradient-canvas` is `none`. Underlying `background-color` becomes actual background.
 
-Accessibilité : contraste AA minimum sur tous les couples texte/fond des thèmes livrés,
-cibles tactiles de 44 px minimum, et respect de `prefers-reduced-motion`.
+Accessibility: minimum AA text/background contrast in supplied themes, minimum
+44 px touch targets, respect `prefers-reduced-motion`.
 
-**Palette de coloration syntaxique, choisie dans les réglages.** Dix palettes (Sillage,
-Océan, Nuit, Agrume, Cerise, Forêt, Sable, Ardoise, Sobre, Encre), chacune en clair et en
-sombre, mémorisées sur l'appareil comme le thème. Chacune ne
-redéfinit que les sept jetons `--sg-syn-*` : le reste de l'interface ne bouge pas, et
-tout ce qui affiche du code suit d'un coup, du fil aux appels d'outils, des diffs à
-l'éditeur, puisque tous lisent les mêmes jetons.
+**Syntax palette selected in settings.** Ten palettes (Sillage, Océan, Nuit,
+Agrume, Cerise, Forêt, Sable, Ardoise, Sobre, Encre), each light/dark, remembered
+on device like theme. Each overrides only seven `--sg-syn-*` tokens: rest of UI
+stays unchanged while code throughout thread, tools, diffs, editor follows together.
 
-Le choix se pose en attribut `data-syntax` sur `<html>`, et la palette par défaut
-s'obtient en **retirant** l'attribut plutôt qu'en dupliquant ses valeurs. Il est appliqué
-avant l'hydratation, par le même script que le thème : sinon le premier bloc de code
-s'affiche dans la palette par défaut puis change de couleurs sous les yeux.
+Choice uses `data-syntax` on `<html>`; default is obtained by **removing** attribute,
+not duplicating values. Same pre-hydration script as theme avoids first code
+block briefly using default before recoloring.
 
-Les sélecteurs ne sont pas ancrés sur `:root`, et c'est ce qui rend l'aperçu honnête :
-chaque bouton porte les deux attributs et montre donc les vraies couleurs de sa palette,
-sans que l'application en change. L'extrait d'aperçu porte les sept rôles à la fois, chaînes et
-gabarits compris, pour qu'on ne choisisse pas sur une impression partielle.
+Selectors are not rooted at `:root`, ensuring honest preview: each button has
+both attributes and actual palette colors without changing app. Preview snippet
+contains all seven roles, strings/templates included, avoiding partial impressions.
 
-Le sélecteur est une **grille** et non une liste qui s'enroule, et la coche de sélection
-occupe sa place même absente : sans ces deux points, choisir une palette redistribuait les
-autres sous les yeux au moment du clic. Vérifié en relevant la position de chaque case,
-relative au document, après chacune des dix sélections.
+Selector is a **grid**, not wrapping list; selection check reserves space even
+when absent. Otherwise choosing palettes rearranged others at click time.
+Checked positions relative to document after all ten selections.
 
-Le thème contrasté garde sa propre palette quoi qu'il arrive, et le dit : son contraste
-est ce pour quoi on le choisit, une palette d'ambiance l'annulerait. Même raisonnement que
-pour la teinte et l'intensité, déjà neutralisées sur ce thème.
+Contrast theme always keeps its own palette and says so: contrast is its purpose,
+and mood palettes would defeat it. Same reasoning as disabled hue/intensity.
 
-### 12.7 Écran de création
+### 12.7 Creation screen
 
-Le CLI se choisit sur deux cartes et non dans une liste déroulante : c'est le choix qui
-engage le plus, il n'y en a que deux, et chacun porte la phrase qui le distingue de
-l'autre. Descriptive, pas promotionnelle : les deux passent par le même journal et la
-même interface, la différence est ailleurs.
+CLI choice uses two cards, not dropdown: most consequential choice, only two,
+each bearing a descriptive distinguishing sentence, not promotion. Both share
+journal/interface; difference is elsewhere.
 
-Le répertoire de travail suit le même principe, options dépliées plutôt que repliées.
-Une liste déroulante cache ce qu'on peut choisir avant qu'on l'ouvre, et ne montre jamais
-deux options côte à côte ; quand elles sont peu nombreuses et qu'elles portent une
-explication (la branche courante, l'état d'un worktree), les montrer coûte quelques
-lignes et évite l'ouverture. Au-delà d'une demi-douzaine, la liste déroulante reprend
-l'avantage, et c'est pourquoi la même liste reste déroulante ailleurs dans l'application.
+Working-directory options likewise remain expanded. Dropdowns hide possibilities
+until opened and never show options side by side; a few explanatory options
+(current branch, worktree status) cost a few lines and avoid opening. Beyond
+half a dozen, dropdowns regain advantage, explaining their use elsewhere.
 
-Dans les deux cas la coche du choix retenu occupe une place réservée en permanence :
-apparaissant au clic, elle décalerait le libellé de chaque ligne au moment même où on
-vise.
+Both keep checkmark space permanently reserved: appearing on click would shift
+labels while targeting.
 
-### 12.8 Réglages
+### 12.8 Settings
 
-Rangés par catégorie, chacune une route : elles se partagent, se mettent en favori, et
-le bouton retour du téléphone les traverse. Une page unique empilait des cartes sans
-rapport, et chaque réglage ajouté allongeait le défilement.
+Categories each have a route, shareable/bookmarkable and traversable by phone Back.
+One page stacked unrelated cards, extending scroll with every setting.
 
-Deux dispositions pour un seul arbre de routes. Sur grand écran, la liste est une colonne
-posée à gauche et la section vit à côté ; `/settings` sans section y redirige vers la
-première, faute de quoi la colonne de droite serait vide. Au doigt, la liste **est** la
-page, et ouvrir une catégorie la remplace, avec un retour vers la liste.
+Two layouts, one route tree. Desktop list is left column with section beside it;
+`/settings` redirects to first section to avoid empty right column. Touch list
+**is** the page; opening category replaces it with a Back link.
 
-La redirection est conditionnée à la largeur réelle, pas à une classe `hidden` : un
-élément caché en CSS reste monté, donc une redirection montée est une redirection
-exécutée, et la liste du téléphone se serait redirigée toute seule.
+Redirect depends on actual width, not `hidden` class: CSS-hidden components stay
+mounted, so mounted redirects execute, causing phone list to redirect itself.
 
-**À propos.** Dernière catégorie, visible de tous : version installée, dernière version
-publiée, et les notes de toutes les releases parues depuis (telles quelles depuis
-GitHub, donc en anglais). Une pastille discrète sur l'icône signale une mise à jour
-disponible, sans toast : la mise à jour attend sans presser. L'action de mise à jour
-est réservée aux administrateurs et n'apparaît que sur le canal `installer` ; en
-Docker, l'écran affiche la commande `docker pull` équivalente. Pendant la mise à jour,
-la progression est sondée sur `/api/system/update/status`, puis le client sonde
-`/api/health` jusqu'à ce que la nouvelle version réponde et se recharge.
+**About.** Last category, visible to all: installed/latest versions and all releases'
+notes since installation (unchanged from GitHub, in English). Discreet icon dot
+indicates update without toast: waiting, not pressuring. Update action is admin-only,
+only on `installer` channel; Docker shows equivalent `docker pull`. During updates,
+progress polls `/api/system/update/status`, then client polls `/api/health` until
+new version responds and reloads.
 
-**Confort de lecture.** Trois réglages qui ne touchent qu'au texte des messages : taille,
-interligne, et douceur de l'encre. Agrandir la conversation ne doit pas déplacer la barre
-latérale ni la barre de saisie, donc ils vivent sur une classe posée sur le rendu markdown
-et non sur la racine du document.
+**Reading comfort.** Three controls affect message text only: size, line height,
+ink softness. Enlarging conversation must not shift sidebar/input, so they live
+on Markdown-render class, not document root.
 
-La douceur mélange l'encre vers sa nuance atténuée (`color-mix`) plutôt que de baisser une
-opacité : un texte translucide laisse passer le fond, et un même message ne se lirait pas
-pareil dans une bulle et hors d'elle. Elle répond au blanc pur sur fond très sombre, dur à
-lire longtemps.
+Softness mixes ink toward muted tone (`color-mix`) rather than lowering opacity:
+translucent text reveals background, making identical messages differ inside/
+outside bubbles. Addresses harsh pure white on very dark background over long reading.
 
-Ils passent par le même mécanisme que la teinte et la luminosité : variables CSS sur
-`<html>`, mémorisées en `localStorage`, appliquées avant l'hydratation par le script de
-`index.html` qui doit rester aligné sur `APPEARANCE_SETTINGS`. La remise à zéro est bornée
-aux curseurs affichés : le bouton posé sous la typographie ne doit pas emporter la teinte
-choisie ailleurs.
+Same mechanism as hue/brightness: CSS variables on `<html>`, `localStorage`,
+applied before hydration by `index.html` script kept aligned with
+`APPEARANCE_SETTINGS`. Reset only affects visible sliders: typography reset must
+not remove hue chosen elsewhere.
 
-L'aperçu est une fausse conversation qui réutilise les vrais composants du fil, bulle
-comprise, plutôt qu'une imitation qui finirait par diverger. Rien ne lui est transmis :
-les réglages étant sur `<html>`, il suit comme le reste.
+Preview is a fake conversation reusing real thread components, including bubble,
+not a diverging imitation. No props needed: settings on `<html>` apply naturally.
 
-**Défauts des CLI.** Avec quoi une nouvelle conversation s'ouvre : modèle, effort, mode
-de permission pour Claude, mode de collaboration, approbation et bac à sable pour Codex,
-et les serveurs MCP actifs. Un jeu complet par CLI, jamais un réglage commun : leurs
-garde-fous ne sont pas le même concept sous deux noms.
+**CLI defaults.** New-conversation settings: Claude model/effort/permission mode,
+Codex collaboration/approval/sandbox, active MCP servers. Complete set per CLI,
+never shared settings: safeguards are different concepts, not two names for one.
 
-Réglage de compte et non d'instance, à la différence de l'archivage : le mode de
-permission engage celui qui lit les réponses, et deux personnes d'un même projet n'ont
-pas à travailler avec les mêmes garde-fous. Stocké dans `user_settings`, lu par
-`GET /api/me/settings`, remplacé un CLI à la fois par `PATCH`. Rien n'est appliqué aux
-conversations existantes, qui portent chacune sa configuration : changer un défaut ne
-doit pas modifier sous les doigts un fil déjà ouvert.
+Account setting, not instance setting unlike archiving: permission modes concern
+who reads replies, and project teammates need not share safeguards. Stored in
+`user_settings`, read by `GET /api/me/settings`, replaced per CLI through `PATCH`.
+No changes to existing conversations, each retaining configuration: changing defaults
+must not alter open threads under users' hands.
 
-L'écran affiche les mêmes catégories que le panneau du composeur, à la même source
-(`useAgentSettings`) : ce qu'on règle ici est exactement ce qu'on y retrouvera, déplié
-en listes déroulantes plutôt que rangé derrière un déclencheur qui doit tenir sur une
-ligne. Les répertoires supplémentaires en sont exclus, désignant des dossiers d'un
-projet précis.
+Screen uses composer's categories and source (`useAgentSettings`): settings exactly
+match what appears there, expanded as dropdowns instead of behind a single-line
+trigger. Additional directories excluded because project-specific.
 
-Côté serveur, ces défauts servent partout où une conversation naît sans configuration
-explicite : import d'une session du CLI Claude, et dernier étage de la cascade de
-`/api/v1` (requête, jeton, préréglage du projet, puis défauts du compte propriétaire).
+Server uses defaults wherever conversations lack explicit configuration: Claude
+CLI session import, final `/api/v1` cascade tier (request, token, project preset,
+then owning account defaults).
 
-**Skills.** La bibliothèque de skills globale (`/settings/skills`), livrée à toutes les
-conversations comme des skills natifs des deux CLI. Visible de tous, parce que chacun
-doit savoir ce que ses agents reçoivent ; modifiable par les administrateurs, comme le
-registre MCP. Les skills d'un projet vivent sur la page du projet, modifiables par son
-propriétaire, avec en lecture ceux que le dépôt porte déjà (`.claude/skills`,
-`.agents/skills`) et le CLI qui les voit.
+**Skills.** Global library (`/settings/skills`) delivered as native skills to all
+conversations in both CLIs. Visible to all so users know what agents receive;
+admin-editable like MCP registry. Project skills live on project page, editable
+by owner, alongside read-only repository skills (`.claude/skills`, `.agents/skills`)
+and CLI visibility.
 
-Un skill s'ouvre dans une page en pleine largeur (`/skills/:id`), commune aux deux
-portées : la colonne des réglages est trop étroite pour ses instructions et ses fichiers
-annexes. On y édite le nom, la description et le corps de `SKILL.md`, les fichiers
-annexes, et l'on y lit ce que le skill fera différemment chez Claude et chez Codex. Une
-écriture vaut tout de suite pour les sessions ouvertes. Le fonctionnement et ses raisons
-sont dans `docs/skill-library.md`.
+Skills open full-width (`/skills/:id`), shared between scopes: settings column
+is too narrow for instructions/supporting files. Edit name, description,
+`SKILL.md` body, supporting files, read Claude/Codex compatibility differences.
+Writes immediately affect open sessions. Behavior/rationale: `docs/skill-library.md`.
 
-Sous la bibliothèque, ses sources : des dépôts git (anthropics/skills et openai/skills
-préconfigurés, tout autre ajouté par un admin, ou trouvé sur skills.sh). Un catalogue se
-parcourt et chaque skill se relit, `SKILL.md` brut et fichiers, avant d'être installé
-dans une portée. L'installation est une copie figée sur un commit ; quand la source
-avance, le skill l'annonce, et la mise à jour se lit en diff avant de s'appliquer.
+Below library, sources: git repositories (preconfigured anthropics/skills,
+openai/skills; others admin-added or found on skills.sh). Browse catalog/review
+raw `SKILL.md` and files before installation into a scope. Install is commit-pinned
+copy; source advances announce updates, reviewable as diffs before applying.
 
 ### 12.9 PWA
 
-- `manifest.webmanifest` : `display: standalone`, icônes 192/512 et maskable, `theme_color`
-  aligné sur le thème actif.
-- Service worker (Workbox) : précache de la coque applicative, `NetworkOnly` sur `/api`.
-  Aucune mise en cache des réponses d'API, ce serait une source d'incohérence avec le
-  journal.
-- **Mise à jour annoncée, en mode `prompt`.** Le mode `autoUpdate` fait bien prendre le
-  contrôle au nouveau service worker, mais la page déjà chargée continue de tourner sur
-  l'ancien code : rien ne la prévient, rien ne la recharge. Le fichier d'enregistrement
-  généré se limitait à `navigator.serviceWorker.register('/sw.js')`. Sur une PWA installée,
-  qui reprend depuis la mémoire au lieu de naviguer, une correction déployée pouvait donc
-  n'atteindre l'écran qu'après une fermeture complète de l'application, et « je ne vois pas
-  la correction » était une observation juste.
+- `manifest.webmanifest`: `display: standalone`, 192/512/maskable icons,
+  `theme_color` matching active theme.
+- Workbox service worker: app-shell precache, `NetworkOnly` for `/api`. Caching
+  API responses would contradict journal consistency.
+- **Updates announced in `prompt` mode.** `autoUpdate` lets new worker take control,
+  but loaded page keeps old code: no notification/reload. Generated registration
+  only called `navigator.serviceWorker.register('/sw.js')`. Installed PWA resumes
+  memory rather than navigating, so fixes might appear only after full closure;
+  “I do not see the fix” was accurate.
 
-  L'enregistrement se fait maintenant depuis l'application, une bannière annonce la
-  nouvelle version, et le rechargement est proposé plutôt qu'imposé : le déclencher
-  d'autorité perdrait un message en cours de saisie. Une revérification périodique
-  (30 min) est nécessaire parce qu'une PWA installée ne navigue presque jamais, et que
-  c'est la navigation qui déclenche normalement le contrôle des mises à jour.
+  Registration now comes from app, banner announces new version, reload offered
+  rather than forced to avoid losing drafts. Periodic recheck (30 min) required
+  because installed PWAs seldom navigate, the usual update-check trigger.
 
-  Vérifié en servant réellement deux builds distincts : la page reste sur l'ancien tant que
-  rien n'est vérifié, la bannière apparaît après la vérification, le rechargement amène le
-  nouveau code, et rien n'apparaît quand rien n'a changé.
-- **La version installée est affichée dans les réglages.** Sans ce repère, « je ne vois pas
-  la correction » ne se tranche pas : rien à l'écran ne dit quelle version tourne.
-- Offline : la coque se charge et affiche un état « hors ligne » explicite, avec les
-  derniers messages lus depuis IndexedDB en lecture seule.
-- Notifications push (Web Push, VAPID) pour deux événements : une permission est demandée
-  et attend, ou une conversation est terminée. C'est ce qui rend l'usage mobile réellement
-  confortable : tu lances une tâche, tu ranges ton téléphone, tu es rappelé quand l'agent
-  a besoin de toi. Prévu au lot 5, pas en v1.
+  Verified by serving two distinct builds: old page stays until checked, banner
+  appears after check, reload brings new code, no banner without changes.
+- **Installed version shown in settings.** Without it, “I do not see the fix” cannot
+  be resolved because screen never identifies running version.
+- Offline: shell loads explicit “offline” state with latest IndexedDB messages
+  read-only.
+- Web Push/VAPID for two events: waiting permission or completed conversation.
+  Makes mobile practical: launch task, put phone away, get called when needed.
+  Planned batch 5, not v1.
 
-### 12.10 Recherche
+### 12.10 Search
 
-Une palette (Cmd+K, Ctrl+K, et une entrée dans la sidebar puisque le raccourci n'existe pas
-au doigt) qui mène à tout ce qu'on peut rejoindre : projets, conversations, passages de
-messages, fichiers, tickets, tâches planifiées, skills, serveurs MCP, catégories de
-réglages, et quelques commandes (nouvelle conversation, board, thème).
+Palette (Cmd+K, Ctrl+K, sidebar entry for touch) reaches projects, conversations,
+message excerpts, files, tickets, scheduled tasks, skills, MCP servers, settings,
+and commands (new conversation, board, theme).
 
-**Aucun filtre à régler.** Une seule saisie, et les résultats se rangent sous leur projet,
-puis sous « Général » pour ce qui n'appartient à aucun. Les groupes se suivent par leur
-meilleur résultat, le projet courant favorisé à égalité ; dans un groupe, ce qui porte un
-nom passe avant les fichiers, et les fichiers avant les passages de messages : un dépôt a
-toujours un fichier qui ressemble à la saisie. Taper le nom d'un projet le restreint
-(« nimbus cache ») ou, seul, liste ses conversations ; taper un type (« skill », « ticket »,
-« mcp ») liste ce type. Chaque groupe montre cinq lignes et se déplie ; Tab passe au groupe
-suivant. Sans saisie, la palette sert de sélecteur rapide : les dernières conversations,
-projet courant d'abord.
+**No filters to configure.** One input, results grouped by project then “General”.
+Groups sort by best result, current project wins ties; named items precede files,
+files precede message excerpts because every repository has a matching file.
+Project names restrict (“nimbus cache”) or alone list conversations; types (“skill”,
+“ticket”, “mcp”) list that type. Groups show five rows and expand; Tab advances
+groups. Empty input is quick switcher: recent conversations, current project first.
 
-**Correspondance floue, la même au client et au serveur** (`packages/protocol/src/fuzzy.ts`),
-sans quoi le serveur écarterait un fichier que la palette aurait mis en tête. Chaque mot
-de la saisie se cherche séparément, dans le champ où il vaut le plus. Trois modes : lettres
-éparses pour un identifiant court (`cmdpal` retrouve `CommandPalette.tsx`), morceaux et
-initiales pour une phrase (`aocf` retrouve « Add offline caching for »), un seul morceau
-pour une description. Un saut n'atterrit au milieu d'un mot que s'il reste dans le même
-mot, et la moyenne exigée par lettre croît avec la longueur du texte : sans ces deux
-règles, un long nom en camelCase fournit toujours de quoi composer la saisie, et « power »
-ramenait `ApprovalsReviewer.ts`. Comme dans VS Code, le nom d'un fichier se cherche en
-lettres éparses et son dossier d'un seul tenant ; une barre oblique sépare comme une
-espace (`web/pal`).
+**Same fuzzy matching on client/server** (`packages/protocol/src/fuzzy.ts`),
+otherwise server might discard files palette would rank first. Each query word
+matches independently in best field. Three modes: scattered letters for short
+identifiers (`cmdpal` → `CommandPalette.tsx`), chunks/initials for phrases
+(`aocf` → “Add offline caching for”), one chunk for descriptions. Jumps land inside
+words only while staying in same word; required mean score per letter rises with
+text length. Otherwise long camelCase always assembles any input, and “power”
+matched `ApprovalsReviewer.ts`. Like VS Code, filenames use scattered letters,
+directories contiguous matching; slash separates like space (`web/pal`).
 
-**Ce qui est déjà en mémoire répond à la frappe.** Projets, conversations, tâches et
-serveurs MCP viennent des listes de la navigation ; tickets et skills de tous les projets,
-d'un catalogue léger relu à chaque ouverture. Seuls passent par le serveur, une fois la
-saisie stabilisée, les fichiers (à partir de 2 caractères) et le contenu des messages (à
-partir de 3). Le serveur garde la liste des fichiers d'un répertoire quinze secondes : une
-saisie déclenche plusieurs recherches, et relancer `git ls-files` dans chaque projet à
-chaque lettre referait le même travail. Depuis une conversation en worktree, son projet se
-cherche dans le worktree, là où le fichier s'ouvrira.
+**In-memory data responds immediately.** Projects, conversations, tasks, MCP servers
+come from navigation lists; all-project tickets/skills from lightweight catalog
+reread on open. Only files (2+ characters) and message content (3+) use server
+after input settles. Server caches directory file lists 15 seconds: typing causes
+several searches, and running `git ls-files` in every project per letter repeats
+work. Worktree conversation searches its project in that worktree where files open.
 
-**Un fichier s'ouvre dans le panneau** : celui de la conversation ouverte quand il est de
-son projet, sinon celui du projet, sur sa vue d'accueil habituelle (board ou brouillon),
-pour ne pas la changer en passant. Le focus va à l'éditeur, pas au bouton du panneau.
+**Files open in panel**: open conversation's panel if same project, otherwise
+project's usual home (board/draft), preserving its view. Focus goes to editor,
+not panel button.
 
-**L'index est dérivé, jamais une source** (invariant I2). Table FTS5 `search_messages`
-alimentée dans la transaction d'écriture du journal, donc elle ne peut pas contenir un
-message que le journal n'aurait pas. Trois conséquences, toutes livrées avec :
+**Index is derived, never a source** (I2). FTS5 `search_messages` feeds inside
+journal write transaction, so cannot contain absent messages. Three shipped consequences:
 
-- l'extraction est écrite **une fois, en SQL**, et sert aux trois usages : le message qui
-  arrive, le fil copié par un fork (qui n'emprunte pas `append`, et resterait sinon
-  introuvable), la reconstruction complète ;
-- les suppressions sont explicites, une table virtuelle FTS5 ne recevant aucun
-  `ON DELETE CASCADE` : conversation supprimée, projet supprimé et ses fils en cascade ;
-- `pnpm --filter @sillage/server search:reindex` vide et rejoue. C'est ce chemin qui
-  rattrapera l'existant le jour où le contenu indexé changera.
+- extraction written **once in SQL** for incoming messages, fork-copied threads
+  (bypassing `append`, otherwise unfindable), full rebuild;
+- explicit deletion because virtual FTS5 receives no `ON DELETE CASCADE`:
+  deleted conversations/projects and cascaded threads;
+- `pnpm --filter @sillage/server search:reindex` clears/replays, catching existing
+  content when indexing changes.
 
-Ce qui est indexé : les blocs de texte des `message.completed` du fil principal, rien
-d'autre. Pas les deltas de streaming, qui décrivent le même contenu en cours d'écriture ;
-pas la réflexion ; pas les outils ; pas ce qu'écrivent les sous-agents, qui se lit dans le
-panneau et n'a donc pas d'ancre `?seq=` où un résultat pourrait mener. Cette dernière exclusion est un choix de volume mesuré, pas une facilité :
-sur une base peu remplie, `tool.completed` pèse déjà 3,4 Ko par appel contre 0,4 Ko par
-message, et indexer les sorties d'outils revient à indexer le contenu des fichiers lus.
+Indexed content: main-thread `message.completed` text blocks only. No streaming
+deltas duplicating unfinished content, reasoning, tools, or subagent writing,
+which lives in panel without `?seq=` anchors for search results. This exclusion
+is a measured volume decision, not convenience: even sparse databases average
+3.4 KB per `tool.completed` versus 0.4 KB per message; indexing tool output indexes
+read files' contents.
 
-Trois points de rigueur dans la requête :
+Three query safeguards:
 
-- la **visibilité est appliquée en SQL**, pas après coup : un extrait de projet privé qui
-  remonterait jusqu'à la couche HTTP aurait déjà fuité si un filtre y était oublié un jour.
-  La jointure sur `conversations` rend au passage les lignes orphelines invisibles ;
-- la saisie est **citée terme à terme** avant d'entrer dans la syntaxe FTS5, avec un
-  préfixe sur le dernier terme puisque la frappe est encore en cours. Sans ça, un `"` ou un
-  `-` tapé au milieu d'une phrase fait échouer la requête entière ;
-- les extraits arrivent bornés par deux caractères de contrôle plutôt que par du balisage.
-  Rendre du HTML venu de la base demanderait de lui faire confiance ; ces bornes se
-  découpent en texte pur.
+- **Visibility enforced in SQL**, not afterward: private excerpts reaching HTTP
+  layer would already leak if a future filter were forgotten. Joining
+  `conversations` also hides orphan rows;
+- input **quoted term by term** before FTS5 syntax, last term prefixed for ongoing
+  typing. Otherwise `"`/`-` inside phrases fail whole query;
+- excerpts bounded by two control characters, not markup. Database HTML would
+  require trust; markers split into plain text.
 
-Le tokenizer est `unicode61 remove_diacritics 2` : « reglage » trouve « réglage ». Le
-classement est celui de `bm25`.
+Tokenizer: `unicode61 remove_diacritics 2`, so “reglage” finds “réglage”. Ranking: `bm25`.
 
-**Un résultat ouvre le message, pas le fil.** L'URL porte `?seq=`, et la vue défile jusqu'au
-message en le signalant par l'anneau qui existe déjà pour le saut entre tours. Le journal
-étant chargé en entier, il n'y a pas de chargement partiel à inventer ; ce sera le moment
-de le faire quand les fils seront assez longs pour que le chargement complet gêne.
+**Results open messages, not threads.** URL carries `?seq=`, view scrolls to message
+with existing turn-jump ring. Entire journal loads already, so no partial-loading
+mechanism needed until genuinely long threads make full loading problematic.
 
-Les conversations archivées sont exclues, comme partout ailleurs : la recherche voit ce que
-la navigation voit.
+Archived conversations are excluded, as elsewhere: search sees what navigation sees.
 
-**Recherche dans le fil ouvert** (Cmd+F, Ctrl+F, et une entrée dans le menu de la
-conversation, ouverte aussi aux lecteurs d'un fil partagé). Tout se passe côté client : le
-fil est déjà chargé en entier, donc interroger le serveur reviendrait à redemander ce qu'on
-a sous les yeux. Le raccourci prend la place de la recherche du navigateur, qui ne sait ni
-compter les occurrences ni sauter de l'une à l'autre dans un conteneur qui défile seul ;
-elle reste atteignable par le menu du navigateur.
+**Search open thread** (Cmd+F/Ctrl+F, conversation-menu entry also for shared-thread
+readers). Entirely client-side: thread fully loaded, so server requests would
+refetch visible data. Shortcut replaces browser search, which cannot count/jump
+occurrences in independently scrolling containers; browser menu still reaches it.
 
-La recherche travaille sur le **DOM** et non sur les éléments du fold : c'est le seul moyen
-de trouver aussi ce que produit le rendu markdown et le contenu des appels d'outils. Le
-texte visible est reconstitué d'un bloc, avec une table qui ramène chaque position au nœud
-et à l'offset d'origine, si bien qu'un terme coupé par un `<strong>` compte comme les
-autres. Le repli des accents se fait caractère par caractère : « é » se décompose en deux
-caractères, donc une normalisation globale décalerait toutes les positions suivantes et le
-surlignage tomberait à côté.
+Search uses **DOM**, not folded items, to find Markdown-rendered text and tool
+content. Visible text is reconstructed with a table mapping positions to original
+nodes/offsets, so terms split by `<strong>` still match. Accent folding is per
+character: “é” decomposes into two, and global normalization would shift later
+positions and misplace highlights.
 
-Le surlignage passe par l'**API Custom Highlight**, qui colore des plages sans modifier le
-document. Insérer des balises casserait le rendu markdown et les blocs de code. Là où
-l'API manque, le défilement seul situe l'occurrence.
+Highlighting uses **Custom Highlight API**, coloring ranges without document
+mutation. Injected tags would break Markdown/code rendering. Where unavailable,
+scroll alone locates occurrence.
 
-**Un défaut trouvé en chemin, et qui dépassait la recherche.** Les plages posées sur les
-messages utilisateur se repliaient toutes seules : le navigateur réancre une plage quand
-son nœud de texte quitte le document. En remontant, la cause était la fonction `fork`,
-recréée à chaque rendu et passée telle quelle aux bulles utilisateur : elle cassait leur
-mémoïsation, et le fil entier était redessiné à chaque événement de défilement. C'est
-exactement ce que le `memo` de `MessageBubble` prétendait éviter. La fonction est devenue
-stable, et la barre relit ses occurrences si elle en trouve une repliée, le fil pouvant
-toujours changer sous elle pendant qu'un tour se déroule.
+**A broader defect found along the way.** Ranges on user messages collapsed because
+browsers reanchor ranges when text nodes leave document. Root cause: `fork` function
+recreated each render and passed directly to user bubbles, breaking memoization
+and redrawing entire thread per scroll event, precisely what `MessageBubble`'s
+`memo` should prevent. Function is now stable; search rereads occurrences if one
+collapses because active turns may still change thread.
 
-### 12.11 Panneau du workspace
+### 12.11 Workspace panel
 
-Troisième colonne à droite, dépliable, largeur à la poignée et mémorisée, comme la
-sidebar. Sur téléphone il ne peut pas coexister avec le fil dans 390 px : il devient une
-vue plein écran, ouverte depuis l'en-tête de la conversation.
+Expandable third column right, handle-resizable and remembered like sidebar.
+Cannot coexist with thread in 390 px phones: becomes fullscreen from conversation header.
 
-Il suit le répertoire de travail de la **conversation** ouverte, worktree compris, et non
-la racine du projet : c'est là que l'agent écrit.
+Follows open **conversation's** working directory including worktree, not project
+root: that is where agent writes.
 
-**Ouverture et fermeture glissées**, comme le tiroir de navigation : translation au
-doigt, où le panneau se pose par-dessus le fil, et fermeture de la marge sur grand écran,
-où il occupe une colonne. Le panneau reste monté le temps de sortir de l'écran, puis
-disparaît : il tient des terminaux vivants et des requêtes d'arborescence, qu'on ne veut
-pas garder derrière un panneau fermé. À l'inverse, l'entrée n'est lancée qu'au rendu
-suivant le montage, un élément qui naît déjà en place n'ayant aucune transition à jouer.
+**Sliding open/close**, like navigation drawer: touch translation overlays thread;
+desktop closes margin where it occupies a column. Panel stays mounted until offscreen,
+then disappears: live terminals/tree requests should not remain behind closed panel.
+Entry starts only on render after mount because elements born in place cannot transition.
 
-**La barre d'onglets ne chasse jamais ses actions.** Les onglets vivent dans une zone qui
-défile, le rafraîchissement et la fermeture dans un bloc qui ne se comprime pas : au doigt,
-les onglets nommés poussaient la croix hors de l'écran et le panneau ne pouvait plus se
-refermer. Les noms demandent plus de place que n'en offrent un téléphone ou la largeur
-par défaut du panneau : en dessous, seul l'onglet actif garde le sien, ce qui dit où
-l'on est sans que la liste ait à défiler. Le nom reste porté par `aria-label` et `title`
-même quand il n'est plus écrit. L'invariant I2 ne s'y applique pas :
-un fichier et un diff sont l'état vivant du disque, pas des événements, donc le panneau
-lit le disque et n'écrit jamais dans le journal.
+**Tab bar never pushes out actions.** Tabs scroll; refresh/close sit in nonshrinking
+block. Touch labels previously pushed cross offscreen, preventing closure. Labels
+need more than phone/default panel width, so below threshold only active tab keeps
+name, identifying location without scrolling. `aria-label`/`title` retain names
+when unwritten. I2 does not apply: files/diffs are live disk state, not events;
+panel reads disk, never writes journal.
 
-Effet de bord voulu : le composer se replie sur la largeur de son conteneur (`@container`),
-donc ouvrir le panneau bascule ses réglages en feuille sans une ligne de plus. Mesuré à
-416 px de composer sur une fenêtre de 1024 px, sidebar et panneau ouverts.
+Intentional effect: composer collapses by container width (`@container`), so opening
+panel switches settings to sheet without more code. Measured 416 px composer on
+1024 px window with sidebar/panel open.
 
-**Explorateur.** Un niveau par requête : un `node_modules` déplié d'un coup pèse des
-mégaoctets. Tout chemin est borné au workspace par la même règle que les mentions `@`,
-faute de quoi un `..` donnerait à quiconque a accès à un projet partagé un navigateur de
-fichiers sur toute la machine. `.git` est masqué, les autres fichiers cachés non :
-`.gitignore` est du contenu comme un autre.
+**Explorer.** One level per request: expanding `node_modules` at once weighs
+megabytes. All paths bounded to workspace like `@` mentions, otherwise `..` gives
+shared-project users whole-machine browsing. `.git` hidden, other hidden files
+visible: `.gitignore` is ordinary content.
 
-Les couleurs viennent d'un seul `git status --porcelain -z --untracked-files=all
---ignored=matching` pour tout le dépôt. Un appel par fichier serait ruineux dans un dossier
-de plusieurs centaines d'entrées. **Un dossier porte l'état le plus notable de ce qu'il
-contient**, sinon il faudrait tout déplier pour trouver ce qui a changé : chaque ancêtre
-d'un fichier modifié hérite de son état, à n'importe quelle profondeur. L'état est doublé
-d'une lettre (`M`, `A`, `D`, `?`) : distinguer cinq teintes proches est difficile, et
-impossible pour qui perçoit mal les couleurs.
+Colors derive from one `git status --porcelain -z --untracked-files=all
+--ignored=matching` for entire repository. Per-file calls would be ruinous across
+hundreds of entries. **Folders carry most significant descendant status** so users
+need not expand everything: changed files propagate status to all ancestors.
+Letters (`M`, `A`, `D`, `?`) duplicate colors, difficult to distinguish and impossible
+for some color perception.
 
-**`ignored` ne remonte pas aux ancêtres**, et c'est le seul état dans ce cas. Il le faisait,
-et le résultat était trompeur : un `node_modules` ou un `dist` quelque part suffisait à
-griser tout le chemin jusqu'à la racine, si bien qu'un dossier réellement modifié
-s'affichait comme exclu du versionnement. Un dossier ignoré à l'intérieur d'un dossier
-versionné ne dit rien du parent ; seul un dossier que git déclare ignoré lui-même l'est.
+**`ignored` alone does not propagate upward.** Previously `node_modules`/`dist`
+anywhere grayed every ancestor to root, making genuinely changed folders appear
+unversioned. Ignored children say nothing about versioned parents; only directories
+git itself marks ignored are ignored.
 
-**Icônes de fichiers** : le jeu de VS Code (`material-icon-theme`), avec sa table de
-correspondance officielle (1378 extensions, 2131 noms exacts comme `package.json` ou
-`Dockerfile`, 4654 noms de dossiers, variantes ouvertes comprises). Aucune table n'est
-écrite ici. Les 1250 SVG sont copiés dans `public/file-icons` par `pnpm icons:sync` et
-servis en statique : les inclure dans le paquet ajouterait 240 Ko compressés pour des
-icônes dont on affiche une poignée à la fois, et le précache du service worker les
-téléchargerait toutes à chaque mise à jour (ses `globPatterns` ne listent pas les SVG).
-Seule la table entre dans le paquet, ~50 Ko compressés dans le fragment du panneau.
+**File icons**: VS Code `material-icon-theme` with official mapping (1,378 extensions,
+2,131 exact names such as `package.json`/`Dockerfile`, 4,654 directory names including
+open variants). No handwritten table. `pnpm icons:sync` copies 1,250 SVGs to static
+`public/file-icons`: bundling would add 240 KB compressed for icons shown a handful
+at once, and worker precache would download all per update (`globPatterns` omits
+SVG). Only mapping enters bundle, ~50 KB compressed in panel chunk.
 
-**Manipulations de fichiers** : créer, renommer, déplacer, supprimer, pour les fichiers
-comme pour les dossiers. Renommer et déplacer sont la **même route** : seul le chemin de
-destination change, et en faire deux obligerait l'interface à décider laquelle appeler à
-partir du chemin. Le déplacement se fait aussi au glisser-déposer, un fichier renvoyant
-son dépôt à son dossier parent.
+**File operations**: create, rename, move, delete files/directories. Rename/move
+share **one route** differing only in destination; separate routes force UI to
+choose from path. Drag/drop also moves; dropping files on parent directory is supported.
 
-Quatre refus, côté serveur et non côté interface : tout chemin traversant `.git` (le
-masquer dans l'arborescence n'est pas un garde-fou, et renommer le stockage de git
-détruirait l'historique), une destination déjà occupée, un dossier déplacé dans sa propre
-descendance, et la suppression de la racine. Le bornage au workspace est celui qui refuse
-déjà les mentions `@` hors périmètre, et il vit avec la résolution de chemin qu'il protège.
-Le contrôle de visibilité, lui, a été factorisé : il était recopié dans trois routes du
-panneau, soit trois endroits où l'oublier.
+Four server-side rejections: paths through `.git` (hiding tree is no guardrail;
+renaming git storage destroys history), occupied destinations, directories moved
+inside descendants, root deletion. Workspace boundary reuses external-mention
+rejection, colocated with protected resolution. Visibility checks were factored
+out of three copied panel routes, three chances to forget them.
 
-Rafraîchi à la **fin d'un tour**, moment où l'arborescence a réellement bougé, plus un
-bouton. Aucun sondage en boucle : pendant le tour, les fichiers changent à chaque écriture
-et relire à chaque événement ferait clignoter la liste sans rien apprendre.
+Refresh at **turn end**, when tree truly changed, plus button. No polling: mid-turn
+files change per write, rereading per event would flicker without useful knowledge.
 
-**Onglet Git.** Le dépôt tel qu'il est, et les gestes du quotidien dessus, pour ne plus
-passer par un terminal ni demander à un agent de commiter à sa place. En tête, la branche,
-son amont et son avance, avec fetch, pull et push ; puis quatre sections repliables dont
-l'état est retenu : les changements (conflits, index, hors index, et le formulaire de
-commit), les branches, les stashs, les commits. Tout passe par le binaire `git` du dépôt,
-jamais par une réimplémentation : hooks, `pull.rebase`, signature et helper de credentials
-s'appliquent comme depuis le shell.
+**Git tab.** Actual repository and everyday operations without terminals or asking
+agents to commit. Header branch/upstream/ahead with fetch/pull/push, then four
+remembered collapsible sections: changes (conflicts/index/unstaged/commit form),
+branches, stashes, commits. Uses repository `git`, never reimplementation: hooks,
+`pull.rebase`, signing, credentials helper behave like shell.
 
-L'index est montré tel quel, en deux groupes, plutôt que caché derrière des cases à
-cocher : c'est la notion que le workflow demande pour choisir ce qu'un commit emporte, et
-une abstraction fuirait au premier `git add` d'un agent. Sans rien dans l'index, le bouton
-propose « tout ajouter et commiter » : le cas courant hors d'un commit soigné. Le message
-passe par l'entrée standard de git, un corps de plusieurs paragraphes garde sa forme, et
-son brouillon survit au changement d'onglet (`sessionStorage`, par portée).
+Index shown as two groups, not checkbox abstraction: workflow needs staging to
+choose commit content, abstraction leaks on agent's first `git add`. Empty index
+offers “stage all and commit”, common outside carefully curated commits.
+Messages use git stdin, preserving multiparagraph body; draft survives tab changes
+(`sessionStorage`, per scope).
 
-Les refus de git sont nommés par un code quand git les dit clairement, et l'avis qui les
-affiche propose le remède qu'on taperait ensuite : un push rejeté offre de forcer avec
-bail (`--force-with-lease`, jamais `--force`), un pull sur des branches divergentes offre
-merge ou rebase, une branche non fusionnée de la supprimer quand même, un checkout bloqué
-par des changements locaux de les stasher puis réessayer. Une fusion qui s'arrête sur des
-conflits n'est pas une erreur : le dépôt passe en « opération en cours », bandeau avec
-abandon et reprise, et les fichiers en conflit se marquent résolus depuis la liste.
+Git rejections get codes when unambiguous; notices offer next-command remedies:
+rejected push offers `--force-with-lease`, never `--force`; divergent pull offers
+merge/rebase; unmerged branch offers forced deletion; local-change-blocked checkout
+offers stash then retry. Conflict-stopped merge is not error: repository enters
+“operation in progress” with abort/continue banner and mark-resolved file actions.
 
-Les actions d'un même dépôt sont sérialisées côté serveur, sans quoi deux clics
-rapprochés finissent sur `index.lock`. Les lectures d'état passent par
-`GIT_OPTIONAL_LOCKS=0` pour ne pas gêner un agent qui commite au même moment. Ce qui
-détruit du travail (abandonner des changements, `reset --hard`, jeter un stash, supprimer
-une branche) demande une confirmation qui dit ce qui va se passer. Pas de graphe : les
-références posées sur chaque commit en disent l'essentiel, et un graphe dans 390 px n'en
-dirait pas plus.
+Repository actions serialize server-side to prevent `index.lock` from rapid clicks.
+Reads use `GIT_OPTIONAL_LOCKS=0` to avoid interfering with agent commits. Destructive
+operations (discard, `reset --hard`, drop stash, delete branch) require explanatory
+confirmation. No graph: per-commit references say essentials; 390 px graph adds little.
 
-**Droits.** Tout compte qui voit le projet peut utiliser le panneau, y compris en écriture
-quand l'éditeur et les terminaux arriveront. C'est cohérent avec l'idée d'un projet
-partagé, mais un terminal exécute des commandes arbitraires sous le compte Unix du daemon,
-donc sur toute la machine et pas seulement sur le workspace : à réserver à des comptes
-administrés par le propriétaire de l'instance.
+**Permissions.** Every account seeing project can use panel, including writes when
+editor/terminals arrive. Consistent with shared projects, but terminal commands run
+under daemon Unix account across whole machine, not just workspace: reserve access
+to accounts managed by instance owner.
 
-**Gestes de l'explorateur.** Un dossier se déplie au clic simple, c'est ce qu'on attend
-de lui. Un fichier, non : le clic simple ne fait que le désigner, le double clic l'ouvre.
-Ouvrir au premier clic remplissait la barre d'onglets en parcourant l'arborescence, et
-empêchait de viser une ligne pour la renommer sans en subir l'ouverture.
+**Explorer gestures.** Folders expand on single click as expected. Files single-click
+select, double-click open. Opening immediately filled tabs during browsing and
+prevented targeting rename without opening.
 
-Le clic droit ouvre les mêmes actions que les trois points de la ligne. Les deux menus
-viennent de modules Radix distincts, dont les éléments ne se partagent pas : les actions
-sont donc décrites une fois en données et rendues deux fois, pour que les listes ne
-divergent pas. Parmi elles, « Référencer dans le prompt » insère `@chemin` dans la barre
-de saisie et l'ajoute aux mentions retenues, comme s'il avait été choisi dans la liste de
-complétion.
+Right-click and overflow menus offer same actions. Distinct Radix modules cannot
+share elements, so actions described once as data, rendered twice to avoid drift.
+“Reference in prompt” inserts `@path` into composer and selected mentions like
+completion selection.
 
-**Recherche de fichier.** Une requête à part de l'arborescence, qui est paginée par
-niveau : chercher demande de traverser, et traverser depuis le client ferait une requête
-par dossier. Sous-chaîne insensible à la casse et aux accents, pas de correspondance
-floue : sur une arborescence de projet le flou remonte surtout du bruit, et on tape
-presque toujours un morceau exact du nom. Les correspondances sur le nom passent avant
-celles sur le chemin, et les plus courtes avant les plus longues. La marche saute les
-dossiers de dépendances et de construction, et reste bornée en nombre d'entrées visitées :
-un répertoire de travail peut être n'importe quoi, y compris un point de montage réseau.
-Une liste tronquée le dit, faute de quoi « aucun résultat » mentirait.
+**File search.** Separate from level-paginated tree: searching traverses, and
+client traversal needs one request per directory. Case/accent-insensitive substring,
+not fuzzy: project-tree fuzzy mostly returns noise; users usually type exact
+name fragments. Name matches precede path matches, shorter before longer. Traversal
+skips dependency/build directories and caps visited entries: working directories
+can include network mounts. Truncation is reported, otherwise “no results” would lie.
 
-Les résultats remplacent l'arborescence au lieu de la filtrer sur place : les niveaux
-dépliés doivent être retrouvés intacts en effaçant la recherche.
+Results replace tree, not filter it in place: clearing search restores expanded levels.
 
-**Onglets et éditeur.** Un clic sur un fichier de l'explorateur l'ouvre en onglet et
-bascule sur l'éditeur : l'ouvrir sans le montrer ne servirait à rien. Les deux vues
-restent montées, pour qu'un aller-retour ne replie pas l'arborescence ni ne relise le
-fichier.
+**Tabs and editor.** Clicking explorer files opens tabs and switches editor:
+opening invisibly is pointless. Both views stay mounted so returning preserves
+tree expansion and avoids rereading files.
 
-CodeMirror 6 plutôt que Monaco : le second pèse vingt fois plus et n'apporte ici que ce
-dont on se prive volontairement (LSP, autocomplétion). Le nécessaire est monté
-explicitement plutôt que par `basicSetup`, qui embarque justement l'autocomplétion et le
-linting. Les modes de langage sont chargés à la demande, comme highlight.js pour le fil, et
-une extension inconnue ne colore rien plutôt que d'appliquer un mode approximatif.
+CodeMirror 6 over Monaco: latter twenty times heavier, adding deliberately omitted
+LSP/completion. Required features mounted explicitly rather than `basicSetup`,
+which includes completion/lint. Languages load on demand like thread highlight.js;
+unknown extensions get no highlighting instead of approximate mode.
 
-Aux grammaires Lezer officielles s'ajoutent les modes hérités de CodeMirror 5
-(`@codemirror/legacy-modes`), moins fins mais qui couvrent d'un seul paquet le shell,
-TOML, INI, Dockerfile et une vingtaine d'autres. Colorer approximativement vaut mieux que
-laisser un fichier tout blanc, ce qui restait le cas de la moitié d'un dépôt réel.
+Official Lezer grammars supplemented with CodeMirror 5 legacy modes
+(`@codemirror/legacy-modes`), less precise but one package covers shell, TOML, INI,
+Dockerfile, about twenty more. Approximate coloring beats plain white, previously
+half a real repository.
 
-Le mode se décide sur le **nom** du fichier, pas sur son extension au sens de Node :
-`extname('.env')` rend une chaîne vide, un fichier qui commence par un point n'ayant pas
-d'extension mais un nom. C'est pour ça qu'un `.env` s'affichait tout blanc, commentaires
-compris. Une table de préfixes couvre `.env.local`, `Dockerfile.dev` et consorts.
+Mode derives from **filename**, not Node extension: `extname('.env')` is empty
+because dotfiles have names, not extensions. Hence `.env` was white including
+comments. Prefix mapping covers `.env.local`, `Dockerfile.dev`, etc.
 
-Le thème n'est pas importé : il est écrit sur les mêmes jetons `--sg-syn-*` que la
-coloration des blocs de code du fil, en `var()` et non en couleurs résolues, donc changer de
-thème ou de teinte déplace l'éditeur avec. Vérifié au navigateur : un mot-clé rend
-exactement `--sg-syn-keyword`.
+Theme is handwritten from same `--sg-syn-*` tokens as thread highlighting, using
+`var()` not resolved colors, so theme/hue changes affect editor. Browser verified
+keyword color exactly matches `--sg-syn-keyword`.
 
-**Le point délicat n'est pas l'éditeur, c'est que l'agent écrit dans les mêmes fichiers.**
-La lecture renvoie une empreinte (taille et date de modification, ce que le système donne
-sans relire le fichier), l'enregistrement la repasse, et le serveur répond 409 si elle a
-changé. Sans ça, enregistrer écrase en silence ce que l'agent vient de faire, et la perte
-ne se remarque qu'une heure plus tard. Le conflit se présente comme une décision et non
-comme un échec : recharger, ou écraser sciemment (`fingerprint: null`). Vérifié en
-réécrivant réellement le fichier sous l'éditeur, dans les deux branches, y compris le fait
-que le disque reste intact tant que rien n'est tranché.
+**Tricky part is agents writing same files.** Reads return fingerprint (size/mtime,
+provided by system without rereading file); saves send it back; server returns 409
+if changed. Otherwise save silently overwrites agent work noticed only later.
+Conflict is decision, not failure: reload or knowingly overwrite (`fingerprint: null`).
+Verified by real underlying file writes, both branches, disk unchanged until decision.
 
-Fichiers binaires (octet nul dans les 8 premiers Ko) et fichiers de plus de 2 Mo refusés
-avec le motif affiché. Les images sont rendues comme images, servies par une route brute
-restreinte à une liste fermée d'extensions : servir n'importe quel binaire avec un type
-deviné inviterait le navigateur à l'interpréter. Un SVG part avec une CSP qui le rend
-inerte, un SVG étant un document capable de porter du script.
+Binary files (NUL in first 8 KB) and files above 2 MB rejected with reason. Images
+render through raw route restricted to closed extension list: arbitrary guessed
+binary types invite browser interpretation. SVG receives inert CSP because SVG
+documents can contain scripts.
 
-Le panneau entier est chargé à la demande (`lazy`) : l'y laisser dans le paquet initial
-le faisait passer de 250 à 365 Ko compressés, payés à chaque ouverture de conversation
-pour une vue qu'on n'ouvre pas toujours. Il forme maintenant un fragment de 110 Ko chargé
-au premier clic.
+Whole panel loads `lazy`: initial bundle formerly grew from 250 to 365 KB compressed,
+paid on every conversation opening for an optional view. Now 110 KB chunk loads
+on first click.
 
-**Les onglets se réorganisent** au glisser-déposer, se ferment au clic du milieu, et un
-menu propose « Fermer les autres » et « Fermer tout ». L'ordre d'ouverture ne dit rien de
-l'usage : on regroupe volontiers ce qui va ensemble.
+**Tabs reorder** by drag/drop, close by middle click; menu offers “Close others”/
+“Close all”. Opening order does not reflect usage: related files should group.
 
-Le panneau de recherche de CodeMirror est habillé par nos jetons et traduit par la facette
-`phrases` qu'il prévoit pour ça : ses champs et boutons natifs restaient blancs quel que
-soit le thème, donc illisibles en sombre. Il est ancré en haut plutôt qu'en bas, où il
-occupait la moitié de la hauteur d'un panneau étroit. `Ctrl+F` depuis le panneau cherche
-dans le fichier et non dans le fil : sans ce partage, le raccourci ouvrait les deux
-recherches à la fois.
+CodeMirror search uses our tokens and native `phrases` translation facet: native
+white fields/buttons were unreadable in dark. Anchored top instead of consuming
+half a narrow panel's bottom. Panel `Ctrl+F` searches file, not thread; otherwise
+both searches opened.
 
-Un seul onglet est monté à la fois : garder les autres en vie retiendrait autant
-d'éditeurs CodeMirror que d'onglets ouverts. Le contenu non enregistré d'un onglet quitté
-est donc perdu, et la pastille le signale tant qu'il est actif.
+Only active tab mounts, avoiding as many live editors as tabs. Unsaved content
+of a departed tab is therefore lost; active dirty dot indicates it.
 
-**Modifications**, en deux sections qui répondent à deux questions différentes.
+**Changes**, two sections answering different questions.
 
-En haut, **où en est le dépôt** : la branche courante, le nombre de fichiers touchés avec
-les totaux de lignes, le dernier commit, puis le diff du répertoire de travail contre HEAD,
-tous auteurs confondus, via `readWorkingDiff`, qui est réellement en lecture seule (il passe
-par un index temporaire, le dépôt n'est jamais touché). Le dernier commit est affiché parce
-qu'un diff vide a deux causes qu'on ne distingue pas autrement : rien n'a été touché, ou
-l'agent vient de commiter ce qu'il a fait. Le worktree n'y figure pas, l'en-tête de la
-conversation le porte déjà.
+Top: **repository state**: current branch, affected files/line totals, last commit,
+then working-directory diff against HEAD across all authors via `readWorkingDiff`,
+truly read-only (temporary index, repository untouched). Last commit distinguishes
+empty-diff causes: untouched or just committed. Worktree omitted because header
+already carries it.
 
-**Les diffs sont colorés**, comme les blocs de code du fil : mêmes jetons `--sg-syn-*`,
-même bibliothèque chargée à la demande, langage déduit de l'extension du fichier et non
-deviné. La coloration se fait ligne à ligne, un diff n'étant pas du code continu : ses
-lignes supprimées et ajoutées ne coexistent nulle part. Un commentaire multiligne peut
-donc être coloré de travers, ce que `ignoreIllegals` rend inoffensif et que la lecture
-d'un diff pardonne. Les fonds vert et rouge restent sous la coloration, qui ne remplace
-pas la lecture de ce qui a changé. Un contenu écrit sans diff auquel le comparer (une
-réécriture entière côté Claude) reste du code et se colore comme le reste.
+**Diffs are highlighted**, same `--sg-syn-*` tokens and on-demand library as thread,
+extension-derived language, never guessed. Line-by-line: deleted/added lines never
+coexist as continuous code. Multiline comments may miscolor, harmless through
+`ignoreIllegals` and acceptable for diffs. Red/green backgrounds remain beneath
+highlighting to show changes. Written content without comparison (Claude whole
+rewrite) is still code and highlighted.
 
-Le diff est relu à la fin d'un tour, **à chaque ouverture du panneau**, et à la demande. Ce
-deuxième point était le manque : un agent qui commitait pendant que le panneau était fermé
-laissait le cache servir un diff périmé à la réouverture, et l'état courant restait celui
-d'avant le commit.
+Diff rereads at turn end, **each panel opening**, on request. Opening refresh was
+missing: commits while closed left stale precommit diff cached on reopen.
 
-**Deux gestes distincts sur un fichier modifié**, plutôt qu'un seul ambigu : le clic sur la
-ligne déplie le diff sur place, et « Ouvrir dans l'éditeur » bascule sur l'onglet Éditeur.
-Le diff reste donc là où l'on regarde les diffs, l'éditeur montre l'état actuel du fichier,
-et aucun des deux ne prétend faire le travail de l'autre. Le clic ouvrait bien l'onglet
-auparavant mais sans y basculer, ce qui donnait l'impression que rien ne se passait. Le patch unifié est découpé côté client
-en sections et en lignes numérotées des deux côtés, sans nouvelle dépendance : le format
-est celui que git produit, et les bibliothèques du domaine servent surtout à *calculer* un
-diff, ce que git fait déjà. Les numéros de ligne ne se sélectionnent pas, pour que copier un
-extrait donne du code et non du code numéroté.
+**Two separate modified-file gestures**: row expands inline diff; “Open in editor”
+switches Editor tab. Diff stays where diffs belong; editor shows current file.
+Previously clicking opened tab without switching, appearing ineffective. Unified
+patch splits client-side into sections with two-sided line numbers, no dependency:
+git already produces diffs; libraries mainly *calculate* them. Line numbers are
+unselectable so copying yields code, not numbered code.
 
-En bas, **ce que l'agent a fait**, tour par tour, dérivé du seul journal via un événement
-normalisé `file.edited { toolCallId, path, action }`. Deviner côté client à partir des noms
-d'outils aurait mis la connaissance de chaque CLI dans le frontend, ce que l'invariant I3
-interdit. Les modifications sont regroupées par message utilisateur plutôt que par
-`turn.started` : c'est la demande qui donne son sens à une série de modifications, et
-l'ordre des deux événements diffère selon le CLI. Contrepartie assumée : les conversations
-antérieures n'ont pas d'historique, l'événement n'existait pas.
+Bottom: **what agent did**, per turn, derived solely from normalized journal
+`file.edited { toolCallId, path, action }`. Client guesses from tool names would
+violate I3 by teaching frontend each CLI. Group by user message, not `turn.started`:
+request gives edits meaning, and event order differs by CLI. Accepted tradeoff:
+older conversations lack history because event did not exist.
 
-**Chaque modification d'un tour passé se déplie sur son diff.** Il ne peut pas venir de
-git, le disque ayant continué d'évoluer depuis : il est reconstitué depuis le payload
-natif de l'appel, conservé dans le journal (`raw`), et lu par l'adaptateur du CLI concerné
-plutôt que par le frontend (invariant I3). Un fichier repris plusieurs fois dans le même
-tour n'apparaît qu'une fois mais garde chaque appel, et les montre l'un après l'autre :
-ne retenir que le dernier effacerait les précédents.
+**Past-turn edits expand to diffs.** Cannot come from git because disk kept changing;
+reconstruct from native tool payload kept in `raw`, read by relevant CLI adapter,
+not frontend (I3). Repeated file edits in one turn show one file retaining every
+call sequentially; keeping last would erase prior ones.
 
-Ce que le payload permet d'affirmer diffère selon l'appel, et l'affichage le dit plutôt
-que de maquiller :
+Payload capabilities vary and display says so:
 
-| Appel | Ce qu'on peut montrer |
+| Call | What can be shown |
 | --- | --- |
-| `Edit` (Claude) | un vrai diff, mais **de l'extrait remplacé seulement** : les numéros de ligne y sont relatifs à l'extrait, ce qui est annoncé |
-| `Write` (Claude) sur un fichier existant | le contenu écrit, sans point de comparaison : l'état précédent n'est nulle part |
-| `Write` (Claude) sur un fichier neuf | un diff complet, tout étant ajouté |
-| `fileChange` (Codex) | le diff unifié produit par le CLI, complet |
+| `Edit` (Claude) | real diff of **replaced excerpt only**: excerpt-relative line numbers explicitly announced |
+| `Write` (Claude), existing file | written content without comparison: previous state unavailable |
+| `Write` (Claude), new file | complete diff, all added |
+| `fileChange` (Codex) | complete CLI unified diff |
 
-Le diff des extraits Claude est calculé ici, par plus longue sous-séquence commune sur les
-lignes : c'est le seul endroit où Sillage doit *calculer* un diff, git le fournissant
-partout ailleurs. Au-delà de 2000 lignes, la comparaison est abandonnée au profit d'un
-remplacement intégral, qui est vrai et ne coûte rien. Une création ou une suppression n'a
-qu'un côté : les deux CLI donnent alors le contenu brut, enveloppé ici dans la forme que
-git produirait pour que l'affichage n'ait qu'un seul format à connaître.
+Claude excerpt diff uses longest common line subsequence, the only place Sillage
+*calculates* diffs because git supplies all others. Above 2,000 lines, use truthful
+cheap whole replacement. Creation/deletion have one side: both CLIs provide raw
+content wrapped in git-like format so display knows one format.
 
-**Un défaut corrigé au passage** : la distinction création / réécriture reposait sur une
-lecture disque **asynchrone** lancée au début de l'appel. Elle pouvait se résoudre après
-que l'outil avait écrit, donc répondre sur un disque déjà modifié, et son garde-fou
-pouvait au contraire abandonner la modification si l'appel se terminait d'abord. Un `stat`
-synchrone coûte quelques microsecondes et supprime les deux cas.
+**Incidental fix**: creation/rewrite distinction used **asynchronous** disk read
+started at call beginning, possibly resolving after write and observing changed
+disk; fallback could instead abandon edit if call finished first. Synchronous
+`stat` takes microseconds and removes both races.
 
-**Ce que chaque CLI permet d'affirmer n'est pas le même**, et la différence est visible :
+**What each CLI establishes differs**, visibly:
 
-| | Source | Suppression | Écriture par le shell |
+| | Source | Deletion | Shell writes |
 | --- | --- | --- | --- |
-| Claude Code | outils `Write`, `Edit`, `NotebookEdit` | non (pas d'outil de suppression) | non vue |
-| Codex | items `fileChange`, avec leur `kind` | oui | non vue (patch natif seulement) |
+| Claude Code | `Write`, `Edit`, `NotebookEdit` tools | no deletion tool | unseen |
+| Codex | `fileChange` items and `kind` | yes | unseen (native patch only) |
 
-Côté Claude, la création se distingue de la réécriture en relevant l'existence du fichier
-**au début** de l'appel, seul moment où la réponse est encore vraie. Lire le message de
-retour (« File created successfully ») marcherait aussi, mais reviendrait à coder en dur une
-phrase anglaise que le CLI peut reformuler.
+Claude distinguishes creation/rewrite by checking existence **at call start**,
+only time answer remains true. Parsing “File created successfully” would hardcode
+English wording CLI may change.
 
-Le SDK Claude déclare un hook `FileChanged` (chemin + `add`/`change`/`unlink`) qui serait la
-source idéale, puisqu'il vient du CLI et couvrirait aussi les écritures faites par `Bash`.
-Sondé sur 0.3.220 avec le `watchPaths` que `SessionStart` permet de renvoyer : **il ne tire
-jamais**, y compris sur des fichiers écrits dans le cwd que le CLI annonce lui-même. D'où le
-passage par les outils, et la limite mesurée : un `rm` lancé par Claude n'apparaît pas dans
-l'historique, alors que l'état courant, lui, le voit. C'est précisément pourquoi les deux
-sections coexistent.
+Claude SDK declares ideal `FileChanged` hook (path + `add`/`change`/`unlink`), CLI-origin
+and covering Bash writes. Probed on 0.3.220 with `SessionStart`-returned `watchPaths`:
+**never fires**, even for files in CLI's announced cwd. Hence tool-based approach
+and measured limit: Claude `rm` absent from history, present in current state.
+Precisely why both sections coexist.
 
-**Terminaux.** Plusieurs shells par projet, ouverts et fermés à la demande, numérotés
-d'après ce qui est ouvert plutôt qu'un compteur : fermer le premier puis en rouvrir un ne
-doit pas donner deux « shell 2 ». Le gestionnaire est indexé par terminal, pour qu'un
-serveur de développement puisse tourner dans l'un pendant qu'on lance des commandes dans
-l'autre. Plafond de 6 par projet, partagé par le protocole pour que l'interface grise le
-bouton au lieu d'attendre un refus.
+**Terminals.** Multiple shells per project, on-demand open/close, numbered from open
+ones rather than counters: close first then reopen must not produce two “shell 2”.
+Manager indexed per terminal so one runs dev server while another runs commands.
+Cap 6/project shared in protocol so UI disables button instead of waiting for rejection.
 
-Le répertoire de travail vient de la session qui ouvre (worktree compris), du workspace
-sinon. Supprimer le projet ferme ses shells ; supprimer un worktree ferme ceux dont c'est
-le cwd. Le cycle de vie passe par REST, la sortie par la socket dédiée : c'est la route
-qui applique le plafond et rend l'identifiant, alors qu'une socket qui créerait à
-l'attachement ouvrirait un terminal de plus à chaque reconnexion.
+Cwd follows opening session (including worktree), otherwise workspace. Project
+deletion closes shells; worktree deletion closes matching cwd shells. REST manages
+lifecycle and cap/ID, dedicated socket carries output: creating on socket attach
+would add terminals every reconnect.
 
-Un terminal survit au départ de son dernier client, et son entrée survit à son process avec
-son dernier écran : un `exit` accidentel ou une commande qui plante ne doivent pas faire
-disparaître ce qu'on voulait lire. C'est l'inactivité prolongée qui finit par libérer le pty.
-Rien n'est journalisé : la sortie d'un shell n'est pas du contenu de conversation, et la
-persister ferait grossir la base sans qu'aucun rendu s'appuie dessus.
+Terminal survives last-client departure, entry survives process with final screen:
+accidental `exit`/crash must not erase readable output. Prolonged inactivity frees
+pty. Nothing journaled: shell output is not conversation content; persisting would
+grow database without supporting any render.
 
-**Le copier/coller est ce qui décide si un shell web est utilisable**, et c'est précisément
-ce qui ne marche pas ailleurs. `Ctrl+C` doit rester `SIGINT`, seule façon d'arrêter une
-commande : la copie passe donc par `Ctrl+Maj+C`, le collage par `Ctrl+Maj+V` et par le clic
-droit, qui reste le geste que tout le monde essaie. Vérifié au navigateur, sélection à la
-souris comprise, avec le contrôle négatif qui compte : après `Ctrl+C` sur un `sleep 60`, le
-shell reprend la main immédiatement.
+**Copy/paste decides web-shell usability**, precisely what fails elsewhere.
+`Ctrl+C` stays SIGINT, only way to stop commands; copy uses `Ctrl+Shift+C`, paste
+`Ctrl+Shift+V`/right-click, universally expected gesture. Browser checked including
+mouse selection and important negative test: `Ctrl+C` on `sleep 60` returns prompt
+immediately.
 
-**Deux défauts trouvés en vérifiant**, tous deux invisibles à la lecture du code :
+**Two defects found by testing**, invisible in code review:
 
-- ouvrir un terminal ne l'affichait pas, la sélection ne suivant pas la création. Cliquer
-  sur « + » sans rien voir changer donne l'impression que rien ne s'est passé ;
-- le terminal restait figé à sa largeur de départ, 305 px pour 687 px disponibles. La cause
-  n'était ni la mise en page ni la police : `visible` était capturé dans la fermeture de
-  l'effet, et valait faux au montage, le terminal se montant pendant le rendu où la
-  sélection d'onglet n'est pas encore faite. `FitAddon` proposait bien 87 colonnes, mais le
-  redimensionnement sortait avant. La valeur passe maintenant par une ref, lue au moment de
-  l'appel.
+- opening terminal did not show it because selection did not follow creation;
+  “+” with no visible change appeared ineffective;
+- terminal stayed initial 305 px despite 687 available. Neither layout nor font:
+  effect closure captured `visible: false` at mount before tab selection.
+  `FitAddon` proposed 87 columns but resize returned early. Value now uses ref
+  read at call time.
 
-Le second n'a été trouvé qu'en mesurant : un observateur témoin posé sur le même élément
-tirait treize fois pendant le glissement, ce qui a écarté la mise en page, puis la sonde a
-montré le `visible: false` figé. Le commentaire du code affirmait l'inverse, ce qui rendait
-le défaut invisible à la relecture.
+Second found only by measurement: control observer on same element fired thirteen
+times during drag, ruling out layout; probe then revealed frozen `visible: false`.
+Code comment claimed opposite, hiding defect during review.
 
-**Sous-agents.** Cinquième onglet, seul à ne pas lire le disque : tout son contenu vient
-du journal. Un sous-agent n'a pas d'existence côté serveur, c'est un appel d'outil, et
-l'identifiant de cet appel lui sert d'identité : `buildSubAgents` regroupe par
-`parentToolCallId` ce que le journal porte déjà, sans état parallèle ni requête.
+**Subagents.** Fifth tab, only one not reading disk: entirely journal-derived.
+Subagents have no server entity, only tool calls whose IDs identify them:
+`buildSubAgents` groups existing events by `parentToolCallId`, no parallel state/query.
 
-La liste donne, par sous-agent, son type, ce qu'on lui a demandé, son activité du moment,
-son nombre d'appels d'outils et un chronomètre. Le chronomètre est tenu par l'affichage
-tant que l'appel tourne : le CLI ne publie la durée qu'à la fin, et un compteur qui avance
-est le signal le plus direct qu'il se passe encore quelque chose.
+List shows type, request, current activity, tool count, timer. Display maintains
+timer while active: CLI publishes duration only at completion, and advancing
+counter is most direct sign of continuing work.
 
-Le fil d'un sous-agent est rendu par le **même composant** que le fil principal
-(`ChatThread`), avec la même fonction de découpe (`buildRows`) à qui l'on passe
-l'identifiant de l'auteur. Ce sont les mêmes événements : leur donner un second rendu
-obligerait à tenir deux vues en accord pour un seul contenu. Seuls diffèrent les ajouts
-propres à la page, ancres de tours et fork, qui sont optionnels. Les éléments interactifs
-(permission, plan, question) n'ont pas d'auteur et restent dans le fil principal, seul
-endroit d'où l'on peut y répondre.
+Subagent threads use **same component** as main (`ChatThread`) and same `buildRows`
+with author ID. Same events: another renderer would require keeping two views
+aligned for one content. Only optional page-specific turn anchors/fork differ.
+Interactive permission/plan/question items lack authors and remain in main thread,
+the only answerable location.
 
-Le décompte des sous-agents en cours est porté par l'onglet, où il ne se replie jamais
-avec le nom : c'est ce qui signale une activité dont on ne verrait sinon aucune trace,
-l'onglet étant fermé.
+Active-subagent count stays on tab even when label collapses, signaling otherwise
+invisible work while tab is closed.
 
 ---
 
-## 13. Authentification
+## 13. Authentication
 
-- Argon2id pour les mots de passe (`node-argon2`), paramètres par défaut de la
-  bibliothèque.
-- Cookie de session opaque de 32 octets, seul son SHA-256 est stocké. Durée 30 jours,
-  prolongée à chaque usage.
-- Pas d'inscription ouverte. Le premier compte est créé depuis la visite de première
-  ouverture (`POST /api/auth/setup`, qui ne répond que tant que la base n'a aucun compte)
-  ou par une commande `pnpm sillage user:create`, les suivants par un administrateur
-  depuis `/settings/users`.
-- Limitation de débit sur `/api/auth/login` : 5 tentatives par minute et par IP.
-- Pas de 2FA en v1. Sillage doit être derrière un reverse proxy ou un VPN, ce qui est
-  documenté dans le README.
+- Argon2id passwords (`node-argon2`), library default parameters.
+- Opaque 32-byte session cookie, only SHA-256 stored. 30-day lifetime renewed on use.
+- No open registration. First account created by first-run tour
+  (`POST /api/auth/setup`, available only with no accounts) or
+  `pnpm sillage user:create`; subsequent accounts by admin through `/settings/users`.
+- `/api/auth/login` rate limit: 5 attempts/minute/IP.
+- No v1 2FA. Sillage belongs behind reverse proxy/VPN, documented in README.
 
-**Autorisation.** Un utilisateur voit un projet s'il en est propriétaire ou si sa
-`visibility` est `shared`. Il ne peut envoyer des messages que dans ses propres
-conversations, mais peut lire celles des autres sur un projet partagé. Les décisions de
-permission sont réservées au propriétaire de la conversation, et l'événement
-`permission.resolved` enregistre qui a décidé.
+**Authorization.** Users see projects they own or with `visibility: shared`.
+They send only in own conversations but read others' on shared projects.
+Permission decisions belong to conversation owner; `permission.resolved` records decider.
 
 ---
 
-## 14. Pièces jointes
+## 14. Attachments
 
-- Envoi multipart, 20 Mo par fichier, 5 fichiers par message. Un message peut n'être
-  que des pièces jointes, mais jamais vide des deux.
-- Stockage sur disque sous `<données>/attachments/<yyyy>/<mm>/<uuid><ext>`, jamais en
-  base : SQLite n'est pas un magasin de blobs et le journal doit rester léger à relire.
-- **Type déterminé par le contenu**, jamais par l'extension : celle-ci est choisie par
-  l'appelant et ne prouve rien. Un PNG renommé `.txt` est reconnu comme une image.
-- Les images d'un format accepté par l'API (jpeg, png, gif, webp) partent en ligne :
-  base64 pour Claude, `localImage` avec un chemin pour Codex, chacun selon son
-  protocole. Tout le reste est transmis par son chemin absolu, que l'agent ouvre avec
-  ses propres outils. La racine de stockage est ajoutée aux dossiers autorisés du
-  runner, sans quoi la lecture serait refusée puisqu'elle est hors du workspace.
-- Une pièce jointe est téléversée **avant** que la conversation existe, puisqu'une
-  conversation naît de son premier message : `conversation_id` reste donc nul jusqu'à
-  l'envoi, et le fichier appartient entre-temps à son utilisateur.
-- Un fichier déjà envoyé ne peut être ni supprimé ni renvoyé : le journal doit pouvoir
-  se rejouer à l'identique (invariant I2).
-- Suppression avec la conversation, fichiers du disque compris. La cascade des clés
-  étrangères n'efface que les lignes, les fichiers sont retirés explicitement avant.
-- Les fichiers téléversés puis abandonnés sont ramassés après 24 heures.
+- Multipart upload, 20 MB/file, 5 files/message. Attachment-only messages allowed,
+  never messages with neither text nor files.
+- Disk storage `<data>/attachments/<yyyy>/<mm>/<uuid><ext>`, never database:
+  SQLite is not blob storage and journal must remain lightweight to reread.
+- **Type from content**, never extension chosen by caller proving nothing.
+  PNG renamed `.txt` is recognized as image.
+- API-supported images (jpeg/png/gif/webp) sent inline: Claude base64, Codex
+  `localImage` path, according to native protocols. Everything else uses absolute
+  path opened with agent tools. Storage root added to runner-allowed directories,
+  otherwise out-of-workspace reads denied.
+- Upload happens **before** conversation creation because first message creates
+  conversation: `conversation_id` stays null until sending, file meanwhile
+  belongs to uploading user.
+- Sent files cannot be deleted or resent: journal must replay identically (I2).
+- Conversation deletion removes disk files too. Foreign-key cascade deletes only
+  rows; files explicitly removed first.
+- Abandoned uploads reclaimed after 24 hours.
 
-## 15. Déploiement
+## 15. Deployment
 
 ```
 ~/.local/share/sillage/
@@ -2067,7 +1823,7 @@ permission sont réservées au propriétaire de la conversation, et l'événemen
 ~/.config/sillage/config.toml
 ```
 
-`config.toml` :
+`config.toml`:
 
 ```toml
 [server]
@@ -2081,11 +1837,11 @@ pty_idle_timeout_min = 60
 
 [retention]
 archived_events_days = 90
-# Jours d'inactivité avant qu'une conversation lue et au repos soit archivée.
-# Zéro coupe l'archivage automatique, l'action manuelle restant disponible.
+# Inactive days before read, idle conversations are archived.
+# Zero disables automatic archiving; manual action remains available.
 auto_archive_days = 14
-# Motif cron du passage d'archivage. Les deux réglages ci-dessus se changent aussi
-# dans Réglages > Archivage, et la valeur de l'interface l'emporte sur celle-ci.
+# Archiving cron pattern. Both settings above are also editable in
+# Settings > Archiving; interface values take precedence over these.
 auto_archive_schedule = "45 4 * * *"
 
 [agents.claude]
@@ -2097,39 +1853,35 @@ binary = "codex"
 enabled = true
 ```
 
-Trois modes d'installation :
+Three installation modes:
 
-1. **Installeur (`install.sh`)**, le mode de référence. Télécharge le tarball de la
-   release (bundle serveur + frontend + node_modules natifs précompilés) dans
-   `~/.local/share/sillage/app/releases/vX.Y.Z`, bascule un lien `current` atomique,
-   rend l'unité systemd depuis `deploy/sillage.service.tmpl` et démarre le service.
-   L'unité pose `SILLAGE_INSTALL_DIR`, ce qui active la mise à jour intégrée :
-   l'écran À propos affiche la version installée, les nouveautés publiées depuis, et
-   un administrateur peut mettre à jour en un clic (téléchargement, bascule du lien,
-   redémarrage via systemd, `Restart=always`).
-2. **Docker** (`ghcr.io/marlburrow/sillage`), sans CLI agent embarqué : ils s'installent
-   depuis l'interface dans le volume de données. Credentials et projets montés depuis
-   l'hôte. `SILLAGE_UPDATE_CHANNEL=docker` désactive la mise à
-   jour intégrée : l'UI affiche la commande `docker pull` à la place.
-3. **Depuis les sources**, pour le développement (`pnpm dev`) ou un déploiement manuel.
+1. **Installer (`install.sh`)**, reference mode. Downloads release tarball
+   (server bundle + frontend + prebuilt native node_modules) to
+   `~/.local/share/sillage/app/releases/vX.Y.Z`, atomically switches `current`
+   link, renders systemd unit from `deploy/sillage.service.tmpl`, starts service.
+   Unit sets `SILLAGE_INSTALL_DIR`, enabling integrated updates: About shows
+   installed version/new releases, admin updates in one click (download, link
+   switch, systemd restart through `Restart=always`).
+2. **Docker** (`ghcr.io/marlburrow/sillage`), no bundled agent CLIs: installed
+   through interface into data volume. Host-mounted credentials/projects.
+   `SILLAGE_UPDATE_CHANNEL=docker` disables integrated updates; UI shows
+   `docker pull` instead.
+3. **From source**, for development (`pnpm dev`) or manual deployment.
 
-Les releases sont des tags git `vX.Y.Z` : la CI construit tarballs Linux x64/arm64,
-image Docker multi-arch et release GitHub à notes générées. La version est figée dans
-les bundles à la compilation (`SILLAGE_VERSION`), exposée par `/api/health` et
-`/api/system/version`.
+Releases are `vX.Y.Z` git tags: CI builds Linux x64/arm64 tarballs, multi-arch Docker
+image, GitHub release with generated notes. Version fixed at compile time in
+bundles (`SILLAGE_VERSION`), exposed by `/api/health` and `/api/system/version`.
 
-Variables d'environnement reconnues : `SILLAGE_HOST` et `SILLAGE_PORT` (priment sur le
-TOML), `SILLAGE_CONFIG`, `SILLAGE_DATA_DIR`, `SILLAGE_WEB_ROOT`, `SILLAGE_MIGRATIONS`,
-`SILLAGE_INSTALL_DIR`, `SILLAGE_UPDATE_CHANNEL`. Le TOML accepte les clés en snake_case
-comme en camelCase.
+Recognized environment: `SILLAGE_HOST`/`SILLAGE_PORT` (override TOML),
+`SILLAGE_CONFIG`, `SILLAGE_DATA_DIR`, `SILLAGE_WEB_ROOT`, `SILLAGE_MIGRATIONS`,
+`SILLAGE_INSTALL_DIR`, `SILLAGE_UPDATE_CHANNEL`. TOML accepts snake_case/camelCase.
 
-L'exposition à l'extérieur se fait par Caddy ou par un tunnel (Tailscale, Cloudflare
-Tunnel). Sillage n'écoute pas sur `0.0.0.0` par défaut (hors Docker) et ne gère pas TLS
-lui-même.
+External exposure through Caddy/tunnel (Tailscale, Cloudflare Tunnel). Sillage
+neither defaults to `0.0.0.0` outside Docker nor handles TLS itself.
 
 ---
 
-## 16. Arborescence
+## 16. Directory layout
 
 ```
 sillage/
@@ -2137,15 +1889,15 @@ sillage/
     server/
       src/
         main.ts
-        http/            routes Fastify
-        ws/              hub WebSocket, abonnements, fan-out
+        http/            Fastify routes
+        ws/              WebSocket hub, subscriptions, fan-out
         agents/
-          types.ts       interface AgentRunner
-          claude/        adaptateur Claude Code
-          codex/         adaptateur Codex
+          types.ts       AgentRunner interface
+          claude/        Claude Code adapter
+          codex/         Codex adapter
           registry.ts
-        sessions/        SessionManager, cycle de vie, file d'attente
-        events/          EventLog, compaction, rétention
+        sessions/        SessionManager, lifecycle, queue
+        events/          EventLog, compaction, retention
         pty/             PtyManager
         git/             worktrees, branches, diff
         auth/
@@ -2154,229 +1906,195 @@ sillage/
         routes/
         components/
           chat/
-          tools/         registre de renderers
+          tools/         renderer registry
           terminal/
         theme/
-        lib/             client WS, store, IndexedDB
+        lib/             WS client, store, IndexedDB
       public/
   packages/
-    protocol/            schémas Zod partagés + types Codex générés
-    db/                  schéma Drizzle + migrations
+    protocol/            shared Zod schemas + generated Codex types
+    db/                  Drizzle schema + migrations
   docs/
     SPEC.md
 ```
 
 ---
 
-## 17. Lots de livraison
+## 17. Delivery batches
 
-**Lot 0 : socle.** Monorepo pnpm, Fastify, Drizzle et migrations, authentification,
-CRUD projets, coque du frontend, thème et tokens, build et unité systemd. Critère de
-recette : se connecter, créer un projet, le voir dans la sidebar.
+**Batch 0: foundation.** pnpm monorepo, Fastify, Drizzle/migrations, authentication,
+project CRUD, frontend shell, theme/tokens, build/systemd unit. Acceptance: sign in,
+create project, see it in sidebar.
 
-**Lot 1 : Claude de bout en bout.** Adaptateur Claude, journal d'événements, hub WS,
-chat avec markdown et appels d'outils repliables, permissions interactives, interruption.
-Critère de recette : couper le wifi 30 secondes pendant qu'un agent travaille, le rebrancher,
-et retrouver l'intégralité du flux sans rechargement de page.
+**Batch 1: Claude end to end.** Claude adapter, event journal, WS hub, Markdown
+chat/collapsible tools, interactive permissions, interruption. Acceptance: disable
+Wi-Fi 30 seconds during agent work, reconnect, recover entire stream without reload.
 
-**Lot 2 : Codex.** Livré. Adaptateur app-server, bindings générés et commités avec
-détection de dérive (`pnpm codex:types:check`), réglages Codex dans la barre de saisie.
-Critère de recette atteint : une conversation Codex produit les mêmes événements
-normalisés qu'une conversation Claude, permissions comprises.
+**Batch 2: Codex.** Shipped. app-server adapter, generated/committed bindings with
+drift detection (`pnpm codex:types:check`), Codex composer settings. Acceptance met:
+Codex conversation produces same normalized events as Claude, including permissions.
 
-Différences constatées à l'usage, qui ne sont pas des manques de Sillage :
+Observed differences, not Sillage gaps:
 
-- Codex accepte modèle, effort, approbation et sandbox **à chaque tour**, donc un
-  changement de réglage n'y demande jamais de relancer le process, contrairement à
-  Claude où seules certaines requêtes de contrôle existent.
-- Codex ne nomme pas ses fils automatiquement : une conversation Codex garde l'extrait
-  de son premier message, là où Claude Code fournit un résumé.
-- L'app-server ne chiffre pas de coût, mais annonce un pourcentage de quota
-  (`usedPercent`), que Claude Code n'envoie pas.
+- Codex accepts model/effort/approval/sandbox **per turn**, so settings never require
+  restart, unlike Claude's limited control requests.
+- Codex does not autoname threads: conversation keeps first-message excerpt where
+  Claude supplies summary.
+- app-server reports no cost but quota percentage (`usedPercent`), which Claude
+  does not send.
 
-**Lot 3 : worktrees et diff.** Livré. Création et sélection de worktree au démarrage
-d'une conversation, gestion depuis la page projet, onglet Diff.
+**Batch 3: worktrees and diff.** Shipped. Create/select worktrees at conversation
+startup, manage from project page, Diff tab.
 
-Deux points tranchés à l'implémentation :
+Two implementation decisions:
 
-- Le diff passe par un index temporaire (`GIT_INDEX_FILE`). Faire un
-  `git add --intent-to-add` sur l'index réel afficherait bien les fichiers non suivis,
-  mais modifierait le dépôt de l'utilisateur pour le simple affichage d'un onglet.
-- Une branche déjà extraite ailleurs ne peut pas l'être une seconde fois, c'est une
-  règle de git. Le message le dit explicitement plutôt que de relayer sa sortie brute.
+- Diff uses temporary index (`GIT_INDEX_FILE`). Real-index `git add --intent-to-add`
+  would show untracked files but modify user repository merely for display.
+- Already checked-out branches cannot be checked out again: git rule. Message
+  states this explicitly rather than forwarding raw output.
 
-**Lot 4 : mobile et PWA.** Livré, à une réserve près. Manifest, icônes (dont maskable),
-service worker Workbox, gestion du clavier virtuel via `visualViewport`.
+**Batch 4: mobile and PWA.** Shipped with one caveat. Manifest, icons/maskable,
+Workbox worker, virtual keyboard through `visualViewport`.
 
-Deux points à retenir :
+Two points to remember:
 
-- **L'installation exige HTTPS.** Sur `http://<ip-locale>` le service worker ne
-  s'enregistre pas et le manifest n'est pas proposé à l'installation : le navigateur
-  réserve les deux aux contextes sécurisés. L'instance de développement est désormais
-  jointe en HTTPS par une route d'ingress, donc l'installation et les notifications
-  push sont débloquées.
-- **Le cookie de session est `Secure` par requête**, pas par variable d'environnement :
-  la même instance répond en clair sur le réseau local et en HTTPS derrière l'ingress.
-  Un `Secure` global casserait l'accès en clair, son absence priverait l'accès chiffré
-  de la protection. `trustProxy` est actif, donc `request.protocol` suit
-  `X-Forwarded-Proto`.
-- **Le fil n'est pas virtualisé.** À la place, les lignes sont mémoïsées et le fold
-  produit un nouvel objet uniquement pour l'élément modifié, ce qui limite chaque lot
-  de deltas au redessin d'un seul message. C'est l'essentiel du gain sans le risque
-  d'une fenêtre glissante à hauteurs dynamiques, qu'on ajoutera si une conversation
-  réellement longue montre que ça ne suffit pas.
+- **Installation requires HTTPS.** On `http://<local-ip>` worker does not register
+  and manifest installation is unavailable: browser requires secure contexts.
+  Dev instance now uses HTTPS ingress, enabling installation/push.
+- **Session cookie `Secure` is per request**, not environment: same instance serves
+  plain local-network HTTP and ingress HTTPS. Global Secure breaks HTTP;
+  absence removes encrypted-access protection. `trustProxy` makes
+  `request.protocol` follow `X-Forwarded-Proto`.
+- **Thread not virtualized.** Rows memoized; fold replaces only modified item,
+  limiting each delta batch to one redraw. Main benefit without dynamic-height
+  sliding-window risks; add if real long conversations show need.
 
-**Lot 5 : confort et intégrations.** Reste à faire :
+**Batch 5: comfort and integrations.** Remaining:
 
-- **Renderers d'outils spécialisés.** Reportés : la coloration syntaxique des payloads
-  (section 12.5) couvre le besoin pour l'instant.
+- **Specialized tool renderers.** Deferred: payload syntax highlighting (12.5)
+  currently covers the need.
 
-Livrés en cours de route, hors découpage initial : prompts utilisateur (questions,
-validation de plan, élicitations MCP), mentions `@`, pièces jointes, réglages d'apparence, ordre manuel des
-projets et des conversations, réglette de navigation dans le fil.
+Shipped outside original breakdown: user prompts (questions/plan approval/MCP
+elicitations), `@` mentions, attachments, appearance, manual project/conversation
+ordering, thread navigation ruler.
 
-**Compaction.** Livrée sur les deux CLI, dans le menu d'actions de la conversation.
+**Compaction.** Shipped for both CLIs in conversation action menu.
 
-Elle a d'abord vécu sur la jauge de contexte, qui devenait cliquable : c'était le seul
-endroit où la contrainte se voit, mais une jauge cliquable ne dit pas ce que le clic
-ferait, et l'apprendre demandait de l'essayer sur une conversation en cours. La jauge est
-redevenue un pur indicateur, et l'action porte son nom dans un menu.
+Initially lived on clickable context gauge, where constraint is visible. But
+clickable gauges do not explain actions, requiring experiments on active threads.
+Gauge is again purely informational; named action lives in menu.
 
-| | Mécanisme | Ce qu'il annonce en retour |
+| | Mechanism | Returned signals |
 | --- | --- | --- |
-| Claude Code | commande `/compact` dans un message | `system/status` (`compacting`, puis `compact_result`), `system/compact_boundary` avec `trigger`, `pre_tokens` et `post_tokens` |
-| Codex | `thread/compact/start` | item `contextCompaction`, sans compteur |
+| Claude Code | `/compact` command in message | `system/status` (`compacting`, then `compact_result`), `system/compact_boundary` with `trigger`, `pre_tokens`, `post_tokens` |
+| Codex | `thread/compact/start` | `contextCompaction` item without counter |
 
-**Une compaction se nomme, elle ne se déguise pas en réflexion.** Elle passait pour un
-tour ordinaire, avec l'indicateur « Réflexion » pendant toute sa durée : sur un fil rempli,
-mesuré à 27 secondes, pendant lesquelles on attend une réponse qui ne viendra pas.
-`context.compaction_started` ouvre l'état, `context.compacted` le referme, et l'indicateur
-annonce la compaction avec la taille du contexte qu'elle est en train de résumer.
+**Name compaction instead of disguising it as thinking.** Previously ordinary turn
+showed “Thinking” throughout, measured 27 seconds on filled thread while waiting
+for nonexistent reply. `context.compaction_started` opens state,
+`context.compacted` closes; indicator names compaction with context size being summarized.
 
-Aucun des deux CLI n'annonce d'avancement chiffré, donc il n'y a pas de barre de
-progression : elle serait inventée. Ce qui est mesuré est affiché à la fin, Claude
-transmettant les deux tailles (« Contexte résumé, 28 k vers 2 k tokens », observé à
-27 580 → 2 224). Un échec de compaction n'émet aucune frontière : le message
-`compact_result: failed` est relayé en erreur récupérable, sinon le contexte reste plein
-sans que rien ne le dise.
+Neither CLI reports numeric progress, so no invented progress bar. Final measured
+sizes appear for Claude (“Context summarized, 28k to 2k tokens”, observed
+27,580 → 2,224). Failed compaction emits no boundary: `compact_result: failed`
+becomes recoverable error, otherwise full context would remain unreported.
 
-Claude n'expose pas de requête de contrôle : `/compact` est une commande de barre oblique,
-reconnue dans un message utilisateur ordinaire. Vérifié plutôt que supposé, en observant
-la réponse du CLI : sur un fil trop court il répond « Not enough messages to compact »,
-et sur un fil rempli il émet `compact_boundary`. Ce message n'est pas journalisé comme
-contenu utilisateur : c'est une commande adressée au CLI, pas une phrase dite à l'agent.
+Claude has no control request: `/compact` is a slash command recognized in ordinary
+user messages. Verified through CLI response: short thread says “Not enough
+messages to compact”, filled thread emits `compact_boundary`. Command is not
+journaled as user content: addressed to CLI, not agent speech.
 
-L'événement `context.compacted` est journalisé parce que rien d'autre ne le montrerait :
-le fil ne perd aucun message à l'écran, mais la mémoire de l'agent a changé. Sans ce
-repère, une réponse qui ignore un détail donné plus haut paraît inexplicable. `preTokens`
-et `postTokens` sont nullables, Codex ne les transmettant pas ; inventer un chiffre serait
-pire.
+`context.compacted` is journaled because nothing else reveals changed agent memory
+while displayed messages stay intact. Without marker, ignoring earlier detail
+seems inexplicable. `preTokens`/`postTokens` nullable because Codex omits them;
+inventing figures would be worse.
 
-Compacter pendant un tour est refusé (409) : le contexte bouge encore. L'entrée de menu
-est alors grisée plutôt que retirée, pour qu'on voie qu'elle existe et qu'elle reviendra.
+Mid-turn compaction rejected (409): context still changes. Menu entry disabled,
+not hidden, to show existence/availability later.
 
-Vérifié de bout en bout sur les deux CLI : contexte en baisse (23 926 → 21 588 pour
-Claude, 13 463 → 12 569 pour Codex) et le mot mémorisé avant la compaction toujours
-restitué après. Compacter résume, ça n'efface pas.
+End-to-end verified both CLIs: context decreases (Claude 23,926 → 21,588,
+Codex 13,463 → 12,569), previously memorized word still recalled. Compaction
+summarizes, does not erase.
 
-**Un défaut trouvé en chemin.** La jauge de contexte de Codex utilisait
-`tokenUsage.total.totalTokens`, qui est le **cumul du fil** et non l'occupation : mesuré
-sur quatre tours, 12 570 puis 25 497 puis 38 794 puis 52 475, alors que le contexte réel
-passait de 12 228 à 13 313. Rapportée à la fenêtre, cette valeur finit par dépasser 100 %
-et ne redescend jamais, pas même après une compaction. C'est `last.inputTokens` qu'il
-faut lire, et il inclut déjà la part mise en cache. Un tour sans entrée utilisateur, comme
-une compaction, le rapporte à zéro : la jauge n'est alors pas mise à jour, plutôt que
-d'annoncer un contexte vide.
+**Incidental defect.** Codex context gauge used `tokenUsage.total.totalTokens`,
+**thread cumulative usage**, not occupancy: four turns measured 12,570, 25,497,
+38,794, 52,475 while real context went 12,228 → 13,313. Dividing by window exceeds
+100%, never drops even after compaction. Correct field: `last.inputTokens`,
+already including cache. Turns without user input, such as compaction, report
+zero: leave gauge unchanged rather than claiming empty context.
 
-**Notifications push.** Livrées. Web Push avec VAPID : le serveur s'authentifie
-directement auprès du service de push du navigateur, sans compte chez un tiers. La paire
-de clés est propre à l'instance, générée au premier démarrage dans `<data>/vapid.json`.
+**Push notifications.** Shipped. Web Push/VAPID: server authenticates directly with
+browser push service, no third-party account. Per-instance key pair generated
+at first start in `<data>/vapid.json`.
 
-Trois décisions qui font la différence entre une notification utile et du bruit :
+Three decisions distinguish useful notifications from noise:
 
-- **Seuls les moments qui réclament l'utilisateur** sont notifiés (permission, question,
-  élicitation, plan) plus la fin d'un tour, qu'on ne peut pas deviner de loin. La liste
-  est nommée dans le code, pas déduite.
-- **Rien n'est envoyé à quelqu'un qui regarde déjà la conversation.** Le socket est le
-  signal de présence : un onglet abonné au fil reçoit l'événement en direct, l'avertir en
-  plus reviendrait à le prévenir de ce qu'il est en train de lire.
-- **Une conversation ne garde qu'une notification affichée** (`tag` = identifiant du
-  fil) : empiler « l'agent a terminé » cinq fois ne dit rien de plus que la dernière.
+- **Notify only user-needed moments** (permission/question/elicitation/plan) plus
+  turn completion, unknowable remotely. Named list in code, not inferred.
+- **Do not notify users already watching conversation.** Socket signals presence:
+  subscribed tabs receive event live; another alert repeats what they read.
+- **One displayed notification per conversation** (`tag` = thread ID): five “agent
+  finished” alerts say nothing beyond latest.
 
-L'abonnement vaut pour un couple compte + appareil. Un endpoint que le service déclare
-mort (404, 410) est supprimé, sinon la table accumule des entrées interrogées à chaque
-envoi. Un échec d'envoi n'interrompt jamais un agent (invariant I1), mais il est
-journalisé avec sa cause : un endpoint injoignable et un contenu refusé ne se
-diagnostiquent pas de la même façon.
+Subscription belongs to account/device pair. Dead endpoints (404/410) removed,
+otherwise table accumulates entries retried every send. Send failures never
+interrupt agents (I1), but causes are logged: unreachable endpoints and rejected
+content need different diagnoses.
 
-Les écouteurs vivent dans `public/push-sw.js`, chargé par `importScripts` dans le service
-worker généré par Workbox : le précache reste géré par l'outil, sans écrire le service
-worker entier à la main.
+Listeners live in `public/push-sw.js`, loaded by `importScripts` into Workbox worker:
+tool manages precache without handwritten entire worker.
 
-Vérifié de bout en bout contre un faux service de push : envoi émis avec l'en-tête VAPID
-quand personne ne regarde, **aucun** envoi pendant qu'un socket suit le fil, reprise dès
-qu'il se ferme, et abonnement retiré sur un 410. Un détail appris à cette occasion :
-web-push impose TLS, ce qui est le comportement correct pour un vrai service de push.
+Verified end to end against fake push service: VAPID-header send when unwatched,
+**none** while socket follows thread, resumes after closure, subscription removed
+on 410. Learned detail: web-push enforces TLS, correct for real push services.
 
-**Fork de conversation.** Livré. Forker à un point du fil crée une nouvelle conversation
-qui hérite de l'historique jusqu'à ce point, sans toucher à l'originale.
+**Conversation fork.** Shipped. Forking at thread point creates new conversation
+inheriting history through that point without touching original.
 
-| | Mécanisme | Granularité |
+| | Mechanism | Granularity |
 | --- | --- | --- |
-| Claude Code | `forkSession(id, { upToMessageId })` | message de transcript |
-| Codex | `thread/fork { lastTurnId }`, dernier tour conservé inclus | tour |
+| Claude Code | `forkSession(id, { upToMessageId })` | transcript message |
+| Codex | `thread/fork { lastTurnId }`, inclusive last retained turn | turn |
 
-Vérifié de bout en bout des deux côtés, à travers Sillage : après un fork juste avant le
-second message, la branche répond « POMME » et l'originale « POMME, BANANE ». Le journal
-de la branche s'arrête exactement au point de coupe.
+Verified through Sillage both sides: fork just before second message answers
+“POMME”, original “POMME, BANANE”. Branch journal stops exactly at cut.
 
-**Le geste.** Le fork se déclenche depuis un message utilisateur, et coupe **avant** lui :
-la branche reprend tout ce qui précède, et le message coupé revient dans la barre de
-saisie, prêt à être reformulé. C'est ce que le fork sert à faire, et le laisser dans
-l'historique de la branche le rendrait inutile. La provenance est affichée dans l'en-tête
-et pointe vers l'originale ; sans elle, deux fils presque identiques dans la sidebar sont
-impossibles à distinguer.
+**Gesture.** Fork from user message cuts **before** it: branch inherits preceding
+history, cut message returns to input for rewording. Keeping it in branch history
+would defeat purpose. Header provenance links original; otherwise near-identical
+sidebar threads are indistinguishable.
 
-La colonne `conversations.forked_from_id` n'est pas en cascade : supprimer l'originale ne
-doit pas emporter ses branches, qui sont des conversations à part entière. La référence
-devient alors orpheline et l'UI cesse simplement d'afficher la provenance.
+`conversations.forked_from_id` does not cascade: deleting original must not delete
+independent branches. Reference becomes orphan; UI stops displaying provenance.
 
-Le fork ne demande aucun runner vivant : il travaille sur ce que le CLI a persisté, donc
-il fonctionne sur une conversation dont la session est arrêtée depuis longtemps. En
-revanche une conversation qui n'a jamais démarré n'a rien à brancher, et le dit
-(`no_agent_session`).
+Fork requires no live runner: uses persisted CLI state, working long after session
+stops. Never-started conversations have nothing to fork (`no_agent_session`).
 
-Deux contraintes tirées de ces essais :
+Two constraints from trials:
 
-- Côté Claude, `upToMessageId` désigne une entrée du fichier de transcript, pas un
-  identifiant d'API. Seules les entrées `user`, `attachment` et `assistant` en portent
-  un ; un message `result` n'existe pas dans le transcript et le fork échoue si on le
-  désigne. L'`uuid` utilisable est celui que le SDK expose sur les messages `assistant`,
-  déjà conservé dans `events.raw` (I3).
-- Codex ne sait pas couper à un message, seulement à la fin d'un tour entier
-  (`lastTurnId`, inclusif ; `thread/rollback { numTurns }` a disparu en 0.156.0). La
-  granularité commune est donc **le tour**, ce qui rejoint le découpage que la
-  réglette de navigation utilise déjà.
+- Claude `upToMessageId` refers to transcript entry, not API ID. Only `user`,
+  `attachment`, `assistant` have one; `result` absent from transcript, so targeting
+  it fails. Usable `uuid` is SDK assistant-message ID, already in `events.raw` (I3).
+- Codex cuts only at complete turn end (`lastTurnId`, inclusive;
+  `thread/rollback { numTurns }` removed in 0.156.0), not messages. Common
+  granularity therefore **turn**, matching navigation ruler.
 
-Le journal de la nouvelle conversation est une copie de celui de l'originale jusqu'au
-point de coupe : sans ça, le fil forké serait vide alors que l'agent, lui, se souvient
-(I2). Le fork de Codex ne revient pas sur les fichiers déjà modifiés sur le
-disque, et cette limite doit être dite à l'utilisateur plutôt que devinée.
+New conversation journal copies original through cut; otherwise forked thread
+would be empty while agent remembers (I2). Codex fork does not roll back disk
+changes; explain this limit to users instead of making them guess.
 
-**Lot 6 : panneau latéral d'outils.** Chantier non spécifié. Explorateur de fichiers
-coloré par état git, édition à onglets, terminaux, et historique des modifications faites
-par l'agent. Le terminal du lot 5 y est déjà prêt (section 10).
+**Batch 6: tools side panel.** Unspecified work. Git-colored explorer, tabbed editing,
+terminals, agent change history. Batch 5 terminal already ready (section 10).
 
 ---
 
-## 18. Points restés ouverts
+## 18. Remaining open points
 
-Ils sont peu nombreux et aucun ne bloque le lot 0 ou le lot 1.
+Few, none blocking batch 0 or 1.
 
-0. **Sous-agents côté Codex.** Le runner Codex câble `parentToolCallId` à `null` : les
-   sous-agents y sont donc invisibles, bandeau et onglet restant vides. L'app-server a
-   pourtant de quoi les rattacher (`thread_spawn` avec `parent_thread_id`, item
-   `subAgentActivity`), non exploité.
+0. **Codex subagents.** Runner sets `parentToolCallId` to `null`, so subagents are
+   invisible, strip/tab empty. app-server has unused linkage (`thread_spawn`
+   with `parent_thread_id`, `subAgentActivity` item).
 
-2. **Steering.** Livré côté Codex, voir section 12.3. Claude n'a pas d'équivalent, donc
-   le bouton n'apparaît que sur les conversations Codex.
+2. **Steering.** Shipped for Codex, see 12.3. Claude has no equivalent, so button
+   appears only on Codex conversations.

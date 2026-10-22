@@ -20,11 +20,7 @@ import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-/**
- * Sillage gère les worktrees lui-même plutôt que de déléguer à `claude --worktree` :
- * Codex n'a pas d'équivalent, et il faut de toute façon savoir où ils sont pour les
- * lister et les nettoyer. La gestion est donc identique pour les deux CLI.
- */
+/** Sillage manages worktrees instead of delegating to `claude --worktree`: Codex has no equivalent, and listing and cleaning them requires knowing their locations anyway. Management is therefore identical for both CLIs. */
 export function registerWorktreeRoutes(
   app: FastifyInstance,
   ctx: AppContext,
@@ -74,11 +70,7 @@ export function registerWorktreeRoutes(
     return Promise.all(rows.map(toDto))
   })
 
-  /**
-   * Les chantiers du projet : tous les arbres que git ou la base connaissent, jugés
-   * contre la branche par défaut, avec les conversations qui y tiennent. Servi depuis
-   * le cache du service, qui ne bloque jamais sur un gros dépôt (voir là-bas).
-   */
+  /** Project worktrees known to git or the database, assessed against the default branch with their attached conversations. Served from the service cache, which never blocks on large repositories (see its implementation). */
   app.get('/api/projects/:id/worktrees/status', async (request): Promise<WorktreeStatusListDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -89,7 +81,7 @@ export function registerWorktreeRoutes(
     return worktreeStatus.get(project)
   })
 
-  /** Ce que « Nettoyer » ferait d'un arbre, pour la confirmation. 404 si le chemin n'est pas un arbre du projet. */
+  /** Previews what 'Clean up' would do for confirmation. Returns 404 when the path is not a project worktree. */
   app.get('/api/projects/:id/worktrees/cleanup', async (request): Promise<WorktreeCleanupPlanDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -137,8 +129,8 @@ export function registerWorktreeRoutes(
       throw forbidden('worktree_delete_forbidden', 'Only the project owner can delete a worktree.')
     }
 
-    // Le travail non commité est perdu à la suppression : on le dit, et on exige une
-    // confirmation explicite plutôt que de décider à la place de l'utilisateur.
+    // Deleting loses uncommitted work: disclose this and require explicit confirmation
+    // rather than deciding for the user.
     const status = await readGitStatus(row.path)
     if (status?.isDirty && !force) {
       throw conflict(
@@ -148,21 +140,21 @@ export function registerWorktreeRoutes(
       )
     }
 
-    // Un shell dont le répertoire va disparaître n'a plus d'objet : on le ferme avant
-    // que le dossier parte, plutôt que de le laisser tourner dans un cwd supprimé.
+    // Shells whose directory is about to disappear have no purpose: close them before
+    // removing it rather than leave them running in a deleted cwd.
     terminals.closeForCwd(row.path)
 
     try {
       await removeWorktree(project.workspacePath, row.path, force)
     } catch (err) {
       if (!(err instanceof GitError)) throw err
-      // Le dossier a pu disparaître hors de Sillage : on nettoie quand même la trace
-      // plutôt que de laisser une entrée fantôme impossible à supprimer.
+      // The directory may have disappeared outside Sillage: still clean up its record
+      // rather than leave an undeletable ghost entry.
       await rm(row.path, { recursive: true, force: true }).catch(() => {})
     }
 
-    // Les conversations rattachées passent en lecture seule au lieu d'être effacées :
-    // leur historique reste consultable.
+    // Attached conversations become read-only rather than being deleted:
+    // their history remains available.
     ctx.db.update(worktrees).set({ removedAt: Date.now() }).where(eq(worktrees.id, id)).run()
     worktreeStatus.forget(project.id)
 
@@ -170,12 +162,7 @@ export function registerWorktreeRoutes(
   })
 }
 
-/**
- * Crée un worktree du projet sur une branche, neuve ou existante.
- *
- * Partagé entre la route et les sessions lancées par un agent (`start_session`) : le
- * dossier, la réutilisation d'une branche et la ligne en base suivent la même règle.
- */
+/** Creates a project worktree on a new or existing branch. Shared by the route and agent-launched sessions (`start_session`) so directory selection, branch reuse and database records follow the same rules. */
 export async function createWorktree(
   ctx: AppContext,
   project: ProjectRow,
@@ -196,8 +183,8 @@ export async function createWorktree(
     throw conflict('worktree_exists', 'Worktree {name} already exists.', { name })
   }
 
-  // Les worktrees vivent dans le répertoire de données, pas dans le projet : ils ne
-  // doivent pas polluer l'arborescence que l'utilisateur voit dans son éditeur.
+  // Worktrees live in the data directory, outside projects:
+  // they must not clutter the tree users see in their editor.
   const path = join(ctx.config.paths.worktrees, project.id, name.replace(/\//g, '__'))
   const { reusedBranch } = await addWorktree(project.workspacePath, path, name, baseRef).catch(
     (err: unknown) => {
@@ -217,7 +204,7 @@ export async function createWorktree(
     removedAt: null,
   }
 
-  // Une entrée précédente supprimée porte le même nom : l'index unique l'interdirait.
+  // A previously deleted entry has the same name, which the unique index would reject.
   if (existing) ctx.db.delete(worktrees).where(eq(worktrees.id, existing.id)).run()
   ctx.db.insert(worktrees).values(row).run()
   return row

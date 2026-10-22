@@ -12,7 +12,7 @@ const ICONS: Record<DecisionSourceKind, typeof Webhook> = {
   worktree: FolderGit2,
 }
 
-/** D'où vient la demande : la tâche, l'automatisation, l'issue ou la branche, et le projet. */
+/** Request origin: task, automation, issue, or branch plus project. */
 export function DecisionSourceLine({ decision, className }: { decision: DecisionDto; className?: string }) {
   const t = useTranslate()
   const Icon = ICONS[decision.source.kind]
@@ -26,7 +26,7 @@ export function DecisionSourceLine({ decision, className }: { decision: Decision
   )
 }
 
-/** « Expire dans 23 h » ou « Expirée », pour une décision en attente. */
+/** Remaining time or expiry for pending decisions. */
 export function decisionDue(decision: DecisionDto, t: typeof translate): string {
   const left = decision.expiresAt - Date.now()
   return left > 0 ? t('decision.expiresIn', { left: formatAgo(left) }) : t('decision.expiring')

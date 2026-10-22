@@ -2,79 +2,29 @@ import { isSpawnTool } from '@sillage/protocol'
 import { hasVisibleContent, type ChatItem, type ToolItem } from './chat-fold'
 import { isSillageTool } from './sillage-tools'
 
-/**
- * Mise en forme d'un fil avant rendu.
- *
- * Deux choses s'y jouent :
- *
- *   - un fil ne montre que ce que son auteur a produit. Ce qu'un sous-agent écrit et
- *     appelle porte l'identifiant de l'appel qui l'a lancé, et n'a rien à faire dans
- *     le fil principal : mêlé aux réponses de l'agent, il s'y lit comme si c'était
- *     lui qui parlait, et deux sous-agents en parallèle deviennent indémêlables. Le
- *     fil principal ne garde donc que l'appel de spawn ; le reste se lit dans le
- *     panneau, découpé par ce même module ;
- *   - une suite d'appels terminés se replie en une ligne, parce qu'elle n'apporte
- *     rien ligne par ligne et éloigne la réponse. Un appel en cours garde la sienne :
- *     c'est le seul qu'on ait une raison de regarder pendant qu'il tourne.
- */
+/** Les suites restent distinctes des autres événements ; leur repli relève de la lecture du fil. */
 
 export type ChatRow =
   | { kind: 'item'; key: string; item: ChatItem }
   | { kind: 'tool'; key: string; tool: ToolItem }
-  | { kind: 'tool-group'; key: string; tools: ToolItem[] }
-
-/** En dessous, replier coûte un clic et n'économise pas une ligne. */
-const MIN_GROUP_SIZE = 2
+  | { kind: 'tool-group'; key: string; tools: ToolItem[]; complete: boolean }
 
 /**
- * Découpe un fil en lignes affichables.
- *
- * `thread` désigne l'auteur du fil : `null` pour l'agent principal, l'identifiant de
- * l'appel de spawn pour un sous-agent. Tout ce qui n'est ni message ni appel d'outil
- * (permission, plan, question, erreur, repère) n'a pas d'auteur et reste dans le fil
- * principal : c'est le seul endroit d'où l'on peut répondre à une sollicitation, et le
- * seul où une erreur de session a un sens.
+ * Split a thread into displayable rows. `thread` identifies its author: `null` for the main agent,
+ * spawning call ID for a subagent. Items other than messages and tool calls (permissions, plans,
+ * questions, errors, notices) have no author and stay in the main thread: the only place to answer
+ * prompts or make sense of session errors.
  */
-export function buildRows(items: ChatItem[], thread: string | null = null): ChatRow[] {
+export function buildRows(items: ChatItem[], thread: string | null = null, turnRunning = false): ChatRow[] {
   const rows: ChatRow[] = []
   let run: ToolItem[] = []
 
-  /**
-   * Vide la suite courante.
-   *
-   * Les appels terminés se regroupent, les appels en cours gardent leur ligne, et
-   * l'ordre chronologique est conservé : plusieurs appels peuvent tourner en parallèle,
-   * et rien ne garantit que celui qui tourne soit le dernier de la suite.
-   *
-   * Le groupe ne se dissout pas quand un appel démarre derrière lui. Il le faisait
-   * auparavant, et c'était visible deux fois : la suite entière se dépliait le temps du
-   * nouvel appel puis se repliait d'un coup, et un groupe ouvert à la main se refermait
-   * en même temps, puisque la ligne disparaissait et que le composant perdait son état.
-   */
-  const flush = () => {
-    if (run.length === 0) return
-
-    let done: ToolItem[] = []
-    const flushDone = () => {
-      const first = done[0]
-      if (first && done.length >= MIN_GROUP_SIZE) {
-        rows.push({ kind: 'tool-group', key: `tools-${first.id}`, tools: done })
-      } else {
-        for (const tool of done) rows.push({ kind: 'tool', key: tool.id, tool })
-      }
-      done = []
-    }
-
-    for (const tool of run) {
-      if (tool.status === 'running') {
-        flushDone()
-        rows.push({ kind: 'tool', key: tool.id, tool })
-      } else {
-        done.push(tool)
-      }
-    }
-    flushDone()
-
+  // La même clé existe dès le premier appel : terminer la série ne remonte pas ses enfants.
+  const flush = (boundary = false) => {
+    const first = run[0]
+    if (!first) return
+    rows.push({ kind: 'tool-group', key: `tools-${first.id}`, tools: run,
+      complete: boundary && run.every((tool) => tool.status !== 'running') })
     run = []
   }
 
@@ -82,12 +32,10 @@ export function buildRows(items: ChatItem[], thread: string | null = null): Chat
     if (item.kind === 'tool') {
       if (item.parentToolCallId !== thread) continue
 
-      // Le lancement d'un sous-agent garde sa ligne : c'est le seul repère qui dise
-      // qu'un pan entier du travail s'est fait ailleurs, et noyé dans « 5 outils » il
-      // ne se distingue plus d'un `Read`.
-      //
-      // De même pour une tâche planifiée qui porte un script de vérification : sa ligne
-      // porte la validation que l'agent vient de demander, qu'un repli cacherait.
+      // Subagent launches retain a row: the only sign that a whole part of the work happened
+      // elsewhere, indistinguishable from a `Read` if buried in a five-tool group. Likewise,
+      // scheduled tasks containing a check script retain their row because it carries requested
+      // approval that collapsing would hide.
       if (isSpawnTool(item.name) || proposesCheck(item)) {
         flush()
         rows.push({ kind: 'tool', key: item.id, tool: item })
@@ -103,14 +51,22 @@ export function buildRows(items: ChatItem[], thread: string | null = null): Chat
       continue
     }
 
-    // Un élément qui n'affiche rien ne doit pas interrompre la suite d'outils.
+    // An invisible item must not interrupt a tool sequence.
     if (!hasVisibleContent(item)) continue
 
-    flush()
+    const textResumed = item.kind === 'message' && (item.streamingText.trim().length > 0 || item.blocks.some((block) => block.type === 'text' && block.text.trim().length > 0))
+    flush(textResumed)
     rows.push({ kind: 'item', key: item.id, item })
   }
-  flush()
+  flush(!turnRunning)
 
+  // Une pensée ou une notice peut séparer les appels du texte qui clôt leur série.
+  let textAfter = !turnRunning
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index]!
+    if (row.kind === 'item' && row.item.kind === 'message' && (row.item.streamingText.trim() || row.item.blocks.some((block) => block.type === 'text' && block.text.trim()))) textAfter = true
+    if (row.kind === 'tool-group' && textAfter && row.tools.every((tool) => tool.status !== 'running')) row.complete = true
+  }
   return rows
 }
 

@@ -15,11 +15,9 @@ const validPath = (path: string) => skillFilePathSchema.safeParse(path).success 
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)
 
 /**
- * Les fichiers annexes d'un skill : `scripts/`, `references/`, `assets/`. Le modèle ne
- * les lit qu'à la demande, quand les instructions de `SKILL.md` y renvoient.
- *
- * Un fichier s'ouvre sous la liste, dans le même éditeur que le reste de Sillage. Un
- * binaire ou un fichier trop lourd est seulement décrit.
+ * Skill supporting files in scripts, references, and assets, read by models only when SKILL.md
+ * refers to them. Open beneath the list using the shared editor; describe binaries and oversized
+ * files instead.
  */
 export function SkillFiles({ skill, canWrite }: { skill: LibrarySkillDetailDto; canWrite: boolean }) {
   const t = useTranslate()
@@ -182,7 +180,7 @@ function SkillFileEditor({
   const t = useTranslate()
   const { data: file, isLoading } = useSkillFile(skillId, path)
   const write = useWriteSkillFile()
-  /** Null tant que rien n'a été tapé : le fichier relu fait alors foi. */
+  /** Null until input changes: reread file contents remain authoritative. */
   const [draft, setDraft] = useState<string | null>(null)
   const dirty = draft !== null && draft !== file?.content
   const editor = useEditorRevision(file?.content ?? null, draft !== null)

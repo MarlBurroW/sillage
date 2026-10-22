@@ -88,38 +88,31 @@ import { fromCodexMcpStatus, toCodexThreadConfig, type CodexMcpStartup } from '.
 import { describeWindow } from './quota.js'
 
 /**
- * Adaptateur Codex (invariant I3) : traduit l'app-server vers le schéma d'événements
- * commun. Le frontend ne sait pas qu'il parle à Codex plutôt qu'à Claude.
- *
- * Différence structurante avec Claude : Codex accepte modèle, effort, approbation et
- * sandbox **à chaque tour**, donc changer un réglage ne demande jamais de relancer le
- * process.
+ * Codex adapter (invariant I3) translates app-server to shared events so frontend need not
+ * distinguish Claude. Structurally, Codex accepts model, effort, approval, and sandbox on every
+ * turn, allowing setting changes without process restart.
  */
 
 /**
- * `turn/start` accepte un mode de collaboration derrière la capacité `experimentalApi`,
- * mais `generate-ts` ne l'exporte pas : le champ est ajouté ici par intersection plutôt
- * que le paramètre entier réécrit à la main. Le jour où Codex l'exportera, l'intersection
- * deviendra redondante sans rien casser.
+ * turn/start supports collaboration mode behind experimentalApi but generate-ts omits it. Add the
+ * field by intersection rather than manually rewriting parameters; future generated support makes
+ * the intersection harmlessly redundant.
  */
 type ExperimentalTurnStartParams = TurnStartParams & {
   collaborationMode?: CollaborationMode | null
 }
 
 /**
- * Notifications volontairement ignorées : progression interne ou redondante avec ce
- * que `item/completed` apporte déjà. Liste nommée plutôt qu'un `default:` muet, pour
- * qu'une notification inconnue reste visible.
+ * Deliberately ignored internal or redundant notifications already covered by item/completed. Keep
+ * a named list rather than silent default branches so unknown notifications remain visible.
  */
-/** Délai accordé au CLI pour clore un tour interrompu avant de forcer `idle`. */
+/** Time allowed for interrupted CLI turns to close before forcing idle. */
 const INTERRUPT_GRACE_MS = 15_000
 
 /**
- * Traduit un message et ses pièces jointes pour l'app-server. Les blocs journalisés
- * viennent du module commun.
- *
- * Codex accepte un chemin local pour les images (`localImage`), là où Claude exige du
- * base64 : c'est le protocole de chacun qui décide, pas une préférence de Sillage.
+ * Translate messages and attachments for app-server; shared modules produce journal blocks. Codex
+ * accepts localImage paths while Claude requires base64: protocols determine representation, not
+ * Sillage preference.
  */
 function buildUserInput(
   text: string,
@@ -130,8 +123,8 @@ function buildUserInput(
   const { blocks, promptText } = describeOutgoingMessage(text, attachments)
   const input: UserInput[] = []
 
-  // Devant le texte, comme le fait le TUI : la compétence est le cadre dans lequel la
-  // consigne se lit, pas une précision qu'on ajoute après coup.
+  // Place skills before text like the TUI: skills frame interpretation of the
+  // instruction rather than adding detail afterward.
   for (const [name, path] of skills) {
     input.push({ type: 'skill', name, path })
   }
@@ -140,8 +133,8 @@ function buildUserInput(
     input.push({ type: 'text', text: promptText, text_elements: [] })
   }
 
-  // Contrairement à Claude, l'app-server ne développe pas les `@chemin` du texte : la
-  // mention est un élément d'entrée à part, que le protocole prévoit explicitement.
+  // Unlike Claude, app-server does not expand textual @path references:
+  // mentions are separate inputs explicitly defined by the protocol.
   for (const mention of mentions) {
     input.push({ type: 'mention', name: mention.name, path: mention.path })
   }
@@ -156,13 +149,9 @@ function buildUserInput(
 }
 
 /**
- * Questions normalisées, à partir de `item/tool/requestUserInput`.
- *
- * Le protocole n'a pas d'équivalent du `multiSelect` de Claude : la réponse est un
- * tableau, mais rien n'indique qu'une question en accepte plusieurs. Annoncer un
- * choix multiple ici serait une invention, donc la case reste à faux.
- *
- * Une question sans options attend une réponse libre : `options` vaut alors null.
+ * Normalize item/tool/requestUserInput questions. Codex lacks Claude multiSelect: responses are
+ * arrays but nothing says questions accept multiple answers. Keep multiSelect false rather than
+ * inventing support. Questions with null options expect free-text answers.
  */
 function toQuestions(params: ToolRequestUserInputParams): AgentQuestion[] {
   return params.questions.map((question) => ({
@@ -175,7 +164,7 @@ function toQuestions(params: ToolRequestUserInputParams): AgentQuestion[] {
     options: (question.options ?? []).map((option) => ({
       label: option.label,
       description: option.description,
-      // Le protocole Codex ne transporte pas d'aperçu, contrairement à Claude.
+      // Unlike Claude, Codex supplies no option previews.
       preview: null,
     })),
   }))
@@ -186,17 +175,17 @@ export class CodexRunner implements AgentRunner {
 
   private client: CodexAppServerClient | null = null
   private threadId: string | null = null
-  /** Serveurs transmis au thread courant, pour distinguer les nôtres de ceux du CLI. */
+  /** Servers supplied to this thread, distinguishing ours from CLI-configured ones. */
   private mcpServers: McpServer[] = []
-  /** Serveurs qu'on n'a pas pu lancer, à joindre à l'inventaire que le CLI rapporte. */
+  /** Servers that could not launch, added to CLI-reported inventory. */
   private mcpFailures: McpServerStatus[] = []
-  /** Dernier démarrage annoncé par serveur : l'inventaire ne porte ni état ni erreur. */
+  /** Latest per-server startup report because inventory carries neither state nor errors. */
   private readonly mcpStartup = new Map<string, CodexMcpStartup>()
-  /** Dernier inventaire publié, pour n'écrire au journal que ce qui change. */
+  /** Latest published inventory, journaling changes only. */
   private lastMcpPayload: string | null = null
-  /** Chemin de chaque compétence publiée, seule façon de rouvrir un nom à l'envoi. */
+  /** Published skill paths, the only way to resolve selected names on send. */
   private skillPaths = new Map<string, string>()
-  /** Racines de la bibliothèque de skills que l'app-server a acceptées. */
+  /** Skill-library roots accepted by app-server. */
   private skillRoots: string[] = []
   private config: CodexConfig
   private readonly interactions: PendingInteractions
@@ -209,38 +198,34 @@ export class CodexRunner implements AgentRunner {
   private readonly completedItems = new Set<string>()
   private readonly durations = new ToolDurations()
   /**
-   * Texte reçu en flux des réponses du fil principal pas encore closes, par item.
-   *
-   * Depuis 0.162.1 (`instant_interrupt` actif par défaut), un `turn/steer` coupe la
-   * réponse en cours : sondé sur 0.163.0, l'item `agentMessage` reçoit ses deltas puis
-   * n'a jamais d'`item/completed`, et `thread/read` ne le garde même pas. Sans ce
-   * tampon, la réponse coupée n'existerait dans le journal que sous forme de deltas,
-   * invisibles pour la recherche, le transfert vers un autre CLI ou `read_conversation`.
+   * Streamed main-thread reply text not yet completed, per item. Since 0.162.1 instant_interrupt
+   * defaults on: turn/steer interrupts replies. Probed on 0.163.0, agentMessage receives deltas but
+   * never item/completed, and thread/read drops it too. Without this buffer interrupted replies
+   * exist only as deltas, invisible to search, CLI handoffs, and read_conversation.
    */
   private readonly streamedAnswers = new Map<string, string>()
   /**
-   * Message steeré pas encore journalisé. Il s'écrit à l'écho du CLI ou, à défaut, à la
-   * réponse de `turn/steer` : quand l'accusé et les notifications arrivent dans le même
-   * bloc de stdout, celles-ci passent avant la suite de l'`await`, et le message de
-   * l'utilisateur se serait retrouvé après la réponse qu'il a provoquée.
+   * Steered message awaiting journaling. Write on CLI echo or otherwise turn/steer response:
+   * notifications arriving in the same stdout chunk precede await continuation, which would
+   * otherwise place user instructions after their generated reply.
    */
   private pendingSteer: { blocks: ContentBlock[] } | null = null
-  /** Nom que Codex donne au fil, annoncé par `thread/name/updated`. */
+  /** Codex thread name reported by thread/name/updated. */
   private suggested: string | null = null
-  /** Tour en cours : `turn/interrupt` l'exige, contrairement au SDK Claude. */
+  /** Current turn required by turn/interrupt, unlike Claude SDK. */
   private turnId: string | null = null
-  /** Garde-fou d'interruption : force `idle` si le CLI ne clôt jamais le tour. */
+  /** Interruption fallback forces idle if the CLI never closes the turn. */
   private interruptWatchdog: NodeJS.Timeout | null = null
   /**
-   * Tour dont la panne est déjà au journal. Le CLI l'annonce deux fois : par une
-   * notification `error`, puis dans le `turn/completed` qui la clôt. Un seul bandeau.
+   * Turn whose failure is already logged. CLI reports twice, through error then closing
+   * turn/completed; show one banner.
    */
   private reportedErrorTurn: string | null = null
   private readonly completedTurns = new Set<string>()
-  /** Modèle réellement retenu par le CLI, seul connu quand la conversation dit « défaut ». */
+  /** Actual CLI-selected model, needed when conversation configuration says default. */
   private threadModel: string | null = null
 
-  /** Voir `AgentRunner`. `this.config` n'avance qu'après une application réussie. */
+  /** See AgentRunner: update this.config only after successful application. */
   get appliedConfig(): AgentConfig {
     return this.config
   }
@@ -252,18 +237,12 @@ export class CodexRunner implements AgentRunner {
     this.asyncQuestions = new CodexAsyncQuestions(ctx)
   }
 
-  /**
-   * La sentinelle `CLI_DEFAULT` devient `null` : le protocole y voit « applique la
-   * politique configurée dans le CLI », ce qui est précisément ce qu'elle exprime.
-   */
+  /** CLI_DEFAULT maps to null, meaning apply CLI-configured policy, exactly the sentinel's intent. */
   private approvalPolicy(): AskForApproval | null {
     return this.config.askForApproval === CLI_DEFAULT ? null : this.config.askForApproval
   }
 
-  /**
-   * `sandbox` est une chaîne côté configuration Sillage, mais une union objet dans le
-   * protocole. La traduction vit ici, à partir des types générés.
-   */
+  /** Sillage sandbox strings map to protocol object unions here using generated types. */
   private sandboxPolicy(): SandboxPolicy {
     switch (this.config.sandbox) {
       case 'read-only':
@@ -273,7 +252,7 @@ export class CodexRunner implements AgentRunner {
       case 'workspace-write':
         return {
           type: 'workspaceWrite',
-          // Relu à chaque tour : un worktree créé en cours de session s'ouvre au suivant.
+          // Reread each turn so worktrees created mid-session appear on the next.
           writableRoots: [...this.config.additionalDirectories, ...(this.ctx.workTrees?.() ?? [])],
           networkAccess: this.config.webSearch,
           excludeTmpdirEnvVar: false,
@@ -299,35 +278,35 @@ export class CodexRunner implements AgentRunner {
 
     await this.client.initialize(CLIENT_INFO)
 
-    // Avant `thread/start` comme avant `thread/resume`. Sondé : la racine appartient au
-    // process et non au thread, elle disparaît avec l'app-server et doit être reposée à
-    // chaque lancement.
+    // Before both thread/start and thread/resume. Probing established roots belong to
+    // the process rather than thread, disappear with app-server, and must be restored
+    // on every launch.
     const skillRoots = this.ctx.skillRoots(this.config)
     if (skillRoots.length > 0) await this.setSkillRoots(skillRoots)
 
     const resolved = this.ctx.resolveMcpServers(this.config)
     this.mcpServers = resolved.servers
     this.mcpFailures = failedStatuses(resolved.failures)
-    // Repassé au `thread/resume` autant qu'au `thread/start`, et ce n'est pas une
-    // précaution : une surcharge de thread n'est pas persistée avec le thread. Sondé,
-    // un thread créé avec des serveurs MCP puis repris sans cette configuration les
-    // perd entièrement, sans erreur ni trace. Ne pas simplifier.
+    // Pass to resume as well as start: this is required, not defensive. Thread
+    // overrides are not persisted with threads. Probing showed threads created
+    // with MCP servers lose them entirely when resumed without configuration,
+    // without errors or traces. Do not simplify.
     const threadConfig = {
       ...toCodexThreadConfig(this.mcpServers),
-      // Rend aussi les questions structurées disponibles en mode de travail normal.
+      // Also enable structured questions during normal working mode.
       'features.default_mode_request_user_input': true,
-      // Le projet tient ses consignes dans SILLAGE.md, qui arrive par
-      // `developerInstructions` : lire aussi l'`AGENTS.md` du dépôt les doublerait. Zéro
-      // coupe les seuls fichiers du projet, le `AGENTS.md` de `CODEX_HOME` reste lu
-      // (sondé sur codex-cli 0.157.1).
+      // Project instructions arrive from SILLAGE.md through
+      // developerInstructions: reading repository AGENTS.md too would duplicate them. Zero
+      // disables only project files; CODEX_HOME AGENTS.md remains active
+      // (probed on codex-cli 0.157.1).
       ...(this.ctx.maskedInstructionRoots().length > 0 ? { project_doc_max_bytes: 0 } : {}),
     }
 
-    // L'équivalent de l'appendice au prompt système côté Claude. Sondé sur le CLI
-    // installé : la consigne tient sur toute la durée du thread, et le
-    // `developer_instructions` nul que le mode de collaboration porte à chaque tour ne
-    // l'efface pas. Repassé au `thread/resume` par le même raisonnement que la
-    // configuration MCP.
+    // Equivalent to Claude's appended system prompt. Probing the installed CLI
+    // established instructions last throughout the thread; nullable
+    // developer_instructions passed by collaboration mode on every turn does not
+    // erase them. Resend on thread/resume for the same reason as MCP
+    // configuration.
     const developerInstructions = [
       this.ctx.projectOverview(this.config),
       'Sillage displays structured user questions as interactive forms. When asking the user to choose or clarify, use the available request_user_input or request_user_input_async tool instead of listing choices in a plain message. Never treat a suggested option as a submitted answer.',
@@ -342,9 +321,9 @@ export class CodexRunner implements AgentRunner {
           model: this.config.model,
           config: threadConfig,
           developerInstructions,
-          // Sans lui, la réponse embarque tout l'historique du fil, images en base64
-          // comprises : 48 Mo constatés le 2026-09-27, de quoi faire tomber le daemon en
-          // OOM à chaque reprise. Sillage tient déjà son propre journal et n'en lit rien.
+          // Without this the response includes full history and base64 images:
+          // 48 MB observed September 27, 2026, enough to OOM the daemon on every resume.
+          // Sillage already maintains its own log and reads none of that history.
           excludeTurns: true,
         })
       : await this.client.call<ThreadStartResponse, 'thread/start'>('thread/start', {
@@ -366,8 +345,8 @@ export class CodexRunner implements AgentRunner {
         agentSessionId: started.thread.id,
         model: started.model,
         cwd: started.cwd,
-        // L'app-server n'annonce pas la liste des outils : elle dépend du sandbox et
-        // des serveurs MCP configurés. Mieux vaut vide que devinée.
+        // App-server publishes no tool list because it depends on sandbox and MCP
+        // configuration. Empty is preferable to guessed.
         tools: [],
       },
       started,
@@ -377,14 +356,10 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Publie les compétences que le CLI met à disposition, et retient leurs chemins.
-   *
-   * Le chemin ne quitte jamais le serveur : le composer choisit un nom, et c'est cette
-   * table qui le rouvre à l'envoi. Sans elle, il faudrait faire confiance au client sur
-   * le fichier que le CLI ira lire.
-   *
-   * Interrogé sur le répertoire de travail du thread : les compétences d'un dépôt sont
-   * portées par le dépôt, et une réponse sans `cwds` ne rendrait que celles du poste.
+   * Publish available skills and retain their paths server-side. Composers select names and this
+   * table resolves files on send; otherwise client-supplied paths would dictate what the CLI reads.
+   * Query the thread cwd to include repository skills; without cwds only machine skills are
+   * returned.
    */
   private async publishSkills(): Promise<void> {
     const client = this.client
@@ -399,14 +374,14 @@ export class CodexRunner implements AgentRunner {
       const skills: AgentSkillDto[] = []
       for (const entry of listed.data) {
         for (const skill of entry.skills) {
-          // Une compétence désactivée reste dans l'inventaire, mais l'invoquer n'aurait
-          // aucun effet : la proposer serait promettre ce que le CLI ne fera pas.
+          // Disabled skills remain inventoried but invoking does nothing:
+          // offering them would promise behavior the CLI cannot deliver.
           if (!skill.enabled) continue
           this.skillPaths.set(skill.name, skill.path)
           skills.push({
             name: skill.name,
-            // La description longue commence par les conditions d'emploi destinées au
-            // modèle (« Use when... ») : le résumé de l'interface est écrit pour être lu.
+            // Long descriptions begin with model-facing activation conditions
+            // such as Use when; UI summaries are written for readers.
             description:
               skill.interface?.shortDescription ?? skill.shortDescription ?? skill.description,
           })
@@ -415,15 +390,15 @@ export class CodexRunner implements AgentRunner {
 
       this.ctx.emit({ type: 'skills.updated', skills })
     } catch (err) {
-      // Sans inventaire, le composer ne propose rien et le reste de la conversation
-      // fonctionne : rien qui justifie de faire tomber la session.
+      // Without inventory the composer offers nothing but conversation still works:
+      // there is no reason to terminate the session.
       process.stderr.write(
         `[codex ${this.conversationId}] compétences indisponibles : ${err instanceof Error ? err.message : String(err)}\n`,
       )
     }
   }
 
-  /** Ne garde que les noms que le CLI a réellement publiés, avec leur chemin. */
+  /** Retain only CLI-published skill names with their paths. */
   private resolveSkills(names: string[]): Map<string, string> {
     const resolved = new Map<string, string>()
     for (const name of names) {
@@ -434,16 +409,10 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Publie l'inventaire MCP du thread.
-   *
-   * Interrogé avec `threadId` : sans lui, l'app-server ne répond que les serveurs de la
-   * configuration de l'utilisateur, et les surcharges posées par Sillage restent
-   * invisibles. C'est la contrepartie de ne rien écrire dans son `config.toml`.
-   *
-   * Codex annonce un démarrage par serveur, et chaque annonce relit l'inventaire
-   * entier. Les publications identiques sont donc écartées : restent celles où un
-   * serveur a réellement changé d'état ou d'outils, qui sont la seule chose que le
-   * journal a besoin de garder.
+   * Publish thread MCP inventory using threadId; otherwise app-server returns only user-configured
+   * servers and hides Sillage overrides, the consequence of preserving user config.toml. Each
+   * startup announcement rereads the entire inventory; deduplicate identical publications so logs
+   * retain only actual state/tool changes.
    */
   private async publishMcpStatus(): Promise<void> {
     const client = this.client
@@ -463,8 +432,8 @@ export class CodexRunner implements AgentRunner {
         if (cursor && cursors.has(cursor)) throw new Error('Curseur MCP répété par Codex.')
         if (cursor) cursors.add(cursor)
       } while (cursor)
-      // Même raison que côté Claude : un serveur écarté faute d'un secret n'a jamais
-      // été transmis, donc l'inventaire du CLI l'ignore.
+      // As with Claude, servers excluded for missing secrets were never supplied,
+      // so CLI inventory cannot include them.
       const servers = [
         ...this.mcpFailures,
         ...fromCodexMcpStatus(inventory, this.mcpServers, this.mcpStartup),
@@ -476,8 +445,8 @@ export class CodexRunner implements AgentRunner {
 
       this.ctx.emit({ type: 'mcp.updated', servers })
     } catch (err) {
-      // Le thread reste utilisable sans son inventaire : seul l'écran d'état est en
-      // retard, et la prochaine annonce de démarrage le rattrapera.
+      // Threads remain usable without inventory; only status displays lag,
+      // recovering on the next startup announcement.
       process.stderr.write(
         `[codex ${this.conversationId}] inventaire MCP indisponible : ${err instanceof Error ? err.message : String(err)}\n`,
       )
@@ -485,26 +454,25 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Le process est mort sans qu'on le lui demande. Équivalent du chemin d'erreur de
-   * la boucle de consommation du runner Claude : clore ce qui attend une réponse,
-   * le dire dans le journal, et passer en erreur pour que le gestionnaire libère la
-   * session. Le prochain message repartira en reprise du fil.
+   * Unexpected process death, equivalent to Claude runner consumption-loop failure: close pending
+   * prompts, journal the error, and set failure state so session management releases it. The next
+   * message resumes the thread.
    */
   private onProcessExit(code: number | null): void {
     this.client = null
     this.turnId = null
     this.clearInterruptWatchdog()
 
-    // Mort pendant le démarrage : la session n'a jamais existé. L'appel `initialize`
-    // ou `thread/start` en vol est rejeté, `start()` échoue, et le gestionnaire
-    // nettoie et remonte l'erreur HTTP. Journaliser ici en plus écrirait une fin de
-    // session et un statut d'erreur pour une conversation qui n'a rien commencé.
+    // Death during startup means no session existed. Pending initialize or
+    // thread/start rejects, start fails, and session management cleans up and
+    // returns the HTTP error. Logging here too would record session termination
+    // and error state for a conversation that never started.
     if (!this.threadId) return
 
     this.interactions.expireAll()
     this.asyncQuestions.expireAll()
-    // Le statut avant le journal : une écriture refusée ne doit pas laisser la
-    // conversation en `running` alors que le process est déjà mort.
+    // Update status before journaling so rejected writes cannot leave a
+    // dead process's conversation running.
     this.ctx.setStatus('error')
     journalDeath(this.ctx, {
       type: 'error',
@@ -525,7 +493,7 @@ export class CodexRunner implements AgentRunner {
     }
     const threadId = (params as { threadId?: string } | null)?.threadId
     const child = threadId && threadId !== this.threadId ? this.childThreads.get(threadId) : undefined
-    // Les tours des sous-agents ne doivent jamais clore le tour du fil principal.
+    // Subagent turns must never close the main thread's turn.
     if (this.threadId && threadId && threadId !== this.threadId) {
       if (child) this.translateChild(method, params, threadId, child.toolId)
       return
@@ -687,8 +655,8 @@ export class CodexRunner implements AgentRunner {
         return
       }
 
-      // Signal d'invalidation, sans contenu : la notification dit que les fichiers de
-      // compétences ont bougé, c'est `skills/list` qui dit en quoi.
+      // Content-free invalidation signal: notifications report skill-file changes;
+      // skills/list supplies their actual contents.
       case 'skills/changed': {
         void this.publishSkills()
         return
@@ -713,10 +681,9 @@ export class CodexRunner implements AgentRunner {
       }
 
       /**
-       * Panne en cours de tour. Quand le CLI compte réessayer lui-même (flux coupé,
-       * serveur momentanément saturé), rien n'est journalisé : le tour continue et un
-       * bandeau annoncerait un échec qui n'a pas eu lieu. Sinon, c'est la panne qui
-       * explique le silence du fil, et elle doit s'y lire.
+       * Mid-turn failures. When CLI will retry itself (broken streams, temporary overload), journal
+       * nothing because the turn continues and banners would falsely claim failure. Otherwise
+       * explain the thread's silence through its failure event.
        */
       case 'error': {
         const p = params as ErrorNotification
@@ -737,29 +704,29 @@ export class CodexRunner implements AgentRunner {
         if (this.turnId && this.turnId !== p.turn.id) return
         this.turnId = null
         this.clearInterruptWatchdog()
-        // Un tour échoué porte sa cause. C'est ce qui manquait quand un quota épuisé
-        // laissait la conversation s'arrêter sans un mot : le `turn.completed` seul
-        // ne dit rien de plus qu'un tour réussi.
+        // Failed turns carry causes. Exhausted quota previously stopped conversations
+        // silently because turn.completed alone says no more
+        // than a successful completion.
         if (p.turn.status === 'failed' && p.turn.error && this.reportedErrorTurn !== p.turn.id) {
           this.ctx.emit(describeTurnError(p.turn.error), p)
         }
         this.reportedErrorTurn = null
-        // Le tour fini, plus personne n'attend de réponse : une sollicitation encore
-        // ouverte est morte avec lui. La laisser vivante est ce qui bloquait les
-        // conversations interrompues sur une demande d'approbation : le clic
-        // « autoriser » suivant repassait la conversation en `running` pour un tour
-        // qui n'existait plus, et rien ne pouvait plus la faire redescendre.
+        // Once turns finish nobody awaits answers: remaining prompts died with them.
+        // Leaving them open blocked approval-interrupted conversations: later Allow
+        // clicks restored running state for nonexistent turns,
+        // with no subsequent event capable of clearing it.
+        // Close those prompts when the turn ends.
         this.expireTurnRequests(p.threadId, p.turn.id)
         if (p.turn.status !== 'completed') this.asyncQuestions.expireAll()
-        // Filet : une réponse coupée sans steer derrière (interruption, panne) se clôt
-        // avec le tour, avant lui, pour rester dans le même tour du journal.
+        // Fallback: interrupted replies without steering close before the turn's
+        // completion event, preserving their position within the same logged turn.
         this.closeCutAnswers(p)
         this.ctx.emit(
           {
             type: 'turn.completed',
             stopReason: p.turn.status,
-            // L'app-server ne chiffre pas le coût : sur abonnement il ne serait de
-            // toute façon pas facturé, et l'inventer serait pire que l'omettre.
+            // App-server reports no cost, unbilled on subscriptions anyway:
+            // inventing one is worse than omission.
             costUsd: 0,
             ...this.turnUsage.finish(),
           },
@@ -776,16 +743,11 @@ export class CodexRunner implements AgentRunner {
         const window = p.tokenUsage.modelContextWindow
 
         /**
-         * L'occupation du contexte est la taille d'entrée de la **dernière** requête,
-         * pas le cumul du fil.
-         *
-         * `total.totalTokens` additionne tous les tours (12 570 puis 25 497 puis 38 794
-         * sur trois tours mesurés) : rapporté à la fenêtre, il finit par dépasser 100 %
-         * et ne redescend jamais, pas même après une compaction. `last.inputTokens`,
-         * lui, suit le contexte réellement envoyé et inclut déjà la part mise en cache.
-         *
-         * Un tour sans entrée utilisateur, comme une compaction, le rapporte à zéro :
-         * la jauge n'est alors pas mise à jour plutôt que d'annoncer un contexte vide.
+         * Context occupancy is the latest request's input size, not thread totals.
+         * total.totalTokens accumulates turns (12570, 25497, 38794 across three measured turns),
+         * exceeding 100 percent and never decreasing even after compaction. last.inputTokens
+         * follows actual sent context including cache. Turns without user input, such as
+         * compaction, report zero: retain the gauge instead of claiming empty context.
          */
         const used = last.inputTokens
         this.ctx.emit({
@@ -793,8 +755,8 @@ export class CodexRunner implements AgentRunner {
           costUsd: 0,
           inputTokens: last.inputTokens,
           outputTokens: last.outputTokens,
-          // Contrairement à Claude, l'app-server annonce la fenêtre spontanément :
-          // aucune requête supplémentaire n'est nécessaire.
+          // Unlike Claude, app-server reports context windows spontaneously:
+          // no extra request required.
           context: window && used > 0
             ? { usedTokens: used, maxTokens: window, ratio: used / window }
             : null,
@@ -832,8 +794,8 @@ export class CodexRunner implements AgentRunner {
             outputTokens: 0,
             rateLimit: {
               type: describeWindow(p.rateLimits.limitName, window.windowDurationMins, true),
-              // Pas de seuil d'alerte inventé : seul un dépassement annoncé par le CLI
-              // change le statut, le pourcentage parle de lui-même.
+              // Invent no warning thresholds: only CLI-reported exceeded limits
+              // change status; percentages speak for themselves.
               status: p.rateLimits.rateLimitReachedType ? 'rejected' : 'allowed',
               utilization: window.usedPercent / 100,
               resetsAt: window.resetsAt,
@@ -845,9 +807,9 @@ export class CodexRunner implements AgentRunner {
       }
 
       /**
-       * Codex ne nomme pas ses fils tout seul, contrairement à Claude Code : cette
-       * notification n'arrive que si le fil est renommé ailleurs (TUI, `thread/name/set`).
-       * Une conversation Codex garde donc l'extrait de son premier message.
+       * Unlike Claude Code, Codex does not name threads automatically. This notification arrives
+       * only after external renaming (TUI, thread/name/set), so Codex conversations retain their
+       * first-message excerpt.
        */
       case 'thread/name/updated': {
         const p = params as ThreadNameUpdatedNotification
@@ -856,9 +818,9 @@ export class CodexRunner implements AgentRunner {
       }
 
       default: {
-        // Le flux `codex/event/*` est le doublon v1 du flux typé v2.
+        // codex/event notifications duplicate the typed v2 stream with v1 events.
         if (method.startsWith('codex/event/') || NOTIFICATION_POLICY[method] === 'ignore') return
-        // Chaque état reste au journal, mais le rendu remplace le repère précédent.
+        // Journal every state while rendering replaces the previous marker.
         this.notice(method, `Événement Codex : ${method}`, 'info', params,
           `codex-notice:${this.turnId ?? 'session'}:${method}`)
         return
@@ -908,11 +870,11 @@ export class CodexRunner implements AgentRunner {
   }
 
   private subAgentActivity(item: Extract<ThreadItem, { type: 'subAgentActivity' }>, parent: string | null): void {
-    // `interacted` dit qu'un message a été remis à un agent, pas qu'il travaille : la TUI de
-    // Codex l'ignore pour la même raison. Si le message le relance, le `turn/started` de son
-    // fil le réinscrit. Le compter comme un démarrage laissait « en cours » pour toujours un
-    // sous-agent terminé à qui l'on venait d'écrire, ou le fil principal quand un sous-agent
-    // écrit à `/root` : rien ne venait jamais les clore.
+    // interacted means message delivery rather than activity: Codex TUI ignores it
+    // for the same reason. If delivery restarts the agent, its thread's turn/started
+    // re-adds it. Counting delivery as startup left finished subagents running
+    // forever after messages, or marked the main thread active when subagents
+    // wrote to /root, with no later event closing them.
     if (item.kind === 'interacted' || item.agentThreadId === this.threadId) return
     if (item.kind === 'started') {
       this.ensureSubAgent(item.agentThreadId, item.agentPath, parent)
@@ -974,10 +936,10 @@ export class CodexRunner implements AgentRunner {
 
   private onItemStarted(item: ThreadItem, raw: unknown, parent: string | null = null): void {
     if (this.startedItems.has(item.id) || this.completedItems.has(item.id)) return
-    // L'écho d'un message steeré est le signal que la réponse en cours a été coupée :
-    // aucun autre événement ne le dit, et elle ne recevra plus rien.
-    // Le message steeré passe avant la clôture, dans le même ordre que lorsque l'accusé
-    // du steer arrive seul, avant les notifications.
+    // Steered-message echoes signal the current reply was interrupted:
+    // no other event says so and no further reply output arrives.
+    // Journal steered messages before closing replies, matching ordering when
+    // steer acknowledgments arrive alone before notifications.
     if (item.type === 'userMessage' && parent === null) {
       this.flushPendingSteer()
       this.closeCutAnswers(raw)
@@ -988,9 +950,9 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Clôt les réponses abandonnées avec le texte déjà affiché. L'identifiant est marqué
-   * terminé : un `item/completed` tardif ajouterait sinon ses blocs une seconde fois,
-   * le fold du client les concaténant sous le même identifiant.
+   * Close abandoned replies with already displayed text and mark IDs completed. Otherwise late
+   * item/completed events would append blocks again because the client fold concatenates matching
+   * IDs.
    */
   private closeCutAnswers(raw: unknown): void {
     for (const [itemId, text] of this.streamedAnswers) {
@@ -1031,8 +993,8 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Les trois requêtes d'approbation de Codex deviennent le même événement que
-   * `canUseTool` côté Claude : une seule UI de permission couvre les deux CLI.
+   * All three Codex approval requests map to the same event as Claude canUseTool, sharing one
+   * permission UI.
    */
   private async handleServerRequest(method: string, params: unknown, rpcId: RequestId): Promise<unknown> {
     const scope = params as { threadId?: string; turnId?: string } | null
@@ -1080,11 +1042,11 @@ export class CodexRunner implements AgentRunner {
           rpcId, 'Permissions',
           { reason: p.reason, cwd: p.cwd, permissions: p.permissions },
           (allowed, scope): PermissionsRequestApprovalResponse => ({
-            // Refuser, c'est n'accorder aucune permission : le protocole n'a pas de
-            // variante « refus », il attend le profil réellement accordé.
+            // Denying grants no permissions: the protocol has no denial variant,
+            // only the actually granted profile.
             //
-            // Accorder, c'est recopier le profil demandé, à ceci près qu'un volet
-            // non demandé y vaut `null` alors que le profil accordé le veut absent.
+            // Granting copies the requested profile except unrequested sections:
+            // null sections must become absent in granted profiles.
             permissions: allowed
               ? {
                   network: p.permissions.network ?? undefined,
@@ -1116,9 +1078,9 @@ export class CodexRunner implements AgentRunner {
     return new Promise<ToolRequestUserInputResponse>((resolve) => {
       const requestId = this.interactions.requestQuestion(toQuestions(params), (answer) => {
         this.serverRequests.delete(rpcId)
-        // Une annulation ou une expiration renvoie un jeu de réponses vide : le
-        // protocole n'a pas de variante « pas de réponse », et laisser la requête
-        // sans réponse figerait le tour.
+        // Cancellation/expiry returns empty answers because the protocol has no
+        // no-answer variant and leaving RPC requests unanswered
+        // would freeze turns.
         const answers = answer === null || answer.status === 'cancelled' ? {} : answer.answers
         resolve({
           answers: Object.fromEntries(
@@ -1144,11 +1106,9 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Élicitation MCP.
-   *
-   * Auparavant cette requête tombait dans le `default:` qui rejette, donc un serveur MCP
-   * qui réclamait une saisie faisait échouer le tour entier. C'est le seul des trois
-   * canaux d'interaction dont l'absence provoquait une panne et pas seulement un manque.
+   * MCP elicitation. Previously default rejection made input-requesting MCP servers fail entire
+   * turns. This was the only missing interaction channel causing failures rather than merely lost
+   * functionality.
    */
   private askElicitation(
     params: McpServerElicitationRequestParams,
@@ -1158,9 +1118,9 @@ export class CodexRunner implements AgentRunner {
       const requestId = this.interactions.requestElicitation(
         {
           serverName: params.serverName,
-          // `openai/form` est un formulaire dont le schéma n'est pas typé par le
-          // protocole : il passe par le même analyseur, tolérant à ce qu'il ne
-          // reconnaît pas.
+          // openai/form schemas are untyped by the protocol: use the same parser,
+          // tolerant of shapes it does not
+          // recognize.
           mode: params.mode === 'url' ? 'url' : 'form',
           message: params.message,
           url: params.mode === 'url' ? params.url : null,
@@ -1170,8 +1130,8 @@ export class CodexRunner implements AgentRunner {
         (answer) => {
           this.serverRequests.delete(rpcId)
           if (answer === null) {
-            // `cancel` plutôt que `decline` : le serveur MCP distingue un refus
-            // explicite d'une demande qui n'a jamais atteint personne.
+            // Use cancel rather than decline: MCP distinguishes explicit refusal
+            // from requests never delivered to anyone.
             resolve({ action: 'cancel', content: null, _meta: null })
             return
           }
@@ -1191,9 +1151,8 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Codex ne soumet pas de plan à validation : son mode plan produit un item de fil,
-   * pas une requête bloquante. Renvoyer false le dit franchement plutôt que de faire
-   * croire à une décision prise.
+   * Codex does not submit plans for approval: Plan mode produces thread items rather than blocking
+   * requests. Returning false explicitly conveys that no decision was made.
    */
   reviewPlan(_requestId: string, _review: PlanReview): boolean {
     return false
@@ -1208,8 +1167,8 @@ export class CodexRunner implements AgentRunner {
     return new Promise<T>((resolve) => {
       const requestId = this.interactions.requestPermission({ toolName, input }, (decision) => {
         this.serverRequests.delete(rpcId)
-        // Une expiration vaut refus ponctuel : le CLI reçoit la même réponse qu'un
-        // « non », il n'a pas de variante « resté sans réponse ».
+        // Expiry means one-time refusal: send the same response as no because
+        // the CLI has no unanswered variant.
         const allowed = decision !== null && decision.decision === 'allowed'
         resolve(buildResponse(allowed, decision?.scope ?? 'once'))
       })
@@ -1249,8 +1208,8 @@ export class CodexRunner implements AgentRunner {
 
   private async startTurn(input: UserInput[], clientUserMessageId?: string): Promise<void> {
     if (!this.client || !this.threadId) throw new Error('La session Codex est fermée.')
-    // La configuration est passée à chaque tour : c'est le protocole qui le prévoit,
-    // et c'est ce qui rend le changement de réglage immédiat.
+    // Configuration travels per turn as defined by the protocol,
+    // making setting changes immediate.
     const turn = await this.client.callExperimental<TurnStartResponse>('turn/start', {
       threadId: this.threadId,
       clientUserMessageId,
@@ -1262,20 +1221,17 @@ export class CodexRunner implements AgentRunner {
       effort: this.config.reasoningEffort || null,
       collaborationMode: this.collaborationMode(),
     } satisfies ExperimentalTurnStartParams)
-    // Les notifications peuvent précéder la réponse RPC, y compris la clôture.
+    // Notifications can precede RPC responses, including completion.
     if (turn.turn.status === 'inProgress' && !this.completedTurns.has(turn.turn.id)) {
-      // Certaines versions répondent sans notification turn/started.
+      // Some versions respond without turn/started notifications.
       this.beginTurn(turn.turn.id)
     }
   }
 
   /**
-   * Mode de collaboration du tour, ou null quand le modèle réel n'est pas encore connu.
-   *
-   * `settings.model` n'est pas facultatif côté protocole, et le modèle de la
-   * conversation peut valoir la sentinelle « défaut du CLI » : c'est alors celui que
-   * `thread/start` a annoncé qui fait foi. Sans lui, plutôt que d'inventer un
-   * identifiant, on n'envoie pas le mode.
+   * Turn collaboration mode, null until the actual model is known. Protocol settings.model is
+   * required while conversation model may be CLI_DEFAULT; use thread/start's reported model.
+   * Without it omit mode rather than invent model IDs.
    */
   private collaborationMode(): CollaborationMode | null {
     const model = this.config.model || this.threadModel
@@ -1285,8 +1241,8 @@ export class CodexRunner implements AgentRunner {
       mode: this.config.collaborationMode,
       settings: {
         model,
-        // L'effort du mode reste celui de la conversation : le préréglage du CLI en
-        // propose un, mais l'appliquer écraserait en silence le choix de l'utilisateur.
+        // Retain conversation effort rather than CLI preset effort, which would
+        // silently overwrite the user's choice.
         reasoning_effort: this.config.reasoningEffort || null,
         developer_instructions: null,
       },
@@ -1294,16 +1250,10 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Infléchit le tour en cours.
-   *
-   * `expectedTurnId` est une précondition du protocole : la requête échoue si le tour
-   * a changé entre l'affichage et le clic, ce qui est exactement le comportement voulu.
-   * Le tour garde son identifiant, vérifié sur le CLI installé : infléchir ne relance
-   * rien, l'agent change de cap à l'intérieur du tour déjà commencé.
-   *
-   * Le message est journalisé ici, comme dans `send` : l'app-server le renvoie aussi
-   * en écho sous forme d'item `userMessage`, que le traducteur ignore justement pour
-   * ne pas l'écrire deux fois.
+   * Steer the active turn. expectedTurnId is a protocol precondition rejecting turns changed
+   * between display and click, the desired behavior. Installed-CLI probing confirmed stable turn
+   * IDs: steering redirects within the existing turn. Journal messages here like send; app-server
+   * echoes userMessage items ignored by translation to avoid duplicate writes.
    */
   async steer(
     text: string,
@@ -1322,7 +1272,7 @@ export class CodexRunner implements AgentRunner {
         input,
       })
     } catch (error) {
-      // Refusé (le tour venait de finir) : rien n'a été envoyé, rien ne s'écrit.
+      // Rejected after turn completion: nothing sent, nothing journaled.
       this.pendingSteer = null
       throw error
     }
@@ -1343,32 +1293,29 @@ export class CodexRunner implements AgentRunner {
     })
   }
 
-  /**
-   * Compaction. Contrairement à Claude, l'app-server a une requête dédiée : rien ne
-   * transite par le fil de conversation.
-   */
+  /** Compaction uses a dedicated app-server request unlike Claude, without conversation messages. */
   async compact(): Promise<boolean> {
     if (!this.client || !this.threadId) return false
     await this.client.call('thread/compact/start', { threadId: this.threadId })
-    // Rien dans les notifications ne distingue un tour de compaction d'un tour
-    // ordinaire : c'est la requête, ici, qui sait ce qu'elle vient de lancer.
+    // Notifications cannot distinguish compaction from ordinary turns:
+    // only this initiating request knows what it started.
     this.ctx.emit({ type: 'context.compaction_started' })
     return true
   }
 
-  /** L'arrêt ciblé depuis la liste des tâches n'est pas exposé par cet adaptateur. */
+  /** This adapter exposes no targeted stop from task lists. */
   async stopBackgroundTask(): Promise<boolean> {
     return false
   }
 
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'codex') return false
-    // Le home du compte est l'environnement de l'app-server, lu au lancement : changer
-    // de compte relance, et le thread se reprend depuis le nouveau home (ils partagent
-    // le dossier des sessions).
+    // Account home is app-server environment read at startup: account changes
+    // restart the process and resume threads from the new home, sharing
+    // session directories.
     if (config.account !== this.config.account) return false
-    // Contrairement aux plugins de Claude, les racines se remplacent à chaud. Une liste
-    // vide retire la bibliothèque, et `skills/changed` met l'inventaire à jour.
+    // Unlike Claude plugins, roots change live. Empty lists remove the library
+    // and skills/changed updates inventory.
     const skillRoots = this.ctx.skillRoots(config)
     if (this.client && JSON.stringify(skillRoots) !== JSON.stringify(this.skillRoots)) {
       await this.setSkillRoots(skillRoots)
@@ -1378,21 +1325,18 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Repose les mêmes racines, ce qui fait tout relire. L'app-server surveille bien ses
-   * racines, mais sondé, il voit un dossier qui arrive et pas un dossier qui part :
-   * renommer, désactiver ou supprimer laisserait l'ancien nom dans son inventaire.
-   * `skills/changed` suit, que `publishSkills` relaie déjà.
+   * Reapply roots to reread everything. Probing showed app-server detects directory arrivals but
+   * not removal; renaming, disabling, or deleting otherwise leaves old names inventoried. Existing
+   * publishSkills relays subsequent skills/changed.
    */
   async reloadSkillLibrary(): Promise<void> {
     if (this.skillRoots.length > 0) await this.setSkillRoots(this.skillRoots)
   }
 
   /**
-   * Remplace les racines de la bibliothèque. On passe le dossier `skills/` de chaque
-   * plugin : c'est un dossier de skills, ce que l'app-server attend.
-   *
-   * Un échec n'emporte pas la session, qui tourne alors sans la bibliothèque : un CLI
-   * trop ancien pour connaître la méthode ne doit pas devenir inutilisable.
+   * Replace library roots with each plugin's skills directory, the skill-directory shape app-server
+   * expects. Failure leaves sessions usable without libraries so older CLIs lacking this method
+   * remain functional.
    */
   private async setSkillRoots(roots: string[]): Promise<void> {
     if (!this.client) return
@@ -1414,9 +1358,9 @@ export class CodexRunner implements AgentRunner {
 
   async interrupt(): Promise<void> {
     this.asyncQuestions.expireAll()
-    // Sans tour en cours il n'y a rien à interrompre : le protocole exige un turnId.
-    // Le geste reste une sortie pour autant : si la conversation se croit occupée
-    // sans tour ouvert, un retour silencieux la laisserait ainsi pour de bon.
+    // Without active turns there is nothing to interrupt: the protocol requires turnId.
+    // Still provide an escape: returning silently when conversation state is busy
+    // without an open turn would leave it busy permanently.
     if (!this.client || !this.threadId || !this.turnId) {
       this.interactions.expireAll()
       this.ctx.setStatus('idle')
@@ -1425,12 +1369,12 @@ export class CodexRunner implements AgentRunner {
     const interrupted = this.turnId
     await this.client.call('turn/interrupt', { threadId: this.threadId, turnId: this.turnId })
 
-    // Pas de passage à `idle` ici : l'app-server clôt le tour de son côté et envoie
-    // `turn/completed`, qui fait foi. L'annoncer avant ferait partir un message en
-    // file pendant que le tour interrompu se termine encore. Le garde-fou couvre le
-    // cas où cette clôture ne vient jamais (approbation restée sans réponse, par
-    // exemple) : sans lui, la conversation resterait occupée jusqu'à l'échéance
-    // d'inactivité et les messages suivants seraient mis en file pour rien.
+    // Do not set idle here: app-server sends authoritative turn/completed.
+    // Announcing earlier would flush queued messages while interrupted turns
+    // still finish. The fallback covers completions that never arrive,
+    // such as unanswered approval requests; otherwise conversations
+    // would stay busy until idle timeout and subsequent messages
+    // would queue needlessly.
     this.clearInterruptWatchdog()
     this.interruptWatchdog = setTimeout(() => {
       if (this.turnId !== interrupted) return

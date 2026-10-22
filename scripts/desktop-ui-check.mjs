@@ -10,22 +10,21 @@ import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
 
 /**
- * L'application de bureau empaquetée, lancée pour de vrai : son serveur démarre, la
- * fenêtre s'ouvre sans page de connexion, les écrans réservés au serveur hébergé ont
- * disparu, le serveur refuse ce qui ne vient pas de la fenêtre, et quitter l'arrête.
+ * Launch the packaged desktop app for real: server starts, window opens without
+ * sign-in, hosted-server-only screens disappear, requests from outside the window
+ * are refused, quitting stops the server.
  *
- * Il ouvre aussi un terminal, qui doit exécuter une commande dans le shell de la plateforme
- * (PowerShell sous Windows), et joue un script de vérification de tâche planifiée, qui doit
- * passer par le shell POSIX (le bash de Git for Windows). Avec SILLAGE_CHECK_INSTALL=<cli>
- * (ou une liste séparée par des virgules), il installe ces CLI par le npm que l'app
- * embarque, puis vérifie qu'ils sont détectés et répondent à --version.
+ * Also opens a terminal that must execute in the platform shell (PowerShell on
+ * Windows), and runs a scheduled-task check script through POSIX shell (Git for
+ * Windows bash). With SILLAGE_CHECK_INSTALL=<cli> (or comma-separated list), installs
+ * CLIs through bundled npm, then checks detection and --version.
  *
- * Le profil de l'app (base, réglages, journal) va dans un dossier temporaire, par
- * SILLAGE_DESKTOP_USER_DATA. Sous Linux, il faut un écran (xvfb-run) et, là où les
- * namespaces sont restreints (Ubuntu 24.04+), un profil AppArmor pour l'exécutable testé.
+ * App profile (database, settings, log) uses a temporary directory through
+ * SILLAGE_DESKTOP_USER_DATA. Linux needs a display (xvfb-run) and, where namespaces
+ * are restricted (Ubuntu 24.04+), an AppArmor profile for the tested executable.
  *
- * Usage : node scripts/desktop-ui-check.mjs [exécutable]
- * (par défaut celui que produit electron-builder pour la plateforme courante)
+ * Usage: node scripts/desktop-ui-check.mjs [executable]
+ * (defaults to electron-builder output for the current platform)
  */
 const root = fileURLToPath(new URL('../', import.meta.url))
 const executable = process.argv[2] ?? join(root, 'apps/desktop/release', packagedApp())
@@ -36,8 +35,8 @@ await mkdir(shots)
 let app
 
 /**
- * L'app non emballée, là où electron-builder la laisse : son dossier ne porte pas
- * l'architecture pour x64 (`linux-unpacked`, `mac`), mais la porte pour les autres
+ * Unpacked app where electron-builder leaves it: directory omits architecture for
+ * x64 (`linux-unpacked`, `mac`) but includes it otherwise
  * (`linux-arm64-unpacked`, `mac-arm64`).
  */
 function packagedApp() {
@@ -51,8 +50,8 @@ function packagedApp() {
 }
 
 /**
- * Ce qu'un CLI muet répond quand on le lance à la main, sans le délai de la sonde : son
- * lanceur npm, puis sa sortie, à lire dans le journal de la CI.
+ * What a silent CLI returns when run manually without probe timeout: its npm
+ * launcher, then output, for reading in CI logs.
  */
 function diagnose(path) {
   if (/\.cmd$/i.test(path)) console.log(`lanceur ${path} :\n${readFileSync(path, 'utf8')}`)
@@ -64,7 +63,7 @@ function diagnose(path) {
   )
 }
 
-/** Une requête HTTP brute, pour forger `Host` et `Origin` comme le ferait une page hostile. */
+/** Raw HTTP request forging `Host`/`Origin` like a hostile page. */
 function raw(port, path, headers) {
   return new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port, path, headers }, (res) => {
@@ -86,14 +85,15 @@ async function listening(port) {
 try {
   app = await electron.launch({
     executablePath: executable,
+    chromiumSandbox: true,
     env: { ...process.env, SILLAGE_DESKTOP_USER_DATA: userData },
     timeout: 120_000,
   })
   const page = await app.firstWindow({ timeout: 120_000 })
   await page.waitForLoadState('domcontentloaded')
-  // Premier lancement : le compte local ouvert par le lanceur a sa visite armée, et la
-  // fenêtre s'ouvre dessus, sans étape de compte ni de mot de passe. On la passe ; « C'est
-  // prêt » mène à la création du premier projet, dans la coque de l'application.
+  // First launch: launcher-created local account has its tour armed, and window
+  // opens there without account/password steps. Skip it; “Ready” leads to first-project
+  // creation inside the application shell.
   await page.waitForURL(/\/bienvenue$/, { timeout: 60_000 })
   await page.getByRole('heading', { level: 1 }).first().waitFor()
   assert.equal(await page.getByText(/Créer ton compte|Create your account/).count(), 0, 'pas de compte à créer en bureau')
@@ -102,8 +102,11 @@ try {
   await page.getByRole('heading', { level: 1, name: /C’est prêt\.|All set\./ }).waitFor()
   await page.getByRole('button', { name: /Créer mon premier projet|Create my first project/ }).click()
   await page.waitForURL(/\/projects\/new$/)
-  // La coque de l'application, signe que la session est ouverte.
+  // Application shell indicates the session is open.
   await page.getByRole('link', { name: /Paramètres|Settings/ }).first().waitFor({ timeout: 60_000 })
+  // Desktop has one account: project creation does not ask whether it is shared.
+  await page.getByLabel(/^(Nom|Name)$/).first().waitFor()
+  assert.equal(await page.getByText(/^(Visibilité|Visibility)$/).count(), 0, 'pas de choix privé/partagé en bureau')
 
   const url = new URL(page.url())
   assert.equal(url.hostname, '127.0.0.1', `fenêtre sur ${page.url()}`)
@@ -112,7 +115,7 @@ try {
 
   const instance = await page.evaluate(() => fetch('/api/system/instance').then((response) => response.json()))
   assert.equal(instance.profile, 'desktop')
-  assert.deepEqual(instance.capabilities, { passwordAuth: false, webPush: false, pwa: false })
+  assert.deepEqual(instance.capabilities, { passwordAuth: false, webPush: false, pwa: false, sharedProjects: false })
   const version = await page.evaluate(() => fetch('/api/system/version').then((response) => response.json()))
   assert.equal(version.channel, 'desktop')
 
@@ -131,8 +134,8 @@ try {
   }
   await page.screenshot({ path: join(shots, 'settings.png') })
 
-  // Seule la fenêtre parle au serveur : une autre origine, un autre `Host` (DNS
-  // rebinding), une WebSocket ouverte depuis une autre page locale, tout est refusé.
+  // Only the window talks to the server: another origin, another `Host` (DNS
+  // rebinding), or a WebSocket from another local page are all rejected.
   const host = `127.0.0.1:${port}`
   assert.equal(await raw(port, '/api/health', { host }), 200)
   assert.equal(await raw(port, '/api/health', { host: `attacker.example:${port}` }), 403)
@@ -149,8 +152,8 @@ try {
     403,
   )
 
-  // Un terminal tourne dans le shell interactif de la plateforme, par le pty du serveur.
-  // L'expression n'apparaît calculée que dans la sortie, jamais dans l'écho de la saisie.
+  // Terminal runs the interactive platform shell through server pty. The expression
+  // is evaluated only in output, never echoed input.
   const workspace = join(scratch, 'workspace')
   await mkdir(workspace)
   const project = await page.evaluate(async (workspacePath) => {
@@ -192,8 +195,8 @@ try {
   )
   assert.ok(terminal.ok, `le terminal n'a pas exécuté la commande : ${JSON.stringify(terminal.output)}`)
 
-  // Un script de vérification passe par le shell POSIX, le bash de Git for Windows sous
-  // Windows : l'expression arithmétique n'y donne 42 que dans un shell POSIX.
+  // Check scripts use POSIX shell, Git for Windows bash on Windows: the arithmetic
+  // expression yields 42 only in a POSIX shell.
   const check = await page.evaluate(
     (projectId) =>
       fetch(`/api/projects/${projectId}/schedules/check-test`, {
@@ -206,9 +209,9 @@ try {
   assert.match(check.stdout ?? '', /sillage-42/, `script de vérification : ${JSON.stringify(check)}`)
   console.log(`script de vérification : ${check.stdout.trim()}`)
 
-  // Un CLI s'installe par le npm embarqué, et se lance ensuite par son lanceur npm : sous
-  // Windows, un `.cmd` que le serveur doit savoir lire. Un à un : deux installations dans le
-  // même préfixe npm se marcheraient dessus.
+  // CLI installs through bundled npm then runs through its npm launcher: on Windows,
+  // a `.cmd` the server must read. Sequentially: two installs in one npm prefix
+  // would interfere.
   for (const cli of (process.env.SILLAGE_CHECK_INSTALL ?? '').split(',').map((name) => name.trim()).filter(Boolean)) {
     const started = await page.evaluate((name) => fetch(`/api/agents/${name}/install`, { method: 'POST' }).then((r) => r.status), cli)
     assert.equal(started, 202)
@@ -226,7 +229,7 @@ try {
     console.log(`${cli} ${agent.version} installé : ${agent.path}`)
   }
 
-  // La session a transité par le tube du lanceur, jamais par le journal.
+  // Session traveled through launcher pipe, never logs.
   const log = await readFile(join(userData, 'logs/server.log'), 'utf8')
   const cookie = (await page.context().cookies()).find((entry) => entry.name === 'sillage_session')
   assert.ok(cookie, 'cookie de session posé par le lanceur')

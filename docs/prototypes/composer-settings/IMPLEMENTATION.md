@@ -1,53 +1,90 @@
-# Intégration des réglages du composer
+# Composer settings integration
 
-La proposition a été retenue le 17 septembre 2026. L’utilisateur change surtout le modèle et l’effort ; ces deux réglages ont chacun un accès direct, avec leur valeur lisible sur mobile. Le choix se fait en deux interactions. La vue complète reste ouverte entre les modifications et présente les options sans sous-écrans, puis les contrôles MCP.
+The proposal was accepted on September 17, 2026. The user mostly changes model
+and effort; both settings now have direct access with values readable on mobile.
+Choosing takes two interactions. The complete view stays open between changes,
+presenting options without subpages, followed by MCP controls.
 
-[Essayer la version intégrée via Tailscale](http://marldev.tail710c78.ts.net:7521/) — compte de démonstration `alex`, mot de passe `sillage-demo`.
+[Try the integrated version through Tailscale](http://marldev.tail710c78.ts.net:7521/)
+— demo account `alex`, password `sillage-demo`.
 
-Le catalogue, les niveaux disponibles et les replis continuent de venir de `useAgentSettings`. Les valeurs enregistrées hors catalogue restent lisibles. La recherche apparaît au-delà de huit modèles. Un modèle sans effort masque le raccourci correspondant ; le changement de modèle conserve ou adapte l’effort selon ses capacités. Les permissions propres à Claude et Codex, les indications de configuration encore en vigueur et l’inventaire MCP externe sont conservés.
+The catalog, available levels, and fallbacks still come from `useAgentSettings`.
+Saved values outside the catalog remain readable. Search appears above eight models.
+Models without effort hide its shortcut; model changes preserve or adapt effort
+according to capabilities. Claude/Codex-specific permissions, indications of still
+applied configuration, and the external MCP inventory are preserved.
 
-Les permissions étendues et le mode Plan sont signalés par un petit point sur le bouton des réglages, sans rangée supplémentaire sous le modèle et l’effort. Le détail reste disponible dans le panneau, au survol et dans le libellé accessible du bouton.
+Expanded permissions and Plan mode are indicated by a small dot on the settings
+button, without an extra row below model and effort. Details remain in the panel,
+on hover, and in the button's accessible label.
 
-Sur téléphone, les feuilles suivent la hauteur du viewport visuel, y compris lorsque le clavier la réduit. Les raccourcis et options ont une hauteur minimale de 44 px. Fermer restitue le focus au déclencheur ; sur ordinateur, un choix à la souris reprend une saisie déjà commencée au même curseur. Flèches, Début et Fin parcourent les options ; Entrée ou Espace choisit et Échap ferme.
+On phones, sheets follow visual viewport height, including keyboard shrinkage.
+Shortcuts and options have a minimum height of 44 px. Closing returns focus to the
+trigger; on desktop, mouse selection resumes existing typing at the same cursor.
+Arrows, Home, and End navigate options; Enter or Space selects and Escape closes.
 
-## Changements rapides et sauvegarde
+## Rapid changes and saving
 
-Le parcours précédent attendait une relecture de la conversation avant d’afficher la nouvelle configuration. Deux changements rapides pouvaient ainsi repartir de la même ancienne configuration et s’écraser. `useConversationConfig` affiche immédiatement le choix et ordonne les écritures par conversation, même si l’utilisateur change de page. Les réponses anciennes ne remplacent pas les choix récents.
+The previous flow waited for a conversation reread before showing the new
+configuration. Two rapid changes could therefore start from the same old
+configuration and overwrite each other. `useConversationConfig` displays choices
+immediately and orders writes per conversation, even across page navigation.
+Old responses do not replace newer choices.
 
-Envoyer, infléchir et exécuter une commande native depuis le composer attendent l’enregistrement des réglages. Un échec conserve les choix et la saisie, avec une action « Réessayer » disponible dans le composer et dans le panneau complet. Une configuration dont l’enregistrement a échoué ne déclenche pas l’envoi du message.
+Sending, steering, and running native commands from the composer wait for settings
+to save. Failures preserve choices and input, with a “Retry” action in the composer
+and full panel. A configuration that failed to save does not trigger message sending.
 
 ## Validation
 
-- `pnpm test:composer-ui` : vrais composants et vraie file de sauvegarde, API simulée, aucun agent lancé. Vérifie les deux accès directs, les modifications multiples, une réponse lente, l’ordre des écritures, l’attente avant envoi, les erreurs puis la reprise, la conservation du brouillon, les règles propres aux agents et les MCP. Vérifie également un catalogue long, un modèle sauvegardé hors catalogue, une approbation granulaire non modifiable, un changement de conversation pendant la sauvegarde, le focus, le changement de taille et le viewport réduit par le clavier.
-- Dimensions exercées : 1440 × 900, 390 × 844, 320 × 640 et 667 × 375. Pas de débordement horizontal ni d’exception navigateur dans ces parcours.
-- Les permissions étendues et le mode Plan n’augmentent plus la hauteur du composer ; leur détail reste annoncé par le bouton des réglages. Vérifié également sur l’aperçu compilé à 390 et 1440 px.
-- `pnpm test:ui` et `pnpm test:codex-ui` passent, ainsi que le typecheck et le lint web.
-- Build de production dans `/tmp/sillage-composer-app/web`. Les avertissements déjà présents sur `::highlight`, CodeMirror et la taille des bundles restent présents.
-- Aperçu compilé contrôlé avec le vrai catalogue, en clair et sombre. Les interactions de cette vérification visuelle restent dans une nouvelle conversation non envoyée. HTTP 200 et index servi identique au build.
+- `pnpm test:composer-ui`: real components and real save queue, mocked API, no
+  agents started. Checks both direct controls, multiple changes, slow responses,
+  write order, waiting before sending, errors and recovery, preserved drafts,
+  agent-specific rules, and MCP. Also checks a long catalog, saved model outside
+  the catalog, uneditable granular approval, conversation change during save,
+  focus, resizing, and keyboard-reduced viewport.
+- Sizes exercised: 1440 × 900, 390 × 844, 320 × 640, and 667 × 375. No horizontal
+  overflow or browser exceptions on these paths.
+- Expanded permissions and Plan mode no longer increase composer height; their
+  details remain announced by the settings button. Also checked on the compiled
+  preview at 390 and 1440 px.
+- `pnpm test:ui` and `pnpm test:codex-ui` pass, as do web typecheck and lint.
+- Production build in `/tmp/sillage-composer-app/web`. Existing warnings about
+  `::highlight`, CodeMirror, and bundle size remain.
+- Compiled preview checked with the real catalog in light and dark themes.
+  Visual-check interactions stay in a new unsent conversation. HTTP 200 and served
+  index identical to the build.
 
-Le clavier et Safari sur un iPhone physique restent à essayer. La simulation du viewport ne remplace pas ce contrôle.
+The keyboard and Safari on a physical iPhone remain untested. Viewport simulation
+does not replace this check.
 
-## Aperçu
+## Preview
 
-L’unité utilisateur `sillage-composer-app-preview` sert le frontend compilé sur `127.0.0.1:7521` via Vite preview. Son API et ses WebSockets sont dirigés vers l’instance de démonstration existante sur le port 7519, avec sa base séparée. La maquette initiale reste sur le port 7520.
+User unit `sillage-composer-app-preview` serves the compiled frontend at
+`127.0.0.1:7521` through Vite preview. API and WebSockets point to the existing demo
+instance on port 7519 with its separate database. The original mockup stays on 7520.
 
-L’interface compacte a été déployée sur l’instance principale le 17 septembre 2026 à 02:53 (Paris), sans redémarrage du serveur. Le build testé remplace atomiquement le dossier web ; les anciens assets restent disponibles pour les onglets ouverts. Les 40 fichiers contrôlés via l’URL publique correspondent au build, et le PID du serveur est inchangé. La provenance et le dossier de retour arrière sont consignés dans `~/.local/share/sillage/app/deployed-composer-web.json`.
+The compact interface was deployed to the main instance on September 17, 2026, at
+02:53 (Paris), without restarting the server. The tested build atomically replaces
+the web directory; old assets remain for open tabs. The 40 files checked through
+the public URL match the build, and the server PID is unchanged. Provenance and
+rollback directory are recorded in `~/.local/share/sillage/app/deployed-composer-web.json`.
 
-Pour retirer cet aperçu :
+To remove this preview:
 
 ```sh
 systemctl --user stop sillage-composer-app-preview
 sudo tailscale serve --http=7521 off
 ```
 
-![Composer intégré sur téléphone](integrated-mobile-light.png)
+![Integrated composer on a phone](integrated-mobile-light.png)
 
-![Choix de l’effort sur téléphone](integrated-mobile-effort.png)
+![Effort choice on a phone](integrated-mobile-effort.png)
 
-![Vue complète sur téléphone](integrated-mobile-all.png)
+![Complete view on a phone](integrated-mobile-all.png)
 
-![Composer sur ordinateur, thème sombre](integrated-desktop-dark.png)
+![Desktop composer, dark theme](integrated-desktop-dark.png)
 
-![Composer compact sur téléphone avec les permissions étendues](integrated-compact-mobile.png)
+![Compact phone composer with expanded permissions](integrated-compact-mobile.png)
 
-![Composer compact sur ordinateur avec les permissions étendues](integrated-compact-desktop.png)
+![Compact desktop composer with expanded permissions](integrated-compact-desktop.png)

@@ -4,10 +4,8 @@ import { additionDiff, deletionDiff } from '../../diff-lines.js'
 import { toWorkspacePath } from '../paths.js'
 
 /**
- * Ce qu'un `fileChange` a fait d'un fichier.
- *
- * Rien à calculer ici, contrairement à Claude : l'item porte un diff unifié par
- * fichier touché, produit par le CLI au moment où il a appliqué le patch.
+ * fileChange edits to a file. Unlike Claude no calculation is needed: items carry per-file unified
+ * diffs produced by the CLI when applying patches.
  */
 export function describeEdit(completedRaw: unknown, cwd: string, path: string): EditDiffDto {
   const item = (completedRaw as { item?: ThreadItem } | null)?.item
@@ -29,10 +27,9 @@ export function describeEdit(completedRaw: unknown, cwd: string, path: string): 
 }
 
 /**
- * Un `update` porte un vrai diff unifié, auquel il ne manque que l'en-tête
- * `diff --git` qui dit de quel fichier il parle. Une création ou une suppression, en
- * revanche, porte le contenu brut : sans cette distinction, la création s'affichait
- * comme un diff sans aucune section, donc comme rien du tout.
+ * Updates carry real unified diffs missing only identifying diff --git headers. Creations/deletions
+ * carry raw contents; without distinguishing these, creations rendered as empty diffs without
+ * hunks.
  */
 function toPatch(path: string, change: FileUpdateChange): string {
   if (change.kind.type === 'add') return additionDiff(path, change.diff)

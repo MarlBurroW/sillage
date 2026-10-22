@@ -10,12 +10,11 @@ import { registerProjectCreationRoutes } from './projects.js'
 import { registerTaskRoutes } from './tasks.js'
 
 /**
- * L'API publique, sous `/api/v1`.
+ * Public API under `/api/v1`.
  *
- * Elle traduit le vocabulaire de tâche vers les conversations, sans rien remplacer :
- * une tâche est une conversation ordinaire, dans la même table et le même journal,
- * visible et reprenable dans l'interface. Le hook d'authentification de `app.ts`
- * garantit qu'on n'entre ici qu'avec un jeton.
+ * Translates task terminology to conversations without replacing anything: a task
+ * is an ordinary conversation in the same table and log, visible and resumable in
+ * the interface. The authentication hook in `app.ts` ensures entry requires a token.
  */
 export function registerV1Routes(
   app: FastifyInstance,

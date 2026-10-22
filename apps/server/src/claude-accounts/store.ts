@@ -5,18 +5,12 @@ import { claudeSecretKind, type ClaudeAccount, type ClaudeAccountKind } from '@s
 import { decryptValue, encryptValue } from '../secrets/cipher.js'
 import type { ClaudeAccountGauges } from './gauges.js'
 
-/**
- * Secrets des comptes Claude supplémentaires, un par compte et par utilisateur.
- *
- * Le gestionnaire de sessions en lit un au lancement d'une conversation qui le
- * désigne, pour le poser dans l'environnement du CLI ; les routes ne rendent que le
- * libellé et la nature du secret, comme pour les credentials git.
- */
+/** Additional Claude account secrets, per account and user. Session managers load selected secrets at conversation launch into CLI environments; routes return only labels and secret kinds, like git credentials. */
 export class ClaudeAccountStore {
   constructor(
     private readonly db: Db,
     private readonly key: Buffer,
-    /** Absentes, aucun compte n'a de jauge : c'est le cas des tests qui ne la regardent pas. */
+    /** Without gauges no accounts have usage data; useful for tests not exercising it. */
     readonly gauges: ClaudeAccountGauges | null = null,
   ) {}
 
@@ -36,17 +30,17 @@ export class ClaudeAccountStore {
       .map((row) => ({ ...row, gauge: this.gaugeOf(row.id, row.kind) }))
   }
 
-  /** Le compte, s'il appartient bien à cet utilisateur, sans son secret. */
+  /** Account only if owned by this user, without secrets. */
   find(ownerId: string, id: string): ClaudeAccount | undefined {
     return this.list(ownerId).find((account) => account.id === id)
   }
 
-  /** Une clé API n'a pas de forfait : sa jauge n'a pas de sens, même un dossier oublié. */
+  /** API keys have no subscription: even leftover directories cannot give them gauges. */
   private gaugeOf(id: string, kind: ClaudeAccountKind): ClaudeAccount['gauge'] {
     return kind === 'oauth' ? (this.gauges?.describe(id) ?? null) : null
   }
 
-  /** Faux quand le libellé est déjà pris par un autre compte du même utilisateur. */
+  /** False when another account owned by this user already has the label. */
   labelFree(ownerId: string, label: string, exceptId?: string): boolean {
     const existing = this.db
       .select({ id: claudeAccounts.id })
@@ -67,7 +61,7 @@ export class ClaudeAccountStore {
     return { id, label, kind, gauge: null, createdAt: now, updatedAt: now }
   }
 
-  /** Renomme, ou remplace le secret : un jeton expiré se réécrit, il ne se corrige pas. */
+  /** Renames or replaces secrets: expired tokens are rewritten, not corrected. */
   update(ownerId: string, id: string, patch: { label?: string; token?: string }): boolean {
     if (!this.row(ownerId, id)) return false
     this.db
@@ -87,16 +81,12 @@ export class ClaudeAccountStore {
   delete(ownerId: string, id: string): boolean {
     if (!this.row(ownerId, id)) return false
     this.db.delete(claudeAccounts).where(eq(claudeAccounts.id, id)).run()
-    // Sa connexion de jauge part avec lui : un abonnement qu'on retire ne se lit plus.
+    // Remove gauge logins too: removed subscriptions must no longer be queried.
     this.gauges?.forget(id)
     return true
   }
 
-  /**
-   * Le secret en clair et sa nature, pour l'environnement d'une session. Le
-   * propriétaire est exigé avec l'identifiant : une configuration de projet partagée
-   * peut désigner le compte d'un autre, qui ne doit pas se retrouver dans ses sessions.
-   */
+  /** Plaintext secret and kind for session environments. Require owners alongside IDs: shared project configurations may reference others' accounts, which must not enter this user's sessions. */
   resolveToken(ownerId: string, id: string): { label: string; kind: ClaudeAccountKind; token: string } | undefined {
     const row = this.row(ownerId, id)
     if (!row) return undefined

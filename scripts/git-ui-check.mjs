@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,8 +9,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// L'onglet Git sur la démo : vrai serveur, vrai git, base temporaire. Le worktree du
-// chantier « offline cache » porte des changements non commités : c'est le terrain.
+// Demo Git tab: real server and git, temporary database. The “offline cache”
+// worktree has uncommitted changes and serves as the test ground.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -52,7 +52,7 @@ try {
   await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n')
   const env = {
     ...process.env,
-    // Le dépôt de démo n'a pas d'identité : git prend celle de l'environnement.
+    // The demo repository has no identity: git uses the environment's identity.
     GIT_AUTHOR_NAME: 'Alex Demo',
     GIT_AUTHOR_EMAIL: 'alex@example.test',
     GIT_COMMITTER_NAME: 'Alex Demo',
@@ -71,7 +71,7 @@ try {
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
-  // Un historique ramifié assez long pour traverser plusieurs pages du graphe.
+  // Branching history long enough to span multiple graph pages.
   const repoRoot = join(data, 'data', 'demo', 'nimbus')
   const git = (...args) => execFileSync('git', args, { cwd: repoRoot, env, stdio: 'pipe' })
   git('checkout', '-b', 'feat/weather-alerts')
@@ -100,13 +100,13 @@ try {
     return { context, page, errors, hero }
   }
 
-  // Grand écran : le workflow complet.
+  // Desktop: complete workflow.
   const { page, errors, hero } = await session({ width: 1440, height: 900 }, false)
   await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   const panel = page.locator('[data-panel="workspace"]')
   await panel.getByRole('button', { name: 'Git', exact: true }).click()
 
-  // L'en-tête dit la branche du worktree, pas celle du projet.
+  // Header shows the worktree branch, not the project's branch.
   await panel.getByText('feat/offline-cache', { exact: true }).first().waitFor()
   const stagedGroup = panel.getByText('Dans l’index', { exact: true })
   const unstagedGroup = panel.getByText('Hors de l’index', { exact: true })
@@ -114,7 +114,7 @@ try {
   await unstagedGroup.waitFor()
   assert.equal(await stagedGroup.count(), 0, 'Rien dans l’index au départ')
 
-  // Ajouter un fichier à l'index depuis sa ligne.
+  // Stage a file from its row.
   const firstRow = panel.locator('.group\\/change').first()
   const firstPath = await firstRow.getAttribute('data-path')
   await firstRow.hover()
@@ -123,12 +123,12 @@ try {
   await panel.getByText('1 fichier dans l’index', { exact: true }).waitFor()
   console.log(`OK : ${firstPath} ajouté à l’index.`)
 
-  // Le diff d'un fichier se déplie à la demande.
+  // File diff expands on demand.
   const stagedRow = panel.locator(`.group\\/change[data-path="${firstPath}"]`).first()
   await stagedRow.getByRole('button').first().click()
   await panel.locator('table').first().waitFor()
 
-  // Commiter ce qui est dans l'index, au clavier.
+  // Commit staged content through keyboard.
   const message = panel.getByRole('textbox', { name: 'Message du commit', exact: true })
   await message.fill('Vérifier le commit depuis Sillage\n\nDeuxième paragraphe conservé tel quel.')
   await message.press('Control+Enter')
@@ -140,7 +140,7 @@ try {
   assert.equal(await stagedGroup.count(), 0, 'L’index est vide après le commit')
   console.log('OK : commit créé et listé.')
 
-  // Branches : la courante, celle du projet prise par un autre worktree, et une neuve.
+  // Branches: current, project branch occupied by another worktree, and a new one.
   await panel.getByRole('button', { name: /^Branches/ }).click()
   const currentRow = panel.locator('.group\\/branch').filter({ hasText: 'feat/offline-cache' }).first()
   await currentRow.getByText('courante', { exact: true }).waitFor()
@@ -155,7 +155,7 @@ try {
   await panel.locator('.group\\/branch').filter({ hasText: 'ui/check' }).getByText('courante', { exact: true }).waitFor()
   console.log('OK : branche créée et extraite.')
 
-  // Retour, puis suppression de la branche neuve.
+  // Return, then delete the new branch.
   await currentRow.hover()
   await currentRow.getByRole('button', { name: 'Passer sur feat/offline-cache', exact: true }).click()
   await currentRow.getByText('courante', { exact: true }).waitFor()
@@ -167,7 +167,7 @@ try {
   await checkRow.waitFor({ state: 'hidden' })
   console.log('OK : branche supprimée après confirmation.')
 
-  // Stash des changements restants, puis pop.
+  // Stash remaining changes, then pop.
   await panel.getByRole('button', { name: 'Stasher les changements', exact: true }).click()
   await panel.getByRole('textbox', { name: 'Message (facultatif)', exact: true }).fill('Mis de côté par la vérification')
   await panel.getByRole('button', { name: 'Stasher', exact: true }).click()
@@ -180,7 +180,7 @@ try {
   await unstagedGroup.waitFor()
   console.log('OK : stash puis pop, les changements sont revenus.')
 
-  // Les références des commits : la branche courante est posée sur le commit de tête.
+  // Commit references: current branch sits on the head commit.
   await panel.getByRole('button', { name: 'Graphe', exact: true }).click()
   await panel.locator('[data-git-rail]').first().waitFor()
   await panel.getByRole('button', { name: 'Charger des commits plus anciens', exact: true }).scrollIntoViewIfNeeded()
@@ -210,11 +210,11 @@ try {
   await page.screenshot({ path: '/tmp/sillage-git-desktop-dark.png' })
   assert.deepEqual(errors, [])
 
-  // Le dépôt a bien bougé sur le disque : le commit existe dans l'API des commits.
+  // Repository really changed on disk: commit exists in the commits API.
   const commits = await (await page.context().request.get(`${base}/api/conversations/${hero.id}/commits?limit=5`)).json()
   assert.equal(commits.commits[0].subject, 'Vérifier le commit depuis Sillage')
 
-  // Téléphone : tout tient dans 390 px, les actions restent accessibles sans survol.
+  // Phone: everything fits 390 px, actions remain accessible without hover.
   const phone = await session({ width: 390, height: 844 }, true)
   await phone.page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   const mobilePanel = phone.page.locator('[data-panel="workspace"]')
@@ -233,6 +233,64 @@ try {
   assert.ok(width, 'Pas de défilement horizontal au téléphone')
   await phone.page.screenshot({ path: '/tmp/sillage-git-phone.png' })
   assert.deepEqual(phone.errors, [])
+
+
+  // Reproduce thousands of untracked files: all remain accessible, but only one page
+  // creates rows, even after a search or action.
+  const statusUrl = `${base}/api/conversations/${hero.id}/git/status`
+  const { cwd } = await (await page.context().request.get(statusUrl)).json()
+  const bulkDir = join(cwd, 'proposition-classifier')
+  await mkdir(bulkDir, { recursive: true })
+  for (let i = 0; i < 6350; i++) {
+    await writeFile(join(bulkDir, `sample-${String(i).padStart(4, '0')}.txt`), `Contenu ${i}\n`)
+  }
+  for (const [testPage, testPanel, label] of [[page, panel, 'desktop'], [phone.page, mobilePanel, 'phone']]) {
+    let diffRequests = 0
+    testPage.on('request', (request) => { if (request.url().includes('/git/file-diff?')) diffRequests++ })
+    await testPanel.getByRole('button', { name: 'Relire l’état du dépôt', exact: true }).click()
+    const group = testPanel.locator('[data-git-change-group]').filter({ hasText: 'Hors de l’index' })
+    const search = group.getByRole('searchbox', { name: 'Rechercher un fichier modifié…' })
+    await search.waitFor()
+    assert.equal(await group.locator('[data-path]').count(), 100)
+    assert.equal(diffRequests, 0, 'Pas de diff chargé pour les lignes fermées')
+    const first = await group.locator('[data-path]').first().getAttribute('data-path')
+    await group.getByRole('button', { name: 'Suivant', exact: true }).click()
+    assert.notEqual(await group.locator('[data-path]').first().getAttribute('data-path'), first)
+    assert.equal(await group.locator('[data-path]').count(), 100)
+    await group.getByRole('button', { name: 'Précédent', exact: true }).click()
+    assert.equal(await group.locator('[data-path]').first().getAttribute('data-path'), first)
+    await search.fill('sample-6349')
+    const target = group.locator('[data-path="proposition-classifier/sample-6349.txt"]')
+    await target.waitFor()
+    assert.equal(await group.locator('[data-path]').count(), 1)
+    await target.getByRole('button').first().click()
+    await group.getByText('Contenu 6349', { exact: true }).waitFor()
+    await testPage.screenshot({ path: `/var/tmp/sillage-git-large-${label}.png` })
+    assert.ok(await testPanel.evaluate((node) => node.scrollWidth <= node.clientWidth + 1))
+    await search.fill('no-such-file')
+    await group.getByText('Aucun fichier correspondant.', { exact: true }).waitFor()
+    await search.fill('')
+    assert.equal(await group.locator('[data-path]').count(), 100)
+  }
+  // Actions from search target the specified file, not its page.
+  const largeGroup = panel.locator('[data-git-change-group]').filter({ hasText: 'Hors de l’index' })
+  await largeGroup.getByRole('searchbox').fill('sample-6349')
+  const target = largeGroup.locator('[data-path="proposition-classifier/sample-6349.txt"]')
+  await target.hover()
+  await target.getByRole('button', { name: 'Ajouter à l’index', exact: true }).click()
+  await panel.locator('[data-git-change-group]').filter({ hasText: 'Dans l’index' }).getByText('sample-6349.txt', { exact: true }).waitFor()
+  const finalStatus = await (await page.context().request.get(statusUrl)).json()
+  assert.deepEqual(finalStatus.repo.staged.map((change) => change.path), ['proposition-classifier/sample-6349.txt'])
+  // Even during search, “stage all” retains the entire group scope.
+  await largeGroup.getByRole('button', { name: 'Tout ajouter à l’index', exact: true }).click()
+  await largeGroup.waitFor({ state: 'hidden', timeout: 60000 })
+  const allStaged = await (await page.context().request.get(statusUrl)).json()
+  assert.equal(allStaged.repo.unstaged.length, 0)
+  assert.ok(allStaged.repo.staged.length >= 6350)
+  assert.equal(await panel.locator('[data-path]').count(), 100)
+  assert.deepEqual(errors, [])
+  assert.deepEqual(phone.errors, [])
+  console.log('OK : 6 350 fichiers, pagination, recherche, diff et index sur grand écran et téléphone.')
 
   console.log('OK : onglet Git vérifié sur grand écran et au téléphone.')
 } finally {

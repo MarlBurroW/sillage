@@ -5,18 +5,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk'
 import type { SillageEvent } from '@sillage/protocol'
 
-/**
- * Signaux du CLI qui ne sont ni du contenu ni une étape du tour, traduits en avis.
- *
- * Le runner jetait tout ce qu'il ne connaissait pas, et la liste de ce qui tombait dans
- * ce `default` avait grandi avec le CLI : crédits épuisés, API qui retente pendant deux
- * minutes, refus du modèle, refus automatique d'une permission. Chacun expliquait un
- * silence que personne ne pouvait expliquer depuis le fil.
- *
- * Fonctions pures, sans accès au runner : testables sans lancer de CLI, et sans effet
- * possible sur le tour. Les phrases sont rédigées ici, en français, comme celles de
- * l'adaptateur Codex : le journal porte la phrase, pas un code à traduire.
- */
+/** CLI signals outside content/turn steps normalized as notices. Previously ignored defaults hid exhausted credits, two-minute API retries, model rejections and automatic permission denials, leaving unexplained silence. Pure functions independent of runners are testable without CLIs and cannot affect turns. Like Codex notices, French sentences are journaled rather than translated codes. */
 
 type Notice = Extract<SillageEvent, { type: 'agent.notice' }>
 
@@ -37,11 +26,7 @@ function notice(
   }
 }
 
-/**
- * Pourquoi le CLI a jeté la conversation, d'après le `trigger` de `conversation_reset`
- * (SDK 0.3.291). Un motif absent, d'un CLI plus ancien, ou inconnu garde la phrase
- * générale : le CLI demande de traiter chaque remise à zéro de la même façon.
- */
+/** Conversation resets from SDK 0.3.291 `conversation_reset.trigger`. Missing, older or unknown reasons retain generic messages because CLIs require identical handling for all resets. */
 const RESET_MESSAGES: Record<string, string> = {
   clear: 'Contexte effacé : la session repart de zéro.',
   plan_mode_exit: 'Plan validé sur un contexte vidé : la session repart du seul plan.',
@@ -49,12 +34,7 @@ const RESET_MESSAGES: Record<string, string> = {
   onboarding: 'Accueil du CLI relancé : la session repart de zéro.',
 }
 
-/**
- * Traduit un signal, ou rend null pour tout message qui n'en est pas un.
- *
- * Appelée en dernier recours par le runner, après les messages qu'il traite lui-même :
- * ce qui revient null ici est réellement ignoré, et volontairement.
- */
+/** Translates signals or returns null for nonsignals. Runner's last-resort handler after its own cases; null therefore means intentional omission. */
 export function translateSignal(message: SDKMessage): SillageEvent | null {
   if (message.type === 'prompt_suggestion') {
     return { type: 'suggestion.updated', text: message.suggestion }
@@ -66,9 +46,9 @@ export function translateSignal(message: SDKMessage): SillageEvent | null {
 
   switch (message.subtype) {
     case 'notification':
-      // Un même `key` décrit un même état (crédits épuisés, serveur MCP perdu), que le
-      // CLI répète à chaque tour : le rendu remplace l'avis précédent plutôt que
-      // d'empiler la répétition, le journal garde chaque occurrence.
+      // Repeated `key` values describe repeated states (credits exhausted, lost MCP):
+      // rendering replaces notices rather than stacks duplicates,
+      // while journals retain every occurrence.
       return notice(
         'notification',
         message.text,
@@ -85,7 +65,7 @@ export function translateSignal(message: SDKMessage): SillageEvent | null {
         `L'API n'a pas répondu (${status}) : nouvelle tentative ${message.attempt}/${message.max_retries} dans ${delay} s.`,
         'info',
         { error: message.error, status: message.error_status },
-        // Un seul repère pour toute la série : l'écran montre la dernière tentative.
+        // One marker for the series: screens show the latest attempt.
         'api-retry',
       )
     }
@@ -116,8 +96,8 @@ export function translateSignal(message: SDKMessage): SillageEvent | null {
     }
 
     case 'permission_denied': {
-      // Seuls les refus décidés sans personne passent par ici : classifieur du mode
-      // auto, `dontAsk`, règle de refus. Ceux de l'utilisateur ont leur propre événement.
+      // Only automatic denials reach here: auto classifiers, `dontAsk`, deny rules.
+      // User decisions have their own events.
       const reason = message.decision_reason ? ` : ${message.decision_reason}` : ''
       return notice(
         'permission_denied',
@@ -132,8 +112,8 @@ export function translateSignal(message: SDKMessage): SillageEvent | null {
     }
 
     case 'informational':
-      // `info` n'est montré par le CLI qu'en mode transcript : c'est du détail de hook,
-      // pas un avis. Les trois autres niveaux s'adressent à l'utilisateur.
+      // CLI `info` appears only in transcript mode and describes hook details,
+      // not notices. Other three levels address users.
       if (message.level === 'info') return null
       return notice(
         'informational',
@@ -148,10 +128,7 @@ export function translateSignal(message: SDKMessage): SillageEvent | null {
   }
 }
 
-/**
- * Motifs d'indisponibilité du mode rapide, dans les mots de la documentation. Ouvert
- * plutôt qu'exhaustif : un motif inconnu s'affiche par sa clé.
- */
+/** Fast-mode unavailability reasons using documentation terminology. Open-ended: unknown reasons display original keys. */
 const FAST_MODE_REASONS: Record<string, string> = {
   free: 'réservé aux comptes payants',
   preference: 'désactivé dans les préférences du CLI',
@@ -165,14 +142,7 @@ const FAST_MODE_REASONS: Record<string, string> = {
   pending: 'vérification de disponibilité en cours',
 }
 
-/**
- * L'avis à journaliser pour un état du mode rapide, ou null quand il n'y a rien à dire.
- *
- * Rien à dire tant que personne ne l'a demandé et que le CLI le laisse éteint : c'est
- * l'état de toutes les conversations. Demandé et éteint, c'est un empêchement à nommer ;
- * allumé ou en pause, un changement de régime à marquer ; éteint après avoir été allumé,
- * la fin de ce régime. Un seul identifiant, pour que le fil montre le dernier état.
- */
+/** Notice for fast-mode state, or null. Say nothing when unrequested and disabled, the ordinary state. Requested but disabled needs explanation; active/paused marks regime changes; disabling after activation marks its end. One ID displays the latest state. */
 export function describeFastMode(
   state: FastModeState,
   reason: FastModeDisabledReason | null,
@@ -214,7 +184,7 @@ export function describeFastMode(
   }
 }
 
-/** Forme des `plugin_errors` de l'`init`, telle que le SDK 0.3.291 la type. */
+/** `init.plugin_errors` shape typed by SDK 0.3.291. */
 export interface PluginLoadError {
   plugin: string
   type: string
@@ -222,14 +192,7 @@ export interface PluginLoadError {
   path?: string
 }
 
-/**
- * Les plugins que le CLI n'a pas pu charger, d'après l'`init`.
- *
- * Sillage lui passe sa bibliothèque de skills sous forme de plugins : sans cet avis, un
- * plugin refusé fait seulement disparaître ses skills de la liste, sans rien qui dise
- * pourquoi. Un seul identifiant, pour que le fil montre le dernier état ; null quand
- * tout s'est chargé.
- */
+/** Plugins rejected during initialization. Sillage delivers skill libraries as plugins, so silent rejections otherwise merely remove skills without explanation. One notice ID displays latest state; null when all loaded. */
 export function describePluginErrors(errors: PluginLoadError[] | undefined): Notice | null {
   if (!errors || errors.length === 0) return null
   const lines = errors.map((error) => `${error.plugin}${error.path ? ` (${error.path})` : ''} : ${error.message}`)

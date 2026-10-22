@@ -17,10 +17,10 @@ interface SkillsControlProps {
   inputRef: RefObject<HTMLTextAreaElement | null>
 }
 
-/** Le catalogue configuré ne prouve pas que le CLI l'a déjà chargé. */
+/** Configured catalogs do not prove the CLI loaded them. */
 export function SkillsControl({ inputRef, narrow = false, ...props }: SkillsControlProps & { narrow?: boolean }) {
   const t = useTranslate()
-  // Icône seule, comme MCP à côté : le libellé passe dans l'infobulle et le nom accessible.
+  // Icon only like adjacent MCP: tooltip and accessible name carry the label.
   return (
     <SettingsSurface label={t('composer.skills.title')} inputRef={inputRef} disabled={false} spacious
       trigger={<TooltipButton type="button" aria-label={t('composer.skills.title')} title={t('composer.skills.title')} className={toolButtonClass(narrow)}>
@@ -39,8 +39,7 @@ function SkillsInventory({ projectId, config, skills, commands, onClose }: Omit<
   const library = useSkillLibrary(projectId ?? null)
   const configured = (library.data?.skills ?? []).filter((skill) => skill.enabled && !skill.problem)
   const libraryEnabled = config.skillLibrary && library.data?.enabled === true
-  // Claude ne distingue pas les skills des commandes dans son inventaire public, et Grok
-  // les publie lui aussi parmi ses commandes en `/`.
+  // Claude's public inventory mixes skills with commands; Grok also publishes them as slash commands.
   const listsSkillsAsCommands = config.agent === 'claude' || config.agent === 'grok'
   const reported = listsSkillsAsCommands ? commands : skills
   const matches = (item: { name: string; description: string }) =>
@@ -83,7 +82,7 @@ function SkillsInventory({ projectId, config, skills, commands, onClose }: Omit<
   </>
 }
 
-/** Une description longue reste consultable sans allonger tout l'inventaire. */
+/** Long descriptions remain accessible without expanding the entire inventory. */
 function InventoryRow({ name, description, scope }: { name: string; description: string; scope?: string }) {
   return <details className="group border-b border-line py-3 last:border-0">
     <summary className="cursor-pointer rounded-sm outline-offset-4 focus-visible:outline-accent">

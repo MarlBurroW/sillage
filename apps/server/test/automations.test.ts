@@ -89,7 +89,7 @@ test('templates render values, keep unknown markers in preview, and markers are 
 })
 
 test('GitHub signatures verify against the documented test vector', () => {
-  // Exemple de la documentation GitHub « Validating webhook deliveries ».
+  // Example from GitHub's Validating webhook deliveries documentation.
   const secret = "It's a Secret to Everybody"
   const raw = Buffer.from('Hello, World!')
   const header = 'sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17'
@@ -152,8 +152,8 @@ async function harness(t: TestContext) {
   const push = { notify: async (_user: string, payload: { title: string }) => { pushes.push(payload.title) } } as unknown as PushService
   const key = randomBytes(32)
   const receiver = new AutomationReceiver({ db, config }, key, scheduler, push)
-  // Les tests tirent eux-mêmes chaque balayage : un réveil asynchrone ferait la course
-  // avec leurs `tick()` et rendrait les verdicts aléatoires.
+  // Tests drive sweeps themselves: asynchronous wakeups would race with
+  // `tick()` calls and make verdicts nondeterministic.
   scheduler.kick = () => {}
 
   const automation = (settings: Partial<WebhookSettings> = {}, overlapPolicy: 'skip' | 'wait' = 'wait') => {
@@ -207,7 +207,7 @@ test('a signed call that passes the conditions is queued, then fired with its pa
   assert.match(prompt, new RegExp(sessionMarker(launched.conversationId!).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   const thread = db.select().from(conversations).where(eq(conversations.id, launched.conversationId!)).get()!
   assert.equal(thread.scheduleId, task.id)
-  // Le secret de signature ne doit pas finir dans le journal.
+  // Signing secrets must never reach journals.
   assert.equal(JSON.parse(launched.headers)['x-hub-signature-256'], undefined)
 })
 
@@ -277,8 +277,8 @@ test('a call marked by a session deep in a launch chain is refused, like start_s
   assert.equal(fromRoot.body.verdict, 'queued')
   const fromDeep = await call(hook.token, { comment: { body: `ok\n${sessionMarker(grandchild)}` } })
   assert.equal(fromDeep.body.verdict, 'chain_refused')
-  // La marque ailleurs que dans le champ désigné ne compte pas : le label posé par
-  // une personne sur une issue écrite par un agent reste un geste humain.
+  // Markers outside designated fields do not count: human-applied labels on
+  // agent-written issues remain human actions.
   const elsewhere = await call(hook.token, { issue: { body: sessionMarker(grandchild) }, comment: { body: 'humain' } })
   assert.equal(elsewhere.body.verdict, 'queued')
 })
@@ -317,7 +317,7 @@ test('the test bench evaluates a call typed on the page and returns the message 
 
   const passes = await test({
     call: { headers: { 'X-GitHub-Event': 'issues' }, body: JSON.stringify({ action: 'labeled', issue: { number: 7, title: 'Crash' } }) },
-    // Un prompt en cours d'édition, pas encore enregistré.
+    // Unsaved prompt currently being edited.
     prompt: 'Traite #{{payload.issue.number}} {{payload.issue.title}} {{payload.missing}}',
   })
   assert.equal(passes.verdict, 'launch')
@@ -331,6 +331,6 @@ test('the test bench evaluates a call typed on the page and returns the message 
   assert.equal(ignored.verdict, 'filtered')
   assert.deepEqual(ignored.reason, { code: 'filter_rule', params: { index: 1, path: 'payload.action', actual: 'closed' } })
 
-  // Un essai n'écrit rien au journal.
+  // Trials write nothing to journals.
   assert.equal(deliveries(task.id).length, 0)
 })

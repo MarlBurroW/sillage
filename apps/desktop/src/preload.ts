@@ -3,9 +3,7 @@ import type { DesktopBridge, DesktopUpdateState } from '@sillage/protocol'
 import { UPDATE_CHANNELS } from './ipc'
 
 /**
- * Le pont entre la fenêtre et le processus principal, seul passage de l'une à l'autre
- * (la fenêtre n'a ni Node ni `ipcRenderer`). Il ne porte que la mise à jour de l'app, que
- * l'écran « À propos » montre et déclenche.
+ * Expose update actions without giving the sandboxed renderer access to Node or IPC.
  */
 const bridge: DesktopBridge = {
   updates: {

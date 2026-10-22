@@ -1,8 +1,8 @@
-# Unité systemd utilisateur.
-# Installation :
+# User systemd unit.
+# Installation:
 #   cp deploy/sillage.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now sillage
-#   loginctl enable-linger $USER   # pour que le daemon survive à la déconnexion
+#   loginctl enable-linger $USER   # keep daemon running after sign-out
 
 [Unit]
 Description=Sillage, plateforme de developpement agentique
@@ -13,23 +13,22 @@ Type=simple
 WorkingDirectory=%h/projects/sillage
 ExecStart=/usr/bin/node --max-old-space-size=256 %h/projects/sillage/apps/server/dist/main.js
 Environment=NODE_ENV=production
-# Le PATH d'une unite systemd est minimal et n'inclut ni ~/.local/bin ni les binaires
-# npm globaux : sans cette ligne, aucun CLI agent n'est trouvable depuis le service.
+# Systemd unit PATH lacks ~/.local/bin and global npm binaries:
+# without this line, service cannot find agent CLIs.
 Environment=PATH=%h/.local/bin:%h/.npm-global/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
 Restart=on-failure
 RestartSec=5
 
-# Garde-fou, pas reservation : au-dela, le noyau ralentit le service au lieu de laisser
-# la machine entiere manquer de memoire. Les process agent sont ses enfants, et les
-# serveurs de dev qu'ils lancent (vite, bun : plusieurs Go piece) aussi. Un plafond fixe
-# ne convient a aucune machine : a 2G, puis a 12G sur une machine de 62 Go, le
-# ralentissement figeait le daemon lui-meme (etat D) sans rien tuer, et Sillage devenait
-# injoignable. D'ou une part de la RAM installee.
-# Pour une autre valeur : `systemctl --user edit sillage`, puis [Service] MemoryHigh=...
+# Guardrail, not reservation: beyond this, kernel throttles service instead of
+# letting the whole machine run out of memory. Agents and their dev servers
+# (vite, bun: several GB each) are children. Fixed caps suit no machine: 2G,
+# then 12G on a 62 GB machine, froze daemon itself (D state) without killing
+# anything, making Sillage unreachable. Hence a share of installed RAM.
+# Override: `systemctl --user edit sillage`, then [Service] MemoryHigh=...
 MemoryHigh=75%
 
-# Le journal, et non un fichier : `journalctl --user -u sillage` doit suffire au
-# diagnostic, et systemd gere deja rotation et retention.
+# Use journal, not a file: `journalctl --user -u sillage` should suffice for
+# diagnosis, and systemd already manages rotation/retention.
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=sillage

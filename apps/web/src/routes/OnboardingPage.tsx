@@ -42,19 +42,18 @@ const SUBTITLES: Record<OnboardingStepId, MessageKey> = {
   ready: 'onboarding.step.ready.sub',
 }
 
-/** La synchronisation d'apparence vit dans la coquille, absente ici : montée à part, avec un compte. */
+/** Appearance sync normally lives in the shell, absent here: mount it separately when signed in. */
 function AppearanceSyncGate() {
   useAppearanceSync()
   return null
 }
 
 /**
- * La visite de première ouverture.
+ * First-open onboarding.
  *
- * Deux régimes : sans compte en base, la page est la seule de l'application et son
- * état vit en local jusqu'à la création du compte ; avec une session, l'état est celui
- * des réglages du compte, et chaque pas y est écrit pour reprendre où l'on en était,
- * sur cet appareil ou un autre.
+ * Two modes: with no database account, this is the app's only page and state stays local until
+ * account creation. With a session, state lives in account settings and every step is saved for
+ * resuming here or on another device.
  */
 export function OnboardingPage() {
   const t = useTranslate()
@@ -67,7 +66,7 @@ export function OnboardingPage() {
 
   const state = user ? (settings?.onboarding ?? DEFAULT_ONBOARDING) : local
   const profile = instance?.profile ?? 'server'
-  // Sans compte, c'est le premier : il sera administrateur.
+  // With no account, this is the first: it will be an administrator.
   const isAdmin = user?.isAdmin ?? true
   const steps = onboardingSteps({ profile, isAdmin, answers: state.answers })
   const index = Math.min(state.step, steps.length - 1)
@@ -76,9 +75,9 @@ export function OnboardingPage() {
 
   const commit = useRef<(() => Promise<void>) | null>(null)
   /*
-   * La garde porte le nom de l'étape qui l'a posée : celle d'une étape quittée ne vaut
-   * plus, sans qu'un effet ait à l'effacer. Un effet du parent qui remettait la garde à
-   * zéro passait après celui de l'étape montée, et annulait sa première garde (19 oct.).
+   * The guard carries its step name: leaving a step invalidates its guard without an effect
+   * clearing it. A parent reset effect ran after the mounted step's effect and canceled its
+   * initial guard (October 19).
    */
   const currentRef = useRef(current)
   currentRef.current = current
@@ -88,7 +87,7 @@ export function OnboardingPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Une erreur appartient à l'étape qui l'a produite.
+  // An error belongs to the step that produced it.
   useEffect(() => {
     setError(null)
   }, [current])
@@ -100,9 +99,9 @@ export function OnboardingPage() {
   }
   const setAnswers = (patch: Partial<OnboardingAnswers>) => persist({ answers: { ...state.answers, ...patch } })
 
-  // La visite ne crée pas de projet : elle y mène, quand il n'y en a encore aucun. La
-  // destination se joue dans `App` (route /bienvenue hors visite), dès que la visite
-  // n'est plus due : naviguer d'ici arriverait après le démontage de cette page.
+  // Onboarding does not create a project; it leads there when none exist. `App` handles
+  // the destination (`/bienvenue` outside onboarding) once the tour is no longer due:
+  // navigating here would occur after this page unmounts.
   const noProject = projects !== undefined && projects.length === 0
   const finish = () => update.mutate({ ...state, pending: false, step: 0 })
 
@@ -122,8 +121,8 @@ export function OnboardingPage() {
   }
   const later = () => persist({ step: index + 1, visited: visited(current), skipped: [...new Set([...state.skipped, current])] })
   const back = () => persist({ step: Math.max(0, index - 1) })
-  // En arrière librement ; en avant jusqu'à l'étape qui suit la dernière traversée : celle
-  // qu'on avait sous les yeux avant de revenir en arrière, sans la marquer faite.
+  // Freely go back; forward only as far as the step after the last visited one:
+  // the step shown before going back, without marking it complete.
   const reachable = (target: number) =>
     target <= index ||
     state.visited.includes(steps[target] ?? 'ready') ||
@@ -131,7 +130,7 @@ export function OnboardingPage() {
   const goto = (target: number) => {
     if (reachable(target)) persist({ step: target })
   }
-  // Tout sauter mène au récapitulatif ; le compte, lui, est déjà fait.
+  // Skipping everything leads to the recap; the account is already created.
   const skipAll = () => {
     const rest = steps.slice(index, -1).filter((id) => id !== 'account')
     persist({ step: steps.length - 1, visited: visited(...rest), skipped: [...new Set([...state.skipped, ...rest])] })
