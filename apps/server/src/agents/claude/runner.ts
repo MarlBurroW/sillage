@@ -114,8 +114,9 @@ type InlineImageSource = Extract<
 async function buildUserMessage(
   text: string,
   attachments: OutgoingAttachment[],
+  referenceContext?: string | null,
 ): Promise<{ blocks: ContentBlock[]; prompt: PromptBlock[] }> {
-  const { blocks, promptText } = describeOutgoingMessage(text, attachments)
+  const { blocks, promptText } = describeOutgoingMessage(text, attachments, referenceContext)
   const prompt: PromptBlock[] = []
 
   if (promptText) {
@@ -1069,7 +1070,7 @@ export class ClaudeRunner implements AgentRunner {
     _mentions: OutgoingMention[],
     _skills: string[],
   ): Promise<void> {
-    const { blocks, prompt } = await buildUserMessage(text, attachments)
+    const { blocks, prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
 
     this.ctx.emit({
       type: 'message.completed',
@@ -1110,7 +1111,7 @@ export class ClaudeRunner implements AgentRunner {
   ): Promise<boolean> {
     if (!this.session || !this.turnOpen) return false
 
-    const { blocks, prompt } = await buildUserMessage(text, attachments)
+    const { blocks, prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
 
     this.ctx.emit({
       type: 'message.completed',

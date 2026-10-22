@@ -32,7 +32,7 @@ export function Menu({ trigger, children, align = 'end', onOpenChange }: MenuPro
 
 interface MenuItemProps {
   icon?: ReactNode
-  onSelect: () => void
+  onSelect: (event: Event) => void
   tone?: 'neutral' | 'critical'
   /**
    * Keep temporarily unavailable actions visible but disabled, conveying that they exist and will

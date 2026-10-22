@@ -1,6 +1,6 @@
 import { Info, Star, X } from 'lucide-react'
 import { useRef, useState, type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react'
-import type { ConversationDto, ConversationMetrics, WorktreeStatusDto } from '@sillage/protocol'
+import type { ConversationDto, ConversationMetrics } from '@sillage/protocol'
 import { formatBytes } from '../lib/attachments'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
@@ -32,7 +32,7 @@ export function SessionPreview({ conversation, metrics, signals, trigger, childr
   const detailsButton = useRef<HTMLButtonElement>(null)
   const returningFocus = useRef(false)
   const label = t('shell.preview.open', { title: conversation.title })
-  const details = <SessionDetails conversation={conversation} metrics={metrics} signals={signals} tree={tree} git={git} />
+  const details = <SessionDetails conversation={conversation} metrics={metrics} signals={signals} />
   return <>
     <Tooltip label={details} side="right" sideOffset={72} className="session-preview-tooltip" disabled={pinned || disabled}>{trigger}</Tooltip>
     {children}
@@ -65,14 +65,14 @@ function DetailsTrigger({ details, pinned, ...props }: ComponentPropsWithRef<'bu
   return <Tooltip label={details} side="right" className="session-preview-tooltip" disabled={pinned}><button {...props} /></Tooltip>
 }
 
-function SessionDetails({ conversation, metrics, signals, tree, git }: {
+export function SessionDetails({ conversation, metrics, signals }: {
   conversation: ConversationDto
   metrics: ConversationMetrics
   signals: Signal[]
-  tree: WorktreeStatusDto | null
-  git: WorktreePreviewState | null
 }) {
   const t = useTranslate()
+  const tree = useConversationWorktree(conversation)
+  const git: WorktreePreviewState | null = tree?.state ?? (conversation.worktreeId ? 'unknown' : null)
   const { data: projects } = useProjects()
   const project = projects?.find(item => item.id === conversation.projectId)
   const timestamp = new Intl.DateTimeFormat(locale(), { dateStyle: 'medium', timeStyle: 'short' }).format(conversation.updatedAt)

@@ -105,3 +105,17 @@
   .sidebar-account { width: 44px; }
   .sidebar-search kbd { display: none; }
 }
+
+/* Inline references share the sidebar's details, while keeping navigation and touch details distinct. */
+.sg-session-ref { display: inline-flex; max-width: 100%; align-items: center; vertical-align: middle; border: 1px solid var(--sg-line); border-radius: 5px; background: var(--sg-surface); font-size: .8125rem; line-height: 1.5; }
+.sg-session-link { display: inline-flex; min-width: 0; align-items: center; gap: 5px; padding: 1px 5px; color: var(--sg-ink) !important; text-decoration: none !important; }
+.sg-session-link > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 28ch; }
+.sg-session-link > span:first-child { flex-shrink: 0; }
+.sg-session-info { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 24px; min-height: 24px; color: var(--sg-ink-faint); border-left: 1px solid var(--sg-line); }
+.sg-session-link:hover, .sg-session-info:hover { background: var(--sg-accent-wash); }
+.sg-session-link:focus-visible, .sg-session-info:focus-visible { outline: 2px solid var(--sg-accent); outline-offset: 2px; }
+.sg-session-unavailable { color: var(--sg-ink-faint); font-size: .8125rem; }
+@media (pointer: coarse) {
+  .sg-session-info { width: 44px; min-height: 44px; }
+  .sg-session-link { min-height: 44px; }
+}

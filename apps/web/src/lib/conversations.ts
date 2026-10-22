@@ -15,9 +15,10 @@ export const conversationsKey = (projectId: string) => ['conversations', project
 const ALL_CONVERSATIONS_KEY = ['conversations', 'all']
 
 /** All visible conversations for the sidebar. One query rather than one per project. */
-export function useAllConversations() {
+export function useAllConversations(enabled = true) {
   return useQuery({
     queryKey: ALL_CONVERSATIONS_KEY,
+    enabled,
     queryFn: () => api.get<ConversationDto[]>('/api/conversations'),
     staleTime: 10_000,
   })

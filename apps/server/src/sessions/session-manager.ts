@@ -22,6 +22,8 @@ import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
+import { sessionReferenceContext } from '../conversations/references.js'
+import { publicUrlOf } from '../settings/app-settings.js'
 import { projectOverview } from '../agents/overview.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
@@ -745,6 +747,11 @@ export class SessionManager {
         })
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },
+
+      sessionReferenceContext: (text, current) => sessionReferenceContext(
+        this.db, conversation.projectId, text, publicUrlOf(this.db, this.config),
+        builtinMcpEnabled(this.config.mcp.sillageServer, current),
+      ),
 
       // Follow MCP server switches except `strictMcp`, which excludes undeclared
       // servers and therefore concerns tools rather than

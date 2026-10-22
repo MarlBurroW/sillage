@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { automationWebhooks, cards, conversations, projectImages, scheduledTasks, worktrees, type Db } from '@sillage/db'
-import { MAX_SESSION_TITLE_CHARS, sessionMarker, sessionTrailer } from '@sillage/protocol'
+import { MAX_SESSION_TITLE_CHARS, sessionReference, sessionMarker, sessionTrailer } from '@sillage/protocol'
 
 /** Project activity injected at session startup. CLIs lack others' history and may not think to query MCP; this unsolicited overview justifies its token cost. Compute rather than store notes that grow stale with undeserved authority: one fresh query per start. Durable user-managed instructions belong separately in SILLAGE.md (`instructions/store.ts`). Cover the whole project rather than `find_file_edits`' worktree scope because other branches are active work too; identify worktrees per row for agents to distinguish. */
 
@@ -58,7 +58,7 @@ function describe(row: Row, now: number): string {
         : 'terminée'
 
   const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
-  return `- ${row.title}\n  ${row.agent}, ${state}, ${where}, ${size(row.tokens)}, ouverte ${ago(row.createdAt, now)}, dernier échange ${ago(row.updatedAt, now)}`
+  return `- ${row.title} | ${sessionReference(row.id)}\n  ${row.agent}, ${state}, ${where}, ${size(row.tokens)}, ouverte ${ago(row.createdAt, now)}, dernier échange ${ago(row.updatedAt, now)}`
 }
 
 /** Current card and preceding sessions working on it. Unlike neighboring activity, this explains the requested work; agents resuming a fourth session otherwise would miss three previous sessions. */
@@ -158,7 +158,10 @@ function sessionTitleReminder(db: Db, input: OverviewInput): string | null {
 export function projectOverview(db: Db, input: OverviewInput): string | null {
   const now = Date.now()
   // Cards before images: requested work precedes suggestions.
-  const briefing = [sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
+  const referenceReminder = input.sillageMcp
+    ? 'Pour citer une session dans tes réponses, écris session:<id> avec son identifiant Sillage exact : l’interface en fait un lien avec son titre et ses détails. read_conversation accepte cet identifiant ou cette référence pour consulter le fil, archives comprises. Une mention seule ne demande pas d’envoyer un message à un autre agent.'
+    : null
+  const briefing = [referenceReminder, sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
     .filter((part) => part !== null)
     .join('\n\n') || null
 

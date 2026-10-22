@@ -724,7 +724,7 @@ export class GrokRunner implements AgentRunner {
 
   /** Turn body. Grok announces `image: false` but reads image blocks its TUI sends. Mentioned files become `file://` links expanded like `@path`; other attachments remain textual paths. */
   private promptBlocks(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): AcpContentBlock[] {
-    const { promptText } = describeOutgoingMessage(text, attachments)
+    const { promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     const blocks: AcpContentBlock[] = []
     if (promptText) blocks.push({ type: 'text', text: promptText })
     for (const mention of mentions) {
@@ -836,7 +836,7 @@ export class GrokRunner implements AgentRunner {
   /** Steers through `_x.ai/interject`, injecting text at the next safe point (probed). Another `session/prompt` would queue until completion. Attachments use paths. */
   async steer(text: string, attachments: OutgoingAttachment[]): Promise<boolean> {
     if (!this.client || !this.sessionId || !this.turnActive) return false
-    const { blocks, promptText } = describeOutgoingMessage(text, attachments.map((attachment) => ({ ...attachment, inlineImage: false })))
+    const { blocks, promptText } = describeOutgoingMessage(text, attachments.map((attachment) => ({ ...attachment, inlineImage: false })), this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     await this.client.request('_x.ai/interject', { sessionId: this.sessionId, text: promptText })
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     return true

@@ -293,7 +293,7 @@ function ToggleIcon({ group, disabled }: { group: SettingGroup; disabled: boolea
 }
 
 /** Same contents anchored on desktop or shown in a touch sheet. */
-export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, spacious = false }: {
+export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, spacious = false, onCloseAutoFocus: restoreFocus }: {
   label: string
   trigger: ReactNode
   children: (close: (resumeTyping?: boolean) => void) => ReactNode
@@ -301,6 +301,7 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
   disabled: boolean
   quick?: boolean
   spacious?: boolean
+  onCloseAutoFocus?: (event: Event) => void
 }) {
   const [open, setOpen] = useState(false)
   const sheet = useMediaQuery('(max-width: 34rem), (pointer: coarse)')
@@ -334,6 +335,8 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
     if (target) target.scrollIntoView({ block: 'nearest' })
   }
   const onCloseAutoFocus = (event: Event) => {
+    restoreFocus?.(event)
+    if (event.defaultPrevented) return
     // Radix returns focus to the trigger on phones and keyboard interaction.
     if (!sheet && resumeTyping.current && inputRef.current) {
       event.preventDefault()
