@@ -23,9 +23,14 @@ extraResources:
 # No version: `releases/latest/download/<name>` always points to the latest package,
 # so both the site and README can use direct download links.
 artifactName: Sillage-${os}-${arch}.${ext}
-publish: null
-# The app has no native dependencies to rebuild for Electron: server dependencies
-# run under bundled Node, not Electron.
+# Generate app-update.yml and latest*.yml for GitHub discovery. Publishing is handled
+# by the release workflow, after all packages are uploaded (`--publish never` here).
+publish:
+  provider: github
+  owner: MarlBurroW
+  repo: sillage
+  releaseType: release
+# Server native dependencies run under bundled Node, not Electron.
 npmRebuild: false
 
 mac:

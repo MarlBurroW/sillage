@@ -47,3 +47,30 @@ export interface UpdateStatus {
   log: string[]
   error: string | null
 }
+
+/** The main process updates the entire desktop app, including Electron and Node. */
+export type DesktopUpdateState =
+  | { status: 'unsupported'; reason: DesktopUpdateUnsupportedReason }
+  | { status: 'idle'; checkedAt: string | null }
+  | { status: 'checking' }
+  | { status: 'downloading'; version: string; percent: number }
+  /** The .deb needs administrator permission, so it cannot install on quit. */
+  | { status: 'ready'; version: string; installOnQuit: boolean }
+  | { status: 'installing'; version: string }
+  /** macPermission indicates a macOS App Management permission failure. */
+  | { status: 'error'; message: string; version: string | null; macPermission: boolean }
+
+/** Unsupported development build, package format, or read-only/translocated macOS bundle. */
+export type DesktopUpdateUnsupportedReason = 'development' | 'package' | 'location'
+
+/** The preload exposes this narrow API as window.sillageDesktop. */
+export interface DesktopBridge {
+  updates: {
+    state(): Promise<DesktopUpdateState>
+    /** Returns an unsubscribe function. */
+    subscribe(listener: (state: DesktopUpdateState) => void): () => void
+    check(): Promise<void>
+    /** Quit, install the downloaded version and relaunch. */
+    install(): Promise<void>
+  }
+}

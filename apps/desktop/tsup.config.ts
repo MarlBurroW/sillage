@@ -1,9 +1,9 @@
 import { defineConfig } from 'tsup'
 
-// CommonJS lets Electron load the main process directly; a sandboxed preload,
-// when the interface needs one, accepts only this format.
+// The sandboxed preload requires CommonJS. Bundle updater dependencies because
+// the packaged app does not include node_modules.
 export default defineConfig({
-  entry: ['src/main.ts'],
+  entry: ['src/main.ts', 'src/preload.ts'],
   format: ['cjs'],
   target: 'node22',
   platform: 'node',

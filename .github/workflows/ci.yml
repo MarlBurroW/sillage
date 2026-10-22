@@ -29,6 +29,7 @@ jobs:
       - run: pnpm opencode:types:check
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test:desktop-mac-install
       - run: pnpm lint
       - run: pnpm build
 
@@ -75,7 +76,9 @@ jobs:
     # Linux/Windows desktop app packaged like release and really launched: tag
     # output must not be discovered broken on release day. Windows-specific paths
     # (npm launchers, shells) cannot be tested elsewhere. Packages remain run artifacts.
+    # Updates are checked too; macOS can be checked with a manual Desktop workflow run.
     uses: ./.github/workflows/desktop.yml
     with:
       version: v0.0.0-ci
       targets: '["linux-x64", "win-x64"]'
+      update-check: true
