@@ -1,14 +1,13 @@
 <img src="docs/brand/wordmark.svg" alt="Sillage" width="340" height="72">
 
-**Your coding agents. Your machine. Any screen.**
+**Work with your coding agents from your computer or phone.**
 
-Run **Claude Code, Codex, OpenCode and Grok Build** in one workspace. Use your
-existing agent accounts, review changes beside the conversation, and pick up your
-work from your computer or phone.
+Sillage runs Claude Code, Codex, OpenCode and Grok Build in one workspace, using
+your existing agent accounts. You can review their changes beside the conversation.
 
 Use the desktop app on your own computer, or host Sillage Server to reach your
-agents from other devices. Sillage is free and open source; you bring the accounts
-or API credentials your agents need.
+agents from other devices. Sillage is free and open source. You'll need the accounts,
+subscriptions or API credentials required by the agents you use.
 
 [**Get the desktop app**](#install-the-desktop-app) ·
 [**Host your own server**](#install-the-server) ·
@@ -25,9 +24,9 @@ or API credentials your agents need.
 
 ## Why I built Sillage
 
-I wanted one place, on a server I own, that I could open from my phone and keep
-working. Pick up a project wherever I happen to be, without carrying a laptop or
-keeping track of a dozen terminals.
+I wanted one place, on a server I own, where I could pick up a project from my
+phone. I could keep working wherever I happened to be, without carrying a laptop
+or keeping track of a dozen terminals.
 
 I also wanted to keep the agents I already used. Sillage runs their native tools
 and permission flows, and gives them a shared workspace: projects, a board,
@@ -37,7 +36,7 @@ context for the next agent, even when I switch CLIs.
 Claude Code and Codex wrote most of Sillage, much of it from inside Sillage itself,
 often from a phone. The tool and the way I work on it grew together.
 
-— [MarlBurroW](https://github.com/MarlBurroW), creator of Sillage
+[MarlBurroW](https://github.com/MarlBurroW), creator of Sillage
 
 ## Server or desktop
 
@@ -50,8 +49,8 @@ starting a separate workspace.
 
 ### Install the desktop app
 
-**The easiest way to try Sillage.** Download the app, open it and follow the setup
-tour. It helps you choose your agents, permissions and first project.
+Download the app and follow the setup tour. It helps you choose your agents,
+permissions and first project.
 
 | Your computer | Download |
 |---|---|
@@ -60,16 +59,15 @@ tour. It helps you choose your agents, permissions and first project.
 | Debian / Ubuntu | [x64 .deb](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-amd64.deb) · [arm64 .deb](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.deb) |
 | Other Linux | [x64 AppImage](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-x86_64.AppImage) · [arm64 AppImage](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.AppImage) |
 
-**First launch:** the app is not yet signed on Windows or notarized on macOS, so
-your system may ask you to allow it. Windows also needs Git for Windows; on macOS,
+The app is not yet signed on Windows or notarized on macOS, so your system may ask
+you to allow it on first launch. Windows also needs Git for Windows; on macOS,
 install the Command Line Tools if Git is missing. On Ubuntu, use the `.deb`.
 The [desktop guide](docs/desktop.md) walks through these steps and troubleshooting.
 
 ### Install the server
 
-**For your phone, tablet and computers.** Install Sillage on a machine that stays
-on, then connect through your browser. The first-run tour creates your account
-and guides you through setup.
+Install Sillage on a machine that stays on, then connect through your browser.
+The first-run tour creates your account and guides you through setup.
 
 On **Linux with systemd** or **macOS with Apple Silicon**:
 
@@ -81,7 +79,7 @@ The installer sets up a background service. Use the
 [remote access guide](docs/remote-access.md) to connect from other devices through
 a private connection or protected HTTPS address.
 
-Prefer another setup? Follow the guides for [Docker](docs/install.md#docker),
+There are also guides for [Docker](docs/install.md#docker),
 [Windows / WSL2](docs/windows.md) or [Kubernetes](deploy/helm/sillage/README.md).
 The [server installation guide](docs/install.md) also covers prerequisites,
 updates, logs and running from source.
@@ -101,7 +99,7 @@ wherever you are.
     <img src="docs/images/conversation-mobile-light.png" width="300" alt="A Sillage conversation on a phone, with the agent’s changes and message composer">
   </picture>
   <br>
-  <em>Your project, on your phone. Powered by Sillage Server.</em>
+  <em>A conversation in Sillage Server, opened on a phone.</em>
 </p>
 
 ### Pick the agent for the next step
@@ -117,30 +115,28 @@ working folder. Track it on the board, link a GitHub issue, review the diff, and
 see which branches are ready to merge. Enable checkpoints to inspect or undo the
 changes from a turn.
 
-When you need more, there are scheduled tasks, webhook automations, voice
-dictation, full-text search, MCP connections and a task API.
-[Explore the full feature guide →](docs/features.md)
+Sillage also has scheduled tasks, webhook automations, voice dictation, full-text
+search, MCP connections and a task API.
+[Full feature guide](docs/features.md)
 
 ## Your first project
 
-1. **Connect an agent.** Install the CLIs you want from Settings, then sign in with
-   your own agent accounts. Existing sign-ins on the host can be reused.
-2. **Choose a project folder.** Open an existing repository or create a project,
+1. Install the CLIs you want from Settings and sign in with your agent accounts.
+   You can reuse existing sign-ins on the host.
+2. Open an existing repository or create a project in the folder you want to use,
    then start a conversation with the agent of your choice.
-3. **Ask for a useful first step.** Try “Explain how this project is organized” or
+3. Try “Explain how this project is organized” or
    “Help me fix this bug.” Review the files and changes alongside the reply.
 
-Sillage is free and open source. You still need the account, subscription or API
-credentials required by each agent you use. [Account setup →](docs/accounts.md)
+[Account setup](docs/accounts.md) covers sign-in and additional accounts.
 
 ## Instructions and memory
 
-Set your conventions once and let your agents share what they learn.
-**Instructions** hold your rules and preferences; **memory** keeps project
+Instructions hold your rules and preferences. Memory keeps project
 decisions, useful facts and pitfalls across conversations and worktrees.
 
 Manage both in Sillage, or keep project instructions in your existing `AGENTS.md`
-or `CLAUDE.md`. [How shared context works →](docs/features.md#instructions-and-memory)
+or `CLAUDE.md`. [How shared context works](docs/features.md#instructions-and-memory)
 
 ## Go further
 
@@ -163,14 +159,14 @@ the Sillage user who added them, but their files share that same host account.
 
 Desktop stays on your computer, listens on the loopback interface and needs no
 Sillage password. Server also listens on loopback by default: use a VPN or a
-protected HTTPS reverse proxy for remote access, rather than exposing its port
-directly. [Set up remote access →](docs/remote-access.md)
+protected HTTPS reverse proxy for remote access. Do not expose its port directly
+to the Internet. [Set up remote access](docs/remote-access.md)
 
 ## Working on Sillage
 
 The project uses TypeScript, React, Fastify, SQLite and Electron.
 
-Want to explore the code? Start with the [development setup](docs/install.md#from-source-development)
+To run it from source, start with the [development setup](docs/install.md#from-source-development)
 and the [specification](docs/SPEC.md) (in French).
 
 <details>
