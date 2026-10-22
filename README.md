@@ -1,14 +1,14 @@
 <img src="docs/brand/wordmark.svg" alt="Sillage" width="340" height="72">
 
-**A home for your coding agents.**
+**Your coding agents. Your machine. Any screen.**
 
-Use **Claude Code, Codex, OpenCode and Grok Build** in one interface, with your
-conversations, code and Git changes side by side. Work on your computer, or host
-Sillage on a server and pick up where you left off from your phone.
+Run **Claude Code, Codex, OpenCode and Grok Build** in one workspace. Use your
+existing agent accounts, review changes beside the conversation, and pick up your
+work from your computer or phone.
 
-Sillage runs the native agent CLIs on your machine, using your own accounts.
-You get their tools and capabilities in a visual workspace, without having to
-manage a terminal for every conversation.
+Use the desktop app on your own computer, or host Sillage Server to reach your
+agents from other devices. Sillage is free and open source; you bring the accounts
+or API credentials your agents need.
 
 [**Get the desktop app**](#install-the-desktop-app) ·
 [**Host your own server**](#install-the-server) ·
@@ -23,43 +23,30 @@ manage a terminal for every conversation.
   <img src="site/screenshots/hero-light.png" alt="Sillage: a coding conversation with grouped tool calls and a reply in progress">
 </picture>
 
-## What you can do
+## Why I built Sillage
 
-- **Keep the conversation going.** Queue your next request or steer an agent while
-  it works. On Server, close your browser and come back from another device: work
-  continues while the host stays awake and Sillage is running.
-- **See what changed.** Browse files, review diffs and manage Git beside the
-  conversation. Enable checkpoints to inspect or undo the changes from a turn.
-- **Work on several ideas at once.** Give each conversation its own branch and
-  working folder with Git worktrees. See what is in progress, ready to merge or
-  ready to clean up.
-- **Use the right agent for the next step.** Choose your CLI, model and account,
-  or continue a conversation in another CLI with context from the original thread.
-- **Turn ideas into tracked work.** Keep a project board with local cards and
-  linked GitHub issues. Connect conversations to tasks and save common commands
-  as buttons.
-- **Let routine work come to you.** Schedule prompts, or use Server to start
-  sessions from GitHub and other webhooks. Review questions and decisions when
-  an agent needs your input.
+I wanted one place, on a server I own, that I could open from my phone and keep
+working. Pick up a project wherever I happen to be, without carrying a laptop or
+keeping track of a dozen terminals.
 
-There is more when you need it: full-text search, voice dictation, shared skills,
-MCP connections, a task API, and phone notifications with Server.
-[Explore the full feature guide →](docs/features.md)
+I also wanted to keep the agents I already used. Sillage runs their native tools
+and permission flows, and gives them a shared workspace: projects, a board,
+instructions and memory. A session can look up an earlier decision and leave
+context for the next agent, even when I switch CLIs.
+
+Claude Code and Codex wrote most of Sillage, much of it from inside Sillage itself,
+often from a phone. The tool and the way I work on it grew together.
+
+— [MarlBurroW](https://github.com/MarlBurroW), creator of Sillage
 
 ## Server or desktop
 
-Both editions share the same interface and agent integrations. Pick the one that
-matches where you want to work.
+**Desktop** is the app for your own computer. **Server** runs on a machine that
+stays on, so you can reach it from your phone, tablet or another computer.
+Both share the same interface and agent integrations.
 
-| | Desktop | Server |
-|---|---|---|
-| Best for | Working on your own computer | Following your agents from any device |
-| Runs as | An app on Windows, macOS or Linux | A background service or container |
-| Keeps working | While the app runs and the computer is awake | While the host is awake and Sillage is running |
-| Access | This computer, without a Sillage password | Browser or phone, with sign-in and configured remote access |
-
-Each edition keeps its own data. You can try Desktop first; setting up Server
-later starts a separate workspace.
+Each edition keeps its own data. Trying Desktop and later setting up Server means
+starting a separate workspace.
 
 ### Install the desktop app
 
@@ -98,6 +85,41 @@ Prefer another setup? Follow the guides for [Docker](docs/install.md#docker),
 [Windows / WSL2](docs/windows.md) or [Kubernetes](deploy/helm/sillage/README.md).
 The [server installation guide](docs/install.md) also covers prerequisites,
 updates, logs and running from source.
+
+## What you can do
+
+### Take your work with you
+
+Start a conversation at your desk, then follow it from your phone. With Sillage
+Server, closing the browser leaves the agent working while the host stays awake.
+Queue your next request, steer the current turn, or answer a permission request
+wherever you are.
+
+<p align="center">
+  <picture>
+    <source srcset="docs/images/conversation-mobile-dark.png" media="(prefers-color-scheme: dark)">
+    <img src="docs/images/conversation-mobile-light.png" width="300" alt="A Sillage conversation on a phone, with the agent’s changes and message composer">
+  </picture>
+  <br>
+  <em>Your project, on your phone. Powered by Sillage Server.</em>
+</p>
+
+### Pick the agent for the next step
+
+Start with Claude Code, then continue with Codex, OpenCode or Grok Build. The next
+agent receives context from the conversation, and your project’s instructions,
+memory and skills stay available across sessions.
+
+### Keep parallel work organized
+
+Give each task its own conversation and Git worktree: a separate branch and
+working folder. Track it on the board, link a GitHub issue, review the diff, and
+see which branches are ready to merge. Enable checkpoints to inspect or undo the
+changes from a turn.
+
+When you need more, there are scheduled tasks, webhook automations, voice
+dictation, full-text search, MCP connections and a task API.
+[Explore the full feature guide →](docs/features.md)
 
 ## Your first project
 
@@ -144,9 +166,8 @@ Sillage password. Server also listens on loopback by default: use a VPN or a
 protected HTTPS reverse proxy for remote access, rather than exposing its port
 directly. [Set up remote access →](docs/remote-access.md)
 
-## Built with Sillage
+## Working on Sillage
 
-Much of Sillage was built with Claude Code and Codex, from inside Sillage itself.
 The project uses TypeScript, React, Fastify, SQLite and Electron.
 
 Want to explore the code? Start with the [development setup](docs/install.md#from-source-development)
