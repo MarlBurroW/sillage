@@ -1,5 +1,6 @@
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { MemoryMode, ProjectMemoryDto } from '@sillage/protocol'
+import type { MemoryFileDto, MemoryMode, ProjectMemoryDto } from '@sillage/protocol'
 import { api } from './api'
 
 /** Reread on every opening: agents write without using the UI. */
@@ -47,4 +48,27 @@ export function memoryDescription(content: string): string | null {
   const head = /^---\n([\s\S]*?)\n---/.exec(content)?.[1] ?? ''
   const line = head.split('\n').find((candidate) => candidate.startsWith('description:'))
   return line ? line.slice('description:'.length).trim().replace(/^["']|["']$/g, '') : null
+}
+
+
+/** Bound list height without hiding search matches in notes outside the current page. */
+export function useMemoryBrowser(files: MemoryFileDto[] = []) {
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const matches = useMemo(() => {
+    const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    const needle = normalize(query.trim())
+    return needle ? files.filter((file) => normalize(`${file.file}\n${file.content}`).includes(needle)) : files
+  }, [files, query])
+  const pages = Math.max(1, Math.ceil(matches.length / 12))
+  const current = Math.min(page, pages - 1)
+  return {
+    query,
+    search: (value: string) => { setQuery(value); setPage(0) },
+    page: current,
+    pages,
+    setPage,
+    count: matches.length,
+    files: matches.slice(current * 12, (current + 1) * 12),
+  }
 }

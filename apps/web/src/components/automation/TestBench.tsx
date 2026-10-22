@@ -1,5 +1,5 @@
-import { ArrowUpRight, Check, Copy, FlaskConical, Loader, RotateCcw, Terminal } from 'lucide-react'
-import { useId, useState, type ReactNode } from 'react'
+import { ArrowUpRight, Check, Copy, FlaskConical, Loader, RotateCcw } from 'lucide-react'
+import { useId, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type {
   AutomationDeliveryDto,
@@ -48,15 +48,13 @@ export const VERDICTS: Record<DeliveryVerdict, { label: MessageKey; tone: BadgeT
 
 /**
  * Automation test bench beside configuration: load an example or real call, edit, and inspect
- * verdict/prompt/script after each setting change without launching work. The second tab lists real
- * calls, each loadable to the bench with one click.
+ * verdict/prompt/script after each setting change without launching work. The page owns navigation
+ * to the received-call history, so it stays reachable without scrolling through configuration.
  */
 export function TestBench({
   taskId,
-  projectId,
   template,
   deliveries,
-  deliveriesLoading,
   call,
   onCall,
   onLoadSample,
@@ -71,10 +69,8 @@ export function TestBench({
   onInsert,
 }: {
   taskId: string
-  projectId: string
   template: AutomationTemplateId | null
   deliveries: AutomationDeliveryDto[]
-  deliveriesLoading: boolean
   call: BenchCall
   onCall: (call: BenchCall) => void
   onLoadSample: (id: string) => void
@@ -89,70 +85,31 @@ export function TestBench({
   onInsert: (path: string) => void
 }) {
   const t = useTranslate()
-  const [panel, setPanel] = useState<'bench' | 'journal'>('bench')
   const received = deliveries.filter((row) => row.verdict !== 'unauthorized')
 
   return (
     <section className="surface flex min-w-0 flex-col rounded-lg border border-line shadow-card" aria-label={t('automation.bench.title')}>
-      <div role="tablist" className="flex shrink-0 gap-1 border-b border-line p-1.5">
-        <TabButton active={panel === 'bench'} onClick={() => setPanel('bench')} icon={<FlaskConical size={14} />}>
-          {t('automation.bench.title')}
-        </TabButton>
-        <TabButton active={panel === 'journal'} onClick={() => setPanel('journal')} icon={<Terminal size={14} />}>
-          {t('automation.journal.title')}
-          {deliveries.length > 0 ? <span className="ml-1 text-xs text-ink-faint tabular-nums">{deliveries.length}</span> : null}
-        </TabButton>
-      </div>
-
-      {panel === 'bench' ? (
-        <Bench
-          taskId={taskId}
-          template={template}
-          received={received}
-          call={call}
-          onCall={onCall}
-          onLoadSample={onLoadSample}
-          onLoadDelivery={onLoadDelivery}
-          loadingDelivery={loadingDelivery}
-          event={event}
-          result={result}
-          pending={pending}
-          error={error}
-          hasScript={hasScript}
-          onFilter={onFilter}
-          onInsert={onInsert}
-        />
-      ) : (
-        <Journal
-          taskId={taskId}
-          projectId={projectId}
-          deliveries={deliveries}
-          loading={deliveriesLoading}
-          onTry={(id) => {
-            onLoadDelivery(id)
-            setPanel('bench')
-          }}
-        />
-      )}
+      <h2 className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3 text-sm font-semibold">
+        <FlaskConical size={15} />{t('automation.bench.title')}
+      </h2>
+      <Bench
+        taskId={taskId}
+        template={template}
+        received={received}
+        call={call}
+        onCall={onCall}
+        onLoadSample={onLoadSample}
+        onLoadDelivery={onLoadDelivery}
+        loadingDelivery={loadingDelivery}
+        event={event}
+        result={result}
+        pending={pending}
+        error={error}
+        hasScript={hasScript}
+        onFilter={onFilter}
+        onInsert={onInsert}
+      />
     </section>
-  )
-}
-
-function TabButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: ReactNode; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={cx(
-        'flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-sm transition-colors',
-        active ? 'bg-accent-wash font-medium text-ink' : 'text-ink-faint hover:text-ink-soft',
-      )}
-    >
-      {icon}
-      {children}
-    </button>
   )
 }
 
@@ -449,7 +406,7 @@ function ScriptView({ result, hasScript }: { result: WebhookTestResult | undefin
 
 // --- Log --------------------------------------------------------------------------------
 
-function Journal({
+export function AutomationJournal({
   taskId,
   projectId,
   deliveries,

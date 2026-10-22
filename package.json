@@ -51,6 +51,8 @@
     "opencode:types": "node scripts/opencode-types.mjs",
     "opencode:types:check": "node scripts/opencode-types.mjs --check",
     "lint": "pnpm --filter @sillage/web lint",
+    "test:settings-navigation-ui": "node scripts/project-settings-ui-check.mjs",
+    "test:project-settings-ui": "node scripts/project-settings-ui-check.mjs",
     "test:news-ui": "node scripts/news-ui-check.mjs"
   },
   "devDependencies": {

@@ -1,4 +1,6 @@
 import {
+  BookOpen,
+  Brain,
   FileText,
   FolderOpen,
   GitBranch,
@@ -13,7 +15,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   agentKindSchema,
   defaultConfigFor,
@@ -41,6 +43,7 @@ import {
   CardBody,
   CardHeader,
   ChoiceList,
+  cx,
   EmptyState,
   Field,
   Select,
@@ -83,100 +86,102 @@ function visibilityOptions(): SelectOption<ProjectVisibility>[] {
 
 export function ProjectPage() {
   const { projectId } = useParams()
-  const navigate = useNavigate()
   const { data: projects, isPending } = useProjects()
   const { data: conversations } = useAllConversations()
   const t = useTranslate()
-  const sharedProjects = useCapability('sharedProjects')
-
   const project = projects?.find((p) => p.id === projectId)
-
   if (isPending) return null
   if (!project) return <EmptyState title={t('project.notFound')} />
 
-  const projectConversations = (conversations ?? []).filter((c) => c.projectId === project.id)
+  return <ProjectWorkspace key={project.id} project={project} hasConversations={Boolean(conversations?.some((c) => c.projectId === project.id))} />
+}
+
+const PROJECT_SECTIONS = [
+  { key: 'general', icon: FolderOpen },
+  { key: 'agents', icon: SlidersHorizontal },
+  { key: 'instructions', icon: FileText },
+  { key: 'memory', icon: Brain },
+  { key: 'skills', icon: BookOpen },
+  { key: 'worktrees', icon: GitBranch },
+] as const
+
+function ProjectWorkspace({ project, hasConversations }: { project: ProjectDto; hasConversations: boolean }) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [params] = useSearchParams()
+  const sharedProjects = useCapability('sharedProjects')
+  const sections = PROJECT_SECTIONS.filter((section) =>
+    (section.key !== 'agents' || project.isOwner) && (section.key !== 'worktrees' || project.git !== null))
+  // Existing sidebar links use #worktrees; new links carry a shareable category.
+  const requested = params.get('section') ?? (location.hash === '#worktrees' ? 'worktrees' : 'general')
+  const active = sections.find((section) => section.key === requested)?.key ?? 'general'
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([active]))
+  useEffect(() => {
+    setVisited((previous) => previous.has(active) ? previous : new Set([...previous, active]))
+  }, [active])
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 md:p-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
-          <ProjectAvatar project={project} className="size-7" />
-          {project.name}
-        </h1>
-        <div className="flex flex-wrap items-center gap-2">
-          {sharedProjects ? (
-            <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
-              {project.visibility === 'shared'
-                ? t('project.visibility.shared')
-                : t('project.visibility.private')}
-            </Badge>
-          ) : null}
-          {project.git ? (
-            <>
-              <Badge icon={<GitBranch size={11} />}>{project.git.branch}</Badge>
-              {project.git.isDirty ? (
-                <Badge tone="caution">{t('project.git.dirty')}</Badge>
-              ) : (
-                <Badge tone="positive">{t('project.git.clean')}</Badge>
-              )}
-            </>
-          ) : (
-            <Badge>{t('project.git.none')}</Badge>
-          )}
-        </div>
-      </header>
-
-      <Card>
-        <CardHeader
-          title={t('project.board.title')}
-          description={t('project.board.description')}
-          icon={<SquareKanban size={16} />}
-        />
-        <CardBody>
-          <Button variant="ghost" onClick={() => navigate(`/p/${project.id}/board`)}>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b border-line bg-surface px-4 pt-4 md:px-8 md:pt-6">
+        <header className="mx-auto grid w-full max-w-4xl grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pb-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+              <ProjectAvatar project={project} className="size-7 shrink-0" />
+              <span className="truncate">{project.name}</span>
+            </h1>
+          </div>
+          <Button variant="ghost" size="sm" icon={<SquareKanban size={15} />} onClick={() => navigate(`/p/${project.id}/board`)}>
             {t('project.board.open')}
           </Button>
-        </CardBody>
-      </Card>
-
-      <WorktreeBoard projectId={project.id} isRepository={project.git !== null} />
-
-      <Card>
-        <CardHeader
-          title={t('instructions.project.title')}
-          description={t('instructions.project.description')}
-          icon={<FileText size={16} />}
-        />
-        <CardBody>
-          <ProjectInstructions projectId={project.id} />
-        </CardBody>
-      </Card>
-
-      <ProjectMemory projectId={project.id} />
-
-      <ProjectSkills projectId={project.id} isOwner={project.isOwner} />
-
-      {project.isOwner ? (
-        <>
-          <ProjectImage project={project} />
-          <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} />
-          <ProjectSettings
-            projectId={project.id}
-            initialName={project.name}
-            initialPath={project.workspacePath}
-            initialVisibility={project.visibility}
-            turnCheckpoints={project.turnCheckpoints}
-            hasConversations={projectConversations.length > 0}
-            onDeleted={() => navigate('/')}
-          />
-        </>
-      ) : (
-        <Card>
-          <CardBody className="text-sm text-ink-faint">
-            {t('project.shared.readonly', { name: project.ownerName })}
-          </CardBody>
-        </Card>
-      )}
+          <div className="col-span-2 flex flex-wrap items-center gap-2">
+            {sharedProjects ? <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
+              {t(project.visibility === 'shared' ? 'project.visibility.shared' : 'project.visibility.private')}
+            </Badge> : null}
+            {project.git ? <>
+              <Badge icon={<GitBranch size={11} />}>{project.git.branch}</Badge>
+              <Badge tone={project.git.isDirty ? 'caution' : 'positive'}>{t(project.git.isDirty ? 'project.git.dirty' : 'project.git.clean')}</Badge>
+            </> : <Badge>{t('project.git.none')}</Badge>}
+          </div>
+        </header>
+        <nav aria-label={t('project.navigation')} className="mx-auto grid max-w-4xl grid-cols-3 gap-x-1 md:flex">
+          {sections.map(({ key, icon: Icon }) => {
+            const search = new URLSearchParams(params)
+            search.set('section', key)
+            return <Link key={key} to={{ pathname: location.pathname, search: `?${search}` }}
+              aria-current={active === key ? 'page' : undefined}
+              className={cx('flex min-h-11 min-w-0 items-center justify-center gap-1.5 border-b-2 px-2 py-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent md:flex-1 md:text-sm',
+                active === key ? 'border-accent text-accent' : 'border-transparent text-ink-faint hover:bg-sunken hover:text-ink')}>
+              <Icon size={15} className="shrink-0" /><span>{t(`project.section.${key}`)}</span>
+            </Link>
+          })}
+        </nav>
+      </div>
+      {/* Mount on first visit, then keep drafts and scroll positions across categories. */}
+      {sections.map(({ key }) => visited.has(key) || active === key ? (
+        <section key={key} aria-label={t(`project.section.${key}`)} hidden={active !== key}
+          className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain', active !== key && 'hidden')}>
+          <div className="mx-auto flex max-w-3xl flex-col gap-5 p-4 md:p-6">
+            {key === 'general' ? project.isOwner ? <>
+              <ProjectSettings projectId={project.id} initialName={project.name} initialPath={project.workspacePath}
+                initialVisibility={project.visibility} turnCheckpoints={project.turnCheckpoints}
+                hasConversations={hasConversations} onDeleted={() => navigate('/')} />
+              <ProjectImage project={project} />
+            </> : <Card><CardBody className="flex flex-col gap-3 text-sm text-ink-faint">
+              <p>{t('project.shared.readonly', { name: project.ownerName })}</p>
+              <p className="break-all font-mono">{project.workspacePath}</p>
+            </CardBody></Card> : null}
+            {key === 'agents' ? <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} /> : null}
+            {key === 'instructions' ? <Card>
+              <CardHeader title={t('instructions.project.title')} description={t('instructions.project.description')} icon={<FileText size={16} />} />
+              <CardBody><ProjectInstructions projectId={project.id} /></CardBody>
+            </Card> : null}
+            {key === 'memory' ? <ProjectMemory projectId={project.id} /> : null}
+            {key === 'skills' ? <ProjectSkills projectId={project.id} isOwner={project.isOwner} /> : null}
+            {key === 'worktrees' ? <WorktreeBoard projectId={project.id} isRepository={project.git !== null} showEmpty /> : null}
+          </div>
+        </section>
+      ) : null)}
     </div>
   )
 }

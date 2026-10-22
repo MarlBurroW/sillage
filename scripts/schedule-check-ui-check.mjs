@@ -111,6 +111,7 @@ try {
   const dialog = page.getByRole('dialog', { name: 'Nouvelle automatisation', exact: true })
   await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('Veille avec vérification')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
+  await dialog.getByRole('tab', { name: 'Garde-fous', exact: true }).click()
   await dialog.getByRole('button', { name: 'Ajouter une vérification', exact: true }).click()
   // Starting template is a real script mentioning the state directory.
   await dialog.locator('[data-check-section] .cm-content').getByText('SILLAGE_STATE_DIR').first().waitFor()
@@ -139,6 +140,7 @@ try {
   // --- Script finds something: turn starts with its output -----------------------
   await card.getByRole('button', { name: 'Modifier', exact: true }).click()
   const editor = page.getByRole('dialog')
+  await editor.getByRole('tab', { name: 'Garde-fous', exact: true }).click()
   await typeScript(editor, 'echo "Version 9.9 publiée"')
   await editor.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await editor.waitFor({ state: 'hidden' })
@@ -208,6 +210,7 @@ try {
   // --- Form on a phone ----------------------------------------------------------
   await card.getByRole('button', { name: 'Modifier', exact: true }).click()
   const mobileForm = page.getByRole('dialog')
+  await mobileForm.getByRole('tab', { name: 'Garde-fous', exact: true }).click()
   await mobileForm.locator('[data-check-section]').scrollIntoViewIfNeeded()
   assert.equal(await mobileForm.evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'check-form-mobile.png') })

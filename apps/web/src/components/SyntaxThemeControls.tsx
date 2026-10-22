@@ -35,12 +35,12 @@ export function SyntaxThemeControls() {
   const applies = theme !== 'dark-contrast'
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="@container flex flex-col gap-3">
       {/*
        * Grid rather than wrapping preserves card widths and prevents selection from redistributing
        * other palettes.
        */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 @min-[24rem]:grid-cols-3 @min-[42rem]:grid-cols-5">
         {SYNTAX_THEMES.map((option) => (
           <button
             key={option}
@@ -51,30 +51,29 @@ export function SyntaxThemeControls() {
             data-theme={theme === 'dark-contrast' ? 'dark' : theme}
             data-syntax={option}
             className={cx(
-              'flex items-center gap-2 rounded-md border px-2.5 py-2 transition-colors',
+              'flex min-w-0 flex-col items-stretch gap-1.5 rounded-md border px-2.5 py-2 transition-colors',
               syntax === option
                 ? 'border-accent bg-accent-wash text-ink'
                 : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
             )}
           >
-            <span className="flex shrink-0 gap-1">
-              {SWATCHES.map((role) => (
-                <span
-                  key={role}
-                  aria-hidden
-                  className="size-2.5 rounded-full"
-                  style={{ background: `var(--sg-syn-${role})` }}
-                />
-              ))}
+            <span className="flex items-center justify-between gap-1">
+              <span className="flex shrink-0 gap-1">
+                {SWATCHES.map((role) => (
+                  <span
+                    key={role}
+                    aria-hidden
+                    className="size-2.5 rounded-full"
+                    style={{ background: `var(--sg-syn-${role})` }}
+                  />
+                ))}
+              </span>
+              <Check size={13} className={cx('shrink-0 text-accent', syntax === option ? '' : 'invisible')} />
             </span>
-            <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
+            {/* Names stay below swatches so narrow settings panels do not reduce them to ellipses. */}
+            <span className="truncate text-left text-xs font-medium">
               {t(SYNTAX_THEME_LABELS[option])}
             </span>
-            {/* Reserve checkmark space even when absent to prevent click-time layout shifts. */}
-            <Check
-              size={13}
-              className={cx('shrink-0 text-accent', syntax === option ? '' : 'invisible')}
-            />
           </button>
         ))}
       </div>

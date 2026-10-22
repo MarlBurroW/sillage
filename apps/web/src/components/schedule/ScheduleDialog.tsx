@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { CalendarClock, Webhook, X } from 'lucide-react'
-import { useId, useMemo, useState } from 'react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
 import {
   DEFAULT_CHECK_TIMEOUT_SECONDS,
   DEFAULT_DECISION_SETTINGS,
@@ -10,6 +10,7 @@ import {
   MAX_SCHEDULE_DURATION_MINUTES,
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_PROMPT_CHARS,
+  MAX_SCHEDULE_INTERVAL_MINUTES,
   MIN_SCHEDULE_DURATION_MINUTES,
   AUTOMATION_TEMPLATES,
   agentKindSchema,
@@ -34,7 +35,7 @@ import { Banner, Button, Field, IconButton, Select, cx } from '../ui'
 import { cronToHuman } from '../../lib/cron'
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { TEMPLATE_LABELS } from '../../lib/automations'
-import { formatDateTime, useCreateSchedule, useUpdateSchedule, type ScheduleInput } from '../../lib/schedules'
+import { describeCadence, formatDateTime, useCreateSchedule, useUpdateSchedule, type ScheduleInput } from '../../lib/schedules'
 import { useUserSettings } from '../../lib/user-settings'
 
 /**
@@ -43,6 +44,15 @@ import { useUserSettings } from '../../lib/user-settings'
  */
 
 type CadenceKind = Exclude<ScheduleCadence['kind'], 'webhook'>
+type Section = 'request' | 'calendar' | 'agent' | 'safeguards'
+
+const SECTION_LABELS: Record<Section, MessageKey> = {
+  request: 'schedule.form.section.request',
+  calendar: 'schedule.form.section.calendar',
+  agent: 'schedule.form.section.agent',
+  safeguards: 'schedule.form.section.safeguards',
+}
+
 type Trigger = 'schedule' | 'webhook'
 type IntervalUnit = 'minutes' | 'hours' | 'days'
 
@@ -83,6 +93,8 @@ export function ScheduleDialog({
 }) {
   const t = useTranslate()
   const promptId = useId()
+  const sectionId = useId()
+  const [section, setSection] = useState<Section>('request')
   const create = useCreateSchedule(project.id)
   const update = useUpdateSchedule()
   const mutation = task ? update : create
@@ -219,15 +231,33 @@ export function ScheduleDialog({
     { value: 'once', label: t('schedule.form.kind.once') },
   ]
 
+  const sections: Section[] = trigger === 'schedule'
+    ? ['request', 'calendar', 'agent', 'safeguards']
+    : ['request', 'agent', 'safeguards']
+  const invalidSection: Section | null = !name.trim() || !prompt.trim() ? 'request'
+    : !cadence || (trigger === 'schedule' && nextRun === null) ? 'calendar'
+      : !durationValid || !checkValid || !decisionSettingsValid(decisionSettings) ? 'safeguards' : null
+  // Keep editors, test results and scroll positions alive when moving between sections.
+  const panel = (value: Section, children: ReactNode) => (
+    <div
+      id={`${sectionId}-${value}-panel`}
+      role={webhookCreation ? undefined : 'tabpanel'}
+      aria-labelledby={webhookCreation ? undefined : `${sectionId}-${value}-tab`}
+      tabIndex={0}
+      hidden={section !== value}
+      className={cx('min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain p-5 sm:p-6', section === value ? 'flex' : 'hidden')}
+    >{children}</div>
+  )
+
   return (
     <Dialog.Root open onOpenChange={(next) => { if (!next && !mutation.isPending) onClose() }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/35 backdrop-blur-sm" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[95dvh] flex-col rounded-t-2xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(640px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+          className={cx(!webhookCreation && 'h-[min(760px,95dvh)]', "surface fixed inset-x-0 bottom-0 z-50 flex max-h-[95dvh] flex-col rounded-t-2xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(640px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl")}
         >
-          <header className="flex items-center justify-between border-b border-line px-5 py-4">
+          <header className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
             <Dialog.Title className="text-lg font-semibold">
               {t(task ? 'schedule.form.editTitle' : 'automation.form.createTitle')}
             </Dialog.Title>
@@ -236,242 +266,289 @@ export function ScheduleDialog({
             </IconButton>
           </header>
 
-          <form className="flex min-h-0 flex-col" onSubmit={(event) => { event.preventDefault(); submit() }}>
-            <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:p-6">
-              {task ? null : (
-                <fieldset className="flex flex-col gap-2">
-                  <legend className="mb-1.5 text-sm font-medium text-ink-soft">{t('automation.form.trigger')}</legend>
-                  <div role="radiogroup" aria-label={t('automation.form.trigger')} className="grid gap-2 sm:grid-cols-2">
-                    {([
-                      { value: 'schedule', icon: <CalendarClock size={16} />, title: t('automation.form.trigger.schedule'), hint: t('automation.form.trigger.scheduleHint') },
-                      { value: 'webhook', icon: <Webhook size={16} />, title: t('automation.form.trigger.webhook'), hint: t('automation.form.trigger.webhookHint') },
-                    ] as const).map((entry) => (
-                      <button
-                        key={entry.value}
-                        type="button"
-                        role="radio"
-                        aria-checked={trigger === entry.value}
-                        onClick={() => chooseTrigger(entry.value)}
-                        className={cx(
-                          'flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-left transition-colors',
-                          trigger === entry.value ? 'border-accent bg-accent-wash' : 'border-line hover:border-line-strong',
-                        )}
-                      >
-                        <span className={cx('mt-0.5 shrink-0', trigger === entry.value ? 'text-accent' : 'text-ink-faint')}>{entry.icon}</span>
-                        <span className="min-w-0">
-                          <span className="block text-sm font-medium text-ink">{entry.title}</span>
-                          <span className="block text-xs text-ink-faint">{entry.hint}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-              )}
+          {webhookCreation ? null : (
+            <div role="tablist" aria-label={t('schedule.form.sections')} className="grid shrink-0 grid-cols-4 gap-x-1 border-b border-line px-3 sm:gap-x-3 sm:px-5">
+              {sections.map((value, index) => (
+                <button
+                  key={value}
+                  id={`${sectionId}-${value}-tab`}
+                  type="button"
+                  role="tab"
+                  aria-selected={section === value}
+                  aria-controls={`${sectionId}-${value}-panel`}
+                  tabIndex={section === value ? 0 : -1}
+                  onClick={() => setSection(value)}
+                  onKeyDown={(event) => {
+                    const next = event.key === 'Home' ? 0 : event.key === 'End' ? sections.length - 1
+                      : event.key === 'ArrowRight' ? (index + 1) % sections.length
+                        : event.key === 'ArrowLeft' ? (index + sections.length - 1) % sections.length : null
+                    if (next === null) return
+                    event.preventDefault()
+                    setSection(sections[next]!)
+                    document.getElementById(`${sectionId}-${sections[next]}-tab`)?.focus()
+                  }}
+                  className={cx('min-h-11 border-b-2 text-xs font-medium transition-colors sm:text-sm', section === value ? 'border-accent text-accent' : 'border-transparent text-ink-faint hover:text-ink')}
+                >
+                  {t(SECTION_LABELS[value])}
+                </button>
+              ))}
+            </div>
+          )}
+          <form noValidate className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); submit() }}>
+              {panel('request', <>
+                  {task ? null : (
+                    <fieldset className="flex flex-col gap-2">
+                      <legend className="mb-1.5 text-sm font-medium text-ink-soft">{t('automation.form.trigger')}</legend>
+                      <div role="radiogroup" aria-label={t('automation.form.trigger')} className="grid gap-2 sm:grid-cols-2">
+                        {([
+                          { value: 'schedule', icon: <CalendarClock size={16} />, title: t('automation.form.trigger.schedule'), hint: t('automation.form.trigger.scheduleHint') },
+                          { value: 'webhook', icon: <Webhook size={16} />, title: t('automation.form.trigger.webhook'), hint: t('automation.form.trigger.webhookHint') },
+                        ] as const).map((entry) => (
+                          <button
+                            key={entry.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={trigger === entry.value}
+                            onClick={() => chooseTrigger(entry.value)}
+                            className={cx(
+                              'flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-left transition-colors',
+                              trigger === entry.value ? 'border-accent bg-accent-wash' : 'border-line hover:border-line-strong',
+                            )}
+                          >
+                            <span className={cx('mt-0.5 shrink-0', trigger === entry.value ? 'text-accent' : 'text-ink-faint')}>{entry.icon}</span>
+                            <span className="min-w-0">
+                              <span className="block text-sm font-medium text-ink">{entry.title}</span>
+                              <span className="block text-xs text-ink-faint">{entry.hint}</span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                  )}
 
-              {trigger === 'webhook' && !task ? (
-                <Select
-                  label={t('automation.form.template')}
-                  value={template}
-                  onChange={chooseTemplate}
-                  options={[
-                    { value: 'generic', label: t('automation.template.generic'), hint: t('automation.template.genericHint') },
-                    ...AUTOMATION_TEMPLATES.map((entry) => ({
-                      value: entry.id,
-                      label: t(TEMPLATE_LABELS[entry.id].title),
-                      hint: t(TEMPLATE_LABELS[entry.id].description),
-                    })),
-                  ]}
-                />
-              ) : null}
-
-              {webhookCreation ? (
-                <p className="text-xs text-ink-faint">{t('automation.form.next')}</p>
-              ) : null}
-
-              <Field
-                label={t('schedule.form.name')}
-                placeholder={t(trigger === 'webhook' ? 'automation.form.namePlaceholder' : 'schedule.form.namePlaceholder')}
-                maxLength={MAX_SCHEDULE_NAME_CHARS}
-                value={name}
-                autoFocus={!task}
-                onChange={(event) => setName(event.target.value)}
-              />
-
-              {webhookCreation ? null : (
-                <>
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor={promptId} className="text-sm font-medium text-ink-soft">
-                  {t('schedule.form.prompt')}
-                </label>
-                <textarea
-                  id={promptId}
-                  rows={7}
-                  maxLength={MAX_SCHEDULE_PROMPT_CHARS}
-                  value={prompt}
-                  placeholder={t('schedule.form.promptPlaceholder')}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  className="rounded-md border border-line bg-sunken px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus:border-accent"
-                />
-                <p className="text-xs text-ink-faint">{t(trigger === 'webhook' ? 'automation.form.promptHint' : 'schedule.form.promptHint')}</p>
-              </div>
-
-              {trigger === 'schedule' ? <fieldset className="flex flex-col gap-2">
-                <legend className="mb-1.5 text-sm font-medium text-ink-soft">{t('schedule.form.cadence')}</legend>
-                <div role="radiogroup" aria-label={t('schedule.form.cadence')} className="flex gap-1 rounded-md border border-line bg-sunken p-1">
-                  {kinds.map((entry) => (
-                    <button
-                      key={entry.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={kind === entry.value}
-                      onClick={() => setKind(entry.value)}
-                      className={cx(
-                        'min-h-9 flex-1 rounded px-2 text-sm transition-colors',
-                        kind === entry.value ? 'bg-surface-high font-medium text-ink' : 'text-ink-faint hover:text-ink-soft',
-                      )}
-                    >
-                      {entry.label}
-                    </button>
-                  ))}
-                </div>
-
-                {kind === 'interval' ? (
-                  <div className="flex items-end gap-2">
-                    <div className="w-28">
-                      <Field
-                        label={t('schedule.form.every')}
-                        type="number"
-                        min={1}
-                        value={intervalValue}
-                        onChange={(event) => setIntervalValue(event.target.value)}
-                      />
-                    </div>
+                  {trigger === 'webhook' && !task ? (
                     <Select
-                      className="flex-1"
-                      value={intervalUnit}
-                      onChange={setIntervalUnit}
-                      placeholder={t('schedule.form.unit')}
+                      label={t('automation.form.template')}
+                      value={template}
+                      onChange={chooseTemplate}
                       options={[
-                        { value: 'minutes', label: t('schedule.form.unit.minutes') },
-                        { value: 'hours', label: t('schedule.form.unit.hours') },
-                        { value: 'days', label: t('schedule.form.unit.days') },
+                        { value: 'generic', label: t('automation.template.generic'), hint: t('automation.template.genericHint') },
+                        ...AUTOMATION_TEMPLATES.map((entry) => ({
+                          value: entry.id,
+                          label: t(TEMPLATE_LABELS[entry.id].title),
+                          hint: t(TEMPLATE_LABELS[entry.id].description),
+                        })),
                       ]}
                     />
-                  </div>
-                ) : null}
+                  ) : null}
 
-                {kind === 'cron' ? (
-                  <>
-                    <Field
-                      label={t('schedule.form.cron')}
-                      value={cron}
-                      spellCheck={false}
-                      error={cadence ? undefined : t('archiving.schedule.invalid')}
-                      onChange={(event) => setCron(event.target.value)}
-                    />
-                    <div className="flex flex-wrap gap-1.5">
-                      {CRON_PRESETS.map((preset) => (
+                  {webhookCreation ? (
+                    <p className="text-xs text-ink-faint">{t('automation.form.next')}</p>
+                  ) : null}
+
+                  <Field
+                    label={t('schedule.form.name')}
+                    placeholder={t(trigger === 'webhook' ? 'automation.form.namePlaceholder' : 'schedule.form.namePlaceholder')}
+                    maxLength={MAX_SCHEDULE_NAME_CHARS}
+                    value={name}
+                    autoFocus={!task}
+                    onChange={(event) => setName(event.target.value)}
+                  />
+
+                  {webhookCreation ? null : (
+                    <div className="flex flex-col gap-1.5">
+                      <label htmlFor={promptId} className="text-sm font-medium text-ink-soft">
+                        {t('schedule.form.prompt')}
+                      </label>
+                      <textarea
+                        id={promptId}
+                        rows={7}
+                        maxLength={MAX_SCHEDULE_PROMPT_CHARS}
+                        value={prompt}
+                        placeholder={t('schedule.form.promptPlaceholder')}
+                        onChange={(event) => setPrompt(event.target.value)}
+                        className="rounded-md border border-line bg-sunken px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus:border-accent"
+                      />
+                      <details className="text-xs text-ink-faint">
+                        <summary className="cursor-pointer py-1 text-ink-soft">{t('schedule.form.promptContext')}</summary>
+                        <p className="mt-1">{t(trigger === 'webhook' ? 'automation.form.promptHint' : 'schedule.form.promptHint')}</p>
+                      </details>
+                    </div>
+
+                  )}
+              </>)}
+              {webhookCreation ? null : <>
+                {trigger === 'schedule' ? panel('calendar', <>
+                  <fieldset className="flex flex-col gap-2">
+                    <legend className="mb-1.5 text-sm font-medium text-ink-soft">{t('schedule.form.cadence')}</legend>
+                    <div role="radiogroup" aria-label={t('schedule.form.cadence')} className="flex gap-1 rounded-md border border-line bg-sunken p-1">
+                      {kinds.map((entry) => (
                         <button
-                          key={preset.expression}
+                          key={entry.value}
                           type="button"
-                          onClick={() => setCron(preset.expression)}
+                          role="radio"
+                          aria-checked={kind === entry.value}
+                          onClick={() => setKind(entry.value)}
                           className={cx(
-                            'rounded-md border px-2 py-0.5 text-xs transition-colors',
-                            preset.expression === cron
-                              ? 'border-accent bg-accent-wash text-ink'
-                              : 'border-line text-ink-faint hover:border-line-strong hover:text-ink-soft',
+                            'min-h-9 flex-1 rounded px-2 text-sm transition-colors',
+                            kind === entry.value ? 'bg-surface-high font-medium text-ink' : 'text-ink-faint hover:text-ink-soft',
                           )}
                         >
-                          {t(preset.labelKey)}
+                          {entry.label}
                         </button>
                       ))}
                     </div>
-                  </>
-                ) : null}
 
-                {kind === 'once' ? (
-                  <Field
-                    label={t('schedule.form.onceAt')}
-                    type="datetime-local"
-                    value={onceAt}
-                    error={cadence && nextRun === null ? t('schedule.form.oncePast') : undefined}
-                    onChange={(event) => setOnceAt(event.target.value)}
+                    {kind === 'interval' ? (
+                      <div className="flex items-end gap-2">
+                        <div className="w-28">
+                          <Field
+                            label={t('schedule.form.every')}
+                            type="number"
+                            min={1}
+                            error={cadence ? undefined : t('schedule.form.intervalInvalid', { max: MAX_SCHEDULE_INTERVAL_MINUTES / 1440 })}
+                            value={intervalValue}
+                            onChange={(event) => setIntervalValue(event.target.value)}
+                          />
+                        </div>
+                        <Select
+                          className="flex-1"
+                          value={intervalUnit}
+                          onChange={setIntervalUnit}
+                          placeholder={t('schedule.form.unit')}
+                          options={[
+                            { value: 'minutes', label: t('schedule.form.unit.minutes') },
+                            { value: 'hours', label: t('schedule.form.unit.hours') },
+                            { value: 'days', label: t('schedule.form.unit.days') },
+                          ]}
+                        />
+                      </div>
+                    ) : null}
+
+                    {kind === 'cron' ? (
+                      <>
+                        <Field
+                          label={t('schedule.form.cron')}
+                          value={cron}
+                          spellCheck={false}
+                          error={cadence ? undefined : t('archiving.schedule.invalid')}
+                          onChange={(event) => setCron(event.target.value)}
+                        />
+                        <div className="flex flex-wrap gap-1.5">
+                          {CRON_PRESETS.map((preset) => (
+                            <button
+                              key={preset.expression}
+                              type="button"
+                              onClick={() => setCron(preset.expression)}
+                              className={cx(
+                                'rounded-md border px-2 py-0.5 text-xs transition-colors',
+                                preset.expression === cron
+                                  ? 'border-accent bg-accent-wash text-ink'
+                                  : 'border-line text-ink-faint hover:border-line-strong hover:text-ink-soft',
+                              )}
+                            >
+                              {t(preset.labelKey)}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+
+                    {kind === 'once' ? (
+                      <Field
+                        label={t('schedule.form.onceAt')}
+                        type="datetime-local"
+                        value={onceAt}
+                        error={cadence && nextRun === null ? t('schedule.form.oncePast') : undefined}
+                        onChange={(event) => setOnceAt(event.target.value)}
+                      />
+                    ) : null}
+
+                    {cadence && nextRun !== null ? (
+                      <p className="text-xs text-ink-faint">
+                        {cronHuman ? <span className="text-ink-soft">{cronHuman}. </span> : null}
+                        {t('schedule.form.nextRun', { date: formatDateTime(nextRun) })}
+                        {kind === 'cron' ? ` ${t('schedule.form.serverClock')}` : null}
+                      </p>
+                    ) : null}
+                  </fieldset>
+
+                </>) : null}
+                {panel('agent', <>
+                  <Select
+                    label={t('draft.cli.legend')}
+                    value={agent}
+                    onChange={setAgent}
+                    options={agentKindSchema.options.map((value) => ({
+                      value,
+                      label: AGENT_LABELS[value],
+                      icon: <AgentIcon agent={value} size={16} />,
+                    }))}
                   />
-                ) : null}
 
-                {cadence && nextRun !== null ? (
-                  <p className="text-xs text-ink-faint">
-                    {cronHuman ? <span className="text-ink-soft">{cronHuman}. </span> : null}
-                    {t('schedule.form.nextRun', { date: formatDateTime(nextRun) })}
-                    {kind === 'cron' ? ` ${t('schedule.form.serverClock')}` : null}
-                  </p>
-                ) : null}
-              </fieldset> : null}
+                  {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {groups.map((group) => (
+                      <GroupField key={group.key} group={group} />
+                    ))}
+                  </div>
+                  <Banner tone="info">{t('schedule.form.unattended')}</Banner>
 
-              {trigger === 'schedule' ? (
-                <CheckSection
-                  projectId={project.id}
-                  taskId={task?.id}
-                  script={checkScript}
-                  timeout={checkTimeout}
-                  onScriptChange={setCheckScript}
-                  onTimeoutChange={setCheckTimeout}
-                />
-              ) : null}
+                </>)}
+                {panel('safeguards', <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field
+                      label={t('schedule.form.maxDuration')}
+                      hint={t('schedule.form.maxDurationHint')}
+                      error={durationValid ? undefined : t('schedule.form.maxDurationInvalid', { max: MAX_SCHEDULE_DURATION_MINUTES })}
+                      type="number"
+                      min={MIN_SCHEDULE_DURATION_MINUTES}
+                      max={MAX_SCHEDULE_DURATION_MINUTES}
+                      value={maxDuration}
+                      onChange={(event) => setMaxDuration(event.target.value)}
+                    />
+                    <Select
+                      label={t('schedule.form.overlap')}
+                      value={overlap}
+                      onChange={setOverlap}
+                      options={[
+                        { value: 'skip', label: t('schedule.form.overlap.skip'), hint: t(trigger === 'webhook' ? 'automation.form.overlap.skipHint' : 'schedule.form.overlap.skipHint') },
+                        { value: 'wait', label: t('schedule.form.overlap.wait'), hint: t(trigger === 'webhook' ? 'automation.form.overlap.waitHint' : 'schedule.form.overlap.waitHint') },
+                      ]}
+                    />
+                  </div>
+                  <DecisionSettingsField value={decisionSettings} onChange={setDecisionSettings} />
+                  {trigger === 'schedule' ? (
+                    <CheckSection
+                      projectId={project.id}
+                      taskId={task?.id}
+                      script={checkScript}
+                      timeout={checkTimeout}
+                      onScriptChange={setCheckScript}
+                      onTimeoutChange={setCheckTimeout}
+                    />
+                  ) : null}
 
-              <Select
-                label={t('draft.cli.legend')}
-                value={agent}
-                onChange={setAgent}
-                options={agentKindSchema.options.map((value) => ({
-                  value,
-                  label: AGENT_LABELS[value],
-                  icon: <AgentIcon agent={value} size={16} />,
-                }))}
-              />
+                </>)}
+              </>}
 
-              {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
-              {groups.map((group) => (
-                <GroupField key={group.key} group={group} />
-              ))}
-              <Banner tone="info">{t('schedule.form.unattended')}</Banner>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field
-                  label={t('schedule.form.maxDuration')}
-                  hint={t('schedule.form.maxDurationHint')}
-                  error={durationValid ? undefined : t('schedule.form.maxDurationInvalid', { max: MAX_SCHEDULE_DURATION_MINUTES })}
-                  type="number"
-                  min={MIN_SCHEDULE_DURATION_MINUTES}
-                  max={MAX_SCHEDULE_DURATION_MINUTES}
-                  value={maxDuration}
-                  onChange={(event) => setMaxDuration(event.target.value)}
-                />
-                <Select
-                  label={t('schedule.form.overlap')}
-                  value={overlap}
-                  onChange={setOverlap}
-                  options={[
-                    { value: 'skip', label: t('schedule.form.overlap.skip'), hint: t(trigger === 'webhook' ? 'automation.form.overlap.skipHint' : 'schedule.form.overlap.skipHint') },
-                    { value: 'wait', label: t('schedule.form.overlap.wait'), hint: t(trigger === 'webhook' ? 'automation.form.overlap.waitHint' : 'schedule.form.overlap.waitHint') },
-                  ]}
-                />
-              </div>
-              <DecisionSettingsField value={decisionSettings} onChange={setDecisionSettings} />
-
-                </>
-              )}
-
+            <footer className="flex shrink-0 flex-col gap-3 border-t border-line px-5 py-3">
               {mutation.isError ? <Banner>{mutation.error.message}</Banner> : null}
-            </div>
-
-            <footer className="flex justify-end gap-2 border-t border-line px-5 py-4">
-              <Button type="button" variant="ghost" disabled={mutation.isPending} onClick={onClose}>
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" disabled={!valid || mutation.isPending}>
-                {t(task ? 'schedule.form.save' : trigger === 'webhook' ? 'automation.form.createAndConfigure' : 'schedule.form.create')}
-              </Button>
+              {webhookCreation ? null : <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-ink-faint">
+                <span>{AGENT_LABELS[agent]}{cadence ? ` · ${describeCadence(cadence, (expression) => cronToHuman(expression, locale()))}` : ''}</span>
+                {invalidSection ? <button type="button" className="text-accent underline underline-offset-2" onClick={() => {
+                  setSection(invalidSection)
+                  document.getElementById(`${sectionId}-${invalidSection}-tab`)?.focus()
+                }}>{t('schedule.form.completeSection', { section: t(SECTION_LABELS[invalidSection]) })}</button> : null}
+              </div>}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" disabled={mutation.isPending} onClick={onClose}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={!valid || mutation.isPending}>
+                  {t(task ? 'schedule.form.save' : trigger === 'webhook' ? 'automation.form.createAndConfigure' : 'schedule.form.create')}
+                </Button>
+              </div>
             </footer>
           </form>
         </Dialog.Content>

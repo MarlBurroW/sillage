@@ -19,13 +19,13 @@ import { useWorktreeStatuses } from '../lib/worktrees'
  * and cards. Replaces Sillage-created-only clean/dirty lists: accumulated trees first raise which
  * still contains work, ordered by urgency.
  */
-export function WorktreeBoard({ projectId, isRepository }: { projectId: string; isRepository: boolean }) {
+export function WorktreeBoard({ projectId, isRepository, showEmpty = false }: { projectId: string; isRepository: boolean; showEmpty?: boolean }) {
   const t = useTranslate()
   const { data } = useWorktreeStatuses(isRepository ? projectId : undefined)
   const { data: conversations } = useConversations(isRepository ? projectId : undefined)
   const byId = useMemo(() => new Map((conversations ?? []).map((c) => [c.id, c])), [conversations])
 
-  if (!isRepository || !data || data.worktrees.length === 0) return null
+  if (!isRepository || !data || (data.worktrees.length === 0 && !showEmpty)) return null
 
   const base = data.base
   return (
@@ -38,6 +38,7 @@ export function WorktreeBoard({ projectId, isRepository }: { projectId: string; 
       />
       <CardBody className="flex flex-col gap-1">
         {!data.fresh ? <p className="text-xs text-ink-faint">{t('worktrees.board.refreshing')}</p> : null}
+        {data.worktrees.length === 0 ? <p className="py-2 text-sm text-ink-faint">{t('project.worktrees.empty')}</p> : null}
         <ul className="flex flex-col divide-y divide-line">
           {data.worktrees.map((tree) => (
             <WorktreeRow key={tree.path} projectId={projectId} tree={tree} base={base} byId={byId} />

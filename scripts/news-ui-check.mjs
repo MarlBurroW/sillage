@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
+import { checkNewsNavigation } from './news-navigation-flow.mjs'
 
 // Real API/components on a disposable database; feeds are cached fixtures.
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -36,6 +37,24 @@ async function ready(origin, child) {
   }
   throw Error(child.diagnostics)
 }
+async function richFixture(env) {
+  const child = run(['--import', 'tsx', '--input-type=module', '-e', `
+    import {openDatabase,newsFeeds,users} from '@sillage/db';
+    import {writeNewsPreferences} from './src/settings/user-settings.ts';
+    const {db,sqlite}=openDatabase(process.env.SILLAGE_DATA_DIR+'/sillage.db');
+    const all=db.select().from(users).all();
+    const user=all.find(u=>u.username==='alex')??all[0];
+    const articles=Array.from({length:23},(_,i)=>({title:i===22?'Éléphant unique dans les nouvelles':'Article '+i,url:'https://example.org/rich-article-'+i,source:'Veille de test',publishedAt:Date.now()-i*1000}));
+    for(let i=0;i<21;i++){
+      const url=i===20?'https://example.org/atom':'https://example.org/feed-'+i;
+      const values={url,data:JSON.stringify({title:'Flux '+i,articles,fetchedAt:Date.now()}),checkedAt:Date.now()};
+      db.insert(newsFeeds).values(values).onConflictDoUpdate({target:newsFeeds.url,set:values}).run();
+    }
+    writeNewsPreferences(db,user.id,{enabled:true,sources:Array.from({length:13},(_,i)=>({url:'https://example.org/feed-'+i,enabled:true}))});sqlite.close();
+  `], env)
+  assert.equal((await once(child, 'exit'))[0], 0, child.diagnostics)
+}
+
 try {
   const config = join(data, 'config.toml')
   await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n[agents.opencode]\nenabled = false\n[agents.grok]\nenabled = false\n')
@@ -65,17 +84,19 @@ try {
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
     await page.goto(`${origin}/settings/veille`)
-    await page.getByRole('heading', { name: 'Articles récents' }).waitFor()
+    await page.getByRole('region', { name: 'Articles récents', exact: true }).waitFor()
     const toggle = page.getByRole('switch', { name: 'Afficher la veille pendant les tours', exact: true })
     assert.equal(await toggle.getAttribute('aria-checked'), 'true')
     await toggle.click()
     await page.waitForFunction(() => document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'false')
     await toggle.click()
     await page.waitForFunction(() => document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'true')
+    await page.getByRole('navigation', { name: 'Rubriques de veille' }).getByRole('link', { name: 'Sources', exact: true }).click()
+    await page.getByRole('button', { name: 'Ajouter la source', exact: true }).click()
     await page.getByLabel('Ajouter un flux RSS ou Atom').fill('https://example.org/atom')
     await page.getByRole('button', { name: 'Tester le flux', exact: true }).click()
     await page.locator('[data-news-preview]').waitFor()
-    await page.getByRole('button', { name: 'Ajouter la source', exact: true }).click()
+    await page.locator('[data-news-preview]').getByRole('button', { name: 'Ajouter la source', exact: true }).click()
     await page.getByText('https://example.org/atom', { exact: true }).waitFor()
     await page.screenshot({ path: `/var/tmp/sillage-news-settings-${width}.png`, fullPage: true })
     // Removing the added source keeps the scenario repeatable at the next size.
@@ -130,6 +151,14 @@ try {
     assert.deepEqual(errors, [])
     await context.close()
   }
+  await richFixture(env)
+  for (const width of [1440, 390, 320]) {
+    const context = await browser.newContext({ viewport: { width, height: width === 320 ? 568 : 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
+    await context.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
+    assert.ok((await context.request.post(`${origin}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })).ok())
+    await checkNewsNavigation(context, origin, width, 'server')
+    await context.close()
+  }
   const deskPort = await freePort()
   const desktop = run(['--import', 'tsx', 'src/main.ts'], { ...env, SILLAGE_PROFILE: 'desktop', SILLAGE_HANDSHAKE_FD: '3', SILLAGE_PORT: String(deskPort), SILLAGE_DATA_DIR: join(data, 'desktop') }, true)
   const handshake = await new Promise((resolve, reject) => {
@@ -148,8 +177,11 @@ try {
   await page.getByRole('switch', { name: 'Afficher la veille pendant les tours' }).waitFor()
   assert.equal(await page.getByRole('switch', { name: 'Afficher la veille pendant les tours' }).getAttribute('aria-checked'), 'false')
   await page.screenshot({ path: '/var/tmp/sillage-news-desktop.png' })
+  await richFixture({ ...env, SILLAGE_DATA_DIR: join(data, 'desktop') })
+  await page.close()
+  await checkNewsNavigation(context, deskOrigin, 1280, 'desktop')
   await context.close()
-  console.log('News UI: Server desktop/mobile, rotation, pause, focus, sources, and Desktop profile passed.')
+  console.log('News UI: pagination, search, drafts, failed-save retry, empty/full sources, Server desktop/mobile, rotation, pause, focus, sources, and Desktop profile passed.')
 } finally {
   await browser?.close()
   for (const child of children.reverse()) if (child.exitCode === null) { child.kill('SIGTERM'); await Promise.race([once(child, 'exit'), delay(5000)]) }

@@ -99,11 +99,16 @@ try {
   await page.waitForURL(/\/schedules\/[0-9a-f-]{36}$/)
   const taskId = page.url().split('/').pop()
   await page.getByRole('region', { name: 'Banc d’essai' }).waitFor()
-  // Four steps in configuration order, with template prompt in place.
-  for (const step of ['Brancher', 'Déclencher', 'Lancer', 'Garde-fous']) {
-    await page.getByRole('region', { name: step }).waitFor()
+  const configuration = page.getByRole('navigation', { name: 'Rubriques de configuration', exact: true })
+  const views = page.getByRole('navigation', { name: 'Automatisation', exact: true })
+  const go = async (name) => { await configuration.getByRole('link', { name, exact: true }).click() }
+  for (const section of ['Connexion', 'Conditions', 'Prompt', 'Agent', 'Garde-fous']) {
+    await go(section)
+    await page.getByRole('region', { name: section, exact: true }).waitFor()
   }
-  assert.match(await page.getByLabel('Prompt', { exact: true }).inputValue(), /Traite l'issue #\{\{payload\.issue\.number\}\}/)
+  await go('Prompt')
+  assert.match(await page.getByRole('textbox', { name: 'Prompt', exact: true }).inputValue(), /Traite l'issue #\{\{payload\.issue\.number\}\}/)
+  await go('Connexion')
 
   // Address and secret as copied into GitHub.
   const url = await page.locator('code').first().textContent()
@@ -127,6 +132,7 @@ try {
     await bench.getByRole('combobox', { name: 'Appel testé' }).click()
     await page.getByRole('option', { name }).click()
   }
+  await go('Conditions')
   await pick('Exemple : GitHub : issue étiquetée « bug »')
   await bench.getByText('Cet appel serait ignoré. Condition 3 non remplie : `payload.label.name` vaut « bug ».').waitFor({ timeout: 15000 })
   assert.ok(await page.locator('[aria-label="Non remplie"]').count() >= 1)
@@ -157,11 +163,12 @@ try {
   assert.match(command, /x-hub-signature-256: sha256=[0-9a-f]{64}/)
   const output = execFileSync('bash', ['-c', command], { encoding: 'utf8' })
   assert.equal(JSON.parse(output).verdict, 'filtered', output)
-  await bench.getByRole('tab', { name: /Journal/ }).click()
-  await bench.getByText('Condition 1 non remplie : `headers.x-github-event` vaut « ping ».').waitFor({ timeout: 15000 })
+  await views.getByRole('link', { name: 'Historique', exact: true }).click()
+  const journal = page.getByRole('region', { name: 'Historique', exact: true })
+  await journal.getByText('Condition 1 non remplie : `headers.x-github-event` vaut « ping ».').waitFor({ timeout: 15000 })
   await page.screenshot({ path: join(shots, 'automations-journal.png') })
   // Received call can be tested with one click, placing it on bench.
-  await bench.getByRole('button', { name: 'Essayer' }).first().click()
+  await journal.getByRole('button', { name: 'Essayer' }).first().click()
   await bench.getByRole('combobox', { name: 'Appel testé' }).filter({ hasText: /Reçu .* : ping/ }).waitFor()
   await bench.getByText(/Cet appel serait ignoré\. Condition 1/).waitFor({ timeout: 15000 })
 
@@ -174,14 +181,14 @@ try {
   await bench.getByRole('tab', { name: 'Explorer' }).click()
   await bench.getByRole('button', { name: 'Insérer {{payload.repository}} dans le prompt' }).click()
   // Without cursor position, field appends to prompt rather than prepending.
-  assert.match(await page.getByLabel('Prompt', { exact: true }).inputValue(), /l'issue\. \{\{payload\.repository\}\}$/)
+  assert.match(await page.getByRole('textbox', { name: 'Prompt', exact: true }).inputValue(), /l'issue\. \{\{payload\.repository\}\}$/)
   await bench.getByRole('button', { name: 'Filtrer sur payload.sender.login', exact: true }).click()
   const paths = await page.getByLabel('Champ').evaluateAll((inputs) => inputs.map((input) => input.value))
   assert.ok(paths.includes('payload.sender.login'), paths.join(', '))
 
   // Script skipping call: bench says so immediately and shows its result.
   await page.getByRole('button', { name: 'Ajouter un script' }).click()
-  const editor = page.getByRole('region', { name: 'Déclencher' }).locator('.cm-content')
+  const editor = page.getByRole('region', { name: 'Conditions', exact: true }).locator('.cm-content')
   await editor.click()
   await page.keyboard.press('Control+a')
   await page.keyboard.type("export default (event) => event.payload.sender.login === 'alex' ? { skip: 'auteur exclu' } : { vars: {} }")
@@ -191,8 +198,9 @@ try {
   await page.screenshot({ path: join(shots, 'automations-script.png') })
 
   // Session is configurable here too: maximum duration.
+  await go('Garde-fous')
   await page.getByLabel('Durée maximale (min)').fill('20')
-  await page.getByRole('region', { name: 'Lancer' }).scrollIntoViewIfNeeded()
+  await page.getByRole('region', { name: 'Garde-fous', exact: true }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(shots, 'automations-session.png') })
 
   // Save then reread: settings persisted.
@@ -220,8 +228,10 @@ try {
   const en = await english.newPage()
   en.on('pageerror', (error) => errors.push(error.message))
   await en.goto(`${base}/p/${project.id}/schedules/${taskId}`)
-  await en.getByRole('tab', { name: /Log/ }).click()
+  await en.getByRole('navigation', { name: 'Automation', exact: true }).getByRole('link', { name: 'History', exact: true }).click()
   await en.getByText('Condition 1 not met: `headers.x-github-event` is “ping”.').first().waitFor()
+  await en.getByRole('navigation', { name: 'Automation', exact: true }).getByRole('link', { name: 'Configuration', exact: true }).click()
+  await en.getByRole('navigation', { name: 'Configuration sections', exact: true }).getByRole('link', { name: 'Conditions', exact: true }).click()
   await en.getByRole('button', { name: 'Remove', exact: true }).click()
   await en.getByRole('button', { name: 'Add a script' }).click()
   assert.match(await en.locator('.cm-content').textContent(), /Receives the call/)
@@ -236,6 +246,7 @@ try {
   const mobile = await phone.newPage()
   mobile.on('pageerror', (error) => errors.push(error.message))
   await mobile.goto(`${base}/p/${project.id}/schedules/${taskId}`)
+  await mobile.getByRole('navigation', { name: 'Automatisation', exact: true }).getByRole('link', { name: 'Tester', exact: true }).click()
   await mobile.getByRole('region', { name: 'Banc d’essai' }).waitFor()
   await mobile.screenshot({ path: join(shots, 'automations-phone.png') })
   await mobile.goto(`${base}/p/${project.id}/schedules`)

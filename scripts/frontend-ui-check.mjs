@@ -452,6 +452,7 @@ try {
   await page.getByRole('heading', { name: 'Personnel', exact: true }).waitFor()
   await page.getByRole('heading', { name: 'Agents et projets', exact: true }).waitFor()
   await page.getByRole('heading', { name: 'Administration', exact: true }).waitFor()
+  await page.getByRole('navigation', { name: 'Catégories d’apparence' }).getByRole('link', { name: 'Lecture', exact: true }).click()
   const size = page.getByRole('slider', { name: 'Taille du texte', exact: true })
   assert.equal(await size.getAttribute('aria-valuetext'), '15 px')
   await size.focus()
@@ -462,6 +463,7 @@ try {
   assert.equal(await size.getAttribute('aria-valuetext'), '16 px')
 
 
+  await page.getByRole('navigation', { name: 'Catégories d’apparence' }).getByRole('link', { name: 'Interface', exact: true }).click()
   const neutral = page.getByRole('radio', { name: 'Neutre', exact: true })
   await page.getByText('Réglages fins des couleurs', { exact: true }).click()
   const hue = page.getByRole('slider', { name: 'Teinte', exact: true })
@@ -471,7 +473,7 @@ try {
   await neutral.check()
   assert.equal(await page.evaluate(() => localStorage.getItem('sillage.tint')), '0')
   assert.equal(await hue.inputValue(), customHue, 'A background preset preserves the accent hue')
-  assert.equal(await size.getAttribute('aria-valuetext'), '16 px', 'A preset preserves reading settings')
+  assert.equal(await page.getByRole('slider', { name: 'Taille du texte', exact: true, includeHidden: true }).getAttribute('aria-valuetext'), '16 px', 'A preset preserves reading settings')
   await page.reload()
   await neutral.waitFor()
   assert.equal(await neutral.isChecked(), true)

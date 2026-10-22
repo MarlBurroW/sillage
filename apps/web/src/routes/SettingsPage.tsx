@@ -4,6 +4,8 @@ import {
   Bell,
   BookOpen,
   ChevronRight,
+  Search,
+  X,
   FileText,
   Cpu,
   Info,
@@ -18,16 +20,16 @@ import {
   UserRound,
   Users,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
-import type { InstanceCapabilities } from '@sillage/protocol'
+import { foldForMatch, type InstanceCapabilities } from '@sillage/protocol'
 import { useInstance } from '../lib/instance'
 import { useCurrentUser } from '../lib/session'
 import { useVersionInfo } from '../lib/system'
 import { UpdateDot } from '../components/UpdateDot'
 import { useMediaQuery } from '../lib/viewport'
-import { cx } from '../components/ui'
+import { Field, IconButton, cx } from '../components/ui'
 
 /**
  * Settings grouped by category.
@@ -42,7 +44,7 @@ import { cx } from '../components/ui'
  */
 interface Section {
   to: string
-  group: 'personal' | 'workspace' | 'administration' | 'about'
+  group: 'personal' | 'agents' | 'workspace' | 'administration' | 'about'
   labelKey: MessageKey
   descriptionKey: MessageKey
   icon: ReactNode
@@ -96,7 +98,7 @@ const SECTIONS: Section[] = [
   },
   {
     to: 'cli',
-    group: 'workspace',
+    group: 'agents',
     labelKey: 'settings.section.cli',
     descriptionKey: 'settings.section.cli.description',
     icon: <SlidersHorizontal size={16} />,
@@ -138,21 +140,21 @@ const SECTIONS: Section[] = [
   },
   {
     to: 'comptes-claude',
-    group: 'workspace',
+    group: 'agents',
     labelKey: 'settings.section.claudeAccounts',
     descriptionKey: 'settings.section.claudeAccounts.description',
     icon: <IdCard size={16} />,
   },
   {
     to: 'comptes-codex',
-    group: 'workspace',
+    group: 'agents',
     labelKey: 'settings.section.codexAccounts',
     descriptionKey: 'settings.section.codexAccounts.description',
     icon: <IdCard size={16} />,
   },
   {
     to: 'comptes-grok',
-    group: 'workspace',
+    group: 'agents',
     labelKey: 'settings.section.grokAccounts',
     descriptionKey: 'settings.section.grokAccounts.description',
     icon: <IdCard size={16} />,
@@ -207,7 +209,7 @@ const SECTIONS: Section[] = [
   },
 ]
 
-const GROUPS = ['personal', 'workspace', 'administration', 'about'] as const
+const GROUPS = ['personal', 'agents', 'workspace', 'administration', 'about'] as const
 
 export function SettingsLayout() {
   const t = useTranslate()
@@ -216,24 +218,60 @@ export function SettingsLayout() {
   const { pathname } = useLocation()
   const { data: instance } = useInstance()
   const sections = visibleSections(Boolean(user?.isAdmin), instance?.capabilities)
+  const [query, setQuery] = useState('')
+  const [openGroups, setOpenGroups] = useState<Set<Section['group']>>(() => new Set(['personal']))
+  const activeGroup = sections.find((entry) => pathname === `/settings/${entry.to}`)?.group
+  useEffect(() => {
+    if (activeGroup) setOpenGroups((current) => new Set([...current, activeGroup]))
+  }, [activeGroup])
+  const terms = foldForMatch(query).trim().split(/\s+/).filter(Boolean)
+  const filtered = sections.filter((entry) => {
+    const text = foldForMatch(`${t(entry.labelKey)} ${t(entry.descriptionKey)} ${entry.group === 'about' ? '' : t(`settings.group.${entry.group}`)}`)
+    return terms.every((term) => text.includes(term))
+  })
   const onIndex = pathname === '/settings' || pathname === '/settings/'
-  // Must match Tailwind `md:`, which controls both layouts.
-  const wide = useMediaQuery('(min-width: 48rem)')
+  // Keep list/detail until the app sidebar leaves enough room for a second navigation column.
+  // Must match Tailwind `lg:`, which controls both layouts.
+  const wide = useMediaQuery('(min-width: 64rem)')
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 md:flex-row md:gap-8 md:p-8">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-6 p-4 lg:flex-row lg:gap-8 lg:p-8">
       {/*
-       * On touch screens, hide the list when a section opens: both cannot fit a phone's width.
+       * Scroll the menu independently so short pages stay short and long pages retain navigation.
+       * On phones, show either the menu or its detail, as both cannot fit side by side.
        */}
-      <nav className={cx('shrink-0 md:w-56', !onIndex && 'hidden md:block')}>
+      <nav aria-label={t('settings.title')} className={cx('flex min-h-0 flex-1 flex-col lg:w-56 lg:flex-none', !onIndex && 'hidden lg:flex')}>
         <h1 className="mb-3 px-1 text-lg font-semibold tracking-tight">{t('settings.title')}</h1>
+        <div className="mb-3 flex shrink-0 items-end gap-1">
+          <div className="min-w-0 flex-1">
+            <Field type="search" label={t('settings.search')} icon={<Search size={14} />} value={query}
+              onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setQuery('') }} />
+          </div>
+          {query ? <IconButton label={t('settings.search.clear')} onClick={() => setQuery('')}><X size={15} /></IconButton> : null}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-settings-list>
+        {filtered.length === 0 ? <p role="status" className="px-2 py-3 text-sm text-ink-faint">{t('settings.search.empty')}</p> : null}
         {GROUPS.map((group) => {
-          const entries = sections.filter((section) => section.group === group)
+          const entries = filtered.filter((section) => section.group === group)
           if (entries.length === 0) return null
           return (
-            <div key={group} className="mb-5">
-              {group !== 'about' ? <h2 className="mb-1.5 px-2.5 text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">{t(`settings.group.${group}`)}</h2> : null}
-              <ul className="flex flex-col gap-1">
+            <div key={group} className="mb-2">
+              {group !== 'about' ? <h2>
+                <button type="button" disabled={terms.length > 0} aria-expanded={terms.length > 0 || openGroups.has(group)} aria-controls={`settings-group-${group}`}
+                  className="flex min-h-11 w-full items-center gap-2 px-2.5 text-left text-sm font-medium text-ink-soft"
+                  onClick={() => setOpenGroups((current) => {
+                    const next = new Set(current)
+                    if (next.has(group)) next.delete(group)
+                    else next.add(group)
+                    return next
+                  })}>
+                  <ChevronRight size={14} className={cx('shrink-0', (terms.length > 0 || openGroups.has(group)) && 'rotate-90')} />
+                  <span className="flex-1">{t(`settings.group.${group}`)}</span>
+                  <span className="text-xs text-ink-faint">{entries.length}</span>
+                </button>
+              </h2> : null}
+              <ul id={`settings-group-${group}`} hidden={group !== 'about' && !terms.length && !openGroups.has(group)}
+                className={cx('flex flex-col gap-1', group !== 'about' && !terms.length && !openGroups.has(group) && 'hidden')}>
                 {entries.map((section) => (
                   <li key={section.to}>
                     <NavLink
@@ -257,11 +295,11 @@ export function SettingsLayout() {
                          * Descriptions help only on touch screens, where the list fills the
                          * page and nothing else explains category contents.
                          */}
-                        <span className="block text-xs text-ink-faint md:hidden">
+                        <span className="block text-xs text-ink-faint lg:hidden">
                           {t(section.descriptionKey)}
                         </span>
                       </span>
-                      <ChevronRight size={14} className="shrink-0 text-ink-faint md:hidden" />
+                      <ChevronRight size={14} className="shrink-0 text-ink-faint lg:hidden" />
                     </NavLink>
                   </li>
                 ))}
@@ -278,9 +316,14 @@ export function SettingsLayout() {
           {t('settings.buildInfo', { version: __APP_VERSION__ })}{' '}
           <time dateTime={__BUILD_TIME__}>{new Date(__BUILD_TIME__).toLocaleString(locale())}</time>
         </p>
+        </div>
       </nav>
 
-      <div className={cx('min-w-0 flex-1', onIndex && 'hidden md:block')}>
+      <div key={pathname} className={cx(
+        'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain',
+        onIndex && 'hidden lg:block',
+        !['/settings/apparence', '/settings/veille'].includes(pathname) && 'lg:max-w-lg',
+      )}>
         {/*
          * On large screens, `/settings` without a section would show an empty column: select
          * the first. Redirect based on actual width, not CSS `hidden`: hidden elements stay
@@ -308,7 +351,7 @@ export function SectionHeader({
     <header className="mb-4 flex flex-col gap-1">
       <NavLink
         to="/settings"
-        className="flex items-center gap-1 text-sm text-ink-faint hover:text-ink md:hidden"
+        className="flex items-center gap-1 text-sm text-ink-faint hover:text-ink lg:hidden"
       >
         <ChevronRight size={14} className="rotate-180" />
         {t('settings.title')}

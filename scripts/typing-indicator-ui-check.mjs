@@ -49,7 +49,7 @@ async function mount(page) {
     const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
     function Screen() {
       useAppearanceSync()
-      return React.createElement('main', { className: 'mx-auto max-w-3xl p-4' },
+      return React.createElement('main', { className: 'mx-auto flex h-screen max-w-3xl flex-col p-4' },
         React.createElement('div', { id: 'live-turn', className: 'mb-6' }, React.createElement(TurnActivity, { label: 'Rédaction' })),
         React.createElement(AppearanceSection))
     }
@@ -58,6 +58,7 @@ async function mount(page) {
         React.createElement(MemoryRouter, null,
           React.createElement(TooltipProvider, null, React.createElement(Screen)))))
   })
+  await page.getByRole('navigation', { name: 'Catégories d’apparence' }).getByRole('link', { name: 'Animations', exact: true }).click()
   await page.getByRole('group', { name: 'Indicateur d’activité', exact: true }).waitFor()
 }
 
@@ -113,11 +114,15 @@ try {
   }
   const card = first.page.locator('.surface').filter({ has: first.page.getByRole('heading', { name: 'Indicateur d’activité', exact: true }) })
   for (const theme of ['Clair', 'Sombre', 'Sombre contrasté']) {
+    await first.page.getByRole('link', { name: 'Interface', exact: true }).click()
     await first.page.getByRole('button', { name: theme, exact: true }).click()
+    await first.page.getByRole('link', { name: 'Animations', exact: true }).click()
     await delay(150)
     await card.screenshot({ path: output + '/desktop-' + theme + '.png' })
   }
+  await first.page.getByRole('link', { name: 'Interface', exact: true }).click()
   await first.page.getByRole('button', { name: 'Sombre', exact: true }).click()
+  await first.page.getByRole('link', { name: 'Animations', exact: true }).click()
   await choices.getByRole('button', { name: 'Orbite', exact: true }).focus()
   await first.page.keyboard.press('Enter')
   await expectStyle(first.page, 'orbit')

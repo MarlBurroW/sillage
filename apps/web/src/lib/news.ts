@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { NewsArticle, NewsDto, NewsFeed, NewsPreferences, UserSettingsDto } from '@sillage/protocol'
+import { foldForMatch, type NewsArticle, type NewsDto, type NewsFeed, type NewsPreferences, type UserSettingsDto } from '@sillage/protocol'
 import { api } from './api'
 
 export function useNews(enabled = true) {
@@ -47,4 +47,24 @@ export function useNewsRotation(articles: NewsArticle[], paused: boolean) {
     return () => window.clearInterval(timer)
   }, [articles.length, paused, next])
   return { index: Math.max(0, articles.findIndex((article) => article.url === selected)), next }
+}
+
+/** Stable, bounded browsing of feeds or articles, including matches outside the current page. */
+export function useNewsBrowser<T>(items: T[], describe: (item: T) => string, pageSize: number) {
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const matches = useMemo(() => {
+    const terms = foldForMatch(query).trim().split(/\s+/).filter(Boolean)
+    return items.filter((item) => {
+      const text = foldForMatch(describe(item))
+      return terms.every((term) => text.includes(term))
+    })
+  }, [items, describe, query])
+  const pages = Math.max(1, Math.ceil(matches.length / pageSize))
+  const current = Math.min(page, pages - 1)
+  return {
+    query, search: (value: string) => { setQuery(value); setPage(0) },
+    page: current, pages, setPage, count: matches.length,
+    items: matches.slice(current * pageSize, (current + 1) * pageSize),
+  }
 }

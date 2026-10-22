@@ -14,8 +14,8 @@ import {
   Trash2,
   Webhook,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   MAX_AUTOMATION_RULES,
   MAX_AUTOMATION_RUNS_PER_HOUR,
@@ -42,9 +42,9 @@ import { MobileNavigationButton } from '../components/MobileNavigation'
 import { useAgentSettings } from '../components/chat/agent-settings'
 import { ConditionsEditor } from '../components/automation/ConditionsEditor'
 import { ScriptEditor } from '../components/automation/ScriptEditor'
-import { TestBench, type BenchCall } from '../components/automation/TestBench'
+import { AutomationJournal, TestBench, type BenchCall } from '../components/automation/TestBench'
 import { GroupField } from '../components/schedule/GroupField'
-import { DecisionSettingsField } from '../components/decisions/DecisionSettingsField'
+import { DecisionSettingsField, decisionSettingsValid } from '../components/decisions/DecisionSettingsField'
 import { Badge, Banner, Button, Card, CardBody, CardHeader, ConfirmDialog, EmptyState, Field, IconButton, Select, cx } from '../components/ui'
 import { automationSamples } from '../lib/automation-samples'
 import {
@@ -61,11 +61,22 @@ import {
   useUpdateWebhook,
 } from '../lib/automations'
 import { useCopy } from '../lib/clipboard'
-import { useTranslate } from '../lib/i18n'
+import { useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import { useSchedules, useUpdateSchedule } from '../lib/schedules'
 import { useSidebarHidden } from '../lib/sidebar'
 import { useUserSettings } from '../lib/user-settings'
+
+const CONFIG_SECTIONS = ['connection', 'trigger', 'prompt', 'agent', 'guards'] as const
+type ConfigSection = (typeof CONFIG_SECTIONS)[number]
+const SECTION_LABELS: Record<ConfigSection, MessageKey> = {
+  connection: 'automation.navigation.connection',
+  trigger: 'automation.navigation.trigger',
+  prompt: 'automation.prompt.title',
+  agent: 'draft.cli.legend',
+  guards: 'automation.step.guards',
+}
+const VIEWS = ['configuration', 'test', 'history'] as const
 
 function settingsOf(webhook: WebhookAutomationDto): WebhookSettings {
   const { verification, deliveryHeader, conditions, script, subjectPath, markerPaths, maxRunsPerHour } = webhook
@@ -113,7 +124,7 @@ function sampleCall(id: string): BenchCall {
 }
 
 /**
- * Webhook automation page: four-step configuration on the left, test bench on the right.
+ * Webhook automation page: focused configuration sections beside a persistent test bench.
  *
  * The bench holds a sample or real call and reports what the automation would do with current
  * settings, including drafts: verdict, rendered prompt and script. Configure on one side,
@@ -144,6 +155,23 @@ export function AutomationPage() {
 function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: WebhookAutomationDto }) {
   const t = useTranslate()
   const sidebarHidden = useSidebarHidden()
+  const [params, setParams] = useSearchParams()
+  const view = VIEWS.find((value) => value === params.get('view')) ?? 'configuration'
+  const section = CONFIG_SECTIONS.find((value) => value === params.get('section')) ?? 'connection'
+  const navigate = (nextView: (typeof VIEWS)[number], nextSection = section) => {
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set('view', nextView)
+      next.set('section', nextSection)
+      return next
+    })
+  }
+  const sectionSearch = (nextView: (typeof VIEWS)[number], nextSection = section) => {
+    const next = new URLSearchParams(params)
+    next.set('view', nextView)
+    next.set('section', nextSection)
+    return `?${next}`
+  }
   const { data: projects } = useProjects()
   const project = projects?.find((entry) => entry.id === task.projectId)
   const updateTask = useUpdateSchedule()
@@ -232,6 +260,8 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
   }, [testKey, runTest])
 
   const promptRef = useRef<HTMLTextAreaElement>(null)
+  const triggerRef = useRef<HTMLDivElement>(null)
+  const pendingFocus = useRef<'prompt' | 'condition' | null>(null)
   // Last cursor position in the prompt; without it, append at the end rather than
   // the beginning, where nothing indicates an intent to write.
   const cursor = useRef<{ start: number; end: number } | null>(null)
@@ -240,17 +270,14 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
     if (area) cursor.current = { start: area.selectionStart, end: area.selectionEnd }
   }
   const insert = (path: string) => {
-    const area = promptRef.current
+    pendingFocus.current = 'prompt'
+    navigate('configuration', 'prompt')
     const appended = cursor.current === null
     const marker = appended && prompt && !/\s$/.test(prompt) ? ` {{${path}}}` : `{{${path}}}`
     const at = cursor.current?.start ?? prompt.length
     const end = cursor.current?.end ?? prompt.length
     setPrompt(prompt.slice(0, at) + marker + prompt.slice(end))
     cursor.current = { start: at + marker.length, end: at + marker.length }
-    requestAnimationFrame(() => {
-      area?.focus()
-      area?.setSelectionRange(at + marker.length, at + marker.length)
-    })
   }
   const filterOn = (path: string, value: unknown) => {
     if (settings.conditions.rules.length >= MAX_AUTOMATION_RULES) return
@@ -259,17 +286,47 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
       ? { path, op: 'equals', value: valueText(value) }
       : { path, op: 'exists', value: '' }
     patch({ conditions: { ...settings.conditions, rules: [...settings.conditions.rules, rule] } })
+    pendingFocus.current = 'condition'
+    navigate('configuration', 'trigger')
   }
 
+  // Router navigation may commit after the draft update. Focus only once its panel is visible.
+  useLayoutEffect(() => {
+    if (view !== 'configuration') return
+    if (pendingFocus.current === 'prompt' && section === 'prompt') {
+      promptRef.current?.focus()
+      if (cursor.current) promptRef.current?.setSelectionRange(cursor.current.start, cursor.current.end)
+      pendingFocus.current = null
+    } else if (pendingFocus.current === 'condition' && section === 'trigger') {
+      const path = settings.conditions.rules.at(-1)?.path
+      const fields = triggerRef.current?.querySelectorAll<HTMLInputElement>('input')
+      const added = fields ? Array.from(fields).findLast((field) => field.value === path) : undefined
+      added?.focus()
+      pendingFocus.current = null
+    }
+  }, [view, section, prompt, settings.conditions])
+
   const save = () => {
+    if (saving || !promptValid || !decisionsValid) return
     const pending: Promise<unknown>[] = []
     if (settingsDirty) pending.push(updateHook.mutateAsync(settings))
     if (sessionDirty) pending.push(updateTask.mutateAsync({ id: task.id, ...session }))
-    void Promise.all(pending).then(() => setBaseline({ settings, session }))
+    void Promise.all(pending).then(() => setBaseline({ settings, session })).catch(() => {
+      // Mutation hooks expose the error in the persistent save bar; keep the draft for retry.
+    })
   }
   const saving = updateHook.isPending || updateTask.isPending
   const saveError = updateHook.error ?? updateTask.error
   const promptValid = prompt.trim() !== ''
+  const decisionsValid = decisionSettingsValid(session)
+  const invalidSection = !promptValid ? 'prompt' : !decisionsValid ? 'guards' : null
+
+  const panel = (value: ConfigSection, children: ReactNode) => (
+    <section aria-label={t(SECTION_LABELS[value])} hidden={section !== value}
+      className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 md:p-5', section !== value && 'hidden')}>
+      <div className="mx-auto flex max-w-3xl flex-col gap-4">{children}</div>
+    </section>
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -302,79 +359,86 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
         </Button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
-        <div className="mx-auto flex max-w-7xl flex-col gap-6">
-          {webhook.trippedAt ? (
-            <Banner tone="caution">{t('automation.tripped', { max: webhook.maxRunsPerHour, date: new Date(webhook.trippedAt).toLocaleString() })}</Banner>
-          ) : null}
-
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-6">
-            <div className="flex min-w-0 flex-col gap-8">
-              <Step number={1} title={t('automation.step.connect')} description={t('automation.step.connectHint')}>
-                <AddressCard task={task} webhook={webhook} settings={settings} onChange={patch} />
-              </Step>
-
-              <Step number={2} title={t('automation.step.trigger')} description={t('automation.step.triggerHint')}>
-                <ConditionsCard
-                  conditions={settings.conditions}
-                  results={local.results}
-                  onChange={(conditions) => patch({ conditions })}
+      <nav aria-label={t('automation.navigation.views')} className="grid shrink-0 grid-cols-3 border-b border-line px-3 md:px-6">
+        {VIEWS.map((value) => (
+          <Link key={value} to={{ search: sectionSearch(value) }} aria-current={view === value ? 'page' : undefined}
+            className={cx('flex min-h-11 items-center justify-center border-b-2 px-1 text-sm font-medium', view === value ? 'border-accent text-accent' : 'border-transparent text-ink-faint hover:text-ink')}>
+            {t(`automation.navigation.${value}`)}
+          </Link>
+        ))}
+      </nav>
+      {webhook.trippedAt ? (
+        <div className="shrink-0 px-4 py-2"><Banner tone="caution">{t('automation.tripped', { max: webhook.maxRunsPerHour, date: new Date(webhook.trippedAt).toLocaleString() })}</Banner></div>
+      ) : null}
+      <div className={cx('mx-auto flex min-h-0 w-full max-w-7xl flex-1', view === 'history' && 'hidden')}>
+        <div className={cx('flex min-h-0 min-w-0 flex-1 flex-col', view !== 'configuration' && 'hidden')}>
+          <nav aria-label={t('automation.navigation.sections')} className="grid shrink-0 grid-cols-3 border-b border-line px-3 sm:grid-cols-5">
+            {CONFIG_SECTIONS.map((value) => (
+              <Link key={value} to={{ search: sectionSearch('configuration', value) }} aria-current={section === value ? 'page' : undefined}
+                className={cx('flex min-h-11 items-center justify-center border-b-2 px-1 text-xs font-medium', section === value ? 'border-accent text-accent' : 'border-transparent text-ink-faint hover:text-ink')}>
+                {t(SECTION_LABELS[value])}
+              </Link>
+            ))}
+          </nav>
+          {panel('connection', <>
+            <p className="text-sm text-ink-faint">{t('automation.step.connectHint')}</p>
+            <AddressCard task={task} webhook={webhook} settings={settings} onChange={patch} />
+          </>)}
+          {panel('trigger', <div ref={triggerRef} className="flex flex-col gap-4">
+            <ConditionsCard conditions={settings.conditions} results={local.results} onChange={(conditions) => patch({ conditions })} />
+            <ScriptCard script={settings.script} onChange={(script) => patch({ script })} />
+          </div>)}
+          {panel('prompt', <>
+            <Card>
+              <CardHeader icon={<Code2 size={16} />} title={t('automation.prompt.title')} description={t('automation.prompt.description')} />
+              <CardBody className="flex flex-col gap-3">
+                <textarea
+                  ref={promptRef}
+                  rows={9}
+                  value={prompt}
+                  aria-label={t('automation.prompt.title')}
+                  onChange={(change) => { setPrompt(change.target.value); remember() }}
+                  onSelect={remember}
+                  className="rounded-md border border-line bg-sunken px-3 py-2 font-mono text-[0.8125rem] text-ink outline-none transition-colors hover:border-line-strong focus:border-accent"
                 />
-                <ScriptCard script={settings.script} onChange={(script) => patch({ script })} />
-              </Step>
-
-              <Step number={3} title={t('automation.step.run')} description={t('automation.step.runHint')}>
-                <SessionCard project={project} session={session} onChange={patchSession} />
-                <Card>
-                  <CardHeader icon={<Code2 size={16} />} title={t('automation.prompt.title')} description={t('automation.prompt.description')} />
-                  <CardBody className="flex flex-col gap-3">
-                    <textarea
-                      ref={promptRef}
-                      rows={9}
-                      value={prompt}
-                      aria-label={t('automation.prompt.title')}
-                      onChange={(change) => { setPrompt(change.target.value); remember() }}
-                      onSelect={remember}
-                      className="rounded-md border border-line bg-sunken px-3 py-2 font-mono text-[0.8125rem] text-ink outline-none transition-colors hover:border-line-strong focus:border-accent"
-                    />
-                    {!promptValid ? <Banner>{t('automation.prompt.required')}</Banner> : null}
-                  </CardBody>
-                </Card>
-              </Step>
-
-              <Step number={4} title={t('automation.step.guards')} description={t('automation.step.guardsHint')}>
-                <GuardsCard settings={settings} onChange={patch} />
-              </Step>
-            </div>
-
-            {/*
-             * Keep the bench visible while configuration scrolls: it shows what each setting
-             * changes.
-             */}
-            <aside className="min-w-0 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-var(--header-height)-3rem)] lg:self-start lg:overflow-y-auto">
-              <TestBench
-                taskId={task.id}
-                projectId={task.projectId}
-                template={webhook.template}
-                deliveries={list}
-                deliveriesLoading={deliveries.isPending}
-                call={bench}
-                onCall={(next) => { touched.current = true; setBench(next) }}
-                onLoadSample={loadSample}
-                onLoadDelivery={loadDelivery}
-                loadingDelivery={loadingId !== null}
-                event={event}
-                result={tested}
-                pending={testPending}
-                error={testError}
-                hasScript={settings.script.trim() !== ''}
-                onFilter={filterOn}
-                onInsert={insert}
-              />
-            </aside>
-          </div>
+                {!promptValid ? <Banner>{t('automation.prompt.required')}</Banner> : null}
+              </CardBody>
+            </Card>
+          </>)}
+          {panel('agent', <SessionCard project={project} session={session} onChange={patchSession} />)}
+          {panel('guards', <>
+            <SessionLimits session={session} onChange={patchSession} />
+            <GuardsCard settings={settings} onChange={patch} />
+          </>)}
         </div>
+        {/* The same bench stays mounted across dedicated and side-by-side views. */}
+        <aside aria-label={t('automation.navigation.test')} className={cx('min-h-0 min-w-0 overflow-y-auto overscroll-contain p-4 md:p-5', view === 'configuration' ? 'hidden xl:block xl:w-1/2 xl:border-l xl:border-line' : 'mx-auto w-full max-w-3xl')}>
+          <TestBench
+            taskId={task.id}
+            template={webhook.template}
+            deliveries={list}
+            call={bench}
+            onCall={(next) => { touched.current = true; setBench(next) }}
+            onLoadSample={loadSample}
+            onLoadDelivery={loadDelivery}
+            loadingDelivery={loadingId !== null}
+            event={event}
+            result={tested}
+            pending={testPending}
+            error={testError}
+            hasScript={settings.script.trim() !== ''}
+            onFilter={filterOn}
+            onInsert={insert}
+          />
+        </aside>
       </div>
+      <section aria-label={t('automation.navigation.history')} hidden={view !== 'history'}
+        className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 md:p-5', view !== 'history' && 'hidden')}>
+        <div className="mx-auto max-w-5xl">
+          <AutomationJournal taskId={task.id} projectId={task.projectId} deliveries={list} loading={deliveries.isPending}
+            onTry={(id) => { loadDelivery(id); navigate('test') }} />
+        </div>
+      </section>
 
       {dirty ? (
         <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line bg-surface px-4 py-2.5 pb-safe md:px-6">
@@ -382,33 +446,15 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
           <Button variant="ghost" size="sm" disabled={saving} onClick={() => { setSettings(baseline.settings); setSession(baseline.session) }}>
             {t('common.cancel')}
           </Button>
-          <Button size="sm" disabled={saving || !promptValid} onClick={save}>
+          {invalidSection ? <button type="button" className="text-sm text-accent underline underline-offset-2" onClick={() => navigate('configuration', invalidSection)}>
+            {t('schedule.form.completeSection', { section: t(SECTION_LABELS[invalidSection]) })}
+          </button> : null}
+          <Button size="sm" disabled={saving || invalidSection !== null} onClick={save}>
             {t('automation.save')}
           </Button>
         </footer>
       ) : null}
     </div>
-  )
-}
-
-/**
- * Page step in configuration order: connect, trigger, launch, protect. Numbered to express
- * sequence, not decoration.
- */
-function Step({ number, title, description, children }: { number: number; title: string; description: string; children: ReactNode }) {
-  return (
-    <section className="flex min-w-0 flex-col gap-3" aria-label={title}>
-      <header className="flex items-start gap-3">
-        <span className="grid size-7 shrink-0 place-items-center rounded-full border border-line-strong text-xs font-semibold text-ink-soft tabular-nums">
-          {number}
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-[0.9375rem] leading-7 font-semibold text-ink">{title}</h2>
-          <p className="text-sm text-ink-faint">{description}</p>
-        </div>
-      </header>
-      <div className="flex min-w-0 flex-col gap-4">{children}</div>
-    </section>
   )
 }
 
@@ -456,7 +502,7 @@ function NameField({ task }: { task: ScheduledTaskDto }) {
   )
 }
 
-/** CLI, model, effort, permissions, duration and queue: the session opened for each accepted call. */
+/** CLI and permissions for the session opened by each accepted call. */
 function SessionCard({
   project,
   session,
@@ -488,10 +534,22 @@ function SessionCard({
           }))}
         />
         {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
-        {groups.map((group) => (
-          <GroupField key={group.key} group={group} />
-        ))}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {groups.map((group) => (
+            <GroupField key={group.key} group={group} />
+          ))}
+        </div>
         <Banner tone="info">{t('schedule.form.unattended')}</Banner>
+
+      </CardBody>
+    </Card>
+  )
+}
+
+/** Runtime limits apply to every accepted call, alongside webhook safeguards. */
+function SessionLimits({ session, onChange }: { session: SessionDraft; onChange: (change: Partial<SessionDraft>) => void }) {
+  const t = useTranslate()
+  return <Card><CardBody className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label={t('schedule.form.maxDuration')}
@@ -521,9 +579,7 @@ function SessionCard({
           value={{ decisionsEnabled: session.decisionsEnabled, decisionMaxHours: session.decisionMaxHours }}
           onChange={(value) => onChange(value)}
         />
-      </CardBody>
-    </Card>
-  )
+  </CardBody></Card>
 }
 
 // --- Address -------------------------------------------------------------------------

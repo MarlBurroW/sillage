@@ -103,6 +103,7 @@ try {
   const dialog = page.getByRole('dialog', { name: 'Nouvelle automatisation', exact: true })
   await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('Veille de test')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
+  await dialog.getByRole('tab', { name: 'Calendrier', exact: true }).click()
   // Without valid cadence nothing is submitted: button must indicate it.
   await dialog.getByRole('spinbutton', { name: 'Tous les', exact: true }).fill('0')
   assert.equal(await dialog.getByRole('button', { name: 'Créer la tâche', exact: true }).isDisabled(), true)
@@ -112,7 +113,9 @@ try {
   await dialog.getByRole('spinbutton', { name: 'Tous les', exact: true }).fill('1')
   await dialog.getByRole('combobox', { name: 'Unité', exact: true }).click()
   await page.getByRole('option', { name: 'minutes', exact: true }).click()
+  await dialog.getByRole('tab', { name: 'Garde-fous', exact: true }).click()
   await dialog.getByRole('spinbutton', { name: 'Durée maximale (min)', exact: true }).fill('3')
+  await dialog.getByRole('tab', { name: 'Calendrier', exact: true }).click()
   await dialog.getByText(/Prochain tir :/).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'form-desktop.png') })
   await dialog.getByRole('button', { name: 'Créer la tâche', exact: true }).click()
