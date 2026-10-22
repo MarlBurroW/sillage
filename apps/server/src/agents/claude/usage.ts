@@ -4,23 +4,11 @@ import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { withControlSession } from './control-session.js'
 
-/**
- * Consommation du compte Claude, lue par la requête de contrôle qui alimente `/usage`.
- *
- * La méthode du SDK s'appelle `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET`
- * et sa documentation prévient que la forme peut changer sans préavis. C'est pourquoi
- * la lecture ci-dessous ne présume rien : elle parcourt ce qui est là, ignore ce qu'elle
- * ne reconnaît pas, et n'échoue jamais sur un champ manquant. Une panne de cette sonde
- * ne doit priver l'UI que de la consommation, pas d'autre chose.
- */
+/** Claude account usage from the control request feeding `/usage`. SDK `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` explicitly permits shape changes without notice. Parse defensively, ignore unknown fields and tolerate omissions. Probe failures must affect usage display only. */
 
 const PROBE_TIMEOUT_MS = 25_000
 
-/**
- * Libellés des fenêtres documentées par le SDK. Tout ce qui n'y figure pas est affiché
- * avec sa clé d'origine plutôt qu'ignoré : c'est ainsi qu'une fenêtre ajoutée côté
- * serveur apparaît sans qu'on ait à toucher au code.
- */
+/** SDK-documented usage window labels. Unknown windows retain original keys rather than disappear, allowing server-added windows without code changes. */
 const WINDOW_LABELS: Record<string, string> = {
   five_hour: '5 heures',
   seven_day: '7 jours',
@@ -29,15 +17,15 @@ const WINDOW_LABELS: Record<string, string> = {
   seven_day_oauth_apps: '7 jours · applications',
 }
 
-/** Une fenêtre exploitable porte un taux et une date de remise à zéro. */
+/** Usable windows contain utilization and reset dates. */
 function toWindow(id: string, label: string, value: unknown): UsageWindow | null {
   if (typeof value !== 'object' || value === null) return null
   const fields = value as { utilization?: unknown; resets_at?: unknown }
 
   const hasUtilization = typeof fields.utilization === 'number'
   const hasReset = typeof fields.resets_at === 'string'
-  // Le payload contient aussi des booléens, des tableaux et des blocs monétaires :
-  // rien de tout ça n'est une fenêtre, et la forme suffit à les écarter.
+  // Payloads also contain booleans, arrays and monetary blocks:
+  // their shapes distinguish them from windows.
   if (!hasUtilization && !hasReset) return null
 
   const resetsAt = hasReset ? Date.parse(fields.resets_at as string) : Number.NaN
@@ -45,18 +33,18 @@ function toWindow(id: string, label: string, value: unknown): UsageWindow | null
   return {
     id,
     label,
-    // Le CLI compte en pourcentage, le reste de Sillage en ratio.
+    // CLI uses percentages; Sillage uses ratios.
     utilization: hasUtilization ? (fields.utilization as number) / 100 : null,
     resetsAt: Number.isFinite(resetsAt) ? resetsAt : null,
   }
 }
 
-/** Montant en unités mineures, tel que le CLI le transmet. */
+/** Amounts in CLI-supplied minor units. */
 function formatAmount(minor: unknown, places: unknown, currency: unknown): string | null {
   if (typeof minor !== 'number') return null
-  // `decimal_places` n'est pas déclaré par le type du SDK mais accompagne les montants.
-  // Sans lui on ne connaît pas l'échelle, et afficher 4250 pour 42,50 € serait pire
-  // que de ne rien afficher.
+  // `decimal_places` accompanies amounts despite missing SDK declarations.
+  // Without scales, showing 4250 instead of €42.50 is worse
+  // than displaying nothing.
   if (typeof places !== 'number') return null
 
   return new Intl.NumberFormat('fr-FR', {
@@ -98,8 +86,8 @@ function normalize(payload: unknown): Omit<AgentUsage, 'fetchedAt'> {
     if (window) windows.push(window)
   }
 
-  // Fenêtres par modèle, alimentées par le serveur : c'est par ce canal qu'une
-  // nouveauté comme Fable obtient sa propre jauge, avec son libellé déjà rédigé.
+  // Server-provided per-model windows allow new models such as Fable
+  // to receive dedicated gauges with supplied labels.
   const scoped = limits.model_scoped
   if (Array.isArray(scoped)) {
     for (const entry of scoped) {
@@ -121,18 +109,14 @@ function normalize(payload: unknown): Omit<AgentUsage, 'fetchedAt'> {
 
 export class ClaudeUsageReader {
   private readonly cached = new CachedProbe(USAGE_CACHE_TTL_MS, () => this.probe())
-  /** Résolu à chaque sonde, comme pour le catalogue : voir `ClaudeModelCatalog`. */
+  /** Resolved on every probe like catalogs; see `ClaudeModelCatalog`. */
   constructor(private readonly executable: () => Promise<string>) {}
 
   read(force = false): Promise<AgentUsage> {
     return this.cached.read(force)
   }
 
-  /**
-   * La consommation d'un abonnement supplémentaire, lue avec sa connexion de jauge (voir
-   * `ClaudeAccountGauges`). Une sonde par compte, à part de celle de la connexion du CLI ;
-   * le dossier est fourni à chaque lecture plutôt que retenu ici.
-   */
+  /** Additional-subscription usage using gauge logins (`ClaudeAccountGauges`). Probe per account separately from default CLI login; provide directories on every read rather than retain them. */
   async readForConfigDir(accountId: string, configDir: string, force = false): Promise<AgentUsage> {
     this.dirs.set(accountId, configDir)
     try {
@@ -150,15 +134,15 @@ export class ClaudeUsageReader {
   })
 
   private probe(configDir?: string): Promise<Omit<AgentUsage, 'fetchedAt'>> {
-    // Requête de contrôle, sans tour : la lecture ne consomme ni tokens ni quota.
+    // Control-only requests consume neither tokens nor quota.
     return withControlSession(
       {
         executable: this.executable,
         cwd: homedir(),
         tag: 'usage',
         timeoutMs: PROBE_TIMEOUT_MS,
-        // Le dossier de la jauge, et aucune variable qui ferait passer une autre
-        // connexion devant la sienne.
+        // Gauge directories without variables prioritizing another
+        // login over its own.
         ...(configDir ? { options: { env: withoutAuthOverrides({ ...process.env, CLAUDE_CONFIG_DIR: configDir }) } } : {}),
       },
       async (session) =>
@@ -167,7 +151,7 @@ export class ClaudeUsageReader {
   }
 }
 
-/** Ce qui passe devant la connexion d'un dossier de configuration (voir la précédence de la doc). */
+/** Authentication overriding configuration-directory login (see documented precedence). */
 function withoutAuthOverrides(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next = { ...env }
   for (const name of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_PROFILE', 'NODE_ENV']) {
@@ -176,16 +160,7 @@ function withoutAuthOverrides(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return next
 }
 
-/**
- * La consommation d'un compte supplémentaire sans jauge : connue d'avance, sans sonde.
- *
- * Une clé API n'a pas de forfait, donc pas de jauge. Un jeton de `setup-token` en a
- * un, mais ne porte que la portée `user:inference` (lue dans l'URL d'autorisation,
- * 2.1.296) : sans `user:profile`, le CLI tient les limites pour inapplicables et ne
- * les demande pas. Lancer un process de 400 Mo pour l'entendre le dire n'a pas de
- * sens ; c'est l'écran qui explique, d'après la nature du compte, pourquoi la jauge
- * manque.
- */
+/** Known usage state for additional accounts without gauges, without probing. API keys have no subscription. setup-token subscriptions carry only `user:inference` (authorization URL, 2.1.296), lacking `user:profile`, so CLIs do not request inapplicable limits. Spawning 400 MB processes to learn this wastes resources; screens explain missing gauges from account kinds. */
 export function claudeAccountUsage(): AgentUsage {
   return { agent: 'claude', plan: null, limitsAvailable: false, windows: [], credits: null, fetchedAt: Date.now() }
 }

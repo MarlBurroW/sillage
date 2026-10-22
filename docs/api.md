@@ -1,18 +1,18 @@
-# API publique
+# Public API
 
-L’API `/api/v1` s’authentifie avec `Authorization: Bearer <clé>`.
-Les clés se créent dans les réglages API de Sillage.
+The `/api/v1` API authenticates with `Authorization: Bearer <key>`.
+Keys are created in Sillage's API settings.
 
-La portée `mcp` ouvre `POST /api/v1/mcp`, le serveur MCP de Sillage par HTTP : voir
+The `mcp` scope opens `POST /api/v1/mcp`, Sillage's MCP server over HTTP: see
 [mcp.md](mcp.md).
 
-## Créer un projet
+## Create a project
 
-`POST /api/v1/projects` exige la permission `projects:write` et une clé sans
-restriction de projets. Les clés existantes ne reçoivent pas cette permission
-automatiquement : créer une nouvelle clé en la cochant.
+`POST /api/v1/projects` requires the `projects:write` permission and a key with no
+project restriction. Existing keys do not receive this permission automatically:
+create a new key with the permission selected.
 
-Pour rattacher un dossier existant sur le serveur :
+To attach an existing directory on the server:
 
 ```json
 {
@@ -21,7 +21,7 @@ Pour rattacher un dossier existant sur le serveur :
 }
 ```
 
-Pour créer un dossier dans un parent existant :
+To create a directory in an existing parent:
 
 ```json
 {
@@ -31,22 +31,22 @@ Pour créer un dossier dans un parent existant :
 }
 ```
 
-Les chemins sont absolus et désignent le système de fichiers du serveur.
-`directory` doit être un simple nom de dossier ; une destination existante doit
-être vide. Cette route ne clone pas de dépôt Git.
+Paths are absolute and refer to the server's file system.
+`directory` must be a simple directory name; an existing destination must be
+empty. This route does not clone a Git repository.
 
-Options communes : `visibility` (`private` par défaut ou `shared`), `color`
-(`#RRGGBB` ou `null`) et `instructionsMode` (`repo` ou `sillage`). Sans mode
-explicite, la présence d’un fichier de consignes dans le dossier détermine le mode,
-comme dans l’interface. Le propriétaire est l’utilisateur de la clé.
+Common options: `visibility` (`private` by default or `shared`), `color`
+(`#RRGGBB` or `null`), and `instructionsMode` (`repo` or `sillage`). Without an
+explicit mode, the presence of an instruction file in the directory determines
+the mode, as in the interface. The key's user owns the project.
 
-La réponse `201` a le même format qu’un élément de `GET /api/v1/projects` :
-`id`, `name`, `workspacePath`, `git` (booléen), `worktrees` et `defaults`.
-L’identifiant peut servir immédiatement à `POST /api/v1/projects/:id/tasks`
-avec la permission `tasks:write`. La découverte exige `projects:read`.
+The `201` response has the same format as an entry in `GET /api/v1/projects`:
+`id`, `name`, `workspacePath`, `git` (boolean), `worktrees`, and `defaults`.
+The ID can immediately be used with `POST /api/v1/projects/:id/tasks`
+with the `tasks:write` permission. Discovery requires `projects:read`.
 
-Erreurs : `401` pour une clé absente ou invalide, `403` pour une permission absente
-(`scope_missing`) ou une clé restreinte (`project_creation_restricted`), `400`
-pour un corps ou chemin invalide, `409` pour un dossier de destination non vide.
-La création n’est pas idempotente : répéter un appel réussi crée une nouvelle
-entrée de projet.
+Errors: `401` for a missing or invalid key, `403` for a missing permission
+(`scope_missing`) or restricted key (`project_creation_restricted`), `400`
+for an invalid body or path, `409` for a nonempty destination directory.
+Creation is not idempotent: repeating a successful request creates another
+project entry.

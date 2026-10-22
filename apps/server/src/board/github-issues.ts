@@ -1,15 +1,9 @@
-/**
- * Le peu de l'API GitHub dont le board a besoin : lire et écrire des issues et leurs
- * commentaires. `fetch` est injectable pour que les tests jouent un faux GitHub.
- */
+/** Minimal GitHub API for board issue/comment reads and writes. Injectable `fetch` lets tests simulate GitHub. */
 
-/**
- * Remplaçable pour les contrôles d'interface, qui jouent un faux GitHub local : rien
- * ne doit partir sur le vrai pendant une démonstration.
- */
+/** Replaceable for UI checks using local fake GitHub servers: demonstrations must never reach real GitHub. */
 const API = process.env.SILLAGE_GITHUB_API_URL?.replace(/\/+$/, '') || 'https://api.github.com'
 const PER_PAGE = 100
-/** Au-delà, la première lecture d'un gros dépôt s'arrête : le board n'est pas un miroir. */
+/** Initial reads stop here for large repositories: boards are not mirrors. */
 const MAX_PAGES = 10
 
 export interface GitHubIssue {
@@ -25,7 +19,7 @@ export interface GitHubIssue {
   created_at: string
   updated_at: string
   closed_at: string | null
-  /** Présent sur une pull request : l'API des issues les rend aussi. */
+  /** Present on pull requests, also returned by the issues API. */
   pull_request?: unknown
 }
 
@@ -45,7 +39,7 @@ export interface GitHubRepoInfo {
   permissions?: { push?: boolean; triage?: boolean }
 }
 
-/** Le code est ce que l'interface traduit ; `transient` dit s'il vaut la peine de réessayer. */
+/** Codes are translated by the interface; `transient` determines whether retries help. */
 export class BoardGitHubError extends Error {
   constructor(
     readonly code: string,
@@ -70,7 +64,7 @@ export class GitHubIssues {
     return this.call<GitHubRepoInfo>('GET', `/repos/${this.repo}`)
   }
 
-  /** Les issues, pull requests écartées, des plus anciennement modifiées aux plus récentes. */
+  /** Issues excluding pull requests, oldest modification first. */
   async listIssues(query: { state: 'open' | 'closed' | 'all'; labels?: string; since?: string }): Promise<GitHubIssue[]> {
     const params: Record<string, string> = { state: query.state, sort: 'updated', direction: 'asc' }
     if (query.labels) params.labels = query.labels
@@ -94,7 +88,7 @@ export class GitHubIssues {
     return this.call<GitHubIssue>('PATCH', `/repos/${this.repo}/issues/${number}`, body)
   }
 
-  /** Tous les commentaires du dépôt modifiés depuis `since` : une requête pour tout le board. */
+  /** Repository comments modified since `since`, one request for the entire board. */
   listRepoComments(since: string): Promise<GitHubComment[]> {
     return this.paginate<GitHubComment>(`/repos/${this.repo}/issues/comments`, { since, sort: 'updated', direction: 'asc' })
   }
@@ -154,7 +148,7 @@ export function labelNames(issue: GitHubIssue): string[] {
   return issue.labels.map((label) => (typeof label === 'string' ? label : label.name))
 }
 
-/** Le numéro d'issue d'un commentaire, lu dans son `issue_url`. */
+/** Issue number parsed from a comment's `issue_url`. */
 export function commentIssueNumber(comment: GitHubComment): number | null {
   const match = /\/issues\/(\d+)$/.exec(comment.issue_url)
   return match ? Number(match[1]) : null

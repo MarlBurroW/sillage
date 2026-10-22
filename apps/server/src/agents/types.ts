@@ -13,235 +13,127 @@ export interface PermissionDecision {
   decidedBy: string | null
 }
 
-/** Réponse de l'utilisateur à une question posée par l'agent. */
+/** User response to agent questions. */
 export interface QuestionAnswer {
   status: 'answered' | 'cancelled'
-  /** Valeurs retenues par identifiant de question. */
+  /** Selected values by question ID. */
   answers: Record<string, string[]>
   decidedBy: string | null
 }
 
-/** Réponse de l'utilisateur à une élicitation MCP. */
+/** User response to MCP elicitations. */
 export interface ElicitationAnswer {
   action: ElicitationAction
-  /** Valeurs saisies, vides sur un refus ou une annulation. */
+  /** Entered values, empty on rejection or cancellation. */
   content: Record<string, ElicitationValue>
   decidedBy: string | null
 }
 
-/** Verdict de l'utilisateur sur un plan proposé par l'agent. */
+/** User verdict on agent-proposed plans. */
 export interface PlanReview {
   decision: 'approved' | 'rejected'
-  /**
-   * Suite retenue quand le plan est accepté : l'`id` d'une option que l'adaptateur a
-   * proposées dans `plan.review_requested`. Opaque ici, validé par l'adaptateur.
-   */
+  /** Accepted-plan follow-up option `id` offered in `plan.review_requested`. Opaque here and adapter-validated. */
   followUpMode: string | null
   decidedBy: string | null
 }
 
-/** Ce que le gestionnaire de sessions fournit à un runner pour qu'il s'exprime. */
+/** Session-manager inputs enabling runner output. */
 export interface RunnerContext {
   conversationId: string
   cwd: string
   config: AgentConfig
-  /**
-   * Exécutable du CLI, déjà résolu en chemin absolu quand il a pu l'être.
-   *
-   * Ne jamais le re-résoudre ni réécrire en dur le nom du binaire dans un runner : sous
-   * systemd le PATH est minimal, et la résolution tient compte du préfixe où Sillage
-   * installe les CLI qu'il gère, que `spawn` ne connaît pas. Reste le nom configuré
-   * quand rien n'a été trouvé, pour que l'échec porte le nom demandé.
-   */
+  /** CLI executable resolved to absolute paths when possible. Never resolve again or hardcode names: systemd PATH is minimal, and resolution includes managed prefixes unknown to `spawn`. Retain configured names on failure so errors identify requested binaries. */
   binary: string
-  /** Racine de stockage des pièces jointes, à autoriser en lecture pour l'agent. */
+  /** Attachment storage root requiring agent read access. */
   attachmentsRoot: string
-  /** Origine héritée par les services lancés depuis cette conversation. */
+  /** Origin inherited by services launched from this conversation. */
   processEnv?: Record<string, string>
-  /**
-   * Résout la configuration d'une conversation en serveurs MCP : les identifiants du
-   * registre qu'elle active, moins les désactivés et les disparus, plus le serveur que
-   * Sillage monte lui-même.
-   *
-   * Prend la configuration entière et non la seule liste d'identifiants, parce que le
-   * serveur de Sillage n'en a pas : il dépend de `sillageMcp` et de `strictMcp`, qui
-   * changent à chaud comme le reste.
-   *
-   * Fonction et non tableau figé : Codex doit rejouer la liste à chaque reprise de
-   * thread, et Claude peut la remplacer à chaud. Un instantané pris au lancement
-   * mentirait dans les deux cas.
-   */
+  /** Resolves whole conversation configurations into active known registry servers plus Sillage's built-in server. Whole configurations are necessary because built-ins have no registry ID and depend on live `sillageMcp`/`strictMcp`. Functions rather than frozen lists support Codex thread resumes and Claude live replacement. */
   resolveMcpServers(config: AgentConfig): ResolvedMcpServers
-  /**
-   * Ce qui se passe sur le projet, à injecter au démarrage de la session. Null quand il
-   * n'y a rien à dire, ou que l'utilisateur a coupé les apports de Sillage.
-   *
-   * Le seul élément de contexte qui arrive sans que l'agent l'ait demandé : les outils
-   * du serveur MCP répondent quand on les interroge, encore faut-il y penser.
-   */
+  /** Project activity injected at startup, null when empty or platform additions disabled. The only context arriving without agent initiative; MCP queries require remembering to ask. */
   projectOverview(config: AgentConfig): string | null
-  /**
-   * Dossiers dont les `CLAUDE.md` et `AGENTS.md` sont à masquer au CLI, parce que le
-   * projet garde ses consignes dans Sillage (SILLAGE.md) et qu'elles arrivent déjà par
-   * `projectOverview`. Vide quand le projet les garde dans son dépôt.
-   *
-   * Lu au lancement seulement : changer de mode vaut pour les sessions suivantes.
-   */
+  /** Directories whose CLAUDE.md/AGENTS.md must be hidden because Sillage-held SILLAGE.md already arrives through `projectOverview`. Empty for repository-held instructions. Startup-only; mode changes apply to subsequent sessions. */
   maskedInstructionRoots(): string[]
-  /**
-   * Dossier de mémoire du projet, que Claude reçoit en `autoMemoryDirectory` à la place
-   * du sien. Créé au retour ; null pour les sondes, qui gardent la mémoire du poste.
-   * Codex le reçoit par `projectOverview`.
-   */
+  /** Project memory directory replacing Claude's native directory through `autoMemoryDirectory`. Created before return; null for probes preserving host memory. Codex receives it via `projectOverview`. */
   memoryDir(): string | null
-  /**
-   * Racines de plugin de la bibliothèque de skills à livrer : la globale, puis celle du
-   * projet. Vide quand la bibliothèque est coupée pour l'instance ou pour la
-   * conversation.
-   *
-   * Les dossiers existent au retour, même vides : un plugin lancé sans eux ne verrait
-   * jamais un skill ajouté ensuite. Fonction pour la même raison que `resolveMcpServers` :
-   * l'interrupteur change à chaud.
-   */
+  /** Global then project skill plugin roots, empty when libraries are disabled globally or per conversation. Directories exist even empty so plugins see later-added skills. Function like `resolveMcpServers` because switches change live. */
   skillRoots(config: AgentConfig): string[]
-  /**
-   * Worktrees où la session travaille hors de son cwd (voir `worktrees/linked.ts`), à
-   * ouvrir en écriture. Facultatif : un runner de test n'en a pas.
-   */
+  /** Writable worktrees used outside cwd (see `worktrees/linked.ts`). Optional because test runners have none. */
   workTrees?(): string[]
-  /** Identifiant de session natif à reprendre, null pour une nouvelle session. */
+  /** Native session ID to resume, null for new sessions. */
   resumeSessionId: string | null
-  /** Écrit dans le journal puis diffuse. `raw` conserve le message natif du CLI. */
+  /** Persists then broadcasts; `raw` retains native CLI messages. */
   emit(event: SillageEvent, raw?: unknown): void
   setStatus(status: ConversationStatus): void
-  /** Mémorise l'identifiant natif dès que le CLI l'annonce, pour pouvoir reprendre. */
+  /** Stores native IDs immediately upon announcement for resume. */
   setAgentSessionId(sessionId: string): void
-  /**
-   * Persiste une configuration que la session vient de changer d'elle-même (mode de
-   * permission adopté à l'approbation d'un plan, par exemple). Sans cette écriture,
-   * l'UI de réglages et la prochaine reprise repartiraient de l'ancienne valeur.
-   */
+  /** Persists session-initiated configuration changes, such as plan-approved permission modes. Otherwise settings and resume would revert to old values. */
   updateConfig(config: AgentConfig): void
-  /** Enregistre une demande de permission en attente et retourne son identifiant. */
+  /** Registers pending permissions and returns request IDs. */
   openPermissionRequest(toolName: string, input: unknown): string
   closePermissionRequest(requestId: string, decision: PermissionDecision): void
 }
 
-/** Une pièce jointe telle que le runner doit la transmettre au CLI. */
+/** Attachment as transmitted by runners. */
 export interface OutgoingAttachment {
   id: string
   filename: string
   mimeType: string
   sizeBytes: number
-  /** Chemin absolu sur le disque du serveur. */
+  /** Absolute server-disk path. */
   path: string
-  /** Image d'un format que le modèle accepte en ligne. Sinon, seul le chemin part. */
+  /** Model-compatible inline image; otherwise transmit only paths. */
   inlineImage: boolean
 }
 
-/**
- * Un fichier mentionné avec `@`, résolu par le serveur.
- *
- * Les deux CLI l'injectent différemment : Claude développe lui-même le `@chemin`
- * resté dans le texte, Codex attend un élément d'entrée `mention` à part. C'est cette
- * divergence qui justifie de faire voyager la mention à côté du texte plutôt que de
- * la laisser au seul soin de l'un des deux.
- */
+/** Server-resolved `@` mention. Claude expands text `@path` itself; Codex requires separate `mention` inputs. Carry mentions alongside text to support both native protocols. */
 export interface OutgoingMention {
-  /** Chemin relatif au répertoire de travail, tel qu'écrit dans le message. */
+  /** Working-directory-relative path as written in messages. */
   relativePath: string
-  /** Chemin absolu sur le disque du serveur. */
+  /** Absolute server-disk path. */
   path: string
   name: string
 }
 
-/**
- * Contrat commun aux CLI (invariant I3). Le reste du serveur ne connaît que cette
- * interface : ajouter un CLI, c'est écrire une implémentation, sans toucher aux
- * routes, au journal, ni au frontend.
- */
+/** Common CLI contract (invariant I3). Other server code knows only this interface: adding CLIs requires implementations without changing routes, journals or frontends. */
 export interface AgentRunner {
   readonly conversationId: string
-  /**
-   * La configuration sous laquelle la session tourne réellement, qui n'est pas toujours
-   * celle enregistrée en base.
-   *
-   * Un réglage que le CLI refuse de changer à chaud reste celui du lancement jusqu'au
-   * redémarrage, alors que la valeur demandée est déjà persistée et affichée. Sans cet
-   * accès, rien ne permet de dire à l'utilisateur sous quel régime son tour se déroule.
-   */
+  /** Actual running configuration, potentially differing from stored requests until unsupported live changes trigger restart. Enables users to see which settings govern current turns. */
   readonly appliedConfig: AgentConfig
-  /** Démarre le process et commence à traduire son flux vers le journal. */
+  /** Starts processes and normalizes streams into journals. */
   start(): Promise<void>
-  /**
-   * Les compétences arrivent par leur nom seul, là où les mentions arrivent résolues.
-   * L'asymétrie est voulue : une mention se résout sur le disque, qu'on connaît ici,
-   * une compétence sur l'inventaire que le CLI a publié, que lui seul connaît. Un nom
-   * qu'il ne reconnaît pas est ignoré.
-   */
+  /** Skills arrive by name while mentions arrive resolved. Deliberate: servers know disk paths, but only CLIs know published skill inventories. Unknown names are ignored. */
   send(
     text: string,
     attachments: OutgoingAttachment[],
     mentions: OutgoingMention[],
     skills: string[],
   ): Promise<void>
-  /**
-   * Applique une nouvelle configuration à la session en cours, sans la redémarrer.
-   * Retourne false si le CLI ne sait pas changer ce réglage à chaud : l'appelant doit
-   * alors arrêter le runner, qui repartira en reprise avec la nouvelle valeur.
-   */
+  /** Applies configurations without restarts. False means unsupported live changes requiring callers to stop runners and resume with new values. */
   applyConfig(config: AgentConfig): Promise<boolean>
-  /**
-   * Fait relire la bibliothèque de skills après une écriture, sans relancer la session.
-   *
-   * Claude relit ses skills sur demande ; Codex relit quand on lui repose ses racines.
-   * D'où une méthode, plutôt qu'un appel que le gestionnaire ferait sans savoir à quel
-   * CLI il parle.
-   */
+  /** Reloads libraries after writes without restarting. Claude reloads on demand; Codex requires resending roots. Encapsulate CLI-specific differences here. */
   reloadSkillLibrary(): Promise<void>
-  /**
-   * Titre que le CLI a dérivé de la conversation, ou null s'il n'en propose pas.
-   * Sert de titre par défaut à la place d'un « Nouvelle conversation » sans valeur.
-   */
+  /** CLI-derived title or null, replacing unhelpful 'New conversation' defaults. */
   suggestedTitle(): Promise<string | null>
   interrupt(): Promise<void>
-  /** Répond à une demande de permission en attente. false si elle n'existe plus. */
+  /** Answers pending permissions; false when no longer pending. */
   resolvePermission(requestId: string, decision: PermissionDecision): boolean
-  /** Répond à une question posée par l'agent. false si elle n'est plus en attente. */
+  /** Answers agent questions; false when no longer pending. */
   answerQuestion(requestId: string, answer: QuestionAnswer): boolean | Promise<boolean>
-  /** Répond à une élicitation MCP. false si elle n'est plus en attente. */
+  /** Answers MCP elicitations; false when no longer pending. */
   resolveElicitation(requestId: string, answer: ElicitationAnswer): boolean
-  /**
-   * Infléchit le tour en cours : le message est pris en compte immédiatement, sans
-   * interrompre ni ouvrir un nouveau tour.
-   *
-   * Retourne false quand le CLI ne sait pas le faire, ou qu'aucun tour n'est en cours.
-   */
+  /** Steers current turns immediately without interrupting or starting another. False when unsupported or no turn is active. */
   steer(
     text: string,
     attachments: OutgoingAttachment[],
     mentions: OutgoingMention[],
     skills: string[],
   ): Promise<boolean>
-  /**
-   * Compacte le contexte : l'agent résume la conversation pour libérer de la place.
-   *
-   * Retourne false si le CLI ne sait pas le faire. Les deux CLI y arrivent, mais par
-   * des chemins différents, d'où la présence de cette méthode plutôt qu'un appel direct.
-   */
+  /** Compacts context by requesting agent summaries. False when unsupported. Both CLIs support different paths, requiring this abstraction. */
   compact(): Promise<boolean>
-  /**
-   * Statue sur un plan proposé par l'agent. false si la demande n'est plus en attente,
-   * ou si le CLI ne connaît pas cette étape.
-   */
+  /** Reviews agent plans; false for expired requests or unsupported CLIs. */
   reviewPlan(requestId: string, review: PlanReview): boolean
-  /**
-   * Arrête un travail de fond par l'identifiant que `background.updated` a annoncé.
-   *
-   * Retourne false si le CLI ne sait pas le faire (capacité `stopBackgroundTask`),
-   * ou si la session n'est pas chargée. La clôture n'est pas confirmée ici : elle
-   * revient par le flux, dans le `background.updated` suivant.
-   */
+  /** Stops background IDs announced by `background.updated`. False when unsupported (`stopBackgroundTask`) or sessions are unloaded. Completion arrives through later `background.updated`, not this response. */
   stopBackgroundTask(taskId: string): Promise<boolean>
   stop(): Promise<void>
 }

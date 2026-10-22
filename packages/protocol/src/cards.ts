@@ -3,21 +3,20 @@ import { type ConversationStatus } from './api.js'
 import { type AgentKind } from './events.js'
 
 /**
- * Colonne du board, c'est-à-dire la position choisie d'une carte dans le workflow.
+ * Board column: a card's chosen workflow position.
  *
- * Délibérément pas nommée `status` : ce mot désigne l'état d'exécution d'une
- * conversation, et confondre les deux est le piège central de ce chantier. Une carte
- * porte trois axes orthogonaux — la colonne, qui se décide ; l'activité, qui s'observe
- * sur les conversations rattachées et n'est jamais persistée ici ; l'état de merge, qui
- * se lit dans git. Seul le premier est un champ de la table.
+ * Deliberately not named `status`: that describes conversation execution state, and confusing
+ * them is the central pitfall here. A card has three independent axes: its chosen column;
+ * activity observed from associated conversations, never persisted here; and merge state read
+ * from git. Only the first is a table field.
  *
- * La liste est fermée : les colonnes personnalisables rendraient l'état illisible pour
- * les dérivations et pour les outils qui liront le board.
+ * The list is closed: customizable columns would make state ambiguous for derivations and tools
+ * reading the board.
  */
 export const cardColumnSchema = z.enum(['todo', 'in_progress', 'review', 'done', 'abandoned'])
 export type CardColumn = z.infer<typeof cardColumnSchema>
 
-/** Ordre d'affichage des colonnes, du backlog vers les sorties. */
+/** Column display order, from backlog to exit columns. */
 export const CARD_COLUMNS: readonly CardColumn[] = [
   'todo',
   'in_progress',
@@ -27,8 +26,8 @@ export const CARD_COLUMNS: readonly CardColumn[] = [
 ]
 
 /**
- * Colonnes de sortie, repliées par défaut sur le board : sans quoi un projet ancien
- * finit dominé par son cimetière.
+ * Exit columns, collapsed by default: otherwise an old project becomes dominated by its
+ * graveyard.
  */
 export const CARD_CLOSED_COLUMNS: readonly CardColumn[] = ['done', 'abandoned']
 
@@ -37,8 +36,8 @@ const DESCRIPTION_MAX = 20_000
 
 export const createCardBodySchema = z.object({
   /**
-   * Créer la carte comme issue sur le dépôt relié ; absent, le réglage du board décide.
-   * Sans board relié, ignoré.
+   * Create the card as an issue in the linked repository; if absent, board settings decide.
+   * Ignored without a linked board.
    */
   github: z.boolean().optional(),
   title: z.string().min(1).max(CARD_TITLE_MAX),
@@ -55,11 +54,10 @@ export const updateCardBodySchema = z
   .partial()
 
 /**
- * Ordre des cartes, colonne par colonne, du haut vers le bas.
+ * Card order per column, top to bottom.
  *
- * Un déplacement touche une colonne quand il monte ou descend une carte, deux quand il
- * la change de colonne. Les deux sont donc écrites d'un seul geste : les envoyer
- * séparément laisserait une carte dupliquée ou absente entre les deux requêtes.
+ * Moving a card affects one column when reordering, two when changing columns. Both are
+ * therefore written atomically: separate requests would temporarily duplicate or lose the card.
  */
 export const reorderCardsBodySchema = z.object({
   columns: z
@@ -73,7 +71,7 @@ export const reorderCardsBodySchema = z.object({
     .max(CARD_COLUMNS.length),
 })
 
-/** Une carte vue depuis une autre : de quoi rendre une puce `#12` sans second appel. */
+/** A card viewed from another card: enough to render a `#12` badge without a second request. */
 export interface CardLinkDto {
   id: string
   number: number
@@ -81,7 +79,7 @@ export interface CardLinkDto {
   column: CardColumn
 }
 
-/** Les sens inverses sont des vues : une seule relation est persistée. */
+/** Inverse directions are views: only one relationship is persisted. */
 export const cardRelationKindSchema = z.enum([
   'blocks', 'blocked_by', 'related', 'duplicates', 'duplicated_by',
   'parent', 'child', 'replaces', 'replaced_by',
@@ -104,10 +102,10 @@ export interface CardRelationDto {
 }
 
 /**
- * Une conversation rattachée, telle que la carte a besoin de la montrer.
+ * An associated conversation, with the information needed by the card.
  *
- * `status` est l'état au chargement, comme partout ailleurs : le flux de statuts du
- * WebSocket a le dernier mot côté client.
+ * `status` is its load-time state, as elsewhere: WebSocket status updates have the final say on
+ * the client.
  */
 export interface CardConversationDto {
   id: string
@@ -125,45 +123,43 @@ const NOTE_MAX = 8_000
 
 export const createCardNoteBodySchema = z.object({
   body: z.string().min(1).max(NOTE_MAX),
-  /** Sur une carte liée à une issue : publier aussi la note en commentaire. */
+  /** For a card linked to an issue: also publish the note as a comment. */
   publish: z.boolean().default(false),
 })
 
 /**
- * Où en est la publication d'une note locale sur l'issue liée : partie, en route, ou
- * refusée par GitHub. Absent pour une note restée locale ou venue de GitHub.
+ * Publication state of a local note on the linked issue: sent, in progress, or rejected by
+ * GitHub. Absent for notes that stayed local or came from GitHub.
  */
 export type CardNotePublication = 'pending' | 'published' | 'failed'
 
 /**
- * Une note du fil d'une carte : ce qu'une session a fait, trouvé ou décidé.
+ * A note in a card's thread: what a session did, found or decided.
  *
- * Ajoutée, jamais réécrite, et distincte de la description : celle-ci est l'énoncé du
- * travail, tenu par une personne ; les notes en sont l'historique, écrit surtout par
- * les agents.
+ * Appended, never rewritten, and separate from the description: the description states the work
+ * and is maintained by a person; notes are its history, written mostly by agents.
  */
 export interface CardNoteDto {
   id: string
   body: string
   createdAt: number
   /**
-   * Qui l'a écrite. Une note d'agent porte sa conversation, pour qu'on puisse aller
-   * lire le travail dont elle rend compte ; `null` quand la conversation a été
-   * supprimée depuis, la note lui survivant.
+   * Author. Agent notes carry their conversation so readers can inspect the work reported;
+   * `null` if the conversation was later deleted, since the note outlives it.
    */
   author:
     | { kind: 'agent'; agent: AgentKind; conversationId: string | null; conversationTitle: string }
     | { kind: 'user'; name: string }
-    /** Un commentaire écrit sur GitHub, par quelqu'un de la communauté ou par soi. */
+    /** A GitHub comment written by a community member or oneself. */
     | { kind: 'github'; login: string }
-  /** Le commentaire GitHub de la note, venu de là-bas ou publié depuis ici. */
+  /** The note's GitHub comment, either received from there or published from here. */
   externalUrl: string | null
   publication: CardNotePublication | null
-  /** Code du refus de GitHub, pour une publication en échec. */
+  /** GitHub rejection code for a failed publication. */
   publicationError: string | null
 }
 
-/** L'issue dont une carte est le reflet, ou dont elle s'est détachée. */
+/** Issue mirrored by a card, or from which it was detached. */
 export interface CardExternalDto {
   provider: 'github'
   number: number
@@ -172,8 +168,8 @@ export interface CardExternalDto {
   labels: string[]
   state: 'open' | 'closed'
   /**
-   * Détachée : la carte est redevenue locale, l'issue vit sa vie sur GitHub et la
-   * synchronisation ne la touche plus. Le lien reste, pour savoir d'où elle vient.
+   * Detached: the card is local again, the issue lives independently on GitHub, and sync no
+   * longer touches it. The link remains to preserve its origin.
    */
   detached: boolean
 }
@@ -181,7 +177,7 @@ export interface CardExternalDto {
 export interface CardDto {
   id: string
   projectId: string
-  /** Numéro court, unique dans le projet, tel qu'il s'écrit après le `#`. */
+  /** Short number, unique within the project, as written after `#`. */
   number: number
   title: string
   description: string
@@ -191,32 +187,32 @@ export interface CardDto {
   createdByName: string
   createdAt: number
   updatedAt: number
-  /** Arrivée dans la colonne actuelle, pour l'ordre « par arrivée » du board. */
+  /** Arrival in the current column, for the board's arrival ordering. */
   columnEnteredAt: number
   conversations: CardConversationDto[]
-  /** Les notes ne voyagent pas avec la liste : le board n'en affiche que le compte. */
+  /** Notes are not included in listings: the board only displays their count. */
   attachmentCount: number
   noteCount: number
-  /** Cartes que la description de celle-ci mentionne. */
+  /** Cards mentioned by this card's description. */
   references: CardLinkDto[]
-  /** Cartes dont la description mentionne celle-ci. */
+  /** Cards whose descriptions mention this one. */
   referencedBy: CardLinkDto[]
-  /** L'issue GitHub liée, pour une carte d'un board relié ; null pour une carte locale. */
+  /** Linked GitHub issue for a connected board card; null for local cards. */
   external: CardExternalDto | null
 }
 
 /**
- * Le `#` doit ouvrir un mot, comme le `@` des fichiers : sans cette contrainte, une
- * couleur hexadécimale ou une ancre d'URL passerait pour une référence.
+ * `#` must start a word, like `@` for files: otherwise hexadecimal colors or URL fragments
+ * would be mistaken for references.
  */
 const CARD_REFERENCE = /(?:^|[^\w#])#(\d+)\b/g
 
 /**
- * Numéros de cartes cités dans un texte, dédupliqués et dans l'ordre d'apparition.
+ * Card numbers cited in text, deduplicated in order of appearance.
  *
- * Partagé par le serveur, qui en tire les backlinks à l'enregistrement, et par le web,
- * qui en tire les puces cliquables. Deux analyseurs finiraient par diverger, et une
- * référence rendue d'un côté sans exister de l'autre est pire que pas de référence.
+ * Shared by the server, which derives backlinks on save, and the web frontend, which builds
+ * clickable badges. Two parsers would eventually diverge; a reference rendered on one side but
+ * absent on the other is worse than no reference.
  */
 export function parseCardReferences(text: string): number[] {
   const found: number[] = []
@@ -227,8 +223,8 @@ export function parseCardReferences(text: string): number[] {
 }
 
 /**
- * Chaque `#n` d'un texte, avec sa place : début du `#` et fin du numéro. Sert au rendu,
- * qui remplace la référence par un lien sans toucher au caractère qui la précède.
+ * Every `#n` in text with its position: start of `#` and end of the number. Rendering replaces
+ * it with a link without touching the preceding character.
  */
 export function cardReferenceRanges(text: string): { start: number; end: number; number: number }[] {
   const ranges: { start: number; end: number; number: number }[] = []
@@ -242,10 +238,10 @@ export function cardReferenceRanges(text: string): { start: number; end: number;
 }
 
 /**
- * Nom de branche proposé pour la première session d'une carte.
+ * Suggested branch name for a card's first session.
  *
- * Le numéro passe devant pour que la branche se relie à sa carte au premier coup d'œil
- * dans `git branch`, où le titre seul ne dit pas d'où il vient.
+ * The number comes first to link the branch to its card at a glance in `git branch`, where a
+ * title alone does not reveal its origin.
  */
 export function cardBranchName(number: number, title: string): string {
   const slug = title

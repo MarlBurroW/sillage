@@ -14,7 +14,7 @@ import { uuidv4 } from './uuid'
 export const conversationsKey = (projectId: string) => ['conversations', projectId]
 const ALL_CONVERSATIONS_KEY = ['conversations', 'all']
 
-/** Toutes les conversations visibles, pour la sidebar. Une requête, pas une par projet. */
+/** All visible conversations for the sidebar. One query rather than one per project. */
 export function useAllConversations() {
   return useQuery({
     queryKey: ALL_CONVERSATIONS_KEY,
@@ -24,10 +24,8 @@ export function useAllConversations() {
 }
 
 /**
- * Ordre manuel au sein d'un projet.
- *
- * Le réordonnancement est appliqué localement avant la réponse du serveur : un
- * glisser-déposer qui attend un aller-retour réseau se voit, et se voit mal.
+ * Manual order within a project. Apply it locally before the server replies: waiting for a network
+ * round trip makes drag-and-drop visibly laggy.
  */
 export function useReorderConversations(projectId: string) {
   const queryClient = useQueryClient()
@@ -41,8 +39,8 @@ export function useReorderConversations(projectId: string) {
       const previous = queryClient.getQueryData<ConversationDto[]>(ALL_CONVERSATIONS_KEY)
       if (!previous) return { previous }
 
-      // Les conversations des autres projets ne bougent pas : on remet celles du
-      // projet concerné dans les emplacements qu'elles occupaient déjà.
+      // Leave other projects' conversations in place: put the reordered project conversations back
+      // in their existing slots.
       const byId = new Map(previous.map((entry) => [entry.id, entry]))
       const reordered = ids.map((id) => byId.get(id)).filter((entry) => entry !== undefined)
       const slots = previous.flatMap((entry, index) => (entry.projectId === projectId ? [index] : []))
@@ -58,7 +56,7 @@ export function useReorderConversations(projectId: string) {
     },
 
     onError: (_error, _ids, context) => {
-      // Le serveur a refusé : l'ordre affiché doit redevenir celui qu'il connaît.
+      // Server rejection: restore the order known by the server.
       if (context?.previous) queryClient.setQueryData(ALL_CONVERSATIONS_KEY, context.previous)
     },
 
@@ -91,12 +89,9 @@ export function useArchiveConversation() {
 }
 
 /**
- * Signet personnel, posé ou retiré.
- *
- * Appliqué localement avant la réponse : l'étoile est un geste de navigation, et la
- * voir se remplir un aller-retour plus tard donne l'impression d'un clic manqué. Les
- * deux listes en cache sont retouchées, la sidebar lisant l'une et une page de projet
- * l'autre.
+ * Add or remove a personal bookmark. Apply locally before the reply: starring is a navigation
+ * action, and a delayed star looks like a missed click. Update both cached lists because the
+ * sidebar and project page read different ones.
  */
 export function useToggleFavorite() {
   const queryClient = useQueryClient()
@@ -123,8 +118,8 @@ export function useToggleFavorite() {
     },
 
     onError: (_error, { id }, context) => {
-      // Une lecture ou un changement de statut peut arriver pendant la requête.
-      // Revenir sur le signet ne doit pas remettre toute la liste à son ancien état.
+      // A read or status change may arrive during the request. Rolling back the bookmark must not
+      // restore the entire old list.
       for (const [key, list] of context?.previous ?? []) {
         const previous = list?.find((entry) => entry.id === id)
         if (!previous) continue
@@ -165,11 +160,11 @@ export function useCreateConversation(projectId: string) {
       agent: AgentConfig['agent']
       config: AgentConfig
       title?: string
-      /** null signifie « dossier du projet », sans worktree. */
+      /** null means the project directory without a worktree. */
       worktreeId?: string | null
-      /** Carte traitée, quand le brouillon a été ouvert depuis le board. */
+      /** Associated card when the draft was opened from the board. */
       cardId?: string | null
-      /** Envoyé avec la création : sans message, aucune conversation n'est écrite. */
+      /** Sent with creation: without a message, no conversation is written. */
       firstMessage?: {
         clientMessageId: string
         text: string
@@ -186,8 +181,7 @@ export function useCreateConversation(projectId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       void queryClient.invalidateQueries({ queryKey: ['projects'] })
-      // Lancer depuis une carte lui ajoute une session et peut la faire changer de
-      // colonne : le board affiché derrière serait faux sans cette relecture.
+      // Starting from a card adds a session and may move its column: reread or the board behind would be stale.
       void queryClient.invalidateQueries({ queryKey: ['cards'] })
     },
   })
@@ -212,8 +206,7 @@ export function sendMessage(
   skills: string[] = [],
 ): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/messages`, {
-    // Identifiant stable côté client : un renvoi après timeout réseau est ignoré
-    // par le serveur au lieu de poster le message deux fois (invariant I5).
+    // Stable client ID: the server ignores a retry after network timeout instead of posting twice (invariant I5).
     clientMessageId: uuidv4(),
     text,
     attachmentIds,
@@ -223,10 +216,8 @@ export function sendMessage(
 }
 
 /**
- * Infléchit le tour en cours au lieu d'ouvrir le suivant.
- *
- * N'existe que là où le CLI le permet : le serveur refuse explicitement si aucun tour
- * n'est en cours, plutôt que de replier sur la file d'attente.
+ * Steer the current turn instead of opening the next. Available only for supporting CLIs: the
+ * server explicitly rejects when no turn is running instead of falling back to queueing.
  */
 export function steerConversation(
   conversationId: string,
@@ -244,7 +235,7 @@ export function steerConversation(
   })
 }
 
-/** Demande à l'agent de résumer la conversation pour libérer du contexte. */
+/** Ask the agent to summarize the conversation to free context. */
 export function compactConversation(conversationId: string): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/compact`)
 }
@@ -282,10 +273,8 @@ export function answerQuestion(
 }
 
 /**
- * Branche la conversation à un point du fil.
- *
- * `throughSeq` est le dernier événement conservé : la branche reprend l'historique
- * jusque-là, et l'agent y est ramené au même point.
+ * Fork the conversation at a thread position. `throughSeq` is the last retained event: history and
+ * agent state resume from that point.
  */
 export function forkConversation(
   conversationId: string,
@@ -295,10 +284,8 @@ export function forkConversation(
 }
 
 /**
- * Continue la conversation dans un autre CLI.
- *
- * La suite est créée sans message : la nouvelle demande s'écrit dans son composer, et
- * le contexte sélectionné part au CLI avec elle, au premier tour.
+ * Continue the conversation in another CLI. Create the continuation without a message: the next
+ * request is written in its composer, and the selected context is sent with it on the first turn.
  */
 export function handoffConversation(
   conversationId: string,
@@ -307,7 +294,7 @@ export function handoffConversation(
   return api.post<ConversationDto>(`/api/conversations/${conversationId}/handoff`, body)
 }
 
-/** Ce qu'une suite a reçu de sa source ; absent pour toute autre conversation. */
+/** Context received from a continuation's source; absent in other conversations. */
 export function useHandoff(conversationId: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: ['conversation', conversationId, 'handoff'],
@@ -317,17 +304,17 @@ export function useHandoff(conversationId: string | undefined, enabled: boolean)
   })
 }
 
-/** Retire un message de la file avant son envoi au CLI. */
+/** Remove a queued message before sending it to the CLI. */
 export function cancelQueuedMessage(conversationId: string, queueId: string): Promise<unknown> {
   return api.delete(`/api/conversations/${conversationId}/queue/${queueId}`)
 }
 
-/** Fait passer un message en attente dans le tour en cours au lieu du suivant. */
+/** Move a queued message into the current turn instead of the next. */
 export function steerQueuedMessage(conversationId: string, queueId: string): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/queue/${queueId}/steer`)
 }
 
-/** Remet un message de session retenu, malgré les garde-fous qui l'ont arrêté. */
+/** Deliver a held session message despite the safeguards that stopped it. */
 export function releaseSessionMessage(conversationId: string, messageId: string): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/session-messages/${messageId}/release`)
 }
@@ -352,7 +339,7 @@ export function decidePlan(
   conversationId: string,
   requestId: string,
   decision: 'approved' | 'rejected',
-  /** L'`id` d'une option de suite annoncée par le plan, opaque pour le client. */
+  /** The plan's follow-up option `id`, opaque to the client. */
   followUpMode: string | null,
 ): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/plans/${requestId}`, {
@@ -364,21 +351,14 @@ export function decidePlan(
 export type JournalPage = { seq: number; ts: number; event: SillageEvent }[]
 
 /**
- * Rattrapage complet depuis un curseur. La route est paginée, donc on boucle
- * jusqu'à rejoindre le dernier `seq` connu du serveur : s'arrêter à la première page
- * laisserait des trous invisibles dans le fil.
- *
- * Chaque page est rendue à l'appelant dès son arrivée plutôt qu'à la fin. Une
- * conversation de vingt mille événements en demande une quarantaine, et les attendre
- * toutes laissait l'écran vide le temps d'autant d'allers-retours enchaînés. Le fil
- * s'affiche maintenant dès la première et grandit jusqu'à sa fin.
- *
- * Les pages ne peuvent pas être demandées en parallèle : le curseur d'une page est le
- * dernier `seq` lu par la précédente, et rien ne permet de le prévoir, une page rendant
- * moins d'entrées qu'elle n'en lit depuis que ses deltas y sont fusionnés.
- *
- * Rend le dernier `seq` lu, qui n'est pas celui de la dernière entrée rendue et devient
- * le curseur d'abonnement du WebSocket.
+ * Catch up fully from a cursor. The route is paginated, so loop until reaching the server's latest
+ * `seq`; stopping at the first page would leave invisible thread gaps. Deliver pages as they arrive
+ * rather than waiting for all of them: a twenty-thousand-event conversation takes roughly forty
+ * sequential round trips, previously leaving the screen empty. The thread now appears with the
+ * first page and grows to completion. Pages cannot be requested in parallel: each cursor is the
+ * previous page's last read `seq`, which cannot be predicted because merged deltas mean pages
+ * return fewer entries than they read. Return the last read `seq`, distinct from the last returned
+ * entry, for the WebSocket subscription cursor.
  */
 export async function fetchJournal(
   conversationId: string,
@@ -402,14 +382,13 @@ export async function fetchJournal(
       )
     }
 
-    // Le web s'échange sans redémarrage, le serveur non : entre les deux, ce client
-    // parle à un serveur qui ignore `nextAfter`. On retombe alors sur la dernière entrée
-    // rendue, ce qu'il faisait avant, plutôt que d'avancer sur un `undefined` qui
-    // relirait la première page sans fin.
+    // The web app can deploy without restarting the server. Older servers omit `nextAfter`, so fall
+    // back to the last returned entry as before; advancing to `undefined` would reread the first
+    // page forever.
     const next = page.nextAfter ?? page.entries.at(-1)?.seq ?? cursor
 
-    // Une page qui n'avance pas arrête la boucle : sans ce garde, un serveur qui rendrait
-    // un curseur immobile la ferait tourner sur la même page indéfiniment.
+    // Stop if a page makes no progress: otherwise a server returning a stationary cursor would loop
+    // on the same page indefinitely.
     if (next <= cursor || next >= page.lastSeq) return Math.max(cursor, next)
     cursor = next
   }

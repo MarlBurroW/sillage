@@ -2,16 +2,10 @@ import { existsSync } from 'node:fs'
 import type { UpdateChannel } from '@sillage/protocol'
 import { INSTANCE_PROFILE } from '../instance/profile.js'
 
-/**
- * L'unité systemd générée par install.sh pose SILLAGE_INSTALL_DIR, l'image
- * Docker pose SILLAGE_UPDATE_CHANNEL=docker. Le test /.dockerenv couvre une
- * image dérivée qui aurait perdu la variable. Tout le reste (checkout de dev,
- * layout inconnu) ne doit jamais permettre de mise à jour intégrée : on
- * écraserait des fichiers qu'on ne gère pas.
- */
+/** install.sh systemd units set SILLAGE_INSTALL_DIR; Docker images set SILLAGE_UPDATE_CHANNEL=docker. Check /.dockerenv for derived images missing that variable. Never permit built-in updates for other layouts (development checkouts or unknown installations), which would overwrite unmanaged files. */
 export function detectChannel(): UpdateChannel {
-  // L'application de bureau se remplace par sa nouvelle version : le serveur qu'elle
-  // embarque ne touche jamais à ses propres fichiers.
+  // Desktop replaces the entire app with its new version; its bundled server
+  // bundles never modifies its own files.
   if (INSTANCE_PROFILE === 'desktop') return 'desktop'
   if (process.env.SILLAGE_UPDATE_CHANNEL === 'docker' || existsSync('/.dockerenv')) {
     return 'docker'
@@ -20,7 +14,7 @@ export function detectChannel(): UpdateChannel {
   return 'none'
 }
 
-/** Racine du layout installeur (contient releases/ et le lien current). */
+/** Installer layout root containing releases and the current symlink. */
 export function installDir(): string {
   const dir = process.env.SILLAGE_INSTALL_DIR
   if (!dir) throw new Error('SILLAGE_INSTALL_DIR non défini')

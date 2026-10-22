@@ -33,13 +33,9 @@ import { failureNotice, useGitPane } from './context'
 import { Section, useSectionOpen } from './Section'
 
 /**
- * Les branches du dépôt, et ce qu'on en fait : en créer une, changer, fusionner,
- * supprimer.
- *
- * Changer de branche est explicite, par un bouton, jamais au clic sur la ligne : la
- * liste se parcourt sans risque, et un changement de branche qui touche cent fichiers
- * mérite un geste qu'on ne fait pas par mégarde. Une branche extraite dans un autre
- * worktree ne peut pas l'être ici : git le refuserait, on le montre d'avance.
+ * Repository branches with create, checkout, merge, and delete. Checkout requires explicit buttons
+ * rather than row clicks so browsing cannot accidentally rewrite hundreds of files. Show branches
+ * checked out elsewhere as unavailable before Git rejects them.
  */
 export function BranchesSection({ repo }: { repo: GitRepoStatusDto }) {
   const t = useTranslate()
@@ -64,7 +60,7 @@ export function BranchesSection({ repo }: { repo: GitRepoStatusDto }) {
         onSuccess: () => notify(null),
         onError: (error) => {
           const notice = failureNotice(error, t('git.action.failed'))
-          // Le remède habituel : mettre le travail de côté, changer, le reprendre plus tard.
+          // Usual remedy: stash work, switch, and restore later.
           if (notice.code === 'git_dirty_worktree') {
             notice.actions = [
               {
@@ -367,7 +363,7 @@ function RemoteBranchRow({
   )
 }
 
-/** Nouvelle branche : son nom, d'où elle part, et si l'on y passe tout de suite. */
+/** New branch name, starting point, and immediate-checkout choice. */
 function CreateBranchForm({
   repo,
   names,

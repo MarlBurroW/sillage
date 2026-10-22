@@ -112,11 +112,11 @@ test('un tour : réflexion, texte, outils normalisés, sortie en flux, édition,
     ['c1', '1→a\n', false],
     ['c2', 'hi\nthere\n', false],
     ['c3', '', false],
-    // Le texte rendu au modèle, rangé sous la variante de l'énumération Rust de Grok.
+    // Model-facing text stored under Grok's Rust enum variant.
     ['c4', 'card', false],
   ])
   assert.deepEqual(f.events.find((event) => event.type === 'file.edited'), { type: 'file.edited', toolCallId: 'c3', path: 'a.txt', action: 'modified' })
-  // Les blocs `diff` voyagent avec la clôture, pour que `describeEdit` retrouve l'extrait.
+  // `diff` blocks accompany completions so `describeEdit` can recover excerpts.
   const editClose = completed.find((event) => event.toolCallId === 'c3')!
   assert.deepEqual((f.raw[f.events.indexOf(editClose)] as { diffs: unknown }).diffs, [{ path: `${f.cwd}/a.txt`, oldText: 'a', newText: 'b' }])
 
@@ -161,7 +161,7 @@ test('lancement : isolation, MCP, modèle et effort posés à la création, comm
     { type: 'http', name: 'remote', url: 'https://example.com/mcp', headers: [{ name: 'Authorization', value: 'Bearer x' }] },
   ])
   assert.deepEqual(created.params._meta, { yoloMode: false, autoMode: false, reasoningEffort: 'low', modelId: 'grok-fast' })
-  // Modèle et effort partent avec la création : rien à reposer ensuite.
+  // Model and effort accompany creation; nothing needs resending afterward.
   assert.equal(rpc.filter((entry) => entry.method === 'session/set_config_option').length, 0)
 
   assert.deepEqual(f.events.find((event) => event.type === 'session.started'),

@@ -16,9 +16,8 @@ const STATUS: Record<DecisionStatus, { label: MessageKey; tone: 'accent' | 'posi
 }
 
 /**
- * Les décisions du compte : celles qui attendent, puis l'historique de ce qui a été
- * tranché, par qui, ou laissé à l'échéance. `?open=` ouvre une décision : c'est
- * l'adresse que suivent les notifications.
+ * Account decisions: pending first, then history of resolutions, who answered, or deadline
+ * outcomes. `?open=` opens a decision, the URL used by notifications.
  */
 export function DecisionsPage() {
   const t = useTranslate()

@@ -9,9 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Comptes Codex supplémentaires : création, connexion par clé API et par code d'appareil,
-// sélecteur de compte dans les défauts du CLI. Vrais composants, vraie API, base temporaire ;
-// le vrai `codex app-server` est lancé pour les connexions, dans un home jetable.
+// Extra Codex accounts: creation, API-key/device-code sign-in, CLI-default account
+// selector. Real components/API, temporary database; real `codex app-server` runs
+// for sign-in in a disposable home.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -77,7 +77,7 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // Créer un compte : il naît non connecté, avec les deux voies de connexion.
+  // Create account: initially signed out with both sign-in methods.
   await page.goto(`${base}/settings/comptes-codex`)
   await page.getByText('Aucun compte supplémentaire').waitFor()
   await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
@@ -88,7 +88,7 @@ try {
   assert.equal(listed.accounts[0].status, 'pending')
   const id = listed.accounts[0].id
 
-  // Clé API : Codex l'écrit dans le home du compte, sans joindre OpenAI.
+  // API key: Codex writes it in account home without contacting OpenAI.
   await page.getByRole('button', { name: 'Utiliser une clé API' }).click()
   await page.getByLabel('Clé API').fill('sk-test-bogus-key')
   await page.getByRole('button', { name: 'Se connecter', exact: true }).click()
@@ -100,7 +100,7 @@ try {
   assert.ok((await lstat(join(data, 'data', 'codex-accounts', id, 'config.toml')).catch(() => null))?.isSymbolicLink() ?? true, 'config.toml lié au home de l’utilisateur quand il existe')
   await page.screenshot({ path: '/tmp/sillage-codex-accounts-desktop.png' })
 
-  // Le sélecteur de compte dans les défauts de Codex.
+  // Account selector in Codex defaults.
   await page.goto(`${base}/settings/cli`)
   await page.getByRole('radio', { name: /Codex/ }).click()
   const account = page.getByRole('combobox', { name: 'Compte' })
@@ -112,9 +112,9 @@ try {
   assert.equal(settings.agentDefaults.codex.account, id)
   assert.equal(settings.agentDefaults.claude.account, null)
 
-  // Déconnexion : le compte redevient en attente et disparaît du sélecteur.
+  // Sign-out returns account to pending and removes it from selector.
   await page.goto(`${base}/settings/comptes-codex`)
-  // Pas le bouton de la navigation, qui ferme la session Sillage : celui de la carte.
+  // Use the card button, not navigation sign-out, which closes the Sillage session.
   await page.getByRole('button', { name: 'Déconnecter ce compte' }).click()
   await page.getByText('Non connecté').waitFor({ timeout: 30000 }).catch(async (err) => {
     await page.screenshot({ path: '/tmp/sillage-codex-accounts-failure.png' })
@@ -124,7 +124,7 @@ try {
   assert.equal((await (await context.request.get(`${base}/api/codex-accounts`)).json()).accounts[0].status, 'pending')
   assert.ok(!(await readFile(authFile, 'utf8').catch(() => '')).includes('sk-test'), 'auth.json retiré par Codex')
 
-  // Code d'appareil : Codex rend une URL et un code, l'écran les montre, on annule.
+  // Device code: Codex returns URL/code, screen displays them, cancel.
   await page.getByRole('button', { name: "Se connecter par code d'appareil" }).click()
   await page.getByText('Ouvrir la page de connexion').waitFor({ timeout: 30000 })
   const code = await page.locator('code').first().textContent()
@@ -137,7 +137,7 @@ try {
   await page.getByRole('button', { name: "Se connecter par code d'appareil" }).waitFor()
   assert.equal((await (await context.request.get(`${base}/api/codex-accounts/${id}/login`)).json()).state, 'idle')
 
-  // Au téléphone : l'écran tient dans la largeur.
+  // Phone: screen fits the width.
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await mobile.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
   await mobile.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })

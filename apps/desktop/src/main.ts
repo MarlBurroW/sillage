@@ -6,42 +6,42 @@ import { loginShellEnv, pathKey } from './shell-env'
 import { text } from './texts'
 
 /**
- * Processus principal de l'application de bureau.
+ * Desktop application's main process.
  *
- * Il lance le serveur de Sillage, celui des releases, avec le Node embarqué ; pose en
- * cookie la session que ce serveur lui remet ; et montre dans une fenêtre l'interface
- * qu'il sert. Tout le reste est l'application web, la même que sur une instance
- * hébergée, qui adapte ses écrans au profil `desktop` que le serveur lui annonce.
+ * Starts the release Sillage server with bundled Node, sets its returned session
+ * as a cookie, and displays the served interface in a window. Everything else is
+ * the same web app as a hosted instance, adapting screens to the server's
+ * announced `desktop` profile.
  */
 
-/** Doit rester le nom de `SESSION_COOKIE` (apps/server/src/auth/sessions.ts). */
+/** Must match `SESSION_COOKIE` (apps/server/src/auth/sessions.ts). */
 const SESSION_COOKIE = 'sillage_session'
 
-/** Le fond de l'application, pour qu'aucun éclair blanc ne précède le premier rendu. */
+/** App background prevents a white flash before the first render. */
 const BACKGROUND = '#0b0d1c'
 
 let server: RunningServer | null = null
 let origin = ''
 let quitting = false
 
-// Un profil jetable pour le contrôle de lancement (scripts/desktop-ui-check.mjs), qui ne
-// touche ni aux projets ni aux réglages de l'utilisateur. Avant toute lecture du chemin.
-// Sous Windows, dans AppData\Local plutôt que Roaming : la base peut peser des gigaoctets,
-// et un profil itinérant la recopierait à chaque ouverture de session.
+// Disposable launch-check profile (scripts/desktop-ui-check.mjs), leaving user
+// projects/settings untouched. Set before reading any path.
+// On Windows use AppData\Local instead of Roaming: databases can weigh gigabytes,
+// and roaming profiles would copy them at every sign-in.
 if (process.env.SILLAGE_DESKTOP_USER_DATA) app.setPath('userData', process.env.SILLAGE_DESKTOP_USER_DATA)
 else if (process.platform === 'win32' && process.env.LOCALAPPDATA) app.setPath('userData', join(process.env.LOCALAPPDATA, 'Sillage'))
 const userData = app.getPath('userData')
 const logFile = join(userData, 'logs', 'server.log')
 
-// Empaquetée, l'app trouve le serveur et Node dans ses ressources ; lancée depuis le
-// dépôt, dans `stage/`, que remplit `scripts/desktop-stage.mjs`.
+// Packaged apps find server and Node in resources; repository launches use
+// `stage/`, populated by `scripts/desktop-stage.mjs`.
 const resources = app.isPackaged ? process.resourcesPath : join(__dirname, '..', 'stage')
 const node =
   process.platform === 'win32' ? join(resources, 'node', 'node.exe') : join(resources, 'node', 'bin', 'node')
 
-// Une seule instance : deux serveurs sur la même base se disputeraient le planificateur et
-// la synchro du board, et le second ouvrirait sa page sur un autre port, donc sans les
-// brouillons ni les préférences du premier.
+// Single instance: two servers on one database would compete for scheduler and
+// board sync, and the second would open another port without the first's drafts
+// or preferences.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -60,8 +60,8 @@ if (!app.requestSingleInstanceLock()) {
 async function boot(): Promise<void> {
   const locale = app.getSystemLocale().replace('-', '_')
   const env = await loginShellEnv(node, locale.includes('_') ? `${locale}.UTF-8` : 'en_US.UTF-8')
-  // Node et npm embarqués en dernier recours : ceux que l'utilisateur maintient passent
-  // devant, mais Sillage peut installer un CLI et le lancer sur un poste qui n'a rien.
+  // Bundled Node/npm are fallbacks: user-maintained ones take precedence, but
+  // Sillage can install and launch a CLI on an otherwise empty machine.
   const key = pathKey(env)
   env[key] = [env[key], dirname(node)].filter(Boolean).join(delimiter)
   const port = await stablePort(join(userData, 'desktop.json'))
@@ -83,8 +83,8 @@ async function launch({ env, port }: { env: NodeJS.ProcessEnv; port: number }): 
   server = started
   const handshake = await started.ready
   origin = handshake.origin
-  // Sans date d'expiration : le cookie ne survit pas à l'app, et le serveur ouvre une
-  // session neuve à chaque lancement.
+  // No expiration: the cookie does not outlive the app, and the server opens a new
+  // session on every launch.
   await session.defaultSession.cookies.set({
     url: origin,
     name: SESSION_COOKIE,
@@ -99,7 +99,7 @@ async function launch({ env, port }: { env: NodeJS.ProcessEnv; port: number }): 
   })
 }
 
-/** Le serveur est tombé en cours de route : le dire, et proposer de le relancer. */
+/** Report a server crash during use and offer to restart it. */
 async function stopped(code: number | null, settings: { env: NodeJS.ProcessEnv; port: number }): Promise<void> {
   const { response } = await dialog.showMessageBox({
     type: 'error',
@@ -136,8 +136,8 @@ function openWindow(): void {
   void win.loadURL(origin)
 }
 
-// Les liens : l'interface reste dans ses fenêtres, tout le reste part dans le navigateur
-// du système. Posé sur chaque contenu créé, fenêtres filles comprises.
+// Keep interface links in app windows; everything else opens in the system browser.
+// Applied to every created content, including child windows.
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
     if (isAppUrl(url)) return { action: 'allow' }
@@ -159,7 +159,7 @@ function isAppUrl(url: string): boolean {
   }
 }
 
-/** Une page ou un courriel, rien d'autre : un lien écrit par un agent n'ouvre ni fichier ni application. */
+/** Pages and email only: agent-written links cannot open files or applications. */
 function openExternal(url: string): void {
   let protocol: string
   try {
@@ -170,8 +170,8 @@ function openExternal(url: string): void {
   if (protocol === 'http:' || protocol === 'https:' || protocol === 'mailto:') void shell.openExternal(url)
 }
 
-// Sur macOS, fermer la fenêtre laisse l'app et ses sessions tourner, comme le veut ce
-// système, et le Dock la rouvre. Ailleurs, la dernière fenêtre fermée quitte l'app.
+// On macOS, closing the window leaves the app and sessions running, as expected
+// on that system, and the Dock reopens it. Elsewhere, closing the last window quits.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
@@ -179,8 +179,8 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0 && origin) openWindow()
 })
 
-// Quitter arrête le serveur comme le ferait son service : il range les sessions en cours
-// et ferme la base, au lieu de laisser des CLI orphelins.
+// Quitting stops the server as its service would: clean up active sessions and
+// close the database instead of leaving orphaned CLIs.
 app.on('before-quit', (event) => {
   if (!server) return
   event.preventDefault()

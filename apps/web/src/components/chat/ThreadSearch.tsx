@@ -5,11 +5,11 @@ import { findRanges, supportsHighlight } from '../../lib/find-in-page'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
-/** Noms des registres de surlignage, à tenir en accord avec `::highlight()` dans le CSS. */
+/** Highlight registry names kept in sync with CSS highlight selectors. */
 const ALL = 'sg-find'
 const CURRENT = 'sg-find-current'
 
-/** Marge au-dessus d'une occurrence atteinte : collée en haut, on perd son contexte. */
+/** Space above targeted occurrences to preserve context. */
 const SCROLL_MARGIN_PX = 96
 
 function clearHighlights(): void {
@@ -19,21 +19,15 @@ function clearHighlights(): void {
 }
 
 /**
- * Recherche dans la conversation ouverte.
- *
- * Tout se passe côté client : le fil est déjà chargé en entier, donc interroger le
- * serveur reviendrait à redemander ce qu'on a sous les yeux.
- *
- * Le surlignage passe par l'API Custom Highlight, qui colore des plages sans modifier
- * le document. Insérer des balises casserait le rendu markdown et les blocs de code ;
- * là où l'API manque, le défilement et l'anneau du message suffisent à situer
- * l'occurrence.
+ * Search the open conversation client-side because the entire log is already loaded. Custom
+ * Highlight API colors ranges without DOM changes that would break Markdown/code. Without support,
+ * scrolling and message rings still locate matches.
  */
 export function ThreadSearch({
   scroller,
   open,
   onClose,
-  /** Change à chaque événement reçu : les occurrences sont alors recalculées. */
+  /** Changes for every received event, triggering match recomputation. */
   revision,
 }: {
   scroller: RefObject<HTMLDivElement | null>
@@ -48,13 +42,12 @@ export function ThreadSearch({
   const input = useRef<HTMLInputElement>(null)
   const t = useTranslate()
 
-  // Les plages appartiennent au DOM du fil : elles ne survivent ni à sa fermeture ni à
-  // un changement de conversation.
+  // Ranges belong to thread DOM and cannot survive closing or conversation changes.
   useEffect(() => clearHighlights, [])
 
   /**
-   * Échap ferme depuis n'importe où, pas seulement depuis le champ : après un clic sur
-   * « suivant », le focus est sur le bouton, et la barre restait ouverte.
+   * Escape closes from anywhere, including next/previous buttons where focus otherwise left the
+   * search bar open.
    */
   useEffect(() => {
     if (!open) return
@@ -80,15 +73,14 @@ export function ThreadSearch({
     }
   }, [open])
 
-  /** Relit les occurrences dans le fil tel qu'il est affiché à cet instant. */
+  /** Reread matches from the currently displayed thread. */
   const refresh = useCallback((): Range[] => {
     const container = scroller.current
     const found = container ? findRanges(container, query) : []
 
     ranges.current = found
     setCount(found.length)
-    // La position est conservée tant qu'elle existe encore : un tour qui se termine
-    // pendant qu'on lit ne doit pas ramener à la première occurrence.
+    // Retain the current occurrence while valid: turn completion must not jump readers to the first match.
     setIndex((current) => (current < found.length ? current : 0))
 
     if (supportsHighlight()) {
@@ -103,13 +95,13 @@ export function ThreadSearch({
     if (open) refresh()
   }, [open, refresh, revision])
 
-  /** Met une occurrence au premier plan et l'amène dans la zone visible. */
+  /** Promote an occurrence and bring it into view. */
   useEffect(() => {
     const container = scroller.current
     if (!open || !container) return
 
-    // Une plage repliée signale que le fil a été redessiné depuis la dernière lecture :
-    // le navigateur réancre alors la plage sur le parent, et la position est perdue.
+    // Collapsed ranges indicate DOM redraw since searching: browsers reanchor them to parents and
+    // lose their location.
     const range = ranges.current[index]?.collapsed ? refresh()[index] : ranges.current[index]
     if (!range) return
 
@@ -127,8 +119,7 @@ export function ThreadSearch({
   const step = (direction: 1 | -1) => {
     if (count === 0) return
     setIndex((current) => (current + direction + count) % count)
-    // Le focus revient au champ : après un clic sur les flèches, la frappe suivante
-    // doit continuer la recherche plutôt que se perdre.
+    // Restore input focus after arrow clicks so further typing continues searching.
     input.current?.focus()
   }
 

@@ -5,14 +5,14 @@ import { useMediaQuery } from '../../lib/viewport'
 const TooltipEnabled = createContext(true)
 
 export function TooltipProvider({ children }: { children: ReactNode }) {
-  // Le focus automatique des panneaux ne doit pas produire une aide collante au doigt.
+  // Automatic panel focus must not leave sticky touch tooltips.
   const enabled = useMediaQuery('(hover: hover) and (pointer: fine)')
   return <TooltipEnabled.Provider value={enabled}>
     <RadixTooltip.Provider delayDuration={400} skipDelayDuration={150}>{children}</RadixTooltip.Provider>
   </TooltipEnabled.Provider>
 }
 
-/** Le portail évite de couper l'aide dans les panneaux et les listes défilantes. */
+/** Portals prevent clipping within panels and scrolling lists. */
 export function Tooltip({ label, children }: { label: string; children: ReactElement }) {
   const enabled = useContext(TooltipEnabled)
   if (!enabled) return children
@@ -29,7 +29,7 @@ export function Tooltip({ label, children }: { label: string; children: ReactEle
   )
 }
 
-/** Conserve le style et la ref du bouton, notamment quand il ouvre un menu Radix. */
+/** Preserve button styles and refs, especially Radix menu triggers. */
 export function TooltipButton({ title, ...props }: ComponentPropsWithRef<'button'>) {
   const label = title ?? props['aria-label']
   const button = <button {...props} />

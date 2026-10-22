@@ -11,7 +11,7 @@ import { StepTitle, Tip, Why, useCommit, useGate, type StepProps } from './shell
 
 const MIN_PASSWORD = 8
 
-/** L'identifiant proposé d'après le nom affiché : `Nicolas Dupont` donne `nicolas-dupont`. */
+/** Suggested identifier derived from display name: Nicolas Dupont becomes nicolas-dupont. */
 function slugUsername(name: string): string {
   return name
     .normalize('NFD')
@@ -22,9 +22,8 @@ function slugUsername(name: string): string {
 }
 
 /**
- * L'étape du compte, en trois visages : le premier compte à créer quand la base est
- * vide, le compte d'un administrateur déjà créé (par la ligne de commande, ou à
- * l'instant), et celui d'un invité qui en prend possession.
+ * Account step in three forms: first-account creation for empty databases, existing administrator
+ * accounts created through CLI or just now, and invited users taking ownership.
  */
 export function AccountStep(props: StepProps) {
   if (!props.user) return <SetupForm {...props} />
@@ -63,11 +62,10 @@ function SetupForm({ nav, hostname }: StepProps) {
       displayName: displayName.trim(),
       password,
     })
-    // La visite est due à ce compte, à partir de Bienvenue : le compte, c'est fait.
+    // Onboarding is due from Welcome for this account: account setup is complete.
     await api.patch('/api/me/settings', { onboarding: { ...DEFAULT_ONBOARDING, pending: true, step: 1 } })
     queryClient.setQueryData(ME_KEY, user)
-    // L'instance n'est plus à installer : le profil se relit, sans quoi un rechargement
-    // repasserait par ici.
+    // Instance setup is complete: reread profile or reloading would return here.
     await queryClient.invalidateQueries({ queryKey: ['system', 'instance'] })
   })
 
@@ -105,8 +103,7 @@ function SetupForm({ nav, hostname }: StepProps) {
             <Field
               label={t('onboarding.account.password')}
               hint={t('onboarding.account.password.hint', { min: MIN_PASSWORD })}
-              // Le bouton reste gris tant que le mot de passe est court : le champ doit
-              // le dire lui-même, sinon on cherche ce qui bloque.
+              // Buttons stay disabled for short passwords, so fields must explain the blocker.
               error={passwordShort ? t('onboarding.account.password.short', { min: MIN_PASSWORD }) : undefined}
               type="password"
               icon={<KeyRound size={16} />}

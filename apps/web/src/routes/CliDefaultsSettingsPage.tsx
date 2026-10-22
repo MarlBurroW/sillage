@@ -10,17 +10,14 @@ import { useUpdateAgentDefault, useUserSettings } from '../lib/user-settings'
 import { SectionHeader } from './SettingsPage'
 
 /**
- * Avec quoi les prochaines conversations s'ouvrent.
+ * Defaults for future conversations.
  *
- * Réglage de compte et non d'instance : le mode de permission engage celui qui lit les
- * réponses, et deux personnes du même projet n'ont pas à travailler avec les mêmes
- * garde-fous. Rien n'est appliqué aux conversations existantes, qui portent chacune sa
- * configuration : changer un défaut ne doit pas modifier sous les doigts un fil déjà
- * ouvert.
+ * Account-level rather than instance-level: permission mode concerns the reader, and two people
+ * in one project need not share safeguards. Existing conversations retain their own
+ * configurations: changing defaults must not alter an open thread under the user's hands.
  *
- * Les mêmes catégories que le panneau du composeur, à la même source : ce qu'on règle
- * ici est exactement ce qu'on y retrouvera, déplié plutôt que rangé derrière un
- * déclencheur qui doit tenir sur une ligne.
+ * Same categories and source as the composer panel: these settings are exactly what users find
+ * there, expanded rather than hidden behind a single-line trigger.
  */
 export function CliDefaultsSettingsPage() {
   const t = useTranslate()
@@ -29,9 +26,9 @@ export function CliDefaultsSettingsPage() {
 
   const [agent, setAgent] = useState<AgentKind>('claude')
   /**
-   * Le choix en cours, tant que la route n'a pas confirmé. Sans lui, chaque option
-   * choisie reviendrait à sa valeur d'avant le temps de l'aller-retour. Abandonné dès
-   * que le CLI change : une configuration Claude n'a aucun sens pour Codex.
+   * Pending choice until the route confirms. Otherwise every selected option would revert
+   * during the round trip. Discarded when switching CLIs: Claude configurations are meaningless
+   * for Codex.
    */
   const [edited, setEdited] = useState<AgentConfig | null>(null)
   const stored = settings?.agentDefaults[agent]
@@ -80,9 +77,10 @@ export function CliDefaultsSettingsPage() {
           {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
           {update.isError ? <Banner>{t('cliDefaults.save.error')}</Banner> : null}
 
-          {/* Rien tant que les défauts du compte ne sont pas connus : les afficher
-              avant reviendrait à proposer de cliquer sur des valeurs qui ne sont pas
-              les siennes, et un clic les enregistrerait pour de bon. */}
+          {/*
+           * Wait until account defaults are known: earlier display would offer values that are
+           * not the user's, and clicking would save them permanently.
+           */}
           {settings ? (
             <>
               {groups.map((group) => (
@@ -93,8 +91,10 @@ export function CliDefaultsSettingsPage() {
                 <span className="text-sm font-medium text-ink-soft">
                   {t('cliDefaults.mcp.label')}
                 </span>
-                {/* Le contrôle porte déjà son icône et son décompte : l'encadrer d'un
-                    second repère ferait deux prises pour un seul réglage. */}
+                {/*
+                 * The control already has an icon and count: another surrounding marker would
+                 * create two handles for one setting.
+                 */}
                 <div className="flex">{mcp}</div>
                 <p className="text-xs text-ink-faint">{t('cliDefaults.mcp.hint')}</p>
               </div>
@@ -107,11 +107,9 @@ export function CliDefaultsSettingsPage() {
 }
 
 /**
- * Une catégorie, en liste déroulante : celle des modèles est trop longue pour être
- * dépliée, et aligner les autres dessus vaut mieux qu'un écran où chaque réglage a sa
- * forme propre. Le ton d'alerte, que le déclencheur ne peut pas porter, est rappelé
- * sous le champ : c'est le seul endroit où l'on choisit un garde-fou sans voir le
- * travail qu'il encadre.
+ * One category as a dropdown: the model list is too long to expand, and consistent controls are
+ * better than unique shapes for every setting. Warnings the trigger cannot carry appear below
+ * the field: this is the only place safeguards are chosen without seeing the work they govern.
  */
 function GroupField({ group }: { group: SettingGroup }) {
   const selected = group.options.find((option) => option.value === group.value)

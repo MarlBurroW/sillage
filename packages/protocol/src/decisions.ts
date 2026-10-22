@@ -1,13 +1,12 @@
 import { z } from 'zod'
 
 /**
- * Les décisions : ce qu'une session autonome (tâche planifiée, automatisation,
- * maintenance du board) demande à un humain, sans se bloquer en l'attendant.
+ * Decisions: requests from autonomous sessions (scheduled tasks, automations, board
+ * maintenance) to a human, without blocking while waiting.
  *
- * Distinctes des demandes natives des CLI (permissions, questions, plans), qui
- * suspendent un tour et vivent dans leur conversation : une décision est déposée en
- * base, survit aux redémarrages, et sa réponse revient à la session sous forme de
- * message, qui la relance.
+ * Separate from native CLI requests (permissions, questions, plans), which suspend a turn and
+ * live within their conversation: decisions are stored in the database, survive restarts, and
+ * return to the session as a message that wakes it.
  */
 
 export const MAX_DECISION_QUESTION_CHARS = 300
@@ -19,21 +18,20 @@ export const MAX_DECISION_HOURS = 168
 export const DEFAULT_DECISION_HOURS = 24
 
 /**
- * D'où vient la demande : ce qui a ouvert la session sans personne au clavier.
- * `worktree` est conservé pour lire les anciennes propositions de nettoyage.
+ * Request origin: what opened the session without a person at the keyboard. `worktree` is
+ * retained to read older cleanup proposals.
  */
 export const decisionSourceKindSchema = z.enum(['schedule', 'webhook', 'board', 'worktree'])
 export type DecisionSourceKind = z.infer<typeof decisionSourceKindSchema>
 
 /**
- * Les sources que tout client sait afficher, parce qu'elles existaient avant qu'on
- * puisse en demander d'autres. Une source venue ensuite n'est servie qu'au client qui la
- * nomme dans `sources` : un onglet resté sur une interface plus ancienne, le temps d'une
- * mise à jour, ne reçoit ainsi jamais une décision qu'il ne saurait pas dessiner.
+ * Sources every client can display because they predate selectable sources. Later sources are
+ * served only to clients naming them in `sources`: a tab still using an older UI during an
+ * update never receives a decision it cannot render.
  */
 export const BASELINE_DECISION_SOURCES: readonly DecisionSourceKind[] = ['schedule', 'webhook', 'board']
 
-/** Les sources qu'un client demande (`?sources=a,b`), les sources de base toujours comprises. */
+/** Sources requested by a client (`?sources=a,b`), always including baseline sources. */
 export function requestedDecisionSources(raw: unknown): DecisionSourceKind[] {
   const asked = typeof raw === 'string' ? raw.split(',').map((entry) => entry.trim()) : []
   const known = asked.filter((entry): entry is DecisionSourceKind => decisionSourceKindSchema.safeParse(entry).success)
@@ -44,8 +42,8 @@ export const decisionStatusSchema = z.enum(['pending', 'answered', 'expired', 'w
 export type DecisionStatus = z.infer<typeof decisionStatusSchema>
 
 /**
- * Réglage de chaque source : l'outil n'est proposé à ses sessions que si l'utilisateur
- * l'a permis, et une demande n'attend pas plus que ce délai.
+ * Per-source settings: sessions get the tool only if enabled by the user, and requests wait no
+ * longer than this deadline.
  */
 export const decisionSettingsSchema = z.object({
   decisionsEnabled: z.boolean(),
@@ -60,24 +58,24 @@ export const DEFAULT_DECISION_SETTINGS: DecisionSettings = {
 
 export interface DecisionSourceDto {
   kind: DecisionSourceKind
-  /** Nom de la tâche ou de l'automatisation, « Issue #12 » pour la maintenance. */
+  /** Task or automation name; “Issue #12” for maintenance. */
   label: string
   taskId: string | null
   cardNumber: number | null
-  /** L'arbre qu'une proposition de nettoyage vise ; null pour les autres sources. */
+  /** Worktree targeted by a cleanup proposal; null for other sources. */
   worktreePath: string | null
 }
 
 /**
- * Les choix d'une proposition de nettoyage. Des clés et non des phrases : le serveur ne
- * connaît pas la langue du lecteur, l'interface les traduit.
+ * Cleanup-proposal choices. Keys rather than sentences: the server does not know the reader's
+ * language; the UI translates them.
  */
 export const WORKTREE_DECISION_OPTIONS = ['clean', 'keep'] as const
 
 export interface DecisionAnswerDto {
   option: string | null
   text: string | null
-  /** Null pour une échéance : personne n'a répondu, la réponse par défaut s'applique. */
+  /** Null at deadline: nobody answered, so the default applies. */
   byName: string | null
   at: number
 }
@@ -92,12 +90,12 @@ export interface DecisionDto {
   question: string
   context: string
   options: string[]
-  /** Le choix appliqué à l'échéance ; null : « pas de réponse » est transmis tel quel. */
+  /** Choice applied at deadline; null forwards “no answer” as-is. */
   defaultOption: string | null
   expiresAt: number
   status: DecisionStatus
   answer: DecisionAnswerDto | null
-  /** Raison donnée par l'agent qui retire sa demande. */
+  /** Reason supplied by the agent withdrawing its request. */
   withdrawnReason: string | null
   createdAt: number
 }

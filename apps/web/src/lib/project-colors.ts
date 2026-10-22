@@ -1,15 +1,12 @@
 import type { MessageKey } from './i18n'
 /**
- * Palette des couleurs de projet, en hexadécimal parce que le serveur ne stocke que
- * ça (`projects.color`, validé par une regex #rrggbb).
- *
- * Choisies pour rester lisibles sur les trois thèmes : la pastille est un petit
- * aplat, une couleur trop sombre y disparaît sur fond sombre.
+ * Project color palette in hex because the server stores only that format (`projects.color`,
+ * validated by #rrggbb). Keep colors readable on all three themes: small solid dots disappear on
+ * dark backgrounds if too dark.
  */
 /**
- * Les libellés sont des clés de catalogue et non du texte : cette table est un module,
- * donc évaluée une fois à l'import. Y écrire le texte le figerait dans la langue de
- * départ, comme c'était le cas.
+ * Labels are catalog keys rather than text: this module evaluates once at import, so literal
+ * translations would freeze the initial language, as previously happened.
  */
 export const PROJECT_COLORS: { value: string | null; label: MessageKey }[] = [
   { value: null, label: 'project.color.themeAccent' },

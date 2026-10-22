@@ -1,17 +1,17 @@
 # @sillage/opencode-bindings
 
-Bindings TypeScript de l'API HTTP d'`opencode serve`, générés depuis l'OpenAPI que le
-binaire installé publie sur `GET /doc` (`pnpm opencode:types`). Paquet à part pour la
-même raison que `@sillage/codex-bindings` : `@sillage/protocol` reste neutre vis-à-vis
-des CLI.
+TypeScript bindings for the `opencode serve` HTTP API, generated from the OpenAPI
+the installed binary publishes at `GET /doc` (`pnpm opencode:types`). A separate
+package for the same reason as `@sillage/codex-bindings`: `@sillage/protocol`
+remains CLI-neutral.
 
-Généré avec **opencode 1.19.3**.
+Generated with **opencode 1.19.3**.
 
-`src/openapi.d.ts` est généré et ne se retouche pas. `src/index.ts` est écrit à la
-main : il donne un nom court aux schémas dont l'adaptateur se sert, et c'est lui qui
-cesse de compiler quand l'un d'eux disparaît de l'API. `pnpm opencode:types:check`
-échoue si le contenu committé a dérivé du binaire.
+`src/openapi.d.ts` is generated and must not be edited. `src/index.ts` is handwritten:
+it gives short names to schemas used by the adapter, and stops compiling when
+one disappears from the API. `pnpm opencode:types:check` fails if committed content
+has drifted from the binary.
 
-Deux générations d'API cohabitent dans ce document (`/session/...` et
-`/api/session/...`, événements `session.next.*`, permissions et questions V1 et V2).
-L'adaptateur ne parle que la première, voir `apps/server/src/agents/opencode/`.
+Two API generations coexist in this document (`/session/...` and `/api/session/...`,
+`session.next.*` events, V1 and V2 permissions and questions). The adapter uses
+only the first; see `apps/server/src/agents/opencode/`.

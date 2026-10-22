@@ -3,19 +3,12 @@ import { hasVisibleContent, type ChatItem, type ToolItem } from './chat-fold'
 import { isSillageTool } from './sillage-tools'
 
 /**
- * Mise en forme d'un fil avant rendu.
- *
- * Deux choses s'y jouent :
- *
- *   - un fil ne montre que ce que son auteur a produit. Ce qu'un sous-agent écrit et
- *     appelle porte l'identifiant de l'appel qui l'a lancé, et n'a rien à faire dans
- *     le fil principal : mêlé aux réponses de l'agent, il s'y lit comme si c'était
- *     lui qui parlait, et deux sous-agents en parallèle deviennent indémêlables. Le
- *     fil principal ne garde donc que l'appel de spawn ; le reste se lit dans le
- *     panneau, découpé par ce même module ;
- *   - une suite d'appels terminés se replie en une ligne, parce qu'elle n'apporte
- *     rien ligne par ligne et éloigne la réponse. Un appel en cours garde la sienne :
- *     c'est le seul qu'on ait une raison de regarder pendant qu'il tourne.
+ * Prepare a thread for rendering. First, a thread shows only its author's output. Subagent messages
+ * and calls carry the spawning call ID and belong in the panel: mixing them with main-agent replies
+ * obscures authorship and makes parallel subagents indistinguishable. Keep only the spawning call
+ * in the main thread; use this same module to split panel threads. Second, collapse consecutive
+ * completed calls into one row because individual rows add little and push the answer away. Running
+ * calls keep their own row because users may need to watch them.
  */
 
 export type ChatRow =
@@ -23,33 +16,25 @@ export type ChatRow =
   | { kind: 'tool'; key: string; tool: ToolItem }
   | { kind: 'tool-group'; key: string; tools: ToolItem[] }
 
-/** En dessous, replier coûte un clic et n'économise pas une ligne. */
+/** Below this threshold, collapsing costs a click without saving a row. */
 const MIN_GROUP_SIZE = 2
 
 /**
- * Découpe un fil en lignes affichables.
- *
- * `thread` désigne l'auteur du fil : `null` pour l'agent principal, l'identifiant de
- * l'appel de spawn pour un sous-agent. Tout ce qui n'est ni message ni appel d'outil
- * (permission, plan, question, erreur, repère) n'a pas d'auteur et reste dans le fil
- * principal : c'est le seul endroit d'où l'on peut répondre à une sollicitation, et le
- * seul où une erreur de session a un sens.
+ * Split a thread into displayable rows. `thread` identifies its author: `null` for the main agent,
+ * spawning call ID for a subagent. Items other than messages and tool calls (permissions, plans,
+ * questions, errors, notices) have no author and stay in the main thread: the only place to answer
+ * prompts or make sense of session errors.
  */
 export function buildRows(items: ChatItem[], thread: string | null = null): ChatRow[] {
   const rows: ChatRow[] = []
   let run: ToolItem[] = []
 
   /**
-   * Vide la suite courante.
-   *
-   * Les appels terminés se regroupent, les appels en cours gardent leur ligne, et
-   * l'ordre chronologique est conservé : plusieurs appels peuvent tourner en parallèle,
-   * et rien ne garantit que celui qui tourne soit le dernier de la suite.
-   *
-   * Le groupe ne se dissout pas quand un appel démarre derrière lui. Il le faisait
-   * auparavant, et c'était visible deux fois : la suite entière se dépliait le temps du
-   * nouvel appel puis se repliait d'un coup, et un groupe ouvert à la main se refermait
-   * en même temps, puisque la ligne disparaissait et que le composant perdait son état.
+   * Flush the current sequence. Group completed calls while keeping running ones separate and
+   * preserving chronological order: calls can run in parallel and the active one need not be last.
+   * Keep the group when another call starts afterward. Previously it dissolved, expanding then
+   * collapsing the entire sequence and resetting manually opened groups because their component
+   * unmounted.
    */
   const flush = () => {
     if (run.length === 0) return
@@ -82,12 +67,10 @@ export function buildRows(items: ChatItem[], thread: string | null = null): Chat
     if (item.kind === 'tool') {
       if (item.parentToolCallId !== thread) continue
 
-      // Le lancement d'un sous-agent garde sa ligne : c'est le seul repère qui dise
-      // qu'un pan entier du travail s'est fait ailleurs, et noyé dans « 5 outils » il
-      // ne se distingue plus d'un `Read`.
-      //
-      // De même pour une tâche planifiée qui porte un script de vérification : sa ligne
-      // porte la validation que l'agent vient de demander, qu'un repli cacherait.
+      // Subagent launches retain a row: the only sign that a whole part of the work happened
+      // elsewhere, indistinguishable from a `Read` if buried in a five-tool group. Likewise,
+      // scheduled tasks containing a check script retain their row because it carries requested
+      // approval that collapsing would hide.
       if (isSpawnTool(item.name) || proposesCheck(item)) {
         flush()
         rows.push({ kind: 'tool', key: item.id, tool: item })
@@ -103,7 +86,7 @@ export function buildRows(items: ChatItem[], thread: string | null = null): Chat
       continue
     }
 
-    // Un élément qui n'affiche rien ne doit pas interrompre la suite d'outils.
+    // An invisible item must not interrupt a tool sequence.
     if (!hasVisibleContent(item)) continue
 
     flush()

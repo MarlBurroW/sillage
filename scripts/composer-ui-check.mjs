@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
 
-// Vrai composer et vraie file de sauvegarde ; API simulée, aucun CLI lancé.
+// Real composer and save queue; mocked API, no CLI launched.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
@@ -22,7 +22,7 @@ const efforts = [
   { value: 'low', label: 'Faible', hint: 'Réflexion limitée' },
   { value: 'medium', label: 'Moyen', hint: 'Réflexion intermédiaire' },
   { value: 'high', label: 'Élevé', hint: 'Réflexion approfondie' },
-  // `xhigh` : c'est lui qui rend Ultracode disponible, et donc épinglable.
+  // `xhigh` makes Ultracode available, therefore pinnable.
   { value: 'xhigh', label: 'Maximal', hint: 'Réflexion la plus longue' },
 ]
 const models = [
@@ -102,7 +102,7 @@ try {
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     const stored = structuredClone(initial)
-    // Les réglages du compte, dont la barre épinglée : le défaut du protocole au départ.
+    // Account settings, including pinned bar: protocol default initially.
     const account = { agentDefaults: {}, collapsedProjects: [], projectsDir: null, appearance: null, notifications: {}, composerLayout: { claude: ['model', 'effort'], codex: ['model', 'effort'], opencode: [], grok: [] } }
     const layouts = []
     const patches = []
@@ -144,21 +144,21 @@ try {
     })
     await mount(page)
     const field = page.getByPlaceholder('Écris ton message...')
-    // Téléphone : la barre de moins de 480 px, puce modèle·effort seule, qui ouvre la
-    // feuille complète ; pas de bouton de réglages à part ni d'épingles.
+    // Phone: below 480 px, only model·effort chip, opening complete sheet;
+    // no separate settings button or pins.
     const narrow = viewport.width < 500
     const touch = viewport.width < 700
     const full = page.getByRole('button', { name: /^Réglages de la conversation,/ })
     const chip = () => page.getByRole('button', { name: /^(Modèle et effort|Modèle) :/ })
     const dialog = page.getByRole('dialog')
     const openAll = async () => { await (narrow ? chip() : full).click(); await dialog.waitFor() }
-    // Ce qui porte les garde-fous retirés : le bouton du panneau, ou la puce au téléphone.
+    // Removed safeguards are indicated on panel button, or chip on phones.
     const status = () => narrow ? chip() : full
-    // Le panneau est une liste : une ligne par réglage, qui s'ouvre sur ses options et y
-    // revient après le choix.
+    // Panel is a list: one row per setting, opening its options and returning
+    // after selection.
     const row = (setting) => dialog.getByRole('button', { name: new RegExp(`^${setting} :`) })
     const pick = async (setting, option) => {
-      // Au téléphone, modèle et effort sont dépliés en tête de la feuille.
+      // Phone: model/effort expanded at sheet top.
       if (narrow && (setting === 'Modèle' || setting === 'Effort de réflexion')) {
         await dialog.getByRole('radio', { name: option, exact: typeof option === 'string' }).click()
         return
@@ -170,8 +170,8 @@ try {
     const mcpView = async () => { await dialog.getByRole('button', { name: 'Serveurs MCP', exact: true }).click(); await dialog.locator('[data-settings-heading]', { hasText: 'Serveurs MCP' }).waitFor() }
     const back = async () => { await dialog.getByRole('button', { name: 'Retour', exact: true }).click(); await dialog.locator('[data-settings-heading]', { hasText: 'Réglages de la conversation' }).waitFor() }
     const close = async () => { await page.getByRole('button', { name: 'Terminé', exact: true }).click(); await dialog.waitFor({ state: 'hidden' }) }
-    // 32 px à la souris, 44 au doigt ; au téléphone, 36 à l'œil et 44 au doigt grâce à
-    // une marge invisible, vérifiée en touchant juste au-dessus du bouton.
+    // 32 px for mouse, 44 for touch; phone looks 36 but targets 44 through invisible
+    // margin, checked by tapping just above button.
     for (const button of narrow ? [chip()] : [chip(), full]) {
       const bounds = await button.boundingBox()
       assert.ok(bounds.height >= (narrow ? 36 : touch ? 44 : 32), `${viewport.width}: ${bounds.height}`)
@@ -181,7 +181,7 @@ try {
       }
     }
     if (narrow) {
-      // Le micro tient la place de l'envoi tant que le champ est vide.
+      // Microphone replaces Send while field is empty.
       assert.equal(await page.getByRole('button', { name: 'Envoyer le message', exact: true }).isVisible(), false)
       assert.equal(await page.getByRole('button', { name: /^Dicter/ }).count(), 1)
     }
@@ -194,20 +194,19 @@ try {
       assert.equal(await page.getByRole('button', { name: /^Dicter/ }).count(), 0, 'Typed text swaps the mic for send')
       await openAll()
       await dialog.getByRole('radio', { name: /^Modèle Beta/ }).click()
-      // La feuille est modale : le reste de la page est masqué tant qu'elle est ouverte,
-      // l'effort retombé se lit donc dans la feuille.
+      // Sheet is modal: rest of page hidden while open, so fallback effort is read
+      // in the sheet.
       assert.equal(await dialog.getByRole('radio', { name: /^Modèle Beta/ }).getAttribute('aria-checked'), 'true')
       assert.equal(await dialog.getByRole('radio', { name: 'Moyen', exact: true }).getAttribute('aria-checked'), 'true', 'Effort falls back immediately')
       await dialog.getByRole('radio', { name: 'Faible', exact: true }).click()
       await close()
       assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'TEXTAREA')
     } else {
-      // Choisir un modèle laisse le menu ouvert, l'effort retombe aussitôt sur un niveau
-      // du nouveau modèle ; choisir l'effort referme et rend la saisie.
+      // Selecting model keeps menu open; effort immediately falls back to a supported
+      // level. Selecting effort closes and restores input.
       await chip().click()
       await page.getByRole('radio', { name: /^Modèle Beta/ }).click()
-      // Au doigt, le menu est une feuille modale qui masque la puce : l'effort retombé
-      // se lit alors dans la feuille.
+      // Touch menu is a modal sheet hiding chip: read fallback effort inside sheet.
       if (touch) assert.equal(await dialog.getByRole('radio', { name: 'Moyen', exact: true }).getAttribute('aria-checked'), 'true')
       else await page.getByRole('button', { name: 'Modèle et effort : Modèle Beta · Moyen', exact: true }).waitFor()
       assert.equal(await dialog.isVisible(), true, 'Picking a model keeps the menu open')
@@ -231,9 +230,9 @@ try {
     await field.fill('Encore un brouillon')
     const compactHeight = (await page.locator('form').boundingBox()).height
     await openAll()
-    // La liste tient sans défiler : c'est tout l'objet de la vue en deux niveaux.
+    // List fits without scrolling: the purpose of two-level view.
     if (!narrow) assert.equal(await dialog.locator('.overflow-y-auto').evaluate((node) => node.scrollHeight <= node.clientHeight + 1), viewport.height >= 600, 'The settings list fits without scrolling')
-    // Au téléphone, rien ne s'épingle ni ne se trie.
+    // Phone: no pinning or sorting.
     if (narrow) assert.equal(await dialog.getByRole('button', { name: /^Épingler/ }).count(), 0)
     await pick('Modèle', /^Modèle Alpha/)
     await pick('Effort de réflexion', 'Élevé')
@@ -292,8 +291,8 @@ try {
     assert.equal(await dialog.isVisible(), true, 'Retry does not leave the complete panel')
     await close()
     await page.evaluate(() => window.settings.flush())
-    // Radix rend le focus au bouton du panneau une image après la fermeture : le poser
-    // avant ferait atterrir l'Entrée suivante sur le panneau complet.
+    // Radix restores panel-button focus one frame after closing: focusing earlier
+    // would send next Enter to full panel.
     await delay(100)
 
     if (narrow) {
@@ -301,8 +300,8 @@ try {
       await dialog.getByRole('radio', { name: /^Sans réflexion/ }).click()
       await close()
     } else {
-      // Au clavier : le menu s'ouvre sur le modèle choisi, Fin va au dernier, Entrée le
-      // prend ; sans niveaux d'effort, la section disparaît et Échap referme.
+      // Keyboard: menu opens on selected model, End reaches last, Enter selects;
+      // without effort levels, section disappears and Escape closes.
       await chip().focus()
       await page.keyboard.press('Enter')
       await dialog.waitFor()
@@ -316,8 +315,8 @@ try {
     assert.equal(await field.inputValue(), 'Encore un brouillon')
     await page.evaluate(() => window.settings.flush())
 
-    // Un vrai catalogue compte une douzaine de modèles : l'effort doit rester visible
-    // sans défiler, sous la liste des modèles qui défile seule.
+    // Real catalogs have about twelve models: effort must stay visible without
+    // scrolling below independently scrolling model list.
     await page.evaluate(async () => {
       const key = ['agents', 'codex', 'models']
       window.configBackup = window.settings.config
@@ -348,7 +347,7 @@ try {
     await delay(100)
 
     if (viewport.width === 1440) {
-      // Catalogue long, valeur enregistrée hors catalogue et politique granulaire.
+      // Long catalog, saved out-of-catalog value, granular policy.
       await page.evaluate(async () => {
         const catalog = window.client.getQueryData(['agents', 'codex', 'models'])
         window.client.setQueryData(['agents', 'codex', 'models'], {
@@ -371,7 +370,7 @@ try {
       await page.keyboard.press('Escape')
       await page.keyboard.press('Escape')
       await dialog.waitFor({ state: 'hidden' })
-      // Passé en largeur de téléphone, la feuille s'ouvre depuis la puce.
+      // At phone width, chip opens sheet.
       await page.setViewportSize({ width: 390, height: 844 })
       await full.waitFor({ state: 'detached' })
       await chip().click()
@@ -380,7 +379,7 @@ try {
         await page.keyboard.press('Tab')
         assert.equal(await page.evaluate(() => document.querySelector('[role="dialog"]').contains(document.activeElement)), true)
       }
-      // Le clavier réduit le viewport visuel sans forcément modifier 100dvh.
+      // Keyboard shrinks visual viewport without necessarily changing 100dvh.
       await page.evaluate(() => {
         document.documentElement.style.setProperty('--sg-app-height', '420px')
         document.documentElement.style.setProperty('--sg-viewport-top', '30px')
@@ -427,16 +426,15 @@ try {
     }
 
     if (narrow) {
-      // Au téléphone, une barre épinglée ne s'affiche pas : la puce modèle·effort reste seule.
+      // Phone shows no pinned bar: model·effort chip stays alone.
       account.composerLayout = { ...account.composerLayout, claude: ['ultracode', 'permission'] }
       await page.evaluate(() => window.client.refetchQueries({ queryKey: ['user-settings'] }))
       await page.waitForFunction(() => window.client.getQueryData(['user-settings'])?.composerLayout.claude.length === 2)
       assert.equal(await page.getByRole('switch', { name: /^Ultracode :/ }).count(), 0)
       assert.equal(await page.getByRole('button', { name: /^Permissions :/ }).count(), 0)
     } else {
-      // Épingler depuis le panneau : l'interrupteur et la puce apparaissent à côté de la
-      // puce modèle·effort, et la liste part au compte, débarrassée des clés `model` et
-      // `effort` qu'enregistraient les premières versions.
+      // Pin through panel: toggle and chip appear beside model·effort; list saves
+      // to account after removing `model`/`effort` keys saved by early versions.
       await openAll()
       assert.equal(await dialog.getByRole('button', { name: /^Épingler (Modèle|Effort)/ }).count(), 0, 'Model and effort are always there')
       await dialog.getByRole('button', { name: 'Épingler Ultracode sous le composeur', exact: true }).click()
@@ -448,12 +446,12 @@ try {
       await page.getByRole('button', { name: /^Permissions :/ }).waitFor()
       assert.deepEqual(layouts.at(-1).claude, ['ultracode', 'permission'])
 
-      // Réordonner au clavier depuis la poignée, puis à la souris quand les deux
-      // poignées tiennent à l'écran ; la barre suit.
+      // Reorder through keyboard handle, then mouse when both handles fit onscreen;
+      // bar follows.
       await openAll()
       await dialog.getByRole('button', { name: 'Déplacer Permissions', exact: true }).focus()
-      // dnd-kit mesure les lignes entre deux touches : sans pause, le déplacement part
-      // avant que la position de départ soit connue.
+      // dnd-kit measures rows between keypresses: without pause, movement starts
+      // before starting position is known.
       for (const key of ['Space', 'ArrowUp', 'Space']) { await page.keyboard.press(key); await delay(150) }
       await delay(250)
       assert.deepEqual(layouts.at(-1).claude, ['permission', 'ultracode'])
@@ -465,12 +463,12 @@ try {
         await page.mouse.down()
         await page.mouse.move(grip.x + grip.width / 2, grip.y - 10, { steps: 4 })
         await page.mouse.move(target.x + target.width / 2, target.y + 4, { steps: 8 })
-        // La cible se calcule à l'image suivante : lâcher dans la foulée la manquerait.
+        // Target is calculated next frame: releasing immediately would miss it.
         await delay(150)
         await page.mouse.up()
       } else {
-        // Sur une feuille basse, la liste défile et les poignées ne tiennent pas
-        // ensemble à l'écran : le même déplacement s'y fait au clavier.
+        // Short sheet scrolls, so handles do not fit onscreen together: perform same
+        // move by keyboard.
         await ultracodeHandle.focus()
         for (const key of ['Space', 'ArrowUp', 'Space']) { await page.keyboard.press(key); await delay(150) }
       }
@@ -484,10 +482,10 @@ try {
       await page.evaluate(() => window.settings.flush())
       assert.equal(stored.claude.ultracode, true)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Pinned chips do not overflow')
-      // Tout tient sur une ligne : la barre n'a pas à se replier.
+      // Everything fits one line: bar need not wrap.
       const [chipBox, sendBox] = [await chip().boundingBox(), await page.getByRole('button', { name: /^Réglages de la conversation,/ }).boundingBox()]
-      // À la souris, tout tient sur une ligne ; au doigt, les cibles de 44 px font
-      // passer les réglages sur leur ligne, et c'est le repli voulu.
+      // Mouse fits one line; 44 px touch targets push settings onto their own line,
+      // the intended fallback.
       assert.equal(Math.abs(chipBox.y + chipBox.height / 2 - (sendBox.y + sendBox.height / 2)) < 4, !touch, 'One line with the mouse, folded with touch targets')
       await openAll()
       await dialog.getByRole('button', { name: 'Retirer Ultracode du composeur', exact: true }).click()

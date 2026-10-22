@@ -6,14 +6,9 @@ import { useTranslate } from '../lib/i18n'
 import { cx } from './ui'
 
 /**
- * Choix d'un dépôt à cloner.
- *
- * Le champ reste en saisie libre, et c'est le point : la liste n'est qu'un raccourci
- * pour les dépôts que le jeton GitHub laisse voir. Une URL collée, d'une autre forge ou
- * d'un dépôt public quelconque, doit passer sans que rien ne s'y oppose.
- *
- * La liste ne s'ouvre donc pas quand ce qui est saisi ressemble déjà à une URL : celui
- * qui vient de coller une adresse n'a rien à choisir.
+ * Repository-to-clone choice remains free text: suggestions only shortcut repositories visible to
+ * the GitHub token. Accept pasted URLs from any forge or public repository. Do not open suggestions
+ * when input already resembles a URL because no choice is needed.
  */
 export function RepoCombobox({
   value,
@@ -40,8 +35,7 @@ export function RepoCombobox({
   const { data, isFetching } = useGitRepos(value.trim(), listing && open)
   const repos = data?.repos ?? []
 
-  // Une nouvelle liste rend l'index précédent arbitraire : il ne désigne plus le même
-  // dépôt, et le laisser tel quel ferait valider une ligne que personne n'a visée.
+  // New lists invalidate prior selection indices, which could otherwise submit a repository nobody chose.
   useEffect(() => setActive(0), [data])
 
   useEffect(() => {
@@ -64,8 +58,7 @@ export function RepoCombobox({
       setActive((index) => (index - 1 + repos.length) % repos.length)
     } else if (event.key === 'Enter') {
       const repo = repos[active]
-      // Sans dépôt visé, `Enter` doit soumettre le formulaire : ce qui est tapé est
-      // peut-être une URL complète.
+      // With no targeted repository Enter submits the form because input may be a complete URL.
       if (repo) {
         event.preventDefault()
         pick(repo)
@@ -126,8 +119,7 @@ export function RepoCombobox({
                   type="button"
                   role="option"
                   aria-selected={index === active}
-                  // `onMouseDown` : un `onClick` laisserait d'abord le champ perdre le
-                  // focus, ce qui referme la liste avant que le choix soit pris en compte.
+                  // Use mousedown: click would blur the field and close suggestions before selection.
                   onMouseDown={(event) => {
                     event.preventDefault()
                     pick(repo)

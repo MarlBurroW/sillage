@@ -12,7 +12,7 @@ for (const file of ['index.html', 'prototype.css', 'prototype.js']) {
 }
 await copyFile(new URL('../../../apps/web/src/styles/tokens.css', import.meta.url), join(output, 'tokens.css'))
 await copyFile(new URL('../../brand/symbol.svg', import.meta.url), join(output, 'symbol.svg'))
-// Les catalogues restent la source unique ; la maquette n’embarque que ses textes.
+// Catalogs remain single source; mockup bundles only its own text.
 const pick = (catalog) => Object.fromEntries(Object.entries(catalog)
   .filter(([key]) => key.startsWith('prototype.typing.'))
   .map(([key, value]) => [key.slice('prototype.typing.'.length), value]))

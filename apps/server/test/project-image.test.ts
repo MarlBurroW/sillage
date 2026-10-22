@@ -98,7 +98,7 @@ test("rappel aux agents : absent, puis provisoire, puis plus rien", async (t) =>
   const { dir, upload, listed, mcp, overview } = await harness(t)
 
   assert.match(overview() ?? '', /n'a pas d'image/)
-  // Sans l'outil pour agir, le rappel ne ferait que du bruit.
+  // Without actionable tools, reminders add only noise.
   assert.equal(overview(false), null)
 
   await writeFile(join(dir, 'notes.txt'), 'rien à voir')
@@ -116,7 +116,7 @@ test("rappel aux agents : absent, puis provisoire, puis plus rien", async (t) =>
   assert.equal((await listed()).image?.provisional, false)
   assert.equal(overview(), null)
 
-  // Une image choisie à la main remplace celle d'un agent, et n'est jamais provisoire.
+  // User-selected images replace agent images and are never provisional.
   mcp({ path: join(dir, 'draft.svg'), provisional: true })
   assert.equal((await upload(PNG)).statusCode, 200)
   assert.equal(overview(), null)

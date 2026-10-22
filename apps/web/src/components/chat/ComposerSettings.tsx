@@ -10,8 +10,8 @@ import { toolButtonClass } from './composer-buttons'
 import { SettingOptions, SettingsHeading, SettingsPanel } from './SettingsPanel'
 
 /**
- * Marque une valeur qui retire un garde-fou. Absente quand il n'y a rien à signaler :
- * un ton « neutre » explicite ne servirait qu'à nommer l'absence de signal.
+ * Mark values removing a safeguard. Absent otherwise: an explicit neutral tone would merely name
+ * absence of a signal.
  */
 export type SettingTone = 'caution'
 
@@ -24,10 +24,10 @@ export interface SettingOption {
   tone?: SettingTone
 }
 
-/** Option dont la valeur reste dans son union d'origine, avant l'élargissement. */
+/** Option retaining its original value union before widening. */
 export type SettingChoice<V extends string> = Omit<SettingOption, 'value'> & { value: V }
 
-/** Les choix viennent du CLI ; leur disposition appartient au composer. */
+/** Choices come from the CLI; layout belongs to the composer. */
 export interface SettingGroup {
   key: string
   label: string
@@ -36,25 +36,21 @@ export interface SettingGroup {
   value: string
   onChange: (value: string) => void
   /**
-   * Ce qui sépare la valeur choisie de celle qui s'applique, quand le CLI ne sait pas
-   * la changer sans repartir. Absent le reste du temps, c'est-à-dire presque toujours.
+   * Difference between selected and applied values when the CLI requires restart. Absent almost all
+   * the time.
    */
   notice?: string
   /**
-   * Pour une catégorie à deux états, la valeur qui compte comme « allumé ». Épinglée
-   * sous le composer, elle devient alors un interrupteur plutôt qu'un menu à deux
-   * lignes : on voit où on en est et un clic suffit à changer.
+   * Enabled value for two-state categories. When pinned, render a switch rather than a two-item
+   * menu so state is visible and one click toggles.
    */
   active?: string
 }
 
 /**
- * Fabrique une catégorie sans perdre le type de la valeur.
- *
- * Le tableau des catégories est hétérogène, donc large sur `string`, et un
- * `SettingGroup<'a'|'b'>` ne s'y assigne pas puisque `onChange` est contravariant.
- * Cette fonction est l'unique point où l'on redescend vers l'union du protocole, et
- * elle vérifie que la valeur vient bien de la liste avant de le faire.
+ * Build a category without losing value types. Heterogeneous categories widen to string,
+ * incompatible with narrower SettingGroup because onChange is contravariant. This is the sole
+ * narrowing point back to protocol unions, validating membership first.
  */
 export function setting<V extends string>(group: {
   key: string
@@ -80,22 +76,19 @@ export interface SummarySegment {
   tone?: SettingTone
 }
 
-/** Les deux catégories réunies dans une seule puce, toujours présente sous le texte. */
+/** Two categories combined into one chip always present beneath text. */
 export const MODEL_EFFORT_KEYS: readonly string[] = ['model', 'effort']
 
 export interface ComposerSettingsProps {
   groups: SettingGroup[]
   summary: SummarySegment[]
   /**
-   * Catégories ajoutées à côté de la puce modèle·effort, dans l'ordre ; les clés
-   * inconnues, et `model`/`effort` déjà dans la puce, sont ignorées.
+   * Categories beside model/effort in order; ignore unknown keys and model/effort already included
+   * in the chip.
    */
   pinned: string[]
   onPinnedChange?: (next: string[]) => void
-  /**
-   * Composer étroit, c'est-à-dire téléphone : la puce seule, qui ouvre le panneau
-   * complet, sans épingles ni bouton de réglages à part.
-   */
+  /** Narrow phone composer: one chip opens the full panel without pins or a separate settings button. */
   narrow: boolean
   mcp?: ReactNode
   feedback?: ReactNode
@@ -103,15 +96,12 @@ export interface ComposerSettingsProps {
   inputRef: RefObject<HTMLTextAreaElement | null>
 }
 
-/** Les catégories épinglées qui existent en ce moment, puce modèle·effort exclue. */
+/** Currently available pinned categories excluding model/effort. */
 export function pinnedExtras(groups: SettingGroup[], pinned: string[]): SettingGroup[] {
   return pinned.flatMap((key) => MODEL_EFFORT_KEYS.includes(key) ? [] : groups.find((group) => group.key === key) ?? [])
 }
 
-/**
- * Ce que le bouton « tous les réglages » doit signaler : le mode plan et les
- * garde-fous retirés qui ne sont pas déjà sous les yeux dans une puce.
- */
+/** Signals for the all-settings button: Plan mode and removed safeguards not already visible in chips. */
 function useStatus({ groups, summary, pinned, narrow }: Pick<ComposerSettingsProps, 'groups' | 'summary' | 'pinned' | 'narrow'>) {
   const t = useTranslate()
   const visible = new Set([...MODEL_EFFORT_KEYS, ...(narrow ? [] : pinnedExtras(groups, pinned).map((group) => group.key))])
@@ -131,7 +121,7 @@ function useStatus({ groups, summary, pinned, narrow }: Pick<ComposerSettingsPro
   return { statusLabels, summaryLabel, caution: warnings.length > 0 }
 }
 
-/** Le panneau complet, sur ordinateur derrière son bouton, au téléphone derrière la puce. */
+/** Full panel behind its desktop button or phone chip. */
 function FullPanel({ groups, pinned, onPinnedChange, narrow, mcp, feedback, disabled, close }: ComposerSettingsProps & { close: (resumeTyping?: boolean) => void }) {
   return (
     <SettingsPanel groups={groups} pinned={pinned} onPinnedChange={narrow ? undefined : onPinnedChange} disabled={disabled}
@@ -140,10 +130,8 @@ function FullPanel({ groups, pinned, onPinnedChange, narrow, mcp, feedback, disa
 }
 
 /**
- * La puce modèle·effort et, sur ordinateur, les réglages épinglés à côté.
- *
- * Modèle et effort se choisissent presque toujours ensemble, et l'effort dépend du
- * modèle : une seule puce leur suffit, et laisse la place aux réglages qu'on ajoute.
+ * Model/effort chip and desktop pins beside it. These settings are usually chosen together and
+ * effort depends on model; combining saves room for additional settings.
  */
 export function ComposerQuickSettings(props: ComposerSettingsProps) {
   const { groups, pinned, narrow, disabled = false, inputRef } = props
@@ -171,7 +159,7 @@ export function ComposerQuickSettings(props: ComposerSettingsProps) {
       <span className="min-w-0 truncate text-left">
         {modelValue}{effortValue ? <span className="font-normal text-ink-soft"> · {effortValue}</span> : null}
       </span>
-      {/* Au téléphone, pas de bouton de réglages à part : la puce porte son signal. */}
+      {/* Phones lack separate settings buttons, so the chip carries their signal. */}
       {narrow && statusLabels.length > 0 ? <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', caution ? 'bg-caution' : 'bg-accent')} /> : null}
       <ChevronDown size={12} className="shrink-0 text-ink-faint" />
     </TooltipButton>
@@ -188,12 +176,10 @@ export function ComposerQuickSettings(props: ComposerSettingsProps) {
           {(close) => (
             <>
               <SettingsHeading title={effort ? t('composer.settings.modelEffort') : model.label} onClose={() => close()} />
-              {/* Les modèles défilent seuls ; l'effort reste fixé dessous. Un catalogue de
-                  douze modèles le repoussait sinon hors de vue, au bout du défilement. */}
+              {/* Scroll models alone with effort fixed below; long catalogs otherwise push effort out of view. */}
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
                 {model.notice ? <p className="mb-2 text-xs text-caution">{model.notice}</p> : null}
-                {/* Choisir un modèle laisse le menu ouvert : ses niveaux d'effort
-                    viennent de changer, et c'est souvent le choix suivant. */}
+                {/* Model selection keeps menus open because effort levels just changed and are usually next. */}
                 <SettingOptions group={model} disabled={disabled} dense onPick={model.onChange} />
               </div>
               {effort ? (
@@ -213,7 +199,7 @@ export function ComposerQuickSettings(props: ComposerSettingsProps) {
   )
 }
 
-/** Le bouton du panneau complet, sur ordinateur seulement. */
+/** Full-panel button on desktop only. */
 export function ComposerSettingsButton(props: ComposerSettingsProps) {
   const { disabled = false, inputRef } = props
   const t = useTranslate()
@@ -252,7 +238,7 @@ function chipClass(narrow: boolean): string {
   )
 }
 
-/** Une catégorie épinglée à plusieurs valeurs : sa valeur, et son menu. */
+/** Pinned multi-value category showing its value and menu. */
 function ExtraChip({ group, disabled, inputRef }: { group: SettingGroup; disabled: boolean; inputRef: RefObject<HTMLTextAreaElement | null> }) {
   const t = useTranslate()
   const current = group.options.find((option) => option.value === group.value)
@@ -285,8 +271,8 @@ function ExtraChip({ group, disabled, inputRef }: { group: SettingGroup; disable
 }
 
 /**
- * Une catégorie à deux états épinglée : son icône seule, colorée quand elle est
- * allumée. Un clic bascule ; le nom et l'état passent dans l'infobulle.
+ * Pinned two-state category as an icon colored when enabled. Click toggles; tooltip supplies name
+ * and state.
  */
 function ToggleIcon({ group, disabled }: { group: SettingGroup; disabled: boolean }) {
   const t = useTranslate()
@@ -306,7 +292,7 @@ function ToggleIcon({ group, disabled }: { group: SettingGroup; disabled: boolea
   )
 }
 
-/** Même contenu, ancré sur ordinateur et dans une feuille sur écran tactile. */
+/** Same contents anchored on desktop or shown in a touch sheet. */
 export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, spacious = false }: {
   label: string
   trigger: ReactNode
@@ -338,18 +324,17 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
   }
   const onOpenAutoFocus = (event: Event) => {
     event.preventDefault()
-    // Ne pas focaliser la recherche sur téléphone : cela ferait monter le clavier.
+    // Do not focus phone search or it would open the keyboard.
     const target = quick
       ? content.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled), [role="radio"][tabindex="0"]')
       : null
     const focus = target ?? content.current?.querySelector<HTMLElement>('[data-settings-heading]')
     focus?.focus({ preventScroll: true })
-    // Le choix en cours peut être loin dans une longue liste : on l'amène en vue, dans
-    // sa liste seulement, sans faire défiler la page.
+    // Reveal the current choice in long lists, scrolling only that list rather than the page.
     if (target) target.scrollIntoView({ block: 'nearest' })
   }
   const onCloseAutoFocus = (event: Event) => {
-    // Sur téléphone et au clavier, Radix rend le focus au bouton d'ouverture.
+    // Radix returns focus to the trigger on phones and keyboard interaction.
     if (!sheet && resumeTyping.current && inputRef.current) {
       event.preventDefault()
       inputRef.current.focus({ preventScroll: true })

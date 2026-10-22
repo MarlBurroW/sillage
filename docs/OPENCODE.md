@@ -1,104 +1,105 @@
-# Intégration OpenCode
+# OpenCode integration
 
-Sillage lance un `opencode serve` par conversation et lui parle en HTTP, avec un flux
-SSE (`GET /event`). Les bindings sont générés depuis l'OpenAPI que le binaire publie sur
-`GET /doc`, avec **opencode 1.19.3**. Tout ce qui suit a été sondé sur cette version
-(1.18.25 à l'origine, revérifié sur 1.19.0 puis 1.19.3 : l'API v1 n'a pas bougé ; la
-1.19.3 ajoute seulement `reasoning_options` aux modèles de `ProviderConfig`, dont
-opencode tire les variantes que l'adaptateur lit déjà).
+Sillage starts one `opencode serve` per conversation and communicates over HTTP,
+with an SSE stream (`GET /event`). Bindings are generated from the OpenAPI the
+binary publishes at `GET /doc`, with **opencode 1.19.3**. Everything below was
+probed on that version (originally 1.18.25, rechecked on 1.19.0 then 1.19.3: the
+v1 API is unchanged; 1.19.3 only adds `reasoning_options` to `ProviderConfig`
+models, from which opencode derives variants the adapter already reads).
 
-Ce qui a changé sur la ligne 1.x et compte pour Sillage :
+Changes in the 1.x line that matter to Sillage:
 
-- **1.19.1** : le partage de session n'existe plus (liens, commandes, import depuis une
-  URL). Les routes `/session/{id}/share` restent dans l'OpenAPI mais ne servent plus ;
-  Sillage n'y a jamais touché et garde `share: 'disabled'` au lancement, toujours accepté.
-- **1.19.2** : la 1.x ne propose plus la 2.x comme mise à jour ordinaire (ni la
-  vérification de mise à jour, ni le script d'installation). Passer à OpenCode 2 reste un
-  geste explicite : `/update` ou `opencode upgrade --major`.
+- **1.19.1**: session sharing is gone (links, commands, URL import).
+  `/session/{id}/share` routes remain in the OpenAPI but no longer work;
+  Sillage never used them and keeps `share: 'disabled'` at launch, still accepted.
+- **1.19.2**: 1.x no longer offers 2.x as a normal update (neither the update check
+  nor the installer). Moving to OpenCode 2 remains an explicit action: `/update`
+  or `opencode upgrade --major`.
 
-**Ne pas lancer `opencode upgrade --major`** (ni l'offre 2.0 de `/update`) sur une
-machine qui fait tourner Sillage tant que l'adaptateur parle l'API v1 : OpenCode 2
-(`@opencode/cli` 2.x) a retiré cette API au profit de `/api/...`, et `--major` désinstalle
-la 1.x. Un garde-fou (`apps/server/src/agents/opencode/version-guard.ts`) lit
-`opencode --version` avant chaque `opencode serve` et refuse une majeure ≥ 2 avec l'erreur
-`opencode_unsupported_version`, plutôt que de laisser tourner une conversation muette.
-Vérifié sur `@opencode/cli` 2.0.32, qui répond `opencode v2.0.32` à `--version` : son
-`serve` annonce bien `server listening on ...`, mais `/session`, `/event` et `/doc`
-répondent la page HTML de son application web (200), et seule `/api/...` est l'API.
+**Do not run `opencode upgrade --major`** (or accept `/update`'s 2.0 offer) on a
+machine running Sillage while the adapter uses the v1 API: OpenCode 2
+(`@opencode/cli` 2.x) removed that API in favor of `/api/...`, and `--major`
+uninstalls 1.x. A guard (`apps/server/src/agents/opencode/version-guard.ts`)
+reads `opencode --version` before every `opencode serve` and rejects major
+versions ≥ 2 with `opencode_unsupported_version` rather than running a silent
+conversation. Checked on `@opencode/cli` 2.0.32, whose `--version` returns
+`opencode v2.0.32`: `serve` does announce `server listening on ...`, but
+`/session`, `/event`, and `/doc` return its web app's HTML page (200), and only
+`/api/...` is the API.
 
-## Génération d'API
+## API generations
 
-Deux générations cohabitent dans le serveur d'opencode. L'adaptateur ne parle que la
-première (`/session/...`, flux `GET /event`), épinglée dans `rawFormat` sous
-`opencode-server@v1` :
+Two generations coexist in the opencode server. The adapter uses only the first
+(`/session/...`, `GET /event` stream), pinned in `rawFormat` as `opencode-server@v1`:
 
-- la seconde (`/api/session/...`, `GET /api/event`, événements `session.next.*`) n'a ni
-  fork ni gestion des serveurs MCP ;
-- son flux ne dit rien des sessions créées par la première : les deux ne se mélangent pas ;
-- c'est la première que parlent le TUI et le SDK d'opencode.
+- the second (`/api/session/...`, `GET /api/event`, `session.next.*` events) has
+  neither forks nor MCP server management;
+- its stream says nothing about sessions created by the first: the two do not mix;
+- the first is what opencode's TUI and SDK use.
 
-## Ce qui se règle au lancement, et ce qui se règle au message
+## Launch settings and per-message settings
 
-opencode lit ses permissions, ses serveurs MCP et ses dossiers de skills dans sa
-configuration. Sillage les injecte par `OPENCODE_CONFIG_CONTENT`, fusionné par-dessus
-l'`opencode.json` du poste sans y écrire. En changer relance donc le serveur de la
-conversation, qui reprend sa session (elles vivent dans la base d'opencode).
+opencode reads permissions, MCP servers, and skill directories from its
+configuration. Sillage injects them through `OPENCODE_CONFIG_CONTENT`, merged
+over the machine's `opencode.json` without writing to it. Changing them therefore
+restarts the conversation's server, which resumes its session (stored in
+opencode's database).
 
-Modèle (`fournisseur/modèle`), variante et agent primaire partent avec chaque message et
-se changent à chaud.
+Model (`provider/model`), variant, and primary agent are sent with every message
+and can change without a restart.
 
-| Réglage Sillage | Chez opencode |
+| Sillage setting | In opencode |
 |---|---|
-| Modifications, commandes, accès web | `permission.edit`, `.bash`, `.webfetch` : `ask`, `allow`, `deny`, ou rien (la règle du poste) |
-| Répertoires supplémentaires, pièces jointes, mémoire, skills | `permission.external_directory`, un motif `dossier/**` en `allow` chacun |
-| Serveurs MCP du registre, serveur de Sillage | `mcp.<nom>`, `local` ou `remote` |
-| Bibliothèque de skills | `skills.paths` ; ils apparaissent parmi les commandes en `/` |
-| Consignes tenues dans SILLAGE.md | `system` de chaque message ; `OPENCODE_DISABLE_PROJECT_CONFIG=1` masque `AGENTS.md` et `CLAUDE.md` du dépôt |
+| Edits, commands, web access | `permission.edit`, `.bash`, `.webfetch`: `ask`, `allow`, `deny`, or unset (the machine's rule) |
+| Additional directories, attachments, memory, skills | `permission.external_directory`, one `directory/**` pattern with `allow` for each |
+| Registry MCP servers, Sillage server | `mcp.<name>`, `local` or `remote` |
+| Skill library | `skills.paths`; they appear among slash commands |
+| Instructions managed in SILLAGE.md | Each message's `system`; `OPENCODE_DISABLE_PROJECT_CONFIG=1` hides the repository's `AGENTS.md` and `CLAUDE.md` |
 
-`OPENCODE_DISABLE_PROJECT_CONFIG` coupe aussi l'`opencode.json` et le dossier
-`.opencode/` du projet : opencode n'a pas d'interrupteur plus fin. Un projet qui garde
-ses consignes dans son dépôt n'est pas concerné.
+`OPENCODE_DISABLE_PROJECT_CONFIG` also disables the project's `opencode.json`
+and `.opencode/` directory: opencode has no finer switch. Projects keeping their
+instructions in their repository are unaffected.
 
-## Comportements relevés
+## Observed behavior
 
-- **Port** : choisi par Sillage. Avec `--port 0`, opencode reprend 4096 pendant que le
-  serveur précédent s'éteint encore, et la première connexion du nouveau est coupée.
-- **Mot de passe** : un par process (`OPENCODE_SERVER_PASSWORD`, utilisateur `opencode`).
-- **Infléchir** : un `prompt_async` reçu pendant un tour est pris à l'étape de modèle
-  suivante, sans passage par `idle`.
-- **Fin de tour** : `session.idle`, envoyé deux fois. À l'interruption il précède la
-  clôture des outils en cours, et les demandes de permission restent dans la liste
-  d'opencode sans `permission.replied` : le runner clôt tout lui-même.
-- **Fork** : `POST /session/{id}/fork` copie les messages qui précèdent `messageID`, lui
-  exclu. Sans `messageID`, tout est copié.
-- **Commandes en `/`** : `POST /session/{id}/command`, qui ne répond qu'à la fin du tour.
-- **Skills ajoutés en cours de route** : invisibles tant que l'instance n'est pas jetée
-  (`POST /instance/dispose`). Le flux ouvert devient alors muet sans se fermer, il faut
-  le rebrancher. Fait au repos seulement, un tour en cours partirait avec l'instance.
-- **Sous-agents** : une session enfant par appel `task`, nommée dans les métadonnées de
-  l'appel (`metadata.sessionId`). Ses événements arrivent sur le même flux.
-- **Sortie d'une commande** : cumulée dans `metadata.output` de l'appel en cours.
-- **Images et fichiers mentionnés** : parts `file` avec une URL `file://`, qu'opencode
-  lit lui-même.
+- **Port**: chosen by Sillage. With `--port 0`, opencode reuses 4096 while the
+  previous server is still shutting down, cutting off the new one's first connection.
+- **Password**: one per process (`OPENCODE_SERVER_PASSWORD`, user `opencode`).
+- **Steering**: a `prompt_async` received during a turn is taken at the next model
+  step, without passing through `idle`.
+- **Turn completion**: `session.idle`, sent twice. On interruption it precedes
+  closure of active tools, and permission requests stay in opencode's list without
+  `permission.replied`: the runner closes everything itself.
+- **Fork**: `POST /session/{id}/fork` copies messages before `messageID`, exclusive.
+  Without `messageID`, everything is copied.
+- **Slash commands**: `POST /session/{id}/command`, which responds only at turn completion.
+- **Skills added during a session**: invisible until the instance is disposed
+  (`POST /instance/dispose`). The open stream then goes silent without closing
+  and must be reconnected. Done only while idle: an active turn would be lost
+  with the instance.
+- **Subagents**: one child session per `task` call, identified in the call's
+  metadata (`metadata.sessionId`). Its events arrive on the same stream.
+- **Command output**: accumulated in the active call's `metadata.output`.
+- **Images and mentioned files**: `file` parts with a `file://` URL, read by opencode itself.
 
-## Hors périmètre de la première version
+## Outside the first version's scope
 
-Connexion des fournisseurs depuis l'interface (passer par `opencode auth login`), coût
-cumulé, import des sessions commencées dans opencode, élicitations MCP.
+Signing in to providers from the interface (use `opencode auth login`), cumulative
+cost, importing sessions started in opencode, MCP elicitations.
 
-## Vérifications
+## Verification
 
 ```sh
 pnpm typecheck
 pnpm test
-pnpm opencode:types:check # compare les bindings au binaire installé
-pnpm test:opencode-ui     # vrais composants, API simulée, ordinateur et mobile
+pnpm opencode:types:check # compare bindings with the installed binary
+pnpm test:opencode-ui     # real components, mocked API, desktop and mobile
 ```
 
-La sonde manuelle `pnpm --filter @sillage/server opencode:probe` fait un vrai tour sur
-l'opencode installé, avec le modèle gratuit `opencode/big-pickle`. Elle laisse une
-session dans la base d'opencode et affiche son identifiant, à supprimer avec
+The manual `pnpm --filter @sillage/server opencode:probe` probe runs a real turn
+on the installed opencode with the free `opencode/big-pickle` model. It leaves a
+session in opencode's database and prints its ID; delete it with
 `opencode session delete <id>`.
 
-Pour mettre à jour l'API : lancer `pnpm opencode:types`, relire le diff, corriger
-`packages/opencode-bindings/src/index.ts` si un schéma a bougé, puis relancer la sonde.
+To update the API: run `pnpm opencode:types`, review the diff, adjust
+`packages/opencode-bindings/src/index.ts` if a schema changed, then rerun the probe.

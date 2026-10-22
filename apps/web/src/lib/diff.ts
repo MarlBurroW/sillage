@@ -1,29 +1,27 @@
 /**
- * Découpage d'un diff unifié.
- *
- * Écrit ici plutôt qu'ajouté en dépendance : le format est celui que `git diff`
- * produit, il tient en une centaine de lignes, et les bibliothèques du domaine font
- * surtout l'inverse (calculer un diff, ce que git fait déjà pour nous).
+ * Unified diff parsing. Local implementation rather than a dependency: Git's output format fits in
+ * roughly a hundred lines, while most diff libraries primarily compute diffs, which Git already
+ * does.
  */
 
 export interface DiffLine {
   kind: 'added' | 'removed' | 'context' | 'meta'
   text: string
-  /** Numéro dans le fichier d'avant, absent sur une ligne ajoutée. */
+  /** Line number in the old file, absent for additions. */
   before: number | null
-  /** Numéro dans le fichier d'après, absent sur une ligne supprimée. */
+  /** Line number in the new file, absent for deletions. */
   after: number | null
 }
 
 export interface DiffHunk {
-  /** L'en-tête `@@ ... @@`, qui porte aussi le nom de la fonction englobante. */
+  /** The `@@ ... @@` header, also containing the enclosing function name. */
   header: string
   lines: DiffLine[]
 }
 
 export interface DiffFile {
   path: string
-  /** Chemin d'origine quand le fichier a été déplacé. */
+  /** Original path for a moved file. */
   oldPath: string | null
   status: 'added' | 'removed' | 'renamed' | 'modified' | 'binary'
   hunks: DiffHunk[]
@@ -31,14 +29,12 @@ export interface DiffFile {
   removed: number
 }
 
-/** `@@ -12,7 +12,9 @@ contexte` : les deux positions de départ nous suffisent. */
+/** `@@ -12,7 +12,9 @@ context`: only the two starting positions are needed. */
 const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/
 
 /**
- * Chemin d'un `diff --git a/x b/y`.
- *
- * Les deux moitiés sont séparées par ` b/`, et non par un espace : un nom de fichier
- * peut contenir des espaces, et git ne les échappe pas dans cette ligne.
+ * Path from `diff --git a/x b/y`. Split halves at ` b/`, not spaces: filenames may contain spaces
+ * and Git does not escape them in this line.
  */
 function parseHeaderPaths(line: string): { from: string; to: string } | null {
   const body = line.slice('diff --git '.length)
@@ -110,7 +106,7 @@ export function parseUnifiedDiff(patch: string): DiffFile[] {
       hunk.lines.push({ kind: 'removed', text: line.slice(1), before, after: null })
       before += 1
     } else if (line.startsWith('\\')) {
-      // « \ No newline at end of file » : une note sur la ligne précédente, pas une ligne.
+      // No-newline-at-end marker: an annotation on the preceding line, not a line itself.
       hunk.lines.push({ kind: 'meta', text: line.slice(2), before: null, after: null })
     } else {
       hunk.lines.push({ kind: 'context', text: line.slice(1), before, after })

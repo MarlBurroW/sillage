@@ -17,14 +17,14 @@ import { Badge, Banner, Button, IconButton, Select, Switch, cx } from '../ui'
 import { PayloadTree } from './PayloadTree'
 import { ScriptEditor } from './ScriptEditor'
 
-/** L'appel posé sur le banc : un exemple ou un appel reçu, modifiable sur place. */
+/** Editable bench call from an example or received delivery. */
 export interface BenchCall {
   source: { kind: 'sample'; id: string } | { kind: 'delivery'; id: string }
   headersText: string
   body: string
-  /** Retouché à la main depuis son chargement. */
+  /** Manually edited since loading. */
   edited: boolean
-  /** Le corps reçu dépassait ce que garde le journal : il est coupé. */
+  /** Received body exceeded log retention and is truncated. */
   truncated: boolean
 }
 
@@ -47,13 +47,9 @@ export const VERDICTS: Record<DeliveryVerdict, { label: MessageKey; tone: BadgeT
 }
 
 /**
- * Le banc d'essai d'une automatisation, à côté de sa configuration : on y pose un appel
- * (un exemple, ou un appel réellement reçu), on le retouche si besoin, et l'on voit ce
- * que l'automatisation en ferait — verdict, prompt, script — à chaque modification des
- * réglages, sans rien lancer.
- *
- * Le journal des vrais appels en est le second onglet : chacun s'y « essaie » d'un clic,
- * c'est-à-dire se pose sur le banc.
+ * Automation test bench beside configuration: load an example or real call, edit, and inspect
+ * verdict/prompt/script after each setting change without launching work. The second tab lists real
+ * calls, each loadable to the bench with one click.
  */
 export function TestBench({
   taskId,
@@ -179,7 +175,7 @@ function SubTabs<T extends string>({ value, onChange, options }: { value: T; onC
   )
 }
 
-// --- Banc ---------------------------------------------------------------------------------
+// --- Test bench -------------------------------------------------------------------------
 
 function Bench({
   taskId,
@@ -271,7 +267,7 @@ function Bench({
   )
 }
 
-/** Le verdict sur l'appel du banc, et ce qui le justifie. */
+/** Bench-call verdict and explanation. */
 function BenchVerdict({ result, pending, error }: { result: WebhookTestResult | undefined; pending: boolean; error: Error | null }) {
   const t = useTranslate()
   if (error) return <Banner>{error.message}</Banner>
@@ -285,7 +281,7 @@ function BenchVerdict({ result, pending, error }: { result: WebhookTestResult | 
       </Banner>
     )
   }
-  // La raison d'une erreur de script se suffit : « Le script a échoué : … ».
+  // Script errors already explain themselves without extra prefixes.
   if (result.verdict === 'script_error') return <Banner>{reason}</Banner>
   return <Banner tone="info">{t('automation.test.ignored', { reason })}</Banner>
 }
@@ -386,7 +382,7 @@ function CallView({
           </div>
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-ink-soft">{t('automation.bench.body')}</span>
-            {/* Remonté à chaque appel chargé : son texte est un état initial. */}
+            {/* Remount for each loaded call because editor text is initial state. */}
             <ScriptEditor
               key={`${call.source.kind}:${call.source.id}`}
               value={call.body}
@@ -451,7 +447,7 @@ function ScriptView({ result, hasScript }: { result: WebhookTestResult | undefin
   )
 }
 
-// --- Journal ------------------------------------------------------------------------------
+// --- Log --------------------------------------------------------------------------------
 
 function Journal({
   taskId,

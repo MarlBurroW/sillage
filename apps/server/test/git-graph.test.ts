@@ -19,7 +19,7 @@ test('Le graphe relie les fusions et conserve les rails à travers les pages', (
   assert.deepEqual(layoutGitGraph(commits.slice(0, 2)).rows, full.rows.slice(0, 2))
   assert.equal(full.rows[0]!.outgoing.length, 2)
   assert.notEqual(full.rows[1]!.lane, full.rows[2]!.lane)
-  // Chaque segment sortant arrive exactement sur le rail de la ligne suivante.
+  // Each outgoing segment meets the next line's rail exactly.
   full.rows.slice(0, -1).forEach((row, index) => {
     const exits = new Map(row.outgoing.map((edge) => [edge.to, edge.color]))
     const entrances = new Map(full.rows[index + 1]!.incoming.map((edge) => [edge.from, edge.color]))

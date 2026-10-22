@@ -9,12 +9,9 @@ import { Button, cx } from '../ui'
 import { Markdown } from './Markdown'
 
 /**
- * Messages d'autres sessions que Sillage a retenus au lieu de relancer celle-ci.
- *
- * Sous l'indicateur d'activité, comme la file : l'agent ne les a pas lus. Retenus parce
- * qu'un échange tournait en rond ou que la session avait déjà été trop relancée sans
- * personne pour regarder ; c'est donc à une personne de trancher, et ce bloc est le seul
- * endroit où elle l'apprend.
+ * Other-session messages held instead of restarting this one. Below activity like queued messages
+ * because the agent has not read them. Looping exchanges or too many unattended restarts require
+ * human judgment, and this block is where users learn that.
  */
 export function HeldSessionMessages({
   conversationId,
@@ -32,7 +29,7 @@ export function HeldSessionMessages({
 
   if (messages.length === 0) return null
 
-  // L'événement `session_message.released` retire l'entrée : rien n'est anticipé ici.
+  // session_message.released removes entries; do not predict it here.
   const run = async (messageId: string, action: () => Promise<unknown>, fallback: string) => {
     setBusy(messageId)
     setError(null)

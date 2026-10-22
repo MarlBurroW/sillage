@@ -50,15 +50,15 @@ export function Button({
 }
 
 interface IconButtonProps extends ComponentPropsWithRef<'button'> {
-  /** Obligatoire : un bouton sans texte doit porter son intitulé pour les lecteurs d'écran. */
+  /** Required accessible label for textless buttons. */
   label: string
-  /** `md` respecte la cible tactile de 44px ; `sm` est réservé aux listes denses. */
+  /** md meets 44px touch targets; sm is for dense lists. */
   size?: 'sm' | 'md'
   children: ReactNode
 }
 
-// Une classe de taille passée par className ne l'emporterait pas : Tailwind ordonne
-// ses utilitaires lui-même, l'ordre dans la chaîne ne décide de rien.
+// Size classes supplied through className cannot reliably override because Tailwind orders
+// utilities independently of string order.
 const ICON_SIZES = { sm: 'size-11 md:size-7 pointer-coarse:size-11', md: 'size-11' } as const
 
 export function IconButton({ label, size = 'md', children, className, ...props }: IconButtonProps) {

@@ -24,9 +24,9 @@ import {
 } from 'drizzle-orm/sqlite-core'
 
 /**
- * Le schéma couvre l'ensemble de la spec, y compris les tables que les lots suivants
- * utiliseront, pour n'avoir qu'une migration initiale à appliquer. Les colonnes JSON
- * sont typées via `$type<>` et sérialisées par la couche d'accès.
+ * The schema covers the full spec, including tables needed by later batches, so only one
+ * initial migration is required. JSON columns are typed through `$type<>` and serialized by the
+ * access layer.
  */
 
 const timestamp = (name: string) => integer(name, { mode: 'number' })
@@ -66,37 +66,35 @@ export const projects = sqliteTable(
     visibility: text('visibility').$type<'private' | 'shared'>().notNull(),
     color: text('color'),
     /**
-     * JSON `ProjectAgentDefaults` : un préréglage de la barre de saisie par CLI, socle
-     * des conversations du projet sous les défauts du compte. Le CLI lui-même n'est
-     * pas une propriété du projet : il est choisi par conversation (colonne
-     * `conversations.agent`), pour qu'un même projet porte du Claude et du Codex — d'où
-     * un préréglage par CLI plutôt qu'un seul. La forme d'avant, une configuration
-     * seule, se relit encore (`readProjectDefaults`).
+     * JSON `ProjectAgentDefaults`: one composer preset per CLI, providing project defaults
+     * beneath account defaults. The CLI itself is chosen per conversation
+     * (`conversations.agent`), not per project, so one project can use both Claude and Codex.
+     * Hence one preset per CLI rather than a single preset. The old single-configuration format
+     * remains readable (`readProjectDefaults`).
      */
     defaultConfig: text('default_config'),
     /**
-     * Ordre manuel dans la sidebar, réécrit en bloc par le glisser-déposer. Un
-     * nouveau projet prend une position supérieure au maximum existant, pour se
-     * ranger en fin de liste plutôt que de s'insérer au milieu.
+     * Manual sidebar order, rewritten in bulk by drag and drop. A new project gets a position
+     * above the existing maximum so it appears at the end rather than in the middle.
      */
     position: integer('position').notNull().default(0),
     /**
-     * Où vivent les consignes du projet : dans Sillage (`sillage`), injectées aux deux
-     * CLI pendant que les `CLAUDE.md` et `AGENTS.md` du dépôt sont masqués, ou dans le
-     * dépôt (`repo`), que les CLI lisent d'eux-mêmes. Fixé à la création ; null pour
-     * les projets d'avant, résolu d'après le dossier (voir `instructions/store.ts`).
+     * Where project instructions live: in Sillage (`sillage`), injected into both CLIs while
+     * repository `CLAUDE.md` and `AGENTS.md` files are hidden, or in the repository (`repo`),
+     * where CLIs read them themselves. Set at creation; null for older projects, resolved from
+     * the directory (see `instructions/store.ts`).
      */
     instructionsMode: text('instructions_mode').$type<InstructionsMode>(),
     /**
-     * Capturer l'état du workspace avant et après chaque tour (refs git cachées), pour
-     * montrer ce qu'un tour a changé et pouvoir y revenir. Vrai par défaut ; à couper
-     * sur un dépôt si lourd que la capture retarde visiblement l'envoi d'un message.
+     * Capture workspace state before and after every turn (hidden git refs) to show what the
+     * turn changed and allow restoring it. Enabled by default; disable for repositories so
+     * large that capture noticeably delays sending a message.
      */
     turnCheckpoints: integer('turn_checkpoints', { mode: 'boolean' }).notNull().default(true),
     /**
-     * Où vit la mémoire des agents : dans Sillage (un dossier par projet, commun aux CLI
-     * et aux worktrees) ou chez chaque CLI (`native`, Sillage ne s'en mêle pas). Fixé à
-     * la création d'après le défaut du compte ; `sillage` pour les projets d'avant.
+     * Where agent memory lives: in Sillage (one directory per project, shared across CLIs and
+     * worktrees), or managed by each CLI (`native`, with no Sillage involvement). Set at
+     * creation from the account default; `sillage` for older projects.
      */
     memoryMode: text('memory_mode').$type<MemoryMode>().notNull().default('sillage'),
     archivedAt: timestamp('archived_at'),
@@ -106,30 +104,31 @@ export const projects = sqliteTable(
 )
 
 /**
- * SILLAGE.md : des consignes tenues par Sillage, communes à Claude et à Codex, injectées
- * dans le prompt système de chaque session. Une ligne globale (`id` = `global`, sans
- * projet) et une par projet (`id` = l'identifiant du projet).
+ * SILLAGE.md: instructions maintained by Sillage, shared by Claude and Codex, injected into
+ * each session's system prompt. One global row (`id` = `global`, no project) and one per
+ * project (`id` = project ID).
  *
- * En base et non en fichier pour la même raison que l'image : le serveur MCP, qui y
- * réécrit à la demande d'un agent, n'a que la base.
+ * Stored in the database rather than a file for the same reason as project images: the MCP
+ * server, which rewrites it at an agent's request, only has database access.
  */
 export const instructions = sqliteTable('instructions', {
   id: text('id').primaryKey(),
   projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
   content: text('content').notNull(),
   updatedAt: timestamp('updated_at').notNull(),
-  /** Dernière main : une personne, ou la session d'un agent passé par les outils MCP. */
+  /** Last editor: a person, or an agent session using the MCP tools. */
   updatedByUserId: text('updated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   updatedByConversationId: text('updated_by_conversation_id'),
 })
 
 /**
- * L'image d'un projet, ce qui le fait reconnaître d'un coup d'œil dans la navigation.
+ * A project's image makes it recognizable at a glance in navigation.
  *
- * Dans sa propre table et non en colonne de `projects` : chaque lecture d'un projet
- * ramènerait sinon le blob, alors qu'il ne sert qu'à la route qui le sert. En base
- * plutôt que sur disque parce que le serveur MCP, qui la pose au nom d'un agent, n'a
- * que la base ; et la cascade retire l'image avec le projet sans fichier à ramasser.
+ * Kept in its own table rather than a `projects` column: otherwise every project read would
+ * fetch the blob, although only the image-serving route needs it. Stored in the database
+ * because the MCP server, which sets it on behalf of an agent, only has database access;
+ * cascading deletion also removes the image with its project without leaving a file to clean
+ * up.
  */
 export const projectImages = sqliteTable('project_images', {
   projectId: text('project_id')
@@ -138,12 +137,11 @@ export const projectImages = sqliteTable('project_images', {
   mimeType: text('mime_type').notNull(),
   data: blob('data', { mode: 'buffer' }).notNull(),
   /**
-   * Posée par un agent faute de logo dans le projet. Tant que c'est vrai, les sessions
-   * se voient rappeler de la remplacer dès qu'un vrai logo existe ; une image choisie
-   * par une personne n'est jamais provisoire.
+   * Set by an agent when the project has no logo. While true, sessions are reminded to replace
+   * it once a real logo exists; an image chosen by a person is never provisional.
    */
   provisional: integer('provisional', { mode: 'boolean' }).notNull().default(false),
-  /** Sert aussi de version dans l'URL, pour que le cache du navigateur suive. */
+  /** Also serves as the URL version so the browser cache stays current. */
   updatedAt: timestamp('updated_at').notNull(),
 })
 
@@ -167,14 +165,13 @@ export const worktrees = sqliteTable(
 )
 
 /**
- * Chemins absolus qu'une conversation a touchés hors de son répertoire de travail.
+ * Absolute paths a conversation has touched outside its working directory.
  *
- * Une session notée à la racine du projet qui écrit dans `~/projects/x-feature` y
- * travaille en réalité : c'est ce rattachement « a écrit dans » que la vue des
- * chantiers croise avec les worktrees du dépôt. Tenu à jour à l'écriture du journal,
- * avec un rattrapage unique à la migration, pour ne pas rebalayer des millions
- * d'événements à chaque lecture. Distinct de `conversations.worktree_id`, qui décide du
- * cwd de la reprise et ne doit jamais être réécrit après coup.
+ * A session recorded at the project root that writes to `~/projects/x-feature` actually works
+ * there: the worktree view cross-references this “wrote in” association with repository
+ * worktrees. Updated on journal writes, with a one-time migration backfill, to avoid rescanning
+ * millions of events on every read. Separate from `conversations.worktree_id`, which determines
+ * the resume cwd and must never be rewritten retroactively.
  */
 export const conversationPaths = sqliteTable(
   'conversation_paths',
@@ -182,7 +179,7 @@ export const conversationPaths = sqliteTable(
     conversationId: text('conversation_id')
       .notNull()
       .references(() => conversations.id, { onDelete: 'cascade' }),
-    /** Chemin absolu d'un fichier édité, ou d'un dossier cité par une commande. */
+    /** Absolute path of an edited file or a directory referenced by a command. */
     path: text('path').notNull(),
     lastTs: timestamp('last_ts').notNull(),
   },
@@ -190,12 +187,11 @@ export const conversationPaths = sqliteTable(
 )
 
 /**
- * Cartes du board : le travail à faire, distinct de la conversation qui l'exécute.
+ * Board cards: work to do, distinct from the conversation carrying it out.
  *
- * Une carte survit à ses sessions et en porte plusieurs ; c'est ce qui la sépare d'une
- * conversation, laquelle est une tentative d'exécution qui se termine et s'archive. Le
- * rattachement vit sur `conversations.card_id`, une conversation ne traitant qu'une
- * carte à la fois.
+ * A card outlives its sessions and can have several; a conversation is one execution attempt
+ * that ends and is archived. The association lives on `conversations.card_id`, since a
+ * conversation handles only one card at a time.
  */
 export const cards = sqliteTable(
   'cards',
@@ -205,36 +201,35 @@ export const cards = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     /**
-     * Numéro court affiché et cité (`#12`), attribué à la création et jamais réutilisé.
+     * Short displayed/reference number (`#12`), assigned at creation and never reused.
      *
-     * Un UUID ne se tape pas dans un message et ne se lit pas dans un nom de branche.
-     * La séquence est par projet, comme les issues d'une forge.
+     * A UUID is awkward to type in a message or read in a branch name. The sequence is per
+     * project, like issues on a forge.
      */
     number: integer('number').notNull(),
     title: text('title').notNull(),
     description: text('description').notNull().default(''),
     /**
-     * Position choisie dans le workflow. Jamais nommée `status` : ce mot désigne l'état
-     * d'exécution d'une conversation, et les deux ne doivent pas se confondre.
-     * L'activité et l'état de merge sont dérivés et n'ont donc pas de colonne ici.
+     * Chosen workflow position. Never called `status`: that word describes a conversation's
+     * execution state, and the two must not be confused. Activity and merge state are derived,
+     * so they have no column here.
      */
     column: text('column').$type<CardColumn>().notNull(),
-    /** Ordre manuel dans sa colonne, croissant. Réécrit en bloc par le glisser-déposer. */
+    /** Ascending manual order within the column. Rewritten in bulk by drag and drop. */
     position: integer('position').notNull().default(0),
     /**
-     * Arrivée dans la colonne actuelle, pour l'ordre « par arrivée » du board.
+     * Arrival in the current column, for the board's arrival ordering.
      *
-     * Tenue par deux déclencheurs SQLite (migration 0047) et non par le code : une carte
-     * change de colonne par l'interface, par un agent depuis le serveur MCP, par la
-     * synchronisation GitHub ou au lancement de sa première session, et un oubli dans
-     * l'un de ces chemins fausserait l'ordre sans bruit. `updatedAt` ne convient pas :
-     * corriger une faute dans la description ne fait pas arriver la carte.
+     * Maintained by two SQLite triggers (migration 0047) rather than code: a card changes
+     * columns through the UI, an agent via the MCP server, GitHub sync, or its first session
+     * starting. Missing any of these paths would silently corrupt ordering. `updatedAt` is
+     * unsuitable: fixing a typo in the description is not an arrival.
      */
     columnEnteredAt: timestamp('column_entered_at'),
     /**
-     * Le worktree dont la fusion a fait passer la carte en « Terminé ». Retenu pour ne
-     * le faire qu'une fois : une personne qui ramène la carte en cours après coup a ses
-     * raisons, et l'arbre fusionné ne doit pas la renvoyer à chaque calcul.
+     * Worktree whose merge moved the card to “Done”. Remembered so it happens only once:
+     * someone moving the card back to in-progress has their reasons, and the merged worktree
+     * must not move it back on every calculation.
      */
     doneByMerge: text('done_by_merge'),
     createdBy: text('created_by')
@@ -250,16 +245,14 @@ export const cards = sqliteTable(
 )
 
 /**
- * Références `#12` trouvées dans la description d'une carte, réécrites à chaque
- * enregistrement.
+ * `#12` references found in a card description, rewritten on every save.
  *
- * Table dérivée du texte, comme l'index de recherche l'est du journal : elle ne porte
- * rien que la description n'ait déjà, et sert à répondre « qui me référence » sans
- * balayer toutes les descriptions du projet.
+ * Derived from text, like the search index from the journal: it contains nothing absent from
+ * the description and answers “who references me” without scanning every description in the
+ * project.
  *
- * La cible cascade comme la source : une carte supprimée ne doit pas laisser de
- * backlink vers le vide. Le texte, lui, garde son `#12`, qui s'affichera comme une
- * référence morte plutôt que de disparaître de la prose.
+ * The target cascades like the source: a deleted card must not leave a dangling backlink. The
+ * text keeps its `#12`, displayed as a dead reference rather than removed from the prose.
  */
 export const cardRefs = sqliteTable(
   'card_refs',
@@ -274,7 +267,7 @@ export const cardRefs = sqliteTable(
   (t) => [primaryKey({ columns: [t.sourceId, t.targetId] }), index('idx_card_refs_target').on(t.targetId)],
 )
 
-/** Relations explicites, indépendantes des mentions dérivées de la description. */
+/** Explicit relationships, independent of mentions derived from the description. */
 export const cardRelations = sqliteTable(
   'card_relations',
   {
@@ -291,16 +284,15 @@ export const cardRelations = sqliteTable(
 )
 
 /**
- * Ce qu'une session a appris ou fait sur une carte, et que la suivante doit savoir.
+ * What a session learned or did on a card that the next session needs to know.
  *
- * Un flux ajouté, jamais réécrit, et c'est ce qui le distingue de la description : la
- * description est l'énoncé du travail, tenu par une personne ; les notes sont son
- * historique, écrit surtout par les agents. Les fondre ferait qu'un compte rendu de
- * session efface la consigne qu'il était censé suivre.
+ * An append-only stream, unlike the description: the description states the work and is
+ * maintained by a person; notes are its history, written mostly by agents. Combining them would
+ * let a session report erase the instructions it was supposed to follow.
  *
- * Chaque note dit qui l'a écrite et quand. C'est ce qui répond à l'objection faite au
- * magasin de mémoire dans cette roadmap : une note anonyme et sans date vieillit en
- * silence et finit par tromper, une note signée d'une session datée se relativise seule.
+ * Every note records its author and time. This addresses the concern about the memory store in
+ * this roadmap: an anonymous, undated note ages silently and eventually misleads; a note signed
+ * by a dated session carries its own context.
  */
 export const cardNotes = sqliteTable(
   'card_notes',
@@ -310,23 +302,22 @@ export const cardNotes = sqliteTable(
       .notNull()
       .references(() => cards.id, { onDelete: 'cascade' }),
     /**
-     * Session auteure, null quand la note est écrite à la main. Sans cascade : le compte
-     * rendu d'un travail survit à la suppression de la conversation qui l'a produit,
-     * c'est même à ce moment-là qu'il devient la seule trace.
+     * Author session, null for a manually written note. No cascade: a work report survives
+     * deletion of the conversation that produced it; at that point it becomes the only record.
      */
     conversationId: text('conversation_id'),
     userId: text('user_id').references(() => users.id),
     body: text('body').notNull(),
     createdAt: timestamp('created_at').notNull(),
     /**
-     * Le commentaire GitHub dont la note est la copie, ou qu'elle est devenue une fois
-     * publiée. Avec `externalAuthor`, c'est un commentaire écrit sur GitHub ; sans, une
-     * note de Sillage publiée là-bas.
+     * GitHub comment copied into this note, or created when it was published. With
+     * `externalAuthor`, it was written on GitHub; without it, it is a Sillage note published
+     * there.
      */
     externalId: text('external_id'),
     externalAuthor: text('external_author'),
     externalUrl: text('external_url'),
-    /** Publication en commentaire sur l'issue de la carte ; null pour une note locale. */
+    /** Publication as a comment on the card's issue; null for a local note. */
     publication: text('publication').$type<CardNotePublication>(),
     publicationError: text('publication_error'),
   },
@@ -338,22 +329,22 @@ export const cardNotes = sqliteTable(
 )
 
 /**
- * Le board d'un projet relié aux issues d'un dépôt GitHub.
+ * A project board linked to issues from a GitHub repository.
  *
- * Une ligne par projet : un board suit une seule source, sans quoi deux `#12` venus de
- * deux dépôts se disputeraient la même carte. Les cartes locales ne sont pas concernées,
- * elles vivent à côté et ne partent jamais d'elles-mêmes.
+ * One row per project: a board follows one source, otherwise two `#12` issues from different
+ * repositories would compete for the same card. Local cards are unaffected; they coexist and
+ * never leave on their own.
  */
 export const boardLinks = sqliteTable('board_links', {
   projectId: text('project_id')
     .primaryKey()
     .references(() => projects.id, { onDelete: 'cascade' }),
   provider: text('provider').$type<'github'>().notNull().default('github'),
-  /** `owner/nom`. Ne change pas : relier un autre dépôt passe par délier celui-ci. */
+  /** `owner/name`. Immutable: linking another repository requires unlinking this one. */
   repo: text('repo').notNull(),
   /**
-   * Le compte dont l'identifiant github.com lit et écrit. Les issues créées depuis
-   * Sillage le sont à son nom, comme ce que ses agents poussent déjà.
+   * Account whose github.com credential reads and writes. Issues created from Sillage use its
+   * identity, like content its agents already push.
    */
   userId: text('user_id')
     .notNull()
@@ -363,10 +354,10 @@ export const boardLinks = sqliteTable('board_links', {
   newCards: text('new_cards').$type<BoardNewCards>().notNull().default('local'),
   progressLabel: text('progress_label').notNull().default('in progress'),
   reviewLabel: text('review_label').notNull().default('review'),
-  /** Une issue ouverte sur GitHub, sans marque de session, ouvre une session sur sa carte. */
+  /** An issue opened on GitHub without a session marker opens a session on its card. */
   onIssue: integer('on_issue', { mode: 'boolean' }).notNull().default(false),
   issueInstructions: text('issue_instructions').notNull().default(''),
-  /** Un commentaire sans marque de session arrive dans la session de son issue. */
+  /** A comment without a session marker is delivered to its issue's session. */
   onComment: integer('on_comment', { mode: 'boolean' }).notNull().default(false),
   commentInstructions: text('comment_instructions').notNull().default(''),
   commentDelivery: text('comment_delivery').$type<BoardCommentDelivery>().notNull().default('queue'),
@@ -374,19 +365,19 @@ export const boardLinks = sqliteTable('board_links', {
   identity: text('identity').$type<BoardIdentity>().notNull().default('ai'),
   signature: text('signature').notNull().default(''),
   sessionAgent: text('session_agent').$type<AgentKind>().notNull().default('claude'),
-  /** JSON `AgentConfig` ; NULL : les réglages du projet pour ce CLI, lus au lancement. */
+  /** JSON `AgentConfig`; NULL uses project settings for that CLI, read at launch. */
   sessionConfig: text('session_config'),
   workspace: text('workspace').$type<BoardWorkspace>().notNull().default('worktree'),
   maxSessionsPerHour: integer('max_sessions_per_hour').notNull().default(10),
-  /** Les sessions de maintenance peuvent demander une décision humaine. */
+  /** Maintenance sessions may request a human decision. */
   decisionsEnabled: integer('decisions_enabled', { mode: 'boolean' }).notNull().default(false),
   decisionMaxHours: integer('decision_max_hours').notNull().default(24),
   /**
-   * Issues retirées du board à la main, en JSON. Supprimer leur carte ne suffirait pas :
-   * la synchronisation suivante la recréerait.
+   * Issues manually removed from the board, as JSON. Deleting their cards alone would not
+   * suffice: the next sync would recreate them.
    */
   hiddenIssues: text('hidden_issues').notNull().default('[]'),
-  /** `updated_at` GitHub le plus récent déjà lu, point de départ de la lecture suivante. */
+  /** Latest GitHub `updated_at` already read, the starting point for the next read. */
   cursor: text('cursor'),
   lastSyncedAt: timestamp('last_synced_at'),
   lastError: text('last_error'),
@@ -395,12 +386,12 @@ export const boardLinks = sqliteTable('board_links', {
 })
 
 /**
- * L'issue dont une carte est le reflet.
+ * The issue mirrored by a card.
  *
- * Table à part plutôt que colonnes de `cards` : la plupart des cartes sont locales et
- * n'ont rien de tout ceci. Les champs `title`, `body`, `state` et `labels` gardent ce
- * que GitHub disait à la dernière lecture : c'est en les comparant à la carte qu'on sait
- * qui a changé quoi, sans drapeau à tenir à jour dans chaque route qui touche une carte.
+ * A separate table rather than `cards` columns: most cards are local and have none of this.
+ * `title`, `body`, `state` and `labels` retain GitHub's values from the last read. Comparing
+ * them with the card reveals who changed what, without maintaining flags in every route that
+ * touches a card.
  */
 export const cardIssues = sqliteTable(
   'card_issues',
@@ -418,19 +409,19 @@ export const cardIssues = sqliteTable(
     author: text('author'),
     title: text('title').notNull(),
     body: text('body').notNull().default(''),
-    /** La marque de session retirée du corps à la lecture, remise à l'écriture. */
+    /** Session marker removed from the body on read and restored on write. */
     marker: text('marker'),
     state: text('state').$type<'open' | 'closed'>().notNull(),
     stateReason: text('state_reason'),
-    /** JSON, noms des labels. */
+    /** JSON label names. */
     labels: text('labels').notNull().default('[]'),
     remoteUpdatedAt: text('remote_updated_at').notNull(),
     closedAt: timestamp('closed_at'),
-    /** Redevenue locale : la synchronisation ne la touche plus, l'issue vit sans elle. */
+    /** Local again: sync no longer touches it, and the issue lives independently. */
     detached: integer('detached', { mode: 'boolean' }).notNull().default(false),
     /**
-     * La conversation qui répond aux commentaires de cette issue : les suivants lui
-     * arrivent en message plutôt que d'ouvrir chaque fois une session sans mémoire.
+     * Conversation replying to this issue's comments: later comments arrive as messages instead
+     * of opening a new session with no memory each time.
      */
     responderId: text('responder_id'),
   },
@@ -438,14 +429,14 @@ export const cardIssues = sqliteTable(
 )
 
 /**
- * Un message d'une session à une autre du même projet.
+ * A message from one session to another in the same project.
  *
- * Déposé par le serveur MCP, qui n'a qu'un accès à la base, et remis par le daemon, qui
- * seul tient les runners : la table est la boîte aux lettres entre les deux process.
- * `deliveredAt` nul veut dire « pas encore remis », et c'est ce que le relais balaie.
+ * Deposited by the MCP server, which only has database access, and delivered by the daemon,
+ * which alone owns the runners: this table is the mailbox between the two processes. Null
+ * `deliveredAt` means “not yet delivered”, which is what the relay scans.
  *
- * Sans clé étrangère vers `conversations` : un échange reste lisible par celle qui
- * reste quand l'autre est supprimée, comme une note de carte survit à son auteure.
+ * No foreign key to `conversations`: an exchange stays readable to the surviving session when
+ * the other is deleted, just as a card note outlives its author.
  */
 export const sessionMessages = sqliteTable(
   'session_messages',
@@ -457,27 +448,26 @@ export const sessionMessages = sqliteTable(
     fromConversationId: text('from_conversation_id').notNull(),
     toConversationId: text('to_conversation_id').notNull(),
     /**
-     * `message` d'une session à une autre ; `broadcast` annoncé à toutes celles qui
-     * travaillent ; `done`, écrit par le relais, prévient qu'une session surveillée a fini.
+     * `message` from one session to another; `broadcast` to all working sessions; `done`,
+     * written by the relay, announces that a watched session has finished.
      */
     kind: text('kind', { enum: ['message', 'broadcast', 'done'] }).notNull().default('message'),
     body: text('body').notNull(),
-    /** Message auquel celui-ci répond, pour compter la profondeur d'un échange. */
+    /** Message this one replies to, used to count exchange depth. */
     replyTo: text('reply_to'),
     createdAt: timestamp('created_at').notNull(),
     /**
-     * Posé quand le relais retient le message au lieu de relancer le destinataire. Sert
-     * à n'annoncer la retenue qu'une fois dans son fil, redémarrage du daemon compris.
+     * Set when the relay holds a message instead of waking the recipient. Ensures the hold is
+     * announced only once in its thread, including across daemon restarts.
      */
     heldAt: timestamp('held_at'),
     deliveredAt: timestamp('delivered_at'),
     /**
-     * `steer` injecté dans un tour ouvert, `queue` mis en file derrière lui, `wake` en
-     * ouvrant un tour, `read` lu par l'outil avant d'avoir été remis, `failed` quand la
-     * remise a échoué : il n'est pas retenté, pour ne pas relancer en boucle un CLI qui
-     * refuse de démarrer, mais reste lisible par l'outil. Les trois derniers ne sont pas
-     * des remises : `discarded` écarté par une personne, `expired` retenu trop
-     * longtemps, `skipped` une annonce arrivée quand le destinataire ne travaillait plus.
+     * `steer` injected into an open turn, `queue` queued behind it, `wake` opening a turn,
+     * `read` read by the tool before delivery, `failed` when delivery failed: no retries, to
+     * avoid repeatedly launching a CLI that refuses to start, but still readable through the
+     * tool. The last three are not deliveries: `discarded` dismissed by a person, `expired`
+     * held too long, `skipped` an announcement arriving after the recipient stopped working.
      */
     deliveredVia: text('delivered_via', {
       enum: ['steer', 'queue', 'wake', 'read', 'failed', 'discarded', 'expired', 'skipped'],
@@ -490,10 +480,10 @@ export const sessionMessages = sqliteTable(
 )
 
 /**
- * Une session qui a demandé à être prévenue de la fin du travail d'une autre.
+ * A session requesting notification when another finishes its work.
  *
- * Plutôt que de relancer `list_sessions` en boucle, ce qui coûte un tour à chaque
- * coup d'œil : le relais surveille, et dépose un message `done` au moment voulu.
+ * Instead of repeatedly calling `list_sessions`, which costs a turn per check, the relay
+ * watches and deposits a `done` message at the right time.
  */
 export const sessionWatches = sqliteTable(
   'session_watches',
@@ -505,24 +495,23 @@ export const sessionWatches = sqliteTable(
     watcherConversationId: text('watcher_conversation_id').notNull(),
     targetConversationId: text('target_conversation_id').notNull(),
     createdAt: timestamp('created_at').notNull(),
-    /** Posé quand le message `done` est déposé, ou quand la surveillance expire. */
+    /** Set when the `done` message is deposited or the watch expires. */
     firedAt: timestamp('fired_at'),
   },
   (t) => [index('idx_session_watches_open').on(t.firedAt)],
 )
 
 /**
- * Une demande qu'une session adresse au daemon : lancer une autre session, créer une
- * carte, lire le catalogue des modèles.
+ * A session request to the daemon: start another session, create a card, read the model
+ * catalog.
  *
- * Même boîte aux lettres que `session_messages`, mais avec retour : le serveur MCP
- * dépose la demande puis attend que le daemon y écrive son résultat, parce que
- * l'agent a besoin de la réponse pour continuer (l'identifiant de la session lancée,
- * ou la liste des modèles qui existent quand il en a nommé un faux). Seul le daemon
- * tient le catalogue des CLI, les runners et la création de worktrees.
+ * The same mailbox pattern as `session_messages`, but with a response: the MCP server deposits
+ * the request, then waits for the daemon to write its result because the agent needs it to
+ * continue (the new session ID, or available models after naming an invalid one). Only the
+ * daemon owns the CLI catalog, runners and worktree creation.
  *
- * Gardée après traitement : c'est elle qui dit qui a lancé quoi, et donc la profondeur
- * d'une chaîne de lancements et leur nombre dans l'heure.
+ * Kept after processing to record who launched what, allowing launch-chain depth and hourly
+ * counts to be calculated.
  */
 export const agentRequests = sqliteTable(
   'agent_requests',
@@ -532,12 +521,12 @@ export const agentRequests = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     /**
-     * Conversation qui demande. Sans clé étrangère, comme les messages entre sessions.
-     * Vide quand la demande vient d'un client MCP hors session (`user_id` dit alors
-     * pour qui agir) : un CLI local branché sur toute l'instance, voir `docs/mcp.md`.
+     * Requesting conversation. No foreign key, like inter-session messages. Empty for requests
+     * from a sessionless MCP client (`user_id` then determines whose behalf to act on): a local
+     * CLI connected to the whole instance; see `docs/mcp.md`.
      */
     conversationId: text('conversation_id').notNull(),
-    /** Compte au nom duquel agir quand aucune conversation ne demande. */
+    /** Account to act on behalf of when no conversation is requesting. */
     userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     kind: text('kind', {
       enum: [
@@ -551,32 +540,32 @@ export const agentRequests = sqliteTable(
         'register_action',
         'remove_action',
         'run_action',
-        // Une automatisation lancée par un appel qui porte la marque de cette session :
-        // la ligne garde la filiation, pour que les limites de chaîne s'y appliquent.
+        // An automation launched by a call bearing this session's marker:
+        // the row preserves lineage so chain limits apply.
         'webhook_launch',
         'request_decision',
         'withdraw_decision',
         'create_automation',
-        // Gestes sur une session existante, au nom d'un compte : ceux d'un client MCP
-        // hors session (`docs/mcp.md`), qui n'a pas de runner pour les faire lui-même.
+        // Operations on an existing session, on behalf of an account: used by a sessionless MCP
+        // client (`docs/mcp.md`), which has no runner to perform them itself.
         'message_session',
         'steer_session',
         'interrupt_session',
         'reply_session',
-        // Worktrees : git et l'avancement des arbres ne vivent que dans le daemon.
+        // Worktrees: git and worktree progress live only in the daemon.
         'create_worktree',
         'list_worktrees',
       ],
     }).notNull(),
-    /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
+    /** Tool arguments as JSON, exactly as supplied by the agent. */
     payload: text('payload').notNull(),
     createdAt: timestamp('created_at').notNull(),
-    /** Posé par le daemon quand la demande est traitée, réussie ou non. */
+    /** Set by the daemon when the request is processed, whether successful or not. */
     settledAt: timestamp('settled_at'),
-    /** Texte rendu à l'agent : le compte rendu, ou ce qui l'a empêché. */
+    /** Text returned to the agent: the outcome, or what prevented it. */
     result: text('result'),
     isError: integer('is_error', { mode: 'boolean' }).notNull().default(false),
-    /** Session née de la demande, pour remonter une chaîne de lancements. */
+    /** Session created by the request, used to trace a launch chain. */
     launchedConversationId: text('launched_conversation_id'),
   },
   (t) => [
@@ -593,18 +582,17 @@ export const conversations = sqliteTable(
     projectId: text('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    /** NULL signifie que l'agent travaille à la racine du projet. */
+    /** NULL means the agent works at the project root. */
     worktreeId: text('worktree_id').references(() => worktrees.id),
     /**
-     * Carte que cette conversation traite, si elle en traite une.
+     * Card this conversation handles, if any.
      *
-     * Rattachement, et non simple mention : citer `#12` dans un message donne du
-     * contexte au modèle sans engager la conversation, alors que cette colonne est ce
-     * dont l'activité d'une carte se déduit. Poser l'un pour l'autre ferait compter une
-     * session au chantier voisin dont elle a seulement parlé.
+     * An association, not merely a mention: quoting `#12` in a message provides model context
+     * without committing the conversation, whereas this column determines card activity.
+     * Confusing the two would count a session towards neighboring work it only mentioned.
      *
-     * Sans cascade : supprimer une carte n'efface pas les conversations qui l'ont
-     * traitée, elles redeviennent des conversations ordinaires.
+     * No cascade: deleting a card does not erase the conversations that handled it; they become
+     * ordinary conversations again.
      */
     cardId: text('card_id'),
     userId: text('user_id')
@@ -612,54 +600,54 @@ export const conversations = sqliteTable(
       .references(() => users.id),
     title: text('title').notNull(),
     /**
-     * Vrai dès que l'utilisateur renomme : le titre proposé par le CLI ne doit plus
-     * jamais l'écraser derrière son dos.
+     * True as soon as the user renames it: the CLI's suggested title must never overwrite it
+     * behind their back.
      */
     titleSetByUser: integer('title_set_by_user', { mode: 'boolean' }).notNull().default(false),
-    // Dérivé de l'enum du protocole : ajouter un CLI ne demande pas de retoucher
-    // la colonne, et une divergence entre les deux listes ne peut plus s'installer.
+    // Derived from the protocol enum: adding a CLI does not require changing
+    // the column, and the two lists cannot drift apart.
     agent: text('agent').$type<AgentKind>().notNull(),
-    /** Identifiant natif du CLI, pour `--resume` ou `thread/resume`. */
+    /** Native CLI ID, for `--resume` or `thread/resume`. */
     agentSessionId: text('agent_session_id'),
     /**
-     * Conversation dont celle-ci est issue par fork, si elle l'est.
+     * Conversation this one was forked from, if any.
      *
-     * Sans cascade : supprimer l'originale ne doit pas emporter ses branches, qui
-     * sont des conversations à part entière. La référence devient alors orpheline et
-     * l'UI cesse simplement d'afficher la provenance.
+     * No cascade: deleting the original must not delete its branches, which are full
+     * conversations in their own right. The reference becomes orphaned and the UI simply stops
+     * displaying the origin.
      */
     forkedFromId: text('forked_from_id'),
     /**
-     * Conversation que celle-ci continue dans un autre CLI, si c'est une suite.
+     * Conversation this one continues in another CLI, if any.
      *
-     * Distinct du fork : l'agent ne reprend pas l'historique natif, il reçoit une
-     * sélection du fil, tenue dans `conversation_handoffs`. Sans cascade, comme
-     * `forkedFromId` : la suite survit à l'originale.
+     * Unlike a fork, the agent does not resume native history; it receives a selection from the
+     * thread stored in `conversation_handoffs`. No cascade, like `forkedFromId`: the
+     * continuation outlives the original.
      */
     handoffFromId: text('handoff_from_id'),
     /**
-     * Jeton d'API qui a créé la conversation, pour l'audit et pour que `GET /api/v1/tasks`
-     * puisse rendre à un appelant ce qu'il a lui-même lancé. Sans cascade : supprimer un
-     * jeton n'efface pas les conversations qu'il a ouvertes.
+     * API token that created the conversation, for auditing and to let `GET /api/v1/tasks`
+     * return what a caller launched. No cascade: deleting a token does not erase conversations
+     * it opened.
      */
     createdByTokenId: text('created_by_token_id'),
     /**
-     * Libellé du jeton d'origine, figé à la création. NULL vaut « créée dans l'interface ».
+     * Original token label, frozen at creation. NULL means “created in the UI”.
      *
-     * Dupliqué du jeton à dessein : c'est ce qui permet à la sidebar de garder son
-     * marqueur quand le jeton a été supprimé.
+     * Deliberately duplicated from the token so the sidebar keeps its marker after the token is
+     * deleted.
      */
     originLabel: text('origin_label'),
     /**
-     * Tâche planifiée dont un tir a ouvert cette conversation, si c'en est un.
+     * Scheduled task whose run opened this conversation, if any.
      *
-     * C'est ce qui la sort de la liste principale : une tâche horaire y poserait
-     * vingt-quatre lignes par jour, que la sidebar range à la place sous leur tâche.
-     * Le tir précis se retrouve par `scheduled_runs.conversation_id`.
+     * Keeps it out of the main list: an hourly task would add twenty-four rows a day, so the
+     * sidebar groups them under their task instead. The exact run is found through
+     * `scheduled_runs.conversation_id`.
      *
-     * Sans cascade, comme `cardId` : supprimer une tâche n'efface pas ce que ses tirs
-     * ont produit. La route de suppression vide la colonne et range les fils, qui
-     * redeviennent des conversations ordinaires.
+     * No cascade, like `cardId`: deleting a task does not erase its runs' output. The deletion
+     * route clears the column and archives the threads, which become ordinary conversations
+     * again.
      */
     scheduleId: text('schedule_id'),
     /** JSON AgentConfig. */
@@ -668,55 +656,53 @@ export const conversations = sqliteTable(
       .$type<'idle' | 'running' | 'awaiting_input' | 'interrupted' | 'error'>()
       .notNull(),
     /**
-     * Travaux de fond et boucles vivants, tels que le dernier `background.updated` et
-     * le dernier `loops.updated` les décrivent.
+     * Active background jobs and loops, as described by the latest `background.updated` and
+     * `loops.updated`.
      *
-     * Persistés alors qu'ils appartiennent au process CLI et meurent avec lui, parce
-     * qu'ils sont le seul signe qu'une conversation `idle` travaille encore : le statut
-     * retombe à la fin du tour, pas à la fin du travail. Sans eux, répondre « cette
-     * session travaille-t-elle » demande de replier le journal de chaque conversation,
-     * ce qui est ruineux dès qu'on en énumère plus d'une.
+     * Persisted even though they belong to the CLI process and die with it: they are the only
+     * indication that an `idle` conversation is still working. Status resets at the end of a
+     * turn, not the end of the work. Without them, answering “is this session working?”
+     * requires folding each conversation's journal, prohibitively expensive when listing
+     * several.
      *
-     * Remis à zéro au démarrage par `recoverInterrupted` : les process sont morts avec
-     * le daemon, donc toute valeur non nulle relue au boot est un reste.
+     * Reset at startup by `recoverInterrupted`: the processes died with the daemon, so any
+     * nonzero value read at boot is stale.
      */
     backgroundCount: integer('background_count').notNull().default(0),
     loopCount: integer('loop_count').notNull().default(0),
     lastSeq: integer('last_seq').notNull().default(0),
     /**
-     * Dernier `seq` qui valait qu'on prévienne le lecteur, d'où se déduit le non-lu.
+     * Latest `seq` worth notifying the reader about, used to determine unread state.
      *
-     * Distinct de `lastSeq` parce que le journal avance aussi tout seul : une session
-     * qui se refroidit ou un relevé d'usage sont écrits après le départ de tout le
-     * monde, et les compter allumait 57 conversations sur 80 sans que personne n'ait
-     * rien à y lire. Voir `NOTABLE` dans l'`EventLog` pour la liste retenue.
+     * Separate from `lastSeq` because the journal also advances on its own: a cooling session
+     * or usage report is written after everyone leaves. Counting these marked 57 out of 80
+     * conversations unread with nothing to read. See `NOTABLE` in `EventLog` for the selected
+     * events.
      */
     lastNotableSeq: integer('last_notable_seq').notNull().default(0),
     /**
-     * Métriques de volume, tenues à jour à l'écriture du journal.
+     * Volume metrics maintained on journal writes.
      *
-     * Persistées pour la même raison que `backgroundCount` : la sidebar en affiche pour
-     * des conversations qu'elle n'a pas ouvertes, et les recalculer demanderait de
-     * replier le journal de chacune, ce qui est ruineux dès qu'on en énumère plus d'une.
+     * Persisted for the same reason as `backgroundCount`: the sidebar displays them for
+     * unopened conversations, and recalculating requires folding each journal, prohibitively
+     * expensive when listing several.
      *
-     * `turnCount` compte les tours, un par message de l'utilisateur : les traits de la
-     * réglette de repères. Compter les messages de l'agent reviendrait à compter ses
-     * étapes, chaque appel d'outil en produisant un.
+     * `turnCount` counts turns, one per user message: the marks on the navigation ruler.
+     * Counting agent messages would count steps, since each tool call produces one.
      *
-     * Le découpage du fil, pas le cycle de vie du runner : le compte s'écarte des
-     * `turn.started` dans les deux sens, un tour pouvant s'ouvrir sans message et un
-     * steer ajoutant un message sans ouvrir de tour.
+     * This follows thread segmentation, not runner lifecycle: it differs from `turn.started` in
+     * both directions, since a turn can open without a message and steering can add a message
+     * without opening a turn.
      */
     turnCount: integer('turn_count').notNull().default(0),
-    /** Poids du journal sur disque, payloads et `raw` compris. */
+    /** Journal size on disk, including payloads and `raw`. */
     journalBytes: integer('journal_bytes').notNull().default(0),
     /**
-     * Dernière occupation de la fenêtre de contexte annoncée par le CLI, et modèle de la
-     * dernière session ouverte. NULL tant que le CLI n'en a rien dit.
+     * Latest context-window usage reported by the CLI, and model of the latest opened session.
+     * NULL until the CLI reports it.
      *
-     * Distincts de `inputTokens`/`outputTokens`, qui cumulent la facturation depuis le
-     * début : le contexte se vide à chaque compaction, et c'est lui qui dit quand la
-     * prochaine arrivera.
+     * Separate from `inputTokens`/`outputTokens`, which accumulate billing from the start:
+     * context resets at each compaction and indicates when the next one will occur.
      */
     contextUsedTokens: integer('context_used_tokens'),
     contextMaxTokens: integer('context_max_tokens'),
@@ -726,9 +712,9 @@ export const conversations = sqliteTable(
     outputTokens: integer('output_tokens').notNull().default(0),
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     /**
-     * Ordre manuel dans le projet, réécrit par le glisser-déposer. Croissant : une
-     * nouvelle conversation reçoit une position inférieure au minimum existant, pour
-     * apparaître en tête comme le faisait le tri par date.
+     * Ascending manual order within the project, rewritten by drag and drop. A new conversation
+     * gets a position below the existing minimum so it appears first, as with the previous date
+     * sort.
      */
     position: integer('position').notNull().default(0),
     archivedAt: timestamp('archived_at'),
@@ -743,33 +729,30 @@ export const conversations = sqliteTable(
 )
 
 /**
- * Le contexte transmis à une conversation qui en continue une autre dans un autre CLI.
+ * Context passed to a conversation continuing another in a different CLI.
  *
- * Le texte est figé à la création, comme un fork fige le journal : la source peut
- * continuer après, la suite est partie de ce qu'elle était à ce moment-là. Dans sa
- * propre table parce qu'il pèse jusqu'à 64 ko et ne sert qu'au démarrage du CLI, là
- * où la ligne de conversation est relue à chaque liste.
+ * Frozen at creation, as a fork freezes the journal: the source may continue afterwards, but
+ * the continuation starts from that moment's state. Stored separately because it can reach 64
+ * KB and is only needed at CLI startup, whereas the conversation row is read on every listing.
  */
 export const conversationHandoffs = sqliteTable('conversation_handoffs', {
   conversationId: text('conversation_id')
     .primaryKey()
     .references(() => conversations.id, { onDelete: 'cascade' }),
   fromConversationId: text('from_conversation_id').notNull(),
-  /** Dernier `seq` de la source pris en compte, pour dire jusqu'où la suite a vu. */
+  /** Last source `seq` included, recording how much the continuation has seen. */
   throughSeq: integer('through_seq').notNull(),
   budgetTokens: integer('budget_tokens').notNull(),
-  /** Le bloc injecté au CLI, tel quel. */
+  /** Block injected into the CLI verbatim. */
   text: text('text').notNull(),
   createdAt: timestamp('created_at').notNull(),
 })
 
 /**
- * Tâches planifiées : un prompt que le daemon rejoue à cadence fixe, chaque tir dans une
- * session neuve.
+ * Scheduled tasks: a prompt the daemon replays at a fixed cadence, each run in a fresh session.
  *
- * Portées par Sillage parce qu'aucun CLI n'a de planificateur local durable : le
- * `CronCreate` de Claude meurt avec sa session, Codex n'en a pas. Le daemon, lui,
- * tourne en permanence.
+ * Managed by Sillage because no CLI has a durable local scheduler: Claude's `CronCreate` dies
+ * with its session, and Codex has none. The daemon runs continuously.
  */
 export const scheduledTasks = sqliteTable(
   'scheduled_tasks',
@@ -778,54 +761,54 @@ export const scheduledTasks = sqliteTable(
     projectId: text('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    /** Compte au nom duquel les tirs s'ouvrent : celui qui a créé la tâche. */
+    /** Account on whose behalf runs open: the task creator. */
     userId: text('user_id')
       .notNull()
       .references(() => users.id),
     name: text('name').notNull(),
     agent: text('agent').$type<AgentKind>().notNull(),
     /**
-     * JSON AgentConfig : modèle, effort et permissions, figés par tâche.
+     * JSON AgentConfig: model, effort and permissions, frozen per task.
      *
-     * Une copie et non les défauts du projet relus à chaque tir : personne n'est au
-     * clavier pour répondre à une demande de permission, donc le garde-fou d'un tir
-     * doit être celui qu'on a choisi en créant la tâche, pas celui du jour.
+     * A copy rather than project defaults reread on every run: nobody is at the keyboard to
+     * answer permission requests, so a run must use the safeguards chosen at task creation, not
+     * today's settings.
      */
     config: text('config').notNull(),
     prompt: text('prompt').notNull(),
-    /** JSON `ScheduleCadence` : intervalle, motif cron ou date unique. */
+    /** JSON `ScheduleCadence`: interval, cron expression or one-time date. */
     cadence: text('cadence').notNull(),
-    /** `fresh` : une session neuve par tir. Seul mode pour l'instant. */
+    /** `fresh`: a new session per run. Currently the only mode. */
     executionMode: text('execution_mode').$type<'fresh'>().notNull().default('fresh'),
-    /** Que faire d'un tir qui arrive pendant que le précédent tourne encore. */
+    /** What to do when a run is due while the previous one is still running. */
     overlapPolicy: text('overlap_policy').$type<'skip' | 'wait'>().notNull().default('skip'),
-    /** Au-delà, le tir est interrompu : rien d'autre n'arrêterait un agent qui s'égare. */
+    /** The run is interrupted beyond this limit: nothing else would stop a wandering agent. */
     maxDurationMinutes: integer('max_duration_minutes').notNull(),
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
-    /** Conversation qui a créé la tâche par `schedule_task` ; NULL depuis l'interface. */
+    /** Conversation that created the task through `schedule_task`; NULL from the UI. */
     createdByConversationId: text('created_by_conversation_id'),
     /**
-     * Script de vérification joué avant le tour LLM, NULL sans vérification. Son code de
-     * sortie décide du lancement et sa sortie rejoint le prompt (voir `scheduler/check.ts`).
+     * Check script run before the LLM turn; NULL for no check. Its exit code decides whether to
+     * launch, and its output joins the prompt (see `scheduler/check.ts`).
      *
-     * Le contenu et non un chemin : le daemon l'exécute hors de toute session, et c'est ce
-     * texte précis qu'on valide. Un fichier pourrait changer après coup, y compris sous la
-     * main d'un tir qui tourne sans demander de permission.
+     * Stores content, not a path: the daemon executes it outside any session, and this exact
+     * text is what gets approved. A file could change afterwards, including by a run executing
+     * without permission prompts.
      */
     checkScript: text('check_script'),
     checkTimeoutSeconds: integer('check_timeout_seconds').notNull().default(120),
     /**
-     * Validation du script par une personne. NULL tant qu'un agent l'a écrit ou modifié
-     * sans qu'on l'ait relu : le tir est alors écarté, ni script ni LLM.
+     * Human script approval. NULL while an agent-written or edited script remains unreviewed:
+     * the run is then skipped, including both script and LLM.
      */
     checkApprovedAt: timestamp('check_approved_at'),
-    /** Conversation qui a proposé le script actuel ; NULL quand il vient de l'interface. */
+    /** Conversation that proposed the current script; NULL when it comes from the UI. */
     checkProposedBy: text('check_proposed_by'),
-    /** Les tirs peuvent demander une décision humaine (`request_decision`). */
+    /** Runs may request a human decision (`request_decision`). */
     decisionsEnabled: integer('decisions_enabled', { mode: 'boolean' }).notNull().default(false),
     decisionMaxHours: integer('decision_max_hours').notNull().default(24),
     lastRunAt: timestamp('last_run_at'),
-    /** NULL quand plus rien n'est prévu : tâche ponctuelle déjà tirée. */
+    /** NULL when nothing remains scheduled: a one-time task already ran. */
     nextRunAt: timestamp('next_run_at'),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
@@ -837,10 +820,10 @@ export const scheduledTasks = sqliteTable(
 )
 
 /**
- * Un tir d'une tâche planifiée, y compris ceux qui n'ont rien lancé.
+ * A scheduled task run, including those that launched nothing.
  *
- * Un tir sauté ou raté au lancement y laisse une ligne sans conversation : sans elle,
- * une tâche qui ne part jamais ressemblerait à une tâche qui n'a rien trouvé.
+ * A skipped run or failed launch leaves a row without a conversation: otherwise a task that
+ * never starts would look like one that found nothing.
  */
 export const scheduledRuns = sqliteTable(
   'scheduled_runs',
@@ -849,29 +832,29 @@ export const scheduledRuns = sqliteTable(
     taskId: text('task_id')
       .notNull()
       .references(() => scheduledTasks.id, { onDelete: 'cascade' }),
-    /** Sans clé étrangère : le fil peut être supprimé, le tir reste dans l'historique. */
+    /** No foreign key: the thread can be deleted while the run stays in history. */
     conversationId: text('conversation_id'),
     trigger: text('trigger').$type<'schedule' | 'manual' | 'webhook'>().notNull(),
-    /** `checking` : la vérification tourne, ou la session démarre derrière elle. */
+    /** `checking`: the check is running, or its subsequent session is starting. */
     status: text('status')
       .$type<'checking' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'>()
       .notNull(),
-    /** L'heure prévue, que `startedAt` dépasse quand le daemon était arrêté ou occupé. */
+    /** Scheduled time, which `startedAt` exceeds if the daemon was stopped or busy. */
     scheduledFor: timestamp('scheduled_for').notNull(),
     startedAt: timestamp('started_at').notNull(),
     finishedAt: timestamp('finished_at'),
-    /** Ce qui a empêché ou coupé le tir, rédigé pour être lu tel quel. */
+    /** What prevented or interrupted the run, written for direct display. */
     error: text('error'),
     /**
-     * Dernière réponse de l'agent, tronquée, recopiée à la fin du tir.
+     * Latest agent reply, truncated and copied at the end of the run.
      *
-     * Dupliquée du journal à dessein : c'est ce que le tir suivant reçoit dans son
-     * prompt, et il doit le recevoir même si le fil a été supprimé entre-temps.
+     * Deliberately duplicated from the journal: the next run receives it in its prompt, even if
+     * the thread has since been deleted.
      */
     summary: text('summary'),
     /**
-     * Ce qu'a donné la vérification, NULL quand le tir n'en a pas joué. La sortie standard
-     * est celle que le prompt a reçue ; l'erreur standard sert au débogage.
+     * Check result; NULL if no check ran. Standard output is what the prompt received; standard
+     * error is for debugging.
      */
     checkExitCode: integer('check_exit_code'),
     checkOutput: text('check_output'),
@@ -885,8 +868,8 @@ export const scheduledRuns = sqliteTable(
 )
 
 /**
- * Le webhook d'une automatisation : une tâche planifiée dont la cadence vaut
- * `{ kind: 'webhook' }` et qui part quand un appel reçu passe ses conditions.
+ * An automation webhook: a scheduled task with cadence `{ kind: 'webhook' }`, launched when an
+ * incoming call passes its conditions.
  */
 export const automationWebhooks = sqliteTable(
   'automation_webhooks',
@@ -894,9 +877,9 @@ export const automationWebhooks = sqliteTable(
     taskId: text('task_id')
       .primaryKey()
       .references(() => scheduledTasks.id, { onDelete: 'cascade' }),
-    /** Dernier segment de l'URL publique : impossible à deviner, mais pas un secret de signature. */
+    /** Last segment of the public URL: unguessable, but not a signing secret. */
     token: text('token').notNull(),
-    /** Secret de signature chiffré (JSON `EncryptedValue`) : on le réaffiche pour le recopier chez l'appelant. */
+    /** Encrypted signing secret (JSON `EncryptedValue`): shown again so it can be copied to the caller. */
     secret: text('secret').notNull(),
     /** JSON `WebhookVerification`. */
     verification: text('verification').notNull(),
@@ -907,7 +890,7 @@ export const automationWebhooks = sqliteTable(
     subjectPath: text('subject_path').notNull().default(''),
     markerPaths: text('marker_paths').notNull().default('*'),
     maxRunsPerHour: integer('max_runs_per_hour').notNull(),
-    /** Le disjoncteur a sauté et mis la tâche en pause ; NULL une fois réactivée. */
+    /** The circuit breaker tripped and paused the task; NULL after reactivation. */
     trippedAt: timestamp('tripped_at'),
     template: text('template'),
   },
@@ -915,9 +898,9 @@ export const automationWebhooks = sqliteTable(
 )
 
 /**
- * Chaque appel reçu par un webhook, avec son sort : lancé, filtré, refusé et pourquoi.
- * C'est ce qui permet de mettre des conditions au point, et de rejouer un appel.
- * Borné par webhook : les plus anciens partent quand les nouveaux arrivent.
+ * Each call received by a webhook and its outcome: launched, filtered, rejected, and why. Used
+ * to refine conditions and replay a call. Bounded per webhook: older calls are removed as new
+ * ones arrive.
  */
 export const automationDeliveries = sqliteTable(
   'automation_deliveries',
@@ -927,19 +910,19 @@ export const automationDeliveries = sqliteTable(
       .notNull()
       .references(() => scheduledTasks.id, { onDelete: 'cascade' }),
     receivedAt: timestamp('received_at').notNull(),
-    /** Identifiant donné par l'appelant, pour reconnaître un rejeu. */
+    /** Caller-provided ID used to recognize a replay. */
     deliveryId: text('delivery_id'),
-    /** En-têtes en JSON, sans ceux qui portent un secret. */
+    /** Headers as JSON, excluding those carrying secrets. */
     headers: text('headers').notNull(),
     query: text('query').notNull().default('{}'),
     body: text('body').notNull(),
     bytes: integer('bytes').notNull(),
     truncated: integer('truncated', { mode: 'boolean' }).notNull().default(false),
     verdict: text('verdict').notNull(),
-    /** JSON `DeliveryReason` : un code que l'interface traduit, et ses paramètres. */
+    /** JSON `DeliveryReason`: a code translated by the UI, plus its parameters. */
     reason: text('reason'),
     subject: text('subject'),
-    /** Variables rendues par le script, en JSON, pour un appel mis en attente. */
+    /** Variables returned by the script, as JSON, for a queued call. */
     vars: text('vars'),
     summary: text('summary'),
     runId: text('run_id'),
@@ -953,19 +936,17 @@ export const automationDeliveries = sqliteTable(
 )
 
 /**
- * Jusqu'où chaque lecteur est allé dans chaque conversation.
+ * How far each reader has read in each conversation.
  *
- * Le journal avance tout seul : un agent qui travaille pendant qu'on regarde ailleurs
- * produit des événements que personne ne voit passer, et la ligne de sidebar reste
- * identique à celle d'un fil mort depuis trois semaines. Comparer ce curseur à
- * `conversations.lastSeq` est ce qui distingue les deux.
+ * The journal advances on its own: an agent working while nobody watches produces unseen
+ * events, yet its sidebar row looks like a thread that died three weeks ago. Comparing this
+ * cursor with `conversations.lastSeq` distinguishes them.
  *
- * Par lecteur et non par conversation : dans un projet partagé, deux comptes n'ont pas
- * lu la même chose. Le propriétaire du fil n'a aucun statut particulier ici.
+ * Per reader, not per conversation: two accounts in a shared project have read different
+ * things. The thread owner has no special status here.
  *
- * Ligne absente = jamais ouvert, donc tout est non lu. La migration qui crée la table
- * pose une ligne à jour pour chaque couple existant, faute de quoi la fonctionnalité
- * s'allumerait partout à la première mise à jour.
+ * Missing row = never opened, so everything is unread. The migration creates an up-to-date row
+ * for every existing pair, otherwise the first update would light up everything.
  */
 export const conversationReads = sqliteTable(
   'conversation_reads',
@@ -976,7 +957,7 @@ export const conversationReads = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** Ne recule jamais : l'écriture prend le maximum avec la valeur déjà en base. */
+    /** Never moves backwards: writes take the maximum of the new and stored values. */
     lastReadSeq: integer('last_read_seq').notNull().default(0),
     updatedAt: timestamp('updated_at').notNull(),
   },
@@ -984,16 +965,15 @@ export const conversationReads = sqliteTable(
 )
 
 /**
- * Les fils qu'un compte a mis en favori.
+ * Threads an account has marked as favorites.
  *
- * Une table plutôt qu'une colonne, comme `conversation_reads` et pour la même raison :
- * un favori appartient à celui qui l'a posé, pas à la conversation. Sur un projet
- * partagé, la sidebar de chacun doit pouvoir garder ses propres signets sans imposer
- * les siens aux autres — ce que fait déjà `conversations.pinned`, qui est un épinglage
- * du fil et reste distinct.
+ * A table rather than a column, like `conversation_reads` and for the same reason: a favorite
+ * belongs to the person who marked it, not the conversation. In shared projects, each sidebar
+ * must keep personal bookmarks without imposing them on others. `conversations.pinned` already
+ * provides shared thread pinning and remains separate.
  *
- * Purement une aide à la navigation : l'archivage automatique n'en tient pas compte,
- * un fil marqué puis terminé se range comme les autres.
+ * Purely a navigation aid: auto-archiving ignores it, so a favorited and completed thread is
+ * archived like any other.
  */
 export const conversationFavorites = sqliteTable(
   'conversation_favorites',
@@ -1004,19 +984,18 @@ export const conversationFavorites = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** Ordre de la section « Favoris », du plus récemment marqué au plus ancien. */
+    /** Favorites section order, most recently marked first. */
     createdAt: timestamp('created_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.conversationId, t.userId] })],
 )
 
 /**
- * Les projets qu'un compte a épinglés en tête du sélecteur.
+ * Projects an account pinned to the top of the picker.
  *
- * Même logique que `conversation_favorites` : une épingle est un repère personnel, pas
- * une propriété du projet. Sur un projet partagé, chacun garde son propre tri. Tenue
- * en base plutôt que dans le `localStorage` du navigateur, pour survivre à un
- * changement d'appareil ou au ménage d'un onglet.
+ * Same logic as `conversation_favorites`: a pin is a personal marker, not a project property.
+ * Everyone keeps their own order in a shared project. Stored in the database rather than
+ * browser `localStorage` to survive device changes or tab cleanup.
  */
 export const projectPins = sqliteTable(
   'project_pins',
@@ -1027,18 +1006,18 @@ export const projectPins = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** Ordre de la section « Épinglés », du plus ancien épinglage au plus récent. */
+    /** Pinned section order, oldest pin first. */
     createdAt: timestamp('created_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.projectId, t.userId] })],
 )
 
 /**
- * Actions de projet : des boutons qui lancent une commande, créés depuis l'interface ou
- * proposés par un agent avec `register_action`.
+ * Project actions: buttons that launch a command, created in the UI or proposed by an agent
+ * through `register_action`.
  *
- * En base et non dans un fichier du dépôt : Sillage n'impose pas son outillage aux
- * projets qu'il pilote.
+ * Stored in the database rather than a repository file: Sillage does not impose its tooling on
+ * the projects it drives.
  */
 export const projectActions = sqliteTable(
   'project_actions',
@@ -1051,16 +1030,16 @@ export const projectActions = sqliteTable(
     description: text('description'),
     kind: text('kind').$type<'task' | 'service'>().notNull(),
     command: text('command').notNull(),
-    /** Relatif au worktree où l'action est lancée ; NULL pour sa racine. */
+    /** Relative to the worktree where the action runs; NULL for its root. */
     subdir: text('subdir'),
-    /** Gabarit d'URL où ouvrir un service, `{port}` compris. */
+    /** URL template for opening a service, including `{port}`. */
     url: text('url'),
     /**
-     * NULL tant qu'une personne n'a pas relu la commande : posée à la création depuis
-     * l'interface, effacée quand un agent change ce qui s'exécute.
+     * NULL until someone reviews the command: set on creation in the UI, cleared when an agent
+     * changes what executes.
      */
     approvedAt: timestamp('approved_at'),
-    /** Dernière conversation à l'avoir créée ou modifiée par MCP ; NULL depuis l'interface. */
+    /** Latest conversation to create or modify it through MCP; NULL from the UI. */
     agentConversationId: text('agent_conversation_id'),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
@@ -1069,9 +1048,8 @@ export const projectActions = sqliteTable(
 )
 
 /**
- * Le journal (invariant I2). `seq` est strictement croissant et sans trou par
- * conversation. WITHOUT ROWID parce que la clé primaire composite est déjà l'ordre
- * de lecture naturel.
+ * The journal (invariant I2). `seq` is strictly increasing and gapless per conversation.
+ * WITHOUT ROWID because the composite primary key already gives the natural read order.
  */
 export const events = sqliteTable(
   'events',
@@ -1084,16 +1062,15 @@ export const events = sqliteTable(
     type: text('type').notNull(),
     /** JSON SillageEvent. */
     payload: text('payload').notNull(),
-    /** JSON natif du CLI, conservé pour les renderers d'outils spécialisés. */
+    /** Native CLI JSON, retained for specialized tool renderers. */
     raw: text('raw'),
     /**
-     * Provenance du `raw` (« claude-agent-sdk@0.3 », « codex-app-server@v2 »...).
+     * Origin of `raw` (“claude-agent-sdk@0.3”, “codex-app-server@v2”, etc.).
      *
-     * Sans elle, la forme du payload natif se devine par `conversations.agent`, ce
-     * qui ne survit pas à un changement de protocole du CLI : deux générations de
-     * `raw` se mélangent alors dans un même fil sans que rien ne les distingue.
-     * Nullable : les événements d'avant l'estampille restent de la génération
-     * courante de leur agent, jusqu'au premier bump.
+     * Without it, native payload shape is inferred from `conversations.agent`, which fails
+     * across CLI protocol changes: two generations of `raw` then coexist in one thread with no
+     * way to tell them apart. Nullable: events predating the stamp retain their agent's current
+     * generation until the first version bump.
      */
     rawFormat: text('raw_format'),
   },
@@ -1107,7 +1084,7 @@ export const permissionRequests = sqliteTable(
     conversationId: text('conversation_id')
       .notNull()
       .references(() => conversations.id, { onDelete: 'cascade' }),
-    /** Position de l'événement `permission.requested` associé dans le journal. */
+    /** Position of the associated `permission.requested` event in the journal. */
     seq: integer('seq').notNull(),
     toolName: text('tool_name').notNull(),
     input: text('input').notNull(),
@@ -1127,20 +1104,20 @@ export const attachments = sqliteTable(
   {
     id: text('id').primaryKey(),
     /**
-     * Null tant que la pièce jointe n'a pas été envoyée : elle est téléversée avant
-     * que la conversation existe, puisqu'une conversation naît de son premier message.
+     * Null until the attachment is sent: it is uploaded before the conversation exists, since
+     * the first message creates a conversation.
      */
     conversationId: text('conversation_id').references(() => conversations.id, {
       onDelete: 'cascade',
     }),
-    /** Une pièce appartient soit à une conversation, soit à un ticket. */
+    /** An attachment belongs to either a conversation or a ticket. */
     cardId: text('card_id').references(() => cards.id, { onDelete: 'set null' }),
-    /** Auteur du téléversement ; les fichiers de ticket se partagent avec le projet. */
+    /** Uploader; ticket files are shared with the project. */
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     filename: text('filename').notNull(),
-    /** Déterminé par le contenu, jamais par l'extension fournie par le client. */
+    /** Determined by content, never by the client-supplied extension. */
     mimeType: text('mime_type').notNull(),
     sizeBytes: integer('size_bytes').notNull(),
     storagePath: text('storage_path').notNull(),
@@ -1150,11 +1127,10 @@ export const attachments = sqliteTable(
 )
 
 /**
- * Abonnements Web Push, un par appareil et par compte.
+ * Web Push subscriptions, one per device and account.
  *
- * L'`endpoint` fourni par le navigateur identifie l'abonnement de façon unique : c'est
- * la clé primaire naturelle, et deux abonnements au même endpoint désigneraient le même
- * appareil.
+ * The browser-provided `endpoint` uniquely identifies the subscription: it is the natural
+ * primary key, and two subscriptions to the same endpoint would refer to the same device.
  */
 export const pushSubscriptions = sqliteTable(
   'push_subscriptions',
@@ -1163,15 +1139,15 @@ export const pushSubscriptions = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** Clés de chiffrement du navigateur, requises pour lui adresser un message. */
+    /** Browser encryption keys required to send it a message. */
     p256dh: text('p256dh').notNull(),
     auth: text('auth').notNull(),
     userAgent: text('user_agent'),
     createdAt: timestamp('created_at').notNull(),
     /**
-     * Sujet VAPID à présenter pour cet abonnement : l'adresse publique de l'instance, lue
-     * à l'abonnement. Apple refuse un sujet en `localhost`, et une instance auto-hébergée
-     * n'a pas d'autre adresse à donner que celle par laquelle on l'a jointe.
+     * VAPID subject for this subscription: the instance's public address, read at subscription
+     * time. Apple rejects a `localhost` subject, and a self-hosted instance has no address to
+     * provide other than the one used to reach it.
      */
     subject: text('subject'),
   },
@@ -1179,12 +1155,12 @@ export const pushSubscriptions = sqliteTable(
 )
 
 /**
- * Les décisions demandées par les sessions autonomes (tâche planifiée, automatisation,
- * maintenance du board) : déposées sans bloquer l'agent, tranchées par une personne ou
- * par l'échéance, puis transmises à la session en message.
+ * Decisions requested by autonomous sessions (scheduled tasks, automations, board maintenance):
+ * deposited without blocking the agent, resolved by a person or the deadline, then delivered to
+ * the session as a message.
  *
- * En base plutôt qu'en mémoire comme les demandes natives des CLI : on les traite des
- * heures plus tard, et un redémarrage du daemon ne doit pas les faire oublier.
+ * Stored in the database rather than memory like native CLI requests: they may be handled hours
+ * later, and a daemon restart must not lose them.
  */
 export const decisions = sqliteTable(
   'decisions',
@@ -1193,9 +1169,9 @@ export const decisions = sqliteTable(
     projectId: text('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    /** Sans clé étrangère : la décision garde sa trace quand la conversation disparaît. */
+    /** No foreign key: the decision retains its record when the conversation disappears. */
     conversationId: text('conversation_id').notNull(),
-    /** Le compte qui doit répondre : celui à qui appartient la source. */
+    /** Account that must answer: the owner of the source. */
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -1205,7 +1181,7 @@ export const decisions = sqliteTable(
     cardId: text('card_id'),
     question: text('question').notNull(),
     context: text('context').notNull().default(''),
-    /** JSON, libellés des choix proposés. */
+    /** JSON labels of the suggested choices. */
     options: text('options').notNull().default('[]'),
     defaultOption: text('default_option'),
     expiresAt: timestamp('expires_at').notNull(),
@@ -1216,14 +1192,14 @@ export const decisions = sqliteTable(
     resolvedAt: timestamp('resolved_at'),
     withdrawnReason: text('withdrawn_reason'),
     /**
-     * Quand la réponse (ou l'échéance) a été remise à la session. NULL pour une décision
-     * tranchée dont la remise a échoué : le daemon réessaie.
+     * When the answer (or deadline) was delivered to the session. NULL for a resolved decision
+     * whose delivery failed: the daemon retries.
      */
     deliveredAt: timestamp('delivered_at'),
     /**
-     * Pour une proposition de nettoyage (`source_kind = 'worktree'`) : l'arbre visé. La
-     * réponse ne part à aucune session, elle nettoie cet arbre ; c'est aussi la clé qui
-     * évite de reposer la question pour un arbre déjà tranché.
+     * For a cleanup proposal (`source_kind = 'worktree'`): the target worktree. The answer goes
+     * to no session; it cleans up this tree. Also the key preventing repeated questions for an
+     * already resolved tree.
      */
     worktreePath: text('worktree_path'),
     createdAt: timestamp('created_at').notNull(),
@@ -1235,14 +1211,13 @@ export const decisions = sqliteTable(
 )
 
 /**
- * Réglages d'instance : ce qui vaut pour tout le monde et que l'administrateur doit
- * pouvoir changer sans éditer `config.toml` ni redémarrer le service, un redémarrage
- * tuant les process CLI enfants.
+ * Instance settings: values shared by everyone that an administrator can change without editing
+ * `config.toml` or restarting the service, which would kill child CLI processes.
  *
- * Clé-valeur plutôt que colonnes typées, sinon chaque réglage suivant traînerait sa
- * migration. La valeur est du JSON, et seule la couche d'accès a besoin de le savoir.
- * Une clé absente vaut « pas encore réglé » et laisse le défaut du `config.toml`
- * s'appliquer, qui reste le point d'entrée d'une instance qu'on provisionne.
+ * Key-value storage rather than typed columns avoids a migration for every new setting. Values
+ * are JSON, and only the access layer needs to know. An absent key means “not configured yet”
+ * and leaves the `config.toml` default in effect, preserving it as the entry point for
+ * provisioning an instance.
  */
 export const appSettings = sqliteTable('app_settings', {
   key: text('key').primaryKey(),
@@ -1254,49 +1229,47 @@ export const userSettings = sqliteTable('user_settings', {
   userId: text('user_id')
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
-  /** JSON : thème, densité, préférences d'affichage. */
+  /** JSON: theme, density, display preferences. */
   data: text('data').notNull().default(sql`'{}'`),
 })
 
 /**
- * Registre des serveurs MCP, partagé par tous les CLI et tous les projets.
+ * MCP server registry, shared by all CLIs and projects.
  *
- * Déclarés une fois ici, activés conversation par conversation via `mcpServers` de
- * l'`AgentConfig`. Rien n'est écrit dans `~/.claude.json` ni dans le `config.toml` de
- * Codex : Sillage transmet ces serveurs en mémoire à chaque lancement de session, et
- * ne devient donc pas copropriétaire de fichiers qu'il n'a pas écrits. Conséquence
- * assumée : une conversation reprise dans un CLI natif n'a pas ces serveurs.
+ * Declared once here, enabled per conversation through `AgentConfig.mcpServers`. Nothing is
+ * written to `~/.claude.json` or Codex's `config.toml`: Sillage passes these servers in memory
+ * at each session launch and does not become a co-owner of files it did not write. Accepted
+ * consequence: a conversation resumed in a native CLI does not have these servers.
  */
 export const mcpServers = sqliteTable('mcp_servers', {
   id: text('id').primaryKey(),
   /**
-   * Unique : le nom sert de clé côté CLI, deux serveurs homonymes s'écraseraient
-   * l'un l'autre dans la table qu'on lui transmet, en silence.
+   * Unique: the name is the CLI-side key; two servers sharing a name would silently overwrite
+   * each other in the table passed to the CLI.
    */
   name: text('name').notNull().unique(),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
-  /** JSON McpTransport : la forme dépend du transport, la colonne n'a pas à le savoir. */
+  /** JSON McpTransport: shape depends on transport; the column need not know it. */
   transport: text('transport').notNull(),
   createdAt: timestamp('created_at').notNull(),
   updatedAt: timestamp('updated_at').notNull(),
 })
 
 /**
- * Dépôts git d'où la bibliothèque de skills s'installe.
+ * Git repositories from which the skill library installs skills.
  *
- * Une installation copie le skill et retient le commit : rien de ce qui arrive ensuite
- * dans le dépôt n'entre dans le contexte des agents sans qu'un admin l'ait relu. Les
- * sources préconfigurées sont insérées par la migration qui crée la table, et non au
- * démarrage, pour qu'une source supprimée ne revienne pas.
+ * Installation copies a skill and records its commit: subsequent repository changes do not
+ * enter agent context until an admin reviews them. Preconfigured sources are inserted by the
+ * table-creation migration, not at startup, so a deleted source stays deleted.
  */
 export const skillSources = sqliteTable('skill_sources', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  /** Tout ce que `git clone` accepte, dépôts privés compris. */
+  /** Anything `git clone` accepts, including private repositories. */
   url: text('url').notNull(),
-  /** Branche ou tag. Null : la branche par défaut du dépôt. */
+  /** Branch or tag. Null means the repository's default branch. */
   ref: text('ref'),
-  /** Dossier du dépôt où chercher les skills. Null : tout le dépôt. */
+  /** Repository directory to search for skills. Null means the entire repository. */
   subpath: text('subpath'),
   builtin: integer('builtin', { mode: 'boolean' }).notNull().default(false),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
@@ -1308,24 +1281,22 @@ export const skillSources = sqliteTable('skill_sources', {
 })
 
 /**
- * Bibliothèque de skills : ce que Sillage livre aux CLI comme des skills natifs.
+ * Skill library: what Sillage delivers to CLIs as native skills.
  *
- * Le contenu vit sur le disque, sous `<data>/skill-library`, et c'est lui qui fait foi :
- * description et corps se relisent dans le `SKILL.md`. Cette table porte ce que le disque
- * ne dit pas, à savoir la portée, l'activation et la provenance. Le dossier se déduit
- * de la ligne, voir `skill-library/layout.ts`.
+ * Content on disk under `<data>/skill-library` is authoritative: description and body are
+ * reread from `SKILL.md`. This table holds what disk does not tell us: scope, activation and
+ * origin. The directory is derived from the row; see `skill-library/layout.ts`.
  */
 export const librarySkills = sqliteTable(
   'library_skills',
   {
     id: text('id').primaryKey(),
     scope: text('scope', { enum: ['global', 'project'] }).notNull(),
-    /** Null en portée globale. La cascade ne touche pas le disque, la route s'en charge. */
+    /** Null for global scope. Cascading deletion does not touch disk; the route handles it. */
     projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     /**
-     * Nom du dossier, et `name` du frontmatter. Unique sur l'ensemble « global + un
-     * projet », ce qu'aucun index ne sait dire puisque SQLite tient les `NULL` pour
-     * distincts : le contrôle est dans le service.
+     * Directory name and frontmatter `name`. Unique across “global + one project”, which no
+     * index can express since SQLite treats `NULL` values as distinct: the service enforces it.
      */
     name: text('name').notNull(),
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
@@ -1333,12 +1304,12 @@ export const librarySkills = sqliteTable(
     sourcePath: text('source_path'),
     sourceCommit: text('source_commit'),
     /**
-     * Empreinte du skill tel que la source le portait à l'installation. Comparée au
-     * catalogue, elle dit si une mise à jour existe ; elle diffère de `installedHash`
-     * quand le skill a été renommé en entrant, son frontmatter réécrit.
+     * Skill hash as stored in the source at installation. Compared with the catalog to detect
+     * updates; differs from `installedHash` when the skill was renamed on import and its
+     * frontmatter rewritten.
      */
     sourceHash: text('source_hash'),
-    /** Empreinte du contenu à l'installation, pour reconnaître une modification locale. */
+    /** Content hash at installation, used to recognize local changes. */
     installedHash: text('installed_hash'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull(),
@@ -1348,12 +1319,11 @@ export const librarySkills = sqliteTable(
 )
 
 /**
- * Dépôt de secrets de l'instance, chiffré au repos.
+ * Instance secret store, encrypted at rest.
  *
- * Le nom est la clé primaire : c'est lui qu'on écrit dans `{{secret.NOM}}`, et deux
- * secrets homonymes n'auraient aucun moyen d'être départagés. La valeur est chiffrée
- * en AES-256-GCM avec la clé du dossier de données ; `iv` et `authTag` appartiennent
- * au chiffré et n'ont pas à être secrets, mais doivent être conservés avec lui.
+ * The name is the primary key: it appears in `{{secret.NOM}}`, and two secrets sharing a name
+ * could not be distinguished. Values use AES-256-GCM with the data-directory key; `iv` and
+ * `authTag` belong to the ciphertext and need not be secret, but must be kept alongside it.
  */
 export const secrets = sqliteTable('secrets', {
   name: text('name').primaryKey(),
@@ -1365,17 +1335,15 @@ export const secrets = sqliteTable('secrets', {
 })
 
 /**
- * Credentials git par utilisateur et par hôte, chiffrées comme les secrets.
+ * Git credentials per user and host, encrypted like secrets.
  *
- * Table distincte de `secrets`, et non une convention de nommage dedans : les secrets
- * sont réservés aux administrateurs et alimentent le namespace `{{secret.NOM}}` des
- * serveurs MCP. Les fusionner ferait apparaître un jeton GitHub dans le sélecteur de
- * secrets MCP et interdirait à un compte non administrateur de cloner un dépôt privé.
+ * A separate table from `secrets`, not a naming convention within it: secrets are admin-only
+ * and feed MCP servers' `{{secret.NOM}}` namespace. Combining them would expose GitHub tokens
+ * in the MCP secret picker and prevent non-admin accounts from cloning private repositories.
  *
- * `username` existe parce que les forges n'attendent pas la même chose : GitHub ignore
- * la valeur pour un jeton personnel mais impose `x-access-token` pour un jeton
- * d'installation, GitLab veut `oauth2`. Le stocker évite de coder en dur une table de
- * correspondance par forge.
+ * `username` exists because forges expect different values: GitHub ignores it for personal
+ * tokens but requires `x-access-token` for installation tokens; GitLab expects `oauth2`.
+ * Storing it avoids hardcoding a per-forge mapping.
  */
 export const gitCredentials = sqliteTable(
   'git_credentials',
@@ -1384,7 +1352,7 @@ export const gitCredentials = sqliteTable(
     ownerId: text('owner_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** Hôte seul, sans schéma ni port : `github.com`, `gitlab.example.org`. */
+    /** Host only, without scheme or port: `github.com`, `gitlab.example.org`. */
     host: text('host').notNull(),
     username: text('username').notNull(),
     ciphertext: text('ciphertext').notNull(),
@@ -1393,19 +1361,19 @@ export const gitCredentials = sqliteTable(
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },
-  // Une seule credential par hôte et par compte : deux jetons pour github.com n'auraient
-  // aucun moyen d'être départagés au moment où git en réclame un.
+  // Only one credential per host and account: two github.com tokens could not
+  // be distinguished when git requests one.
   (t) => [uniqueIndex('idx_git_credentials_owner_host').on(t.ownerId, t.host)],
 )
 
 /**
- * Comptes Claude supplémentaires, par utilisateur : un jeton OAuth longue durée de
- * `claude setup-token` chacun, chiffré comme les credentials git.
+ * Additional Claude accounts per user: each has a long-lived OAuth token from `claude
+ * setup-token`, encrypted like git credentials.
  *
- * Par utilisateur et non par instance, pour la même raison que les credentials git :
- * c'est l'abonnement de quelqu'un, et un administrateur n'a pas à emprunter celui d'un
- * autre. Le libellé est ce que le sélecteur de compte affiche : un jeton ne porte ni
- * courriel ni nom d'organisation lisibles sans dépenser un tour.
+ * Per user rather than per instance for the same reason as git credentials: it is someone's
+ * subscription, and an administrator should not borrow another person's. The label is displayed
+ * in the account picker: a token carries no readable email or organization name without
+ * spending a turn.
  */
 export const claudeAccounts = sqliteTable(
   'claude_accounts',
@@ -1416,10 +1384,10 @@ export const claudeAccounts = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     label: text('label').notNull(),
     /**
-     * Ce qu'est le secret : un jeton OAuth de `claude setup-token` (abonnement, passé
-     * dans `CLAUDE_CODE_OAUTH_TOKEN`) ou une clé API Console (facturée à l'usage, passée
-     * dans `ANTHROPIC_API_KEY`). Déduit du préfixe à l'écriture, retenu pour que le
-     * lancement n'ait pas à déchiffrer pour le savoir.
+     * Secret kind: an OAuth token from `claude setup-token` (subscription, passed in
+     * `CLAUDE_CODE_OAUTH_TOKEN`) or a Console API key (usage billing, passed in
+     * `ANTHROPIC_API_KEY`). Inferred from the prefix on write and retained so launch does not
+     * need to decrypt it to find out.
      */
     kind: text('kind').$type<'oauth' | 'apiKey'>().notNull().default('oauth'),
     ciphertext: text('ciphertext').notNull(),
@@ -1428,17 +1396,17 @@ export const claudeAccounts = sqliteTable(
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },
-  // Deux comptes du même nom seraient indiscernables dans le sélecteur.
+  // Two identically named accounts would be indistinguishable in the picker.
   (t) => [uniqueIndex('idx_claude_accounts_owner_label').on(t.ownerId, t.label)],
 )
 
 /**
- * Comptes Codex supplémentaires, par utilisateur.
+ * Additional Codex accounts per user.
  *
- * Aucun secret ici, contrairement aux comptes Claude : la connexion vit dans l'`auth.json`
- * du home que Sillage donne au compte (`<données>/codex-accounts/<id>`), écrit et
- * rafraîchi par Codex lui-même. La ligne ne porte que le libellé et ce que Codex a dit
- * du compte à la dernière connexion, pour que la liste se lise sans lancer d'app-server.
+ * No secret here, unlike Claude accounts: login lives in `auth.json` under the home Sillage
+ * assigns to the account (`<data>/codex-accounts/<id>`), written and refreshed by Codex itself.
+ * The row holds only the label and what Codex reported at the last login, so listing accounts
+ * does not require launching an app-server.
  */
 export const codexAccounts = sqliteTable(
   'codex_accounts',
@@ -1448,7 +1416,7 @@ export const codexAccounts = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     label: text('label').notNull(),
-    /** `chatgpt` ou `apiKey` une fois connecté, NULL tant que le home est vide. */
+    /** `chatgpt` or `apiKey` after login; NULL while the home is empty. */
     authMode: text('auth_mode').$type<'chatgpt' | 'apiKey'>(),
     email: text('email'),
     planType: text('plan_type'),
@@ -1459,12 +1427,12 @@ export const codexAccounts = sqliteTable(
 )
 
 /**
- * Comptes Grok Build supplémentaires, par utilisateur.
+ * Additional Grok Build accounts per user.
  *
- * Même parti que les comptes Codex : aucun secret ici. La connexion vit dans l'`auth.json`
- * du `GROK_HOME` que Sillage donne au compte (`<données>/grok-accounts/<id>`), écrit et
- * rafraîchi par Grok. La ligne retient le libellé et ce que Grok a dit du compte, pour
- * que la liste se lise sans lancer de process.
+ * Same approach as Codex accounts: no secret here. Login lives in `auth.json` under the
+ * account's Sillage-assigned `GROK_HOME` (`<data>/grok-accounts/<id>`), written and refreshed
+ * by Grok. The row retains the label and reported account details so listing does not require
+ * launching a process.
  */
 export const grokAccounts = sqliteTable(
   'grok_accounts',
@@ -1474,10 +1442,10 @@ export const grokAccounts = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     label: text('label').notNull(),
-    /** `grok` (abonnement, connexion grok.com) ou `apiKey` une fois connecté, NULL avant. */
+    /** `grok` (subscription, grok.com login) or `apiKey` after login; NULL beforehand. */
     authMode: text('auth_mode').$type<'grok' | 'apiKey'>(),
     email: text('email'),
-    /** Formule annoncée par la facturation de Grok (« X Premium », « SuperGrok »…). */
+    /** Plan reported by Grok billing (“X Premium”, “SuperGrok”, etc.). */
     plan: text('plan'),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
@@ -1486,18 +1454,18 @@ export const grokAccounts = sqliteTable(
 )
 
 /**
- * Jetons d'API, porteurs d'identité des clients machine.
+ * API tokens carrying machine-client identities.
  *
- * Même stockage que les sessions : seul le SHA-256 du secret est retenu, le jeton en
- * clair n'existe que dans la réponse à sa création. Une révocation garde la ligne, pour
- * que le libellé reste lisible dans l'audit des conversations qu'il a lancées.
+ * Stored like sessions: only the secret's SHA-256 hash is retained; the cleartext token exists
+ * only in the creation response. Revocation keeps the row so its label remains readable when
+ * auditing conversations it launched.
  */
 export const apiTokens = sqliteTable(
   'api_tokens',
   {
     id: text('id').primaryKey(),
     tokenHash: text('token_hash').notNull().unique(),
-    /** Premiers caractères du secret, pour reconnaître une ligne sans la révéler. */
+    /** First characters of the secret, to identify a row without revealing it. */
     hint: text('hint').notNull(),
     label: text('label').notNull(),
     userId: text('user_id')
@@ -1505,18 +1473,18 @@ export const apiTokens = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     /** JSON ApiScope[]. */
     scopes: text('scopes').notNull(),
-    /** JSON string[] d'identifiants de projets ; vide signifie « tous ceux qu'il voit ». */
+    /** JSON string[] of project IDs; empty means “all projects it can see”. */
     projectIds: text('project_ids').notNull(),
     agent: text('agent').$type<AgentKind>().notNull(),
-    /** JSON AgentConfig : avec quoi les tâches de ce jeton travaillent par défaut. */
+    /** JSON AgentConfig: default settings for tasks launched with this token. */
     config: text('config').notNull(),
-    /** URL appelée sur les événements de tâche ; NULL quand le jeton n'en veut pas. */
+    /** URL called on task events; NULL if the token requests none. */
     webhookUrl: text('webhook_url'),
     /**
-     * Secret HMAC des livraisons, en clair : le serveur doit pouvoir signer, donc le
-     * chiffrer avec une clé posée à côté de la base ne protégerait de rien. Il ne donne
-     * aucun accès à Sillage, seulement la capacité de forger des livraisons vers
-     * l'endpoint du consommateur, qui exige aussi de connaître l'URL.
+     * Delivery HMAC secret, in cleartext: the server must sign, so encrypting it with a key
+     * beside the database would offer no protection. It grants no Sillage access, only the
+     * ability to forge deliveries to the consumer's endpoint, which also requires knowing its
+     * URL.
      */
     webhookSecret: text('webhook_secret'),
     createdAt: timestamp('created_at').notNull(),
@@ -1528,25 +1496,24 @@ export const apiTokens = sqliteTable(
 )
 
 /**
- * Réglages propres aux tâches lancées par l'API : surcharge de webhook, échéance de
- * réponse. Table à part plutôt que des colonnes sur `conversations`, qui appartient au
- * noyau et n'a pas à porter les préoccupations d'un appelant machine.
+ * Settings specific to API-launched tasks: webhook override and response deadline. Separate
+ * from `conversations`, which belongs to the core and should not carry machine-caller concerns.
  */
 export const apiTaskOptions = sqliteTable('api_task_options', {
   conversationId: text('conversation_id')
     .primaryKey()
     .references(() => conversations.id, { onDelete: 'cascade' }),
   webhookUrl: text('webhook_url'),
-  /** 0 signifie « pas d'échéance », choisi explicitement par l'appelant. */
+  /** 0 means “no deadline”, explicitly chosen by the caller. */
   replyDeadlineSec: integer('reply_deadline_sec').notNull(),
 })
 
 /**
- * Livraisons de webhook, persistées avant le premier essai.
+ * Webhook deliveries, persisted before the first attempt.
  *
- * Un redémarrage du service ne doit pas avaler la seule notification qu'attendait
- * l'appelant : la reprise relit ce qui n'a pas été livré et reprend le barème là où
- * il en était. `nextAttemptAt` NULL marque l'abandon après épuisement des essais.
+ * A service restart must not swallow the only notification a caller was waiting for: recovery
+ * rereads undelivered entries and resumes the retry schedule where it left off. NULL
+ * `nextAttemptAt` marks abandonment after all attempts are exhausted.
  */
 export const webhookDeliveries = sqliteTable(
   'webhook_deliveries',
@@ -1570,17 +1537,16 @@ export const webhookDeliveries = sqliteTable(
 )
 
 /**
- * Clés d'idempotence des créations de tâche.
+ * Idempotency keys for task creation.
  *
- * La déduplication des envois vit en mémoire sur cinq minutes, ce qui convient à un
- * renvoi réseau mais pas à un agent qui réessaie dix minutes plus tard : sans cette
- * table, il ouvrirait une seconde conversation.
+ * Send deduplication lives in memory for five minutes, suitable for network retransmissions but
+ * not an agent retrying ten minutes later: without this table it would open a second
+ * conversation.
  *
- * La clé se réserve avant la création, d'où un `conversation_id` nullable : entre les
- * deux, une requête concurrente doit voir la réservation et attendre plutôt que de
- * lancer un second tour. Sans référence non plus, pour que la réservation puisse
- * exister avant sa conversation ; la conversation supprimée laisse une clé orpheline,
- * que la purge finit par emporter.
+ * The key is reserved before creation, hence nullable `conversation_id`: a concurrent request
+ * must see the reservation and wait instead of launching a second turn. No reference either, so
+ * the reservation can precede its conversation; a deleted conversation leaves an orphaned key
+ * that cleanup eventually removes.
  */
 export const apiIdempotency = sqliteTable(
   'api_idempotency',
@@ -1628,7 +1594,7 @@ export type CodexAccountRow = typeof codexAccounts.$inferSelect
 export type GrokAccountRow = typeof grokAccounts.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect
 
-/** Cache partagé par URL ; les abonnements restent privés dans les réglages du compte. */
+/** Shared cache per URL; subscriptions remain private in account settings. */
 export const newsFeeds = sqliteTable('news_feeds', {
   url: text('url').primaryKey(),
   data: text('data').notNull(),

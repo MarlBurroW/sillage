@@ -3,10 +3,9 @@
 @import './typing-indicator.css';
 
 /*
- * Mapping des tokens vers l'espace de nommage Tailwind.
- * Règle : la clé Tailwind et le token source ne portent jamais le même nom, sinon
- * la variable s'auto-référence et devient invalide. Aucun nom ne doit non plus
- * collisionner avec une échelle intégrée (base, sm, md, lg, xl... pour text-*).
+ * Map tokens into Tailwind's namespace. Tailwind keys and source tokens must never share names or
+ * variables self-reference and become invalid. Avoid built-in scale collisions too (base, sm, md,
+ * lg, xl for text utilities).
  */
 @theme inline {
   --color-canvas: var(--sg-canvas);
@@ -32,7 +31,7 @@
   --color-loop: var(--sg-loop);
 }
 
-/* Valeurs littérales : ni thémables ni sujettes à l'auto-référence. */
+/* Literal values are neither themeable nor subject to self-reference. */
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
@@ -47,30 +46,24 @@
   --header-height: 3.25rem;
   --sidebar-width: 16.5rem;
   /*
-   * Largeur sur grand écran, ajustable par la poignée et réécrite en place par le
-   * script. Le tiroir mobile ne la lit pas : il prend toute la largeur de l'écran, une
-   * poignée n'y aurait aucun sens, et une largeur choisie au clavier pourrait dépasser
-   * celle du téléphone.
+   * Desktop width adjusted by the handle and rewritten in place by script. The mobile drawer
+   * ignores it and fills the screen: handles make no sense there and a keyboard-selected desktop
+   * width could exceed the phone.
    */
   --sidebar-desktop-width: var(--sidebar-width);
-  /* Hauteur minimale d'une cible tactile, imposée par la spec. */
+  /* Minimum touch target height required by the specification. */
   --tap: 2.75rem;
 
   /*
-   * Encoches de l'appareil, nommées plutôt qu'appelées directement par `env()`.
-   *
-   * Une barre de hauteur fixe doit pouvoir *ajouter* l'encoche à sa hauteur, ce que
-   * `calc()` ne sait pas faire depuis une classe utilitaire, et les nommer permet de
-   * rejouer la géométrie d'un iPhone sur un poste de développement.
-   *
-   * Elles ne portent l'écart réel que parce que le document demande `viewport-fit=cover` ;
-   * sans lui elles valent zéro. Elles restent nulles dans un navigateur de bureau.
+   * Named device safe-area insets instead of direct `env()` calls. Fixed-height bars must add
+   * insets, which utility-class calc cannot do directly; names also allow iPhone geometry
+   * simulation during development. Insets are nonzero only with viewport-fit=cover and remain
+   * zero in desktop browsers.
    */
   --sg-safe-top: env(safe-area-inset-top, 0px);
   /*
-   * L'encoche du bas est amputée de ce que le viewport n'atteint déjà pas, mesuré par
-   * `useVisualViewport` : sans ça, une application installée sur iOS écarte le contenu
-   * d'un indicateur d'accueil qui se trouve 62 px plus bas, hors du viewport.
+   * Subtract the viewport's already-unreachable bottom gap measured by `useVisualViewport`, or
+   * installed iOS apps reserve space for a home indicator 62 px below the viewport.
    */
   --sg-safe-bottom: max(
     0px,
@@ -80,15 +73,11 @@
 
 @layer base {
   /*
-   * Le fond de l'application est porté par la racine, et il est plat.
-   *
-   * Une application installée sur iOS remonte le viewport de la hauteur de la barre
-   * d'état : 894 px mesurés pour un écran de 956, ancrés en haut. La bande qui reste en
-   * bas est hors du viewport, donc hors d'atteinte de tout élément, `position: fixed`
-   * compris. Seul le fond de la racine, propagé au canevas du document, la peint. Un
-   * dégradé y aurait toujours fini par se raccorder de travers, puisque le calque et la
-   * bande ne partagent ni la même hauteur ni la même origine : le fond est donc une
-   * couleur unique, que les deux prennent sans discussion.
+   * The root owns a flat app background. Installed iOS apps shift the viewport up by the status
+   * bar: measured 894 px on a 956 px screen, anchored at top. The remaining bottom strip is
+   * outside every element's reach, including fixed layers. Only root background propagated to the
+   * document canvas paints it. Gradients cannot align across different heights and origins, so
+   * use one shared solid color.
    */
   html {
     background-color: var(--sg-canvas);
@@ -98,9 +87,8 @@
   }
 
   /*
-   * L'application est un calque fixe dimensionné sur le viewport visuel : le document
-   * lui-même ne défile jamais. Sans ça, iOS fait rebondir la page derrière le clavier
-   * et décale tout ce qui est positionné en fixe.
+   * The app is a fixed layer sized to the visual viewport; the document never scrolls. Otherwise
+   * iOS bounces the page behind the keyboard and offsets fixed elements.
    */
   html,
   body {
@@ -124,7 +112,7 @@
     color: var(--sg-ink);
   }
 
-  /* Barres de défilement discrètes, teintées comme le reste. */
+  /* Subtle scrollbars tinted like the rest of the interface. */
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--sg-line-strong) transparent;
@@ -132,13 +120,10 @@
 }
 
 /*
- * iOS zoome sur un champ dont le texte fait moins de 16 px, et ce zoom ne se défait
- * jamais tout seul : il laisse la page décalée et un défilement horizontal parasite.
- *
- * Volontairement hors de toute couche : les tailles de texte viennent d'utilitaires
- * Tailwind, et une règle placée dans `@layer base` leur céderait la place. Un style
- * sans couche, lui, l'emporte sur toutes les couches. La contrainte ne vaut qu'au
- * doigt, pour ne pas grossir les champs sur desktop.
+ * iOS zooms inputs below 16 px and does not automatically undo it, leaving offsets and horizontal
+ * scrolling. Keep this rule unlayered: Tailwind text utilities override `@layer base`, while
+ * unlayered CSS wins over every layer. Apply only to touch devices to avoid enlarging desktop
+ * inputs.
  */
 @media (pointer: coarse) {
   input,
@@ -150,31 +135,25 @@
 
 @layer utilities {
   /*
-   * Fondu du fil à son bord bas.
-   *
-   * Le fil se coupe net au ras de la barre de saisie, souvent au milieu d'une ligne :
-   * une phrase tranchée dessine la limite du conteneur mieux que n'importe quelle
-   * bordure. Le masque la dissout sur la hauteur d'une ligne. Il porte sur la boîte de
-   * l'élément, pas sur son contenu, donc le fondu reste en bas pendant le défilement.
+   * Fade the thread's bottom edge. Abruptly clipping above the composer often cuts a text line,
+   * outlining the container more strongly than borders. Fade over one line height. Mask the
+   * element box rather than content so the fade stays at the bottom while scrolling.
    */
   .fade-bottom {
     mask-image: linear-gradient(to bottom, black calc(100% - 1.5rem), transparent);
   }
 
-  /* Le dégradé signature, réservé aux surfaces élevées. */
+  /* Signature gradient reserved for elevated surfaces. */
   .surface {
     background: var(--sg-gradient-surface);
     background-color: var(--sg-surface);
   }
 
   /*
-   * Bulle d'un message utilisateur. Elle part de la surface du thème et reçoit une
-   * couche d'accent dosée par `--sg-message-contrast` : à zéro elle est exactement une
-   * `.surface`, au maximum elle porte le lavis d'accent plein.
-   *
-   * Le lavis est une couche d'image posée sur le dégradé de surface, et non une
-   * `background-color` : celle-ci passerait sous le dégradé, opaque dans le thème
-   * clair, et le réglage n'y produirait rien de visible.
+   * User message bubble starts with the theme surface and receives accent controlled by
+   * `--sg-message-contrast`: zero matches `.surface`, maximum gives full accent wash. Use an
+   * image layer over the surface gradient rather than background-color, which would sit beneath
+   * the opaque light-theme gradient and have no visible effect.
    */
   .sg-user-bubble {
     --sg-user-wash: color-mix(
@@ -212,10 +191,8 @@
   }
 
   /*
-   * Calque de l'application.
-   *
-   * `dvh` dans un navigateur, où il est la seule unité à suivre la barre d'adresse qui
-   * se replie. `--sg-app-height` par-dessus quand le clavier est ouvert.
+   * App layer. Use `dvh` in browsers to track collapsing address bars, overridden by
+   * `--sg-app-height` when the keyboard opens.
    */
   .app-layer {
     position: fixed;
@@ -233,12 +210,9 @@
   }
 
   /*
-   * Barre de hauteur fixe qui descend sous l'encoche.
-   *
-   * `h-[var(--header-height)]` et `pt-safe` sur le même élément ne se combinent pas :
-   * la boîte garde 52 px, le contenu est poussé de 59 px, et il déborde donc *sous*
-   * la barre, où la vue le recouvre. C'était invisible au navigateur, où l'encoche
-   * vaut zéro, et cassait l'en-tête dans la PWA installée.
+   * Fixed-height bar extending beneath the safe-area inset. Combining `h-[var(--header-height)]`
+   * and `pt-safe` retains a 52 px box while pushing content down 59 px, overflowing below the bar
+   * and under the view. Invisible in browsers with zero inset but broken in installed PWAs.
    */
   .header-bar {
     height: calc(var(--header-height) + var(--sg-safe-top));
@@ -246,10 +220,7 @@
   }
 }
 
-/*
- * Le contenu markdown est injecté en HTML brut : Tailwind ne peut pas styler ces
- * balises par utilitaires, elles sont donc traitées ici, une seule fois.
- */
+/* Markdown injects raw HTML, so Tailwind utility classes cannot style its tags; handle them here once. */
 @layer components {
   .sg-markdown > * + * {
     margin-top: 0.75em;
@@ -287,13 +258,9 @@
   }
 
   /*
-   * Une URL sans espace ne casse nulle part : elle élargit son conteneur et fait
-   * défiler la page entière de côté sur un écran étroit. `anywhere` autorise la
-   * coupure à l'intérieur du mot, mais seulement quand il ne tient pas, donc le
-   * texte courant garde ses coupures normales.
-   *
-   * Posé sur le conteneur plutôt que sur `a` seul : un identifiant ou un chemin
-   * collé en texte brut produit exactement le même débordement.
+   * Unbroken URLs expand containers and horizontally scroll narrow pages. `anywhere` breaks words
+   * only when needed, preserving normal text wrapping. Apply to the container rather than just
+   * links: plain identifiers and paths overflow identically.
    */
   .sg-markdown {
     overflow-wrap: anywhere;
@@ -316,9 +283,8 @@
   }
 
   /*
-   * Chemin dont le serveur a confirmé qu'il désigne un fichier du workspace : il ouvre
-   * l'éditeur. Il garde l'aspect d'un `code span`, avec pour seule différence la teinte
-   * d'accent et le curseur, parce qu'il reste avant tout un chemin cité dans une phrase.
+   * Server-confirmed workspace file path opens the editor. Retain code-span appearance except
+   * accent color and pointer cursor because it is primarily a path cited within a sentence.
    */
   .sg-markdown .sg-file {
     color: var(--sg-accent);
@@ -332,10 +298,9 @@
   }
 
   /*
-   * Référence à une carte du board (`#12`). Un lien dans une phrase plutôt qu'une
-   * puce : le numéro se lit d'abord comme du texte, l'accent et le soulignement au
-   * survol disent qu'il mène quelque part. Le fond reste celui du texte, sinon un
-   * message qui cite dix cartes se couvre de pastilles.
+   * Board card reference (`#12`) is an inline link rather than a chip: read it as text, with
+   * accent and hover underline signaling navigation. Preserve the text background so messages
+   * citing ten cards do not fill with pills.
    */
   .sg-reading .sg-card-ref {
     color: var(--sg-accent);
@@ -350,12 +315,9 @@
   }
 
   /*
-   * Image du workspace montrée dans le fil. Le bouton est le cadre : il n'apporte ni
-   * fond ni police, seulement la bordure, le coin arrondi et le clic qui ouvre le
-   * fichier en grand dans le panneau.
-   *
-   * `max-width` sur l'image et non sur le bouton : une capture d'écran fait deux mille
-   * pixels de large et étirerait la colonne du fil.
+   * Workspace image displayed in the thread. The button is a frame without background or font,
+   * adding only border, rounded corners, and click-to-open in the panel. Apply max-width to the
+   * image rather than button: screenshots thousands of pixels wide would stretch the thread.
    */
   .sg-markdown .sg-file-image {
     display: block;
@@ -377,10 +339,7 @@
     height: auto;
   }
 
-  /*
-   * Blocs indentés de quatre espaces. Les blocs délimités par des accents graves ne
-   * passent plus par ici : ils sont rendus par CodeBlock, avec leur barre d'outils.
-   */
+  /* Four-space-indented blocks. Fenced blocks instead use CodeBlock with its toolbar. */
   .sg-markdown pre {
     overflow-x: auto;
     background: var(--sg-sunken);
@@ -388,7 +347,7 @@
     border-radius: var(--radius-md);
     padding: 0.75rem;
   }
-  /* Dans un bloc, le code ne reprend pas le cadre de l'inline. */
+  /* Block code does not inherit the inline frame. */
   .sg-markdown pre code {
     background: none;
     border: 0;
@@ -397,7 +356,7 @@
     line-height: 1.55;
   }
 
-  /* Liste de tâches : la case remplace la puce, elle ne s'y ajoute pas. */
+  /* Task-list checkboxes replace bullets rather than adding to them. */
   .sg-markdown li.sg-task-item {
     list-style: none;
     margin-left: -1.35em;
@@ -423,8 +382,8 @@
   }
 
   /*
-   * Le défilement appartient à l'enveloppe, le tableau garde `display: table` : c'est
-   * la seule façon d'occuper toute la largeur tout en gardant des colonnes alignées.
+   * Scrolling belongs to the wrapper; retain display: table on the table to fill width while
+   * aligning columns.
    */
   .sg-table-scroll table {
     width: 100%;
@@ -450,9 +409,8 @@
   }
 
   /*
-   * Coloration syntaxique. highlight.js émet des classes `hljs-*` ; les couleurs sont
-   * définies ici avec les tokens de thème, plutôt qu'importées d'une feuille toute
-   * faite qui ignorerait le thème clair, sombre et contrasté.
+   * Syntax highlighting. highlight.js emits hljs classes; theme tokens define colors here rather
+   * than a premade sheet ignoring light, dark, and high-contrast themes.
    */
   .hljs-comment,
   .hljs-quote {
@@ -507,10 +465,9 @@
 }
 
 /*
- * xterm pose `user-select: none` sur tout le terminal et gère la sélection lui-même.
- * C'est ce qui rend l'appui long sans effet sur téléphone. On rend les lignes
- * sélectionnables nativement : le geste du système redevient disponible, et la
- * sélection propre à xterm continue de fonctionner à la souris.
+ * xterm applies user-select: none and handles selection itself, disabling phone long-press.
+ * Restore native line selection so system gestures work while xterm mouse selection remains
+ * available.
  */
 .sg-terminal .xterm .xterm-screen,
 .sg-terminal .xterm .xterm-rows {
@@ -519,9 +476,8 @@
 }
 
 /*
- * Curseur de teinte : le dégradé est porté par l'élément lui-même (style en ligne),
- * on retire donc la piste native pour le laisser voir. Les deux moteurs ont des
- * pseudo-éléments distincts et ne tolèrent pas d'être regroupés dans un même sélecteur.
+ * Hue slider: the element carries its own inline gradient, so remove the native track. Browser
+ * engines use separate pseudo-elements and cannot share one selector.
  */
 .sg-hue-slider {
   appearance: none;
@@ -557,8 +513,8 @@
 }
 
 /*
- * Message atteint par la navigation de tours. L'anneau s'estompe tout seul : c'est un
- * repère du regard, pas un état à refermer.
+ * Message targeted by turn navigation. The ring fades automatically because it is an attention
+ * cue rather than a state to dismiss.
  */
 @keyframes sg-flash-turn {
   0%,
@@ -570,24 +526,18 @@
   }
 }
 /*
- * L'anneau vise la bulle et non la rangée qui la contient : celle-ci fait toute la
- * largeur du fil, horodatage et actions compris, et l'encadrer désignait une zone
- * bien plus grande que le message qu'on cherchait.
+ * Target the bubble, not the full-width row containing timestamps and actions, which would frame
+ * far more than the requested message.
  */
 .sg-flash-turn .sg-bubble {
   animation: sg-flash-turn 1.4s ease-out;
 }
 
 /*
- * Confort de lecture du fil.
- *
- * `.sg-reading` porte les trois réglages : la taille en `rem` pour rester indexée sur
- * la préférence du navigateur, l'interligne sans unité, et une encre mélangée vers sa
- * nuance atténuée plutôt qu'une opacité. Un texte translucide laisserait passer le
- * fond, et un même message ne se lirait pas pareil dans une bulle et hors d'elle.
- *
- * Posé sur le texte des messages uniquement : agrandir la conversation ne doit pas
- * déplacer la barre latérale ni la barre de saisie.
+ * Thread reading comfort. `.sg-reading` carries rem-based size following browser preference,
+ * unitless line height, and ink blended toward its muted shade rather than opacity. Translucent
+ * text would change over bubble and nonbubble backgrounds. Apply only to message text so
+ * enlarging conversations never moves the sidebar or composer.
  */
 .sg-reading {
   font-size: calc(var(--sg-read-size) * 1rem);
@@ -600,9 +550,8 @@
 }
 
 /*
- * Surlignage de la recherche dans le fil. `::highlight()` colore des plages sans
- * toucher au document : insérer des balises casserait le rendu markdown et les blocs
- * de code. Les noms doivent rester en accord avec ThreadSearch.
+ * Thread search highlights. `::highlight()` colors ranges without document changes: inserted tags
+ * would break Markdown and code blocks. Keep names in sync with ThreadSearch.
  */
 ::highlight(sg-find) {
   background-color: var(--sg-accent-wash);
@@ -614,8 +563,8 @@
 }
 
 /*
- * Barre d'installation d'un CLI : un segment qui balaie la piste, puisque npm ne donne
- * pas de proportion. Immobile pour qui a réduit les animations, le texte à côté suffit.
+ * CLI installation bar sweeps because npm provides no fraction. Stay still for reduced motion;
+ * adjacent text suffices.
  */
 .sg-install-sweep {
   animation: sg-install-sweep 1.4s ease-in-out infinite;
@@ -642,7 +591,7 @@
   }
 }
 
-/* La limite commune suit le réglage sans dépasser le panneau disponible. */
+/* The shared limit follows the setting without exceeding the available panel. */
 .sg-conversation-width {
   width: 100%;
   max-width: calc(var(--sg-conversation-width) * 1px);

@@ -11,14 +11,7 @@ import { scanServiceProcesses, stopServiceProcess, type ServiceProcess } from '.
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 import type { WorktreeStatusService } from './status-service.js'
 
-/**
- * Nettoyer un chantier en un geste : arrêter ce qui y tourne, ranger ses sessions,
- * retirer l'arbre et sa branche.
- *
- * Deux temps, le plan puis l'exécution, parce que rien ici ne doit partir en silence :
- * la confirmation montre ce que le plan a trouvé, et l'exécution refait les mêmes
- * recherches au moment d'agir plutôt que de se fier à une liste qui a pu vieillir.
- */
+/** One-step worktree cleanup: stop its processes, archive sessions, remove tree and branch. Separate planning from execution so nothing disappears silently: confirmation shows the plan, then execution repeats discovery rather than trusting potentially stale lists. */
 export class WorktreeCleanup {
   private readonly origins: ProcessOrigins
 
@@ -32,11 +25,7 @@ export class WorktreeCleanup {
     this.origins = processOrigins(dataDirectory)
   }
 
-  /**
-   * L'arbre désigné par son chemin, s'il appartient bien au projet : connu de git ou de
-   * la base, jamais un dossier quelconque. C'est la seule garde entre une route et un
-   * `rm -rf`.
-   */
+  /** Path-selected tree only when it belongs to the project, known to git or the database, never arbitrary directories. This is the sole guard between routes and `rm -rf`. */
   private async locate(project: ProjectRow, path: string): Promise<WorktreeStatusDto | null> {
     const list = await this.status.get(project)
     return list.worktrees.find((tree) => tree.path === path) ?? null
@@ -56,7 +45,7 @@ export class WorktreeCleanup {
           .all()
       : []
 
-    // La carte d'une session rattachée, si elle n'est pas déjà sortie du board.
+    // Attached session's card, provided it has not already left the board.
     const cardIds = [...new Set(open.map((c) => c.cardId).filter((id): id is string => id !== null))]
     const card = cardIds.length
       ? this.db
@@ -92,8 +81,8 @@ export class WorktreeCleanup {
     const base = (await this.status.get(project)).base
     const result: WorktreeCleanupResultDto = { removed: false, branchDeleted: false, archived: 0, stopped: 0 }
 
-    // Ce qui tourne dedans d'abord : un serveur dont le dossier disparaît sous lui ne
-    // s'arrête pas proprement, il se met en échec.
+    // Stop running processes first: servers whose directories disappear underneath them
+    // fail instead of shutting down cleanly.
     if (options.stopServices) {
       for (const service of await this.servicesUnder(tree.path)) {
         if (await service.stop()) result.stopped += 1
@@ -108,17 +97,17 @@ export class WorktreeCleanup {
         .set({ archivedAt: Date.now() })
         .where(and(inArray(conversations.id, ids), isNull(conversations.archivedAt)))
         .run().changes
-      // Les captures de tour vivent dans le dépôt de l'arbre : à retirer avant lui.
+      // Turn snapshots live in the tree's repository: remove them before the tree.
       for (const id of ids) await this.dropCheckpoints(id).catch(() => undefined)
     }
 
-    // `worktree remove --force` retire aussi une entrée dont le dossier a disparu, et
-    // elle seule : pas de `prune`, qui purgerait en silence les autres arbres perdus.
+    // `worktree remove --force` removes missing-directory entries individually:
+    // avoid `prune`, which would silently purge other missing trees.
     try {
       await removeWorktree(project.workspacePath, tree.path, true)
     } catch (err) {
       if (!(err instanceof GitError)) throw err
-      // Git ne le connaît plus (entrée en base seulement) : le dossier part seul.
+      // Git no longer knows this database-only entry: remove just its directory.
       if (await stat(tree.path).then((s) => s.isDirectory()).catch(() => false)) {
         await rm(tree.path, { recursive: true, force: true })
       }
@@ -126,7 +115,7 @@ export class WorktreeCleanup {
     result.removed = true
 
     if (options.deleteBranch && tree.branch && tree.branch !== base) {
-      // `-D` : une branche fusionnée par squash n'est pas un ancêtre, `-d` la refuserait.
+      // Use `-D`: squash-merged branches are not ancestors and would fail `-d`.
       await deleteBranch(project.workspacePath, tree.branch, true)
         .then(() => { result.branchDeleted = true })
         .catch(() => undefined)
@@ -139,10 +128,7 @@ export class WorktreeCleanup {
     return result
   }
 
-  /**
-   * Les apps `sillage-app-*` et les processus suivis dont le répertoire est dans
-   * l'arbre, chacun avec la façon de l'arrêter.
-   */
+  /** `sillage-app-*` apps and tracked processes whose directories lie inside the tree, each with its stop method. */
   private async servicesUnder(path: string): Promise<{ id: string; label: string; kind: 'app' | 'process'; stop: () => Promise<boolean> }[]> {
     if (process.platform !== 'linux') return []
     const prefix = `${path}/`

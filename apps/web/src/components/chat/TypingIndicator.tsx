@@ -2,7 +2,7 @@ import type { TypingIndicatorStyle } from '../../lib/typing-indicator'
 import { Logo } from '../Logo'
 import { cx } from '../ui'
 
-/** Le fil et les réglages partagent le dessin pour que l’aperçu reste fidèle. */
+/** Thread and settings share artwork to keep previews faithful. */
 export function TypingIndicator({
   variant,
   size = 22,

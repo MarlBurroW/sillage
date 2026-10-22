@@ -10,7 +10,7 @@ function projectCard(db: Db, projectId: string, number: number) {
   return card
 }
 
-/** Le sens inverse et le lien symétrique partagent la même ligne, donc pas de doublons. */
+/** Inverse and symmetric links share the same row, preventing duplicates. */
 function canonical(sourceId: string, targetId: string, kind: CardRelationKind) {
   if (['blocked_by', 'duplicated_by', 'child', 'replaced_by'].includes(kind)) {
     return { sourceId: targetId, targetId: sourceId, kind: CARD_RELATION_INVERSE[kind] as StoredCardRelationKind }
@@ -52,7 +52,7 @@ export function linkCards(db: Db, projectId: string, number: number, target: num
       if (edge.kind === 'parent' && edges.some(e => e.targetId === edge.targetId)) {
         throw conflict('card_relation_parent', 'This card already has a parent. Remove that relation first.')
       }
-      // Une chaîne doit avoir une fin : ni ascendance circulaire, ni blocage mutuel.
+      // Chains must terminate: neither circular ancestry nor mutual blocking.
       const pending = [edge.targetId]
       const visited = new Set<string>()
       while (pending.length) {

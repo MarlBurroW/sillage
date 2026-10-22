@@ -10,25 +10,25 @@ import { requireScope } from '../require-user.js'
 import { allowedProjectIds } from './access.js'
 
 /**
- * Le serveur MCP de Sillage par HTTP, pour un client qui n'est pas sur la machine.
+ * Sillage's MCP server over HTTP for clients outside this machine.
  *
- * Le serveur lui-même (`mcp/sillage-mcp.mjs`) parle en stdio et lit la base : il ne
- * sait rien du réseau. Ce pont l'expose selon le transport « streamable HTTP » de MCP,
- * sous `/api/v1/mcp`, donc derrière le jeton d'API et sa portée `mcp`. Il ne
- * réimplémente aucun outil : chaque session HTTP est un process du serveur en mode
- * global, lancé au nom du compte du jeton et borné à ses projets, et chaque requête
- * JSON-RPC lui est transmise telle quelle.
+ * The server itself (`mcp/sillage-mcp.mjs`) uses stdio and reads the database; it
+ * knows nothing about networking. This bridge exposes MCP's streamable HTTP
+ * transport under `/api/v1/mcp`, protected by API tokens and their `mcp` scope.
+ * No tools are reimplemented: each HTTP session runs a global-mode server
+ * process as the token owner, limited to their projects, and forwards JSON-RPC
+ * requests unchanged.
  *
- * Toujours une réponse JSON, jamais un flux : le serveur ne pousse rien au client, et
- * les deux CLI acceptent l'une comme l'autre. Le client enchaîne `initialize`, reçoit
- * un `Mcp-Session-Id`, et le présente ensuite ; sans lui, ou après expiration, 404,
- * ce qui lui dit de recommencer par `initialize`, comme le transport le prévoit.
+ * Responses always use JSON, never streams: the server pushes nothing, and both
+ * CLIs support either format. Clients call `initialize`, receive a `Mcp-Session-Id`,
+ * then present it on subsequent requests. Missing or expired IDs return 404,
+ * telling clients to initialize again as required by the transport.
  */
 
-/** Sans requête depuis ce délai, le process est arrêté : le client rouvrira une session. */
+/** Stop the process after this idle timeout; the client can open a new session. */
 const IDLE_MS = 30 * 60 * 1000
 const REAP_EVERY_MS = 60 * 1000
-/** Plus que `start_session` côté serveur (90 s), qui attend lui-même le daemon. */
+/** Longer than server-side `start_session` (90 s), which itself waits for the daemon. */
 const REPLY_TIMEOUT_MS = 120 * 1000
 const MAX_SESSIONS_PER_TOKEN = 4
 
@@ -88,7 +88,7 @@ class McpSession {
     return !this.closed
   }
 
-  /** Transmet un message ; rend la réponse pour une requête, rien pour une notification. */
+  /** Forwards a message; returns responses to requests and nothing for notifications. */
   send(message: JsonRpcMessage): Promise<JsonRpcMessage | null> {
     this.lastUsed = Date.now()
     if (this.closed) throw notFound('mcp_session_closed', 'MCP session closed.')
@@ -138,12 +138,12 @@ export class McpBridge {
   }
 
   /**
-   * Un process du serveur en mode global, au nom du compte du jeton. Les projets
-   * permis sont ceux du jeton ; le serveur y ajoute lui-même ce que le compte voit.
+   * Global-mode server process running as the token owner. Allowed projects come
+   * from the token; the server also checks what that account can see.
    */
   open(token: ApiTokenRow, user: UserRow): McpSession {
     const owned = [...this.sessions.values()].filter((session) => session.tokenId === token.id)
-    // Un client qui réinitialise sans fermer accumulerait des process : le plus ancien part.
+    // Reinitializing without closing would accumulate processes: evict the oldest.
     while (owned.length >= MAX_SESSIONS_PER_TOKEN) owned.shift()!.close()
 
     const child = spawn(process.execPath, [resolveEntry()], {
@@ -162,7 +162,7 @@ export class McpBridge {
     return session
   }
 
-  /** La session de l'en-tête, si elle appartient au jeton qui la présente. */
+  /** Session from the header, provided it belongs to the token presenting it. */
   lookup(id: string | undefined, token: ApiTokenRow): McpSession | null {
     if (!id) return null
     const session = this.sessions.get(id)
@@ -212,7 +212,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): McpBri
     return reply.status(204).send()
   })
 
-  // Le transport prévoit un flux descendant sur GET ; ce serveur ne pousse rien.
+  // The transport supports a downstream GET stream; this server pushes nothing.
   app.get('/api/v1/mcp', async (request: FastifyRequest) => {
     requireScope(request, 'mcp')
     throw new HttpError(405, 'mcp_no_stream', 'This server does not open server-to-client streams.')

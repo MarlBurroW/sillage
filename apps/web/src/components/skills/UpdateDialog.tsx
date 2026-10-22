@@ -9,9 +9,8 @@ import { DiffHunks } from '../DiffHunks'
 import { Banner, Button, IconButton } from '../ui'
 
 /**
- * Ce qu'une mise à jour changerait, avant de l'appliquer : le skill installé à gauche,
- * la source à droite. Une modification locale y apparaît comme ce qui sera perdu, et
- * l'avertissement le dit en clair.
+ * Preview updates before applying: installed skill left, source right. Show local edits as content
+ * to be lost and explain the warning plainly.
  */
 export function UpdateDialog({
   open,

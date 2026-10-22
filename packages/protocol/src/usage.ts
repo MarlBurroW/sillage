@@ -2,31 +2,30 @@ import { z } from 'zod'
 import { agentKindSchema } from './events.js'
 
 /**
- * Consommation du compte, telle que le CLI la déclare.
+ * Account usage as reported by the CLI.
  *
- * Volontairement une **liste** de fenêtres et non un jeu de champs nommés : les CLI en
- * ajoutent régulièrement côté serveur, sans mise à jour du client. La sortie de Fable a
- * fait apparaître une fenêtre dédiée du jour au lendemain, et la sonde du CLI installé
- * montre aujourd'hui une douzaine de clés dont la plupart sont encore nulles et portent
- * des noms de code. Figer une liste ici reviendrait à devoir rebuilder à chaque
- * nouveauté, et à masquer en silence tout ce qui n'aurait pas été prévu.
+ * Deliberately a **list** of windows rather than named fields: CLIs regularly add them
+ * server-side without client updates. Fable's release introduced a dedicated window overnight;
+ * the installed CLI probe now shows about a dozen keys, mostly still null and using codenames.
+ * A fixed list would require rebuilding for every addition and silently hide anything
+ * unanticipated.
  */
 
 export const usageWindowSchema = z.object({
-  /** Clé d'origine côté CLI, stable, utilisée comme identité de rendu. */
+  /** Stable original CLI key, used as rendering identity. */
   id: z.string(),
   label: z.string(),
-  /** Part consommée, de 0 à 1. Null quand le CLI ne la fournit pas. */
+  /** Consumed fraction from 0 to 1; null if unreported. */
   utilization: z.number().nullable(),
-  /** Fin de la fenêtre, en millisecondes. Null si inconnue. */
+  /** Window end in milliseconds; null if unknown. */
   resetsAt: z.number().nullable(),
 })
 export type UsageWindow = z.infer<typeof usageWindowSchema>
 
 /**
- * Crédits facturés au-delà du forfait. Les deux CLI n'en donnent pas la même chose :
- * Claude un pourcentage et des montants, Codex un solde. `detail` est donc un texte
- * déjà mis en forme, plutôt qu'un modèle monétaire commun qui n'existe pas.
+ * Credits billed beyond the plan. CLIs report different data: Claude a percentage and amounts,
+ * Codex a balance. `detail` is therefore preformatted text rather than a nonexistent shared
+ * monetary model.
  */
 export const usageCreditsSchema = z.object({
   label: z.string(),
@@ -37,11 +36,11 @@ export const usageCreditsSchema = z.object({
 
 export const agentUsageSchema = z.object({
   agent: agentKindSchema,
-  /** Formule déclarée par le CLI (`max`, `plus`...). Null en facturation à l'usage. */
+  /** CLI-reported plan (`max`, `plus`, etc.); null for usage billing. */
   plan: z.string().nullable(),
   /**
-   * Faux quand les limites de forfait ne s'appliquent pas : clé API, Bedrock, Vertex.
-   * Les fenêtres sont alors vides, et ce n'est pas une panne.
+   * False when plan limits do not apply: API key, Bedrock, Vertex. Windows are then empty; this
+   * is not a failure.
    */
   limitsAvailable: z.boolean(),
   windows: z.array(usageWindowSchema),

@@ -4,42 +4,26 @@ import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@si
 import type { EventLog } from '../events/event-log.js'
 import { assessWorktree, defaultBase, listWorktrees } from './assess.js'
 
-/**
- * Au-delà, une liste rendue est recalculée ; en deçà, elle est resservie telle quelle.
- * Court, parce que l'arbre bouge sous les sessions ; mais la barre latérale relit la
- * liste à chaque fin de tour, et sans ce délai chaque relecture lancerait des dizaines
- * de git.
- */
+/** Recalculate lists older than this limit and reuse fresher ones. Keep short because sessions modify trees, but sidebar reads on every turn end would otherwise launch dozens of git processes. */
 const TTL_MS = 30_000
 
-/** Arbres jugés de front : chacun lance plusieurs git, un gros dépôt les sent passer. */
+/** Concurrent worktree assessments: each launches several git processes, costly for large repositories. */
 const CONCURRENCY = 3
 
-/**
- * Délai avant de recalculer un projet de soi-même après un tour ou une action git :
- * plusieurs tours qui finissent ensemble ne coûtent qu'un calcul.
- */
+/** Delay before automatically recalculating projects after turns or git actions: simultaneous completions share one calculation. */
 const REFRESH_DELAY_MS = 5_000
 
 type ComputedListener = (project: ProjectRow, list: WorktreeStatusListDto) => void | Promise<void>
 
 interface CacheEntry {
   value: WorktreeStatusListDto | null
-  /** Périmée par un tour ou une action git : resservie une fois, le temps de recalculer. */
+  /** Invalidated by turns or git actions; serve once while recalculating. */
   stale: boolean
-  /** Calcul en cours, partagé entre les appelants qui arrivent pendant qu'il tourne. */
+  /** Ongoing calculation shared by callers arriving before it completes. */
   pending: Promise<WorktreeStatusListDto> | null
 }
 
-/**
- * L'avancement des worktrees d'un projet, calculé par arbre et non par session, et
- * servi depuis un cache que la fin d'un tour, une action git ou une création de
- * worktree invalident.
- *
- * Une liste périmée est rendue tout de suite pendant que la suivante se calcule :
- * la barre latérale n'attend jamais un `git status` sur un dépôt de plusieurs
- * gigaoctets. Seul le tout premier appel d'un projet attend.
- */
+/** Project worktree progress calculated per tree rather than session, cached until turn completion, git operations or worktree creation invalidates it. Return stale lists immediately while refreshing so sidebars never await `git status` on multi-gigabyte repositories. Only the first project request waits. */
 export class WorktreeStatusService {
   private readonly cache = new Map<string, CacheEntry>()
   private readonly listeners: ComputedListener[] = []
@@ -49,8 +33,8 @@ export class WorktreeStatusService {
     private readonly db: Db,
     log: EventLog,
   ) {
-    // La fin d'un tour est le moment où l'arbre a le plus de chances d'avoir changé ;
-    // une édition hors du cwd peut rattacher la session à un nouvel arbre.
+    // Trees are most likely to change at turn completion;
+    // edits outside cwd may attach sessions to new trees.
     log.subscribeAll((entry) => {
       if (entry.event.type !== 'turn.completed' && entry.event.type !== 'file.edited') return
       const row = this.db
@@ -64,11 +48,7 @@ export class WorktreeStatusService {
     })
   }
 
-  /**
-   * Prévient après chaque calcul : c'est là qu'une fusion se voit. Avec un abonné, le
-   * service recalcule aussi de lui-même après un tour ou une action git, pour qu'une
-   * fusion faite par un agent soit vue sans que personne n'ait l'interface ouverte.
-   */
+  /** Notifies after each calculation, when merges become visible. With subscribers, also recalculate automatically after turns and git actions so agent merges are noticed even without an open interface. */
   onComputed(listener: ComputedListener): void {
     this.listeners.push(listener)
   }
@@ -82,7 +62,7 @@ export class WorktreeStatusService {
         const project = this.db.select().from(projects).where(eq(projects.id, projectId)).get()
         if (project) void this.get(project).catch(() => undefined)
       } catch {
-        // Base fermée à l'arrêt du daemon : il n'y a plus rien à recalculer.
+        // Database closed during daemon shutdown: nothing remains to recalculate.
       }
     }, REFRESH_DELAY_MS)
     timer.unref()
@@ -94,15 +74,12 @@ export class WorktreeStatusService {
     if (entry) entry.stale = true
   }
 
-  /**
-   * Oublie la liste au lieu de la périmer : après un arbre créé ou retiré, resservir
-   * l'ancienne montrerait ce qu'on vient de supprimer, le temps du recalcul.
-   */
+  /** Forget lists rather than mark stale after creating or removing worktrees: serving the old list during refresh would show newly deleted entries. */
   forget(projectId: string): void {
     this.cache.delete(projectId)
   }
 
-  /** Invalide le projet dont le workspace ou l'un des worktrees est `cwd`. */
+  /** Invalidates projects whose workspace or worktrees match `cwd`. */
   invalidateForCwd(cwd: string): void {
     const project = this.db
       .select({ id: projects.id })
@@ -132,13 +109,13 @@ export class WorktreeStatusService {
     if (current && !entry.stale && Date.now() - current.computedAt < TTL_MS) return current
 
     if (!entry.pending) {
-      // Le drapeau tombe au départ du calcul : une invalidation arrivée pendant qu'il
-      // tourne doit compter, elle vise un état qu'il n'a peut-être pas vu.
+      // Clear the flag when calculation starts: invalidations arriving during calculation
+      // must count because their state may not have been observed.
       entry.stale = false
       entry.pending = this.compute(project)
         .then((value) => {
           entry.value = value
-          // Hors du chemin de la réponse : un abonné lent ne retarde pas la liste.
+          // Outside the response path: slow subscribers must not delay lists.
           for (const listener of this.listeners) {
             void Promise.resolve()
               .then(() => listener(project, value))
@@ -150,13 +127,13 @@ export class WorktreeStatusService {
           entry.pending = null
         })
     }
-    // Une liste connue mais périmée part tout de suite, signalée comme telle ; le
-    // calcul lancé servira la lecture suivante.
+    // Return known stale lists immediately with their stale marker;
+    // the new calculation serves the next read.
     if (current) return { ...current, fresh: false }
     return entry.pending
   }
 
-  /** Comme `get`, mais attend le recalcul plutôt que de rendre une liste périmée. */
+  /** Like `get`, but awaits recalculation instead of returning stale lists. */
   async current(project: ProjectRow): Promise<WorktreeStatusListDto> {
     const list = await this.get(project)
     if (list.fresh) return list
@@ -172,8 +149,8 @@ export class WorktreeStatusService {
       .where(and(eq(worktrees.projectId, project.id), isNull(worktrees.removedAt)))
       .all()
 
-    // Réconciliation par chemin : ce que git liste, ce que la base connaît, l'union des
-    // deux. L'arbre principal n'est pas un chantier, il sort de la liste.
+    // Reconcile by path: union git's list with database entries.
+    // The main tree is not a work item and is excluded.
     type Unified = {
       id: string | null
       name: string
@@ -221,7 +198,7 @@ export class WorktreeStatusService {
       ...assessed[index]!,
     }))
 
-    // Les plus urgents d'abord, puis les plus récemment actifs.
+    // Most urgent first, then most recently active.
     const order = { missing: 0, dirty: 1, unmerged: 2, merged: 3 }
     result.sort(
       (a, b) =>
@@ -232,11 +209,7 @@ export class WorktreeStatusService {
     return { base, computedAt: Date.now(), fresh: true, worktrees: result }
   }
 
-  /**
-   * Les conversations tenues à un arbre : par leur cwd (`worktree_id`), ou parce
-   * qu'elles y ont écrit (voir `conversation_paths`). Le premier lien l'emporte sur le
-   * second pour une même conversation.
-   */
+  /** Conversations attached through cwd (`worktree_id`) or edits (`conversation_paths`). For the same conversation, the former takes precedence. */
   private linkedConversations(
     projectId: string,
     worktreeId: string | null,
@@ -253,7 +226,7 @@ export class WorktreeStatusService {
       for (const row of direct) linked.set(row.id, 'worktree')
     }
 
-    // `substr` plutôt que LIKE : un nom de dossier porte souvent `_`, joker de LIKE.
+    // Use substr rather than LIKE because directory names often contain underscore wildcards.
     const prefix = `${path}/`
     const edited = this.db
       .select({ id: conversationPaths.conversationId })

@@ -27,8 +27,7 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
   const [query, setQuery] = useState('')
   const list = useRef<HTMLDivElement>(null)
   const togglePin = useTogglePin()
-  // Les épingles vivaient dans le navigateur : celles d'avant sont poussées au serveur
-  // une fois, puis la clé locale disparaît pour que la migration ne rejoue pas.
+  // Migrate old browser-local pins to the server once, then remove the local key to prevent replay.
   useEffect(() => {
     if (!userId || projects.length === 0) return
     const storageKey = `sillage.pinnedProjects:${userId}`
@@ -41,9 +40,9 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
         const project = projects.find((entry) => entry.id === id)
         if (project && !project.pinned) togglePin.mutate({ id: project.id, pinned: true })
       }
-    } catch { /* Stockage facultatif. */ }
-    // Une seule passe par compte : relancer à chaque changement de liste réépinglerait.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    } catch { /* Optional storage. */ }
+    // Run once per account: list-change reruns would repin projects.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, projects.length > 0])
   const matches = projects.filter((project) => scoreMatch(project.name, query.trim()) !== null || !query.trim())
   const groups = [

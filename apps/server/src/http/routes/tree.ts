@@ -31,13 +31,11 @@ import { requireUser } from '../require-user.js'
 import { workspaceScopes } from './workspace-scopes.js'
 
 /**
- * Priorité d'agrégation sur un dossier : c'est le changement le plus notable de son
- * contenu qui le colore.
+ * Folder aggregation priority: its most significant child change sets its color.
  *
- * `ignored` n'y figure pas, et c'est le point : un dossier ignoré à l'intérieur d'un
- * dossier versionné ne dit rien du parent. Le propager remontait `ignored` jusqu'à la
- * racine dès qu'un `node_modules` existait quelque part, et un dossier réellement
- * modifié s'affichait alors en gris au lieu de sa couleur.
+ * Deliberately excludes `ignored`: an ignored child says nothing about its tracked
+ * parent. Propagating it marked everything up to the root as ignored whenever
+ * `node_modules` existed, making genuinely modified folders appear gray.
  */
 const SEVERITY: Record<Exclude<FileState, 'ignored'>, number> = {
   deleted: 1,
@@ -47,15 +45,14 @@ const SEVERITY: Record<Exclude<FileState, 'ignored'>, number> = {
 }
 
 /**
- * Arborescence du répertoire de travail d'une conversation, un niveau par requête.
+ * Conversation working-directory tree, one level per request.
  *
- * Les couleurs viennent d'un seul `git status` pour tout le dépôt : un appel par
- * fichier serait ruineux dans un dossier de plusieurs centaines d'entrées. Un dossier
- * porte l'état le plus notable de ce qu'il contient, faute de quoi il faudrait tout
- * déplier pour trouver ce qui a changé.
+ * Colors come from one repository-wide `git status`: per-file calls would be
+ * prohibitively expensive in large directories. Folders inherit their most
+ * significant child status so finding changes does not require expanding everything.
  */
 export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void {
-  // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
+  // Conversation and project scopes: see `workspace-scopes.ts`.
   for (const { base, cwdOf } of workspaceScopes) {
     app.get(`${base}/tree`, async (request): Promise<TreeListingDto> => {
       const user = requireUser(request)
@@ -71,8 +68,8 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
       for (const [file, state] of states) {
         if (state === 'ignored') continue
 
-        // Chaque ancêtre du fichier hérite de son état : `apps/web/src/x.ts` colore
-        // `apps`, `apps/web` et `apps/web/src`, quel que soit le niveau déplié.
+        // Each ancestor inherits the file status: `apps/web/src/x.ts` colors `apps`,
+        // `apps/web` and `apps/web/src`, regardless of which level is expanded.
         const parts = file.split('/')
         for (let depth = 1; depth < parts.length; depth += 1) {
           const ancestor = parts.slice(0, depth).join('/')
@@ -97,11 +94,11 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
     })
 
     /**
-     * Recherche d'un fichier par son nom, dans tout le répertoire de travail.
+     * Searches filenames throughout the working directory.
      *
-     * Séparée de l'arborescence, qui est paginée par niveau : chercher demande de
-     * traverser, et traverser à la demande depuis le client ferait une requête par
-     * dossier. Aucun état git n'est joint, la liste ne sert qu'à rejoindre un fichier.
+     * Separate from the level-paginated tree: searching needs traversal, and
+     * client-driven traversal would require one request per directory. Excludes
+     * git status because results only serve to navigate to files.
      */
     app.get(`${base}/tree/search`, async (request): Promise<TreeSearchDto> => {
       const user = requireUser(request)
@@ -113,12 +110,12 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
     })
 
     /**
-     * Manipulations d'entrées.
+     * Entry operations.
      *
-     * Rien n'est journalisé : un fichier est l'état vivant du disque, pas un événement
-     * (l'invariant I2 ne porte que sur la conversation). Ces trois routes ne font que ce
-     * que leur nom dit, et le bornage au workspace vit dans `workspace.ts`, avec la
-     * résolution de chemin qu'il protège.
+     * Nothing is journaled: files are live disk state, not events (invariant I2
+     * applies only to conversations). These three routes do exactly their named
+     * operation; workspace boundaries live in `workspace.ts` alongside the path
+     * resolution they protect.
      */
     app.post(`${base}/entries`, async (request, reply) => {
       const user = requireUser(request)
@@ -131,14 +128,12 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
     })
 
     /**
-     * Fichier déposé dans l'explorateur.
+     * Explorer file upload.
      *
-     * Un fichier par requête, et le chemin de destination en paramètre d'URL plutôt
-     * qu'en champ du formulaire : les champs d'un envoi multipart n'arrivent qu'à leur
-     * tour dans le flux, donc lire la destination avant le contenu obligerait à espérer
-     * un ordre que le navigateur ne garantit pas. Le découpage par fichier est aussi ce
-     * qui donne une progression fiable côté interface, et ce qui permet qu'un fichier
-     * refusé n'emporte pas les autres.
+     * One file per request; destination goes in the URL rather than a form field.
+     * Multipart fields arrive in stream order, so reading the destination before
+     * content would rely on ordering browsers do not guarantee. Splitting by file
+     * also provides reliable UI progress and isolates rejected files from others.
      */
     app.post(`${base}/entries/upload`, async (request, reply) => {
       const user = requireUser(request)
@@ -147,13 +142,13 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const cwd = cwdOf(ctx.db, id, user.id)
 
-      // La limite du greffon vaut pour les pièces jointes ; un fichier posé sur le
-      // disque du workspace a droit à la sienne, plus haute.
+      // The plugin limit applies to attachments; files placed on workspace disk
+      // have their own, higher limit.
       const part = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } })
       if (!part) throw badRequest('no_file', 'No file received.')
 
-      // `truncated` n'est lisible qu'une fois le flux consommé : l'écriture le consulte
-      // après coup pour distinguer un dépassement de taille d'une panne disque.
+      // `truncated` becomes readable only after consuming the stream: the writer checks
+      // it afterward to distinguish size overflows from disk failures.
       await writeUpload(cwd, path, part.file, () => part.file.truncated)
       return reply.status(201).send({ path })
     })
@@ -168,7 +163,7 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
       return reply.status(204).send()
     })
 
-    /** Copier et dupliquer : le serveur choisit le nom, voir `copyEntry`. */
+    /** Copy and duplicate: the server chooses the name; see copyEntry. */
     app.post(`${base}/entries/copy`, async (request, reply) => {
       const user = requireUser(request)
       const { id } = request.params as { id: string }
@@ -180,10 +175,10 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
     })
 
     /**
-     * Une sélection de l'explorateur en `.zip`, écrit en flux.
+     * Streams an explorer selection as `.zip`.
      *
-     * L'inventaire précède la réponse : un dépassement de plafond ou un chemin refusé
-     * répond une erreur, plutôt qu'un téléchargement coupé au milieu.
+     * Inventory precedes the response so excessive sizes and rejected paths return
+     * errors rather than downloads cut off halfway through.
      */
     app.get(`${base}/entries/archive`, async (request, reply) => {
       const user = requireUser(request)

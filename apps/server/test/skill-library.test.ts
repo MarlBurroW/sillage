@@ -18,8 +18,8 @@ test('un skill créé est un plugin Claude et une racine Codex, sans rien à moi
   const skill = create(library)
 
   const dir = join(root, 'global/sillage/skills/deploy')
-  // Pas de manifeste : Claude prend le nom du dossier, et Codex préfixerait sinon chaque
-  // skill du nom du plugin.
+  // Without manifests Claude uses directory names; Codex would otherwise prefix every
+  // skill with the plugin name.
   assert.ok(!existsSync(join(root, 'global/sillage/.claude-plugin')))
   assert.equal(readFileSync(join(dir, 'SKILL.md'), 'utf8'), '---\nname: deploy\ndescription: Use when deploying.\n---\n\nRun it.')
   assert.deepEqual(listFiles(join(root, '.staging')), [], 'la zone de transit est vidée')
@@ -29,8 +29,8 @@ test('un skill créé est un plugin Claude et une racine Codex, sans rien à moi
 
   const roots = library.layout.rootsFor('p1')
   assert.deepEqual(roots, [join(root, 'global/sillage'), join(root, 'projects/p1/projet')])
-  // Une portée vide existe quand même, `skills/` compris : sans lui, un skill ajouté
-  // en cours de session ne serait jamais vu par Claude.
+  // Even empty scopes exist including `skills/`: otherwise skills added
+  // during the session would never become visible to Claude.
   assert.ok(existsSync(join(root, 'projects/p1/projet/skills')))
 })
 
@@ -38,7 +38,7 @@ test('un nom ne vaut qu’une fois sur ce qu’une conversation voit', (t) => {
   const { library } = harness(t)
   create(library, { scope: 'project', projectId: 'p1', name: 'lint' })
 
-  // Un projet voisin peut avoir son homonyme ; le global, non, il serait visible de p1.
+  // Other projects may reuse names; global skills cannot because p1 would see them.
   assert.doesNotThrow(() => create(library, { scope: 'project', projectId: 'p2', name: 'lint' }))
   assert.throws(() => create(library, { name: 'lint' }), { code: 'skill_name_taken' })
 
@@ -102,7 +102,7 @@ test('le disque fait foi : dossier disparu, fichier illisible, nom divergent', (
   rmSync(join(root, 'global/sillage/skills/deploy'), { recursive: true })
   assert.equal(library.list(null)[0]!.problem, 'skill_missing')
   assert.throws(() => library.update(library.row(skill.id), { body: 'x' }), { code: 'skill_missing' })
-  // Supprimer reste possible, c'est la sortie d'un skill dont le dossier a disparu.
+  // Deletion remains possible to remove skills whose directories disappeared.
   library.remove(library.row(skill.id))
   assert.deepEqual(library.list(null), [])
 })
@@ -191,7 +191,7 @@ test('routes : admins pour le global, propriétaire pour un projet, invisibles p
   const own = (await call('owner', 'POST', '/api/skill-library', projectBody)).json() as LibrarySkillDto
   const hidden = (await call('owner', 'POST', '/api/skill-library', { ...projectBody, projectId: 'secret' })).json() as LibrarySkillDto
 
-  // Un projet partagé se lit par ses membres, un projet privé n'existe pas pour eux.
+  // Members can read shared projects; private projects are nonexistent to them.
   const listed = (await call('member', 'GET', '/api/skill-library?projectId=p1')).json() as { skills: LibrarySkillDto[]; enabled: boolean }
   assert.deepEqual(listed.skills.map((skill) => skill.name), ['deploy', 'lint'])
   assert.equal(listed.enabled, true)
@@ -199,14 +199,14 @@ test('routes : admins pour le global, propriétaire pour un projet, invisibles p
   assert.equal((await call('member', 'GET', `/api/skill-library/${hidden.id}`)).statusCode, 404)
   assert.equal((await call('member', 'GET', `/api/skill-library/${own.id}`)).statusCode, 200)
 
-  // Passer un skill de projet en global demande aussi le droit d'écrire le global.
+  // Moving project skills globally also requires global write access.
   const promote = { scope: 'global', projectId: null }
   assert.equal((await call('owner', 'PATCH', `/api/skill-library/${own.id}`, promote)).statusCode, 403)
   assert.equal((await call('admin', 'PATCH', `/api/skill-library/${own.id}`, promote)).statusCode, 403)
   assert.equal((await call('member', 'DELETE', `/api/skill-library/${global.id}`)).statusCode, 403)
   assert.equal((await call('admin', 'DELETE', `/api/skill-library/${global.id}`)).statusCode, 204)
 
-  // Les champs de portée vont par deux, et un nom invalide est refusé avant le disque.
+  // Scope fields come in pairs; reject invalid names before disk access.
   assert.equal((await call('owner', 'PATCH', `/api/skill-library/${own.id}`, { scope: 'global' })).statusCode, 400)
   assert.equal((await call('admin', 'POST', '/api/skill-library', { ...body, name: '../evil' })).statusCode, 400)
 })

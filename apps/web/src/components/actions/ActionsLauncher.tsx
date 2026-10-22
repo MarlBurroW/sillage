@@ -8,12 +8,9 @@ import { TooltipButton } from '../ui/Tooltip'
 import { ActionList, useActionDialogs, type ActionHandlers } from './ActionList'
 
 /**
- * Le lanceur de l'en-tête : les boutons du projet à un clic, sur toutes ses pages,
- * sans ouvrir le panneau ni quitter le fil.
- *
- * Le décompte sur l'éclair dit combien de services tournent : c'est l'information
- * qu'on oublie, un serveur de dev lancé la veille et resté en marche. Une action à
- * relire se signale aussi, par une pastille, puisqu'elle attend l'utilisateur.
+ * Header project-action launcher available everywhere without panel navigation. Lightning counts
+ * running services, including forgotten development servers; badges also identify actions awaiting
+ * user review.
  */
 export function ActionsLauncher({ projectId, conversationId, size = 'md' }: {
   projectId: string
@@ -24,7 +21,7 @@ export function ActionsLauncher({ projectId, conversationId, size = 'md' }: {
   const { data } = useActions()
   const [open, setOpen] = useState(false)
   const { handlers, create, dialogs, failure } = useActionDialogs(projectId, conversationId)
-  // Un dialogue ouvert depuis le popover le referme : il est tenu hors de lui.
+  // Dialogs opened from popovers close them, so own dialogs outside.
   const closing: ActionHandlers = {
     onReview: (action) => { setOpen(false); handlers.onReview(action) },
     onEdit: (action) => { setOpen(false); handlers.onEdit(action) },

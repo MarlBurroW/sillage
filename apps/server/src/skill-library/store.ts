@@ -40,46 +40,30 @@ import {
 import { SkillLibraryLayout } from './layout.js'
 import { assertSkillFilePath } from './validate.js'
 
-/**
- * La bibliothèque de skills : la base dit ce qui existe et où, le disque porte le
- * contenu.
- *
- * Toutes les opérations sur le disque sont synchrones, et ce n'est pas de la paresse.
- * Une écriture déplace des dossiers puis met la base à jour, et rien ne doit s'intercaler
- * entre les deux. En synchrone, deux requêtes concurrentes ne peuvent pas s'entrelacer,
- * sans verrou à tenir. Les fichiers sont petits, le coût est négligeable.
- *
- * Un CLI ne doit jamais voir un skill à moitié écrit : Codex surveille ces dossiers et
- * relit dans les secondes qui suivent. Toute écriture passe donc par la zone de transit,
- * puis par un `rename`, atomique sur un même système de fichiers.
- */
+/** Skill library: the database records existence and location, disk holds contents. All disk operations are deliberately synchronous: writes move directories then update the database without allowing concurrent requests to interleave or requiring locks. Files are small, making the cost negligible. CLIs must never see half-written skills; Codex watches directories and reloads within seconds. All writes therefore stage first, then use same-filesystem atomic `rename`. */
 
-/** Plafond de l'inventaire d'un dossier, contre un skill qui embarquerait un dépôt entier. */
+/** Directory inventory limit to guard against skills containing whole repositories. */
 const MAX_LISTED_FILES = 2000
 
-/** Où un skill entre dans la bibliothèque. `name` remplace celui du frontmatter. */
+/** Skill destination in the library; `name` overrides frontmatter. */
 export interface SkillTarget {
   scope: LibrarySkillScope
   projectId: string | null
   name?: string
 }
 
-/** D'où vient un skill installé depuis une source, et dans quelle version. */
+/** Source and version for source-installed skills. */
 export interface SkillOrigin {
   sourceId: string
   path: string
   commit: string
-  /** Empreinte du skill dans la source, avant tout renommage à l'installation. */
+  /** Source skill fingerprint before installation renaming. */
   hash: string
 }
 
-/**
- * Le catalogue des sources, vu de la bibliothèque : ce qu'il faut pour dire qu'une
- * mise à jour existe. Une interface plutôt que le service des sources lui-même, qui a
- * besoin de la bibliothèque pour installer.
- */
+/** Source catalog interface seen by the library, sufficient to detect updates. Use an interface instead of the source service itself, which depends on the library for installation. */
 export interface SourceCatalogReader {
-  /** Empreinte actuelle d'un skill dans sa source, null si le catalogue ne le connaît pas. */
+  /** Current source fingerprint, or null when the catalog does not know the skill. */
   hashOf(sourceId: string, path: string): string | null
 }
 
@@ -93,10 +77,7 @@ interface Inspection {
 export class SkillLibrary {
   readonly layout: SkillLibraryLayout
 
-  /**
-   * `onChange` reçoit le projet touché, ou null pour la portée globale, qui concerne
-   * toutes les conversations. C'est ce qui fait recharger les sessions ouvertes.
-   */
+  /** `onChange` receives the affected project or null for global changes affecting every conversation. This triggers reloads in open sessions. */
   constructor(
     private readonly db: Db,
     root: string,
@@ -106,7 +87,7 @@ export class SkillLibrary {
     this.layout = new SkillLibraryLayout(root)
   }
 
-  /** Les skills globaux, plus ceux du projet quand il est donné. */
+  /** Global skills plus project skills when a project is supplied. */
   list(projectId: string | null): LibrarySkillDto[] {
     const scope = projectId
       ? or(eq(librarySkills.scope, 'global'), eq(librarySkills.projectId, projectId))
@@ -120,12 +101,7 @@ export class SkillLibrary {
       .map((row) => this.toDto(row, this.inspect(row)))
   }
 
-  /**
-   * Les skills globaux et ceux de ces projets, pour la palette.
-   *
-   * Seul `SKILL.md` est relu, pour sa description : `list` calcule aussi l'empreinte de
-   * chaque skill installé, ce qui lit tous ses fichiers, et la palette n'en montre rien.
-   */
+  /** Global skills and skills from these projects, for the palette. Read only `SKILL.md` descriptions: `list` also fingerprints installed skills by reading all files, information the palette never displays. */
   summaries(projectIds: readonly string[]): PaletteSkillDto[] {
     const scope = projectIds.length
       ? or(eq(librarySkills.scope, 'global'), inArray(librarySkills.projectId, [...projectIds]))
@@ -142,18 +118,18 @@ export class SkillLibrary {
           const data = parseSkillMarkdown(readFileSync(join(this.dirOf(row), SKILL_MAIN_FILE), 'utf8')).data
           if (typeof data.description === 'string') description = data.description
         } catch {
-          // Un skill illisible reste trouvable par son nom ; sa page dira ce qui ne va pas.
+          // Unreadable skills remain discoverable by name; their page explains the issue.
         }
         return { id: row.id, projectId: row.projectId, name: row.name, description, enabled: row.enabled }
       })
   }
 
-  /** Les skills installés depuis une source, pour son catalogue. */
+  /** Source-installed skills for the source catalog. */
   installedFrom(sourceId: string): LibrarySkillRow[] {
     return this.db.select().from(librarySkills).where(eq(librarySkills.sourceId, sourceId)).all()
   }
 
-  /** Voir `SourceCatalogReader` : la source a-t-elle changé depuis l'installation ? */
+  /** See `SourceCatalogReader`: has the source changed since installation? */
   updateAvailable(row: LibrarySkillRow): boolean {
     if (!this.catalog || row.sourceId === null || row.sourcePath === null || row.sourceHash === null) return false
     const current = this.catalog.hashOf(row.sourceId, row.sourcePath)
@@ -181,15 +157,7 @@ export class SkillLibrary {
     return this.install(new Map([[SKILL_MAIN_FILE, Buffer.from(markdown)]]), input, userId)
   }
 
-  /**
-   * Fait entrer un skill dans la bibliothèque à partir de ses fichiers : création, import
-   * d'une archive, reprise d'un skill de la machine, duplication.
-   *
-   * Le dossier est écrit entier dans la zone de transit, puis déplacé d'un geste : Codex
-   * surveille la racine, et ne doit pas voir un `SKILL.md` sans ses fichiers annexes.
-   * Quand `target.name` remplace le nom du frontmatter, celui-ci est réécrit : le nom du
-   * dossier et celui du fichier doivent rester le même.
-   */
+  /** Adds skills from files: creation, archive import, local adoption and duplication. Write the complete directory in staging then move it atomically: Codex watches the root and must not see `SKILL.md` without supporting files. When `target.name` overrides frontmatter, rewrite it so directory and file names agree. */
   install(
     files: Map<string, Uint8Array>,
     target: SkillTarget,
@@ -222,7 +190,7 @@ export class SkillLibrary {
       sourcePath: origin?.path ?? null,
       sourceCommit: origin?.commit ?? null,
       sourceHash: origin?.hash ?? null,
-      // Ce qui a été écrit, renommage compris : c'est la référence d'une modification locale.
+      // Written contents including renaming: the baseline for local modification checks.
       installedHash: origin ? contentHash(dir, listFiles(dir)) : null,
       createdBy: userId,
       createdAt: now,
@@ -233,13 +201,7 @@ export class SkillLibrary {
     return this.toDto(row, this.inspect(row))
   }
 
-  /**
-   * Remplace le contenu d'un skill installé par la version de sa source. Le nom reste
-   * celui de la bibliothèque : un skill renommé à l'installation le reste.
-   *
-   * Le dossier est remplacé d'un geste, comme à l'installation. Une modification locale
-   * est écrasée : c'est à l'interface de l'annoncer avant.
-   */
+  /** Replaces installed skill contents with the source version while retaining library names, including installation-time renames. Replace directories atomically as during installation. Local modifications are overwritten; the interface must disclose this beforehand. */
   applyUpdate(row: LibrarySkillRow, files: Map<string, Uint8Array>, origin: SkillOrigin): LibrarySkillDto {
     const dir = this.existingDir(row)
     const { text, data } = readMain(files)
@@ -263,30 +225,23 @@ export class SkillLibrary {
     return this.toDto(next, this.inspect(next))
   }
 
-  /**
-   * Ce que deviendrait le dossier d'un skill avec ces fichiers, écrit à part : de quoi
-   * montrer le diff d'une mise à jour sans rien toucher. À effacer par l'appelant.
-   */
+  /** Stages the skill directory these files would produce to show update diffs without changing anything. Callers must delete it. */
   stageUpdate(row: LibrarySkillRow, files: Map<string, Uint8Array>): string {
     const { text, data } = readMain(files)
     return this.stageFiles(files, row.name, text, data)
   }
 
-  /** Le dossier actuel d'un skill, pour le comparer à une version de sa source. */
+  /** Current skill directory for comparison with a source version. */
   directoryOf(row: LibrarySkillRow): string {
     return this.existingDir(row)
   }
 
-  /** Une zone de transit vide, à effacer par l'appelant. */
+  /** Empty staging area, to be deleted by the caller. */
   scratch(): string {
     return this.stage()
   }
 
-  /**
-   * Écrit les fichiers dans la zone de transit. Quand le nom du skill diffère de celui
-   * du frontmatter, celui-ci est réécrit : le nom du dossier et celui du fichier doivent
-   * rester le même.
-   */
+  /** Writes staged files. If the skill name differs from frontmatter, rewrite it to keep the directory and file names consistent. */
   private stageFiles(
     files: Map<string, Uint8Array>,
     name: string,
@@ -303,12 +258,12 @@ export class SkillLibrary {
     return staging
   }
 
-  /** Une copie sous un autre nom, ou dans une autre portée. La provenance ne suit pas. */
+  /** Copy under another name or scope; provenance is not inherited. */
   duplicate(row: LibrarySkillRow, target: SkillTarget, userId: string): LibrarySkillDto {
     return this.install(this.readAll(row), target, userId)
   }
 
-  /** Copie un skill trouvé sur la machine. L'original reste en place, intact. */
+  /** Copies a skill found on the machine, leaving the original intact. */
   adopt(dir: string, target: SkillTarget, userId: string): LibrarySkillDto {
     return this.install(readDirectory(dir), target, userId)
   }
@@ -317,10 +272,7 @@ export class SkillLibrary {
     return writeSkillArchive(row.name, this.readAll(row))
   }
 
-  /**
-   * Un fichier annexe, en texte quand il s'édite. Binaire ou trop lourd pour l'éditeur,
-   * il est décrit sans son contenu.
-   */
+  /** Supporting file as text when editable; binary or oversized files are described without content. */
   readFile(row: LibrarySkillRow, path: string): LibrarySkillFileDto {
     const file = join(this.existingDir(row), assertSkillFilePath(path, { allowMain: true }))
     if (!existsSync(file) || !lstatSync(file).isFile()) {
@@ -339,7 +291,7 @@ export class SkillLibrary {
     this.touch(row)
   }
 
-  /** Supprime un fichier, puis les dossiers que son départ laisse vides. */
+  /** Deletes a file, then directories left empty by its removal. */
   deleteFile(row: LibrarySkillRow, path: string): void {
     const dir = this.existingDir(row)
     const file = join(dir, assertSkillFilePath(path))
@@ -353,11 +305,7 @@ export class SkillLibrary {
     this.touch(row)
   }
 
-  /**
-   * Contenu, puis emplacement : renommer, changer de portée et (dés)activer sont tous un
-   * déplacement de dossier. Tout est vérifié avant la première écriture, pour qu'un refus
-   * ne laisse pas un skill réécrit mais resté à son ancienne place.
-   */
+  /** Content then location: renaming, scope changes and enabling/disabling all move directories. Validate everything before the first write so rejections cannot leave rewritten skills in old locations. */
   update(row: LibrarySkillRow, patch: UpdateLibrarySkillBody): LibrarySkillDto {
     const next: LibrarySkillRow = {
       ...row,
@@ -400,8 +348,8 @@ export class SkillLibrary {
 
   remove(row: LibrarySkillRow): void {
     const dir = this.dirOf(row)
-    // Sorti des racines d'un seul geste, puis effacé : un CLI qui relit entre les deux
-    // ne trouve pas un dossier à moitié vidé.
+    // Move outside roots atomically before deleting so CLIs reloading between steps
+    // never encounter partially emptied directories.
     if (existsSync(dir)) {
       const trash = join(this.layout.stagingDir(), randomUUID())
       mkdirSync(this.layout.stagingDir(), { recursive: true })
@@ -412,7 +360,7 @@ export class SkillLibrary {
     this.onChange(row.projectId)
   }
 
-  /** Les dossiers d'un projet qu'on supprime, à appeler avant la cascade SQL. */
+  /** Project directories to delete before SQL cascades. */
   removeProject(projectId: string): void {
     const disabled = this.db
       .select({ id: librarySkills.id })
@@ -435,7 +383,7 @@ export class SkillLibrary {
     return readDirectory(this.existingDir(row))
   }
 
-  /** Une écriture de fichier vaut modification du skill, pour la liste comme pour les sessions. */
+  /** File writes count as skill modifications for lists and sessions. */
   private touch(row: LibrarySkillRow): void {
     this.db.update(librarySkills).set({ updatedAt: Date.now() }).where(eq(librarySkills.id, row.id)).run()
     this.onChange(row.projectId)
@@ -447,15 +395,7 @@ export class SkillLibrary {
       : this.layout.disabledDir(row.id)
   }
 
-  /**
-   * Un nom ne vaut qu'une fois sur ce qu'une conversation voit, soit le global plus son
-   * projet. Un skill global entre en collision avec tous les projets, un skill de projet
-   * avec le global et son seul projet. Les skills désactivés comptent : les réactiver ne
-   * doit pas créer de doublon.
-   *
-   * Côté Claude, deux homonymes vivraient sous deux préfixes, mais l'alias `/nom`
-   * deviendrait ambigu. Côté Codex, les deux apparaîtraient.
-   */
+  /** Names must be unique across what a conversation sees: global plus project. Global skills collide with every project; project skills with global and their own project only. Disabled skills also count so reenabling cannot create duplicates. Claude would expose duplicates under different prefixes but make `/nom` ambiguous; Codex would list both. */
   private assertFreeName(
     name: string,
     scope: LibrarySkillScope,
@@ -482,7 +422,7 @@ export class SkillLibrary {
     }
   }
 
-  /** Un dossier déposé à la main, que la base ne connaît pas, ne doit pas être écrasé. */
+  /** Never overwrite manually added directories unknown to the database. */
   private assertFreeDirectory(dir: string, name: string): void {
     if (existsSync(dir)) {
       throw conflict('skill_directory_exists', 'A folder named {name} already exists in the library.', {
@@ -544,8 +484,8 @@ export class SkillLibrary {
               commit: row.sourceCommit,
             }
           : null,
-      // Calculée seulement pour un skill installé : sans empreinte de référence, il n'y a
-      // rien à comparer, et lire tous les fichiers à chaque liste serait pour rien.
+      // Calculate only for installed skills: without baseline fingerprints there is
+      // nothing to compare, and reading every file for every list would be wasted work.
       locallyModified:
         row.installedHash !== null && problem !== 'skill_missing'
           ? contentHash(inspection.dir, files) !== row.installedHash
@@ -559,12 +499,7 @@ export class SkillLibrary {
   }
 }
 
-/**
- * Fichiers d'un skill, en chemins relatifs à séparateur `/`, triés. Les liens
- * symboliques sont ignorés : un skill ne doit rien faire lire hors de son dossier.
- * `.git` aussi : un dépôt dont la racine est un skill ne doit pas apporter son
- * historique dans la bibliothèque.
- */
+/** Sorted skill file paths with `/` separators. Ignore symlinks to prevent reading outside skill directories, and `.git` so skills at repository roots do not import repository history into the library. */
 export function listFiles(dir: string): string[] {
   const files: string[] = []
   const walk = (relative: string): void => {
@@ -581,10 +516,7 @@ export function listFiles(dir: string): string[] {
   return files.sort()
 }
 
-/**
- * Le `SKILL.md` d'un jeu de fichiers, lu et vérifié : un skill qui entre dans la
- * bibliothèque doit au moins avoir une description, qui est ce que les CLI listent.
- */
+/** Reads and validates `SKILL.md` from a file set: library skills must at least have descriptions, which CLIs display in their lists. */
 function readMain(files: Map<string, Uint8Array>): { text: string; data: Record<string, unknown> } {
   const main = files.get(SKILL_MAIN_FILE)
   if (!main) throw badRequest('skill_main_missing', 'The skill has no SKILL.md.')
@@ -601,20 +533,17 @@ function readMain(files: Map<string, Uint8Array>): { text: string; data: Record<
   return { text, data }
 }
 
-/** Les fichiers d'un dossier de skill, liens symboliques exclus comme dans `listFiles`. */
+/** Skill-directory files, excluding symlinks as in `listFiles`. */
 export function readDirectory(dir: string): Map<string, Uint8Array> {
   return new Map(listFiles(dir).map((path) => [path, readFileSync(join(dir, path))]))
 }
 
-/** Le test de Git : un octet nul dans les premiers kilo-octets signe un binaire. */
+/** Git's binary check: null bytes in the first few kilobytes identify binary files. */
 function isText(buffer: Buffer): boolean {
   return !buffer.subarray(0, 8000).includes(0)
 }
 
-/**
- * Empreinte du contenu d'un skill : chemins et contenus, indépendante de l'ordre de
- * lecture et des dates de modification, que la copie depuis une source ne conserve pas.
- */
+/** Skill content fingerprint over paths and contents, independent of read order and modification times, which source copies do not preserve. */
 export function contentHash(dir: string, files: string[]): string {
   const hash = createHash('sha256')
   for (const file of files) {

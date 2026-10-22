@@ -22,7 +22,7 @@ async function adapterFixture(t: TestContext) {
   return { cwd, rpc, adapter: new GrokAdapter(config) }
 }
 
-/** Journal réduit à ce que `forkCut` en lit. */
+/** Journal reduced to fields read by `forkCut`. */
 function logWithTurns(kept: number, total: number): EventLog {
   return { countByType: () => ({ kept, total }) } as unknown as EventLog
 }

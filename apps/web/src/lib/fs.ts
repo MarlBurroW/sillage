@@ -11,14 +11,14 @@ export function useDirectoryListing(path: string | null, showHidden: boolean) {
       if (showHidden) params.set('showHidden', 'true')
       return api.get<FsListingDto>(`/api/fs/browse?${params}`)
     },
-    // Le disque bouge sous nos pieds : pas de cache long, mais on garde l'ancien
-    // listing affiché pendant le chargement du suivant pour éviter le clignotement.
+    // Disk contents change independently: avoid long caching but retain the previous listing during
+    // the next load to prevent flashing.
     staleTime: 5_000,
     placeholderData: (previous) => previous,
   })
 }
 
-/** Crée un dossier dans `path` et invalide tous les listings ouverts pour le refléter. */
+/** Create a directory in `path` and invalidate all open listings to reflect it. */
 export function useCreateDirectory() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -29,8 +29,8 @@ export function useCreateDirectory() {
 }
 
 /**
- * Découpe un chemin absolu en segments cliquables pour le fil d'Ariane. Un chemin Windows
- * (`C:\Users\…`) commence par son lecteur, qui tient lieu de racine.
+ * Split absolute paths into clickable breadcrumbs. Windows paths (`C:\Users\…`) start with their
+ * drive as the root.
  */
 export function breadcrumbSegments(path: string): { label: string; path: string }[] {
   const drive = /^([A-Za-z]:)[\\/]/.exec(path)

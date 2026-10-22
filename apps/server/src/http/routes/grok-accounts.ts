@@ -12,13 +12,7 @@ import type { GrokAccountStore } from '../../grok-accounts/store.js'
 import { HttpError, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-/**
- * Comptes Grok supplémentaires de l'utilisateur courant.
- *
- * Même contrat que les comptes Codex : par compte Sillage, et la connexion est menée par
- * Grok dans le home du compte. Les routes ne transportent qu'une clé API à l'aller,
- * jamais rien au retour.
- */
+/** Additional Grok accounts belonging to the current user. Same contract as Codex accounts: per Sillage account, with Grok authenticating inside the account home. Routes send API keys one way and never return secrets. */
 export function registerGrokAccountRoutes(
   app: FastifyInstance,
   accounts: GrokAccountStore,
@@ -31,7 +25,7 @@ export function registerGrokAccountRoutes(
     if (!account) throw notFound('grok_account_not_found', 'Unknown Grok account.')
     return account
   }
-  /** Ce que Grok a refusé, tel quel : c'est lui qui sait pourquoi. */
+  /** Preserve Grok's rejection verbatim: it knows the reason. */
   const grokRefused = (err: unknown) =>
     new HttpError(502, 'grok_login_failed', 'Grok could not sign in: {error}.', {
       error: err instanceof Error ? err.message : String(err),
@@ -69,10 +63,7 @@ export function registerGrokAccountRoutes(
     reply.status(204)
   })
 
-  /**
-   * Lance la connexion. Par code d'appareil, la réponse porte l'URL et le code, et la
-   * suite se lit par `GET …/login` ; par clé API, tout est fait au retour.
-   */
+  /** Starts login. Device-code responses include the URL and code; progress is read through `GET …/login`. API-key login is complete when this returns. */
   app.post('/api/grok-accounts/:id/login', async (request): Promise<GrokLoginStatusDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -102,7 +93,7 @@ export function registerGrokAccountRoutes(
     const { id } = request.params as { id: string }
     const account = owned(user.id, id)
     try {
-      // Une attente en cours s'annule ; un home connecté se déconnecte.
+      // Cancel pending logins; log out homes that are already authenticated.
       if (login.status(id).state === 'pending') await login.cancel(id)
       else if (account.status === 'ready') await login.logout(id)
     } catch (err) {

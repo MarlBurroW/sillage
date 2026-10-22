@@ -32,7 +32,7 @@ export function ServicesPage() {
   const scannedAt = query.data?.scannedAt ?? Date.now()
   const services = query.data?.services ?? []
   const apps = query.data?.apps ?? []
-  // Le filtre de projet vaut pour toutes les listes : il se construit sur leur réunion.
+  // Project filtering applies to every list, so build it from their union.
   const owners = [...apps, ...services]
   const projects = [...new Map(owners.filter((entry) => entry.projectId)
     .map((entry) => [entry.projectId!, entry.projectName!])).entries()]
@@ -43,18 +43,18 @@ export function ServicesPage() {
     ...projects.map(([value, label]) => ({ value, label })),
     ...(owners.some((entry) => !entry.projectId) ? [{ value: 'unknown', label: t('services.noProject') }] : []),
   ]
-  // Un filtre reste effaçable quand le dernier service de ce projet vient de s'arrêter.
+  // Keep filters clearable when a project's last service has just stopped.
   if (!options.some((option) => option.value === project)) options.push({ value: project, label: t('services.previousProject') })
 
   const filteredApps = apps.filter(inProject)
-  // Une commande suit son lanceur dans le filtre : c'est lui qui porte le projet à l'écran.
+  // Commands follow their launcher in filtering: it carries the displayed project.
   const launchers = services.filter((entry) => entry.kind === 'launcher' && inProject(entry))
   const byLauncher = new Map<number, ServiceDto[]>()
   for (const entry of services) {
     if (entry.launcherPid === null) continue
     byLauncher.set(entry.launcherPid, [...(byLauncher.get(entry.launcherPid) ?? []), entry])
   }
-  // Une commande dont le lanceur n'est pas visible garde sa place, sous son propre projet.
+  // Commands whose launcher is invisible keep their place under their own project.
   const stray = services.filter((entry) => entry.kind === 'command' && entry.launcherPid !== null
     && !services.some((launcher) => launcher.pid === entry.launcherPid) && inProject(entry))
   const detached = services.filter((entry) => entry.kind === 'detached' && inProject(entry))
@@ -157,7 +157,7 @@ function useDuration(scannedAt: number) {
   }
 }
 
-/** Projet, puis conversation ou terminal d'origine, en une ligne. */
+/** Project, then source conversation or terminal, on one line. */
 function Attribution({ entry }: { entry: Attributed }) {
   const t = useTranslate()
   return (
@@ -181,7 +181,7 @@ function Attribution({ entry }: { entry: Attributed }) {
   )
 }
 
-/** Un agent ou un terminal, avec ce qu'il a lancé ; ses outils (serveurs MCP) tiennent en un mot. */
+/** An agent or terminal with its launched work; tools (MCP servers) fit in one word. */
 function LauncherGroup({ launcher, entries, scannedAt, busy, onStop }: {
   launcher: ServiceDto
   entries: ServiceDto[]
@@ -199,7 +199,7 @@ function LauncherGroup({ launcher, entries, scannedAt, busy, onStop }: {
   const helperNames = helpers.map((helper) => helper.command ?? helper.name).join('\n')
   const kind = t(agent ? 'services.launcher.agent' : launcher.origin === 'terminal' ? 'services.launcher.terminal' : 'services.unknownOrigin')
   return (
-    // Un repère en bordure gauche, à angles droits, relie le lanceur à ses commandes.
+    // A square-cornered left-edge marker connects the launcher to its commands.
     <section aria-label={`${kind} ${launcher.conversationTitle ?? launcher.projectName ?? launcher.name}`} className="flex flex-col gap-2 border-l-2 border-line-strong pl-3 md:pl-4">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
         <span className="flex items-center gap-1.5 text-ink-faint">
@@ -226,7 +226,7 @@ function LauncherGroup({ launcher, entries, scannedAt, busy, onStop }: {
   )
 }
 
-/** Une commande et tout ce qui en descend, ou un processus détaché. */
+/** A command and all its descendants, or a detached process. */
 function ProcessRow({ entry, attributed, scannedAt, busy, onStop }: {
   entry: ServiceDto
   attributed?: boolean
@@ -268,7 +268,7 @@ function ProcessRow({ entry, attributed, scannedAt, busy, onStop }: {
   )
 }
 
-/** Pastille et libellé de l'état systemd ; un état inconnu se montre tel quel. */
+/** systemd state badge and label; unknown states display verbatim. */
 const APP_STATES: Record<string, { key: MessageKey; dot: string }> = {
   active: { key: 'services.app.state.active', dot: 'bg-positive' },
   activating: { key: 'services.app.state.activating', dot: 'bg-caution' },

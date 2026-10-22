@@ -9,22 +9,22 @@ import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@sillage/protocol'
 import { HttpError, notFound } from './http/errors.js'
 
 /**
- * Répertoire de travail d'une conversation, et bornage des chemins qui s'y rapportent.
+ * Conversation working directory and boundaries for paths inside it.
  *
- * Extrait du gestionnaire de sessions parce que le panneau latéral en a besoin sans
- * qu'aucune session ne tourne : lire l'arborescence ne demande pas d'agent démarré.
+ * Extracted from the session manager because the side panel needs it even when
+ * no session is running: browsing the tree does not require a running agent.
  */
 
-/** Un niveau par requête : un `node_modules` déplié d'un coup pèse des mégaoctets. */
+/** One level per request: expanding an entire `node_modules` takes megabytes. */
 const MAX_ENTRIES = 1000
 
 /**
- * Répertoire de travail d'une conversation que ce compte a le droit de voir.
+ * Working directory of a conversation this account is allowed to view.
  *
- * Le contrôle de visibilité est ici, avec la résolution du chemin, plutôt que recopié
- * dans chaque route du panneau : trois copies, c'est trois endroits où l'oublier.
- * Un accès refusé répond « introuvable », comme le reste de l'API : distinguer les
- * deux dirait à un tiers qu'une conversation existe.
+ * Visibility is checked alongside path resolution instead of being copied into
+ * every panel route: three copies mean three places to forget it. Denied access
+ * returns 'not found', like the rest of the API: distinguishing the two would
+ * reveal to a third party that a conversation exists.
  */
 export function conversationWorkspace(db: Db, conversationId: string, userId: string): string {
   const row = db
@@ -46,8 +46,8 @@ export function conversationWorkspace(db: Db, conversationId: string, userId: st
 }
 
 /**
- * Workspace d'un projet que ce compte a le droit de voir. Pendant de
- * `conversationWorkspace` pour le panneau en vue projet, où aucun fil n'existe.
+ * Workspace of a project this account is allowed to view. Counterpart to
+ * `conversationWorkspace` for the project panel, where no conversation exists.
  */
 export function projectWorkspace(db: Db, projectId: string, userId: string): string {
   const row = db.select().from(projects).where(eq(projects.id, projectId)).get()
@@ -58,14 +58,13 @@ export function projectWorkspace(db: Db, projectId: string, userId: string): str
 }
 
 /**
- * Dossier visé par le brouillon d'une conversation : le worktree s'il en désigne un,
- * le workspace du projet sinon.
+ * Directory targeted by a conversation draft: its worktree when specified,
+ * otherwise the project workspace.
  *
- * Même politique qu'une conversation existante (`resolveConversationCwd`) : un
- * worktree retiré retombe sur le workspace au lieu d'échouer, pour que les mentions
- * `@`, les commandes `/` et la création du fil répondent tous depuis le même dossier.
- * Un worktree d'un autre projet, lui, est introuvable : l'identifiant ne doit pas
- * servir à lire ailleurs.
+ * Uses the same policy as existing conversations (`resolveConversationCwd`): a
+ * removed worktree falls back to the workspace so `@` mentions, `/` commands and
+ * conversation creation all resolve from the same directory. A worktree belonging
+ * to another project is not found: its identifier must not grant access elsewhere.
  */
 export function projectCwd(
   db: Db,
@@ -99,10 +98,10 @@ export function resolveConversationCwd(db: Db, conversation: Pick<ConversationRo
 }
 
 /**
- * Chemin absolu d'une entrée du workspace, refusé s'il en sort.
+ * Absolute path to a workspace entry, rejected if it escapes the workspace.
  *
- * Sans ce bornage, un `..` dans un chemin donnerait à quiconque a accès à un projet
- * partagé un navigateur de fichiers sur toute la machine.
+ * Without this boundary, `..` in a path would give anyone with access to a shared
+ * project a file browser for the entire machine.
  */
 export function resolveInside(root: string, relativePath: string): string {
   const absolute = resolve(root, relativePath)
@@ -118,7 +117,7 @@ export function resolveInside(root: string, relativePath: string): string {
   return absolute
 }
 
-/** Comme `resolveInside`, mais renvoie aussi le nom, pour les mentions `@`. */
+/** Like `resolveInside`, but also returns the name for `@` mentions. */
 export function resolveMention(
   root: string,
   relativePath: string,
@@ -128,11 +127,11 @@ export function resolveMention(
 }
 
 /**
- * Refuse tout chemin qui traverse `.git`.
+ * Rejects any path passing through `.git`.
  *
- * L'explorateur masque déjà ce dossier, mais l'interface n'est pas le garde-fou :
- * renommer ou supprimer le stockage de git par une requête directe détruirait
- * l'historique du dépôt, sans que rien ne soit récupérable.
+ * The explorer already hides this directory, but the interface is not the
+ * safeguard: renaming or deleting git storage through a direct request would
+ * destroy the repository history with no way to recover it.
  */
 export function refuseGitInternals(relativePath: string): void {
   if (relativePath.split('/').includes('.git')) {
@@ -147,7 +146,7 @@ async function exists(absolute: string): Promise<boolean> {
   )
 }
 
-/** Crée un fichier vide ou un dossier. Refuse d'écraser ce qui est déjà là. */
+/** Creates an empty file or directory. Refuses to overwrite an existing entry. */
 export async function createEntry(
   root: string,
   parent: string,
@@ -164,8 +163,8 @@ export async function createEntry(
 
   try {
     if (kind === 'directory') await mkdir(absolute, { recursive: true })
-    // `wx` échoue si le fichier apparaît entre la vérification et l'écriture : le
-    // contrôle ci-dessus renseigne, celui-ci décide.
+    // `wx` fails if the file appears between checking and writing:
+    // the check above informs the caller; this one enforces the rule.
     else await writeFile(absolute, '', { flag: 'wx' })
   } catch (err) {
     throw new HttpError(400, 'create_failed', 'Could not create {name}: {reason}.', {
@@ -178,16 +177,16 @@ export async function createEntry(
 }
 
 /**
- * Écrit un fichier déposé dans l'explorateur, en flux.
+ * Streams a file uploaded through the explorer.
  *
- * Le contenu n'est jamais assemblé en mémoire : un dépôt de cent mégaoctets tiendrait
- * dans le tas du serveur, dix simultanés non. Les dossiers manquants sont créés, pour
- * qu'un dossier entier lâché sur l'arborescence arrive avec sa structure.
+ * Content is never assembled in memory: a hundred-megabyte upload would fit in
+ * the server heap, but ten simultaneous uploads would not. Missing directories
+ * are created so dropping an entire folder preserves its structure.
  *
- * `wx` refuse un fichier déjà là : écraser silencieusement le travail en cours de
- * l'agent parce qu'un glissement a raté sa cible est une perte qu'on ne remarque pas.
- * La vérification est laissée au système de fichiers plutôt qu'à un `stat` préalable,
- * qui laisserait une fenêtre entre le contrôle et l'écriture.
+ * `wx` rejects existing files: silently overwriting an agent's work because a
+ * drop missed its target would cause an unnoticed loss. The filesystem enforces
+ * this instead of a preliminary `stat`, which would leave a race between checking
+ * and writing.
  */
 export async function writeUpload(
   root: string,
@@ -200,9 +199,9 @@ export async function writeUpload(
   const absolute = resolveInside(root, relativePath)
   await mkdir(dirname(absolute), { recursive: true })
 
-  // Code distinct de celui des pièces jointes : les deux plafonds n'ont ni la même
-  // valeur ni le même ordre de grandeur, et une seule phrase pour les deux dirait
-  // « maximum 10240 Mo » là où on attend des gigaoctets.
+  // Uses a different code from attachments: the two limits differ in both
+  // value and scale, and sharing one message would say
+  // 'maximum 10240 MB' where gigabytes are expected.
   const tooLarge = (): never => {
     throw new HttpError(413, 'upload_too_large', 'File is too large (maximum {maxGb} GB).', {
       maxGb: Math.round(MAX_UPLOAD_BYTES / 1024 / 1024 / 1024),
@@ -212,8 +211,8 @@ export async function writeUpload(
   try {
     await pipeline(content, createWriteStream(absolute, { flags: 'wx' }))
 
-    // Le flux multipart s'arrête net à la limite sans toujours signaler d'erreur : sans
-    // ce contrôle, un fichier trop gros était écrit tronqué et annoncé comme reçu.
+    // The multipart stream stops at the limit without always reporting an error:
+    // without this check, an oversized file was truncated and reported as received.
     if (onTooLarge()) {
       await unlink(absolute).catch(() => {})
       tooLarge()
@@ -221,9 +220,9 @@ export async function writeUpload(
   } catch (err) {
     if (err instanceof HttpError) throw err
 
-    // Un fichier partiel est pire que pas de fichier : l'arborescence en montrerait un
-    // d'apparence normale, tronqué au milieu. Sauf si c'est l'ouverture qui a échoué,
-    // auquel cas il appartient à quelqu'un d'autre et ne doit surtout pas être retiré.
+    // A partial file is worse than no file: the tree would show an apparently
+    // normal entry truncated halfway through. Unless opening failed, in which
+    // case it belongs to someone else and must never be removed.
     const existed = (err as NodeJS.ErrnoException).code === 'EEXIST'
     if (!existed) await unlink(absolute).catch(() => {})
 
@@ -239,10 +238,10 @@ export async function writeUpload(
 }
 
 /**
- * Renomme ou déplace une entrée : c'est la même opération, seul le chemin change.
+ * Renames or moves an entry: both are the same operation with a different path.
  *
- * Le dossier de destination est créé au besoin, pour qu'un déplacement vers un chemin
- * profond ne demande pas de le préparer d'abord.
+ * Creates the destination directory when needed so moving to a deeply nested
+ * path does not require preparing it first.
  */
 export async function moveEntry(root: string, from: string, to: string): Promise<void> {
   refuseGitInternals(from)
@@ -252,8 +251,8 @@ export async function moveEntry(root: string, from: string, to: string): Promise
   const destination = resolveInside(root, to)
   if (source === destination) return
 
-  // Déplacer un dossier dans lui-même détruirait son contenu : `rename` le refuse sur
-  // certains systèmes et l'accepte sur d'autres, donc on tranche ici.
+  // Moving a directory into itself would destroy its contents: `rename` rejects
+  // it on some systems and accepts it on others, so enforce the rule here.
   if (destination.startsWith(`${source}/`)) {
     throw new HttpError(400, 'move_into_self', 'A folder cannot be moved into itself.')
   }
@@ -274,11 +273,11 @@ export async function moveEntry(root: string, from: string, to: string): Promise
 }
 
 /**
- * Comme `resolveInside`, mais vérifié aussi sur le chemin réel.
+ * Like `resolveInside`, but also checks the real path.
  *
- * Le bornage lexical ne voit pas les liens : `lien/secret` reste « dans » le workspace
- * même quand `lien` pointe sur `/etc`. Ce qui lit le contenu d'une entrée pour le
- * recopier ou l'emporter doit donc regarder où elle mène vraiment.
+ * Lexical boundaries cannot see symlinks: `link/secret` stays 'inside' the workspace
+ * even if `link` points to `/etc`. Anything reading an entry to copy or export its
+ * contents must therefore check where it actually leads.
  */
 export async function resolveRealInside(root: string, relativePath: string): Promise<string> {
   const absolute = resolveInside(root, relativePath)
@@ -288,26 +287,26 @@ export async function resolveRealInside(root: string, relativePath: string): Pro
   return absolute
 }
 
-/** Nom proposé à la n-ième collision : `nom copy.ext`, puis `nom copy 2.ext`… */
+/** Suggested name at the nth collision: `nom copy.ext`, then `nom copy 2.ext`… */
 function copyName(name: string, isDirectory: boolean, attempt: number): string {
   if (attempt === 0) return name
-  // Un fichier caché sans extension (`.env`) n'a pas de point à garder pour la fin.
+  // An extensionless hidden file (`.env`) has no dot to preserve at the end.
   const dot = isDirectory ? -1 : name.lastIndexOf('.')
   const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
   return `${stem} copy${attempt > 1 ? ` ${attempt}` : ''}${extension}`
 }
 
-/** Au-delà, la collision n'est plus un accident et chercher plus loin ne rapporte rien. */
+/** Beyond this point, collisions are no accident and further searching is pointless. */
 const MAX_COPY_ATTEMPTS = 100
 
 /**
- * Copie une entrée dans un dossier, dossier compris avec son contenu, et renvoie le
- * chemin créé.
+ * Copies an entry into a directory, including a directory's contents, and returns
+ * the created path.
  *
- * Le nom n'est jamais celui d'une entrée existante : coller là où le même nom existe
- * déjà est le cas le plus courant (dupliquer sur place), et écraser n'est jamais ce
- * qu'on voulait. Les liens symboliques du contenu sont recopiés tels quels plutôt que
- * suivis : les suivre ferait entrer dans le workspace ce vers quoi ils pointent.
+ * The name never matches an existing entry: pasting where that name already exists
+ * is the common case (duplicating in place), and overwriting is never intended.
+ * Symlinks inside the entry are copied as-is rather than followed, which would
+ * bring their targets into the workspace.
  */
 export async function copyEntry(root: string, from: string, toParent: string): Promise<string> {
   refuseGitInternals(from)
@@ -332,16 +331,16 @@ export async function copyEntry(root: string, from: string, toParent: string): P
     try {
       await cp(source, destination, {
         recursive: true,
-        // Le nom vient d'être trouvé libre, mais rien ne garantit qu'il le reste : la
-        // copie refuse plutôt que d'écraser ce qui serait apparu entre-temps.
+        // The name was just found to be free, but may not remain so:
+        // copying refuses to overwrite anything that appeared in the meantime.
         errorOnExist: true,
         force: false,
         verbatimSymlinks: true,
       })
     } catch (err) {
-      // Une copie à moitié faite serait prise pour une copie réussie. Le nom était
-      // libre à l'instant : ce qui s'y trouve vient de cette copie, sauf si c'est
-      // justement la collision qui l'a fait échouer.
+      // A partial copy would look successful. The name was free just now, so
+      // anything there comes from this copy, unless a collision is precisely
+      // what caused it to fail.
       if ((err as NodeJS.ErrnoException).code !== 'ERR_FS_CP_EEXIST') {
         await rm(destination, { recursive: true, force: true }).catch(() => {})
       }
@@ -357,7 +356,7 @@ export async function copyEntry(root: string, from: string, toParent: string): P
   throw new HttpError(409, 'entry_exists', '{name} already exists.', { name })
 }
 
-/** Supprime une entrée, dossier compris avec son contenu. */
+/** Deletes an entry, including a directory and its contents. */
 export async function deleteEntry(root: string, relativePath: string): Promise<void> {
   refuseGitInternals(relativePath)
 
@@ -378,18 +377,18 @@ export async function deleteEntry(root: string, relativePath: string): Promise<v
 }
 
 /**
- * Un niveau de l'arborescence, dossiers d'abord puis fichiers, chacun trié par nom.
+ * One level of the tree, directories first then files, each sorted by name.
  *
- * Les liens symboliques ne sont pas suivis (`withFileTypes` renvoie leur propre type) :
- * un lien vers la racine ferait boucler l'explorateur, et le suivre contournerait le
- * bornage au workspace.
+ * Symlinks are not followed (`withFileTypes` returns their own type): a link to
+ * the root would make the explorer loop, and following it would bypass the
+ * workspace boundary.
  */
 /**
- * Dossiers écartés de la recherche.
+ * Directories excluded from search.
  *
- * Ils ne sont pas cachés de l'explorateur, où les déplier est un choix ; les traverser
- * pour trouver un fichier est autre chose : `node_modules` seul pèse plus que tout le
- * reste du dépôt réuni, et ses résultats ne sont jamais ceux qu'on cherche.
+ * They remain visible in the explorer, where expanding them is deliberate;
+ * traversing them to find a file is different: `node_modules` alone outweighs
+ * the rest of the repository, and its results are never what we are looking for.
  */
 const SEARCH_SKIP = new Set([
   '.git',
@@ -407,21 +406,21 @@ const SEARCH_SKIP = new Set([
   'coverage',
 ])
 
-/** Au-delà, la liste ne se lit plus et la marche coûte plus qu'elle ne rapporte. */
+/** Beyond this limit the list is unreadable and traversal costs more than it yields. */
 const SEARCH_MAX_RESULTS = 80
 const SEARCH_MAX_VISITED = 30_000
 
 /**
- * Recherche un fichier par son nom dans tout le répertoire de travail.
+ * Searches for a file by name throughout the working directory.
  *
- * Sous-chaîne insensible à la casse et aux accents, pas de correspondance floue : sur
- * une arborescence de projet, le flou remonte surtout du bruit, et on tape presque
- * toujours un morceau exact du nom. Les correspondances sur le nom passent avant celles
- * sur le chemin, et les plus courtes avant les plus longues, parce que `panel.ts` est
- * plus probablement la cible que `panel-transition-helpers.ts`.
+ * Uses case- and accent-insensitive substring matching rather than fuzzy matching:
+ * in a project tree, fuzzy matching mostly adds noise, and users almost always
+ * enter an exact part of the name. Name matches precede path matches, and shorter
+ * matches precede longer ones because `panel.ts` is a likelier target than
+ * `panel-transition-helpers.ts`.
  *
- * La marche est bornée en largeur comme en profondeur d'exploration : un répertoire de
- * travail peut être n'importe quoi, y compris un point de montage réseau.
+ * Traversal is bounded in both breadth and depth: a working directory can be
+ * anything, including a network mount.
  */
 export async function searchEntries(
   root: string,
@@ -440,8 +439,8 @@ export async function searchEntries(
     try {
       entries = await readdir(resolveInside(root, relative), { withFileTypes: true })
     } catch {
-      // Un dossier illisible (droits, lien cassé) n'interrompt pas la recherche : il
-      // n'est simplement pas exploré.
+      // An unreadable directory (permissions, broken link) does not stop the search:
+      // it is simply skipped.
       continue
     }
 
@@ -474,7 +473,7 @@ export async function searchEntries(
   return { entries: rank(found, needle), truncated }
 }
 
-/** Casse et accents retirés : chercher « recu » doit trouver « reçu ». */
+/** Removes case and accents: searching for 'recu' must find 'reçu'. */
 function fold(value: string): string {
   return value
     .normalize('NFD')
@@ -506,9 +505,9 @@ export async function listDirectory(root: string, relativePath: string): Promise
   }
 
   const listed: TreeEntryDto[] = entries
-    // `.git` est le stockage de git, pas du contenu de projet : l'ouvrir n'a aucun
-    // sens et il porterait le plus gros sous-arbre de la racine. Les autres fichiers
-    // cachés restent visibles, `.gitignore` étant du contenu comme un autre.
+    // `.git` stores git data rather than project content: opening it makes no
+    // sense and would expose the root's largest subtree. Other hidden files
+    // remain visible because `.gitignore` is ordinary project content.
     .filter((entry) => entry.name !== '.git')
     .filter((entry) => entry.isDirectory() || entry.isFile())
     .slice(0, MAX_ENTRIES)

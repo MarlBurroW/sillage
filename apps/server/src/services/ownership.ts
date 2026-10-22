@@ -12,7 +12,7 @@ export interface ProcessNode {
 
 export interface ProcessHost {
   pid: number
-  /** Seulement une unité dont Sillage est bien le processus principal. */
+  /** Only units whose main process really is Sillage. */
   cgroup: string | null
   stopsWithService: boolean
 }
@@ -26,7 +26,7 @@ function unitPath(group: string | null): string | null {
   return group?.match(/^.*\.(?:service|scope)(?=\/|$)/)?.[0] ?? null
 }
 
-/** Une origine héritée n'est pas un lien de dépendance : seule l'exécution compte. */
+/** Inherited origins are not dependency links: execution ancestry is what matters. */
 export function executionLink(pid: number, nodes: ReadonlyMap<number, ProcessNode>, host: ProcessHost): 'descendant' | 'service-group' | null {
   const first = nodes.get(pid)
   if (!first || pid === host.pid) return null
@@ -35,7 +35,7 @@ export function executionLink(pid: number, nodes: ReadonlyMap<number, ProcessNod
   let current: ProcessNode | undefined = first
   while (current && current.pid !== host.pid && !visited.has(current.pid)) {
     visited.add(current.pid)
-    // Même un tmux resté dans le cgroup de Sillage est hors de cette vue.
+    // Even tmux left in Sillage's cgroup is outside this view.
     if (/^(?:tmux(?:[: ].*)?|screen(?:-\d.*)?)$/.test(current.name)) return null
     if (current.name === 'systemd') break
     if (current.parent === host.pid) return 'descendant'
@@ -43,12 +43,12 @@ export function executionLink(pid: number, nodes: ReadonlyMap<number, ProcessNod
     if (parent && BigInt(parent.start) > BigInt(current.start)) return null
     current = parent
   }
-  // Un shell peut disparaître après « commande & ». Le cgroup reste une preuve,
-  // mais uniquement si l'arrêt de l'unité emporte effectivement ses processus.
+  // Shells may disappear after 'command &'. Cgroups remain evidence only when
+  // stopping the unit actually terminates their processes.
   return host.stopsWithService && first.cgroup === host.cgroup ? 'service-group' : null
 }
 
-/** Pas de repli sur le cgroup de la session SSH, d'un test ou d'un conteneur partagé. */
+/** Never fall back to shared SSH-session, test or container cgroups. */
 export async function readProcessHost(): Promise<ProcessHost> {
   const host: ProcessHost = { pid: process.pid, cgroup: null, stopsWithService: false }
   const cgroup = unifiedCgroup(await readFile('/proc/self/cgroup', 'utf8'))
@@ -64,6 +64,6 @@ export async function readProcessHost(): Promise<ProcessHost> {
       host.cgroup = cgroup
       host.stopsWithService = ['control-group', 'mixed'].includes(properties.KillMode ?? '')
     }
-  } catch { /* Sans systemd, la chaîne des parents reste utilisable. */ }
+  } catch { /* Without systemd the parent-process chain remains usable. */ }
   return host
 }

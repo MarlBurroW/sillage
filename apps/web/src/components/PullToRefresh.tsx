@@ -2,30 +2,26 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { cx } from './ui'
 
-/** Course de l'indicateur, après amortissement, qui déclenche le rafraîchissement. */
+/** Damped indicator travel required to refresh. */
 const THRESHOLD_PX = 64
-/** Au-delà, l'indicateur ne descend plus. */
+/** Maximum indicator downward travel. */
 const MAX_PULL_PX = 88
-/** Le doigt parcourt le double de ce que l'indicateur descend, comme un geste natif. */
+/** Finger travel doubles indicator travel, matching native gestures. */
 const RESISTANCE = 0.5
-/** En deçà, un doigt posé qui frémit n'a encore rien décidé. */
+/** Below this threshold touch jitter implies no gesture yet. */
 const SLOP_PX = 6
-/** Taille de la pastille, qui attend cachée au-dessus du bord. */
+/** Indicator size, initially hidden above the edge. */
 const BADGE_PX = 36
 
 /**
- * « Tirer pour rafraîchir » sur une zone qui défile.
- *
- * Une PWA installée n'a pas celui du navigateur, et le document de Sillage ne défile
- * jamais (voir `index.css`) : le geste n'existait donc nulle part sur téléphone.
- *
- * Les écouteurs sont posés à la main : React enregistre `touchmove` en passif, et seul
- * un écouteur actif peut retenir le défilement natif pendant qu'on tire. Sans ça, iOS
- * fait rebondir la liste sous le doigt en même temps que l'indicateur descend.
+ * Pull-to-refresh within scrollable areas. Installed PWAs lack browser refresh and Sillage
+ * documents never scroll (index.css), so phones otherwise had no gesture. Register listeners
+ * manually because React touchmove is passive; active listeners must prevent native scrolling or
+ * iOS bounces the list while the indicator descends.
  */
 function usePull(target: RefObject<HTMLElement | null>, onRefresh: () => void): number {
   const [distance, setDistance] = useState(0)
-  // Une ref : les écouteurs sont posés une fois et doivent appeler la version courante.
+  // Use a ref so listeners mounted once invoke the current callback.
   const refreshRef = useRef(onRefresh)
   refreshRef.current = onRefresh
 
@@ -54,8 +50,7 @@ function usePull(target: RefObject<HTMLElement | null>, onRefresh: () => void): 
     const onMove = (event: TouchEvent) => {
       const touch = event.touches[0]
       if (!origin || !touch) return
-      // Un appui long a lancé le glissement d'une ligne, qui retient déjà le
-      // défilement : le geste lui appartient.
+      // Long-press already started row dragging and owns scrolling: leave it the gesture.
       if (event.defaultPrevented) {
         reset()
         return
@@ -64,13 +59,13 @@ function usePull(target: RefObject<HTMLElement | null>, onRefresh: () => void): 
       const dx = touch.clientX - origin.x
       const dy = touch.clientY - origin.y
       if (!pulling) {
-        // Vers le haut, c'est un défilement : rendu au navigateur jusqu'au prochain appui.
+        // Upward motion scrolls: return to browser control until the next touch.
         if (dy < 0) {
           origin = null
           return
         }
-        // Retenu dès le premier pixel : iOS décide au premier mouvement si le geste
-        // défile, et ne laisse plus rien annuler ensuite.
+        // Capture from the first pixel because iOS decides scrolling at initial movement and
+        // disallows cancellation later.
         if (event.cancelable) event.preventDefault()
         if (Math.hypot(dx, dy) < SLOP_PX) return
         if (Math.abs(dx) > dy) {
@@ -105,7 +100,7 @@ function usePull(target: RefObject<HTMLElement | null>, onRefresh: () => void): 
   return distance
 }
 
-/** Vrai si une zone qui défile, entre le doigt et le conteneur, n'est pas tout en haut. */
+/** Whether any scrollable ancestor between touch and container is below its top. */
 function scrolledAway(target: EventTarget | null, container: HTMLElement): boolean {
   for (let node = target instanceof Element ? target : null; node; node = node.parentElement) {
     if (node.scrollTop > 0) return true
@@ -115,10 +110,8 @@ function scrolledAway(target: EventTarget | null, container: HTMLElement): boole
 }
 
 /**
- * Pastille qui descend sous le doigt, puis tourne le temps du rafraîchissement.
- *
- * À poser dans le conteneur suivi, positionné : elle s'y superpose en haut sans rien
- * décaler, et rien de la liste n'est rendu à nouveau pendant le geste.
+ * Indicator follows the finger then spins during refresh. Place in the positioned observed
+ * container, overlaying its top without shifting or rerendering list contents during the gesture.
  */
 export function PullToRefresh({ target, refreshing, onRefresh }: {
   target: RefObject<HTMLElement | null>
@@ -134,7 +127,7 @@ export function PullToRefresh({ target, refreshing, onRefresh }: {
       <span
         className={cx(
           'surface flex items-center justify-center rounded-full border border-line shadow-float',
-          // Suivre le doigt sans retard pendant le geste, glisser seulement au relâché.
+          // Follow fingers immediately; animate only after release.
           distance > 0 && !refreshing ? null : 'transition-[translate,opacity] duration-200 ease-out',
         )}
         style={{

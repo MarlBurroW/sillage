@@ -6,12 +6,9 @@ import { Tooltip } from '../ui/Tooltip'
 import { cx } from '../ui'
 
 /**
- * Branche et worktree où travaille l'agent, à côté du projet au-dessus du titre.
- *
- * Montrée aussi à la racine du projet : c'est là qu'elle sert le plus, l'arbre
- * principal pouvant être resté sur une autre branche que celle qu'on croit. Le nom du
- * worktree ne s'ajoute que s'il diffère de la branche, sinon on lirait deux fois la
- * même chose. Le clic ouvre l'onglet Git, la suite naturelle de la question.
+ * Agent branch/worktree beside the project above the title, including at project root where the
+ * main tree may be on an unexpected branch. Add worktree names only when different from branches to
+ * avoid repetition. Clicking opens Git, the natural next destination.
  */
 export function WorkspaceLabel({
   worktreeId,
@@ -28,11 +25,11 @@ export function WorkspaceLabel({
 }) {
   const t = useTranslate()
 
-  // Liste pas encore chargée : rien plutôt qu'un « introuvable » qui clignote.
+  // Before list loading show nothing rather than a flashing missing warning.
   if (worktreeId && !worktreesLoaded) return null
 
-  // Dossier effacé hors de Sillage, ou worktree supprimé alors que le fil y pointe :
-  // l'agent n'a plus de répertoire, il faut le dire plutôt que taire la branche.
+  // Explain externally deleted directories or removed worktrees still targeted by threads: the
+  // agent has no directory, not merely a hidden branch.
   if (worktreeId && !worktree?.git) {
     return (
       <span className="flex min-w-0 items-center gap-1 text-critical">
@@ -43,7 +40,7 @@ export function WorkspaceLabel({
   }
 
   const git = worktree ? worktree.git : projectGit
-  // Projet hors dépôt : il n'y a pas de branche à montrer.
+  // Non-Git projects have no branch to display.
   if (!git) return null
 
   const detached = git.branch === 'HEAD'

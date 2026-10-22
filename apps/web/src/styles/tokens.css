@@ -1,21 +1,11 @@
 /*
- * Tokens de thème de Sillage.
- *
- * Préfixés `--sg-` : les noms de l'espace Tailwind (base, sans, md, lg...) sont
- * réservés. Nommer un token `base` écrase silencieusement l'utilitaire `text-base`,
- * et un token qui porte le nom de sa cible Tailwind produit une auto-référence
- * circulaire qui invalide la variable. Le mapping vers Tailwind est dans index.css.
- *
- * Trois réglages pilotent l'ensemble des surfaces :
- *   --sg-hue   la teinte, partagée avec la couleur d'accent
- *   --sg-tint  un multiplicateur de chroma, pour doser l'intensité de la teinte
- *   --sg-lift  un décalage de luminosité, pour éclaircir ou assombrir le shading
- *
- * `lift` ne s'applique qu'aux surfaces et aux bordures. L'appliquer aussi au texte
- * annulerait le gain : les deux bougeraient ensemble et le contraste resterait figé.
- *
- * La chroma perçue s'effondre dans les valeurs sombres : à L=0.21 il faut environ
- * 0.06 de chroma pour qu'une surface se lise comme teintée et non comme grise.
+ * Sillage theme tokens. Prefix with `--sg-`: Tailwind namespace names (base, sans, md, lg, etc.)
+ * are reserved. A token named base silently overrides `text-base`; a token matching its Tailwind
+ * target creates a circular self-reference invalidating the variable. Mapping lives in index.css.
+ * Three controls drive surfaces: `--sg-hue` shares accent hue, `--sg-tint` scales chroma
+ * intensity, and `--sg-lift` shifts shading lightness. Apply lift only to surfaces and borders:
+ * moving text too would preserve contrast and cancel the benefit. Perceived chroma collapses at
+ * dark values: L=0.21 needs roughly 0.06 chroma to appear tinted rather than gray.
  */
 
 :root {
@@ -23,7 +13,7 @@
   --sg-tint: 0.25;
   --sg-lift: 0;
 
-  /* Dose de teinte d'accent sur la bulle utilisateur, voir `.sg-user-bubble`. */
+  /* Accent tint applied to user bubbles; see `.sg-user-bubble`. */
   --sg-message-contrast: 0.45;
 }
 
@@ -31,10 +21,9 @@
   --sg-hue: 318;
 
   /*
-   * Confort de lecture du fil, pilotés depuis les réglages (`appearance.ts`).
-   * Déclarés une seule fois, hors des blocs de thème : ils ne dépendent pas du thème,
-   * et `--sg-read-ink` se recompose tout seul puisqu'il part de jetons qui, eux, en
-   * dépendent.
+   * Thread reading controls from settings (`appearance.ts`). Declare once outside theme blocks
+   * because they are theme-independent; `--sg-read-ink` recomputes itself from theme-dependent
+   * tokens.
    */
   --sg-read-size: 0.9375;
   --sg-read-leading: 1.65;
@@ -48,7 +37,7 @@
 
   --sg-ink: oklch(0.24 calc(0.05 * var(--sg-tint)) var(--sg-hue));
   --sg-ink-soft: oklch(0.46 calc(0.045 * var(--sg-tint)) var(--sg-hue));
-  /* Les descriptions restent du texte à lire, même lorsqu'elles sont secondaires. */
+  /* Descriptions remain readable text even when secondary. */
   --sg-ink-faint: oklch(0.52 calc(0.04 * var(--sg-tint)) var(--sg-hue));
 
   --sg-accent: oklch(0.54 0.19 var(--sg-hue));
@@ -63,16 +52,15 @@
   --sg-caution: oklch(0.62 0.14 75);
   --sg-critical: oklch(0.55 0.19 25);
   /*
-   * Boucle armée. Teinte absolue elle aussi : `accent` porte déjà le travail de fond,
-   * le tour en cours et la sélection, et une boucle doit rester lisible à côté d'eux
-   * quelle que soit la teinte choisie par l'utilisateur.
+   * Armed loop. Use an absolute hue too: accent already signals background work, current turns,
+   * and selection. Loops must remain distinguishable alongside them regardless of user-selected
+   * hue.
    */
   --sg-loop: oklch(0.56 0.13 210);
 
   /*
-   * Palette de coloration syntaxique. Teintes absolues, comme positive/caution :
-   * les faire suivre `--sg-hue` rapprocherait les rôles jusqu'à les confondre dès que
-   * la teinte du thème change.
+   * Syntax palette uses absolute hues like positive/caution: following `--sg-hue` would make
+   * roles indistinguishable as theme hue changes.
    */
   --sg-syn-comment: oklch(0.62 0.03 var(--sg-hue));
   --sg-syn-keyword: oklch(0.5 0.19 305);
@@ -147,7 +135,7 @@
   --sg-shadow-lg: 0 16px 40px oklch(0.05 0.03 var(--sg-hue) / 0.65);
 }
 
-/* Contraste renforcé : surfaces strictement neutres, aucun dégradé, aucune ombre. */
+/* High contrast: strictly neutral surfaces, no gradients or shadows. */
 :root[data-theme='dark-contrast'] {
   --sg-hue: 318;
 
@@ -173,7 +161,7 @@
   --sg-critical: oklch(0.74 0.19 25);
   --sg-loop: oklch(0.83 0.13 210);
 
-  /* Luminosité relevée pour tenir le contraste sur le fond très sombre du thème. */
+  /* Raise lightness to preserve contrast against the theme's very dark background. */
   --sg-syn-comment: oklch(0.7 0 0);
   --sg-syn-keyword: oklch(0.83 0.16 305);
   --sg-syn-string: oklch(0.86 0.15 150);
@@ -182,7 +170,7 @@
   --sg-syn-type: oklch(0.86 0.1 195);
   --sg-syn-attribute: oklch(0.83 0.13 20);
 
-  /* Aucun dégradé ici : le thème contrasté tient sa lisibilité de surfaces plates. */
+  /* No gradients: high-contrast readability depends on flat surfaces. */
   --sg-gradient-surface: none;
   --sg-gradient-accent: none;
 
@@ -192,18 +180,11 @@
 }
 
 /*
- * Palettes de coloration syntaxique, choisies dans les réglages.
- *
- * Chacune fixe les sept mêmes rôles, en clair et en sombre, et rien d'autre : le reste
- * de l'interface ne bouge pas. Le thème contrasté garde volontairement sa propre
- * palette, relevée en luminosité, dont le contraste est la raison d'être : la remplacer
- * par une palette d'ambiance annulerait ce pour quoi ce thème est choisi.
- *
- * Sans attribut, c'est la palette par défaut définie plus haut qui s'applique.
- *
- * Les sélecteurs ne sont volontairement pas ancrés sur `:root` : un aperçu peut ainsi
- * porter les deux attributs et montrer les vraies couleurs de la palette sans que
- * l'application entière en change.
+ * Syntax palettes selected in settings. Each defines the same seven roles in light and dark,
+ * leaving the rest of the UI unchanged. High-contrast intentionally retains its brighter
+ * dedicated palette: replacing it with an ambient palette would defeat its purpose. Without an
+ * attribute use the default above. Selectors deliberately omit `:root` so previews can carry both
+ * attributes and show real palette colors without changing the whole app.
  */
 
 [data-theme='light'][data-syntax='ocean'] {
@@ -267,9 +248,8 @@
 }
 
 /*
- * Quasi monochrome : une seule couleur, pour les chaînes, le reste jouant sur la
- * luminosité. Utile quand la couleur sert déjà à autre chose à l'écran, un diff par
- * exemple.
+ * Nearly monochrome: only strings use color; other roles vary by lightness. Useful when color
+ * already conveys something else, such as diffs.
  */
 [data-theme='light'][data-syntax='sobre'] {
   --sg-syn-comment: oklch(0.66 0.02 var(--sg-hue));
@@ -311,7 +291,7 @@
   --sg-syn-attribute: oklch(0.78 0.13 340);
 }
 
-/* Bleu-gris : colorée, mais d'une seule famille, sauf les propriétés qui tranchent. */
+/* Blue-gray: one color family except contrasting properties. */
 [data-theme='light'][data-syntax='ardoise'] {
   --sg-syn-comment: oklch(0.6 0.02 250);
   --sg-syn-keyword: oklch(0.45 0.09 250);
@@ -372,7 +352,7 @@
   --sg-syn-attribute: oklch(0.78 0.13 20);
 }
 
-/* Encre unique, pour qui veut du code sans couleur du tout ou presque. */
+/* Single ink for nearly colorless code. */
 [data-theme='light'][data-syntax='encre'] {
   --sg-syn-comment: oklch(0.68 0.01 var(--sg-hue));
   --sg-syn-keyword: oklch(0.24 0.01 var(--sg-hue));

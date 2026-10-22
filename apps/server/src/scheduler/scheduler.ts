@@ -2,32 +2,18 @@ import { Cron } from 'croner'
 import type { FastifyBaseLogger } from 'fastify'
 
 export interface ScheduledJob {
-  /** Identifiant en kebab-case, repris tel quel dans les journaux. */
+  /** Kebab-case identifier used unchanged in logs. */
   name: string
-  /** Motif cron à cinq champs, lu dans le fuseau du serveur. */
+  /** Five-field cron expression interpreted in the server timezone. */
   schedule: string
   run: () => void | Promise<unknown>
 }
 
-/**
- * Les travaux périodiques du serveur.
- *
- * Sillage a longtemps fait ses ménages une seule fois, au démarrage de `main`. Sur une
- * instance qui tient des semaines sans redémarrer, cela revient à ne jamais les faire.
- *
- * Un motif cron plutôt qu'un intervalle : « toutes les vingt-quatre heures » se compte
- * depuis le dernier redémarrage, donc l'heure de passage dérive à chaque déploiement et
- * finit par tomber en pleine séance de travail.
- */
+/** Periodic server jobs. Housekeeping used to run only when `main` started, effectively never on instances staying up for weeks. Use cron rather than intervals: twenty-four-hour intervals shift with deployments and eventually run during active work. */
 export class Scheduler {
   private readonly jobs = new Map<string, ScheduledJob>()
   private readonly armed = new Map<string, Cron>()
-  /**
-   * Posé par `start`, qui est le moment où l'ordonnanceur devient vivant.
-   *
-   * Nul avant, parce que le logger est celui de l'application et n'existe qu'une fois
-   * celle-ci construite, alors que les tâches se déclarent avant.
-   */
+  /** Set by `start` when the scheduler becomes active. Null beforehand because the application logger exists only after application construction, whereas jobs are declared earlier. */
   private log: FastifyBaseLogger | null = null
 
   register(job: ScheduledJob): void {
@@ -41,12 +27,7 @@ export class Scheduler {
     log.info({ jobs: [...this.jobs.keys()] }, 'taches planifiees demarrees')
   }
 
-  /**
-   * Change le motif d'une tâche sans redémarrer le serveur.
-   *
-   * Croner ne sait pas reprogrammer une tâche en vol : elle est coupée puis réarmée.
-   * Un passage en cours va donc à son terme, seule la programmation suivante change.
-   */
+  /** Changes job schedules without restarting. Croner cannot reschedule active jobs, so stop and rearm them. Current runs finish; only the next schedule changes. */
   reschedule(name: string, schedule: string): void {
     const job = this.jobs.get(name)
     if (!job) throw new Error(`Tâche planifiée inconnue : ${name}`)
@@ -55,8 +36,8 @@ export class Scheduler {
     job.schedule = schedule
     this.armed.get(name)?.stop()
     this.armed.delete(name)
-    // Sans logger, l'ordonnanceur n'a pas démarré : la tâche partira sur son nouveau
-    // motif au `start`, il n'y a rien à réarmer.
+    // Without a logger the scheduler has not started: `start` will use the new
+    // expression, so nothing needs rearming.
     if (this.log) {
       this.arm(job, this.log)
       this.log.info({ job: name, schedule }, 'tache planifiee reprogrammee')
@@ -73,14 +54,14 @@ export class Scheduler {
       job.schedule,
       {
         name: job.name,
-        // Un passage qui déborde sur le suivant ne se relance pas par-dessus lui-même :
-        // les tâches écrivent toutes dans la même base SQLite, qui n'a qu'un rédacteur.
+        // Never overlap jobs with themselves: all write to the same SQLite database,
+        // which has only one writer.
         protect: (busy) =>
           log.warn(
             { job: job.name, since: busy.currentRun() },
             'tache planifiee encore en cours, passage saute',
           ),
-        // Une tâche en attente ne doit pas retenir le process à l'arrêt.
+        // Pending jobs must not keep processes alive during shutdown.
         unref: true,
       },
       () => this.run(job, log),
@@ -94,7 +75,7 @@ export class Scheduler {
       await job.run()
       log.debug({ job: job.name, ms: Date.now() - startedAt }, 'tache planifiee terminee')
     } catch (err) {
-      // Attrapé ici pour qu'une tâche qui casse n'emporte ni le process ni ses voisines.
+      // Catch here so failing jobs affect neither the process nor other jobs.
       log.error({ job: job.name, err }, 'tache planifiee en echec')
     }
   }

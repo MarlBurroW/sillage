@@ -9,10 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Retours d'un utilisateur Windows (20 oct. 2026) : avancement de l'installation d'un
-// CLI, CLI manquants masquables, sélection de texte dans les cellules d'un tableau,
-// clic droit dans la sidebar. Vrais composants, vraie API, base temporaire. Les CLI
-// Codex et Grok sont déclarés sur des binaires introuvables pour forcer leur absence.
+// Windows user feedback (October 20, 2026): CLI installation progress, hideable
+// missing CLIs, table-cell text selection, sidebar right-click. Real components/API,
+// temporary database. Codex/Grok point to missing binaries to force absence.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -92,7 +91,7 @@ try {
   await page.getByRole('button', { name: 'Ne plus proposer' }).first().click()
   await page.getByText(/Masqués tant qu’ils ne sont pas installés : Codex, Grok Build\./).waitFor()
   assert.equal(await page.locator('input[name="draft-agent"]').count(), 2, 'claude et opencode coupé')
-  // Le masque est au compte : il survit au rechargement.
+  // Hiding belongs to the account and survives reload.
   await page.reload()
   await page.getByText(/Masqués tant qu’ils ne sont pas installés : Codex, Grok Build\./).waitFor()
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
@@ -102,8 +101,8 @@ try {
   await page.getByText(/Codex n'est pas installé/).waitFor()
   assert.equal(await page.locator('input[name="draft-agent"]').count(), 4)
 
-  // 2. L'avancement d'une installation : l'état « running » est injecté dans la
-  //    réponse de la sonde, l'installation réelle durant plusieurs minutes.
+  // 2. Installation progress: inject “running” into probe response because real
+  //    installation takes several minutes.
   await page.route('**/api/agents', async (route) => {
     const response = await route.fetch()
     const body = await response.json()
@@ -123,7 +122,7 @@ try {
   await page.screenshot({ path: '/tmp/sillage-wf-install-progress.png', fullPage: true })
   await page.unroute('**/api/agents')
 
-  // 3. Clic droit sur une session de la sidebar, puis sur l'en-tête d'un projet.
+  // 3. Right-click a sidebar session, then a project header.
   const row = page.getByRole('link', { name: /Radar tile prefetch|prefetch/i }).first()
   await row.waitFor()
   await row.click({ button: 'right' })
@@ -132,15 +131,15 @@ try {
   await page.screenshot({ path: '/tmp/sillage-wf-context-conversation.png' })
   await page.keyboard.press('Escape')
   await page.getByRole('menuitem', { name: 'Renommer' }).waitFor({ state: 'detached' })
-  // `force` : vu seul, le projet n'est pas déplaçable et dnd-kit pose aria-disabled sur
-  // son en-tête, que Playwright lit comme un élément inactif.
+  // `force`: alone, the project is not draggable and dnd-kit sets aria-disabled on
+  // its header, which Playwright considers inactive.
   await page.getByRole('link', { name: 'Nimbus', exact: true }).first().click({ button: 'right', force: true })
   await page.getByRole('menuitem', { name: 'Board' }).waitFor()
   await page.getByRole('menuitem', { name: 'Renommer' }).waitFor()
   await page.screenshot({ path: '/tmp/sillage-wf-context-project.png' })
   await page.keyboard.press('Escape')
 
-  // 4. Une sélection commencée dans une cellule n'en sort pas.
+  // 4. Selection started in a cell stays inside it.
   await row.click()
   const cell = page.locator('.sg-table-scroll td', { hasText: 'Tablet' }).first()
   await cell.waitFor()
@@ -155,8 +154,8 @@ try {
   assert.equal(selected, 'Tablet (1024×768)', `sélection confinée à la cellule, obtenu « ${selected} »`)
   await page.screenshot({ path: '/tmp/sillage-wf-table-selection.png' })
 
-  // Au téléphone : pas de clic droit, le bouton « … » reste la voie ; la page de
-  // brouillon reste dans la largeur avec ses rangs d'installation.
+  // Phone: no right-click, “…” remains the route; draft page and installation rows
+  // fit the width.
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await mobile.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
   await mobile.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
@@ -168,10 +167,10 @@ try {
   await phone.screenshot({ path: '/tmp/sillage-wf-mobile.png', fullPage: true })
   await mobile.close()
 
-  // 5. Sillage Desktop : un seul compte, donc ni choix privé/partagé à la création d'un
-  //    projet ni badge dans ses réglages. Profil simulé sans Electron, comme dans
-  //    onboarding-ui-check : SILLAGE_PROFILE=desktop et la poignée de main sur le
-  //    descripteur 3 ; le web vient d'un build, la fenêtre de bureau ne passe pas par Vite.
+  // 5. Sillage Desktop: one account, so no private/shared choice at project creation
+  //    or badge in settings. Simulate without Electron as onboarding-ui-check does:
+  //    SILLAGE_PROFILE=desktop, handshake on descriptor 3; web comes from a build,
+  //    desktop window does not use Vite.
   const webDist = join(data, 'web-dist')
   const build = run([join(webDir, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', webDist], webDir, { ...env, NODE_ENV: 'production' })
   const [buildCode] = await once(build, 'exit')
@@ -204,8 +203,8 @@ try {
   await desk.waitForURL(/\/bienvenue$/)
   await desk.getByRole('button', { name: 'Passer la visite' }).click()
   await desk.getByRole('heading', { level: 1 }).filter({ hasText: 'C’est prêt.' }).waitFor()
-  // Le bouton de fin de visite mène à la création de projet, et c'est lui qui clôt la
-  // visite : y aller par l'URL avant ramènerait à la visite.
+  // Tour completion button leads to project creation and closes the tour: navigating
+  // there by URL beforehand would redirect back to the tour.
   await desk.getByRole('button', { name: 'Créer mon premier projet' }).click()
   await desk.waitForURL(/\/projects\/new$/)
   await desk.getByLabel('Nom', { exact: true }).first().waitFor()

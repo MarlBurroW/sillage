@@ -1,18 +1,17 @@
-# Copier vers docker-compose.yml et ajuster les chemins montés.
+# Copy to docker-compose.yml and adjust mount paths.
 #
-# Les CLIs agents ne sont pas dans l'image : installez ceux dont vous vous servez
-# depuis l'interface, au premier écran de nouvelle conversation. Ils atterrissent
-# dans le volume de données, donc ils survivent au remplacement du conteneur.
+# Agent CLIs are not in the image: install those you use through the interface
+# on the first new-conversation screen. They go into the data volume and survive
+# container replacement.
 #
-# Reste à les authentifier : montez les répertoires de credentials depuis l'hôte
-# (authentifiez-vous une fois sur l'hôte avec `claude` / `codex login` /
-# `opencode auth login`), ou faites-le
-# dans le conteneur via `docker exec`.
+# Then authenticate: mount credential directories from host (sign in once on host
+# with `claude` / `codex login` / `opencode auth login`), or use `docker exec`
+# inside the container.
 #
-# Premier compte (administrateur d'office) :
+# First account (automatically administrator):
 #   docker compose exec -it sillage node /app/server/cli/user-create.js
 #
-# Mise à jour : changer le tag de l'image puis `docker compose up -d --pull always`.
+# Update: change image tag, then `docker compose up -d --pull always`.
 
 services:
   sillage:
@@ -20,25 +19,24 @@ services:
     container_name: sillage
     restart: unless-stopped
     ports:
-      # Le serveur ne gère pas TLS : n'exposez ce port qu'en local ou derrière
-      # un reverse proxy / VPN, jamais directement sur Internet.
+      # Server does not handle TLS: expose this port only locally or behind
+      # a reverse proxy / VPN, never directly to the Internet.
       - "127.0.0.1:7317:7317"
     volumes:
-      # Base, pièces jointes, worktrees, logs, et les CLIs agents installés depuis
-      # l'interface. Volume obligatoire : sans lui, les CLIs seraient à réinstaller
-      # à chaque remplacement du conteneur.
+      # Database, attachments, worktrees, logs, and interface-installed agent CLIs.
+      # Required volume: without it, CLIs need reinstalling on every container replacement.
       - sillage-data:/home/node/.local/share/sillage
       # Config optionnelle (config.toml).
       - sillage-config:/home/node/.config/sillage
-      # Credentials des CLIs agents, partagés avec l'hôte.
+      # Agent CLI credentials shared with host.
       - ~/.claude:/home/node/.claude
       - ~/.codex:/home/node/.codex
-      # OpenCode y garde ses identifiants et ses sessions : sans ce volume, une
-      # conversation ne se reprendrait pas après le remplacement du conteneur.
+      # OpenCode keeps credentials and sessions here: without this volume, conversations
+      # could not resume after container replacement.
       - ~/.local/share/opencode:/home/node/.local/share/opencode
-      # Grok Build y garde sa connexion, ses sessions et son binaire.
+      # Grok Build keeps its sign-in, sessions, and binary here.
       - ~/.grok:/home/node/.grok
-      # Vos dépôts : les projets créés dans Sillage pointent sur ces chemins.
+      # Your repositories: Sillage projects point to these paths.
       - ~/projects:/home/node/workspace
 
 volumes:

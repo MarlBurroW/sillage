@@ -3,27 +3,14 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { linksTo, linkTo } from '../platform/links.js'
 
-/**
- * Le `GROK_HOME` d'un compte supplémentaire, sur le modèle de `CodexAccountHomes`.
- *
- * Un dossier par compte, où seul ce qui tient au compte est réel : chaque autre entrée
- * du home de l'utilisateur y est liée par un lien symbolique. Grok y lit donc la même
- * configuration, les mêmes skills, la même mémoire, et surtout les mêmes sessions
- * (`sessions/`), ce qui permet de reprendre une conversation quel que soit le compte qui
- * l'a ouverte. Les liens sont repris à chaque lancement : une entrée apparue dans le home
- * de l'utilisateur après la création du compte doit être vue par le compte aussi. Une
- * entrée que Grok crée lui-même dans le home du compte (journaux) y reste.
- */
+/** Additional account `GROK_HOME`, following `CodexAccountHomes`. One directory per account with only account-specific entries real; symlink the user's other home entries. Grok shares configuration, skills, memory and especially `sessions/`, permitting resume regardless of the originating account. Refresh links every launch so newly created user-home entries reach existing accounts. Grok-created account-local entries such as logs remain local. */
 
-/** `$GROK_HOME` du serveur, à défaut `~/.grok` : là où vit la connexion du CLI. */
+/** Server `$GROK_HOME`, falling back to `~/.grok`, holding CLI authentication. */
 export function userGrokHome(): string {
   return process.env.GROK_HOME || join(homedir(), '.grok')
 }
 
-/**
- * Ce qui reste propre au compte : la connexion, et les caches que Grok remplit d'après
- * elle (catalogue de modèles, réglages distants), qui changent d'un abonnement à l'autre.
- */
+/** Account-specific entries: authentication and authentication-dependent caches (model catalogs, remote settings) varying between subscriptions. */
 const PRIVATE = new Set(['auth.json', 'models_cache.json', 'settings_cache.json'])
 
 export class GrokAccountHomes {
@@ -33,7 +20,7 @@ export class GrokAccountHomes {
     return join(this.root, accountId)
   }
 
-  /** Crée le home s'il manque, puis reprend les liens. Rend son chemin. */
+  /** Creates missing homes, refreshes links and returns their path. */
   ensure(accountId: string): string {
     const home = this.path(accountId)
     mkdirSync(home, { recursive: true })
@@ -51,8 +38,8 @@ export class GrokAccountHomes {
         current = null
       }
       if (current) {
-        // Un lien juste : rien à faire. Un lien vers ailleurs : repris. Un vrai fichier
-        // ou dossier : propre au compte, laissé.
+        // Correct links need no work; retarget incorrect links and leave real files
+        // or directories as account-specific entries.
         if (!current.isSymbolicLink()) continue
         if (linksTo(link, target)) continue
         unlinkSync(link)
@@ -62,7 +49,7 @@ export class GrokAccountHomes {
     return home
   }
 
-  /** Vrai quand le home porte une connexion, c'est-à-dire un `auth.json`. */
+  /** Whether the home contains authentication, meaning `auth.json`. */
   connected(accountId: string): boolean {
     return existsSync(join(this.path(accountId), 'auth.json'))
   }

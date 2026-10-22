@@ -15,31 +15,30 @@ import { conflict, notFound } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
 
 /**
- * Registre des serveurs MCP, partagé par toute l'instance.
+ * Instance-wide MCP server registry.
  *
- * Réservé aux administrateurs en écriture : déclarer un serveur MCP, c'est décrire une
- * commande que les CLI lanceront sous l'utilisateur système du serveur. C'est un droit
- * d'exécution, pas une préférence d'affichage.
+ * Only administrators may write: declaring an MCP server specifies a command
+ * CLIs execute as the server's system user, granting execution rights rather
+ * than changing display preferences.
  *
- * Un serveur modifié ne s'applique qu'au prochain lancement des conversations qui
- * l'utilisent. Rien ici ne va rejouer la configuration d'une session en cours : le
- * runner Claude ne renvoie ses serveurs que sur un changement de configuration de
- * conversation, et Codex ne sait pas les remplacer sans rouvrir son thread.
+ * Changes apply when conversations next launch. Running sessions are not
+ * reconfigured: Claude resends servers only when conversation settings change,
+ * and Codex cannot replace them without reopening its thread.
  */
 export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
   const listAll = (): McpServer[] =>
     ctx.db.select().from(mcpServers).orderBy(mcpServers.name).all().map(rowToMcpServer)
 
   /**
-   * Le nom est la clé côté CLI : deux serveurs homonymes s'écraseraient en silence dans
-   * la table transmise. La base porte déjà l'unicité, ce contrôle sert à répondre un
-   * code que l'interface sait traduire plutôt qu'une erreur de contrainte.
+   * Names are CLI keys: duplicate names silently overwrite each other in the
+   * supplied map. The database already enforces uniqueness; this check returns
+   * a translatable code instead of a constraint error.
    */
   const requireFreeName = (name: string, exceptId?: string): void => {
-    // Le serveur que Sillage monte lui-même n'est pas dans cette table, donc l'unicité
-    // de la base ne le protège pas : une entrée homonyme prendrait sa place dans la
-    // configuration transmise au CLI, et l'agent perdrait l'accès à l'historique sans
-    // qu'aucune erreur ne le signale.
+    // Sillage's own server is absent from this table, so database uniqueness cannot
+    // protect it. An entry with its name would replace it in the CLI configuration,
+    // and the agent would lose history access without
+    // any error being reported.
     if (isReservedMcpServerName(name)) {
       throw conflict('mcp_server_name_reserved', 'The name {name} is reserved by Sillage.', {
         name,
@@ -103,10 +102,9 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
   })
 
   /**
-   * Pas de cascade vers les conversations : leur configuration garde l'identifiant, que
-   * le registre ne résout plus. C'est ce qui permet de supprimer une entrée sans
-   * réécrire la configuration de tout ce qui s'en servait, au prix d'un identifiant
-   * orphelin que la résolution ignore.
+   * Do not cascade into conversations: their configuration retains an ID the
+   * registry no longer resolves. Entries can then be removed without rewriting
+   * every referencing configuration; resolution ignores these orphaned IDs.
    */
   app.delete('/api/mcp/servers/:id', async (request, reply) => {
     requireAdmin(request)

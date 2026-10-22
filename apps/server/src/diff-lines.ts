@@ -1,16 +1,6 @@
-/**
- * Diff unifié entre deux textes, ligne à ligne.
- *
- * Écrit ici plutôt qu'ajouté en dépendance : c'est le seul endroit où Sillage doit
- * *calculer* un diff, git le fournissant partout ailleurs. Le format produit est
- * exactement celui que git émet, donc le même analyseur le rend côté client.
- */
+/** Line-by-line unified text diff. Implement locally rather than add dependencies because this is Sillage's only calculated diff; git supplies others. Emit git-compatible format for the same client parser. */
 
-/**
- * Au-delà, la table de la plus longue sous-séquence commune coûte des dizaines de
- * millions de cellules pour un résultat que personne ne lira ligne à ligne : le
- * fichier est alors présenté comme entièrement remplacé, ce qui est vrai.
- */
+/** Beyond this threshold, longest-common-subsequence tables require tens of millions of cells for results nobody reads line by line. Present files as entirely replaced, which is accurate. */
 const MAX_LINES = 2000
 
 interface Op {
@@ -18,12 +8,7 @@ interface Op {
   text: string
 }
 
-/**
- * Plus longue sous-séquence commune, en table de programmation dynamique.
- *
- * Table plate plutôt qu'un tableau de tableaux : c'est le même calcul, sans allouer
- * une ligne par ligne de fichier.
- */
+/** Longest common subsequence via dynamic programming. Flat tables avoid allocating one array per file line without changing the calculation. */
 function align(before: string[], after: string[]): Op[] {
   const rows = before.length
   const cols = after.length
@@ -67,10 +52,7 @@ function replaceAll(before: string[], after: string[]): Op[] {
   ]
 }
 
-/**
- * Un unique bloc couvrant tout le texte comparé : les deux fragments sont courts et
- * les découper en sections masquerait ce qui les entoure.
- */
+/** One hunk covers all compared text because fragments are short and splitting would hide surrounding context. */
 export function unifiedDiff(path: string, before: string, after: string): string {
   const left = before.split('\n')
   const right = after.split('\n')
@@ -88,13 +70,7 @@ export function unifiedDiff(path: string, before: string, after: string): string
   ].join('\n')
 }
 
-/**
- * Fichier créé ou supprimé en entier : il n'y a rien à comparer, seulement un côté.
- *
- * Les deux CLI donnent ce contenu brut plutôt qu'un diff dans ce cas, et un contenu
- * brut ne se rend pas comme un diff : il est enveloppé ici dans la forme que git
- * produirait, pour que l'affichage n'ait qu'un seul format à connaître.
- */
+/** Whole-file creation/deletion has only one side to show. Both CLIs provide raw contents rather than diffs; wrap as git-compatible patches so rendering needs only one format. */
 function wholeFileDiff(path: string, content: string, side: 'added' | 'removed'): string {
   const lines = content.split('\n')
   const added = side === 'added'

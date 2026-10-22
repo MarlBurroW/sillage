@@ -22,7 +22,7 @@ import {
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'sillage-memory-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
-  // La mémoire Claude d'avant, dans un CLAUDE_CONFIG_DIR jetable.
+  // Prior Claude memory in disposable CLAUDE_CONFIG_DIR.
   const previous = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = join(dir, 'claude')
   t.after(() => {
@@ -76,10 +76,10 @@ test('premier lancement : la mémoire Claude du workspace est copiée, une seule
   const listed = await memory()
   assert.deepEqual(listed.files.map((file) => file.file), ['MEMORY.md', 'ancienne.md'])
   assert.equal(listed.importedFrom?.dir, native)
-  // L'original reste, pour une session lancée hors de Sillage.
+  // Keep originals for sessions launched outside Sillage.
   assert.equal(await readFile(join(native, 'ancienne.md'), 'utf8'), 'Une note d’avant.')
 
-  // Vidée à la main, elle ne se remplit pas de nouveau.
+  // Manually emptied memory must not refill automatically.
   await rm(join(memoryDir, 'ancienne.md'))
   await rm(join(memoryDir, 'MEMORY.md'))
   ensureProjectMemory(root, 'project', workspace)
@@ -117,7 +117,7 @@ test('outils MCP : Codex lit, écrit et retire des notes, l’index suit', async
     await readFile(join(memoryDir, 'MEMORY.md'), 'utf8'),
     '- [port-du-serveur](port-du-serveur.md) — Le serveur de dev écoute sur 4242\n',
   )
-  // Réécrire une note déjà indexée ne double pas sa ligne.
+  // Rewriting indexed notes must not duplicate index entries.
   mcp('write_memory', { file: 'port-du-serveur.md', content: NOTE.replace('4242.', '4243.') })
   assert.equal((await readFile(join(memoryDir, 'MEMORY.md'), 'utf8')).split('\n').filter(Boolean).length, 1)
   assert.match(mcp('read_memory', { file: 'port-du-serveur.md' }).text, /4243/)

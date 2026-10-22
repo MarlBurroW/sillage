@@ -5,18 +5,17 @@ import { api } from './api'
 const cardsKey = (projectId: string) => ['cards', projectId]
 
 /**
- * La liste des projets porte le compte des cartes par colonne, affiché dans la
- * navigation : un changement de colonne, un ajout ou une suppression le rend faux.
- * Une simple retouche de titre ou de description n'y touche pas, et ne relit donc pas
- * la liste, qui interroge git pour chaque projet.
+ * The project list holds card counts by column for navigation: moving, adding, or deleting a card
+ * invalidates them. Editing only title or description does not, so avoid rereading the list, which
+ * probes Git for every project.
  */
 function invalidateCardCounts(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['projects'] })
 }
 
 /**
- * `live` : le board est relié à GitHub, des cartes arrivent sans geste de personne ici.
- * Relire toutes les trente secondes suit le rythme des synchronisations.
+ * `live` means the board is linked to GitHub and cards can arrive without local actions. Polling
+ * every thirty seconds matches synchronization cadence.
  */
 export function useCards(projectId: string | undefined, live = false) {
   return useQuery({
@@ -60,7 +59,7 @@ export function useUpdateCard(projectId: string) {
   })
 }
 
-/** Une carte rouverte attend sa sauvegarde en vol avant d'en lancer une autre. */
+/** A reopened card waits for its in-flight save before starting another. */
 export function useCardSaving(cardId: string) {
   return useIsMutating({
     mutationKey: ['update-card'],
@@ -75,13 +74,13 @@ export function useDeleteCard(projectId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
       invalidateCardCounts(queryClient)
-      // Les conversations rattachées perdent leur puce : leur liste devient fausse.
+      // Linked conversations lose their badge, invalidating their list.
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
     },
   })
 }
 
-/** Une colonne du board dans son ordre, telle qu'elle sera écrite. */
+/** A board column in the order to be persisted. */
 export interface CardColumnOrder {
   column: CardColumn
   ids: string[]
@@ -98,8 +97,8 @@ export function useReorderCards(projectId: string) {
       const previous = queryClient.getQueryData<CardDto[]>(cardsKey(projectId))
       if (!previous) return { previous }
 
-      // Le déplacement doit se voir immédiatement : attendre la réponse ferait revenir
-      // la carte à sa place le temps d'un aller-retour, ce qui se lit comme un refus.
+      // Show the move immediately: waiting for a reply would snap the card back during the round
+      // trip, looking like rejection.
       const moved = new Map<string, { column: CardColumn; position: number }>()
       for (const group of columns) {
         group.ids.forEach((id, index) => moved.set(id, { column: group.column, position: index }))
@@ -110,8 +109,8 @@ export function useReorderCards(projectId: string) {
         previous.map((card) => {
           const move = moved.get(card.id)
           if (!move) return card
-          // L'arrivée dans la colonne aussi, pour l'ordre par arrivée : sans elle, la
-          // carte se poserait à son ancienne date avant de sauter au retour du serveur.
+          // Update arrival time too for arrival-based order; otherwise the card would sit at its
+          // former date before jumping on reply.
           return { ...card, ...move, columnEnteredAt: move.column === card.column ? card.columnEnteredAt : now }
         }),
       )
@@ -119,7 +118,7 @@ export function useReorderCards(projectId: string) {
     },
 
     onError: (_error, _columns, context) => {
-      // Le serveur a refusé : l'ordre affiché doit redevenir celui qu'il connaît.
+      // Server rejection: restore the server-known order.
       if (context?.previous) queryClient.setQueryData(cardsKey(projectId), context.previous)
     },
 
@@ -131,10 +130,8 @@ export function useReorderCards(projectId: string) {
 }
 
 /**
- * Cartes citables après un `#`, sans les sessions ni les backlinks que porte le board.
- *
- * `query !== null` plutôt que `query.length > 0` : un `#` seul doit ouvrir la liste,
- * comme le `@` des fichiers.
+ * Cards available after `#`, without the board's sessions or backlinks. Use `query !== null` rather
+ * than nonempty length: a bare `#` must open the list like file `@` mentions.
  */
 export function useCardSuggestions(projectId: string | undefined, query: string | null) {
   return useQuery({
@@ -154,11 +151,8 @@ export function useCardSuggestions(projectId: string | undefined, query: string 
 const notesKey = (cardId: string) => ['card-notes', cardId]
 
 /**
- * Le fil d'une carte, chargé à part du board.
- *
- * Les notes s'accumulent au fil des sessions et ne servent qu'au panneau ouvert : les
- * embarquer dans la liste ferait payer à chaque affichage du board des textes que
- * personne ne regarde.
+ * Card thread loaded separately from the board. Notes accumulate across sessions and serve only the
+ * open panel: bundling them into the list would load unread text on every board display.
  */
 export function useCardNotes(cardId: string | undefined, live = false) {
   return useQuery({
@@ -166,8 +160,8 @@ export function useCardNotes(cardId: string | undefined, live = false) {
     queryFn: () => api.get<CardNoteDto[]>(`/api/cards/${cardId}/notes`),
     enabled: Boolean(cardId),
     staleTime: 15_000,
-    // Une note en route vers GitHub part dans les secondes qui suivent : on la suit de
-    // près. Une carte suivie reçoit aussi les commentaires écrits là-bas.
+    // A note awaiting GitHub delivery should leave within seconds: poll closely. Tracked cards also
+    // receive comments written there.
     refetchInterval: (query) =>
       query.state.data?.some((note) => note.publication === 'pending') ? 3_000 : live ? 30_000 : false,
   })
@@ -181,7 +175,7 @@ export function useAddCardNote(projectId: string, cardId: string) {
       api.post<CardNoteDto[]>(`/api/cards/${cardId}/notes`, { body, publish }),
     onSuccess: (notes) => {
       queryClient.setQueryData(notesKey(cardId), notes)
-      // Le compte affiché sur la tuile vient du board, qui ne sait rien de cet ajout.
+      // The tile count comes from the board, which does not know about this addition.
       void queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
     },
   })
@@ -208,7 +202,7 @@ export function useCardRelations(cardId: string) {
   return useQuery({
     queryKey: relationsKey(cardId),
     queryFn: () => api.get<CardRelationDto[]>(`/api/cards/${cardId}/relations`),
-    // Les agents peuvent ajouter un lien pendant que le ticket est ouvert.
+    // Agents may add a link while the ticket is open.
     refetchInterval: 15_000,
   })
 }
@@ -220,7 +214,7 @@ export function useChangeCardRelation(cardId: string) {
       if (remove) await api.delete<void>(`/api/cards/${cardId}/relations`, body)
       else await api.post<CardRelationDto[]>(`/api/cards/${cardId}/relations`, body)
     },
-    // Les deux sens sont visibles : invalider aussi le cache de l’autre ticket.
+    // Both directions are visible: invalidate the other ticket's cache too.
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['card-relations'] }),
   })
 }

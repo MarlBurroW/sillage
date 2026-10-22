@@ -92,20 +92,19 @@ import type { WorktreeCleanup } from '../worktrees/cleanup.js'
 import type { WorktreeStatusService } from '../worktrees/status-service.js'
 
 /**
- * Routes accessibles sans session. Tout le reste exige un utilisateur.
+ * Routes accessible without a session. Everything else requires a user.
  *
- * Le profil de l'instance en fait partie : l'interface l'attend avant de dessiner quoi que
- * ce soit, page de connexion comprise.
+ * This includes the instance profile: the interface needs it before rendering
+ * anything, including the login page.
  */
 const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/auth/setup', '/api/health', '/api/system/instance'])
 
 /**
- * L'API publique, réservée aux jetons.
+ * Public API reserved for tokens.
  *
- * La frontière est nette dans les deux sens : un cookie n'y entre pas, un jeton ne sort
- * pas de ce préfixe. C'est ce qui permet aux DTO de l'interface de bouger sans devenir
- * un contrat public, et ce qui interdit à un jeton volé d'atteindre l'administration
- * des comptes.
+ * The boundary works both ways: cookies cannot enter and tokens cannot leave
+ * this prefix. Interface DTOs can evolve without becoming a public contract,
+ * and stolen tokens cannot reach account administration.
  */
 const API_V1_PREFIX = '/api/v1/'
 
@@ -153,14 +152,13 @@ export async function buildApp(
   if (INSTANCE_PROFILE === 'desktop') registerLocalOriginGuard(app)
 
   /**
-   * Rien ne compressait sur le chemin : ni Sillage, ni le nginx qui le précède, dont le
-   * `gzip_types` par défaut ne couvre que `text/html`. Une conversation longue relit son
-   * journal en clair, 32 Mo pour la plus lourde, ce qui se voit surtout depuis
-   * l'extérieur où la montante de la maison est le facteur limitant.
+   * Nothing compressed responses along the path: neither Sillage nor its nginx
+   * proxy, whose default `gzip_types` only includes `text/html`. Long conversations
+   * reread uncompressed journals, up to 32 MB, especially noticeable remotely
+   * where home upload bandwidth is the bottleneck.
    *
-   * Le niveau reste bas : le journal passe de 32 à 14 Mo dès le niveau 1, et monter à 6
-   * ne gagne que 0,6 Mo pour le double de temps processeur, payé par le daemon qui porte
-   * déjà les CLI.
+   * Keep the level low: level 1 reduces 32 MB to 14 MB; level 6 saves only another
+   * 0.6 MB while doubling CPU time in the daemon already hosting the CLIs.
    */
   await app.register(compress, { global: true, zlibOptions: { level: 1 }, threshold: 1024 })
   await app.register(cookie)
@@ -168,8 +166,8 @@ export async function buildApp(
     limits: { files: 1, fileSize: MAX_ATTACHMENT_BYTES },
   })
 
-  // Résolution de l'identité sur toute requête. Les routes décident ensuite si elles
-  // exigent un utilisateur, via requireUser().
+  // Resolve identity on every request. Routes then decide whether they
+  // require a user through requireUser().
   app.addHook('onRequest', async (request) => {
     const secret = bearerSecret(request.headers.authorization)
     const identity = secret ? resolveApiToken(ctx.db, secret) : null
@@ -179,8 +177,8 @@ export async function buildApp(
       return
     }
 
-    // Repli sur le cookie même en présence d'un en-tête `Authorization` : un proxy ou
-    // une extension qui en ajoute un ne doit pas rendre l'interface inutilisable.
+    // Fall back to cookies even with an `Authorization` header: a proxy or
+    // extension adding one must not make the interface unusable.
     const token = request.cookies[SESSION_COOKIE]
     if (!token) return
     const user = await resolveSession(ctx.db, token)
@@ -191,7 +189,7 @@ export async function buildApp(
     if (!request.url.startsWith('/api/')) return
     const path = request.url.split('?')[0] ?? request.url
     if (PUBLIC_ROUTES.has(path) || path === '/api/auth/logout') return
-    // Les webhooks n'ont ni session ni jeton : c'est leur signature qui les authentifie.
+    // Webhooks have neither sessions nor tokens: their signature authenticates them.
     if (path.startsWith(HOOKS_PREFIX)) return
 
     if (path.startsWith(API_V1_PREFIX)) {
@@ -229,8 +227,8 @@ export async function buildApp(
     grokAccounts,
   )
   registerMcpRoutes(app, ctx)
-  // Les sources lisent la bibliothèque pour installer, la bibliothèque lit leurs
-  // catalogues pour signaler une mise à jour : les sources d'abord.
+  // Sources read the library to install skills; the library reads source catalogs
+  // to detect updates, so initialize sources first.
   const skillSources = new SkillSources(ctx.db, ctx.config.paths.skillSourcesCache)
   const skillLibrary = new SkillLibrary(
     ctx.db,
@@ -273,7 +271,7 @@ export async function buildApp(
   registerGitActionRoutes(app, ctx, worktreeStatus)
   registerTerminalRoutes(app, ctx, sessions, terminals)
   await registerWebSocketHub(app, ctx, log, sessions, notifications)
-  // Après le hub : c'est lui qui enregistre le plugin websocket dont dépend le terminal.
+  // After the hub, which registers the websocket plugin required by terminals.
   registerTerminalHub(app, ctx, terminals)
 
   await registerWebClient(app, ctx)
@@ -282,9 +280,9 @@ export async function buildApp(
 }
 
 /**
- * Le frontend buildé est servi en statique par le même process (pas de serveur Node
- * front). En développement, Vite sert l'UI et proxifie /api, donc dist/ est absent
- * et on se contente de répondre en JSON.
+ * The built frontend is served statically by this process, without a frontend
+ * Node server. During development, Vite serves the UI and proxies /api, so dist/
+ * is absent and we simply return JSON.
  */
 async function registerWebClient(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const indexPath = join(ctx.config.paths.webRoot, 'index.html')
@@ -294,13 +292,12 @@ async function registerWebClient(app: FastifyInstance, ctx: AppContext): Promise
     await app.register(fastifyStatic, {
       root: ctx.config.paths.webRoot,
       index: false,
-      // Le cache-control intégré du plugin écraserait celui posé par setHeaders.
+      // The plugin's built-in cache-control would overwrite the value from setHeaders.
       cacheControl: false,
       /**
-       * Seuls les fichiers de `assets/` portent un hash dans leur nom : eux seuls
-       * peuvent être figés. Tout le reste (index.html, sw.js, manifest, icônes) garde
-       * un nom stable, et un cache immutable y empêcherait toute mise à jour, service
-       * worker compris.
+       * Only `assets/` files have hashed names and can be cached permanently.
+       * Everything else (index.html, sw.js, manifest, icons) keeps a stable name;
+       * immutable caching would prevent updates, including service worker updates.
        */
       setHeaders: (res, path) => {
         const hashed = path.includes(`${sep}assets${sep}`)
@@ -311,20 +308,20 @@ async function registerWebClient(app: FastifyInstance, ctx: AppContext): Promise
       },
     })
 
-    // Sans index, le plugin statique répond 403 sur la racine au lieu de la déléguer.
+    // Without an index, the static plugin returns 403 at the root instead of delegating.
     app.get('/', (_request, reply) => reply.sendFile('index.html'))
   }
 
   app.setNotFoundHandler((request, reply) => {
     const path = request.url.split('?')[0] ?? request.url
-    // Un asset manquant doit répondre 404, pas du HTML : sinon le navigateur remonte
-    // une erreur de type MIME au lieu du vrai problème.
+    // Missing assets must return 404 rather than HTML; otherwise browsers report a
+    // MIME type error instead of the actual problem.
     const looksLikeAsset = /\.[a-z0-9]+$/i.test(path)
 
     if (path.startsWith('/api/') || looksLikeAsset || !hasBuild) {
       return reply.status(404).send({ error: { code: 'not_found', message: 'Route inconnue.' } })
     }
-    // Repli SPA : react-router gère les routes côté client.
+    // SPA fallback: react-router handles client-side routes.
     return reply.sendFile('index.html')
   })
 }

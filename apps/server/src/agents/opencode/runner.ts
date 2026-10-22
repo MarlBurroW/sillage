@@ -45,24 +45,21 @@ import { OpencodeServer } from './server.js'
 import { describePermission, describeTool, fileEdits, QUESTION_TOOL } from './tools.js'
 
 /**
- * Adaptateur opencode (invariant I3) : traduit le flux d'`opencode serve` vers le schéma
- * d'événements commun.
+ * opencode adapter (I3): translate opencode serve stream to common event schema.
  *
- * Un serveur par conversation, comme l'app-server de Codex : ce qui se règle chez
- * opencode (permissions, serveurs MCP, skills) se lit dans sa configuration au
- * lancement, voir `config.ts`. Modèle, variante et agent primaire partent en revanche
- * avec chaque message, donc se changent à chaud.
+ * One server per conversation like Codex app-server: permissions/MCP/skills read at launch
+ * (config.ts); model/variant/primary agent sent per message, change live.
  *
- * Tout ce qui est affirmé ici du comportement d'opencode a été sondé sur la 1.18.25, et revérifié sur la 1.19.0 puis la 1.19.3 (ligne 1.x, la dernière avant OpenCode 2).
+ * Behavior probed on 1.18.25 and rechecked 1.19.0/1.19.3 (last 1.x before OpenCode 2).
  */
 
-/** Délai accordé à opencode pour clore un tour interrompu avant de forcer `idle`. */
+/** Time for opencode to close interrupted turns before forcing idle. */
 const INTERRUPT_GRACE_MS = 15_000
 
-/** Titre qu'opencode pose en attendant d'en générer un : ce n'en est pas un. */
+/** Temporary pre-generated opencode title, not a real title. */
 const PLACEHOLDER_TITLE = /^(New session|Child session) - \d{4}-/
 
-/** Événements sans rapport avec la conversation, ou de la seconde génération de l'API. */
+/** Events unrelated to conversation or from second API generation. */
 const NOISE = [
   'server.', 'plugin.', 'catalog.', 'reference.', 'integration.', 'installation.',
   'file.', 'lsp.', 'vcs.', 'pty.', 'tui.', 'project.', 'workspace.', 'worktree.',
@@ -73,7 +70,7 @@ const NOISE = [
 type PromptBody = NonNullable<RequestBody<'session.prompt_async'>>
 type PromptPart = PromptBody['parts'][number]
 
-/** Une part de texte ou de réflexion en cours d'écriture. */
+/** Text/reasoning part currently being written. */
 interface OpenPart {
   kind: 'text' | 'thinking'
   text: string
@@ -81,7 +78,7 @@ interface OpenPart {
   parent: string | null
 }
 
-/** Ce qu'on a déjà dit d'un appel d'outil, pour ne journaliser que ce qui change. */
+/** Already reported tool state, to journal changes only. */
 interface ToolTrack {
   input: string
   output: string
@@ -98,26 +95,26 @@ export class OpencodeRunner implements AgentRunner {
   private server: OpencodeServer | null = null
   private sessionId: string | null = null
   private config: OpencodeConfig
-  /** Configuration avec laquelle le serveur a été lancé. */
+  /** Configuration used to launch server. */
   private launched: Config = {}
   private mcpServers: McpServer[] = []
   private mcpFailures: McpServerStatus[] = []
   private lastMcpPayload: string | null = null
   private readonly interactions: PendingInteractions
-  /** Demande native (`per_…`, `que_…`) vers l'identifiant de la demande Sillage. */
+  /** Native request (per_…, que_…) mapped to Sillage request ID. */
   private readonly nativeRequests = new Map<string, string>()
-  /** Demandes qu'opencode a closes de lui-même : il n'y a plus rien à lui répondre. */
+  /** Requests opencode closed itself, requiring no answer. */
   private readonly settledNatively = new Set<string>()
 
-  /** Rôle de chaque message vu : les parts ne le portent pas. */
+  /** Role per seen message; parts omit it. */
   private readonly messages = new Map<string, { role: Message['role']; summary: boolean }>()
   private readonly openParts = new Map<string, OpenPart>()
   private readonly closedParts = new Set<string>()
   private readonly tools = new Map<string, ToolTrack>()
   private readonly closedTools = new Set<string>()
-  /** `fournisseur/modèle` de chaque message assistant, que ses parts ne répètent pas. */
+  /** Assistant message provider/model, not repeated by parts. */
   private readonly assistantModels = new Map<string, string>()
-  /** Session d'un sous-agent vers l'appel `task` qui l'a lancée. */
+  /** Subagent session mapped to launching task call. */
   private readonly children = new Map<string, string | null>()
   private readonly noticed = new Set<string>()
 
@@ -125,22 +122,22 @@ export class OpencodeRunner implements AgentRunner {
   private turn = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
   private turnAborted = false
   private turnFailed = false
-  /** Une compaction est annoncée et pas encore close. */
+  /** Compaction announced but not closed. */
   private compacting = false
   private lastAssistantMessageId: string | null = null
   private interruptWatchdog: NodeJS.Timeout | null = null
 
-  /** Fenêtre de contexte par `fournisseur/modèle`, lue au lancement. */
+  /** Context windows per provider/model, read at launch. */
   private readonly contextLimits = new Map<string, number>()
   private defaultModel: string | null = null
   private commandNames = new Set<string>()
-  /** Rechargement de l'instance en cours : un message envoyé pendant ce temps attend. */
+  /** Instance reload in progress: messages wait. */
   private reloading: Promise<void> | null = null
-  /** La bibliothèque de skills a changé pendant un tour : à relire quand il finit. */
+  /** Library changed mid-turn: reread at end. */
   private reloadPending = false
   private suggested: string | null = null
 
-  /** Voir `AgentRunner`. `this.config` n'avance qu'après une application réussie. */
+  /** See AgentRunner. this.config advances only after successful application. */
   get appliedConfig(): AgentConfig {
     return this.config
   }
@@ -159,8 +156,8 @@ export class OpencodeRunner implements AgentRunner {
         config,
         mcpServers: resolved.servers,
         skillRoots: this.ctx.skillRoots(config),
-        // Les pièces jointes et la mémoire du projet vivent hors du répertoire de
-        // travail : sans règle, opencode demanderait la permission de les lire.
+        // Attachments/project memory outside cwd need explicit read rules to avoid permission
+        // prompts.
         readableDirs: [this.ctx.attachmentsRoot, ...(memoryDir ? [memoryDir] : [])],
       }),
       servers: resolved.servers,
@@ -174,10 +171,9 @@ export class OpencodeRunner implements AgentRunner {
     this.mcpServers = servers
     this.mcpFailures = failures
 
-    // Le projet tient ses consignes dans SILLAGE.md, qui arrive par `system` : lire
-    // aussi l'`AGENTS.md` du dépôt les doublerait. opencode n'a pas d'interrupteur plus
-    // fin : celui-ci coupe aussi l'`opencode.json` et le dossier `.opencode/` du
-    // projet. Les consignes du poste (`~/.config/opencode/AGENTS.md`) restent lues.
+    // Project uses SILLAGE.md through system: reading repository AGENTS.md duplicates instructions.
+    // No finer opencode switch: also disables project opencode.json/.opencode. Machine
+    // ~/.config/opencode/AGENTS.md remains read.
     const masked = this.ctx.maskedInstructionRoots().length > 0
     this.server = await OpencodeServer.start({
       binary: this.ctx.binary,
@@ -197,8 +193,7 @@ export class OpencodeRunner implements AgentRunner {
       onExit: (code) => this.onProcessExit(code),
     })
 
-    // Les sessions vivent dans la base d'opencode, pas dans le process : reprendre,
-    // c'est seulement vérifier que celle-ci existe encore.
+    // Sessions live in opencode database, not process: resume only checks existence.
     const session = this.ctx.resumeSessionId
       ? await this.server.get<Session>(`/session/${this.ctx.resumeSessionId}`)
       : await this.server.post<Session>('/session', {})
@@ -214,8 +209,7 @@ export class OpencodeRunner implements AgentRunner {
         agentSessionId: session.id,
         model: this.config.model || this.defaultModel || '',
         cwd: session.directory,
-        // La liste des outils dépend de l'agent et du modèle du tour : mieux vaut vide
-        // que devinée.
+        // Tool list depends on turn agent/model: empty beats guessed.
         tools: [],
       },
       session,
@@ -225,9 +219,8 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   /**
-   * Modèle par défaut et fenêtres de contexte. opencode ne les annonce pas dans le
-   * flux, et sans la fenêtre la jauge de contexte n'aurait pas de dénominateur. Un
-   * échec n'emporte pas la session : elle tourne alors sans jauge.
+   * Default model/context windows, absent from stream. Without window gauge lacks denominator.
+   * Probe failure leaves session running without gauge.
    */
   private async loadCatalog(): Promise<void> {
     try {
@@ -247,8 +240,8 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   /**
-   * Publie l'inventaire MCP. Les publications identiques sont écartées : opencode
-   * signale chaque changement d'outils, et l'inventaire entier est relu à chaque fois.
+   * Publish MCP inventory, skipping duplicates: opencode signals every tool change and each
+   * triggers full inventory read.
    */
   private async publishMcpStatus(): Promise<void> {
     const server = this.server
@@ -266,9 +259,8 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   /**
-   * Publie les commandes en `/`. opencode y range aussi les skills (`source: skill`),
-   * ceux de la bibliothèque de Sillage compris : il n'y a donc pas d'inventaire de
-   * compétences à part, contrairement à Codex.
+   * Publish slash commands, including skills (source: skill) and Sillage library. Unlike Codex, no
+   * separate skill inventory.
    */
   private async publishCommands(): Promise<void> {
     const server = this.server
@@ -283,18 +275,16 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   /**
-   * Le process est mort sans qu'on le lui demande : clore ce qui attend une réponse, le
-   * dire dans le journal, et passer en erreur pour que le gestionnaire libère la
-   * session. Le prochain message repartira en reprise.
+   * Unexpected process death: close prompts, journal failure, set error so manager frees session.
+   * Next message resumes.
    */
   private onProcessExit(code: number | null): void {
     this.server = null
     this.turnActive = false
     this.clearInterruptWatchdog()
 
-    // Mort pendant le démarrage : la session n'a jamais existé, `start()` échoue et le
-    // gestionnaire remonte l'erreur. Journaliser ici écrirait une fin de session pour
-    // une conversation qui n'a rien commencé.
+    // Death during startup: session never existed, start fails and manager reports. Journaling here
+    // would end a conversation that never started.
     if (!this.sessionId) return
 
     this.interactions.expireAll()
@@ -307,16 +297,16 @@ export class OpencodeRunner implements AgentRunner {
     })
   }
 
-  /** Après une coupure du flux : un tour a pu finir sans qu'on l'entende. */
+  /** After stream disconnect, turn may have ended unheard. */
   private async resync(): Promise<void> {
     if (!this.server || !this.sessionId) return
     try {
       const statuses = await this.server.get<ResponseBody<'session.status'>>('/session/status')
-      // Une session au repos est absente de la table, pas marquée `idle`.
+      // Idle sessions are absent from table, not marked idle.
       const status = statuses[this.sessionId]
       if (this.turnActive && (!status || status.type === 'idle')) this.endTurn()
     } catch {
-      // Le flux rebranché dira la suite.
+      // Reconnected stream reports subsequent events.
     }
   }
 
@@ -324,7 +314,7 @@ export class OpencodeRunner implements AgentRunner {
     return sessionId !== undefined && (sessionId === this.sessionId || this.children.has(sessionId))
   }
 
-  /** Appel `task` dont descend une session, null pour la session principale. */
+  /** Ancestor task call for session, null for main. */
   private parentOf(sessionId: string): string | null {
     return sessionId === this.sessionId ? null : (this.children.get(sessionId) ?? null)
   }
@@ -333,7 +323,7 @@ export class OpencodeRunner implements AgentRunner {
     switch (event.type) {
       case 'session.created': {
         const { info } = event.properties
-        // L'appel `task` qui la lance la rattache dès que ses métadonnées arrivent.
+        // Launching task links it once metadata arrives.
         if (info.parentID && this.inTree(info.parentID) && !this.children.has(info.id)) {
           this.children.set(info.id, null)
         }
@@ -365,7 +355,7 @@ export class OpencodeRunner implements AgentRunner {
 
       case 'session.error': {
         const { sessionID, error } = event.properties
-        // Sans identifiant, la panne est celle de l'instance : elle nous concerne.
+        // Without ID, instance-wide failure concerns us.
         if (sessionID === undefined || sessionID === this.sessionId) this.reportError(error, event)
         return
       }
@@ -387,7 +377,7 @@ export class OpencodeRunner implements AgentRunner {
       case 'message.part.delta': {
         const { partID, field, delta } = event.properties
         const open = this.openParts.get(partID)
-        // Une part inconnue rattrapera son texte à sa prochaine version complète.
+        // Unknown parts recover text from next complete version.
         if (!open || field !== 'text') return
         open.text += delta
         this.ctx.emit({
@@ -407,8 +397,7 @@ export class OpencodeRunner implements AgentRunner {
         this.onQuestionAsked(event)
         return
 
-      // opencode a clos la demande sans nous : une réponse venue d'ailleurs, ou un tour
-      // interrompu. Nos propres réponses sont déjà sorties de la table à ce moment.
+      // opencode closed request externally or on interruption. Our own answers are already removed.
       case 'permission.replied':
       case 'question.replied':
       case 'question.rejected': {
@@ -424,7 +413,7 @@ export class OpencodeRunner implements AgentRunner {
         if (event.properties.sessionID !== this.sessionId) return
         this.ctx.emit({
           type: 'plan.updated',
-          // Une tâche annulée n'a pas d'état dans le schéma commun : elle sort du plan.
+          // Canceled tasks have no shared-schema state: remove from plan.
           items: event.properties.todos
             .filter((todo) => todo.status !== 'cancelled')
             .map((todo) => ({
@@ -440,10 +429,10 @@ export class OpencodeRunner implements AgentRunner {
         return
 
       default: {
-        // Le type du flux est plus large que l'union générée (`server.heartbeat`).
+        // Stream type broader than generated union (server.heartbeat).
         const type: string = event.type
         if (NOISE.some((prefix) => type.startsWith(prefix))) return
-        // Un événement d'une version plus récente reste visible, une fois.
+        // New-version events remain visible once.
         if (this.noticed.has(type)) return
         this.noticed.add(type)
         this.notice(type, `Événement opencode : ${type}`, 'info', event, `opencode-notice:${type}`)
@@ -466,11 +455,10 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   /**
-   * Le tour est fini : `session.idle` fait foi, et opencode l'envoie deux fois.
+   * Turn complete: session.idle authoritative, emitted twice.
    *
-   * Sondé : à l'interruption, `idle` précède la clôture en erreur des outils en cours,
-   * et les demandes de permission restent dans sa liste sans `permission.replied`.
-   * Tout ce qui est encore ouvert est donc clos ici, sans attendre la suite du flux.
+   * Probed: interruption idle precedes active-tool error closure, and permission requests remain
+   * without permission.replied. Close everything here without waiting further.
    */
   private endTurn(): void {
     if (!this.turnActive) return
@@ -497,7 +485,7 @@ export class OpencodeRunner implements AgentRunner {
         cacheReadTokens: this.turn.cacheRead,
         cacheCreationTokens: this.turn.cacheWrite,
       },
-      // Le dernier message du tour : c'est sur lui que le fork retrouve son point de coupe.
+      // Last turn message provides fork cut.
       { sessionID: this.sessionId, messageID: this.lastAssistantMessageId },
     )
     this.ctx.setStatus('idle')
@@ -510,7 +498,7 @@ export class OpencodeRunner implements AgentRunner {
       this.turnAborted = true
       return
     }
-    // La même panne arrive par `session.error` et par le message assistant qu'elle clôt.
+    // Same failure arrives through session.error and closed assistant message.
     if (this.turnFailed) return
     this.turnFailed = true
     this.ctx.emit(describeSessionError(error), raw)
@@ -527,7 +515,7 @@ export class OpencodeRunner implements AgentRunner {
 
     if (info.sessionID === this.sessionId) {
       if (summary) {
-        // Compaction automatique : rien d'autre ne l'annonce que le message de résumé.
+        // Automatic compaction announced only by summary message.
         if (!this.compacting) {
           this.compacting = true
           this.ctx.emit({ type: 'context.compaction_started' })
@@ -538,7 +526,7 @@ export class OpencodeRunner implements AgentRunner {
       if (info.error) this.reportError(info.error, raw)
     }
 
-    // Un message clos ne recevra plus rien : ses parts encore ouvertes le sont aussi.
+    // Closed messages receive nothing more: close open parts too.
     if (info.time.completed) {
       for (const [id, open] of this.openParts) {
         if (open.messageId === info.id) this.closePart(id, raw)
@@ -550,8 +538,7 @@ export class OpencodeRunner implements AgentRunner {
     const { part } = event.properties
     if (!this.inTree(part.sessionID)) return
     const message = this.messages.get(part.messageID)
-    // Les parts d'un message utilisateur sont l'écho de ce que Sillage a déjà
-    // journalisé à l'envoi, celles d'un résumé de compaction ne se montrent pas.
+    // User parts echo Sillage-journaled sends; compaction-summary parts stay hidden.
     if (message?.role !== 'assistant' || message.summary) return
     const parent = this.parentOf(part.sessionID)
 
@@ -570,15 +557,14 @@ export class OpencodeRunner implements AgentRunner {
         this.onStepFinish(part, this.modelOf(part.messageID, event))
         return
       default:
-        // `step-start`, `patch`, `snapshot`… : la mécanique d'opencode, rien à montrer.
+        // step-start, patch, snapshot… internal opencode mechanics, nothing to show.
         return
     }
   }
 
   /**
-   * Texte et réflexion arrivent en deltas, encadrés par deux versions complètes de la
-   * part. La version complète fait foi : si un delta a manqué, ce qui dépasse du texte
-   * accumulé part comme un delta de rattrapage.
+   * Text/reasoning deltas bracketed by complete part versions. Complete version authoritative:
+   * missing accumulated suffix becomes catch-up delta.
    */
   private onTextPart(
     id: string, kind: OpenPart['kind'], text: string, messageId: string, ended: boolean,
@@ -607,7 +593,7 @@ export class OpencodeRunner implements AgentRunner {
     if (!open) return
     this.openParts.delete(id)
     boundedAdd(this.closedParts, id)
-    // Une réflexion masquée par le fournisseur arrive vide : rien à afficher.
+    // Provider-hidden reasoning arrives empty: nothing to show.
     if (!open.text.trim()) return
     this.ctx.emit(
       {
@@ -633,20 +619,20 @@ export class OpencodeRunner implements AgentRunner {
       this.tools.set(part.callID, track)
       this.ctx.emit({ type: 'tool.started', toolCallId: part.callID, ...described, parentToolCallId: parent }, raw)
     } else if (input !== track.input) {
-      // L'entrée arrive vide tant que le modèle l'écrit, puis complète à l'exécution.
+      // Input empty during model writing, complete at execution.
       track.input = input
       this.ctx.emit({ type: 'tool.input_updated', toolCallId: part.callID, input: described.input }, raw)
     }
 
     const metadata = 'metadata' in state ? (state.metadata ?? {}) : {}
 
-    // La session du sous-agent n'est nommée que dans les métadonnées de son appel.
+    // Subagent session named only in call metadata.
     if (part.tool === 'task' && typeof metadata.sessionId === 'string') {
       this.children.set(metadata.sessionId, part.callID)
     }
 
     if (state.status === 'running') {
-      // La sortie d'une commande grossit dans `metadata.output`, en cumulé.
+      // Command output accumulates in metadata.output.
       const output = typeof metadata.output === 'string' ? metadata.output : ''
       if (output.length > track.output.length && output.startsWith(track.output)) {
         this.ctx.emit({ type: 'tool.output_delta', toolCallId: part.callID, chunk: output.slice(track.output.length) })
@@ -671,17 +657,14 @@ export class OpencodeRunner implements AgentRunner {
     for (const edit of fileEdits(part, this.ctx.cwd)) this.ctx.emit(edit)
   }
 
-  /** `fournisseur/modèle` du message d'une part, pour retrouver sa fenêtre de contexte. */
+  /** Part message provider/model for context-window lookup. */
   private modelOf(messageId: string, event: EventOf<'message.part.updated'>): string | null {
-    // Seule la session principale occupe le contexte que la jauge décrit.
+    // Only main session occupies gauged context.
     if (event.properties.part.sessionID !== this.sessionId) return null
     return this.assistantModels.get(messageId) ?? null
   }
 
-  /**
-   * Une étape de modèle s'achève avec sa consommation. `input` ne compte pas ce qui
-   * vient du cache : l'occupation du contexte est la somme des trois.
-   */
+  /** Model step ends with usage. input excludes cache: context occupancy sums all three. */
   private onStepFinish(part: PartOf<'step-finish'>, model: string | null): void {
     const { tokens } = part
     this.turn.cost += part.cost
@@ -710,8 +693,8 @@ export class OpencodeRunner implements AgentRunner {
     const requestId = this.interactions.requestPermission(details, (decision) => {
       this.nativeRequests.delete(request.id)
       if (this.settledNatively.delete(request.id)) return
-      // opencode n'a que deux portées : cette fois, ou jusqu'à la fin de l'instance.
-      // Une expiration vaut refus, il n'a pas de variante « resté sans réponse ».
+      // opencode has two scopes: once or instance lifetime. Expiration means rejection; no
+      // unanswered variant.
       const reply = decision?.decision === 'allowed'
         ? (decision.scope === 'once' ? 'once' : 'always')
         : 'reject'
@@ -724,13 +707,13 @@ export class OpencodeRunner implements AgentRunner {
     const request = event.properties
     if (!this.inTree(request.sessionID) || this.nativeRequests.has(request.id)) return
 
-    // opencode attend les réponses dans l'ordre des questions : le rang sert de clé.
+    // Answers follow question order, keyed by index.
     const questions: AgentQuestion[] = request.questions.map((question, index) => ({
       id: String(index),
       header: question.header,
       question: question.question,
       multiSelect: question.multiple === true,
-      // Sauf mention contraire, opencode accepte une réponse libre.
+      // Unless stated otherwise, opencode allows free text.
       allowOther: question.custom !== false,
       secret: false,
       options: question.options.map((option) => ({ ...option, preview: null })),
@@ -750,7 +733,7 @@ export class OpencodeRunner implements AgentRunner {
     this.nativeRequests.set(request.id, requestId)
   }
 
-  /** Réponse à une demande : un échec se dit, il ne doit pas faire tomber la session. */
+  /** Answer requests: report failures without killing session. */
   private reply(path: string, body: unknown): void {
     const server = this.server
     if (!server) return
@@ -767,25 +750,21 @@ export class OpencodeRunner implements AgentRunner {
     return this.interactions.resolveQuestion(requestId, answer)
   }
 
-  /** opencode ne relaie pas les élicitations de ses serveurs MCP : rien n'attend jamais. */
+  /** opencode does not forward MCP elicitations: nothing pending. */
   resolveElicitation(requestId: string, answer: ElicitationAnswer): boolean {
     return this.interactions.resolveElicitation(requestId, answer)
   }
 
-  /**
-   * opencode ne soumet pas de plan à validation : son mode plan est un agent qu'on
-   * choisit, pas une requête bloquante.
-   */
+  /** No plan-approval request: plan mode is selected agent, not blocking prompt. */
   reviewPlan(_requestId: string, _review: PlanReview): boolean {
     return false
   }
 
   /**
-   * Corps d'un message pour opencode.
+   * opencode message body.
    *
-   * Images et fichiers mentionnés partent en parts `file` désignées par une URL
-   * `file://` : opencode lit lui-même le fichier, comme son TUI le fait pour un `@`.
-   * Les autres pièces jointes restent un chemin dans le texte.
+   * Images/mentioned files use file parts with file:// URLs read by opencode like TUI @ mentions.
+   * Other attachments remain paths in text.
    */
   private promptBody(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): PromptBody {
     const parts: PromptPart[] = []
@@ -809,13 +788,13 @@ export class OpencodeRunner implements AgentRunner {
     }
 
     const model = parseModel(this.config.model)
-    // L'équivalent de l'appendice au prompt système des deux autres. `system` ne vaut
-    // que pour le message qui le porte : il est donc reposé à chaque envoi.
+    // Equivalent system-prompt appendix. system applies only to containing message, so resend every
+    // time.
     const system = this.ctx.projectOverview(this.config)
     return {
       parts,
       agent: this.config.primaryAgent,
-      // Sans modèle ni variante, opencode applique les siens.
+      // Without model/variant, opencode uses its own.
       ...(model ? { model } : {}),
       ...(this.config.variant ? { variant: this.config.variant } : {}),
       ...(system ? { system } : {}),
@@ -828,11 +807,11 @@ export class OpencodeRunner implements AgentRunner {
     const { blocks, promptText } = describeOutgoingMessage(text, attachments)
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     this.ctx.setStatus('running')
-    // Un message parti pendant un rechargement verrait ses événements se perdre.
+    // Messages during reload would lose events.
     if (this.reloading) await this.reloading
     if (!this.server) throw new Error('La session opencode est fermée.')
 
-    // Une commande en `/` n'est pas développée par `prompt_async` : elle a sa route.
+    // prompt_async does not expand slash commands: dedicated route.
     const command = parseSlashCommand(text)
     if (command && this.commandNames.has(command.name)) {
       this.runCommand(command.name, command.args)
@@ -848,8 +827,8 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   /**
-   * `POST /command` ne répond qu'à la fin du tour, sans variante asynchrone : la requête
-   * part sans être attendue, et son échec revient par le journal.
+   * POST /command responds only at turn end, no async variant: fire without awaiting, failures
+   * journaled.
    */
   private runCommand(name: string, args: string): void {
     const body: RequestBody<'session.command'> = {
@@ -872,11 +851,10 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   /**
-   * Infléchit le tour en cours.
+   * Steer active turn.
    *
-   * Sondé : un `prompt_async` reçu pendant un tour n'en ouvre pas un second et
-   * n'interrompt rien. Le message est pris à l'étape de modèle suivante, à l'intérieur
-   * du même passage `busy` → `idle`.
+   * Probed: mid-turn prompt_async neither opens another turn nor interrupts. Taken at next model
+   * step inside same busy → idle interval.
    */
   async steer(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): Promise<boolean> {
     if (!this.server || !this.sessionId || !this.turnActive) return false
@@ -887,17 +865,14 @@ export class OpencodeRunner implements AgentRunner {
     return true
   }
 
-  /**
-   * Compaction, par une requête dédiée. Elle exige un modèle : celui de la
-   * conversation, sinon celui qu'opencode applique par défaut.
-   */
+  /** Dedicated compaction request requires model: conversation’s, otherwise opencode default. */
   async compact(): Promise<boolean> {
     const model = parseModel(this.config.model || this.defaultModel || '')
     if (!this.server || !this.sessionId || !model) return false
 
     this.compacting = true
     this.ctx.emit({ type: 'context.compaction_started' })
-    // Comme `/command`, la réponse n'arrive qu'une fois le résumé écrit.
+    // Like /command, responds only after summary written.
     this.server
       .post(`/session/${this.sessionId}/summarize`, model satisfies RequestBody<'session.summarize'>, null)
       .catch((err: unknown) => {
@@ -909,14 +884,14 @@ export class OpencodeRunner implements AgentRunner {
     return true
   }
 
-  /** opencode n'annonce pas de travaux de fond à arrêter. */
+  /** opencode reports no background work to stop. */
   async stopBackgroundTask(): Promise<boolean> {
     return false
   }
 
   /**
-   * Modèle, variante et agent primaire partent avec chaque message : rien à relancer.
-   * Tout ce qui tient à la configuration de lancement demande un nouveau serveur.
+   * Model/variant/primary agent sent per message, no restart. Launch-config changes require new
+   * server.
    */
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'opencode') return false
@@ -926,9 +901,8 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   /**
-   * Sondé : un serveur en marche ne voit pas un skill ajouté, renommé ou retiré après
-   * son lancement. Il faut lui faire jeter son instance, ce qui emporterait un tour en
-   * cours : la relecture attend donc le repos.
+   * Probed: running server misses added/renamed/deleted skills. Dispose instance to reread, which
+   * would kill active turns, so wait for idle.
    */
   async reloadSkillLibrary(): Promise<void> {
     if (this.turnActive) {
@@ -960,8 +934,8 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   async interrupt(): Promise<void> {
-    // Sans tour en cours il n'y a rien à interrompre. Le geste reste une sortie pour
-    // autant : une conversation qui se croit occupée ne doit pas le rester.
+    // No active turn means nothing to interrupt, but action remains escape hatch: falsely busy
+    // conversations must become idle.
     if (!this.server || !this.sessionId || !this.turnActive) {
       this.interactions.expireAll()
       this.ctx.setStatus('idle')
@@ -969,8 +943,7 @@ export class OpencodeRunner implements AgentRunner {
     }
     await this.server.post(`/session/${this.sessionId}/abort`)
 
-    // `session.idle` clôt le tour et fait foi. Le garde-fou couvre le cas où il ne
-    // vient jamais.
+    // session.idle authoritative closure; fallback covers missing event.
     this.clearInterruptWatchdog()
     this.interruptWatchdog = setTimeout(() => {
       this.turnAborted = true
@@ -986,7 +959,7 @@ export class OpencodeRunner implements AgentRunner {
 
   async stop(): Promise<void> {
     this.clearInterruptWatchdog()
-    // Le serveur part avec ses demandes : inutile de les lui refuser une à une.
+    // Server leaves with its requests: no need deny individually.
     const server = this.server
     this.server = null
     this.interactions.expireAll()
@@ -1003,7 +976,7 @@ function isDirectory(path: string): boolean {
   }
 }
 
-/** Commandes d'opencode dans la forme commune. `hints` liste les `$1`, `$ARGUMENTS`… attendus. */
+/** Common-format opencode commands. hints lists expected $1, $ARGUMENTS… */
 export function toSlashCommands(commands: Command[]) {
   return commands.map((command) => ({
     name: command.name,

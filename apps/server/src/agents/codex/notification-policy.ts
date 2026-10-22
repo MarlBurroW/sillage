@@ -1,11 +1,11 @@
 import type { ServerNotification } from '@sillage/codex-bindings'
 
-/** Chaque notification ajoutée par une régénération exige une décision explicite. */
+/** Every notification added by regeneration requires an explicit policy decision. */
 export const NOTIFICATION_POLICY: Record<string, 'handled' | 'notice' | 'ignore' | undefined> = {
   'error': 'handled',
   'thread/started': 'handled',
   'thread/status/changed': 'handled',
-  // L'état lu/non lu du CLI ne pilote pas celui du journal Sillage.
+  // CLI read/unread state does not control Sillage journal state.
   'thread/readState/changed': 'ignore',
   'thread/archived': 'notice',
   'thread/deleted': 'notice',
@@ -87,11 +87,11 @@ export const NOTIFICATION_POLICY: Record<string, 'handled' | 'notice' | 'ignore'
   'windows/worldWritableWarning': 'notice',
   'windowsSandbox/setupCompleted': 'notice',
   'account/login/completed': 'notice',
-  // Login OAuth de passerelle d'entreprise : Sillage ne le déclenche pas, mais un
-  // changement de compte mérite d'être lu dans le fil, comme les autres `account/*`.
+  // Enterprise gateway OAuth login is not initiated by Sillage, but account
+  // changes deserve thread notices like other account events.
   'account/gatewayOAuth/changed': 'notice',
-  // Pièces jointes persistées par fil (0.155) : Sillage tient son propre journal.
+  // Per-thread persisted attachments (0.155): Sillage maintains its own log.
   'thread/attachment/updated': 'ignore',
-  // Prédiction de la suite d'un fil (0.162) : rien à en montrer.
+  // Thread continuation prediction (0.162) provides nothing to display.
   'thread/prediction/updated': 'ignore',
 } satisfies Record<ServerNotification['method'], 'handled' | 'notice' | 'ignore'>

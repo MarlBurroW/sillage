@@ -7,16 +7,10 @@ import { browseQuerySchema, mkdirBodySchema, type FsEntryDto, type FsListingDto 
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-/**
- * Un dossier très peuplé ne doit pas produire une réponse de plusieurs mégaoctets
- * ni bloquer l'event loop sur les stat().
- */
+/** Large directories must not produce multi-megabyte responses or block the event loop with stat() calls. */
 const MAX_ENTRIES = 500
 
-/**
- * Dossiers systèmes sans intérêt comme workspace, et dont la traversée est lente ou
- * dangereuse (/proc expose un dossier par processus, /sys des milliers d'entrées).
- */
+/** System directories unsuitable as workspaces and slow or dangerous to traverse (/proc has a directory per process, /sys has thousands of entries). */
 const DENIED_PREFIXES = ['/proc', '/sys', '/dev', '/run']
 
 function isDenied(path: string): boolean {
@@ -26,18 +20,18 @@ function isDenied(path: string): boolean {
 async function describeEntry(parentPath: string, name: string): Promise<FsEntryDto | null> {
   const path = join(parentPath, name)
   try {
-    // stat et non lstat : un lien symbolique vers un dossier est un dossier valide ici.
+    // Use stat rather than lstat: symlinks targeting directories are valid here.
     const info = await stat(path)
     if (!info.isDirectory()) return null
   } catch {
-    // Lien cassé ou permission refusée sur la cible : l'entrée n'est pas exploitable.
+    // Broken symlink or inaccessible target: the entry is unusable.
     return null
   }
 
   let readable = true
   try {
-    // R_OK pour lister, X_OK pour traverser. Un seul appel système, alors qu'un
-    // readdir de test lirait entièrement chacun des 500 sous-dossiers.
+    // R_OK permits listing, X_OK traversal. A single system call avoids a test readdir
+    // that would read every entry in each of 500 subdirectories.
     await access(path, constants.R_OK | constants.X_OK)
   } catch {
     readable = false
@@ -46,10 +40,7 @@ async function describeEntry(parentPath: string, name: string): Promise<FsEntryD
   return { name, path, isGitRepo: existsSync(join(path, '.git')), readable }
 }
 
-/**
- * Les racines proposées à côté du dossier personnel : `/`, ou sous Windows chaque lecteur
- * présent, puisqu'il n'y a pas de racine commune.
- */
+/** Roots offered alongside the home directory: `/`, or each available Windows drive because Windows has no common root. */
 function systemRoots(): { label: string; path: string }[] {
   if (process.platform !== 'win32') return [{ label: 'Racine', path: '/' }]
   return 'CDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -65,8 +56,8 @@ export function registerFsRoutes(app: FastifyInstance): void {
     requireUser(request)
     const query = browseQuerySchema.parse(request.query)
 
-    // resolve() normalise les '..' : la valeur retournée est toujours canonique, ce
-    // qui évite qu'un chemin comme /home/x/../../etc s'affiche autrement qu'il n'est.
+    // resolve() normalizes '..' so returned values are canonical,
+    // preventing paths such as /home/x/../../etc from appearing misleadingly different.
     const path = resolve(query.path ?? home)
 
     if (isDenied(path)) {
@@ -115,8 +106,8 @@ export function registerFsRoutes(app: FastifyInstance): void {
     requireUser(request)
     const body = mkdirBodySchema.parse(request.body)
 
-    // Un nom qui contient '/' (ou '\' sous Windows) viserait un autre dossier que celui
-    // affiché ; '.' et '..' n'ont pas de sens comme nom d'entrée à créer.
+    // Names containing '/' (or '\\' on Windows) would target a different directory;
+    // '.' and '..' are not meaningful names for new entries.
     const separator = body.name.includes('/') || (process.platform === 'win32' && body.name.includes('\\'))
     if (separator || body.name === '.' || body.name === '..') {
       throw badRequest('invalid_name', '{name} is not a valid folder name.', { name: body.name })

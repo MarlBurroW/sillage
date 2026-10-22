@@ -6,24 +6,21 @@ import type { Config, Event } from '@sillage/opencode-bindings'
 import { assertSupportedOpencode } from './version-guard.js'
 
 /**
- * Un `opencode serve` et le client HTTP qui lui parle.
+ * opencode serve and HTTP client.
  *
- * opencode n'a pas de protocole sur stdio comme l'app-server de Codex : il ouvre une API
- * HTTP et pousse ses événements par SSE (`GET /event`). Ce module tient les trois bouts
- * (le process, les requêtes, le flux) et rien du métier, comme `CodexAppServerClient`.
+ * No stdio protocol like Codex: HTTP API, SSE GET /event. Module owns process/requests/stream
+ * without business logic, like CodexAppServerClient.
  *
- * Première génération de l'API seulement (`/session/...`, `GET /event`). Sondé sur
- * opencode 1.18.25, 1.19.0 et 1.19.3 : la seconde (`/api/session/...`, `GET /api/event`) est un monde à
- * part, son flux ne dit rien des sessions créées par la première, et il lui manque le
- * fork et les serveurs MCP.
+ * First API only (/session/..., GET /event), probed 1.18.25/1.19.0/1.19.3. Second
+ * (/api/session/..., GET /api/event) ignores first sessions and lacks forks/MCP.
  */
 
 const START_TIMEOUT_MS = 30_000
 const REQUEST_TIMEOUT_MS = 30_000
-/** Tentatives de rebranchement du flux avant de déclarer le serveur perdu. */
+/** Stream reconnect attempts before declaring server lost. */
 const MAX_STREAM_RETRIES = 5
 
-/** Conserve le statut HTTP : un refus d'opencode n'est pas une panne de transport. */
+/** Preserve HTTP status: opencode rejection is not transport failure. */
 export class OpencodeHttpError extends Error {
   constructor(message: string, readonly status: number, readonly body: unknown) {
     super(message)
@@ -36,27 +33,26 @@ export interface OpencodeServerOptions {
   cwd: string
   env?: NodeJS.ProcessEnv
   /**
-   * Configuration injectée par `OPENCODE_CONFIG_CONTENT`, fusionnée par-dessus celle du
-   * poste. C'est le seul canal par conversation : `POST /mcp` et le reste agissent sur
-   * l'instance entière, et rien n'est écrit dans les fichiers de l'utilisateur.
+   * OPENCODE_CONFIG_CONTENT injected over machine config. Only per-conversation channel: POST /mcp
+   * etc affect whole instance; user files untouched.
    */
   config: Config
-  /** Événements du flux. Absent, le flux n'est pas ouvert : une sonde n'en a pas besoin. */
+  /** Stream events. Without handler stream stays unopened: probes do not need it. */
   onEvent?: (event: Event) => void
   /**
-   * Le flux a été rebranché après une coupure. Ce qui s'est dit entre-temps est perdu :
-   * à l'appelant de relire l'état qu'il suit.
+   * Reconnected stream after interruption. Events during gap lost; caller must reread tracked
+   * state.
    */
   onReconnect?: () => void
-  /** Mort du process, ou flux définitivement perdu, hors d'un `close()` demandé. */
+  /** Unexpected process death or permanently lost stream outside requested close(). */
   onExit?: (code: number | null) => void
 }
 
 export class OpencodeServer {
   private closed = false
-  /** Coupe la connexion courante du flux ; une par branchement. */
+  /** Close current stream connection, one per attachment. */
   private connection = new AbortController()
-  /** Rebranchement demandé par `reloadInstance`, à résoudre au premier événement reçu. */
+  /** reloadInstance-requested reconnect, resolved at first event. */
   private restart: (() => void) | null = null
 
   private constructor(
@@ -67,18 +63,15 @@ export class OpencodeServer {
   ) {}
 
   /**
-   * Lance le serveur et attend qu'il écoute, flux branché.
+   * Start server, wait for listening with stream connected.
    *
-   * Le port est choisi ici et non laissé à opencode : avec `--port 0` il prend 4096
-   * dès qu'il le croit libre, y compris pendant que le serveur précédent de la même
-   * conversation finit de s'éteindre. Relevé en relançant un runner pour un réglage : le
-   * nouveau annonçait 4096 et sa première connexion était coupée. Un mot de passe par
-   * process : sans lui, n'importe quel programme de la machine piloterait la session
-   * par ce port.
+   * Choose port here: --port 0 picks 4096 when apparently free, even while previous conversation
+   * server shuts down. Observed settings restart: new server announced 4096, first connection cut.
+   * Per-process password prevents any local program driving session through port.
    */
   static async start(options: OpencodeServerOptions): Promise<OpencodeServer> {
-    // Ici, seul point de lancement : session, catalogue, commandes et fork passent tous
-    // par là, et un opencode 2 doit être refusé partout plutôt que de tourner à vide.
+    // Single launch point for sessions/catalog/commands/forks: reject opencode 2 everywhere rather
+    // than run silently.
     await assertSupportedOpencode(options.binary)
     const password = randomBytes(24).toString('hex')
     const port = await freePort()
@@ -102,7 +95,7 @@ export class OpencodeServer {
       throw err
     }
 
-    // Passé l'annonce, la sortie n'est plus qu'un diagnostic.
+    // After announcement output serves diagnostics only.
     const relay = (chunk: Buffer) => process.stderr.write(`[opencode] ${chunk.toString()}`)
     child.stdout.on('data', relay)
     child.stderr.on('data', relay)
@@ -131,10 +124,7 @@ export class OpencodeServer {
     this.options.onExit?.(code)
   }
 
-  /**
-   * Branche le flux et rend la main à son premier événement (`server.connected`) :
-   * une requête partie avant verrait ses premiers événements passer sans témoin.
-   */
+  /** Connect stream, return at first server.connected: earlier requests would lose initial events. */
   private async openStream(): Promise<void> {
     const body = await this.connectStream()
     let connected!: () => void
@@ -166,13 +156,12 @@ export class OpencodeServer {
           onFirstFrame()
         })
       } catch {
-        // Coupure du flux : traitée comme une fin, le rebranchement suit.
+        // Stream failure treated as end, followed by reconnect.
       }
       if (this.closed) return
 
-      // Le flux s'est tu alors que le process vit encore. On le rebranche plutôt que de
-      // perdre la session ; au-delà de quelques essais, c'est le serveur qui est perdu.
-      // Une coupure demandée ne compte pas comme une panne et n'attend pas.
+      // Stream silent but process alive: reconnect rather than lose session; after attempts declare
+      // server lost. Requested disconnection neither counts as failure nor waits.
       if (this.restart === null) {
         if (++retries > MAX_STREAM_RETRIES) return this.fail(null)
         await new Promise((resolve) => setTimeout(resolve, 200 * retries))
@@ -181,7 +170,7 @@ export class OpencodeServer {
       try {
         body = await this.connectStream()
       } catch {
-        // Nouvel essai au tour suivant, avec un délai plus long.
+        // Retry next iteration with longer delay.
         body = new ReadableStream({ start: (controller) => controller.close() })
         continue
       }
@@ -193,13 +182,11 @@ export class OpencodeServer {
   }
 
   /**
-   * Fait relire sa configuration à opencode (`POST /instance/dispose`) : dossiers de
-   * skills, agents, commandes. Les sessions, en base, n'en souffrent pas.
+   * Reload config through POST /instance/dispose: skills/agents/commands. Database sessions
+   * unaffected.
    *
-   * Sondé : le flux ouvert reste branché à l'instance jetée et ne dit plus rien, sans
-   * se fermer. Il est donc coupé et rebranché ici, et la main n'est rendue qu'à son
-   * premier événement, comme au lancement. À n'appeler qu'au repos : un tour en cours
-   * partirait avec l'instance.
+   * Probed: existing stream stays attached to disposed instance, silently open.
+   * Disconnect/reconnect, wait first event like startup. Idle only: active turns die with instance.
    */
   async reloadInstance(): Promise<void> {
     await this.post('/instance/dispose')
@@ -210,7 +197,7 @@ export class OpencodeServer {
     })
   }
 
-  /** Trames SSE : des lignes `data:` closes par une ligne vide. Le reste est ignoré. */
+  /** SSE frames: data: lines terminated by blank line. Ignore rest. */
   private async readFrames(body: ReadableStream<Uint8Array>, onFrame: () => void): Promise<void> {
     const decoder = new TextDecoder()
     let buffer = ''
@@ -241,9 +228,8 @@ export class OpencodeServer {
   }
 
   /**
-   * Requête JSON. `timeoutMs` nul pour celles qui durent le temps d'un tour
-   * (`/command`, `/summarize`) : les borner couperait une réponse qu'opencode ne
-   * rend qu'à la fin.
+   * JSON request. Null timeoutMs for turn-duration /command,/summarize: limiting would cut
+   * responses returned only at end.
    */
   async request<T>(
     method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -288,15 +274,15 @@ export class OpencodeServer {
     if (this.closed) return
     this.closed = true
     this.connection.abort()
-    // Un rechargement en attente ne doit pas rester suspendu à un flux qui ne viendra plus.
+    // Pending reload must not hang on stream that will never arrive.
     this.restart?.()
     this.child.kill()
   }
 }
 
 /**
- * Un port libre, pris au système puis rendu. Rien ne le réserve entre-temps : si un
- * autre process le prend, opencode échoue à démarrer et le lancement le dit.
+ * Free port requested from system then released, not reserved: if another process takes it,
+ * opencode startup fails visibly.
  */
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -312,7 +298,7 @@ function freePort(): Promise<number> {
   })
 }
 
-/** L'adresse qu'opencode annonce (« opencode server listening on http://… »). */
+/** Address announced by opencode (“opencode server listening on http://…”). */
 function listeningUrl(child: ChildProcessWithoutNullStreams): Promise<string> {
   return new Promise((resolve, reject) => {
     let output = ''
@@ -350,7 +336,7 @@ function listeningUrl(child: ChildProcessWithoutNullStreams): Promise<string> {
   })
 }
 
-/** Les erreurs d'opencode portent leur message sous `data.message`, ou à plat. */
+/** opencode errors carry message under data.message or at top level. */
 function describeFailure(method: string, path: string, status: number, body: unknown): string {
   const fields = body as { data?: { message?: unknown }; message?: unknown } | null
   const detail = fields?.data?.message ?? fields?.message

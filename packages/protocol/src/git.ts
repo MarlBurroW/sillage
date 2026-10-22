@@ -2,15 +2,14 @@ import { z } from 'zod'
 import { commitHashSchema } from './api.js'
 
 /**
- * Le workflow git du panneau : index, commit, branches, remote, stash.
+ * Panel git workflow: index, commits, branches, remotes, stashes.
  *
- * Distinct des lectures de `api.ts` (diff de travail, commits), qui ne faisaient que
- * montrer : ici on agit sur le dépôt. Les schémas des corps sont stricts parce que
- * chaque valeur finit sur la ligne de commande de git, où un nom qui commence par `-`
- * deviendrait une option.
+ * Unlike `api.ts` reads (working diff, commits), which only display information, this acts on
+ * the repository. Request-body schemas are strict because every value ends up on git's command
+ * line, where a name starting with `-` becomes an option.
  */
 
-/** Nature d'un changement, d'après la colonne XY de `git status --porcelain=v2`. */
+/** Change kind from the XY column of `git status --porcelain=v2`. */
 export const gitChangeKindSchema = z.enum([
   'added',
   'modified',
@@ -25,44 +24,44 @@ export type GitChangeKind = z.infer<typeof gitChangeKindSchema>
 
 export interface GitChangeDto {
   path: string
-  /** Chemin d'origine d'un renommage ou d'une copie, null sinon. */
+  /** Original path of a rename or copy; otherwise null. */
   oldPath: string | null
   kind: GitChangeKind
-  /** Lignes ajoutées et retirées. Null pour un binaire, ou quand git ne les compte pas. */
+  /** Added and removed lines. Null for binaries or when git does not count them. */
   added: number | null
   removed: number | null
 }
 
-/** Opération à plusieurs temps laissée en cours : git attend qu'on la finisse ou l'abandonne. */
+/** Unfinished multi-step operation: git waits for completion or abort. */
 export const gitOperationSchema = z.enum(['merge', 'rebase', 'cherry-pick', 'revert', 'bisect'])
 export type GitOperation = z.infer<typeof gitOperationSchema>
 
 export interface GitRepoStatusDto {
-  /** Branche courante, null en HEAD détachée. */
+  /** Current branch; null for detached HEAD. */
   branch: string | null
-  /** Vrai quand HEAD ne pointe sur aucune branche. */
+  /** True when HEAD points to no branch. */
   detached: boolean
-  /** Vrai quand le dépôt n'a encore aucun commit : pas de HEAD à comparer. */
+  /** True when the repository has no commits: no HEAD to compare against. */
   unborn: boolean
   head: { hash: string; shortHash: string; subject: string; body: string } | null
-  /** Branche distante suivie (`origin/main`), null si la branche n'en a pas. */
+  /** Tracked remote branch (`origin/main`); null without an upstream. */
   upstream: string | null
   ahead: number
   behind: number
   operation: GitOperation | null
   remotes: string[]
-  /** Dans l'index, prêt à être commité. */
+  /** In the index, ready to commit. */
   staged: GitChangeDto[]
-  /** Dans le répertoire de travail seulement, fichiers non suivis compris. */
+  /** Only in the working directory, including untracked files. */
   unstaged: GitChangeDto[]
-  /** En conflit : à résoudre puis à marquer résolus (les ajouter à l'index). */
+  /** Conflicted: resolve, then mark resolved by staging. */
   conflicted: GitChangeDto[]
   stashCount: number
 }
 
 export interface GitStatusDto {
   cwd: string
-  /** Null hors dépôt git : un projet peut pointer sur un dossier quelconque. */
+  /** Null outside a git repository: a project may point to any directory. */
   repo: GitRepoStatusDto | null
 }
 
@@ -71,19 +70,19 @@ export interface GitBranchDto {
   current: boolean
   hash: string
   subject: string
-  /** Date du dernier commit, en millisecondes. */
+  /** Latest commit timestamp in milliseconds. */
   ts: number
   upstream: string | null
   ahead: number
   behind: number
-  /** Vrai si la branche distante suivie a disparu. */
+  /** True if the tracked remote branch has disappeared. */
   gone: boolean
-  /** Chemin du worktree où la branche est extraite, null si elle ne l'est nulle part. */
+  /** Worktree path where the branch is checked out; null if nowhere. */
   worktreePath: string | null
 }
 
 export interface GitRemoteBranchDto {
-  /** Nom complet, `origin/main`. */
+  /** Full name, `origin/main`. */
   name: string
   remote: string
   hash: string
@@ -99,7 +98,7 @@ export interface GitBranchesDto {
 export interface GitStashDto {
   index: number
   message: string
-  /** Branche sur laquelle le stash a été fait, telle que git l'inscrit dans le message. */
+  /** Branch where the stash was created, as recorded by git in its message. */
   branch: string | null
   ts: number
 }
@@ -114,13 +113,13 @@ export interface GitFileDiffDto {
 }
 
 /**
- * Résultat d'une action qui a réussi au sens de git, conflits compris : une fusion qui
- * laisse des conflits n'est pas une panne, c'est l'état normal avant leur résolution.
+ * Result of an action git considers successful, including conflicts: a merge leaving conflicts
+ * is not a failure, but the normal state before resolution.
  */
 export interface GitActionDto {
-  /** Ce que git a dit d'utile, une ligne (« Already up to date. »), ou null. */
+  /** Useful git output, one line (“Already up to date.”), or null. */
   summary: string | null
-  /** Vrai quand l'action laisse des conflits à résoudre dans le répertoire de travail. */
+  /** True when the action leaves working-directory conflicts to resolve. */
   conflicts: boolean
 }
 
@@ -129,21 +128,20 @@ export interface GitCommitResultDto extends GitActionDto {
   shortHash: string
 }
 
-// Corps des requêtes
+// Request bodies
 
 /**
- * Un chemin relatif au dépôt, tel que `git status` le rend. Le bornage au dépôt est
- * l'affaire de git, qui refuse un pathspec hors de son arbre ; l'octet nul, lui, ne
- * passe pas une ligne de commande.
+ * Repository-relative path as returned by `git status`. Git enforces repository containment by
+ * rejecting external pathspecs; null bytes cannot appear on a command line.
  */
 const gitPathSchema = z.string().min(1).max(4096).refine((path) => !path.includes('\0'))
 
-/** Absent, la portée est tout le répertoire de travail. */
+/** Absent means the entire working directory. */
 export const gitPathsBodySchema = z.object({
   paths: z.array(gitPathSchema).min(1).max(5000).optional(),
 })
 
-/** Ces chemins-là sont obligatoires : abandonner « tout » se fait ligne à ligne, consciemment. */
+/** These paths are required: discarding “everything” must be an intentional selection of each entry. */
 export const gitDiscardBodySchema = z.object({
   paths: z.array(gitPathSchema).min(1).max(5000),
 })
@@ -159,14 +157,13 @@ export const gitFileDiffQuerySchema = z.object({
 export const gitCommitBodySchema = z.object({
   message: z.string().trim().min(1).max(20_000),
   amend: z.boolean().default(false),
-  /** Ajouter tout le répertoire de travail à l'index d'abord : le commit « tout » d'un geste. */
+  /** Stage the whole working directory first: one-step “commit all”. */
   stageAll: z.boolean().default(false),
 })
 
 /**
- * Un nom de référence tel que git l'accepte, et rien qui puisse passer pour une option
- * ou une plage (`-x`, `a..b`, `@{1}`). La règle de git est plus riche, mais ce qu'elle
- * refuse en plus échoue chez lui avec un message clair.
+ * A git reference name, excluding anything resembling an option or range (`-x`, `a..b`,
+ * `@{1}`). Git's rules are richer; additional violations fail there with a clear message.
  */
 export const gitRefSchema = z
   .string()
@@ -185,19 +182,19 @@ export const gitRefSchema = z
 
 export const gitCreateBranchBodySchema = z.object({
   name: gitRefSchema,
-  /** Point de départ : une branche, un commit. HEAD par défaut. */
+  /** Starting point: branch or commit. Defaults to HEAD. */
   from: z.union([gitRefSchema, commitHashSchema]).optional(),
   checkout: z.boolean().default(true),
 })
 
 export const gitCheckoutBodySchema = z.object({
-  /** Une branche locale, une branche distante (`origin/x`), ou un commit. */
+  /** A local branch, remote branch (`origin/x`) or commit. */
   ref: z.union([gitRefSchema, commitHashSchema]),
 })
 
 export const gitDeleteBranchBodySchema = z.object({
   name: gitRefSchema,
-  /** `-D` : la branche part même si elle n'est pas fusionnée. Jamais implicite. */
+  /** `-D`: delete the branch even if unmerged. Never implicit. */
   force: z.boolean().default(false),
 })
 
@@ -206,14 +203,14 @@ export const gitMergeBodySchema = z.object({
 })
 
 export const gitPullBodySchema = z.object({
-  /** Absent, git suit `pull.rebase` ; sinon la stratégie est imposée. */
+  /** Absent follows `pull.rebase`; otherwise forces the strategy. */
   rebase: z.boolean().optional(),
 })
 
 export const gitPushBodySchema = z.object({
-  /** `--force-with-lease`, et non `--force` : refuse d'écraser ce qu'on n'a pas vu. */
+  /** `--force-with-lease`, not `--force`: refuses to overwrite unseen changes. */
   force: z.boolean().default(false),
-  /** Remote de publication quand la branche n'a pas encore d'amont. `origin` sinon. */
+  /** Publication remote when the branch has no upstream yet. Otherwise `origin`. */
   remote: gitRefSchema.optional(),
 })
 
@@ -238,19 +235,19 @@ export const gitRevertBodySchema = z.object({
   hash: commitHashSchema,
 })
 
-// Points de reprise d'un tour
+// Turn checkpoints
 
 export const checkpointKeySchema = z.string().regex(/^[0-9a-f-]{8,64}$/)
 
 export const checkpointFileDiffQuerySchema = z.object({
   path: gitPathSchema,
-  /** L'ancien nom d'un renommage : sans lui, git montrerait une création. */
+  /** Previous name in a rename: without it, git would show a creation. */
   oldPath: gitPathSchema.optional(),
 })
 
 export interface CheckpointRestoreDto {
   written: number
   deleted: number
-  /** Faux quand l'index n'a pas pu être capturé (conflits au moment du tour). */
+  /** False when the index could not be captured due to conflicts during the turn. */
   indexRestored: boolean
 }

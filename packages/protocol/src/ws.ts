@@ -5,11 +5,11 @@ import type { SillageEvent } from './events.js'
 import type { InAppNotification } from './notifications.js'
 
 /**
- * Une seule connexion WebSocket par onglet, multiplexée sur plusieurs conversations
- * (la sidebar suit les statuts pendant que la vue principale suit un fil).
+ * One WebSocket connection per tab, multiplexed across conversations: the sidebar follows
+ * statuses while the main view follows a thread.
  */
 
-/** Au-delà, l'explorateur déplié coûte plus de veilles que la machine n'en accorde. */
+/** Beyond this, the expanded explorer consumes more watchers than the machine allows. */
 export const MAX_WATCHED_PATHS = 200
 
 export const clientMessageSchema = z.discriminatedUnion('t', [
@@ -20,28 +20,27 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   }),
   z.object({ t: z.literal('unsubscribe'), conversationId: z.string() }),
   /**
-   * Dossiers dont le client affiche le contenu, et qu'il veut donc voir suivis sur le
-   * disque. L'ensemble est déclaré entier à chaque fois plutôt que par ajouts et
-   * retraits : le client connaît ses niveaux dépliés, et un delta perdu laisserait un
-   * dossier suivi pour toujours ou plus du tout.
+   * Directories whose contents the client displays and therefore wants watched on disk. The
+   * entire set is declared each time rather than added/removed incrementally: the client knows
+   * expanded levels, and a lost delta could leave a directory watched forever or not at all.
    */
   z.object({
     t: z.literal('watch-tree'),
     /**
-     * L'explorateur vit aussi en vue projet, où aucune conversation n'existe : le
-     * répertoire suivi est alors le workspace du projet plutôt que celui d'un fil.
+     * The explorer also works in project view without a conversation: watch the project
+     * workspace rather than a thread's directory.
      */
     scope: z.enum(['conversation', 'project']),
     id: z.string(),
-    // Borné parce que chaque dossier coûte une veille inotify, ressource comptée par
-    // utilisateur sur la machine hôte.
+    // Bounded because each directory consumes an inotify watcher, a resource counted
+    // per user on the host machine.
     paths: z.array(z.string()).max(MAX_WATCHED_PATHS),
   }),
   z.object({ t: z.literal('ping') }),
   /**
-   * L'onglet est-il visible, et à quel abonnement push correspond son appareil ? Le
-   * serveur ne pousse pas de notification système vers un appareil où l'application est
-   * sous les yeux : il y envoie un toast. Un onglet caché compte comme absent.
+   * Is the tab visible, and which push subscription identifies its device? The server sends a
+   * toast instead of a system notification to devices where the app is visible. A hidden tab
+   * counts as absent.
    */
   z.object({
     t: z.literal('presence'),
@@ -64,97 +63,92 @@ export type ServerMessage =
       conversationId: string
       status: z.infer<typeof conversationStatusSchema>
       /**
-       * Vrai si un process CLI est encore vivant pour cette conversation.
+       * True if a CLI process is still alive for this conversation.
        *
-       * Distinct du statut : une conversation au repos peut avoir gardé sa session
-       * chargée, ou l'avoir laissée expirer. Le prochain message coûte alors le
-       * redémarrage du CLI et le rechargement du contexte, ce que l'utilisateur a
-       * intérêt à savoir avant de se demander pourquoi la réponse tarde.
+       * Separate from status: an idle conversation may retain its loaded session or let it
+       * expire. The next message then requires restarting the CLI and reloading context, useful
+       * to know before wondering why the reply is slow.
        */
       warm: boolean
       /**
-       * Nombre de travaux de fond vivants pour cette conversation.
+       * Active background job count for this conversation.
        *
-       * Doublonne l'événement `background.updated` du journal, et pour la même raison
-       * que `warm` : la sidebar suit des conversations qu'elle n'a pas ouvertes, donc
-       * sans journal à replier. C'est un état de process, jamais persisté : une
-       * conversation froide n'a plus de CLI, donc plus de travail de fond.
+       * Duplicates journal `background.updated` for the same reason as `warm`: the sidebar
+       * follows unopened conversations without journals to fold. Process state, never
+       * persisted: a cold conversation has no CLI and hence no background work.
        */
       background: number
       /**
-       * Nombre de boucles armées pour cette conversation.
+       * Armed loop count for this conversation.
        *
-       * Doublonne `loops.updated` pour la même raison que `background` : la sidebar
-       * doit distinguer une conversation au repos d'une conversation qui repartira
-       * seule, sans avoir son journal à replier.
+       * Duplicates `loops.updated` for the same reason as `background`: the sidebar must
+       * distinguish idle conversations from ones that will restart themselves without folding
+       * their journals.
        */
       loops: number
       /**
-       * Configuration sous laquelle la session tourne réellement, `null` à froid.
+       * Configuration actually used by the session; `null` when cold.
        *
-       * Un réglage que le CLI ne sait pas changer en vol reste celui du lancement
-       * jusqu'au redémarrage, alors que la valeur demandée est déjà enregistrée et
-       * affichée : c'est le seul moyen de savoir que le tour en cours n'obéit pas encore
-       * à ce qui est à l'écran. Envoyée entière plutôt que réduite au réglage qui pose
-       * problème, les deux CLI n'ayant pas les mêmes ; le client compare et n'annonce
-       * que ce qui diffère. À froid il n'y a rien à comparer : le prochain lancement
-       * prendra la configuration enregistrée.
+       * Settings the CLI cannot change live remain at launch values until restart, while
+       * requested values are already saved and displayed. This reveals when the current turn is
+       * not yet using on-screen settings. Sent in full rather than limited to problematic
+       * settings because those differ between CLIs; the client compares and reports only
+       * differences. Cold sessions have nothing to compare: the next launch uses saved
+       * configuration.
        */
       appliedConfig: AgentConfig | null
       /**
-       * Dernier `seq` qui valait qu'on prévienne le lecteur, pour la même raison que les
-       * trois précédents.
+       * Latest `seq` worth notifying the reader about, for the same reason as the three
+       * preceding fields.
        *
-       * Porté par le statut plutôt que par un flux propre : le moment qui intéresse la
-       * sidebar est la fin du tour, pas chaque jeton. Un fil qui repasse au repos a fini
-       * de produire, et c'est là que le point de non-lu doit apparaître. Le suivre
-       * événement par événement le ferait clignoter pendant toute la réponse.
+       * Carried by status rather than a dedicated stream: the sidebar cares about turn
+       * completion, not every token. When a thread becomes idle it has finished producing
+       * output; that is when the unread dot should appear. Following every event would make it
+       * blink throughout the reply.
        *
-       * Le `seq` brut du journal ne conviendrait pas : il avance encore après le départ
-       * de tout le monde, quand la session se refroidit ou qu'un relevé d'usage tombe.
+       * Raw journal `seq` is unsuitable: it advances after everyone leaves when sessions cool
+       * down or usage reports arrive.
        */
       lastNotableSeq: number
       /**
-       * Métriques de volume, relues en base à chaque diffusion.
+       * Volume metrics reread from the database on every broadcast.
        *
-       * Portées par le statut pour la même raison que `lastNotableSeq`, et pour le même prix :
-       * la ligne de conversation est déjà lue pour lui. Ce qui les fait bouger arrive en
-       * fin de tour, moment où le statut change de toute façon.
+       * Carried by status for the same reason and cost as `lastNotableSeq`: the conversation
+       * row is already read for it. They change at turn completion, when status changes anyway.
        */
       metrics: ConversationMetrics
     }
   /**
-   * Le CLI a proposé un titre pour la conversation. Poussé plutôt que redécouvert par
-   * rafraîchissement : le titre arrive après la fin du tour, donc une invalidation
-   * déclenchée sur ce même signal courrait après lui.
+   * The CLI suggested a conversation title. Push rather than rediscover by refresh: titles
+   * arrive after turn completion, so invalidation triggered by that same signal would race
+   * them.
    */
   | { t: 'title'; conversationId: string; title: string }
-  /** Un toast pour cet onglet visible : une décision, ou un CLI qui attend ailleurs. */
+  /** Toast for this visible tab: a decision or a CLI awaiting input elsewhere. */
   | { t: 'notify'; notification: InAppNotification }
-  /** Les décisions de ce compte ont changé : le client relit la liste. */
+  /** This account's decisions changed: the client rereads the list. */
   | { t: 'decisions-changed' }
   /**
-   * Le contenu d'un dossier suivi a bougé sur le disque : le client relit ce niveau.
+   * A watched directory changed on disk: the client rereads that level.
    *
-   * Un chemin par message, la veille étant déjà amortie côté serveur : regrouper
-   * demanderait de retarder les dossiers calmes derrière celui qui s'agite.
+   * One path per message, since watches are already amortized server-side: batching would delay
+   * quiet directories behind active ones.
    *
-   * Ce que le rafraîchissement de fin de tour ne voit pas passe par ici : un terminal
-   * du panneau, un éditeur hors de Sillage, une autre conversation sur le même
-   * worktree.
+   * Catches changes missed by end-of-turn refresh: panel terminals, external editors, or
+   * another conversation using the same worktree.
    */
   | { t: 'tree-changed'; scope: 'conversation' | 'project'; id: string; path: string }
   /**
-   * Le retard dépasse CATCHUP_THRESHOLD : le client doit recharger par la route REST
-   * paginée plutôt que de recevoir le delta sur le socket.
+   * Lag exceeds CATCHUP_THRESHOLD: the client must reload through paginated REST instead of
+   * receiving socket deltas.
    */
   | { t: 'catchup'; conversationId: string; fromSeq: number; toSeq: number }
   /**
-   * La liste des projets ou des conversations a changé : le client la relit.
+   * The project or conversation list changed: the client rereads it.
    *
-   * Le signal ne décrit pas le changement. Suppressions, renommages, rangements et
-   * réordonnancements se comptent en quelques-uns par minute, et la liste relue fait
-   * foi sans qu'il faille tenir un delta par geste.
+   * The signal does not describe the change. Deletions, renames, archiving and reordering occur
+   * only a few times per minute; rereading gives authoritative state without a delta for every
+   * action.
    */
   | { t: 'lists-changed' }
   | { t: 'pong' }

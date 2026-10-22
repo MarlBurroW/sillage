@@ -6,12 +6,11 @@ import type { AppContext } from '../context.js'
 import { badRequest, notFound } from '../errors.js'
 
 /**
- * Ce qu'un jeton peut atteindre.
+ * Resources reachable by a token.
  *
- * Deux filtres se composent, et jamais un seul : ce que son utilisateur voit déjà, et
- * la liste de projets que le jeton déclare. Un jeton emprunte une identité, il ne
- * l'élargit pas ; et restreindre ses projets est le vrai garde-fou quand il part chez
- * un tiers.
+ * Always combine both filters: what its user can already see and the token's
+ * project allowlist. A token borrows an identity without expanding it; limiting
+ * projects is the real safeguard when handing it to a third party.
  */
 export function loadProjectForToken(
   ctx: AppContext,
@@ -21,8 +20,8 @@ export function loadProjectForToken(
 ): ProjectRow {
   const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
   if (!project) throw notFound('project_not_found', 'Project not found.')
-  // Archivé compris : la route de découverte ne le liste pas, et pouvoir lancer une
-  // tâche sur un projet qu'on ne peut pas trouver est une incohérence, pas une souplesse.
+  // Includes archived projects: discovery excludes them, and launching a task in
+  // an undiscoverable project would be an inconsistency rather than flexibility.
   if (project.archivedAt !== null) throw notFound('project_not_found', 'Project not found.')
   if (project.ownerId !== userId && project.visibility !== 'shared') {
     throw notFound('project_not_found', 'Project not found.')
@@ -34,7 +33,7 @@ export function loadProjectForToken(
   return project
 }
 
-/** Liste blanche du jeton ; vide signifie « tous ceux que son utilisateur voit ». */
+/** Token allowlist; empty means every project its user can see. */
 export function allowsProject(token: ApiTokenRow, projectId: string): boolean {
   const allowed = JSON.parse(token.projectIds) as string[]
   return allowed.length === 0 || allowed.includes(projectId)
@@ -45,14 +44,13 @@ export function allowedProjectIds(token: ApiTokenRow): string[] {
 }
 
 /**
- * Une tâche, vue par le jeton.
+ * A task viewed through a token.
  *
- * L'écriture reste réservée au propriétaire du fil, comme dans l'interface : un projet
- * partagé se lit à plusieurs mais ne s'écrit pas à plusieurs.
+ * Writing remains limited to the conversation owner, as in the interface:
+ * shared projects allow multiple readers, not multiple writers.
  *
- * Les trois refus rendent le même code : distinguer « cet identifiant n'existe pas » de
- * « il existe mais pas pour toi » apprendrait à un appelant qui tâtonne ce que la base
- * contient.
+ * All three rejections return the same code: distinguishing nonexistent IDs
+ * from inaccessible ones would reveal database contents to probing callers.
  */
 export function loadTaskForToken(
   ctx: AppContext,
@@ -77,7 +75,7 @@ export function loadTaskForToken(
   return conversation
 }
 
-/** Un worktree doit appartenir au projet visé, et ne pas avoir été retiré. */
+/** A worktree must belong to the target project and must not have been removed. */
 export function assertWorktreeBelongs(
   ctx: AppContext,
   projectId: string,
@@ -96,12 +94,12 @@ export function assertWorktreeBelongs(
 }
 
 /**
- * Racine publique de l'instance, pour le lien qu'un agent fera suivre à un humain.
+ * Public instance root for links agents pass on to humans.
  *
- * Déduite de la requête par défaut, parce que Sillage s'atteint aussi bien par son nom
- * de domaine que par son adresse locale et que figer l'un rendrait l'autre inutilisable.
- * Mais l'en-tête `Host` vient de l'appelant : `server.publicUrl` existe pour qui ne veut
- * pas qu'un jeton puisse fabriquer un lien vers un autre site.
+ * Derived from the request by default because Sillage is reachable through
+ * either its domain or local address; fixing either would break the other.
+ * However, `Host` is caller-controlled: `server.publicUrl` prevents tokens
+ * from manufacturing links to another site when that protection is desired.
  */
 export function publicBaseUrl(ctx: AppContext, request: FastifyRequest): string {
   const configured = publicUrlOf(ctx.db, ctx.config)

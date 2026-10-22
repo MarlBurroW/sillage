@@ -5,44 +5,35 @@ import { rawFileUrl } from './files-io'
 import type { WorkspaceScope } from './workspace-scope'
 
 /**
- * Rendu markdown : markdown-it produit la structure, mais les blocs de code et les
- * tableaux sont extraits pour être rendus par React.
- *
- * Ces deux-là portent une barre d'outils (copie, téléchargement, retour à la ligne,
- * export CSV) : les recréer à la main dans le DOM après coup, comme le faisait le
- * bouton de copie d'origine, ne tient plus dès qu'il y a un état à gérer.
+ * Markdown rendering: markdown-it produces the structure, while code blocks and tables are
+ * extracted for React rendering. Their toolbars (copy, download, wrapping, CSV export) require
+ * state; rebuilding them manually in the DOM afterward, as the original copy button did, no longer
+ * works.
  */
 
 /**
- * `html: false` : le HTML brut du modèle est échappé, pas interprété. C'est la seule
- * protection nécessaire ici, et elle vaut mieux qu'un assainisseur ajouté après coup.
+ * `html: false` escapes raw model HTML instead of interpreting it. This is the only protection
+ * needed here and is preferable to sanitizing afterward.
  */
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
 /**
- * Seuls les liens portant un schéma sont détectés automatiquement.
- *
- * Le mode approximatif de linkify-it lie tout ce qui ressemble à `nom.tld` sans schéma,
- * or `.md`, `.sh`, `.io` ou `.ts` sont de vrais domaines de premier niveau : « CLAUDE.md »
- * devenait un lien vers `http://claude.md`, un domaine que Sillage ne contrôle pas. Dans
- * un outil où l'on cite des fichiers à longueur de message, c'est la règle qui se trompe
- * le plus souvent, et elle se trompe vers l'extérieur.
- *
- * Le prix est qu'un `github.com/org/depot` écrit sans `https://` reste du texte. Les
- * modèles écrivent des URL complètes, et une URL qu'il faut copier vaut mieux qu'un nom
- * de fichier qui emmène ailleurs.
+ * Automatically detect only links with a scheme. linkify-it's fuzzy mode links anything resembling
+ * `name.tld`, but `.md`, `.sh`, `.io`, and `.ts` are real top-level domains: CLAUDE.md became a
+ * link to `http://claude.md`, outside Sillage's control. For messages constantly citing files, this
+ * rule is especially error-prone and sends users elsewhere. As a tradeoff, `github.com/org/repo`
+ * without `https://` remains text. Models write complete URLs, and copying a URL is preferable to a
+ * filename leading elsewhere.
  */
 md.linkify.set({ fuzzyLink: false })
 
-/** Marqueur de case à cocher en tête d'élément de liste, à la façon de GitHub. */
+/** Checkbox marker at the start of a list item, following GitHub conventions. */
 const TASK_MARKER = /^\[([ xX])\]\s+/
 
 /**
- * Cases à cocher des listes de tâches.
- *
- * markdown-it ne connaît pas cette extension : le marqueur reste du texte brut au
- * début du premier paragraphe de l'élément. On le retire du texte et on le remplace
- * par une vraie case, désactivée puisque le fil n'est pas modifiable.
+ * Task-list checkboxes. markdown-it does not implement this extension: the marker remains plain
+ * text at the start of the item's first paragraph. Replace it with a real disabled checkbox because
+ * the thread is read-only.
  */
 md.core.ruler.push('sg_task_lists', (state) => {
   const tokens = state.tokens
@@ -50,8 +41,8 @@ md.core.ruler.push('sg_task_lists', (state) => {
   for (let i = 0; i < tokens.length; i += 1) {
     if (tokens[i]?.type !== 'list_item_open') continue
 
-    // Le contenu de l'élément commence par un paragraphe, dont le token `inline`
-    // porte le texte. Un élément vide n'a pas cette structure.
+    // Item content starts with a paragraph whose `inline` token carries the text. An empty item
+    // lacks this structure.
     const inline = tokens[i + 2]
     if (inline?.type !== 'inline') continue
 
@@ -73,49 +64,42 @@ md.core.ruler.push('sg_task_lists', (state) => {
 })
 
 /**
- * Ce qui, dans un `code span`, peut valoir la peine d'être soumis au serveur.
- *
- * Filtre grossier et volontairement large : il ne tranche pas, il évite seulement
- * d'envoyer des commandes shell et des URL. C'est le workspace qui dit ensuite ce qui
- * est un fichier, parce que la forme ne prouve rien : `text/plain`, `fs/promises` et
- * `@sillage/protocol` ressemblent tous à des chemins.
- *
- * Le suffixe `:12` ou `:12:5` des sorties de `grep` est toléré et retiré : le chemin
- * qu'il désigne existe, seule la position ne se transmet pas à l'éditeur.
+ * Content in a code span worth submitting to the server. Deliberately broad coarse filter: it only
+ * avoids shell commands and URLs, leaving the workspace to decide what is a file. Shape proves
+ * nothing: `text/plain`, `fs/promises`, and `@sillage/protocol` all resemble paths. Accept and
+ * strip `:12` or `:12:5` grep location suffixes: the path exists, but the location is not passed to
+ * the editor.
  */
 const PATH_CANDIDATE = /^(?!-)(?!\w+:\/\/)[\w./@+-]{1,300}$/
 const LINE_SUFFIX = /:\d+(?::\d+)?$/
 
-/** Chemin porté par un `code span`, ou null s'il ne peut pas en être un. */
+/** Path carried by a code span, or null if it cannot be one. */
 function pathCandidate(content: string): string | null {
-  // Le `./` d'écriture est retiré, le workspace attend un chemin relatif à sa racine.
+  // Strip the written `./` prefix: the workspace expects a path relative to its root.
   const path = content.replace(LINE_SUFFIX, '').replace(/^\.\//, '')
   if (!PATH_CANDIDATE.test(path)) return null
-  // Un chemin sans séparateur ni extension est un mot : `useState`, `null`, `main`.
-  // `Makefile` et `LICENSE` y perdent, sauf écrits avec leur dossier ; l'inverse
-  // enverrait au serveur chaque mot mis entre accents graves dans une phrase.
+  // A path with no separator or extension is a word: `useState`, `null`, `main`. This excludes
+  // `Makefile` and `LICENSE` unless written with their directory; otherwise every backticked word
+  // in a sentence would reach the server.
   if (!path.includes('/') && !/\.\w{1,10}$/.test(path)) return null
-  // Un segment `.` ou `..` sort du workspace, ou n'y désigne rien.
+  // A `.` or `..` segment leaves the workspace or identifies nothing within it.
   if (/(^|\/)\.\.?($|\/)/.test(path)) return null
   return path
 }
 
 /**
- * Cible d'un lien ou d'une image qui ne peut pas désigner un fichier : elle porte un
- * schéma (`https:`, `mailto:`), elle est protocole-relative, ou c'est une ancre.
+ * Link or image target that cannot name a file: it has a scheme (`https:`, `mailto:`), is
+ * protocol-relative, or is an anchor.
  */
 const NON_PATH_TARGET = /^(\w+:|\/\/|#)/
 
 /**
- * Chemin porté par la cible d'un lien ou d'une image, ou null si elle mène ailleurs.
- *
- * markdown-it encode la cible en pourcent (un espace devient `%20`) : elle est décodée
- * avant d'être jugée, sinon un chemin avec espace serait recalé par `PATH_CANDIDATE`,
- * et le chemin transmis à l'éditeur ne serait pas celui du disque.
- *
- * `base` est le dossier du document quand il en a un : dans un fichier ouvert dans
- * l'éditeur, `[avant](capture.png)` désigne la capture voisine, pas une capture à la
- * racine du workspace. C'est la règle de GitHub, et celle qu'applique l'agent qui écrit.
+ * Path carried by a link or image target, or null if it leads elsewhere. Decode markdown-it's
+ * percent-encoded target (spaces become `%20`) before checking it; otherwise `PATH_CANDIDATE`
+ * rejects paths with spaces and the editor receives a path different from the one on disk. `base`
+ * is the document's directory when available: in an editor document, `[before](capture.png)` refers
+ * to the neighboring screenshot rather than the workspace root. This matches GitHub and the
+ * authoring agent's convention.
  */
 function pathTarget(target: string | null, base?: string): string | null {
   if (!target || NON_PATH_TARGET.test(target)) return null
@@ -123,7 +107,7 @@ function pathTarget(target: string | null, base?: string): string | null {
   try {
     decoded = decodeURI(target)
   } catch {
-    // Séquence d'échappement invalide : la cible est prise telle qu'écrite.
+    // Invalid escape sequence: use the target as written.
   }
   if (base !== undefined && !decoded.startsWith('/')) {
     const joined = joinPath(base, decoded)
@@ -134,10 +118,8 @@ function pathTarget(target: string | null, base?: string): string | null {
 }
 
 /**
- * `target` résolu depuis le dossier `base`, `.` et `..` compris.
- *
- * null si la cible remonte au-dessus d'une base relative : elle sortirait du workspace,
- * que le serveur refuserait de toute façon.
+ * Resolve `target` from directory `base`, including `.` and `..`. Return null if it climbs above a
+ * relative base: it would leave the workspace and the server would reject it anyway.
  */
 function joinPath(base: string, target: string): string | null {
   const absolute = base.startsWith('/')
@@ -150,34 +132,26 @@ function joinPath(base: string, target: string): string | null {
   return `${absolute ? '/' : ''}${segments.join('/')}`
 }
 
-/** Un type que `file/raw` sert comme image : les autres n'ont rien à afficher. */
+/** A type served as an image by `file/raw`; other types have nothing to display. */
 function isViewableImage(path: string): boolean {
   const extension = path.split('.').pop()?.toLowerCase() ?? ''
   return extension in VIEWABLE_IMAGE_TYPES
 }
 
 /**
- * Rend cliquables les `code spans`, liens et images qui désignent un fichier du
- * workspace.
- *
- * Seuls les chemins de `known` sont transformés : le rendu ne décide de rien, il
- * applique une réponse déjà obtenue. Sans `known`, la passe ne fait que collecter les
- * candidats, que l'appelant soumettra.
- *
- * L'attribut porte le chemin, et c'est un écouteur délégué qui ouvre l'onglet : le HTML
- * est injecté tel quel, il n'y a pas de composant React où accrocher un `onClick`.
- *
- * Un lien ou une image dont la cible est un chemin non confirmé est marqué `data-sg-drop` :
- * il sera rendu en texte. Un `<a href="/home/…">` est lu par le navigateur comme un
- * chemin du site : le clic sortirait de Sillage vers une page qui n'existe pas. Du texte
- * inerte vaut mieux qu'un lien qui emmène ailleurs — c'est la même règle que
- * `fuzzyLink: false`.
+ * Make code spans, links, and images naming workspace files clickable. Only paths in `known` are
+ * transformed: rendering applies an existing answer instead of deciding. Without `known`, this pass
+ * merely collects candidates for the caller to submit. An attribute carries the path and a
+ * delegated listener opens the tab: injected HTML has no React component for `onClick`. Mark
+ * unconfirmed link or image targets `data-sg-drop` to render them as text. Browsers interpret `<a
+ * href="/home/…">` as a site path, which would leave Sillage for a nonexistent page. Inert text is
+ * preferable to a misleading link, as with `fuzzyLink: false`.
  */
 function markFilePaths(md: MarkdownIt): void {
   md.core.ruler.push('sg_file_paths', (state) => {
     const env = state.env as MarkdownEnv
 
-    /** Marque un token porteur d'un chemin, et dit s'il a été confirmé. */
+    /** Mark a token carrying a path and indicate whether it was confirmed. */
     const mark = (token: Token, path: string): boolean => {
       env.candidates?.add(path)
       if (env.knownFiles?.has(path)) {
@@ -198,8 +172,7 @@ function markFilePaths(md: MarkdownIt): void {
 
         if (child.type === 'code_inline') {
           const path = pathCandidate(child.content)
-          // Un `code span` non confirmé reste un `code span` : il n'a jamais été
-          // cliquable, il n'y a rien à retirer.
+          // An unconfirmed code span remains a code span: it was never clickable, so nothing needs removing.
           if (path) {
             env.candidates?.add(path)
             if (env.knownFiles?.has(path)) child.attrSet('data-sg-path', path)
@@ -212,10 +185,9 @@ function markFilePaths(md: MarkdownIt): void {
           if (!path) continue
           if (!mark(child, path)) continue
 
-          // La source devient l'URL de lecture du workspace : le chemin du disque n'est
-          // pas une adresse que le navigateur sait atteindre. Sans portée pour la
-          // construire, ou pour un type que la route de lecture refuse, l'image se rend
-          // en chemin cliquable plutôt qu'en icône cassée : `![x](notes.md)` s'écrit.
+          // Use the workspace read URL as the source: a disk path is not a browser-accessible
+          // address. Without a scope, or for a type rejected by the read route, render a clickable
+          // path rather than a broken image; `![x](notes.md)` is valid input.
           if (env.scope && isViewableImage(path)) {
             child.attrSet('src', rawFileUrl(env.scope, path))
           } else {
@@ -228,9 +200,8 @@ function markFilePaths(md: MarkdownIt): void {
           const path = pathTarget(child.attrGet('href'), env.base)
           if (!path) continue
           const known = mark(child, path)
-          // Les liens ne s'imbriquent pas : la première fermeture est la sienne. Elle
-          // porte la même marque, faute de quoi le rendu ne saurait pas quelle balise
-          // refermer.
+          // Links cannot nest: the first closing token belongs to this link. Mark it too so
+          // rendering knows which tag to close.
           const close = children.slice(i + 1).find((next) => next.type === 'link_close')
           close?.attrSet(known ? 'data-sg-path' : 'data-sg-drop', '')
         }
@@ -240,16 +211,16 @@ function markFilePaths(md: MarkdownIt): void {
   })
 
   /**
-   * Les liens sortants ne doivent pas pouvoir manipuler l'onglet de Sillage. Ceux qui
-   * désignent un fichier deviennent des boutons, comme les chemins cités.
+   * Outgoing links must not be able to manipulate the Sillage tab. Links naming files become
+   * buttons, like cited paths.
    */
   md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
     const token = tokens[idx]
     if (!token) return ''
 
     const path = token.attrGet('data-sg-path')
-    // Un bouton plutôt qu'un `<a>` réécrit : il est atteignable au clavier et annoncé
-    // comme une action, et il n'a pas de `href` que le navigateur pourrait suivre.
+    // Use a button instead of a rewritten `<a>`: keyboard-accessible and announced as an action,
+    // without an href the browser could follow.
     if (path !== null) {
       return `<button type="button" class="sg-file" data-sg-path="${md.utils.escapeHtml(path)}">`
     }
@@ -269,10 +240,9 @@ function markFilePaths(md: MarkdownIt): void {
   }
 
   /**
-   * Une image du workspace est montrée dans le fil, et non pas seulement liée : c'est
-   * une capture d'écran neuf fois sur dix, et l'ouvrir en un clic reste possible par le
-   * bouton qui l'enveloppe. Une source non confirmée n'affiche pas d'image cassée : il
-   * reste le texte alternatif.
+   * Show workspace images directly in the thread: they are usually screenshots, and the wrapping
+   * button still allows opening them with one click. An unconfirmed source retains alt text instead
+   * of displaying a broken image.
    */
   md.renderer.rules.image = (tokens, idx, options, env, self) => {
     const token = tokens[idx]
@@ -287,15 +257,15 @@ function markFilePaths(md: MarkdownIt): void {
       return `<button type="button" class="sg-file-image">${self.renderToken(tokens, idx, options)}</button>`
     }
 
-    // Fichier confirmé mais pas affichable : le même bouton que pour un chemin cité,
-    // portant le texte alternatif quand il y en a un, le chemin sinon.
+    // Confirmed but undisplayable file: use the same button as for a cited path, labeled with alt
+    // text when available, otherwise the path.
     if (token.attrGet('data-sg-flat') !== null) {
       const label = md.utils.escapeHtml(alt || path)
       return `<button type="button" class="sg-file" data-sg-path="${md.utils.escapeHtml(path)}">${label}</button>`
     }
 
     token.attrSet('alt', alt)
-    // La marque vit sur le bouton qui enveloppe l'image, pas sur l'image elle-même.
+    // The marker belongs to the wrapping button, not the image itself.
     token.attrs = (token.attrs ?? []).filter(([name]) => name !== 'data-sg-path')
     return (
       `<button type="button" class="sg-file-image" data-sg-path="${md.utils.escapeHtml(path)}">` +
@@ -305,9 +275,8 @@ function markFilePaths(md: MarkdownIt): void {
   }
 
   /**
-   * Un chemin confirmé se rend en bouton, pas en `<code>` cliquable : il est alors
-   * atteignable au clavier et annoncé comme une action, ce qu'un écouteur posé sur un
-   * élément inerte ne donne pas.
+   * Render a confirmed path as a button rather than clickable `<code>`: this provides keyboard
+   * access and action semantics that a listener on an inert element cannot provide.
    */
   md.renderer.rules.code_inline = (tokens, idx, _options, _env, self) => {
     const token = tokens[idx]
@@ -321,13 +290,10 @@ function markFilePaths(md: MarkdownIt): void {
 markFilePaths(md)
 
 /**
- * Rend cliquables les `#12` qui désignent une carte du board.
- *
- * Seuls les numéros de `cards` sont transformés, comme les chemins de fichiers : un
- * « issue #1 » d'un autre dépôt ou un numéro qui n'existe pas ici reste du texte, plutôt
- * qu'un lien vers une carte qui n'est pas la bonne. Jamais dans le code ni dans un lien :
- * la passe ne touche que les jetons de texte hors lien. Le bouton porte le numéro, et
- * c'est un écouteur délégué qui ouvre la carte et en montre l'aperçu.
+ * Make `#12` references to board cards clickable. Only numbers in `cards` are transformed, like
+ * file paths: issue numbers from other repositories or missing cards remain text rather than
+ * linking to the wrong card. Never modify code or links, only text tokens outside links. The button
+ * carries the number; a delegated listener opens and previews the card.
  */
 function markCardReferences(md: MarkdownIt): void {
   md.core.ruler.push('sg_card_refs', (state) => {
@@ -372,24 +338,24 @@ function markCardReferences(md: MarkdownIt): void {
 
 markCardReferences(md)
 
-/** Ce que la passe de rendu reçoit et remplit. */
+/** Inputs and outputs of the rendering pass. */
 interface MarkdownEnv {
-  /** Chemins possibles rencontrés, à soumettre au serveur. */
+  /** Potential paths encountered, to submit to the server. */
   candidates?: Set<string>
-  /** Chemins dont le serveur a confirmé qu'ils sont des fichiers. */
+  /** Paths the server confirmed as files. */
   knownFiles?: Set<string>
   /**
-   * Portée dont les chemins relèvent, pour construire l'URL de lecture des images.
-   * Absente hors conversation : une image du disque reste alors son texte alternatif.
+   * Scope of these paths, used to build image read URLs. Absent outside conversations: disk images
+   * then remain alt text.
    */
   scope?: WorkspaceScope
-  /** Dossier du document rendu, d'où partent ses liens relatifs. Voir `pathTarget`. */
+  /** Rendered document's directory, the base for relative links. See `pathTarget`. */
   base?: string
-  /** Numéros des cartes du board auquel le texte se rapporte. Voir `markCardReferences`. */
+  /** Card numbers from the board associated with the text. See `markCardReferences`. */
   cards?: Set<number>
 }
 
-/** Un segment de contenu, tel que le composant React doit le rendre. */
+/** Content segment to be rendered by the React component. */
 export type MarkdownSegment =
   | { kind: 'html'; html: string }
   | { kind: 'code'; language: string; code: string }
@@ -397,11 +363,11 @@ export type MarkdownSegment =
 
 export interface MarkdownDocument {
   segments: MarkdownSegment[]
-  /** Chemins possibles du document, qu'ils aient été rendus cliquables ou non. */
+  /** Potential paths in the document, whether made clickable or not. */
   candidates: Set<string>
 }
 
-/** Texte d'une cellule, débarrassé de son balisage, pour l'export CSV. */
+/** Cell text with markup removed, for CSV export. */
 function cellText(inline: Token | undefined): string {
   if (!inline?.children) return inline?.content ?? ''
   return inline.children
@@ -411,7 +377,7 @@ function cellText(inline: Token | undefined): string {
     .trim()
 }
 
-/** Cellules d'un tableau, dans l'ordre des lignes, en-tête compris. */
+/** Table cells in row order, including the header. */
 function tableRows(tokens: Token[], start: number, end: number): string[][] {
   const rows: string[][] = []
   let current: string[] | null = null
@@ -434,9 +400,8 @@ function tableRows(tokens: Token[], start: number, end: number): string[][] {
 }
 
 /**
- * Découpe le document en segments. Les tokens qui ne relèvent ni d'un bloc de code ni
- * d'un tableau sont rendus en bloc par markdown-it, plutôt qu'un par un : c'est le
- * seul moyen de garder son HTML exactement tel qu'il le produit.
+ * Split the document into segments. Render tokens outside code blocks and tables together through
+ * markdown-it, rather than individually: this is the only way to preserve its exact HTML output.
  */
 export function parseMarkdown(
   text: string,
@@ -462,7 +427,7 @@ export function parseMarkdown(
       flushHtml(i)
       segments.push({
         kind: 'code',
-        // `info` peut porter des métadonnées après le langage (`ts title=...`).
+        // `info` may contain metadata after the language (`ts title=...`).
         language: token.info.trim().split(/\s+/)[0] ?? '',
         code: token.content.replace(/\n$/, ''),
       })

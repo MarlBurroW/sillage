@@ -14,8 +14,8 @@ export function AccountSection() {
       <SectionHeader
         title={t('settings.section.account')}
         description={t('account.section.description')}
-        // À côté du titre et non entre lui et la carte : le rôle qualifie le compte
-        // entier, et une pastille seule sur sa ligne s'étirait sur toute la largeur.
+        // Beside the title rather than between it and the card: the role applies to the whole
+        // account, and a badge alone on its own row stretched to full width.
         badge={
           user?.isAdmin ? (
             <Badge tone="accent" icon={<ShieldCheck size={11} />}>

@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 import { chromium } from 'playwright'
 
-// Vérifie que le fil rend ce que l'adaptateur Grok Build journalise : outils sous leurs noms
-// du journal (dont un outil MCP appelé par `use_tool`), permission, question rendue par
-// intitulé et plan soumis avec ses suites. API simulée, aucune conversation réelle.
+// Check thread rendering of Grok Build adapter journal: tools under journal names
+// (including MCP via `use_tool`), permission, title-keyed question, plan with next
+// modes. Mocked API, no real conversation.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
@@ -29,7 +29,7 @@ try {
     await setTimeout(100)
   }
   assert.ok(ready, diagnostics || 'Vite failed to start')
-  // Le Chromium complet est couvert par le profil AppArmor du serveur.
+  // Full Chromium is covered by server's AppArmor profile.
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     const page = await browser.newPage({ viewport, locale: 'fr-FR' })
@@ -52,16 +52,15 @@ try {
       await import('/src/styles/index.css')
       const React = (await import('/node_modules/.vite/deps/react.js')).default
       const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
-      // Les cartes d'outils lisent leur sortie par React Query. Le fournisseur doit venir
-      // du même module que celui des composants, que Vite sert sous une URL versionnée :
-      // elle se lit dans un module qui l'importe.
+      // Tool cards read output through React Query. Provider must come from same module
+      // as components, served by Vite at versioned URL read from an importing module.
       const source = await (await fetch('/src/lib/tool-output.ts')).text()
       const queryModule = /from "([^"]*react-query[^"]*)"/.exec(source)[1]
       const { QueryClient, QueryClientProvider } = await import(queryModule)
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
       const { ChatThread } = await import('/src/components/chat/ChatThread.tsx')
-      // Les bulles portent des infobulles (bouton copier) : l'application les enveloppe dans
-      // ce fournisseur à la racine (main.tsx), le banc doit faire de même.
+      // Bubbles have tooltips (copy button): app wraps them with this provider at root
+      // (main.tsx); harness must do the same.
       const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
       const { TurnActivity } = await import('/src/components/chat/TurnActivity.tsx')
       const { applyEvent, emptyChatState } = await import('/src/lib/chat-fold.ts')
@@ -78,7 +77,7 @@ try {
           ),
         ))
       }
-      // Les événements tels que `apps/server/src/agents/grok/` les émet (sondé sur 1.0.62).
+      // Events as emitted by `apps/server/src/agents/grok/` (probed on 1.0.62).
       window.appendEvent({ type: 'turn.started' })
       window.appendEvent({ type: 'message.completed', messageId: 'think', role: 'assistant', blocks: [{ type: 'thinking', text: 'Je lis le fichier.' }], parentToolCallId: null })
       window.appendEvent({ type: 'tool.started', toolCallId: 'read', name: 'Read', input: { file_path: 'calc.py' }, parentToolCallId: null })
@@ -105,14 +104,14 @@ try {
       ] })
     })
     await page.getByText('calc.py', { exact: false }).first().waitFor()
-    // Les appels terminés à la suite se replient en une ligne, qui les nomme.
+    // Consecutive completed calls collapse into one line naming them.
     await page.getByText('3 outils', { exact: true }).click()
-    // Comme chez Claude, la ligne d'une commande montre la description que le modèle a écrite.
+    // Like Claude, command row shows model-written description.
     await page.getByText('Vérifier', { exact: true }).first().waitFor()
     await page.getByText('sillage/read_card', { exact: false }).first().waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'le fil ne déborde pas')
 
-    // Permission : la décision part avec la portée choisie, puis la carte se referme.
+    // Permission: send decision with selected scope, then close card.
     await Promise.all([
       page.waitForResponse((response) => response.url().includes('/permissions/permission')),
       page.getByRole('button', { name: 'Autoriser pour la session', exact: true }).click(),
@@ -125,7 +124,7 @@ try {
     })
     await page.getByText('Autorisé', { exact: true }).waitFor()
 
-    // Question : Grok attend les réponses par intitulé, qui sert de clé.
+    // Question: Grok expects answers keyed by title.
     await page.getByText('Chats ou chiens ?', { exact: true }).waitFor()
     await page.locator('button[aria-pressed]', { hasText: 'Chats' }).click()
     await Promise.all([
@@ -137,7 +136,7 @@ try {
       window.appendEvent({ type: 'question.resolved', requestId: 'question', status: 'answered', answers: { 'Chats ou chiens ?': ['Chats'] }, decidedBy: 'test' })
     })
 
-    // Plan : les deux suites proposées par l'adaptateur ; « laisser décider » part en `auto`.
+    // Plan: both adapter-proposed continuations; “let agent decide” sends `auto`.
     await page.getByText('Ajouter un README', { exact: false }).first().waitFor()
     await Promise.all([
       page.waitForResponse((response) => response.url().includes('/plans/plan')),

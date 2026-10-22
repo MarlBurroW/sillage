@@ -6,11 +6,7 @@ import { CodexAdapter } from '../src/agents/codex/adapter.js'
 import { ForkError } from '../src/agents/registry.js'
 import { EventLog } from '../src/events/event-log.js'
 
-/**
- * Point de coupe d'un fork Codex : l'identifiant du dernier tour conservé, relu dans
- * la notification native conservée avec `turn.completed`. Ce que le test protège,
- * c'est la lecture du journal, pas l'appel au CLI.
- */
+/** Codex fork cut points use the latest retained turn ID read from native notifications stored with `turn.completed`. Tests protect journal reads, not CLI calls. */
 function openJournal(): { log: EventLog; adapter: CodexAdapter; close: () => void } {
   const { db, sqlite } = openDatabase(':memory:')
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
@@ -44,9 +40,9 @@ test('fork Codex : couper à un tour désigne son identifiant natif, à la fin a
 
     assert.deepEqual(adapter.forkCut(log, 'c', first), { lastTurnId: 'turn-1' })
     assert.deepEqual(adapter.forkCut(log, 'c', second), { lastTurnId: 'turn-2' })
-    // Au bout du fil, rien à retirer : le fork copie tout, sans désigner de tour.
+    // At conversation ends nothing is removed: copy everything without specifying turns.
     assert.deepEqual(adapter.forkCut(log, 'c', 1_000), { lastTurnId: null })
-    // Avant le premier tour terminé, la branche n'aurait rien à reprendre.
+    // Before the first completed turn, forks have nothing to resume.
     assert.throws(() => adapter.forkCut(log, 'c', first - 1), ForkError)
   } finally {
     close()

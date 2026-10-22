@@ -11,7 +11,7 @@ import { useProjectDefaults } from '../../lib/user-settings'
 import { AGENT_LABELS } from '../AgentIcon'
 import { Question, StepTitle, useCommit, useGate, type StepProps } from './shell'
 
-/** Le récapitulatif : ce que chaque étape a laissé, lu dans les vraies données. */
+/** Recap reads actual data saved by each step. */
 export function ReadyStep({ nav, state, user, profile }: StepProps) {
   const t = useTranslate()
   const admin = user?.isAdmin ?? false

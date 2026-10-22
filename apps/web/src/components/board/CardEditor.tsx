@@ -4,7 +4,7 @@ import { useTranslate } from '../../lib/i18n'
 import { Markdown } from '../chat/Markdown'
 import { cx } from '../ui'
 
-/** Champs partagés par la création et l'édition, avec un aperçu qui conserve la saisie. */
+/** Shared creation/edit fields with a preview preserving input. */
 export function CardEditor({ title, description, onChange, disabled = false }: {
   title: string
   description: string

@@ -1,16 +1,7 @@
 import { isAbsolute } from 'node:path'
 import type { SillageEvent } from '@sillage/protocol'
 
-/**
- * Chemins absolus qu'un événement révèle hors du répertoire de travail.
- *
- * Les éditions journalisées gardent un chemin absolu quand elles sortent du cwd
- * (`toWorkspacePath`) : c'est le signe qu'une session travaille ailleurs que là où
- * Sillage la croit, typiquement dans un worktree créé au shell. Une édition faite par
- * Bash (`sed`, `git apply`) échappe au journal : on retient alors les dossiers que la
- * commande nomme explicitement, `cd`, `git -C` ou `git worktree add`, qui suffisent à
- * rattacher la session à l'arbre où elle s'est installée.
- */
+/** Absolute paths exposed outside working directories. Journaled edits retain absolute paths outside cwd (`toWorkspacePath`), indicating sessions working elsewhere, typically shell-created worktrees. Bash edits (`sed`, `git apply`) evade edit events; retain directories explicitly named by `cd`, `git -C` or `git worktree add`, enough to attach sessions to their working tree. */
 export function touchedPaths(event: SillageEvent): string[] {
   if (event.type === 'file.edited') {
     return isAbsolute(event.path) ? [event.path] : []
@@ -23,10 +14,7 @@ export function touchedPaths(event: SillageEvent): string[] {
   return []
 }
 
-/**
- * Un argument de commande : entre guillemets, avec ses espaces, ou nu jusqu'au premier
- * séparateur du shell. Trois groupes de capture, un seul renseigné.
- */
+/** Command argument: quoted with spaces or bare until shell separators. Three capture groups with exactly one populated. */
 const ARG = String.raw`(?:'(\/[^']+)'|"(\/[^"]+)"|(\/[^\s'"\`;&|)]+))`
 
 const DIRECTORY_FORMS = [

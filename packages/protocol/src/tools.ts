@@ -1,18 +1,14 @@
 /**
- * Vocabulaire canonique des noms d'outils portés par `tool.started.name`.
+ * Canonical tool names carried by `tool.started.name`.
  *
- * Ce contrat n'était écrit nulle part : il ne vivait que dans un commentaire du
- * registre de vues du frontend, et un auteur d'adaptateur devait le deviner en
- * lisant l'adaptateur Codex. Le voici, normatif.
+ * Previously undocumented except in a frontend view-registry comment, forcing adapter authors
+ * to infer the contract from Codex's adapter. This definition is normative.
  *
- * Un adaptateur DOIT publier ses appels d'outils sous ces noms quand l'action
- * correspond : Codex publie ses exécutions de commande sous `Bash` et ses
- * changements de fichiers sous `Edit`. Un outil MCP passe tel quel sous la forme
- * `serveur/outil`, et un outil vraiment natif sans équivalent garde son nom : le
- * frontend le rend alors par sa vue générique, sans casser.
+ * Adapters MUST use these names for matching actions: Codex publishes command execution as
+ * `Bash` and file changes as `Edit`. MCP tools pass through as `server/tool`; genuinely native
+ * tools without equivalents retain their names and use the frontend's generic view.
  *
- * La détection des modifications de fichiers ne passe jamais par ces noms :
- * l'événement `file.edited` existe précisément pour ça.
+ * File-change detection never relies on these names: `file.edited` exists for that purpose.
  */
 export const CANONICAL_TOOLS = [
   'Bash',
@@ -25,7 +21,7 @@ export const CANONICAL_TOOLS = [
   'WebSearch',
   'WebFetch',
   'TodoWrite',
-  /** `Task` et `Agent` désignent le même outil de sous-agent selon la version du CLI. */
+  /** `Task` and `Agent` name the same sub-agent tool depending on CLI version. */
   'Task',
   'Agent',
   'ExitPlanMode',
@@ -33,10 +29,10 @@ export const CANONICAL_TOOLS = [
 
 export type CanonicalToolName = (typeof CANONICAL_TOOLS)[number]
 
-/** Les deux noms de l'outil de sous-agent, réunis là où le contrat les déclare. */
+/** Both sub-agent tool names, grouped where the contract declares them. */
 const SPAWN_TOOLS: ReadonlySet<string> = new Set<CanonicalToolName>(['Task', 'Agent'])
 
-/** Vrai si cet appel lance un sous-agent, dont tout le travail se rattache à lui. */
+/** True if this call launches a sub-agent whose work is associated with it. */
 export function isSpawnTool(name: string): boolean {
   return SPAWN_TOOLS.has(name)
 }

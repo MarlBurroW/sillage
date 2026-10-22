@@ -19,11 +19,7 @@ const commandsQuerySchema = z.object({
   refresh: z.string().optional(),
 })
 
-/**
- * Une sonde CLI qui échoue vaut 502, jamais une liste vide : renvoyer un catalogue
- * en dur ou un tableau nu mentirait sur ce qui est réellement disponible. Absent, non
- * authentifié ou trop lent, le CLI échoue toujours de la même façon.
- */
+/** Failed CLI probes return 502, never an empty list: hardcoded catalogs or bare empty arrays would misrepresent availability. Missing, unauthenticated and slow CLIs all fail consistently. */
 function cliUnavailable(
   adapter: AgentAdapter,
   code: string,
@@ -45,16 +41,12 @@ export function registerAgentRoutes(
   codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
 ): void {
-  /** Le nom du CLI vient de la requête : un inconnu vaut 404, pas un défaut silencieux. */
-  /**
-   * Ce qui désigne un compte supplémentaire au CLI, résolu avec son propriétaire :
-   * l'identifiant vient du navigateur, et celui d'un autre utilisateur ne doit rendre
-   * ni jeton ni consommation. Null pour un compte inconnu, ou un CLI sans comptes.
-   */
+  /** CLI names come from requests: unknown names return 404 rather than silently defaulting. */
+  /** Resolves additional account references with their owner: browser-provided IDs belonging to someone else must reveal neither tokens nor usage. Null for unknown accounts or CLIs without accounts. */
   const accountCredential = (agent: string, userId: string, accountId: string): string | null => {
     if (agent === 'claude') {
-      // Le dossier de sa jauge s'il en a une ; une chaîne vide dit « compte connu, sans
-      // jauge », et l'adaptateur répond sans sonder.
+      // Usage directory when available; an empty string means a known account without
+      // a gauge, and the adapter answers without probing.
       const account = claudeAccounts.find(userId, accountId)
       if (!account) return null
       return account.gauge && claudeAccounts.gauges ? claudeAccounts.gauges.path(accountId) : ''
@@ -76,21 +68,14 @@ export function registerAgentRoutes(
   }
   const paramsAgent = (params: unknown) => (params as { agent: string }).agent
 
-  /**
-   * Présence et version des CLI, tous agents confondus.
-   *
-   * Sillage ne transporte plus les binaires : ils viennent du système, donc l'écran doit
-   * pouvoir dire lequel manque et pourquoi plutôt que de proposer un agent que le serveur
-   * échouerait à lancer. `?refresh=1` force la sonde, pour le bouton de rafraîchissement
-   * après une installation faite à côté.
-   */
+  /** CLI presence and versions across agents. Sillage no longer bundles binaries: system-installed CLIs require the screen to explain which is missing and why rather than offer agents the server cannot launch. `?refresh=1` forces a probe after an external installation. */
   app.get('/api/agents', async (request) => {
     requireUser(request)
     const force = (request.query as { refresh?: string }).refresh === '1'
 
-    // En parallèle : chaque sonde absente coûte une résolution de PATH, chaque sonde
-    // présente un lancement de process, et les faire à la queue leu leu ferait attendre
-    // l'écran pour rien.
+    // Run concurrently: missing CLIs require PATH resolution, installed CLIs require
+    // process launches, and serializing them would delay
+    // the screen unnecessarily.
     const agents = await Promise.all(
       registry.all().map(async (adapter) => ({
         ...(await adapter.cli.describe(force)),
@@ -101,13 +86,7 @@ export function registerAgentRoutes(
     return { agents }
   })
 
-  /**
-   * Installe la version testée d'un CLI dans le préfixe que Sillage gère.
-   *
-   * Répond avant la fin : le paquet pèse plusieurs centaines de mégaoctets, et attendre
-   * dans la requête la ferait dépendre de la patience d'un proxy. L'avancement se lit
-   * sur `GET /api/agents`.
-   */
+  /** Installs the tested CLI version in Sillage's managed prefix. Returns before completion: packages weigh hundreds of megabytes, and waiting inside the request would depend on proxy patience. Progress is available through `GET /api/agents`. */
   app.post('/api/agents/:agent/install', async (request, reply) => {
     requireUser(request)
     const adapter = resolveAdapter(paramsAgent(request.params))
@@ -123,12 +102,7 @@ export function registerAgentRoutes(
     return reply.status(202).send(installer.state(adapter.kind))
   })
 
-  /**
-   * Consommation du compte. Lue à la demande plutôt que poussée : chaque lecture
-   * démarre un process CLI, et la valeur n'intéresse que le moment où on l'ouvre.
-   * `?refresh=1` court-circuite le cache, pour le bouton de rafraîchissement.
-   * `?account=` lit celle d'un compte supplémentaire de l'utilisateur, sous son jeton.
-   */
+  /** Account usage, read on demand rather than pushed: each read starts a CLI process, and values matter only when viewed. `?refresh=1` bypasses the cache; `?account=` reads an additional user account using its token. */
   app.get('/api/agents/:agent/usage', async (request) => {
     const user = requireUser(request)
     const adapter = resolveAdapter(paramsAgent(request.params))
@@ -169,14 +143,7 @@ export function registerAgentRoutes(
     }
   })
 
-  /**
-   * Commandes en `/` proposables depuis le brouillon d'une conversation.
-   *
-   * Le fil reçoit sa liste du runner au premier tour ; avant ce tour il n'y a ni session
-   * ni journal, seulement un dossier et un CLI choisi. Portée par le projet comme
-   * `/files`, et lue dans le même dossier que lui : les commandes de projet vivent dans
-   * l'arbre. `?refresh=1` court-circuite le cache, comme pour `/usage`.
-   */
+  /** Slash commands offered in conversation drafts. Conversations receive their list from the runner on the first turn; before then only a directory and selected CLI exist. Project-scoped like `/files`, using the same directory because project commands live in the tree. `?refresh=1` bypasses the cache like `/usage`. */
   app.get('/api/projects/:id/commands', async (request): Promise<ProjectCommandsDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

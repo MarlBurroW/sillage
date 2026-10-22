@@ -7,18 +7,7 @@ import { CodexAppServerClient } from '../agents/codex/app-server-client.js'
 import { CLIENT_INFO } from '../agents/codex/client-info.js'
 import { CodexRunner } from '../agents/codex/runner.js'
 
-/**
- * Sonde manuelle de `turn/steer` pendant que le modèle écrit sa réponse.
- *
- * Depuis 0.162.1, `instant_interrupt` est actif par défaut : le steer peut couper le
- * message en cours au lieu d'attendre la fin de l'item. Ce qui compte pour Sillage
- * (écho unique du message steeré, réponse coupée conservée, tour qui continue puis
- * repasse au repos) n'est décrit nulle part ; la sonde le relève sur le binaire
- * installé. Deux passes : `--raw` journalise la séquence app-server brute, sans
- * Sillage ; sans option, la même scène passe par le vrai `CodexRunner`.
- *
- * Un vrai tour de modèle par passe : à lancer à la main, jamais en CI.
- */
+/** Manual `turn/steer` probe while models write. Since 0.162.1 default `instant_interrupt` can cut messages rather than wait for item completion. Undocumented Sillage requirements: single steer echoes, preserved interrupted responses, continuing turns then idle. Measure installed binaries in two passes: `--raw` logs app-server sequences without Sillage; default uses real `CodexRunner`. Each pass costs a real model turn; manual only, never CI. */
 
 const raw = process.argv.includes('--raw')
 const MARKER = 'PINEAPPLE'
@@ -26,14 +15,14 @@ const TASK =
   'Test d’intégration. Ne lis ni ne modifie aucun fichier et n’utilise aucun outil. ' +
   'Écris un long texte : les nombres de 1 à 400 en toutes lettres, un par ligne.'
 const STEER = `Arrête la liste immédiatement et réponds exactement ${MARKER}, rien d’autre.`
-// Assez de deltas pour être sûr d'être au milieu du message, pas à sa toute fin.
+// Enough deltas to ensure mid-message interruption rather than its end.
 const DELTAS_BEFORE_STEER = 40
 
 const binary = process.env.CODEX_BIN ?? 'codex'
 const model = process.env.CODEX_MODEL ?? 'gpt-6-astra'
 const cwd = await mkdtemp(join(tmpdir(), 'sillage-codex-steer-'))
 
-/** Résume un paramètre de notification sans recopier de texte du modèle en entier. */
+/** Summarizes notification parameters without copying entire model text. */
 function summarize(method: string, params: any): string {
   const item = params?.item
   if (item) {
@@ -59,7 +48,7 @@ async function probeRaw(): Promise<void> {
     onServerRequest: async () => ({ decision: 'decline' }),
     onNotification: (method, params: any) => {
       if (method.endsWith('/delta')) {
-        // Les deltas sont regroupés par item : seul leur enchaînement nous intéresse.
+        // Group deltas by item: only sequence matters.
         const key = `${method} item=${params.itemId}`
         if (deltaRuns.at(-1)?.startsWith(key)) {
           deltaRuns[deltaRuns.length - 1] = `${key} ×${Number(deltaRuns.at(-1)!.split('×')[1] ?? 1) + 1}`
@@ -89,7 +78,7 @@ async function probeRaw(): Promise<void> {
   await done
   clearTimeout(timeout)
   if (steered) await steered
-  // Ce que le fil retient du tour : la réponse coupée y est-elle encore ?
+  // History retained after turns: is the interrupted response still present?
   const read: any = await client.call('thread/read', { threadId: threadId!, includeTurns: true })
   for (const t of read.thread.turns ?? []) {
     console.log(`thread/read turn=${t.id} status=${t.status}`)

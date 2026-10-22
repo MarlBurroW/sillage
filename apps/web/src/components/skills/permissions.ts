@@ -3,7 +3,7 @@ import { useTranslate } from '../../lib/i18n'
 import { useProjects } from '../../lib/projects'
 import { useCurrentUser } from '../../lib/session'
 
-/** Une portée où l'on peut écrire, telle qu'un sélecteur la propose. */
+/** Writable scope offered by selectors. */
 export interface SkillDestination {
   value: string
   label: string
@@ -12,9 +12,8 @@ export interface SkillDestination {
 }
 
 /**
- * Ce que l'utilisateur peut écrire dans la bibliothèque, calqué sur les droits du
- * serveur : le global aux administrateurs, un projet à son propriétaire. Le serveur
- * reste juge ; ceci évite seulement de proposer un geste voué au refus.
+ * Library write permissions mirror server rules: global for administrators, projects for owners.
+ * Server enforcement remains authoritative; this avoids offering doomed actions.
  */
 export function useSkillPermissions() {
   const t = useTranslate()

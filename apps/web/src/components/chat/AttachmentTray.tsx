@@ -7,10 +7,8 @@ import { formatBytes } from '../../lib/attachments'
 import { IconButton, cx } from '../ui'
 
 /**
- * Pièces jointes en attente d'envoi, au-dessus de la saisie.
- *
- * Les images sont montrées en vignette : reconnaître une capture d'écran à son nom de
- * fichier est impossible, et c'est le cas d'usage le plus fréquent depuis un téléphone.
+ * Pending attachments above input. Image thumbnails identify screenshots impossible to recognize by
+ * filename, especially common on phones.
  */
 export function AttachmentTray({
   attachments,

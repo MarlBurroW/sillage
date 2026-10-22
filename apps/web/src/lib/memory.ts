@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MemoryMode, ProjectMemoryDto } from '@sillage/protocol'
 import { api } from './api'
 
-/** Relue à chaque ouverture : les agents y écrivent sans passer par l'interface. */
+/** Reread on every opening: agents write without using the UI. */
 const memoryKey = (projectId: string) => ['memory', projectId]
 
 export function useProjectMemory(projectId: string) {
@@ -12,7 +12,7 @@ export function useProjectMemory(projectId: string) {
   })
 }
 
-/** Où vit la mémoire de ce projet. Pris au prochain lancement de runner. */
+/** Project memory location, applied at the next runner launch. */
 export function useSetMemoryMode(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -42,7 +42,7 @@ export function useDeleteMemoryFile(projectId: string) {
   })
 }
 
-/** La description d'une note, lue dans son en-tête : c'est ce qui dit de quoi elle parle. */
+/** Note description read from its header, explaining its subject. */
 export function memoryDescription(content: string): string | null {
   const head = /^---\n([\s\S]*?)\n---/.exec(content)?.[1] ?? ''
   const line = head.split('\n').find((candidate) => candidate.startsWith('description:'))

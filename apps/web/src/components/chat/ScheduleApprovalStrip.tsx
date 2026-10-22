@@ -9,12 +9,9 @@ import { outputText } from '../tools/payload'
 import { Button } from '../ui'
 
 /**
- * Sous l'appel `schedule_task` qui vient de proposer un script de vérification : le
- * raccourci pour le valider sans aller le chercher sur la page de la tâche.
- *
- * C'est là que l'utilisateur apprend qu'un script attend sa relecture, au moment où
- * l'agent le propose ; l'envoyer ailleurs, c'est laisser la tâche écartée sans qu'il le
- * sache. L'état se relit sur la tâche elle-même : validé ailleurs, le bandeau le dit.
+ * Below schedule_task calls proposing check scripts, offer approval without visiting task pages.
+ * This is where users learn review is needed as the agent proposes it, avoiding silently skipped
+ * tasks. Read task state so approval elsewhere appears here too.
  */
 export function ScheduleApprovalStrip({ tool }: { tool: ToolItem }) {
   const t = useTranslate()
@@ -22,7 +19,7 @@ export function ScheduleApprovalStrip({ tool }: { tool: ToolItem }) {
   const { data: schedules } = useSchedules()
   const taskId = scheduledTaskIdOf(outputText(tool.output))
   const task = taskId ? schedules?.find((entry) => entry.id === taskId) : undefined
-  // Tâche supprimée, ou script retiré depuis : il n'y a plus rien à valider ici.
+  // Deleted task or removed script leaves nothing to approve.
   if (!task?.check) return null
 
   if (task.check.approved) {

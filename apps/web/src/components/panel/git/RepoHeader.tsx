@@ -20,13 +20,9 @@ import { Button, IconButton, Menu, MenuItem, MenuSeparator, cx } from '../../ui'
 import { failureNotice, useGitPane } from './context'
 
 /**
- * La branche et sa relation au remote, avec les trois gestes qui les concernent :
- * fetch, pull, push.
- *
- * Les remèdes aux refus les plus courants sont proposés dans l'avis plutôt que cachés
- * dans un menu : un push rejeté offre de forcer avec bail, un pull qui trouve des
- * branches divergentes offre merge ou rebase. C'est ce qu'on taperait ensuite dans un
- * terminal, et c'est précisément ce que l'onglet veut épargner.
+ * Branch and remote relationship with fetch/pull/push. Common rejection remedies appear in notices
+ * rather than menus: force-with-lease for rejected pushes, merge or rebase for divergent pulls.
+ * These are terminal follow-up commands the tab aims to spare users.
  */
 export function RepoHeader({
   repo,
@@ -209,7 +205,7 @@ function Chip({ tone, label, children }: { tone: string; label: string; children
   )
 }
 
-/** Un geste du remote : son icône, ou une roue tant qu'il tourne, et un décompte s'il a lieu. */
+/** Remote action with icon, pending spinner, and optional count. */
 function Action({
   label,
   pending,
@@ -248,10 +244,8 @@ const OPERATION_LABELS: Record<GitOperation, MessageKey> = {
 }
 
 /**
- * Une opération laissée en suspens par git : fusion, rebase, cherry-pick ou revert
- * arrêtés sur des conflits. Tant qu'elle dure, le dépôt n'est pas dans un état
- * ordinaire, et le bandeau tient les deux seules issues : abandonner, ou continuer une
- * fois les conflits résolus et ajoutés à l'index.
+ * Git operation paused on conflicts: merge, rebase, cherry-pick, or revert. While active, show the
+ * two possible exits: abort or continue after resolving and staging conflicts.
  */
 export function OperationBanner({ repo }: { repo: GitRepoStatusDto }) {
   const t = useTranslate()

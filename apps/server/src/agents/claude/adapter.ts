@@ -22,21 +22,12 @@ import { ClaudeModelCatalog } from './model-catalog.js'
 import { ClaudeRunner } from './runner.js'
 import { ClaudeUsageReader, claudeAccountUsage } from './usage.js'
 
-/**
- * Point de coupe d'un fork : l'`uuid` d'une entrée du fichier de transcript.
- *
- * Ce n'est pas un identifiant d'API. Seules les entrées `user`, `attachment` et
- * `assistant` en portent un ; viser un message `result`, qui n'existe pas dans le
- * transcript, fait échouer le fork avec « Message <uuid> not found in session ».
- */
+/** Fork cut points are transcript-entry `uuid`, not API IDs. Only `user`, `attachment` and `assistant` entries have them; nonexistent transcript `result` messages cause 'Message <uuid> not found in session'. */
 interface ClaudeForkCut {
   upToMessageId: string | null
 }
 
-/**
- * Libellés anglais des niveaux d'effort, pour les clients de l'API. Le web ne s'en sert
- * qu'en repli : il traduit d'après la valeur, le serveur ignorant la langue de l'utilisateur.
- */
+/** English effort labels for API clients. Web uses them only as fallbacks and translates values because servers do not know user languages. */
 const EFFORT_LABELS: Record<string, string> = {
   low: 'Low',
   medium: 'Medium',
@@ -52,12 +43,7 @@ export class ClaudeAdapter implements AgentAdapter {
   readonly capabilities = AGENT_CAPABILITIES.claude
   readonly rawFormat = 'claude-agent-sdk@0.3'
 
-  /**
-   * Un seul exemplaire de chaque sonde par daemon : catalogue et lecteur de quota
-   * démarrent chacun un process CLI pour se remplir, ce qu'on ne veut pas refaire à
-   * chaque requête. Deux caches distincts : les modèles ne bougent qu'entre deux
-   * versions de CLI, la consommation change en permanence.
-   */
+  /** One catalog and quota probe per daemon: both launch CLIs, so avoid repeating per request. Separate caches because models change only between CLI versions while usage changes continuously. */
   private readonly catalog: ClaudeModelCatalog
   private readonly commandCatalog: ClaudeCommandCatalog
   private readonly usageReader: ClaudeUsageReader
@@ -66,9 +52,9 @@ export class ClaudeAdapter implements AgentAdapter {
   constructor(config: Config) {
     this.binary = config.agents.claude.binary
     this.cli = new CliBinary('claude', this.binary, config.agents.claude.enabled, config.paths.agents)
-    // Les deux sondes lancent le CLI via le SDK : elles ont besoin du même chemin absolu
-    // que les conversations, sans quoi le réglage `agents.claude.binary` resterait sans
-    // effet ici et le SDK retomberait sur un binaire que la release ne livre pas.
+    // Both SDK probes need conversation-resolved absolute paths;
+    // otherwise `agents.claude.binary` would be ignored
+    // and SDKs would select unbundled binaries.
     this.catalog = new ClaudeModelCatalog(() => this.cli.executable())
     this.commandCatalog = new ClaudeCommandCatalog(() => this.cli.executable())
     this.usageReader = new ClaudeUsageReader(() => this.cli.executable())
@@ -79,10 +65,10 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   forkCut(log: EventLog, conversationId: string, throughSeq: number): ClaudeForkCut {
-    // L'identifiant de transcript ne vit que dans le payload natif conservé à la
-    // traduction (invariant I3) : c'est là qu'on le relit. Les messages de
-    // sous-agents sont écartés : leur uuid appartient à une sidechain, et couper là
-    // fait échouer le fork ou vise le mauvais point du fil principal.
+    // Transcript IDs exist only in native payloads retained during normalization
+    // (invariant I3), so read them there. Exclude subagents:
+    // their UUIDs belong to sidechains and cuts there
+    // would fail or target incorrect points in the main conversation.
     const raw = log.lastRawOfType(conversationId, 'message.completed', throughSeq, {
       topLevelOnly: true,
     })
@@ -120,8 +106,8 @@ export class ClaudeAdapter implements AgentAdapter {
         value: model.value,
         displayName: model.displayName,
         description: model.description,
-        // L'id canonique derrière un alias : sans lui, « Opus » ne dit pas quelle
-        // génération va effectivement répondre.
+        // Canonical IDs behind aliases: 'Opus' alone does not identify
+        // which generation will actually respond.
         hint: model.resolvedModel ?? null,
         isDefault: model.value === 'default',
         efforts: efforts.map((level) => ({
@@ -129,8 +115,8 @@ export class ClaudeAdapter implements AgentAdapter {
           label: EFFORT_LABELS[level] ?? level,
           hint: null,
         })),
-        // `medium` est le défaut historique du CLI ; un modèle qui ne le connaît pas
-        // retombe sur son premier niveau plutôt que sur une valeur inventée.
+        // `medium` is the historical CLI default; models lacking it
+        // use their first level rather than invented values.
         defaultEffort: efforts.includes('medium') ? 'medium' : (efforts[0] ?? null),
         supportsFastMode: model.supportsFastMode === true,
       }
@@ -144,10 +130,10 @@ export class ClaudeAdapter implements AgentAdapter {
         }
       : null
 
-    // Disponible tant que le CLI ne nomme pas d'empêchement. `sdk_opt_in_required` n'en
-    // est pas un : c'est l'état normal d'un compte qui y a droit, relevé à la sonde,
-    // puisque c'est la session qui doit demander le mode. Null sur un CLI trop ancien
-    // pour en parler, ce qui cache le réglage plutôt que de l'offrir à l'aveugle.
+    // Available unless CLIs name blockers. `sdk_opt_in_required` is not one:
+    // probes show it is normal for eligible accounts,
+    // because sessions must request the mode. Null for older CLIs unable
+    // to report support, hiding settings rather than offering them blindly.
     const { state, reason } = listing.fastMode
     const available = state !== 'off' || reason === null || reason === 'sdk_opt_in_required'
     const fastMode: FastModeAvailabilityDto | null =
@@ -157,8 +143,8 @@ export class ClaudeAdapter implements AgentAdapter {
       models,
       modes: [],
       account,
-      // `default` est le style qu'on obtient en n'en demandant aucun : c'est la valeur
-      // vide de la configuration, pas une entrée de plus à choisir.
+      // default is obtained without requesting a style: it corresponds to an empty
+      // configuration value rather than another selectable entry.
       outputStyles: listing.outputStyles.filter((style) => style !== 'default'),
       fastMode,
       agents: listing.agents.map((agent) => ({ name: agent.name, description: agent.description })),
@@ -170,7 +156,7 @@ export class ClaudeAdapter implements AgentAdapter {
     return this.usageReader.read(force)
   }
 
-  /** `credential` est le dossier de la connexion de jauge ; vide, le compte n'en a pas. */
+  /** `credential` is the gauge-login directory; empty means accounts have none. */
   usageForAccount(accountId: string, credential: string, force: boolean): Promise<AgentUsage> {
     if (!credential) return Promise.resolve(claudeAccountUsage())
     return this.usageReader.readForConfigDir(accountId, credential, force)

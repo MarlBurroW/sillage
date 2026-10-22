@@ -5,16 +5,15 @@ import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
- * Bande affichée à la place du champ de saisie pendant une dictée : chrono, et des
- * barres dont la hauteur suit le niveau réel du micro. Le but n'est pas décoratif,
- * c'est un vumètre : des barres à plat pendant qu'on parle disent que le navigateur
- * écoute le mauvais périphérique, et l'alerte silence le dit en toutes lettres.
+ * Replace input during dictation with timer and real microphone-level bars. This is a meter rather
+ * than decoration: flat bars while speaking reveal wrong-device capture and a silence warning
+ * explains it.
  */
 
 const BAR_COUNT = 36
-/** Cadence de défilement des barres. Le niveau, lui, est relevé à chaque frame. */
+/** Bar scrolling cadence; measure audio level every frame. */
 const BAR_INTERVAL_MS = 90
-/** En dessous, on considère qu'aucune voix n'est captée (le fond de bruit est ~0.001). */
+/** Below this threshold treat capture as voiceless; noise floor is approximately 0.001. */
 const HEARD_RMS = 0.02
 const SILENCE_WARNING_MS = 3000
 
@@ -50,18 +49,16 @@ export function DictationStrip({
         const value = (sample - 128) / 128
         sum += value * value
       }
-      // Le pic depuis la dernière barre, pas la moyenne : une syllabe brève entre deux
-      // rafraîchissements doit se voir.
+      // Peak since the previous bar rather than average so brief syllables remain visible.
       peak = Math.max(peak, Math.sqrt(sum / samples.length))
 
       const now = performance.now()
       if (now - last >= BAR_INTERVAL_MS) {
         last = now
         if (peak >= HEARD_RMS) heard.current = true
-        // Racine carrée et non linéaire : une voix normale plafonne vers un RMS de
-        // 0,1, en linéaire les barres resteraient couchées même en parlant fort.
-        // Figé avant l'appel : l'updater s'exécute au rendu, après le `peak = 0`
-        // ci-dessous, et lirait un pic déjà remis à zéro.
+        // Square-root scaling: normal speech peaks around RMS 0.1 and linear bars would stay flat
+        // even when loud. Capture before updating because the render-time updater would otherwise
+        // read the reset peak.
         const level = Math.min(1, Math.sqrt(peak) * 2.2)
         setBars((current) => [...current.slice(1), level])
         setSilent(!heard.current && now - started >= SILENCE_WARNING_MS)

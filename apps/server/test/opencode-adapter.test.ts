@@ -16,7 +16,7 @@ async function adapterFixture(t: Parameters<typeof fixture>[0]) {
   return { ...transport, adapter: new OpencodeAdapter(config) }
 }
 
-/** Journal réduit à ce que `forkCut` en lit. */
+/** Journal reduced to fields read by `forkCut`. */
 function logWith(raws: Record<string, unknown>): EventLog {
   return { lastRawOfType: (_id: string, type: string) => raws[type] ?? null } as unknown as EventLog
 }
@@ -47,7 +47,7 @@ test('fork : coupe au message qui suit le dernier gardé, ou garde tout', async 
   const { adapter, cwd, records } = await adapterFixture(t)
   const target = { agentSessionId: 'ses_root', cwd }
 
-  // Le plus récent des deux repères du journal l'emporte.
+  // Latest of the two journal markers wins.
   const cut = adapter.forkCut(logWith({ 'turn.completed': { messageID: 'msg_2' }, 'message.completed': { part: { messageID: 'msg_1' } } }), 'c', 10)
   assert.deepEqual(cut, { lastMessageId: 'msg_2' })
   assert.equal(await adapter.fork(target, cut), 'ses_fork')
@@ -55,7 +55,7 @@ test('fork : coupe au message qui suit le dernier gardé, ou garde tout', async 
   const forks = (await records()).filter((record) => record.path.endsWith('/fork'))
   assert.deepEqual(forks.map((record) => record.body), [{ messageID: 'msg_3' }, {}])
 
-  // Rien de l'agent avant le point demandé : il n'y a pas de branche à reprendre.
+  // No agent content before requested points means nothing to fork.
   const empty = adapter.forkCut(logWith({}), 'c', 1)
   assert.deepEqual(empty, { lastMessageId: null })
   await assert.rejects(adapter.fork(target, empty), ForkError)
@@ -64,7 +64,7 @@ test('fork : coupe au message qui suit le dernier gardé, ou garde tout', async 
 test('outils : noms et champs du journal, serveurs MCP, diff des éditions', () => {
   assert.deepEqual(describeTool('read', { filePath: '/a', offset: 2 }, []), { name: 'Read', input: { file_path: '/a', offset: 2 } })
   assert.deepEqual(describeTool('task', { prompt: 'p' }, []), { name: 'Agent', input: { prompt: 'p' } })
-  // Le préfixe le plus long l'emporte, et un outil inconnu garde son nom.
+  // Longest prefixes win; unknown tools retain their names.
   assert.equal(describeTool('git_hub_search', {}, ['git', 'git_hub']).name, 'git_hub/search')
   assert.equal(describeTool('custom_tool', {}, ['other']).name, 'custom_tool')
 
@@ -91,7 +91,7 @@ test('modèle, codes d\'erreur et configuration', () => {
   assert.equal(opencodeErrorCode('APIError'), 'api_error')
   assert.equal(opencodeErrorCode('UnknownError'), 'turn_failed')
 
-  // Une configuration écrite avant un réglage se relit avec ses défauts.
+  // Configurations predating settings load with defaults.
   const stored = parseAgentConfig(JSON.stringify({ agent: 'opencode', model: 'a/b' }))
   assert.deepEqual(stored, { ...DEFAULT_OPENCODE_CONFIG, model: 'a/b' })
   assert.equal(isPermissiveConfig(DEFAULT_OPENCODE_CONFIG), false)

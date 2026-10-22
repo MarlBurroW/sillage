@@ -34,8 +34,8 @@ async function harness(t: TestContext) {
   }
   const store = new ClaudeAccountStore(db, randomBytes(32))
 
-  // La consommation lue sous un jeton : l'adaptateur simulé rend le jeton reçu, ce qui
-  // est tout ce que la route doit garantir.
+  // Usage under a token: the fake adapter echoes the received token,
+  // which is all the route must guarantee.
   const seen: Array<{ accountId: string; token: string }> = []
   const adapter = {
     kind: 'claude',
@@ -69,7 +69,7 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   assert.equal(account.kind, 'oauth')
   assert.ok(!('token' in account))
 
-  // Le jeton n'est stocké que chiffré.
+  // Tokens are stored only as ciphertext.
   const row = db.select().from(claudeAccounts).where(eq(claudeAccounts.id, account.id)).get()!
   assert.ok(!row.ciphertext.includes('sk-ant'))
   assert.equal(store.resolveToken('owner', account.id)?.token, TOKEN)
@@ -86,17 +86,17 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   assert.deepEqual(list.accounts.map((entry) => entry.label), ['Boulot', 'Boîte'])
   assert.ok(list.accounts.every((entry) => !('token' in entry)))
 
-  // La consommation par compte est demandée pour le compte, et seulement au propriétaire.
+  // Per-account usage requires that account and only its owner.
   const usage = await app.inject(`/api/agents/claude/usage?account=${account.id}`)
   assert.equal(usage.statusCode, 200, usage.body)
   assert.equal(usage.json<AgentUsage>().plan, account.id)
-  // Sans jauge, le compte est connu mais rien n'est à lire : l'adaptateur reçoit une
-  // chaîne vide, jamais le jeton, qui ne lit pas les limites du forfait.
+  // Without gauges, accounts are known but nothing can be read: adapters receive
+  // empty strings, never tokens, which cannot read subscription limits.
   assert.deepEqual(seen, [{ accountId: account.id, token: '' }])
   assert.equal((await app.inject({ url: `/api/agents/claude/usage?account=${account.id}`, headers: { 'x-user': 'other' } })).statusCode, 404)
   assert.equal((await app.inject('/api/agents/claude/usage')).json<AgentUsage>().plan, 'cli', 'Sans compte, la connexion du CLI')
 
-  // Renommer, remplacer le jeton, ou rien : chaque cas a sa réponse.
+  // Renaming, replacing tokens or no changes: each has its own response.
   assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: {} })).statusCode, 400)
   const replaced = TOKEN.replace(/a+$/, 'b'.repeat(40))
   assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: { label: 'Travail', token: replaced } })).statusCode, 204)
@@ -126,7 +126,7 @@ test('jauge d’un abonnement : reprise d’un dossier jetable, courriel lu, ret
   const keyed = store.create('owner', 'Boîte', 'sk-ant-api03-' + 'k'.repeat(40))
   assert.equal(store.find('owner', account.id)?.gauge, null)
 
-  // Une connexion ratée ne laisse rien : pas d'identifiants, pas de reprise.
+  // Failed logins leave nothing: neither credentials nor resumable state.
   const staging = join(dir, 'staging')
   mkdirSync(staging)
   assert.throws(() => gauges.adopt(account.id, staging))
@@ -140,7 +140,7 @@ test('jauge d’un abonnement : reprise d’un dossier jetable, courriel lu, ret
   assert.equal(existsSync(join(gauges.path(account.id), 'history.jsonl')), false, 'Seule la connexion est gardée')
   assert.equal(statSync(join(gauges.path(account.id), '.credentials.json')).mode & 0o777, 0o600)
 
-  // Une clé API n'a pas de forfait : même un dossier égaré ne lui donne pas de jauge.
+  // API keys have no subscription; even stray directories cannot give them gauges.
   mkdirSync(gauges.path(keyed.id), { recursive: true })
   writeFileSync(join(gauges.path(keyed.id), '.credentials.json'), '{}')
   assert.equal(store.find('owner', keyed.id)?.gauge, null)

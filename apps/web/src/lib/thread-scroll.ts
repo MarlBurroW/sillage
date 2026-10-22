@@ -1,28 +1,20 @@
 /**
- * Endroit où l'on lisait un fil, par conversation.
- *
- * La page de conversation n'est pas remontée quand on passe d'un fil à l'autre : sans
- * mémoire extérieure, revenir sur une conversation qu'on avait laissée au milieu la
- * rouvrait ailleurs, et il fallait retrouver à la main où l'on en était.
- *
- * Le repère est un message, pas une hauteur : entre deux visites le fil a grandi, des
- * blocs se sont dépliés, la fenêtre de rendu a bougé, et un `scrollTop` mémorisé ne
- * désigne plus la même chose. Le décalage, lui, reste en pixels : il ne vaut que
- * quelques dizaines de pixels autour du message repéré.
- *
- * Volontairement non persisté, comme les brouillons : une position vieille de plusieurs
- * jours n'a plus rien à voir avec ce que la conversation est devenue, et rouvrir à la
- * fin est alors le bon défaut.
+ * Reading position per conversation. Conversation pages do not remount when switching threads;
+ * without external memory, returning mid-thread opened elsewhere and required manually finding the
+ * old position. Anchor to a message rather than height: new content, expanded blocks, and
+ * rendering-window changes invalidate saved `scrollTop`. Keep only the nearby offset in pixels.
+ * Deliberately not persisted, like drafts: days-old positions no longer reflect the conversation
+ * and reopening at the bottom is then preferable.
  */
 export interface ThreadScroll {
   /**
-   * Le fil suivait le direct. Il rouvre en bas quoi qu'il soit arrivé depuis, ce que
-   * ne saurait pas faire un repère posé sur le dernier message connu.
+   * The thread was following live output. Reopen at the bottom regardless of new content, unlike an
+   * anchor on the last known message.
    */
   atBottom: boolean
-  /** Message le plus haut affiché, par son `seq`. Ignoré quand `atBottom`. */
+  /** Topmost displayed message by `seq`. Ignored when `atBottom`. */
   seq: number
-  /** Distance entre le haut de ce message et le haut de la zone affichée. */
+  /** Distance from this message's top to the visible area's top. */
   offset: number
 }
 

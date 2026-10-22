@@ -7,8 +7,8 @@ import { DEFAULT_CLAUDE_CONFIG } from '@sillage/protocol'
 import { ClaudeRunner } from '../src/agents/claude/runner.js'
 import type { RunnerContext } from '../src/agents/types.js'
 
-// Le vrai SDK construit la ligne de commande ; seul le CLI est remplacé pour
-// vérifier le contrat de lancement sans compte Claude ni consommation de quota.
+// The real SDK builds command lines; replace only CLIs to verify launch contracts
+// without Claude accounts or quota usage.
 const cli = `
 import { writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -57,8 +57,8 @@ for (const mode of ['manual', 'bypassPermissions'] as const) {
       assert.equal(args.includes('--allow-dangerously-skip-permissions'), mode === 'bypassPermissions')
       assert.equal(args.includes(`--resume=${resume}`), resume !== null)
 
-      // Dans les deux sens, le gestionnaire doit relancer le CLI : ne pas annoncer
-      // une application à chaud sur la seule foi d'une réponse de contrôle.
+      // Managers must restart CLIs in both directions: control acknowledgments alone
+      // must not imply live application.
       const nextMode = mode === 'manual' ? 'bypassPermissions' : 'manual'
       assert.equal(await runner.applyConfig({ ...config, permissionMode: nextMode }), false)
       assert.equal(runner.appliedConfig.permissionMode, mode)

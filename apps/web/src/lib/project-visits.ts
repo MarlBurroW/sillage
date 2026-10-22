@@ -3,13 +3,13 @@ import { useLocation } from 'react-router-dom'
 
 type Visit = { projectId: string; path: string }
 
-/** Historique de navigation local au compte, jamais celui des mises à jour des agents. */
+/** Navigation history local to the account, never agent update history. */
 export function useProjectVisits(userId: string) {
   const { pathname } = useLocation()
   const key = `sillage.projectVisits:${userId}`
   const [revision, setRevision] = useState(0)
   const visits = useMemo((): Visit[] => {
-    void revision // Invalidation après une écriture locale.
+    void revision // Invalidate after local writes.
     try {
       const value: unknown = JSON.parse(localStorage.getItem(key) ?? '[]')
       if (!Array.isArray(value)) return []
@@ -24,7 +24,7 @@ export function useProjectVisits(userId: string) {
       if (visits[0]?.path === pathname) return
       localStorage.setItem(key, JSON.stringify(next))
       setRevision((value) => value + 1)
-    } catch { /* La navigation reste disponible sans stockage. */ }
+    } catch { /* Navigation remains available without storage. */ }
   }, [key, pathname, userId, visits])
   return visits
 }

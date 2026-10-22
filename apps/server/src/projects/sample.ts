@@ -8,14 +8,7 @@ import { insertProject } from './create.js'
 
 const run = promisify(execFile)
 
-/**
- * Le projet d'essai de la visite.
- *
- * Un dépôt de quelques fichiers, avec des tests qui échouent exprès : de quoi voir un
- * agent lire, corriger et proposer un commit sans toucher à un vrai dépôt. Node suffit à
- * lancer les tests, puisque Sillage tourne dessus. Le dossier porte un nom reconnaissable,
- * pour qu'on sache ce que c'est et qu'on le retire sans hésiter.
- */
+/** Tour sample project. A small repository with deliberately failing tests lets agents read, fix and propose commits without touching real projects. Node suffices to run tests because Sillage already needs it. Use a recognizable directory name so users understand it and can confidently remove it. */
 const SAMPLE_DIRECTORY = 'sillage-sample'
 const SAMPLE_NAME = 'Sillage sample'
 
@@ -106,10 +99,7 @@ test('a negative price is refused', () => {
 `,
 }
 
-/**
- * Le premier dossier libre : `sillage-sample`, puis `sillage-sample-2`, et ainsi de suite.
- * Un projet d'essai déjà créé puis retiré de Sillage laisse son dossier sur le disque.
- */
+/** First free directory: `sillage-sample`, then `sillage-sample-2`, etc. Sample projects removed from Sillage leave their disk directories behind. */
 async function freeDirectory(parent: string): Promise<string> {
   for (let attempt = 1; attempt <= 20; attempt++) {
     const name = attempt === 1 ? SAMPLE_DIRECTORY : `${SAMPLE_DIRECTORY}-${attempt}`
@@ -120,11 +110,7 @@ async function freeDirectory(parent: string): Promise<string> {
   throw badRequest('sample_directory_taken', 'Too many sample projects already exist in {path}.', { path: parent })
 }
 
-/**
- * Un dépôt git dès le départ : sans lui, ni les points de reprise ni le panneau git
- * n'auraient rien à montrer, et c'est ce que la visite cherche à faire voir. Un git
- * absent n'empêche pas le projet d'exister : les tests se lancent quand même.
- */
+/** Initialize git immediately so checkpoints and the Git panel have content to demonstrate during the tour. Missing git does not prevent project creation: tests can still run. */
 async function initRepository(path: string): Promise<void> {
   const git = (...args: string[]) =>
     run('git', ['-c', 'user.name=Sillage', '-c', 'user.email=sillage@localhost', ...args], { cwd: path })
@@ -133,7 +119,7 @@ async function initRepository(path: string): Promise<void> {
     await git('add', '-A')
     await git('commit', '-q', '-m', 'Add the Sillage sample project')
   } catch {
-    // Sans git sur la machine, le dossier reste un simple projet.
+    // Without Git the directory remains a plain project.
   }
 }
 
@@ -165,7 +151,7 @@ export async function createSampleProject(
     workspacePath,
     visibility: input.visibility,
     color: null,
-    // Le dépôt n'a pas de consignes : celles de Sillage, qui s'écrivent depuis la page.
+    // No repository instructions: use Sillage instructions edited through the page.
     instructionsMode: 'sillage',
   })
 }

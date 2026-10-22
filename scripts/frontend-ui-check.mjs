@@ -14,7 +14,7 @@ import { checkDownloads } from './checks/downloads.mjs'
 import { checkFavorites } from './checks/favorites.mjs'
 import { checkMedia } from './checks/media.mjs'
 
-// Vrais composants et vraie API, dans une base temporaire. Aucun CLI n'est activé.
+// Real components and API, temporary database. No CLI enabled.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -73,7 +73,7 @@ try {
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
-    // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
+    // Browser PDF viewer does not expose application storage.
     if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')
   }, new URL(base).origin)
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
@@ -280,7 +280,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await code.evaluate((node) => node === window.uiEditorNode), true, 'Resizing must retain the editor DOM')
   await workspace.getByRole('button', { name: 'Fermer le panneau', exact: true }).focus()
-  // Au clavier, le premier Échap ferme l'aide du bouton avant le panneau.
+  // Keyboard: first Escape closes button help before the panel.
   await page.getByRole('tooltip').waitFor()
   await page.keyboard.press('Escape')
   await page.getByRole('tooltip').waitFor({ state: 'hidden' })
@@ -291,7 +291,7 @@ try {
   await checkEditor({ page, context, base, project })
   await checkIde({ page, context, base, project })
   await checkMedia({ page, context, base, project })
-  // Le contrôle multimédia laisse le panneau ouvert ; repartir du board seul.
+  // Media check leaves panel open; start again from board alone.
   await page.locator('[data-panel="workspace"]').getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
   await checkDownloads({ page, context, base, project, hero, data })
   await checkFavorites({ page, context, base, project, hero })
@@ -328,7 +328,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Overflow at ${width}px`)
   }
 
-  // Les filtres partagent le vrai socket ; seules les transitions de test sont injectées.
+  // Filters share real socket; only test transitions are injected.
   let activitySocket
   await page.routeWebSocket('**/api/ws', (socket) => {
     activitySocket = socket
@@ -376,7 +376,7 @@ try {
   await overview.waitFor({ state: 'hidden' })
   console.log('OK : filtres en direct, travaux de fond, lecture et retour aux projets.')
 
-  // La reprise ne traverse ni un compte ni un projet devenu inaccessible.
+  // Resume cannot cross accounts or enter a now-inaccessible project.
   const heroPath = `/p/${project.id}/c/${hero.id}`
   await page.goto(base + heroPath)
   await page.locator('textarea').waitFor()
@@ -395,8 +395,8 @@ try {
   assert.notEqual(new URL(page.url()).pathname, '/p/deleted/c/inaccessible')
   console.log('OK : reprise du fil et de la carte, repli après suppression du contexte.')
 
-  // Les CLI restent désactivés côté serveur. Des sondes fixes rendent le formulaire
-  // manipulable sans lancer un agent, et l'envoi est intercepté avant toute création.
+  // CLIs stay disabled server-side. Fixed probes make the form usable without agents;
+  // sending is intercepted before any creation.
   await page.route('**/api/agents', async (route) => {
     const response = await route.fetch()
     const json = await response.json()

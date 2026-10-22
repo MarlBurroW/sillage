@@ -9,7 +9,7 @@ import { Badge, Banner, Button } from '../ui'
 import { useSkillPermissions } from './permissions'
 import { UpdateDialog } from './UpdateDialog'
 
-/** Réunir la recherche, la revue et l'application sans quitter la bibliothèque. */
+/** Combine discovery, review, and application without leaving the library. */
 export function SkillUpdates({ skills }: { skills: LibrarySkillDto[] }) {
   const t = useTranslate()
   const queryClient = useQueryClient()
@@ -58,7 +58,7 @@ export function SkillUpdates({ skills }: { skills: LibrarySkillDto[] }) {
     setBusy('apply')
     setErrors([])
     setCompleted(0)
-    // Revoir l'état local juste avant chaque écriture : la liste peut dater d'avant une édition.
+    // Recheck local state before each write because the list may predate edits.
     for (const skill of selection) {
       try {
         const latest = await api.get<LibrarySkillDto>(`/api/skill-library/${skill.id}`)

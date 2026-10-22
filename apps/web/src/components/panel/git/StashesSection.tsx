@@ -9,11 +9,8 @@ import { failureNotice, useGitPane } from './context'
 import { Section, useSectionOpen } from './Section'
 
 /**
- * Les stashs : le travail mis de côté, à reprendre ou à jeter.
- *
- * `apply` et `pop` sont deux entrées distinctes et nommées par ce qu'elles font du
- * stash : la différence (garder ou retirer l'entrée) est précisément ce qu'on oublie
- * dans un terminal, et qu'on paie en stashs fantômes ou en travail perdu.
+ * Stashes hold work to restore or discard. Name apply and pop separately by whether they retain or
+ * remove entries, the easily forgotten terminal distinction leading to ghost stashes or lost work.
  */
 export function StashesSection({ repo }: { repo: GitRepoStatusDto }) {
   const t = useTranslate()

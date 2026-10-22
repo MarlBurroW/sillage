@@ -49,7 +49,7 @@ async function database(t: TestContext) {
   return { dir, db, ctx: { db, config: { paths: { data: dir } } as Config } }
 }
 
-/** Le compte vient d'un en-tête : le hook d'authentification réel lit un cookie. */
+/** Account comes from a header; real authentication hooks read cookies. */
 function authenticate(app: FastifyInstance, db: Awaited<ReturnType<typeof database>>['db']) {
   app.addHook('onRequest', async (request) => {
     const id = request.headers['x-user']
@@ -75,7 +75,7 @@ async function hub(t: TestContext, warm: string[] = []) {
   const app = Fastify()
   authenticate(app, db)
 
-  // Déclarées avant le hub, comme dans `buildApp` : le hook doit s'y appliquer quand même.
+  // Declared before the hub like `buildApp`: hooks must still apply.
   app.patch('/api/conversations/:id', async (request, reply) =>
     (request.params as { id: string }).id === 'missing' ? reply.code(404).send({}) : { ok: true })
   app.put('/api/conversations/:id/favorite', async () => ({ favorite: true }))
@@ -83,8 +83,8 @@ async function hub(t: TestContext, warm: string[] = []) {
 
   await registerWebSocketHub(app, ctx, {} as EventLog, sessions, { setPresence: () => {} } as unknown as Notifications)
   await app.ready()
-  // Les deux bouts coupés net : une fermeture polie attend la réponse de l'autre côté,
-  // que les flux simulés de `injectWS` ne transmettent pas, et `ws` patiente alors 30 s.
+  // Terminate both ends abruptly: graceful closure awaits peer replies that
+  // `injectWS` simulated streams do not forward, making `ws` wait 30 s.
   t.after(async () => {
     for (const client of app.websocketServer.clients) client.terminate()
     await app.close()
@@ -93,7 +93,7 @@ async function hub(t: TestContext, warm: string[] = []) {
   const connect = async (user: string) => {
     const received: ServerMessage[] = []
     const socket = await app.injectWS('/api/ws', { headers: { 'x-user': user } }, {
-      // Avant l'ouverture : l'instantané de statuts part dès la connexion.
+      // Before opening: status snapshots arrive immediately on connection.
       onInit: (ws) => ws.on('message', (raw) => received.push(JSON.parse(raw.toString()) as ServerMessage)),
     })
     t.after(() => socket.terminate())
@@ -103,7 +103,7 @@ async function hub(t: TestContext, warm: string[] = []) {
   return { app, sessions, connect }
 }
 
-/** Les messages traversent des flux asynchrones : on attend un peu avant de conclure. */
+/** Messages cross asynchronous streams: wait briefly before concluding. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
 const listsChanged = (messages: ServerMessage[]) => messages.filter((m) => m.t === 'lists-changed').length
 
@@ -179,7 +179,7 @@ test('un socket qui arrive reçoit le statut des sessions vivantes qu’il peut 
 test('chaque route de LIST_ROUTES existe', async (t) => {
   const { ctx } = await database(t)
   const app = Fastify()
-  // Les collaborateurs ne sont jamais appelés : seule la déclaration des routes compte.
+  // Collaborators are never invoked; only route registration matters.
   const sessions = stubSessions()
   registerProjectRoutes(app, ctx, {} as AttachmentStore, {} as CloneJobs, {} as TerminalManager)
   registerConversationRoutes(app, ctx, {} as EventLog, sessions, {} as AgentRegistry, {} as AttachmentStore, {} as WebhookService)

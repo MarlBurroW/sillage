@@ -15,14 +15,9 @@ import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { useWorktreeStatuses } from '../lib/worktrees'
 
 /**
- * La vue des chantiers d'un projet : chaque arbre que git ou Sillage connaît, son état
- * contre la branche par défaut, ses indicateurs, les sessions qui y tiennent et leur
- * carte.
- *
- * Remplace l'ancienne liste des worktrees, qui ne voyait que ceux créés par Sillage et
- * n'en disait que « propre » ou « modifié » : la question qui se pose devant des
- * arbres qui s'accumulent est « lequel porte encore du travail », et c'est elle que
- * la vue répond en premier, les plus urgents en tête.
+ * Project worktrees known to Git or Sillage, their default-branch relationship, metrics, sessions,
+ * and cards. Replaces Sillage-created-only clean/dirty lists: accumulated trees first raise which
+ * still contains work, ordered by urgency.
  */
 export function WorktreeBoard({ projectId, isRepository }: { projectId: string; isRepository: boolean }) {
   const t = useTranslate()
@@ -69,12 +64,11 @@ function WorktreeRow({
   const linked = tree.conversations
     .map((entry) => ({ ...entry, conversation: byId.get(entry.id) }))
     .filter((entry): entry is typeof entry & { conversation: ConversationDto } => entry.conversation !== undefined)
-    // Les plus récemment actives d'abord : ce sont elles qui disent où en est le travail.
+    // Most recently active first because they best indicate work progress.
     .sort((a, b) => b.conversation.updatedAt - a.conversation.updatedAt)
   const state = t(`worktrees.state.${tree.state}`)
 
-  // Les indicateurs, dans l'ordre où ils pèsent : ce qui reste ici, puis l'écart à la
-  // base, puis l'ancienneté. Un zéro n'apprend rien et ne s'écrit pas.
+  // Metrics ordered by significance: remaining work, divergence, then age. Omit meaningless zeros.
   const facts: string[] = []
   if (tree.modified > 0) facts.push(plural('worktrees.modified', tree.modified))
   if (tree.untracked > 0) facts.push(plural('worktrees.untracked', tree.untracked))
@@ -115,7 +109,7 @@ function WorktreeRow({
           )}
         </ul>
       </div>
-      {/* Nettoyer, connu de Sillage ou non : l'arbre est à git, pas à la base. */}
+      {/* Clean trees whether known to Sillage or not: Git owns them, not the database. */}
       <Button
         variant="ghost"
         size="sm"
@@ -132,7 +126,7 @@ function WorktreeRow({
   )
 }
 
-/** Une session rattachée : son état du moment, son titre, comment elle tient à l'arbre, sa carte. */
+/** Associated session with current status, title, tree relationship, and card. */
 function LinkedSession({ conversation, link }: { conversation: ConversationDto; link: 'worktree' | 'edited' }) {
   const t = useTranslate()
   const status = useLiveStatus(conversation.id) ?? conversation.status

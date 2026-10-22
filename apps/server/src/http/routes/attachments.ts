@@ -10,7 +10,7 @@ import type { AttachmentStore } from '../../attachments/store.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-/** Types affichables directement par le navigateur, servis tels quels. */
+/** Browser-displayable types served unchanged. */
 const INLINE_DISPOSITION = /^image\/|^text\/plain$|^application\/pdf$/
 
 export function registerAttachmentRoutes(app: FastifyInstance, store: AttachmentStore, ctx: AppContext): void {
@@ -21,8 +21,8 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
     if (!file) throw badRequest('no_file', 'No file received.')
 
     const content = await file.toBuffer().catch(() => null)
-    // `toBuffer` échoue quand la limite est franchie : la taille est donc contrôlée
-    // pendant la lecture, sans jamais charger un fichier démesuré en mémoire.
+    // `toBuffer` fails when the limit is exceeded, so size is checked
+    // during reading without ever loading an oversized file into memory.
     if (!content) {
       throw badRequest('file_too_large', 'File is too large (maximum {maxMb} MB).', {
         maxMb: Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024),
@@ -30,8 +30,8 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
     }
     if (content.byteLength === 0) throw badRequest('empty_file', 'File is empty.')
 
-    // `basename` neutralise un nom qui contiendrait un chemin : il est affiché et
-    // transmis à l'agent, il ne doit désigner aucun répertoire.
+    // `basename` neutralizes names containing paths: names are displayed and sent
+    // to agents, and must not identify directories.
     const dto: AttachmentDto = await store.save({
       userId: user.id,
       filename: basename(file.filename).slice(0, 200) || 'fichier',
@@ -46,8 +46,8 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
 
     const row = store.get(id)
     if (!row) throw notFound('attachment_not_found', 'Attachment not found.')
-    // Les fichiers de ticket suivent la visibilité du projet ; les pièces de chat
-    // restent privées à leur auteur.
+    // Ticket files follow project visibility; chat attachments
+    // remain private to their author.
     if (row.cardId) {
       const project = ctx.db.select({ ownerId: projects.ownerId, visibility: projects.visibility })
         .from(cards).innerJoin(projects, eq(cards.projectId, projects.id))
@@ -80,8 +80,8 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
     const row = store.get(id)
     if (!row) return reply.status(204).send()
     if (row.userId !== user.id) throw forbidden('attachment_forbidden', 'This attachment is not yours.')
-    // Retirer une pièce jointe déjà envoyée réécrirait l'historique du fil, que le
-    // journal doit pouvoir rejouer à l'identique (invariant I2).
+    // Removing sent attachments would rewrite conversation history, which the
+    // journal must replay identically (invariant I2).
     if (row.conversationId || row.cardId) {
       throw badRequest('already_sent', 'This attachment is already part of the conversation.')
     }

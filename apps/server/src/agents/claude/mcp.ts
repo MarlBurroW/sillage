@@ -1,13 +1,7 @@
 import type { McpServerConfig, McpServerStatus as SdkMcpServerStatus } from '@anthropic-ai/claude-agent-sdk'
 import type { McpServer, McpServerState, McpServerStatus } from '@sillage/protocol'
 
-/**
- * Traduction du registre Sillage vers ce que le SDK Claude attend, et retour.
- *
- * Les serveurs partent en mémoire, jamais sur le disque : le SDK les annonce ensuite
- * avec `scope: 'dynamic'`, ce qui est aussi le seul moyen de les distinguer de ceux
- * que l'utilisateur a déclarés lui-même dans `~/.claude.json` ou via claude.ai.
- */
+/** Sillage registry to Claude SDK translation and back. Pass servers in memory, never disk. SDK labels them `scope: 'dynamic'`, distinguishing them from user `~/.claude.json` or claude.ai servers. */
 
 const DYNAMIC_SCOPE = 'dynamic'
 
@@ -33,10 +27,7 @@ export function toSdkMcpServers(servers: McpServer[]): Record<string, McpServerC
   return Object.fromEntries(entries)
 }
 
-/**
- * `pending` par défaut plutôt qu'un état inventé : le SDK documente cinq statuts, mais
- * en ajouter un ne doit pas faire passer un serveur pour connecté.
- */
+/** Default `pending` rather than invented states: future statuses beyond five documented ones must not imply connections. */
 const STATES: Record<string, McpServerState> = {
   connected: 'connected',
   failed: 'failed',

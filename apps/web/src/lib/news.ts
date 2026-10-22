@@ -25,10 +25,10 @@ export function usePreviewFeed() {
   return useMutation({ mutationFn: (url: string) => api.post<NewsFeed>('/api/news/preview', { url }) })
 }
 
-/** La rotation appartient à la lecture : aucun accès réseau à chaque titre ou chaque tour. */
+/** Rotation belongs to reading: no network access per headline or turn. */
 export function useNewsRotation(articles: NewsArticle[], paused: boolean) {
   const [selected, setSelected] = useState<string | null>(null)
-  // Un rafraîchissement du cache ne doit pas remplacer le lien sous le pointeur.
+  // A cache refresh must not replace the link under the pointer.
   useEffect(() => {
     if (articles.length && !articles.some((article) => article.url === selected)) setSelected(articles[0]!.url)
   }, [articles, selected])

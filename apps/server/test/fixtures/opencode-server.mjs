@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Faux `opencode serve` déterministe : aucun modèle, réseau ou accès à la base d'opencode.
+// Deterministic fake `opencode serve`: no models, networking or real opencode database.
 import { appendFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createServer } from 'node:http'
@@ -9,9 +9,9 @@ if (process.argv.includes('--version')) {
   process.exit(0)
 }
 
-// Ce que le runner a injecté au lancement, pour que les tests le relisent.
-// À côté du script, jamais dans le dossier courant : le catalogue lance opencode depuis
-// le HOME, où ces traces n'ont rien à faire.
+// Runner launch input retained for tests.
+// Beside scripts rather than cwd: catalogs launch opencode from HOME,
+// where these traces do not belong.
 const here = dirname(process.argv[1])
 writeFileSync(join(here, 'launch.json'), JSON.stringify({
   config: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? '{}'),
@@ -34,7 +34,7 @@ const session = (id) => ({
   version: '1.19.0', time: { created: 1, updated: 1 },
 })
 
-/** Messages rendus par `GET /session/:id/message`, que le test de fork peut remplacer. */
+/** Messages returned by `GET /session/:id/message`, replaceable by fork tests. */
 let messages = ['msg_1', 'msg_2', 'msg_3', 'msg_4'].map((id) => ({ info: { id }, parts: [] }))
 
 const json = (response, status, body) => {
@@ -62,7 +62,7 @@ const server = createServer((request, response) => {
     const route = `${request.method} ${pathname}`
 
     if (route === 'POST /session') return json(response, 200, session('ses_root'))
-    // Comme le vrai : les flux ouverts restent branchés mais ne reçoivent plus rien.
+    // Like the real server: open streams stay connected but receive nothing.
     if (route === 'POST /instance/dispose') {
       streams.clear()
       return json(response, 200, true)
@@ -104,7 +104,7 @@ const server = createServer((request, response) => {
         return json(response, 200, true)
       }
       if (action === 'prompt_async' || action === 'command') {
-        // Le scénario voyage dans le texte du message : `fixture:{"events":[…]}`.
+        // Scenarios travel in message text: `fixture:{"events":[…]}`.
         const text = action === 'command' ? body.arguments : (body.parts.find((part) => part.type === 'text')?.text ?? '')
         const scenario = text.startsWith('fixture:') ? JSON.parse(text.slice(8)) : {}
         if (scenario.messages) messages = scenario.messages
@@ -115,12 +115,12 @@ const server = createServer((request, response) => {
       }
     }
 
-    // Réponses aux permissions et aux questions, et tout le reste : accepté.
+    // Accept permission/question responses and all other requests.
     json(response, 200, true)
   })
 })
 
-// Le port vient du runner, comme pour le vrai : `serve --port <n>`.
+// Runner supplies ports like real `serve --port <n>`.
 const port = Number(process.argv[process.argv.indexOf('--port') + 1])
 server.listen(port, '127.0.0.1', () => {
   console.log(`opencode server listening on http://127.0.0.1:${server.address().port}`)

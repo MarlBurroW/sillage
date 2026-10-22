@@ -5,8 +5,8 @@ import { api } from './api'
 const linkKey = (projectId: string) => ['board-link', projectId]
 
 /**
- * La liaison du board à GitHub. Relue souvent tant qu'une synchronisation tourne, pour
- * que l'état affiché suive ; sinon toutes les minutes, au rythme des passages.
+ * Board GitHub connection. Poll closely during synchronization to track state, otherwise every
+ * minute matching synchronization cadence.
  */
 export function useBoardLink(projectId: string | undefined) {
   return useQuery({
@@ -18,7 +18,7 @@ export function useBoardLink(projectId: string | undefined) {
   })
 }
 
-/** Ce qu'une synchronisation a pu changer : les cartes, leurs fils, les comptes. */
+/** Data synchronization may change: cards, threads, and counts. */
 function invalidateBoard(queryClient: ReturnType<typeof useQueryClient>, projectId: string) {
   void queryClient.invalidateQueries({ queryKey: ['cards', projectId] })
   void queryClient.invalidateQueries({ queryKey: ['card-notes'] })
@@ -52,7 +52,7 @@ export function useSyncBoard(projectId: string) {
   return useMutation({
     mutationFn: () => api.post<BoardLinkStateDto>(`/api/projects/${projectId}/board-link/sync`),
     onSuccess: (state) => queryClient.setQueryData(linkKey(projectId), state),
-    // Même en échec : ce qui a eu le temps de passer est déjà dans la base.
+    // Even on failure: successfully processed data is already in the database.
     onSettled: () => {
       invalidateBoard(queryClient, projectId)
       void queryClient.invalidateQueries({ queryKey: linkKey(projectId) })
@@ -71,7 +71,7 @@ export function useResetHiddenIssues(projectId: string) {
   })
 }
 
-/** Publier une carte locale comme issue, ou rattacher une carte détachée à la sienne. */
+/** Publish a local card as an issue or reconnect a detached card to its existing issue. */
 export function usePublishCard(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({

@@ -1,13 +1,6 @@
 import { spawnSync } from 'node:child_process'
 
-/**
- * Arrête un processus et ceux qu'il a lancés.
- *
- * Sous Linux et macOS, par son groupe : le processus doit avoir été lancé `detached`,
- * chef de son propre groupe. Sous Windows, il n'y a pas de groupe à viser, et un lancement
- * détaché ouvrirait une console à part : `taskkill /T` parcourt l'arborescence, et ne
- * connaît qu'une manière, définitive, d'arrêter.
- */
+/** Stops processes and their descendants. Linux/macOS target groups, requiring `detached` group leaders. Windows has no such groups and detached launching would open separate consoles; `taskkill /T` walks trees and supports only definitive termination. */
 export function killTree(pid: number, signal: NodeJS.Signals, platform: NodeJS.Platform = process.platform): void {
   try {
     if (platform === 'win32') {
@@ -16,6 +9,6 @@ export function killTree(pid: number, signal: NodeJS.Signals, platform: NodeJS.P
       process.kill(-pid, signal)
     }
   } catch {
-    // Déjà terminé.
+    // Already terminated.
   }
 }

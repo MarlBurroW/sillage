@@ -20,13 +20,13 @@ const execFileAsync = promisify(execFile)
 const GITHUB_REMOTE =
   /^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i
 
-/** `owner/nom` d'une URL de remote GitHub, sous ses formes https, ssh et scp. */
+/** `owner/name` from GitHub remote URLs in HTTPS, SSH and SCP forms. */
 export function githubRepoFromRemote(url: string): string | null {
   const match = GITHUB_REMOTE.exec(url.trim())
   return match ? `${match[1]}/${match[2]}` : null
 }
 
-/** La configuration de session enregistrée ; une ligne illisible vaut « réglages du projet ». */
+/** Stored session configuration; unreadable rows mean 'project settings'. */
 function readSessionConfig(value: string | null): AgentConfig | null {
   if (!value) return null
   try {
@@ -37,7 +37,7 @@ function readSessionConfig(value: string | null): AgentConfig | null {
   }
 }
 
-/** Le dépôt GitHub de l'`origin` du projet, pour préremplir la liaison. */
+/** GitHub repository from the project's `origin`, used to prefill the connection. */
 async function originRepo(workspacePath: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', workspacePath, 'remote', 'get-url', 'origin'], { timeout: 3000 })
@@ -48,8 +48,8 @@ async function originRepo(workspacePath: string): Promise<string | null> {
 }
 
 /**
- * La liaison d'un board à un dépôt GitHub. Seul le propriétaire du projet la pose, la
- * règle ou la défait : elle publie au nom de son identifiant GitHub.
+ * Connects a board to a GitHub repository. Only the project owner can create,
+ * configure or remove the link: it publishes through their GitHub identity.
  */
 export function registerBoardLinkRoutes(app: FastifyInstance, ctx: AppContext, board: BoardSync): void {
   const loadProject = (projectId: string, userId: string): ProjectRow => {
@@ -119,7 +119,7 @@ export function registerBoardLinkRoutes(app: FastifyInstance, ctx: AppContext, b
     return state(loadProject(id, user.id), user.id)
   })
 
-  /** Relie le board, ou en change les réglages ; le dépôt, lui, ne change pas. */
+  /** Connects a board or changes settings; the repository itself stays fixed. */
   app.put('/api/projects/:id/board-link', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -140,8 +140,8 @@ export function registerBoardLinkRoutes(app: FastifyInstance, ctx: AppContext, b
       if (existing.repo.toLowerCase() !== settings.repo.toLowerCase()) {
         throw conflict('board_repo_locked', 'Unlink the board before linking another repository.')
       }
-      // Un autre filtre ou une autre fenêtre change les issues qui entrent : on relit
-      // depuis le début, ce qui ne fait qu'ajouter les cartes manquantes.
+      // A different filter or window changes eligible issues: reread from the start,
+      // which only adds missing cards.
       const rescan = existing.labelFilter !== settings.labelFilter || existing.closedDays !== settings.closedDays
       ctx.db
         .update(boardLinks)
@@ -155,8 +155,8 @@ export function registerBoardLinkRoutes(app: FastifyInstance, ctx: AppContext, b
   })
 
   /**
-   * Délie le board. Les cartes GitHub sans travail local partent avec le lien, sauf
-   * `?keep=1` ; celles qui en portent restent, redevenues locales.
+   * Disconnects a board. GitHub cards without local work leave with the link
+   * unless `?keep=1`; cards with local work remain as local cards.
    */
   app.delete('/api/projects/:id/board-link', async (request) => {
     const user = requireUser(request)
@@ -191,7 +191,7 @@ export function registerBoardLinkRoutes(app: FastifyInstance, ctx: AppContext, b
     return state(project, user.id)
   })
 
-  /** Les issues retirées à la main reviennent au prochain passage. */
+  /** Manually removed issues return on the next pass. */
   app.post('/api/projects/:id/board-link/hidden/reset', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

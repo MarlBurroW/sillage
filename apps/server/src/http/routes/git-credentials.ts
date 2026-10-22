@@ -11,14 +11,13 @@ import { HttpError, badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
- * Accès aux forges git de l'utilisateur courant.
+ * Current user's git forge access.
  *
- * Par compte et non par instance, contrairement aux secrets : cloner un dépôt privé est
- * un geste d'utilisateur. Chacun ne voit et ne modifie donc que ses propres credentials,
- * y compris un administrateur, qui n'a aucune raison d'emprunter le jeton d'un autre.
+ * Per account rather than instance, unlike secrets: cloning private repositories
+ * is a user action. Everyone sees and edits only their own credentials, including
+ * administrators, who have no reason to borrow another user's token.
  *
- * Aucune route ne rend un jeton. Corriger une faute de frappe se fait en le réécrivant,
- * comme pour les secrets.
+ * No route returns tokens. Correcting typos requires replacing them, as with secrets.
  */
 export function registerGitCredentialRoutes(
   app: FastifyInstance,
@@ -31,16 +30,16 @@ export function registerGitCredentialRoutes(
   })
 
   /**
-   * `PUT` et non `POST` : écrire un jeton est idempotent, et le remplacer quand il
-   * expire est le geste courant, pas l'exception.
+   * `PUT` rather than `POST`: token writes are idempotent, and replacing expired
+   * tokens is the ordinary operation rather than an exception.
    */
   app.put('/api/git-credentials', async (request, reply) => {
     const user = requireUser(request)
     const body = putGitCredentialBodySchema.parse(request.body)
 
     credentials.put(user.id, body.host, body.username, body.token)
-    // Le catalogue en cache a été constitué avec le jeton précédent, qui ne donnait
-    // peut-être pas accès aux mêmes dépôts.
+    // The cached catalog used the previous token, which may have granted access
+    // to a different set of repositories.
     catalog.forget(user.id)
 
     reply.status(204)
@@ -50,8 +49,8 @@ export function registerGitCredentialRoutes(
     const user = requireUser(request)
     const { host } = request.params as { host: string }
 
-    // Validé avant d'atteindre la base : l'hôte vient de l'URL, et un motif refusé à
-    // l'écriture n'a pas de raison d'être accepté à la suppression.
+    // Validate before reaching the database: the host comes from the URL, and a
+    // pattern rejected on writes has no reason to be accepted on deletion.
     if (!credentials.delete(user.id, gitHostSchema.parse(host))) {
       throw notFound('git_credential_not_found', 'No credential for this host.')
     }
@@ -61,11 +60,10 @@ export function registerGitCredentialRoutes(
   })
 
   /**
-   * Dépôts accessibles avec le jeton, pour la combobox de création de projet.
+   * Repositories accessible with the token, for the project creation combobox.
    *
-   * GitHub seul pour l'instant : chaque forge a sa propre API de listage, et rien dans
-   * l'interface ne dépend de cette route, qui n'est qu'un raccourci. Coller une URL
-   * reste la voie universelle.
+   * GitHub only for now: every forge has its own listing API, and the interface
+   * does not depend on this shortcut. Pasting a URL remains universal.
    */
   app.get('/api/git-credentials/:host/repos', async (request): Promise<GitRepoListDto> => {
     const user = requireUser(request)
@@ -88,8 +86,8 @@ export function registerGitCredentialRoutes(
     try {
       return await catalog.search(user.id, credential.token, q ?? '')
     } catch (err) {
-      // Un jeton refusé ou un quota épuisé n'est pas une panne de Sillage : le code
-      // distingue les cas, pour que l'interface dise quoi corriger.
+      // A rejected token or exhausted quota is not a Sillage failure: distinct codes
+      // let the interface explain what needs correcting.
       if (err instanceof GitHubError) {
         throw new HttpError(502, err.code, err.message, err.params)
       }

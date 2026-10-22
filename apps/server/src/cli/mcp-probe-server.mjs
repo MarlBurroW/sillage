@@ -1,9 +1,4 @@
-/**
- * Serveur MCP réduit au strict nécessaire, pour la sonde `mcp-probe.ts`.
- *
- * Aucun réseau ni dépendance : s'il n'apparaît pas dans l'inventaire d'un CLI, la cause
- * est dans le chemin que Sillage sonde, pas dans l'installation d'un paquet.
- */
+/** Minimal MCP server for `mcp-probe.ts`, without networking or dependencies. Missing CLI inventory entries therefore indicate probed integration paths rather than package installation problems. */
 import { createInterface } from 'node:readline'
 
 const log = (msg) => process.stderr.write(`[fake-mcp] ${msg}\n`)
@@ -33,7 +28,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       jsonrpc: '2.0',
       id: msg.id,
       result: {
-        // On renvoie la version demandée par le client : le CLI décide, pas nous.
+        // Echo client-requested versions: the CLI decides, not us.
         protocolVersion: msg.params?.protocolVersion ?? '2025-06-18',
         capabilities: { tools: {} },
         serverInfo: { name: 'sillage-probe', version: '0.0.1' },
@@ -56,7 +51,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return
   }
 
-  // Les notifications n'ont pas d'id et n'attendent pas de réponse.
+  // Notifications have no IDs and expect no responses.
   if (msg.id === undefined) return
 
   send({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `inconnu: ${msg.method}` } })

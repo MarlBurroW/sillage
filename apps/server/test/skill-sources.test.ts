@@ -15,7 +15,7 @@ import type {
 import { normalizeSourceUrl } from '../src/skill-library/sources.js'
 import { http } from './skill-library-support.js'
 
-/** Un dépôt git jetable, qu'on fait évoluer à la main comme le ferait son auteur. */
+/** Disposable git repository manually advanced like its author would. */
 function repository(dir: string) {
   const root = join(dir, 'upstream')
   mkdirSync(root, { recursive: true })
@@ -44,7 +44,7 @@ function repository(dir: string) {
   return { root, write, skill, commit, head: () => git('rev-parse', 'HEAD') }
 }
 
-/** Une source vers un dépôt local, posée en base : l'API refuse les chemins locaux. */
+/** Local source repository inserted directly in the database because APIs reject local paths. */
 function localSource(db: Db, id: string, url: string, subpath: string | null) {
   db.insert(skillSources)
     .values({ id, name: id, url, subpath, ref: null, builtin: false, enabled: true, createdAt: 1, updatedAt: 1 })
@@ -93,7 +93,7 @@ test('rafraîchir, parcourir, relire, installer : la provenance suit', async (t)
   assert.match(preview.main, /Version 1\./)
   assert.deepEqual(preview.files, ['SKILL.md', 'scripts/run.sh'])
 
-  // Installer : qui peut écrire dans la portée visée.
+  // Installation requires destination-scope write permission.
   const target = { path: 'skills/alpha', scope: 'project', projectId: 'p1' }
   assert.equal((await call('member', 'POST', '/api/skill-sources/local/install', target)).statusCode, 403)
   const installed = (await call('owner', 'POST', '/api/skill-sources/local/install', target)).json() as LibrarySkillDto
@@ -112,7 +112,7 @@ test('mise à jour : signalée au rafraîchissement, montrée en diff, appliqué
   localSource(db, 'local', upstream.root, 'skills')
   await call('admin', 'POST', '/api/skill-sources/local/refresh')
 
-  // Renommé à l'installation : pas de mise à jour fantôme pour autant.
+  // Installation renames must not create phantom updates.
   const renamed = (await call('admin', 'POST', '/api/skill-sources/local/install', { path: 'skills/beta', scope: 'global', name: 'gamma' })).json() as LibrarySkillDto
   assert.equal(renamed.name, 'gamma')
   assert.equal(renamed.updateAvailable, false)
@@ -196,7 +196,7 @@ test('rafraîchissement raté : erreur gardée sur la source, catalogue précéd
   assert.ok(gone.lastError)
   assert.equal(gone.lastCommit, null)
 
-  // Changer de dossier rend le catalogue caduc : il ne doit plus rien proposer.
+  // Changing directories invalidates catalogs, which must stop offering entries.
   const upstream = repository(dir)
   localSource(db, 'local', upstream.root, 'skills')
   await call('admin', 'POST', '/api/skill-sources/local/refresh')

@@ -33,26 +33,20 @@ import {
 import { McpControl, type McpControlProps } from './McpControl'
 
 /**
- * Réglages d'une configuration d'agent, sous la forme de catégories d'options.
- *
- * Partagé par le composer, qui règle une conversation, et l'écran des défauts de
- * compte, qui règle avec quoi les suivantes s'ouvriront. Les deux posent exactement la
- * même question au même objet : dupliquer la liste des modes de permission ou la
- * gestion des sentinelles aurait garanti que les deux écrans divergent.
- *
- * Ce module produit des données, pas une disposition : le composer les empile dans un
- * panneau à plat, la page de réglages les déplie. Seul le contrôle MCP arrive
- * déjà rendu, n'étant pas un choix unique parmi une liste.
+ * Agent configuration settings as option categories. Shared by conversation composers and account
+ * defaults for future conversations: both ask the same questions of the same object, so duplicating
+ * permission modes or sentinel handling would guarantee divergence. Produces data rather than
+ * layout: composers stack a flat panel while settings expand categories. Only MCP controls arrive
+ * rendered because they are not single-choice lists.
  */
 
-/** Traduction, passée aux fabriques d'options qui vivent hors du composant. */
+/** Translation passed to option factories outside the component. */
 type Translate = (key: MessageKey, params?: MessageParams) => string
 
 /**
- * Plafond de dépense d'une conversation Claude, en paliers plutôt qu'en champ libre :
- * les catégories sont des listes de choix, et un palier se lit d'un coup d'œil dans
- * la puce du composer. `none` retire le plafond ; au-delà du montant, le CLI clôt le
- * tour en erreur (`error_max_budget_usd`).
+ * Claude conversation spending cap in steps rather than free input: categories are choice lists and
+ * steps fit composer chips. `none` removes the cap; exceeding it ends the turn with
+ * `error_max_budget_usd`.
  */
 const BUDGET_STEPS_USD = [2, 5, 10, 25, 50] as const
 
@@ -61,7 +55,7 @@ function budgetOptions(t: Translate, current: number | null): SettingChoice<stri
     { value: 'none', label: t('composer.budget.none'), hint: t('composer.budget.none.hint') },
     ...BUDGET_STEPS_USD.map((amount) => ({ value: String(amount), label: t('composer.budget.amount', { amount }) })),
   ]
-  // Un montant posé autrement (API, ancienne version) reste sélectionnable et lisible.
+  // Amounts saved through the API or earlier versions remain readable and selectable.
   if (current !== null && !options.some((option) => option.value === String(current))) {
     options.push({ value: String(current), label: t('composer.budget.amount', { amount: current }), hint: t('composer.select.saved') })
   }
@@ -93,9 +87,8 @@ function permissionOptions(t: Translate): SettingChoice<ClaudeConfig['permission
 }
 
 /**
- * Modes de Grok Build. Ses noms recopient ceux de Claude Code, à `manual` près, qu'il
- * appelle `default` : les libellés de Claude servent donc, sauf l'automatique, dont
- * l'indice nomme l'agent qui décide. Tous se changent à chaud.
+ * Grok Build modes mirror Claude Code except manual, called default. Reuse Claude labels except
+ * automatic, whose hint names the deciding agent. All change live.
  */
 function grokPermissionOptions(t: Translate): SettingChoice<GrokConfig['permissionMode']>[] {
   return [
@@ -121,18 +114,16 @@ function webSearchOptions(t: Translate): SettingChoice<WebSearchChoice>[] {
 }
 
 /**
- * Valeur d'affichage de la sentinelle `CLI_DEFAULT` dans le sélecteur d'approbation.
- * Laisser Codex appliquer sa propre politique est un état réel du protocole
- * (`approvalPolicy: null`), pas un trou : il mérite d'être nommé et sélectionnable.
+ * Display value for `CLI_DEFAULT` in approval selection. Letting Codex apply its own policy is real
+ * protocol state (`approvalPolicy: null`), deserving a named selectable entry.
  */
 const CLI_DEFAULT_CHOICE = 'cli-default'
 
 type ApprovalChoice = CodexApprovalName | typeof CLI_DEFAULT_CHOICE | 'granular'
 
 /**
- * Vocabulaire natif de Codex, volontairement non aligné sur celui de Claude : les
- * deux CLI n'ont pas les mêmes concepts, et inventer une abstraction commune
- * mentirait sur ce qui se passe réellement.
+ * Native Codex vocabulary deliberately differs from Claude: their concepts differ and a shared
+ * abstraction would misrepresent actual behavior.
  */
 function codexApprovalOptions(t: Translate): SettingChoice<ApprovalChoice>[] {
   return [
@@ -161,9 +152,8 @@ function codexApprovalOptions(t: Translate): SettingChoice<ApprovalChoice>[] {
 }
 
 /**
- * Le mode rapide de Claude Code, en deux valeurs plutôt qu'une case à cocher : le
- * panneau ne connaît que des listes, et « Standard » mérite d'être nommé autant que
- * « Rapide », puisque c'est le tarif qui les sépare.
+ * Claude Code fast mode as two choices rather than a checkbox because panels use lists and Standard
+ * deserves naming alongside Fast, whose price differs.
  */
 type SpeedChoice = 'standard' | 'fast'
 
@@ -175,9 +165,8 @@ function speedOptions(t: Translate): SettingChoice<SpeedChoice>[] {
 }
 
 /**
- * Ultracode, en deux valeurs pour la même raison que la vitesse. L'allumé porte le ton
- * de mise en garde : il lance des workflows multi-agents à chaque tâche de fond, et le
- * résumé doit le montrer tant qu'il dépense.
+ * Ultracode uses two choices for the same reason as speed. Enabled carries caution tone: it starts
+ * multi-agent workflows for each background task and remains visible while spending.
  */
 type UltracodeChoice = 'off' | 'on'
 
@@ -189,8 +178,8 @@ function ultracodeOptions(t: Translate): SettingChoice<UltracodeChoice>[] {
 }
 
 /**
- * La bibliothèque de skills de Sillage, livrée ou non à la session. Un choix à deux
- * valeurs plutôt qu'une case, pour se ranger avec les autres réglages du panneau.
+ * Whether to deliver Sillage's skill library to the session. Two choices rather than a checkbox to
+ * fit other panel settings.
  */
 type LibraryChoice = 'on' | 'off'
 
@@ -221,10 +210,9 @@ function codexSandboxOptions(t: Translate): SettingChoice<CodexConfig['sandbox']
 }
 
 /**
- * Règle d'opencode pour une famille d'outils, dans son vocabulaire : demander, laisser
- * faire, refuser. La sentinelle `CLI_DEFAULT` est un état réel, celui où Sillage ne pose
- * aucune règle et où l'`opencode.json` du poste décide : elle a son entrée, comme la
- * politique d'approbation de Codex.
+ * opencode tool-family rules in native vocabulary: ask, allow, deny. `CLI_DEFAULT` is real state
+ * where Sillage supplies no rule and local opencode.json decides; give it an entry like Codex
+ * approval policy.
  */
 type OpencodePermissionChoice = Exclude<OpencodePermission, ''> | typeof CLI_DEFAULT_CHOICE
 
@@ -249,7 +237,7 @@ function opencodePermissionOptions(t: Translate): SettingChoice<OpencodePermissi
 const opencodePermissionChoice = (value: OpencodePermission): OpencodePermissionChoice =>
   value === CLI_DEFAULT ? CLI_DEFAULT_CHOICE : value
 
-/** Les familles réglables, dans l'ordre du panneau, avec leur intitulé et leur icône. */
+/** Configurable families in panel order with titles and icons. */
 const OPENCODE_PERMISSIONS: { family: keyof OpencodePermissions; label: MessageKey; icon: ReactElement }[] = [
   { family: 'edit', label: 'composer.setting.opencodeEdit', icon: <FilePen size={15} /> },
   { family: 'bash', label: 'composer.setting.opencodeBash', icon: <SquareTerminal size={15} /> },
@@ -257,13 +245,9 @@ const OPENCODE_PERMISSIONS: { family: keyof OpencodePermissions; label: MessageK
 ]
 
 /**
- * Nomme le modèle derrière la ligne par défaut du catalogue.
- *
- * Claude Code appelle la sienne « Default (recommended) », ce qui est long et ne dit
- * pas qui répondra. Une autre ligne pointe le même `resolvedModel` et porte, elle, un
- * nom lisible : c'est celui-là qu'on affiche. Null quand aucune ne correspond, faute
- * de quoi il faudrait inventer un nom de modèle, ce qui serait pire que de rester
- * vague.
+ * Name the model behind the default catalog entry. Claude Code's Default (recommended) is long and
+ * does not identify the responding model. Another entry sharing resolvedModel has a readable name;
+ * use it. Return null without a match rather than inventing a name.
  */
 function defaultModelLabel(
   models: AgentModelDto[],
@@ -276,13 +260,9 @@ function defaultModelLabel(
 }
 
 /**
- * Le libellé de la valeur que la session applique encore, quand ce n'est pas celle
- * qui est choisie. Null quand les deux coïncident, donc partout sauf entre un réglage
- * que le CLI refuse de changer en vol et le redémarrage qui le prend en compte.
- *
- * Un libellé et non un drapeau : « en attente » ne dit pas sous quel régime le tour se
- * déroule, ce qu'on cherche justement à savoir quand on vient de poser ou de lever un
- * garde-fou.
+ * Label for the value still applied by the session when different from the selection. Null when
+ * equal, except between selecting a setting that cannot change live and restarting. A label rather
+ * than a flag: pending does not explain which safeguards currently govern the turn.
  */
 function appliedLabel(
   applied: string | undefined,
@@ -293,12 +273,12 @@ function appliedLabel(
   return options.find((option) => option.value === applied)?.label ?? applied
 }
 
-/** La mention posée sur la ligne du réglage, absente quand rien n'attend. */
+/** Setting-row annotation, absent when nothing is pending. */
 function notice(applied: string | null, t: Translate): string | undefined {
   return applied === null ? undefined : t('composer.setting.pending', { value: applied })
 }
 
-/** Voir `appliedLabel` : la même comparaison, pour la rangée de signaux. */
+/** See `appliedLabel`: same comparison for the signals row. */
 export function appliedPermissionLabel(
   config: AgentConfig,
   applied: AgentConfig | null,
@@ -309,15 +289,15 @@ export function appliedPermissionLabel(
 }
 
 export interface AgentSettings {
-  /** Les catégories, dans l'ordre où on les change. */
+  /** Categories in expected adjustment order. */
   groups: SettingGroup[]
-  /** Valeurs annoncées par l'accès complet et états de permissions à garder visibles. */
+  /** Full-access advertised values and permission states that must remain visible. */
   summary: SummarySegment[]
-  /** Serveurs MCP et isolation stricte, déjà rendus. */
+  /** Rendered MCP servers and strict isolation controls. */
   mcp: ReactElement<McpControlProps> | null
-  /** Les mêmes contrôles MCP, dépliés dans la vue complète du composer. */
+  /** The same MCP controls expanded in the composer's full view. */
   mcpPanel: ReactNode
-  /** Le CLI n'a pas répondu : la liste des modèles se réduit à ce qui est enregistré. */
+  /** When the CLI does not respond, model choices reduce to the saved setting. */
   catalogError: Error | null
 }
 
@@ -325,20 +305,20 @@ interface AgentSettingsParams {
   config: AgentConfig
   onConfigChange: (config: AgentConfig) => void
   /**
-   * Configuration sous laquelle le CLI tourne réellement, `null` à froid ou hors d'une
-   * conversation lancée. Ce qui y diffère de `config` est un réglage choisi que la
-   * session n'a pas pu adopter en vol et qui attend son redémarrage.
+   * Configuration actually running in the CLI, null before startup or outside an active
+   * conversation. Differences from config represent selected settings awaiting restart because live
+   * adoption failed.
    */
   appliedConfig?: AgentConfig | null
   /**
-   * Inventaire MCP rapporté par la session en cours. Absent hors d'une conversation
-   * lancée : le contrôle retombe alors sur ce que la configuration décrit.
+   * MCP inventory reported by the running session. Absent outside started conversations, where
+   * controls fall back to configured state.
    */
   mcpInventory?: McpServerStatus[]
   disabled?: boolean
 }
 
-/** Référence stable : un tableau littéral par défaut relancerait le rendu du contrôle. */
+/** Stable reference: a default array literal would retrigger control rendering. */
 const NO_INVENTORY: McpServerStatus[] = []
 
 export function useAgentSettings({
@@ -349,23 +329,21 @@ export function useAgentSettings({
   disabled = false,
 }: AgentSettingsParams): AgentSettings {
   const t = useTranslate()
-  // Une seule sonde, celle de l'agent visé : chaque sonde démarre le CLI correspondant
-  // côté serveur.
+  // Probe only the selected agent: each probe starts its corresponding server-side CLI.
   const { data: catalog, error: catalogError } = useAgentModels(config.agent)
 
-  // Copies constantes de la configuration : TypeScript ne conserve pas l'affinement
-  // d'un paramètre à l'intérieur des fonctions de rendu construites plus bas.
+  // Constant configuration copies: TypeScript does not preserve parameter narrowing inside
+  // rendering functions built below.
   const claude = config.agent === 'claude' ? config : null
   const codex = config.agent === 'codex' ? config : null
   const opencode = config.agent === 'opencode' ? config : null
   const grok = config.agent === 'grok' ? config : null
 
   /**
-   * Modèle réellement en vigueur. `CLI_DEFAULT` ne désigne aucune entrée du catalogue :
-   * l'afficher tel quel donnait un sélecteur vide et, faute de modèle trouvé, aucun
-   * niveau d'effort. Le CLI annonce lequel de ses modèles il prendrait, c'est celui-là
-   * que la barre montre. La configuration, elle, garde la sentinelle : c'est au serveur
-   * de la résoudre au moment de créer la conversation.
+   * Actually effective model. `CLI_DEFAULT` matches no catalog entry: displaying it directly left
+   * an empty selector and no effort choices. Display the model the CLI reports it would choose,
+   * while retaining the sentinel in configuration for server-side resolution at conversation
+   * creation.
    */
   const resolvedModel =
     config.model || catalog?.models.find((model) => model.isDefault)?.value || CLI_DEFAULT
@@ -377,9 +355,8 @@ export function useAgentSettings({
       return {
         value: model.value,
         label: named ?? model.displayName,
-        // `hint` porte la version réelle derrière un alias : sans elle, « Opus » ne
-        // dit pas quelle génération va effectivement répondre. Le rappel « par
-        // défaut » ne sert que si le libellé n'a pas déjà pu le dire.
+        // The hint identifies the actual version behind an alias; Opus alone does not say which
+        // generation responds. Add a default reminder only if the label does not already convey it.
         hint: [
           model.description,
           model.hint,
@@ -390,10 +367,9 @@ export function useAgentSettings({
       }
     })
 
-    // Le modèle enregistré doit rester sélectionnable même si le catalogue n'a pas pu
-    // être lu, sinon le select s'affiche vide et efface le réglage de la conversation.
-    // Seulement s'il y a un réglage à préserver : la sentinelle n'en est pas un.
-    // Un ancien nom d'un modèle toujours listé garde le nom lisible de celui-ci.
+    // Keep saved models readable and selectable when the catalog cannot load, or the empty select
+    // would erase conversation settings. Only preserve actual values, not the sentinel. Old names
+    // for still-listed models retain the readable catalog name.
     if (config.model && !known.some((option) => option.value === config.model)) {
       const listed = catalogModel(models, config.model)
       known.unshift({
@@ -412,9 +388,8 @@ export function useAgentSettings({
       hint: effort.hint ?? undefined,
     }))
 
-    // Même règle que pour le modèle : le niveau enregistré reste sélectionnable et
-    // lisible quand le catalogue ne le déclare pas (ou plus). Seulement si le modèle
-    // gère l'effort : sinon le sélecteur n'a pas à exister.
+    // Likewise keep saved effort levels readable and selectable if no longer declared, but only
+    // when the model supports effort; otherwise omit the selector.
     const current =
       config.agent === 'claude' ? config.effort : config.agent === 'opencode' ? config.variant : config.reasoningEffort
     if (known.length > 0 && current && !known.some((option) => option.value === current)) {
@@ -424,9 +399,8 @@ export function useAgentSettings({
   }, [catalog, config, resolvedModel, t])
 
   /**
-   * Le mode rapide n'est proposé que s'il peut servir : un compte qui y a droit, et un
-   * modèle qui le gère. Absent sinon, plutôt que grisé, comme l'effort ; et absent sur
-   * un CLI qui ne connaît pas la notion, dont le catalogue laisse `fastMode` null.
+   * Offer fast mode only for eligible accounts and supporting models. Omit rather than disable it,
+   * like effort, and omit for CLIs without the concept whose catalog fastMode is null.
    */
   const speedOffered =
     claude !== null &&
@@ -434,18 +408,16 @@ export function useAgentSettings({
     supportsFastMode(catalog.models, resolvedModel)
 
   /**
-   * Ultracode n'impose plus `xhigh` depuis Claude Code 2.1.284, mais le CLI le refuse
-   * toujours sur un modèle qui ne gère pas ce niveau (sondé sur 2.1.296) : le réglage
-   * n'existe que là, comme le mode rapide.
+   * Ultracode no longer forces xhigh since Claude Code 2.1.284, but still rejects models lacking
+   * that level (probed on 2.1.296), so offer it only there like fast mode.
    */
   const supportsUltracode = (model: string): boolean =>
     effortsFor(catalog?.models, model).some((effort) => effort.value === 'xhigh')
   const ultracodeOffered = claude !== null && supportsUltracode(resolvedModel)
 
   /**
-   * Styles de réponse annoncés par le CLI, derrière une entrée « par défaut » : la
-   * configuration vide veut dire « laisser le style habituel », et Radix refuse une
-   * option de valeur vide, d'où la même sentinelle d'affichage que l'approbation.
+   * CLI response styles after a default entry. Empty configuration means retain the usual style;
+   * Radix rejects empty option values, requiring the same display sentinel as approval.
    */
   const outputStyleOptions = useMemo((): SettingChoice<string>[] => {
     const styles = catalog?.outputStyles ?? []
@@ -464,10 +436,7 @@ export function useAgentSettings({
     return known
   }, [catalog, claude, t])
 
-  /**
-   * Modèles pouvant servir de conseiller : ceux du catalogue, moins la ligne « par
-   * défaut » qui ne nomme personne, derrière une entrée « aucun ».
-   */
+  /** Advisor model choices: catalog entries except the nameless default entry, after a none entry. */
   const advisorOptions = useMemo((): SettingChoice<string>[] => {
     const models = catalog?.models ?? []
     if (!claude || models.length === 0) return []
@@ -487,10 +456,7 @@ export function useAgentSettings({
     return known
   }, [catalog, claude, t])
 
-  /**
-   * Même sentinelle côté effort, que seul Codex laisse vide : le niveau montré est
-   * celui que le modèle retenu annonce par défaut.
-   */
+  /** Same effort sentinel, which only Codex leaves empty: display the selected model's advertised default. */
   const effortSetting = codex ?? grok
   const resolvedEffort = effortSetting
     ? effortSetting.reasoningEffort ||
@@ -499,14 +465,13 @@ export function useAgentSettings({
     : CLI_DEFAULT
 
   /**
-   * Modes de collaboration annoncés par Codex. Le mode décide des outils accessibles
-   * au modèle : en mode Plan, il peut poser des questions à choix, ce que le routeur
-   * du CLI refuse autrement. La liste vient du CLI, donc elle disparaît si la version
-   * installée ne la connaît pas, et reste vide pour les CLI sans cette notion.
+   * Codex-advertised collaboration modes determine accessible tools: Plan mode allows
+   * multiple-choice questions otherwise rejected by CLI routing. Source the list from the CLI,
+   * omitting it for older versions and CLIs without this concept.
    */
   const codexModeOptions = useMemo((): SettingChoice<CodexMode>[] => {
-    // La liste est une chaîne libre côté protocole, opencode y rangeant ses agents :
-    // seuls les modes que Codex connaît peuvent partir dans sa configuration.
+    // The protocol list is free-form because opencode stores agents there; send only modes
+    // recognized by Codex in its configuration.
     return (catalog?.modes ?? []).flatMap((entry) => {
       const mode = codexModeSchema.safeParse(entry.mode)
       return mode.success ? [{ value: mode.data, label: entry.label }] : []
@@ -514,9 +479,8 @@ export function useAgentSettings({
   }, [catalog])
 
   /**
-   * Agents primaires d'opencode (`build`, `plan`, ceux de l'utilisateur) : le pendant
-   * des modes de collaboration, à ceci près que la liste est ouverte. L'agent
-   * enregistré reste sélectionnable même si le catalogue ne l'annonce pas.
+   * opencode primary agents (build, plan, user-defined), analogous to collaboration modes but with
+   * an open list. Keep saved agents selectable even if unlisted.
    */
   const primaryAgentOptions = useMemo((): SettingChoice<string>[] => {
     if (!opencode) return []
@@ -532,8 +496,8 @@ export function useAgentSettings({
   }, [catalog, opencode, t])
 
   /**
-   * Variantes du modèle, derrière une entrée « par défaut » : sans variante, opencode
-   * laisse au modèle ses réglages propres, et aucune des variantes ne désigne cet état.
+   * Model variants after a default entry: without a variant, opencode retains model settings, a
+   * state no named variant represents.
    */
   const variantOptions = useMemo((): SettingChoice<string>[] => {
     if (!opencode || effortOptions.length === 0) return []
@@ -543,13 +507,12 @@ export function useAgentSettings({
     ]
   }, [effortOptions, opencode, t])
 
-  // L'approbation peut être un objet granulaire, que Sillage n'édite pas : il est
-  // alors affiché comme une option non modifiable plutôt que comme un select vide.
+  // Approval may be a granular object Sillage cannot edit: display an uneditable option rather than
+  // an empty select.
   const approval = config.agent === 'codex' ? config.askForApproval : CLI_DEFAULT
   const granular = typeof approval !== 'string'
 
-  // Radix refuse une option de valeur vide : la sentinelle « le CLI décide » a donc
-  // besoin d'une valeur d'affichage propre, traduite dans les deux sens ci-dessous.
+  // Radix rejects empty option values: the CLI-decides sentinel needs a display value mapped both ways below.
   const approvalValue: ApprovalChoice = granular
     ? 'granular'
     : approval === CLI_DEFAULT
@@ -569,9 +532,8 @@ export function useAgentSettings({
     : codexApprovalOptions(t)
 
   /**
-   * Chaque modèle expose ses propres niveaux. Garder l'effort courant quand le
-   * nouveau modèle ne le connaît pas ferait échouer le tour côté CLI : on retombe
-   * alors sur le repli annoncé par le catalogue.
+   * Every model has its own effort levels. Retaining unsupported effort after model changes would
+   * fail the CLI turn, so use the catalog's advertised fallback.
    */
   const clampEffort = (model: string, current: string): string => {
     if (effortsFor(catalog?.models, model).some((effort) => effort.value === current)) {
@@ -580,24 +542,19 @@ export function useAgentSettings({
     return catalog?.models.find((entry) => entry.value === model)?.defaultEffort ?? ''
   }
 
-  /** Même repli, ramené dans l'enum du protocole que `ClaudeConfig.effort` exige. */
+  /** Same fallback narrowed to the protocol enum required by ClaudeConfig.effort. */
   const clampClaudeEffort = (model: string, current: string): ClaudeConfig['effort'] => {
     const parsed = claudeEffortSchema.safeParse(clampEffort(model, current))
     return parsed.success ? parsed.data : DEFAULT_CLAUDE_CONFIG.effort
   }
 
-  /**
-   * Intitulé de la valeur en cours. Le repli sur la valeur brute couvre la sentinelle
-   * `CLI_DEFAULT`, qui n'a pas d'option nommée dans les listes de modèles.
-   */
+  /** Current value label. Raw-value fallback covers `CLI_DEFAULT`, absent from named model options. */
   const labelOf = <T extends string>(options: SettingChoice<T>[], value: T): string =>
     options.find((option) => option.value === value)?.label || value || t('composer.select.default')
 
   /**
-   * Un créneau du résumé.
-   *
-   * Le ton vient de l'option choisie, et non d'une seconde liste de valeurs
-   * dangereuses tenue en parallèle. Un garde-fou levé reste visible à toute largeur.
+   * Summary slot. Tone comes from the selected option rather than a parallel list of dangerous
+   * values. Removed safeguards remain visible at every width.
    */
   const segment = <T extends string>(
     key: string,
@@ -608,28 +565,25 @@ export function useAgentSettings({
     return { key, label: labelOf(options, value), tone }
   }
 
-  // Le registre est partagé par toute l'instance : la requête est mise en cache par
-  // React Query et ne repart pas à chaque conversation ouverte.
+  // The registry is instance-wide: React Query caches it instead of requesting for each opened conversation.
   const mcpRegistry = useMcpServers().data
-  // Absent quand l'instance a coupé la bibliothèque : un réglage sans effet n'a pas à
-  // occuper le panneau, comme le serveur MCP de Sillage.
+  // Omit when the instance disables the library: ineffective settings should not occupy the panel,
+  // like Sillage MCP.
   const libraryAvailable = useSkillLibrary(null).data?.enabled === true
   const libraryOptionList = skillLibraryOptions(t)
   const mcpServers = mcpRegistry?.servers ?? []
-  // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
-  // le serveur : la ligne apparaît alors au chargement du registre, plutôt que de
-  // s'afficher d'abord puis de disparaître sous le curseur.
+  // False until the query responds, like an instance without the server: appear when the registry
+  // loads rather than briefly showing and disappearing under the pointer.
   const sillageAvailable = mcpRegistry?.sillageServer === true
 
   /**
-   * Comptes Claude supplémentaires du compte Sillage. Demandés pour Claude seulement,
-   * et la catégorie n'apparaît que s'il y a un choix à faire : sans compte enregistré,
-   * la connexion du CLI va de soi.
+   * Additional Claude accounts for this Sillage account. Request only for Claude and show the
+   * category only when there is a choice; otherwise CLI login is implicit.
    */
   const { data: claudeAccountList } = useClaudeAccounts(claude !== null)
-  // Codex : seuls les comptes connectés se choisissent, un home vide refuserait le tour.
+  // Codex: only connected accounts are selectable because empty homes would reject turns.
   const { data: codexAccountList } = useCodexAccounts(codex !== null)
-  // Grok, sur le même modèle que Codex : un home par compte, connecté ou non.
+  // Grok follows Codex: one home per account, connected or not.
   const { data: grokAccountList } = useGrokAccounts(grok !== null)
   const accountOptions = useMemo((): SettingChoice<string>[] => {
     const chosen = claude?.account ?? codex?.account ?? grok?.account ?? null
@@ -646,9 +600,8 @@ export function useAgentSettings({
       { value: CLI_DEFAULT_CHOICE, label: t('composer.account.cli'), hint: t('composer.account.cli.hint') },
       ...accounts.map((account) => ({ value: account.id, label: account.label })),
     ]
-    // Un compte supprimé depuis : la conversation le désigne encore, le serveur
-    // repartira sur la connexion du CLI, et l'écran le dit plutôt que de montrer un
-    // sélecteur vide.
+    // For deleted accounts still referenced by conversations, the server falls back to CLI login;
+    // explain that rather than showing an empty selector.
     if (chosen && !accounts.some((account) => account.id === chosen)) {
       known.push({ value: chosen, label: t('composer.account.missing'), hint: t('composer.select.saved') })
     }
@@ -681,14 +634,12 @@ export function useAgentSettings({
             ...claude,
             model,
             effort: clampClaudeEffort(model, claude.effort),
-            // Garder le mode rapide sur un modèle qui ne le gère pas ferait basculer
-            // le CLI sur Opus sans prévenir : il retombe avec le modèle.
+            // Retaining fast mode on unsupported models would silently switch the CLI to Opus: reset it with the model.
             fastMode: claude.fastMode && supportsFastMode(catalog?.models, model),
             ultracode: claude.ultracode && supportsUltracode(model),
           }),
       }),
-      // Absente plutôt que grisée quand le modèle n'a pas de niveaux d'effort : un
-      // réglage sans effet n'a pas à occuper le panneau.
+      // Omit rather than disable for models without effort levels: ineffective settings need no panel space.
       ...(effortOptions.length > 0
         ? [
             setting({
@@ -698,8 +649,7 @@ export function useAgentSettings({
               options: effortOptions,
               value: claude.effort,
               onChange: (effort) => {
-                // Les options sont génériques sur des chaînes ; l'enum du protocole
-                // fait foi, une valeur inconnue ne part pas.
+                // Options use generic strings; the protocol enum is authoritative and unknown values are not sent.
                 const parsed = claudeEffortSchema.safeParse(effort)
                 if (parsed.success) onConfigChange({ ...claude, effort: parsed.data })
               },
@@ -728,8 +678,7 @@ export function useAgentSettings({
               options: ultracodeOptionList,
               active: 'on',
               value: claude.ultracode ? 'on' : 'off',
-              // Indépendant de l'effort, comme dans le CLI depuis 2.1.284 : l'allumer ou
-              // l'éteindre laisse le niveau où il est.
+              // Independent of effort since CLI 2.1.284: toggling leaves the current effort unchanged.
               onChange: (choice) => onConfigChange({ ...claude, ultracode: choice === 'on' }),
             }),
           ]
@@ -744,8 +693,7 @@ export function useAgentSettings({
               value: accountChoice(claude.account),
               onChange: (choice) =>
                 onConfigChange({ ...claude, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
-              // Le jeton arrive par l'environnement du process : changer de compte
-              // attend la relance de la session, comme le mode de permission.
+              // Tokens arrive through process environment: account changes await session restart like permission mode.
               notice: notice(
                 appliedLabel(
                   appliedConfig?.agent === 'claude' ? accountChoice(appliedConfig.account) : undefined,
@@ -764,10 +712,9 @@ export function useAgentSettings({
         options: permissionOptionList,
         value: claude.permissionMode,
         onChange: (permissionMode) => onConfigChange({ ...claude, permissionMode }),
-        // Le seul réglage du panneau que Claude Code refuse de changer en vol : entrer
-        // dans « Tout autoriser » comme en sortir demande de relancer la session. Le
-        // CLI est comparé aussi : un `appliedConfig` reçu à l'instant où l'on bascule
-        // de CLI décrirait encore la session de l'autre.
+        // The only panel setting Claude Code cannot change live: entering or leaving allow-all
+        // requires restart. Compare CLI too because appliedConfig received during a CLI switch may
+        // describe the previous session.
         notice: notice(
           appliedLabel(
             appliedConfig?.agent === 'claude' ? appliedConfig.permissionMode : undefined,
@@ -785,8 +732,7 @@ export function useAgentSettings({
         value: claude.maxBudgetUsd === null ? 'none' : String(claude.maxBudgetUsd),
         onChange: (budget) => onConfigChange({ ...claude, maxBudgetUsd: budget === 'none' ? null : Number(budget) }),
       }),
-      // Absents quand le catalogue n'en annonce pas, comme l'effort : un CLI sans
-      // styles ou sans modèles n'a pas à montrer un sélecteur vide.
+      // Omit when the catalog has none, like effort: CLIs without styles or models must not show empty selectors.
       ...(outputStyleOptions.length > 0
         ? [
             setting({
@@ -823,8 +769,7 @@ export function useAgentSettings({
               active: 'on',
               value: libraryChoice(claude.skillLibrary),
               onChange: (choice) => onConfigChange({ ...claude, skillLibrary: choice === 'on' }),
-              // Comme le mode de permission : Claude ne reçoit ses plugins qu'au
-              // lancement, le changement attend la relance de la session.
+              // Like permission mode, Claude receives plugins only at launch, so changes await restart.
               notice: notice(
                 appliedLabel(
                   appliedConfig?.agent === 'claude' ? libraryChoice(appliedConfig.skillLibrary) : undefined,
@@ -841,11 +786,10 @@ export function useAgentSettings({
     summary = [
       segment('model', modelOptions, resolvedModel),
       ...(effortOptions.length > 0 ? [segment('effort', effortOptions, claude.effort)] : []),
-      // Le mode rapide coûte à chaque tour : tant qu'il est allumé, il se lit dans le
-      // résumé, comme un garde-fou levé se lit dans le sien.
+      // Fast mode costs every turn: keep it in the summary while enabled, like removed safeguards.
       ...(speedOffered && claude.fastMode ? [segment('speed', speedOptionList, 'fast')] : []),
       ...(ultracodeOffered && claude.ultracode ? [segment('ultracode', ultracodeOptionList, 'on')] : []),
-      // Un autre abonnement que celui du CLI paie le tour : ça se lit dans le résumé.
+      // A subscription other than CLI login pays for the turn: show it in the summary.
       ...(claude.account ? [segment('account', accountOptions, claude.account)] : []),
       segment('permission', permissionOptionList, claude.permissionMode),
     ]
@@ -912,8 +856,7 @@ export function useAgentSettings({
               value: accountChoice(codex.account),
               onChange: (choice) =>
                 onConfigChange({ ...codex, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
-              // Le home du compte est l'environnement de l'app-server : changer de
-              // compte attend la relance de la session.
+              // Account home is the app-server environment: changes await session restart.
               notice: notice(
                 appliedLabel(
                   appliedConfig?.agent === 'codex' ? accountChoice(appliedConfig.account) : undefined,
@@ -932,8 +875,7 @@ export function useAgentSettings({
         options: approvalOptions,
         value: approvalValue,
         onChange: (choice) => {
-          // 'granular' n'est qu'un repère d'affichage, il n'est pas sélectionnable et
-          // ne doit jamais repartir vers le serveur.
+          // granular is only a display marker, never selectable or sent to the server.
           if (choice === 'granular') return
           onConfigChange({
             ...codex,
@@ -949,7 +891,7 @@ export function useAgentSettings({
         value: codex.sandbox,
         onChange: (sandbox) => onConfigChange({ ...codex, sandbox }),
       }),
-      // Appliqué à chaud par Codex, d'où l'absence de mention d'attente.
+      // Applied live by Codex, so no pending annotation.
       ...(libraryAvailable
         ? [
             setting({
@@ -965,7 +907,7 @@ export function useAgentSettings({
         : []),
     ]
 
-    // Les levées d'approbation et de bac à sable restent visibles simultanément.
+    // Removed approval and sandbox safeguards remain visible simultaneously.
     const approvalOff = approvalValue === 'never'
     summary = [
       segment('model', modelOptions, resolvedModel),
@@ -1001,8 +943,7 @@ export function useAgentSettings({
         icon: <Sparkles size={15} />,
         options: modelOptions,
         value: resolvedModel,
-        // Une variante que le nouveau modèle ne connaît pas retombe sur ses réglages
-        // propres, qui existent toujours.
+        // Unsupported variants after model changes fall back to the new model's own settings, which always exist.
         onChange: (model) =>
           onConfigChange({ ...opencode, model, variant: clampEffort(model, opencode.variant) }),
       }),
@@ -1027,9 +968,8 @@ export function useAgentSettings({
             }),
           ]
         : []),
-      // opencode lit ses règles au lancement : comme le mode de permission de Claude,
-      // un changement attend la relance de la session, et la ligne dit ce qui vaut
-      // encore d'ici là.
+      // opencode reads rules at launch: like Claude permission mode, changes await restart and the
+      // row explains the currently effective rule.
       ...OPENCODE_PERMISSIONS.map(({ family, label, icon }) =>
         setting({
           key: `permission-${family}`,
@@ -1078,9 +1018,8 @@ export function useAgentSettings({
         : []),
     ]
 
-    // Le résumé nomme la famille : « Autoriser » seul ne dirait pas quoi. Une famille
-    // laissée libre reste visible, comme tout garde-fou levé ; les deux en « demander »
-    // se résument en un mot.
+    // Name the family in summaries: Allow alone does not say what. Unrestricted families stay
+    // visible like any removed safeguard; two ask rules summarize in one word.
     const { edit, bash } = opencode.permissions
     summary = [
       segment('model', modelOptions, resolvedModel),
@@ -1154,8 +1093,7 @@ export function useAgentSettings({
               value: accountChoice(grok.account),
               onChange: (choice) =>
                 onConfigChange({ ...grok, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
-              // Le compte est le `GROK_HOME` du process : changer de compte attend la
-              // relance de la session.
+              // Account identifies process GROK_HOME: changes await session restart.
               notice: notice(
                 appliedLabel(applied ? accountChoice(applied.account) : undefined, accountChoice(grok.account), accountOptions),
                 t,
@@ -1163,8 +1101,8 @@ export function useAgentSettings({
             }),
           ]
         : []),
-      // Grok coupe ses outils web par une option de lancement : le changement attend
-      // la relance de la session, et la ligne dit ce qui vaut d'ici là.
+      // Grok disables web tools through a launch option: changes await restart and the row explains
+      // the current state.
       setting({
         key: 'webSearch',
         label: t('composer.setting.webSearch'),
@@ -1188,7 +1126,7 @@ export function useAgentSettings({
               active: 'on',
               value: libraryChoice(grok.skillLibrary),
               onChange: (choice) => onConfigChange({ ...grok, skillLibrary: choice === 'on' }),
-              // Les skills arrivent en plugin au lancement du process, comme chez Claude.
+              // Skills arrive as plugins at process launch, like Claude.
               notice: notice(
                 appliedLabel(
                   applied ? libraryChoice(applied.skillLibrary) : undefined,

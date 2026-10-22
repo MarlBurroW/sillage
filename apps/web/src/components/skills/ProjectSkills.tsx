@@ -8,12 +8,9 @@ import { SkillUpdates } from './SkillUpdates'
 import { SkillList, originLabel } from './SkillList'
 
 /**
- * Les skills d'un projet, sur sa page : ceux de la bibliothèque, éditables par le
- * propriétaire, et ceux que le dépôt porte déjà, en lecture seule.
- *
- * Ces derniers sont montrés parce qu'ils ne servent qu'à un CLI chacun : un
- * `.claude/skills` n'existe pas pour Codex, ni un `.agents/skills` pour Claude. Le menu
- * d'ajout propose de les reprendre, ce qui les livre aux deux.
+ * Project skills include owner-editable library entries and read-only repository skills. Show
+ * repository entries because each serves only its CLI: claude skills are invisible to Codex and
+ * agents skills to Claude. Importing through Add delivers them to both.
  */
 export function ProjectSkills({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
   const t = useTranslate()

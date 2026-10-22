@@ -4,32 +4,15 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { CheckpointFile } from '@sillage/protocol'
 
-/**
- * Points de reprise d'un tour : l'état du workspace capturé avant et après.
- *
- * Chaque capture est un arbre git, référencé sous `refs/sillage/checkpoints/` et jamais
- * commité : la branche de l'utilisateur, son index et HEAD ne bougent pas, et `git log
- * --all` ne voit rien, une ref qui pointe sur un arbre n'ayant pas d'historique. Les
- * objets, eux, vivent dans le dépôt : c'est ce qui permet de differ deux captures avec
- * git lui-même, et de remettre les fichiers en place par `checkout-index`.
- *
- * La capture passe par un index temporaire (`GIT_INDEX_FILE`), copie de l'index réel
- * pour profiter de son cache de stat : sur un gros dépôt, `git add -u` n'a alors à
- * hacher que ce qui a changé. Les fichiers ignorés n'y entrent jamais, et un fichier
- * non suivi au-delà de `MAX_UNTRACKED_BYTES` non plus : une archive déposée dans le
- * workspace ne doit pas finir dans l'object store à chaque tour.
- *
- * Les refs sont communes à tous les worktrees du dépôt : nommées par conversation et
- * par tour, deux conversations dans deux worktrees ne se marchent pas dessus.
- */
+/** Turn checkpoints capture workspace state before and after execution. Each snapshot is a git tree under `refs/sillage/checkpoints/`, never a commit: the user's branch, index and HEAD stay unchanged; `git log --all` sees nothing because tree refs have no history. Objects live in the repository, allowing git to diff snapshots and `checkout-index` to restore files. Capture uses a temporary index (`GIT_INDEX_FILE`) copied from the real one to reuse its stat cache: on large repositories `git add -u` hashes only changed files. Ignored files and untracked files above `MAX_UNTRACKED_BYTES` are excluded so uploaded archives do not enter the object store each turn. Refs are shared across repository worktrees but named by conversation and turn, preventing collisions. */
 
-/** Une capture ou une restauration qui traîne plus que ça est un dépôt hors d'usage. */
+/** Capture or restore exceeding this duration indicates an unusable repository. */
 const TIMEOUT_MS = 60_000
 
-/** Au-delà, un fichier non suivi n'est pas capturé, et jamais supprimé à la restauration. */
+/** Larger untracked files are neither captured nor deleted during restoration. */
 export const MAX_UNTRACKED_BYTES = 5 * 1024 * 1024
 
-/** Au-delà, un diff de fichier ne s'affiche plus utilement. */
+/** Beyond this size, file diffs are no longer useful to display. */
 const MAX_PATCH_BYTES = 512 * 1024
 
 export class CheckpointError extends Error {
@@ -83,7 +66,7 @@ function run(cwd: string, args: string[], env?: NodeJS.ProcessEnv, input?: strin
   })
 }
 
-/** Une commande dont l'échec est une erreur : la sortie ou rien. */
+/** Command whose failure is an error: return output or throw. */
 async function read(cwd: string, args: string[], env?: NodeJS.ProcessEnv, input?: string): Promise<string> {
   const result = await run(cwd, args, env, input)
   if (result.code !== 0) {
@@ -98,19 +81,13 @@ function splitZ(raw: string): string[] {
 }
 
 interface Repo {
-  /** Racine du worktree, telle que git la résout. */
+  /** Worktree root as resolved by git. */
   top: string
-  /** Chemin du répertoire de la conversation sous la racine, avec `/` final, ou vide. */
+  /** Conversation directory relative to the root, with trailing `/`, or empty. */
   prefix: string
 }
 
-/**
- * Où est le dépôt, et où est le répertoire de la conversation dedans.
- *
- * Un projet peut pointer sous la racine d'un dépôt : la capture et la restauration ne
- * regardent alors que ce sous-arbre, et les chemins rendus lui sont relatifs, comme
- * ceux du reste du panneau. Null hors dépôt : un projet peut pointer n'importe où.
- */
+/** Repository location and conversation directory within it. Projects may target subdirectories: capture and restore then affect only that subtree and return relative paths like the rest of the panel. Null outside repositories because projects may point anywhere. */
 async function locate(cwd: string): Promise<Repo | null> {
   const result = await run(cwd, ['rev-parse', '--show-toplevel', '--show-prefix'])
   if (result.code !== 0) return null
@@ -119,7 +96,7 @@ async function locate(cwd: string): Promise<Repo | null> {
   return { top, prefix: prefix ?? '' }
 }
 
-/** Le pathspec qui borne une commande au répertoire de la conversation. */
+/** Pathspec limiting commands to the conversation directory. */
 function scopeOf(repo: Repo): string[] {
   return repo.prefix ? ['--', repo.prefix] : []
 }
@@ -140,11 +117,11 @@ export function checkpointRef(conversationId: string, key: string, phase: Checkp
 
 export interface Snapshot {
   ref: string
-  /** L'arbre du répertoire de travail : fichiers suivis et non suivis, sans les ignorés. */
+  /** Working-directory tree: tracked and untracked files, excluding ignored files. */
   tree: string
-  /** L'arbre de l'index au même moment ; null s'il portait des conflits. */
+  /** Index tree at the same instant; null when conflicts existed. */
   indexTree: string | null
-  /** HEAD au même moment ; null sur un dépôt sans commit. */
+  /** HEAD at the same instant; null for repositories without commits. */
   head: string | null
 }
 
@@ -154,14 +131,7 @@ interface Meta {
   ts: number
 }
 
-/**
- * Capture l'état du workspace sous une ref.
- *
- * Un fichier en conflit est capturé tel qu'il est sur le disque, marqueurs compris :
- * c'est bien l'état du workspace. L'index, lui, ne se laisse pas écrire en arbre tant
- * qu'il a des entrées non fusionnées ; la capture le note comme absent, et la
- * restauration le laissera alors tel quel.
- */
+/** Captures workspace state under a ref. Conflicted files are captured exactly as on disk, including markers. The index cannot become a tree while it has unmerged entries; record it as absent and leave it unchanged during restoration. */
 export async function captureSnapshot(cwd: string, ref: string): Promise<Snapshot> {
   const repo = await locate(cwd)
   if (!repo) throw new CheckpointError('checkpoint_not_repository', 'This directory is not inside a git repository.')
@@ -171,7 +141,7 @@ export async function captureSnapshot(cwd: string, ref: string): Promise<Snapsho
     const indexPath = resolve(repo.top, (await read(repo.top, ['rev-parse', '--git-path', 'index'])).trim())
     const workIndex = join(tmp, 'work')
     const snapIndex = join(tmp, 'snap')
-    // Un dépôt tout juste initialisé n'a pas encore d'index : on part alors de rien.
+    // Newly initialized repositories have no index yet: start from nothing.
     await cp(indexPath, workIndex).catch(() => {})
     await cp(indexPath, snapIndex).catch(() => {})
 
@@ -221,7 +191,7 @@ export async function captureSnapshot(cwd: string, ref: string): Promise<Snapsho
   }
 }
 
-/** Relit une capture. Null si la ref n'existe plus : conversation nettoyée, dépôt recloné. */
+/** Rereads a snapshot. Null if its ref is gone (cleaned conversation or recloned repository). */
 export async function readSnapshot(cwd: string, ref: string): Promise<Snapshot | null> {
   const repo = await locate(cwd)
   if (!repo) return null
@@ -233,7 +203,7 @@ export async function readSnapshot(cwd: string, ref: string): Promise<Snapshot |
   try {
     meta = JSON.parse(await read(repo.top, ['cat-file', '-p', `${ref}:meta`])) as Meta
   } catch {
-    // Une capture sans méta reste utilisable : on ne saura juste pas où était HEAD.
+    // Snapshots without metadata remain usable; only their original HEAD is unknown.
   }
   return { ref, tree, indexTree: meta.indexTree ?? null, head: meta.head ?? null }
 }
@@ -247,10 +217,7 @@ const KINDS: Record<string, CheckpointFile['kind']> = {
   T: 'typechange',
 }
 
-/**
- * Lignes ajoutées et retirées par fichier, depuis `--numstat -z`. Un renommage occupe
- * trois champs : les compteurs suivis d'un chemin vide, puis l'ancien et le nouveau nom.
- */
+/** Added and removed lines per file from `--numstat -z`. Renames occupy three fields: counters with an empty path, then old and new names. */
 function parseNumstat(raw: string): Map<string, { added: number | null; removed: number | null }> {
   const counts = new Map<string, { added: number | null; removed: number | null }>()
   const fields = raw.split('\0')
@@ -269,7 +236,7 @@ function parseNumstat(raw: string): Map<string, { added: number | null; removed:
   return counts
 }
 
-/** Nature de chaque changement, depuis `--name-status -z`. Un R ou un C porte deux chemins. */
+/** Change types from `--name-status -z`; R and C entries have two paths. */
 function parseNameStatus(raw: string): CheckpointFile[] {
   const fields = splitZ(raw)
   const files: CheckpointFile[] = []
@@ -293,26 +260,18 @@ function parseNameStatus(raw: string): CheckpointFile[] {
 
 export interface CheckpointDiff {
   files: CheckpointFile[]
-  /** Fichiers que git a apportés pendant le tour (pull, merge, rebase), écartés. */
+  /** Files introduced by git during the turn (pull, merge, rebase), excluded from changes. */
   excluded: number
 }
 
-/** Un chemin tel que le journal le porte, ramené à la racine du dépôt. */
+/** Journal path resolved relative to the repository root. */
 function toRepoPath(repo: Repo, cwd: string, path: string): string | null {
   const rel = isAbsolute(path) ? relative(repo.top, path) : relative(repo.top, resolve(cwd, path))
   if (rel.startsWith('..') || isAbsolute(rel)) return null
   return rel
 }
 
-/**
- * Ce que le tour a changé, entre ses deux captures.
- *
- * Quand HEAD a bougé pendant le tour, tout ce que git a changé entre les deux HEAD et
- * que l'agent n'a pas touché lui-même est écarté : un pull ou une fusion apportent des
- * fichiers qui ne sont pas le travail du tour. Un fichier que l'agent a édité reste
- * listé même s'il l'a commité ensuite. Limite connue : un fichier modifié par une
- * commande shell, hors des outils d'édition, puis commité, est écarté lui aussi.
- */
+/** Changes between the turn's snapshots. When HEAD moved, exclude files changed between those HEADs unless the agent edited them: pull and merge bring files unrelated to the turn's work. Agent-edited files remain even if committed afterward. Known limitation: files modified through shell commands outside editing tools and then committed are also excluded. */
 export async function diffCheckpoint(
   cwd: string,
   conversationId: string,
@@ -336,7 +295,7 @@ export async function diffCheckpoint(
 
   let broughtByGit = new Set<string>()
   if (before.head && after.head && before.head !== after.head) {
-    // Un HEAD réécrit depuis n'est plus lisible : on ne sait alors rien écarter.
+    // Rewritten HEADs may no longer resolve, preventing exclusion.
     const moved = await run(repo.top, ['diff-tree', '-r', '-z', '--name-only', before.head, after.head, ...scope])
     if (moved.code === 0) broughtByGit = new Set(splitZ(moved.stdout))
   }
@@ -360,7 +319,7 @@ export async function diffCheckpoint(
   return { files, excluded }
 }
 
-/** Le diff d'un fichier entre les deux captures, lu quand on le déplie et pas avant. */
+/** File diff between snapshots, read only when expanded. */
 export async function readCheckpointFileDiff(
   cwd: string,
   conversationId: string,
@@ -388,7 +347,7 @@ export interface RestoreResult {
   indexRestored: boolean
 }
 
-/** Retire les dossiers qu'une suppression a laissés vides, sans remonter au-delà de la racine. */
+/** Removes directories left empty by deletion without ascending beyond the root. */
 async function pruneEmptyDirs(top: string, path: string): Promise<void> {
   let dir = dirname(resolve(top, path))
   while (dir.startsWith(top) && dir !== top) {
@@ -401,20 +360,7 @@ async function pruneEmptyDirs(top: string, path: string): Promise<void> {
   }
 }
 
-/**
- * Ramène le workspace à l'état d'une capture.
- *
- * Ne réécrit que ce qui diffère : un index temporaire chargé de l'arbre capturé, puis
- * rafraîchi, dit exactement quels fichiers ne sont plus ceux de la capture, et seuls
- * ceux-là passent par `checkout-index`. Tout réécrire changerait la date de chaque
- * fichier, et un outil de build y verrait un projet entier à recompiler.
- *
- * Les fichiers apparus depuis, suivis ou non, sont supprimés, sauf les ignorés, jamais
- * capturés, et les non suivis trop gros pour l'avoir été. L'index réel est remis à
- * l'état d'avant pour les seuls chemins concernés ; HEAD et les commits ne bougent pas,
- * un tour qui a commité laisse donc ses commits, et les fichiers reviennent en
- * modifications par rapport à eux.
- */
+/** Restores workspace state from a snapshot. Rewrite only differences: a temporary index loaded from the snapshot tree and refreshed identifies exactly which files need `checkout-index`. Rewriting everything would change timestamps and trigger full rebuilds. Delete newly appeared tracked and untracked files except ignored files and untracked files too large to have been captured. Restore the real index only for affected paths; leave HEAD and commits unchanged. Turns that committed retain their commits, with restored files appearing as modifications against them. */
 export async function restoreSnapshot(cwd: string, ref: string): Promise<RestoreResult> {
   const repo = await locate(cwd)
   if (!repo) throw new CheckpointError('checkpoint_not_repository', 'This directory is not inside a git repository.')
@@ -426,7 +372,7 @@ export async function restoreSnapshot(cwd: string, ref: string): Promise<Restore
   try {
     const work = { GIT_INDEX_FILE: join(tmp, 'index') }
     await read(repo.top, ['read-tree', snapshot.tree], work)
-    // Sort en 1 dès qu'un fichier diffère : ce n'est pas une erreur, c'est la question posée.
+    // Exit 1 means files differ: this is the answer being requested, not an error.
     await run(repo.top, ['update-index', '--refresh', '-q'], work)
     const changed = splitZ(await read(repo.top, ['diff-files', '-z', '--name-only', ...scope], work))
     if (changed.length > 0) {
@@ -477,14 +423,7 @@ export async function restoreSnapshot(cwd: string, ref: string): Promise<Restore
   }
 }
 
-/**
- * Donne à une branche de conversation les captures de sa source.
- *
- * Le journal recopié au fork porte les mêmes clés : sans leurs refs, la branche
- * montrerait des repères qui ne mènent à rien. Les refs pointent sur les mêmes arbres,
- * rien n'est dupliqué dans l'object store ; chaque conversation garde ensuite les
- * siennes, et le nettoyage de l'une ne touche pas l'autre.
- */
+/** Gives forked conversations their source snapshots. Copied journals use the same keys and would otherwise show markers with no target. Refs point to the same trees without duplicating object-store data; conversations then retain independent refs so cleaning either does not affect the other. */
 export async function copyCheckpoints(cwd: string, fromId: string, toId: string): Promise<number> {
   const repo = await locate(cwd)
   if (!repo) return 0
@@ -504,7 +443,7 @@ export async function copyCheckpoints(cwd: string, fromId: string, toId: string)
   return entries.length
 }
 
-/** Retire toutes les captures d'une conversation. Sans effet hors dépôt ou sans capture. */
+/** Removes all conversation snapshots. No effect outside git or without snapshots. */
 export async function deleteCheckpoints(cwd: string, conversationId: string): Promise<number> {
   const repo = await locate(cwd)
   if (!repo) return 0

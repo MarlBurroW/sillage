@@ -1,30 +1,17 @@
 import type { GitRepoDto } from '@sillage/protocol'
 import { subsequenceGaps } from '../subsequence.js'
 
-/**
- * Les dépôts auxquels un jeton donne accès, pour la combobox de création de projet.
- *
- * La liste est rapatriée en une fois puis filtrée en mémoire, plutôt que d'interroger
- * l'API de recherche de GitHub à chaque frappe. Trois raisons : cette API est limitée à
- * trente requêtes par minute, son qualificatif `user:` rate les dépôts d'organisation
- * auxquels le compte a accès, et un filtrage local répond sans latence.
- */
+/** Token-accessible repositories for project creation comboboxes. Fetch once then filter locally instead of GitHub search per keystroke: search is limited to thirty requests per minute, `user:` misses accessible organization repositories, and local filtering avoids latency. */
 
 export const GITHUB_HOST = 'github.com'
 
-/** Cent est le maximum accepté par l'API ; en demander moins multiplierait les pages. */
+/** One hundred is the API maximum; smaller pages multiply requests. */
 const PER_PAGE = 100
 
-/** Dix pages, soit mille dépôts. Au-delà, la combobox n'est plus le bon outil. */
+/** Ten pages, one thousand repositories; beyond this comboboxes are unsuitable. */
 const MAX_PAGES = 10
 
-/**
- * Durée de vie du cache.
- *
- * Assez long pour qu'une session de création de projet ne rappelle pas l'API à chaque
- * ouverture du formulaire, assez court pour qu'un dépôt créé à l'instant apparaisse
- * sans qu'il faille redémarrer Sillage.
- */
+/** Cache lifetime long enough to avoid refetching every form opening, short enough for new repositories to appear without restarting Sillage. */
 const CACHE_TTL_MS = 5 * 60 * 1000
 
 interface CacheEntry {
@@ -47,12 +34,7 @@ export class GitHubRepoCatalog {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  /**
-   * Les dépôts du compte, filtrés par `query`.
-   *
-   * Le cache est indexé par utilisateur : deux comptes de la même instance ont deux
-   * jetons et ne voient pas les mêmes dépôts.
-   */
+  /** Account repositories filtered by `query`. Cache per user because accounts have different tokens and repository access. */
   async search(
     ownerId: string,
     token: string,
@@ -65,7 +47,7 @@ export class GitHubRepoCatalog {
     return { repos: filter(entry.repos, query), truncated: entry.truncated }
   }
 
-  /** Après l'écriture ou la suppression d'un jeton, ce qui est en cache ne vaut plus. */
+  /** Token writes or deletion invalidate cached access. */
   forget(ownerId: string): void {
     this.cache.delete(ownerId)
   }
@@ -88,7 +70,7 @@ export class GitHubRepoCatalog {
   }
 }
 
-/** Le code est ce que l'interface traduit ; le message anglais n'est qu'un repli. */
+/** The UI translates codes; English messages are only fallback. */
 export class GitHubError extends Error {
   constructor(
     readonly code: string,
@@ -104,11 +86,11 @@ async function fetchPage(token: string, page: number): Promise<GitHubRepo[]> {
   const url = new URL('https://api.github.com/user/repos')
   url.searchParams.set('per_page', String(PER_PAGE))
   url.searchParams.set('page', String(page))
-  // Le tri par date de push met en tête ceux sur lesquels on travaille, ce qui est
-  // exactement l'ordre voulu quand la combobox s'ouvre sans qu'on ait rien tapé.
+  // Push-date sorting puts active repositories first,
+  // the desired empty-query order.
   url.searchParams.set('sort', 'pushed')
-  // Sans ce paramètre, l'API ne rend que les dépôts dont le compte est propriétaire, et
-  // ceux de ses organisations manqueraient à l'appel.
+  // Without this parameter, the API returns only owned repositories
+  // and omits organization repositories.
   url.searchParams.set('affiliation', 'owner,collaborator,organization_member')
 
   const response = await fetch(url, {
@@ -148,7 +130,7 @@ function toDto(repo: GitHubRepo): GitRepoDto {
   }
 }
 
-/** Sans requête, l'ordre de GitHub est déjà le bon : le plus récemment poussé d'abord. */
+/** Without queries, GitHub already sorts correctly: latest push first. */
 function filter(repos: GitRepoDto[], query: string): GitRepoDto[] {
   const trimmed = query.trim()
   if (!trimmed) return repos.slice(0, 50)
@@ -162,9 +144,9 @@ function filter(repos: GitRepoDto[], query: string): GitRepoDto[] {
 }
 
 function rank(repo: GitRepoDto, query: string): number | null {
-  // Le nom seul d'abord : qui tape « sillage » cherche `moi/sillage`, pas un dépôt dont
-  // le propriétaire contient ces lettres. Le nom complet ne sert qu'ensuite, pour que
-  // « marl/sil » reste possible.
+  // Match basenames first: 'sillage' seeks `moi/sillage`, not repositories whose
+  // owners contain those letters. Full names are a fallback,
+  // still allowing 'marl/sil'.
   const onName = subsequenceGaps(repo.name, query)
   if (onName !== null) return onName * 4 + repo.name.length
 

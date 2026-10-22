@@ -6,7 +6,7 @@ import { useCurrentUser } from './session'
 const storageKey = (userId: string) => `sillage.lastContext:${userId}`
 const contextPattern = /^\/p\/([\w-]+)\/(board|c\/([\w-]+))(?:\?[^#]*)?$/
 
-/** Un ancien favori ne doit pas renvoyer vers un projet supprimé ou devenu privé. */
+/** Old bookmarks must not reopen deleted or newly private projects. */
 function accessible(path: string, projects: ProjectDto[], conversations: ConversationDto[]): boolean {
   const match = contextPattern.exec(path)
   if (!match || !projects.some((project) => project.id === match[1])) return false
@@ -24,19 +24,19 @@ export function lastContext(userId: string, projects: ProjectDto[], conversation
   }
 }
 
-/** Les réglages et la page d'accueil ne remplacent jamais le travail à reprendre. */
+/** Settings and home never replace the work to resume. */
 export function useRememberContext(): void {
   const { pathname, search } = useLocation()
   const { data: user } = useCurrentUser()
   useEffect(() => {
     const path = pathname + search
-    // Mémoriser dès la navigation : attendre les listes perd une visite courte.
-    // Les droits et l'existence du fil seront vérifiés au moment de la reprise.
+    // Remember on navigation: waiting for lists loses short visits. Check permissions and thread
+    // existence on resume.
     if (!user || !contextPattern.test(path)) return
     try {
       localStorage.setItem(storageKey(user.id), path)
     } catch {
-      // Un stockage désactivé ne doit pas empêcher de naviguer.
+      // Disabled storage must not prevent navigation.
     }
   }, [pathname, search, user])
 }

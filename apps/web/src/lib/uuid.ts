@@ -1,15 +1,13 @@
 /**
- * `crypto.randomUUID` est réservé aux contextes sécurisés (https ou localhost).
- * Sillage est conçu pour être ouvert depuis un téléphone sur `http://<ip-locale>`,
- * qui n'en est pas un : l'appel direct y lève une TypeError.
- *
- * `crypto.getRandomValues`, lui, est disponible partout.
+ * `crypto.randomUUID` requires secure contexts (HTTPS or loopback). Sillage supports phones on
+ * local-IP HTTP, where calling it directly throws TypeError. `crypto.getRandomValues` is available
+ * everywhere.
  */
 export function uuidv4(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
 
   const bytes = crypto.getRandomValues(new Uint8Array(16))
-  // Version 4 et variante RFC 4122.
+  // Version 4 and RFC 4122 variant.
   bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40
   bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80
 

@@ -6,30 +6,14 @@ import { pushSubscriptions, type Db } from '@sillage/db'
 import { randomUUID } from 'node:crypto'
 import type { PushDeliveryDto, PushDeviceDto, PushPayload, PushServiceKind, PushTestDto } from '@sillage/protocol'
 
-/**
- * Notifications Web Push.
- *
- * Le serveur ne connaît aucun tiers : le protocole VAPID lui permet de s'authentifier
- * directement auprès du service de push du navigateur, sans passer par un compte chez
- * Google ou Apple. La paire de clés est propre à l'instance et générée au premier
- * démarrage.
- *
- * Les notifications ne servent qu'à ce qu'on ne peut pas voir : un agent qui réclame
- * une décision, ou un tour terminé pendant qu'on regarde ailleurs. Tout notifier
- * reviendrait à n'être lu par personne.
- */
+/** Web Push notifications. The server needs no third-party account: VAPID authenticates directly with browser push services without Google or Apple accounts. Instance-specific key pairs are generated on first startup. Notify only what users cannot see: agents requesting decisions or turns ending while attention is elsewhere. Notifying everything would mean nobody reads anything. */
 
 const KEYS_FILE = 'vapid.json'
 
-/**
- * Sujet VAPID de repli. Le protocole exige un `mailto:` ou une URL par lequel le service
- * de push peut joindre l'opérateur. Google ne le vérifie pas, Apple si : il refuse un
- * sujet en `localhost` (403 BadJwtToken). Chaque abonnement garde donc l'adresse
- * publique par laquelle on a joint l'instance, et ce repli ne sert qu'aux anciens.
- */
+/** Fallback VAPID subject. The protocol requires a `mailto:` or URL where push services can contact the operator. Google does not validate it; Apple rejects `localhost` (403 BadJwtToken). Subscriptions therefore retain their public instance address; this fallback serves only older entries. */
 const FALLBACK_SUBJECT = 'mailto:sillage@localhost'
 
-/** Le sujet à retenir pour une adresse d'abonnement : une origine https, jamais locale. */
+/** Subject to retain for a subscription address: an HTTPS origin, never local. */
 export function vapidSubject(origin: string | null | undefined): string | null {
   if (!origin) return null
   try {
@@ -41,7 +25,7 @@ export function vapidSubject(origin: string | null | undefined): string | null {
   }
 }
 
-/** Le service d'un abonnement, lu dans son adresse : il dit de quel appareil il s'agit. */
+/** Subscription service inferred from its address, identifying the device type. */
 export function pushServiceOf(endpoint: string): PushServiceKind {
   const host = (() => {
     try {
@@ -57,7 +41,7 @@ export function pushServiceOf(endpoint: string): PushServiceKind {
   return 'other'
 }
 
-/** Les essais gardés en mémoire, le temps que l'écran de test lise leur résultat. */
+/** Trials retained in memory while the test screen reads their results. */
 const TEST_RETENTION_MS = 10 * 60_000
 
 interface VapidKeys {
@@ -65,7 +49,7 @@ interface VapidKeys {
   privateKey: string
 }
 
-/** Lit la paire de clés de l'instance, en la créant au premier démarrage. */
+/** Reads the instance key pair, creating it on first startup. */
 function loadOrCreateKeys(dataDir: string): VapidKeys {
   const path = join(dataDir, KEYS_FILE)
 
@@ -75,9 +59,9 @@ function loadOrCreateKeys(dataDir: string): VapidKeys {
       return { publicKey: parsed.publicKey, privateKey: parsed.privateKey }
     }
   } catch (err) {
-    // Absent au premier démarrage : c'est le cas normal. Un fichier présent mais
-    // illisible doit en revanche se voir, sinon on régénère des clés en silence et
-    // tous les abonnements existants cessent de fonctionner sans explication.
+    // Missing files are normal on first startup. Existing unreadable files must surface:
+    // silently regenerating keys would break all existing subscriptions
+    // without explanation.
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw new Error(`Clés VAPID illisibles (${path}) : ${(err as Error).message}`)
     }
@@ -88,18 +72,14 @@ function loadOrCreateKeys(dataDir: string): VapidKeys {
   return generated
 }
 
-/** Ce que le service attend d'un journal, sans dépendre de Fastify. */
+/** Logging interface needed by this service without depending on Fastify. */
 interface Logger {
   warn: (obj: unknown, message: string) => void
 }
 
 export class PushService {
   readonly publicKey: string
-  /**
-   * Journal de repli tant que celui de l'application n'existe pas : il est construit
-   * après le service, qui lui est passé en dépendance. Écrire sur la sortie d'erreur
-   * vaut mieux que d'avaler les échecs d'envoi.
-   */
+  /** Fallback logger until the application's logger exists: the application is built after this injected service. Writing stderr is better than swallowing delivery failures. */
   private log: Logger = {
     warn: (obj, message) => process.stderr.write(`[push] ${message} ${JSON.stringify(obj)}\n`),
   }
@@ -110,7 +90,7 @@ export class PushService {
   constructor(
     private readonly db: Db,
     dataDir: string,
-    /** Adresse publique réglée pour l'instance, sujet préféré quand elle est en https. */
+    /** Configured public instance address, preferred as subject when HTTPS. */
     private readonly publicUrl = '',
   ) {
     this.keys = loadOrCreateKeys(dataDir)
@@ -125,12 +105,12 @@ export class PushService {
     userId: string,
     subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
     userAgent: string | undefined,
-    /** Origine de la page qui s'abonne : l'adresse publique de l'instance, vue du navigateur. */
+    /** Subscribing page origin: public instance address as seen by the browser. */
     origin?: string,
   ): void {
     const subject = vapidSubject(origin)
-    // Le même appareil qui se réabonne après une rotation de clés doit remplacer son
-    // entrée, pas en créer une seconde qui échouerait à chaque envoi.
+    // A device resubscribing after key rotation must replace its entry rather than
+    // create a duplicate that fails on every delivery.
     this.db
       .insert(pushSubscriptions)
       .values({
@@ -159,7 +139,7 @@ export class PushService {
     this.db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint)).run()
   }
 
-  /** Les appareils abonnés d'un compte, pour l'écran des notifications. */
+  /** Account's subscribed devices for notification settings. */
   devices(userId: string): PushDeviceDto[] {
     return this.db
       .select()
@@ -170,7 +150,7 @@ export class PushService {
       .sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  /** Retire un appareil de ce compte, et seulement de lui. */
+  /** Remove a device belonging to this account only. */
   removeDevice(userId: string, endpoint: string): boolean {
     const row = this.db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint)).get()
     if (!row || row.userId !== userId) return false
@@ -178,11 +158,7 @@ export class PushService {
     return true
   }
 
-  /**
-   * Une notification d'essai sur tous les appareils du compte, après un délai tenu par
-   * le serveur : on a le temps de fermer l'application pour la voir arriver sur un
-   * téléphone verrouillé. Le résultat de chaque envoi reste lisible quelques minutes.
-   */
+  /** Test notification to all account devices after a server-held delay, allowing users to close the app and see it on a locked phone. Per-device results remain readable for a few minutes. */
   scheduleTest(userId: string, delaySeconds: number): PushTestDto {
     const test = { id: randomUUID(), userId, sendAt: Date.now() + delaySeconds * 1000, deliveries: null as PushDeliveryDto[] | null }
     this.tests.set(test.id, test)
@@ -205,7 +181,7 @@ export class PushService {
     return { id: test.id, sendAt: test.sendAt, deliveries: test.deliveries }
   }
 
-  /** Vrai si le compte a au moins un appareil abonné. */
+  /** Whether this account has at least one subscribed device. */
   hasSubscriptions(userId: string): boolean {
     const row = this.db
       .select({ endpoint: pushSubscriptions.endpoint })
@@ -215,20 +191,14 @@ export class PushService {
     return row !== undefined
   }
 
-  /**
-   * Adresse une notification à tous les appareils d'un compte.
-   *
-   * Les échecs ne remontent pas : une notification perdue ne doit jamais interrompre
-   * un agent (invariant I1). Un abonnement que le service déclare mort est en revanche
-   * supprimé, sinon la table accumule des endpoints périmés interrogés à chaque envoi.
-   */
+  /** Notifies every account device. Do not propagate failures: lost notifications must never interrupt agents (invariant I1). Delete subscriptions reported dead to avoid accumulating stale endpoints retried on every send. */
   async notify(userId: string, payload: PushPayload, options: { except?: Set<string> } = {}): Promise<PushDeliveryDto[]> {
     const rows = this.db
       .select()
       .from(pushSubscriptions)
       .where(eq(pushSubscriptions.userId, userId))
       .all()
-      // L'appareil où l'application est sous les yeux a reçu un toast à la place.
+      // Devices already displaying the app received a toast instead.
       .filter((row) => !options.except?.has(row.endpoint))
 
     return Promise.all(
@@ -254,14 +224,14 @@ export class PushService {
         } catch (err) {
           const status = (err as { statusCode?: number }).statusCode ?? null
           const reason = pushFailureReason(err)
-          // 404 et 410 : le navigateur a révoqué l'abonnement. Toute autre erreur peut
-          // être passagère, l'abonnement est conservé.
+          // 404 and 410 mean browser-revoked subscriptions. Other errors may be transient,
+          // so retain those subscriptions.
           if (status === 404 || status === 410) {
             this.unsubscribe(row.endpoint)
             return { endpoint: row.endpoint, service, outcome: 'removed', status, reason }
           }
-          // Le message compte autant que le code : un endpoint injoignable et un
-          // contenu refusé ne se diagnostiquent pas de la même façon.
+          // Messages matter as much as status: unreachable endpoints and rejected
+          // content require different diagnoses.
           this.log.warn({ status, endpoint: row.endpoint, cause: reason }, 'notification push non delivree')
           return { endpoint: row.endpoint, service, outcome: 'failed', status, reason }
         }
@@ -270,7 +240,7 @@ export class PushService {
   }
 }
 
-/** Le motif d'un refus : Apple répond `{"reason":"BadJwtToken"}`, les autres un texte. */
+/** Rejection reason: Apple returns `{"reason":"BadJwtToken"}`, others return text. */
 function pushFailureReason(err: unknown): string {
   const body = (err as { body?: unknown }).body
   if (typeof body === 'string' && body.trim()) {
@@ -278,7 +248,7 @@ function pushFailureReason(err: unknown): string {
       const parsed = JSON.parse(body) as { reason?: unknown }
       if (typeof parsed.reason === 'string') return parsed.reason
     } catch {
-      // Pas du JSON : le texte tel quel, borné.
+      // Not JSON: return bounded raw text.
     }
     return body.trim().slice(0, 200)
   }

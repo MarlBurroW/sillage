@@ -4,9 +4,8 @@ import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
- * Un appel reçu, déplié en arbre. Chaque ligne porte son chemin pointé et deux gestes :
- * filtrer sur ce champ, ou le citer dans le prompt. C'est ce qui évite d'écrire un
- * chemin à la main, et de se tromper d'un niveau.
+ * Received call as a tree. Rows carry dotted paths with filter/reference actions, avoiding manually
+ * typed paths and nesting mistakes.
  */
 export function PayloadTree({
   value,
@@ -15,7 +14,7 @@ export function PayloadTree({
   onInsert,
 }: {
   value: unknown
-  /** Préfixe des chemins : `payload`, `headers`… */
+  /** Path prefix such as payload or headers. */
   root: string
   onFilter: (path: string, value: unknown) => void
   onInsert: (path: string) => void
@@ -59,7 +58,7 @@ function Node({
   const t = useTranslate()
   const branch = value !== null && typeof value === 'object'
   const children = branch ? entries(value) : []
-  // Les deux premiers niveaux ouverts : c'est là que sont `action`, `issue`, `sender`.
+  // Expand the first two levels containing action, issue, and sender.
   const [open, setOpen] = useState(depth < 1)
 
   const preview = (() => {
@@ -94,7 +93,7 @@ function Node({
           <span className="shrink-0 text-ink-faint">:</span>
           <span className={cx('min-w-0 truncate', tone)} title={typeof value === 'string' ? value : undefined}>{preview}</span>
         </button>
-        {/* Visibles au survol et au clavier ; toujours là au doigt, où rien ne survole. */}
+        {/* Visible on hover/focus and always on touch, which has no hover. */}
         <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-focus-within/node:opacity-100 group-hover/node:opacity-100 pointer-coarse:opacity-100">
           <button
             type="button"

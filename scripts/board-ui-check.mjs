@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Vrais composants et vraie API, dans une base temporaire. Aucun CLI n'est activé.
+// Real components and API, temporary database. No CLI enabled.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -68,7 +68,7 @@ try {
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
-    // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
+    // Browser PDF viewer does not expose application storage.
     if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')
   }, new URL(base).origin)
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
@@ -93,7 +93,7 @@ try {
   await dialog.getByRole('button', { name: 'Aperçu', exact: true }).click()
   await dialog.getByRole('heading', { name: 'Objectif', exact: true }).waitFor()
   await dialog.getByRole('button', { name: 'Écrire', exact: true }).click()
-  // Annuler ferme et conserve le brouillon ; ne doit jamais soumettre le formulaire.
+  // Cancel closes and preserves the draft; it must never submit the form.
   await dialog.getByRole('button', { name: 'Annuler', exact: true }).click()
   assert.equal((await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json()).length, cards.length)
   await page.getByRole('button', { name: 'Nouveau ticket', exact: true }).click()
@@ -154,7 +154,7 @@ try {
   await search.fill('aucun-resultat-123')
   await page.getByText('Aucun ticket ne correspond à ta recherche.').waitFor()
   await search.fill('')
-  // Déplacement clavier : le tri reste utilisable sans souris.
+  // Keyboard movement: sorting stays usable without a mouse.
   const handle = page.getByRole('button', { name: `Déplacer la carte #${number}`, exact: true })
   await handle.focus()
   await page.keyboard.press('Space')

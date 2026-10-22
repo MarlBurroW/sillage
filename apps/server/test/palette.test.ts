@@ -20,7 +20,7 @@ import { registerErrorHandler } from '../src/http/errors.js'
 import { registerPaletteRoutes } from '../src/http/routes/palette.js'
 import { SkillLibrary } from '../src/skill-library/store.js'
 
-/** Un mot de saisie contre un texte, positions rendues en lettres pour se lire. */
+/** Input word matched against text, positions rendered as letters for readability. */
 function picked(text: string, query: string, mode?: 'fuzzy' | 'words' | 'strict'): string | null {
   const [token = ''] = fuzzyTokens(query)
   const match = fuzzyMatch(text, token, { mode })
@@ -31,9 +31,9 @@ test('correspondance floue : lettres dans l’ordre, débuts de mot et bosses du
   assert.equal(picked('CommandPalette.tsx', 'cmdpal'), 'CmdPal')
   assert.equal(picked('CommandPalette.tsx', 'cp'), 'CP')
   assert.equal(picked('config.ts', 'cfg'), 'cfg')
-  // L'alignement optimal retient la bosse de « Palette », pas le premier « p » venu.
+  // Optimal alignment selects 'Palette' capitalization rather than the first 'p'.
   assert.equal(picked('apps/web/CommandPalette.tsx', 'palette'), 'Palette')
-  // Casse et accents ne comptent pas, et les positions désignent le texte affiché.
+  // Ignore case and accents; positions reference displayed text.
   assert.equal(picked('Réglages du projet', 'reglage'), 'Réglage')
 })
 
@@ -41,17 +41,17 @@ test('correspondance floue : les lettres piochées une par mot sont du bruit', (
   assert.equal(picked('ApprovalsReviewer.ts', 'power'), null)
   assert.equal(picked('InAppBrowserRequirements.ts', 'power'), null)
   assert.equal(picked('Rate-limit the places endpoint', 'mcp'), null)
-  // Une lettre seule doit ouvrir un mot.
+  // Single letters must start words.
   assert.equal(picked('Release notes', 's'), null)
   assert.equal(picked('Refactor settings', 's'), 's')
 })
 
 test('correspondance floue : les modes phrase et strict', () => {
-  // Une phrase accepte des initiales, pas un saut au milieu d'un mot.
+  // Phrases allow initials, not jumps into word interiors.
   assert.equal(picked('Add offline caching for forecasts', 'aocf', 'words'), 'Aocf')
   assert.equal(picked('Add offline caching for forecasts', 'cache', 'words'), null)
   assert.equal(picked('Add offline caching for forecasts', 'cach', 'words'), 'cach')
-  // Strict : un seul morceau, de préférence en début de mot.
+  // Strict matching: one contiguous piece, preferably at word starts.
   assert.equal(picked('Atlas API', 'api', 'strict'), 'API')
   assert.equal(picked('Clean Architecture Checker', 'cache', 'strict'), null)
 })
@@ -65,14 +65,11 @@ test('plusieurs mots, chacun dans le champ où il vaut le plus, dans n’importe
   assert.ok(match)
   assert.deepEqual(match.matched, [true, true])
   assert.equal(matchFields(fields, fuzzyTokens('cach atlas')), null)
-  // La barre oblique sépare comme une espace : dossier d'un côté, nom de l'autre.
+  // Slashes separate like spaces: directory on one side, name on the other.
   assert.deepEqual(fuzzyTokens(' web/pal  x '), ['web', 'pal', 'x'])
 })
 
-/**
- * Trois projets sur le disque : deux au propriétaire, dont un archivé, et un privé d'un
- * autre compte. Le premier est un dépôt git avec un worktree, le deuxième un simple dossier.
- */
+/** Three disk projects: two owned, including one archived, and another account's private project. The first is git with a worktree; the second a plain directory. */
 function harness(t: TestContext) {
   const dir = mkdtempSync(join(tmpdir(), 'sillage-palette-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
@@ -164,17 +161,17 @@ test('fichiers : tous les projets visibles, nom flou, dossier d’un seul tenant
     return Object.fromEntries(response.json<PaletteFilesDto>().projects.map((group) => [group.projectId, group.paths]))
   }
 
-  // Ni le projet privé d'un autre compte, ni l'archivé, ni ce que git ignore.
+  // Exclude other accounts' private projects, archived projects and git-ignored files.
   assert.deepEqual(await search('forecast'), {
     nimbus: ['src/lib/forecast.ts', 'src/components/ForecastCard.tsx'],
     atlas: ['src/forecast-proxy.ts'],
   })
-  // Le nom du projet restreint sans lister tout le projet à lui seul.
+  // Project names restrict matches without listing all project files alone.
   assert.deepEqual(await search('nimbus card'), { nimbus: ['src/components/ForecastCard.tsx'] })
   assert.deepEqual(await search('nimbus'), {})
-  // Une barre oblique sépare le dossier du nom.
+  // Slashes separate directories from names.
   assert.deepEqual(await search('lib/fore'), { nimbus: ['src/lib/forecast.ts'] })
-  // Depuis une conversation en worktree, son projet se cherche dans le worktree.
+  // Worktree conversations search their project's files within that worktree.
   assert.deepEqual((await search('forecast', 'offline')).nimbus, ['src/lib/forecast.ts', 'src/lib/forecast-cache.ts'])
   assert.deepEqual((await search('forecast', 'main')).nimbus, ['src/lib/forecast.ts', 'src/components/ForecastCard.tsx'])
 })

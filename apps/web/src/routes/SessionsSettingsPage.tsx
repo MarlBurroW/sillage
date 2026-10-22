@@ -8,11 +8,10 @@ import { useTranslate } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 
 /**
- * Plafond de sessions CLI simultanées.
+ * Maximum simultaneous CLI sessions.
  *
- * Réglage d'instance : ce qu'il protège est la mémoire de la machine, partagée par
- * tous les comptes. La valeur du `config.toml` ne sert plus que de point de départ,
- * l'écran écrivant en base.
+ * Instance setting protecting machine memory shared by all accounts. `config.toml` is only the
+ * initial value; this screen writes to the database.
  */
 export function SessionsSettingsPage() {
   const t = useTranslate()
@@ -22,8 +21,8 @@ export function SessionsSettingsPage() {
   const update = useUpdateAppSettings()
 
   const [limit, setLimit] = useState('')
-  // Le champ suit le serveur tant qu'on n'y a pas touché : sans ça il reste vide au
-  // premier rendu, la requête n'ayant pas encore répondu.
+  // The field follows the server until edited; otherwise it stays empty on first
+  // render before the request returns.
   useEffect(() => {
     if (!settings) return
     setLimit(String(settings.maxConcurrentSessions))
@@ -78,8 +77,10 @@ export function SessionsSettingsPage() {
               <Button type="submit" disabled={!valid || !dirty || update.isPending}>
                 {t('sessions.limit.save')}
               </Button>
-              {/* Le bouton qui se grise ne dit pas que ça a marché : il se grise aussi
-                  quand on remet la valeur d'origine. */}
+              {/*
+               * A disabled button does not prove success: it also disables when restoring the
+               * original value.
+               */}
               {update.isSuccess && !dirty ? (
                 <span className="text-xs text-positive">{t('settings.saved')}</span>
               ) : null}

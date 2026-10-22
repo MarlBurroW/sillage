@@ -16,18 +16,18 @@ export interface ServiceProcess {
   command: string | null
   parentPid: number
   parentName: string | null
-  /** Le lanceur sous lequel ranger une commande ou un outil. */
+  /** Launcher under which commands and tools are grouped. */
   launcherPid: number | null
   stopsWithSillage: boolean
   cwd: string | null
   ports: number[]
   startedAt: number
   memoryBytes: number
-  /** L'entrée et tout ce qui en descend. */
+  /** Entry and all its descendants. */
   processCount: number
-  /** Les descendants par nom, du plus nombreux au plus rare. */
+  /** Descendant names ordered by descending frequency. */
   processes: ServiceProcessSummary[]
-  /** L'identité de chaque processus de l'arbre, pour n'arrêter que ceux-là. */
+  /** Identity of every tree process, ensuring only these processes are stopped. */
   members: { pid: number; start: string }[]
   origin: ReturnType<ProcessOrigins['resolve']>
 }
@@ -41,7 +41,7 @@ interface ObservedProcess extends FoldableProcess {
   status: string
 }
 
-/** Le nom peut contenir des espaces et des parenthèses. */
+/** Names may contain spaces and parentheses. */
 export function processIdentity(line: string): { parent: number; start: string } {
   const fields = line.slice(line.lastIndexOf(')') + 2).trim().split(/\s+/)
   if (!/^\d+$/.test(fields[19] ?? '')) throw new Error('Invalid process stat')
@@ -80,12 +80,7 @@ function inheritedOrigin(pid: number, nodes: ReadonlyMap<number, FoldableProcess
 
 export interface FoldedEntry { kind: ServiceKind; launcherPid: number | null; members: number[] }
 
-/**
- * Range chaque processus rattaché sous une entrée. Les racines sont les enfants directs
- * du daemon, leurs propres enfants et les orphelins ; tout le reste se replie sous la
- * racine dont il descend, pour qu'un `npm run dev` et ses dix sous-processus ne fassent
- * qu'une ligne. Sous un agent, un serveur MCP est un outil, pas une commande.
- */
+/** Groups attached processes under entries. Roots are direct daemon children, their children and orphans; other processes fold under their ancestor root so `npm run dev` and ten subprocesses occupy one row. Under agents, MCP servers are tools rather than commands. */
 export function foldProcesses(
   nodes: ReadonlyMap<number, FoldableProcess>, linked: ReadonlySet<number>, host: Pick<ProcessHost, 'pid'>, origins: ProcessOrigins,
 ): Map<number, FoldedEntry> {
@@ -123,7 +118,7 @@ function summarize(names: string[]): ServiceProcessSummary[] {
   return [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
 }
 
-/** L'origine sert à nommer le projet, jamais à décider qu'un processus dépend de Sillage. */
+/** Origins name projects; they never establish process dependency on Sillage. */
 export async function scanServiceProcesses(origins: ProcessOrigins): Promise<ServiceProcess[]> {
   const [tcp, tcp6, uptime, bootId, hz, entries, host] = await Promise.all([
     readFile('/proc/net/tcp', 'utf8').catch(() => ''),
@@ -138,7 +133,7 @@ export async function scanServiceProcesses(origins: ProcessOrigins): Promise<Ser
   const nodes = new Map<number, ObservedProcess>()
   let cursor = 0
 
-  // D'abord la parenté complète, puis les détails des seuls processus rattachés.
+  // Read full ancestry first, then details only for attached processes.
   await Promise.all(Array.from({ length: 12 }, async () => {
     while (cursor < pids.length) {
       const pid = Number(pids[cursor++])
@@ -155,7 +150,7 @@ export async function scanServiceProcesses(origins: ProcessOrigins): Promise<Ser
         nodes.set(pid, { pid, ...processIdentity(identity),
           name: basename(exe) || /^Name:\s+(.+)$/m.exec(status)?.[1] || String(pid),
           status, environment, argv: cmdline.split('\0').filter(Boolean), cgroup: unifiedCgroup(cgroup) })
-      } catch { /* Le processus a pu disparaître pendant le scan. */ }
+      } catch { /* The process may disappear during scanning. */ }
     }
   }))
 
@@ -189,7 +184,7 @@ export async function scanServiceProcesses(origins: ProcessOrigins): Promise<Ser
         if (after.start !== node.start || after.parent !== node.parent) continue
         results.push({
           id: `${bootId.trim()}:${pid}:${node.start}`, kind: entry.kind, pid,
-          // L'exécutable réel d'un CLI peut n'être qu'un numéro de version ; argv[0] porte le nom.
+          // Actual CLI executable names may be version numbers; argv[0] carries the name.
           name: basename(node.argv[0] ?? '') || node.name,
           command: summarizeCommand(node.argv),
           parentPid: node.parent, parentName: nodes.get(node.parent)?.name ?? null,
@@ -203,18 +198,13 @@ export async function scanServiceProcesses(origins: ProcessOrigins): Promise<Ser
           members,
           origin: inheritedOrigin(pid, nodes, origins, host.pid),
         })
-      } catch { /* Disparu ou devenu inaccessible : il sera revu au prochain scan. */ }
+      } catch { /* Missing or inaccessible: check again next scan. */ }
     }
   }))
   return results.sort((a, b) => a.startedAt - b.startedAt || a.pid - b.pid)
 }
 
-/**
- * Revalide la racine, parenté comprise : un service transféré à tmux doit devenir
- * inarrêtable ici. Puis SIGTERM à chaque processus de l'arbre vu au scan, revérifié par
- * son instant de départ : un shell non interactif ne relaie pas le signal à ses enfants,
- * qui resteraient sinon comme processus détachés.
- */
+/** Revalidates roots including ancestry: services transferred to tmux must become impossible to stop here. Then SIGTERM every scanned process, rechecking start times: noninteractive shells do not relay signals to children, which would otherwise become detached. */
 export function stopServiceProcess(service: ServiceProcess, origins: ProcessOrigins, host: ProcessHost): boolean {
   if (!service.origin || service.kind === 'launcher' || service.kind === 'helper' || service.pid === host.pid) return false
   try {
@@ -226,10 +216,10 @@ export function stopServiceProcess(service: ServiceProcess, origins: ProcessOrig
       const identity = processIdentity(rawIdentity)
       let name = rawIdentity.slice(rawIdentity.indexOf('(') + 1, rawIdentity.lastIndexOf(')'))
       let environment = ''
-      // Le subreaper systemd peut être non dumpable : stat/cgroup restent lisibles,
-      // contrairement à exe/environ. Cela n'annule pas la preuve du cgroup enfant.
-      try { name = basename(readlinkSync(`${root}/exe`)) } catch { /* Nom de stat. */ }
-      try { environment = readFileSync(`${root}/environ`, 'utf8') } catch { /* Pas d'origine disponible. */ }
+      // The systemd subreaper may be nondumpable: stat/cgroup remain readable whereas
+      // exe/environ do not. This does not invalidate child-cgroup evidence.
+      try { name = basename(readlinkSync(`${root}/exe`)) } catch { /* stat name. */ }
+      try { environment = readFileSync(`${root}/environ`, 'utf8') } catch { /* No origin available. */ }
       nodes.set(pid, { pid, ...identity, name, environment, argv: [],
         cgroup: unifiedCgroup(readFileSync(`${root}/cgroup`, 'utf8')) })
       if (name === 'systemd') break
@@ -245,7 +235,7 @@ export function stopServiceProcess(service: ServiceProcess, origins: ProcessOrig
     for (const member of service.members.length ? service.members : [{ pid: service.pid, start: identity.start }]) {
       try {
         if (processIdentity(readFileSync(`/proc/${member.pid}/stat`, 'utf8')).start === member.start) process.kill(member.pid, 'SIGTERM')
-      } catch { /* Déjà parti, ou PID réattribué : on ne le vise pas. */ }
+      } catch { /* Already gone or PID reused: do not target it. */ }
     }
     return true
   } catch { return false }

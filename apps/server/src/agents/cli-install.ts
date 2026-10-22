@@ -9,34 +9,28 @@ import { resolveBinary } from './cli-binary.js'
 import { launchOf } from './launch.js'
 
 /**
- * Installation des CLI agents par Sillage lui-même.
+ * Sillage-managed agent CLI installation.
  *
- * Les binaires ne viennent plus de la release, donc un serveur fraîchement installé peut
- * n'avoir aucun CLI. Plutôt que de renvoyer l'utilisateur à un terminal qu'il n'a pas
- * toujours (image Docker, machine distante), Sillage sait poser la version qu'il vise, dans un préfixe npm qui lui appartient.
+ * Binaries no longer ship in releases, so fresh servers may have none. Rather than require
+ * terminals unavailable in Docker/remote use, install target versions into owned npm prefix.
  *
- * En tâche de fond, et non dans la requête : le paquet pèse plusieurs centaines de
- * mégaoctets, et une installation qui tient dans le temps d'une requête HTTP tiendrait
- * par chance. L'état se consulte, il ne se retourne pas.
+ * Background job, not HTTP request: packages weigh hundreds of MB and finishing within request
+ * lifetime would be luck. State is queryable, not returned synchronously.
  */
 
-/** Fenêtre au-delà de laquelle on considère l'installation perdue plutôt que lente. */
+/** Timeout after which installation is considered lost rather than slow. */
 const INSTALL_TIMEOUT_MS = 15 * 60 * 1000
 
-/**
- * Sortie d'erreur conservée en cas d'échec. Assez pour diagnostiquer, pas assez pour
- * qu'un `npm` bavard remplisse la mémoire du daemon.
- */
+/** Failure stderr retained: enough for diagnosis, bounded so verbose npm cannot fill daemon memory. */
 const MAX_ERROR_CHARS = 4_000
 
 /**
- * Une requête au registre, telle que npm la journalise au niveau `http` :
- * `npm http fetch GET 200 https://registry.npmjs.org/…/claude-code-2.1.301.tgz 1532ms`.
- * C'est le seul signe de vie que npm donne sans terminal ; sa barre d'avancement
- * suppose un TTY, et le niveau par défaut se tait jusqu'au bilan final.
+ * Registry request as npm http logs it: `npm http fetch GET 200
+ * https://registry.npmjs.org/…/claude-code-2.1.301.tgz 1532ms`. Only nonterminal sign of life:
+ * progress requires TTY, default logging silent until final report.
  */
 const FETCH_LINE = /^npm (?:http|verb http) fetch \w+ \d+ (\S+)/
-/** Les lignes d'erreur, au format d'npm 10 (`npm error`) comme d'npm 9 (`npm ERR!`). */
+/** Error lines in npm 10 (npm error) and npm 9 (npm ERR!) formats. */
 const ERROR_LINE = /^npm (?:error|ERR!)\b/
 
 type State =
@@ -45,15 +39,14 @@ type State =
   | { status: 'failed'; version: string; error: string; at: number }
 
 export class CliInstaller {
-  /** Un état par agent. Absent vaut « jamais tenté », que `state()` rend comme `idle`. */
+  /** Per-agent state. Absence means never attempted, exposed as idle by state(). */
   private readonly states = new Map<AgentKind, State>()
 
   constructor(
     private readonly prefix: string,
     /**
-     * Prévenu quand un CLI vient d'être posé. La sonde de présence est en cache, et sans
-     * ce signal elle dirait « absent » jusqu'à son expiration : l'écran reviendrait au
-     * bouton « Installer » juste après l'installation, comme si rien ne s'était passé.
+     * Notify after CLI install. Presence probe is cached: without invalidation screen would revert
+     * to Install until expiry, appearing ineffective.
      */
     private readonly onInstalled: (kind: AgentKind) => void = () => {},
   ) {}
@@ -74,11 +67,10 @@ export class CliInstaller {
   }
 
   /**
-   * Lance l'installation et rend la main aussitôt.
+   * Start installation and return immediately.
    *
-   * Retourne faux si une installation de ce CLI tourne déjà : deux `npm install`
-   * concurrents sur le même préfixe se marcheraient dessus, et rien ne garantit
-   * laquelle des deux versions survivrait.
+   * False if this CLI already installing: concurrent npm installs in same prefix interfere, with no
+   * guarantee which version survives.
    */
   start(kind: AgentKind): boolean {
     if (this.states.get(kind)?.status === 'running') return false
@@ -91,8 +83,8 @@ export class CliInstaller {
 
   private async run(kind: AgentKind, pkg: string, version: string): Promise<void> {
     try {
-      // npm refuse d'installer dans un préfixe inexistant. Le créer ici plutôt qu'au
-      // démarrage : le dossier n'a de raison d'exister que si on installe.
+      // npm refuses nonexistent prefixes. Create here, not startup: directory needed only when
+      // installing.
       await mkdir(this.prefix, { recursive: true })
       await this.npm(kind, pkg, version)
       this.onInstalled(kind)
@@ -108,25 +100,21 @@ export class CliInstaller {
     }
   }
 
-  /** Note une requête de plus au registre, pour que l'écran voie l'installation avancer. */
+  /** Record another registry request so interface shows progress. */
   private progress(kind: AgentKind, url: string): void {
     const state = this.states.get(kind)
     if (state?.status !== 'running') return
-    // Le nom du fichier suffit : l'URL complète du registre n'apprend rien de plus et
-    // ne tient pas sur une ligne d'interface.
+    // Filename suffices: full registry URL adds nothing and does not fit interface line.
     const current = url.slice(url.lastIndexOf('/') + 1) || null
     this.states.set(kind, { ...state, fetched: state.fetched + 1, current })
   }
 
   private npm(kind: AgentKind, pkg: string, version: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // `--prefix` plutôt que la configuration npm de l'utilisateur : Sillage installe
-      // chez lui, et ne doit pas déplacer ce qui est déjà installé sur le système.
-      // `--no-fund --no-audit` parce que rien ne lit cette sortie.
-      // `--loglevel=http` pour que npm raconte ses téléchargements : c'est ce que
-      // l'écran montre pendant les minutes que dure l'installation.
-      // npm se cherche comme un CLI : sous Windows c'est un lanceur `npm.cmd`, que Node ne
-      // lance pas sans shell. L'app de bureau en embarque un, placé en dernier dans le PATH.
+      // Use --prefix instead of user npm config: install in Sillage storage without moving system
+      // packages. --no-fund/--no-audit suppress unread output. --loglevel=http reports downloads
+      // during installation minutes. Resolve npm like CLI: Windows npm.cmd cannot launch directly
+      // through Node without shell. Desktop bundles fallback last on PATH.
       const npm = resolveBinary('npm')
       if (!npm) {
         reject(new Error("npm est introuvable sur le serveur : impossible d'installer un CLI."))
@@ -150,9 +138,8 @@ export class CliInstaller {
         { stdio: ['ignore', 'ignore', 'pipe'], timeout: INSTALL_TIMEOUT_MS, windowsHide: true },
       )
 
-      // Seules les lignes d'erreur sont gardées : le journal des requêtes, lui, ne vaut
-      // que pendant l'installation, et un paquet de plusieurs centaines de fichiers en
-      // produirait plus que la limite ne permet d'en conserver.
+      // Keep error lines only: request logs matter during installation, and hundreds of package
+      // files would exceed retention cap.
       const errors: string[] = []
       let pending = ''
       let errorChars = 0
@@ -175,8 +162,8 @@ export class CliInstaller {
 
       child.on('error', (err) =>
         reject(
-          // `npm` absent du PATH est le cas le plus probable sur un serveur minimal, et
-          // « spawn npm ENOENT » n'apprend rien à qui lit ça depuis une interface web.
+          // Missing npm is likely on minimal servers; “spawn npm ENOENT” does not explain to
+          // web-interface users.
           (err as NodeJS.ErrnoException).code === 'ENOENT'
             ? new Error("npm est introuvable sur le serveur : impossible d'installer un CLI.")
             : err,
@@ -185,8 +172,8 @@ export class CliInstaller {
       child.on('close', (code, signal) => {
         if (pending) onLine(pending)
         if (code === 0) return resolve()
-        // La sortie d'erreur de npm dit ce qui a échoué (réseau, droits, version
-        // inconnue) ; le code de sortie seul ne dirait que « exited with 1 ».
+        // npm stderr explains network/permissions/unknown-version failures; exit code alone says
+        // only exited with 1.
         reject(
           new Error(
             errors.join('\n') ||

@@ -18,7 +18,7 @@ export function useProjects() {
   })
 }
 
-/** Un dossier déjà là (`workspacePath`), ou un dossier à créer dans `parentDir`. */
+/** An existing directory (`workspacePath`) or one to create within `parentDir`. */
 export type CreateProjectInput = (
   | { name: string; workspacePath: string; visibility: 'private' | 'shared' }
   | { name: string; parentDir: string; directory: string; visibility: 'private' | 'shared' }
@@ -30,8 +30,8 @@ export function useCreateProject() {
     mutationFn: (input: CreateProjectInput) => api.post<ProjectDto>('/api/projects', input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: PROJECTS_KEY })
-      // Le serveur mémorise le dossier parent d'un projet créé de zéro : le formulaire
-      // suivant doit le proposer sans attendre un rechargement.
+      // The server remembers the parent directory for newly created projects: the next form should
+      // offer it without requiring reload.
       void queryClient.invalidateQueries({ queryKey: ['user-settings'] })
     },
   })
@@ -53,11 +53,9 @@ export function useStartClone() {
 }
 
 /**
- * Avancement d'un clone.
- *
- * Interrogé à la seconde plutôt que reçu par le WebSocket : le hub est indexé par
- * conversation, et un flux qui dure une minute à la création d'un projet ne justifie pas
- * d'y ouvrir une famille d'événements.
+ * Clone progress. Poll once per second rather than using WebSocket: the hub is
+ * conversation-indexed, and a minute-long project-creation stream does not warrant a new event
+ * family.
  */
 export function useCloneJob(id: string | null) {
   const queryClient = useQueryClient()
@@ -66,8 +64,7 @@ export function useCloneJob(id: string | null) {
     queryKey: ['clone', id],
     queryFn: async () => {
       const job = await api.get<CloneJobDto>(`/api/projects/clone/${id}`)
-      // Le projet n'existe qu'à la fin du clone : c'est le moment, et le seul, où la
-      // liste affichée est périmée.
+      // The project exists only after cloning completes: only then does the displayed list become stale.
       if (job.status === 'done') void queryClient.invalidateQueries({ queryKey: PROJECTS_KEY })
       return job
     },
@@ -77,10 +74,8 @@ export function useCloneJob(id: string | null) {
 }
 
 /**
- * Ordre manuel des projets.
- *
- * Appliqué localement avant la réponse du serveur : un glisser-déposer qui attend un
- * aller-retour réseau se voit, et se voit mal.
+ * Manual project order. Apply locally before the server reply so drag-and-drop does not visibly
+ * wait for a network round trip.
  */
 export function useReorderProjects() {
   const queryClient = useQueryClient()
@@ -101,7 +96,7 @@ export function useReorderProjects() {
     },
 
     onError: (_error, _ids, context) => {
-      // Le serveur a refusé : l'ordre affiché doit redevenir celui qu'il connaît.
+      // Server rejection: restore the server-known order.
       if (context?.previous) queryClient.setQueryData(PROJECTS_KEY, context.previous)
     },
 
@@ -110,11 +105,8 @@ export function useReorderProjects() {
 }
 
 /**
- * Épingle du sélecteur de projet.
- *
- * Appliquée localement avant la réponse, comme le signet de conversation : l'étoile
- * doit se remplir au clic. Le serveur tient l'épingle par compte, ce qui la fait
- * suivre d'un appareil à l'autre.
+ * Project-switcher pin. Apply locally before the reply like conversation bookmarks: fill the star
+ * on click. The server stores pins per account so they follow users across devices.
  */
 export function useTogglePin() {
   const queryClient = useQueryClient()
@@ -135,7 +127,7 @@ export function useTogglePin() {
     },
 
     onError: (_error, { id }, context) => {
-      // Ne revenir que sur l'épingle : un statut git ou un compteur ont pu bouger entre-temps.
+      // Roll back only the pin: Git status or counters may have changed meanwhile.
       const before = context?.previous?.find((entry) => entry.id === id)
       if (!before) return
       queryClient.setQueryData<ProjectDto[]>(PROJECTS_KEY, (current) =>
@@ -156,17 +148,14 @@ export function useUpdateProject() {
   })
 }
 
-/** Côté du carré auquel une image matricielle est ramenée avant l'envoi. */
+/** Square side length used to resize raster images before upload. */
 const IMAGE_SIDE = 256
 
 /**
- * Ramène une photo ou une capture à un petit carré PNG.
- *
- * L'image s'affiche en quelques dizaines de pixels : envoyer les mégaoctets d'une photo
- * de téléphone ferait buter sur le plafond du serveur pour rien. Le carré est obtenu par
- * des marges transparentes et non par un rognage, qui couperait un logo allongé. Un SVG
- * part tel quel, et un fichier que le navigateur ne sait pas décoder aussi : le serveur
- * dira ce qu'il en pense.
+ * Resize a photo or screenshot to a small PNG square. Display size is only a few dozen pixels, so
+ * phone-photo megabytes would needlessly hit server limits. Pad transparently rather than crop to
+ * preserve wide logos. Send SVGs and browser-undecodable files unchanged and let the server
+ * validate them.
  */
 async function shrinkImage(file: File): Promise<Blob> {
   if (file.type === 'image/svg+xml') return file
@@ -202,8 +191,7 @@ export function useSetProjectImage() {
         )
       }
 
-      // `fetch` directement, comme pour les pièces jointes : le navigateur compose
-      // lui-même l'en-tête multipart, frontière comprise.
+      // Use `fetch` directly, like attachments: let the browser build the multipart header including its boundary.
       const body = new FormData()
       body.append('file', image, file.name)
       const response = await fetch(`/api/projects/${id}/image`, {

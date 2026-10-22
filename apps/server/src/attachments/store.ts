@@ -5,16 +5,12 @@ import { and, eq, inArray, isNull, lt } from 'drizzle-orm'
 import { attachments, type Db } from '@sillage/db'
 import { INLINE_IMAGE_TYPES, type AttachmentDto } from '@sillage/protocol'
 
-/** Une pièce jointe jamais envoyée est un déchet : on la ramasse au bout d'un jour. */
+/** Unsent attachments are garbage collected after one day. */
 const ORPHAN_TTL_MS = 24 * 60 * 60 * 1000
 
 export type AttachmentRow = typeof attachments.$inferSelect
 
-/**
- * Signatures de fichiers. Le type est déterminé par le contenu et non par l'extension
- * fournie par le client : celle-ci est choisie par l'appelant, donc elle ne prouve rien
- * sur ce que le fichier contient réellement.
- */
+/** File signatures. Determine types by content rather than client-provided extensions, which callers choose and therefore prove nothing about contents. */
 const SIGNATURES: { mime: string; bytes: number[] }[] = [
   { mime: 'image/png', bytes: [0x89, 0x50, 0x4e, 0x47] },
   { mime: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
@@ -25,13 +21,13 @@ const SIGNATURES: { mime: string; bytes: number[] }[] = [
 
 function looksLikeUtf8Text(buffer: Buffer): boolean {
   const sample = buffer.subarray(0, 4096)
-  // Un octet nul ne se rencontre pas dans du texte, et sa présence suffit à trancher.
+  // Null bytes do not occur in text and suffice to classify files.
   if (sample.includes(0)) return false
   return Buffer.compare(Buffer.from(sample.toString('utf8'), 'utf8'), sample) === 0
 }
 
 export function sniffMimeType(buffer: Buffer, filename: string): string {
-  // WebP se cache derrière un conteneur RIFF, donc avant les signatures simples.
+  // WebP uses RIFF containers, so check before simple signatures.
   if (buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP') {
     return 'image/webp'
   }
@@ -67,10 +63,7 @@ export class AttachmentStore {
     readonly root: string,
   ) {}
 
-  /**
-   * Écrit le fichier puis enregistre sa trace. Le contenu ne va jamais en base :
-   * SQLite n'est pas un magasin de blobs, et le journal doit rester léger à relire.
-   */
+  /** Writes files then records metadata. Contents never enter the database: SQLite is not blob storage, and journals must remain cheap to replay. */
   async save(input: { userId: string; filename: string; content: Buffer; cardId?: string }): Promise<AttachmentDto> {
     const now = new Date()
     const dir = join(
@@ -81,9 +74,9 @@ export class AttachmentStore {
     await mkdir(dir, { recursive: true })
 
     const id = randomUUID()
-    // L'extension d'origine est conservée pour que l'agent voie un nom exploitable,
-    // mais le nom sur disque reste un uuid : deux envois du même nom ne doivent pas
-    // se marcher dessus.
+    // Retain original extensions so agents see usable names,
+    // but disk names remain UUIDs so identical upload names cannot
+    // overwrite one another.
     const storagePath = join(dir, `${id}${extname(input.filename).slice(0, 16)}`)
     await writeFile(storagePath, input.content)
 
@@ -108,7 +101,7 @@ export class AttachmentStore {
     return toAttachmentDto(row)
   }
 
-  /** Pièces jointes appartenant à cet utilisateur et pas encore envoyées. */
+  /** Attachments owned by this user and not yet sent. */
   listClaimable(userId: string, ids: string[]): AttachmentRow[] {
     if (ids.length === 0) return []
     return this.db
@@ -125,7 +118,7 @@ export class AttachmentStore {
       .all()
   }
 
-  /** Rattache les fichiers au fil : ils suivront désormais sa suppression. */
+  /** Attaches files to conversations so subsequent deletion cascades to them. */
   claim(ids: string[], conversationId: string): void {
     if (ids.length === 0) return
     this.db.update(attachments).set({ conversationId }).where(inArray(attachments.id, ids)).run()
@@ -142,12 +135,7 @@ export class AttachmentStore {
     await rm(row.storagePath, { force: true })
   }
 
-  /**
-   * Supprime les fichiers d'une conversation avant que la base ne l'efface.
-   *
-   * La cascade des clés étrangères ne retire que les lignes : sans ce passage, chaque
-   * conversation supprimée laisserait ses fichiers sur le disque pour toujours.
-   */
+  /** Deletes conversation files before database removal. Foreign-key cascades delete rows only; otherwise deleted conversations would leave disk files forever. */
   async removeForConversations(conversationIds: string[]): Promise<number> {
     if (conversationIds.length === 0) return 0
 
@@ -161,17 +149,14 @@ export class AttachmentStore {
     return rows.length
   }
 
-  /** Les fichiers des tickets suivent leur suppression et celle du projet. */
+  /** Ticket files follow ticket and project deletion. */
   async removeForCards(cardIds: string[]): Promise<void> {
     if (!cardIds.length) return
     const rows = this.db.select().from(attachments).where(inArray(attachments.cardId, cardIds)).all()
     for (const row of rows) await this.remove(row.id)
   }
 
-  /**
-   * Fichiers téléversés puis abandonnés sans envoi. Sans ce ramassage, chaque
-   * hésitation devant le composer laisserait un fichier sur le disque à vie.
-   */
+  /** Uploads abandoned before sending. Without collection, every hesitation at the composer would leave permanent disk files. */
   async purgeOrphans(): Promise<number> {
     const stale = this.db
       .select()

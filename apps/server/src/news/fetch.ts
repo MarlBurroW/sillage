@@ -20,7 +20,7 @@ export function isPublicAddress(address: string): boolean {
   try { return ipaddr.process(address).range() === 'unicast' } catch { return false }
 }
 
-/** L'adresse validée est celle de la connexion : une seconde résolution permettrait le rebinding DNS. */
+/** Connect to the validated address: resolving again would allow DNS rebinding. */
 export async function publicAddress(hostname: string): Promise<{ address: string; family: number }> {
   const host = hostname.replace(/^\[|\]$/g, '')
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -43,7 +43,7 @@ export async function downloadFeed(value: string): Promise<{ xml: string; url: s
     const response = await new Promise<{ status: number; location?: string; body: string }>((resolve, reject) => {
       const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
         signal,
-        // Le certificat TLS et le Host restent ceux de l'URL, seul le DNS est épinglé.
+        // TLS certificates and Host remain URL-derived; only DNS is pinned.
         lookup: (_host, options, callback) => {
           if (options.all) callback(null, [address])
           else callback(null, address.address, address.family)

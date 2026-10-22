@@ -3,9 +3,8 @@ import type { ClaudeSessionsDto, ClaudeSyncDto, ConversationDto } from '@sillage
 import { api } from './api'
 
 /**
- * Sessions Claude Code trouvées sur le disque pour le dossier du projet, pas encore
- * rattachées à une conversation. Le CLI et le daemon partagent le même compte :
- * importer revient à adopter l'identifiant natif, pas à copier quoi que ce soit.
+ * Claude Code disk sessions for the project directory not yet linked to conversations. CLI and
+ * daemon share an account: importing adopts the native ID rather than copying anything.
  */
 export function useClaudeSessions(projectId: string | undefined, enabled: boolean) {
   return useQuery({
@@ -29,8 +28,8 @@ export function useImportClaudeSession(projectId: string) {
 }
 
 /**
- * Rattrape dans le journal les tours faits au CLI depuis la dernière ouverture.
- * Les événements repris arrivent par l'abonnement WebSocket, comme le direct.
+ * Catch up the log with CLI turns since the last opening. Recovered events arrive over WebSocket
+ * like live output.
  */
 export function syncClaudeConversation(conversationId: string): Promise<ClaudeSyncDto> {
   return api.post<ClaudeSyncDto>(`/api/conversations/${conversationId}/claude-sync`)

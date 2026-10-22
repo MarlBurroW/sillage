@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Capture les écrans du site depuis une instance de démo déjà lancée et seedée
- * (voir `apps/server/src/cli/demo-seed.ts`, puis `pnpm --filter @sillage/server
- * search:reindex` pour que la palette de recherche ait des résultats).
+ * Capture site screens from an already running, seeded demo instance
+ * (see `apps/server/src/cli/demo-seed.ts`, then `pnpm --filter @sillage/server
+ * search:reindex` so search palette has results).
  *
  *   SILLAGE_URL=http://127.0.0.1:7517 node scripts/screenshots.mjs
- *   SILLAGE_SHOTS=schedule node scripts/screenshots.mjs   # une partie des vues seulement
+ *   SILLAGE_SHOTS=schedule node scripts/screenshots.mjs   # only some views
  *
- * Chaque vue sort en deux versions, `<nom>-dark.png` et `<nom>-light.png`, dans
- * `site/screenshots/`. Locale forcée en anglais : le site est en anglais.
+ * Each view produces `<name>-dark.png` and `<name>-light.png` in `site/screenshots/`.
+ * Locale forced to English because the site is English.
  */
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
@@ -20,12 +20,12 @@ const USERNAME = process.env.SILLAGE_DEMO_USER ?? 'alex'
 const PASSWORD = process.env.SILLAGE_DEMO_PASSWORD ?? 'sillage-demo'
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'site', 'screenshots')
 
-// Palette du site : réglages natifs relevés sur la capture de référence.
-// Aucun filtre ni retouche des images ; l'interface rend ces couleurs elle-même.
+// Site palette: native settings taken from the reference screenshot.
+// No image filters or retouching; the interface renders these colors itself.
 const APPEARANCE = { hue: 318, tint: 0.25, lift: -0.01 }
 
 const VIEWPORT = { width: 1600, height: 1000 }
-/** Plus large pour le board : les cinq colonnes tiennent sans coupe. */
+/** Wider for the board so all five columns fit without cropping. */
 const BOARD_VIEWPORT = { width: 1840, height: 1100 }
 
 async function fetchJson(context, path) {
@@ -34,7 +34,7 @@ async function fetchJson(context, path) {
   return response.json()
 }
 
-/** Retrouve les identifiants seedés, pour construire la liste des vues. */
+/** Find seeded IDs to build the view list. */
 async function resolveTargets(context) {
   const projects = await fetchJson(context, '/api/projects')
   const project = (name) => {
@@ -64,8 +64,8 @@ async function resolveTargets(context) {
 }
 
 /**
- * Les vues à capturer. `interact` joue un geste après le chargement (ouvrir un
- * tiroir, la palette…) ; `viewport` remplace le format par défaut pour la vue.
+ * Views to capture. `interact` performs an action after loading (open a drawer,
+ * palette…); `viewport` overrides the default size for a view.
  */
 function buildShots(t) {
   return [
@@ -110,7 +110,7 @@ function buildShots(t) {
         await page.keyboard.press('Control+k')
         const input = await page.waitForSelector('div[role="dialog"] input', { timeout: 10000 })
         await input.type('offline', { delay: 40 })
-        // Les résultats arrivent en une requête, sans marqueur de fin : petite marge.
+        // Results arrive in one request with no completion marker: allow a small margin.
         await page.waitForTimeout(1200)
       },
     },
@@ -124,15 +124,15 @@ function buildShots(t) {
       },
     },
     {
-      // La page du projet : la vue Chantiers compare chaque arbre à main.
+      // Project page: Worktrees compares each tree against main.
       name: 'worktrees',
       path: `/p/${t.nimbus.id}`,
       waitFor: 'text=feat/radar-prefetch',
     },
     { name: 'settings-mcp', path: '/settings/mcp', waitFor: 'text=playwright' },
     { name: 'settings-appearance', path: '/settings/apparence', waitFor: 'role=heading[name="Appearance"]' },
-    // Les vues du panneau latéral ferment la liste : leur `storage` (panneau ouvert)
-    // reste posé dans le contexte, et rien ne doit se capturer après elles.
+    // Side-panel views go last: their `storage` (open panel) stays in context,
+    // so nothing should be captured afterward.
     {
       name: 'panel-files',
       path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
@@ -142,7 +142,7 @@ function buildShots(t) {
       interact: async (page) => {
         const panel = page.locator('[data-panel="workspace"]')
         await panel.waitFor({ timeout: 10000 })
-        // Déplier jusqu'au fichier, puis attendre que l'éditeur montre son contenu.
+        // Expand to the file, then wait for editor content.
         await panel.locator('text=src').first().click()
         await panel.locator('text=lib').first().click()
         await panel.locator('text=forecast.ts').first().click()
@@ -153,16 +153,16 @@ function buildShots(t) {
       name: 'panel-git',
       path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
       waitFor: 'text=Offline fallback is in place',
-      // Assez large pour que le graphe et l'arbre de travail tiennent côte à côte.
+      // Wide enough for graph and working tree side by side.
       storage: { 'sillage.panelOpen': '1', 'sillage.panelDockedWidth': '1040' },
       viewport: BOARD_VIEWPORT,
       interact: async (page) => {
         const panel = page.locator('[data-panel="workspace"]')
         await panel.waitFor({ timeout: 10000 })
-        // Le rail du panneau porte des icônes : le nom de l'onglet est son aria-label.
+        // Panel rail has icons: tab name is its aria-label.
         await panel.getByRole('button', { name: 'Git', exact: true }).click()
         await panel.locator('text=Cache the last forecast per city').first().waitFor({ timeout: 10000 })
-        // Déplier le diff du fichier principal, pour montrer de vrais hunks.
+        // Expand main-file diff to show real hunks.
         await panel.locator('text=src/lib/forecast.ts').first().click()
         await panel.locator('text=fromCache').first().waitFor({ timeout: 10000 })
       },
@@ -174,7 +174,7 @@ async function shoot(page, shot, file) {
   await page.setViewportSize(shot.viewport ?? VIEWPORT)
   await page.goto(`${BASE_URL}${shot.path}`)
   if (shot.storage) {
-    // Les clés lues au chargement du module (panneau ouvert…) demandent un reload.
+    // Keys read at module load (open panel…) require a reload.
     await page.evaluate((entries) => {
       for (const [key, value] of entries) localStorage.setItem(key, value)
     }, Object.entries(shot.storage))
@@ -182,7 +182,7 @@ async function shoot(page, shot, file) {
   }
   if (shot.waitFor) await page.waitForSelector(shot.waitFor, { timeout: 15000 })
   if (shot.interact) await shot.interact(page)
-  // Les transitions d'entrée et le stream WebSocket se posent en un instant.
+  // Entry transitions and WebSocket stream settle quickly.
   await page.waitForTimeout(900)
   await page.screenshot({ path: join(OUT_DIR, file) })
   console.log(`✓ ${file}`)
@@ -205,7 +205,7 @@ async function captureTheme(browser, theme, shots) {
   }, { theme, values: APPEARANCE })
 
   const page = await context.newPage()
-  // La page de connexion se capture avant de poser le cookie de session.
+  // Capture sign-in page before setting session cookie.
   for (const shot of shots.filter((s) => s.anonymous)) {
     await shoot(page, shot, `${shot.name}-${theme}.png`)
   }
@@ -213,7 +213,7 @@ async function captureTheme(browser, theme, shots) {
     data: { username: USERNAME, password: PASSWORD },
   })
   if (!login.ok()) throw new Error(`Login failed: ${login.status()} ${await login.text()}`)
-  // Le compte fait foi après connexion : garder sa copie et le cache synchrones.
+  // Account is authoritative after sign-in: keep its copy synchronized with cache.
   const settings = await context.request.patch(`${BASE_URL}/api/me/settings`, {
     data: { appearance: { theme, syntax: 'sillage', values: APPEARANCE } },
   })
@@ -228,14 +228,14 @@ async function main() {
   mkdirSync(OUT_DIR, { recursive: true })
   const browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
 
-  // Un contexte éphémère résout les identifiants, valables pour les deux thèmes.
+  // Ephemeral context resolves IDs valid for both themes.
   const probe = await browser.newContext()
   const login = await probe.request.post(`${BASE_URL}/api/auth/login`, {
     data: { username: USERNAME, password: PASSWORD },
   })
   if (!login.ok()) throw new Error(`Login failed: ${login.status()} ${await login.text()}`)
-  // `SILLAGE_SHOTS=schedule,board` ne refait que ces vues : les autres captures ne
-  // bougent pas pour une section ajoutée au site.
+  // `SILLAGE_SHOTS=schedule,board` rebuilds only these views: other screenshots
+  // stay unchanged when adding a site section.
   const only = process.env.SILLAGE_SHOTS?.split(',').map((name) => name.trim()).filter(Boolean)
   const shots = buildShots(await resolveTargets(probe)).filter((shot) => !only || only.includes(shot.name))
   await probe.close()

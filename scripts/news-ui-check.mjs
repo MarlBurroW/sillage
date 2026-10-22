@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
 
-// API et composants réels sur une base jetable ; les flux sont des fixtures en cache.
+// Real API/components on a disposable database; feeds are cached fixtures.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const data = await mkdtemp('/var/tmp/sillage-news-ui-')
@@ -78,7 +78,7 @@ try {
     await page.getByRole('button', { name: 'Ajouter la source', exact: true }).click()
     await page.getByText('https://example.org/atom', { exact: true }).waitFor()
     await page.screenshot({ path: `/var/tmp/sillage-news-settings-${width}.png`, fullPage: true })
-    // Retirer la source ajoutée garde le scénario rejouable sur la taille suivante.
+    // Removing the added source keeps the scenario repeatable at the next size.
     await page.getByRole('button', { name: 'Retirer Veille de test', exact: true }).last().click()
     await page.getByText('https://example.org/atom', { exact: true }).waitFor({ state: 'detached' })
     const projects = await (await context.request.get(`${origin}/api/projects`)).json()

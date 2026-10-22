@@ -12,11 +12,8 @@ import { useTranslate } from '../../lib/i18n'
 import { Button, IconButton, Select, cx } from '../ui'
 
 /**
- * Les conditions d'une automatisation, une ligne par règle : champ, opérateur, valeur.
- *
- * Partagé par le formulaire de création, où aucun appel n'existe encore, et par la page
- * de réglage, qui passe `results` : chaque ligne y montre alors ✓ ou ✗ et ce que le
- * champ vaut dans l'appel choisi.
+ * Automation conditions as field/operator/value rows. Shared by creation without calls and settings
+ * with results, where rows show match status and the chosen call's actual field value.
  */
 export function ConditionsEditor({
   conditions,
@@ -51,8 +48,10 @@ export function ConditionsEditor({
         const actual = result ? valueText(result.actual) : ''
         return (
           <div key={index} className="flex flex-col gap-1.5 rounded-md border border-line px-2.5 py-2">
-            {/* Sur deux lignes : le chemin entier d'abord, il est souvent long ; puis ce
-                qu'on en attend. Une seule ligne s'entassait dans une demi-page. */}
+            {/*
+             * Two lines: full paths often need their own line, followed by expectations. One line
+             * crowded half-width layouts.
+             */}
             <div className="flex items-center gap-1.5">
               {results ? (
                 <span

@@ -10,12 +10,9 @@ import { Badge, Card, CardBody, Field } from '../ui'
 import { Question, StepTitle, Tip, Why, useCommit, useGate, type StepProps } from './shell'
 
 /**
- * Adresse et téléphone, hébergé seulement.
- *
- * L'administrateur confirme l'adresse publique, proposée d'après celle par laquelle ce
- * navigateur est arrivé ; un membre la voit en lecture seule. Vient ensuite ce qui
- * concerne le téléphone, si l'on compte s'en servir : l'app à installer, et les
- * notifications de cet appareil.
+ * Address and phone for hosted instances only. Administrators confirm the public URL inferred from
+ * this browser's origin; members see it read-only. Then show phone installation and device
+ * notifications if requested.
  */
 export function AddressStep({ nav, state, user, hostname }: StepProps) {
   const t = useTranslate()
@@ -25,7 +22,7 @@ export function AddressStep({ nav, state, user, hostname }: StepProps) {
   const { data: appSettings } = useAppSettings()
   const updateApp = useUpdateAppSettings()
 
-  // Null tant qu'on n'a pas tapé : l'adresse réglée, sinon celle de ce navigateur.
+  // Null until typing: use configured address, otherwise this browser's origin.
   const [draft, setDraft] = useState<string | null>(null)
   const configured = appSettings?.publicUrl ?? ''
   const url = admin ? (draft ?? (configured || currentOrigin())) : configured || currentOrigin()
@@ -54,7 +51,7 @@ export function AddressStep({ nav, state, user, hostname }: StepProps) {
   }, [url, phone, info.valid])
 
   const title = admin ? t(phone ? 'onboarding.address.title.both' : 'onboarding.address.title.address') : t('onboarding.address.title.phone')
-  // Trois cas : joignable de partout ; locale (avec ou sans HTTPS) ; non locale mais en clair.
+  // Three cases: globally reachable, local with or without HTTPS, or nonlocal plaintext.
   const badge = info.valid ? (
     info.https && !info.local ? (
       <Badge tone="positive">{t('onboarding.address.reachable')}</Badge>

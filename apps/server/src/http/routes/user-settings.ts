@@ -16,13 +16,7 @@ import {
 import type { AppContext } from '../context.js'
 import { requireUser } from '../require-user.js'
 
-/**
- * Réglages du compte connecté.
- *
- * Ni lecture ni écriture pour un autre compte, administrateur compris : ce sont des
- * préférences, pas une politique, et personne n'a à décider avec quel modèle un
- * collègue ouvre ses conversations.
- */
+/** Signed-in account settings. No reading or writing other accounts' settings, including by administrators: these are preferences rather than policy, and nobody should choose the model a colleague starts conversations with. */
 export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/me/settings', async (request): Promise<UserSettingsDto> => {
     const user = requireUser(request)
@@ -33,8 +27,8 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     const user = requireUser(request)
     const body = updateUserSettingsBodySchema.parse(request.body)
 
-    // Champ par champ, chacun facultatif : le panneau des défauts et la sidebar
-    // écrivent le même document sans jamais parler du réglage de l'autre.
+    // All fields are optional: the defaults panel and sidebar write the same document
+    // without addressing each other's settings.
     if (body.agentDefault) writeUserAgentDefault(ctx.db, user.id, body.agentDefault)
     if (body.collapsedProjects) writeCollapsedProjects(ctx.db, user.id, body.collapsedProjects)
     if (body.hiddenAgents) writeHiddenAgents(ctx.db, user.id, body.hiddenAgents)
@@ -45,8 +39,8 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     if (body.composerLayout) writeComposerLayout(ctx.db, user.id, body.composerLayout)
     if (body.onboarding) writeOnboarding(ctx.db, user.id, body.onboarding)
     if (body.projectDefaults) writeProjectDefaults(ctx.db, user.id, body.projectDefaults)
-    // Relu plutôt que reconstruit depuis le corps : l'écran a besoin des deux CLI, et
-    // le corps n'en porte qu'un.
+    // Reread rather than rebuild from the body: the screen needs both CLIs, and
+    // the body includes only one.
     return readUserSettings(ctx.db, user.id)
   })
 }

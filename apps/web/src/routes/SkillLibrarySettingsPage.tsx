@@ -10,11 +10,10 @@ import { useSkillLibrary } from '../lib/skill-library'
 import { SectionHeader } from './SettingsPage'
 
 /**
- * Bibliothèque de skills globale : livrée à toutes les conversations de l'instance.
+ * Global skill library delivered to every conversation in the instance.
  *
- * Visible de tous, parce que chacun doit savoir ce que ses agents reçoivent ; modifiable
- * par les administrateurs seuls, comme le registre MCP. Les skills d'un projet se gèrent
- * sur la page du projet.
+ * Visible to all so everyone knows what agents receive; editable only by administrators, like
+ * the MCP registry. Project skills are managed on project pages.
  */
 export function SkillLibrarySettingsPage() {
   const t = useTranslate()

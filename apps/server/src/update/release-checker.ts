@@ -17,13 +17,7 @@ interface GithubRelease {
   assets: Array<{ name: string; browser_download_url: string }>
 }
 
-/**
- * Interroge l'API GitHub pour connaître la dernière version publiée.
- *
- * L'API non authentifiée est limitée à 60 requêtes/heure par IP : le résultat
- * est mis en cache une heure, et en cas d'échec on continue de servir la
- * dernière réponse connue plutôt que de casser l'écran À propos.
- */
+/** Queries GitHub for the latest release. Unauthenticated requests are limited to 60/hour/IP: cache for an hour, and retain the latest known response on failure instead of breaking About screens. */
 export class ReleaseChecker {
   private releases: GithubRelease[] | null = null
   private fetchedAt: number | null = null
@@ -50,7 +44,7 @@ export class ReleaseChecker {
       version: installed,
       channel: detectChannel(),
       latest,
-      // Une version non parsable (dev) ne doit jamais déclencher de proposition.
+      // Unparseable development versions must never trigger update suggestions.
       updateAvailable: installedParsable && newer.length > 0,
       releases: newer.map(toNote),
       checkedAt: this.fetchedAt ? new Date(this.fetchedAt).toISOString() : null,
@@ -58,7 +52,7 @@ export class ReleaseChecker {
     }
   }
 
-  /** URL du tarball de la release `tag` pour la plateforme courante, si connue. */
+  /** Release `tag` tarball URL for the current platform, if known. */
   findAsset(tag: string): string | null {
     const release = (this.releases ?? []).find(
       (r) => r.tag_name.replace(/^v/, '') === tag.replace(/^v/, ''),
@@ -71,7 +65,7 @@ export class ReleaseChecker {
   }
 
   private refresh(): Promise<void> {
-    // Une seule requête GitHub à la fois, même si plusieurs clients rafraîchissent.
+    // Only one GitHub request at a time despite concurrent refreshes.
     this.inflight ??= this.doRefresh().finally(() => {
       this.inflight = null
     })
@@ -102,7 +96,7 @@ export class ReleaseChecker {
       this.fetchedAt = Date.now()
       this.checkError = null
     } catch {
-      // Réseau coupé ou timeout : on garde le cache existant et on le signale.
+      // Network failures/timeouts preserve caches and report the failure.
       this.checkError = 'network'
     }
   }

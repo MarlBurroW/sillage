@@ -2,15 +2,9 @@ import { useTranslate } from '../lib/i18n'
 import { Markdown } from './chat/Markdown'
 
 /**
- * Fausse conversation, pour juger les réglages de lecture sans quitter la page.
- *
- * Les curseurs s'appliquent à `<html>` : ce bloc n'a rien à recevoir, il suit comme le
- * reste de l'application. Il reprend donc exactement les composants du fil, bulle
- * comprise, plutôt qu'une imitation qui finirait par diverger du vrai rendu.
- *
- * Le texte n'est pas du remplissage : il porte un paragraphe, du gras, du code en
- * ligne et une liste, c'est-à-dire ce qu'un message contient réellement et ce dont la
- * taille et l'interligne changent la lecture.
+ * Mock conversation for judging reading settings in place. Sliders affect html so this follows
+ * automatically, reusing actual thread components and bubbles rather than drifting imitations. Text
+ * exercises paragraphs, bold, inline code, and lists to reveal real size/line-height effects.
  */
 export function ReadingPreview() {
   const t = useTranslate()

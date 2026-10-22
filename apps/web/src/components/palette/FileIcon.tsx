@@ -4,12 +4,9 @@ import { useEffect, useState } from 'react'
 let icons: Promise<typeof import('../../lib/file-icons')> | null = null
 
 /**
- * Icône d'un fichier, chargée à part.
- *
- * La table de correspondance de VS Code pèse près de 300 Ko : importée ici, elle entrait
- * dans le paquet principal, que la palette partage avec tout l'écran, et le faisait
- * dépasser ce que le service worker accepte de mettre en cache. Le panneau la charge déjà
- * de son côté ; en attendant, une icône générique tient la place.
+ * Lazy file icon. VS Code matching tables approach 300 KB; importing directly inflated the shared
+ * main bundle beyond service-worker cache limits. The panel loads it separately; use generic icons
+ * meanwhile.
  */
 export function FileIcon({ name }: { name: string }) {
   const [url, setUrl] = useState<string | null>(null)

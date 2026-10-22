@@ -9,8 +9,7 @@ const UPDATE_KEY = ['system', 'update']
 const versionQuery = {
   queryKey: VERSION_KEY,
   queryFn: () => api.get<VersionInfo>('/api/system/version'),
-  // Le serveur cache déjà la réponse GitHub une heure : inutile de le solliciter
-  // à chaque navigation dans les réglages.
+  // The server already caches GitHub replies for an hour: avoid requesting on every settings navigation.
   staleTime: 30 * 60 * 1000,
 }
 
@@ -19,10 +18,9 @@ export function useVersionInfo() {
 }
 
 /**
- * Vrai quand une mise à jour attend un administrateur : seul lui peut la lancer,
- * les autres comptes n'ont pas à être relancés. La barre latérale s'en sert, donc
- * la vérification part dès l'ouverture de l'application et plus seulement quand on
- * visite les réglages ; le cache serveur borne toujours GitHub à une requête par heure.
+ * Whether an update awaits an administrator: only administrators can launch it, so do not prompt
+ * others. The sidebar uses this, checking at app opening rather than only in settings; server
+ * caching still limits GitHub to one request per hour.
  */
 export function useUpdateNotice(): boolean {
   const { data: user } = useCurrentUser()
@@ -31,7 +29,7 @@ export function useUpdateNotice(): boolean {
   return isAdmin && data?.updateAvailable === true
 }
 
-/** Rafraîchissement forcé (admin) : contourne le cache serveur d'une heure. */
+/** Forced administrator refresh bypassing the one-hour server cache. */
 export function useRefreshVersionInfo() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -48,16 +46,14 @@ export function useStartUpdate() {
   })
 }
 
-/** Suivi d'une mise à jour en cours, par sondage : le serveur va redémarrer
- * et couper toute connexion persistante, un poll survit naturellement. */
+/** Poll an ongoing update: server restart severs persistent connections, while polling naturally survives. */
 export function useUpdateStatus(enabled: boolean) {
   return useQuery({
     queryKey: UPDATE_KEY,
     queryFn: () => api.get<UpdateStatus>('/api/system/update/status'),
     enabled,
     refetchInterval: 1000,
-    // Pendant le redémarrage, les requêtes échouent : on garde le dernier état
-    // connu à l'écran au lieu de basculer en erreur.
+    // Requests fail during restart: keep the latest known state visible instead of showing an error.
     retry: false,
     placeholderData: (previous) => previous,
   })

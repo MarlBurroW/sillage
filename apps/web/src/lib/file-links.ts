@@ -3,25 +3,20 @@ import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
 /**
- * Chemins cités dans le fil dont on sait qu'ils désignent un fichier du workspace.
- *
- * Les messages sont rendus un par un, chacun avec ses candidats, mais les interroger un
- * par un ferait autant de requêtes que de messages à l'ouverture d'une conversation. Les
- * candidats sont donc rassemblés sur une micro-tâche, soumis en un lot, et la réponse
- * alimente une table partagée par tout le fil : un chemin cité dix fois n'est vérifié
- * qu'une seule.
- *
- * Hors de React et hors du cache de requêtes parce que la clé n'est pas un écran mais un
- * ensemble de chemins qui s'agrandit à mesure qu'on défile.
+ * Thread-cited paths known to identify workspace files. Messages render individually with their
+ * candidates, but querying individually would create one request per message on conversation open.
+ * Gather candidates in a microtask, submit a batch, and feed a shared table: a path cited ten times
+ * is checked once. Outside React and the query cache because the key is a growing path set rather
+ * than a screen.
  */
 
-/** Doit rester sous la limite de `filesExistBodySchema`. */
+/** Must remain below the `filesExistBodySchema` limit. */
 const BATCH_LIMIT = 50
 
 interface Resolution {
-  /** Chemins confirmés comme fichiers. */
+  /** Paths confirmed as files. */
   readonly files: Set<string>
-  /** Chemins déjà soumis, confirmés ou non, pour ne pas les redemander. */
+  /** Previously submitted paths, confirmed or not, to avoid repeat queries. */
   readonly asked: Set<string>
 }
 
@@ -54,20 +49,18 @@ async function flush(scope: WorkspaceScope): Promise<void> {
 
   const answer = await api
     .post<{ files: string[] }>(`${workspaceApiBase(scope)}/files/exist`, { paths })
-    // Un lien manquant n'est pas une panne à signaler : le chemin reste du texte, ce
-    // qu'il était avant. Les chemins restent marqués comme demandés, sinon chaque
-    // rendu relancerait la requête qui vient d'échouer.
+    // A missing link is not an error to report: the path remains text as before. Keep paths marked
+    // requested or each render would repeat the failed query.
     .catch(() => null)
   if (!answer) return
 
   if (answer.files.length > 0) {
-    // Relu après l'attente, et non repris de l'instantané d'avant la requête : deux lots
-    // peuvent être en vol pour la même conversation, puisque `flush` libère la file dès
-    // son entrée. Repartir de l'instantané ferait perdre au second les fichiers que le
-    // premier vient d'ajouter, définitivement : ils sont déjà marqués comme demandés.
+    // Reread after awaiting rather than using the pre-request snapshot: `flush` clears the queue on
+    // entry, so batches can overlap for one conversation. Reusing the snapshot would permanently
+    // lose files added by the first batch because they are already marked requested.
     const current = resolutionOf(scope)
-    // Un ensemble neuf, et non muté : `useSyncExternalStore` compare les identités, et
-    // un ajout en place ne déclencherait aucun rendu.
+    // Use a new set rather than mutating: `useSyncExternalStore` compares identity and an in-place
+    // addition would trigger no render.
     byScope.set(scope, {
       files: new Set([...current.files, ...answer.files]),
       asked: current.asked,
@@ -75,14 +68,14 @@ async function flush(scope: WorkspaceScope): Promise<void> {
     emit()
   }
 
-  // Le lot était plafonné : ce qui n'est pas passé repart au tour suivant.
+  // The batch hit its cap: remaining paths go in the next batch.
   const overflow = [...queued].slice(BATCH_LIMIT)
   if (overflow.length > 0) {
     request(scope, overflow)
   }
 }
 
-/** Met des chemins en file, et déclenche un lot si aucun n'attend déjà. */
+/** Queue paths and schedule a batch if none is pending. */
 function request(scope: WorkspaceScope, paths: string[]): void {
   const resolution = resolutionOf(scope)
   const fresh = paths.filter((path) => !resolution.asked.has(path))
@@ -95,8 +88,7 @@ function request(scope: WorkspaceScope, paths: string[]): void {
   }
 
   pending.set(scope, new Set(fresh))
-  // Une micro-tâche suffit : tous les messages d'un même rendu déposent leurs candidats
-  // avant qu'elle ne s'exécute.
+  // A microtask suffices: all messages in one render submit candidates before it runs.
   void Promise.resolve().then(() => flush(scope))
 }
 
@@ -108,19 +100,16 @@ function subscribe(listener: () => void): () => void {
 }
 
 /**
- * Portée dont le workspace sert de référence aux chemins du fil : la conversation, ou
- * le projet pour l'aperçu d'un fichier ouvert depuis son panneau.
- *
- * Un contexte plutôt qu'une prop : `Markdown` est rendu depuis une dizaine d'endroits,
- * dont les notes de version et l'aperçu des réglages, où aucune conversation n'existe.
- * Ceux-là n'ont rien à passer et n'obtiennent pas de liens, ce qui est correct.
+ * Scope whose workspace resolves thread paths: the conversation, or the project for previews opened
+ * from its panel. Use context rather than props: `Markdown` renders in many places, including
+ * release notes and settings previews, with no conversation. Those callers pass nothing and
+ * correctly receive no file links.
  */
 export const FileLinkContext = createContext<WorkspaceScope | null>(null)
 
 /**
- * Fichiers connus pour cette conversation, et soumission des candidats manquants.
- *
- * Renvoie un ensemble vide hors conversation : le rendu ne produit alors aucun lien.
+ * Known files for this conversation and submission of missing candidates. Returns an empty set
+ * outside conversations, producing no links.
  */
 export function useKnownFiles(candidates: Set<string>): Set<string> {
   const scope = useContext(FileLinkContext)
@@ -131,8 +120,8 @@ export function useKnownFiles(candidates: Set<string>): Set<string> {
     () => EMPTY,
   )
 
-  // `candidates` est un ensemble neuf à chaque analyse : la clé de dépendance est son
-  // contenu, sinon l'effet repartirait à chaque rendu.
+  // `candidates` is a fresh set after every parse: use its contents as the dependency key or the
+  // effect would rerun every render.
   const key = [...candidates].sort().join('\n')
   useEffect(() => {
     if (!scope || key.length === 0) return

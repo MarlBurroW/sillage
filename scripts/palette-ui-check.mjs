@@ -9,12 +9,12 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Palette de recherche sur la vraie API et les données de démo. Aucun CLI n'est activé.
+// Search palette using real API and demo data. No CLI enabled.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const data = await mkdtemp(join(tmpdir(), 'sillage-palette-check-'))
-// Captures sur demande seulement : `SHOTS=/un/dossier node scripts/palette-ui-check.mjs`.
+// Screenshots only on request: `SHOTS=/a/directory node scripts/palette-ui-check.mjs`.
 const shots = process.env.SHOTS
 const processes = []
 let browser
@@ -92,12 +92,12 @@ try {
   const selected = async () => (await palette.locator('[role=option][aria-selected=true]').innerText()).split('\n')[0]
   const search = async (text) => {
     await input.fill(text)
-    // Le classement est différé et les fichiers arrivent du serveur : on attend le calme.
+    // Ranking is deferred and files arrive from the server: wait for things to settle.
     await page.waitForTimeout(150)
     await palette.locator('svg.animate-spin').waitFor({ state: 'detached' })
   }
 
-  // Le raccourci n'est écouté qu'une fois l'application montée.
+  // The shortcut is listened for only after app mount.
   const open = async (path) => {
     if (path) {
       await page.goto(`${base}${path}`)
@@ -109,26 +109,26 @@ try {
 
   await open(`/p/${nimbus.id}/c/${hero.id}`)
 
-  // Sans saisie : les conversations récentes, le projet courant d'abord, sans celle qu'on lit.
+  // Empty input: recent conversations, current project first, excluding the open one.
   assert.equal((await groups())[0], 'Nimbus')
   assert.equal(await palette.getByRole('option', { name: /Add offline caching/ }).count(), 0)
 
-  // Tous les types sous leur projet : fichier du worktree de la conversation, skill, tickets.
+  // All types under their project: conversation-worktree file, skill, tickets.
   await search('forecast')
   assert.deepEqual(await groups(), ['Nimbus'])
   const options = await palette.getByRole('option').allInnerTexts()
   for (const expected of ['forecast-debugging', 'Hourly forecast chart', 'forecast-cache.ts']) {
     assert.ok(options.some((text) => text.includes(expected)), `${expected} absent : ${options.join(' | ')}`)
   }
-  // Ce qui porte un nom passe avant les fichiers.
+  // Named entities precede files.
   const kinds = options.map((text) => text.split('\n').at(-1))
   assert.ok(kinds.indexOf('Fichier') > kinds.indexOf('Skill'), kinds.join(', '))
   if (shots) await page.screenshot({ path: join(shots, 'palette-forecast.png') })
 
-  // Le nom d'un projet restreint ; un type liste ce type ; le général a son groupe.
+  // Project names restrict results; a type lists that type; general items have their own group.
   await search('atlas readme')
   assert.deepEqual(await groups(), ['Atlas API'])
-  // Une action d'un autre projet ne vient que nommée avec lui.
+  // An action from another project appears only when named with that project.
   await search('board')
   assert.deepEqual(await groups(), ['Nimbus'])
   await search('docs board')
@@ -146,7 +146,7 @@ try {
   await page.keyboard.press('Shift+Tab')
   assert.equal(await selected(), first)
 
-  // Un fichier du projet courant s'ouvre dans le panneau de la conversation, focus dans l'éditeur.
+  // A current-project file opens in the conversation panel with editor focus.
   await search('forecast-cache')
   assert.equal(await selected(), 'forecast-cache.ts')
   await page.keyboard.press('Enter')
@@ -154,14 +154,14 @@ try {
   await page.locator('[data-editor-file="src/lib/forecast-cache.ts"] .cm-content:focus').waitFor()
   assert.equal(new URL(page.url()).pathname, `/p/${nimbus.id}/c/${hero.id}`)
 
-  // Un fichier d'un autre projet : sa vue d'accueil, panneau ouvert sur le fichier.
+  // Another project’s file opens its home view with the panel showing the file.
   await open()
   await search('atlas readme')
   await page.keyboard.press('Enter')
   await page.locator('[data-panel="workspace"] [data-editor-file="README.md"]').waitFor()
   assert.equal(new URL(page.url()).pathname, `/p/${atlas.id}/c/new`)
 
-  // Déplier un groupe au clavier : la sélection descend sur le premier résultat révélé.
+  // Expand a group by keyboard: selection moves to the first revealed result.
   await open(`/p/${nimbus.id}/c/${hero.id}`)
   await search('nimbus')
   const rows = await palette.getByRole('option').allInnerTexts()
@@ -172,12 +172,12 @@ try {
   assert.ok((await palette.getByRole('option').count()) > rows.length)
   assert.equal(await palette.getByRole('option', { name: /de plus/ }).count(), 0)
 
-  // Une commande s'exécute sur place.
+  // A command executes in place.
   await search('thème sombre')
   await page.keyboard.press('Enter')
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark')
 
-  // Au téléphone : plein écran, bouton de fermeture, rien ne déborde.
+  // Phone: fullscreen, close button, no overflow.
   await page.setViewportSize({ width: 390, height: 844 })
   await open()
   await search('forecast')

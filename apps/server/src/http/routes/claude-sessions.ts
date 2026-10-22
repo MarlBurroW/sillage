@@ -27,20 +27,7 @@ import { requireUser } from '../require-user.js'
 import type { AppContext } from '../context.js'
 import { conversationToDto } from './conversations.js'
 
-/**
- * Reprise dans Sillage de sessions commencées avec le CLI Claude Code.
- *
- * Le daemon partage le compte et le disque du CLI : les transcripts de
- * `~/.claude/projects` sont directement lisibles, et `resume` continue une session
- * quel que soit l'outil qui l'a ouverte. Importer revient donc à créer une
- * conversation portant l'identifiant natif, et à reconstruire le journal depuis le
- * transcript (invariant I2). Rien n'est dupliqué côté CLI : les tours faits ensuite
- * dans Sillage s'écrivent dans le même fichier, et `claude --resume` les montre.
- *
- * La seule contrainte reste de ne pas piloter la même session des deux côtés en même
- * temps ; la resynchronisation rattrape l'affichage après un passage par le CLI, elle
- * ne protège pas d'une écriture simultanée.
- */
+/** Imports sessions started in the Claude Code CLI into Sillage. The daemon shares the CLI's account and disk: transcripts in `~/.claude/projects` are directly readable, and `resume` continues sessions regardless of their origin. Import creates a conversation with the native ID and rebuilds its journal from the transcript (invariant I2). No CLI data is duplicated: subsequent Sillage turns use the same file and appear in `claude --resume`. Do not drive the session from both tools simultaneously; resynchronization catches up the display after CLI use but does not protect against concurrent writes. */
 
 const sessionIdSchema = z.string().uuid()
 
@@ -71,7 +58,7 @@ export function registerClaudeSessionRoutes(
     return project
   }
 
-  /** Identifiants de session déjà rattachés à une conversation, tous projets confondus. */
+  /** Session IDs already attached to conversations across all projects. */
   const linkedSessionIds = () =>
     new Set(
       ctx.db
@@ -101,13 +88,13 @@ export function registerClaudeSessionRoutes(
     const linked = linkedSessionIds()
     return {
       sessions: found
-        // Une session d'un autre dossier ne serait pas reprenable : le CLI retrouve
-        // son transcript par le chemin, pas par le seul identifiant. Même dossier au sens
-        // du système : la casse et les séparateurs varient d'un terminal à l'autre.
+        // Sessions from other directories cannot resume: the CLI locates transcripts
+        // by path as well as ID. Compare directories using filesystem semantics because
+        // case and separators vary between terminals.
         .filter((session) => session.cwd === undefined || samePath(session.cwd, project.workspacePath))
         .filter((session) => !linked.has(session.sessionId))
-        // Sans premier message, il n'y a rien à reprendre : ce sont des sessions
-        // ouvertes puis refermées aussitôt.
+        // Without a first message there is nothing to resume: these sessions were
+        // opened and immediately closed.
         .filter((session) => Boolean(session.firstPrompt?.trim()))
         .map((session) => ({
           sessionId: session.sessionId,
@@ -149,9 +136,9 @@ export function registerClaudeSessionRoutes(
         ? (firstPrompt.event.blocks.find((block) => block.type === 'text')?.text ?? null)
         : null
 
-    // Le préréglage du projet puis les défauts du compte, comme pour une conversation
-    // ouverte depuis l'interface : adopter une session du CLI n'est pas une raison de
-    // repartir des défauts du protocole, que la personne a peut-être justement changés.
+    // Use project presets then account defaults, as for interface-created conversations:
+    // adopting CLI sessions is no reason to revert to protocol defaults
+    // that the user may have deliberately changed.
     const defaults =
       readProjectDefaults(project.defaultConfig).claude ??
       readUserSettings(ctx.db, user.id).agentDefaults.claude
@@ -168,7 +155,7 @@ export function registerClaudeSessionRoutes(
       id: randomUUID(),
       projectId: project.id,
       worktreeId: null,
-      // Une session importée depuis le CLI ne vient d'aucune carte.
+      // CLI-imported sessions do not originate from cards.
       cardId: null,
       userId: user.id,
       title: importTitle(info, firstText),
@@ -189,7 +176,7 @@ export function registerClaudeSessionRoutes(
       costUsd: 0,
       inputTokens: 0,
       outputTokens: 0,
-      // Repris par `appendBatch` avec les événements de la session adoptée.
+      // Handled by `appendBatch` with the adopted session's events.
       turnCount: 0,
       journalBytes: 0,
       contextUsedTokens: null,
@@ -209,8 +196,8 @@ export function registerClaudeSessionRoutes(
         type: 'session.started',
         agent: 'claude',
         agentSessionId: sessionId,
-        // Le transcript ne déclare ni la liste d'outils ni toujours un modèle : on
-        // journalise ce qu'il dit, pas ce qu'on suppose.
+        // Transcripts declare neither the tool list nor always a model:
+        // journal what they say rather than assumptions.
         model: translated.model ?? '',
         cwd: project.workspacePath,
         tools: [],
@@ -221,13 +208,7 @@ export function registerClaudeSessionRoutes(
     return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, null, false))
   })
 
-  /**
-   * Rattrape dans le journal les tours faits au CLI depuis le dernier point commun.
-   *
-   * Appelée à l'ouverture d'une conversation Claude : le CLI relit toujours le
-   * transcript complet, mais le journal de Sillage est sa propre copie, et sans ce
-   * rattrapage l'affichage ignorerait ce qui s'est passé hors de Sillage.
-   */
+  /** Catches up the journal with CLI turns since the last shared entry. Called when opening Claude conversations: the CLI rereads its entire transcript, but Sillage keeps its own journal copy and would otherwise omit activity outside Sillage. */
   app.post('/api/conversations/:id/claude-sync', async (request): Promise<ClaudeSyncDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -239,8 +220,8 @@ export function registerClaudeSessionRoutes(
       throw badRequest('claude_only', 'Only Claude Code conversations can be resynced.')
     }
 
-    // Rien à faire tant que la session n'a jamais démarré, ou qu'un tour est en
-    // cours : le transcript est alors en train de s'écrire, on repassera.
+    // Nothing to do before the session first starts or during an active turn:
+    // the transcript is still being written, so try again later.
     if (!conversation.agentSessionId) return { imported: 0 }
     if (conversation.status === 'running' || conversation.status === 'awaiting_input') {
       return { imported: 0 }
@@ -257,8 +238,8 @@ export function registerClaudeSessionRoutes(
       entries.forEach((entry, index) => {
         if (typeof entry.uuid === 'string' && anchors.uuids.has(entry.uuid)) anchorIndex = index
       })
-      // Journal et transcript sans point commun : reprendre au hasard doublerait le
-      // fil, on ne touche à rien.
+      // No common entry between journal and transcript: guessing would duplicate
+      // the conversation, so leave it untouched.
       if (anchorIndex === -1) return { imported: 0 }
       after = entries.slice(anchorIndex + 1)
     } else if (conversation.lastSeq > 0) {
@@ -266,20 +247,20 @@ export function registerClaudeSessionRoutes(
     }
     if (after.length === 0) return { imported: 0 }
 
-    // Un fil de sous-agent vit dans son propre fichier, avec sa propre chronologie :
-    // le découpage au point commun ne lui convient pas, et l'`uuid` non plus, la
-    // plupart de ses entrées ne laissant aucun `raw` qui en porte un. C'est donc tout
-    // ou rien, par sous-agent : dès qu'il a laissé la moindre trace au journal, on le
-    // tient pour importé.
+    // Subagent conversations have separate files and timelines, so splitting at the
+    // shared entry does not apply. Nor do `uuid` values: most entries leave no `raw`
+    // carrying one. Import each subagent all or nothing:
+    // as soon as it has any journal trace,
+    // consider it imported.
     const sidechains = await readSubAgentTranscripts(cwd, conversation.agentSessionId, entries)
     for (const toolCallId of sidechains.keys()) {
       if (anchors.subAgentIds.has(toolCallId)) sidechains.delete(toolCallId)
     }
 
     const events = translateTranscript(after, cwd, sidechains).events.filter((item) => {
-      // Un tour interrompu peut laisser son appel d'outil après le point commun alors
-      // que le flux vivant l'a déjà journalisé. Le début compte autant que le résultat :
-      // un `tool.started` en double rouvre le tour dans le fil replié.
+      // Interrupted turns may leave tool calls after the shared entry even though the
+      // live stream already journaled them. Starts matter as much as results:
+      // duplicate `tool.started` events reopen turns in the folded view.
       if (item.event.type === 'tool.started') {
         return !anchors.startedToolCallIds.has(item.event.toolCallId)
       }
@@ -291,11 +272,11 @@ export function registerClaudeSessionRoutes(
     if (events.length === 0) return { imported: 0 }
     const imported = events.length
 
-    // Rien ne tournera plus après ce rattrapage : `releaseRunner` juste en dessous en
-    // fait la garantie. Le lot doit donc laisser le fil au repos, sinon un tour ouvert
-    // en son milieu resterait affiché « en cours » à chaque rechargement. Le
-    // traducteur ne pose sa propre clôture que pour un tour qu'il a vu s'ouvrir, ce
-    // qu'une reprise en plein tour ne lui montre jamais.
+    // Nothing runs after catch-up: `releaseRunner` below guarantees this. The batch
+    // must therefore leave the conversation idle, or a turn opened halfway through
+    // would appear running after every reload. The translator only closes turns
+    // it saw opening, which resuming midway
+    // through a turn never shows it.
     const last = events.at(-1)?.event.type
     if (last !== 'turn.completed' && last !== 'session.ended') {
       events.push({
@@ -304,11 +285,11 @@ export function registerClaudeSessionRoutes(
       })
     }
 
-    // Un runner encore chaud garde un contexte qui ignore ces tours : on l'arrête,
-    // la reprise au prochain message repartira du fichier, qui a tout. Un tour a pu
-    // démarrer pendant la lecture du transcript, après la vérification de statut
-    // ci-dessus : il journalise lui-même ce qu'il produit, importer par-dessus
-    // doublerait le fil.
+    // A warm runner retains context unaware of these turns: stop it so the next message
+    // resumes from the complete file. A turn may have started while reading the
+    // transcript, after the status check above:
+    // it journals its own output, and importing over it
+    // would duplicate the thread.
     if (!(await sessions.releaseRunner(id))) return { imported: 0 }
 
     log.appendBatch(id, events, TRANSCRIPT_RAW_FORMAT)

@@ -11,17 +11,11 @@ import {
   type RepoInstructionFileDto,
 } from '@sillage/protocol'
 
-/**
- * SILLAGE.md : lecture, écriture, et ce qu'on en injecte aux CLI.
- *
- * Le contenu vit en base, une ligne `global` et une par projet. Le serveur MCP y écrit
- * aussi, de son côté (`edit_instructions` et `write_instructions` dans `mcp/sillage-mcp.mjs`) : les deux doivent
- * rester d'accord sur la forme des lignes et sur la résolution du mode.
- */
+/** SILLAGE.md reads, writes and CLI injection. Contents live in database rows, one `global` and one per project. MCP also writes independently (`edit_instructions` and `write_instructions` in `mcp/sillage-mcp.mjs`); both implementations must agree on row shape and mode resolution. */
 
 export const GLOBAL_INSTRUCTIONS_ID = 'global'
 
-/** Les fichiers de consignes présents à la racine d'un dossier, dans l'ordre de préférence. */
+/** Instruction files at directory roots in preference order. */
 export function repoInstructionFiles(workspacePath: string): RepoInstructionFile[] {
   return REPO_INSTRUCTION_FILES.filter((name) => existsSync(join(workspacePath, name)))
 }
@@ -38,13 +32,7 @@ export async function readRepoInstructionFiles(
   return found.filter((file) => file !== null)
 }
 
-/**
- * Le mode en vigueur pour un projet.
- *
- * Un projet d'avant le réglage n'en a pas : il garde ce qu'il faisait, c'est-à-dire les
- * fichiers du dépôt quand il en a. Sans fichier, Sillage ne change rien non plus, la
- * partie projet étant vide ; c'est la première écriture qui fixe alors le mode.
- */
+/** Effective project mode. Projects predating the setting preserve existing behavior: use repository files when present. Without files, Sillage changes nothing because project instructions are empty; the first write fixes the mode. */
 export function resolveInstructionsMode(project: {
   instructionsMode: InstructionsMode | null
   workspacePath: string
@@ -122,17 +110,11 @@ export function instructionsAuthor(
 interface AppendixInput {
   projectId: string
   mode: InstructionsMode
-  /** L'agent a-t-il les outils SILLAGE.md du serveur MCP sous la main. */
+  /** Whether agents have the MCP server's SILLAGE.md tools available. */
   sillageMcp: boolean
 }
 
-/**
- * Le bloc SILLAGE.md à ajouter au prompt système, ou null quand il n'y a rien à dire.
- *
- * Le rappel des outils part même quand les deux parties sont vides : c'est le seul moyen
- * pour un agent d'apprendre qu'il peut tenir ces consignes, et les outils MCP ne sont pas
- * toujours chargés d'emblée.
- */
+/** SILLAGE.md block added to system prompts, or null when empty. Include tool reminders even when both instruction sections are empty: agents need to learn they can maintain instructions, and MCP tools may not load immediately. */
 export function instructionsAppendix(db: Db, input: AppendixInput): string | null {
   const global = readInstructions(db, null)?.content.trim() ?? ''
   const project =
@@ -158,17 +140,12 @@ export function instructionsAppendix(db: Db, input: AppendixInput): string | nul
   return parts.length > 0 ? parts.join('\n\n') : null
 }
 
-/** Caractères spéciaux de picomatch, pour qu'un chemin compte pour lui-même. */
+/** Escapes picomatch special characters so paths match literally. */
 function escapeGlob(path: string): string {
   return path.replace(/[\\*?[\]{}()!+@]/g, '\\$&')
 }
 
-/**
- * Motifs `claudeMdExcludes` qui masquent à Claude les consignes du dépôt.
- *
- * Bornés aux dossiers donnés : un motif sans racine masquerait aussi le `CLAUDE.md` de
- * `~/.claude`, sondé sur Claude Code 2.1.286.
- */
+/** `claudeMdExcludes` patterns hiding repository instructions from Claude. Restrict to supplied directories: rootless patterns also hide `~/.claude/CLAUDE.md`, as probed on Claude Code 2.1.286. */
 export function claudeMdExcludes(roots: string[]): string[] {
   const bases = new Set(roots.map((root) => escapeGlob(root.replace(/\/+$/, ''))))
   return [...bases].flatMap((base) => [

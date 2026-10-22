@@ -26,15 +26,14 @@ import { requireUser } from '../require-user.js'
 import { visibleProject } from './projects.js'
 
 /**
- * Bibliothèque de skills, livrée aux CLI comme des skills natifs.
+ * Skill library delivered to CLIs as native skills.
  *
- * Lecture : tout utilisateur pour la portée globale, les membres du projet pour la
- * sienne. Écriture : les administrateurs pour le global, le propriétaire pour un projet.
- * Un skill global entre dans le contexte de toutes les conversations de l'instance, et
- * ses scripts s'exécutent sous l'utilisateur système du serveur : c'est un droit
- * d'exécution, au même titre qu'un serveur MCP.
+ * Read access: all users for global scope, project members for project scope.
+ * Write access: administrators globally, owners for projects. Global skills enter
+ * every conversation's context and run scripts as the server's system user:
+ * this grants execution rights just like an MCP server.
  *
- * Une écriture vaut tout de suite pour les sessions ouvertes, voir `SkillLibrary`.
+ * Writes apply immediately to open sessions; see `SkillLibrary`.
  */
 export function registerSkillLibraryRoutes(
   app: FastifyInstance,
@@ -64,7 +63,7 @@ export function registerSkillLibraryRoutes(
     return library.detail(requireSkill(request.params, user))
   })
 
-  /** Changer de portée demande le droit d'écrire au départ et à l'arrivée. */
+  /** Changing scope requires write access at both the source and destination. */
   app.patch('/api/skill-library/:id', async (request): Promise<LibrarySkillDto> => {
     const user = requireUser(request)
     const row = requireSkill(request.params, user)
@@ -82,7 +81,7 @@ export function registerSkillLibraryRoutes(
     reply.status(204)
   })
 
-  /** Le chemin suit `/files/`, segments encodés un à un par le client. */
+  /** Path follows `/files/`, with each segment encoded separately by the client. */
   const filePath = (request: FastifyRequest): string => (request.params as { '*': string })['*']
 
   app.get('/api/skill-library/:id/files/*', async (request): Promise<LibrarySkillFileDto> => {
@@ -108,8 +107,8 @@ export function registerSkillLibraryRoutes(
   })
 
   /**
-   * Un fichier déposé, un par requête, sa destination en paramètre d'URL : même
-   * raisonnement que le dépôt dans l'explorateur (`routes/tree.ts`).
+   * One uploaded file per request, destination in a URL parameter: the same
+   * rationale as explorer uploads (`routes/tree.ts`).
    */
   app.post('/api/skill-library/:id/upload', async (request, reply) => {
     const user = requireUser(request)
@@ -151,8 +150,8 @@ export function registerSkillLibraryRoutes(
   })
 
   /**
-   * Ce que l'appelant a le droit de voir sur la machine : les dossiers de l'utilisateur
-   * système pour un administrateur, le dépôt du projet pour ses membres.
+   * Machine directories visible to the caller: the system user's directories
+   * for administrators, the project repository for its members.
    */
   const scanFor = (user: UserRow, projectId: string | null) =>
     scanLocalSkills({
@@ -168,11 +167,11 @@ export function registerSkillLibraryRoutes(
   })
 
   /**
-   * La reprise ne copie qu'un dossier que le scan vient de proposer à cet appelant : le
-   * chemin vient du client, et le prendre tel quel ferait copier n'importe quel dossier
-   * du serveur dans la bibliothèque, donc dans le contexte des agents.
+   * Import only directories just offered to this caller by the scan: accepting
+   * arbitrary client paths would copy any server directory into the library
+   * and therefore into agent context.
    *
-   * Un skill de dépôt se reprend dans son projet, celui dont le scan lit le workspace.
+   * Repository skills are imported into the project whose workspace was scanned.
    */
   app.post('/api/skill-library/adopt', async (request, reply): Promise<LibrarySkillDto> => {
     const user = requireUser(request)
@@ -187,8 +186,8 @@ export function registerSkillLibraryRoutes(
 }
 
 /**
- * Les droits sur la bibliothèque, partagés avec les routes des sources : qui voit un
- * projet, qui écrit dans une portée, qui voit un skill.
+ * Library permissions shared with source routes: project visibility, scope
+ * write access and skill visibility.
  */
 export function skillAccess(ctx: AppContext, library: SkillLibrary) {
   const requireVisibleProject = (projectId: string, user: UserRow) => {
@@ -208,7 +207,7 @@ export function skillAccess(ctx: AppContext, library: SkillLibrary) {
     }
   }
 
-  /** Un skill de projet invisible pour l'appelant n'existe pas, plutôt qu'interdit. */
+  /** Project skills invisible to the caller are reported as nonexistent, not forbidden. */
   const requireSkill = (params: unknown, user: UserRow): LibrarySkillRow => {
     const row = library.row((params as { id: string }).id)
     if (row.scope === 'project' && !visibleProject(ctx, row.projectId ?? '', user.id)) {
@@ -221,8 +220,8 @@ export function skillAccess(ctx: AppContext, library: SkillLibrary) {
 }
 
 /**
- * Le fichier d'un envoi multipart, entier en mémoire : un skill tient en quelques
- * kilo-octets, et le plafond du greffon borne le reste.
+ * Entire multipart upload held in memory: skills occupy a few kilobytes, and
+ * the plugin's size limit bounds the rest.
  */
 async function uploaded(request: FastifyRequest): Promise<Buffer> {
   const part = await request.file({ limits: { fileSize: MAX_ATTACHMENT_BYTES } })

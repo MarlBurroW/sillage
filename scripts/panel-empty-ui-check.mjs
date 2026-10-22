@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Les sept états vides sont mesurés dans une instance isolée, sans toucher la production.
+// Measure all seven empty states in an isolated instance without touching production.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -51,7 +51,7 @@ try {
   await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n')
   const env = {
     ...process.env,
-    // Le dépôt de démo n'a pas d'identité : git prend celle de l'environnement.
+    // The demo repository has no identity: git uses the environment's identity.
     GIT_AUTHOR_NAME: 'Alex Demo',
     GIT_AUTHOR_EMAIL: 'alex@example.test',
     GIT_COMMITTER_NAME: 'Alex Demo',
@@ -89,7 +89,7 @@ try {
     })
     assert.equal(created.status(), 201, await created.text())
     const hero = await created.json()
-    // Le journal reste réellement vide ; seule l'absence de dépôt est simulée.
+    // The journal stays genuinely empty; only the missing repository is simulated.
     await context.route('**/git/status', (route) => route.fulfill({ json: { repo: null } }))
     await context.route('**/api/actions', (route) => route.fulfill({ json: [] }))
     const page = await context.newPage()

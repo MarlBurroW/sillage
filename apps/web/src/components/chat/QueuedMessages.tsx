@@ -7,15 +7,9 @@ import { IconButton, cx } from '../ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
- * Messages écrits pendant qu'un tour est en cours.
- *
- * Affichés sous l'indicateur d'activité, et non dans le fil : leur position dit ce
- * qu'ils sont, c'est-à-dire ce que l'agent n'a pas encore lu. Un message posé au-dessus
- * de l'indicateur laisserait croire qu'il est déjà pris en compte.
- *
- * Attendre la fin du tour reste le comportement par défaut. Infléchir est le geste qui
- * y déroge, donc il est proposé ici, sur le message déjà écrit et relu, plutôt qu'au
- * moment de la saisie où l'on ne sait pas encore si le tour va durer.
+ * Messages written during a running turn appear below activity, signaling the agent has not read
+ * them; placing them above would imply processing. Waiting remains default. Offer steering here on
+ * already-written messages rather than during composition when turn duration is unknown.
  */
 export function QueuedMessages({
   conversationId,
@@ -34,8 +28,7 @@ export function QueuedMessages({
 
   if (messages.length === 0) return null
 
-  // L'événement `message.dequeued` retire l'entrée : on ne l'anticipe pas ici, sinon
-  // l'affichage cesserait d'être un pur fold du journal.
+  // Await message.dequeued to remove entries, preserving display as a pure log fold.
   const run = async (queueId: string, action: () => Promise<unknown>, fallback: string) => {
     setBusy(queueId)
     setError(null)
@@ -61,8 +54,7 @@ export function QueuedMessages({
         <div
           key={message.queueId}
           className={cx(
-            // `items-center` et non `items-start` : un bouton de 28px calé en haut d'une
-            // ligne de texte de 20px pend visiblement sous elle.
+            // Center rather than top-align: 28px buttons beside 20px text otherwise hang below the line.
             'group flex max-w-[85%] items-center gap-1 rounded-lg rounded-br-sm',
             'border border-dashed border-line-strong bg-surface/40 px-3 py-2',
             busy === message.queueId && 'opacity-50',
@@ -83,8 +75,7 @@ export function QueuedMessages({
             ) : null}
           </div>
 
-          {/* Visible sans survol, contrairement au retrait : c'est l'action qu'on vient
-              chercher ici, et la teinte d'accent la distingue de la croix voisine. */}
+          {/* Always visible unlike removal: this is the sought action, accented against the nearby cross. */}
           {canSteer ? (
             <IconButton
               label={t('queued.steer')}
@@ -133,8 +124,8 @@ export function QueuedMessages({
 }
 
 /**
- * Le texte d'un message en file, ou, pour un message d'une autre session, son
- * expéditeur et son corps : l'enveloppe brute ferait passer ses balises pour du texte.
+ * Queued message text, or sender/body for other-session messages so raw envelope tags do not appear
+ * as content.
  */
 function QueuedText({ text }: { text: string }) {
   const t = useTranslate()

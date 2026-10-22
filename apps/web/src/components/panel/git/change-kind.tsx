@@ -2,10 +2,8 @@ import type { GitChangeKind } from '@sillage/protocol'
 import type { MessageKey } from '../../../lib/i18n'
 
 /**
- * Lettre et teinte par nature de changement, les mêmes que l'explorateur de fichiers :
- * un fichier marqué `M` en orange dans l'arborescence doit l'être aussi ici. La lettre
- * double la couleur, parce que distinguer cinq teintes proches est difficile, et
- * impossible pour qui perçoit mal les couleurs.
+ * Change-kind letters and colors match explorer status: orange M means the same here. Letters
+ * supplement hues for users who cannot distinguish similar colors.
  */
 export const CHANGE_KINDS: Record<GitChangeKind, { letter: string; tone: string; label: MessageKey }> = {
   modified: { letter: 'M', tone: 'text-caution', label: 'git.kind.modified' },
@@ -18,7 +16,7 @@ export const CHANGE_KINDS: Record<GitChangeKind, { letter: string; tone: string;
   conflicted: { letter: '!', tone: 'text-critical', label: 'git.kind.conflicted' },
 }
 
-/** Dossier et nom séparés : le nom porte le regard, le dossier reste lisible en retrait. */
+/** Separate directory and basename: emphasize the name while retaining subdued location. */
 export function splitPath(path: string): { dir: string; name: string } {
   const at = path.lastIndexOf('/')
   return at === -1 ? { dir: '', name: path } : { dir: path.slice(0, at + 1), name: path.slice(at + 1) }

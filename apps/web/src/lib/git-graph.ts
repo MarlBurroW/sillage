@@ -1,4 +1,4 @@
-/** Rails stables : on réutilise les places libres sans déplacer les branches voisines. */
+/** Stable lanes: reuse free slots without shifting neighboring branches. */
 export interface GraphCommit {
   hash: string
   parents: string[]
@@ -59,6 +59,6 @@ export function layoutGitGraph(commits: GraphCommit[]): { rows: GraphRow[]; widt
   return { rows, width }
 }
 
-// La palette reste lisible sur les deux thèmes ; la géométrie porte aussi les liens.
+// The palette remains readable in both themes; geometry also conveys links.
 export const GRAPH_COLORS = ['#4385d5', '#b26bca', '#2c9b88', '#d18b32', '#d96683', '#778bd0', '#839b32']
 export const graphColor = (color: number) => `var(--git-rail-${color % GRAPH_COLORS.length}, ${GRAPH_COLORS[color % GRAPH_COLORS.length]!})`

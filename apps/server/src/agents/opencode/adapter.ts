@@ -22,26 +22,19 @@ import { withProbeServer } from './probe.js'
 import { OpencodeRunner } from './runner.js'
 import { describeEdit } from './tools.js'
 
-/**
- * Point de coupe d'un fork : le dernier message d'opencode à garder dans la branche.
- * Null quand rien de l'agent ne précède le point demandé.
- */
+/** Fork cut: last retained opencode message, null when no agent output precedes requested point. */
 interface OpencodeForkCut {
   lastMessageId: string | null
 }
 
-/**
- * L'installeur officiel d'opencode pose le binaire ici, et n'ajoute ce dossier au PATH
- * que dans les fichiers du shell interactif : un daemon ne l'y voit pas.
- */
+/** Official installer location, added only to interactive-shell PATH; invisible to daemon. */
 const INSTALLER_BINARY = join(homedir(), '.opencode/bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode')
 
 /**
- * Le nom configuré, ou le chemin de l'installeur quand ce nom ne mène nulle part.
+ * Configured name or installer fallback when unresolved.
  *
- * Décidé une fois, à la construction : un opencode installé ensuite depuis l'interface
- * atterrit dans le préfixe de Sillage, que la résolution ordinaire consulte à chaque
- * lancement.
+ * Decided once at construction: later UI installations use Sillage prefix, checked by normal
+ * resolution every launch.
  */
 function configuredBinary(binary: string, managedDir: string): string {
   if (resolveBinary(binary, managedDir) !== null || binary !== 'opencode') return binary
@@ -59,10 +52,9 @@ export class OpencodeAdapter implements AgentAdapter {
   readonly binary: string
   readonly capabilities = AGENT_CAPABILITIES.opencode
   /**
-   * `v1` désigne la première génération de l'API d'`opencode serve` (`/session/...`,
-   * flux `GET /event`), sondée sur opencode 1.18.25, 1.19.0 puis 1.19.3. La seconde (`/api/session/...`,
-   * événements `session.next.*`) n'a ni fork ni serveurs MCP, et son flux ignore les
-   * sessions de la première : l'adaptateur n'en parle qu'une.
+   * v1 is first opencode serve API (/session/..., GET /event), probed 1.18.25/1.19.0/1.19.3. Second
+   * (/api/session/..., session.next.*) lacks forks/MCP and ignores first-generation sessions;
+   * adapter uses only one.
    */
   readonly rawFormat = 'opencode-server@v1'
 
@@ -80,9 +72,8 @@ export class OpencodeAdapter implements AgentAdapter {
   }
 
   /**
-   * Le runner estampille chaque `turn.completed` et chaque part de message de
-   * l'identifiant du message natif. Ces identifiants sont croissants : le plus grand
-   * des deux est le dernier message de la branche.
+   * Runner stamps turn.completed/message parts with increasing native message IDs; maximum is
+   * branch’s last message.
    */
   forkCut(log: EventLog, conversationId: string, throughSeq: number): OpencodeForkCut {
     const ids = [
@@ -94,10 +85,9 @@ export class OpencodeAdapter implements AgentAdapter {
   }
 
   /**
-   * `POST /session/{id}/fork` copie les messages qui précèdent `messageID`, lui exclu
-   * (sondé) : le point de coupe natif est donc le message qui suit le dernier à garder,
-   * et son absence signifie « tout garder ». Comme chez Codex, le fork ne revient pas
-   * sur les fichiers déjà écrits.
+   * POST /session/{id}/fork copies messages before messageID, exclusive (probed): native cut is
+   * message following last retained one; absent means keep all. Like Codex, fork does not restore
+   * written files.
    */
   async fork(target: ForkTarget, cut: unknown): Promise<string> {
     const { lastMessageId } = cut as OpencodeForkCut
@@ -135,8 +125,7 @@ export class OpencodeAdapter implements AgentAdapter {
           description: provider.name,
           hint: value,
           isDefault: value === fallback,
-          // Les variantes sont l'effort d'opencode. Aucune n'est « par défaut » : sans
-          // variante, le modèle tourne avec ses réglages propres.
+          // Variants are opencode effort. None is default: no variant means model’s own settings.
           efforts: Object.keys(model.variants ?? {}).map((variant) => ({
             value: variant,
             label: variant,
@@ -150,9 +139,8 @@ export class OpencodeAdapter implements AgentAdapter {
 
     return {
       models,
-      // Les agents primaires tiennent le rôle des modes de collaboration de Codex.
-      // Les agents cachés (`title`, `summary`, `compaction`) sont ceux d'opencode
-      // lui-même, et les sous-agents ne mènent pas un tour.
+      // Primary agents correspond to Codex collaboration modes. Hidden title/summary/compaction
+      // agents are internal; subagents do not lead turns.
       modes: listing.agents
         .filter((agent) => agent.mode !== 'subagent' && !agent.hidden)
         .map((agent) => ({ mode: agent.name, label: agent.name, hint: agent.description ?? null })),
@@ -171,9 +159,8 @@ export class OpencodeAdapter implements AgentAdapter {
   }
 
   /**
-   * opencode n'a ni forfait ni quota : chaque fournisseur facture le sien, et le CLI
-   * ne rapporte qu'un coût par message. `limitsAvailable: false` le dit sans que ce
-   * soit une panne.
+   * opencode has no plan/quota: providers bill independently, CLI reports per-message cost only.
+   * limitsAvailable false conveys this without suggesting failure.
    */
   async usage(): Promise<AgentUsage> {
     return {
@@ -199,8 +186,8 @@ export class OpencodeAdapter implements AgentAdapter {
 }
 
 /**
- * Le modèle qu'opencode prendrait sans qu'on lui en nomme un : celui que sa
- * configuration désigne, sinon le défaut du premier fournisseur utilisable.
+ * Model opencode would choose when unnamed: configured model, otherwise first usable provider
+ * default.
  */
 function defaultModel(listing: Awaited<ReturnType<OpencodeCatalog['list']>>): string | null {
   if (listing.configured) return listing.configured

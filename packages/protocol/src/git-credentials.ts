@@ -2,17 +2,17 @@ import { z } from 'zod'
 import { instructionsModeSchema } from './instructions.js'
 
 /**
- * Accès aux forges git, par utilisateur et par hôte.
+ * Git forge access per user and host.
  *
- * Comme les secrets, un jeton s'écrit et ne se relit jamais par l'API. Contrairement à
- * eux, il appartient à un compte et non à l'instance : cloner un dépôt privé est un
- * geste d'utilisateur, alors que les secrets sont réservés aux administrateurs.
+ * Like secrets, tokens are write-only through the API. Unlike secrets, they belong to an
+ * account rather than the instance: cloning a private repository is a user action, while
+ * secrets are admin-only.
  *
- * Le jeton ne sert pas qu'au clone. Il est aussi ce qui rend possible le `push` d'un
- * agent, par un helper que Sillage inscrit dans le dépôt cloné.
+ * The token is also used for agent `push` operations through a helper Sillage registers in the
+ * cloned repository.
  */
 
-/** Hôte seul, tel que git le présentera au helper : ni schéma, ni port, ni chemin. */
+/** Host only, as git presents it to the helper: no scheme, port or path. */
 export const gitHostSchema = z
   .string()
   .min(1)
@@ -22,11 +22,11 @@ export const gitHostSchema = z
 export const gitCredentialSchema = z.object({
   host: z.string(),
   /**
-   * Ce que le helper présentera comme nom d'utilisateur.
+   * Username presented by the helper.
    *
-   * Les forges n'attendent pas la même chose : GitHub ignore la valeur pour un jeton
-   * personnel mais impose `x-access-token` pour un jeton d'installation, GitLab veut
-   * `oauth2`. Le stocker évite de coder en dur une table de correspondance par forge.
+   * Forges expect different values: GitHub ignores it for personal tokens but requires
+   * `x-access-token` for installation tokens; GitLab expects `oauth2`. Storing it avoids a
+   * hardcoded per-forge mapping.
    */
   username: z.string(),
   createdAt: z.number(),
@@ -44,31 +44,31 @@ export interface GitCredentialListDto {
   credentials: GitCredential[]
 }
 
-/** Une entrée de la combobox de sélection de dépôt. */
+/** An entry in the repository-selection combobox. */
 export interface GitRepoDto {
-  /** `owner/repo`, tel que la forge le nomme. */
+  /** `owner/repo`, as named by the forge. */
   fullName: string
-  /** Le nom seul, proposé comme nom de projet. */
+  /** Name alone, suggested as the project name. */
   name: string
   cloneUrl: string
   isPrivate: boolean
   description: string | null
-  /** Dernier push, pour classer les plus vivants en tête. */
+  /** Latest push time, to rank the most active repositories first. */
   pushedAt: number | null
 }
 
 export interface GitRepoListDto {
   repos: GitRepoDto[]
-  /** Vrai quand la forge a plus de dépôts que Sillage n'en a rapatriés. */
+  /** True when the forge has more repositories than Sillage fetched. */
   truncated: boolean
 }
 
 export const startCloneBodySchema = z.object({
   url: z.string().min(1).max(2048),
   name: z.string().min(1).max(120),
-  /** Dossier qui accueillera le clone ; le dépôt y crée son propre sous-dossier. */
+  /** Clone destination directory; the repository creates its own subdirectory there. */
   parentDir: z.string().min(1),
-  /** Nom du sous-dossier, par défaut celui que git aurait choisi. */
+  /** Subdirectory name, defaulting to the name git would choose. */
   directory: z.string().min(1).max(255),
   visibility: z.enum(['private', 'shared']).default('private'),
   color: z
@@ -76,60 +76,57 @@ export const startCloneBodySchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/)
     .nullable()
     .default(null),
-  /** Absent : décidé d'après le dépôt cloné, comme pour un dossier existant. */
+  /** Absent: infer from the cloned repository, as for an existing directory. */
   instructionsMode: instructionsModeSchema.optional(),
 })
 
 export interface CloneJobDto {
   id: string
   status: 'running' | 'done' | 'failed'
-  /** La phase telle que git la nomme, vide tant qu'il n'a rien dit. */
+  /** Phase as named by git; empty until it reports one. */
   phase: string
   percent: number | null
-  /** Renseigné à la réussite : le projet créé dans la foulée du clone. */
+  /** Set on success: project created immediately after cloning. */
   projectId: string | null
   /**
-   * Même forme qu'une erreur d'API : un code que le client traduit, et un message
-   * anglais de repli. Les échecs que Sillage ne sait pas nommer portent le texte brut
-   * de git, qui reste plus précis que ne le serait une reformulation.
+   * Same shape as API errors: a client-translated code and English fallback message. Unknown
+   * failures retain raw git text, more precise than a paraphrase.
    */
   error: { code: string; message: string } | null
 }
 
 export interface RemoteUrl {
   /**
-   * L'URL débarrassée de sa requête et de son fragment, et c'est elle qu'il faut
-   * cloner : git suit l'adresse au caractère près et échouerait sur un `?ref=x` que la
-   * validation aurait pourtant laissé passer.
+   * URL with query and fragment removed, used for cloning: git follows addresses exactly and
+   * would fail on a `?ref=x` that validation had allowed.
    */
   url: string
-  /** Hôte seul, minuscule, sans port : la clé des credentials. */
+  /** Lowercase host without port: the credential key. */
   host: string
-  /** Dernier segment du chemin, sans `.git` : le nom de dossier que git choisirait. */
+  /** Last path segment without `.git`: the directory name git would choose. */
   repo: string
   isSsh: boolean
 }
 
-/** Schéma, identifiants facultatifs, hôte, port facultatif, puis chemin. */
+/** Scheme, optional credentials, host, optional port, then path. */
 const SCHEME_URL = /^([a-z][a-z0-9+.-]*):\/\/(?:[^@/]*@)?([^:/?#]+)(?::\d+)?(\/.*)?$/i
 
-/** Forme scp : pas de schéma, et un deux-points qui sépare l'hôte du chemin. */
+/** scp form: no scheme, with a colon separating host and path. */
 const SCP_URL = /^(?:[^@/]+@)?([^:/]+):(.+)$/
 
 /**
- * Découpe une URL de dépôt, dans les deux formes que les forges proposent au
- * copier-coller : `https://github.com/owner/repo.git` et `git@github.com:owner/repo.git`.
+ * Parses a repository URL in the two forms offered by forges:
+ * `https://github.com/owner/repo.git` and `git@github.com:owner/repo.git`.
  *
- * Par motif et non par `new URL` : ce paquet est partagé entre le serveur et le
- * navigateur et ne déclare aucun global de runtime, ni DOM ni Node.
+ * Uses patterns rather than `new URL`: this package is shared by server and browser and
+ * declares no runtime globals, DOM or Node.
  *
- * Retourne null sur tout le reste, y compris un chemin local. C'est volontaire : le
- * clone d'un dépôt local n'a rien à faire dans un formulaire qui demande une URL, et le
- * refuser ici évite d'avoir à valider un chemin arbitraire plus loin.
+ * Returns null for everything else, including local paths. Intentional: local clones do not
+ * belong in a URL form; rejecting them here avoids validating arbitrary paths later.
  */
 export function parseRemoteUrl(input: string): RemoteUrl | null {
-  // Requête et fragment retirés d'emblée : une URL de dépôt n'en porte pas, mais une
-  // adresse copiée depuis un navigateur en traîne souvent une.
+  // Remove query and fragment immediately: repository URLs do not need them, but
+  // addresses copied from a browser often include them.
   const url = input.trim().split(/[?#]/)[0]?.trim() ?? ''
   if (!url) return null
 
@@ -157,6 +154,6 @@ function lastSegment(path: string): string | null {
   const segment = path.split('/').filter(Boolean).pop()
   if (!segment) return null
   const name = segment.replace(/\.git$/, '')
-  // Un nom de dépôt sert de nom de dossier : refuser ce qui remonterait l'arborescence.
+  // Repository names become directory names: reject values that traverse upwards.
   return name && name !== '.' && name !== '..' ? name : null
 }

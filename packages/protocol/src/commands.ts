@@ -1,29 +1,27 @@
 import { z } from 'zod'
 
 /**
- * Les commandes en `/` que le CLI de la session reconnaît.
+ * Slash commands recognized by the session's CLI.
  *
- * Elles ne sont pas déduites d'un catalogue écrit ici : chaque CLI publie les siennes,
- * et la liste dépend du poste et du projet autant que de la version. Les compétences
- * découvertes en cours de route, les commandes de projet et celles des extensions y
- * entrent sans que Sillage ait à les connaître.
+ * Not inferred from a catalog maintained here: each CLI publishes its own, and the list depends
+ * on the machine and project as well as version. Dynamically discovered skills, project
+ * commands and extension commands join without Sillage needing prior knowledge.
  */
 export const slashCommandSchema = z.object({
-  /** Sans la barre oblique, telle que le CLI la nomme. */
+  /** Without the slash, as named by the CLI. */
   name: z.string(),
   description: z.string(),
-  /** Forme attendue des arguments (`<file>`, `[on|off]`), vide quand il n'en prend pas. */
+  /** Expected argument shape (`<file>`, `[on|off]`); empty when none. */
   argumentHint: z.string(),
-  /** Autres noms menant à la même commande : `/cost` et `/stats` pour `/usage`. */
+  /** Aliases for the same command: `/cost` and `/stats` for `/usage`. */
   aliases: z.array(z.string()).default([]),
 })
 
 export type SlashCommandDto = z.infer<typeof slashCommandSchema>
 
 /**
- * Commandes reconnues dans le dossier d'un projet, lues avant qu'une conversation
- * existe. C'est ce que le brouillon propose en `/` ; le fil, lui, reçoit la liste par
- * `commands.updated` dès que sa session tourne.
+ * Commands recognized in a project directory, read before a conversation exists. Drafts offer
+ * these after `/`; running threads receive their list through `commands.updated`.
  */
 export interface ProjectCommandsDto {
   commands: SlashCommandDto[]
@@ -31,28 +29,26 @@ export interface ProjectCommandsDto {
 }
 
 /**
- * Commandes que Sillage exécute lui-même au lieu de les transmettre comme du texte.
+ * Commands Sillage executes itself instead of forwarding as text.
  *
- * Le CLI sait déjà les faire, mais par un chemin que Sillage a dû doubler pour ses
- * propres boutons. Passer par la plomberie maison plutôt que par la frappe donne le
- * même retour visuel des deux côtés : la même bannière de compaction, la même erreur,
- * le même bouton grisé pendant l'opération.
+ * The CLI already supports them, but Sillage duplicated their paths for its own buttons. Using
+ * that plumbing rather than typing gives identical visual feedback: the same compaction banner,
+ * error and disabled button during the operation.
  */
 export const NATIVE_SLASH_COMMANDS = new Set(['compact'])
 
 /**
- * Commandes retirées de la liste proposée.
+ * Commands removed from suggestions.
  *
- * Trois motifs, et rien d'autre. Elles ne servent qu'au harnais qui les a lancées
- * (`__remote-workflow`), elles s'adressent au terminal que Sillage n'a pas (`color`
- * repeint une barre de saisie absente, `heapdump` écrit sur le bureau de la machine
- * serveur), ou elles déplacent sous Sillage un état dont il rend compte : `/clear`
- * échange la session du CLI sans que le journal en sache rien, et `/model`, `/effort`,
- * `/fast`, `/output-style`, `/advisor` et `/config` changent la configuration appliquée
- * pendant que les réglages du composer continuent d'afficher l'ancienne.
+ * Only three reasons: harness-internal commands (`__remote-workflow`); terminal-specific
+ * commands Sillage cannot use (`color` repaints an absent composer, `heapdump` writes to the
+ * server machine's desktop); or commands that change state Sillage tracks. `/clear` swaps the
+ * CLI session without the journal knowing, while `/model`, `/effort`, `/fast`, `/output-style`,
+ * `/advisor` and `/config` change applied configuration while composer settings still show the
+ * old values.
  *
- * Les commandes que Sillage double sans les contredire ne sont pas ici : `/usage` et
- * `/context` répondent par du texte, et rien ne se désynchronise à les lire deux fois.
+ * Commands duplicated by Sillage without conflict are not listed: `/usage` and `/context` reply
+ * with text, and reading them twice causes no desynchronization.
  */
 const HIDDEN_SLASH_COMMANDS = new Set([
   '__remote-workflow',
@@ -69,15 +65,15 @@ const HIDDEN_SLASH_COMMANDS = new Set([
 ])
 
 /**
- * Ce que le CLI annonce, réduit à ce qui a un sens depuis un navigateur.
+ * CLI-advertised commands filtered to those meaningful in a browser.
  *
- * Appliqué à la source, avant que la liste entre au journal : ce qui n'est pas
- * proposable n'a pas à voyager ni à être refiltré par chaque lecteur.
+ * Applied at the source, before journaling: commands that cannot be offered need not travel or
+ * be refiltered by every reader.
  *
- * Les commandes dépréciées passent par leur description, faute de champ pour le dire :
- * le CLI garde `/agents` et `/extra-usage` pour rediriger celui qui les tape encore, et
- * les annonce « (removed) » et « Renamed to ... ». Les proposer serait offrir une
- * commande dont la seule réponse est qu'elle n'existe plus.
+ * Deprecated commands are detected through descriptions because there is no dedicated field:
+ * the CLI keeps `/agents` and `/extra-usage` to redirect users still typing them, labeling them
+ * “(removed)” and “Renamed to ...”. Offering them would suggest commands whose only response is
+ * that they no longer exist.
  */
 export function usableSlashCommands(commands: SlashCommandDto[]): SlashCommandDto[] {
   return commands.filter((command) => {
@@ -88,11 +84,10 @@ export function usableSlashCommands(commands: SlashCommandDto[]): SlashCommandDt
 }
 
 /**
- * La commande écrite en tête du message, s'il en porte une.
+ * Command at the start of a message, if any.
  *
- * Seulement en tête : c'est la seule position où les CLI la reconnaissent, et un `/`
- * accepté ailleurs ferait passer pour une commande le chemin qu'on est en train
- * d'écrire.
+ * Only at the start: CLIs recognize it only there, and accepting `/` elsewhere would mistake a
+ * path being typed for a command.
  */
 export function parseSlashCommand(text: string): { name: string; args: string } | null {
   const match = /^\/([a-zA-Z0-9_:-]+)(?:\s+([\s\S]*))?$/.exec(text.trim())

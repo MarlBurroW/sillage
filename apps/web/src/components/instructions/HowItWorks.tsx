@@ -2,11 +2,8 @@ import { HelpCircle } from 'lucide-react'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 
 /**
- * L'explication d'un mécanisme, repliée par défaut.
- *
- * Consignes et mémoire touchent à ce que reçoivent les agents sans qu'on le voie :
- * l'explication doit être à un clic de l'endroit où l'on agit, sans prendre la place
- * de l'éditeur pour qui la connaît déjà.
+ * Collapsed mechanism explanation. Instructions and memory invisibly affect agent context, so
+ * explanations belong one click from controls without consuming editor space for informed users.
  */
 export function HowItWorks({ items }: { items: MessageKey[] }) {
   const t = useTranslate()

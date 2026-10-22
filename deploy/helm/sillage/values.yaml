@@ -1,16 +1,14 @@
-# Valeurs par défaut du chart Sillage.
-# Sillage garde tout son état dans une base SQLite : il tourne en un seul
-# exemplaire, jamais deux. Les réglages qui le garantissent (replicas figé à 1,
-# stratégie Recreate) ne sont volontairement pas exposés ici.
+# Sillage chart defaults.
+# All state lives in SQLite: run one instance, never two. Settings ensuring this
+# (replicas fixed at 1, Recreate strategy) are intentionally not exposed here.
 
 image:
   repository: ghcr.io/marlburrow/sillage
-  # Vide = le appVersion du Chart. Préfère un tag précis à `latest` :
-  # avec `latest` et pullPolicy IfNotPresent, un pod recréé peut repartir sur
-  # l'image déjà en cache du nœud, donc sur une version plus ancienne.
+  # Empty = Chart appVersion. Prefer a pinned tag to `latest`: with `latest` and
+  # pullPolicy IfNotPresent, recreated pods may use a cached, older node image.
   tag: ""
   pullPolicy: IfNotPresent
-# Pour une image privée : [{ name: ghcr-creds }]
+# For private images: [{ name: ghcr-creds }]
 imagePullSecrets: []
 
 nameOverride: ""
@@ -22,14 +20,13 @@ service:
 
 ingress:
   enabled: false
-  # Ce cluster expose deux contrôleurs (`nginx` et `traefik`) et aucun n'est
-  # marqué par défaut : sans className explicite, l'Ingress ne serait pris en
-  # charge par personne.
+  # This cluster has two controllers (`nginx`, `traefik`), neither marked default:
+  # without explicit className, no controller would handle the Ingress.
   className: nginx
   annotations: {}
-    # Sillage garde des WebSockets ouverts (flux des sessions, terminaux PTY).
-    # Le timeout par défaut d'ingress-nginx est de 60 s et coupe les sessions
-    # inactives : décommente si tu vois des reconnexions intempestives.
+    # Sillage keeps WebSockets open (session streams, PTY terminals). Default
+    # ingress-nginx timeout is 60 seconds, cutting idle sessions: uncomment if
+    # unexpected reconnects occur.
     # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     # nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
   host: sillage.example.com
@@ -37,38 +34,36 @@ ingress:
   pathType: Prefix
   tls:
     enabled: false
-    # Nom du Secret de type kubernetes.io/tls. Ce cluster n'a pas cert-manager :
-    # crée-le à la main (`kubectl create secret tls ...`) ou installe cert-manager.
+    # Name of kubernetes.io/tls Secret. This cluster has no cert-manager: create
+    # manually (`kubectl create secret tls ...`) or install cert-manager.
     secretName: sillage-tls
 
-# --- Stockage -----------------------------------------------------------------
-# Renseigne storageClass, surtout pour le volume `data`, et choisis du stockage
-# bloc plutôt que du NFS : SQLite tourne en mode WAL et compte sur des verrous
-# fichier que NFS n'honore pas de façon fiable, ce qui corrompt la base.
+# --- Storage -----------------------------------------------------------------
+# Set storageClass, especially for `data`, and choose block storage over NFS:
+# SQLite uses WAL and depends on file locks NFS does not reliably honor,
+# leading to database corruption.
 #
-# Laisser le champ vide n'est pas neutre. Quand plusieurs StorageClass sont
-# marquées par défaut, Kubernetes n'émet aucune erreur : il retient la plus
-# récemment créée. Sur ce cluster (local-path et nfs-client toutes deux par
-# défaut) un PVC sans classe atterrit sur `nfs-client` — précisément le cas à
-# éviter. Vérifié par `kubectl apply --dry-run=server`.
+# Leaving this empty is not neutral. With multiple default StorageClasses,
+# Kubernetes reports no error: it selects the newest. On this cluster
+# (local-path and nfs-client both default), classless PVCs land on `nfs-client`,
+# exactly what must be avoided. Checked with `kubectl apply --dry-run=server`.
 #
-# Ici, la bonne valeur est `longhorn` (bloc, répliqué).
+# Here the correct value is `longhorn` (replicated block storage).
 storage:
   data:
-    # Base SQLite, pièces jointes, worktrees, et les CLI agents installés depuis
-    # l'interface. Volume obligatoire : sans lui tout est perdu au redémarrage.
+    # SQLite database, attachments, worktrees, interface-installed agent CLIs.
+    # Required volume: without it everything is lost on restart.
     enabled: true
     storageClass: ""
     accessMode: ReadWriteOnce
     size: 20Gi
-    # Réutiliser un PVC existant au lieu d'en créer un (migration, restauration).
+    # Reuse an existing PVC instead of creating one (migration, restoration).
     existingClaim: ""
 
-  # $HOME du conteneur, où les CLI agents écrivent leurs credentials
-  # (~/.claude, ~/.codex, ~/.local/share/opencode, où OpenCode garde aussi ses
-  # sessions, ~/.grok pour Grok Build). Un Secret ne convient pas : ces fichiers sont réécrits par les
-  # CLI au rafraîchissement des jetons, il leur faut un volume inscriptible.
-  # Voir le README pour l'amorçage.
+  # Container $HOME, where agent CLIs write credentials (~/.claude, ~/.codex,
+  # ~/.local/share/opencode, where OpenCode also keeps sessions, ~/.grok for Grok
+  # Build). A Secret is unsuitable: CLIs rewrite files on token refresh and
+  # need writable volumes. See README for bootstrapping.
   home:
     enabled: true
     storageClass: ""
@@ -76,7 +71,7 @@ storage:
     size: 2Gi
     existingClaim: ""
 
-  # Tes dépôts git, sur lesquels pointent les projets Sillage.
+  # Your git repositories, referenced by Sillage projects.
   workspace:
     enabled: false
     storageClass: ""
@@ -84,10 +79,10 @@ storage:
     size: 20Gi
     existingClaim: ""
 
-# --- Configuration applicative -------------------------------------------------
-# Rendu dans un ConfigMap et passé via SILLAGE_CONFIG. Laisse vide pour t'en
-# remettre aux valeurs par défaut du serveur.
-# Un fichier présent mais invalide fait échouer le démarrage, volontairement.
+# --- Application configuration ------------------------------------------------
+# Rendered into ConfigMap and passed through SILLAGE_CONFIG. Leave empty
+# to use server defaults. Present but invalid configuration intentionally
+# prevents startup.
 config: ""
   # Exemple :
   # config: |
@@ -101,14 +96,14 @@ config: ""
 # debug | info | warn | error
 logLevel: info
 
-# Variables d'environnement supplémentaires (liste de {name, value} ou valueFrom).
+# Additional environment variables (list of {name, value} or valueFrom).
 extraEnv: []
 
-# --- Ressources ----------------------------------------------------------------
-# Une session Claude coûte 400 à 500 Mo de RSS et les process agents sont des
-# enfants du serveur : ils comptent dans la limite du conteneur. La limite doit
-# donc couvrir le daemon (~110 Mo) plus max_concurrent_sessions sessions.
-# Dépasser la limite mémoire d'un conteneur, c'est un OOMKill sans préavis.
+# --- Resources ---------------------------------------------------------------
+# One Claude session costs 400–500 MB RSS; agent processes are server children
+# counting toward container limit. Cover daemon (~110 MB) plus
+# max_concurrent_sessions sessions. Exceeding container memory means OOMKill
+# without warning.
 resources:
   requests:
     cpu: 100m
@@ -116,8 +111,8 @@ resources:
   limits:
     memory: 3Gi
 
-# L'image tourne en tant qu'utilisateur `node` (uid 1000), déjà pourvu d'un HOME
-# inscriptible. fsGroup aligne la propriété des volumes montés sur ce compte.
+# Image runs as `node` (uid 1000) with writable HOME. fsGroup aligns mounted
+# volume ownership with this account.
 podSecurityContext:
   runAsUser: 1000
   runAsGroup: 1000
@@ -127,13 +122,11 @@ containerSecurityContext:
   allowPrivilegeEscalation: false
   capabilities:
     drop: ["ALL"]
-  # Pas de readOnlyRootFilesystem : npm installe les CLI agents à la demande et
-  # les PTY écrivent dans /tmp.
+  # No readOnlyRootFilesystem: npm installs agent CLIs on demand and PTYs write /tmp.
   readOnlyRootFilesystem: false
 
-# Les migrations tournent au démarrage du serveur, avant l'écoute HTTP. Sur une
-# base volumineuse cela prend du temps : la startupProbe laisse jusqu'à
-# 30 × 10 s = 5 min avant de déclarer l'échec, au lieu de boucler en CrashLoop.
+# Migrations run before HTTP listening. Large databases take time: startupProbe
+# allows up to 30 × 10 s = 5 min before failure instead of CrashLoop.
 probes:
   startup:
     periodSeconds: 10

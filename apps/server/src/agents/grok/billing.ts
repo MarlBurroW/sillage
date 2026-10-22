@@ -7,17 +7,7 @@ import { agentProcessEnv } from '../process-env.js'
 import { GROK_ISOLATION_ENV } from './launch.js'
 import { fields } from './tools.js'
 
-/**
- * Consommation d'un compte Grok, lue par l'extension `_x.ai/billing` d'un
- * `grok agent stdio` jetable (sondé sur 1.0.62 : `{config: {creditUsagePercent,
- * currentPeriod: {type, start, end}, onDemandCap, onDemandUsed, prepaidBalance…},
- * subscription_tier}`). Les montants sont en cents de dollar, sous `{val}`, et un
- * montant nul arrive comme `{}`.
- *
- * L'abonnement donne une enveloppe de crédits par période, hebdomadaire ou mensuelle :
- * c'est la seule fenêtre. Le dépassement payé à la demande et le solde prépayé passent
- * en crédits, comme chez les deux autres CLI.
- */
+/** Grok usage through disposable `_x.ai/billing` calls (1.0.62: `{config: {creditUsagePercent, currentPeriod: {type, start, end}, onDemandCap, onDemandUsed, prepaidBalance…}, subscription_tier}`). Amounts are dollar cents under `{val}`; zero arrives as `{}`. Subscriptions provide one weekly/monthly allowance window; paid overages and prepaid balances become credits like other CLIs. */
 
 const PROBE_TIMEOUT_MS = 30_000
 
@@ -38,7 +28,7 @@ function periodLabel(type: unknown): string {
   return 'période en cours'
 }
 
-/** La réponse de `_x.ai/billing`, dans la forme commune. */
+/** Normalized `_x.ai/billing` response. */
 export function toGrokUsage(response: unknown): GrokUsage {
   const body = fields(response)
   const config = fields(body.config)
@@ -73,10 +63,7 @@ export function toGrokUsage(response: unknown): GrokUsage {
   return { agent: 'grok', plan, limitsAvailable: windows.length > 0, windows, credits }
 }
 
-/**
- * Lit la consommation du compte connecté dans `home` (`GROK_HOME`), à défaut celle de la
- * connexion du CLI. Sans connexion, Grok refuse la requête : l'erreur remonte.
- */
+/** Reads authenticated usage from supplied `home` (`GROK_HOME`) or default CLI login. Unauthenticated requests fail and propagate errors. */
 export async function readGrokBilling(binary: string, home?: string): Promise<GrokUsage> {
   const client = new AcpClient({
     label: 'grok',
@@ -95,15 +82,15 @@ export async function readGrokBilling(binary: string, home?: string): Promise<Gr
   }
 }
 
-/** La lecture démarre un process : elle est gardée une minute, comme celles de Codex. */
+/** Reads launch processes, so cache for a minute like Codex. */
 const USAGE_CACHE_TTL_MS = 60_000
 
-/** Pas de connexion, ou une clé API sans abonnement : rien à montrer, et ce n'est pas une panne. */
+/** No login or subscriptionless API keys means nothing to show, not failure. */
 const NO_LIMITS: GrokUsage = { agent: 'grok', plan: null, limitsAvailable: false, windows: [], credits: null }
 
 export class GrokUsageReader {
   private readonly cached = new CachedProbe(USAGE_CACHE_TTL_MS, () => this.probe())
-  /** Une lecture par compte supplémentaire, dans le home du compte. */
+  /** One read per additional account inside its home. */
   private readonly byAccount = new CachedProbeMap<GrokUsage>(USAGE_CACHE_TTL_MS, (accountId) => {
     const home = this.homes.get(accountId)
     if (!home) throw new Error('Home du compte Grok introuvable.')

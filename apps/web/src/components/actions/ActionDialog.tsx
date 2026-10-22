@@ -16,17 +16,14 @@ import { useCreateAction, useUpdateAction } from '../../lib/actions'
 import { useTranslate } from '../../lib/i18n'
 import { Banner, Button, Field, IconButton, cx } from '../ui'
 
-/**
- * Créer ou modifier une action. Enregistrer depuis ici vaut relecture : une action
- * proposée par un agent et retouchée par l'utilisateur devient validée.
- */
+/** Create/edit actions. Saving counts as review: agent proposals edited by users become approved. */
 export function ActionDialog({
   projectId,
   action,
   onClose,
 }: {
   projectId: string
-  /** Absente pour une création. */
+  /** Absent during creation. */
   action?: ProjectActionDto
   onClose: () => void
 }) {
@@ -49,7 +46,7 @@ export function ActionDialog({
 
   const submit = () => {
     if (!valid) return
-    // Une tâche n'a pas de lien : passer de service à tâche le retire.
+    // Tasks have no URL: switching from service removes it.
     const body = { label, kind, command, description, subdir, url: kind === 'service' ? url : '' }
     if (action) update.mutate({ id: action.id, ...body }, { onSuccess: onClose })
     else create.mutate(body, { onSuccess: onClose })

@@ -15,12 +15,7 @@ import { backfillCommandPaths } from '../src/worktrees/backfill.js'
 import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
-/**
- * L'avancement des worktrees : chaque état de la carte #46 sur un dépôt jetable.
- *
- * Même cloisonnement que `checkpoints.test.ts` : la configuration git de la machine
- * ne doit pas décider du résultat.
- */
+/** Worktree progress: every card #46 state in a disposable repository. Isolate like `checkpoints.test.ts` so host git configuration cannot determine results. */
 const isolation = mkdtempSync(join(tmpdir(), 'sillage-worktree-isolation-'))
 writeFileSync(join(isolation, 'gitconfig'), '')
 process.env.GIT_CONFIG_NOSYSTEM = '1'
@@ -39,7 +34,7 @@ function write(repo: string, file: string, content: string): void {
   writeFileSync(join(repo, file), content)
 }
 
-/** Un dépôt sur `main` avec un commit, et de quoi créer des worktrees à côté. */
+/** Repository on `main` with one commit and room for sibling worktrees. */
 function repository(t: TestContext): { repo: string; trees: string } {
   const dir = mkdtempSync(join(tmpdir(), 'sillage-worktree-status-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
@@ -131,7 +126,7 @@ test('non commité, non suivi, commité non fusionné, en conflit', async (t) =>
   assert.deepEqual([result.ahead, result.behind, result.conflicts], [1, 0, false])
   assert.ok(result.lastCommitAt !== null)
 
-  // La base avance sur la même ligne : la fusion coincerait.
+  // Base advances on the same line, creating merge conflicts.
   write(repo, 'src/app.ts', 'export const app = 3\n')
   commitAll(repo, 'main moves')
   const conflicting = addTree(repo, trees, 'feat/conflict')
@@ -142,7 +137,7 @@ test('non commité, non suivi, commité non fusionné, en conflit', async (t) =>
   assert.equal(result.state, 'unmerged')
   assert.deepEqual([result.ahead, result.behind, result.conflicts], [1, 1, true])
 
-  // Même chose sans commit : une modification locale sur une ligne que la base a changée.
+  // Same without commits: local edits on a line changed in the base.
   const stale = addTree(repo, trees, 'feat/stale')
   git(stale, 'reset', '--hard', 'main~1')
   write(stale, 'src/app.ts', 'export const app = 5\n')
@@ -170,13 +165,13 @@ test('fusionné par merge, par squash et par cherry-pick', async (t) => {
   git(repo, 'commit', '-m', 'squash b')
   result = await assess(repo, squashed)
   assert.equal(result.state, 'merged')
-  // L'ancestralité dirait « deux commits à fusionner » : c'est le piège évité.
+  // Ancestry would report two commits to merge: this is the trap avoided.
   assert.equal(result.ahead, 2)
 
   const picked = addTree(repo, trees, 'feat/picked')
   write(picked, 'src/c.ts', 'c\n')
   const hash = commitAll(picked, 'c')
-  // La base avance d'abord : sinon le cherry-pick recrée le même commit à l'identique.
+  // Advance the base first; otherwise cherry-pick recreates the identical commit.
   write(repo, 'README.md', 'base 2\n')
   commitAll(repo, 'main moves')
   git(repo, 'cherry-pick', hash)
@@ -184,7 +179,7 @@ test('fusionné par merge, par squash et par cherry-pick', async (t) => {
   assert.equal(result.state, 'merged')
   assert.equal(result.ahead, 1)
 
-  // Fusionné mais du travail a repris par-dessus : il redevient un chantier.
+  // Merged work with new changes becomes active work again.
   write(picked, 'src/c.ts', 'c2\n')
   result = await assess(repo, picked)
   assert.equal(result.state, 'dirty')
@@ -196,7 +191,7 @@ test('du non commité et du non suivi que la base a déjà ne comptent pas', asy
   const tree = addTree(repo, trees, 'feat/copied')
   write(tree, 'src/app.ts', 'export const app = 2\n')
   write(tree, 'src/new.ts', 'new\n')
-  // Le même contenu arrive dans la base par un autre chemin (copie à la main).
+  // The same content reaches the base through another path (manual copy).
   write(repo, 'src/app.ts', 'export const app = 2\n')
   write(repo, 'src/new.ts', 'new\n')
   commitAll(repo, 'same content on main')
@@ -205,7 +200,7 @@ test('du non commité et du non suivi que la base a déjà ne comptent pas', asy
   assert.equal(result.state, 'merged')
   assert.deepEqual([result.modified, result.untracked, result.behind], [1, 1, 1])
 
-  // Un fichier non suivi de plus, inconnu de la base : de nouveau à garder.
+  // Additional untracked files absent from the base must be kept again.
   write(tree, 'src/other.ts', 'other\n')
   assert.equal((await assess(repo, tree)).state, 'dirty')
 })
@@ -214,18 +209,18 @@ test('git antérieur à 2.40 : le non commité se juge par le stash entier, sans
   const { repo, trees } = repository(t)
   const legacy = { legacyGit: true }
 
-  // Rien de commité, le non commité est déjà dans la base : fusionné.
+  // No commits, but uncommitted content is already in the base: merged.
   const copied = addTree(repo, trees, 'feat/copied')
   write(copied, 'src/app.ts', 'export const app = 2\n')
   write(repo, 'src/app.ts', 'export const app = 2\n')
   commitAll(repo, 'same content on main')
   assert.equal((await assess(repo, copied, legacy)).state, 'merged')
 
-  // Du travail que la base n'a pas : à garder.
+  // Work absent from the base must be kept.
   write(copied, 'src/app.ts', 'export const app = 3\n')
   assert.equal((await assess(repo, copied, legacy)).state, 'dirty')
 
-  // Commits fusionnés par squash, puis du non commité que la base a aussi : fusionné.
+  // Squash-merged commits followed by uncommitted content also in the base: merged.
   const squashed = addTree(repo, trees, 'feat/squashed')
   write(squashed, 'src/s.ts', 's\n')
   commitAll(squashed, 's')
@@ -236,10 +231,10 @@ test('git antérieur à 2.40 : le non commité se juge par le stash entier, sans
   assert.equal((await assess(repo, squashed, legacy)).state, 'merged')
   assert.equal((await assess(repo, squashed)).state, 'merged', 'le chemin moderne dit pareil')
 
-  // Commits pas encore fusionnés : le non commité ne se juge plus et compte comme à
-  // garder, même déjà dans la base. C'est la limite de ce chemin, dans le sens prudent.
+  // Unmerged commits prevent independent assessment of uncommitted work, so retain it
+  // even if already in the base. This path errs on the cautious side.
   const pending = addTree(repo, trees, 'feat/pending')
-  // Parti d'avant le commit qui a apporté « base 2 » à la base.
+  // Started before the commit adding 'base 2' to the base.
   git(pending, 'reset', '-q', '--hard', 'main~1')
   write(pending, 'src/p.ts', 'p\n')
   commitAll(pending, 'p')
@@ -301,12 +296,12 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
   db.insert(projects).values(project).run()
   const projectRow = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
 
-  // Connu de Sillage, avec une session rattachée par son cwd.
+  // Sillage-known tree with a session attached through cwd.
   const known = addTree(repo, trees, 'feat/known')
   db.insert(worktrees).values({ id: 'wt-known', projectId: 'project', name: 'feat/known', path: known, baseRef: 'HEAD', createdBy: 'owner', createdAt: 1 }).run()
-  // Externe, créé au shell, où une session notée à la racine a écrit.
+  // External shell-created tree edited by a session whose cwd is the project root.
   const external = addTree(repo, trees, 'feat/external')
-  // Fantôme : en base, sans dossier ni entrée git.
+  // Ghost: database entry without directory or git entry.
   db.insert(worktrees).values({ id: 'wt-ghost', projectId: 'project', name: 'feat/ghost', path: join(trees, 'ghost'), baseRef: 'HEAD', createdBy: 'owner', createdAt: 1 }).run()
 
   const conversation = (id: string, worktreeId: string | null) => ({
@@ -317,21 +312,21 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
 
   const log = new EventLog(db)
   const service = new WorktreeStatusService(db, log)
-  // Le journal alimente le rattachement « a écrit dans », y compris par une commande.
+  // Journal entries attach sessions through edits, including commands.
   log.append('c-root', { type: 'file.edited', toolCallId: 't1', path: join(external, 'src/x.ts'), action: 'created' })
   log.append('c-both', { type: 'tool.started', toolCallId: 't2', name: 'Bash', input: { command: `cd ${external} && ls` }, parentToolCallId: null })
   log.append('c-root', { type: 'file.edited', toolCallId: 't3', path: join(external, 'src/x.ts'), action: 'modified' })
   assert.equal(db.select().from(conversationPaths).all().length, 2)
 
-  // Le rattrapage des commandes déjà journalisées ne tourne qu'une fois : une commande
-  // insérée après coup n'est reprise qu'au premier passage.
+  // Previously journaled commands are backfilled only once: late-inserted commands
+  // are processed only on the first pass.
   db.delete(conversationPaths).run()
   assert.equal(backfillCommandPaths(db), 1)
   assert.equal(db.select().from(conversationPaths).all().length, 1)
   assert.equal(backfillCommandPaths(db), 0)
   log.append('c-root', { type: 'file.edited', toolCallId: 't4', path: join(external, 'src/x.ts'), action: 'modified' })
 
-  // Par lots d'une commande : le curseur passe d'une conversation à l'autre sans rien perdre.
+  // One-command batches: cursors cross conversations without losing entries.
   log.append('c-direct', { type: 'tool.started', toolCallId: 't5', name: 'Bash', input: { command: `git -C ${known} status` }, parentToolCallId: null })
   db.delete(conversationPaths).run()
   db.run(sql`DELETE FROM app_settings WHERE key = 'worktree_paths_backfill'`)
@@ -363,8 +358,8 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
   assert.deepEqual([ghost.id, ghost.state, ghost.name, ghost.external], ['wt-ghost', 'missing', 'feat/ghost', false])
   assert.equal(first.worktrees[0]?.id, 'wt-ghost', "l'introuvable passe en tête")
 
-  // Resservi du cache tant que rien ne l'invalide ; un tour terminé le périme, et la
-  // liste périmée est rendue tout de suite pendant que la suivante se calcule.
+  // Serve cached lists until invalidated; completed turns mark them stale,
+  // then return stale lists immediately while refreshing.
   write(known, 'src/app.ts', 'changed\n')
   assert.equal((await service.get(projectRow)).worktrees.find((w) => w.id === 'wt-known')?.state, 'merged')
   log.append('c-direct', { type: 'turn.completed', costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0 } as never)
@@ -425,7 +420,7 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
   assert.ok(db.select().from(conversations).where(sqlEq(conversations.id, 'c1')).get()?.archivedAt)
   assert.ok(!(await status.get(projectRow)).worktrees.some((w) => w.path === known))
 
-  // Un arbre externe, non commité : le plan le dit, et il se nettoie en gardant la branche.
+  // External uncommitted trees: plans disclose this and cleanup can preserve branches.
   const external2 = (await cleanup.plan(projectRow, external))!
   assert.deepEqual([external2.state, external2.untracked, external2.conversations], ['dirty', 1, []])
   const kept = (await cleanup.run(projectRow, { path: external, deleteBranch: false, archiveSessions: true, stopServices: false }))!
@@ -433,7 +428,7 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
   assert.equal(git(repo, 'branch', '--list', 'feat/external').trim(), 'feat/external')
   assert.ok(!existsSync(external))
 
-  // Le dossier a déjà disparu : git garde l'entrée, le nettoyage la purge quand même.
+  // Directories already gone: git entries remain and cleanup still removes them.
   const gone = addTree(repo, trees, 'feat/gone')
   rmSync(gone, { recursive: true, force: true })
   const prunable = (await cleanup.run(projectRow, { path: gone, deleteBranch: true, archiveSessions: false, stopServices: false }))!

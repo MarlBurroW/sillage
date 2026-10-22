@@ -14,11 +14,8 @@ import { HowItWorks, MEMORY_HELP } from './HowItWorks'
 import { MarkdownEditor } from './Instructions'
 
 /**
- * La mémoire du projet, sur sa page : ce que les agents ont retenu d'eux-mêmes.
- *
- * Jusqu'ici elle vivait dans un dossier de `~/.claude` que personne n'ouvrait, et Codex
- * ne la voyait pas. La montrer permet de corriger une note fausse avant qu'elle ne
- * trompe la session suivante.
+ * Project memory exposes what agents retained. Previously hidden in claude directories and
+ * invisible to Codex, visible notes can now be corrected before misleading later sessions.
  */
 export function ProjectMemory({ projectId }: { projectId: string }) {
   const t = useTranslate()
@@ -42,7 +39,7 @@ export function ProjectMemory({ projectId }: { projectId: string }) {
       />
       <CardBody className="flex flex-col gap-3">
         <HowItWorks items={MEMORY_HELP} />
-        {/* Où elle vit, pour ce projet : le propriétaire tranche, les autres voient. */}
+        {/* Project memory location: owners choose, others view. */}
         {data?.canEdit ? (
           <ChoiceList label={t('memory.mode')} value={data.mode} options={modes} onChange={(mode) => setMode.mutate(mode)} />
         ) : null}

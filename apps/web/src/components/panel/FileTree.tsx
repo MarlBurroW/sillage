@@ -93,10 +93,8 @@ import {
 } from '../ui'
 
 /**
- * Couleur et lettre par état git, dans le vocabulaire de `git status`.
- *
- * Les deux ensemble et non la couleur seule : distinguer cinq teintes proches est
- * difficile, et impossible pour qui perçoit mal les couleurs.
+ * Git-status color and letter together: five similar hues are hard to distinguish and inaccessible
+ * to users with impaired color perception.
  */
 const STATES: Record<FileState, { letter: string; tone: string }> = {
   modified: { letter: 'M', tone: 'text-caution' },
@@ -106,39 +104,33 @@ const STATES: Record<FileState, { letter: string; tone: string }> = {
   ignored: { letter: '', tone: 'text-ink-faint/60' },
 }
 
-/** Décalage par niveau. Plus serré que la sidebar : l'arborescence descend plus bas. */
+/** Indent per level, tighter than the sidebar because file trees nest deeper. */
 const INDENT_PX = 12
 
-/**
- * Type de transfert du glisser-déposer : il porte les entrées déplacées, en JSON, la
- * sélection entière quand la ligne saisie en fait partie.
- */
+/** Drag transfer type carrying JSON entries: the whole selection when dragging a selected row. */
 const DRAG_TYPE = 'application/x-sillage-entries'
 
-/**
- * Les raccourcis suivent le système, comme dans les explorateurs qu'on y connaît : ⌘ et
- * Option sur Mac, Ctrl ailleurs.
- */
+/** Shortcuts follow the operating system: Command and Option on Mac, Ctrl elsewhere. */
 const IS_MAC = navigator.userAgent.includes('Mac')
 const MOD = IS_MAC ? '⌘' : 'Ctrl+'
 const HINT = { cut: `${MOD}X`, copy: `${MOD}C`, paste: `${MOD}V`, rename: 'F2' }
 
-/** Le libellé de la touche Suppr change avec la langue du clavier, pas celui de ⌘⌫. */
+/** Delete-key label varies by keyboard language, unlike Command-Backspace. */
 function deleteHint(): string {
   return IS_MAC ? '⌘⌫' : translate('filetree.key.delete')
 }
 
-/** Glisser en tenant Option (Mac) ou Ctrl copie au lieu de déplacer, comme sur le bureau. */
+/** Hold Option on Mac or Ctrl elsewhere to copy instead of move, matching desktop behavior. */
 function copyModifier(event: { altKey: boolean; ctrlKey: boolean }): boolean {
   return IS_MAC ? event.altKey : event.ctrlKey
 }
 
-/** Saisie en cours dans l'arborescence : création d'une entrée, ou renommage. */
+/** Active tree input: entry creation or rename. */
 type Draft =
   | { mode: 'create'; parent: string; kind: 'file' | 'directory' }
   | { mode: 'rename'; path: string; name: string }
 
-/** Une entrée désignée : son chemin, et si c'est un dossier. */
+/** Targeted entry path and directory flag. */
 type Picked = readonly [path: string, isDirectory: boolean]
 
 function nameOf(path: string): string {
@@ -146,17 +138,16 @@ function nameOf(path: string): string {
 }
 
 /**
- * Ce sur quoi agit un geste fait sur une ligne : toute la sélection si la ligne en fait
- * partie, la ligne seule sinon. C'est la règle des explorateurs de bureau, et elle
- * laisse agir sur une entrée sans perdre ce qu'on avait coché ailleurs.
+ * Row actions affect the whole selection if the row belongs to it, otherwise just that row. Desktop
+ * explorer convention allows acting without losing selections elsewhere.
  */
 function targetsOf(view: TreeView, path: string, isDirectory: boolean): Picked[] {
   return view.selection.has(path) ? [...view.selection] : [[path, isDirectory]]
 }
 
 /**
- * Dossier où créent les boutons de l'en-tête : celui de la dernière entrée désignée, ou
- * son dossier pour un fichier, comme dans un éditeur de bureau. La racine sinon.
+ * Header buttons create within the last targeted directory, or the parent of a targeted file, like
+ * desktop editors; otherwise root.
  */
 function targetFolderOf(view: TreeView): string {
   const anchor = view.anchor
@@ -165,9 +156,8 @@ function targetFolderOf(view: TreeView): string {
 }
 
 /**
- * Dernier fichier actif suivi par la sélection, par portée. Hors du composant : la
- * colonne refermée puis rouverte ne doit pas défaire une sélection pour un fichier
- * qu'elle a déjà suivi.
+ * Last active file followed by selection, per scope. Outside the component so reopening the column
+ * does not undo selection for a file already followed.
  */
 const followed = new Map<string, string>()
 
@@ -176,7 +166,7 @@ export function FileTree({
   onOpenFile,
 }: {
   scope: string
-  /** Referme la colonne quand elle recouvre l'éditeur : sinon le fichier ouvert reste caché. */
+  /** Close the column when overlaying the editor so opened files become visible. */
   onOpenFile: () => void
 }) {
   const t = useTranslate()
@@ -184,35 +174,30 @@ export function FileTree({
   const { active: activePath, paths: openPaths } = useEditorTabs(scope)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [query, setQuery] = useState('')
-  /** Entrées dont la suppression est proposée : le geste est sans retour possible. */
+  /** Entries proposed for irreversible deletion. */
   const [pendingDelete, setPendingDelete] = useState<Picked[] | null>(null)
-  /**
-   * Compte rendu d'un geste qui n'en laisse aucun autre : une copie dans le
-   * presse-papiers, ou les échecs d'une action sur plusieurs entrées.
-   */
+  /** Feedback for actions with no other visible result: copying to clipboard or failures in bulk operations. */
   const [notice, setNotice] = useState<{ tone: 'info' | 'critical'; text: string } | null>(null)
   const create = useCreateEntry(scope)
   const rename = useMoveEntry(scope)
   const operations = useEntryOperations(scope)
-  /** Dossier visé par le sélecteur de fichiers, quand il est ouvert depuis un menu. */
+  /** Destination for file selection opened from a menu. */
   const [uploadInto, setUploadInto] = useState('')
   const picker = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const typeahead = useRef({ text: '', at: 0 })
-  /** Profondeur de survol d'un glissement de fichiers, pour cadrer toute la colonne. */
+  /** Nested file-drag hover depth for outlining the whole column. */
   const [dragDepth, setDragDepth] = useState(0)
   const target = useTreeView(scope, targetFolderOf)
 
   const error = create.error ?? rename.error
 
-  // Un fichier arrivé dans un dossier replié n'est signalé par aucune veille : c'est ce
-  // rafraîchissement qui le fait apparaître à son ouverture.
+  // Files arriving in collapsed directories have no watches: this refresh makes them appear on opening.
   const refresh = useRefreshTree(scope)
   useEffect(() => registerTreeRefresh(scope, refresh), [scope, refresh])
 
-  // La sélection suit le fichier affiché, comme dans un éditeur de bureau : ouvert depuis
-  // un onglet ou un lien du fil, il est déplié jusqu'à lui et désigné, et c'est sur lui
-  // qu'agissent les raccourcis.
+  // Selection follows the displayed file like desktop editors: expand and select files opened by
+  // tabs or thread links so shortcuts target them.
   useEffect(() => {
     if (!activePath || followed.get(scope) === activePath) return
     followed.set(scope, activePath)
@@ -236,7 +221,7 @@ export function FileTree({
     onOpenFile()
   }
 
-  /** Un renommage ou un déplacement réussi : la vue et les onglets suivent l'entrée. */
+  /** After successful rename or move, update view and tabs to follow the entry. */
   const moved = (from: string, to: string) => {
     renameInView(scope, from, to)
     moveDocuments(scope, from, to)
@@ -244,8 +229,8 @@ export function FileTree({
   }
 
   /**
-   * Une suppression réussie ferme les onglets de ce qui a disparu. Sauf ceux qui portent
-   * un brouillon : c'est la dernière copie du travail, et il doit rester récupérable.
+   * Successful deletion closes affected tabs except unsaved drafts, which remain the last
+   * recoverable copy of work.
    */
   const removed = (paths: string[]) => {
     forgetInView(scope, paths)
@@ -254,7 +239,7 @@ export function FileTree({
     }
   }
 
-  /** Lance une suite de manipulations, puis reporte leurs effets sur la vue. */
+  /** Run operations sequentially and apply their effects to the view. */
   const run = (list: EntryOperation[], after?: (done: OperationsOutcome['done']) => void) => {
     if (list.length === 0) return
     setNotice(null)
@@ -289,8 +274,8 @@ export function FileTree({
   const transfer = (entries: Picked[], toParent: string, mode: 'move' | 'copy') => {
     const kinds = new Map(entries)
     const sources = topLevelPaths(kinds.keys())
-      // Déplacer une entrée là où elle est déjà ne ferait rien, qu'une erreur « existe
-      // déjà ». La copie, elle, y a un sens : c'est dupliquer.
+      // Moving to the current location would only yield an already-exists error. Copying there
+      // still makes sense as duplication.
       .filter((from) => mode === 'copy' || parentOf(from) !== toParent)
 
     run(
@@ -300,8 +285,7 @@ export function FileTree({
           : { kind: 'move', from, to: toParent ? `${toParent}/${nameOf(from)}` : nameOf(from) },
       ),
       (done) => {
-        // Ce qui vient d'arriver est sélectionné et visible : c'est là que va le regard,
-        // et c'est de là que part le geste suivant, renommer la copie par exemple.
+        // Select and reveal new entries where attention and the next action belong, such as renaming a copy.
         const arrived = done.map(({ operation, path }): Picked => {
           const from = operation.kind === 'delete' ? operation.path : operation.from
           return [path, kinds.get(from) ?? false]
@@ -324,8 +308,7 @@ export function FileTree({
       create.mutate(
         { parent, name, kind },
         {
-          // La nouvelle entrée est désignée, et un fichier s'ouvre : on le crée presque
-          // toujours pour l'écrire aussitôt.
+          // Select new entries and open files because creation usually precedes immediate editing.
           onSuccess: ({ path }) => {
             selectOnly(scope, path, kind === 'directory')
             if (kind === 'file') open(path)
@@ -356,11 +339,11 @@ export function FileTree({
       const clipboard = getTreeView(scope).clipboard
       if (!clipboard) return
       transfer([...clipboard.entries], toParent, clipboard.mode === 'cut' ? 'move' : 'copy')
-      // Coupé, l'original a quitté sa place : le recoller une seconde fois échouerait.
+      // After cutting, the original has moved: a second paste would fail.
       if (clipboard.mode === 'cut') clearTreeClipboard(scope)
     },
     onCopyPaths: (paths, absolute) => {
-      // La racine vient du premier niveau, toujours chargé quand l'arborescence s'affiche.
+      // Root comes from the first level, always loaded when the tree displays.
       const root = queryClient.getQueryData<TreeListingDto>(['tree', scope, ''])?.root
       const text = paths.map((path) => (absolute && root ? `${root}/${path}` : path)).join('\n')
       void copyText(text).then((ok) =>
@@ -377,12 +360,10 @@ export function FileTree({
       )
     },
     onDrop: (parent, transfer) => {
-      // Le cadre de dépôt se retire ici et pas seulement à la racine : une ligne qui
-      // reçoit le dépôt l'arrête avant elle, et aucun `dragleave` ne suit un `drop`.
+      // Remove drop feedback here too: receiving rows stop propagation before root and no dragleave follows drop.
       setDragDepth(0)
-      // Le dépliage des dossiers déposés est asynchrone : la mise en file attend, pas le
-      // gestionnaire d'événement, qui doit rendre la main pour que le navigateur libère
-      // le glissement.
+      // Dropped directory expansion is asynchronous: queueing waits, not the event handler, which
+      // must yield so the browser releases the drag.
       void filesFromDrop(transfer).then((files) => enqueueUploads(scope, parent, files))
     },
     onPickFiles: openPicker,
@@ -397,14 +378,12 @@ export function FileTree({
   const searching = query.trim().length >= 2
 
   return (
-    // Toute la colonne accepte les fichiers : viser une ligne de 28 pixels à la souris
-    // est déjà difficile, au doigt c'est perdu d'avance. Ce qui ne tombe sur aucun
-    // dossier va à la racine du répertoire de travail.
+    // The entire column accepts files: hitting a 28-pixel row is difficult with mouse and
+    // impractical by touch. Drops outside directories target workspace root.
     <div
       className={cx(
-        // Colonne pleine hauteur : c'est ce qui permet aux envois de se poser en pied
-        // plutôt qu'à la suite des fichiers, et au dépôt d'être accepté partout, y
-        // compris sous la dernière ligne.
+        // Full-height column keeps uploads at the bottom rather than after files and accepts drops
+        // below the last row too.
         'relative flex min-h-full flex-col',
         dragDepth > 0 && 'outline-2 -outline-offset-2 outline-dashed outline-accent',
       )}
@@ -420,8 +399,7 @@ export function FileTree({
       onDragOver={(event) => {
         const external = carriesExternalFiles(event.dataTransfer)
         if (!external && !event.dataTransfer.types.includes(DRAG_TYPE)) return
-        // Sans ce `preventDefault`, le navigateur refuse le dépôt et retombe sur son
-        // comportement par défaut : ouvrir le fichier à la place de la page.
+        // Without preventDefault the browser rejects the drop and opens the file in place of the page.
         event.preventDefault()
         event.dataTransfer.dropEffect = external || copyModifier(event) ? 'copy' : 'move'
       }}
@@ -432,15 +410,14 @@ export function FileTree({
           actions.onDrop('', event.dataTransfer)
           return
         }
-        // Une entrée lâchée hors de toute ligne remonte à la racine, comme sur un bureau.
+        // Entries dropped outside rows move to root, like a desktop.
         const dragged = readDragged(event)
         if (!dragged) return
         event.preventDefault()
         actions.onTransfer(dragged, '', copyModifier(event) ? 'copy' : 'move')
       }}
     >
-      {/* Sélecteur de fichiers pour le doigt et le clavier : le glisser-déposer n'existe
-          pas sur mobile, et le dépôt ne doit pas être la seule voie. */}
+      {/* File picker for touch and keyboard: mobile lacks drag-and-drop, which cannot be the only upload route. */}
       <input
         ref={picker}
         type="file"
@@ -449,7 +426,7 @@ export function FileTree({
         onChange={(event) => {
           const files = Array.from(event.target.files ?? [])
           enqueueUploads(scope, uploadInto, files.map((file) => ({ file, relativePath: file.name })))
-          // Remis à zéro : sans ça, redéposer le même fichier n'émet pas d'événement.
+          // Reset so dropping the same file again emits an event.
           event.target.value = ''
         }}
       />
@@ -459,8 +436,10 @@ export function FileTree({
           <span className="truncate">{t('filetree.title')}</span>
           {operations.isPending ? <Loader size={11} className="animate-spin text-ink-faint" /> : null}
         </span>
-        {/* Les créations visent le dossier de l'entrée désignée, la racine à défaut :
-            l'infobulle le nomme, puisque la cible change sans que le bouton bouge. */}
+        {/*
+         * Creation targets the selected entry's directory or root. Tooltips name this changing
+         * destination because buttons stay fixed.
+         */}
         <RootAction
           label={target ? t('filetree.header.newFileIn', { folder: target }) : t('filetree.root.newFile')}
           icon={<FilePlus2 size={13} />}
@@ -500,7 +479,7 @@ export function FileTree({
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Escape') setQuery('')
-              // Descendre dans les résultats sans reprendre la souris.
+              // Navigate down search results without returning to the mouse.
               if (event.key === 'ArrowDown') {
                 event.preventDefault()
                 actions.rows()[0]?.focus()
@@ -557,14 +536,15 @@ export function FileTree({
         </p>
       ) : null}
 
-      {/* La recherche remplace l'arborescence au lieu de la filtrer sur place : replier
-          et déplier des dossiers pour suivre un résultat ferait perdre le fil, et les
-          niveaux dépliés doivent être retrouvés intacts en effaçant la recherche. */}
+      {/*
+       * Search replaces rather than filters the tree: opening/closing directories around matches
+       * would lose context, and clearing must restore expanded levels unchanged.
+       */}
       <div
         ref={list}
         className="flex-1 pb-4"
         onKeyDown={(event) => handleTreeKey(event, actions, typeahead.current)}
-        // Un clic dans le vide sous les lignes désélectionne, comme sur un bureau.
+        // Clicking empty space below rows clears selection, like a desktop.
         onClick={(event) => {
           if (event.target === event.currentTarget) clearSelection(scope)
         }}
@@ -617,12 +597,9 @@ export function FileTree({
 }
 
 /**
- * Raccourcis de l'arborescence, à la manière d'un explorateur de bureau.
- *
- * Posés sur la liste plutôt que sur chaque ligne : la ligne de départ se lit sur la
- * cible de l'événement, et l'ordre des lignes sur le DOM, qui est exactement ce qui est
- * à l'écran, dossiers dépliés et résultats de recherche compris. Le recalculer depuis
- * le cache des niveaux reproduirait ce que le rendu a déjà fait.
+ * Desktop-style explorer shortcuts. Listen on the list rather than individual rows: the event
+ * target gives the starting row and DOM order already reflects expanded directories and search
+ * results. Reconstructing order from level caches would duplicate rendering work.
  */
 function handleTreeKey(
   event: KeyboardEvent,
@@ -630,7 +607,7 @@ function handleTreeKey(
   typeahead: { text: string; at: number },
 ): void {
   const row = (event.target as HTMLElement).closest<HTMLElement>('[data-tree-path]')
-  // Le champ de renommage vit dans la liste : ses touches lui appartiennent.
+  // Rename inputs live in the list and own their keystrokes.
   if (!row || event.target instanceof HTMLInputElement) return
 
   const { scope } = actions
@@ -641,7 +618,7 @@ function handleTreeKey(
   const mod = event.metaKey || event.ctrlKey
   const targets = targetsOf(view, path, isDirectory)
 
-  /** Déplace le curseur ; la sélection suit, s'étend à la Maj, reste en place avec Ctrl. */
+  /** Move focus; selection follows, extends with Shift, or stays unchanged with Ctrl. */
   const moveTo = (to: number) => {
     const next = rows[Math.max(0, Math.min(rows.length - 1, to))]
     if (!next) return
@@ -665,13 +642,13 @@ function handleTreeKey(
       moveTo(rows.length - 1)
       break
     case 'ArrowRight':
-      // Déplie, puis entre dans le dossier déplié.
+      // Expand, then enter the expanded directory.
       if (!isDirectory) return
       if (!view.expanded.has(path)) setExpanded(scope, path, true)
       else if (rows[index + 1]?.dataset.treePath?.startsWith(`${path}/`)) moveTo(index + 1)
       break
     case 'ArrowLeft': {
-      // Replie, puis remonte au dossier parent.
+      // Collapse, then move to the parent directory.
       if (isDirectory && view.expanded.has(path)) {
         setExpanded(scope, path, false)
         break
@@ -682,8 +659,7 @@ function handleTreeKey(
       break
     }
     case 'Enter':
-      // Sans `preventDefault` plus bas, le bouton recevrait aussi un clic, qui ouvrirait
-      // en aperçu ce qu'Entrée ouvre pour de bon.
+      // Without preventDefault below, buttons also receive a click, previewing what Enter opens permanently.
       if (isDirectory) setExpanded(scope, path, !view.expanded.has(path))
       else actions.open(path)
       break
@@ -697,7 +673,7 @@ function handleTreeKey(
       actions.onDelete(targets)
       break
     case 'Backspace':
-      // ⌘⌫ sur Mac, où le clavier n'a souvent pas de touche Suppr.
+      // Command-Backspace on Mac keyboards often lacking Delete.
       if (!event.metaKey) return
       actions.onDelete(targets)
       break
@@ -719,8 +695,8 @@ function handleTreeKey(
         break
       }
 
-      // Taper le début d'un nom y amène, comme dans tout explorateur. Les frappes
-      // rapprochées s'additionnent ; une seule lettre répétée passe au suivant.
+      // Type a name prefix to navigate like any explorer. Nearby keystrokes accumulate; repeating
+      // one letter cycles matches.
       if (event.key.length !== 1 || event.altKey) return
       const now = Date.now()
       const text = now - typeahead.at < 700 ? typeahead.text + event.key.toLowerCase() : event.key.toLowerCase()
@@ -739,14 +715,14 @@ function handleTreeKey(
   event.preventDefault()
 }
 
-/** Ligne de l'écran sous forme de couple chemin/type, lue sur ses attributs. */
+/** Displayed row as a path/type pair read from attributes. */
 function pickedOf(row: HTMLElement): Picked {
   return [row.dataset.treePath ?? '', row.dataset.treeDir === '1']
 }
 
 /**
- * Sélectionne de l'ancre jusqu'à `to`, dans l'ordre de l'écran. Sans ancre visible, la
- * ligne visée devient le point de départ.
+ * Select from the anchor through to in screen order. Without a visible anchor use the targeted row
+ * as the start.
  */
 function selectRange(actions: Actions, to: string, additive: boolean): void {
   const rows = actions.rows().map(pickedOf)
@@ -764,17 +740,14 @@ function selectRange(actions: Actions, to: string, additive: boolean): void {
 }
 
 /**
- * Sélection au clic, à la manière des explorateurs de bureau : Ctrl (⌘ sur Mac) coche
- * ou décoche, Maj étend depuis le dernier clic. En mode sélection, un simple appui
- * coche : au doigt, il n'y a pas de touche à tenir.
- *
- * Rend vrai quand le clic s'arrête à la sélection, sans ouvrir ni déplier.
+ * Desktop-style click selection: Ctrl (Command on Mac) toggles and Shift extends from the previous
+ * click. In touch selection mode a tap toggles without modifiers. Return true when selection
+ * consumes the click without opening or expanding.
  */
 function selectFromClick(event: MouseEvent, entry: TreeEntryDto, actions: Actions): boolean {
   const { scope } = actions
   const additive = event.metaKey || event.ctrlKey
-  // Safari ne donne pas le focus à un bouton cliqué : sans ça, les flèches partiraient
-  // de la ligne précédente, ou de nulle part.
+  // Safari does not focus clicked buttons: explicitly focus or arrows start from the previous row or nowhere.
   if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus({ preventScroll: true })
   if (event.shiftKey) {
     selectRange(actions, entry.path, additive)
@@ -788,7 +761,7 @@ function selectFromClick(event: MouseEvent, entry: TreeEntryDto, actions: Action
   return false
 }
 
-/** Entrées glissées depuis l'arborescence, ou null pour un autre glissement. */
+/** Entries dragged from the tree, or null for other drag kinds. */
 function readDragged(event: DragEvent): Picked[] | null {
   const raw = event.dataTransfer.getData(DRAG_TYPE)
   if (!raw) return null
@@ -800,9 +773,8 @@ function readDragged(event: DragEvent): Picked[] | null {
 }
 
 /**
- * Pastille « 3 éléments » sous le curseur pendant un glissement de plusieurs entrées :
- * l'image par défaut ne montrerait que la ligne saisie, et laisserait croire qu'elle
- * part seule.
+ * Multi-entry count badge under the drag cursor: the default image shows only the grabbed row and
+ * misleadingly suggests it moves alone.
  */
 function setDragBadge(event: DragEvent, label: string): void {
   const badge = document.createElement('div')
@@ -812,15 +784,14 @@ function setDragBadge(event: DragEvent, label: string): void {
     'background:var(--sg-accent);color:var(--sg-accent-ink)'
   document.body.append(badge)
   event.dataTransfer.setDragImage(badge, -8, -8)
-  // L'image est capturée à l'appel : l'élément peut partir au tour suivant.
+  // The image is captured immediately; remove its element on the next tick.
   setTimeout(() => badge.remove())
 }
 
 /**
- * Barre des actions sur la sélection, dès que plusieurs entrées sont cochées.
- *
- * Le clic droit les propose aussi, mais rien ne dit qu'il existe ; et au doigt, cette
- * barre est la seule voie, le mode sélection ne laissant plus l'appui ouvrir un menu.
+ * Bulk action bar when multiple entries are selected. Context menus also offer these actions but
+ * are undiscoverable, and touch selection mode prevents long-press menus, making this the only
+ * touch route.
  */
 function SelectionBar({ actions }: { actions: Actions }) {
   const t = useTranslate()
@@ -858,7 +829,7 @@ function SelectionBar({ actions }: { actions: Actions }) {
         icon={<Download size={13} />}
         onClick={() => {
           const picked = targets()
-          // Un fichier seul se télécharge tel quel : l'emballer n'apporterait rien.
+          // Download single files directly; wrapping adds nothing.
           const [only] = picked
           if (picked.length === 1 && only && !only[1]) downloadFile(scope, only[0])
           else downloadArchive(scope, picked.map(([path]) => path))
@@ -881,11 +852,9 @@ function SelectionBar({ actions }: { actions: Actions }) {
 }
 
 /**
- * Envois en cours, en pied de colonne.
- *
- * Collé au bas plutôt qu'en tête : l'arborescence reste au même endroit pendant qu'un
- * dossier monte, et le fichier qu'on vient de déposer apparaît à sa place sans que la
- * liste ne saute. Un envoi réussi s'efface tout seul ; une erreur attend d'être lue.
+ * Uploads at column bottom rather than top: uploading directories does not shift the tree, and
+ * dropped files appear in place without jumping. Success disappears automatically; errors wait to
+ * be read.
  */
 function UploadQueue({ scope }: { scope: string }) {
   const t = useTranslate()
@@ -927,8 +896,7 @@ function UploadQueue({ scope }: { scope: string }) {
               <span className="min-w-0">{upload.error}</span>
             </p>
           ) : (
-            // Une taille nulle n'a pas de fraction : la barre reste pleine plutôt que de
-            // diviser par zéro, le fichier étant de toute façon déjà écrit.
+            // Zero size has no fraction: show a full bar rather than divide by zero; the file is already written anyway.
             <div className="h-1 overflow-hidden rounded-full bg-surface-high">
               <div
                 className={cx(
@@ -960,7 +928,7 @@ function statusOf(upload: UploadItem): string {
   })
 }
 
-/** Résultats plats : un chemin complet dit mieux d'où vient un fichier qu'une indentation. */
+/** Flat search results: full paths explain file origins better than indentation. */
 function SearchResults({
   scope,
   query,
@@ -1025,7 +993,7 @@ function RootAction({
   label: string
   icon: React.ReactNode
   onClick: () => void
-  /** Plus serré à la souris : la barre de sélection loge aussi le compte. */
+  /** Tighter mouse layout: the selection bar also contains the count. */
   compact?: boolean
 }) {
   return (
@@ -1046,33 +1014,31 @@ function RootAction({
 }
 
 /**
- * Ce que les lignes peuvent déclencher.
- *
- * Passé en bloc plutôt qu'une prop par action : l'arborescence est récursive, et
- * une douzaine de props traverseraient chaque niveau sans que celui-ci les regarde.
- * La sélection n'y est pas : chaque ligne lit la sienne dans `tree-view`.
+ * Actions available to rows. Pass one object instead of a dozen props through every recursive
+ * level, which does not consume them. Selection stays outside: each row reads its own tree-view
+ * state.
  */
 interface Actions {
   scope: string
   activePath: string | null
   draft: Draft | null
   setDraft: (draft: Draft | null) => void
-  /** Ouvre un fichier ; en aperçu, il cède sa place au suivant, voir `openTab`. */
+  /** Open a file; previews yield their tab to the next file, see openTab. */
   open: (path: string, preview?: boolean) => void
   onCreate: (parent: string, name: string, kind: 'file' | 'directory') => void
   onRename: (path: string, name: string) => void
-  /** Déplace ou copie des entrées dans `toParent`. */
+  /** Move or copy entries into toParent. */
   onTransfer: (entries: Picked[], toParent: string, mode: 'move' | 'copy') => void
-  /** Propose la suppression, qui attend une confirmation. */
+  /** Propose deletion pending confirmation. */
   onDelete: (entries: Picked[]) => void
   onClipboard: (mode: 'copy' | 'cut', entries: Picked[]) => void
   onPaste: (toParent: string) => void
   onCopyPaths: (paths: string[], absolute: boolean) => void
-  /** Fichiers lâchés depuis le système sur `parent`, dossiers compris. */
+  /** System files dropped on parent, including directories. */
   onDrop: (parent: string, transfer: DataTransfer) => void
-  /** Ouvre le sélecteur de fichiers, à destination de `parent`. */
+  /** Open the file picker targeting parent. */
   onPickFiles: (parent: string) => void
-  /** Lignes affichées, dans l'ordre de l'écran : la base du clavier et de la Maj. */
+  /** Displayed rows in screen order, the basis for keyboard and Shift behavior. */
   rows: () => HTMLElement[]
 }
 
@@ -1149,32 +1115,28 @@ function Level({
   )
 }
 
-/** Une action proposée sur une entrée, rendue dans les deux menus. */
+/** Entry action rendered in both menus. */
 interface EntryAction {
   key: string
-  /** Les actions d'un même groupe se suivent ; un trait sépare deux groupes. */
+  /** Actions in one group remain consecutive; separators divide groups. */
   group: string
   icon: ReactNode
   label: string
-  /** Raccourci clavier équivalent, rappelé en bout de ligne. */
+  /** Equivalent keyboard shortcut shown at row end. */
   hint?: string
   tone?: 'critical'
   run: () => void
 }
 
 /**
- * Les actions d'une entrée seule, en données plutôt qu'en éléments.
- *
- * Elles s'affichent à deux endroits, au clic droit et derrière les trois points, et
- * les deux menus viennent de modules Radix distincts dont les éléments ne se
- * partagent pas. Décrire les actions une fois et les rendre deux fois évite que les
- * deux listes divergent.
+ * Single-entry actions as data rather than elements. Context and ellipsis menus use separate Radix
+ * primitives whose entries cannot be shared. Describe once and render twice to prevent divergence.
  */
 function entryActions(entry: TreeEntryDto, actions: Actions, view: TreeView): EntryAction[] {
   const { scope } = actions
   const self: Picked[] = [[entry.path, entry.isDirectory]]
   const expand = () => setExpanded(scope, entry.path, true)
-  // « Sélectionner » n'est utile qu'au doigt : à la souris, Ctrl-clic fait la même chose.
+  // Select is useful only by touch; mouse Ctrl-click already does this.
   const touch = window.matchMedia('(pointer: coarse)').matches
 
   return [
@@ -1250,7 +1212,7 @@ function entryActions(entry: TreeEntryDto, actions: Actions, view: TreeView): En
       hint: HINT.copy,
       run: () => actions.onClipboard('copy', self),
     },
-    // Coller dans un dossier, ou à côté d'un fichier : c'est là qu'on a cliqué.
+    // Paste inside directories or beside files, matching the click target.
     ...(view.clipboard
       ? [
           {
@@ -1326,7 +1288,7 @@ function entryActions(entry: TreeEntryDto, actions: Actions, view: TreeView): En
   ]
 }
 
-/** Les actions d'une sélection de plusieurs entrées, quand la ligne visée en fait partie. */
+/** Bulk-selection actions when the targeted row belongs to it. */
 function selectionActions(targets: Picked[], actions: Actions): EntryAction[] {
   const { scope } = actions
   const paths = targets.map(([path]) => path)
@@ -1356,8 +1318,7 @@ function selectionActions(targets: Picked[], actions: Actions): EntryAction[] {
       label: translate('filetree.entry.downloadZip'),
       run: () => downloadArchive(scope, paths),
     },
-    // Les dossiers n'ont pas de mention `@` à eux dans l'explorateur : seuls les
-    // fichiers de la sélection partent dans la barre de saisie.
+    // Directories have no explorer @ mentions: send only selected files to the composer.
     ...(files.length > 0
       ? [
           {
@@ -1395,10 +1356,7 @@ function selectionActions(targets: Picked[], actions: Actions): EntryAction[] {
   ]
 }
 
-/**
- * Le contenu des deux menus d'une ligne. Lu à l'ouverture, puisque Radix ne le monte
- * qu'à ce moment : la sélection et le presse-papiers y sont ceux de l'instant.
- */
+/** Contents of both row menus, read when Radix mounts on opening so selection and clipboard are current. */
 function EntryMenuItems({
   entry,
   actions,
@@ -1428,19 +1386,14 @@ function EntryMenuItems({
   )
 }
 
-/** Fond d'une ligne : la sélection d'abord, puis le fichier ouvert, puis le survol. */
+/** Row background precedence: selection, open file, then hover. */
 function rowTone(selected: boolean, active: boolean): string {
   if (selected) return 'bg-accent-wash text-ink'
   if (active) return 'bg-accent-wash/45'
   return 'hover:bg-surface-high'
 }
 
-/**
- * Ligne d'un résultat de recherche.
- *
- * Plus simple qu'une ligne d'arborescence : ni chevron, ni glisser-déposer, ni
- * décalage, puisqu'il n'y a pas de niveau à représenter.
- */
+/** Search-result row: no chevron, drag-and-drop, or indentation because it represents no tree level. */
 function EntryRow({
   entry,
   actions,
@@ -1464,7 +1417,7 @@ function EntryRow({
           data-tree-path={entry.path}
           data-tree-name={entry.name}
           onMouseDown={(event) => {
-            // Maj-clic étend la sélection : sans ça, il sélectionnerait aussi du texte.
+            // Shift-click extends selection; prevent browser text selection too.
             if (event.shiftKey) event.preventDefault()
           }}
           onClick={(event) => {
@@ -1476,7 +1429,7 @@ function EntryRow({
           }}
           className={cx(
             'flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left select-none',
-            // L'anneau de focus global, rentré dans la ligne : la colonne le rognerait.
+            // Inset the global focus ring or the column would clip it.
             'transition-colors focus-visible:-outline-offset-2',
             rowTone(selected, active),
           )}
@@ -1514,8 +1467,7 @@ function Entry({
   const state = entry.state ? STATES[entry.state] : null
   const draft = actions.draft
 
-  // Le fichier affiché dans l'éditeur se montre : ouvert depuis un onglet ou un lien du
-  // fil, il peut se trouver loin dans une liste qu'on n'a pas fait défiler.
+  // Reveal the editor's current file: tabs or thread links may open files far outside the scrolled viewport.
   useEffect(() => {
     if (active) button.current?.scrollIntoView({ block: 'nearest' })
   }, [active])
@@ -1534,25 +1486,24 @@ function Entry({
     )
   }
 
-  /** Un dossier accepte le dépôt ; un fichier le renvoie à son dossier parent. */
+  /** Directories accept drops; files forward them to their parent. */
   const dropTarget = entry.isDirectory ? entry.path : parentOf(entry.path)
 
   const onDrop = (event: DragEvent) => {
     event.preventDefault()
-    // Le dépôt s'arrête ici : sans quoi la colonne, qui accepte aussi les fichiers,
-    // les enverrait une seconde fois à la racine.
+    // Stop propagation here or the column would upload files again at root.
     event.stopPropagation()
     setDropping(false)
 
-    // Des fichiers venus du système, et non une entrée déplacée dans l'arborescence :
-    // un dossier les reçoit, un fichier les envoie à son dossier parent.
+    // System file drops rather than moved tree entries: directories receive them and files forward
+    // them to parents.
     if (carriesExternalFiles(event.dataTransfer)) {
       actions.onDrop(dropTarget, event.dataTransfer)
       return
     }
 
-    // Déposer un dossier sur lui-même ou dans sa propre descendance n'a pas de sens :
-    // le serveur le refuse, mais autant ne pas envoyer la requête.
+    // Dropping directories into themselves or descendants is invalid: avoid sending requests the
+    // server will reject.
     const dragged = readDragged(event)?.filter(([from]) => !isWithin(dropTarget, from))
     if (dragged?.length) actions.onTransfer(dragged, dropTarget, copyModifier(event) ? 'copy' : 'move')
   }
@@ -1569,7 +1520,7 @@ function Entry({
             )}
             draggable
             onDragStart={(event) => {
-              // La sélection part entière quand la ligne saisie en fait partie.
+              // Drag the entire selection when the grabbed row belongs to it.
               const dragged = targetsOf(getTreeView(scope), entry.path, entry.isDirectory)
               event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(dragged))
               event.dataTransfer.effectAllowed = 'copyMove'
@@ -1579,7 +1530,7 @@ function Entry({
             }}
             onDragOver={(event) => {
               const external = carriesExternalFiles(event.dataTransfer)
-              // Sans `preventDefault`, le navigateur refuse le dépôt sans rien dire.
+              // Without preventDefault browsers silently reject drops.
               if (!external && !event.dataTransfer.types.includes(DRAG_TYPE)) return
               event.preventDefault()
               event.dataTransfer.dropEffect = external || copyModifier(event) ? 'copy' : 'move'
@@ -1600,18 +1551,14 @@ function Entry({
               data-tree-dir={entry.isDirectory ? '1' : undefined}
               data-tree-name={entry.name}
               onMouseDown={(event) => {
-                // Maj-clic étend la sélection : sans ça, il sélectionnerait aussi du texte.
+                // Shift-click extends selection; prevent browser text selection too.
                 if (event.shiftKey) event.preventDefault()
               }}
               /*
-               * Un dossier se déplie au clic simple, un fichier s'ouvre. C'est le geste
-               * attendu de part et d'autre, et l'arborescence reste visible à côté de
-               * l'éditeur, donc ouvrir ne coûte plus de quitter ce qu'on parcourt.
-               *
-               * Le clic simple ouvre un aperçu, remplacé par le fichier suivant : sans
-               * ça, parcourir l'arborescence remplit la barre d'onglets. Le double clic
-               * ouvre pour de bon, comme dans un éditeur. Avec Ctrl ou Maj, le clic ne
-               * fait que sélectionner.
+               * Single-click expands directories or opens files, the expected gestures. The tree
+               * remains beside the editor, so opening does not abandon browsing. Single-click
+               * creates a preview replaced by subsequent files, avoiding tab accumulation;
+               * double-click keeps it permanently. Ctrl or Shift clicks only select.
                */
               onClick={(event) => {
                 if (selectFromClick(event, entry, actions)) return
@@ -1625,7 +1572,7 @@ function Entry({
               }}
               className={cx(
                 'flex h-7 min-w-0 flex-1 items-center gap-1.5 text-left text-[0.8125rem] select-none',
-                // L'anneau de focus global, rentré dans la ligne : la colonne le rognerait.
+                // Inset the global focus ring or the column would clip it.
                 'focus-visible:-outline-offset-2',
                 entry.state === 'ignored' ? 'text-ink-faint/60' : 'text-ink-soft',
               )}
@@ -1640,7 +1587,7 @@ function Entry({
                 <span className="w-3 shrink-0" />
               )}
 
-              {/* `alt` vide : l'icône répète le nom écrit juste à côté. */}
+              {/* Empty alt because icons repeat adjacent filenames. */}
               <img
                 src={fileIconUrl(entry.name, entry.isDirectory, open)}
                 alt=""
@@ -1659,8 +1606,7 @@ function Entry({
               ) : null}
             </button>
 
-            {/* Le menu reste visible tant qu'il est ouvert : sinon il disparaît sous le
-                curseur dès que celui-ci quitte la ligne pour aller le choisir. */}
+            {/* Keep menu triggers visible while open or they vanish when pointers leave rows for the menu. */}
             <div
               className={cx(
                 'shrink-0 pr-1 opacity-0 transition-opacity',
@@ -1696,10 +1642,8 @@ function Entry({
 }
 
 /**
- * Champ de saisie d'un nom, pour une création comme pour un renommage.
- *
- * Le nom est présélectionné sans son extension quand il y en a une : renommer part
- * presque toujours du corps du nom, et retaper `.tsx` à chaque fois n'apporte rien.
+ * Name input for creation and rename. Select the basename without extension because renaming
+ * usually changes the stem and retyping .tsx adds no value.
  */
 function NameInput({
   depth,

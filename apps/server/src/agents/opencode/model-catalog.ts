@@ -8,12 +8,11 @@ import { withProbeServer } from './probe.js'
 import { toSlashCommands } from './runner.js'
 
 /**
- * Catalogues d'opencode, lus sur un serveur jetable : modèles des fournisseurs
- * connectés, agents primaires, et commandes en `/` d'un dossier.
+ * opencode catalogs from disposable server: connected-provider models, primary agents, directory
+ * slash commands.
  *
- * Même contrat que pour les deux autres CLI : rien n'est codé en dur, et tout est mis
- * en cache parce que chaque sonde démarre un process. Le binaire est résolu à chaque
- * sonde, pour voir une version installée pendant que le daemon tourne.
+ * Like other CLIs, no hardcoding; cache because probes start processes. Resolve binary per probe to
+ * detect installation while daemon runs.
  */
 
 type Providers = ResponseBody<'config.providers'>
@@ -21,7 +20,7 @@ type Providers = ResponseBody<'config.providers'>
 interface Listing {
   providers: Providers['providers']
   defaults: Providers['default']
-  /** Modèle nommé par la configuration du poste (`model`), quand elle en nomme un. */
+  /** Machine-configured model when named. */
   configured: string | null
   agents: Agent[]
 }
@@ -48,9 +47,8 @@ export class OpencodeCatalog {
   }
 
   /**
-   * `GET /config/providers` ne rend que les fournisseurs utilisables (identifiants
-   * présents, ou gratuits) : c'est la liste à proposer, là où `GET /provider` énumère
-   * les quelque deux cents qu'opencode connaît.
+   * GET /config/providers returns usable providers (credentials/free): offer these instead of GET
+   * /provider listing roughly two hundred known providers.
    */
   private async probeModels(): Promise<Listing> {
     return withProbeServer(await this.executable(), homedir(), async (server) => {

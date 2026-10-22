@@ -36,7 +36,7 @@ part that does not travel, the terminal.
 Sillage is built with AI, heavily. Claude Code and Codex wrote most of the code,
 and most of that happened from inside Sillage itself.
 
-The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
+The full specification lives in [docs/SPEC.md](docs/SPEC.md) (English).
 
 ## What it adds on top of the CLIs
 

@@ -9,10 +9,10 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Comptes Grok supplémentaires : création, connexion par clé API et par code d'appareil,
-// sélecteur de compte dans les défauts du CLI. Vrais composants, vraie API, base temporaire ;
-// le CLI est le faux Grok des tests (`apps/server/test/fixtures/grok-agent.mjs`), qui parle
-// comme Grok Build 1.0.62 sans joindre xAI.
+// Extra Grok accounts: creation, API-key/device-code sign-in, CLI-default account
+// selector. Real components/API, temporary database; CLI is test fake Grok
+// (`apps/server/test/fixtures/grok-agent.mjs`), speaking like Grok Build 1.0.62
+// without contacting xAI.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -64,8 +64,8 @@ try {
     SILLAGE_CONFIG: config,
     SILLAGE_DATA_DIR: join(data, 'data'),
     SILLAGE_WEB_ROOT: join(data, 'web'),
-    // Le home Grok de « l'utilisateur », que les comptes reprennent par liens, et une
-    // confirmation de code d'appareil assez lente pour que l'écran montre l'attente.
+    // “User” Grok home linked by accounts, and device-code confirmation slow enough
+    // for the screen to show waiting.
     GROK_HOME: userGrokHome,
     FIXTURE_LOGIN_DELAY: '60000',
   }
@@ -88,12 +88,12 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // L'entrée du menu des réglages mène à la page.
+  // Settings menu entry leads to page.
   await page.goto(`${base}/settings`)
   await page.getByRole('link', { name: /Comptes Grok/ }).first().click()
   await page.waitForURL(/\/settings\/comptes-grok$/)
 
-  // Créer un compte : il naît non connecté, avec les deux voies de connexion.
+  // Create account: initially signed out with both sign-in methods.
   await page.getByText('Aucun compte supplémentaire').waitFor()
   await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
   await page.getByLabel('Nom').fill('Perso')
@@ -104,7 +104,7 @@ try {
   const id = listed.accounts[0].id
   const accountHome = join(data, 'data', 'grok-accounts', id)
 
-  // Clé API : Grok l'écrit dans le home du compte ; elle ne revient jamais au navigateur.
+  // API key: Grok writes it in account home; never returned to browser.
   await page.getByRole('button', { name: 'Utiliser une clé API' }).click()
   await page.getByLabel('Clé API xAI').fill('xai-test-bogus-key')
   await page.getByRole('button', { name: 'Se connecter', exact: true }).click()
@@ -115,7 +115,7 @@ try {
   assert.ok((await lstat(join(accountHome, 'sessions'))).isSymbolicLink(), 'les sessions sont celles du home de l’utilisateur')
   await page.screenshot({ path: '/var/tmp/sillage-grok-accounts-desktop.png' })
 
-  // Le sélecteur de compte dans les défauts de Grok.
+  // Account selector in Grok defaults.
   await page.goto(`${base}/settings/cli`)
   await page.getByRole('radio', { name: /Grok Build/ }).click()
   const account = page.getByRole('combobox', { name: 'Compte' })
@@ -126,19 +126,19 @@ try {
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
   assert.equal(settings.agentDefaults.grok.account, id)
 
-  // La jauge du compte, lue par `_x.ai/billing` dans son home.
+  // Account gauge read through `_x.ai/billing` in its home.
   const usage = await (await context.request.get(`${base}/api/agents/grok/usage?account=${id}`)).json()
   assert.equal(usage.plan, 'X Premium')
   assert.equal(usage.windows[0]?.id, 'credits')
 
-  // Déconnexion : le compte redevient en attente, sa connexion est retirée.
+  // Sign-out returns account to pending and removes its sign-in.
   await page.goto(`${base}/settings/comptes-grok`)
   await page.getByRole('button', { name: 'Déconnecter ce compte' }).click()
   await page.getByText('Non connecté').waitFor({ timeout: 30000 })
   assert.equal((await (await context.request.get(`${base}/api/grok-accounts`)).json()).accounts[0].status, 'pending')
   assert.equal(await readFile(join(accountHome, 'auth.json'), 'utf8').catch(() => null), null, 'auth.json retiré')
 
-  // Code d'appareil : l'écran montre l'URL et le code écrits par `grok login`, on annule.
+  // Device code: screen shows URL/code printed by `grok login`, then cancel.
   await page.getByRole('button', { name: "Se connecter par code d'appareil" }).click()
   await page.getByText('Ouvrir la page de connexion').waitFor({ timeout: 30000 })
   assert.equal(await page.locator('code').first().textContent(), 'W68V-VRXD')
@@ -150,7 +150,7 @@ try {
   await page.getByRole('button', { name: "Se connecter par code d'appareil" }).waitFor()
   assert.equal((await (await context.request.get(`${base}/api/grok-accounts/${id}/login`)).json()).state, 'idle')
 
-  // Au téléphone : l'écran tient dans la largeur.
+  // Phone: screen fits width.
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await mobile.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
   await mobile.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })

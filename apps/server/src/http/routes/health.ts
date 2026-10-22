@@ -8,8 +8,8 @@ export function registerHealthRoutes(app: FastifyInstance): void {
     const mem = process.memoryUsage()
     return {
       status: 'ok',
-      // Après une mise à jour, le client sonde cette route (publique) pour savoir
-      // quand la nouvelle version tourne réellement, pas juste que le port répond.
+      // After updates, clients poll this public route to determine when the new
+      // version is actually running, rather than merely checking that the port responds.
       version: CURRENT_VERSION,
       uptimeSec: Math.round((Date.now() - startedAt) / 1000),
       rssMb: Math.round(mem.rss / 1024 / 1024),

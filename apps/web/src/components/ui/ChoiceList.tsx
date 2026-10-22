@@ -10,15 +10,9 @@ export interface Choice<T extends string> {
 }
 
 /**
- * Un choix parmi quelques-uns, dépliés plutôt que repliés dans une liste déroulante.
- *
- * Un `select` cache les options derrière un clic : on ne sait pas ce qu'on peut choisir
- * avant d'ouvrir, et on ne voit jamais deux options côte à côte. Quand elles sont peu
- * nombreuses et qu'elles portent une explication, les montrer coûte quelques lignes et
- * évite l'ouverture. Au-delà d'une demi-douzaine, la liste déroulante reprend l'avantage.
- *
- * Sémantique de groupe de boutons radio, pas de boutons pressés : les options
- * s'excluent, et un lecteur d'écran doit l'annoncer comme tel.
+ * Expanded choices for small explained option sets. Selects hide options and prevent comparison; a
+ * few visible rows save opening. Dropdowns become preferable beyond roughly six choices. Use
+ * radio-group semantics, not pressed buttons, so screen readers announce mutual exclusion.
  */
 export function ChoiceList<T extends string>({
   label,
@@ -64,8 +58,7 @@ export function ChoiceList<T extends string>({
                   <span className="block truncate text-xs text-ink-faint">{option.hint}</span>
                 ) : null}
               </span>
-              {/* Place réservée en permanence : la coche apparaissant au choix
-                  décalerait le libellé de chaque ligne au moment du clic. */}
+              {/* Always reserve checkmark space to prevent selection shifting labels. */}
               <span className="w-4 shrink-0 text-accent">
                 {selected ? <Check size={16} /> : null}
               </span>

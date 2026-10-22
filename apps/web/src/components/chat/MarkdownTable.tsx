@@ -5,15 +5,11 @@ import { ToolbarButton } from './CodeBlock'
 import { useTranslate } from '../../lib/i18n'
 
 /**
- * Garde une sélection à la souris dans la cellule où elle a commencé.
- *
- * Dès que le curseur sort de la cellule, Chromium bascule en sélection de cellules
- * entières : on voulait trois mots, on se retrouve avec une grille, et la fin de la
- * sélection saute d'une case à l'autre sans suivre le curseur. `user-select: contain`
- * ferait exactement ce qu'on veut, mais Chromium ne le connaît pas (vérifié sur
- * Chromium 151) : on ramène donc la fin de la sélection au bord de la cellule tant que
- * le bouton reste enfoncé. Une sélection commencée hors du tableau n'est pas touchée,
- * et un tableau entier se copie toujours par le bouton CSV.
+ * Constrain mouse selection to its starting cell. Chromium otherwise switches to whole-cell
+ * selection once pointers leave, turning three-word selection into a jumping grid.
+ * user-select:contain is unsupported (verified Chromium 151), so clamp the selection end to the
+ * cell edge while pressed. Preserve selections starting outside tables; full tables remain copyable
+ * through CSV.
  */
 function useContainedCellSelection(ref: RefObject<HTMLElement | null>): void {
   useEffect(() => {
@@ -26,7 +22,7 @@ function useContainedCellSelection(ref: RefObject<HTMLElement | null>): void {
       if (!cell || !selection || selection.rangeCount === 0) return
       const { anchorNode, focusNode } = selection
       if (!anchorNode || !focusNode || !cell.contains(anchorNode) || cell.contains(focusNode)) return
-      // La fin est sortie : au bord le plus proche de là où elle est partie.
+      // Selection left the cell: clamp to the nearest exit edge.
       const after = Boolean(cell.compareDocumentPosition(focusNode) & Node.DOCUMENT_POSITION_FOLLOWING)
       selection.extend(cell, after ? cell.childNodes.length : 0)
     }
@@ -52,11 +48,8 @@ function useContainedCellSelection(ref: RefObject<HTMLElement | null>): void {
 }
 
 /**
- * Tableau markdown, sur toute la largeur disponible, avec export CSV.
- *
- * Le défilement horizontal est porté par l'enveloppe et non par le tableau lui-même :
- * un `display: block` sur `<table>` casse la mise en page en colonnes, et les
- * cellules cessent de s'aligner dès qu'une ligne est plus longue que les autres.
+ * Full-width Markdown table with CSV export. Wrapper owns horizontal scrolling: display:block on
+ * table breaks column layout and cells stop aligning with differently sized rows.
  */
 export function MarkdownTable({ html, rows }: { html: string; rows: string[][] }) {
   const t = useTranslate()
@@ -66,7 +59,7 @@ export function MarkdownTable({ html, rows }: { html: string; rows: string[][] }
     <div className="overflow-hidden rounded-md border border-line">
       <div className="flex items-center gap-1 border-b border-line px-2 py-1">
         <span className="min-w-0 flex-1 truncate text-[0.6875rem] text-ink-faint">
-          {/* La première ligne est l'en-tête : elle ne compte pas comme donnée. */}
+          {/* The first row is the header, not data. */}
           {Math.max(rows.length - 1, 0)} ligne{rows.length > 2 ? 's' : ''}
         </span>
         <ToolbarButton

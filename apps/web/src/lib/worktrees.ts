@@ -14,13 +14,10 @@ const worktreesKey = (projectId: string) => ['worktrees', projectId]
 const statusKey = (projectId: string) => ['worktree-status', projectId]
 
 /**
- * L'avancement des chantiers d'un projet : chaque arbre jugé contre la branche par
- * défaut, avec les sessions qui y tiennent.
- *
- * Une seule requête par projet, partagée entre toutes les lignes de la barre latérale
- * qui la lisent : aucune commande git ne part d'un rendu. Le serveur peut répondre
- * d'une liste périmée pendant qu'il recalcule (`fresh: false`) : on repasse alors
- * peu après, une fois, pour avoir la suivante.
+ * Project worktree progress: each tree compared with the default branch plus its associated
+ * sessions. One project query shared by all sidebar rows; rendering never runs Git. The server may
+ * return stale data while recalculating (`fresh: false`); retry once shortly afterward for the next
+ * snapshot.
  */
 export function useWorktreeStatuses(projectId: string | undefined) {
   return useQuery({
@@ -33,12 +30,9 @@ export function useWorktreeStatuses(projectId: string | undefined) {
 }
 
 /**
- * L'arbre auquel une conversation tient, pour sa ligne dans la barre latérale.
- *
- * Son cwd d'abord (lien `worktree`), sinon l'arbre où elle a écrit, le plus récemment
- * actif en premier : la liste est déjà triée ainsi par le serveur. Null pour une session
- * de l'arbre principal, qui n'affiche rien de plus : c'est le contraste qui fait
- * repérer les autres.
+ * Conversation-associated tree for the sidebar row. Prefer its cwd (`worktree` link), otherwise the
+ * most recently active written tree, already sorted server-side. Null for main-tree sessions, which
+ * need no extra label: contrast identifies others.
  */
 export function useConversationWorktree(conversation: Pick<ConversationDto, 'id' | 'projectId'>): WorktreeStatusDto | null {
   const { data } = useWorktreeStatuses(conversation.projectId)
@@ -55,7 +49,7 @@ export function useConversationWorktree(conversation: Pick<ConversationDto, 'id'
   }, [data, conversation.id])
 }
 
-/** Ce qui reste à faire ou à nettoyer, pour le compteur près du projet. */
+/** Remaining work or cleanup for the project counter. */
 export function worktreeCounts(list: WorktreeStatusListDto | undefined): { pending: number; cleanable: number } {
   let pending = 0
   let cleanable = 0
@@ -99,14 +93,14 @@ export function useBranches(projectId: string | undefined) {
   })
 }
 
-/** Ce que le nettoyage ferait d'un arbre, lu à l'ouverture de la confirmation. */
+/** Cleanup preview for a tree, read when opening confirmation. */
 export function useWorktreeCleanupPlan(projectId: string, path: string | null) {
   return useQuery({
     queryKey: ['worktree-cleanup', projectId, path],
     queryFn: () =>
       api.get<WorktreeCleanupPlanDto>(`/api/projects/${projectId}/worktrees/cleanup?path=${encodeURIComponent(path ?? '')}`),
     enabled: path !== null,
-    // Relu à chaque ouverture : ce qui tourne dans l'arbre change d'une minute à l'autre.
+    // Reread on each opening: active processes within a tree can change minute to minute.
     staleTime: 0,
     gcTime: 0,
   })

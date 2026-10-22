@@ -4,33 +4,19 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { MEMORY_INDEX_FILE, memoryFileSchema, type MemoryFileDto } from '@sillage/protocol'
 
-/**
- * Mémoire des agents, un dossier par projet sous `<data>/memory/projects/<id>`.
- *
- * Au format de la mémoire automatique de Claude Code, parce que c'est Claude qui l'écrit
- * nativement : Sillage lui passe ce dossier en `autoMemoryDirectory` (sondé sur Claude
- * Code 2.1.286, les écritures y passent sans permission, comme dans le dossier par
- * défaut). Un dossier par projet et non par répertoire de travail, comme le fait Claude
- * seul : les worktrees d'un projet partagent ce qu'ils apprennent.
- *
- * Le serveur MCP y écrit aussi pour Codex (`write_memory` dans `mcp/sillage-mcp.mjs`) :
- * les deux doivent rester d'accord sur la forme des noms et sur la tenue de l'index.
- */
+/** Agent memory, one directory per project under `<data>/memory/projects/<id>`. Uses Claude Code's native automatic-memory format, supplied via `autoMemoryDirectory` (probed on Claude Code 2.1.286: writes require no permission, like its default directory). Scope by project rather than working directory so worktrees share learning. MCP also writes Codex notes (`write_memory` in `mcp/sillage-mcp.mjs`); both implementations must agree on filenames and index maintenance. */
 
-/** Trace de l'import de la mémoire Claude d'avant, pour ne le faire qu'une fois. */
+/** Marker for one-time import of previous Claude memory. */
 const IMPORT_MARKER = '.imported-from.json'
 
-/** Au-delà, l'index injecté à Codex pèse plus qu'il n'oriente. */
+/** Beyond this size, Codex's injected index costs more context than guidance it provides. */
 const MAX_INJECTED_INDEX_CHARS = 20_000
 
 export function projectMemoryDir(root: string, projectId: string): string {
   return join(root, 'projects', projectId)
 }
 
-/**
- * Le dossier où Claude Code range seul la mémoire d'un répertoire de travail : le chemin
- * dont chaque caractère hors lettres et chiffres devient un tiret.
- */
+/** Claude Code's native memory directory for a working directory: replace each nonalphanumeric path character with a hyphen. */
 export function claudeNativeMemoryDir(cwd: string): string {
   const config = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
   return join(config, 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'), 'memory')
@@ -40,14 +26,7 @@ function hasNotes(dir: string): boolean {
   return existsSync(dir) && readdirSync(dir).some((name) => name.endsWith('.md'))
 }
 
-/**
- * Le dossier de mémoire du projet, créé au besoin, avec la mémoire que Claude tenait
- * déjà pour ce workspace importée la première fois.
- *
- * Copiée et non déplacée : l'original reste là pour une session lancée hors de Sillage.
- * L'import n'a lieu que dans un dossier encore vide, et une seule fois, d'où la trace :
- * sans elle, une mémoire vidée à la main se remplirait de nouveau au lancement suivant.
- */
+/** Creates project memory when needed and imports existing Claude workspace memory once. Copy rather than move so CLI sessions outside Sillage retain originals. Import only into empty directories and record completion: otherwise manually emptied memory would reappear on the next launch. */
 export function ensureProjectMemory(root: string, projectId: string, workspacePath: string): string {
   const dir = projectMemoryDir(root, projectId)
   mkdirSync(dir, { recursive: true })
@@ -97,7 +76,7 @@ export async function writeMemoryFile(dir: string, file: string, content: string
   await writeFile(join(dir, file), content, 'utf8')
 }
 
-/** Retire une note et sa ligne d'index : un pointeur vers un fichier absent tromperait. */
+/** Deletes notes and their index entries; pointers to missing files would mislead. */
 export async function deleteMemoryFile(dir: string, file: string): Promise<void> {
   memoryFileSchema.parse(file)
   await rm(join(dir, file), { force: true })
@@ -109,17 +88,13 @@ export async function deleteMemoryFile(dir: string, file: string): Promise<void>
   await writeFile(indexPath, kept.join('\n'), 'utf8')
 }
 
-/**
- * La mémoire telle qu'on la donne à Codex en début de session : l'index, et de quoi
- * lire et écrire les notes. Claude n'en a pas besoin, il charge l'index de lui-même.
- * Null quand il n'y a ni index ni moyen d'écrire : rien à dire.
- */
+/** Memory supplied to Codex at session start: index and note read/write instructions. Claude loads its own index and needs none. Null without both an index and a write mechanism. */
 export function memoryAppendixForCodex(dir: string, sillageMcp: boolean): string | null {
   let index = ''
   try {
     index = readFileSync(join(dir, MEMORY_INDEX_FILE), 'utf8').trim()
   } catch {
-    // Pas encore d'index.
+    // No index yet.
   }
   if (!index && !sillageMcp) return null
   if (index.length > MAX_INJECTED_INDEX_CHARS) {

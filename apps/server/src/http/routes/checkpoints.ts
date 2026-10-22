@@ -15,12 +15,12 @@ import { HttpError, badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
- * Les points de reprise d'un tour : lire le diff d'un fichier entre les deux captures,
- * et ramener le workspace à l'état d'avant.
+ * Turn checkpoints: read a file diff between snapshots and restore the workspace
+ * to its previous state.
  *
- * La liste des fichiers, elle, ne passe pas par ici : l'événement `checkpoint.completed`
- * du journal la porte déjà, et c'est de lui que le fil et le panneau la tiennent.
- * Par conversation seulement, un point de reprise n'existant que par un tour.
+ * File lists do not go through these routes: the journal's `checkpoint.completed`
+ * event already carries them for both the conversation and panel. Conversation
+ * scope only, since checkpoints belong to turns.
  */
 export function registerCheckpointRoutes(app: FastifyInstance, ctx: AppContext, sessions: SessionManager): void {
   const parseKey = (key: string): string => {
@@ -51,8 +51,8 @@ export function registerCheckpointRoutes(app: FastifyInstance, ctx: AppContext, 
   })
 
   /**
-   * Remet le workspace tel qu'il était avant le tour. Réservé au propriétaire : c'est
-   * son dépôt qu'on réécrit, et son fil qui en garde la trace.
+   * Restores the workspace to its state before the turn. Owner only: this rewrites
+   * their repository and records the operation in their conversation.
    */
   app.post('/api/conversations/:id/checkpoints/:key/restore', async (request): Promise<CheckpointRestoreDto> => {
     const user = requireUser(request)

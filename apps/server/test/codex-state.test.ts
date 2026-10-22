@@ -37,7 +37,7 @@ test('consommation cumulée, cache et reprise : compter uniquement les nouveaux 
   usage.start('turn')
   usage.update(update(1020, 105, 910))
   usage.update(update(1040, 110, 920))
-  usage.update(update(1040, 110, 920)) // Snapshot répété.
+  usage.update(update(1040, 110, 920)) // Repeated snapshot.
   assert.deepEqual(usage.finish(), { inputTokens: 20, outputTokens: 10, cacheReadTokens: 20, cacheCreationTokens: 0 })
   const resumed = new CodexTurnUsage()
   resumed.start('turn')
@@ -70,7 +70,7 @@ test('recherche, images, sommeil, compaction et revue ont un rendu normalisé', 
   assert.ok(started.some((event) => event.type === 'context.compaction_started'))
   assert.ok(completed.some((event) => event.type === 'tool.completed' && event.toolCallId === 'web' && JSON.stringify(event.output).includes('Result')))
   assert.ok(completed.some((event) => event.type === 'message.completed' && event.blocks.some((block) => block.type === 'image')))
-  // Image introuvable : le chemin seul, jamais une erreur.
+  // Missing images yield paths only, never errors.
   assert.ok(completed.some((event) => event.type === 'tool.completed' && event.toolCallId === 'view' && JSON.stringify(event.output) === '{"path":"/tmp/image.png"}'))
   assert.ok(completed.some((event) => event.type === 'context.compacted'))
   assert.ok(completed.some((event) => event.type === 'agent.notice' && event.code === 'enteredReviewMode'))

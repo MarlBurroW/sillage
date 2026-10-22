@@ -11,11 +11,8 @@ import { ImageGallery } from './ImageViewer'
 import { Markdown } from './Markdown'
 
 /**
- * Horodatage d'un message.
- *
- * Heure seule dans la journée, date complète au-delà : dans une conversation ouverte
- * ce matin, « 14:32 » situe mieux qu'une date répétée à chaque ligne, alors qu'un fil
- * repris trois jours plus tard a besoin du jour.
+ * Message timestamp. Show time only today and full dates otherwise: time best locates today's
+ * conversation, while threads resumed days later need the date.
  */
 function formatTimestamp(ts: number): string {
   const date = new Date(ts)
@@ -28,7 +25,7 @@ function formatTimestamp(ts: number): string {
   })
 }
 
-/** Barre d'actions sous un message : date, puis ce qu'on peut en faire. */
+/** Message action bar: timestamp then available actions. */
 function MessageFooter({
   ts,
   text,
@@ -40,7 +37,7 @@ function MessageFooter({
   text: string
   label: string
   align: 'start' | 'end'
-  /** Proposé sur les seuls messages utilisateur : ce sont eux qui ouvrent un tour. */
+  /** Offered only for user messages, which open turns. */
   onFork?: () => void
 }) {
   const t = useTranslate()
@@ -51,8 +48,7 @@ function MessageFooter({
         align === 'end' && 'flex-row-reverse',
       )}
     >
-      {/* Toujours visible, contrairement aux actions : c'est un repère de lecture, pas
-          une commande, et le faire apparaître au survol le rendrait inutile. */}
+      {/* Always visible unlike actions: reading markers would be useless if hover-only. */}
       <time dateTime={new Date(ts).toISOString()} title={new Date(ts).toLocaleString(locale())}>
         {formatTimestamp(ts)}
       </time>
@@ -77,17 +73,16 @@ function MessageFooter({
 }
 
 /**
- * Mémoïsé : pendant un tour, seul le dernier message change à chaque lot de deltas.
- * Sans ça, un fil de 200 messages est redessiné entièrement seize fois par seconde.
- * Le fold produit désormais un nouvel objet par élément modifié, ce qui rend la
- * comparaison par référence exacte.
+ * Memoize: only the last message changes per delta batch. Otherwise 200-message threads redraw
+ * entirely sixteen times per second. The fold replaces changed objects, making reference
+ * comparisons exact.
  */
 export const MessageBubble = memo(function MessageBubble({
   message,
   onFork,
 }: {
   message: MessageItem
-  /** Absent en lecture seule, ou quand la conversation ne peut pas être branchée. */
+  /** Absent in read-only or nonforkable conversations. */
   onFork?: (message: MessageItem) => void
 }) {
   const t = useTranslate()
@@ -105,15 +100,14 @@ export const MessageBubble = memo(function MessageBubble({
 
   const liveThinking = message.streamingThinking
   const liveText = message.streamingText
-  // Le texte définitif prime sur le tampon de streaming, vidé dès que le message
-  // complet arrive. C'est aussi ce qui part dans le presse-papiers.
+  // Final text takes precedence over streaming buffers cleared on completion. Copy the same text to clipboard.
   const shown = text || liveText
 
   const hasAttachments = images.length > 0 || files.length > 0
   if (!shown && !thinking && !liveThinking && !hasAttachments) return null
 
-  // Un message d'une autre session arrive par le canal des messages utilisateur, le seul
-  // qu'aient les CLI : sans ce rendu, il passerait pour une consigne tapée au clavier.
+  // Other-session messages use the CLI's user-message channel; specialized rendering prevents
+  // mistaking them for typed instructions.
   const peer = message.role === 'user' && text ? parseSessionMessage(text) : null
   if (peer) {
     return (
@@ -151,8 +145,10 @@ export const MessageBubble = memo(function MessageBubble({
       <Attachments images={images} files={files} />
       {shown ? (
         <>
-          {/* `sg-bubble` désigne la cible du surlignage de tour et de recherche. Une
-              réponse d'agent n'a pas de bulle, c'est son contenu qui fait office. */}
+          {/*
+           * sg-bubble targets turn/search highlights. Agent replies have no bubble, so their
+           * content serves as the target.
+           */}
           <div className="sg-bubble min-w-0 rounded-lg">
             <Markdown text={shown} />
           </div>
@@ -171,12 +167,9 @@ const PEER_LABELS = {
 } as const
 
 /**
- * Message reçu d'une autre session du projet.
- *
- * À gauche et non à droite comme une bulle de l'utilisateur, puisque ce n'est pas lui
- * qui parle, et bordé en pointillé pour ne pas se confondre non plus avec une réponse
- * de l'agent. L'en-tête mène à la session expéditrice ; la note adressée au modèle, qui
- * suit l'enveloppe, n'est pas affichée.
+ * Message from another project session. Left-aligned rather than user-right because it is not the
+ * user's speech, with dashed border distinguishing agent replies. Heading links to the sender; omit
+ * the model-facing note after the envelope.
  */
 function PeerMessage({
   envelope,
@@ -223,10 +216,7 @@ function PeerMessage({
   )
 }
 
-/**
- * Pièces jointes d'un message. Les images sont montrées, le reste devient un lien de
- * téléchargement : le chemin transmis à l'agent n'a pas à apparaître dans le fil.
- */
+/** Message attachments: display images and download links for others, omitting agent-facing disk paths. */
 function Attachments({
   images,
   files,
@@ -266,9 +256,8 @@ function Attachments({
 }
 
 /**
- * Contenu de la réflexion, replié. L'état « en cours » n'est plus porté ici : il
- * appartient à l'indicateur de tour, qui reste affiché même quand ce bloc s'est déjà
- * terminé au milieu d'un tour.
+ * Collapsed reasoning content. Running state belongs to turn activity, which remains visible after
+ * reasoning completes mid-turn.
  */
 function ThinkingBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false)

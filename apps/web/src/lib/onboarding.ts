@@ -1,11 +1,8 @@
 import type { AgentConfig, InstanceProfile, OnboardingAnswers } from '@sillage/protocol'
 
 /**
- * La visite de première ouverture : quelles étapes, dans quel ordre, d'après ce que
- * l'instance est et ce que l'utilisateur a répondu.
- *
- * Calculée à chaque rendu plutôt que mémorisée : les réponses de Bienvenue changent la
- * liste, et l'index enregistré au compte ne vaut que pour la liste du moment.
+ * First-launch tour steps and order based on instance type and user answers. Recompute each render:
+ * Welcome answers change the list, so the stored account index applies only to the current list.
  */
 export type OnboardingStepId =
   | 'account'
@@ -26,17 +23,16 @@ export interface OnboardingShape {
 
 export function onboardingSteps({ profile, isAdmin, answers }: OnboardingShape): OnboardingStepId[] {
   const steps: OnboardingStepId[] = []
-  // Hébergé : le compte d'abord, créé s'il est le premier, repris s'il a été ouvert par
-  // un administrateur. En bureau, le lanceur a déjà ouvert la session.
+  // Server: account first, creating the first or using one opened by an administrator. Desktop
+  // already has a session opened by the launcher.
   if (profile === 'server') steps.push('account')
   steps.push('welcome', 'appearance', 'agents', 'work')
-  // Où vivent consignes et mémoire des projets : un défaut de compte, pour chacun.
+  // Storage for project instructions and memory: an account default for each.
   steps.push('memory')
-  // Les consignes globales relèvent de l'administrateur ; celles d'un projet se règlent
-  // sur sa page.
+  // Global instructions belong to administrators; project instructions are configured on the project page.
   if (isAdmin) steps.push('rules')
-  // L'adresse publique sert bien au-delà du téléphone (webhooks, API) : l'administrateur
-  // la voit toujours. Un membre n'a que la partie téléphone, s'il compte s'en servir.
+  // The public address serves more than phones (webhooks, API), so administrators always see it.
+  // Members see only the phone section if they plan to use it.
   if (profile === 'server' && (isAdmin || answers.devices === 'phone')) steps.push('address')
   steps.push('ready')
   return steps
@@ -45,10 +41,8 @@ export function onboardingSteps({ profile, isAdmin, answers }: OnboardingShape):
 export type PermissionChoice = OnboardingAnswers['permission']
 
 /**
- * Le réflexe choisi, traduit dans le vocabulaire de chaque CLI.
- *
- * Les quatre réflexes sont ceux de Claude ; les autres CLI n'ont pas tous les quatre, et
- * la traduction prend le garde-fou le plus proche plutôt que d'inventer un mode.
+ * Selected permission policy in each CLI's vocabulary. The four policies come from Claude; other
+ * CLIs use the nearest available safeguard rather than an invented mode.
  */
 export function withPermissionChoice(config: AgentConfig, choice: PermissionChoice): AgentConfig {
   switch (config.agent) {
@@ -81,10 +75,8 @@ export function withPermissionChoice(config: AgentConfig, choice: PermissionChoi
 }
 
 /**
- * Ce qu'une adresse dit de l'accès depuis ailleurs.
- *
- * `local` : une adresse qui ne mène nulle part hors du réseau où elle a été tapée.
- * Les noms d'un réseau privé Tailscale (`.ts.net`) ou d'un domaine public passent.
+ * What an address implies about remote access. `local` identifies addresses unusable outside the
+ * originating network. Private Tailscale names (`.ts.net`) and public domain names are accepted.
  */
 export function describeOrigin(value: string): { valid: boolean; https: boolean; local: boolean } {
   let url: URL
@@ -111,7 +103,7 @@ export function describeOrigin(value: string): { valid: boolean; https: boolean;
   return { valid: true, https: url.protocol === 'https:', local }
 }
 
-/** L'origine de la page, sans chemin : ce par quoi ce navigateur est arrivé. */
+/** Current page origin without a path: the address this browser used to arrive. */
 export function currentOrigin(): string {
   return window.location.origin
 }

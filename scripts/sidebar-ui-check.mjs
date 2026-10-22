@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Vrais composants et vraie API, dans une base temporaire. Aucun CLI n'est activé.
+// Real components and API, temporary database. No CLI enabled.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -68,7 +68,7 @@ try {
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
-    // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
+    // Browser PDF viewer does not expose application storage.
     if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')
   }, new URL(base).origin)
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
@@ -82,7 +82,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   const shots = join(root, 'docs/audits/2026-09-19-sidebar')
   await mkdir(shots, { recursive: true })
-  // Une longue liste pour vérifier le défilement, sans toucher à la base réelle.
+  // Long list checks scrolling without touching real database.
   await page.route('**/api/conversations', async (route) => {
     const response = await route.fetch()
     const entries = await response.json()

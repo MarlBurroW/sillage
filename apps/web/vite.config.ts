@@ -6,8 +6,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 const SERVER_PORT = process.env.SILLAGE_PORT ?? '7317'
 
-// Même résolution que apps/server/tsup.config.ts : tag fourni par la CI de
-// release, describe git en build local, `dev` hors dépôt.
+// Same resolution as apps/server/tsup.config.ts: release CI tag, git describe for local builds,
+// `dev` outside a repository.
 function resolveVersion(): string {
   if (process.env.SILLAGE_VERSION) return process.env.SILLAGE_VERSION.replace(/^v/, '')
   try {
@@ -25,23 +25,16 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       /*
-       * `prompt` et non `autoUpdate`.
-       *
-       * `autoUpdate` fait bien prendre le contrôle au nouveau service worker, mais la
-       * page déjà chargée continue de tourner sur l'ancien code : rien ne la prévient,
-       * rien ne la recharge. Sur une PWA installée qui reprend depuis la mémoire au
-       * lieu de naviguer, elle restait indéfiniment sur un build périmé, et une
-       * correction déployée n'atteignait jamais l'écran.
-       *
-       * En mode `prompt`, l'application est notifiée et propose le rechargement. Le
-       * faire d'autorité perdrait un message en cours de saisie.
+       * Use `prompt` rather than `autoUpdate`. Automatic updates give the new service worker
+       * control but leave loaded pages running old code without notice or reload. Installed PWAs
+       * resuming from memory could remain outdated indefinitely. Prompt mode notifies the app and
+       * offers reload; forced reload would lose a message being composed.
        */
       registerType: 'prompt',
-      // L'enregistrement se fait depuis l'application, qui a besoin du retour de
-      // `useRegisterSW` pour afficher l'invite.
+      // Register from the app, which needs `useRegisterSW` feedback to display the prompt.
       injectRegister: null,
-      // `push-sw.js` doit être copié tel quel : il n'est pas importé par le bundle,
-      // c'est le service worker qui le charge à l'exécution.
+      // Copy `push-sw.js` unchanged: the generated bundle does not import it; the service worker
+      // loads it at runtime.
       includeAssets: ['apple-touch-icon.png', 'favicon.svg', 'push-sw.js'],
       manifest: {
         name: 'Sillage',
@@ -57,23 +50,21 @@ export default defineConfig({
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
-          // `maskable` réserve la zone rognée par les masques d'Android : sans cette
-          // entrée, l'icône est recadrée dans le cercle et le motif disparaît.
+          // `maskable` reserves Android's cropped region: otherwise circular icon cropping hides the symbol.
           { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
-        // Nos écouteurs push sont chargés dans le service worker généré, plutôt que
-        // d'écrire celui-ci entièrement à la main : le précache reste géré par Workbox.
+        // Load push listeners into the generated service worker instead of writing it entirely by
+        // hand, preserving Workbox precache management.
         importScripts: ['/push-sw.js'],
-        // La coque applicative est précachée, jamais les réponses d'API : les mettre
-        // en cache produirait un fil incohérent avec le journal (invariant I2).
+        // Precache the app shell, never API responses, which would make the thread inconsistent
+        // with the log (invariant I2).
         globPatterns: ['**/*.{js,css,html,woff2}'],
-        // Le paquet principal dépasse encore les 2 Mio par défaut (2,14 Mo au 17 oct.
-        // 2026), même depuis que le catalogue français est chargé à la demande : il ne
-        // portait qu'un peu moins de 190 ko des 2,33 Mo. Il est téléchargé au démarrage
-        // quoi qu'il arrive ; l'exclure du précache casserait seulement l'application
-        // hors ligne. Revenir à la limite par défaut demande d'alléger encore le paquet.
+        // The main bundle still exceeds the default 2 MiB limit (2.14 MB on October 17, 2026), even
+        // after lazy-loading the French catalog, which accounted for under 190 KB of 2.33 MB. It is
+        // downloaded at startup anyway; excluding it only breaks offline use. Returning to the
+        // default limit requires further bundle reduction.
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
@@ -94,10 +85,8 @@ export default defineConfig({
     },
   },
   /**
-   * Identifiant du build, affiché dans les réglages.
-   *
-   * Sans lui, « je ne vois pas la correction » ne se tranche pas : rien à l'écran ne
-   * dit quelle version tourne réellement.
+   * Build identifier displayed in settings. Without it, reports of missing fixes cannot be resolved
+   * because the screen gives no evidence of the running version.
    */
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),

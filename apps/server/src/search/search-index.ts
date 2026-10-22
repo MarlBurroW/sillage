@@ -1,17 +1,7 @@
 import { sql } from 'drizzle-orm'
 import type { Db } from '@sillage/db'
 
-/**
- * Index de recherche plein texte sur les messages.
- *
- * Table dérivée du journal, jamais consultée comme source (invariant I2) : elle se
- * vide et se reconstruit par rejeu, et le jour où le contenu indexé changera, c'est ce
- * chemin qui rattrapera l'existant.
- *
- * Une seule extraction, partagée par les trois usages (un message qui arrive, un fil
- * copié par fork, une reconstruction complète). Écrite en SQL et non en TypeScript
- * pour que la reprise dans la migration et l'écriture à chaud ne puissent pas diverger.
- */
+/** Full-text message search index. Derived from the journal, never authoritative (invariant I2): rebuild by clearing and replaying when indexed content changes. One SQL extraction handles arriving messages, forked history and full rebuilds so migration backfill and live writes cannot diverge. */
 const EXTRACT = sql`
   INSERT INTO search_messages (text, conversation_id, seq, role, ts)
   SELECT group_concat(block.value ->> '$.text', char(10)),
@@ -29,22 +19,16 @@ const EXTRACT = sql`
     AND coalesce(event.payload ->> '$.parentToolCallId', '') = ''
 `
 
-/** Écriture d'un client Drizzle ou d'une transaction : les deux savent exécuter du SQL. */
+/** Drizzle client or transaction writer: both execute SQL. */
 type Runner = Pick<Db, 'run'>
 
-/**
- * Indexe le message qui vient d'être journalisé.
- *
- * Appelé dans la transaction d'écriture du journal, donc l'index ne peut pas contenir
- * un message que le journal n'aurait pas. Un message sans bloc de texte, par exemple
- * un appel d'outil seul, ne produit aucune ligne : le `GROUP BY` ne voit rien.
- */
+/** Indexes newly journaled messages inside the journal write transaction so indexes cannot contain absent messages. Messages without text, such as tool-only calls, produce no rows because `GROUP BY` sees nothing. */
 export function indexMessage(run: Runner, conversationId: string, seq: number): void {
   run.run(sql`${EXTRACT} AND event.conversation_id = ${conversationId} AND event.seq = ${seq}
     GROUP BY event.conversation_id, event.seq`)
 }
 
-/** Indexe un fil entier, après la copie de journal que fait un fork. */
+/** Indexes an entire conversation after fork journal copying. */
 export function indexConversation(run: Runner, conversationId: string): void {
   run.run(sql`${EXTRACT} AND event.conversation_id = ${conversationId}
     GROUP BY event.conversation_id, event.seq`)
@@ -54,14 +38,7 @@ export function dropConversation(run: Runner, conversationId: string): void {
   run.run(sql`DELETE FROM search_messages WHERE conversation_id = ${conversationId}`)
 }
 
-/**
- * Reconstruction complète.
- *
- * Les lignes orphelines partent avec le reste : une table virtuelle FTS5 ne reçoit pas
- * les `ON DELETE CASCADE`, donc supprimer un projet laisse derrière lui les messages
- * de ses conversations. La requête de recherche les ignore déjà, en joignant les
- * conversations, mais ils occupent de la place jusqu'ici.
- */
+/** Full rebuild. Remove orphaned rows too: virtual FTS5 tables do not receive `ON DELETE CASCADE`, so project deletion leaves indexed messages. Search already hides them by joining conversations, but they occupy space until rebuilt. */
 export function rebuild(db: Db): number {
   db.run(sql`DELETE FROM search_messages`)
   db.run(sql`${EXTRACT} GROUP BY event.conversation_id, event.seq`)

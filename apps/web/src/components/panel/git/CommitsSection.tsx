@@ -27,13 +27,8 @@ import { GraphRail } from './GraphRail'
 import { graphColor, layoutGitGraph, type GraphRow } from '../../../lib/git-graph'
 
 /**
- * Les commits de la branche, du plus récent au plus ancien, avec les références qui
- * les marquent et ce qu'on peut en faire : créer une branche là, annuler par un commit
- * inverse, ou ramener la branche jusqu'ici.
- *
- * Tous auteurs confondus, donc y compris ce qu'un agent a commité par une commande
- * shell. Ce que l'agent a fait tour par tour est une autre question, et vit dans
- * l'onglet Historique.
+ * Branch commits newest first with references and actions: branch here, revert, or reset. Includes
+ * all authors and agent shell commits. Turn-by-turn agent work belongs in History instead.
  */
 export function CommitsSection({ repo }: { repo: GitRepoStatusDto }) {
   const t = useTranslate()
@@ -392,7 +387,7 @@ function Commit({
   )
 }
 
-/** Une référence posée sur un commit : branche locale, branche distante, ou tag. */
+/** Commit reference: local branch, remote branch, or tag. */
 function Ref({ name, color }: { name: string; color: string }) {
   const isTag = name.startsWith('tag: ')
   const label = isTag ? name.slice('tag: '.length) : name
@@ -438,8 +433,7 @@ function CommitDiff({ scope, hash }: { scope: string; hash: string }) {
   }
 
   return (
-    // Décalé : sans ça, les fichiers d'un commit déplié s'alignent sur les commits
-    // eux-mêmes, et la liste se lit comme une seule suite.
+    // Indent expanded files so they do not align with commits and flatten the hierarchy.
     <div className="border-t border-line/60 bg-sunken/40">
       <div className="git-diff-summary">
         <strong>{t('git.graph.files', { count: files.length })}</strong>
@@ -452,8 +446,10 @@ function CommitDiff({ scope, hash }: { scope: string; hash: string }) {
         <p className="px-2.5 py-1.5 text-[0.6875rem] text-ink-faint">{t('changes.commits.diffEmpty')}</p>
       ) : null}
 
-      {/* Sans `onOpenFile` : le fichier du disque n'est plus celui de ce commit, et
-          ouvrir l'un en croyant lire l'autre est le pire des deux mondes. */}
+      {/*
+       * Omit onOpenFile because disk no longer matches the commit; opening it would misrepresent
+       * historical contents.
+       */}
       {files.map((file) => (
         <FileDiff key={file.path} file={file} />
       ))}
@@ -466,10 +462,8 @@ function CommitDiff({ scope, hash }: { scope: string; hash: string }) {
 }
 
 /**
- * Ramener la branche à un commit, en choisissant ce qu'il advient du travail d'après.
- *
- * Les trois modes sont expliqués en clair : `soft`, `mixed` et `hard` ne disent rien à
- * qui ne les a pas déjà appris à ses dépens, et le dernier détruit du travail.
+ * Reset a branch to a commit while choosing what happens to later work. Explain soft, mixed, and
+ * hard plainly because names assume prior knowledge and hard destroys work.
  */
 function ResetDialog({
   commit,
@@ -514,7 +508,7 @@ function ResetDialog({
   )
 }
 
-/** Une branche qui part de ce commit, qu'on extrait ou non tout de suite. */
+/** Branch from this commit, optionally checking it out immediately. */
 function BranchDialog({
   commit,
   busy,

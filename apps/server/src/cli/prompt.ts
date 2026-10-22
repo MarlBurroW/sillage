@@ -1,10 +1,6 @@
 import { createInterface, type Interface } from 'node:readline'
 
-/**
- * readline émet ses lignes dès qu'elles arrivent. Avec un `rl.question` par ligne, les
- * lignes reçues entre deux questions (cas d'un stdin redirigé) sont perdues en silence.
- * On écoute donc en continu et on met en file d'attente ce qui arrive en avance.
- */
+/** readline emits lines immediately. Per-line `rl.question` loses redirected-stdin lines arriving between questions; listen continuously and queue early arrivals. */
 export class Prompter {
   private readonly rl: Interface
   private readonly queue: string[] = []
@@ -45,11 +41,11 @@ export class Prompter {
     return (await this.nextLine()).trim()
   }
 
-  /** Saisie sans écho, pour ne pas laisser le mot de passe dans le scrollback. */
+  /** Non-echoing input avoids leaving passwords in scrollback. */
   async askHidden(question: string): Promise<string> {
     process.stdout.write(question)
 
-    // En TTY, c'est readline qui réaffiche les caractères tapés, via _writeToOutput.
+    // In TTYs, readline echoes typed characters through _writeToOutput.
     const internals = this.rl as Interface & { _writeToOutput?: (s: string) => void }
     const echo = internals._writeToOutput
     internals._writeToOutput = () => {}

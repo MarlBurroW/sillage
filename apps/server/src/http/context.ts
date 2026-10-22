@@ -8,11 +8,11 @@ export interface AppContext {
 
 declare module 'fastify' {
   interface FastifyRequest {
-    /** Renseigné par le hook d'authentification, absent sur les routes publiques. */
+    /** Set by the authentication hook; absent on public routes. */
     user?: UserRow
     /**
-     * Jeton d'API présenté en Bearer, quand l'appelant est une machine. `user` porte
-     * alors son propriétaire : un jeton emprunte une identité, il n'en crée pas.
+     * API token presented as Bearer by machine callers. `user` then holds its
+     * owner: tokens borrow identities rather than create them.
      */
     apiToken?: ApiTokenRow
   }

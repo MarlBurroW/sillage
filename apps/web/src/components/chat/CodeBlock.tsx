@@ -8,11 +8,8 @@ import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
 
 /**
- * Extension de fichier proposée au téléchargement, par langage.
- *
- * Les identifiants de langage ne sont pas des extensions : `python` donne `.py`, et
- * la plupart des autres ne diffèrent pas. Cette table ne couvre que les cas où les
- * deux divergent, le reste passe par le nom du langage lui-même.
+ * Download extensions by language. Language IDs differ from extensions, such as python to py; list
+ * only differences and otherwise use the language name.
  */
 const EXTENSIONS: Record<string, string> = {
   typescript: 'ts',
@@ -64,11 +61,8 @@ export function ToolbarButton({
 }
 
 /**
- * Bloc de code : coloration, bascule de retour à la ligne, copie, téléchargement.
- *
- * Le retour à la ligne est un réglage par bloc et non global : une longue commande
- * shell se lit mieux repliée, alors qu'un tableau de valeurs alignées se lit mieux en
- * défilement horizontal.
+ * Code block with highlighting, wrapping, copy, and download. Wrapping is per block: long shell
+ * commands benefit while aligned data tables prefer horizontal scrolling.
  */
 export function CodeBlock({ language, code }: { language: string; code: string }) {
   const [wrap, setWrap] = useState(false)

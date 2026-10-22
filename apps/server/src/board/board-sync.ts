@@ -30,31 +30,20 @@ import {
   type GitHubIssue,
 } from './github-issues.js'
 
-/** Les changements faits dans Sillage partent vite ; la lecture de GitHub, plus rarement. */
+/** Send Sillage changes quickly; poll GitHub less often. */
 const TICK_MS = 15_000
 const PULL_EVERY_MS = 2 * 60_000
-/**
- * Recul pris sur le curseur : `since` compare à l'horloge de GitHub, pas à la nôtre.
- * Relire une minute de trop ne coûte rien, toutes les écritures étant idempotentes.
- */
+/** Cursor overlap because `since` uses GitHub's clock, not ours. Rereading an extra minute is harmless because writes are idempotent. */
 const CURSOR_MARGIN_MS = 60_000
 const DAY_MS = 86_400_000
 
-/**
- * Ce que Sillage ajoute à un texte qu'un agent publie : la signature si le board assume
- * l'IA, puis la marque de session, invisible. C'est la marque, et elle seule, qui fait
- * que ce texte n'ouvrira pas de session de maintenance en revenant de GitHub.
- */
+/** Text appended to agent publications: optional board AI signature then invisible session marker. Only the marker prevents returned GitHub content from opening maintenance sessions. */
 export function publicationTail(link: Pick<BoardLinkRow, 'identity' | 'signature'>, conversationId: string): string {
   const signature = link.identity === 'ai' ? link.signature.trim() : ''
   return signature ? `${signature}\n${sessionMarker(conversationId)}` : sessionMarker(conversationId)
 }
 
-/**
- * Le corps d'une issue sans la marque de session, ni la signature du board quand elle la
- * précède : les deux sont gardées à part pour être remises. La carte montre le texte, et
- * le modifier ici ne doit pas effacer de GitHub ce qui dit d'où il vient.
- */
+/** Issue bodies without session markers or preceding board signatures; retain both separately for restoration. Cards show content, and editing here must not erase provenance on GitHub. */
 export function splitMarker(body: string | null, signature = ''): { body: string; marker: string | null } {
   const text = (body ?? '').replace(/\r\n/g, '\n')
   const [first] = findSessionMarkers(text)
@@ -91,14 +80,10 @@ export function parseHidden(value: string): number[] {
   }
 }
 
-/**
- * Un titre GitHub peut dépasser ce qu'une carte accepte. La table garde la version
- * coupée, celle de la carte : comparer l'entière à la coupée la ferait renvoyer, tronquée,
- * à chaque passage.
- */
+/** GitHub titles can exceed card limits. Store the truncated card version: comparing full remote titles to truncated ones would resend truncated titles every pass. */
 const cardTitle = (title: string) => title.slice(0, CARD_TITLE_MAX)
 
-/** Ce que la table garde d'une issue lue sur GitHub. */
+/** Issue information retained from GitHub. */
 function issueColumns(issue: GitHubIssue, signature: string) {
   const { body, marker } = splitMarker(issue.body, signature)
   return {
@@ -115,10 +100,7 @@ function issueColumns(issue: GitHubIssue, signature: string) {
   }
 }
 
-/**
- * Une carte porte du travail local : une session, un fichier, une note écrite dans
- * Sillage. C'est ce qui la fait rester quand son issue sort du board.
- */
+/** Cards have local work when they contain sessions, files or Sillage-written notes. Such cards remain when issues leave the board. */
 export function hasLocalWork(db: AppContext['db'], cardId: string): boolean {
   const session = db.select({ id: conversations.id }).from(conversations).where(eq(conversations.cardId, cardId)).limit(1).get()
   if (session) return true
@@ -133,7 +115,7 @@ export function hasLocalWork(db: AppContext['db'], cardId: string): boolean {
   return Boolean(note)
 }
 
-/** Une erreur GitHub dite à une route : un code que l'interface traduit. */
+/** GitHub error exposed to routes as a translatable code. */
 function httpError(err: unknown): HttpError {
   if (err instanceof HttpError) return err
   if (err instanceof BoardGitHubError) {
@@ -143,21 +125,12 @@ function httpError(err: unknown): HttpError {
   return new HttpError(502, 'board_github_unreachable', err instanceof Error ? err.message : String(err))
 }
 
-/**
- * Le board relié à GitHub : tient les cartes à jour des issues, et renvoie vers GitHub
- * ce que Sillage change.
- *
- * Rien ne se marque « à envoyer » : chaque issue garde ce que GitHub disait à la
- * dernière lecture, et une carte qui en diffère a changé ici. Toutes les routes qui
- * touchent une carte, et `advanceCardOnLaunch`, sont donc couvertes sans le savoir.
- * Quand les deux côtés ont bougé, l'envoi passe avant la lecture : le geste le plus
- * récent, fait dans Sillage, gagne.
- */
+/** GitHub-linked board keeps cards synchronized with issues and sends Sillage changes back. No dirty flags: retain the latest remote snapshot, then differing cards indicate local changes. This automatically covers all card routes and `advanceCardOnLaunch`. When both sides changed, send before reading so the latest local action wins. */
 export class BoardSync {
   private timer: NodeJS.Timeout | null = null
   private logger: FastifyBaseLogger | null = null
   private ticking = false
-  /** Une file par projet : la lecture et une publication ne doivent pas se croiser. */
+  /** One queue per project prevents reads and publications from racing. */
   private readonly queues = new Map<string, Promise<unknown>>()
   private readonly syncing = new Set<string>()
   private readonly kickTimers = new Map<string, NodeJS.Timeout>()
@@ -166,7 +139,7 @@ export class BoardSync {
     private readonly ctx: AppContext,
     private readonly credentials: Pick<GitCredentialStore, 'resolve'>,
     private readonly fetcher: FetchLike = fetch,
-    /** Ouvre les sessions qui répondent aux commentaires ; absent, l'option ne fait rien. */
+    /** Opens comment-response sessions; absent, the option does nothing. */
     private readonly responder?: Responder,
   ) {}
 
@@ -200,12 +173,12 @@ export class BoardSync {
     return this.ctx.db.select().from(boardLinks).where(eq(boardLinks.projectId, projectId)).get()
   }
 
-  /** L'issue suivie d'une carte, détachée ou non ; undefined pour une carte locale. */
+  /** Tracked issue attached or detached; undefined for local cards. */
   issueOf(cardId: string): CardIssueRow | undefined {
     return this.ctx.db.select().from(cardIssues).where(eq(cardIssues.cardId, cardId)).get()
   }
 
-  /** Un changement fait dans Sillage : l'envoyer sans attendre le prochain passage. */
+  /** Send local changes without awaiting the next pass. */
   kick(projectId: string): void {
     if (!this.timer || this.kickTimers.has(projectId)) return
     const timer = setTimeout(() => {
@@ -231,12 +204,12 @@ export class BoardSync {
     }
   }
 
-  /** « Synchroniser maintenant » : lève l'erreur, que la route rend telle quelle. */
+  /** 'Sync now' throws errors for routes to return unchanged. */
   async syncNow(projectId: string): Promise<void> {
     await this.run(projectId, true, true)
   }
 
-  /** Vérifie qu'un dépôt est joignable avec l'identifiant du compte, avant de relier. */
+  /** Checks repository access using account credentials before connecting. */
   async checkRepo(userId: string, repo: string): Promise<void> {
     try {
       const info = await this.client(userId, repo).repoInfo()
@@ -246,12 +219,9 @@ export class BoardSync {
     }
   }
 
-  // --- Gestes des routes et des agents -----------------------------------------------
+  // --- Route and agent operations -------------------------------------------------
 
-  /**
-   * Crée l'issue, puis la carte qui la suit. Dans cet ordre : un refus de GitHub ne
-   * laisse pas derrière lui une carte qui prétendrait être publiée.
-   */
+  /** Creates issues before tracking cards so GitHub rejections cannot leave cards falsely appearing published. */
   async createIssueCard(
     projectId: string,
     userId: string,
@@ -267,7 +237,7 @@ export class BoardSync {
         issue = await this.placeIssue(client, link, issue, body.column)
         const card = createCard(this.ctx.db, projectId, userId, body)
         this.track(link, card.id, issue)
-        // Ses `#n` désignent désormais des issues : les liens se recalculent.
+        // Its `#n` references now identify issues: recalculate links.
         syncCardReferences(this.ctx.db, card, card.description)
         return card
       } catch (err) {
@@ -276,10 +246,7 @@ export class BoardSync {
     })
   }
 
-  /**
-   * Publie une carte locale comme issue ; sur une carte détachée, la rattache à son
-   * issue, GitHub reprenant alors la main sur le titre, la description et la colonne.
-   */
+  /** Publishes local cards as issues or reconnects detached cards to their issues, letting GitHub control title, description and column again. */
   async publishCard(cardId: string): Promise<void> {
     const card = this.ctx.db.select().from(cards).where(eq(cards.id, cardId)).get()
     if (!card) throw new HttpError(404, 'card_not_found', 'Card not found.')
@@ -307,17 +274,17 @@ export class BoardSync {
     })
   }
 
-  /** La carte redevient locale ; l'issue reste ouverte sur GitHub, sans suite ici. */
+  /** Makes cards local again; issues stay open on GitHub without tracking here. */
   detachCard(cardId: string): void {
     const issue = this.issueOf(cardId)
     if (!issue || issue.detached) throw new HttpError(409, 'card_not_published', 'This card is not linked to an issue.')
     this.ctx.db.update(cardIssues).set({ detached: true }).where(eq(cardIssues.cardId, cardId)).run()
-    // Redevenue locale, ses `#n` désignent à nouveau des cartes.
+    // Once local again, its `#n` references identify cards.
     const card = this.ctx.db.select().from(cards).where(eq(cards.id, cardId)).get()
     if (card) syncCardReferences(this.ctx.db, card, card.description)
   }
 
-  /** Une carte GitHub supprimée : la synchronisation ne doit pas la recréer. */
+  /** Deleted GitHub cards must not be recreated by synchronization. */
   hideIssue(projectId: string, number: number): void {
     const link = this.link(projectId)
     if (!link) return
@@ -330,7 +297,7 @@ export class BoardSync {
       .run()
   }
 
-  // --- Passages ---------------------------------------------------------------------
+  // --- Sync passes ---------------------------------------------------------------------
 
   private async run(projectId: string, pull: boolean, raise = false): Promise<void> {
     await this.serialized(projectId, async () => {
@@ -356,7 +323,7 @@ export class BoardSync {
       } catch (err) {
         const code = err instanceof BoardGitHubError ? err.code : 'board_github_unreachable'
         if (!(err instanceof BoardGitHubError)) this.logger?.warn({ err, projectId }, 'synchronisation du board en échec')
-        // L'échec compte comme un passage : on réessaiera au prochain, pas à chaque tic.
+        // Failure counts as a pass: retry next pass rather than every tick.
         this.ctx.db
           .update(boardLinks)
           .set({ lastError: code, ...(pull ? { lastSyncedAt: started } : {}) })
@@ -369,10 +336,7 @@ export class BoardSync {
     })
   }
 
-  /**
-   * Ce que Sillage a changé sur les cartes suivies part vers leur issue. Rend le code du
-   * dernier refus définitif, que le passage affichera.
-   */
+  /** Sends local changes on tracked cards to issues. Returns the last permanent rejection code for display by the pass. */
   private async push(link: BoardLinkRow, client: GitHubIssues): Promise<string | null> {
     let refused: string | null = null
     const rows = this.ctx.db
@@ -397,8 +361,8 @@ export class BoardSync {
         this.ctx.db.update(cardIssues).set(issueColumns(updated, link.signature)).where(eq(cardIssues.cardId, card.id)).run()
       } catch (err) {
         if (!(err instanceof BoardGitHubError) || err.transient) throw err
-        // Refus définitif (droits, issue verrouillée ou supprimée) : la carte reprend ce
-        // que dit GitHub plutôt que de réessayer à chaque passage, et l'erreur s'affiche.
+        // On permanent rejections (permissions, locked or deleted issues), restore cards
+        // from GitHub instead of retrying every pass, and display the error.
         this.ctx.db
           .update(cards)
           .set({ title: issue.title, description: issue.body, column: impliedColumn(remote, link), updatedAt: Date.now() })
@@ -410,7 +374,7 @@ export class BoardSync {
     return refused
   }
 
-  /** Les notes à publier partent en commentaire sur l'issue de leur carte. */
+  /** Publishes queued notes as comments on their card's issue. */
   private async publishNotes(link: BoardLinkRow, client: GitHubIssues): Promise<void> {
     const pending = this.ctx.db
       .select({
@@ -455,10 +419,7 @@ export class BoardSync {
     }
   }
 
-  /**
-   * Une note à publier dont la carte n'a plus d'issue suivie (détachée, board délié)
-   * ne partira jamais : elle échoue plutôt que d'attendre en silence.
-   */
+  /** Queued notes whose cards no longer track issues (detached or disconnected boards) cannot publish: fail rather than wait silently. */
   private failOrphanNotes(): void {
     this.ctx.db
       .update(cardNotes)
@@ -476,11 +437,7 @@ export class BoardSync {
       .run()
   }
 
-  /**
-   * Lit GitHub. La première fois : les issues ouvertes, et les fermées depuis moins de
-   * `closedDays`. Ensuite : tout ce qui a bougé depuis le curseur, issues et
-   * commentaires, en deux requêtes pour tout le board.
-   */
+  /** Reads GitHub. Initially fetch open issues and those closed within `closedDays`; afterward fetch changed issues and comments since the cursor in two board-wide requests. */
   private async pull(link: BoardLinkRow, client: GitHubIssues, started: number): Promise<MaintenanceEvent[]> {
     const tracked = new Map(
       this.ctx.db
@@ -510,8 +467,8 @@ export class BoardSync {
       issues = await client.listIssues({ state: 'all', since: link.cursor })
     }
 
-    // Les cartes neuves dont l'issue a déjà des commentaires : ceux-là sont antérieurs
-    // au curseur, la lecture des commentaires récents ne les ramènerait pas.
+    // New cards may have comments older than the cursor,
+    // which recent-comment queries would miss.
     const backfill: Array<{ cardId: string; number: number }> = []
     const events: MaintenanceEvent[] = []
     let created = false
@@ -534,16 +491,16 @@ export class BoardSync {
       if (issue.comments > 0) backfill.push({ cardId: card.id, number: issue.number })
     }
 
-    // Des issues neuves : les `#n` des cartes suivies peuvent désormais viser une carte,
-    // y compris entre deux issues arrivées dans ce même passage.
+    // New issues let tracked cards' `#n` references resolve to cards,
+    // including between issues arriving in the same pass.
     if (created) this.relinkReferences(link)
 
     for (const entry of backfill) {
       for (const comment of await client.listIssueComments(entry.number)) this.applyComment(entry.cardId, comment, link.signature)
     }
-    // Seuls les commentaires lus ici peuvent ouvrir une session : ceux de la première
-    // lecture et des issues tout juste arrivées sont l'historique, que la session de
-    // l'issue lira dans le fil de la carte.
+    // Only comments read here can open sessions: initial history and comments on newly
+    // arriving issues are historical context the issue session
+    // reads in the card thread.
     const batches = new Map<number, MaintenanceEvent & { kind: 'comment' }>()
     if (link.cursor) {
       const fresh = new Set(backfill.map((entry) => entry.number))
@@ -568,22 +525,16 @@ export class BoardSync {
     return events
   }
 
-  /**
-   * Une issue ou un commentaire ouvre-t-il une session ? Seulement s'il est nouveau et ne
-   * porte pas de marque de session : l'auteur ne compte pas, une issue ouverte par
-   * l'utilisateur sur github.com est une issue comme les autres. Ce que Sillage publie
-   * lui-même est déjà connu et n'arrive pas jusque-là ; ce qu'un agent publie avec `gh`
-   * porte la marque.
-   */
+  /** Issues or comments open sessions only when new and unmarked. Authors do not matter: user-created github.com issues are ordinary issues. Sillage's own publications are already known and never reach here; agent `gh` publications carry markers. */
   private isNew(link: BoardLinkRow, createdAt: string, body: string | null): boolean {
     if (!this.responder || !link.cursor) return false
-    // Ce qu'on découvre parce qu'il vient d'être modifié, ou d'entrer dans le filtre,
-    // n'est pas nouveau pour autant.
+    // Discovery after modification or entering filters
+    // does not itself make issues new.
     if (Date.parse(createdAt) < Date.parse(link.cursor)) return false
     return findSessionMarkers(body ?? '').length === 0
   }
 
-  /** Les sessions de maintenance, une par issue. Rend le code d'un refus à afficher. */
+  /** One maintenance session per issue; returns rejection codes for display. */
   private async answer(events: MaintenanceEvent[]): Promise<string | null> {
     let notice: string | null = null
     for (const event of events) {
@@ -609,7 +560,7 @@ export class BoardSync {
     }
   }
 
-  /** Une issue suivie a bougé sur GitHub : la carte prend ce qui a changé, et seulement ça. */
+  /** Tracked issues changed on GitHub: update only changed card fields. */
   private refresh(link: BoardLinkRow, existing: CardIssueRow, issue: GitHubIssue): void {
     const card = this.ctx.db.select().from(cards).where(eq(cards.id, existing.cardId)).get()
     if (!card) return
@@ -629,7 +580,7 @@ export class BoardSync {
     if (patch.description !== undefined) syncCardReferences(this.ctx.db, card, patch.description)
   }
 
-  /** La carte reprend tout de l'issue : au rattachement d'une carte détachée. */
+  /** Restore all issue fields when reconnecting detached cards. */
   private applyRemoteToCard(link: BoardLinkRow, card: CardRow, issue: GitHubIssue, moveColumn: boolean): void {
     const { body } = splitMarker(issue.body, link.signature)
     const column = impliedColumn(issueRemote(issue), link)
@@ -642,11 +593,7 @@ export class BoardSync {
     syncCardReferences(this.ctx.db, card, body)
   }
 
-  /**
-   * Un commentaire GitHub devient une note, ou met à jour la sienne. Les notes publiées
-   * depuis Sillage se reconnaissent à leur identifiant et ne sont pas réécrites : leur
-   * version GitHub porte la signature, la note garde le texte écrit ici.
-   */
+  /** GitHub comments become notes or update existing notes. Recognize Sillage-published notes by ID and leave them unchanged: GitHub versions carry signatures while local notes retain original text. */
   private applyComment(cardId: string, comment: GitHubComment, signature: string): 'inserted' | 'known' {
     const externalId = String(comment.id)
     const body = splitMarker(comment.body, signature).body
@@ -669,8 +616,8 @@ export class BoardSync {
         conversationId: null,
         userId: null,
         body: body || ' ',
-        // Borné à maintenant : une horloge GitHub en avance rangerait le commentaire
-        // après les notes écrites ici juste après lui.
+        // Clamp to now: GitHub clock skew could otherwise place comments
+        // after local notes written immediately afterward.
         createdAt: Math.min(Date.parse(comment.created_at), Date.now()),
         externalId,
         externalAuthor: comment.user?.login ?? 'ghost',
@@ -680,10 +627,7 @@ export class BoardSync {
     return 'inserted'
   }
 
-  /**
-   * Les issues fermées depuis plus de `closedDays` quittent le board, sauf si leur carte
-   * porte du travail local : celle-là reste, comme une carte locale terminée.
-   */
+  /** Issues closed longer than `closedDays` leave the board unless cards contain local work, in which case they remain as completed local cards. */
   private prune(link: BoardLinkRow): void {
     const cutoff = Date.now() - link.closedDays * DAY_MS
     const stale = this.ctx.db
@@ -704,7 +648,7 @@ export class BoardSync {
     if (stale.length > 0) this.ctx.db.delete(cards).where(inArray(cards.id, stale)).run()
   }
 
-  // --- Outils -----------------------------------------------------------------------
+  // --- Tools -----------------------------------------------------------------------
 
   private track(link: BoardLinkRow, cardId: string, issue: GitHubIssue): CardIssueRow {
     const row = {
@@ -721,7 +665,7 @@ export class BoardSync {
     return row
   }
 
-  /** Donne à une issue neuve l'état de la colonne où sa carte est créée. */
+  /** Assigns new issue states from the column where their cards are created. */
   private async placeIssue(client: GitHubIssues, link: BoardLinkRow, issue: GitHubIssue, column: CardColumn): Promise<GitHubIssue> {
     const remote = issueRemote(issue)
     if (columnMatches(column, remote, link)) return issue
@@ -765,7 +709,7 @@ export class BoardSync {
   }
 }
 
-/** Le corps de PATCH qui fait passer l'issue de `remote` à `wanted`. */
+/** PATCH body transitioning issues from `remote` to `wanted`. */
 function statePatch(wanted: RemoteState, remote: RemoteState): Parameters<GitHubIssues['updateIssue']>[1] {
   const patch: Parameters<GitHubIssues['updateIssue']>[1] = {}
   if (wanted.state !== remote.state || wanted.stateReason !== remote.stateReason) {

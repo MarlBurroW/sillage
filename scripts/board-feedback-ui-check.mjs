@@ -9,9 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Retours sur le board (20 oct. 2026) : références `#n` cliquables avec aperçu au
-// survol, `#` du composer, tiroir refermé d'un clic à côté, carte saisie par tout son
-// corps, ordre par arrivée dans la colonne. Vrais composants, vraie API, base temporaire.
+// Board feedback (October 20, 2026): clickable `#n` references with hover previews,
+// composer `#`, drawer closed by outside click, cards grabbed by body, column order
+// by arrival. Real components/API, temporary database.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -46,7 +46,7 @@ async function ready(url, child) {
   throw new Error(`Server did not start: ${child.diagnostics}`)
 }
 
-/** Glisse au pointeur, depuis le centre d'un élément jusqu'à un autre. */
+/** Pointer drag from one element center to another. */
 async function drag(page, from, to) {
   const a = await from.boundingBox()
   const b = await to.boundingBox()
@@ -89,7 +89,7 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // 1. Les `#n` d'une réponse : liés quand la carte existe, texte sinon.
+  // 1. Response `#n` references: links when card exists, plain text otherwise.
   await page.goto(`${base}/p/${project.id}/c/${radar.id}`)
   const ref4 = page.locator('button.sg-card-ref[data-sg-card="4"]')
   await ref4.waitFor()
@@ -104,7 +104,7 @@ try {
   await page.mouse.move(5, 500)
   await tooltip.waitFor({ state: 'detached' })
 
-  // 2. Le `#` du composer propose les cartes et écrit le numéro.
+  // 2. Composer `#` suggests cards and inserts number.
   const composer = page.getByPlaceholder(/Écris ton message/)
   await composer.click()
   await composer.pressSequentially('voir #rad')
@@ -115,19 +115,19 @@ try {
   assert.equal(await composer.inputValue(), 'voir #4 ')
   await composer.fill('')
 
-  // 3. Le clic sur une référence ouvre la carte dans le board.
+  // 3. Clicking a reference opens card on board.
   await page.locator('button.sg-card-ref[data-sg-card="10"]').click()
   await page.waitForURL(/\/board\?carte=10$/)
   const panel = page.getByRole('complementary', { name: /#10/ })
   await panel.getByRole('heading', { name: 'City list virtualization' }).waitFor()
-  // La description cite #2 : lien et aperçu dans le tiroir aussi.
+  // Description mentions #2: link and preview also work in drawer.
   const ref2 = panel.locator('button.sg-card-ref[data-sg-card="2"]')
   await ref2.hover()
   await page.getByRole('tooltip').filter({ hasText: 'Offline caching for forecasts' }).waitFor()
   await page.screenshot({ path: '/tmp/sillage-bf-panel-ref.png' })
   await page.mouse.move(5, 500)
 
-  // 4. Un clic dans le vide du board referme le tiroir ; un clic sur une carte bascule.
+  // 4. Click empty board area to close drawer; click a card to switch.
   const todo = page.getByRole('region', { name: 'À faire' }).or(page.locator('section[aria-label="À faire"]')).first()
   await page.locator('[data-card-tile="1"] [data-card-open]').click()
   await page.waitForURL(/carte=1$/)
@@ -137,7 +137,7 @@ try {
   await page.waitForURL((url) => !url.search.includes('carte'))
   await page.getByRole('complementary', { name: /#1/ }).waitFor({ state: 'hidden' })
 
-  // 5. La carte se saisit par son corps, sans viser la poignée, et le geste n'ouvre rien.
+  // 5. Grab card by body without targeting handle; gesture opens nothing.
   await drag(page, page.locator('[data-card-tile="1"]'), progress)
   await progress.locator('[data-card-tile="1"]').waitFor()
   await delay(500)
@@ -147,7 +147,7 @@ try {
   await page.screenshot({ path: '/tmp/sillage-bf-drag.png' })
   assert.ok(todo)
 
-  // 6. L'ordre par arrivée : #1 vient d'arriver en cours, #2 y est depuis la veille.
+  // 6. Arrival order: #1 just entered In progress, #2 has been there since yesterday.
   const tiles = () => progress.locator('[data-card-tile]').evaluateAll((nodes) => nodes.map((node) => node.dataset.cardTile))
   await page.getByRole('button', { name: 'Ordre des cartes' }).click()
   await page.getByRole('menuitem', { name: 'Arrivées récentes en tête' }).click()
@@ -163,7 +163,7 @@ try {
   await page.reload()
   await page.waitForFunction(() => document.querySelector('section[aria-label="En cours"] [data-card-tile]')?.getAttribute('data-card-tile') === '2')
 
-  // Au téléphone : le board tient dans la largeur, les références s'ouvrent au doigt.
+  // Phone: board fits width, references open by touch.
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await mobile.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
   await mobile.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })

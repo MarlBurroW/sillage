@@ -1,35 +1,35 @@
 import { z } from 'zod'
 
 /**
- * Automatisations déclenchées par un webhook : un appel HTTP reçu ouvre une session
- * neuve, comme le tir d'une tâche planifiée dont elles partagent le moteur.
+ * Webhook-triggered automations: an incoming HTTP call opens a fresh session, like a
+ * scheduled-task run, using the same engine.
  *
- * Le moteur ne connaît aucun service : il reçoit des en-têtes et un corps, les passe à
- * des conditions et à un script facultatif, puis rend un prompt. GitHub et GitLab ne
- * sont que des réglages préremplis (`AUTOMATION_TEMPLATES`).
+ * The engine knows no service: it receives headers and a body, evaluates conditions and an
+ * optional script, then returns a prompt. GitHub and GitLab are merely presets
+ * (`AUTOMATION_TEMPLATES`).
  *
- * La lecture des chemins, les conditions et le rendu du prompt vivent ici et non dans
- * le serveur : l'interface les évalue en direct sur un appel reçu, et un verdict
- * affiché qui différerait du verdict appliqué rendrait le testeur inutile.
+ * Path reading, conditions and prompt rendering live here rather than on the server: the UI
+ * evaluates them live against received calls, and a displayed verdict differing from the
+ * applied one would make the tester useless.
  */
 
 export const MAX_AUTOMATION_RULES = 30
 export const MAX_AUTOMATION_SCRIPT_CHARS = 20000
 export const MAX_AUTOMATION_PATH_CHARS = 300
 export const MAX_AUTOMATION_VALUE_CHARS = 1000
-/** Au-delà, un déclencheur qui s'emballe se met en pause tout seul. */
+/** Beyond this, a runaway trigger pauses itself. */
 export const DEFAULT_AUTOMATION_RUNS_PER_HOUR = 10
 export const MAX_AUTOMATION_RUNS_PER_HOUR = 120
-/** Plus gros corps conservé dans le journal ; un appel plus lourd est accepté mais tronqué. */
+/** Largest body retained in the journal; larger calls are accepted but truncated. */
 export const MAX_DELIVERY_BODY_BYTES = 256 * 1024
 
-// --- Chemins et gabarits -------------------------------------------------------------
+// --- Paths and templates -------------------------------------------------------------
 
 /**
- * Valeur au bout d'un chemin pointé : `payload.issue.title`, `payload.commits.0.id`,
- * `headers.x-github-event`. Un segment `*` parcourt un tableau ou les valeurs d'un objet
- * et rend la liste de ce qu'il trouve : `payload.issue.labels.*.name` donne les noms de
- * tous les labels, ce qu'aucun index fixe ne saurait dire.
+ * Value at a dotted path: `payload.issue.title`, `payload.commits.0.id`,
+ * `headers.x-github-event`. A `*` segment traverses an array or object values and returns all
+ * results: `payload.issue.labels.*.name` yields every label name, which no fixed index could
+ * provide.
  */
 export function readPath(root: unknown, path: string): unknown {
   const segments = path.split('.').map((segment) => segment.trim()).filter(Boolean)
@@ -52,7 +52,7 @@ export function readPath(root: unknown, path: string): unknown {
   return current.length > 0 ? current[0] : undefined
 }
 
-/** Texte d'une valeur pour un prompt ou une comparaison : un objet se lit en JSON. */
+/** Text representation for a prompt or comparison: objects become JSON. */
 export function valueText(value: unknown, pretty = false): string {
   if (value === undefined || value === null) return ''
   if (typeof value === 'string') return value
@@ -60,15 +60,15 @@ export function valueText(value: unknown, pretty = false): string {
   return JSON.stringify(value, null, pretty ? 2 : undefined) ?? ''
 }
 
-/** Au-delà, un `{{payload}}` entier chasserait la consigne du contexte de l'agent. */
+/** Beyond this, a full `{{payload}}` would displace instructions from agent context. */
 const MAX_RENDERED_VALUE_CHARS = 20000
 
 const PLACEHOLDER = /\{\{\s*([\w.*-]+)\s*\}\}/g
 
 /**
- * Remplace les `{{chemin}}` d'un gabarit par leur valeur dans `scope`. Un chemin absent
- * rend une chaîne vide, sauf avec `keepMissing`, qui laisse le marqueur en place : c'est
- * ce que l'aperçu montre, pour qu'une faute de frappe se voie au lieu de disparaître.
+ * Replaces template `{{path}}` placeholders with values from `scope`. Missing paths become
+ * empty strings, except with `keepMissing`, which retains the marker: the preview uses this to
+ * make typos visible instead of hiding them.
  */
 export function renderTemplate(
   template: string,
@@ -83,17 +83,16 @@ export function renderTemplate(
   })
 }
 
-/** Les chemins qu'un gabarit cite, pour signaler ceux que l'appel d'exemple n'a pas. */
+/** Paths referenced by a template, used to flag those missing from the sample call. */
 export function templatePaths(template: string): string[] {
   return [...template.matchAll(PLACEHOLDER)].map((match) => match[1]!)
 }
 
-// --- Événement ------------------------------------------------------------------------
+// --- Event ---------------------------------------------------------------------------
 
 /**
- * Ce que conditions, script et prompt voient d'un appel. Les en-têtes sont en
- * minuscules, comme HTTP les traite ; `payload` vaut null quand le corps n'est pas du
- * JSON, et `body` garde alors le texte brut.
+ * What conditions, scripts and prompts see from a call. Headers are lowercase, matching HTTP
+ * handling; `payload` is null for non-JSON bodies, with `body` retaining raw text.
  */
 export interface AutomationEvent {
   headers: Record<string, string>
@@ -129,21 +128,20 @@ export const automationConditionsSchema = z.object({
 })
 export type AutomationConditions = z.infer<typeof automationConditionsSchema>
 
-/** Les opérateurs qui ne lisent pas de valeur, pour que le formulaire masque le champ. */
+/** Operators that do not read a value, allowing the form to hide that field. */
 export const VALUELESS_OPERATORS: readonly AutomationOperator[] = ['exists', 'missing']
 
 export interface RuleResult {
   ok: boolean
-  /** Ce que le chemin a donné, pour l'afficher à côté du ✓ ou du ✗. */
+  /** Resolved path value, displayed next to ✓ or ✗. */
   actual: unknown
-  /** Une regex invalide : la règle échoue, et le formulaire dit pourquoi. */
+  /** Invalid regex: the rule fails and the form explains why. */
   error?: string
 }
 
 /**
- * Une règle sur une liste (chemin avec `*`) réussit si l'un des éléments la satisfait,
- * sauf pour les négations, qui exigent qu'aucun ne corresponde : « le label n'est pas
- * `wip` » doit être faux dès qu'un des labels l'est.
+ * A rule on a list (`*` path) succeeds if any element matches, except negations, which require
+ * none to match: “label is not `wip`” must be false as soon as any label is `wip`.
  */
 export function evaluateRule(rule: AutomationRule, event: AutomationEvent): RuleResult {
   const actual = readPath(event, rule.path)
@@ -172,7 +170,7 @@ export function evaluateRule(rule: AutomationRule, event: AutomationEvent): Rule
   if (rule.op === 'not_equals') return { ok: !present.some(equals), actual }
   if (rule.op === 'contains') return { ok: present.some(contains), actual }
   if (rule.op === 'not_contains') return { ok: !present.some(contains), actual }
-  // `in` : une valeur par ligne ou séparée par des virgules.
+  // `in`: one value per line or comma-separated.
   const choices = expected.split(/[\n,]/).map((choice) => choice.trim()).filter(Boolean)
   return { ok: present.some((value) => choices.includes(valueText(value))), actual }
 }
@@ -187,7 +185,7 @@ export function evaluateConditions(
   return { ok, results }
 }
 
-// --- Vérification de l'appelant ------------------------------------------------------
+// --- Caller verification -------------------------------------------------------------
 
 const headerName = z
   .string()
@@ -196,15 +194,14 @@ const headerName = z
   .regex(/^[a-z0-9-]{1,100}$/, { message: 'An HTTP header name.' })
 
 /**
- * Comment s'assurer qu'un appel vient bien du service attendu. L'URL est déjà secrète,
- * mais elle traîne dans les journaux d'un proxy ou d'une CI : la signature est ce qui
- * empêche qu'elle suffise à lancer des agents.
+ * How to verify a call comes from the expected service. The URL is already secret, but appears
+ * in proxy or CI logs: the signature prevents the URL alone from being enough to launch agents.
  */
 export const webhookVerificationSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }),
-  /** Le secret tel quel dans un en-tête (GitLab : `x-gitlab-token`). */
+  /** Raw secret in a header (GitLab: `x-gitlab-token`). */
   z.object({ kind: z.literal('token'), header: headerName }),
-  /** HMAC du corps brut (GitHub : `x-hub-signature-256`, `sha256=`). */
+  /** HMAC of the raw body (GitHub: `x-hub-signature-256`, `sha256=`). */
   z.object({
     kind: z.literal('hmac'),
     header: headerName,
@@ -214,23 +211,23 @@ export const webhookVerificationSchema = z.discriminatedUnion('kind', [
 ])
 export type WebhookVerification = z.infer<typeof webhookVerificationSchema>
 
-// --- Configuration d'un webhook ------------------------------------------------------
+// --- Webhook configuration -----------------------------------------------------------
 
 export const webhookSettingsSchema = z.object({
   verification: webhookVerificationSchema,
-  /** En-tête qui identifie une livraison, pour ignorer les rejeux ; vide pour aucun. */
+  /** Header identifying a delivery to ignore replays; empty for none. */
   deliveryHeader: z.union([headerName, z.literal('')]),
   conditions: automationConditionsSchema,
   script: z.string().max(MAX_AUTOMATION_SCRIPT_CHARS),
   /**
-   * Chemin qui nomme le sujet d'un appel (une issue, une PR, une branche) : deux appels
-   * en attente sur le même sujet fusionnent, le plus récent l'emporte.
+   * Path identifying the call's subject (issue, PR, branch): pending calls on the same subject
+   * are merged, with the latest winning.
    */
   subjectPath: z.string().trim().max(MAX_AUTOMATION_PATH_CHARS),
   /**
-   * Où chercher la marque d'une session Sillage, séparés par des virgules ; `*` pour
-   * tout le corps, vide pour ne pas la chercher. Une marque trouvée fait compter le
-   * lancement comme fait par cette session, avec ses limites de chaîne.
+   * Comma-separated paths to search for a Sillage session marker; `*` for the entire body,
+   * empty to skip searching. A found marker attributes the launch to that session, including
+   * its chain limits.
    */
   markerPaths: z.string().trim().max(MAX_AUTOMATION_PATH_CHARS * 3),
   maxRunsPerHour: z.number().int().min(1).max(MAX_AUTOMATION_RUNS_PER_HOUR),
@@ -249,11 +246,11 @@ export const DEFAULT_WEBHOOK_SETTINGS: WebhookSettings = {
 
 export const updateWebhookSettingsBodySchema = webhookSettingsSchema.partial()
 
-// --- Journal des livraisons ----------------------------------------------------------
+// --- Delivery journal ----------------------------------------------------------------
 
 /**
- * Le sort d'un appel reçu. Chaque refus a le sien : un déclencheur qui ne part jamais
- * doit dire si c'est sa signature, ses conditions ou son disjoncteur qui l'arrête.
+ * Outcome of an incoming call. Each rejection has its own: a trigger that never launches must
+ * say whether its signature, conditions or circuit breaker blocked it.
  */
 export const deliveryVerdictSchema = z.enum([
   'launched',
@@ -273,9 +270,9 @@ export const deliveryVerdictSchema = z.enum([
 export type DeliveryVerdict = z.infer<typeof deliveryVerdictSchema>
 
 /**
- * Pourquoi un appel n'a pas lancé de session, en code et paramètres : le serveur ne
- * connaît pas la langue de l'utilisateur, c'est l'interface qui en fait une phrase.
- * `text` garde un message libre, celui d'un script (`{ skip: '…' }`) ou d'une erreur.
+ * Why a call did not launch a session, as a code and parameters: the server does not know the
+ * user's language; the UI turns it into a sentence. `text` retains a free-form script message
+ * (`{ skip: '…' }`) or error.
  */
 export const DELIVERY_REASON_CODES = [
   'filter_rule',
@@ -310,15 +307,15 @@ export interface AutomationDeliveryDto {
   id: string
   taskId: string
   receivedAt: number
-  /** L'identifiant donné par l'appelant (`x-github-delivery`), s'il en donne un. */
+  /** Caller-provided ID (`x-github-delivery`), if any. */
   deliveryId: string | null
   verdict: DeliveryVerdict
   reason: DeliveryReason | null
   subject: string | null
   conversationId: string | null
-  /** Session dont la marque a été trouvée dans l'appel. */
+  /** Session whose marker was found in the call. */
   originConversationId: string | null
-  /** Résumé lisible : l'événement GitHub et son action, quand ils existent. */
+  /** Readable summary: GitHub event and action, when available. */
   summary: string | null
   bytes: number
   truncated: boolean
@@ -331,13 +328,13 @@ export interface AutomationDeliveryDetailDto extends AutomationDeliveryDto {
 export interface WebhookAutomationDto extends WebhookSettings {
   taskId: string
   url: string
-  /** Le disjoncteur a sauté : la tâche est en pause jusqu'à sa réactivation. */
+  /** Circuit breaker tripped: the task is paused until reactivated. */
   trippedAt: number | null
-  /** Modèle d'origine, pour l'aide affichée ; null pour un webhook générique. */
+  /** Original template for contextual help; null for generic webhooks. */
   template: AutomationTemplateId | null
 }
 
-/** Ce que le script rend, une fois validé. */
+/** Validated script result. */
 export const scriptDecisionSchema = z.union([
   z.null(),
   z.literal(false),
@@ -348,7 +345,7 @@ export const scriptDecisionSchema = z.union([
   }),
 ])
 
-/** Un appel saisi sur la page : en-têtes et corps brut, comme ils arriveraient. */
+/** A call entered on the page: headers and raw body, as they would arrive. */
 export const webhookCallSchema = z.object({
   headers: z.record(z.string(), z.string()).default({}),
   body: z.string().max(MAX_DELIVERY_BODY_BYTES),
@@ -356,20 +353,20 @@ export const webhookCallSchema = z.object({
 export type WebhookCall = z.infer<typeof webhookCallSchema>
 
 /**
- * Essai d'une configuration, sans rien lancer ni rien écrire : sur un appel du journal
- * (`deliveryId`) ou sur un appel saisi dans le banc d'essai (`call`).
+ * Tests configuration without launching or writing anything: using a journal call
+ * (`deliveryId`) or one entered in the test bench (`call`).
  */
 export const testWebhookBodySchema = z
   .object({
     deliveryId: z.string().min(1).optional(),
     call: webhookCallSchema.optional(),
-    /** Réglages en cours d'édition, pas encore enregistrés. */
+    /** Settings currently being edited, not yet saved. */
     settings: webhookSettingsSchema.partial().optional(),
     prompt: z.string().max(20000).optional(),
   })
   .refine((body) => Boolean(body.deliveryId) !== Boolean(body.call), { message: 'Give either deliveryId or call.' })
 
-/** Rejouer un appel du journal pour de vrai. */
+/** Actually replay a call from the journal. */
 export const replayWebhookBodySchema = z.object({ deliveryId: z.string().min(1) })
 
 export interface WebhookTestResult {
@@ -378,25 +375,25 @@ export interface WebhookTestResult {
   script: { ran: boolean; error: DeliveryReason | null; result: unknown; durationMs: number; logs: string[] }
   subject: string | null
   vars: Record<string, unknown>
-  /** Le prompt de l'automatisation rendu avec cet appel ; un champ absent garde son `{{…}}`. */
+  /** Automation prompt rendered with this call; absent fields retain their `{{…}}` markers. */
   prompt: string
-  /** Le premier message complet que la session recevrait, en-tête de Sillage compris. */
+  /** Complete first message the session would receive, including Sillage's header. */
   message: string
   reason: DeliveryReason | null
   originConversationId: string | null
 }
 
-/** La commande curl qui enverrait un appel pour de vrai. */
+/** curl command that would send a real call. */
 export const webhookCurlBodySchema = webhookCallSchema.extend({
-  /** Origine de la page, pour une adresse complète quand `publicUrl` n'est pas réglée. */
+  /** Page origin, to form a full address when `publicUrl` is unset. */
   origin: z.string().max(300).optional(),
 })
 
-// --- Marque de session ----------------------------------------------------------------
+// --- Session marker ------------------------------------------------------------------
 
 /**
- * Ce que les agents laissent dans ce qu'ils écrivent sur une forge : un commentaire
- * HTML invisible dans une issue ou une PR, un trailer dans un message de commit.
+ * What agents leave in content written to a forge: an invisible HTML comment in an issue or PR,
+ * or a trailer in a commit message.
  */
 export function sessionMarker(conversationId: string): string {
   return `<!-- sillage:session=${conversationId} -->`
@@ -407,19 +404,19 @@ export function sessionTrailer(conversationId: string): string {
 
 const MARKER = /(?:<!--\s*sillage:session=|Sillage-Session:\s*)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi
 
-/** Les sessions dont un texte porte la marque, dans l'ordre où elles apparaissent. */
+/** Sessions whose markers appear in a text, in order of appearance. */
 export function findSessionMarkers(text: string): string[] {
   return [...new Set([...text.matchAll(MARKER)].map((match) => match[1]!.toLowerCase()))]
 }
 
-/** Le texte où chercher la marque, selon `markerPaths`. */
+/** Text to search for markers, according to `markerPaths`. */
 export function markerText(event: AutomationEvent, markerPaths: string): string {
   const paths = markerPaths.split(',').map((path) => path.trim()).filter(Boolean)
   if (paths.includes('*')) return event.body
   return paths.map((path) => valueText(readPath(event, path))).join('\n')
 }
 
-// --- Modèles --------------------------------------------------------------------------
+// --- Templates -----------------------------------------------------------------------
 
 export const automationTemplateIdSchema = z.enum([
   'github_issue_label',
@@ -433,7 +430,7 @@ export type AutomationTemplateId = z.infer<typeof automationTemplateIdSchema>
 export interface AutomationTemplate {
   id: AutomationTemplateId
   settings: WebhookSettings
-  /** Prompt prérempli, en français et en anglais : l'agent lit ce que l'utilisateur écrit. */
+  /** Prefilled prompt in French and English: the agent reads what the user writes. */
   prompt: { fr: string; en: string }
 }
 
@@ -455,9 +452,9 @@ function github(
 }
 
 /**
- * Les modèles prêts à l'emploi. Les deux premiers partent d'un geste humain (un label,
- * une commande), le schéma le plus sûr contre les chaînes : on demande aux agents de
- * ne jamais poser ce label ni écrire cette commande.
+ * Ready-to-use templates. The first two start with a human action (a label, a command), the
+ * safest pattern against chains: agents are instructed never to add that label or write that
+ * command.
  */
 export const AUTOMATION_TEMPLATES: readonly AutomationTemplate[] = [
   {
@@ -469,8 +466,8 @@ export const AUTOMATION_TEMPLATES: readonly AutomationTemplate[] = [
         { path: 'payload.label.name', op: 'equals', value: 'sillage' },
       ],
       'payload.issue.number',
-      // Le label est posé par une personne : la marque de l'agent qui a écrit l'issue
-      // ne dit rien de qui déclenche.
+      // A person adds the label: the marker of the agent who wrote the issue
+      // says nothing about who triggered it.
       '',
     ),
     prompt: {
@@ -541,7 +538,7 @@ export const AUTOMATION_TEMPLATES: readonly AutomationTemplate[] = [
   },
 ]
 
-/** Résumé d'un appel pour le journal, à partir des en-têtes des forges connues. */
+/** Call summary for the journal, based on known forge headers. */
 export function summarizeEvent(event: AutomationEvent): string | null {
   const kind = event.headers['x-github-event'] ?? event.headers['x-gitlab-event'] ?? event.headers['x-event-key']
   const action = readPath(event.payload, 'action')

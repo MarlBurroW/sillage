@@ -8,10 +8,10 @@ import { useTranslate } from '../../lib/i18n'
 import { COLUMN_DOTS, columnLabel } from './columns'
 import { GitHubMark } from './GitHubMark'
 
-/** Le temps de survol avant l'aperçu : le pointeur qui ne fait que passer n'en ouvre pas. */
+/** Hover delay prevents passing pointers opening previews. */
 const HOVER_DELAY_MS = 250
 const WIDTH_PX = 320
-/** Hauteur supposée de l'aperçu, pour décider s'il tient sous la référence. */
+/** Estimated preview height to decide whether it fits below the reference. */
 const ROOM_PX = 220
 const EXCERPT_CHARS = 240
 
@@ -20,7 +20,7 @@ interface Shown {
   rect: DOMRect
 }
 
-/** Le bouton de référence sous un événement, et le numéro qu'il porte. */
+/** Reference button beneath an event and its card number. */
 function referenceOf(target: EventTarget | null): { element: HTMLElement; number: number } | null {
   const element = target instanceof Element ? target.closest<HTMLElement>('[data-sg-card]') : null
   const number = Number(element?.dataset.sgCard)
@@ -28,13 +28,9 @@ function referenceOf(target: EventTarget | null): { element: HTMLElement; number
 }
 
 /**
- * Les `#12` d'un texte rendu : le clic ouvre la carte, le survol ou le focus en montrent
- * un aperçu (colonne, titre, début de la description).
- *
- * Un écouteur délégué sur le conteneur, comme pour les chemins de fichiers : le HTML de
- * markdown-it est injecté tel quel, sans composant React où accrocher un écouteur par
- * référence. L'aperçu est en portail et ne prend pas le pointeur : il se lit, il ne
- * s'utilise pas, et c'est le clic sur la référence qui mène à la carte.
+ * Rendered # references open cards on click and preview column/title/description on hover or focus.
+ * Delegate through the container because markdown-it injects HTML without per-reference React
+ * components. Portaled previews ignore pointers: read them, then click the reference to navigate.
  */
 export function useCardRefPreview(projectId: string | null, cards: Map<number, CardDto>) {
   const navigate = useNavigate()
@@ -51,7 +47,7 @@ export function useCardRefPreview(projectId: string | null, cards: Map<number, C
   }
   const hide = (target: EventTarget | null, next: EventTarget | null) => {
     const reference = referenceOf(target)
-    // Passer du bouton à son propre texte n'est pas le quitter.
+    // Moving from the button to its own text is not leaving it.
     if (!reference || (next instanceof Node && reference.element.contains(next))) return
     if (timer.current) clearTimeout(timer.current)
     setShown(null)
@@ -69,7 +65,7 @@ export function useCardRefPreview(projectId: string | null, cards: Map<number, C
       event.stopPropagation()
       setShown(null)
       const href = cardHref(projectId, reference.number)
-      // Ctrl ou Cmd : dans un nouvel onglet, comme un lien, sans quitter le fil.
+      // Ctrl/Command opens a new tab like a link without leaving the thread.
       if (event.metaKey || event.ctrlKey) window.open(href, '_blank', 'noopener')
       else navigate(href)
     },

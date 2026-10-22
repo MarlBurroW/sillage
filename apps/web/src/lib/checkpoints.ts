@@ -4,14 +4,12 @@ import { api } from './api'
 import type { TurnCheckpoint } from './chat-fold'
 
 /**
- * Points de reprise d'un tour, côté client.
- *
- * La liste des fichiers vient du journal (`checkpoint.completed`, replié dans
- * `ChatState.checkpoints`) ; seuls le diff d'un fichier et la restauration passent par
- * l'API, le premier parce qu'il se lit à la demande, la seconde parce qu'elle agit.
+ * Client-side turn checkpoints. File lists come from the log (`checkpoint.completed`, folded into
+ * `ChatState.checkpoints`); only per-file diffs and restoration use the API, one on demand and the
+ * other because it acts.
  */
 
-/** Le diff d'un fichier entre les deux captures. Immuable une fois le tour passé. */
+/** File diff between snapshots. Immutable after turn completion. */
 export function useCheckpointFileDiff(
   conversationId: string,
   key: string,
@@ -36,12 +34,12 @@ export function restoreCheckpoint(conversationId: string, key: string): Promise<
   return api.post<CheckpointRestoreDto>(`/api/conversations/${conversationId}/checkpoints/${key}/restore`)
 }
 
-/** Un point de reprise vaut d'être montré quand il a quelque chose à montrer. */
+/** Show checkpoints only when they have something to display. */
 export function hasChanges(checkpoint: TurnCheckpoint): boolean {
   return checkpoint.status === 'ready' && checkpoint.files.length > 0
 }
 
-/** Lignes ajoutées et retirées sur l'ensemble du tour, binaires exclus. */
+/** Added and removed lines across the turn, excluding binaries. */
 export function sumLines(checkpoint: TurnCheckpoint): { added: number; removed: number } {
   let added = 0
   let removed = 0

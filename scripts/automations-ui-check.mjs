@@ -9,11 +9,10 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Automatisations par webhook, de bout en bout dans l'interface : création depuis un
-// modèle GitHub, appels signés reçus, explorateur, conditions évaluées en direct,
-// script, enregistrement. Aucune session ne part : l'appel qui passerait les conditions
-// arrive pendant la pause, et c'est l'essai du serveur qui dit qu'il lancerait.
-// Les captures vont dans AUTOMATIONS_SHOTS, ou dans un dossier temporaire.
+// Webhook automations end to end: GitHub-template creation, signed received calls,
+// explorer, live condition evaluation, script, save. No session starts: matching
+// call arrives while paused; server trial reports that it would launch.
+// Screenshots go to AUTOMATIONS_SHOTS or a temporary directory.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -84,12 +83,12 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // Création depuis le modèle GitHub « issue étiquetée ».
+  // Create from GitHub “labeled issue” template.
   await page.goto(`${base}/p/${project.id}/schedules`)
   await page.getByRole('button', { name: 'Nouvelle automatisation' }).first().click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('radio', { name: /Par un webhook/ }).click()
-  // Le formulaire crée, la page configure : modèle et nom, rien d'autre.
+  // Form creates, page configures: template and name only.
   assert.equal(await dialog.getByLabel('Nom').inputValue(), 'Issues étiquetées sillage')
   assert.equal(await dialog.locator('textarea').count(), 0)
   await dialog.getByText('Ensuite, sur la page de l’automatisation', { exact: false }).waitFor()
@@ -100,20 +99,20 @@ try {
   await page.waitForURL(/\/schedules\/[0-9a-f-]{36}$/)
   const taskId = page.url().split('/').pop()
   await page.getByRole('region', { name: 'Banc d’essai' }).waitFor()
-  // Les quatre étapes, dans l'ordre où l'on configure, et le prompt du modèle en place.
+  // Four steps in configuration order, with template prompt in place.
   for (const step of ['Brancher', 'Déclencher', 'Lancer', 'Garde-fous']) {
     await page.getByRole('region', { name: step }).waitFor()
   }
   assert.match(await page.getByLabel('Prompt', { exact: true }).inputValue(), /Traite l'issue #\{\{payload\.issue\.number\}\}/)
 
-  // L'adresse et le secret, comme on les recopierait dans GitHub.
+  // Address and secret as copied into GitHub.
   const url = await page.locator('code').first().textContent()
   assert.match(url, /\/api\/hooks\/[\w-]{20,}$/)
   await page.getByRole('button', { name: 'Afficher le secret' }).click()
   await page.locator('code', { hasText: /^[0-9a-f]{64}$/ }).waitFor()
 
-  // Le banc d'essai : sans appel reçu, il part de l'exemple du modèle, et dit tout de
-  // suite ce que l'automatisation en ferait, prompt rendu compris.
+  // Test bench: without received calls, starts from template example and immediately
+  // shows what automation would do, including rendered prompt.
   const bench = page.getByRole('region', { name: 'Banc d’essai' })
   await bench.getByText('Cet appel lancerait une session, sujet « 42 ».').waitFor({ timeout: 15000 })
   assert.equal(await page.locator('[aria-label="Non remplie"]').count(), 0)
@@ -123,8 +122,7 @@ try {
   await bench.getByRole('switch', { name: 'Message complet' }).click()
   await page.screenshot({ path: join(shots, 'automations-launch.png') })
 
-  // Une variante d'exemple : un autre label, et la condition qui échoue le dit, à droite
-  // comme à gauche.
+  // Example variant: another label; failed condition explains itself on both sides.
   const pick = async (name) => {
     await bench.getByRole('combobox', { name: 'Appel testé' }).click()
     await page.getByRole('option', { name }).click()
@@ -133,8 +131,7 @@ try {
   await bench.getByText('Cet appel serait ignoré. Condition 3 non remplie : `payload.label.name` vaut « bug ».').waitFor({ timeout: 15000 })
   assert.ok(await page.locator('[aria-label="Non remplie"]').count() >= 1)
 
-  // L'appel se retouche sur place : le corps défile dans son éditeur, et le verdict suit
-  // ce qu'on tape.
+  // Call can be edited in place: body scrolls in editor, verdict follows typing.
   await pick('Exemple : GitHub : issue étiquetée « sillage »')
   await bench.getByRole('tab', { name: 'Appel' }).click()
   await bench.getByRole('tab', { name: 'Modifier' }).click()
@@ -151,9 +148,8 @@ try {
   await bench.getByRole('tab', { name: 'Prompt' }).click()
   assert.match(await bench.locator('pre').first().textContent(), /Traite l'issue #7 « Typed by hand »/)
 
-  // « Copier en curl » : la commande signée par le serveur, exécutée pour de vrai. Un
-  // ping passe la signature et se fait filtrer : rien ne part, mais tout le chemin HTTP
-  // a été parcouru, et l'appel arrive au journal.
+  // “Copy as curl”: server-signed command executed for real. Ping passes signature
+  // then gets filtered: nothing launches, but entire HTTP path runs and call is journaled.
   await pick(/Exemple : GitHub : ping/)
   await bench.getByRole('tab', { name: 'Appel' }).click()
   await bench.getByRole('button', { name: 'Copier en curl' }).click()
@@ -164,26 +160,26 @@ try {
   await bench.getByRole('tab', { name: /Journal/ }).click()
   await bench.getByText('Condition 1 non remplie : `headers.x-github-event` vaut « ping ».').waitFor({ timeout: 15000 })
   await page.screenshot({ path: join(shots, 'automations-journal.png') })
-  // Un appel reçu s'essaie d'un clic : il se pose sur le banc.
+  // Received call can be tested with one click, placing it on bench.
   await bench.getByRole('button', { name: 'Essayer' }).first().click()
   await bench.getByRole('combobox', { name: 'Appel testé' }).filter({ hasText: /Reçu .* : ping/ }).waitFor()
   await bench.getByText(/Cet appel serait ignoré\. Condition 1/).waitFor({ timeout: 15000 })
 
-  // Revenir à l'exemple qui passe, pour la suite.
+  // Return to passing example for subsequent checks.
   await pick('Exemple : GitHub : issue étiquetée « sillage »')
   await bench.getByText('Cet appel lancerait une session', { exact: false }).waitFor()
 
-  // L'explorateur : filtrer sur un champ, l'insérer dans le prompt.
+  // Explorer: filter a field, insert it into prompt.
   await bench.getByRole('tab', { name: 'Appel' }).click()
   await bench.getByRole('tab', { name: 'Explorer' }).click()
   await bench.getByRole('button', { name: 'Insérer {{payload.repository}} dans le prompt' }).click()
-  // Sans curseur posé, le champ s'ajoute à la fin du prompt, pas au début.
+  // Without cursor position, field appends to prompt rather than prepending.
   assert.match(await page.getByLabel('Prompt', { exact: true }).inputValue(), /l'issue\. \{\{payload\.repository\}\}$/)
   await bench.getByRole('button', { name: 'Filtrer sur payload.sender.login', exact: true }).click()
   const paths = await page.getByLabel('Champ').evaluateAll((inputs) => inputs.map((input) => input.value))
   assert.ok(paths.includes('payload.sender.login'), paths.join(', '))
 
-  // Un script qui écarte l'appel : le banc le dit aussitôt, et montre ce qu'il rend.
+  // Script skipping call: bench says so immediately and shows its result.
   await page.getByRole('button', { name: 'Ajouter un script' }).click()
   const editor = page.getByRole('region', { name: 'Déclencher' }).locator('.cm-content')
   await editor.click()
@@ -194,12 +190,12 @@ try {
   assert.match(await bench.locator('pre').first().textContent(), /"skip": "auteur exclu"/)
   await page.screenshot({ path: join(shots, 'automations-script.png') })
 
-  // La session se règle aussi ici : durée maximale.
+  // Session is configurable here too: maximum duration.
   await page.getByLabel('Durée maximale (min)').fill('20')
   await page.getByRole('region', { name: 'Lancer' }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(shots, 'automations-session.png') })
 
-  // Enregistrer, puis relire : les réglages ont tenu.
+  // Save then reread: settings persisted.
   await page.getByRole('button', { name: 'Enregistrer' }).click()
   await page.getByText('Modifications non enregistrées').waitFor({ state: 'detached' })
   const saved = (await (await context.request.get(`${base}/api/schedules`)).json()).find((task) => task.id === taskId)
@@ -208,14 +204,14 @@ try {
   assert.match(saved.prompt, /\{\{payload\.repository\}\}/)
   assert.equal(saved.maxDurationMinutes, 20)
 
-  // Le nom se change dans l'en-tête, d'un clic.
+  // Rename from header with one click.
   await page.getByRole('heading', { name: 'Issues étiquetées' }).getByRole('button').click()
   await page.getByLabel('Nom', { exact: true }).fill('Issues à traiter')
   await page.keyboard.press('Enter')
   await page.getByRole('heading', { name: 'Issues à traiter' }).waitFor()
 
-  // En anglais : les raisons du journal et le script de départ suivent la langue de
-  // l'interface, le serveur n'envoie que des codes.
+  // English: journal reasons and starter script follow interface language;
+  // server sends codes only.
   const english = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'en-US', serviceWorkers: 'block' })
   await english.addInitScript((origin) => {
     if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'en')
@@ -231,7 +227,7 @@ try {
   assert.match(await en.locator('.cm-content').textContent(), /Receives the call/)
   await english.close()
 
-  // Au téléphone.
+  // On a phone.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await phone.addInitScript((origin) => {
     if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')

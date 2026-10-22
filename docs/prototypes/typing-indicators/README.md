@@ -1,23 +1,23 @@
-# Propositions d’indicateurs de saisie
+# Typing indicator proposals
 
-Page autonome de comparaison, sans intégration à la conversation de production.
-Six mouvements : Écho, Onde, Orbite, Encre, Constellation et Souffle. L’utilisateur a
-retenu Écho, sous le nom « Sillage », comme défaut, avec les six choix dans Apparence.
-L’intégration est préparée dans le même worktree, sans déploiement.
+Standalone comparison page, without integration into the production conversation.
+Six motions: Écho, Onde, Orbite, Encre, Constellation, and Souffle. The user selected
+Écho, named “Sillage”, as the default, with all six choices in Appearance.
+Integration is prepared in the same worktree, without deployment.
 
-## Direction visuelle
+## Visual direction
 
-Reprendre les couleurs et la police de Sillage permet de juger les animations dans
-leur contexte. Les jetons sont copiés depuis `apps/web/src/styles/tokens.css` à la
-construction ; les valeurs ci-dessous sont de simples repères de conception :
+Using Sillage's colors and font lets animations be judged in context. Tokens are
+copied from `apps/web/src/styles/tokens.css` at build time; the values below are
+only design reference points:
 
-- Fond prune sombre `#17121a`, surface `#211b25`, ligne `#39303e`.
-- Encre claire `#f5f2f7`, encre secondaire `#c2b8c8`, accent lilas `#cb8ddd`.
-- Police système de Sillage : titre 48 px, titres de choix 14 px, légendes 11 px.
+- Dark plum background `#17121a`, surface `#211b25`, line `#39303e`.
+- Light ink `#f5f2f7`, secondary ink `#c2b8c8`, lilac accent `#cb8ddd`.
+- Sillage system font: title 48 px, option headings 14 px, captions 11 px.
 
-Le mouvement porte la personnalité ; la page reste calme. Les six cases servent
-à comparer des alternatives, l’aperçu à droite montre leur taille en conversation.
-Les textes sont alignés à gauche. Le repère latéral de la description reste droit.
+Motion carries personality; the page stays calm. Six tiles compare alternatives,
+and the right-hand preview shows their conversation size. Text is left-aligned.
+The description's side marker stays square.
 
 ```text
 Sillage                                      thème / langue
@@ -31,65 +31,64 @@ rythme / accent / pause              Réflexion / Rédaction
                                     Description du choix
 ```
 
-Sur téléphone, les choix précèdent la conversation et un lien permet de rejoindre
-l’aperçu sans chercher. Pas d’image ni de police distante. Le logo Écho reprend le
-tracé de référence dans `docs/brand/symbol.svg` ; sa forme n’est pas redessinée.
+On phones, choices precede the conversation, with a link to reach the preview
+without searching. No remote images or fonts. The Écho logo uses the reference
+paths from `docs/brand/symbol.svg`; its shape is not redrawn.
 
-## Construire et servir
+## Build and serve
 
-Depuis la racine du worktree, avec Node 24 :
+From the worktree root, with Node 24:
 
 ```sh
 node docs/prototypes/typing-indicators/build.mjs
 ```
 
-Sortie par défaut : `/var/tmp/sillage-typing-proposals`. Un premier argument permet
-de choisir un autre dossier. Les traductions françaises et anglaises sont extraites
-des catalogues de l’application, sous `prototype.typing.*`.
+Default output: `/var/tmp/sillage-typing-proposals`. A first argument selects a
+different directory. French and English translations are extracted from the
+application catalogs under `prototype.typing.*`.
 
-L’aperçu du 22 octobre 2026 écoute en privé sur le port 7476, exposé par Tailscale :
+The October 22, 2026 preview listens privately on port 7476, exposed through Tailscale:
 <http://marldev.tail710c78.ts.net:7476>.
 
-L’unité temporaire reste active après la session, jusqu’à son arrêt ou au prochain
-redémarrage de la machine. Elle est visible dans **Services** de Sillage.
+The temporary unit stays active after the session until stopped or the next machine
+reboot. It is visible in Sillage's **Services**.
 
 ```sh
 systemctl --user list-units 'sillage-app-*'
 systemctl --user stop sillage-app-typing-proposals
-# Retirer aussi l’exposition si l’aperçu n’est plus utile.
+# Also remove exposure if the preview is no longer useful.
 sudo tailscale serve --http=7476 off
 ```
 
-## Vérifications
+## Verification
 
 ```sh
 NODE_ENV=development node docs/prototypes/typing-indicators/ui-check.mjs
 ```
 
-Le parcours vérifie les six choix, les thèmes, les langues, le rythme, la pause,
-la couleur, les états réflexion/rédaction, le clavier, le mouvement réduit et les
-largeurs 1440, 768, 390 et 320 px. Captures dans `/var/tmp/sillage-typing-ui`.
-`TYPING_PROPOSALS_URL` et `TYPING_PROPOSALS_OUTPUT` remplacent les valeurs par défaut.
+The walkthrough checks all six choices, themes, languages, rhythm, pause, color,
+thinking/writing states, keyboard, reduced motion, and widths 1440, 768, 390,
+and 320 px. Screenshots in `/var/tmp/sillage-typing-ui`. `TYPING_PROPOSALS_URL`
+and `TYPING_PROPOSALS_OUTPUT` override defaults.
 
-`pnpm typecheck`, `pnpm test` (345 tests) et `pnpm lint` passent également.
-Server et Desktop utilisent ici la même maquette statique : aucune dépendance à
-l’authentification, aux notifications ou au profil du serveur. Aucun comportement
-de ces éditions n’est modifié par cette étude.
+`pnpm typecheck`, `pnpm test` (345 tests), and `pnpm lint` also pass.
+Server and Desktop use the same static mockup here: no dependency on authentication,
+notifications, or server profile. This study changes no behavior in either edition.
 
-## Intégration retenue
+## Selected integration
 
-`TypingIndicator` fournit les dessins au fil (`TurnActivity`) et aux réglages
-(`TypingIndicatorControls`). Le store `lib/typing-indicator.ts` conserve le choix
-local ; `appearance-sync.ts` l’enregistre avec les autres préférences du compte.
-Un compte ancien ou un style inconnu reprend Sillage. Les animations réduites
-gardent un dessin fixe, notamment pour éviter de faire disparaître Encre.
+`TypingIndicator` supplies designs to the thread (`TurnActivity`) and settings
+(`TypingIndicatorControls`). The `lib/typing-indicator.ts` store keeps the local
+choice; `appearance-sync.ts` saves it with other account preferences. An old account
+or unknown style defaults to Sillage. Reduced motion keeps a static design,
+particularly to prevent Encre from disappearing.
 
-Validation de l’intégration : `pnpm test:typing-indicator-ui`, typecheck, lint,
-346 tests et build web. Les captures sont dans `/var/tmp/sillage-typing-integrated`.
-Le parcours couvre le rechargement et un second navigateur sans cache, les trois
-thèmes, le clavier, le téléphone et le mouvement réduit. Le test serveur
-`appearance.test.ts` vérifie le passage par l’API et la base.
+Integration validation: `pnpm test:typing-indicator-ui`, typecheck, lint,
+346 tests, and web build. Screenshots in `/var/tmp/sillage-typing-integrated`.
+The walkthrough covers reload and a second uncached browser, all three themes,
+keyboard, phone, and reduced motion. Server test `appearance.test.ts` checks the
+API and database path.
 
-Server et Desktop utilisent les mêmes composants et la même route de préférences.
-Pas de migration SQL ; déployer serveur et web ensemble, car le schéma partagé doit
-conserver le nouveau champ `appearance.typingIndicator`.
+Server and Desktop use the same components and preferences route. No SQL migration;
+deploy server and web together because the shared schema must retain the new
+`appearance.typingIndicator` field.

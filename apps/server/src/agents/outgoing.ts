@@ -1,15 +1,7 @@
 import type { ContentBlock } from '@sillage/protocol'
 import type { OutgoingAttachment } from './types.js'
 
-/**
- * La part commune d'un message sortant : les blocs journalisés, qui décrivent ce que
- * l'utilisateur a envoyé, et le texte réellement transmis au modèle, complété de la
- * liste des fichiers joints non affichables en ligne.
- *
- * Chaque runner traduit ensuite vers son protocole natif : images en base64 côté
- * Claude, chemins `localImage` et mentions à part côté Codex. Le journal, lui, doit
- * rester identique quel que soit le CLI, et c'est cette fonction qui le garantit.
- */
+/** Shared outgoing-message preparation: journal blocks describing user input and actual model text augmented with non-inline attachment lists. Runners then translate native protocols: Claude base64 images, Codex `localImage` paths and separate mentions. This function ensures identical journals across CLIs. */
 export function describeOutgoingMessage(
   text: string,
   attachments: OutgoingAttachment[],

@@ -4,13 +4,9 @@ import { cx } from './cx'
 import { MenuHint } from './Menu'
 
 /**
- * Menu au clic droit.
- *
- * Primitive distincte du menu déroulant plutôt qu'un `Menu` ouvert à la main : le clic
- * droit doit se positionner au curseur, pas sous un déclencheur, et il faut aussi
- * l'appui long au doigt, que Radix gère ici et pas là-bas. L'habillage reste celui des
- * menus de l'application, à un seul endroit près : `Item` et consorts appartiennent à
- * deux modules Radix différents et ne se partagent pas.
+ * Right-click menu using a separate primitive: position at the pointer rather than beneath a
+ * trigger and support Radix long-press behavior. Styling matches dropdown menus, but entries belong
+ * to distinct Radix modules and cannot be shared.
  */
 export function ContextMenu({
   trigger,
@@ -19,9 +15,8 @@ export function ContextMenu({
 }: {
   trigger: ReactNode
   /**
-   * Coupe le déclencheur sans retirer le menu de l'arbre. Sert au doigt, quand l'appui
-   * long appartient déjà à un autre geste (le glissement d'une ligne) et qu'un bouton
-   * visible donne de toute façon les mêmes actions.
+   * Disable the trigger without removing the menu tree, useful when touch long-press already drags
+   * rows and a visible button offers the same actions.
    */
   disabled?: boolean
   children: ReactNode
@@ -35,7 +30,7 @@ export function ContextMenu({
             'z-50 min-w-48 overflow-x-hidden overflow-y-auto rounded-lg border border-line p-1',
             'surface shadow-pop',
           )}
-          // Un long menu au doigt dépasserait l'écran : il défile plutôt que d'être rogné.
+          // Scroll long touch menus instead of clipping beyond the screen.
           style={{ maxHeight: 'var(--radix-context-menu-content-available-height)' }}
         >
           {children}
@@ -56,9 +51,9 @@ export function ContextMenuItem({
   icon?: ReactNode
   onSelect: () => void
   tone?: 'neutral' | 'critical'
-  /** Grisée plutôt que retirée, comme `MenuItem`. */
+  /** Disable rather than remove, like MenuItem. */
   disabled?: boolean
-  /** Raccourci clavier équivalent, voir `MenuHint`. */
+  /** Equivalent shortcut; see MenuHint. */
   hint?: string
   children: ReactNode
 }) {
@@ -85,7 +80,7 @@ export function ContextMenuSeparator() {
   return <Primitive.Separator className="my-1 h-px bg-line" />
 }
 
-/** La pastille de couleur de `MenuSwatch`, pour un menu au clic droit. */
+/** Context-menu equivalent of MenuSwatch. */
 export function ContextMenuSwatch({
   color,
   selected,

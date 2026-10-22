@@ -9,9 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Actions de projet, de bout en bout : vraie API, vrai serveur MCP, vrais terminaux, et
-// sous Linux une vraie unité systemd utilisateur (`sillage-app-action-*`), arrêtée et
-// retirée à la fin. Les captures vont dans ACTIONS_SHOTS, ou dans un dossier temporaire.
+// Project actions end to end: real API, MCP server, terminals, and on Linux a real
+// systemd user unit (`sillage-app-action-*`), stopped/removed at completion.
+// Screenshots go to ACTIONS_SHOTS or a temporary directory.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -47,7 +47,7 @@ async function ready(url, child) {
   throw new Error(`Server did not start: ${child.diagnostics}`)
 }
 
-/** Un appel d'outil sur le vrai serveur MCP, comme le ferait un CLI. */
+/** Tool call on the real MCP server, as a CLI would make it. */
 async function mcp(env, conversationId, projectId, name, args) {
   const child = spawn(process.execPath, [join(serverDir, 'src/mcp/sillage-mcp.mjs')], {
     env: {
@@ -102,7 +102,7 @@ try {
   const conversation = (await api(`/api/projects/${project.id}/conversations`))[0]
   assert.ok(conversation, 'Nimbus a une conversation de démo')
 
-  // Une tâche créée depuis l'API, donc validée d'office.
+  // API-created task, therefore approved automatically.
   const created = await context.request.post(`${base}/api/projects/${project.id}/actions`, {
     data: { label: 'Dire bonjour', kind: 'task', command: 'echo hello-from-action; exit 2', description: 'Un essai qui échoue exprès' },
   })
@@ -110,7 +110,7 @@ try {
   const task = await created.json()
   assert.equal(task.status, 'approved')
 
-  // Un service proposé par un agent, par le vrai serveur MCP.
+  // Agent-proposed service through the real MCP server.
   const registered = await mcp(env, conversation.id, project.id, 'register_action', {
     label: 'Serveur statique',
     kind: 'service',
@@ -124,7 +124,7 @@ try {
   const service = (await api('/api/actions')).find((action) => action.label === 'Serveur statique')
   assert.equal(service.status, 'proposed')
 
-  // Un clic ne lance pas une action proposée.
+  // One click does not launch a proposed action.
   const refused = await context.request.post(`${base}/api/actions/${service.id}/run`, { data: {} })
   assert.equal(refused.status(), 409)
 
@@ -139,7 +139,7 @@ try {
   await panel.getByText('À relire').waitFor()
   await page.screenshot({ path: join(shots, 'actions-desktop.png') })
 
-  // La tâche : le disque la lance, son terminal passe devant avec la sortie et le code.
+  // Task: play button launches it, terminal comes forward with output and exit code.
   await page.getByRole('button', { name: 'Lancer : Dire bonjour' }).first().click()
   await page.locator('.xterm-rows', { hasText: 'hello-from-action' }).waitFor({ timeout: 10000 })
   await page.locator('.xterm-rows', { hasText: '[exit 2]' }).waitFor({ timeout: 10000 })
@@ -148,7 +148,7 @@ try {
   await actionsTab.click()
   await panel.getByText(/Sortie en code 2/).waitFor({ timeout: 15000 })
 
-  // Le service proposé : relu (commande en clair), validé, lancé d'un geste.
+  // Proposed service: reviewed (plain command), approved, launched in one action.
   await page.getByRole('button', { name: 'Relire : Serveur statique' }).first().click()
   const dialog = page.getByRole('dialog')
   await dialog.getByText(`python3 -m http.server --bind 127.0.0.1 ${httpPort}`).waitFor()
@@ -163,7 +163,7 @@ try {
     assert.equal(served, 200)
     await page.screenshot({ path: join(shots, 'actions-service-running.png') })
 
-    // Le lanceur de l'en-tête compte le service en marche et montre la même liste.
+    // Header launcher counts running services and shows the same list.
     const launcher = page.getByRole('button', { name: 'Actions, 1 en marche' })
     await launcher.click()
     const popover = page.getByRole('dialog', { name: 'Actions' })
@@ -171,7 +171,7 @@ try {
     await page.screenshot({ path: join(shots, 'actions-launcher.png') })
     await page.keyboard.press('Escape')
 
-    // La palette suit l'état : un service en marche s'arrête, il ne se relance pas.
+    // Palette follows state: running services stop rather than relaunch.
     await page.keyboard.press('Control+k')
     await page.getByRole('option', { name: /Arrêter : Serveur statique/ }).waitFor()
     await page.getByRole('option', { name: /Ouvrir : Serveur statique/ }).waitFor()
@@ -180,7 +180,7 @@ try {
     await page.getByRole('option', { name: /Arrêter : Serveur statique/ }).click()
     await panel.getByText('Arrêté').waitFor({ timeout: 20000 })
 
-    // Arrêté, le service se relance depuis la palette, et le journal s'ouvre du menu.
+    // Stopped services restart from palette; logs open from menu.
     await page.keyboard.press('Control+k')
     await page.getByRole('combobox').fill('Lancer serveur')
     await page.getByRole('option', { name: /Lancer : Serveur statique/ }).click()
@@ -192,11 +192,11 @@ try {
     await page.getByRole('button', { name: 'Arrêter : Serveur statique' }).first().click()
     await panel.getByText('Arrêté').waitFor({ timeout: 20000 })
   } else {
-    // Sans systemd utilisateur, le service retombe dans un terminal.
+    // Without user systemd, service falls back to a terminal.
     await page.locator('.xterm-rows', { hasText: 'python3 -m http.server' }).waitFor({ timeout: 10000 })
   }
 
-  // Au téléphone.
+  // On a phone.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await phone.addInitScript((origin) => {
     if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')
@@ -214,7 +214,7 @@ try {
   await mobile.getByText('Dire bonjour').waitFor()
   await mobile.screenshot({ path: join(shots, 'actions-phone.png') })
 
-  // Supprimer le service arrête et retire son unité.
+  // Deleting service stops and removes its unit.
   for (const action of await api('/api/actions')) {
     if (action.projectId !== project.id) continue
     const removed = await context.request.delete(`${base}/api/actions/${action.id}`)

@@ -2,14 +2,10 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { runMigrations, type Db } from '@sillage/db'
 
-/** Un dossier de migrations Drizzle valide contient toujours ce fichier. */
+/** Valid Drizzle migration directories always contain this file. */
 const JOURNAL = join('meta', '_journal.json')
 
-/**
- * Les migrations vivent dans packages/db et sont copiées dans dist/ à la compilation.
- * On remonte l'arborescence depuis le module courant plutôt que de coder en dur une
- * profondeur relative, qui diffère entre dist/main.js et dist/cli/*.js.
- */
+/** Migrations live in packages/db and are copied to dist/ during builds. Walk upward from the current module instead of hardcoding relative depth, which differs between dist/main.js and dist/cli/*.js. */
 export function migrationsFolder(): string {
   const fromEnv = process.env.SILLAGE_MIGRATIONS
   if (fromEnv) return fromEnv

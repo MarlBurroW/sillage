@@ -10,10 +10,10 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// L'avancement des worktrees sur la démo : vrai serveur, vrai git, base temporaire.
-// La démo porte deux arbres créés par Sillage (« offline cache », non commité ; « radar
-// prefetch », commité non fusionné) ; on y ajoute au shell un arbre externe fusionné et
-// un arbre introuvable, comme les agents en laissent derrière eux.
+// Demo worktree progress: real server/git, temporary database. Demo has two
+// Sillage-created trees (“offline cache”, uncommitted; “radar prefetch”, committed
+// unmerged); shell adds an external merged tree and a missing tree, as agents
+// sometimes leave behind.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -75,8 +75,8 @@ try {
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
-  // Deux arbres de plus, créés au shell comme le font les agents : l'un fusionné par
-  // squash (à nettoyer), l'autre dont le dossier a disparu (introuvable).
+  // Two more shell-created trees as agents create them: one squash-merged
+  // (to clean), another with its directory gone (missing).
   const repoRoot = join(data, 'data', 'demo', 'nimbus')
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, stdio: 'pipe' }).toString().trim()
   const squashed = join(data, 'external', 'nimbus-squashed')
@@ -86,7 +86,7 @@ try {
   git(squashed, 'commit', '-m', 'Fix a typo')
   git(repoRoot, 'merge', '--squash', 'fix/squashed-typo')
   git(repoRoot, 'commit', '-m', 'Fix a typo (squashed)')
-  // Un second arbre fusionné, à nettoyer depuis sa conversation.
+  // A second merged tree to clean from its conversation.
   const docs = join(data, 'external', 'nimbus-docs')
   git(repoRoot, 'worktree', 'add', '-b', 'docs/readme', docs, 'main')
   await writeFile(join(docs, 'NOTES.md'), 'notes\n')
@@ -131,7 +131,7 @@ try {
     return { context, page, errors, project, status }
   }
 
-  // L'API : quatre arbres, l'arbre principal exclu, chaque état représenté.
+  // API: four trees, main tree excluded, each state represented.
   const desktop = await session({ width: 1440, height: 900 }, false)
   const states = Object.fromEntries(desktop.status.worktrees.map((tree) => [tree.name, tree.state]))
   assert.deepEqual(states, {
@@ -146,7 +146,7 @@ try {
   assert.ok(desktop.status.worktrees.find((tree) => tree.name === 'feat/offline-cache').conversations.length > 0)
   console.log('OK : états calculés sur la démo.')
 
-  // Une fusion n'ajoute ni décision ni encombrement dans la barre latérale.
+  // Merging adds neither a decision nor sidebar clutter.
   const { page, errors, project } = desktop
   const decisions = await (await desktop.context.request.get(`${base}/api/decisions?status=pending&sources=worktree`)).json()
   assert.deepEqual(decisions.decisions, [])
@@ -164,7 +164,7 @@ try {
   assert.ok(await mergedPhone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
   await mergedPhone.page.setViewportSize({ width: 390, height: 844 })
   assert.ok(await mergedPhone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-  // Le geste au téléphone ouvre la même confirmation détaillée que la vue Chantiers.
+  // Phone action opens the same detailed confirmation as Worktrees view.
   await worktreeBar(mergedPhone.page).getByRole('button', { name: 'Nettoyer', exact: true }).click()
   const phoneDialog = mergedPhone.page.getByRole('dialog', { name: 'Nettoyer docs/readme' })
   await phoneDialog.getByRole('switch', { name: 'Archiver 1 session' }).waitFor()
@@ -179,16 +179,16 @@ try {
   assert.equal(git(repoRoot, 'branch', '--list', 'docs/readme'), '')
   console.log('OK : worktree dans le fil, nettoyage confirmé, aucune décision automatique.')
 
-  // Barre latérale : la session en worktree porte sa branche et son état, pas les autres.
+  // Sidebar: worktree sessions carry branch/status, others do not.
   await page.goto(`${base}/p/${project.id}/board`)
   const nav = page.getByRole('navigation').filter({ has: page.getByRole('group', { name: 'Suivi des conversations' }) })
-  // La ligne de session porte le titre en attribut ; le suivi d'activité, au-dessus, non.
+  // Session row has its title attribute; activity tracking above does not.
   const row = (scope, title) => scope.locator(`a[title="${title}"]`)
   const offline = row(nav, 'Add offline caching for forecasts')
   await offline.waitFor()
   await offline.getByRole('note', { name: /Worktree feat\/offline-cache, Non commité/ }).waitFor()
   await row(nav, 'Radar tile prefetching').getByRole('note', { name: /À fusionner/ }).waitFor()
-  // Une session de la racine ne dit rien de plus : seules les deux en worktree portent une note.
+  // Root sessions show no extra note: only the two worktree sessions do.
   assert.equal(await nav.getByRole('note').count(), 2)
   const chantiers = nav.getByRole('link', { name: /^Chantiers/ })
   await chantiers.waitFor()
@@ -197,7 +197,7 @@ try {
   await page.screenshot({ path: join(shots, 'sidebar-desktop.png') })
   console.log('OK : barre latérale sur grand écran.')
 
-  // Le clic sur la pastille ouvre le fil et son onglet Git.
+  // Clicking the badge opens the thread and its Git tab.
   await offline.getByRole('note').click()
   await page.waitForURL(/\/c\//)
   const panel = page.locator('[data-panel="workspace"]')
@@ -206,14 +206,14 @@ try {
   await worktreeBar(page).getByText('Non commité', { exact: true }).waitFor()
   assert.equal(await worktreeBar(page).getByRole('button', { name: 'Nettoyer', exact: true }).count(), 0)
   await worktreeBar(page).getByRole('button', { name: 'Voir le Git', exact: true }).waitFor()
-  // La racine conserve sa branche dans l'en-tête, sans barre supplémentaire.
+  // Root retains its branch in the header without an extra bar.
   const conversations = await (await desktop.context.request.get(`${base}/api/projects/${project.id}/conversations`)).json()
   const rootSession = conversations.find((entry) => !entry.worktreeId)
   await page.goto(`${base}/p/${project.id}/c/${rootSession.id}`)
   assert.equal(await worktreeBar(page).count(), 0)
 
 
-  // Vue Chantiers sur la page projet, atteinte depuis la ligne de la barre latérale.
+  // Worktrees view on project page, reached from sidebar row.
   await chantiers.click()
   await page.waitForURL(/#worktrees$/)
   const board = page.locator('#worktrees').locator('..')
@@ -231,8 +231,8 @@ try {
   assert.deepEqual(errors, [])
   console.log('OK : vue Chantiers sur grand écran.')
 
-  // Nettoyer l'arbre fusionné : la confirmation dit qu'il n'y a rien à perdre, propose
-  // la branche, puis l'arbre et la branche disparaissent.
+  // Clean merged tree: confirmation says nothing will be lost, offers branch
+  // removal, then tree and branch disappear.
   const squashedRow = board.locator('li').filter({ has: page.locator('span.font-mono', { hasText: 'fix/squashed-typo' }) }).first()
   await squashedRow.getByRole('button', { name: 'Nettoyer', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Nettoyer fix/squashed-typo' })
@@ -247,7 +247,7 @@ try {
   assert.match(await chantiers.innerText(), /3 en attente$/)
   console.log('OK : nettoyage en un geste.')
 
-  // Un arbre non commité : la confirmation liste ce qui serait perdu, et la session à archiver.
+  // Uncommitted tree: confirmation lists what would be lost and the session to archive.
   const offlineRow = board.locator('li').filter({ has: page.locator('span.font-mono', { hasText: 'feat/offline-cache' }) }).first()
   await offlineRow.getByRole('button', { name: 'Nettoyer', exact: true }).click()
   const dirtyDialog = page.getByRole('dialog', { name: 'Nettoyer feat/offline-cache' })
@@ -260,14 +260,14 @@ try {
   assert.deepEqual(errors, [])
   console.log('OK : confirmation sur un arbre non commité.')
 
-  // Téléphone : la ligne reste lisible, la vue ne déborde pas.
+  // Phone: row stays readable, view does not overflow.
   const phone = await session({ width: 390, height: 844 }, true)
   await phone.page.goto(`${base}/p/${project.id}/board`)
   await phone.page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
   const phoneNav = phone.page.getByRole('navigation').filter({ has: phone.page.getByRole('group', { name: 'Suivi des conversations' }) })
   const phoneTag = row(phoneNav, 'Add offline caching for forecasts').getByRole('note')
   await phoneTag.waitFor()
-  // Le tiroir glisse : la capture attend qu'il soit en place.
+  // Drawer slides: screenshot waits until it is in position.
   await delay(600)
   const tagBox = await phoneTag.boundingBox()
   assert.ok(tagBox && tagBox.width > 0, 'La pastille est visible au téléphone')
@@ -288,12 +288,12 @@ try {
   await phone.page.screenshot({ path: join(shots, 'conversation-dirty-phone.png') })
   assert.ok(await phone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
-  // En Desktop, même origine pour le web et l'API : Vite serait refusé par le WebSocket.
+  // Desktop web/API share origin: WebSocket would reject Vite.
   const desktopWeb = join(data, 'desktop-web')
   const build = run([join(webDir, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', desktopWeb], webDir, { ...env, NODE_ENV: 'production' })
   const [buildCode] = await once(build, 'exit')
   assert.equal(buildCode, 0, build.diagnostics)
-  // Même code en Desktop, avec la session du lanceur et sans page de connexion.
+  // Same code in Desktop with launcher's session and no sign-in page.
   server.kill('SIGTERM')
   await once(server, 'exit')
   const deskServer = run(['--import', 'tsx', 'src/main.ts'], serverDir, {

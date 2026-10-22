@@ -22,14 +22,13 @@ import {
 } from '../lib/git-credentials'
 
 /**
- * Accès aux forges git du compte.
+ * Account git-forge access.
  *
- * Comme pour les secrets, l'écran ne peut afficher aucun jeton, parce que l'API n'en
- * rend aucun. Ce qui reste et qui compte : l'hôte, le nom d'utilisateur présenté, et la
- * date de dernière écriture, qui est ce à quoi on se raccroche quand un jeton expire.
+ * Like secrets, tokens cannot be displayed because the API returns none. What matters is the
+ * host, presented username and last-write date, useful when a token expires.
  *
- * Par compte et non par instance, contrairement aux secrets : chacun ne voit que les
- * siens, administrateur compris.
+ * Per account, unlike instance secrets: everyone sees only their own credentials,
+ * administrators included.
  */
 
 const errorOf = (error: unknown): string | null =>
@@ -115,12 +114,13 @@ export function GitCredentialsSettingsPage() {
                   type="password"
                   value={token}
                   onChange={(event) => setToken(event.target.value)}
-                  // Le gestionnaire de mots de passe du navigateur n'a rien à retenir ici.
+                  // The browser password manager has nothing to save here.
                   autoComplete="off"
                   required
                 />
-                {/* Au moment de choisir le jeton, pas en tête de page : c'est là
-                    qu'on décide de sa portée. */}
+                {/*
+                 * At token selection, not the page top: this is where scope is decided.
+                 */}
                 <Banner tone="caution">{t('gitCredentials.trustModel')}</Banner>
                 {errorOf(putCredential.error) ? (
                   <Banner>{errorOf(putCredential.error)}</Banner>

@@ -1,4 +1,4 @@
-/* Hériter du thème Sillage : cette vue ne redéfinit que les couleurs des rails Git. */
+/* Inherit Sillage theme; redefine only Git lane colors. */
 .git-workspace {
   container-name: git-workspace;
   background: var(--sg-canvas);
@@ -321,7 +321,7 @@
   --git-rail-5: #5d70af;
   --git-rail-6: #667b1e;
 }
-/* Les métadonnées des branches dépendent de la colonne, pas du plein écran. */
+/* Branch metadata responds to column width rather than full-screen width. */
 .git-work-sidebar {
   container-type: inline-size;
 }

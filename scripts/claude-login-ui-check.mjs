@@ -9,10 +9,10 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Connexions guidées Claude menées jusqu'au succès : le jeton d'un abonnement, puis sa jauge.
-// Un faux CLI rejoue le dialogue de `setup-token` et d'`auth login` (sondé sur 2.1.296) et
-// accepte les codes qui commencent par GOOD. On compte les relectures de l'état : une
-// boucle d'invalidation y tournait à quarante requêtes par seconde (13 octobre 2026).
+// Guided Claude sign-ins through success: subscription token, then gauge. Fake CLI
+// replays `setup-token`/`auth login` dialogue (probed on 2.1.296), accepting codes
+// starting GOOD. Count state rereads: an invalidation loop ran at forty requests
+// per second here (October 13, 2026).
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -49,12 +49,12 @@ async function ready(url, child) {
 }
 
 const FAKE_CLI = `#!/bin/bash
-# Faux claude : setup-token et auth login, le reste répond comme un CLI sans session.
+# Fake claude: setup-token/auth login; everything else acts like a signed-out CLI.
 if [ "$1" = "--version" ]; then echo "2.1.296 (Claude Code)"; exit 0; fi
 url="https://claude.com/cai/oauth/authorize?code=true&client_id=x&response_type=code&scope=user%3Ainference&state=S$RANDOM$RANDOM"
 if [ "$1" = "setup-token" ]; then
   printf 'Browser didn'"'"'t open? Use the url below to sign in\\r\\n\\033]8;id=1;%s\\007%s\\033]8;;\\007\\r\\nPaste code here if prompted > ' "$url" "\${url:0:60}"
-  # Comme le vrai : un refus attend Entrée, puis rouvre l'invite.
+  # Like the real CLI: rejection waits for Enter, then reopens the prompt.
   while read -r code; do
     if [ "\${code:0:4}" = "GOOD" ]; then
       printf '\\r\\nYour OAuth token (valid for 365 days):\\r\\n\\033[33msk-ant-oat01-%s\\033[39m\\r\\n' "$(printf 'A%.0s' $(seq 1 90))"
@@ -113,7 +113,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   const polls = []
   page.on('request', (request) => { if (/\/api\/claude-accounts\/login\//.test(request.url()) && request.method() === 'GET') polls.push(Date.now()) })
-  /** Les relectures de la dernière seconde : une poignée, jamais des dizaines. */
+  /** Rereads in the last second: a handful, never dozens. */
   const recentPolls = () => polls.filter((at) => at > Date.now() - 1000).length
 
   await page.goto(`${base}/settings/comptes-claude`)
@@ -122,7 +122,7 @@ try {
   await page.getByRole('button', { name: 'Lancer la connexion' }).click()
   await page.getByText("Ouvrir la page d'autorisation").waitFor()
 
-  // Un code refusé, puis le bon : le jeton se lit, le compte naît.
+  // Rejected code, then correct code: token read, account created.
   await page.getByLabel('Code', { exact: true }).fill('BAD-' + 'x'.repeat(80))
   await page.getByRole('button', { name: 'Valider le code' }).click()
   await page.getByText(/Invalid code/).waitFor({ timeout: 15000 })
@@ -136,7 +136,7 @@ try {
   assert.ok(recentPolls() <= 2, `Relectures après la fin : ${recentPolls()} en une seconde`)
   await page.getByText('Pas de jauge d\'usage').waitFor()
 
-  // La jauge enchaînée : un refus fait relancer le CLI, le bon code la donne.
+  // Chained gauge: rejection restarts CLI; correct code enables it.
   await page.getByRole('button', { name: 'Activer la jauge' }).first().click()
   await page.getByText("Jauge d'usage", { exact: true }).waitFor()
   await page.getByLabel('Code', { exact: true }).fill('BAD-' + 'y'.repeat(80))

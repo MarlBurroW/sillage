@@ -5,7 +5,7 @@ import { useTranslate } from '../lib/i18n'
 import { useBranches, useCreateWorktree, useWorktrees } from '../lib/worktrees'
 import { Banner, Button, ChoiceList, Field, Select, cx, type SelectOption } from './ui'
 
-/** Valeur sentinelle : travailler dans le dossier du projet, sans worktree. */
+/** Sentinel for working in the project directory without a worktree. */
 const ROOT = '__root__'
 const NEW = '__new__'
 
@@ -13,23 +13,17 @@ interface WorktreeSelectProps {
   projectId: string
   value: string | null
   onChange: (worktreeId: string | null) => void
-  /** Masqué quand le projet n'est pas un dépôt git : un worktree n'y a aucun sens. */
+  /** Hide for non-Git projects where worktrees have no meaning. */
   isRepository: boolean
-  /**
-   * `list` déplie les options au lieu de les cacher derrière une liste déroulante.
-   * Permet aux écrans qui ont assez de place de montrer les répertoires côte à côte.
-   */
+  /** list expands options instead of a dropdown, allowing spacious screens to show directories side by side. */
   layout?: 'select' | 'list'
-  /**
-   * Nom de branche proposé quand la création s'ouvre, sans le figer : lancer une carte
-   * suggère `feat/12-slug`, que rien n'empêche de réécrire avant de valider.
-   */
+  /** Suggested editable branch name on creation, such as feat/12-slug when starting from a card. */
   suggestedName?: string
 }
 
 /**
- * Choix du répertoire de travail d'une conversation. Sillage gère les worktrees
- * lui-même pour que le comportement soit identique entre Claude et Codex.
+ * Conversation working-directory choice. Sillage manages worktrees itself for identical
+ * Claude/Codex behavior.
  */
 export function WorktreeSelect({
   projectId,
@@ -87,8 +81,8 @@ export function WorktreeSelect({
 
   const pick = (choice: string) => {
     if (choice === NEW) {
-      // La proposition ne s'applique qu'à l'ouverture : réécrire un nom déjà saisi
-      // parce qu'on est repassé par la liste effacerait le travail de l'utilisateur.
+      // Apply suggestions only on opening: replacing an edited name after returning through the
+      // list would erase user work.
       if (!creating && !name) setName(suggestedName ?? '')
       setCreating(true)
       return

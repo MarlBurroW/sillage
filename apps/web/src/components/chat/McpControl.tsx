@@ -8,47 +8,35 @@ import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
 import { toolButtonClass } from './composer-buttons'
 
 /**
- * Serveurs MCP actifs sur la conversation, et l'isolation stricte de Claude.
- *
- * Les deux vivent dans le même contrôle parce qu'ils répondent à la même question,
- * « avec quels outils cet agent travaille » : les séparer obligerait à ouvrir deux
- * réglages pour comprendre ce que le CLI a réellement chargé.
- *
- * C'est cette même question qui justifie d'y montrer les serveurs venus du CLI, que
- * Sillage n'a pas déclarés et ne peut pas régler. Les taire donnait un composeur qui
- * annonçait « Aucun » à une session où l'agent disposait déjà de sept outils : le
- * réglage disait vrai sur ce qu'il contrôle, et faux sur ce qui est chargé.
- *
- * `strictMcp` n'est proposé que pour Claude, et le dit. Codex n'a pas d'équivalent :
- * son `config.toml` et son serveur intégré restent là quoi qu'on fasse, et offrir la
- * bascule des deux côtés promettrait une isolation qu'un des deux ne tient pas.
+ * Conversation MCP servers and Claude strict isolation. Together they answer which tools the agent
+ * uses; separating them would require two settings to understand actual CLI inventory. Also show
+ * CLI-declared servers Sillage cannot configure: hiding them made None appear despite seven
+ * available tools, true about controlled settings but false about loaded tools. Offer strictMcp
+ * only for Claude and say so. Codex has no equivalent: config.toml and its embedded server remain,
+ * so offering the same switch would falsely promise isolation.
  */
 
 export interface McpControlProps {
   presentation?: 'menu' | 'panel'
-  /** Composer de téléphone : bouton plus petit à l'œil, même cible au doigt. */
+  /** Phone composer: visually smaller button with unchanged touch target. */
   narrow?: boolean
-  /** Registre de Sillage : le seul que ce contrôle peut activer ou désactiver. */
+  /** Sillage registry, the only servers this control can toggle. */
   servers: McpServer[]
   /**
-   * Inventaire que le CLI rapporte pour la session en cours.
-   *
-   * Vide sur une conversation au repos, qui n'a pas de process : le contrôle retombe
-   * alors sur ce que la configuration décrit, faute de mieux.
+   * CLI-reported session inventory. Idle conversations have no process and fall back to configured
+   * state for lack of better information.
    */
   inventory: McpServerStatus[]
   selected: string[]
   onSelectedChange: (ids: string[]) => void
   /**
-   * Serveur MCP de Sillage, ou null quand l'instance ne le monte pas du tout.
-   *
-   * Null fait disparaître la ligne au lieu de la griser : un réglage visible mais
-   * inopérant pousse à chercher pourquoi il ne fait rien, là où son absence se lit
-   * comme une instance qui n'a pas cette fonction.
+   * Sillage MCP server or null if the instance does not mount it. Null removes rather than disables
+   * the row: visible ineffective controls invite troubleshooting, while absence correctly indicates
+   * an unavailable feature.
    */
   sillage: boolean | null
   onSillageChange: (enabled: boolean) => void
-  /** Null pour Codex, qui n'a pas d'isolation à régler. */
+  /** Null for Codex, which has no configurable isolation. */
   strict: boolean | null
   onStrictChange: (strict: boolean) => void
   disabled?: boolean
@@ -75,18 +63,16 @@ export function McpControl({
   const toolsByName = new Map(inventory.map((server) => [server.name, server.tools.length]))
 
   const toggle = (id: string, checked: boolean) => {
-    // Reconstruit depuis l'ordre du registre plutôt qu'en ajoutant en fin de liste :
-    // l'ordre décide quel serveur l'emporte quand deux exposent un outil homonyme, et
-    // il ne doit pas dépendre de l'ordre des clics.
+    // Rebuild in registry order rather than appending: order resolves tool-name collisions and must
+    // not depend on click sequence.
     const next = new Set(active)
     if (checked) next.add(id)
     else next.delete(id)
     onSelectedChange(servers.filter((server) => next.has(server.id)).map((server) => server.id))
   }
 
-  // `strictMcp` l'emporte sur l'activation : le drapeau annonce « rien d'autre que ce
-  // que j'ai déclaré », et le serveur de Sillage tombe avec les autres. La case reste
-  // affichée pour que son état se lise, mais devient inerte tant que l'isolation dure.
+  // strictMcp overrides activation: only declared servers are allowed, excluding Sillage with the
+  // others. Keep its state visible but inert during isolation.
   const sillageActive = sillage === true && strict !== true
 
   const items = (
@@ -113,8 +99,7 @@ export function McpControl({
         <p className="px-2.5 py-2 text-xs text-ink-faint">{t('composer.mcp.empty')}</p>
       ) : (
         <>
-          {/* L'intitulé n'apparaît que s'il y a de quoi le distinguer d'autre chose :
-              sans serveur du CLI, une seule section n'a pas besoin d'être nommée. */}
+          {/* Headings are needed only to distinguish sections; without CLI servers one section needs no name. */}
           {external.length > 0 ? <MenuLabel>{t('composer.mcp.sillage')}</MenuLabel> : null}
           {servers.map((server) => (
             <CheckboxItem
@@ -137,9 +122,8 @@ export function McpControl({
           <Separator />
           <MenuLabel>{t('composer.mcp.fromCli')}</MenuLabel>
           {external.map((server) => (
-            // Une ligne inerte plutôt qu'une case grisée : une case, même désactivée,
-            // laisse croire qu'elle deviendra cochable, alors que Sillage ne pourra
-            // jamais régler un serveur qu'il n'a pas déclaré.
+            // Use an inert row rather than disabled checkbox, which would imply Sillage could
+            // eventually configure a server it never declared.
             <div
               key={server.name}
               className="flex items-baseline gap-2 rounded-md px-2.5 py-1.5 text-sm text-ink-faint"
@@ -176,12 +160,9 @@ export function McpControl({
     </>
   )
 
-  // Une pastille d'icône et de compte plutôt qu'un sélecteur nommé : la question
-  // « avec quels outils » se lit d'un coup d'œil et ne mérite pas d'occuper la barre
-  // à hauteur des réglages qu'on change à chaque tour.
-  // Le serveur de Sillage compte comme les autres tant que le CLI n'a pas répondu :
-  // c'en est un, il expose des outils, et l'omettre ferait afficher « aucun » à une
-  // conversation qui démarrera pourtant avec une mémoire du projet.
+  // Icon/count badge rather than named selector: inventory is glanceable and needs less space than
+  // per-turn settings. Count Sillage before CLI response too: it provides tools, and omitting it
+  // would claim None despite project memory on startup.
   const configured = selected.length + (sillageActive ? 1 : 0)
   const summary = mcpSummary(configured, inventory.length)
   const count = inventory.length > 0 ? inventory.length : configured
@@ -200,9 +181,10 @@ export function McpControl({
           className={cx(toolButtonClass(narrow), 'relative tabular-nums')}
         >
           <PlugZap size={16} className="shrink-0" />
-          {/* Rien à zéro : un « 0 » se lirait comme une panne, pour la même raison
-              que le compte d'outils reste muet tant que le CLI n'a pas répondu. En
-              pastille, pour que le bouton garde la taille d'une icône. */}
+          {/*
+           * Omit zero because it suggests failure, like tool counts before CLI response. Badge
+           * sizing keeps the trigger icon-sized.
+           */}
           {count > 0 ? <span aria-hidden className="absolute top-0.5 right-0 min-w-3.5 rounded-full bg-accent-wash px-1 text-center text-[0.625rem] leading-3.5 text-ink">{count}</span> : null}
         </TooltipButton>
       }
@@ -212,7 +194,7 @@ export function McpControl({
   )
 }
 
-/** Les mêmes choix que le menu, avec des contrôles ordinaires dans le panneau. */
+/** Menu choices as ordinary controls within the panel. */
 function McpSwitch({ checked, onCheckedChange, disabled, children }: {
   checked: boolean
   onCheckedChange: (checked: boolean) => void
@@ -234,7 +216,7 @@ function McpSwitch({ checked, onCheckedChange, disabled, children }: {
 
 function McpDivider() { return <div className="my-2 h-px bg-line" /> }
 
-/** Absent tant que le CLI n'a pas répondu : un « 0 outil » se lirait comme un échec. */
+/** Absent until CLI response: zero tools would look like failure. */
 function ToolCount({ count }: { count: number | undefined }) {
   const t = useTranslate()
   if (count === undefined || count === 0) return null
@@ -247,17 +229,10 @@ function ToolCount({ count }: { count: number | undefined }) {
 }
 
 /**
- * Résumé affiché par le composer sur son déclencheur replié.
- *
- * Compte ce que la session a réellement chargé dès que le CLI l'a dit, et non ce que
- * la configuration décrit : c'est la question à laquelle ce contrôle sert à répondre,
- * et les serveurs du CLI en font partie sans que Sillage les ait déclarés. Une
- * conversation au repos n'a pas d'inventaire, le compte configuré prend alors le
- * relais faute de mieux.
- *
- * Fonction appelée au rendu et non constante de module : un libellé composé au
- * chargement se figerait dans la langue d'alors et resterait en place après un
- * changement de langue.
+ * Composer summary for the collapsed trigger. Once available count actual session inventory,
+ * including CLI servers undeclared in Sillage, rather than configuration. Idle conversations lack
+ * inventory and fall back to configured counts. Compute during render rather than module
+ * initialization so labels follow language changes.
  */
 export function mcpSummary(configured: number, loaded: number): string {
   if (loaded > 0) {

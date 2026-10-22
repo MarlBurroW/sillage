@@ -3,11 +3,8 @@ import { highlight, isHighlighterReady, loadHighlighter } from '../../lib/highli
 import { cx } from '../ui'
 
 /**
- * Code coloré, dans un `<pre>`.
- *
- * La bibliothèque de coloration est chargée à la demande : le premier bloc affiché de
- * la session apparaît d'abord en clair, puis se colore, plutôt que d'être retenu le
- * temps du téléchargement.
+ * Highlighted code in pre tags. Lazy-load the library, showing first blocks plainly before
+ * highlighting rather than delaying text during download.
  */
 export function HighlightedCode({
   code,
@@ -16,7 +13,7 @@ export function HighlightedCode({
   className,
 }: {
   code: string
-  /** Vide, inconnu ou trop volumineux : le code reste en clair. */
+  /** Empty, unknown, or oversized code stays unhighlighted. */
   language: string
   wrap?: boolean
   className?: string
@@ -39,11 +36,10 @@ export function HighlightedCode({
   return (
     <pre className={cx('overflow-x-auto', wrap && 'break-words whitespace-pre-wrap', className)}>
       {rendered.applied ? (
-        // Les jetons sont des `<span>` de classes `hljs-*`, stylés avec les tokens de
-        // thème (voir index.css).
+        // hljs spans use theme tokens from index.css.
         <code className="hljs" dangerouslySetInnerHTML={{ __html: rendered.html }} />
       ) : (
-        // Rendu comme texte : React échappe, on n'a rien à assainir nous-mêmes.
+        // Render as text and let React escape, requiring no manual sanitization.
         <code>{code}</code>
       )}
     </pre>

@@ -22,8 +22,8 @@ export function AppearanceSection() {
   const [theme, setTheme] = useTheme()
   const appearance = useAppearance()
   const active = useLocale()
-  // Langue dont le catalogue se télécharge encore : l'interface ne bascule qu'une fois
-  // qu'il est là, et le bouton montre l'attente plutôt que de sembler ignorer le clic.
+  // Language whose catalog is still downloading: switch only once it arrives,
+  // and show waiting state rather than seeming to ignore the click.
   const pending = usePendingLocale()
   const t = useTranslate()
 
@@ -34,8 +34,10 @@ export function AppearanceSection() {
         description={t('settings.appearance.description')}
       />
 
-      {/* La langue avant le thème : c'est le réglage qui décide de la lisibilité du
-          reste de l'écran, y compris des libellés de cette page. */}
+      {/*
+       * Language before theme: it determines readability of the rest of the screen, including
+       * this page's labels.
+       */}
       <Card>
         <CardHeader
           title={t('settings.language.title')}
@@ -49,8 +51,8 @@ export function AppearanceSection() {
                 key={option}
                 type="button"
                 onClick={() => {
-                  // Un échec laisse l'interface dans sa langue, entière : rien à réparer
-                  // à l'écran, un nouveau clic retentera.
+                  // Failure leaves the UI intact in its current language: nothing needs repairing;
+                  // another click retries.
                   setLocale(option).catch((error: unknown) => console.warn(error))
                 }}
                 aria-pressed={active === option}
@@ -62,8 +64,10 @@ export function AppearanceSection() {
                     : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
                 )}
               >
-                {/* Chaque langue dans la sienne : on cherche « Français » même quand
-                    l'interface est en anglais. */}
+                {/*
+                 * Each language names itself: users look for “Français” even in an English
+                 * interface.
+                 */}
                 {pending === option ? <Loader size={14} className="animate-spin" aria-hidden /> : null}
                 {LOCALE_LABELS[option]}
               </button>
@@ -99,8 +103,10 @@ export function AppearanceSection() {
             ))}
           </div>
 
-          {/* Le thème contrasté est neutre par construction : teinte et intensité
-              n'y produiraient rien, seule la luminosité a un effet. */}
+          {/*
+           * The contrast theme is neutral by design: hue and intensity do nothing; only
+           * brightness has an effect.
+           */}
           {theme === 'dark-contrast' ? <AppearanceControls appearance={appearance} keys={['lift']} /> : (
             <>
               <AppearancePresets appearance={appearance} theme={theme} />
@@ -113,7 +119,7 @@ export function AppearanceSection() {
         </CardBody>
       </Card>
 
-      {/* La largeur et la typographie partagent les réglages de confort de lecture. */}
+      {/* Width and typography share reading-comfort settings. */}
       <Card>
         <CardHeader
           title={t('settings.reading.title')}
@@ -141,8 +147,10 @@ export function AppearanceSection() {
         </CardBody>
       </Card>
 
-      {/* La palette de code ne touche à rien d'autre que le code, et la mélanger aux
-          réglages de surfaces laisserait croire l'inverse. */}
+      {/*
+       * The code palette affects only code; mixing it with surface settings would imply
+       * otherwise.
+       */}
       <Card>
         <CardHeader
           title={t('settings.syntax.title')}

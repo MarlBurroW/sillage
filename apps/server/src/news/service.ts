@@ -26,7 +26,7 @@ export class NewsService {
     await Promise.allSettled(this.pending.values())
   }
 
-  /** Séquentiel pour borner le travail réseau, même avec plusieurs comptes. */
+  /** Sequential to bound network work even across multiple accounts. */
   async refreshSubscribed(): Promise<void> {
     if (this.refreshing) { this.refreshAgain = true; return }
     this.refreshing = true
@@ -43,7 +43,7 @@ export class NewsService {
         await this.refresh(url).catch(() => {})
       }
       if (this.stopped) return
-      // Les sources retirées ne doivent pas faire croître le cache sans limite.
+      // Removed sources must not grow caches indefinitely.
       for (const row of this.db.select().from(newsFeeds).all()) {
         if (!urls.has(row.url) && row.checkedAt < this.now() - MAX_AGE) this.db.delete(newsFeeds).where(eq(newsFeeds.url, row.url)).run()
       }
@@ -61,7 +61,7 @@ export class NewsService {
     if (active) return active
     const cached = this.db.select().from(newsFeeds).where(eq(newsFeeds.url, url)).get()
     if (cached && cached.checkedAt > this.now() - HOUR) return
-    // Les tests de flux partagent la même limite que les collectes périodiques.
+    // Feed tests share the periodic collection limit.
     if (this.pending.size >= 4) throw new FeedError('news_busy')
     const job = (async () => {
       let data = cached?.data ?? JSON.stringify({ title: new URL(url).hostname, articles: [] })

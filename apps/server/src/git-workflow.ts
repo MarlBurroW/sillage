@@ -17,36 +17,19 @@ import type {
   GitStashDto,
 } from '@sillage/protocol'
 
-/**
- * Le workflow git du panneau : ce qu'on fait d'un dépôt au quotidien sans ouvrir un
- * terminal. Index, commit, branches, remote, stash.
- *
- * Séparé de `git.ts`, qui ne fait que lire pour afficher : ici chaque fonction modifie
- * le dépôt de l'utilisateur, et les erreurs de git deviennent des codes que l'interface
- * sait traduire et, souvent, proposer de résoudre (forcer, stasher, rebaser).
- *
- * Tout passe par `git` lui-même, jamais par une réimplémentation : les hooks du dépôt,
- * sa configuration (`pull.rebase`, `commit.gpgsign`, `core.hooksPath`) et son helper de
- * credentials s'appliquent exactement comme depuis le shell de l'utilisateur.
- */
+/** Panel git workflow: everyday repository operations without a terminal, covering index, commits, branches, remotes and stash. Separate from display-only `git.ts`: functions here modify user repositories, and git errors become translatable codes often offering remedies (force, stash, rebase). Always use git itself: repository hooks, configuration (`pull.rebase`, `commit.gpgsign`, `core.hooksPath`) and credential helpers behave exactly as in the user's shell. */
 
-/** Lectures d'état, qui ne touchent pas au réseau. Large pour un gros dépôt à froid. */
+/** State reads without network access. Generous timeout for cold large repositories. */
 const READ_TIMEOUT_MS = 15_000
-/** Actions locales. Un hook de pre-commit qui lance un linter peut prendre son temps. */
+/** Local operations. Pre-commit hooks running linters may take time. */
 const LOCAL_TIMEOUT_MS = 120_000
-/** Fetch, pull, push : la ligne décide, pas nous. */
+/** Fetch, pull, push: the network determines duration, not us. */
 const NETWORK_TIMEOUT_MS = 180_000
 
-/** Au-delà, un diff de fichier ne s'affiche plus utilement. */
+/** Beyond this size, file diffs are no longer useful to display. */
 const MAX_PATCH_BYTES = 512 * 1024
 
-/**
- * Erreur d'une action git, sous la forme que l'interface traduit.
- *
- * `code` nomme la situation quand git la dit clairement (rien à commiter, branche non
- * fusionnée, push rejeté) : l'interface y attache une phrase et parfois un remède.
- * `detail` garde ce que git a écrit, qui reste le plus précis dans tous les autres cas.
- */
+/** Git action error in translatable form. `code` identifies recognizable situations (nothing to commit, unmerged branch, rejected push), allowing interface messages and remedies. `detail` retains git output, the most precise explanation in other cases. */
 export class GitActionError extends Error {
   constructor(
     readonly code: string,
@@ -69,11 +52,7 @@ interface RunResult {
   stderr: string
 }
 
-/**
- * Lance git et rend sa sortie quel que soit son code de retour : c'est l'appelant qui
- * sait si un code non nul est une erreur (un `commit` sans rien) ou un état (une
- * fusion qui laisse des conflits). Seuls l'absence de git et le délai dépassé lèvent.
- */
+/** Runs git and returns output regardless of exit code: callers know whether nonzero means an error (empty commit) or state (merge conflicts). Only missing git and timeouts throw. */
 function exec(cwd: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolvePromise, reject) => {
     const child = execFile(
@@ -114,14 +93,14 @@ function exec(cwd: string, args: string[], options: RunOptions = {}): Promise<Ru
   })
 }
 
-/** Lecture dont l'échec est une erreur : la sortie ou rien. */
+/** Read whose failure is an error: return output or throw. */
 async function read(cwd: string, args: string[], options: RunOptions = {}): Promise<string> {
   const result = await exec(cwd, args, options)
   if (result.code !== 0) throw classify(result, args)
   return result.stdout
 }
 
-/** Les trois dernières lignes utiles de ce que git a écrit, le reste est du bruit de progression. */
+/** Last three useful output lines; the rest is progress noise. */
 function tail(result: RunResult): string {
   return `${result.stderr}\n${result.stdout}`
     .split('\n')
@@ -131,13 +110,7 @@ function tail(result: RunResult): string {
     .join(' ')
 }
 
-/**
- * Nomme ce que git a refusé, quand il le dit d'une façon reconnaissable.
- *
- * Les motifs suivent les messages de git tels qu'ils sont écrits depuis des années ;
- * un message qui n'y est pas reste un échec générique, avec le texte de git en détail,
- * qui dit toujours plus qu'une reformulation.
- */
+/** Names recognizable git rejections. Patterns follow git's long-established messages; unmatched messages remain generic failures with git output in details, which is more informative than paraphrasing. */
 function classify(result: RunResult, args: string[]): GitActionError {
   const text = `${result.stderr}\n${result.stdout}`
   const detail = tail(result) || `git ${args.join(' ')} exited with ${result.code}`
@@ -165,11 +138,7 @@ function classify(result: RunResult, args: string[]): GitActionError {
   return new GitActionError('git_failed', detail)
 }
 
-/**
- * Ce que git a dit d'utile, en une ligne : « Already up to date. », « Everything
- * up-to-date », le nom de la branche publiée. Les lignes de transport et de progression
- * n'apprennent rien à qui n'a pas le terminal sous les yeux.
- */
+/** Useful git output in one line: 'Already up to date.', 'Everything up-to-date', published branch names. Transport and progress lines do not help users without a terminal open. */
 function summarize(result: RunResult): string | null {
   const lines = `${result.stdout}\n${result.stderr}`
     .split('\n')
@@ -186,13 +155,7 @@ function summarize(result: RunResult): string | null {
   return lines.at(-1) ?? null
 }
 
-/**
- * Une action à la fois par dépôt.
- *
- * Deux clics rapprochés, ou un clic pendant qu'un agent commite, finissent sinon sur
- * « index.lock exists » : git ne fait pas la queue, il refuse. La sérialisation ne
- * protège que de nous-mêmes, mais c'est le cas le plus fréquent.
- */
+/** One operation at a time per repository. Nearby clicks, or clicks while agents commit, otherwise end in 'index.lock exists': git refuses rather than queues. This only serializes our own operations, but they are the common case. */
 const queues = new Map<string, Promise<unknown>>()
 
 export function serialized<T>(cwd: string, task: () => Promise<T>): Promise<T> {
@@ -202,15 +165,7 @@ export function serialized<T>(cwd: string, task: () => Promise<T>): Promise<T> {
   return next
 }
 
-/**
- * Environnement des commandes qui parlent au remote.
- *
- * `GIT_TERMINAL_PROMPT=0` : sans terminal, un git qui demande un mot de passe resterait
- * bloqué jusqu'au délai au lieu d'échouer. Le helper de Sillage est ajouté en dernier
- * recours, après ceux que le dépôt et l'utilisateur ont déjà : un dépôt cloné par
- * Sillage l'a dans sa configuration, un dépôt ajouté depuis le disque non, et c'est pour
- * celui-là que le jeton enregistré doit quand même servir.
- */
+/** Environment for remote commands. `GIT_TERMINAL_PROMPT=0` avoids hanging until timeout on password prompts without a terminal. Append Sillage's helper as a fallback after repository and user helpers: Sillage clones configure it already, but disk-added repositories still need access to stored tokens. */
 export function networkEnv(credentialHelper: string | null): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { GIT_TERMINAL_PROMPT: '0', GIT_EDITOR: 'true' }
   if (credentialHelper) {
@@ -221,10 +176,10 @@ export function networkEnv(credentialHelper: string | null): NodeJS.ProcessEnv {
   return env
 }
 
-/** Pas d'éditeur : un message par défaut suffit à une fusion ou un revert. */
+/** No editor: default messages suffice for merges and reverts. */
 const NO_EDITOR: NodeJS.ProcessEnv = { GIT_EDITOR: 'true' }
 
-// État
+// State
 
 const KINDS: Record<string, GitChangeKind> = {
   M: 'modified',
@@ -235,12 +190,7 @@ const KINDS: Record<string, GitChangeKind> = {
   T: 'typechange',
 }
 
-/**
- * Lignes ajoutées et retirées par fichier, depuis `--numstat -z`.
- *
- * Un renommage occupe trois champs : les compteurs suivis d'un chemin vide, puis
- * l'ancien et le nouveau nom. Un binaire donne « - » à la place des nombres.
- */
+/** Added and removed lines per file from `--numstat -z`. Renames occupy three fields: counters with an empty path, then old and new names. Binary files use '-' instead of numbers. */
 function parseNumstat(raw: string): Map<string, { added: number | null; removed: number | null }> {
   const counts = new Map<string, { added: number | null; removed: number | null }>()
   const fields = raw.split('\0')
@@ -270,14 +220,7 @@ interface Porcelain {
   conflicted: GitChangeDto[]
 }
 
-/**
- * Découpe `git status --porcelain=v2 --branch -z`.
- *
- * Le format v2 est le seul qui dise à la fois l'état de l'index et celui du répertoire
- * de travail pour chaque fichier, avec l'amont de la branche et son avance. `-z`
- * sépare par octet nul, seul séparateur qui survive à un nom de fichier contenant un
- * espace ; le chemin d'origine d'un renommage arrive alors dans le champ suivant.
- */
+/** Parses `git status --porcelain=v2 --branch -z`. Only v2 exposes both index and working-directory state per file alongside upstream and ahead counts. `-z` separates with null bytes, preserving filenames with spaces; renamed entries carry their original path in the next field. */
 function parsePorcelain(raw: string): Porcelain {
   const status: Porcelain = {
     oid: null,
@@ -340,7 +283,7 @@ function parsePorcelain(raw: string): Porcelain {
     const index = xy[0] ?? '.'
     const worktree = xy[1] ?? '.'
     const path = tokens.slice(tag === '2' ? 9 : 8).join(' ')
-    // Le chemin d'origine n'existe que pour une entrée « 2 », et c'est le champ suivant.
+    // Only '2' entries have original paths, in the following field.
     const origin = tag === '2' ? (fields[(i += 1)] ?? null) : null
 
     if (index !== '.') {
@@ -366,10 +309,7 @@ function parsePorcelain(raw: string): Porcelain {
   return status
 }
 
-/**
- * L'opération que git a laissée en suspens, d'après les fichiers qu'il pose dans son
- * répertoire pour s'en souvenir lui-même : c'est ce que regarde son invite de shell.
- */
+/** Pending git operation inferred from marker files git keeps in its directory, the same files its shell prompt reads. */
 async function readOperation(cwd: string): Promise<GitOperation | null> {
   const raw = await read(cwd, [
     'rev-parse',
@@ -405,16 +345,7 @@ async function readOperation(cwd: string): Promise<GitOperation | null> {
   return null
 }
 
-/**
- * L'état complet du dépôt, en une lecture.
- *
- * Les lectures git sont lancées ensemble : les enchaîner multiplierait d'autant le temps
- * d'ouverture de l'onglet. `GIT_OPTIONAL_LOCKS=0` sur le statut : sans lui, `git
- * status` prend le verrou de l'index pour rafraîchir son cache, et entrerait en
- * collision avec un agent en train de commiter.
- *
- * Retourne null hors dépôt : un projet peut pointer sur un dossier quelconque.
- */
+/** Full repository state in one read. Launch git reads concurrently to avoid multiplying tab opening time. Use `GIT_OPTIONAL_LOCKS=0` for status: otherwise refreshing the stat cache takes an index lock and can collide with an agent committing. Returns null outside repositories because projects may target arbitrary directories. */
 export async function readRepoStatus(cwd: string): Promise<GitRepoStatusDto | null> {
   const inside = await exec(cwd, ['rev-parse', '--is-inside-work-tree'])
   if (inside.code !== 0 || inside.stdout.trim() !== 'true') return null
@@ -425,7 +356,7 @@ export async function readRepoStatus(cwd: string): Promise<GitRepoStatusDto | nu
       read(cwd, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'], quiet),
       exec(cwd, ['diff', '--cached', '--numstat', '--no-relative', '-z', '-M'], quiet),
       exec(cwd, ['diff', '--numstat', '--no-relative', '-z', '-M'], quiet),
-      // Échoue sur un dépôt sans commit : c'est un état normal, pas une panne.
+      // Fails on repositories without commits: ordinary state rather than a failure.
       exec(cwd, ['log', '-1', '--format=%H%x00%h%x00%s%x00%b']),
       read(cwd, ['remote']),
       exec(cwd, ['rev-list', '--walk-reflogs', '--count', 'refs/stash']),
@@ -454,8 +385,8 @@ export async function readRepoStatus(cwd: string): Promise<GitRepoStatusDto | nu
     }
   }
 
-  // Le porcelain reste relatif à la racine même lancé depuis un sous-dossier.
-  // Le panneau et ses actions utilisent, eux, le dossier du projet/de la session.
+  // Porcelain paths remain root-relative even when run from subdirectories.
+  // The panel and its actions instead use the project/session directory.
   const fromCwd = (changes: GitChangeDto[]) => changes.map((change) => ({
     ...change,
     path: posix.relative(prefix.replace(/\n$/, ''), change.path),
@@ -479,15 +410,7 @@ export async function readRepoStatus(cwd: string): Promise<GitRepoStatusDto | nu
   }
 }
 
-/**
- * Le diff d'un seul fichier, dans la zone demandée.
- *
- * Par fichier et à la demande, plutôt que tout le diff d'un coup : un dépôt avec deux
- * cents fichiers modifiés n'a pas à transporter deux cents patches pour en déplier un.
- * Un fichier non suivi n'a rien dans l'index à comparer : `--no-index` contre le vide
- * le montre entièrement ajouté, et sort en 1 quand il y a une différence, ce qui est
- * ici le cas attendu.
- */
+/** Diff for one file in the requested area. Per-file on-demand reads avoid transferring two hundred patches to expand one. Untracked files have no index version: `--no-index` against an empty file shows them as wholly added and returns 1 for differences, which is expected here. */
 export async function readFileDiff(cwd: string, path: string, area: GitArea): Promise<GitFileDiffDto> {
   const args =
     area === 'staged'
@@ -496,12 +419,12 @@ export async function readFileDiff(cwd: string, path: string, area: GitArea): Pr
         ? ['diff', '--no-index', '--', '/dev/null', path]
         : ['diff', '-M', '--', path]
 
-  // Les préférences du terminal (couleurs, préfixes, diff externe) ne sont pas
-  // un patch unifié exploitable par l'interface.
+  // Terminal preferences (colors, prefixes, external diff) are not
+  // a unified patch usable by the interface.
   args.splice(1, 0, '--no-color', '--no-ext-diff', '--no-textconv', '--src-prefix=a/', '--dst-prefix=b/')
   const result = await exec(cwd, args, { env: { GIT_OPTIONAL_LOCKS: '0' } })
-  // --no-index peut aussi sortir en 1 si le fichier est inaccessible. Dans ce cas,
-  // une sortie vide n'est pas un diff vide : il faut remonter l'erreur de Git.
+  // --no-index can also exit 1 for inaccessible files. In that case,
+  // empty output is not an empty diff: surface Git's error.
   const difference = area === 'untracked' && result.code === 1 && result.stdout.length > 0
   if (result.code !== 0 && !difference) throw classify(result, args)
 
@@ -511,26 +434,17 @@ export async function readFileDiff(cwd: string, path: string, area: GitArea): Pr
 
 // Index
 
-/** Ajoute à l'index. Sans chemin, tout le répertoire de travail, suppressions comprises. */
+/** Stages paths, or the whole working directory including deletions when none are given. */
 export async function stage(cwd: string, paths?: string[]): Promise<void> {
   await read(cwd, paths ? ['add', '-A', '--', ...paths] : ['add', '-A'], { timeout: LOCAL_TIMEOUT_MS })
 }
 
-/**
- * Retire de l'index, sans toucher au répertoire de travail. `reset` et non `restore
- * --staged` : seul le premier fonctionne sur un dépôt qui n'a pas encore de commit.
- */
+/** Unstages without changing working files. Use `reset` rather than `restore --staged`: only the former works before the first commit. */
 export async function unstage(cwd: string, paths?: string[]): Promise<void> {
   await read(cwd, paths ? ['reset', '-q', '--', ...paths] : ['reset', '-q'], { timeout: LOCAL_TIMEOUT_MS })
 }
 
-/**
- * Abandonne les modifications du répertoire de travail sur ces chemins.
- *
- * Un fichier suivi revient à sa version de l'index, un fichier non suivi est supprimé :
- * deux commandes, parce que `checkout` ne connaît pas le second et `clean` ignore le
- * premier. La répartition se fait d'après l'index, pas d'après ce que dit le client.
- */
+/** Discards working-directory changes at these paths. Tracked files return to their index version; untracked files are deleted. Two commands are needed because `checkout` ignores untracked files and `clean` ignores tracked ones. Classify using the index rather than client input. */
 export async function discard(cwd: string, paths: string[]): Promise<void> {
   const listed = await read(cwd, ['ls-files', '-z', '--', ...paths])
   const tracked = new Set(listed.split('\0').filter(Boolean))
@@ -546,14 +460,7 @@ export async function discard(cwd: string, paths: string[]): Promise<void> {
   }
 }
 
-/**
- * Commite l'index.
- *
- * Le message passe par l'entrée standard et non par `-m` : un corps de plusieurs
- * paragraphes y garde sa mise en forme, et aucune limite de ligne de commande ne le
- * tronque. `--cleanup=whitespace` et non `strip` : une ligne qui commence par `#` fait
- * partie du message quand il n'y a pas d'éditeur pour y mettre des commentaires.
- */
+/** Commits the index. Feed messages through stdin rather than `-m` to preserve paragraphs and avoid command-line limits. Use `--cleanup=whitespace`, not `strip`: without an editor inserting comments, lines starting with `#` belong to the message. */
 export async function commit(
   cwd: string,
   message: string,
@@ -575,7 +482,7 @@ export async function commit(
 
 // Branches
 
-/** `[ahead 1, behind 2]`, `[gone]`, ou rien : ce que `%(upstream:track)` rend. */
+/** Output of upstream:track: ahead/behind counts, gone, or nothing. */
 function parseTrack(track: string): { ahead: number; behind: number; gone: boolean } {
   return {
     ahead: Number(/ahead (\d+)/.exec(track)?.[1] ?? 0),
@@ -584,14 +491,7 @@ function parseTrack(track: string): { ahead: number; behind: number; gone: boole
   }
 }
 
-/**
- * Branches locales et distantes, de la plus récemment commitée à la plus ancienne.
- *
- * `%(worktreepath)` dit où une branche est extraite : une branche prise par un autre
- * worktree ne peut pas l'être ici, et l'interface doit le montrer plutôt que laisser
- * git le refuser. `origin/HEAD` est un alias, pas une branche : écarté d'après le nom
- * complet, parce que `refname:short` l'abrège en `origin`.
- */
+/** Local and remote branches, newest commit first. `%(worktreepath)` identifies branches checked out elsewhere, which cannot be checked out here; show this instead of waiting for git to reject them. Exclude `origin/HEAD` by full name because `refname:short` abbreviates it as `origin`. */
 export async function readBranches(cwd: string): Promise<GitBranchesDto> {
   const raw = await read(cwd, [
     'for-each-ref',
@@ -627,7 +527,7 @@ export async function readBranches(cwd: string): Promise<GitBranchesDto> {
   return { local, remote }
 }
 
-/** Nouvelle branche, extraite ou non. Sans point de départ, HEAD. */
+/** Creates a branch, optionally checking it out; defaults the start point to HEAD. */
 export async function createBranch(
   cwd: string,
   name: string,
@@ -640,13 +540,7 @@ export async function createBranch(
   })
 }
 
-/**
- * Extrait une branche locale, une branche distante ou un commit.
- *
- * Trois commandes selon ce qu'est la référence, parce que `switch` les distingue : une
- * branche distante donne une branche locale du même nom qui la suit, un commit laisse
- * HEAD détachée. La nature est vérifiée ici, et non devinée d'après le nom.
- */
+/** Checks out local branches, remote branches or commits. `switch` requires three distinct commands: remote branches create tracking local branches of the same name; commits detach HEAD. Resolve reference types rather than guessing from names. */
 export async function checkout(cwd: string, ref: string): Promise<void> {
   const isLocal = (await exec(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}`])).code === 0
   if (isLocal) {
@@ -667,13 +561,7 @@ export async function deleteBranch(cwd: string, name: string, force: boolean): P
   await read(cwd, ['branch', force ? '-D' : '-d', name], { timeout: LOCAL_TIMEOUT_MS })
 }
 
-/**
- * Finit une action qui a pu laisser des conflits.
- *
- * Un code non nul n'est une erreur que si le dépôt n'est pas en attente de résolution :
- * une fusion arrêtée sur un conflit a réussi à faire ce qu'on lui demandait, elle
- * attend juste la suite.
- */
+/** Finishes operations that may leave conflicts. Nonzero exit codes are errors only when the repository is not awaiting resolution: merges stopping on conflicts successfully did the requested work and await continuation. */
 async function settle(cwd: string, result: RunResult, args: string[]): Promise<GitActionDto> {
   if (result.code === 0) return { summary: summarize(result), conflicts: false }
 
@@ -698,7 +586,7 @@ const ABORT: Record<GitOperation, string[]> = {
 }
 
 const CONTINUE: Record<GitOperation, string[]> = {
-  // Une fusion n'a pas de `--continue` : la conclure, c'est commiter.
+  // Merges have no `--continue`: completing them means committing.
   merge: ['commit', '--no-edit'],
   rebase: ['rebase', '--continue'],
   'cherry-pick': ['cherry-pick', '--continue'],
@@ -706,14 +594,14 @@ const CONTINUE: Record<GitOperation, string[]> = {
   bisect: ['bisect', 'reset'],
 }
 
-/** Abandonne l'opération en cours, quelle qu'elle soit, et remet le dépôt d'avant. */
+/** Aborts any pending operation and restores the previous repository state. */
 export async function abortOperation(cwd: string): Promise<void> {
   const operation = await readOperation(cwd)
   if (!operation) throw new GitActionError('git_no_operation', 'No merge, rebase or similar operation is in progress.')
   await read(cwd, ABORT[operation], { timeout: LOCAL_TIMEOUT_MS })
 }
 
-/** Reprend l'opération en cours, une fois les conflits résolus et ajoutés à l'index. */
+/** Continues the pending operation after conflicts are resolved and staged. */
 export async function continueOperation(cwd: string): Promise<GitActionDto> {
   const operation = await readOperation(cwd)
   if (!operation) throw new GitActionError('git_no_operation', 'No merge, rebase or similar operation is in progress.')
@@ -735,13 +623,7 @@ export async function pull(cwd: string, rebase: boolean | undefined, env: NodeJS
   return settle(cwd, await exec(cwd, args, { timeout: NETWORK_TIMEOUT_MS, env }), args)
 }
 
-/**
- * Publie la branche courante.
- *
- * Sans amont, la branche est publiée sous son nom et reliée, ce que `git push` seul
- * refuse de deviner. `--force-with-lease` plutôt que `--force` : il n'écrase que ce
- * qu'on a déjà vu au dernier fetch, et refuse le travail d'un autre arrivé entre-temps.
- */
+/** Publishes the current branch. Without upstream, publish and track its own name rather than ask `git push` to guess. `--force-with-lease` overwrites only what the last fetch saw, protecting others' work arriving afterward. */
 export async function push(
   cwd: string,
   options: { force: boolean; remote: string | undefined },
@@ -769,12 +651,7 @@ export async function push(
 
 // Stash
 
-/**
- * Les stashs, du plus récent au plus ancien.
- *
- * Le message de git porte la branche d'origine (« On main: … », « WIP on main: … ») :
- * elle est extraite parce que c'est ce qui dit où ré-appliquer le stash sans surprise.
- */
+/** Stashes, newest first. Git's message includes the source branch ('On main: …', 'WIP on main: …'); extract it to identify where reapplying the stash is least surprising. */
 export async function readStashes(cwd: string): Promise<GitStashDto[]> {
   const raw = await read(cwd, ['stash', 'list', '-z', '--format=%gd%x1f%gs%x1f%ct'])
   return raw
@@ -808,7 +685,7 @@ export async function stashPush(
   return { summary: summarize(result), conflicts: false }
 }
 
-/** Ré-applique un stash, en le gardant (`apply`) ou en le retirant (`pop`). */
+/** Reapplies a stash, retaining it (`apply`) or removing it (`pop`). */
 export async function stashApply(cwd: string, index: number, pop: boolean): Promise<GitActionDto> {
   const args = ['stash', pop ? 'pop' : 'apply', `stash@{${index}}`]
   return settle(cwd, await exec(cwd, args, { timeout: LOCAL_TIMEOUT_MS }), args)
@@ -820,26 +697,20 @@ export async function stashDrop(cwd: string, index: number): Promise<void> {
 
 // Commits
 
-/** Un commit inverse, sans éditeur : le message par défaut de git nomme le commit annulé. */
+/** Creates an inverse commit without an editor; git's default message identifies the reverted commit. */
 export async function revertCommit(cwd: string, hash: string): Promise<GitActionDto> {
   const args = ['revert', '--no-edit', hash]
   return settle(cwd, await exec(cwd, args, { timeout: LOCAL_TIMEOUT_MS, env: NO_EDITOR }), args)
 }
 
-/** Ramène la branche à un commit. `hard` jette le travail en cours : à confirmer en amont. */
+/** Resets a branch to a commit. `hard` discards current work and requires prior confirmation. */
 export async function resetTo(cwd: string, hash: string, mode: GitResetMode): Promise<void> {
   await read(cwd, ['reset', `--${mode}`, hash], { timeout: LOCAL_TIMEOUT_MS })
 }
 
-// Dépôt
+// Repository
 
-/**
- * Fait du répertoire un dépôt git, sur une branche `main`.
- *
- * Le premier geste qu'on ferait dans un terminal sur un projet créé sans clone. Refusé
- * si le répertoire est déjà dans un dépôt : un `git init` imbriqué dans un dépôt parent
- * créerait un sous-dépôt que rien n'a demandé.
- */
+/** Initializes git on branch `main`, the first terminal step for projects created without cloning. Reject directories already within repositories: nested `git init` would create an unsolicited subrepository. */
 export async function initRepository(cwd: string): Promise<void> {
   const inside = await exec(cwd, ['rev-parse', '--is-inside-work-tree'])
   if (inside.code === 0 && inside.stdout.trim() === 'true') {

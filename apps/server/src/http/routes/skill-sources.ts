@@ -22,14 +22,7 @@ import { conflict } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
 import { skillAccess } from './skill-library.js'
 
-/**
- * Sources de la bibliothèque de skills, et mises à jour des skills qui en viennent.
- *
- * Déclarer, modifier, rafraîchir une source : administrateurs, puisque cela fait entrer
- * le contenu d'un dépôt tiers sur le serveur. Parcourir un catalogue et relire un skill :
- * tout utilisateur. Installer et mettre à jour : qui peut écrire dans la portée visée,
- * comme pour toute écriture dans la bibliothèque.
- */
+/** Skill library sources and updates to their skills. Only administrators can declare, edit or refresh sources because these operations bring third-party repository content onto the server. Everyone may browse catalogs and review skills. Installation and updates require write access to the destination scope, like other library writes. */
 export function registerSkillSourceRoutes(
   app: FastifyInstance,
   ctx: AppContext,
@@ -64,11 +57,7 @@ export function registerSkillSourceRoutes(
     reply.status(204)
   })
 
-  /**
-   * Clone ou remet à jour, avec les identifiants git de l'administrateur qui le demande.
-   * Synchrone : un clone de profondeur 1 tient en secondes, et l'interface attend la
-   * réponse pour montrer le catalogue.
-   */
+  /** Clones or refreshes using the requesting administrator's git credentials. Synchronous: depth-1 clones take seconds, and the interface waits for the response before showing the catalog. */
   app.post('/api/skill-sources/:id/refresh', async (request): Promise<SkillSourceDto> => {
     const user = requireAdmin(request)
     const row = await sources.refresh(requireSource(request.params), credentialEnv(ctx.config.paths, user.id))
@@ -121,10 +110,7 @@ export function registerSkillSourceRoutes(
     return installed
   })
 
-  /**
-   * skills.sh, pour trouver un dépôt à déclarer. Réservé aux administrateurs : eux seuls
-   * peuvent ajouter la source que le résultat désigne.
-   */
+  /** skills.sh repository discovery. Administrators only because only they can add the source identified by results. */
   app.get('/api/skill-sources/search', async (request): Promise<SkillSearchDto> => {
     requireAdmin(request)
     const { q } = z.object({ q: z.string().trim().min(1).max(100) }).parse(request.query)
@@ -140,7 +126,7 @@ export function registerSkillSourceRoutes(
     }
   })
 
-  /** Le skill, sa source et ce qu'une mise à jour changerait. */
+  /** Skill, source and changes an update would make. */
   const pendingUpdate = (params: unknown, user: Parameters<typeof requireSkill>[1]) => {
     const row = requireSkill(params, user)
     if (row.sourceId === null || row.sourcePath === null) {

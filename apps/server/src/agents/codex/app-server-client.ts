@@ -9,28 +9,24 @@ import type {
 } from '@sillage/codex-bindings'
 
 /**
- * Méthodes et paramètres tirés de l'union générée : un nom de méthode inexistant ou
- * des paramètres du mauvais type ne compilent pas. Le protocole ne se retranscrit
- * donc jamais à la main, il se cite.
- *
- * Les types de réponse ne sont pas indexés par méthode dans les bindings, l'appelant
- * les précise donc explicitement (`call<ModelListResponse>(...)`).
+ * Methods and parameters come from the generated union: nonexistent methods or incorrect parameter
+ * types fail compilation. Reference the protocol rather than transcribing it manually. Response
+ * types are not indexed by method in bindings, so callers specify them explicitly
+ * (call<ModelListResponse>(...)).
  */
 export type CodexMethod = ClientRequest['method']
 export type CodexParams<M extends CodexMethod> = Extract<ClientRequest, { method: M }>['params']
 
 /**
- * Client JSON-RPC de `codex app-server`, sur stdio et délimité par des sauts de ligne.
- *
- * Volontairement minimal et sans logique métier : l'adaptateur Codex du lot 2 s'appuie
- * dessus pour les tours de conversation, le catalogue de modèles s'en sert pour un
- * simple `model/list`. Les types des paramètres viennent des bindings générés, jamais
- * d'une transcription à la main du protocole.
+ * Newline-delimited stdio JSON-RPC client for codex app-server. Deliberately minimal, without
+ * business logic: the batch-2 adapter uses it for conversation turns, while catalogs only need
+ * model/list. Parameter types always come from generated bindings, never manual protocol
+ * transcription.
  */
 
 const REQUEST_TIMEOUT_MS = 30_000
 
-/** Conserve le code RPC : un refus du CLI n'est pas une panne de transport. */
+/** Preserve RPC codes: CLI rejection is not transport failure. */
 export class CodexRpcError extends Error {
   constructor(message: string, readonly code: number, readonly data?: unknown) {
     super(message)
@@ -48,14 +44,14 @@ export interface CodexClientOptions {
   binary: string
   cwd?: string
   env?: NodeJS.ProcessEnv
-  /** Notifications serveur (`item/started`, `turn/completed`...). */
+  /** Server notifications such as item/started and turn/completed. */
   onNotification?: (method: string, params: unknown) => void
-  /** Requêtes serveur à répondre, dont les demandes d'approbation. */
+  /** Server requests needing replies, including approvals. */
   onServerRequest?: (method: string, params: unknown, requestId: RequestId) => Promise<unknown>
   /**
-   * Mort du process hors d'un `close()` demandé. Sans ce signal, une conversation
-   * sans requête en vol resterait `running` pour toujours : rejeter les appels en
-   * attente ne prévient personne quand il n'y en a aucun.
+   * Unexpected process death outside requested close calls. Without this signal, conversations
+   * without in-flight requests would remain running forever: rejecting pending calls notifies
+   * nobody when none exist.
    */
   onExit?: (code: number | null) => void
 }
@@ -77,8 +73,8 @@ export class CodexAppServerClient {
       windowsHide: true,
     })
 
-    // Le sandbox Linux de Codex se plaint bruyamment sur les hôtes sans espaces de
-    // noms utilisateur. C'est un diagnostic, pas un événement de conversation.
+    // Codex Linux sandbox complains loudly on hosts lacking user
+    // namespaces. This is diagnostic output, not conversation events.
     this.child.stderr.on('data', (chunk: Buffer) => {
       process.stderr.write(`[codex] ${chunk.toString()}`)
     })
@@ -116,14 +112,14 @@ export class CodexAppServerClient {
         throw new Error('Invalid RPC envelope')
       }
     } catch {
-      // Le CLI écrit parfois des lignes non JSON sur stdout au démarrage. Les ignorer
-      // en silence masquerait un vrai problème de protocole, on les signale.
+      // CLI startup occasionally writes non-JSON stdout lines. Ignoring them
+      // silently could hide actual protocol issues, so report them.
       process.stderr.write(`[codex] ligne non JSON ignorée : ${line.slice(0, 200)}\n`)
       return
     }
 
     if (message.id !== undefined && (message.result !== undefined || message.error !== undefined)) {
-      if (typeof message.id !== 'number') return // Nos appels utilisent des ids numériques.
+      if (typeof message.id !== 'number') return // Our calls use numeric IDs.
       const call = this.pending.get(message.id)
       if (!call) return
       this.pending.delete(message.id)
@@ -166,7 +162,7 @@ export class CodexAppServerClient {
 
     try {
       const result = await handler(method, params, id)
-      // Le serveur peut annuler une question pendant que l'utilisateur la lit.
+      // Servers may cancel questions while users read them.
       if (this.serverRequests.delete(id)) this.write({ jsonrpc: '2.0', id, result })
     } catch (err) {
       if (!this.serverRequests.delete(id)) return
@@ -203,13 +199,9 @@ export class CodexAppServerClient {
   }
 
   /**
-   * Appel d'une méthode ou d'un champ que `experimentalApi` débloque.
-   *
-   * `codex app-server generate-ts` n'exporte pas ces méthodes, donc elles ne sont pas
-   * dans l'union générée et `call` les refuserait. Le nom est explicite pour que ce
-   * contournement reste visible : tout ce qui passe par ici est susceptible de
-   * disparaître à la prochaine version du CLI, contrairement au reste du protocole,
-   * dont la dérive est détectée par `pnpm codex:types:check`.
+   * Call methods or fields enabled by experimentalApi. generate-ts omits them from the generated
+   * union, so ordinary call rejects them. Explicit naming keeps this bypass visible: these features
+   * may disappear next CLI release, unlike protocol drift detected by pnpm codex:types:check.
    */
   callExperimental<T>(method: string, params: unknown): Promise<T> {
     return this.call<T, CodexMethod>(method as CodexMethod, params as CodexParams<CodexMethod>)
@@ -218,8 +210,8 @@ export class CodexAppServerClient {
   async initialize(clientInfo: InitializeParams['clientInfo']): Promise<InitializeResponse> {
     const result = await this.call<InitializeResponse, 'initialize'>('initialize', {
       clientInfo,
-      // `experimentalApi` conditionne le mode de collaboration : sans elle,
-      // `turn/start.collaborationMode` est rejeté et le mode Plan est inatteignable.
+      // experimentalApi gates collaboration mode: without it,
+      // turn/start.collaborationMode is rejected and Plan mode is unreachable.
       capabilities: {
         experimentalApi: true,
         requestAttestation: false,

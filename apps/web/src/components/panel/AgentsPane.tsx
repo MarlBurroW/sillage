@@ -15,11 +15,8 @@ import { SubAgentRow } from '../chat/SubAgentRow'
 import { EmptyState, cx } from '../ui'
 
 /**
- * Les sous-agents de la conversation : la liste, et le fil de celui qu'on consulte.
- *
- * Le fil est rendu par le même composant que le fil principal. Un sous-agent est une
- * conversation comme une autre, avec ses messages, sa réflexion et ses appels : lui
- * donner un rendu à part obligerait à tenir deux vues en accord pour un seul contenu.
+ * Conversation subagents: list and selected thread. Share rendering with the main thread: messages,
+ * reasoning, and calls are the same content and should not require synchronized duplicate views.
  */
 export function AgentsPane({
   conversationId,
@@ -29,10 +26,10 @@ export function AgentsPane({
   selectedId,
 }: {
   conversationId: string
-  /** CLI de la conversation : c'est lui qui dit si un travail de fond s'arrête. */
+  /** Conversation CLI determining whether background tasks can be stopped. */
   agent: AgentKind
   agents: SubAgent[]
-  /** Travaux poursuivis hors du tour, sans fil à ouvrir : le CLI n'en transmet rien. */
+  /** Work continuing outside turns without openable threads because the CLI supplies no content. */
   background: BackgroundWork[]
   selectedId: string | null
 }) {
@@ -71,12 +68,8 @@ export function AgentsPane({
 type BackgroundFamily = 'workflow' | 'shell' | 'subagent' | 'monitor'
 
 /**
- * Les noms sous lesquels le CLI annonce chaque famille de travaux.
- *
- * Deux orthographes par famille parce que le CLI les mélange : le SDK documente des
- * libellés lisibles (`shell`, `subagent`), et la version 2.1 émet ses discriminants
- * bruts (`local_bash`, `local_agent`). Le préfixe `local_` est retiré avant la
- * recherche, ce qui rattrape les deux d'un coup.
+ * CLI names for task families. SDK documents readable names (shell, subagent), while version 2.1
+ * emits raw discriminants (local_bash, local_agent). Strip local_ before lookup to cover both.
  */
 const KIND_ALIASES: Record<string, BackgroundFamily | undefined> = {
   workflow: 'workflow',
@@ -103,11 +96,8 @@ const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
 }
 
 /**
- * Les travaux de fond, au-dessus des sous-agents et non mêlés à eux.
- *
- * Ils n'ont pas de fil à ouvrir : le CLI en donne l'activité du moment, jamais ce
- * qu'ils écrivent. Une ligne sans clic est donc honnête, là où une ligne cliquable
- * promettrait un détail qui n'existe pas.
+ * Background work above rather than mixed with subagents. The CLI reports activity but no written
+ * output, so inert rows accurately avoid promising nonexistent detail.
  */
 function BackgroundList({
   conversationId,
@@ -121,9 +111,8 @@ function BackgroundList({
   const t = useTranslate()
   const canStop = AGENT_CAPABILITIES[agent].stopBackgroundTask
   /**
-   * L'arrêt n'est pas confirmé par la réponse : la tâche disparaît au prochain
-   * `background.updated`. Entre les deux, le bouton reste marqué, sans quoi il
-   * inviterait à recliquer sur un arrêt déjà demandé.
+   * Stop replies do not confirm termination: tasks disappear on the next background.updated. Keep
+   * the button pending meanwhile to avoid repeated stop requests.
    */
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set())
   if (tasks.length === 0) return null
@@ -133,8 +122,8 @@ function BackgroundList({
     try {
       await stopBackgroundTask(conversationId, taskId)
     } catch {
-      // Refus du serveur (session arrêtée entre-temps, tâche déjà close) : le bouton
-      // redevient cliquable, et la liste, elle, dit toujours vrai via le journal.
+      // Server rejection (session ended or task already closed) restores interaction; the log keeps
+      // the list authoritative.
       setStopping((prev) => {
         const next = new Set(prev)
         next.delete(taskId)
@@ -149,8 +138,7 @@ function BackgroundList({
         {t('panel.background.title')}
       </h2>
       {tasks.map((task) => {
-        // Un type inconnu s'affiche tel qu'il est venu plutôt que d'être rangé de
-        // force dans une famille : le CLI en ajoute au fil des versions.
+        // Display unknown types unchanged rather than forcing a family because CLI versions add new kinds.
         const family = KIND_ALIASES[task.kind.replace(/^local_/, '')]
         return (
           <div
@@ -163,8 +151,7 @@ function BackgroundList({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs text-ink">{task.description}</span>
               <span className="block truncate text-[0.6875rem] text-ink-faint">
-                {/* La famille dit quelle sorte de travail tourne, l'activité ce qu'il
-                    fait à l'instant : les deux tiennent sur la ligne. */}
+                {/* Family identifies work kind; activity describes its current action. Both fit on the row. */}
                 {task.activity
                   ? `${family ? t(KIND_LABELS[family]) : task.kind} · ${task.activity}`
                   : family
@@ -231,8 +218,7 @@ function SubAgentThread({
           </span>
         </span>
 
-        {/* Les tokens d'un sous-agent n'apparaissent nulle part ailleurs : ils ne
-            comptent pas dans l'usage du tour, que seul l'agent principal alimente. */}
+        {/* Subagent tokens appear nowhere else: turn usage includes only the main agent. */}
         {agent.totalTokens > 0 ? (
           <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
             {t('subagent.tokens', { count: formatTokens(agent.totalTokens) })}
@@ -243,8 +229,7 @@ function SubAgentThread({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
         {rows.length === 0 ? (
           <p className="text-xs text-ink-faint">
-            {/* Le CLI transmet le travail du sous-agent au fil de l'eau : entre le
-                lancement et son premier mot, il n'y a rien à montrer. */}
+            {/* CLI streams subagent work; there is nothing to show before its first output. */}
             {agent.status === 'running'
               ? t('subagent.pane.starting')
               : t('subagent.pane.silent')}

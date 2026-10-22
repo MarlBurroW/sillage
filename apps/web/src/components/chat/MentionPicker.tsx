@@ -4,12 +4,7 @@ import type { FileMatchDto } from '../../lib/files'
 import { cx } from '../ui'
 import { useTranslate } from '../../lib/i18n'
 
-/**
- * Liste des fichiers proposés pour une mention.
- *
- * Posée au-dessus de la zone de saisie et non en dessous : sur téléphone, le clavier
- * virtuel occupe tout le bas de l'écran et une liste sous le champ serait invisible.
- */
+/** Mention file suggestions above the input because phone keyboards would hide lists beneath it. */
 export function MentionPicker({
   files,
   active,
@@ -26,8 +21,7 @@ export function MentionPicker({
   const t = useTranslate()
   const list = useRef<HTMLUListElement>(null)
 
-  // La navigation au clavier peut sortir de la zone visible : l'élément actif est
-  // ramené dans le cadre, sans faire défiler la conversation derrière.
+  // Reveal active keyboard entries inside this list without scrolling conversations behind.
   useEffect(() => {
     list.current?.children[active]?.scrollIntoView({ block: 'nearest' })
   }, [active])
@@ -53,8 +47,7 @@ export function MentionPicker({
             type="button"
             role="option"
             aria-selected={index === active}
-            // `onMouseDown` : un `onClick` laisserait d'abord le champ perdre le focus,
-            // ce qui referme la liste avant que la sélection soit prise en compte.
+            // Use mousedown: click blurs input and closes suggestions before selection.
             onMouseDown={(event) => {
               event.preventDefault()
               onPick(file)

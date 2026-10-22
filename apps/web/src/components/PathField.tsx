@@ -10,15 +10,11 @@ interface PathFieldProps {
   hint?: string
   error?: string
   placeholder?: string
-  /** Le chemin est exigé côté serveur : sans ça, un champ vide part et revient en
-   * erreur de validation, dans une phrase qui nomme un champ de l'API. */
+  /** The server requires paths: without this, empty fields return validation messages naming API fields. */
   required?: boolean
 }
 
-/**
- * Saisie d'un chemin : champ texte pour ceux qui tapent vite, explorateur pour le
- * reste. Les deux écrivent la même valeur, aucun des deux n'est un mode dégradé.
- */
+/** Path entry by text for fast typists or explorer for others. Both edit the same value with equal status. */
 export function PathField({
   label,
   value,

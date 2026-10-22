@@ -19,18 +19,17 @@ import { badRequest, conflict, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
- * Administration des jetons d'API, réservée au cookie de session.
+ * API token administration, reserved for session cookies.
  *
- * Elle vit sous `/api/tokens` et non sous `/api/v1` : un jeton ne doit pas pouvoir
- * s'en fabriquer un autre, ni élargir ses portées. Créer un accès machine reste un
- * geste humain.
+ * Lives under `/api/tokens`, outside `/api/v1`: tokens must not mint more tokens
+ * or expand their scopes. Creating machine access remains a human action.
  */
 export function registerApiTokenRoutes(
   app: FastifyInstance,
   ctx: AppContext,
   registry: AgentRegistry,
 ): void {
-  /** Un jeton ne peut viser que des projets que son propriétaire voit déjà. */
+  /** A token can only target projects its owner can already see. */
   const assertProjectsVisible = (userId: string, projectIds: string[]): void => {
     if (projectIds.length === 0) return
 
@@ -67,8 +66,8 @@ export function registerApiTokenRoutes(
     }
     assertProjectsVisible(user.id, body.projectIds)
 
-    // Les `CLI_DEFAULT` sont résolus une fois ici, comme à la création d'une
-    // conversation : le jeton porte ensuite une configuration explicite et stable.
+    // Resolve `CLI_DEFAULT` once here, as when creating conversations:
+    // the token then carries an explicit, stable configuration.
     const config = await registry.adapter(body.agent).resolveDefaults(body.config)
 
     const { row, secret } = createApiToken(ctx.db, {
@@ -85,14 +84,14 @@ export function registerApiTokenRoutes(
     const payload: CreatedApiTokenDto = {
       token: apiTokenToDto(row),
       secret,
-      // Lisible en base contrairement au secret d'authentification, mais montré une
-      // seule fois quand même : l'écran n'a aucune raison de le réexposer ensuite.
+      // Readable in the database unlike authentication secrets, but still displayed
+      // only once: the interface has no reason to expose it again later.
       webhookSecret: row.webhookSecret ?? '',
     }
     return reply.status(201).send(payload)
   })
 
-  /** Révocation, seule modification possible : voir `updateApiTokenBodySchema`. */
+  /** Revocation is the only modification allowed; see `updateApiTokenBodySchema`. */
   app.patch('/api/tokens/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -109,9 +108,9 @@ export function registerApiTokenRoutes(
   })
 
   /**
-   * La suppression n'est offerte que sur un jeton déjà révoqué : elle est définitive et
-   * un jeton encore vivant se coupe d'abord, pour que le geste soit en deux temps.
-   * Les conversations qu'il a lancées gardent leur marqueur, qui est recopié sur elles.
+   * Only revoked tokens can be deleted: deletion is permanent, so active tokens
+   * must first be disabled to make this a two-step action. Their conversations
+   * retain the origin marker copied onto them.
    */
   app.delete('/api/tokens/:id', async (request, reply) => {
     const user = requireUser(request)

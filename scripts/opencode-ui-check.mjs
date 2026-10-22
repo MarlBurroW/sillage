@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 import { chromium } from 'playwright'
 
-// Vérifie que le fil rend ce que l'adaptateur opencode journalise : outils sous leurs noms
-// du journal, sous-agent, permission et question. API simulée, aucune conversation réelle.
+// Check the thread renders what the opencode adapter journals: tools under journal
+// names, subagent, permission, question. Mocked API, no real conversation.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
@@ -28,7 +28,7 @@ try {
     await setTimeout(100)
   }
   assert.ok(ready, diagnostics || 'Vite failed to start')
-  // Le Chromium complet est couvert par le profil AppArmor du serveur.
+  // Full Chromium is covered by the server's AppArmor profile.
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     const page = await browser.newPage({ viewport, locale: 'fr-FR' })
@@ -51,16 +51,15 @@ try {
       await import('/src/styles/index.css')
       const React = (await import('/node_modules/.vite/deps/react.js')).default
       const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
-      // Les cartes d'outils lisent leur sortie par React Query. Le fournisseur doit venir
-      // du même module que celui des composants, que Vite sert sous une URL versionnée :
-      // elle se lit dans un module qui l'importe.
+      // Tool cards read output through React Query. The provider must come from the same
+      // module as components, served by Vite at a versioned URL: read it from a module importing it.
       const source = await (await fetch('/src/lib/tool-output.ts')).text()
       const queryModule = /from "([^"]*react-query[^"]*)"/.exec(source)[1]
       const { QueryClient, QueryClientProvider } = await import(queryModule)
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
       const { ChatThread } = await import('/src/components/chat/ChatThread.tsx')
-      // Les bulles portent des infobulles (bouton copier) : l'application les enveloppe dans
-      // ce fournisseur à la racine (main.tsx), le banc doit faire de même.
+      // Bubbles have tooltips (copy button): the app wraps them in this provider at the
+      // root (main.tsx), so the harness must do the same.
       const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
       const { TurnActivity } = await import('/src/components/chat/TurnActivity.tsx')
       const { applyEvent, emptyChatState } = await import('/src/lib/chat-fold.ts')
@@ -77,7 +76,7 @@ try {
           ),
         ))
       }
-      // Les événements tels que `apps/server/src/agents/opencode/` les émet.
+      // Events as emitted by `apps/server/src/agents/opencode/`.
       window.appendEvent({ type: 'turn.started' })
       window.appendEvent({ type: 'tool.started', toolCallId: 'read', name: 'Read', input: { file_path: 'src/note.txt' }, parentToolCallId: null })
       window.appendEvent({ type: 'tool.completed', toolCallId: 'read', output: '<content>\n1: hello\n</content>', isError: false, durationMs: 4 })
@@ -103,13 +102,13 @@ try {
     })
     await page.getByText('src/note.txt', { exact: false }).first().waitFor()
     await page.getByText('Explorer le dossier', { exact: false }).first().waitFor()
-    // Deux appels terminés à la suite se replient en une ligne, qui les nomme.
+    // Two consecutive completed calls collapse into one line naming them.
     await page.getByText('2 outils', { exact: true }).click()
     await page.getByText('echo sortie-en-flux', { exact: false }).first().waitFor()
     await page.getByText('Voir le fil du sous-agent', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'le fil ne déborde pas')
 
-    // Permission : la décision part avec la portée choisie, puis la carte se referme.
+    // Permission: send the decision with the selected scope, then close the card.
     await page.getByText('Edit demande une autorisation', { exact: true }).waitFor()
     await Promise.all([
       page.waitForResponse((response) => response.url().includes('/permissions/permission')),
@@ -123,7 +122,7 @@ try {
     })
     await page.getByText('Autorisé', { exact: true }).waitFor()
 
-    // Question : opencode attend les réponses dans l'ordre, la clé est le rang.
+    // Question: opencode expects answers in order, keyed by index.
     await page.getByText('Majuscules ou minuscules ?', { exact: true }).waitFor()
     await page.locator('button[aria-pressed]', { hasText: 'Majuscules' }).click()
     await Promise.all([

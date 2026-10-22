@@ -24,16 +24,14 @@ export interface CodeEditorHandle {
   goToLine: () => void
 }
 
-// En mémoire seulement, par compte/workspace/fichier. Un seul DOM CodeMirror reste
-// monté, mais revenir au document retrouve sa sélection, son défilement et Annuler.
+// Memory-only state per account/workspace/file. Keep only one CodeMirror DOM mounted, restoring
+// selection, scroll, and undo when returning to documents.
 const sessions = new Map<string, { state: EditorState; scroll: ReturnType<EditorView['scrollSnapshot']>; revision: number }>()
 const MAX_SESSIONS = 40
 
 /**
- * Intitulés du panneau de recherche.
- *
- * CodeMirror expose ses libellés par la facette `phrases` : les traduire ici évite
- * d'avoir à réécrire le panneau, et c'est le mécanisme prévu pour ça.
+ * Search-panel labels through CodeMirror's phrases facet, its intended translation mechanism,
+ * without rebuilding the panel.
  */
 function searchPhrases(): Record<string, string> {
   return {
@@ -58,15 +56,12 @@ function searchPhrases(): Record<string, string> {
 }
 
 /**
- * Éditeur de texte d'un onglet.
- *
- * CodeMirror plutôt que Monaco : le second pèse vingt fois plus et n'apporte ici que
- * ce dont on se prive volontairement (LSP, autocomplétion). Le nécessaire est monté
- * explicitement plutôt que par `basicSetup` : ce dernier embarque l'autocomplétion et
- * le linting, qui n'ont rien à faire dans un éditeur sans serveur de langage.
+ * Tab text editor. CodeMirror instead of Monaco, twenty times larger for intentionally omitted
+ * features (LSP, completion). Mount necessary extensions explicitly instead of basicSetup, which
+ * bundles completion and linting inappropriate without a language server.
  */
 export function CodeEditor({
-  /** Contenu de départ, lu au montage seulement. */
+  /** Initial contents read only on mount. */
   initial,
   path,
   onChange,
@@ -84,7 +79,7 @@ export function CodeEditor({
   sessionKey: string
   revision: number
   onPosition: (line: number, column: number) => void
-  /** Pour qui peut lire sans pouvoir modifier : le texte se parcourt et se cherche. */
+  /** Read-only users can browse and search text. */
   readOnly?: boolean
   ref?: Ref<CodeEditorHandle>
 }) {
@@ -95,20 +90,19 @@ export function CodeEditor({
     goToLine: () => { if (current.current) gotoLine(current.current) },
   }), [])
   /**
-   * Les rappels sont lus au moment de l'événement, jamais capturés dans les extensions :
-   * les recréer reconstruirait l'état de l'éditeur et perdrait le curseur à chaque frappe.
+   * Read callbacks at event time rather than capturing them in extensions: recreating extensions
+   * rebuilds editor state and loses the cursor per keystroke.
    */
   const handlers = useRef({ onChange, onSave, onPosition })
   handlers.current = { onChange, onSave, onPosition }
   /**
-   * Le contenu ne se pousse pas dans un éditeur vivant : le reconstruire pour suivre la
-   * prop effacerait le curseur et l'historique de qui est en train de taper. Il n'est lu
-   * qu'au montage, ce qui laisse l'appelant décider par quoi repartir en le remontant.
+   * Do not push contents into a live editor: following props by rebuilding would erase cursor and
+   * undo history. Read on mount only so callers choose replacement through remounting.
    */
   const content = useRef(initial)
   content.current = initial
 
-  // Capturer le défilement avant que React ne détache le DOM du fichier précédent.
+  // Capture scroll before React detaches the previous file's DOM.
   useLayoutEffect(() => {
     const parent = host.current
     if (!parent) return
@@ -131,8 +125,7 @@ export function CodeEditor({
         bracketMatching(),
         indentUnit.of('  '),
         language.of([]),
-        // En haut : en bas, le panneau se retrouve sous la barre d'état du fichier,
-        // et sur un panneau étroit il occupe alors la moitié de la hauteur visible.
+        // Search at top: at bottom it sits below file status and consumes half the visible height in narrow panels.
         search({ top: true }),
         EditorState.phrases.of(searchPhrases()),
         editorTheme,
@@ -142,7 +135,7 @@ export function CodeEditor({
         EditorView.editable.of(!readOnly),
         keymap.of([
           {
-            // Le raccourci d'enregistrement du navigateur sauvegarderait la page.
+            // Prevent the browser save shortcut from saving the page.
             key: 'Mod-s',
             preventDefault: true,
             run: () => {
@@ -162,7 +155,7 @@ export function CodeEditor({
       ]
     const cached = sessions.get(sessionKey)
     const reusable = cached?.revision === revision && cached.state.doc.toString() === content.current
-    // Rebrancher les callbacks sur le composant actuel sans vider historyField.
+    // Reconnect callbacks to the current component without clearing historyField.
     const state = reusable
       ? cached.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state
       : EditorState.create({ doc: content.current, extensions })
@@ -171,8 +164,7 @@ export function CodeEditor({
     current.current = editor
     position(state)
 
-    // Le mode arrive après coup : l'attendre laisserait un éditeur vide le temps du
-    // chargement, alors que le texte est déjà là.
+    // Language mode loads afterward: waiting would leave an empty editor despite available text.
     let cancelled = false
     void loadLanguage(path).then((support) => {
       if (cancelled || !support) return

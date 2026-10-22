@@ -16,11 +16,9 @@ import { useSkillPermissions } from './permissions'
 import { NameField } from './SkillDialog'
 
 /**
- * Le catalogue des sources : relire les skills et installer une sélection sans quitter la source.
- *
- * L'aperçu montre le `SKILL.md` brut, tel que le modèle le recevra, et la liste des
- * fichiers qui viendront avec : un skill tiers entre dans le contexte des agents et ses
- * scripts s'exécutent avec leurs droits. On l'installe en connaissance de cause.
+ * Source catalog for reviewing skills and installing selections without leaving. Preview raw
+ * SKILL.md exactly as models receive it plus accompanying files: third-party skills enter agent
+ * context and scripts run with agent permissions, so users inspect before installing.
  */
 export function CatalogDialog({
   open,
@@ -32,9 +30,9 @@ export function CatalogDialog({
 }: {
   open: boolean
   onClose: () => void
-  /** Source ouverte d'abord ; à défaut, la première récupérée. */
+  /** Initially opened source, otherwise the first fetched one. */
   sourceId?: string | null
-  /** Skill montré d'emblée, par son nom : celui qu'on a choisi dans une recherche skills.sh. */
+  /** Initial skill name selected from skills.sh search. */
   skillName?: string | null
   scope: LibrarySkillScope
   projectId: string | null
@@ -53,8 +51,8 @@ export function CatalogDialog({
   const [chosen, setChosen] = useState<string | null>(sourceId ?? null)
   const current = fetched.find((source) => source.id === chosen) ?? fetched[0] ?? null
   const { data: catalog, isPending, error: catalogError } = useSourceCatalog(open && current ? current.id : null)
-  // Le filtre part du skill demandé : au doigt, la liste réduite à lui laisse son aperçu
-  // juste en dessous. Le vider rend le reste du dépôt.
+  // Start filtering by requested skill so touch previews sit just below it. Clearing shows the
+  // remaining repository.
   const [filter, setFilter] = useState(skillName ?? '')
   const [selected, setSelected] = useState<string | null>(null)
   const [wanted, setWanted] = useState(skillName ?? null)
@@ -68,7 +66,7 @@ export function CatalogDialog({
   )
   const focused =
     skills.find((skill) => skill.path === selected) ?? (selected === null && wanted ? findByName(skills, wanted) : null)
-  // Rapporté au catalogue entier : un filtre retouché ne fait pas disparaître le skill du dépôt.
+  // Compare against the whole catalog: editing filters must not make repository skills appear absent.
   const missing = selected === null && wanted !== null && catalog !== undefined && findByName(catalog.skills, wanted) === null
 
   const eligible = (skill: SourceSkillDto) => !skill.problem && !skill.installed.some((entry) =>
@@ -85,7 +83,7 @@ export function CatalogDialog({
     setBusy(true)
     setErrors({})
     setCompleted(0)
-    // Chaque succès est conservé : un conflit de nom ne bloque pas les autres skills.
+    // Retain every success: name conflicts do not block other skills.
     for (const skill of (catalog?.skills ?? []).filter((item) => checked.has(item.path) && eligible(item))) {
       try {
         await install.mutateAsync({ sourceId: current.id, path: skill.path, scope: destination.scope, projectId: destination.projectId })
@@ -117,7 +115,7 @@ export function CatalogDialog({
           {fetched.length === 0 ? (
             <EmptyState icon={<Library size={22} />} title={t('skills.catalog.noSource')} description={t('skills.catalog.noSource.hint')} />
           ) : (
-            // Sur téléphone, la liste cède sa place à l'aperçu ; la sélection reste conservée.
+            // On phones preview replaces the list while retaining selection.
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
               <div className={cx('flex min-h-0 flex-1 flex-col gap-3 border-line p-4 md:w-80 md:flex-none md:border-r', focused && 'hidden md:flex')}>
                 <Select
@@ -220,8 +218,8 @@ export function CatalogDialog({
 }
 
 /**
- * Le skill qu'un résultat de skills.sh désigne. L'annuaire le nomme comme son frontmatter,
- * et le catalogue aussi, sauf quand le `SKILL.md` n'en donne pas : le dossier sert alors.
+ * Skill identified by skills.sh result. Both directory and catalog use frontmatter names, falling
+ * back to directory names when SKILL.md lacks one.
  */
 function findByName(skills: SourceSkillDto[], name: string): SourceSkillDto | null {
   return skills.find((skill) => skill.name === name) ?? skills.find((skill) => skill.path.split('/').pop() === name) ?? null

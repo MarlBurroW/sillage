@@ -37,22 +37,21 @@ import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 
 /**
- * API et serveur MCP : les deux portes de Sillage vers un outil extérieur, et les jetons
- * qui les ouvrent.
+ * API and MCP server: Sillage's two entry points for external tools, and the tokens that unlock
+ * them.
  *
- * Les deux vivent sous `/api/v1` et partagent les jetons, ce qui les faisait passer pour
- * une seule chose : la page commence donc par les présenter côte à côte, chacune avec
- * son adresse et un bouton qui prépare un jeton à sa mesure.
+ * Both live under `/api/v1` and share tokens, making them look like one feature. The page
+ * therefore introduces them side by side, each with its address and a button preparing an
+ * appropriate token.
  *
- * Pour l'API, c'est ici que se décide avec quoi les agents travailleront : le CLI, le
- * modèle et l'effort sont portés par le jeton, une fois, plutôt que redemandés à chaque
- * tâche par un appelant qui ne saurait pas les choisir. Le serveur MCP n'en a pas
- * l'usage : une session qu'il lance prend les réglages par défaut du projet.
+ * For the API, this is where agent settings are chosen: CLI, model and effort are set once on
+ * the token rather than requested with every task from callers unable to choose them. MCP does
+ * not need them: sessions it launches use project defaults.
  */
 
 const SCOPES = apiScopeSchema.options
 
-/** Ce que chaque portée ouvre, dit en clair : le nom seul ne dit pas où s'arrête `tasks:write`. */
+/** What each scope allows, in plain language: the name alone does not explain the limits of `tasks:write`. */
 const SCOPE_HINT_KEYS: Record<ApiScope, MessageKey> = {
   'projects:read': 'apiTokens.scope.projects:read',
   'projects:write': 'apiTokens.scope.projects:write',
@@ -63,9 +62,8 @@ const SCOPE_HINT_KEYS: Record<ApiScope, MessageKey> = {
 }
 
 /**
- * Modes de permission proposables sur un jeton : ceux où le CLI garde un garde-fou.
- * `bypassPermissions` n'y est pas, à dessein : il vaudra la portée `tasks:autonomous`
- * de la tranche 3, pas une option de formulaire parmi d'autres.
+ * Token permission modes that retain a CLI safeguard. `bypassPermissions` is deliberately
+ * absent: it belongs to the phase-3 `tasks:autonomous` scope, not an ordinary form option.
  */
 const API_PERMISSION_MODES = ['manual', 'auto', 'acceptEdits', 'dontAsk', 'bypassPermissions'] as const
 type ApiPermissionMode = (typeof API_PERMISSION_MODES)[number]
@@ -77,8 +75,8 @@ const PERMISSION_MODE_KEYS = {
   bypassPermissions: 'composer.permission.bypass',
 } as const
 /**
- * Les modes de Grok qu'un jeton peut fixer : le plan n'a pas de sens pour une tâche que
- * personne ne relit avant qu'elle s'exécute. « Demander » reprend le libellé de Claude.
+ * Grok modes configurable on a token: plan mode makes no sense for tasks nobody reviews before
+ * execution. “Ask” reuses Claude's label.
  */
 const GROK_API_PERMISSION_MODES = ['default', 'auto', 'bypassPermissions'] as const
 type GrokApiPermissionMode = (typeof GROK_API_PERMISSION_MODES)[number]
@@ -89,35 +87,33 @@ const GROK_PERMISSION_MODE_KEYS = {
 } as const
 const AGENTS = Object.keys(AGENT_LABELS) as AgentKind[]
 
-/** Ce pour quoi un jeton est créé : il décide des portées cochées d'entrée et des champs montrés. */
+/** Token purpose determines initially selected scopes and displayed fields. */
 type TokenUse = 'api' | 'mcp'
 const PRESET_SCOPES: Record<TokenUse, ApiScope[]> = {
   api: ['projects:read', 'tasks:read', 'tasks:write'],
   mcp: ['mcp'],
 }
 
-/** Le CLI, le modèle et le webhook ne servent qu'aux tâches : sans portée `tasks:*`, rien ne les lit. */
+/** CLI, model and webhook are task-only: without a `tasks:*` scope, nothing reads them. */
 const launchesTasks = (scopes: ApiScope[]) => scopes.some((scope) => scope.startsWith('tasks:'))
 
-/** Documentation publique, lisible sans être connecté à l'instance. */
+/** Public documentation readable without signing into the instance. */
 const DOCS = {
   api: 'https://github.com/MarlBurroW/sillage/blob/main/docs/api.md',
   mcp: 'https://github.com/MarlBurroW/sillage/blob/main/docs/mcp.md',
 }
 
 /**
- * Les adresses que l'utilisateur recopiera ailleurs : celles par lesquelles il voit
- * l'interface, qui sont aussi celles que son outil atteindra.
+ * Addresses users copy elsewhere: those used to view the UI, which their tools will also reach.
  */
 const apiEndpoint = () => `${window.location.origin}/api/v1`
 const mcpEndpoint = () => `${window.location.origin}/api/v1/mcp`
 
 /**
- * Exemples de configuration d'un client MCP. Ce ne sont que des cas particuliers des
- * trois informations du guide (transport, adresse, en-tête) : MCP est un standard, et
- * tout client qui parle HTTP « streamable » se configure de la même façon, sous des
- * noms de champs différents. Formats sondés : `http_headers` lu par Codex 0.162.1
- * (`codex mcp get --json`), `--header` de `claude mcp add`.
+ * MCP client configuration examples. Special cases of the guide's three inputs (transport,
+ * address, header): MCP is a standard, and every streamable HTTP client configures the same
+ * information under different field names. Probed formats: Codex 0.162.1 `http_headers` (`codex
+ * mcp get --json`), and `claude mcp add --header`.
  */
 const mcpJsonExample = (token: string) =>
   JSON.stringify(
@@ -130,7 +126,7 @@ const codexTomlExample = (token: string) =>
 const claudeCommandExample = (token: string) =>
   `claude mcp add --transport http sillage ${mcpEndpoint()} --header "Authorization: Bearer ${token}"`
 
-/** Durées de vie proposées, en jours. `none` laisse le jeton valable jusqu'à révocation. */
+/** Suggested lifetimes in days. `none` keeps the token valid until revoked. */
 const LIFETIMES = { none: null, '30': 30, '90': 90, '365': 365 } as const
 type LifetimeChoice = keyof typeof LIFETIMES
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -156,8 +152,10 @@ export function ApiTokensSettingsPage() {
         description={t('apiTokens.section.description')}
       />
 
-      {/* L'une sous l'autre : côte à côte, la colonne des réglages est trop étroite pour
-          qu'une adresse tienne sur une ligne à côté de son bouton. */}
+      {/*
+       * Stack vertically: the settings column is too narrow for side-by-side addresses and
+       * their buttons on one line.
+       */}
       <section className="flex flex-col gap-3">
         <SurfaceCard
           icon={<Terminal size={16} />}
@@ -181,8 +179,10 @@ export function ApiTokensSettingsPage() {
           disabled={adding !== null}
           onCreate={() => open('mcp')}
         >
-          {/* Replié : utile au moment de brancher un client, encombrant le reste du temps.
-              Le jeton n'existe plus en clair, d'où l'emplacement à remplacer. */}
+          {/*
+           * Collapsed: useful when connecting a client, clutter otherwise. The token no longer
+           * exists in cleartext, hence the replacement placeholder.
+           */}
           <details className="rounded-md border border-line px-3 py-2">
             <summary className="cursor-pointer text-sm font-medium text-ink-soft">
               {t('apiTokens.mcpGuide.toggle')}
@@ -198,8 +198,10 @@ export function ApiTokensSettingsPage() {
 
       {created ? <SecretReveal created={created} onDismiss={() => setCreated(null)} /> : null}
 
-      {/* Remonté à la fermeture : un formulaire rouvert doit repartir vide, pas des
-          champs du jeton précédent. La clé le remonte aussi d'un usage à l'autre. */}
+      {/*
+       * Remount on closing: reopened forms must start empty, not with the previous token's
+       * fields. The key also remounts when changing purpose.
+       */}
       {adding ? (
         <CreateTokenCard
           key={adding}
@@ -230,9 +232,9 @@ export function ApiTokensSettingsPage() {
 }
 
 /**
- * Une des deux portes de Sillage : ce qu'elle ouvre, son adresse, et de quoi créer le
- * jeton qui va avec. L'adresse se copie, parce qu'elle part dans la configuration d'un
- * autre outil et qu'une faute de frappe y donnerait une erreur peu parlante.
+ * One of Sillage's two entry points: what it exposes, its address, and token creation. The
+ * address is copyable because it goes into another tool's configuration, where a typo would
+ * cause an unhelpful error.
  */
 function SurfaceCard({
   icon,
@@ -255,7 +257,7 @@ function SurfaceCard({
   createLabel: string
   disabled: boolean
   onCreate: () => void
-  /** Ce que la porte demande en plus pour s'en servir, sous son adresse. */
+  /** Additional requirements for using this entry point, below its address. */
   children?: ReactNode
 }) {
   const t = useTranslate()
@@ -286,11 +288,11 @@ function SurfaceCard({
 }
 
 /**
- * Les secrets ne s'affichent qu'ici, et une seule fois.
+ * Secrets appear only here, once.
  *
- * Le jeton parce que seule son empreinte est stockée ; le secret de webhook parce que
- * l'écran n'a aucune raison de le réexposer ensuite. Une bannière discrète les
- * laisserait perdre à la première navigation.
+ * The token because only its hash is stored; the webhook secret because the screen has no
+ * reason to reveal it again. A subtle banner would let users lose them on their first
+ * navigation.
  */
 function SecretReveal({
   created,
@@ -313,8 +315,10 @@ function SecretReveal({
             value={created.webhookSecret}
           />
         ) : null}
-        {/* Le jeton à peine né est le seul moment où le guide peut l'embarquer : après, il
-            n'existe plus en clair nulle part. */}
+        {/*
+         * Immediately after token creation is the only time the guide can include it:
+         * afterwards it no longer exists in cleartext anywhere.
+         */}
         {created.token.scopes.includes('mcp') ? <McpConnectGuide token={created.secret} /> : null}
         <Button size="sm" variant="ghost" onClick={onDismiss} className="self-start">
           {t('apiTokens.secret.dismiss')}
@@ -325,13 +329,12 @@ function SecretReveal({
 }
 
 /**
- * Comment brancher un client MCP sur Sillage, quel qu'il soit.
+ * Connecting any MCP client to Sillage.
  *
- * MCP est un standard : tout client demande les trois mêmes choses, transport, adresse
- * et authentification, sous des noms qui varient. Le guide les donne d'abord, puis dit
- * comment les reconnaître dans un formulaire : c'est là que l'utilisateur se trompe,
- * pas sur l'adresse. Les exemples ne viennent qu'ensuite, repliés, comme des cas
- * particuliers. Sans jeton, ils portent un emplacement à remplacer.
+ * MCP is a standard: all clients need transport, address and authentication under varying
+ * names. The guide provides these first, then explains how to recognize them in a form, where
+ * users make mistakes. Collapsed examples follow as special cases. Without a token, they
+ * contain a replacement placeholder.
  */
 function McpConnectGuide({ token }: { token: string | null }) {
   const t = useTranslate()
@@ -387,7 +390,7 @@ function CopyableValue({
 }: {
   label: string
   value: string
-  /** Une commande sur plusieurs lignes garde ses retours ; un secret se coupe où il peut. */
+  /** Multiline commands retain line breaks; secrets wrap wherever possible. */
   multiline?: boolean
 }) {
   const t = useTranslate()
@@ -456,9 +459,9 @@ function CreateTokenCard({
   const submit = (event: FormEvent) => {
     event.preventDefault()
 
-    // La configuration part complète, construite sur les défauts du CLI : le formulaire
-    // n'expose que ce qu'un appelant voudrait changer, le reste garde sa valeur connue.
-    // Le champ d'effort porte le nom natif du CLI, `effort` ou `reasoningEffort`.
+    // Send a complete configuration built from CLI defaults: the form exposes only
+    // what a caller might change; everything else retains its known value.
+    // The effort field uses the CLI's native name, `effort` or `reasoningEffort`.
     const config: Record<string, unknown> = { ...DEFAULT_CONFIGS[agent], model }
     if (effort) config[EFFORT_FIELD[agent]] = effort
     if (agent === 'claude') config.permissionMode = permissionMode
@@ -473,7 +476,7 @@ function CreateTokenCard({
         agent,
         config,
         expiresAt: days === null ? null : Date.now() + days * DAY_MS,
-        // Masqué sans portée de tâches : une valeur saisie avant de décocher ne doit pas partir.
+        // Hidden without task scopes: values entered before deselection must not be sent.
         webhookUrl: (launchesTasks(scopes) && webhookUrl.trim()) || null,
       },
       { onSuccess: onCreated },
@@ -497,8 +500,10 @@ function CreateTokenCard({
             required
           />
 
-          {/* Le CLI, le modèle et le webhook ne servent qu'aux tâches de l'API : pour un
-              jeton MCP seul, les montrer laisserait croire qu'ils règlent ses sessions. */}
+          {/*
+           * CLI, model and webhook apply only to API tasks: showing them for MCP-only tokens
+           * would imply they configure MCP sessions.
+           */}
           {launchesTasks(scopes) ? (
             <>
               <div className="grid gap-4 sm:grid-cols-3">
@@ -548,8 +553,8 @@ function CreateTokenCard({
                   value={permissionMode}
                   onChange={(mode) => {
                     setPermissionMode(mode)
-                    // Tout permettre exige la portée dédiée : la cocher soi-même serait
-                    // facile à oublier, et le serveur refuserait le formulaire entier.
+                    // Allowing everything requires the dedicated scope: selecting it manually would
+                    // be easy to forget, causing the server to reject the entire form.
                     if (mode === 'bypassPermissions' && !scopes.includes('tasks:autonomous')) {
                       setScopes([...scopes, 'tasks:autonomous'])
                     }
@@ -568,8 +573,8 @@ function CreateTokenCard({
                   value={grokPermissionMode}
                   onChange={(mode) => {
                     setGrokPermissionMode(mode)
-                    // `auto` et `bypassPermissions` ne laissent personne dans la boucle :
-                    // le serveur exige alors la portée des tâches autonomes.
+                    // `auto` and `bypassPermissions` retain no human in the loop:
+                    // the server therefore requires the autonomous-task scope.
                     if (mode !== 'default' && !scopes.includes('tasks:autonomous')) {
                       setScopes([...scopes, 'tasks:autonomous'])
                     }
@@ -613,8 +618,10 @@ function CreateTokenCard({
             <legend className="mb-1.5 text-sm font-medium text-ink-soft">
               {t('apiTokens.scopes.label')}
             </legend>
-            {/* Une ligne par portée, avec ce qu'elle ouvre : un nom comme
-                `tasks:write` ne dit pas s'il permet aussi d'arrêter une tâche. */}
+            {/*
+             * One row per scope, explaining access: `tasks:write` alone does not say whether
+             * stopping tasks is allowed.
+             */}
             <div className="grid gap-2 sm:grid-cols-2">
               {SCOPES.map((scope) => (
                 <label
@@ -644,8 +651,10 @@ function CreateTokenCard({
             <legend className="text-sm font-medium text-ink-soft">
               {t('apiTokens.projects.label')}
             </legend>
-            {/* Aucune case cochée vaut « tous les projets » : c'est le cas courant, et
-                forcer une sélection ferait de la restriction le défaut silencieux. */}
+            {/*
+             * No selection means “all projects”, the common case. Requiring a selection would
+             * silently make restriction the default.
+             */}
             <p className="text-xs text-ink-faint">{t('apiTokens.projects.hint')}</p>
             <div className="flex flex-wrap gap-3">
               {(projects ?? []).map((project) => (
@@ -695,7 +704,7 @@ function TokenCard({ token }: { token: ApiTokenDto }) {
               {t('apiTokens.hint', { hint: token.hint })}
             </code>
             {revoked ? <Badge tone="critical">{t('apiTokens.revoked')}</Badge> : null}
-            {/* Le CLI ne règle que les tâches : sur un jeton MCP seul, il ne dirait rien de vrai. */}
+            {/* CLI settings govern tasks only: they would convey nothing true on an MCP-only token. */}
             {launchesTasks(token.scopes) ? (
               <Badge icon={<AgentIcon agent={token.agent} size={11} />}>{token.agent}</Badge>
             ) : null}

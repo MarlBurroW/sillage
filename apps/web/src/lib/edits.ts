@@ -3,12 +3,9 @@ import type { EditDiffDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
- * Ce qu'un appel d'outil a fait d'un fichier.
- *
- * Reconstitué par le serveur depuis le payload natif du journal, donc immuable une
- * fois le tour passé : le cache n'a aucune raison d'expirer. Le composant n'est monté
- * qu'une fois la ligne dépliée, un tour touchant couramment plusieurs dizaines de
- * fichiers dont on n'en regarde qu'un.
+ * Edits made to a file by a tool call. Reconstructed server-side from native log payload and
+ * immutable after the turn, so cache need not expire. Mount only upon row expansion: turns often
+ * touch dozens of files and users inspect only one.
  */
 export function useEditDiff(conversationId: string, toolCallId: string, path: string) {
   return useQuery({

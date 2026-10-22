@@ -3,23 +3,12 @@ import { launchOf } from '../launch.js'
 import { createInterface, type Interface } from 'node:readline'
 import type { InitializeRequest, InitializeResponse } from '@agentclientprotocol/sdk'
 
-/**
- * Client JSON-RPC de l'Agent Client Protocol (ACP), sur stdio et délimité par des sauts
- * de ligne : le protocole qu'un éditeur comme Zed parle aux agents, et que Grok Build
- * expose par `grok agent stdio`.
- *
- * Écrit à la main plutôt que par la `ClientSideConnection` du SDK officiel, dont seuls
- * les types sont repris : le SDK valide chaque message entrant avec son schéma zod, et
- * un agent qui ajoute ses propres variantes de `session/update` (Grok en publie sous
- * `_x.ai/…`) verrait ces messages rejetés au lieu d'être montrés une fois en notice. Le
- * même parti que pour `codex app-server` : un transport minimal, sans logique métier,
- * et le runner décide de ce qui se traduit.
- */
+/** Newline-delimited stdio JSON-RPC Agent Client Protocol used by editors such as Zed and Grok's `grok agent stdio`. Handwritten transport with official SDK types rather than `ClientSideConnection`, whose zod validation would reject agent-specific session/update variants (`_x.ai/…`) instead of showing unknown notices once. Like Codex app-server: minimal transport without business logic; runners decide translations. */
 
-/** Délai par défaut d'une requête. `session/prompt`, qui dure le tour, n'en a pas. */
+/** Default request timeout; turn-long `session/prompt` has none. */
 const REQUEST_TIMEOUT_MS = 30_000
 
-/** Conserve le code RPC : un refus de l'agent n'est pas une panne de transport. */
+/** Retains RPC codes: agent rejections are not transport failures. */
 export class AcpRpcError extends Error {
   constructor(message: string, readonly code: number, readonly data?: unknown) {
     super(message)
@@ -37,24 +26,21 @@ interface PendingCall {
 }
 
 export interface AcpClientOptions {
-  /** Nom court du CLI, pour préfixer ce qu'il écrit sur stderr dans les logs. */
+  /** Short CLI name prefixing stderr logs. */
   label: string
   binary: string
   args: string[]
   cwd?: string
   env?: NodeJS.ProcessEnv
-  /** Notifications de l'agent (`session/update`, et ses extensions `_…`). */
+  /** Agent notifications (session/update and its underscore-prefixed extensions). */
   onNotification?: (method: string, params: unknown) => void
-  /**
-   * Requêtes de l'agent à répondre : `session/request_permission`, et tout ce que le
-   * client n'a pas déclaré savoir faire. Une exception devient une erreur RPC.
-   */
+  /** Agent requests needing replies: `session/request_permission` and unsupported capabilities. Exceptions become RPC errors. */
   onRequest?: (method: string, params: unknown) => Promise<unknown>
-  /** Mort du process hors d'un `close()` demandé, voir `CodexClientOptions.onExit`. */
+  /** Unexpected process death outside requested `close()`; see `CodexClientOptions.onExit`. */
   onExit?: (code: number | null, stderrTail: string) => void
 }
 
-/** Ce que stderr garde en mémoire, pour expliquer une mort au démarrage. */
+/** Retained stderr explaining startup deaths. */
 const STDERR_TAIL_CHARS = 4_000
 
 export class AcpClient {
@@ -119,7 +105,7 @@ export class AcpClient {
 
     const hasId = message.id !== undefined && message.id !== null
     if (hasId && message.method === undefined) {
-      if (typeof message.id !== 'number') return // Nos appels utilisent des ids numériques.
+      if (typeof message.id !== 'number') return // Our requests use numeric IDs.
       const call = this.pending.get(message.id)
       if (!call) return
       this.pending.delete(message.id)
@@ -167,10 +153,7 @@ export class AcpClient {
     this.child.stdin.write(`${JSON.stringify(payload)}\n`)
   }
 
-  /**
-   * Appel d'une méthode de l'agent. `timeoutMs: null` pour celles qui durent le temps
-   * qu'il faut, `session/prompt` d'abord : la réponse n'arrive qu'à la fin du tour.
-   */
+  /** Calls agent methods. `timeoutMs: null` permits unbounded requests, notably `session/prompt`, whose response arrives only at turn completion. */
   request<T>(method: string, params: unknown, timeoutMs: number | null = REQUEST_TIMEOUT_MS): Promise<T> {
     if (this.closed) return Promise.reject(new Error(`Le client ${this.options.label} est fermé.`))
 
@@ -191,11 +174,7 @@ export class AcpClient {
     this.write({ jsonrpc: '2.0', method, params })
   }
 
-  /**
-   * Poignée de main. Le client ne déclare ni système de fichiers ni terminal : l'agent
-   * garde ses propres outils, qui lisent et écrivent sur le disque du serveur, là même
-   * où Sillage les lirait pour lui. Les déléguer ne ferait que doubler le trajet.
-   */
+  /** Handshake advertises neither filesystem nor terminals: agents retain native tools on the same server disk Sillage would access, avoiding redundant delegation round trips. */
   initialize(clientInfo: { name: string; title?: string; version: string }): Promise<InitializeResponse> {
     const params: InitializeRequest = {
       protocolVersion: 1,
@@ -217,9 +196,9 @@ export class AcpClient {
     if (this.closed) return
     this.closed = true
     this.reader.close()
-    // stdin fermé d'abord : un agent ACP s'arrête proprement à la fin de son entrée,
-    // ce qui lui laisse écrire sa session sur disque. Le signal suit, pour celui qui
-    // traînerait.
+    // Close stdin first so ACP agents persist sessions and shut down gracefully;
+    // signals follow for agents that
+    // linger.
     this.child.stdin.end()
     const child = this.child
     setTimeout(() => {

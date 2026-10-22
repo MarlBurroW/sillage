@@ -2,17 +2,15 @@ import type { ProjectDto } from '@sillage/protocol'
 import { cx } from './ui'
 
 /**
- * Le repère visuel d'un projet : son image, ou à défaut sa pastille de couleur.
- *
- * Les deux occupent la même boîte, pour que les noms restent alignés dans une liste où
- * certains projets ont une image et d'autres non.
+ * Project marker uses an image or fallback color dot in identical boxes so names stay aligned
+ * across mixed lists.
  */
 export function ProjectAvatar({
   project,
   className = 'size-4',
 }: {
   project: Pick<ProjectDto, 'image' | 'color'> | undefined
-  /** Taille de la boîte. */
+  /** Box size. */
   className?: string
 }) {
   if (project?.image) {
@@ -20,7 +18,7 @@ export function ProjectAvatar({
       <img
         src={project.image.url}
         alt=""
-        // `contain` et non `cover` : un logo rogné ne se reconnaît plus.
+        // Contain rather than cover: cropped logos become unrecognizable.
         className={cx('shrink-0 rounded-[22%] object-contain', className)}
       />
     )

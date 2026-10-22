@@ -1,8 +1,8 @@
 import { FocusScope } from '@radix-ui/react-focus-scope'
 import { cloneElement, useEffect, useRef, type HTMLAttributes, type ReactElement } from 'react'
 
-// Seul le panneau plein écran au premier plan neutralise le reste de l'interface.
-// Recalculer la pile évite que deux panneaux ouverts rendent chacun l'autre inerte.
+// Only the foreground fullscreen panel disables the rest. Recompute the stack so two panels cannot
+// make each other inert.
 const modals: HTMLElement[] = []
 let restoreOutside = () => {}
 
@@ -23,7 +23,7 @@ function updateModalBackground() {
   }
 }
 
-/** Même contenu en panneau libre ou plein écran, sans remonter l'éditeur au redimensionnement. */
+/** Shared free/fullscreen content without remounting editors on resize. */
 export function PanelFocus({ open, modal, onClose, fallbackFocus, protectEditor = false, children }: {
   open: boolean
   modal: boolean
@@ -46,7 +46,7 @@ export function PanelFocus({ open, modal, onClose, fallbackFocus, protectEditor 
       node.querySelector<HTMLElement>('[data-panel-initial-focus]')?.focus({ preventScroll: true })
     }
     return () => {
-      // Laisser la désactivation du piège de focus et de l'arrière-plan se terminer.
+      // Let focus trapping and background deactivation finish.
       queueMicrotask(() => {
         const focused = document.activeElement
         if (focused !== document.body && focused?.isConnected && !node.contains(focused)) return
@@ -85,7 +85,7 @@ export function PanelFocus({ open, modal, onClose, fallbackFocus, protectEditor 
         if (!open || event.key !== 'Escape' || event.defaultPrevented) return
         const target = event.target
         if (!(target instanceof HTMLElement) || !container.current?.contains(target)) return
-        // Échap reste disponible pour l'autocomplétion et les programmes du terminal.
+        // Preserve Escape for completion and terminal programs.
         if (protectEditor && target.closest('input, textarea, [contenteditable="true"], .cm-editor, .xterm')) return
         event.preventDefault()
         event.stopPropagation()

@@ -1,10 +1,9 @@
 name: Release
 
-# Publier = pousser un tag `vX.Y.Z`. Le workflow construit les archives Linux
-# (x64 et arm64) et macOS (arm64), node_modules natifs précompilés inclus, l'image
-# Docker multi-arch sur ghcr.io, puis crée la release GitHub avec ses notes générées.
-# L'application de bureau (desktop.yml) rejoint ensuite la release pour les mêmes
-# plateformes.
+# Publish by pushing `vX.Y.Z` tag. Build Linux (x64/arm64), macOS (arm64)
+# archives with prebuilt native node_modules, multi-arch Docker image on ghcr.io,
+# then GitHub release with generated notes. Desktop app (desktop.yml)
+# then joins release for same platforms.
 
 on:
   push:
@@ -16,15 +15,15 @@ permissions:
 
 env:
   IMAGE: ghcr.io/marlburrow/sillage
-  # Le binaire d'Electron ne sert qu'à lancer l'app de bureau depuis le dépôt ;
-  # desktop.yml laisse electron-builder télécharger le sien.
+  # Electron binary only launches desktop app from repository; desktop.yml
+  # lets electron-builder download its own.
   ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
 jobs:
   tarball:
-    # Runners natifs par architecture : compiler node-pty sous QEMU est lent et
-    # fragile. ubuntu-22.04 fixe la glibc de référence (2.35, Debian 12+). macos-15
-    # tourne sur Apple Silicon, seule cible macOS.
+    # Native architecture runners: compiling node-pty under QEMU is slow/fragile.
+    # ubuntu-22.04 fixes baseline glibc (2.35, Debian 12+). macos-15 runs Apple Silicon,
+    # the only macOS target.
     strategy:
       matrix:
         include:
@@ -134,8 +133,8 @@ jobs:
           pattern: tarball-*
           merge-multiple: true
           path: dist
-      # Les notes générées listent les PR et commits depuis le tag précédent ;
-      # l'écran « À propos » de l'application les affiche telles quelles.
+      # Generated notes list PRs/commits since previous tag; application About
+      # screen displays them unchanged.
       - name: Create the GitHub release
         run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes dist/*.tar.gz
         env:
@@ -147,8 +146,8 @@ jobs:
       version: ${{ github.ref_name }}
 
   desktop-publish:
-    # Ajoutée à la release une fois celle-ci créée, et sans la retenir : une app de bureau
-    # en échec sur une plateforme ne prive personne du serveur, ni des autres plateformes.
+    # Added after release creation without blocking it: desktop failure on one
+    # platform must not withhold server or other platforms.
     needs: [release, desktop]
     if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest

@@ -3,9 +3,9 @@ name: sillage
 description: Sillage, plateforme de développement agentique (Fastify + SQLite + CLI agents)
 type: application
 
-# Version du chart : à incrémenter à chaque changement des templates.
+# Chart version: increment for every template change.
 version: 0.3.0
-# Version applicative par défaut, sert de tag d'image quand image.tag est vide.
+# Default application version, used as image tag when image.tag is empty.
 appVersion: "0.24.1"
 
 home: https://github.com/MarlBurroW/sillage

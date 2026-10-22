@@ -2,31 +2,12 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { BUILTIN_MCP_SERVER_NAME, type AgentConfig, type McpServer } from '@sillage/protocol'
 
-/**
- * Le serveur MCP de Sillage, monté d'office dans chaque conversation.
- *
- * Ce n'est pas une ligne de `mcp_servers` : personne ne l'a déclaré, il n'a ni commande
- * à saisir ni secret à garder, et son nom est réservé pour qu'aucune entrée du registre
- * ne vienne l'écraser. Il emprunte quand même la forme `McpServer`, ce qui lui fait
- * traverser les deux adaptateurs de CLI et l'inventaire sans qu'aucun d'eux ait à
- * connaître son existence.
- *
- * Activé par défaut, désactivable à trois niveaux : la conversation, pour le temps d'un
- * sujet ; le défaut des nouvelles conversations, dans les réglages ; l'instance entière,
- * dans `config.toml`, pour qui ne veut de Sillage qu'une interface aux CLI.
- */
+/** Built-in Sillage MCP server mounted in conversations. Not a `mcp_servers` row: no user-declared command or secret, with reserved names preventing registry overrides. Still uses `McpServer` to pass adapters/inventory without special knowledge. Enabled by default; disable per conversation, default settings or instance `config.toml` for users wanting CLI interfaces only. */
 
-/** Identifiant distinct de ceux du registre, qui sont des UUID. */
+/** ID distinct from registry UUIDs. */
 export const BUILTIN_MCP_SERVER_ID = 'builtin:sillage'
 
-/**
- * Le fichier du serveur, selon qu'on tourne sur les sources ou sur le bundle.
- *
- * En développement ce module est `src/agents/mcp-builtin.ts` et le serveur son voisin
- * `src/mcp/` ; en production tsup a tout fondu dans `dist/main.js` et le `.mjs` est
- * copié dans `dist/mcp/`. Deux candidats testés plutôt qu'un drapeau d'environnement,
- * qui mentirait le jour où quelqu'un lance le bundle depuis le dépôt.
- */
+/** Server file under source or bundle layouts. Development `src/agents/mcp-builtin.ts` finds neighboring `src/mcp/`; production bundles to `dist/main.js` and copies `.mjs` to `dist/mcp/`. Test both candidates rather than environment flags, which mislead when bundles run from repositories. */
 export function resolveEntry(): string {
   const candidates = [
     join(import.meta.dirname, '../mcp/sillage-mcp.mjs'),
@@ -40,23 +21,18 @@ export function resolveEntry(): string {
 }
 
 export interface BuiltinMcpParams {
-  /** Interrupteur global de `config.toml`. */
+  /** Global config.toml switch. */
   enabled: boolean
   config: AgentConfig
   databasePath: string
   projectId: string
   conversationId: string
-  /** Dossier de mémoire du projet, où `write_memory` écrit pour Codex. */
-  /** Null en mode natif : les outils de mémoire ne sont alors pas proposés. */
+  /** Project memory directory where Codex `write_memory` writes. */
+  /** Null in native mode, omitting memory tools. */
   memoryDir: string | null
 }
 
-/**
- * Null quand le serveur ne doit pas partir, pour l'une des raisons du contrat ci-dessus.
- *
- * `strictMcp` l'emporte sur l'activation : le drapeau annonce « rien d'autre que ce que
- * j'ai déclaré » et se contredirait à garder une exception maison.
- */
+/** Null when disabled according to the contract above. `strictMcp` overrides activation: promising only declared servers cannot retain platform exceptions. */
 export function builtinMcpEnabled(enabled: boolean, config: AgentConfig): boolean {
   if (!enabled || !config.sillageMcp) return false
   return !(config.agent === 'claude' && config.strictMcp)
@@ -72,13 +48,13 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
     enabled: true,
     transport: {
       type: 'stdio',
-      // `process.execPath` et non « node » : sous systemd le PATH est minimal, et rien
-      // ne garantit que celui du CLI mène au même runtime que celui du serveur.
+      // Use process.execPath rather than node: systemd has a minimal PATH and nothing
+      // guarantees the CLI's Node matches the server runtime.
       command: process.execPath,
       args: [resolveEntry()],
-      // Une portée, jamais un secret : le serveur lit la base directement, il n'a donc
-      // aucun jeton à recevoir, et l'environnement d'un process reste lisible par
-      // quiconque a un shell sur la machine.
+      // Scope only, never secrets: direct database reads need no tokens,
+      // and process environments remain readable
+      // to anyone with machine shell access.
       env: {
         SILLAGE_MCP_DB: databasePath,
         SILLAGE_MCP_PROJECT: projectId,

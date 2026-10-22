@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-/** Navigation IDE et continuité du contexte d'édition, dans la démo temporaire. */
+/** IDE navigation and editing-context continuity in temporary demo. */
 export async function checkIde({ page, context, base, project }) {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${base}/p/${project.id}/board`)
@@ -90,7 +90,7 @@ export async function checkIde({ page, context, base, project }) {
   assert.equal(await panel.isVisible(), true)
   assert.equal(await code.evaluate(node => node === window.ideCodeNode), true)
 
-  // Deux fichiers homonymes, créés uniquement dans le workspace temporaire.
+  // Two same-named files created only in temporary workspace.
   for (const data of [{ parent: '', name: 'ui-check', kind: 'directory' }, { parent: 'ui-check', name: 'package.json', kind: 'file' }]) {
     assert.ok((await context.request.post(`${base}/api/projects/${project.id}/entries`, { data })).ok())
   }

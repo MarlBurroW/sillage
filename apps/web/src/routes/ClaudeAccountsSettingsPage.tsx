@@ -30,17 +30,16 @@ import {
 } from '../lib/claude-accounts'
 
 /**
- * Comptes Claude supplémentaires du compte Sillage.
+ * Additional Claude accounts for the Sillage account.
  *
- * Le CLI ne tient qu'une connexion : celle de `/login`. Un abonnement de plus passe par
- * un jeton de `claude setup-token`, que Sillage sait obtenir lui-même en pilotant la
- * commande : l'écran montre l'URL d'autorisation, recueille le code que la page
- * affiche, et le compte naît avec le jeton. On peut aussi coller un jeton obtenu
- * ailleurs, ou une clé API Console facturée à l'usage.
+ * The CLI keeps one login through `/login`. Additional subscriptions use `claude setup-token`,
+ * which Sillage can run itself: show the authorization URL, collect the page's code and create
+ * the account with the token. Users may also paste an externally obtained token or a
+ * usage-billed Console API key.
  *
- * Comme pour les accès git, l'écran n'affiche jamais un secret : l'API n'en rend
- * aucun. Ce qui reste et qui compte, c'est le nom qu'on lui a donné, sa nature, et la
- * date du dernier secret, parce qu'un jeton expire au bout d'un an.
+ * As with git credentials, the screen never displays a secret because the API returns none.
+ * What remains meaningful is the label, secret kind and last-secret date, since tokens expire
+ * after a year.
  */
 
 const errorOf = (error: unknown): string | null =>
@@ -97,8 +96,8 @@ export function ClaudeAccountsSettingsPage() {
 }
 
 /**
- * Le formulaire d'ajout : un nom, puis la voie. Guidée, le CLI est piloté par le
- * serveur et l'écran suit ses étapes ; collée, le secret part tel quel.
+ * Add form: name, then method. Guided login is driven by the server with visible steps; pasted
+ * secrets are submitted as-is.
  */
 export function AddAccountCard({ onClose }: { onClose: () => void }) {
   const t = useTranslate()
@@ -107,7 +106,7 @@ export function AddAccountCard({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<AddMode>('guided')
   const [label, setLabel] = useState('')
   const [token, setToken] = useState('')
-  /** La connexion guidée en cours, une fois lancée. */
+  /** Current guided login, once started. */
   const [login, setLogin] = useState<ClaudeLoginStatusDto | null>(null)
 
   const submit = (event: FormEvent) => {
@@ -151,7 +150,7 @@ export function AddAccountCard({ onClose }: { onClose: () => void }) {
                 type="password"
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
-                // Le gestionnaire de mots de passe du navigateur n'a rien à retenir ici.
+                // The browser password manager has nothing to save here.
                 autoComplete="off"
                 autoCapitalize="none"
                 autoCorrect="off"
@@ -185,14 +184,14 @@ export function AddAccountCard({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * Les étapes du CLI, suivies à l'écran : l'URL à ouvrir, le code à coller, puis le
- * compte créé. Un code refusé se ressaisit sans tout recommencer, tant que le CLI vit.
+ * Visible CLI steps: URL to open, code to paste, then created account. Rejected codes can be
+ * re-entered without starting over while the CLI remains alive.
  */
 export function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDto; onClose: () => void }) {
   const t = useTranslate()
   /**
-   * La connexion suivie : celle du jeton, puis, si on l'enchaîne, celle de la jauge.
-   * Les deux passent par les mêmes routes de suivi, seul l'identifiant change.
+   * Tracked login: token first, then optionally the gauge. Both use the same tracking routes;
+   * only the ID changes.
    */
   const [initial, setInitial] = useState(first)
   const { data: polled } = useClaudeLoginStatus(initial.loginId)
@@ -200,7 +199,7 @@ export function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginS
   const cancel = useCancelClaudeLogin()
   const startGauge = useStartClaudeGauge()
   const [code, setCode] = useState('')
-  // L'envoi d'un code pose sa réponse dans la même relecture : c'est elle qui fait foi.
+  // Code submission places its response in the same query state, which remains authoritative.
   const status = polled ?? initial
   const gauge = status.purpose === 'gauge'
 
@@ -240,8 +239,10 @@ export function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginS
                   : t('claudeAccounts.gauge.done', { label: status.account?.label ?? '' })
                 : t('claudeAccounts.guided.done', { label: status.account?.label ?? '' })}
             </Banner>
-            {/* Le jeton fait marcher les sessions, pas la jauge : la proposer dans la
-                foulée, c'est une page et un code de plus, au moment où l'on y est. */}
+            {/*
+             * The token enables sessions, not the gauge: offering the gauge immediately adds
+             * one page and code while the user is already there.
+             */}
             {!gauge && status.account ? <p className="text-sm text-ink-soft">{t('claudeAccounts.gauge.offer')}</p> : null}
             {errorOf(startGauge.error) ? <Banner>{errorOf(startGauge.error)}</Banner> : null}
             <div className="flex flex-wrap items-center gap-2">
@@ -318,7 +319,7 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
   const remove = useDeleteClaudeAccount()
   const startGauge = useStartClaudeGauge()
   const forgetGauge = useForgetClaudeGauge()
-  /** La connexion de jauge en cours pour ce compte, une fois lancée. */
+  /** Current gauge login for this account, once started. */
   const [gaugeLogin, setGaugeLogin] = useState<ClaudeLoginStatusDto | null>(null)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -396,7 +397,7 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
                 date: new Date(account.updatedAt).toLocaleString(locale()),
               })}
             </p>
-            {/* La jauge d'un abonnement : sans elle, le choix du compte se fait à l'aveugle. */}
+            {/* Subscription gauge: without it, account selection is blind. */}
             {account.kind === 'oauth' ? (
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                 <span className={account.gauge ? 'text-ink-soft' : 'text-ink-faint'}>

@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm'
 import { grokAccounts, type GrokAccountRow, type Db } from '@sillage/db'
 import type { GrokAccount } from '@sillage/protocol'
 
-/** Ce que Grok a dit du compte à la dernière lecture, à retenir sur la ligne. */
+/** Account information from Grok's latest read, retained in the row. */
 export interface GrokAccountIdentity {
   authMode: 'grok' | 'apiKey' | null
   email: string | null
@@ -23,10 +23,7 @@ function toDto(row: GrokAccountRow): GrokAccount {
   }
 }
 
-/**
- * Lignes des comptes Grok supplémentaires. Le home et sa connexion sont à côté, dans
- * `GrokAccountHomes` : la ligne ne dit que le libellé et l'identité lue.
- */
+/** Additional Grok account rows. Homes and authentication live separately in `GrokAccountHomes`; rows hold only labels and observed identity. */
 export class GrokAccountStore {
   constructor(private readonly db: Db) {}
 
@@ -49,7 +46,7 @@ export class GrokAccountStore {
     return row ? toDto(row) : undefined
   }
 
-  /** Sans propriétaire : pour ce qui suit une connexion déjà autorisée par la route. */
+  /** Without owner checks for operations continuing logins already authorized by routes. */
   findById(id: string): GrokAccount | undefined {
     const row = this.db.select().from(grokAccounts).where(eq(grokAccounts.id, id)).get()
     return row ? toDto(row) : undefined
@@ -77,7 +74,7 @@ export class GrokAccountStore {
     return true
   }
 
-  /** Écrit ce que Grok a dit du compte ; `authMode` null vaut « déconnecté ». */
+  /** Stores Grok account information; null `authMode` means logged out. */
   setIdentity(id: string, identity: GrokAccountIdentity): void {
     this.db
       .update(grokAccounts)

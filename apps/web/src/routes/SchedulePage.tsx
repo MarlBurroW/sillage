@@ -52,11 +52,10 @@ const RUN_DOTS: Record<ScheduleRunStatus, string> = {
 }
 
 /**
- * Les tâches planifiées d'un projet : ce que le daemon rejoue tout seul, et ce que
- * chaque tir a donné.
+ * Project scheduled tasks: what the daemon repeats automatically and each run's outcome.
  *
- * Une page par projet et non un réglage d'instance : une tâche travaille dans un dépôt,
- * avec les consignes et la mémoire de ce projet, et c'est là qu'on vient la chercher.
+ * A page per project, not an instance setting: tasks work in repositories with project
+ * instructions and memory, so that is where users look for them.
  */
 export function SchedulePage() {
   const { projectId } = useParams()
@@ -71,12 +70,12 @@ export function SchedulePage() {
     [schedules, projectId],
   )
 
-  // `null` : fermé ; `'new'` : création ; sinon la tâche en cours de modification.
+  // `null`: closed; `'new'`: creation; otherwise the task being edited.
   const [editing, setEditing] = useState<ScheduledTaskDto | 'new' | null>(null)
 
-  // `?new` vient de la ligne d'ajout de la sidebar. On ouvre le formulaire puis on
-  // retire le paramètre, sans entrée d'historique : sinon un rechargement ou un retour
-  // arrière rouvrirait un formulaire qu'on a déjà fermé.
+  // `?new` comes from the sidebar add row. Open the form then remove the parameter
+  // without adding history; otherwise reload or back navigation would reopen
+  // an already closed form.
   const [searchParams, setSearchParams] = useSearchParams()
   const requested = searchParams.has('new')
   useEffect(() => {
@@ -134,13 +133,13 @@ export function SchedulePage() {
 
       {editing && project ? (
         <ScheduleDialog
-          // La clé remonte le formulaire d'une tâche à l'autre : ses champs sont un état
-          // initial, pas un reflet de la tâche.
+          // The key remounts the form between tasks: fields are initial state,
+          // not a live reflection of the task.
           key={editing === 'new' ? 'new' : editing.id}
           project={project}
           task={editing === 'new' ? undefined : editing}
           onClose={() => setEditing(null)}
-          // Une automatisation par webhook se règle sur un vrai appel : sa page l'attend.
+          // Webhook automation configuration uses a real call: its dedicated page expects one.
           onCreated={(created) => navigate(`/p/${created.projectId}/schedules/${created.id}`)}
         />
       ) : null}
@@ -235,7 +234,7 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
             {t('schedule.action.runNow')}
           </Button>
         )}
-        {/* Pour essayer la tâche quand la vérification dit « rien à faire », ou se trompe. */}
+        {/* Try the task when the check reports “nothing to do” or is wrong. */}
         {check ? (
           <Button
             variant="ghost"
@@ -251,14 +250,14 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
           variant="ghost"
           size="sm"
           icon={task.enabled ? <Pause size={14} /> : <Play size={14} />}
-          // Une ponctuelle déjà tirée n'a plus de date à venir : la reprendre demande
-          // d'en choisir une, donc de passer par le formulaire.
+          // An already-run one-time task has no future date: rescheduling requires choosing
+          // one through the form.
           disabled={update.isPending || state === 'done'}
           onClick={() => update.mutate({ id: task.id, enabled: !task.enabled })}
         >
           {t(task.enabled ? 'schedule.action.pause' : 'schedule.action.resume')}
         </Button>
-        {/* Un webhook se règle sur sa page, tout entier : « Configurer » y mène. */}
+        {/* Webhooks are configured entirely on their own page; “Configure” leads there. */}
         {webhook ? null : (
           <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={onEdit}>
             {t('schedule.action.edit')}
@@ -332,7 +331,7 @@ function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string })
       </span>
       <span className="shrink-0 text-ink-soft">{t(RUN_LABELS[run.status])}</span>
       {run.trigger === 'manual' ? <span className="shrink-0">{t('schedule.run.manual')}</span> : null}
-      {/* Écarté par son script : « rien à faire », pas une anomalie comme un chevauchement. */}
+      {/* Skipped by its script: “nothing to do”, not an anomaly like overlap. */}
       {run.status === 'skipped' && run.check ? <span className="shrink-0">{t('schedule.run.byCheck')}</span> : null}
       {run.error ? <span className="min-w-0 truncate" title={run.check?.stdout || run.error}>{run.error}</span> : null}
     </>

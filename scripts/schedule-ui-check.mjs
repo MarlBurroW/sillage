@@ -9,9 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Vrais composants, vraie API et vrai CLI Claude, dans une base temporaire : la tâche
-// créée ici tire pour de bon, à la minute. Compter deux tours très courts de quota.
-// Les captures vont dans SCHEDULE_SHOTS, ou dans un dossier temporaire annoncé à la fin.
+// Real components/API and real Claude CLI in a temporary database: this task really
+// fires at the minute. Allow two very short quota turns. Screenshots go to
+// SCHEDULE_SHOTS or a temporary directory announced at completion.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -76,12 +76,11 @@ try {
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
   assert.ok(login.ok())
   const api = async (path) => (await context.request.get(`${base}${path}`)).json()
-  // Un projet sans automatisation : la démo en sème une dans Nimbus, et la page doit
-  // partir de son état vide.
+  // Project without automation: demo seeds one in Nimbus, but page must start empty.
   const seeded = await api('/api/schedules')
   const project = (await api('/api/projects')).find((entry) => !entry.archivedAt && !seeded.some((task) => task.projectId === entry.id))
   const schedules = async () => (await api('/api/schedules')).filter((task) => task.projectId === project.id)
-  /** Attend qu'un état de la tâche soit vrai, le temps d'un tir réel. */
+  /** Wait for a task condition to become true during a real firing. */
   const until = async (label, predicate, timeoutMs) => {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
@@ -97,14 +96,14 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await mkdir(shots, { recursive: true })
 
-  // --- Création par le formulaire ------------------------------------------------
+  // --- Creation through the form ------------------------------------------------
   await page.goto(`${base}/p/${project.id}/schedules`)
   await page.getByText('Aucune automatisation dans ce projet').waitFor()
   await page.getByRole('button', { name: 'Nouvelle automatisation', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Nouvelle automatisation', exact: true })
   await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('Veille de test')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
-  // Sans cadence valide, rien ne part : le bouton doit le dire.
+  // Without valid cadence nothing is submitted: button must indicate it.
   await dialog.getByRole('spinbutton', { name: 'Tous les', exact: true }).fill('0')
   assert.equal(await dialog.getByRole('button', { name: 'Créer la tâche', exact: true }).isDisabled(), true)
   await dialog.getByRole('radio', { name: 'Cron', exact: true }).click()
@@ -126,7 +125,7 @@ try {
   assert.deepEqual(created.cadence, { kind: 'interval', minutes: 1 })
   assert.equal(created.maxDurationMinutes, 3)
 
-  // --- Le tir part tout seul, à l'heure ------------------------------------------
+  // --- Automatic firing at the scheduled time -----------------------------------
   const fired = await until('le tir planifié part', (task) => task.runs.some((entry) => entry.conversationId), 100_000)
   const run1 = fired.runs.find((entry) => entry.conversationId)
   assert.equal(run1.trigger, 'schedule')
@@ -134,11 +133,11 @@ try {
   assert.equal(thread.scheduleId, created.id)
   assert.match(thread.title, /^Veille de test · /)
 
-  // En pause tout de suite : un seul tir automatique suffit à la preuve.
+  // Pause immediately: one automatic firing is enough proof.
   await card.getByRole('button', { name: 'Mettre en pause', exact: true }).click()
   await until('la tâche est en pause', (task) => !task.enabled && task.nextRunAt === null, 10_000)
 
-  // La sidebar : le fil n'est pas dans la liste du projet, il est sous sa tâche.
+  // Sidebar: thread is under its task, not in the project list.
   const nav = page.locator('aside nav')
   const threadLink = nav.locator(`a[href$="/c/${thread.id}"]`)
   const section = nav.locator('[data-sidebar-schedules]')
@@ -155,12 +154,12 @@ try {
   await card.getByText('terminé', { exact: true }).first().waitFor({ timeout: 30_000 })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'schedule-desktop.png') })
 
-  // Le fil s'ouvre comme une conversation ordinaire, et l'agent a su qu'il tournait seul.
+  // Thread opens like an ordinary conversation; agent knew it ran autonomously.
   await threadLink.click()
   await page.getByText(/personne n'est au clavier/).first().waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'run-desktop.png') })
 
-  // --- Lancer maintenant, depuis le téléphone ------------------------------------
+  // --- Run now from the phone ---------------------------------------------------
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/p/${project.id}/schedules`)
   await card.getByText('En pause', { exact: true }).waitFor()
@@ -189,7 +188,7 @@ try {
 
   await until('le tir manuel se termine', (task) => task.runs.every((entry) => entry.status !== 'running'), 150_000)
 
-  // --- Suppression : les fils redeviennent des conversations ordinaires, rangées --
+  // --- Deletion: threads become ordinary archived conversations -----------------
   await page.setViewportSize({ width: 1440, height: 900 })
   await card.getByRole('button', { name: 'Supprimer', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Supprimer', exact: true }).click()
@@ -197,7 +196,7 @@ try {
   const after = (await api('/api/conversations')).filter((entry) => entry.title.startsWith('Veille de test · '))
   assert.equal(after.length, 2)
   assert.ok(after.every((entry) => entry.scheduleId === null && entry.archivedAt !== null))
-  // La section reste, vide : elle sert aussi à en créer une (voir 61129df).
+  // Section stays empty: it also creates tasks (see 61129df).
   assert.equal(await nav.locator('[data-sidebar-schedules]').getByText('Veille de test').count(), 0)
 
   assert.deepEqual(errors, [])

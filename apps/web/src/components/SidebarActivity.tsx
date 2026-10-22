@@ -33,7 +33,7 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   const [view, setView] = useState<View>('all')
   const returnFocus = useRef<HTMLElement | null>(null)
   const openId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
-  // Un instantané primitif évite un rendu pour chaque jeton ou métrique reçue.
+  // Primitive snapshots avoid rendering on every received token or metric.
   const snapshot = () => JSON.stringify(conversations.map((entry) => ({
     status: liveStatus(entry.id) ?? entry.status,
     background: liveBackground(entry.id) > 0,
@@ -47,7 +47,7 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
       const state = states[index]!
       const awaiting = state.status === 'awaiting_input'
       const running = !awaiting && (state.status === 'running' || state.background)
-      // Une session archivée qui travaille encore compte bien dans le total global.
+      // Archived sessions still working count in the global total.
       if (conversation.archivedAt && !running && !awaiting) return []
       return [{ conversation, ...state, running, awaiting }]
     })
@@ -57,10 +57,10 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   const unread = entries.filter((entry) => entry.unread)
   const recent = entries.filter((entry) => entry.settledAt > 0 && !entry.running && !entry.awaiting)
     .sort((a, b) => b.settledAt - a.settledAt).slice(0, 8)
-  // Les attentes précèdent le travail en cours, sans clic pour découvrir les sessions.
+  // Show waits before running work without extra clicks to discover sessions.
   const active = [...awaiting, ...running]
   const projectNames = new Map(projects.map((project) => [project.id, project.name]))
-  // Le tri stable conserve les attentes en tête au sein de chaque projet.
+  // Stable sorting retains waits first within each project.
   const visible = (view === 'all' ? [...active, ...recent] : view === 'awaiting' ? awaiting : unread)
     .sort((a, b) => {
       const aName = projectNames.get(a.conversation.projectId) ?? t('shell.overview.unknown')

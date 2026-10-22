@@ -11,12 +11,9 @@ import { CHANGE_KINDS, splitPath } from './change-kind'
 import { useGitPane } from './context'
 
 /**
- * Les changements d'un seul tour, dans l'onglet Git.
- *
- * Remplace le dépôt tout entier le temps qu'on le regarde : c'est la même question que
- * la section Changements, « qu'est-ce qui a changé ? », posée à un tour plutôt qu'au
- * répertoire de travail. Les diffs viennent des deux captures et non du disque, que le
- * tour suivant a pu réécrire.
+ * Single-turn changes temporarily replace repository-wide Git view, asking what changed in this
+ * turn rather than working directory. Diffs come from snapshots instead of disk rewritten by later
+ * turns.
  */
 export function TurnChangesView({
   conversationId,
@@ -28,7 +25,7 @@ export function TurnChangesView({
 }: {
   conversationId: string
   checkpoint: TurnCheckpoint
-  /** Début du message qui a ouvert le tour, pour dire de quel tour il s'agit. */
+  /** Opening message prefix identifying the turn. */
   label: string | null
   canRestore: boolean
   onRestore: (checkpoint: TurnCheckpoint) => void
@@ -93,7 +90,7 @@ export function TurnChangesView({
   )
 }
 
-/** Un fichier changé par le tour, dépliable sur son diff. Même ligne que l'onglet Git. */
+/** Turn-changed file expandable to diff using the Git tab's row. */
 function FileRow({
   conversationId,
   checkpointKey,

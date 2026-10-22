@@ -10,99 +10,65 @@ import { agentProcessEnv } from '../agents/process-env.js'
 import type { ClaudeAccountGauges } from './gauges.js'
 import type { ClaudeAccountStore } from './store.js'
 
-/**
- * Connexion guidée d'un abonnement Claude, par `claude setup-token` piloté dans un
- * pseudo-terminal.
- *
- * Le CLI n'offre pas de flux sans terminal pour un abonnement : `setup-token` ouvre
- * un navigateur, ou imprime l'URL d'autorisation, puis attend que l'on colle le code
- * que la page affiche, et imprime enfin le jeton. Sondé sur 2.1.296 sous `script` :
- * l'URL arrive en lien OSC 8, l'invite « Paste code here if prompted » suit, un code
- * faux donne « OAuth error: Invalid code … Press Enter to retry », et le dossier de
- * configuration n'est pas touché. Sillage rejoue donc ce dialogue : il montre l'URL,
- * reçoit le code, l'écrit au CLI et lit le jeton dans sa sortie.
- *
- * Le CLI tourne dans un dossier de configuration jetable : il ne doit ni lire la
- * connexion du poste ni y écrire quoi que ce soit. Le jeton n'existe qu'en mémoire le
- * temps d'être chiffré dans le compte, qui n'est créé qu'à ce moment.
- *
- * Le même dialogue sert à la jauge d'un compte existant, par `claude auth login` :
- * même URL, même invite (sondé sur 2.1.296), mais la portée comprend `user:profile` et
- * le CLI écrit sa connexion dans le dossier au lieu d'imprimer un jeton. La fin se lit
- * donc à l'apparition de `.credentials.json`, et le dossier jetable est repris par
- * `ClaudeAccountGauges.adopt` avant d'être effacé.
- */
+/** Guided Claude subscription login through `claude setup-token` in a pseudo-terminal. No nonterminal subscription flow exists: setup-token opens browsers or prints authorization URLs, waits for pasted codes, then prints tokens. Probed on 2.1.296 under `script`: URLs use OSC 8 links followed by 'Paste code here if prompted'; wrong codes yield 'OAuth error: Invalid code … Press Enter to retry'; configuration directories remain untouched. Sillage mirrors this dialogue. Use disposable configuration directories to avoid reading or writing host authentication; tokens exist only in memory until encrypted into accounts created at that point. Existing account gauges use `claude auth login`: same URL/prompt (2.1.296), but scopes include `user:profile` and credentials are written rather than printed. Detect `.credentials.json`, then let `ClaudeAccountGauges.adopt` retain the directory before cleanup. */
 
-/** Au-delà, le CLI en attente est fermé : personne n'a collé le code. */
+/** Close waiting CLIs after this timeout when nobody pasted codes. */
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
-/** Le temps que le CLI vérifie un code auprès d'Anthropic et imprime le jeton. */
+/** Time allowed for Anthropic code verification and token output. */
 const CODE_TIMEOUT_MS = 3 * 60 * 1000
-/** Entre le code et l'Entrée qui le valide, pour que le CLI ne les lise pas d'un bloc. */
+/** Separate code input from validating Enter so CLIs do not read them as one paste. */
 const ENTER_DELAY_MS = 300
-/** Ce qu'on garde de la sortie du CLI pour expliquer un échec, jeton masqué. */
+/** CLI output retained for explaining failures, with tokens redacted. */
 const DIAGNOSTIC_TAIL = 400
 const URL_PATTERN = /https:\/\/[a-z.]*claude\.com\/[^\s\x07\x1b"']*oauth\/authorize\?[^\s\x07\x1b"']+/g
 const TOKEN_PREFIX = 'sk-ant-oat01-'
 const TOKEN_CHARS = /[A-Za-z0-9_-]/
-/** Un jeton de setup-token fait une centaine de caractères : moins, c'est une coupure. */
+/** Setup tokens are roughly a hundred characters; shorter values are truncated. */
 const TOKEN_MIN_LENGTH = 60
-/** Le motif s'arrête où le CLI reprend la main : « Press Enter to retry », « Retrying… ». */
+/** Patterns stop where CLIs resume control: 'Press Enter to retry', 'Retrying…'. */
 const ERROR_PATTERN = /OAuth\s*error:\s*(.*?)(?=[\s\x00]*(?:Press\s*Enter|Retrying|$))/i
-/** Ce qu'`auth login` dit d'un code refusé, juste avant de quitter (sondé sur 2.1.296). */
+/** `auth login` rejection text before exit, probed on 2.1.296. */
 const LOGIN_FAILED_PATTERN = /Login\s*failed:\s*([^\n\x00]*)/i
-/** Les relances d'`auth login` après un code refusé, avant d'abandonner. */
+/** `auth login` retries after rejected codes before giving up. */
 const MAX_RELAUNCHES = 5
 
 interface Login {
   ownerId: string
   purpose: ClaudeLoginPurpose
-  /** Le libellé du compte à créer (`token`), ou le compte qui reçoit sa jauge (`gauge`). */
+  /** Account label to create (`token`) or account receiving its gauge (`gauge`). */
   label: string
   accountId: string | null
   pty: IPty
   configDir: string
-  /** Sortie cumulée, débarrassée des séquences de terminal, pour y lire invite et jeton. */
+  /** Accumulated terminal-cleaned output for reading prompts and tokens. */
   output: string
-  /** La même, brute : c'est là que vit l'URL entière, dans la cible de son lien. */
+  /** Same output raw, retaining full URLs inside link targets. */
   raw: string
   status: ClaudeLoginStatusDto
   timer: NodeJS.Timeout
-  /** Délai de la vérification du code en cours, s'il y en a une. */
+  /** Current code-verification timeout, when present. */
   checking: { since: number; timer: NodeJS.Timeout } | null
-  /** Ce qui relance le CLI : les arguments, et combien de fois il l'a été. */
+  /** CLI restart arguments and restart count. */
   args: string[]
   relaunches: number
-  /** Posé par `finish` : un CLI qui meurt ensuite ne doit plus être relancé. */
+  /** Set by `finish`: subsequent CLI death must not restart it. */
   closing: boolean
 }
 
-/**
- * L'URL d'autorisation, lue dans la sortie brute et non dans sa version nettoyée.
- *
- * Le CLI l'écrit en lien OSC 8 : la cible du lien porte l'URL entière, le texte
- * visible n'en montre qu'une ligne, coupée à la largeur du terminal. Nettoyer d'abord
- * retirait la cible et ne laissait que le texte, et l'URL tronquée finissait sur un
- * `%3` incomplet que le navigateur réencodait en `%253` : « Requête OAuth non valide »
- * (vu le 13 octobre 2026). On garde donc la plus longue occurrence, et seulement si
- * elle va jusqu'au `state`, dernier paramètre.
- */
+/** Authorization URLs read from raw output rather than cleaned text. OSC 8 targets hold complete URLs while visible text wraps at terminal width. Cleaning first discarded targets and left incomplete `%3`, reencoded as `%253`, producing invalid OAuth requests (observed 2026-10-13). Keep longest occurrences only when reaching final `state` parameters. */
 export function authUrlFrom(raw: string): string | null {
   const complete = [...raw.matchAll(URL_PATTERN)].map((match) => match[0]).filter((url) => /[?&]state=[A-Za-z0-9_-]+$/.test(url))
-  // La dernière : le CLI rouvre un flux, avec une nouvelle URL, quand un code ne
-  // correspond pas à celui en cours, et c'est elle qu'il faut alors montrer.
+  // Keep the latest: codes from other flows cause CLIs to reopen authorization
+  // with new URLs that must be displayed.
   return complete[complete.length - 1] ?? null
 }
 
-/** Le `state` d'une URL d'autorisation : ce qui distingue un flux d'un autre. */
+/** Authorization URL `state` distinguishing flows. */
 function stateOf(url: string | null): string | null {
   return url ? (/[?&]state=([A-Za-z0-9_-]+)/.exec(url)?.[1] ?? null) : null
 }
 
-/**
- * Remplace ce qu'un terminal interprète (couleurs, curseur, liens OSC 8) par une
- * marque, et retire le retour chariot. Une marque et non rien : le jeton est imprimé
- * en couleur, et c'est la remise à zéro de la couleur qui le sépare du texte qui suit.
- */
+/** Replaces terminal control (colors, cursor movements, OSC 8 links) with markers and removes carriage returns. Markers rather than deletion preserve boundaries between colored tokens and subsequent text when colors reset. */
 const MARK = '\x00'
 export function plain(chunk: string): string {
   return chunk
@@ -112,15 +78,7 @@ export function plain(chunk: string): string {
     .replace(/[\x0e\x0f\x07\r]/g, '')
 }
 
-/**
- * Le jeton imprimé par le CLI, reconstitué par-dessus les sauts de ligne.
- *
- * Ink coupe le texte à la largeur de sa boîte, et un jeton d'une centaine de
- * caractères peut donc arriver sur deux lignes. On suit le jeton depuis son préfixe,
- * en enjambant espaces et sauts de ligne, et on s'arrête à tout autre caractère, dont
- * la marque laissée par la remise à zéro de la couleur. Le plus long l'emporte : un
- * cadre Ink redessiné répète le jeton, parfois coupé.
- */
+/** Reassembles printed tokens across line wraps. Ink wraps hundred-character tokens within boxes; follow prefixes across spaces/newlines until other characters, including color-reset markers. Longest wins because redraws repeat tokens, sometimes truncated. */
 export function tokenFrom(output: string): string | null {
   let best: string | null = null
   for (let at = output.indexOf(TOKEN_PREFIX); at !== -1; at = output.indexOf(TOKEN_PREFIX, at + 1)) {
@@ -136,11 +94,11 @@ export function tokenFrom(output: string): string | null {
   return best
 }
 
-/** La fin de la sortie du CLI, lisible et sans jeton : ce qu'on montre quand il n'a pas conclu. */
+/** Readable token-free output tail shown when CLIs fail to finish. */
 function diagnostic(output: string): string {
   return output
     .replace(/sk-ant-oat01-[A-Za-z0-9_-]*/g, 'sk-ant-oat01-…')
-    // Les marques, et ce qui reste de contrôle : un message d'erreur se lit et se sérialise.
+    // Remove markers and remaining control bytes so errors are readable and serializable.
     .replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{2,}/g, '\n')
@@ -157,7 +115,7 @@ export class ClaudeLoginService {
     private readonly gauges: ClaudeAccountGauges | null = null,
   ) {}
 
-  /** Connexion qui donne sa jauge à un compte existant, par `claude auth login`. */
+  /** Login supplying existing-account gauges through `claude auth login`. */
   startGauge(ownerId: string, accountId: string, label: string): Promise<ClaudeLoginStatusDto> {
     return this.launch(ownerId, 'gauge', label, accountId)
   }
@@ -167,7 +125,7 @@ export class ClaudeLoginService {
     return login && login.ownerId === ownerId ? login.status : undefined
   }
 
-  /** Lance le CLI et attend qu'il imprime l'URL, ou qu'il échoue avant. */
+  /** Starts CLIs and waits for URLs or earlier failures. */
   start(ownerId: string, label: string): Promise<ClaudeLoginStatusDto> {
     return this.launch(ownerId, 'token', label, null)
   }
@@ -200,20 +158,15 @@ export class ClaudeLoginService {
     this.logins.set(loginId, login)
     this.attach(loginId, pty)
 
-    // L'URL vient en une seconde ; au-delà, c'est que le CLI n'a pas démarré ou
-    // qu'il raconte autre chose, et la sortie est le seul indice.
+    // URLs arrive within a second; longer means CLIs failed to start or
+    // printed something else; output is the only clue.
     await this.until(loginId, (current) => current.status.state !== 'starting', 20_000).catch(() => {
       this.finish(loginId, `Le CLI n'a pas imprimé d'URL d'autorisation : ${login.output.trim().slice(-300) || 'aucune sortie'}`)
     })
     return login.status
   }
 
-  /**
-   * Écrit le code au CLI. La suite se lit par `status` : le jeton arrive en quelques
-   * secondes, mais l'échange peut traîner, et une requête HTTP qui attend trois minutes
-   * serait coupée avant. Un échec garde la fin de la sortie du CLI : c'est le seul
-   * indice de ce qu'il attendait.
-   */
+  /** Writes codes to CLIs; read subsequent progress through `status`. Tokens normally arrive in seconds but exchanges may stall, and three-minute HTTP waits would be cut off. Failures retain output tails, the only clue to expected input. */
   submitCode(ownerId: string, loginId: string, code: string): ClaudeLoginStatusDto | undefined {
     const login = this.logins.get(loginId)
     if (!login || login.ownerId !== ownerId) return undefined
@@ -221,17 +174,17 @@ export class ClaudeLoginService {
       return login.status
     }
 
-    // Après un refus, le CLI attend Entrée pour rouvrir l'invite (sondé) : on la lui
-    // donne, puis le code. Un code collé avec ses espaces ou sauts de ligne est nettoyé,
-    // le CLI le refuserait tel quel.
+    // After rejection, CLIs await Enter to reopen prompts (probed): send it before
+    // the next code. Strip pasted whitespace and newlines,
+    // which the CLI would reject unchanged.
     if (login.status.state === 'failed' && login.purpose === 'token') login.pty.write('\r')
     login.status = { ...login.status, state: 'checking', error: null }
     const since = login.output.length
-    // Le code et l'Entrée en deux écritures, espacées : arrivés d'un bloc, le CLI tient
-    // un code long pour un collage et l'Entrée qui le suit en fait partie, rien n'est
-    // validé et l'écran reste muet (sondé sur 2.1.296 : 91 caractères + Entrée en une
-    // écriture, aucune réaction ; en deux, le code part). Un code court passait, d'où
-    // des essais à code faux qui marchaient.
+    // Write code and Enter separately with a delay: together, CLIs treat long codes
+    // as pastes including Enter, leaving nothing validated
+    // and screens silent. Probed on 2.1.296: 91 characters plus Enter in one write
+    // produced no reaction; two writes submitted successfully. Short codes worked,
+    // explaining successful invalid-code trials.
     login.pty.write(code.replace(/\s+/g, ''))
     setTimeout(() => {
       if (login.checking) login.pty.write('\r')
@@ -247,10 +200,10 @@ export class ClaudeLoginService {
       }
     }, CODE_TIMEOUT_MS)
     login.checking = { since, timer }
-    // Le flux a peut-être déjà tout dit entre l'écriture et l'attente.
+    // Streams may already have completed between writing and waiting.
     this.settle(loginId)
-    // `auth login` peut écrire sa connexion sans rien imprimer de plus : on regarde le
-    // dossier à intervalle, tant que la vérification dure.
+    // `auth login` can write credentials without more output: poll its
+    // directory during verification.
     if (login.purpose === 'gauge') {
       const watch = setInterval(() => {
         if (!login.checking) return clearInterval(watch)
@@ -260,14 +213,14 @@ export class ClaudeLoginService {
     return login.status
   }
 
-  /** Un CLI neuf, dans son propre dossier jetable. */
+  /** Fresh CLI inside its own disposable directory. */
   private async spawnCli(args: string[]): Promise<{ pty: IPty; configDir: string }> {
     const configDir = await mkdtemp(join(tmpdir(), 'sillage-claude-login-'))
     const launch = launchOf(await this.binary())
     const pty = spawn(launch.command, [...launch.args, ...args], {
       name: 'xterm-256color',
-      // Large : l'URL d'`auth login` est imprimée en texte et non en lien, et la plus
-      // longue des deux, avec ses sept portées, ne doit pas dépendre de la largeur.
+      // Wide terminals: `auth login` prints plain URLs rather than links, and its longer
+      // seven-scope URL must not depend on terminal width.
       cols: 400,
       rows: 40,
       cwd: configDir,
@@ -276,7 +229,7 @@ export class ClaudeLoginService {
     return { pty, configDir }
   }
 
-  /** Branche la sortie et la fin d'un CLI ; celles d'un CLI déjà remplacé sont ignorées. */
+  /** Attaches CLI output and exit listeners, ignoring replaced CLI instances. */
   private attach(loginId: string, pty: IPty): void {
     pty.onData((data) => {
       if (this.logins.get(loginId)?.pty === pty) this.consume(loginId, data)
@@ -288,16 +241,12 @@ export class ClaudeLoginService {
     })
   }
 
-  /**
-   * Le CLI a quitté sans conclure. `setup-token` attend un nouveau code après un refus,
-   * `auth login` quitte (« Login failed: … », sondé sur 2.1.296) : pour garder le même
-   * geste, on en relance un, sous la même connexion, et l'écran montre le nouveau lien.
-   */
+  /** CLI exited without finishing. setup-token awaits new codes after rejection, while auth login exits ('Login failed: …', probed 2.1.296). Preserve the same interaction by restarting under the same login and showing its new URL. */
   private async exited(loginId: string, exitCode: number): Promise<void> {
     const login = this.logins.get(loginId)
     if (!login) return
-    // `auth login` réussi quitte aussi, une fois sa connexion écrite : c'est un succès,
-    // à reprendre avant que quoi que ce soit n'efface le dossier.
+    // Successful `auth login` also exits after writing credentials: adopt success
+    // before anything removes the directory.
     if (login.purpose === 'gauge' && existsSync(join(login.configDir, '.credentials.json'))) {
       if (!login.checking) login.checking = { since: login.output.length, timer: setTimeout(() => undefined, 0) }
       this.adoptGauge(loginId, 0)
@@ -342,7 +291,7 @@ export class ClaudeLoginService {
     return true
   }
 
-  /** Ferme ce qui attend encore, à l'arrêt : rien n'y survit. */
+  /** Closes remaining pending logins on shutdown; none survive. */
   async closeAll(): Promise<void> {
     for (const loginId of [...this.logins.keys()]) await this.finish(loginId, 'Serveur arrêté.')
   }
@@ -350,40 +299,36 @@ export class ClaudeLoginService {
   private consume(loginId: string, data: string): void {
     const login = this.logins.get(loginId)
     if (!login) return
-    // Nettoyé sur le cumul et non par morceau : une séquence coupée entre deux
-    // morceaux laisserait ses débris dans ce qu'on lit.
+    // Clean accumulated output rather than chunks: control sequences split across
+    // chunks would otherwise leave fragments in parsed text.
     login.raw += data
     login.output = plain(login.raw)
     const url = authUrlFrom(login.raw)
     if (login.status.state === 'starting' && url) {
-      // Après une relance, l'écran reste sur l'échec, motif et nouveau lien compris :
-      // c'est l'envoi du prochain code qui l'efface.
+      // After restarts, screens retain failures including reasons and new URLs;
+      // only submitting another code clears them.
       login.status = { ...login.status, state: login.status.error ? 'failed' : 'waiting_code', authUrl: url }
     }
     if (login.checking) this.settle(loginId)
-    // Hors vérification aussi : un flux rouvert change l'URL, et l'écran doit la suivre.
+    // Also outside verification: reopened flows change URLs that screens must follow.
     if (url && url !== login.status.authUrl) login.status = { ...login.status, authUrl: url }
   }
 
-  /**
-   * Pendant la vérification d'un code : un jeton imprimé fait le compte, un refus
-   * remet en attente. Lu depuis l'envoi du code, pour ne pas reprendre un refus
-   * précédent.
-   */
+  /** During code verification, printed tokens create accounts; rejections restore waiting. Parse only output since submission to avoid previous rejections. */
   private settle(loginId: string): void {
     const login = this.logins.get(loginId)
     if (!login?.checking) return
     const since = login.output.slice(login.checking.since)
-    // `auth login` ne montre rien de ce qu'il obtient : sa connexion se lit dans le dossier.
+    // `auth login` prints no credentials: read authentication from its directory.
     if (login.purpose === 'gauge' && existsSync(join(login.configDir, '.credentials.json'))) {
       this.adoptGauge(loginId)
       return
     }
     const token = login.purpose === 'token' ? tokenFrom(since) : null
     const refused = ERROR_PATTERN.exec(since)?.[1]?.replace(new RegExp(MARK, 'g'), '')
-    // Un code d'une autre page : le CLI ne dit rien et rouvre un flux, avec une nouvelle
-    // URL (vu le 13 octobre 2026, un code collé depuis une tentative précédente). On le
-    // dit, et l'URL affichée devient la nouvelle : il suffit de la rouvrir.
+    // Codes from other pages silently reopen flows with new URLs (observed 2026-10-13
+    // with codes from previous attempts). Explain and display the new URL:
+    // users only need reopen it.
     const reopened = authUrlFrom(login.raw)
     const restarted = reopened !== null && stateOf(reopened) !== stateOf(login.status.authUrl)
     if (!token && !refused && !restarted) return
@@ -391,7 +336,7 @@ export class ClaudeLoginService {
     clearTimeout(login.checking.timer)
     login.checking = null
     if (token && claudeSecretKind(token) === 'oauth') {
-      // Le libellé a pu être pris entre-temps : un suffixe vaut mieux qu'un jeton perdu.
+      // Labels may become occupied meanwhile; suffixes are better than lost tokens.
       const label = this.store.labelFree(login.ownerId, login.label) ? login.label : `${login.label} ${new Date().toLocaleDateString('fr-FR')}`
       const account = this.store.create(login.ownerId, label, token)
       login.status = { ...login.status, state: 'done', error: null, account }
@@ -409,17 +354,13 @@ export class ClaudeLoginService {
     }
   }
 
-  /**
-   * Reprend la connexion de jauge. Le CLI écrit `.credentials.json` puis complète
-   * `.claude.json` (le compte, son courriel) : on laisse passer un instant pour que le
-   * second soit là, la jauge sait de toute façon vivre sans courriel.
-   */
+  /** Adopts gauge authentication. CLIs write `.credentials.json` then complete `.claude.json` with account/email; wait briefly for the latter, though gauges tolerate missing email. */
   private adoptGauge(loginId: string, delayMs = 1500): void {
     const login = this.logins.get(loginId)
     if (!login?.checking || !login.accountId || !this.gauges) return
     clearTimeout(login.checking.timer)
     login.checking = null
-    // Plus rien ne doit conclure à sa place : ni la fin du CLI, ni un délai.
+    // Nothing else may finish now: neither CLI exit nor timeouts.
     login.closing = true
     const accountId = login.accountId
     setTimeout(() => {
@@ -445,8 +386,8 @@ export class ClaudeLoginService {
     if (error !== null && login.status.state !== 'done') {
       login.status = { ...login.status, state: 'failed', error }
     }
-    // Le dossier ne s'efface qu'une fois le CLI parti : il y écrit encore en mourant,
-    // et un dossier supprimé sous lui renaissait à moitié.
+    // Delete directories only once CLIs exit: they still write during shutdown,
+    // and premature deletion recreated partial directories.
     const exited = new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, 3000)
       login.pty.onExit(() => {
@@ -457,11 +398,11 @@ export class ClaudeLoginService {
     try {
       login.pty.kill()
     } catch {
-      // Déjà mort : c'est ce qu'on voulait.
+      // Already dead, the desired outcome.
     }
     await exited
     await rm(login.configDir, { recursive: true, force: true })
-    // L'état reste lisible le temps que l'écran le relise, puis s'oublie.
+    // Retain state long enough for screens to reread, then discard it.
     setTimeout(() => this.logins.delete(loginId), 5 * 60 * 1000).unref()
   }
 

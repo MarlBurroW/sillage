@@ -1,14 +1,12 @@
-// Versionnage et mise à jour de l'instance.
+// Instance versioning and updates.
 
 /**
- * Comment cette installation se met à jour :
- * - `installer` : layout de l'installeur (releases/ + lien `current`), la mise à
- *   jour intégrée est disponible pour un administrateur.
- * - `docker` : l'image est immuable, on affiche seulement la nouvelle version et
- *   la commande à lancer.
- * - `desktop` : l'application de bureau, qu'on remplace par sa nouvelle version ; le
- *   serveur n'a rien à faire lui-même.
- * - `none` : checkout de dev ou layout inconnu, pas de mise à jour proposée.
+ * How this installation updates:
+ * - `installer`: installer layout (releases/ + `current` link); built-in updates available to
+ * administrators.
+ * - `docker`: immutable image; only show the new version and command to run.
+ * - `desktop`: desktop app replaced by its new version; the server does nothing itself.
+ * - `none`: development checkout or unknown layout; no update offered.
  */
 export type UpdateChannel = 'installer' | 'docker' | 'desktop' | 'none'
 
@@ -16,18 +14,18 @@ export interface ReleaseNote {
   tag: string
   name: string
   publishedAt: string
-  /** Markdown des notes de release GitHub (rédigées en anglais). */
+  /** GitHub release notes in Markdown (written in English). */
   body: string
   htmlUrl: string
 }
 
 export interface VersionInfo {
-  /** Version installée (`X.Y.Z`, ou identifiant git en dev). */
+  /** Installed version (`X.Y.Z`, or git ID in development). */
   version: string
   channel: UpdateChannel
   latest: string | null
   updateAvailable: boolean
-  /** Releases strictement plus récentes que la version installée, la plus récente d'abord. */
+  /** Releases strictly newer than the installed version, newest first. */
   releases: ReleaseNote[]
   checkedAt: string | null
   checkError: 'rate_limited' | 'network' | null
@@ -45,7 +43,7 @@ export interface UpdateStatus {
   phase: UpdatePhase
   targetVersion: string | null
   startedAt: string | null
-  /** Lignes de progression, à afficher telles quelles. */
+  /** Progress lines, displayed verbatim. */
   log: string[]
   error: string | null
 }

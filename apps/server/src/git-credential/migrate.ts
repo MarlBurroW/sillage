@@ -2,21 +2,9 @@ import { readLocalCredentialHelpers, writeLocalCredentialHelpers } from '../git.
 import type { Paths } from '../config.js'
 import { credentialHelperCommand, credentialLauncherPath } from './helper.js'
 
-/**
- * Remise à niveau du helper de credentials des dépôts déjà clonés.
- *
- * Avant le lanceur stable, le clone écrivait dans le `.git/config` le Node et le `.mjs`
- * de la release du moment. Ces chemins disparaissent avec la release (on n'en garde que
- * trois) ou avec le Node, et `git push` finit alors sur une trace de Node. Au
- * démarrage, on réécrit ces entrées vers le lanceur, en place.
- */
+/** Upgrades credential helpers in existing clones. Previously `.git/config` recorded release-specific Node and `.mjs` paths, which disappear when old releases or Node versions are removed, breaking `git push` with Node traces. Rewrite these entries to the stable launcher at startup. */
 
-/**
- * Découpe une commande dans la forme qu'écrit `shellQuote` : des mots entre apostrophes,
- * l'apostrophe elle-même écrite `'\''`. Ce n'est pas un analyseur de shell complet, et
- * il n'a pas à l'être : il ne sert qu'à reconnaître ce que Sillage a lui-même écrit. Une
- * forme qu'il ne comprend pas rend null, et l'entrée reste intacte.
- */
+/** Parses commands emitted by `shellQuote`: single-quoted words with apostrophes encoded as `'\''`. This is deliberately not a full shell parser; it only recognizes Sillage's own output. Unknown forms return null and remain untouched. */
 export function splitQuotedWords(command: string): string[] | null {
   const words: string[] = []
   let index = 0
@@ -52,13 +40,7 @@ function argAfter(words: string[], name: string): string | undefined {
 
 type Entry = { kind: 'current' } | { kind: 'legacy'; ownerId: string } | { kind: 'other' }
 
-/**
- * Ce qu'est une entrée pour cette instance.
- *
- * Une ancienne entrée n'est reprise que si elle vise la base de cette instance : un
- * serveur de test, avec son propre répertoire de données, peut enregistrer le même dépôt
- * que le daemon, et ne doit pas lui détourner son helper.
- */
+/** Classifies entries for this instance. Upgrade legacy entries only when they target this database: test servers with separate data directories may register production repositories and must not hijack their helpers. */
 function classify(value: string, paths: Pick<Paths, 'data' | 'database'>): Entry {
   if (!value.startsWith('!')) return { kind: 'other' }
   const words = splitQuotedWords(value.slice(1))
@@ -72,15 +54,7 @@ function classify(value: string, paths: Pick<Paths, 'data' | 'database'>): Entry
   return { kind: 'other' }
 }
 
-/**
- * La liste remise à niveau, ou null si elle n'a pas à changer.
- *
- * Les helpers de l'utilisateur restent où ils sont ; seules les anciennes entrées de
- * Sillage sont remplacées, chacune à sa place. Une valeur vide est ajoutée devant la
- * première entrée Sillage si rien ne la précède encore, comme le fait le clone depuis
- * 0fd5b4e : sans elle, le trousseau de macOS répond avant Sillage. Deux entrées devenues
- * identiques n'en font plus qu'une.
- */
+/** Upgraded helper list or null when unchanged. Preserve user helpers and replace legacy Sillage entries in place. Add an empty value before the first Sillage entry when nothing precedes it, matching clone behavior since 0fd5b4e; otherwise macOS Keychain answers first. Collapse entries becoming identical. */
 export function upgradeHelperList(values: string[], paths: Pick<Paths, 'data' | 'database'>): string[] | null {
   const entries = values.map((value) => classify(value, paths))
   if (!entries.some((entry) => entry.kind === 'legacy')) return null
@@ -105,12 +79,7 @@ export function upgradeHelperList(values: string[], paths: Pick<Paths, 'data' | 
   return result
 }
 
-/**
- * Passe sur les dépôts des projets. Un dossier qui n'est plus un dépôt, ou qui a
- * disparu, est ignoré : ce ménage ne doit jamais empêcher le serveur de démarrer.
- *
- * Idempotent : un dépôt déjà à jour n'est pas réécrit.
- */
+/** Visits project repositories, skipping missing or nongit directories so cleanup cannot block startup. Idempotent: already-current repositories are not rewritten. */
 export async function upgradeCredentialHelpers(
   workspaces: Iterable<string>,
   paths: Pick<Paths, 'data' | 'database'>,
@@ -125,7 +94,7 @@ export async function upgradeCredentialHelpers(
       await writeLocalCredentialHelpers(cwd, next)
       upgraded.push(cwd)
     } catch {
-      // Configuration en lecture seule ou verrouillée : on retentera au prochain démarrage.
+      // Read-only or locked configuration: retry on next startup.
     }
   }
   return upgraded

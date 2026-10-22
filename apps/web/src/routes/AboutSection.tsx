@@ -39,8 +39,8 @@ export function AboutSection() {
   const isAdmin = user?.isAdmin ?? false
   const updating = tracking && status !== undefined && status.phase !== 'failed'
 
-  // Une mise à jour peut avoir été lancée depuis un autre appareil : si le
-  // serveur en signale une en cours au montage, on s'y accroche.
+  // An update may have started on another device: if the server
+  // reports one in progress at mount time, attach to it.
   const probedRef = useRef(false)
   useEffect(() => {
     if (probedRef.current || tracking) return
@@ -50,7 +50,7 @@ export function AboutSection() {
       .then((current) => {
         if (current.phase !== 'idle' && current.phase !== 'failed') setTracking(true)
       })
-      // Serveur injoignable ou session périmée : l'écran reste utilisable sans suivi.
+      // Server unreachable or session expired: the screen remains usable without tracking.
       .catch(() => undefined)
   }, [tracking])
 
@@ -65,7 +65,7 @@ export function AboutSection() {
     <div className="flex flex-col gap-4">
       <SectionHeader title={t('about.title')} description={t('about.description')} />
 
-      {/* La visite se rejoue d'ici : elle rouvre à sa première étape, sans rien défaire. */}
+      {/* Replay onboarding here: reopen at the first step without undoing anything. */}
       <Card>
         <CardHeader title={t('about.tour.title')} description={t('about.tour.description')} />
         <CardBody>
@@ -154,8 +154,9 @@ export function AboutSection() {
               <p className="text-sm text-ink-faint">{t('about.manual.instructions')}</p>
             )}
 
-            {/* Les notes de release sont rédigées en anglais : elles viennent
-                telles quelles de GitHub. */}
+            {/*
+             * Release notes are written in English and come directly from GitHub.
+             */}
             {info.releases.map((release) => (
               <article key={release.tag} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
                 <header className="mb-1.5 flex items-baseline justify-between gap-2">
@@ -221,9 +222,8 @@ export function AboutSection() {
 }
 
 /**
- * Une fois le redémarrage engagé, l'ancien process ne répondra plus : on sonde
- * /api/health (route publique) jusqu'à ce que la nouvelle version réponde, puis
- * on recharge pour servir le frontend fraîchement déployé.
+ * Once restart begins, the old process stops responding: poll the public `/api/health` route
+ * until the new version responds, then reload to serve the freshly deployed frontend.
  */
 function useRestartWatch(phase: UpdatePhase | undefined, targetVersion: string | null) {
   useEffect(() => {

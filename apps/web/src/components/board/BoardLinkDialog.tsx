@@ -26,11 +26,9 @@ import { GitHubMark } from './GitHubMark'
 import { DecisionSettingsField, decisionSettingsValid } from '../decisions/DecisionSettingsField'
 
 /**
- * Relier le board aux issues d'un dépôt GitHub, ou régler la liaison.
- *
- * Le même formulaire sert aux deux : relier n'est que le premier enregistrement des
- * réglages. Ce qui n'existe qu'une fois relié (état de la synchronisation, issues
- * masquées, délier) se range au-dessus et en dessous, sans changer l'ordre des champs.
+ * Link boards to GitHub issues or configure existing links through the same form. Linking is the
+ * first settings save. Link-only synchronization state, hidden issues, and unlink actions surround
+ * unchanged fields.
  */
 export function BoardLinkDialog({
   projectId,
@@ -75,7 +73,7 @@ export function BoardLinkDialog({
         }
       : { repo: state.suggestedRepo ?? '', ...DEFAULT_BOARD_LINK_SETTINGS }
   const [settings, setSettings] = useState<BoardLinkSettings>(initial)
-  // Rouvrir le dialogue repart de ce que le serveur sait, pas d'une saisie abandonnée.
+  // Reopening starts from server state rather than abandoned input.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (open) setSettings(initial()) }, [open, link?.repo])
   const [tab, setTab] = useState<'sync' | 'maintenance'>('sync')
@@ -192,8 +190,7 @@ export function BoardLinkDialog({
               ) : null}
               {!canEdit ? <Banner tone="info">{t('board.github.ownerOnly')}</Banner> : null}
 
-              {/* `min-w-0` : un fieldset prend par défaut la largeur de son contenu, et le
-                  dialogue débordait de l'écran du téléphone. */}
+              {/* min-w-0 prevents fieldset content from forcing dialogs wider than phone screens. */}
               <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-5">
                 <Field
                   label={t('board.github.repo')}
@@ -296,17 +293,16 @@ export function BoardLinkDialog({
 }
 
 /**
- * Les réglages de session qui comptent pour une maintenance : le modèle, l'effort et ce
- * que l'agent a le droit de faire. Le reste, propre à chaque CLI, se replie.
+ * Maintenance-relevant session settings: model, effort, and permissions. Collapse other
+ * CLI-specific details.
  */
 const PRIMARY_SETTINGS = new Set(['model', 'effort', 'permission', 'approval', 'sandbox'])
 
 type SetSetting = <K extends keyof BoardLinkSettings>(key: K, value: BoardLinkSettings[K]) => void
 
 /**
- * Les sessions de maintenance : ce qui les ouvre, ce qu'elles font, comment elles
- * répondent, avec quels réglages. Rendu seulement sur son onglet : le sélecteur de modèle
- * sonde le CLI côté serveur, inutile tant qu'on ne regarde que la synchronisation.
+ * Maintenance sessions: triggers, actions, replies, and settings. Mount only in their tab because
+ * model selection probes the server CLI unnecessarily for synchronization-only viewers.
  */
 function MaintenanceSettings({
   settings,
@@ -322,8 +318,8 @@ function MaintenanceSettings({
   const t = useTranslate()
   const { data: userSettings } = useUserSettings()
   const agent = settings.sessionAgent
-  // Même ordre que pour une conversation neuve : le préréglage du projet, puis les défauts
-  // du compte. Tant que rien n'est retouché, le board suit ces réglages (null en base).
+  // Same precedence as new conversations: project presets then account defaults. Until edited the
+  // board follows those settings (null in the database).
   const defaults = project.defaultConfig[agent] ?? userSettings?.agentDefaults[agent] ?? defaultConfigFor(agent)
   const config = settings.sessionConfig?.agent === agent ? settings.sessionConfig : defaults
   const { groups, catalogError } = useAgentSettings({ config, onConfigChange: (next) => set('sessionConfig', next), disabled: readOnly })
@@ -404,7 +400,7 @@ function MaintenanceSettings({
           value={agent}
           onChange={(value) => {
             set('sessionAgent', value)
-            // Les réglages d'un autre CLI ne se convertissent pas : on repart des siens.
+            // Never convert settings from other CLIs: use the selected CLI's own defaults.
             set('sessionConfig', null)
           }}
           options={agentKindSchema.options.map((value) => ({ value, label: AGENT_LABELS[value], icon: <AgentIcon agent={value} size={16} /> }))}
@@ -451,7 +447,7 @@ function MaintenanceSettings({
   )
 }
 
-/** Un déclencheur : son interrupteur, et ce qu'il fait quand il est allumé. */
+/** Trigger with its toggle and enabled behavior. */
 function Trigger({
   title,
   hint,
@@ -476,7 +472,7 @@ function Trigger({
         </div>
         <Switch checked={checked} label={title} disabled={readOnly} onCheckedChange={onCheckedChange} />
       </div>
-      {/* Toujours modifiable : on prépare l'instruction avant d'allumer. */}
+      {/* Always editable so instructions can be prepared before enabling. */}
       {children}
     </section>
   )

@@ -1,23 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 
 /**
- * Révision d'un `CodeEditor` dont le texte peut changer ailleurs.
- *
- * L'éditeur ne lit son contenu qu'au montage : c'est ce qui préserve le curseur et
- * l'historique de qui tape. Mais quand le texte change côté serveur (une mise à jour
- * appliquée depuis la source, par exemple), il montrerait encore l'ancien, et un Ctrl+S
- * le réécrirait par-dessus la nouvelle version. On le remonte donc quand le texte du
- * serveur diffère de ce qu'il affiche, et seulement sans brouillon : des modifications
- * en cours ne sont jamais remplacées sous les doigts.
+ * Revision for CodeEditor text changed elsewhere. Editors read contents on mount to preserve
+ * cursor/undo, but server updates would otherwise leave old text that Ctrl+S overwrites. Remount
+ * when server text differs from display only without drafts; never replace ongoing edits.
  */
 export function useEditorRevision(serverText: string | null, hasDraft: boolean) {
-  /** Ce que l'éditeur affiche : le texte du montage, puis chaque frappe. */
+  /** Displayed editor text: initial contents then keystrokes. */
   const shown = useRef(serverText)
   const [revision, setRevision] = useState(0)
 
   useEffect(() => {
     if (serverText === null || hasDraft || serverText === shown.current) return
-    // Le premier texte reçu est celui du montage : rien à remonter.
+    // First received text is mount content, requiring no remount.
     const loaded = shown.current !== null
     shown.current = serverText
     if (loaded) setRevision((value) => value + 1)
@@ -25,11 +20,11 @@ export function useEditorRevision(serverText: string | null, hasDraft: boolean) 
 
   return {
     revision,
-    /** À appeler à chaque frappe. */
+    /** Call on every keystroke. */
     track: (text: string) => {
       shown.current = text
     },
-    /** Abandonne le brouillon : l'éditeur repart du texte du serveur. */
+    /** Discard drafts and restart from server text. */
     reset: () => {
       shown.current = serverText
       setRevision((value) => value + 1)

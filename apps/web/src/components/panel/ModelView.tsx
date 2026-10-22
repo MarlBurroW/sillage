@@ -5,10 +5,7 @@ import { ModelViewer, type ModelStats } from '../../lib/model-viewer'
 import type { WorkspaceScope } from '../../lib/workspace-scope'
 import { Banner, Button, IconButton } from '../ui'
 
-/**
- * Modèle 3D du workspace, dans une scène WebGL. Chargé à la demande par l'éditeur :
- * ce composant entraîne `three` avec lui.
- */
+/** Workspace 3D model in WebGL, lazy-loaded by the editor because this component imports three. */
 export function ModelView({ scope, path }: { scope: WorkspaceScope; path: string }) {
   const host = useRef<HTMLDivElement>(null)
   const viewer = useRef<ModelViewer | null>(null)

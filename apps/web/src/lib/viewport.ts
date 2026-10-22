@@ -1,38 +1,27 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
 /**
- * Hauteur réellement visible, publiée dans `--sg-app-height`.
- *
- * Sur mobile, l'ouverture du clavier réduit le viewport visuel sans toucher au
- * viewport de mise en page : `100dvh` continue de valoir la hauteur de l'écran entier
- * et la barre de saisie se retrouve cachée sous le clavier. `visualViewport` est la
- * seule mesure qui suive le clavier.
- *
- * La valeur est écrite en variable CSS plutôt que remontée en état React : le clavier
- * émet des dizaines d'événements pendant son animation, et re-rendre l'application à
- * chacun ferait ramer le fil de conversation.
+ * Actually visible height published as `--sg-app-height`. On mobile the keyboard shrinks the visual
+ * viewport without changing the layout viewport: `100dvh` still spans the full screen and hides the
+ * composer under the keyboard. Only `visualViewport` tracks the keyboard. Write a CSS variable
+ * rather than React state: keyboard animations emit dozens of events, and rerendering the app for
+ * each would slow the conversation thread.
  */
 /**
- * Hauteur que le clavier doit prendre, au-delà de l'écart au repos, pour être reconnu.
- *
- * Assez bas pour ne manquer aucun clavier, et sans rapport avec l'écart constant que
- * certaines plateformes affichent hors saisie, lequel est mesuré séparément.
+ * Keyboard height above the resting gap required for recognition. Low enough to catch every
+ * keyboard and independent of the constant non-editing gap some platforms report, which is measured
+ * separately.
  */
 const KEYBOARD_MIN_PX = 80
 
 /**
- * Écart entre le bas du viewport et le bas de l'écran, publié dans `--sg-viewport-gap`.
- *
- * Une application installée sur iOS remonte le viewport de la hauteur de la barre
- * d'état et l'ancre en haut : 894 px de viewport pour un écran de 956, donc 62 px hors
- * d'atteinte en bas. L'indicateur d'accueil, lui, est dans ces 62 px : écarter le
- * contenu de `env(safe-area-inset-bottom)` par-dessus le paie une deuxième fois, et
- * c'est autant de hauteur perdue sur un téléphone.
- *
- * L'écart est donc mesuré et retranché de l'encoche. Réservé au mode installé : un
- * navigateur ordinaire montre le même écart quand ses barres d'outils sont dépliées, et
- * le contenu passerait dessous. La mesure suppose le portrait, ce que le manifeste
- * impose déjà.
+ * Gap between viewport and screen bottoms published as `--sg-viewport-gap`. An installed iOS app
+ * shifts the viewport up by the status-bar height and anchors it at the top: 894 px of viewport for
+ * a 956 px screen leaves 62 px unreachable at the bottom. The home indicator already lies within
+ * that gap: adding `env(safe-area-inset-bottom)` would pay for it twice and waste phone space.
+ * Measure the gap and subtract it from the inset. Only in installed mode: ordinary browsers report
+ * the same gap with expanded toolbars, where subtraction would put content underneath. Assumes
+ * portrait orientation, already enforced by the manifest.
  */
 function publishViewportGap(root: HTMLElement): void {
   if (!matchMedia('(display-mode: standalone)').matches) return
@@ -49,16 +38,11 @@ export function useVisualViewport(): void {
     publishViewportGap(root)
 
     /**
-     * Écart entre les deux viewports hors clavier.
-     *
-     * Une PWA installée en rapporte un non nul et constant, sans qu'aucun clavier ne
-     * soit ouvert. Il était traité par un seuil fixe, que l'écart réel d'un appareil
-     * pouvait dépasser : la hauteur du viewport visuel s'imposait alors en permanence
-     * et laissait une bande vide sous la barre de saisie, de la hauteur de cet écart.
-     *
-     * Le plus petit écart observé est celui d'un clavier fermé, donc il se mesure au
-     * lieu de se deviner. Un minimum ne fait que décroître, ce qui le corrige tout
-     * seul s'il a été relevé au mauvais moment.
+     * Gap between viewports without a keyboard. Installed PWAs report a constant nonzero gap even
+     * with no keyboard open. A fixed threshold could be exceeded by a device's actual gap,
+     * permanently forcing visual-viewport height and leaving an empty strip beneath the composer.
+     * The smallest observed gap corresponds to a closed keyboard, so measure rather than guess. A
+     * minimum only decreases and corrects itself if initially measured at the wrong moment.
      */
     let resting = Number.POSITIVE_INFINITY
 
@@ -66,13 +50,11 @@ export function useVisualViewport(): void {
       root.style.removeProperty('--sg-app-height')
       root.style.removeProperty('--sg-viewport-top')
       /*
-       * Le clavier refermé peut laisser le viewport visuel décalé dans le viewport de
-       * mise en page : iPadOS en mode installé ne le ramène pas toujours à zéro, et
-       * n'émet alors ni `resize` ni `scroll`. Le calque fixe est bien redessiné à sa
-       * place, mais WebKit garde les zones de toucher de l'ancien décalage jusqu'au
-       * prochain défilement : la barre de saisie et le bas du fil ne répondent plus
-       * au doigt. Remettre le document à zéro recale les deux viewports et force ce
-       * recalcul. Sans décalage, l'appel ne fait rien.
+       * Closing the keyboard can leave the visual viewport offset inside the layout viewport:
+       * installed iPadOS does not always reset it or emit `resize`/`scroll`. The fixed layer
+       * redraws correctly, but WebKit retains old touch regions until the next scroll, leaving the
+       * composer and thread bottom unresponsive. Resetting document scroll realigns both viewports
+       * and forces hit-region recalculation. With no offset, this is a no-op.
        */
       window.scrollTo(0, 0)
     }
@@ -81,29 +63,27 @@ export function useVisualViewport(): void {
       && document.activeElement.matches('input, textarea, [contenteditable]:not([contenteditable="false"])')
 
     const apply = () => {
-      // `innerHeight` peut suivre le clavier sur iOS ; le calque fixe reste, lui,
-      // dimensionné par le viewport de mise en page.
+      // `innerHeight` may follow the keyboard on iOS, while the fixed layer remains sized by the layout viewport.
       const gap = Math.max(0, Math.max(root.clientHeight, window.innerHeight) - viewport.height)
-      // Un montage ou une rotation pendant la saisie ne doit pas enregistrer la
-      // hauteur du clavier comme écart au repos. La fermeture affinera la mesure.
+      // Mounting or rotating during text entry must not record keyboard height as the resting gap.
+      // Closing the keyboard refines the measurement.
       if (!hasInputFocus() && gap < resting) resting = gap
       const baseline = Number.isFinite(resting) ? resting : 0
 
-      // Le clavier est la seule raison d'imposer une hauteur : hors de ce cas, la
-      // mesure est retirée plutôt que corrigée, et la règle CSS reprend la main.
+      // Only a keyboard warrants forcing height: otherwise remove the measurement and let CSS take over.
       if (gap - baseline < KEYBOARD_MIN_PX) {
         clear()
         return
       }
 
       root.style.setProperty('--sg-app-height', `${viewport.height}px`)
-      // iOS fait aussi défiler la page derrière le clavier : sans compenser ce
-      // décalage, l'en-tête sort par le haut de l'écran.
+      // iOS also scrolls the page behind the keyboard: compensate for this offset or the header
+      // leaves the top of the screen.
       root.style.setProperty('--sg-viewport-top', `${viewport.offsetTop}px`)
     }
 
-    // Une rotation change l'écart au repos : la mesure repart de zéro, sans quoi
-    // l'ancienne, plus petite, ferait passer le nouvel écart pour un clavier.
+    // Rotation changes the resting gap: reset its measurement, or the previous smaller gap could
+    // make the new one look like a keyboard.
     const remeasure = () => {
       resting = Number.POSITIVE_INFINITY
       publishViewportGap(root)
@@ -111,10 +91,9 @@ export function useVisualViewport(): void {
     }
 
     /*
-     * Filet pour le clavier qui se ferme sans événement de viewport (voir `clear`) :
-     * quand la saisie perd le focus et qu'aucune autre ne le reprend, la mesure est
-     * rejouée après le délai de l'animation du clavier. Si `resize` a bien été émis
-     * entre-temps, `apply` a déjà tout remis et ce passage ne change rien.
+     * Fallback for keyboard closure without a viewport event (see `clear`): when input loses focus
+     * without another input gaining it, repeat measurement after the keyboard animation delay. If
+     * `resize` fired meanwhile, `apply` already restored everything and this changes nothing.
      */
     let settle: ReturnType<typeof setTimeout> | undefined
     const onFocusOut = () => {
@@ -122,8 +101,7 @@ export function useVisualViewport(): void {
       settle = setTimeout(() => {
         if (hasInputFocus()) return
         apply()
-        // `apply` ne touche à rien si le clavier n'était pas reconnu : le recalage du
-        // document doit quand même avoir lieu.
+        // `apply` does nothing if the keyboard was not recognized: document realignment must still happen.
         window.scrollTo(0, 0)
       }, 350)
     }
@@ -147,11 +125,9 @@ export function useVisualViewport(): void {
 }
 
 /**
- * Suit une requête média.
- *
- * Nécessaire là où une classe `hidden` ne suffit pas : un élément caché en CSS est
- * quand même monté, et une redirection montée est une redirection exécutée. La liste
- * de réglages en dépend, elle est la page entière au doigt et une colonne ailleurs.
+ * Track a media query. Needed where a `hidden` class is insufficient: CSS-hidden elements remain
+ * mounted, and mounted redirects still execute. Settings use this because their list occupies the
+ * whole page on touch screens and a column elsewhere.
  */
 export function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(
@@ -166,7 +142,7 @@ export function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(
     subscribe,
     () => window.matchMedia(query).matches,
-    // Rendu serveur absent ici, mais `useSyncExternalStore` réclame l'instantané.
+    // There is no server rendering here, but `useSyncExternalStore` requires a snapshot.
     () => false,
   )
 }

@@ -4,23 +4,7 @@ import { DEFAULT_CLAUDE_CONFIG, type SillageEvent } from '@sillage/protocol'
 import { ClaudeRunner } from '../agents/claude/runner.js'
 import type { RunnerContext } from '../agents/types.js'
 
-/**
- * Sonde des réglages de session portés par la couche « flag » du CLI : style de
- * réponse, mode rapide, suggestions de message suivant.
- *
- * Rien de tout ça n'est documenté au-delà des types du SDK : `applyFlagSettings` est
- * annoncé « streaming input only », l'opt-in du mode rapide par le SDK
- * (`sdk_opt_in_required`) n'apparaît que dans une union de motifs, et les suggestions
- * n'arrivent qu'après le `result`. Le comportement est donc relevé plutôt que déduit,
- * et cette sonde est ce qui permettra de le revérifier au prochain bump du SDK.
- *
- * Deux tours minuscules. Le premier en vitesse normale et style `Concise` doit produire
- * un seul `session.started`, une suggestion et aucun avis de mode rapide. Le second,
- * après passage à chaud en mode rapide, doit produire l'avis « activé », ou nommer
- * l'empêchement que le compte oppose. Ne remplace pas un test : elle lance un vrai CLI
- * authentifié et coûte deux vrais tours, dont un au tarif du mode rapide, en crédits
- * d'usage. Elle se lance à la main, quand on touche à ce chemin.
- */
+/** Probes CLI flag-layer session settings: output style, fast mode and next-message suggestions. Documentation exposes little beyond SDK types: `applyFlagSettings` is streaming-input-only, SDK fast opt-in (`sdk_opt_in_required`) appears only in reason unions, and suggestions follow `result`. Measure behavior for future SDK bumps. Tiny turns should produce one session start, suggestions and no fast notice in standard Concise mode, then fast-mode activation or account rejection after live changes. Manual authenticated real-CLI probe, not tests, costing actual turns including usage-credit fast pricing. */
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -56,11 +40,11 @@ async function main(): Promise<void> {
 
   const config = {
     ...DEFAULT_CLAUDE_CONFIG,
-    // Ce que `resolveDefaults` donne à une conversation réelle : la ligne `default` du
-    // catalogue, que `setModel` accepte, là où la sentinelle vide le fait échouer.
+    // Real `resolveDefaults` uses catalog `default`, accepted by `setModel`,
+    // unlike empty sentinels that fail.
     model: 'default',
-    // `bypassPermissions` : la sonde ne peut répondre à aucune demande, et une réponse
-    // d'un mot dans un dossier temporaire n'en appelle aucune.
+    // `bypassPermissions`: probes cannot answer requests, and single-word replies
+    // in temporary directories require no judgment.
     permissionMode: 'bypassPermissions' as const,
     outputStyle: 'Concise',
   }
@@ -92,10 +76,7 @@ async function main(): Promise<void> {
   const runner = new ClaudeRunner(ctx)
   await runner.start()
 
-  /**
-   * Un tour, attendu jusqu'à son terme puis un peu au-delà : la suggestion arrive après
-   * le `result`, produite par un appel de plus, et quelques secondes lui suffisent.
-   */
+  /** Wait through turn completion and slightly beyond: suggestions use an additional call after `result`, normally a few seconds. */
   const turn = async (label: string, text: string): Promise<boolean> => {
     console.log(label)
     await runner.send(text, [], [], [])
@@ -107,10 +88,10 @@ async function main(): Promise<void> {
     return true
   }
 
-  // Deux tours en vitesse normale : le CLI tait la suggestion sur le premier tour d'une
-  // session, c'est le second qui doit la produire. Le mode rapide vient en dernier,
-  // parce qu'un refus de l'API (crédits d'usage) compte comme une erreur et tait aussi
-  // la suggestion de son tour.
+  // Two standard-speed turns: CLI suppresses suggestions on first turns and should
+  // produce them on second turns. Fast mode comes last because API credit
+  // rejections count as errors and also suppress
+  // the suggestion for that turn.
   if (!(await turn('tour 1 : vitesse normale, style Concise', 'Reply with exactly OK and nothing else.'))) {
     await runner.stop()
     return

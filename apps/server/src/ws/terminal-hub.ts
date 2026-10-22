@@ -8,13 +8,7 @@ import { TerminalError, type TerminalManager } from '../terminals/terminal-manag
 import type { AppContext } from '../http/context.js'
 import { visibleProject } from '../http/routes/projects.js'
 
-/**
- * Socket du terminal, séparée de celle du journal.
- *
- * Un socket par vue de terminal ouverte, et non un multiplexage : il n'y a qu'un
- * terminal visible à la fois, et le débit d'une sortie de compilation n'a pas à
- * ralentir la diffusion des événements de conversation.
- */
+/** Terminal socket separate from the journal socket. One socket per open terminal view rather than multiplexing: only one terminal is visible at once, and build output must not slow conversation-event delivery. */
 export function registerTerminalHub(
   app: FastifyInstance,
   ctx: AppContext,
@@ -40,17 +34,17 @@ export function registerTerminalHub(
         if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message))
       }
 
-      // Le terminal est ouvert par la route REST, jamais par la socket : c'est elle
-      // qui applique le plafond et rend l'identifiant, et une socket qui créerait à
-      // l'attachement en ouvrirait un à chaque reconnexion.
+      // REST opens terminals, never sockets: the route is
+      // which enforces limits and returns IDs; creating terminals on socket attachment
+      // would open another on every reconnect.
       const terminalId = request.query.terminalId ?? ''
 
       let attached
       try {
         attached = terminals.attach(projectId, terminalId, {
           onOutput: (data) => send({ t: 'output', data }),
-          // La socket reste ouverte : le client garde l'écran final à l'écran, et
-          // c'est la fermeture de l'onglet qui décide de s'en défaire.
+          // Keep sockets open so clients retain the final screen;
+          // closing the tab decides when to discard it.
           onExit: (code) => send({ t: 'exit', code }),
         })
       } catch (err) {
@@ -81,8 +75,8 @@ export function registerTerminalHub(
         else terminals.resize(projectId, terminalId, parsed.cols, parsed.rows)
       })
 
-      // Le terminal continue de tourner : fermer l'onglet ne doit pas interrompre une
-      // commande en cours. C'est l'inactivité prolongée qui finit par le libérer.
+      // Keep terminals running: closing tabs must not interrupt active commands.
+      // Extended inactivity eventually releases them.
       socket.on('close', attached.detach)
     },
   )

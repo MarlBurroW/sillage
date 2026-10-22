@@ -5,7 +5,7 @@ import { useGlobalInstructions, useSaveGlobalInstructions } from '../../lib/inst
 import { cx } from '../ui'
 import { Question, StepTitle, Tip, Why, useCommit, useGate, type StepProps } from './shell'
 
-/** Les consignes proposées : un libellé pour la puce, une ligne pour le texte. */
+/** Suggested instructions with chip labels and text lines. */
 const SUGGESTIONS: { id: string; label: MessageKey; text: MessageKey }[] = [
   { id: 'language', label: 'onboarding.rules.suggest.language', text: 'onboarding.rules.suggest.language.text' },
   { id: 'commits', label: 'onboarding.rules.suggest.commits', text: 'onboarding.rules.suggest.commits.text' },
@@ -21,14 +21,14 @@ const SUGGESTIONS: { id: string; label: MessageKey; text: MessageKey }[] = [
 ]
 
 /**
- * Les consignes globales de SILLAGE.md, écrites depuis des puces ou à la main, et
- * enregistrées à « Continuer » : un texte ne se sauve pas à chaque frappe.
+ * Global SILLAGE.md instructions entered via chips or manually, saved on Continue rather than every
+ * keystroke.
  */
 export function RulesStep({ nav, state }: StepProps) {
   const t = useTranslate()
   const { data } = useGlobalInstructions()
   const save = useSaveGlobalInstructions()
-  // Null tant qu'on n'a pas tapé : le contenu déjà enregistré s'affiche tel quel.
+  // Null until typing: display saved content unchanged.
   const [draft, setDraft] = useState<string | null>(null)
   const value = draft ?? data?.content ?? ''
 

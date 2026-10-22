@@ -8,28 +8,27 @@ import {
 } from './skill-library.js'
 
 /**
- * Sources de la bibliothèque de skills : des dépôts git d'où l'on installe.
+ * Skill library sources: git repositories used for installation.
  *
- * Installer copie le skill et retient le commit. Rien de ce qui arrive ensuite dans le
- * dépôt n'entre dans le contexte des agents sans qu'on l'ait relu : une mise à jour se
- * montre en diff, et ne s'applique qu'à la demande.
+ * Installation copies the skill and records its commit. Later repository changes do not enter
+ * agent context without review: updates are shown as diffs and applied only on request.
  */
 
 export interface SkillSourceDto {
   id: string
   name: string
   url: string
-  /** Branche ou tag, null pour la branche par défaut. */
+  /** Branch or tag; null for the default branch. */
   ref: string | null
-  /** Dossier du dépôt où chercher les skills, null pour tout le dépôt. */
+  /** Repository directory to search for skills; null for the whole repository. */
   subpath: string | null
   builtin: boolean
   enabled: boolean
-  /** Commit du dernier rafraîchissement réussi, null tant que rien n'a été récupéré. */
+  /** Commit of the latest successful refresh; null before any fetch. */
   lastCommit: string | null
   lastFetchedAt: number | null
   lastError: string | null
-  /** Skills du dernier catalogue, null tant que la source n'a pas été récupérée. */
+  /** Skills from the latest catalog; null before fetching the source. */
   skillCount: number | null
 }
 
@@ -38,8 +37,8 @@ export interface SkillSourceListDto {
 }
 
 /**
- * `url` accepte une URL de dépôt, ou `owner/repo` pour GitHub, la forme sous laquelle
- * skills.sh et les README désignent un dépôt.
+ * `url` accepts a repository URL or GitHub `owner/repo`, the form used by skills.sh and
+ * READMEs.
  */
 export const createSkillSourceBodySchema = z.object({
   url: z.string().trim().min(1).max(500),
@@ -60,14 +59,14 @@ export const updateSkillSourceBodySchema = z
   .partial()
 export type UpdateSkillSourceBody = z.infer<typeof updateSkillSourceBodySchema>
 
-/** Un skill d'une source, et ce que la bibliothèque en a déjà installé. */
+/** A source skill and what the library has already installed from it. */
 export interface SourceSkillDto {
-  /** Chemin du dossier dans le dépôt, clé de l'installation. */
+  /** Directory path within the repository, used as the installation key. */
   path: string
   name: string
   description: string
   problem: 'skill_unreadable' | 'skill_name_invalid' | null
-  /** Le skill embarque des scripts, que l'agent exécutera. */
+  /** The skill bundles scripts that the agent will execute. */
   scripts: boolean
   installed: {
     skillId: string
@@ -84,8 +83,8 @@ export interface SkillSourceCatalogDto {
 }
 
 /**
- * Ce qu'on relit avant d'installer : le `SKILL.md` entier, tel que le modèle le
- * recevra, et la liste des fichiers qui viendront avec.
+ * Review before installation: full `SKILL.md` as the model will receive it, plus the list of
+ * accompanying files.
  */
 export interface SourceSkillPreviewDto {
   path: string
@@ -94,7 +93,7 @@ export interface SourceSkillPreviewDto {
   files: string[]
 }
 
-/** Chemin d'un skill dans sa source. Vide quand le dépôt lui-même est le skill. */
+/** Skill path within its source. Empty if the repository itself is the skill. */
 export const sourceSkillPathSchema = z.union([z.literal(''), skillFilePathSchema])
 
 export const installSourceSkillBodySchema = z
@@ -110,7 +109,7 @@ export const installSourceSkillBodySchema = z
   })
 export type InstallSourceSkillBody = z.infer<typeof installSourceSkillBodySchema>
 
-/** Ce qu'appliquer la mise à jour changerait, en diff unifié, du skill vers la source. */
+/** What applying the update would change, as a unified diff from the skill to the source. */
 export interface LibrarySkillUpdateDto {
   skill: LibrarySkillDto
   fromCommit: string
@@ -118,9 +117,9 @@ export interface LibrarySkillUpdateDto {
   patch: string
 }
 
-/** Un résultat de skills.sh. `sourceId` désigne la source déjà déclarée pour ce dépôt. */
+/** A skills.sh result. `sourceId` identifies the already registered source for this repository. */
 export interface SkillSearchResultDto {
-  /** `owner/repo` sur GitHub. */
+  /** GitHub `owner/repo`. */
   repository: string
   name: string
   installs: number
@@ -128,9 +127,8 @@ export interface SkillSearchResultDto {
 }
 
 /**
- * `available` à faux quand skills.sh n'a pas répondu comme attendu : son API n'est pas
- * documentée, et l'interface masque alors la recherche plutôt que d'afficher une
- * erreur qui ne dépend pas de l'utilisateur.
+ * `available` is false when skills.sh responds unexpectedly: its API is undocumented, so the UI
+ * hides search rather than showing an error beyond the user's control.
  */
 export interface SkillSearchDto {
   available: boolean

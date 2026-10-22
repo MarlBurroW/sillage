@@ -55,26 +55,9 @@ import {
   type AcpDiff,
 } from './tools.js'
 
-/**
- * Adaptateur Grok Build (invariant I3) : traduit le flux ACP de `grok agent stdio` vers
- * le schéma d'événements commun.
- *
- * Un process par conversation, comme l'app-server de Codex. Un tour, c'est un
- * `session/prompt` : sa réponse n'arrive qu'à la fin, avec la raison d'arrêt et la
- * consommation. Modèle, effort et mode de permission se changent à chaud ; les outils
- * web, les skills et les serveurs MCP tiennent au lancement.
- *
- * Grok double l'ACP standard d'extensions `_x.ai/…`, dans les deux sens : des
- * notifications (`_x.ai/session_notification`…), et des requêtes qui attendent une
- * réponse (`_x.ai/ask_user_question`, `_x.ai/exit_plan_mode`, `_x.ai/mcp/elicit`).
- * Seules les extensions qui disent ce que le standard tait sont lues ; les autres sont
- * du bruit d'interface (annonces, astuces, file d'attente du TUI).
- *
- * Tout ce qui est affirmé ici a été sondé sur Grok Build 1.0.62, et lu dans ses sources
- * publiques (xai-org/grok-build, Apache-2.0).
- */
+/** Grok Build adapter (invariant I3) normalizing `grok agent stdio` ACP. One process per conversation like Codex; turns are `session/prompt` requests responding only at completion with stop reasons and usage. Model, effort and permission mode change live; web tools, skills and MCP servers are launch-time settings. Grok extends ACP with `_x.ai/…` notifications and requests (`_x.ai/ask_user_question`, `_x.ai/exit_plan_mode`, `_x.ai/mcp/elicit`). Read only extensions adding otherwise unavailable state; ignore interface noise such as tips and TUI queues. All claims probed on Grok Build 1.0.62 and checked in public xai-org/grok-build Apache-2.0 sources. */
 
-/** Notifications `_x.ai/…` sans rapport avec ce que le journal raconte. */
+/** `_x.ai/…` notifications unrelated to journal content. */
 const NOISE = new Set([
   '_x.ai/session/setup', '_x.ai/announcements/update', '_x.ai/settings/update', '_x.ai/models/update',
   '_x.ai/sessions/changed', '_x.ai/queue/changed', '_x.ai/session/prompt_complete', '_x.ai/mcp/init_progress',
@@ -82,36 +65,33 @@ const NOISE = new Set([
   '_x.ai/fs_notify', '_x.ai/fs/index', '_x.ai/fs/index/delta', '_x.ai/session/interjection', '_x.ai/hooks/event',
 ])
 
-/** Variantes de `_x.ai/session_notification` lues ailleurs, ou sans intérêt pour le fil. */
+/** `_x.ai/session_notification` variants handled elsewhere or irrelevant to conversations. */
 const NOTIFICATION_NOISE = new Set([
   'tool_call_delta_chunk', 'pending_interaction', 'interaction_resolved', 'response_completed', 'response_started',
   'turn_usage', 'model_changed', 'session_summary_generated', 'last_turn_summary', 'turn_completed',
   'image_compressed', 'auto_continue_completed',
 ])
 
-/** Un `costUsdTicks` vaut un dix-milliardième de dollar (sondé : 0,033 $ pour 330 643 200). */
+/** `costUsdTicks` are ten-billionths of dollars (probed: $0.033 for 330,643,200). */
 const USD_PER_TICK = 1e-10
 
-/** Délai accordé à Grok pour clore un tour annulé avant de forcer la fin. */
+/** Grace period for Grok to close canceled turns before forced completion. */
 const CANCEL_GRACE_MS = 15_000
 
-/**
- * Suites proposées à la validation d'un plan. Grok repasse de lui-même en mode
- * `default` après l'approbation ; « laisser décider » le met ensuite en `auto`.
- */
+/** Plan-approval follow-up choices. Grok returns to `default` itself; 'let agent decide' subsequently switches to `auto`. */
 const PLAN_FOLLOW_UP_OPTIONS: PlanFollowUpOption[] = [
   { id: 'default', label: 'Valider et demander', hint: 'Chaque écriture et chaque commande restent soumises à ton accord' },
   { id: 'auto', label: 'Valider et laisser décider', hint: "Grok n'interrompt que pour ce qui lui paraît risqué" },
 ]
 
-/** Un bloc de texte ou de réflexion en cours d'écriture. */
+/** Text or reasoning block currently streaming. */
 interface OpenText {
   kind: 'text' | 'thinking'
   id: string
   text: string
 }
 
-/** Ce qu'on a déjà dit d'un appel d'outil, pour ne journaliser que ce qui change. */
+/** Already-journaled tool state, preventing unchanged updates. */
 interface ToolTrack {
   native: string
   input: string
@@ -127,7 +107,7 @@ interface PromptUsage {
   costUsdTicks?: number
 }
 
-/** Ce qu'un mode de Sillage demande à Grok : les drapeaux de permission, et le mode de session. */
+/** Grok permission flags and session mode requested by Sillage modes. */
 function permissionFlags(mode: GrokPermissionMode): { yoloMode: boolean; autoMode: boolean; sessionMode: string } {
   return {
     yoloMode: mode === 'bypassPermissions',
@@ -143,45 +123,37 @@ export class GrokRunner implements AgentRunner {
   private sessionId: string | null = null
   private config: GrokConfig
   private launched: GrokLaunch | null = null
-  /** Serveurs MCP avec lesquels la session a été ouverte. */
+  /** MCP servers used when opening sessions. */
   private launchedMcp = ''
   private readonly interactions: PendingInteractions
   private readonly durations = new ToolDurations()
 
   private open: OpenText | null = null
   private readonly tools = new Map<string, ToolTrack>()
-  /** Appels sans carte (`ask_user_question`), à ne pas annoncer quand leurs mises à jour arrivent. */
+  /** Cardless calls (`ask_user_question`) whose later updates must remain hidden. */
   private readonly silentTools = new Set<string>()
   private mcpNames: string[] = []
   private mcpFailures: McpServerStatus[] = []
   private readonly mcpStatus = new Map<string, McpServerStatus>()
-  /** Élicitation MCP de Grok (`elicitationId`) vers la demande Sillage. */
+  /** Grok MCP `elicitationId` to Sillage request mapping. */
   private readonly elicitations = new Map<string, string>()
   private commandNames = new Set<string>()
-  /**
-   * Derniers relevés publiés. Grok republie ses commandes à chaque étape du modèle et
-   * la taille du contexte sur chaque mise à jour, morceaux de texte compris : seuls les
-   * changements partent au journal.
-   */
+  /** Latest published snapshots. Grok repeats commands at every model step and context sizes on every update including text fragments; journal only changes. */
   private lastCommands = ''
   private lastContext = 0
   private readonly noticed = new Set<string>()
 
   private turnActive = false
   private cancelWatchdog: NodeJS.Timeout | null = null
-  /** Une compaction demandée par Sillage est en cours. */
+  /** Sillage-requested compaction in progress. */
   private compacting: 'manual' | 'auto' | null = null
-  /** Fenêtre de contexte par modèle, lue dans le catalogue de la session. */
+  /** Per-model context windows from session catalogs. */
   private readonly contextLimits = new Map<string, number>()
   private currentModel: string | null = null
   private currentEffort: string | null = null
   private sessionMode = 'default'
   private suggested: string | null = null
-  /**
-   * Notifications reçues avant que la session ait un identifiant connu. Grok publie ses
-   * commandes et l'état de ses serveurs MCP avant de répondre à `session/new` (sondé) :
-   * elles sont rejouées une fois la réponse arrivée, plutôt que perdues.
-   */
+  /** Notifications arriving before session IDs are known. Grok publishes commands and MCP states before `session/new` responds (probed); replay after responses rather than lose them. */
   private early: [string, unknown][] | null = []
 
   get appliedConfig(): AgentConfig {
@@ -226,9 +198,9 @@ export class GrokRunner implements AgentRunner {
     this.readModels(fields(fields(init._meta).modelState))
 
     const flags = permissionFlags(this.config.permissionMode)
-    // Les consignes du dépôt se coupent par le profil d'agent : `agentsMd: false` est le
-    // seul interrupteur, les fichiers `AGENTS.md`/`CLAUDE.md` étant lus quoi qu'il arrive
-    // sinon. Le profil remplace celui par défaut sans en changer les outils (sondé).
+    // Disable repository instructions through agent profiles: `agentsMd: false` is
+    // the sole switch; otherwise `AGENTS.md`/`CLAUDE.md` always load.
+    // Profiles replace defaults without changing tools (probed).
     const masked = this.ctx.maskedInstructionRoots().length > 0
     const meta = {
       yoloMode: flags.yoloMode,
@@ -241,8 +213,8 @@ export class GrokRunner implements AgentRunner {
     let session: NewSessionResponse | ResumeSessionResponse
     let sessionId: string
     if (this.ctx.resumeSessionId) {
-      // `session/resume` et non `session/load` : la seconde rejoue tout l'historique en
-      // `session/update`, que le journal a déjà. Elle refuse `additionalDirectories`.
+      // Use session/resume rather than session/load: the latter replays all history through
+      // `session/update`, already journaled. It rejects `additionalDirectories`.
       session = await this.client.request<ResumeSessionResponse>('session/resume', {
         sessionId: this.ctx.resumeSessionId,
         cwd: this.ctx.cwd,
@@ -251,10 +223,10 @@ export class GrokRunner implements AgentRunner {
       })
       sessionId = this.ctx.resumeSessionId
     } else {
-      // Le texte de projet (SILLAGE.md, mémoire, transfert) part en `rules`, que Grok
-      // ajoute à son prompt système dans un bloc `<human_rules>`. Lu à la création
-      // seulement : une reprise garde le prompt système enregistré avec la session.
-      // Le champ `systemPrompt` de l'ACP, lui, est ignoré (sondé).
+      // Project instructions (SILLAGE.md, memory, handoff) go through `rules`, appended
+      // to system prompts in `<human_rules>`. Read only on creation:
+      // resumes retain saved system prompts.
+      // ACP `systemPrompt` is ignored (probed).
       const rules = this.ctx.projectOverview(this.config)
       const created = await this.client.request<NewSessionResponse>('session/new', {
         cwd: this.ctx.cwd,
@@ -293,7 +265,7 @@ export class GrokRunner implements AgentRunner {
     for (const [method, params] of early) this.onNotification(method, params)
   }
 
-  /** Fenêtres de contexte et modèle courant, dans `_meta.modelState` ou `models`. */
+  /** Context windows and current model in `_meta.modelState` or `models`. */
   private readModels(models: Record<string, unknown>): void {
     for (const entry of Array.isArray(models.availableModels) ? models.availableModels : []) {
       const model = fields(entry)
@@ -312,10 +284,7 @@ export class GrokRunner implements AgentRunner {
     }
   }
 
-  /**
-   * Modèle et effort de la configuration, posés sur la session quand ils diffèrent de
-   * ce qu'elle annonce. `CLI_DEFAULT` laisse la valeur de Grok.
-   */
+  /** Apply configured model/effort when differing from announced session settings. `CLI_DEFAULT` preserves Grok values. */
   private async applySessionOptions(config: GrokConfig): Promise<void> {
     const wanted: [string, string, string | null][] = [
       ['model', config.model, this.currentModel],
@@ -331,11 +300,7 @@ export class GrokRunner implements AgentRunner {
     }
   }
 
-  /**
-   * Le mode de permission, à chaud. `yoloMode` et `autoMode` passent par la notification
-   * `_x.ai/yolo_mode_changed`, qui vise toutes les sessions du process : il n'y en a
-   * qu'une. Le mode plan est un mode de session (`session/set_mode`).
-   */
+  /** Live permission modes. Notify `_x.ai/yolo_mode_changed` for `yoloMode`/`autoMode`, affecting all process sessions, of which there is one. Plan mode uses `session/set_mode`. */
   private async applyPermissionMode(mode: GrokPermissionMode, initial = false): Promise<void> {
     const flags = permissionFlags(mode)
     if (!initial) this.client!.notify('_x.ai/yolo_mode_changed', { yolo_mode: flags.yoloMode, auto_mode: flags.autoMode })
@@ -354,7 +319,7 @@ export class GrokRunner implements AgentRunner {
     const wasStarted = this.sessionId !== null
     this.turnActive = false
     this.clearCancelWatchdog()
-    // Mort pendant le démarrage : `start()` échoue et le gestionnaire remonte l'erreur.
+    // Death during startup makes `start()` fail; managers report it.
     if (!wasStarted) return
 
     this.interactions.expireAll()
@@ -368,7 +333,7 @@ export class GrokRunner implements AgentRunner {
     })
   }
 
-  // ─── Flux entrant ────────────────────────────────────────────────────────────
+  // ─── Incoming stream ────────────────────────────────────────────────────────────
 
   private onNotification(method: string, params: unknown): void {
     if (this.early) {
@@ -377,8 +342,8 @@ export class GrokRunner implements AgentRunner {
     }
     if (method === 'session/update') {
       const notification = params as SessionNotification
-      // Les sous-agents publient sous l'identifiant de leur propre session : seul le
-      // résultat de leur appel `task` remonte dans le fil.
+      // Subagents publish under their own session ID; only
+      // their `task` results return to the main conversation.
       if (notification.sessionId !== this.sessionId) return
       this.onUpdate(notification)
       return
@@ -405,7 +370,7 @@ export class GrokRunner implements AgentRunner {
 
   private onUpdate(notification: SessionNotification): void {
     const { update } = notification
-    // La taille du contexte voyage dans le `_meta` de chaque mise à jour.
+    // Context sizes accompany every update's `_meta`.
     const totalTokens = fields(notification._meta).totalTokens
     if (typeof totalTokens === 'number' && totalTokens > 0) this.reportContext(totalTokens)
 
@@ -418,7 +383,7 @@ export class GrokRunner implements AgentRunner {
         return
       }
       case 'user_message_chunk':
-        // L'écho de ce que Sillage a déjà journalisé à l'envoi.
+        // Echo of input Sillage already journaled on send.
         return
       case 'tool_call':
         this.closeText()
@@ -464,7 +429,7 @@ export class GrokRunner implements AgentRunner {
     }
   }
 
-  /** Les variantes propres à Grok, que l'ACP standard ne porte pas. */
+  /** Grok-specific variants absent from standard ACP. */
   private onExtensionUpdate(update: Record<string, unknown>): void {
     const kind = typeof update.sessionUpdate === 'string' ? update.sessionUpdate : ''
     switch (kind) {
@@ -496,10 +461,7 @@ export class GrokRunner implements AgentRunner {
     }
   }
 
-  /**
-   * Grok change de mode de lui-même en sortant du plan validé. La configuration suit,
-   * pour que les réglages et une reprise ne repartent pas en mode plan.
-   */
+  /** Grok changes modes itself after plan approval. Update configuration so controls and resumed sessions do not revert to plan mode. */
   private onModeChanged(mode: string): void {
     this.sessionMode = mode
     if (mode !== 'plan' && this.config.permissionMode === 'plan') {
@@ -526,10 +488,7 @@ export class GrokRunner implements AgentRunner {
     })
   }
 
-  /**
-   * Texte et réflexion arrivent en morceaux, sans identifiant de message (sondé) : un
-   * bloc court jusqu'à ce qu'un autre genre de contenu l'interrompe.
-   */
+  /** Text/reasoning chunks have no message IDs (probed): retain blocks until another content kind interrupts. */
   private appendText(kind: OpenText['kind'], text: string): void {
     if (!text) return
     if (this.open && this.open.kind !== kind) this.closeText()
@@ -570,10 +529,7 @@ export class GrokRunner implements AgentRunner {
     this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, parentToolCallId: null }, raw)
   }
 
-  /**
-   * Une mise à jour d'appel : l'entrée se précise (Grok y ajoute `variant`), la sortie
-   * d'une commande grossit dans `rawOutput.output`, puis l'appel se clôt.
-   */
+  /** Tool updates refine input (Grok adds `variant`), accumulate command `rawOutput.output`, then complete calls. */
   private onToolUpdate(
     id: string,
     update: { status?: string | null; rawInput?: unknown; rawOutput?: unknown; content?: unknown },
@@ -613,7 +569,7 @@ export class GrokRunner implements AgentRunner {
         isError: failed,
         durationMs: this.durations.stop(id),
       },
-      // Les blocs `diff` arrivent avant la clôture : gardés ici pour `describeEdit`.
+      // Retain pre-completion `diff` blocks for `describeEdit`.
       { update, diffs: track.diffs },
     )
     if (!failed) for (const event of this.fileEdits(id, track)) this.ctx.emit(event)
@@ -643,7 +599,7 @@ export class GrokRunner implements AgentRunner {
     this.publishMcp()
   }
 
-  // ─── Requêtes de l'agent ─────────────────────────────────────────────────────
+  // ─── Agent requests ─────────────────────────────────────────────────────────
 
   private onRequest(method: string, params: unknown): Promise<unknown> {
     switch (method) {
@@ -660,12 +616,7 @@ export class GrokRunner implements AgentRunner {
     }
   }
 
-  /**
-   * Une demande de permission. Grok propose ses options (`allow-once`,
-   * `allow-edits-session`, `always-allow`, `reject-once`…) et lit la réponse par son
-   * genre : celle qui correspond au geste de l'utilisateur, l'identifiant restant le sien.
-   * Un refus clôt le tour entier côté Grok (`PermissionRejected`), pas seulement l'appel.
-   */
+  /** Permission requests. Grok proposes native options (`allow-once`, `allow-edits-session`, `always-allow`, `reject-once`…) and reads responses by kind; choose the user action's option while retaining its native ID. Rejections end whole turns (`PermissionRejected`), not just calls. */
   private onPermission(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const call = request.toolCall
     const described = describeTool(nativeToolName(call._meta, call.title), call.rawInput)
@@ -687,10 +638,7 @@ export class GrokRunner implements AgentRunner {
     })
   }
 
-  /**
-   * Une question de l'outil `ask_user_question`. Grok attend les réponses par intitulé
-   * de question, qui sert donc de clé.
-   */
+  /** `ask_user_question` requests keyed by question headings as Grok requires. */
   private onQuestion(params: Record<string, unknown>): Promise<unknown> {
     const listed = Array.isArray(params.questions) ? params.questions.map(fields) : []
     const questions: AgentQuestion[] = listed
@@ -715,7 +663,7 @@ export class GrokRunner implements AgentRunner {
     })
   }
 
-  /** Le plan que Grok soumet en sortant du mode plan (`exit_plan_mode`). */
+  /** Plan submitted by Grok when leaving plan mode (exit_plan_mode). */
   private onPlanReview(params: Record<string, unknown>): Promise<unknown> {
     return new Promise((resolve) => {
       this.interactions.requestPlanReview(
@@ -728,7 +676,7 @@ export class GrokRunner implements AgentRunner {
           resolve({ outcome: 'approved' })
           const parsed = grokPermissionModeSchema.safeParse(review.followUpMode)
           const mode = parsed.success && (parsed.data === 'auto' || parsed.data === 'default') ? parsed.data : 'default'
-          // Grok repasse en `default` de lui-même ; seul `auto` demande un geste de plus.
+          // Grok returns to `default` itself; only `auto` needs another action.
           this.sessionMode = 'default'
           if (mode === 'auto') this.client?.notify('_x.ai/yolo_mode_changed', { yolo_mode: false, auto_mode: true })
           this.config = { ...this.config, permissionMode: mode }
@@ -765,20 +713,16 @@ export class GrokRunner implements AgentRunner {
     this.ctx.emit({ type: 'agent.notice', id, code, message, level, details }, details)
   }
 
-  /** Un événement d'une version plus récente reste visible, une fois. */
+  /** Future-version events remain visible once. */
   private noticeOnce(key: string, message: string, details: unknown): void {
     if (this.noticed.has(key)) return
     this.noticed.add(key)
     this.notice(key, message, 'info', details, `grok-notice:${key}`)
   }
 
-  // ─── Tours ───────────────────────────────────────────────────────────────────
+  // ─── Turns ───────────────────────────────────────────────────────────────────
 
-  /**
-   * Le corps d'un tour. Grok annonce `image: false` mais lit les blocs image que son
-   * TUI lui envoie ; les fichiers mentionnés partent en liens `file://`, qu'il développe
-   * comme un `@chemin`. Les autres pièces jointes restent un chemin dans le texte.
-   */
+  /** Turn body. Grok announces `image: false` but reads image blocks its TUI sends. Mentioned files become `file://` links expanded like `@path`; other attachments remain textual paths. */
   private promptBlocks(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): AcpContentBlock[] {
     const { promptText } = describeOutgoingMessage(text, attachments)
     const blocks: AcpContentBlock[] = []
@@ -802,7 +746,7 @@ export class GrokRunner implements AgentRunner {
     const { blocks } = describeOutgoingMessage(text, attachments)
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
 
-    // Une commande en `/` connue de Grok part telle quelle : il la développe lui-même.
+    // Known slash commands pass unchanged for Grok expansion.
     const command = parseSlashCommand(text)
     const prompt = command && this.commandNames.has(command.name)
       ? [{ type: 'text' as const, text }]
@@ -823,11 +767,11 @@ export class GrokRunner implements AgentRunner {
     try {
       const response = await client.request<PromptResponse>('session/prompt', { sessionId: this.sessionId, prompt }, null)
       const meta = fields(response._meta)
-      // Un refus de permission clôt le tour en `cancelled` : c'est un refus, pas une interruption.
+      // Permission rejections end turns as `cancelled`: rejection, not interruption.
       const stopReason = meta.cancellationCategory === 'PermissionRejected' ? 'permission_denied' : response.stopReason
       this.endTurn(stopReason, meta.usage as PromptUsage | undefined, response)
     } catch (error) {
-      // La mort du process se raconte par `onProcessExit`.
+      // Process death is reported through onProcessExit.
       if (!this.client) return
       this.ctx.emit({
         type: 'error',
@@ -855,8 +799,8 @@ export class GrokRunner implements AgentRunner {
         type: 'turn.completed',
         stopReason: stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : stopReason,
         costUsd: (usage?.costUsdTicks ?? 0) * USD_PER_TICK,
-        // `inputTokens` compte le cache chez Grok, qui le détaille à part : le journal,
-        // lui, sépare les deux comme pour les autres CLI.
+        // Grok `inputTokens` includes cache usage reported separately;
+        // journals separate both like other CLIs.
         inputTokens: Math.max(0, (usage?.inputTokens ?? 0) - (usage?.cachedReadTokens ?? 0)),
         outputTokens: usage?.outputTokens ?? 0,
         cacheReadTokens: usage?.cachedReadTokens ?? 0,
@@ -873,12 +817,12 @@ export class GrokRunner implements AgentRunner {
       this.ctx.setStatus('idle')
       return
     }
-    // Une demande en attente bloque le tour : Grok la laisse tomber à l'annulation, et
-    // la réponse « annulée » qu'elle recevra ici ne change plus rien.
+    // Pending requests block turns. Grok drops them on cancellation,
+    // so canceled responses here no longer affect anything.
     this.interactions.expireAll()
     this.client.notify('session/cancel', { sessionId: this.sessionId })
-    // La réponse au `session/prompt` (`cancelled`) clôt le tour. Le garde-fou couvre le
-    // cas où elle ne vient jamais.
+    // `session/prompt` canceled responses end turns;
+    // safeguards cover responses that never arrive.
     this.clearCancelWatchdog()
     this.cancelWatchdog = setTimeout(() => this.endTurn('cancelled', undefined, null), CANCEL_GRACE_MS)
     this.cancelWatchdog.unref()
@@ -889,11 +833,7 @@ export class GrokRunner implements AgentRunner {
     this.cancelWatchdog = null
   }
 
-  /**
-   * Infléchit le tour en cours par `_x.ai/interject` : Grok glisse le texte au prochain
-   * point sûr du tour (sondé). Un second `session/prompt`, lui, attendrait la fin du tour
-   * dans la file de Grok. Les pièces jointes partent par leur chemin.
-   */
+  /** Steers through `_x.ai/interject`, injecting text at the next safe point (probed). Another `session/prompt` would queue until completion. Attachments use paths. */
   async steer(text: string, attachments: OutgoingAttachment[]): Promise<boolean> {
     if (!this.client || !this.sessionId || !this.turnActive) return false
     const { blocks, promptText } = describeOutgoingMessage(text, attachments.map((attachment) => ({ ...attachment, inlineImage: false })))
@@ -902,10 +842,7 @@ export class GrokRunner implements AgentRunner {
     return true
   }
 
-  /**
-   * Compaction par `_x.ai/compact_conversation`, qui répond une fois le résumé écrit.
-   * La fin se lit dans `auto_compact_completed`, qui porte les tailles avant et après.
-   */
+  /** Compacts through `_x.ai/compact_conversation`, responding after summary persistence. `auto_compact_completed` reports before/after sizes. */
   async compact(): Promise<boolean> {
     const client = this.client
     if (!client || !this.sessionId || this.turnActive) return false
@@ -942,20 +879,17 @@ export class GrokRunner implements AgentRunner {
     return this.interactions.resolvePlanReview(requestId, review)
   }
 
-  /** Grok arrête une tâche de fond par un outil du modèle, pas par une requête du client. */
+  /** Grok stops background work through model tools, not client requests. */
   async stopBackgroundTask(): Promise<boolean> {
     return false
   }
 
-  /**
-   * Modèle, effort et mode de permission se changent à chaud. Les outils web, les skills
-   * et les serveurs MCP demandent un nouveau process.
-   */
+  /** Model, effort and permission modes change live; web tools, skills and MCP require fresh processes. */
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'grok' || !this.launched || !this.client || !this.sessionId) return false
     if (!sameLaunch(this.launchFor(config), this.launched)) return false
     if (JSON.stringify(this.ctx.resolveMcpServers(config).servers) !== this.launchedMcp) return false
-    // Le compte est le `GROK_HOME` du process : il ne se change qu'en le relançant.
+    // Accounts are process `GROK_HOME` and require restarting to change.
     if (config.account !== this.config.account) return false
     try {
       await this.applySessionOptions(config)
@@ -967,11 +901,7 @@ export class GrokRunner implements AgentRunner {
     return true
   }
 
-  /**
-   * La bibliothèque arrive en plugins (`--plugin-dir`) : `_x.ai/plugins/reload` les fait
-   * relire sans relancer la session. Un échec laisse les skills d'avant, il se dit dans
-   * les logs plutôt que dans le fil.
-   */
+  /** Libraries arrive through `--plugin-dir`; `_x.ai/plugins/reload` reloads without session restarts. Failures preserve old skills and go to logs rather than conversations. */
   async reloadSkillLibrary(): Promise<void> {
     if (!this.client) return
     await this.client.request('_x.ai/plugins/reload', { sessionId: this.sessionId }).catch((err: unknown) => {
@@ -992,12 +922,7 @@ export class GrokRunner implements AgentRunner {
   }
 }
 
-/**
- * Ce que le fil montre d'un appel terminé : la sortie de commande, le texte rendu, sinon
- * ce que Grok a rendu au modèle. Son `rawOutput` est l'énumération Rust de l'outil
- * (`{type: "SearchReplace", EditsApplied: {…, tool_output_for_prompt}}`) : le texte
- * destiné au modèle y est rangé sous la variante, quand il y est.
- */
+/** Completed tool display: command output, returned text or model-facing Grok output. `rawOutput` is a Rust enum (`{type: "SearchReplace", EditsApplied: {…, tool_output_for_prompt}}`), storing model text beneath variant keys when present. */
 function toolOutput(update: { rawOutput?: unknown; content?: unknown }, track: ToolTrack): unknown {
   if (track.output) return track.output
   const text = contentText(update.content)

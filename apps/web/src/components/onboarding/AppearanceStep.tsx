@@ -16,9 +16,8 @@ const THEME_ICONS: Record<Theme, ReactNode> = {
 }
 
 /**
- * Apparence : les mêmes réglages que Réglages › Apparence, appliqués en direct sur
- * `<html>` et enregistrés au compte par la synchronisation montée sur la page. Rien à
- * valider : ce que l'on voit est déjà ce qui est retenu.
+ * Same appearance controls as Settings, applied live to html and saved through page-mounted account
+ * sync. No confirmation needed: visible settings are already retained.
  */
 export function AppearanceStep({ nav }: StepProps) {
   const t = useTranslate()
@@ -52,8 +51,7 @@ export function AppearanceStep({ nav }: StepProps) {
         </div>
       </Question>
 
-      {/* Le thème contrasté est neutre par construction : teinte et ambiance n'y
-          changeraient rien. */}
+      {/* High contrast is neutral by design; hue and ambience would have no effect. */}
       {theme === 'dark-contrast' ? null : (
         <>
           <AppearancePresets appearance={appearance} theme={theme} />

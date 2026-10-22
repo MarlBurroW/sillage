@@ -2,20 +2,20 @@ import { z } from 'zod'
 import type { TerminalDto } from './terminal.js'
 
 /**
- * Actions de projet : des boutons qui lancent une commande dans le dossier du projet.
+ * Project actions: buttons that run a command in the project directory.
  *
- * Tenues par Sillage, jamais écrites dans le dépôt : chacun a son propre outillage, et
- * un `.sillage/` versionné imposerait le sien à tous ceux qui clonent.
+ * Maintained by Sillage, never written into the repository: everyone has their own tooling, and
+ * a tracked `.sillage/` would impose it on everyone who clones.
  *
- * Deux natures, parce qu'elles ne vivent pas pareil :
- * - `task` : une commande ponctuelle (tests, seed, build), jouée dans un terminal du
- *   panneau, qui se termine et laisse son écran et son code de sortie ;
- * - `service` : une commande qui tourne (serveur de dev, worker), portée par une unité
- *   systemd `sillage-app-*` pour survivre au daemon et apparaître dans Services. Sans
- *   systemd utilisateur (macOS, conteneur), elle retombe dans un terminal.
+ * Two kinds, with different lifecycles:
+ * - `task`: a one-off command (tests, seed, build) in a panel terminal; it exits and leaves its
+ * screen and exit code.
+ * - `service`: a long-running command (dev server, worker), backed by a `sillage-app-*` systemd
+ * unit to outlive the daemon and appear in Services. Without user systemd (macOS, containers),
+ * it falls back to a terminal.
  *
- * Les bornes sont ici parce que le formulaire les affiche et que l'outil MCP
- * `register_action` doit refuser la même chose que la route.
+ * Limits live here because the form displays them and the `register_action` MCP tool must
+ * reject the same inputs as the route.
  */
 
 export const MAX_ACTION_LABEL_CHARS = 60
@@ -23,16 +23,16 @@ export const MAX_ACTION_DESCRIPTION_CHARS = 300
 export const MAX_ACTION_COMMAND_CHARS = 4000
 export const MAX_ACTION_SUBDIR_CHARS = 300
 export const MAX_ACTION_URL_CHARS = 500
-/** Au-delà, ce n'est plus une barre de boutons mais un Makefile. */
+/** Beyond this, it is a Makefile rather than a button bar. */
 export const MAX_ACTIONS_PER_PROJECT = 30
 
 export const projectActionKindSchema = z.enum(['task', 'service'])
 export type ProjectActionKind = z.infer<typeof projectActionKindSchema>
 
 /**
- * Sous-dossier relatif au worktree où la commande s'exécute. Relatif et sans `..` :
- * une action suit le worktree de la conversation, un chemin absolu la ferait toujours
- * tourner au même endroit.
+ * Subdirectory relative to the worktree where the command runs. Relative and without `..`: an
+ * action follows the conversation's worktree; an absolute path would always run in the same
+ * place.
  */
 export const actionSubdirSchema = z
   .string()
@@ -43,10 +43,9 @@ export const actionSubdirSchema = z
   })
 
 /**
- * Adresse où ouvrir un service, pour un lien dans l'interface. `{port}` y est remplacé
- * par le premier port sur lequel le service écoute : l'agent n'a pas à deviner celui
- * qu'un serveur de dev aura pris. Elle doit être joignable depuis le navigateur de
- * l'utilisateur, ce qui exclut souvent `localhost` quand Sillage tourne ailleurs.
+ * Address to open a service, linked from the UI. `{port}` is replaced with the first listening
+ * port, so the agent need not guess which port a dev server chose. It must be reachable from
+ * the user's browser, often ruling out `localhost` when Sillage runs elsewhere.
  */
 export const actionUrlSchema = z
   .string()
@@ -56,14 +55,14 @@ export const actionUrlSchema = z
     message: 'An http(s) URL, optionally with {port}.',
   })
 
-/** Sans `URL`, absent des types de ce paquet partagé entre navigateur et serveur. */
+/** Avoid `URL`, absent from this package's types shared between browser and server. */
 function isHttpUrl(value: string): boolean {
   return /^https?:\/\/[^\s/?#]+(?:[/?#]\S*)?$/i.test(value)
 }
 
 /**
- * L'URL à ouvrir, ou null : sans gabarit, ou avec `{port}` alors que le service
- * n'écoute encore sur rien.
+ * URL to open, or null if there is no template, or it contains `{port}` while the service has
+ * no listening port yet.
  */
 export function resolveActionUrl(template: string | null, ports: readonly number[]): string | null {
   if (!template) return null
@@ -85,7 +84,7 @@ export type CreateProjectActionBody = z.infer<typeof createProjectActionBodySche
 export const updateProjectActionBodySchema = createProjectActionBodySchema.partial()
 export type UpdateProjectActionBody = z.infer<typeof updateProjectActionBodySchema>
 
-/** Depuis une conversation, l'action tourne dans son worktree ; sinon à la racine du projet. */
+/** From a conversation, the action runs in its worktree; otherwise at the project root. */
 export const runProjectActionBodySchema = z.object({
   conversationId: z.string().min(1).optional(),
 })
@@ -93,10 +92,10 @@ export const runProjectActionBodySchema = z.object({
 export const serviceActionControlSchema = z.enum(['stop', 'restart'])
 export type ServiceActionControl = z.infer<typeof serviceActionControlSchema>
 
-/** État d'une action `service` portée par systemd. */
+/** State of a systemd-backed `service` action. */
 export interface ProjectActionServiceState {
   unit: string
-  /** `ActiveState` de systemd ; `inactive` quand l'unité n'existe pas. */
+  /** systemd `ActiveState`; `inactive` when the unit does not exist. */
   state: string
   cwd: string | null
   ports: number[]
@@ -111,38 +110,38 @@ export interface ProjectActionDto {
   kind: ProjectActionKind
   command: string
   subdir: string | null
-  /** Gabarit d'URL d'un service, `{port}` compris ; null sans lien. */
+  /** Service URL template, including `{port}`; null for no link. */
   url: string | null
   /**
-   * `proposed` : écrite ou modifiée par un agent et pas encore relue. Un clic lance la
-   * commande hors de toute session : on la montre avant la première exécution, pour
-   * qu'une injection de prompt ne puisse pas y glisser ce qu'on lancerait sans voir.
+   * `proposed`: written or modified by an agent and not yet reviewed. Clicking runs the command
+   * outside any session: show it before its first execution so prompt injection cannot sneak in
+   * something we would run unseen.
    */
   status: 'approved' | 'proposed'
-  /** Conversation qui l'a créée ou modifiée en dernier ; null depuis l'interface. */
+  /** Conversation that last created or modified it; null from the UI. */
   agentConversationId: string | null
-  /** Son titre, pour dire d'où vient une action à relire ; null si elle n'existe plus. */
+  /** Its title, identifying the source of an action awaiting review; null if deleted. */
   agentConversationTitle: string | null
   createdAt: number
   updatedAt: number
-  /** Null pour une `task`, ou quand systemd n'est pas disponible. */
+  /** Null for a `task`, or when systemd is unavailable. */
   service: ProjectActionServiceState | null
-  /** Dernière exécution dans un terminal, tant que son onglet est ouvert. */
+  /** Latest terminal run, while its tab remains open. */
   lastRun: ProjectActionLastRun | null
 }
 
 export interface ProjectActionLastRun {
   terminalId: string
   alive: boolean
-  /** Null tant qu'elle tourne, ou si un redémarrage du daemon l'a interrompue. */
+  /** Null while running, or if a daemon restart interrupted it. */
   exitCode: number | null
   startedAt: number
 }
 
-/** Ce que rend une exécution : le terminal ouvert, ou l'unité démarrée. */
+/** Execution result: the opened terminal or started unit. */
 export interface ProjectActionRunResult {
   terminal: TerminalDto | null
   service: ProjectActionServiceState | null
-  /** Une exécution précédente tourne encore : on la rend au lieu d'en lancer une seconde. */
+  /** A previous run is still active: return it instead of launching another. */
   alreadyRunning: boolean
 }

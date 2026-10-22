@@ -2,17 +2,14 @@ import { eq } from 'drizzle-orm'
 import { secrets, type Db } from '@sillage/db'
 import { decryptValue, encryptValue } from './cipher.js'
 
-/**
- * Dépôt de secrets de l'instance, chiffré au repos par `cipher.ts`, qui documente ce
- * que ce chiffrement protège et ce qu'il ne protège pas.
- */
+/** Instance secret store encrypted at rest by `cipher.ts`, which documents protection boundaries. */
 export class SecretStore {
   constructor(
     private readonly db: Db,
     private readonly key: Buffer,
   ) {}
 
-  /** Noms et dates seuls : la valeur ne sort d'ici que par `resolve`. */
+  /** Names and dates only: values leave here solely through resolve. */
   list(): { name: string; createdAt: number; updatedAt: number }[] {
     return this.db
       .select({
@@ -25,7 +22,7 @@ export class SecretStore {
       .all()
   }
 
-  /** Écrit ou remplace. Un secret ne se modifie pas partiellement, il se réécrit. */
+  /** Writes or replaces secrets in full; partial edits are unsupported. */
   put(name: string, value: string): void {
     const encrypted = encryptValue(this.key, value)
     const now = Date.now()
@@ -47,7 +44,7 @@ export class SecretStore {
     return true
   }
 
-  /** `undefined` si le secret n'existe pas ; lève si la ligne existe mais ne se déchiffre pas. */
+  /** `undefined` for nonexistent secrets; throws for existing undecryptable rows. */
   resolve(name: string): string | undefined {
     const row = this.db.select().from(secrets).where(eq(secrets.name, name)).get()
     if (!row) return undefined

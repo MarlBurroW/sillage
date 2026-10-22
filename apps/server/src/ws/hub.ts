@@ -14,21 +14,7 @@ import { canReadConversation, readConversationState } from '../http/routes/conve
 import { watchDirectory } from '../tree-watch.js'
 import { conversationWorkspace, projectWorkspace, resolveInside } from '../workspace.js'
 
-/**
- * Routes dont le succès change ce que la sidebar des autres onglets affiche.
- *
- * Le socket ne poussait que des statuts : une session supprimée, renommée ou rangée
- * depuis un onglet restait affichée dans les autres jusqu'au rechargement. Une session
- * créée ailleurs, elle, finissait par apparaître, mais seulement parce que son premier
- * statut trahissait un identifiant inconnu.
- *
- * `personal` ne prévient que les onglets du compte appelant : un signet ne regarde
- * personne d'autre. Le curseur de lecture n'y figure pas : il avance toutes les deux
- * secondes pendant un tour, et chaque onglet relirait la liste à ce rythme.
- *
- * Le planificateur et les webhooks créent sans passer par une route : le premier statut
- * de la session suffit alors à la révéler.
- */
+/** Routes whose success changes other tabs' sidebar contents. Sockets previously pushed only statuses, leaving deleted, renamed or archived sessions stale elsewhere until reload; new sessions appeared only because initial statuses exposed unknown IDs. `personal` notifies only the caller's tabs: bookmarks concern nobody else. Exclude read cursors, which advance every two seconds during turns and would trigger constant list reloads. Scheduler and webhook creations bypass routes; their first status reveals them. */
 export const LIST_ROUTES: Record<string, 'shared' | 'personal'> = {
   'POST /api/projects/:id/conversations': 'shared',
   'POST /api/v1/projects/:id/tasks': 'shared',
@@ -59,16 +45,10 @@ export const LIST_ROUTES: Record<string, 'shared' | 'personal'> = {
   'POST /api/schedules/:id/webhook/replay': 'shared',
 }
 
-/**
- * Un socket par onglet, multiplexé sur plusieurs conversations : la sidebar suit les
- * statuts pendant que la vue principale suit un fil.
- *
- * Le socket ne fait que diffuser un journal déjà persisté (invariant I1). Sa chute
- * n'interrompt rien et ne perd rien : le client se réabonne avec son curseur.
- */
+/** One socket per tab, multiplexed across conversations: sidebars track statuses while main views follow conversations. Sockets only broadcast persisted journals (invariant I1). Disconnects interrupt and lose nothing: clients resubscribe from their cursors. */
 class Connection {
   private readonly subscriptions = new Map<string, () => void>()
-  /** Par conversation, la veille disque de chaque dossier déplié chez ce client. */
+  /** Per-conversation disk watches for this client's expanded directories. */
   private readonly treeWatches = new Map<string, Map<string, () => void>>()
   private alive = true
 
@@ -93,11 +73,11 @@ class Connection {
 
     this.unsubscribe(conversationId)
 
-    // Rattrapage avant abonnement : les événements produits pendant la coupure sont
-    // relus depuis la base, puis le flux temps réel prend le relais.
+    // Catch up before subscribing: reread missed events from the database,
+    // then switch to live streaming.
     const missed = this.log.read(conversationId, afterSeq, CATCHUP_THRESHOLD + 1)
     if (missed.length > CATCHUP_THRESHOLD) {
-      // Trop de retard pour le socket : le client rechargera par la route REST paginée.
+      // Too far behind for socket replay: clients reload through paginated REST routes.
       const last = missed[missed.length - 1]
       this.send({
         t: 'catchup',
@@ -117,9 +97,9 @@ class Connection {
       }
     }
 
-    // Instantané de statut : sans lui, un client qui s'abonne après le dernier
-    // changement resterait sur l'état qu'il avait au chargement. La sidebar n'a pas
-    // de journal à replier, elle ne peut pas le déduire elle-même.
+    // Status snapshots prevent clients subscribing after the last change from keeping
+    // their initial stale state. Sidebars have no journal
+    // from which to derive it themselves.
     this.sendStatus(conversationId)
 
     const unsubscribe = this.log.subscribe(conversationId, (entry) => {
@@ -150,31 +130,19 @@ class Connection {
     })
   }
 
-  /**
-   * Statut de chaque session vivante que ce compte peut lire, à l'ouverture du socket.
-   *
-   * Le client vide ses statuts à chaque reconnexion, ce qui a été poussé avant la
-   * coupure ne faisant plus foi, et retombe sur la liste REST. Celle-ci ne connaît ni
-   * les travaux de fond ni les boucles, qui n'existent que dans le process : sans cet
-   * instantané, leurs pastilles disparaissaient jusqu'au prochain changement de statut.
-   * Les conversations froides n'ont rien de plus que ce que la liste dit déjà.
-   */
+  /** Status of every live session this account can read when sockets open. Clients clear statuses on reconnect because pre-disconnect pushes no longer hold, falling back to REST lists. Those lists know nothing about in-process background work or loops; without snapshots, their badges disappear until another status change. Cold conversations have nothing beyond list information. */
   sendLiveStatuses(): void {
     for (const conversationId of this.sessions.warmConversationIds()) {
       if (canReadConversation(this.ctx, conversationId, this.userId)) this.sendStatus(conversationId)
     }
   }
 
-  /** Vrai si cette connexion appartient au compte et suit cette conversation. */
+  /** Whether this connection belongs to the account and follows this conversation. */
   watches(conversationId: string, userId: string): boolean {
     return this.userId === userId && this.subscriptions.has(conversationId)
   }
 
-  /**
-   * Visible et l'abonnement push de son appareil, tels que l'onglet les déclare. Faux
-   * jusqu'à la première déclaration : un onglet qui ne dit rien compte comme absent, et
-   * reçoit donc la notification système plutôt que rien.
-   */
+  /** Tab-reported visibility and device push subscription. False until first declaration: silent tabs count as absent and receive system notifications rather than nothing. */
   private visible = false
   private endpoint: string | null = null
 
@@ -196,16 +164,10 @@ class Connection {
     this.subscriptions.delete(conversationId)
   }
 
-  /**
-   * Aligne les veilles disque de cette conversation sur les dossiers déclarés.
-   *
-   * Indépendant de l'abonnement au journal : le panneau latéral lit l'arborescence
-   * d'une conversation dont aucune session ne tourne. Le droit de lecture est revérifié
-   * à chaque déclaration, comme pour le statut, plutôt que retenu du premier appel.
-   */
+  /** Aligns conversation disk watches with declared directories. Independent of journal subscriptions: side panels browse conversations without running sessions. Recheck read access on every declaration like statuses rather than retain initial permissions. */
   watchTree(scope: 'conversation' | 'project', id: string, paths: string[]): void {
-    // Les deux portées partagent la même table : un identifiant de conversation et un
-    // identifiant de projet ne peuvent pas se confondre, mais la clé le dit quand même.
+    // Both scopes share one map: conversation and project IDs cannot collide,
+    // but keys still make the scope explicit.
     const key = `${scope}:${id}`
     const current = this.treeWatches.get(key) ?? new Map<string, () => void>()
 
@@ -243,9 +205,9 @@ class Connection {
         )
       }
     } catch {
-      // `resolveInside` refuse un chemin qui sort du répertoire de travail. Le client ne
-      // propose que des chemins qu'il tient du serveur : arriver ici est un défaut, et
-      // les veilles déjà posées restent valides.
+      // `resolveInside` rejects paths outside working directories. Clients offer only
+      // server-supplied paths, so reaching this branch signals a defect;
+      // existing watches remain valid.
       this.send({
         t: 'error',
         code: 'path_outside_workspace',
@@ -257,15 +219,7 @@ class Connection {
     else this.treeWatches.delete(key)
   }
 
-  /**
-   * Le statut part pour toute conversation lisible, pas seulement pour le fil abonné :
-   * la sidebar suit des lignes qu'elle n'a pas ouvertes, et sans ça leur point « en
-   * cours » ne bougeait qu'au rechargement de la page.
-   *
-   * Le contrôle d'accès est refait à chaque poussée plutôt que porté par un abonnement :
-   * les changements de statut se comptent en quelques-uns par tour, la lecture est
-   * locale, et rien ne peut alors dériver d'un partage révoqué entre-temps.
-   */
+  /** Broadcast statuses for every readable conversation, not just subscribed ones: sidebars track unopened conversations whose running badges otherwise changed only on reload. Recheck access on each push instead of retaining subscription permissions: changes happen only a few times per turn, reads are local, and revoked sharing can never leave stale access. */
   notifyStatus(update: StatusBroadcast): void {
     if (
       !this.subscriptions.has(update.conversationId) &&
@@ -281,8 +235,8 @@ class Connection {
       this.send({ t: 'title', conversationId, title })
       return
     }
-    // Les autres onglets n'ont que la ligne de la sidebar, restée sur le titre
-    // provisoire : c'est la liste qu'ils doivent relire.
+    // Other tabs have only sidebar rows retaining the provisional
+    // title: they must reread the list.
     if (canReadConversation(this.ctx, conversationId, this.userId)) this.notifyListsChanged()
   }
 
@@ -298,10 +252,7 @@ class Connection {
     this.alive = true
   }
 
-  /**
-   * Retourne false si rien n'est arrivé depuis le battement précédent. Un ping WebSocket
-   * est envoyé au passage : un client qui n'émet pas de ping applicatif reste détecté.
-   */
+  /** Returns false when nothing arrived since the previous heartbeat. Also sends a WebSocket ping so clients without application pings remain detectable. */
   checkAlive(): boolean {
     if (!this.alive) return false
     this.alive = false
@@ -318,7 +269,7 @@ class Connection {
     this.treeWatches.clear()
   }
 
-  /** Socket mort et non refermé (mise en veille mobile) : on coupe sans attendre. */
+  /** Dead sockets left open by mobile sleep are terminated immediately. */
   terminate(): void {
     this.close()
     this.socket.terminate()
@@ -337,8 +288,8 @@ export async function registerWebSocketHub(
 
   const connections = new Set<Connection>()
 
-  // Le hub est seul à savoir quels onglets sont visibles et ce qu'ils regardent : c'est
-  // ce qui décide entre un toast, une notification système, ou rien.
+  // Only the hub knows visible tabs and their viewed conversations:
+  // this determines whether to toast, push a system notification or do nothing.
   notifications.setPresence({
     visibleEndpoints: (userId) =>
       new Set([...connections].map((connection) => connection.visibleEndpoint(userId)).filter((endpoint): endpoint is string => endpoint !== null)),
@@ -369,7 +320,7 @@ export async function registerWebSocketHub(
   )
 
   app.get('/api/ws', { websocket: true }, (socket, request) => {
-    // Le hook d'authentification a déjà résolu la session à partir du cookie.
+    // The authentication hook already resolved the session from cookies.
     const user = request.user
     if (!user) {
       socket.close(4401, 'unauthorized')
@@ -417,8 +368,8 @@ export async function registerWebSocketHub(
     })
   })
 
-  // Posé après les routes et pourtant appliqué à toutes : Fastify assemble les hooks
-  // d'une route au démarrage, pas à sa déclaration.
+  // Registered after routes but applied to all: Fastify assembles route hooks
+  // at startup rather than declaration time.
   app.addHook('onResponse', async (request, reply) => {
     if (reply.statusCode >= 400) return
     const reach = LIST_ROUTES[`${request.method} ${request.routeOptions.url}`]
@@ -431,8 +382,8 @@ export async function registerWebSocketHub(
     }
   })
 
-  // Sur mobile, un socket tué par la mise en veille reste ouvert côté serveur sans
-  // jamais se fermer proprement. Le battement les élimine au lieu de les accumuler.
+  // Mobile sleep can kill sockets without cleanly closing server connections.
+  // Heartbeats remove these instead of accumulating them.
   const heartbeat = setInterval(() => {
     for (const connection of connections) {
       if (!connection.checkAlive()) {

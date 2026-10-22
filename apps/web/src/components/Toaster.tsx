@@ -9,7 +9,7 @@ import { wsClient } from '../lib/ws-client'
 import { Button, IconButton } from './ui'
 import { toastQuestion } from './decisions/decision-text'
 
-/** Au-delà, les toasts se résument : une pile qui couvre l'écran ne se lit plus. */
+/** Summarize beyond this count: screen-covering stacks are unreadable. */
 const VISIBLE = 2
 
 const REQUEST_TITLES: Record<CliRequestKind, MessageKey> = {
@@ -20,11 +20,9 @@ const REQUEST_TITLES: Record<CliRequestKind, MessageKey> = {
 }
 
 /**
- * Les toasts de l'application, en bas à droite sur grand écran, en haut au téléphone.
- *
- * Seuls ceux qu'un humain doit traiter arrivent ici : une décision demandée par une
- * session autonome, un CLI qui attend dans une autre conversation. Le serveur ne les
- * envoie qu'aux onglets visibles et pousse la notification système aux autres appareils.
+ * App toasts bottom-right on desktop, top on phones. Only actionable decisions and CLIs waiting
+ * elsewhere belong here. Servers target visible tabs and send system notifications to other
+ * devices.
  */
 export function Toaster() {
   const t = useTranslate()
@@ -32,7 +30,7 @@ export function Toaster() {
   const { data: pending } = useDecisions('pending')
 
   useEffect(() => wsClient.onNotify(pushToast), [])
-  // Une décision tranchée ailleurs (autre onglet, téléphone, échéance) n'a plus à s'afficher.
+  // Remove decisions resolved elsewhere through tabs, phones, or deadlines.
   useEffect(() => {
     if (pending) dismissDecisionToasts(new Set(pending.map((decision) => decision.id)))
   }, [pending])

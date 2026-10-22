@@ -24,26 +24,23 @@ import { GitHubMark } from './GitHubMark'
 interface CardPanelProps {
   card: CardDto
   projectId: string
-  /** Le board relié à GitHub, null sinon : il décide des gestes de publication offerts. */
+  /** GitHub-linked board or null, determining available publication actions. */
   link: BoardLinkDto | null
-  /** État visé, distinct de la présence : le panneau reste monté le temps de sortir. */
+  /** Target state separate from presence: stay mounted during exit. */
   open: boolean
   onClose: () => void
   onSelectCard: (number: number) => void
 }
 
 /**
- * Le détail d'une carte, à côté du board plutôt qu'à sa place.
- *
- * Il se pose par-dessus plutôt que de pousser les colonnes, et glisse depuis le bord
- * droit comme le panneau d'outils d'une conversation : c'est le même geste sur le même
- * bord, et deux animations différentes pour deux tiroirs voisins se remarquent.
+ * Card details beside rather than replacing the board. Overlay columns and slide from the right
+ * like conversation tools: matching gestures on the same edge should share animation.
  */
 export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }: CardPanelProps) {
   const t = useTranslate()
   /**
-   * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
-   * rendu suivant : un élément qui naît déjà en place n'a aucune transition à jouer.
+   * Start the first render offscreen and enter on the next: elements born in position have no
+   * transition to play.
    */
   const [entered, setEntered] = useState(false)
   useEffect(() => {
@@ -54,10 +51,7 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
   const aside = useRef<HTMLElement>(null)
   useEffect(restoreCardPanelWidth, [])
 
-  /**
-   * Le tiroir est collé au bord droit de la fenêtre : sa largeur vaut donc la distance
-   * du pointeur à ce bord, sans décalage à mémoriser au début du geste.
-   */
+  /** Drawer hugs the right window edge, so width is pointer distance from it without a gesture-start offset. */
   const handle = resizeHandle({
     widthAt: (clientX) => window.innerWidth - clientX,
     current: () => aside.current?.getBoundingClientRect().width ?? null,
@@ -71,7 +65,7 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
   const detach = useDetachCard(projectId)
   const [publishing, setPublishing] = useState(false)
   const saving = useCardSaving(card.id)
-  /** L'issue suivie ; une carte détachée en garde la trace mais redevient locale. */
+  /** Tracked issue; detached cards retain its reference but become local again. */
   const issue = card.external && !card.external.detached ? card.external : null
   const detached = card.external?.detached ? card.external : null
   const latestSession = card.conversations.filter((session) => !session.archivedAt)
@@ -87,8 +81,8 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
   const editVisible = editing || draft !== null
 
   const dirty = title !== card.title || description !== card.description
-  // Après un rechargement pendant la requête, le serveur peut déjà avoir reçu
-  // le texte. Ne pas laisser ce brouillon masquer ses futures mises à jour.
+  // After reload during a request the server may already have received text. Do not let this draft
+  // mask future server updates.
   useEffect(() => {
     if (draft && !dirty) acknowledge(draft)
   }, [draft, dirty, acknowledge])
@@ -96,10 +90,10 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
   const save = () => {
     if (!title.trim() || !dirty || saving) return
     if (!draft) return
-    // La promesse continue même si le panneau est fermé pendant l'enregistrement.
+    // The promise continues even if the panel closes during saving.
     void updateCard.mutateAsync({ id: card.id, title: title.trim(), description })
       .then(() => { acknowledge(draft); setEditing(false) })
-      .catch(() => { /* L'erreur est affichée et le brouillon reste intact. */ })
+      .catch(() => { /* Display errors and preserve drafts unchanged. */ })
   }
 
   return (
@@ -118,16 +112,12 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
       aria-modal={modal && open ? true : undefined}
       aria-label={t('board.card.panelLabel', { number: card.number })}
       className={cx(
-        // Pas d'`overflow` ici : il rognerait la poignée, posée en débord sur le bord
-        // gauche. C'est la zone de défilement interne qui borne le contenu.
+        // No overflow here or it would clip the protruding left handle; inner scrolling bounds content.
         'surface z-20 flex flex-col border-l border-line shadow-pop',
-        // `absolute` et non `fixed` : le repère est le calque de la coque, donc le
-        // panneau suit le viewport visuel quand le clavier s'ouvre.
-        // La largeur est bornée en CSS et pas seulement à l'enregistrement : une
-        // fenêtre rétrécie après coup laisserait sinon un tiroir plus large qu'elle.
+        // Absolute rather than fixed references the shell layer and follows visual viewport on
+        // keyboard opening. Clamp in CSS too so shrinking windows cannot leave an oversized drawer.
         'absolute inset-0 md:left-auto md:w-[min(var(--card-panel-width,40rem),calc(100vw-10rem))]',
-        // `translate` et non `transform` : Tailwind v4 pose les utilitaires de
-        // translation sur cette propriété CSS, distincte de `transform`.
+        // Transition translate rather than transform: Tailwind v4 uses the distinct translate property.
         'transition-[translate] duration-200 ease-out',
         entered && open ? 'translate-x-0' : 'translate-x-full',
       )}
@@ -306,8 +296,7 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
         <p>{t('board.github.publish.body', { repo: link?.repo ?? '' })}</p>
       </ConfirmDialog>
 
-      {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
-          tiroir occupe tout l'écran, il n'y a rien à ajuster. */}
+      {/* Left-edge resize handle only on desktop; fullscreen touch drawers have nothing to adjust. */}
       <div
         role="separator"
         aria-orientation="vertical"
@@ -359,7 +348,7 @@ function CardLinkList({
   )
 }
 
-/** L'état d'une carte citée, sans le poids d'une pastille pleine dans une liste. */
+/** Referenced card state without a heavy filled badge in a list. */
 function ColumnDot({ column }: { column: CardColumn }) {
   const tone = COLUMN_TONES[column]
   return (

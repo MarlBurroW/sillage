@@ -1,18 +1,13 @@
 /**
- * Notifications push.
- *
- * Chargé par `importScripts` dans le service worker généré par Workbox : garder la
- * génération automatique du précache tout en ajoutant nos propres écouteurs, plutôt
- * que d'écrire le service worker entier à la main.
- *
- * Ce script n'a pas de session et ne peut rien aller relire : tout ce qu'il affiche
- * vient du contenu poussé par le serveur.
+ * Push notifications. Loaded with `importScripts` into the Workbox-generated service worker, adding
+ * listeners while retaining generated precaching rather than maintaining the entire worker
+ * manually. This script has no session and cannot refetch: every displayed value comes from the
+ * server push payload.
  */
 
 /**
- * Titres par sorte de notification, dans la langue de l'appareil : le serveur ne connaît
- * pas celle de l'interface, et ce script n'a pas accès à son catalogue. Le titre envoyé
- * par le serveur reste le repli.
+ * Notification titles by kind in the device language: the server does not know UI language and this
+ * script cannot access its catalog. Keep server-provided titles as fallback.
  */
 const TITLES = {
   fr: {
@@ -53,13 +48,12 @@ self.addEventListener('push', (event) => {
   try {
     payload = event.data.json()
   } catch {
-    // Contenu illisible : mieux vaut ne rien afficher qu'une notification vide, mais
-    // l'erreur ne doit pas remonter, sinon le navigateur désactive l'abonnement.
+    // Unreadable payload: show nothing instead of an empty notification, but swallow errors or the
+    // browser disables the subscription.
     return
   }
 
-  // Le nombre de décisions en attente sur l'icône de l'application installée ; sans
-  // effet là où l'API n'existe pas.
+  // Pending decision count on the installed app icon; no effect where the API is unavailable.
   if (typeof payload.badge === 'number' && self.navigator.setAppBadge) {
     self.navigator.setAppBadge(payload.badge).catch(() => {})
   }
@@ -69,8 +63,7 @@ self.addEventListener('push', (event) => {
       body: bodyOf(payload),
       icon: '/icon-192.png',
       badge: '/icon-192.png',
-      // Une conversation ne garde qu'une notification affichée : le serveur envoie son
-      // identifiant comme étiquette.
+      // Keep one displayed notification per conversation using the server-supplied tag.
       tag: payload.tag,
       renotify: true,
       data: { url: payload.url },
@@ -87,8 +80,7 @@ self.addEventListener('notificationclick', (event) => {
     (async () => {
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
 
-      // Un onglet déjà ouvert sur l'application est réutilisé : en ouvrir un second
-      // laisserait deux vues de la même conversation côte à côte.
+      // Reuse an existing app tab instead of opening a second view of the same conversation.
       for (const client of clients) {
         if (new URL(client.url).origin !== self.location.origin) continue
         await client.focus()

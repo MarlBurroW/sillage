@@ -9,7 +9,7 @@ import { WorktreeCleanupDialog } from '../WorktreeCleanupDialog'
 import { WorktreeStateMark } from '../WorktreeTag'
 import { IconButton } from '../ui'
 
-/** L'état du chantier reste près du fil ; son nettoyage n'est pas une demande d'agent. */
+/** Worktree state stays near the thread; cleanup is not an agent request. */
 export function ConversationWorktreeBar({ conversation, canClean }: { conversation: ConversationDto; canClean: boolean }) {
   const t = useTranslate()
   const tree = useConversationWorktree(conversation)
@@ -17,8 +17,8 @@ export function ConversationWorktreeBar({ conversation, canClean }: { conversati
   const [cleaningPath, setCleaningPath] = useState<string | null>(null)
   const base = data?.base ?? null
   const workingHere = tree?.conversations.some((entry) => entry.id === conversation.id && entry.link === 'worktree')
-  // Un arbre supprimé peut encore être le cwd de la session : le signaler même si git
-  // ne le retourne plus. Un ancien arbre seulement édité, lui, n'a plus lieu d'apparaître.
+  // Deleted trees may remain session cwd: report even when absent from Git. Formerly edited-only
+  // trees need no lingering display.
   if (!tree && (!conversation.worktreeId || !data)) return null
 
   const state = tree

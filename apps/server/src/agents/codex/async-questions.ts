@@ -4,7 +4,7 @@ import type { QuestionAnswer, RunnerContext } from '../types.js'
 
 type AgentMessage = Extract<ThreadItem, { type: 'agentMessage' }>
 
-/** Les questions asynchrones arrivent dans un message, sans requête RPC à résoudre. */
+/** Asynchronous questions arrive in messages without RPC requests to resolve. */
 export class CodexAsyncQuestions {
   private readonly pending = new Map<string, { questions: AgentQuestion[]; sending: boolean; threadId: string | null }>()
 
@@ -40,15 +40,15 @@ export class CodexAsyncQuestions {
 
     pending.sending = true
     try {
-      // `turn/start` du CLI actuel injecte dans un tour actif, ou en ouvre un si le
-      // tour vient de finir. Pas de course entre un test local et `turn/steer`.
+      // Current CLI turn/start injects into an active turn or opens one if the
+      // turn just ended. No race between local checks and turn/steer.
       if (answer.status === 'answered') {
         const text = questions.map((question) =>
           `${question.question}\n${answer.answers[question.id]!.join('\n')}`,
         ).join('\n\n')
         await deliver(text, requestId, pending.threadId)
       }
-      // Une interruption peut avoir expiré la question pendant l'envoi.
+      // Interruption may have expired the question while sending.
       if (this.pending.get(requestId) !== pending) return false
       this.pending.delete(requestId)
       this.ctx.emit({
