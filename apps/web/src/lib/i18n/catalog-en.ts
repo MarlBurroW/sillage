@@ -67,6 +67,7 @@ export const en = {
   'sillageTool.search_history': "Search conversation history",
   'sillageTool.read_conversation': "Read a conversation",
   'sillageTool.list_sessions': "List sessions",
+  'sillageTool.rename_session': "Rename the session",
   'sillageTool.find_file_edits': "Find file changes",
   'sillageTool.list_cards': "Consult the board",
   'sillageTool.read_card': "Read a card",

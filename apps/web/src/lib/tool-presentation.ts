@@ -13,6 +13,7 @@ export function toolOrigin(name: string): ToolOrigin {
     : { kind: 'native', server: '', name }
 }
 const SILLAGE_LABELS: Record<string, MessageKey> = {
+  rename_session: 'sillageTool.rename_session',
   search_history: 'sillageTool.search_history',
   read_conversation: 'sillageTool.read_conversation',
   list_sessions: 'sillageTool.list_sessions',

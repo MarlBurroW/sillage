@@ -62,6 +62,7 @@ export const fr: Catalog = {
   'sillageTool.search_history': "Rechercher dans l’historique",
   'sillageTool.read_conversation': "Lire une conversation",
   'sillageTool.list_sessions': "Lister les sessions",
+  'sillageTool.rename_session': "Renommer la session",
   'sillageTool.find_file_edits': "Retrouver les modifications",
   'sillageTool.list_cards': "Consulter le board",
   'sillageTool.read_card': "Lire une carte",
