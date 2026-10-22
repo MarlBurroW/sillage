@@ -21,10 +21,7 @@ export interface GitStatus {
   isDirty: boolean
 }
 
-/**
- * Retourne null si le chemin n'est pas un dépôt git, ce qui est un cas normal :
- * un projet peut pointer sur un dossier quelconque.
- */
+/** Returns null outside git repositories, a normal case because projects may target arbitrary directories. */
 export async function readGitStatus(cwd: string): Promise<GitStatus | null> {
   try {
     const inside = (await git(cwd, ['rev-parse', '--is-inside-work-tree'])).trim()
@@ -53,18 +50,14 @@ export class GitError extends Error {
   }
 }
 
-/** Extrait le message d'erreur de git, bien plus parlant que « exit code 128 ». */
+/** Extracts git errors, far more useful than 'exit code 128'. */
 function gitMessage(err: unknown): string {
   const stderr = (err as { stderr?: string }).stderr
   const text = stderr?.trim() || (err instanceof Error ? err.message : String(err))
   return text.split('\n').slice(0, 3).join(' ').trim()
 }
 
-/**
- * Crée un worktree. `git worktree add` échoue si la branche existe déjà, donc on
- * bascule sur un rattachement plutôt que d'imposer un nom neuf : reprendre une branche
- * existante est un usage courant.
- */
+/** Creates worktrees. `git worktree add` rejects existing branches, so attach them instead of requiring new names: resuming branches is common. */
 export async function addWorktree(
   repo: string,
   path: string,
@@ -83,8 +76,8 @@ export async function addWorktree(
     )
   } catch (err) {
     const message = gitMessage(err)
-    // git répond « already used by worktree » : une branche ne peut être extraite que
-    // dans un seul worktree à la fois. Le dire clairement évite de chercher longtemps.
+    // Git says 'already used by worktree': branches can be checked out in only
+    // one worktree at a time. Explain clearly to avoid lengthy troubleshooting.
     if (/already (checked out|used by worktree)/i.test(message)) {
       throw new GitError(
         `La branche « ${branch} » est déjà extraite dans un autre worktree ou dans le projet lui-même.`,
@@ -103,28 +96,17 @@ export async function removeWorktree(repo: string, path: string, force: boolean)
   }
 }
 
-/**
- * Un clone qui n'a plus rien dit depuis ce délai est considéré perdu.
- *
- * Une inactivité plutôt qu'une durée totale : un dépôt de plusieurs gigaoctets sur une
- * ligne lente met légitimement une heure, alors qu'un clone qui ne produit plus une
- * ligne pendant cinq minutes ne reviendra pas.
- */
+/** Consider clones lost after this silence threshold. Use inactivity rather than total duration: multi-gigabyte repositories on slow connections may legitimately take an hour, but five-minute output silence indicates a lost clone. */
 const CLONE_IDLE_TIMEOUT_MS = 5 * 60 * 1000
 
 export interface CloneProgress {
-  /** La phase telle que git la nomme : « Receiving objects », « Resolving deltas ». */
+  /** Phase as named by Git, such as Receiving objects or Resolving deltas. */
   phase: string
-  /** Null tant que la phase en cours n'est pas chiffrée. */
+  /** Null until current-phase progress is quantified. */
   percent: number | null
 }
 
-/**
- * Erreur de clone, sous la forme que le client sait traduire.
- *
- * Le message reste en anglais, comme celui des erreurs d'API : c'est le code que
- * l'interface affiche, et le message ne sert que de repli lisible dans les logs.
- */
+/** Translatable clone error. Messages remain English like API errors: interfaces translate codes, while messages provide readable log fallbacks. */
 export class CloneError extends Error {
   constructor(
     readonly code: string,
@@ -135,11 +117,7 @@ export class CloneError extends Error {
   }
 }
 
-/**
- * Reconnaît dans la sortie de git les deux échecs qui ont une cause actionnable : un
- * dépôt privé sans jeton valide, et une URL qui ne mène à rien. Le reste part avec le
- * texte brut de git, plus précis que ne le serait une reformulation.
- */
+/** Recognizes two actionable git failures: private repositories without valid tokens and nonexistent URLs. Other failures retain raw git text, more precise than paraphrases. */
 function cloneFailure(stderr: string): CloneError {
   const text = stderr.trim()
 
@@ -154,13 +132,7 @@ function cloneFailure(stderr: string): CloneError {
   return new CloneError('clone_failed', detail || 'git failed without a message.')
 }
 
-/**
- * Clone un dépôt distant.
- *
- * Ne passe pas par le helper `git()`, dont le timeout de cinq secondes est dimensionné
- * pour des lectures d'état. La progression est lue sur la sortie d'erreur, où git écrit
- * quand `--progress` est demandé, ce qu'il ne fait pas de lui-même hors terminal.
- */
+/** Clones remote repositories. Avoid `git()`'s five-second timeout intended for state reads. Read stderr progress enabled explicitly by `--progress`, which git does not enable automatically without terminals. */
 export async function cloneRepository(
   url: string,
   destination: string,
@@ -171,8 +143,8 @@ export async function cloneRepository(
     env: { ...process.env, ...env },
   })
 
-  // Seules les dernières lignes servent au diagnostic, mais git en produit des milliers
-  // pendant un gros clone : les garder toutes ferait grossir la mémoire pour rien.
+  // Only recent lines help diagnosis, while large clones produce thousands:
+  // retaining all would waste memory.
   const tail: string[] = []
   let buffer = ''
 
@@ -196,8 +168,8 @@ export async function cloneRepository(
 
     child.stderr.on('data', (chunk: Buffer) => {
       resetIdleTimer()
-      // git sépare les mises à jour d'une même phase par des retours chariot pour
-      // réécrire la ligne en place : les traiter comme des fins de ligne.
+      // Git separates phase updates with carriage returns to rewrite lines in place:
+      // treat them as line endings.
       buffer += chunk.toString()
       const lines = buffer.split(/[\r\n]/)
       buffer = lines.pop() ?? ''
@@ -221,34 +193,22 @@ export async function cloneRepository(
     child.on('close', (code) => {
       clearTimeout(idleTimer)
       if (code === 0) resolve()
-      // Déjà rejeté par `fail` si c'est nous qui l'avons tué ; un second reject est ignoré.
+      // Already rejected by `fail` when killed by us; duplicate rejection is ignored.
       else reject(cloneFailure(tail.join('\n')))
     })
   })
 }
 
-/**
- * Inscrit le helper de credentials de Sillage dans la configuration locale du dépôt.
- *
- * Local et non global : deux comptes de la même instance clonent chacun avec leur
- * propre identifiant de propriétaire, et une configuration globale n'en porterait qu'un.
- * Les worktrees héritent de cette configuration, qui vit dans le dépôt principal.
- *
- * Précédé d'une valeur vide, qui écarte les helpers des configurations système et
- * globale, pour la raison donnée à `credentialEnv` : le trousseau de macOS en tête.
- */
+/** Registers Sillage's credential helper in repository-local configuration. Not global: accounts clone using their own owner IDs, which global configuration cannot represent simultaneously. Worktrees inherit main-repository configuration. Precede with an empty value to clear system/global helpers, especially macOS Keychain, as explained in `credentialEnv`. */
 export async function setCredentialHelper(cwd: string, helper: string): Promise<void> {
   await git(cwd, ['config', '--local', '--replace-all', 'credential.helper', ''])
   await git(cwd, ['config', '--local', '--add', 'credential.helper', helper])
 }
 
-/**
- * Les helpers de credentials de la configuration locale, dans l'ordre où git les
- * interroge. Null hors dépôt ou sans aucun helper local : rien à y voir.
- */
+/** Local credential helpers in git query order. Null outside repositories or without local helpers. */
 export async function readLocalCredentialHelpers(cwd: string): Promise<string[] | null> {
   try {
-    // `-z` : une valeur se termine par un octet nul, ce qui garde la valeur vide de tête.
+    // `-z` terminates values with null bytes, preserving the initial empty value.
     const raw = await git(cwd, ['config', '--local', '-z', '--get-all', 'credential.helper'])
     return raw.split('\0').slice(0, -1)
   } catch {
@@ -256,12 +216,7 @@ export async function readLocalCredentialHelpers(cwd: string): Promise<string[] 
   }
 }
 
-/**
- * Remplace toute la liste des helpers locaux, ordre compris.
- *
- * Effacer puis tout réécrire plutôt que `--replace-all` avec un motif : c'est la seule
- * forme qui garantisse que chaque valeur reste à sa place dans la liste.
- */
+/** Replaces all local helpers including order. Clear and rewrite rather than `--replace-all` with patterns: only this preserves every value's position. */
 export async function writeLocalCredentialHelpers(cwd: string, helpers: string[]): Promise<void> {
   await git(cwd, ['config', '--local', '--unset-all', 'credential.helper'])
   for (const helper of helpers) {
@@ -269,19 +224,7 @@ export async function writeLocalCredentialHelpers(cwd: string, helpers: string[]
   }
 }
 
-/**
- * État de tous les fichiers du dépôt, en un seul appel.
- *
- * Les codes de `--porcelain` sont réduits à ce que montre une arborescence : savoir
- * qu'un fichier est modifié dans l'index *et* dans le répertoire de travail n'apprend
- * rien à qui regarde une liste de fichiers.
- *
- * Un appel par fichier serait ruineux dans un dossier de plusieurs centaines
- * d'entrées, et l'explorateur en déplie un niveau à la fois. `-z` sépare par octet nul,
- * seul format qui survive à un nom de fichier contenant un espace ou un guillemet.
- *
- * Retourne null hors dépôt git : un projet peut pointer sur un dossier quelconque.
- */
+/** All repository file statuses in one call. Reduce `--porcelain` codes to tree-display states: distinguishing simultaneous index and working-tree changes adds nothing to file lists. Per-file calls would be costly in large directories, and explorers expand one level at a time. `-z` preserves filenames containing spaces or quotes. Null outside repositories because projects may target arbitrary directories. */
 export async function readFileStates(cwd: string): Promise<Map<string, FileState> | null> {
   let raw: string
   try {
@@ -308,12 +251,12 @@ export async function readFileStates(cwd: string): Promise<Map<string, FileState
     const code = field.slice(0, 2)
     let path = field.slice(3)
 
-    // Un renommage occupe deux champs : le nouveau nom, puis l'ancien. C'est le
-    // nouveau qui existe sur le disque, donc le suivant est consommé et ignoré.
+    // Renames occupy two fields, new name then old. The
+    // new name existing on disk, so consume and ignore the next field.
     if (code[0] === 'R' || code[0] === 'C') i += 1
 
-    // Git remonte les dossiers entièrement ignorés comme une seule entrée terminée
-    // par un séparateur : la garder telle quelle ne correspondrait à aucune entrée.
+    // Git reports fully ignored directories as single entries with trailing
+    // separators: remove separators to match actual entries.
     if (path.endsWith('/')) path = path.slice(0, -1)
 
     if (code === '!!') states.set(path, 'ignored')
@@ -336,10 +279,7 @@ export interface Commit {
   refs: string[]
 }
 
-/**
- * Les références que `%D` liste sur un commit : « HEAD -> main, origin/main, tag: v1 ».
- * La flèche de HEAD est retirée, le commit courant étant signalé par ailleurs.
- */
+/** Commit references from `%D`: 'HEAD -> main, origin/main, tag: v1'. Remove HEAD arrows because current commits are indicated separately. */
 function parseRefs(decoration: string | undefined): string[] {
   if (!decoration) return []
   return decoration
@@ -348,15 +288,7 @@ function parseRefs(decoration: string | undefined): string[] {
     .filter((ref) => ref.length > 0 && ref !== 'HEAD')
 }
 
-/**
- * Historique topologique : chaque enfant précède ses parents, même si les dates se croisent.
- *
- * Un commit de plus que demandé est lu, et non renvoyé : c'est ce qui dit s'il reste
- * quelque chose derrière, sans avoir à compter l'historique entier.
- *
- * Retourne null hors dépôt git. Un dépôt sans aucun commit rend une liste vide : `git
- * log` y échoue faute de HEAD, ce qui est un état normal et non une panne.
- */
+/** Topological history: children precede parents even when timestamps disagree. Read one extra commit without returning it to detect more history without counting everything. Null outside repositories; empty lists before the first commit because `git log` failing without HEAD is normal state. */
 export async function readCommits(
   cwd: string,
   limit: number,
@@ -371,7 +303,7 @@ export async function readCommits(
   const hasHead = await git(cwd, ['rev-parse', '--verify', 'HEAD']).then(() => true).catch(() => false)
   if (!all && !hasHead) return { commits: [], hasMore: false }
 
-  // Les refs explicites évitent d’inclure les commits techniques des stashs ou des points de reprise.
+  // Explicit refs exclude technical stash and checkpoint commits.
   const raw = await git(cwd, [
     'log',
     '--topo-order',
@@ -409,15 +341,15 @@ export interface DiffFile {
 
 export interface WorkingDiff {
   files: DiffFile[]
-  /** Diff unifié complet, tronqué au-delà de `MAX_DIFF_BYTES`. */
+  /** Full unified diff truncated beyond `MAX_DIFF_BYTES`. */
   patch: string
   truncated: boolean
 }
 
-/** Un diff de plusieurs mégaoctets ne s'affiche pas et ne se transporte pas utilement. */
+/** Multi-megabyte diffs are neither useful to display nor transfer. */
 const MAX_DIFF_BYTES = 512 * 1024
 
-/** Découpe la sortie de `--numstat` en fichiers. Un binaire y donne « - » au lieu d'un nombre. */
+/** Splits `--numstat` output into files. Binary files use '-' instead of counts. */
 function parseNumstat(numstat: string): DiffFile[] {
   return numstat
     .split('\n')
@@ -430,12 +362,7 @@ function parseNumstat(numstat: string): DiffFile[] {
     .filter((file) => file.path.length > 0)
 }
 
-/**
- * Ce qu'un commit a changé, contre son premier parent.
- *
- * `-m --first-parent` pour qu'une fusion montre ce qu'elle apporte à la branche plutôt
- * que rien du tout, qui est ce que `git show` en dit par défaut.
- */
+/** Commit changes against the first parent. `-m --first-parent` shows what merges contribute to branches instead of `git show`'s default empty result. */
 export async function readCommitDiff(cwd: string, hash: string): Promise<WorkingDiff> {
   try {
     const [numstat, patch] = await Promise.all([

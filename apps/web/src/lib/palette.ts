@@ -13,12 +13,9 @@ import { api } from './api'
 import { useDebounced } from './search'
 
 /**
- * Palette de recherche : tout ce qu'on peut rejoindre, dans une seule liste classée et
- * groupée par projet.
- *
- * Ce module ne connaît que des résultats déjà décrits : le composant les fabrique à
- * partir des listes de l'interface, puis tout se classe ici de la même façon, qu'il
- * s'agisse d'une conversation, d'un fichier ou d'un réglage.
+ * Search palette: every destination in one ranked list grouped by project. This module only handles
+ * already-described results: the component builds them from UI lists, and ranking works uniformly
+ * for conversations, files, and settings.
  */
 
 export type PaletteKind =
@@ -35,9 +32,9 @@ export type PaletteKind =
   | 'message'
 
 /**
- * Rang par nature : ce qui porte un nom passe avant les fichiers, et les fichiers avant
- * les passages de messages. Un dépôt a toujours un fichier qui ressemble à la saisie :
- * classés au score seul, ils couvraient le projet « Power Rush » quand on tapait « power ».
+ * Rank by kind: named entities before files, files before message excerpts. Repositories always
+ * contain a file resembling the query: score alone let files bury the Power Rush project when
+ * searching for power.
  */
 const TIER: Record<PaletteKind, number> = {
   project: 0,
@@ -53,7 +50,7 @@ const TIER: Record<PaletteKind, number> = {
   message: 2,
 }
 
-/** Départage des ex aequo : ce qu'on vise le plus souvent passe devant. */
+/** Break ties by putting commonly visited destinations first. */
 const KIND_ORDER: Record<PaletteKind, number> = {
   project: 0,
   action: 1,
@@ -70,17 +67,17 @@ const KIND_ORDER: Record<PaletteKind, number> = {
 
 export interface PaletteField extends FuzzyField {
   /**
-   * Ce que le champ éclaire à l'affichage : le titre, la ligne de détail, ou rien quand
-   * il ne sert qu'à restreindre, comme le nom du projet ou le type de résultat.
+   * Display field to highlight: title, detail line, or neither for filtering-only fields such as
+   * project name or result kind.
    */
   role: 'title' | 'detail' | 'context'
   /**
-   * Contexte qui suffit seul à retenir le résultat : taper « skill » liste les skills,
-   * taper le nom d'un projet liste ses conversations. Sans lui, un contexte ne fait que
-   * restreindre : « nimbus » ne rend pas tous les fichiers de Nimbus.
+   * Context sufficient by itself to include the result: typing skill lists skills, and typing a
+   * project name lists its conversations. Otherwise context only narrows results: nimbus does not
+   * return every Nimbus file.
    */
   browse?: boolean
-  /** Champ qui doit porter au moins un mot pour que le résultat soit retenu. */
+  /** Field that must match at least one word for inclusion. */
   required?: boolean
 }
 
@@ -92,39 +89,36 @@ export type PaletteTarget =
 export interface PaletteItem {
   key: string
   kind: PaletteKind
-  /** Null pour ce qui n'appartient à aucun projet : réglages, skills globaux, MCP. */
+  /** Null for results belonging to no project: settings, global skills, MCP. */
   projectId: string | null
   title: string
   detail?: string
-  /** Passage trouvé dans un message, bornes de correspondance comprises. */
+  /** Message excerpt including match bounds. */
   excerpt?: string
-  /** Repère de la ligne : l'agent d'une conversation, l'icône d'un fichier... */
+  /** Row marker: conversation agent, file icon, and so on. */
   icon: ReactNode
-  /** Indication de droite : le type du résultat, ou l'état d'une conversation. */
+  /** Right-hand annotation: result kind or conversation state. */
   aside?: string
-  /**
-   * Date du résultat : affichée en ancienneté après `aside`, elle départage aussi les ex
-   * aequo, le plus récent devant.
-   */
+  /** Result timestamp: displayed as age after `aside`, also breaks ties in favor of newer results. */
   at?: number
   fields: PaletteField[]
   target: PaletteTarget
-  /** Ajouté au score : un favori remonte, un fil archivé ou un skill éteint descend. */
+  /** Score adjustment: favorites rise, archived threads and disabled skills fall. */
   boost?: number
-  /** Résultat déjà retenu ailleurs, comme un message trouvé par le serveur. */
+  /** Result already selected elsewhere, such as a server-found message. */
   fixedScore?: number
 }
 
 export interface PaletteHit {
   item: PaletteItem
   score: number
-  /** Lettres à surligner, en indices du titre et du détail affichés. */
+  /** Character indices to highlight in displayed title and detail. */
   title: number[]
   detail: number[]
 }
 
 export interface PaletteGroup {
-  /** Identifiant du projet, ou `GENERAL_GROUP`. */
+  /** Project ID or `GENERAL_GROUP`. */
   key: string
   projectId: string | null
   hits: PaletteHit[]
@@ -133,13 +127,10 @@ export interface PaletteGroup {
 
 const GENERAL_GROUP = 'general'
 
-/**
- * Prime du projet où l'on se trouve : à correspondance égale, c'est là qu'on cherche,
- * mais un meilleur résultat ailleurs doit passer devant.
- */
+/** Current-project bonus: prefer it for equal matches, but a stronger result elsewhere must still win. */
 const CURRENT_PROJECT_BONUS = 1
 
-/** Poids partagés par les fabricants de résultats. */
+/** Weights shared by result builders. */
 export const WEIGHT = {
   title: 1,
   dir: 0.6,
@@ -147,17 +138,17 @@ export const WEIGHT = {
   context: 0.35,
 } as const
 
-/** Champ prêt à chercher, son repli calculé une fois plutôt qu'à chaque frappe. */
+/** Search-ready field with its folded form computed once rather than on each keystroke. */
 export function field(text: string, role: PaletteField['role'], weight: number, extra: Partial<PaletteField> = {}): PaletteField {
   return { text, role, weight, folded: foldForMatch(text), ...extra }
 }
 
-/** Le nom du projet, qui restreint sans rien surligner. */
+/** Project name, filtering without highlighting. */
 export function projectField(name: string, extra: Pick<PaletteField, 'browse' | 'required'> = {}): PaletteField {
   return field(name, 'context', WEIGHT.context, { mode: 'strict', ...extra })
 }
 
-/** Le type de résultat : taper « ticket » ou « skill » liste ce type. */
+/** Result kind: typing ticket or skill lists that kind. */
 export function kindField(label: string): PaletteField {
   return field(label, 'context', WEIGHT.context, { mode: 'strict', browse: true })
 }
@@ -202,7 +193,7 @@ function compareHits(a: PaletteHit, b: PaletteHit): number {
 
 export interface RankContext {
   currentProjectId: string | null
-  /** Ordre de la sidebar, qui départage deux groupes de même score. */
+  /** Sidebar order, breaking ties between equally scored groups. */
   projectOrder: readonly string[]
 }
 
@@ -213,10 +204,8 @@ function groupRank(context: RankContext, group: PaletteGroup): number {
 }
 
 /**
- * Classe tous les résultats contre la saisie, et les range par projet.
- *
- * Les groupes se suivent par leur meilleur résultat, pas dans l'ordre de la sidebar :
- * taper le nom d'un projet doit l'amener en tête, même depuis un autre projet.
+ * Rank all results against the query and group by project. Order groups by their best result rather
+ * than sidebar position: searching a project name must bring it first even from another project.
  */
 export function rankPalette(items: readonly PaletteItem[], query: string, context: RankContext): PaletteGroup[] {
   const tokens = fuzzyTokens(query)
@@ -246,17 +235,15 @@ export function rankPalette(items: readonly PaletteItem[], query: string, contex
   )
 }
 
-/** Conversations proposées sans saisie, par projet. */
+/** Conversations offered with no query, by project. */
 const RECENT_IN_CURRENT = 5
 const RECENT_PER_PROJECT = 3
 const RECENT_PROJECTS = 4
 
 /**
- * Sans saisie, la palette sert de sélecteur rapide : les dernières conversations, le
- * projet courant d'abord, puis ceux où l'on a travaillé le plus récemment.
- *
- * La conversation ouverte n'y figure pas, y revenir ne mène nulle part ; les tirs
- * planifiés non plus, qui ne sont pas des sessions qu'on suit.
+ * Without a query the palette is a quick switcher: recent conversations, current project first,
+ * then most recently used projects. Exclude the open conversation, which leads nowhere, and
+ * scheduled runs, which are not interactive sessions.
  */
 export function recentPalette(
   conversations: readonly ConversationDto[],
@@ -283,8 +270,8 @@ export function recentPalette(
     byProject.set(entry.projectId, list)
   }
 
-  // Les actions du projet courant passent devant ses conversations : à
-  // l'ouverture, la palette est aussi le chemin le plus court vers un bouton.
+  // Current-project actions precede its conversations: when opened, the palette is also the
+  // shortest path to an action button.
   const runs = currentProjectId
     ? [...items.values()].filter(
         (item) => item.key.startsWith('run:') && item.projectId === currentProjectId,
@@ -313,10 +300,9 @@ export function recentPalette(
 }
 
 /**
- * Listes que la palette filtre elle-même : cartes et skills de tous les projets.
- *
- * Relues à chaque ouverture plutôt que tenues à jour : une carte renommée ou un skill
- * ajouté depuis la dernière recherche doit s'y trouver, et la liste est légère.
+ * Lists filtered by the palette itself: cards and skills from all projects. Reread on every opening
+ * rather than maintaining them live: renamed cards and newly added skills must appear, and the list
+ * is lightweight.
  */
 export function usePaletteCatalog(enabled: boolean) {
   return useQuery({
@@ -327,15 +313,13 @@ export function usePaletteCatalog(enabled: boolean) {
   })
 }
 
-/** En deçà, un nom de fichier ne discrimine rien et la marche coûte le plus cher. */
+/** Below this length filenames are insufficiently distinctive and the tree walk is most expensive. */
 export const PALETTE_FILES_MIN_QUERY = 2
 
 /**
- * Fichiers de tous les projets.
- *
- * `keepPreviousData` : la palette reclasse elle-même chaque fichier contre la saisie du
- * moment, donc une réponse d'une frappe en retard ne montre jamais un fichier qui ne
- * correspond plus ; elle évite seulement que la section se vide à chaque lettre.
+ * Files from all projects. `keepPreviousData` works because the palette reranks every file against
+ * the current query: a late response never displays a nonmatching file, and the section does not
+ * empty on every keystroke.
  */
 export function usePaletteFiles(query: string, conversationId: string | null) {
   const trimmed = query.trim()
@@ -355,7 +339,7 @@ export function usePaletteFiles(query: string, conversationId: string | null) {
     data: result.data,
     isFetching: result.isFetching,
     isError: result.isError,
-    // Comme pour les messages : la saisie attend encore son délai de frappe.
+    // As with messages, the query is still waiting for its typing debounce.
     settling: settled !== trimmed && trimmed.length >= PALETTE_FILES_MIN_QUERY,
   }
 }

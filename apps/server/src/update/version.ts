@@ -1,18 +1,7 @@
-/**
- * La version installée. En build de release, tsup remplace l'expression
- * `process.env.SILLAGE_VERSION` par le littéral dérivé du tag git, donc la
- * valeur est figée dans le bundle. En dev (tsx, pas de bundling), la variable
- * n'existe pas et on retombe sur `dev`.
- */
+/** Installed version. Release tsup builds replace `process.env.SILLAGE_VERSION` with git-tag literals, fixing values in bundles. Development tsx without bundling lacks the variable and falls back to `dev`. */
 export const CURRENT_VERSION: string = process.env.SILLAGE_VERSION ?? 'dev'
 
-/**
- * Comparaison de versions maison plutôt qu'une dépendance semver : on ne
- * compare que nos propres tags `vX.Y.Z`. Toute version non parsable (`dev`,
- * describe git avec suffixe) est traitée comme plus ancienne que n'importe
- * quelle version parsable ; c'est au checker de ne jamais proposer de mise à
- * jour quand la version installée n'est pas parsable.
- */
+/** Local version comparison rather than semver dependencies because only our `vX.Y.Z` tags matter. Treat unparseable versions (`dev`, suffixed git describe) as older than parsable ones; checkers must never offer updates when installed versions are unparseable. */
 export function compareVersions(a: string, b: string): number {
   const pa = parseVersion(a)
   const pb = parseVersion(b)

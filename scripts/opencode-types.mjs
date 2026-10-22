@@ -6,13 +6,13 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Régénère les bindings de l'API d'opencode depuis le binaire installé.
+ * Regenerate opencode API bindings from installed binary.
  *
- *   node scripts/opencode-types.mjs          écrit packages/opencode-bindings/src/openapi.d.ts
- *   node scripts/opencode-types.mjs --check  échoue si le commité a dérivé
+ *   node scripts/opencode-types.mjs          writes packages/opencode-bindings/src/openapi.d.ts
+ *   node scripts/opencode-types.mjs --check  fails if committed content drifted
  *
- * opencode n'a pas de commande de génération : son OpenAPI se lit sur `GET /doc` d'un
- * `opencode serve`. Le script en lance un jetable, lit le document et le referme.
+ * opencode has no generation command: OpenAPI comes from `GET /doc` on
+ * `opencode serve`. Start a disposable instance, read document, close it.
  */
 
 const root = join(fileURLToPath(import.meta.url), '../..')
@@ -20,7 +20,7 @@ const target = join(root, 'packages/opencode-bindings/src/openapi.d.ts')
 const readme = join(root, 'packages/opencode-bindings/README.md')
 const check = process.argv.includes('--check')
 
-/** L'installeur d'opencode pose le binaire hors du PATH des shells non interactifs. */
+/** opencode installer places binary outside noninteractive shells' PATH. */
 function resolveBinary() {
   if (process.env.OPENCODE_BIN) return process.env.OPENCODE_BIN
   const installed = join(homedir(), '.opencode/bin/opencode')
@@ -32,7 +32,7 @@ const binary = resolveBinary()
 async function fetchOpenApi(dir) {
   const child = spawn(binary, ['serve', '--port', '0', '--hostname', '127.0.0.1'], {
     cwd: dir,
-    // Aucune configuration du poste ne doit colorer le document : il décrit l'API.
+    // No machine configuration should affect the document: it describes the API.
     env: { ...process.env, OPENCODE_CONFIG_CONTENT: '{}' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -64,8 +64,8 @@ function generate(openapi, dir) {
   const input = join(dir, 'openapi.json')
   const output = join(dir, 'openapi.d.ts')
   writeFileSync(input, openapi)
-  // `--empty-objects-unknown` : les objets libres de l'API (entrée d'un outil,
-  // métadonnées) sortiraient sinon en `Record<string, never>`, illisibles sans cast.
+  // `--empty-objects-unknown`: otherwise free API objects (tool input, metadata)
+  // would become `Record<string, never>`, unreadable without casts.
   execFileSync(
     join(root, 'node_modules/.bin/openapi-typescript'),
     [input, '-o', output, '--empty-objects-unknown'],
@@ -84,8 +84,8 @@ try {
     writeFileSync(
       readme,
       readFileSync(readme, 'utf8').replace(
-        /Généré avec \*\*opencode [^*]+\*\*/,
-        `Généré avec **opencode ${version}**`,
+        /Generated with \*\*opencode [^*]+\*\*/,
+        `Generated with **opencode ${version}**`,
       ),
     )
     console.log(`Bindings régénérés depuis opencode ${version} dans ${relative(root, target)}`)

@@ -5,61 +5,56 @@ import { translate, translateError } from './i18n'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
 /**
- * Fichiers déposés dans l'explorateur, en cours d'envoi vers le workspace.
- *
- * Hors de React, comme les onglets de l'éditeur : un envoi survit au repli de la
- * colonne et au passage d'un onglet du panneau à l'autre, alors qu'un état de composant
- * disparaîtrait avec lui — en laissant les requêtes tourner sans plus rien pour les
- * montrer.
- *
- * `XMLHttpRequest` et non `fetch` : c'est le seul moyen d'obtenir la progression de
- * l'envoi dans un navigateur. `fetch` ne rapporte que le téléchargement.
+ * Files dropped in the explorer and uploading to the workspace. Stored outside React, like editor
+ * tabs: uploads survive collapsing the column and switching panel tabs, whereas component state
+ * would disappear and leave requests running with nothing displaying them. Use `XMLHttpRequest`
+ * rather than `fetch`: it is the only browser API reporting upload progress; `fetch` reports
+ * downloads only.
  */
 
 export interface Upload {
   id: string
   scope: WorkspaceScope
-  /** Destination, relative au répertoire de travail. */
+  /** Destination relative to the working directory. */
   path: string
-  /** Nom affiché : le chemin depuis le dossier visé, pour situer un fichier de sous-dossier. */
+  /** Displayed name: path from the target directory, locating nested files. */
   label: string
   sizeBytes: number
   sentBytes: number
   status: 'pending' | 'sending' | 'done' | 'error'
-  /** Message déjà traduit, présent seulement en `error`. */
+  /** Already translated message, present only in `error`. */
   error: string | null
 }
 
-/** Fichier retenu d'un dépôt, avec sa place dans l'arborescence lâchée. */
+/** File from a drop, with its position in the dropped tree. */
 export interface DroppedFile {
   file: File
-  /** Chemin relatif au dossier visé : un nom simple, ou `dossier/sous/fichier`. */
+  /** Path relative to the target directory: a simple name or `folder/sub/file`. */
   relativePath: string
 }
 
 /**
- * Envois menés de front.
- *
- * Trois plutôt qu'un : un dossier de petits fichiers passe son temps en aller-retours
- * plutôt qu'en transfert. Plutôt que tous à la fois : la barre de progression d'une
- * centaine d'envois qui avancent d'un pour cent chacun ne dit plus rien, et le serveur
- * écrit alors cent fichiers partiels en parallèle.
+ * Concurrent uploads. Three rather than one because small-file directory uploads spend most time on
+ * round trips. Avoid unlimited concurrency: a hundred progress bars each advancing one percent
+ * become meaningless, while the server writes a hundred partial files in parallel.
  */
 const CONCURRENCY = 3
 
-/** Délai avant qu'un envoi réussi quitte la liste. Assez pour être vu, pas pour gêner. */
+/** Delay before a successful upload leaves the list: long enough to notice without getting in the way. */
 const KEEP_DONE_MS = 2500
 
 let uploads: Upload[] = []
-/** Snapshots par portée, reconstruits à chaque émission : `useSyncExternalStore` exige
- *  qu'une lecture sans changement rende exactement le même objet. */
+/**
+ * Snapshots per scope, rebuilt on each emission: `useSyncExternalStore` requires unchanged reads to
+ * return the exact same object.
+ */
 let byScope = new Map<WorkspaceScope, Upload[]>()
 const EMPTY: Upload[] = []
 
 const listeners = new Set<() => void>()
-/** Requêtes en vol, pour pouvoir annuler un envoi qu'on regrette. */
+/** In-flight requests, allowing users to cancel an upload. */
 const inFlight = new Map<string, XMLHttpRequest>()
-/** Rafraîchissement de l'arborescence, posé par la portée affichée. */
+/** Tree refresh callback registered by the displayed scope. */
 const refreshers = new Map<WorkspaceScope, Set<() => void>>()
 
 function emit(): void {
@@ -87,11 +82,9 @@ export function useUploads(scope: WorkspaceScope): Upload[] {
 }
 
 /**
- * Déclare de quoi relire l'arborescence d'une portée après un envoi.
- *
- * La veille disque du serveur signale déjà les fichiers arrivés, mais elle ne couvre
- * que les niveaux dépliés : déposer dans un dossier replié n'y ferait rien apparaître à
- * son ouverture, la liste venant du cache. Le rafraîchissement explicite ferme ce trou.
+ * Register how to reread a scope's tree after an upload. Server disk watches already report
+ * arriving files, but only for expanded levels: dropping into a collapsed directory would otherwise
+ * show stale cached contents when opened. Explicit refresh fills this gap.
  */
 export function registerTreeRefresh(scope: WorkspaceScope, refresh: () => void): () => void {
   const set = refreshers.get(scope) ?? new Set()
@@ -115,7 +108,7 @@ export function dismissUpload(id: string): void {
   emit()
 }
 
-/** Retire les envois terminés d'une portée, réussis comme échoués. */
+/** Remove finished uploads from a scope, both successful and failed. */
 export function clearSettledUploads(scope: WorkspaceScope): void {
   uploads = uploads.filter(
     (upload) => upload.scope !== scope || (upload.status !== 'done' && upload.status !== 'error'),
@@ -123,16 +116,14 @@ export function clearSettledUploads(scope: WorkspaceScope): void {
   emit()
 }
 
-/** File d'attente et nombre d'envois en cours, partagés par toutes les portées. */
+/** Queue and active upload count shared by all scopes. */
 const pending: { upload: Upload; file: File }[] = []
 let running = 0
 
 /**
- * Met en file les fichiers d'un dépôt, à destination de `parent`.
- *
- * Le refus pour cause de nombre est signalé comme un envoi en erreur plutôt que jeté :
- * l'appelant l'afficherait dans un endroit de plus, alors que la liste des envois est
- * déjà sous les yeux.
+ * Queue dropped files for upload to `parent`. Report count-limit rejection as an upload error
+ * rather than throwing: the caller would show it elsewhere while the upload list is already
+ * visible.
  */
 export function enqueueUploads(
   scope: WorkspaceScope,
@@ -168,8 +159,7 @@ export function enqueueUploads(
       label: relativePath,
       sizeBytes: file.size,
       sentBytes: 0,
-      // Refusé avant d'être envoyé : inutile de faire monter cent mégaoctets pour
-      // s'entendre répondre non au bout.
+      // Reject before uploading: there is no reason to transfer a hundred megabytes only to be rejected afterward.
       status: tooLarge ? 'error' : 'pending',
       error: tooLarge
         ? translate('uploads.tooLarge', {
@@ -194,7 +184,7 @@ function pump(): void {
   while (running < CONCURRENCY && pending.length > 0) {
     const next = pending.shift()
     if (!next) return
-    // L'entrée a pu être retirée entre la mise en file et son tour.
+    // The entry may have been removed between queueing and its turn.
     if (!uploads.some((upload) => upload.id === next.upload.id)) continue
 
     running += 1
@@ -212,15 +202,15 @@ async function send(upload: Upload, file: File): Promise<void> {
     await put(upload, file)
     patch(upload.id, { status: 'done', sentBytes: upload.sizeBytes })
     for (const refresh of refreshers.get(upload.scope) ?? []) refresh()
-    // Un envoi réussi n'a plus rien à dire une fois l'arborescence à jour : il s'efface,
-    // là où une erreur reste jusqu'à ce qu'elle soit lue.
+    // Once the tree is current, a successful upload has nothing left to report and disappears; an
+    // error stays until read.
     setTimeout(() => {
       if (uploads.some((entry) => entry.id === upload.id && entry.status === 'done')) {
         dismissUpload(upload.id)
       }
     }, KEEP_DONE_MS)
   } catch (err) {
-    // Une annulation retire déjà l'entrée : il n'y a plus rien à marquer en erreur.
+    // Cancellation already removes the entry: there is nothing left to mark as failed.
     if (!uploads.some((entry) => entry.id === upload.id)) return
     patch(upload.id, {
       status: 'error',
@@ -239,8 +229,8 @@ function put(upload: Upload, file: File): Promise<void> {
     const url = `${workspaceApiBase(upload.scope)}/entries/upload?path=${encodeURIComponent(upload.path)}`
     request.open('POST', url)
 
-    // Le navigateur compose lui-même l'en-tête `content-type` du multipart, frontière
-    // comprise : le poser à la main casserait le découpage.
+    // Let the browser build the multipart `content-type` header, including its boundary: setting it
+    // manually would break parsing.
     request.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable) patch(upload.id, { sentBytes: event.loaded })
     })
@@ -261,7 +251,7 @@ function put(upload: Upload, file: File): Promise<void> {
   })
 }
 
-/** Le corps d'erreur de l'API, traduit comme partout ailleurs, ou le statut à défaut. */
+/** API error body translated as elsewhere, or the status as fallback. */
 function errorOf(request: XMLHttpRequest): Error {
   try {
     const payload = JSON.parse(request.responseText) as {
@@ -270,20 +260,16 @@ function errorOf(request: XMLHttpRequest): Error {
     const error = payload.error
     if (error) return new Error(translateError(error.code, error.message, error.params))
   } catch {
-    // Réponse illisible (proxy, coupure) : le statut est tout ce qu'on peut en dire.
+    // Unreadable response (proxy or disconnect): only the status is available.
   }
   return new Error(translate('error.http', { status: request.status }))
 }
 
 /**
- * Fichiers portés par un dépôt, dossiers dépliés.
- *
- * `webkitGetAsEntry` est la seule voie pour lire un dossier lâché : `dataTransfer.files`
- * n'en montre que l'entrée elle-même, sans contenu et sans taille, ce qui produisait un
- * envoi vide. Le nom n'est pas normalisé mais il est de fait universel.
- *
- * Les entrées sont saisies d'abord, avant toute attente : la liste d'un `DataTransfer`
- * est vidée dès que le gestionnaire d'événement rend la main.
+ * Files in a drop, with directories expanded. `webkitGetAsEntry` is the only way to read dropped
+ * directories: `dataTransfer.files` exposes only their empty, sizeless entry, which caused empty
+ * uploads. The name is nonstandard but universally supported in practice. Capture entries before
+ * awaiting: the `DataTransfer` list is cleared as soon as the event handler yields.
  */
 export async function filesFromDrop(transfer: DataTransfer): Promise<DroppedFile[]> {
   const entries = Array.from(transfer.items)
@@ -292,8 +278,8 @@ export async function filesFromDrop(transfer: DataTransfer): Promise<DroppedFile
     .filter((entry): entry is FileSystemEntry => entry !== null)
 
   if (entries.length === 0) {
-    // Navigateur sans l'API, ou dépôt qui ne la déclenche pas : les fichiers nus font
-    // l'affaire, et un dossier n'y figure de toute façon pas.
+    // Without the API, or when the drop does not expose it, plain files suffice; directories would
+    // not appear there anyway.
     return Array.from(transfer.files).map((file) => ({ file, relativePath: file.name }))
   }
 
@@ -303,8 +289,8 @@ export async function filesFromDrop(transfer: DataTransfer): Promise<DroppedFile
 }
 
 async function collect(entry: FileSystemEntry, prefix: string, into: DroppedFile[]): Promise<void> {
-  // Au-delà du plafond, la suite ne servirait qu'à être refusée : la marche s'arrête,
-  // et l'appelant voit un dépôt trop gros plutôt qu'un dépôt tronqué.
+  // Beyond the cap, further entries would only be rejected: stop walking and let the caller report
+  // an oversized drop instead of a truncated one.
   if (into.length > MAX_UPLOAD_FILES) return
 
   const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name
@@ -313,8 +299,7 @@ async function collect(entry: FileSystemEntry, prefix: string, into: DroppedFile
     const file = await new Promise<File | null>((resolve) => {
       ;(entry as FileSystemFileEntry).file(resolve, () => resolve(null))
     })
-    // Un fichier illisible (déplacé entre le dépôt et la lecture) est passé plutôt que
-    // de faire échouer tout le lot.
+    // Skip an unreadable file (moved between drop and read) instead of failing the entire batch.
     if (file) into.push({ file, relativePath })
     return
   }
@@ -322,8 +307,8 @@ async function collect(entry: FileSystemEntry, prefix: string, into: DroppedFile
   if (!entry.isDirectory) return
 
   const reader = (entry as FileSystemDirectoryEntry).createReader()
-  // `readEntries` ne rend qu'un lot à la fois, une centaine d'entrées : il faut le
-  // rappeler jusqu'au lot vide, sans quoi un gros dossier arrive amputé.
+  // `readEntries` returns one batch of roughly a hundred entries: call it until an empty batch
+  // arrives or large directories will be truncated.
   for (;;) {
     const batch = await new Promise<FileSystemEntry[]>((resolve) => {
       reader.readEntries(resolve, () => resolve([]))
@@ -333,7 +318,7 @@ async function collect(entry: FileSystemEntry, prefix: string, into: DroppedFile
   }
 }
 
-/** Vrai si un glissement porte des fichiers venus du système, et non une entrée déplacée. */
+/** Whether a drag carries files from the operating system rather than a moved explorer entry. */
 export function carriesExternalFiles(transfer: DataTransfer): boolean {
   return Array.from(transfer.types).includes('Files')
 }

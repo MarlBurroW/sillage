@@ -1,31 +1,22 @@
 import { basename, dirname } from 'node:path'
 
-/**
- * La ligne de commande telle que l'utilisateur la reconnaît : ce qu'il a tapé ou ce
- * que l'agent a demandé, sans l'enrobage du CLI ni les chemins d'installation, et
- * sans les valeurs qui ressemblent à un secret. C'est la seule forme qui sort du
- * serveur ; l'environnement et les arguments bruts n'en sortent jamais.
- */
+/** User-recognizable command line: what they typed or the agent requested, without CLI wrappers or installation paths, and with secret-like values removed. Only this form leaves the server; environments and raw arguments never do. */
 
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish', 'ksh'])
 export const COMMAND_LIMIT = 160
 
-/** `zsh -c …`, `bash -lc …` : le porteur d'une commande, pas la commande. */
+/** `zsh -c …`, `bash -lc …`: command carriers rather than the command itself. */
 export function isShellCommand(argv: readonly string[]): boolean {
   return SHELLS.has(basename(argv[0] ?? '')) && /^-[A-Za-z]*c[A-Za-z]*$/.test(argv[1] ?? '') && !!argv[2]
 }
 
-/**
- * Claude Code enrobe chaque commande : restauration de l'environnement, `eval '…'`,
- * parfois `< /dev/null` pour une tâche de fond, puis sauvegarde du dossier courant.
- * Seule la commande évaluée intéresse ; ses apostrophes y sont doublées en '"'"'.
- */
+/** Claude Code wraps commands with environment restoration, `eval '…'`, sometimes `< /dev/null` for background tasks, then cwd saving. Only the evaluated command matters; its apostrophes are escaped as '\"'\"'. */
 function unwrapAgentShell(script: string): string {
   const evaluated = /(?:^|&&\s*)eval '([\s\S]*)'(?:\s*<\s*\S+)?(?:\s*&&\s*pwd -P >\|?\s*\S+)?\s*$/.exec(script)?.[1]
   return evaluated ? evaluated.replaceAll(`'"'"'`, "'") : script
 }
 
-/** Mots de passe d'URL, en-têtes d'autorisation, jetons et clés passés en argument. */
+/** URL passwords, authorization headers, tokens and keys supplied as arguments. */
 const SECRETS: [RegExp, string][] = [
   [/(:\/\/[^\s/:@]+:)[^\s@/]+@/g, '$1…@'],
   [/(authorization\s*[=:]\s*["']?(?:bearer|basic|token)?\s*)[^\s"']+/gi, '$1…'],
@@ -37,13 +28,13 @@ export function redactSecrets(text: string): string {
   return SECRETS.reduce((current, [pattern, replacement]) => current.replace(pattern, replacement), text)
 }
 
-/** Un exécutable pris dans un répertoire de binaires s'identifie par son nom seul. */
+/** Executables under binary directories are identified by basename alone. */
 function shortenArgument(argument: string): string {
   return argument.startsWith('/') && /\/\.?bin$/.test(dirname(argument)) ? basename(argument) : argument
 }
 
 export function summarizeCommand(argv: readonly string[], home = process.env.HOME ?? ''): string | null {
-  // Un programme qui réécrit son titre (Chrome, `npm exec`) laisse une seule chaîne, espaces compris.
+  // Programs rewriting their process title (Chrome, `npm exec`) leave one string including spaces.
   if (argv.length === 1 && /\s/.test(argv[0]!)) argv = argv[0]!.split(/\s+/)
   if (!argv.length) return null
   let text = isShellCommand(argv)

@@ -7,22 +7,19 @@ import { DiffHunks } from '../DiffHunks'
 import { cx } from '../ui'
 
 /**
- * Ce que les deux vues de changements ont en commun.
- *
- * L'onglet Git montre ce que dit le dépôt, l'onglet Historique ce que l'agent a écrit
- * dans cette conversation. Deux sources et deux questions, mais les mêmes lignes de
- * fichier et les mêmes couleurs : les partager est le seul moyen qu'elles ne divergent
- * pas d'une vue à l'autre.
+ * Shared change-view pieces. Git shows repository state; History shows agent writes in this
+ * conversation. Different sources/questions share file rows and colors to prevent visual
+ * divergence.
  */
 
-/** Icône et teinte par nature de changement. */
+/** Change-kind icon and tone. */
 export const ACTIONS: Record<EditedFile['action'], { icon: ReactNode; tone: string }> = {
   created: { icon: <FilePlus2 size={12} />, tone: 'text-positive' },
   modified: { icon: <Pencil size={12} />, tone: 'text-caution' },
   deleted: { icon: <FileX2 size={12} />, tone: 'text-critical' },
 }
 
-/** Statuts d'un diff ramenés au vocabulaire des trois actions du journal. */
+/** Map diff statuses to the log's three action names. */
 const DIFF_ACTIONS: Record<DiffFile['status'], EditedFile['action']> = {
   added: 'created',
   removed: 'deleted',
@@ -42,13 +39,13 @@ export function SectionTitle({ children, action }: { children: ReactNode; action
   )
 }
 
-/** Un fichier d'un diff, dépliable sur ses hunks. */
+/** Diff file expandable to hunks. */
 export function FileDiff({
   file,
   onOpenFile,
 }: {
   file: DiffFile
-  /** Absent pour un commit passé : le fichier du disque n'est plus celui d'alors. */
+  /** Absent for historical commits because disk files no longer match. */
   onOpenFile?: (path: string) => void
 }) {
   const t = useTranslate()

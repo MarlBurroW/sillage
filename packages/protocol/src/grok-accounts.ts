@@ -1,17 +1,16 @@
 import { z } from 'zod'
 
 /**
- * Comptes Grok Build supplémentaires, par utilisateur.
+ * Additional Grok Build accounts per user.
  *
- * Grok ne tient qu'une connexion par `GROK_HOME`, dans son `auth.json`. Comme pour Codex,
- * Sillage donne à chaque compte supplémentaire son propre home, où seuls la connexion et
- * ce qui dépend du compte (catalogue de modèles, réglages distants) sont réels : le reste
- * (sessions, config.toml, mémoire, skills) est un lien vers le home de l'utilisateur, pour
- * que le compte ne change que l'abonnement qui paie, pas les réglages ni les sessions.
+ * Grok keeps one login per `GROK_HOME` in `auth.json`. As with Codex, each additional account
+ * gets its own home, where only login and account-dependent data (model catalog, remote
+ * settings) are real. Everything else (sessions, config.toml, memory, skills) links to the
+ * user's home so switching accounts changes only the paying subscription, not settings or
+ * sessions.
  *
- * Sillage ne stocke aucun secret lui-même : la connexion se fait par Grok lancé dans ce
- * home, par code d'appareil (`grok login --device-auth`) ou par clé API, et c'est Grok qui
- * écrit son `auth.json`.
+ * Sillage stores no secrets itself: Grok runs in that home to log in through device code (`grok
+ * login --device-auth`) or API key, and writes `auth.json` itself.
  */
 
 export const grokAccountLabelSchema = z.string().trim().min(1).max(60)
@@ -19,13 +18,13 @@ export const grokAccountLabelSchema = z.string().trim().min(1).max(60)
 export const grokAccountSchema = z.object({
   id: z.string(),
   label: z.string(),
-  /** `pending` tant qu'aucune connexion n'a abouti dans son home. */
+  /** `pending` until a login succeeds in its home. */
   status: z.enum(['pending', 'ready']),
-  /** `grok` pour un abonnement connecté par grok.com, `apiKey` pour une clé xAI. */
+  /** `grok` for a subscription authenticated through grok.com; `apiKey` for an xAI key. */
   authMode: z.enum(['grok', 'apiKey']).nullable(),
-  /** Courriel lu à la connexion grok.com, null pour une clé API. */
+  /** Email read during grok.com login; null for API keys. */
   email: z.string().nullable(),
-  /** Formule annoncée par la facturation de Grok (« X Premium », « SuperGrok »…). */
+  /** Plan reported by Grok billing (“X Premium”, “SuperGrok”, etc.). */
   plan: z.string().nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -36,15 +35,15 @@ export const createGrokAccountBodySchema = z.object({ label: grokAccountLabelSch
 export const updateGrokAccountBodySchema = z.object({ label: grokAccountLabelSchema })
 
 /**
- * Deux façons de connecter un home : le code d'appareil, pour un abonnement sans
- * navigateur sur le serveur, et une clé API xAI.
+ * Two home login methods: device code for a subscription without a browser on the server, or an
+ * xAI API key.
  */
 export const startGrokLoginBodySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('deviceCode') }),
   z.object({ type: z.literal('apiKey'), apiKey: z.string().trim().min(1) }),
 ])
 
-/** Où en est la connexion d'un compte, même forme que celle des comptes Codex. */
+/** Account login progress, with the same shape as Codex accounts. */
 export interface GrokLoginStatusDto {
   state: 'idle' | 'pending' | 'done' | 'failed'
   verificationUrl: string | null

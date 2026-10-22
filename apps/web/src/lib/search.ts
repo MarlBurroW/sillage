@@ -8,7 +8,7 @@ import {
 } from '@sillage/protocol'
 import { api } from './api'
 
-/** Frappe moyenne : en dessous, on interroge le serveur à chaque lettre pour rien. */
+/** Typical typing delay: shorter waits query the server needlessly for every letter. */
 const DEBOUNCE_MS = 200
 
 export function useDebounced<T>(value: T, delay = DEBOUNCE_MS): T {
@@ -23,13 +23,9 @@ export function useDebounced<T>(value: T, delay = DEBOUNCE_MS): T {
 }
 
 /**
- * Recherche dans le contenu des messages.
- *
- * `keepPreviousData` : sans lui, chaque frappe vide la liste avant de la remplir, et la
- * section clignote alors qu'elle affichait déjà une réponse valable.
- *
- * `settling` dit que la saisie n'est pas encore partie : sans lui, rien n'annonçait
- * pendant le délai de frappe que des résultats allaient encore arriver.
+ * Search message content. `keepPreviousData` avoids emptying and refilling the list on each
+ * keystroke, flashing despite valid existing results. `settling` indicates the query has not yet
+ * been sent so users know more results will arrive after debounce.
  */
 export function useMessageSearch(query: string) {
   const settled = useDebounced(query)
@@ -50,16 +46,13 @@ export function useMessageSearch(query: string) {
 
 export interface ExcerptPart {
   text: string
-  /** Vrai si ce fragment est l'une des correspondances trouvées. */
+  /** Whether this fragment is one of the matches. */
   hit: boolean
 }
 
 /**
- * Découpe un extrait sur les bornes posées par SQLite.
- *
- * Les correspondances arrivent encadrées par deux caractères de contrôle plutôt que
- * par du balisage : le rendu reste du texte, sans jamais injecter de HTML venu de la
- * base.
+ * Split an excerpt at SQLite-provided boundaries. Matches use two control characters rather than
+ * markup: rendering remains text and never injects database HTML.
  */
 export function splitExcerpt(excerpt: string): ExcerptPart[] {
   const parts: ExcerptPart[] = []
@@ -80,11 +73,9 @@ export function splitExcerpt(excerpt: string): ExcerptPart[] {
 }
 
 /**
- * Score d'une saisie contre un texte, par sous-séquence : « cmpct » retrouve
- * « compaction ». Renvoie null quand les lettres n'y sont pas dans l'ordre.
- *
- * Les lettres consécutives et les débuts de mot valent plus : sans ça, un titre qui
- * porte la frappe éparpillée passe devant celui qui la porte telle quelle.
+ * Subsequence score between query and text: cmpct finds compaction. Return null if letters are
+ * absent or out of order. Consecutive letters and word starts score higher so scattered matches do
+ * not outrank literal ones.
  */
 export function scoreMatch(text: string, query: string): number | null {
   const haystack = text.toLowerCase()
@@ -104,7 +95,6 @@ export function scoreMatch(text: string, query: string): number | null {
     at = found + 1
   }
 
-  // À score égal, le titre le plus court est le plus probable : la frappe y occupe
-  // une part plus grande de ce qui est écrit.
+  // For equal scores prefer shorter titles, where the query covers more of the text.
   return score - haystack.length / 100
 }

@@ -15,7 +15,7 @@ export const TYPING_INDICATOR_LABELS: Record<TypingIndicatorStyle, MessageKey> =
 
 const STORAGE_KEY = 'sillage.typingIndicator'
 
-/** Un style retiré ou un ancien compte retrouve le logo plutôt qu’un vide. */
+/** Removed styles and older accounts fall back to the logo instead of blank space. */
 export function resolveTypingIndicator(value: unknown): TypingIndicatorStyle {
   return TYPING_INDICATORS.includes(value as TypingIndicatorStyle)
     ? value as TypingIndicatorStyle

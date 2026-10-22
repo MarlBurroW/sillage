@@ -13,7 +13,7 @@ test('questions Astra interactives, non bloquantes et encore répondables après
   assert.equal(question.blocking, false)
   assert.deepEqual(question.questions[0]!.options.map((option) => option.label), ['Blue', 'Green'])
   assert.equal(question.questions[1]!.allowOther, true)
-  assert.equal(f.statuses.at(-1), 'idle') // La réponse RPC tardive ne réactive pas un tour fini.
+  assert.equal(f.statuses.at(-1), 'idle') // Late RPC responses must not reactivate completed turns.
   assert.ok(!f.statuses.includes('awaiting_input'))
   assert.ok(!f.events.some((event) => event.type === 'question.resolved'))
   const answer = { status: 'answered' as const, answers: { '0': ['Green'], '1': ['Keep it simple'] }, decidedBy: 'test' }
@@ -44,7 +44,7 @@ test('questions concurrentes et serverRequest/resolved ciblé avec ids natifs di
   assert.equal(f.events.filter((event) => event.type === 'question.resolved' && event.status === 'expired').length, 1)
   assert.equal(await f.runner.answerQuestion(questions[1]!.requestId, { status: 'cancelled', answers: {}, decidedBy: 'test' }), false)
   assert.equal(await f.runner.answerQuestion(questions[2]!.requestId, { status: 'answered', answers: { q: ['optional answer'] }, decidedBy: 'test' }), true)
-  await f.emit() // Barrière transport.
+  await f.emit() // Transport barrier.
   const replies = (await f.records()).filter((record) => record.result)
   assert.ok(replies.some((record) => record.id === 0 && record.result.answers.q.answers[0] === 'yes'))
   assert.ok(!replies.some((record) => record.id === 'second'))
@@ -106,14 +106,14 @@ test('un message à un sous-agent terminé ne le remet pas en cours, un nouveau 
   await f.emit([
     { method: 'thread/started', params: { thread: { id: 'child', parentThreadId: 'root', agentNickname: 'Inspector', preview: 'Inspect' } } },
     done('child-turn', 'child'),
-    // Le parent écrit au sous-agent terminé, et le sous-agent avait écrit à `/root`.
+    // Parents message completed subagents; subagents had messaged `/root`.
     interacted('to-child', 'child', '/root/inspector'),
     interacted('to-root', 'root', '/root'),
   ])
   assert.deepEqual(running(), { type: 'background.updated', tasks: [] })
   assert.equal(f.events.filter((event) => event.type === 'task.started').length, 1)
 
-  // Le message relance un tour du sous-agent : lui seul le remet en cours, jusqu'à sa fin.
+  // Messages restart subagent turns; only that subagent becomes active until completion.
   await f.emit([{ method: 'turn/started', params: { threadId: 'child', turn: { id: 'child-turn-2' } } }])
   assert.deepEqual(running(), { type: 'background.updated', tasks: [{ id: 'child', kind: 'agent', description: 'Inspector' }] })
   await f.emit([done('child-turn-2', 'child')])
@@ -148,13 +148,13 @@ test('bibliothèque de skills : posée avant le thread, remplacée à chaud, abs
   const calls = async () => (await transport.records()).filter((record) => record.method === 'skills/extraRoots/set')
   const methods = (await transport.records()).map((record) => record.method)
   const set = methods.indexOf('skills/extraRoots/set')
-  // La racine appartient au process, pas au thread : elle doit précéder `thread/start`.
+  // Roots belong to processes, not threads: set them before `thread/start`.
   assert.ok(set > methods.indexOf('initialized') && set < methods.indexOf('thread/start'))
   assert.deepEqual((await calls())[0].params.extraRoots, ['/library/global/skills', '/library/projects/p1/skills'])
 
   assert.equal(await runner.applyConfig({ ...DEFAULT_CODEX_CONFIG, skillLibrary: true }), true)
   assert.equal((await calls()).length, 1, 'mêmes racines, rien à renvoyer')
-  // Recharger repose les racines : l'app-server ne voit pas seul un dossier qui part.
+  // Reloading resends roots: app-servers do not notice removed directories themselves.
   await runner.reloadSkillLibrary()
   assert.equal((await calls()).length, 2)
   assert.deepEqual((await calls())[1].params.extraRoots, (await calls())[0].params.extraRoots)
@@ -191,12 +191,7 @@ test('Codex 0.163 : état de lecture ignoré et sorties des outils concurrents a
   assert.equal(f.statuses.at(-1), 'idle')
 })
 
-/**
- * Séquence relevée sur codex-cli 0.163.0 (`instant_interrupt` actif par défaut), sonde
- * `codex-steer-probe.ts` : un `turn/steer` pendant `item/agentMessage/delta` coupe la
- * réponse, qui ne reçoit jamais d'`item/completed` ; l'écho `userMessage` du steer
- * suit, puis une nouvelle réponse, dans le même tour.
- */
+/** Sequence observed on codex-cli 0.163.0 with default `instant_interrupt`, probe `codex-steer-probe.ts`: `turn/steer` during `item/agentMessage/delta` interrupts responses without `item/completed`; steer `userMessage` echoes follow, then another response within the same turn. */
 const userEcho = (id: string, text: string) => ({ type: 'userMessage', id, content: [{ type: 'text', text, text_elements: [] }] })
 const answer = (id: string, text: string) => ({ type: 'agentMessage', id, text, phase: 'final_answer', memoryCitation: null })
 const delta = (itemId: string, text: string) => ({ method: 'item/agentMessage/delta', params: { threadId: 'root', turnId: 'turn-1', itemId, delta: text } })
@@ -216,7 +211,7 @@ for (const prefix of ['fixture:', 'fixture-late:']) test(`steer pendant la répo
     delta('cut', 'trois\n'),
     itemEvent(userEcho('u2', 'stop'), 'item/started'), itemEvent(userEcho('u2', 'stop')),
     itemEvent(answer('next', ''), 'item/started'), delta('next', 'PINEAPPLE'), itemEvent(answer('next', 'PINEAPPLE')),
-    // Hypothétique sur 0.163.0, mais un CLI qui clôt tard ne doit pas doubler le texte.
+    // Hypothetical on 0.163.0, but late completions must not duplicate text.
     itemEvent(answer('cut', 'un\ndeux\ntrois\nquatre\n')),
     done(),
   ] })
@@ -243,7 +238,7 @@ test('une réponse coupée sans item/completed est close avant la fin du tour', 
   const types = f.events.map((event) => (event.type === 'message.completed' ? `${event.role}:${event.messageId}` : event.type))
   const closed = types.indexOf('assistant:cut')
   assert.ok(closed !== -1 && closed < types.indexOf('turn.completed'))
-  // Un message ordinaire, clos par le CLI, ne l'est qu'une fois.
+  // Ordinary CLI-completed messages close only once.
   await f.emit([itemEvent(answer('whole', ''), 'item/started'), delta('whole', 'ok'), itemEvent(answer('whole', 'ok')), done('turn-2')])
   assert.equal(f.events.filter((event) => event.type === 'message.completed' && event.messageId === 'whole').length, 1)
 })

@@ -3,24 +3,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { linksTo, linkTo } from '../platform/links.js'
 
-/**
- * Le `CODEX_HOME` d'un compte supplémentaire.
- *
- * Un dossier par compte, où seul `auth.json` est réel : chaque autre entrée du home de
- * l'utilisateur y est liée par un lien symbolique. Codex y lit donc la même
- * configuration, les mêmes skills, les mêmes mémoires, et surtout les mêmes threads,
- * ce qui permet de reprendre ou de brancher une conversation quel que soit le compte
- * qui l'a ouverte (sondé sur 0.162.1). Les bases SQLite suivent aussi : SQLite résout
- * le lien avant de poser ses fichiers de journal à côté de la vraie base.
- *
- * Les liens sont repris à chaque lancement et non posés une fois : Codex crée de
- * nouvelles entrées au fil des versions (`memories/`, `goals_1.sqlite`…), et une
- * entrée apparue dans le home de l'utilisateur après la création du compte doit être
- * vue par le compte aussi. Une entrée que Codex crée lui-même dans le home du compte
- * (journal, `history.jsonl`) y reste : elle n'est pas un lien, et on n'y touche pas.
- */
+/** Additional account `CODEX_HOME`. One directory per account with only `auth.json` initially real; other user-home entries are symlinked. Codex therefore shares configuration, skills, memory and especially threads, allowing resume and fork across accounts (probed on 0.162.1). SQLite follows links before placing journals beside real databases. Refresh links on every launch: new Codex versions create entries (`memories/`, `goals_1.sqlite`…) that existing accounts must also see. Real entries Codex creates within account homes (journals, `history.jsonl`) remain account-local and untouched. */
 
-/** `$CODEX_HOME` du serveur, à défaut `~/.codex` : là où vit la connexion du CLI. */
+/** Server `$CODEX_HOME`, falling back to `~/.codex`, holding CLI authentication. */
 export function userCodexHome(): string {
   return process.env.CODEX_HOME || join(homedir(), '.codex')
 }
@@ -34,7 +19,7 @@ export class CodexAccountHomes {
     return join(this.root, accountId)
   }
 
-  /** Crée le home s'il manque, puis reprend les liens. Rend son chemin. */
+  /** Creates missing homes, refreshes links and returns their path. */
   ensure(accountId: string): string {
     const home = this.path(accountId)
     mkdirSync(home, { recursive: true })
@@ -52,8 +37,8 @@ export class CodexAccountHomes {
         current = null
       }
       if (current) {
-        // Un lien juste : rien à faire. Un lien vers ailleurs (home de l'utilisateur
-        // déplacé) : repris. Un vrai fichier ou dossier : propre au compte, laissé.
+        // Correct links need no work. Retarget links pointing elsewhere after user-home
+        // moves; leave real files and directories as account-owned entries.
         if (!current.isSymbolicLink()) continue
         if (linksTo(link, target)) continue
         unlinkSync(link)
@@ -63,7 +48,7 @@ export class CodexAccountHomes {
     return home
   }
 
-  /** Vrai quand le home porte une connexion, c'est-à-dire un `auth.json`. */
+  /** Whether the home contains authentication, meaning `auth.json`. */
   connected(accountId: string): boolean {
     return existsSync(join(this.path(accountId), 'auth.json'))
   }

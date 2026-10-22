@@ -9,13 +9,9 @@ import { useTranslate } from '../../lib/i18n'
 import { Banner, ConfirmDialog } from '../ui'
 
 /**
- * Confirmation avant de ramener le workspace à l'état d'avant un tour.
- *
- * Le geste réécrit des fichiers sans que l'agent le sache : il garde le souvenir de ce
- * qu'il a écrit. D'où la case qui propose de brancher la conversation juste avant le
- * message du tour, pendant conversationnel du retour arrière : la branche repart d'un
- * agent qui n'a jamais vu ces fichiers, et le message du tour revient dans sa barre de
- * saisie pour être reformulé.
+ * Confirm restoring workspace state before a turn. Files change without the agent knowing, so offer
+ * forking immediately before its message: the new agent never saw those files and the original
+ * message becomes an editable draft.
  */
 export function RestoreCheckpointDialog({
   conversationId,
@@ -24,9 +20,9 @@ export function RestoreCheckpointDialog({
   onClose,
 }: {
   conversationId: string
-  /** Null quand le dialogue est fermé. */
+  /** Null when closed. */
   checkpoint: TurnCheckpoint | null
-  /** Texte du message qui a ouvert le tour, repris en brouillon de la branche. */
+  /** Opening message text reused as the fork draft. */
   openerText: string
   onClose: () => void
 }) {
@@ -38,7 +34,7 @@ export function RestoreCheckpointDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Chaque ouverture repart propre : la case cochée pour un tour ne vaut pas pour le suivant.
+  // Reset on every opening: a checkbox choice for one turn does not apply to the next.
   useEffect(() => {
     if (checkpoint) {
       setFork(false)
@@ -54,7 +50,7 @@ export function RestoreCheckpointDialog({
       await restoreCheckpoint(conversationId, checkpoint.key)
       refresh()
       if (fork) {
-        // Coupe juste avant le message du tour : la capture d'avant le précède.
+        // Cut immediately before the turn message, after its preceding before-snapshot.
         const branch = await forkConversation(conversationId, checkpoint.seq)
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
         onClose()

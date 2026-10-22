@@ -35,10 +35,10 @@ const errorOf = (error: unknown): string | null =>
   error instanceof ApiRequestError ? error.message : null
 
 /**
- * Gestion des comptes de l'instance.
+ * Instance account management.
  *
- * Rappel du modèle : un compte donne l'accès à Sillage, pas une isolation. Tous les
- * agents tournent sous le même utilisateur système et partagent tes credentials CLI.
+ * Reminder: accounts grant Sillage access, not isolation. All agents run as the same system
+ * user and share your CLI credentials.
  */
 export function UsersSettingsPage() {
   const t = useTranslate()
@@ -203,9 +203,10 @@ function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
             </p>
           </div>
 
-          {/* Modifier sous la main, le reste dans un menu : changer un rôle ou
-              supprimer un compte est rare, et trois boutons empilés par ligne
-              donnaient à la liste l'air d'un tableau de bord. */}
+          {/*
+           * Keep editing handy; put rarer role changes and deletion in a menu. Three stacked
+           * buttons per row made the list look like a dashboard.
+           */}
           <div className="flex shrink-0 items-center gap-1">
             <Button
               size="sm"
@@ -222,7 +223,7 @@ function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
                 </IconButton>
               }
             >
-              {/* Au doigt, « Modifier » rejoint le menu : la ligne n'a pas la place. */}
+              {/* On touch screens, move “Edit” into the menu: the row lacks room. */}
               <div className="md:hidden">
                 <MenuItem icon={<Pencil size={15} />} onSelect={() => setEditing((value) => !value)}>
                   {editing ? t('users.edit.close') : t('users.edit.open')}
@@ -237,8 +238,10 @@ function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
                 {user.isAdmin ? t('users.role.remove') : t('users.role.promote')}
               </MenuItem>
               <MenuSeparator />
-              {/* Grisé plutôt qu'absent pour son propre compte : l'action existe,
-                  le serveur la refuse pour soi. */}
+              {/*
+               * Disabled rather than absent for one's own account: the action exists but the
+               * server rejects self-targeting.
+               */}
               <MenuItem
                 icon={<Trash2 size={15} />}
                 tone="critical"
@@ -253,8 +256,10 @@ function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
 
         {editing ? (
           <div className="rounded-md border border-line bg-sunken p-3">
-            {/* Même formulaire que pour son propre compte : le mot de passe actuel n'y
-                est pas demandé, un administrateur réinitialise sans le connaître. */}
+            {/*
+             * Same form as for one's own account, without current password: administrators
+             * reset passwords without knowing them.
+             */}
             <AccountForm
               userId={user.id}
               username={user.username}

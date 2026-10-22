@@ -1,12 +1,8 @@
 import { HttpError } from '../http/errors.js'
 
-/**
- * Client minimal d'une API au format OpenAI, le dialecte commun de Groq, Mistral,
- * OpenAI et des Whisper auto-hébergés. Aucun SDK : deux endpoints suffisent, et un
- * SDK par fournisseur ruinerait justement l'intérêt du format partagé.
- */
+/** Minimal OpenAI-compatible API client, the common dialect of Groq, Mistral, OpenAI and self-hosted Whisper. No SDK: two endpoints suffice, and per-provider SDKs would defeat the shared format's purpose. */
 export interface SttProvider {
-  /** Sans barre oblique finale, `https://api.mistral.ai/v1` par exemple. */
+  /** No trailing slash, for example `https://api.mistral.ai/v1`. */
   baseUrl: string
   model: string
   apiKey: string
@@ -18,17 +14,11 @@ interface AudioPayload {
   mimeType: string
 }
 
-/**
- * `POST /audio/transcriptions`, avec le biais de vocabulaire en paramètre `prompt` :
- * Whisper le lit comme du texte qui précéderait la dictée et cale son lexique dessus.
- */
+/** `POST /audio/transcriptions` with vocabulary bias in `prompt`: Whisper interprets it as preceding transcript text and adapts its lexicon. */
 export interface TranscriptionHints {
-  /** Biais de vocabulaire, lu par Whisper comme du texte qui précéderait la dictée. */
+  /** Vocabulary bias interpreted by Whisper as preceding transcript text. */
   prompt?: string
-  /**
-   * Langue imposée, en ISO 639-1. Sans elle, la détection automatique part en vrille
-   * sur les énoncés courts : un « test » isolé revient en allemand ou en cyrillique.
-   */
+  /** Forced ISO 639-1 language. Automatic detection is unreliable on short utterances: isolated 'test' can return German or Cyrillic. */
   language?: string
 }
 
@@ -40,8 +30,8 @@ export async function transcribe(
   try {
     return await requestTranscription(provider, audio, hints)
   } catch (err) {
-    // Tous les fournisseurs n'acceptent pas `prompt` ou `language` : plutôt que de
-    // casser la dictée sur un raffinement, on retente une fois à nu.
+    // Some providers reject `prompt` or `language`: retry once without them rather
+    // than break dictation over optional refinements.
     const hinted = hints.prompt || hints.language
     if (hinted && err instanceof HttpError && err.code === 'stt_provider_error') {
       return requestTranscription(provider, audio, {})
@@ -70,7 +60,7 @@ async function requestTranscription(
   return text
 }
 
-/** `POST /chat/completions`, pour le lexique et la passe de nettoyage. */
+/** `POST /chat/completions` for lexicon generation and cleanup. */
 export async function complete(
   provider: SttProvider,
   system: string,
@@ -94,7 +84,7 @@ export async function complete(
   return content
 }
 
-/** Toujours un `detail` en paramètre : la traduction du code l'interpole. */
+/** Always include `detail` because translated error codes interpolate it. */
 function providerError(detail: string): HttpError {
   return new HttpError(502, 'stt_provider_error', 'The provider refused the request: {detail}', {
     detail,
@@ -123,8 +113,8 @@ async function call(
 
   const text = await response.text()
   if (!response.ok) {
-    // Le corps d'erreur du fournisseur est la seule piste de diagnostic (mauvais
-    // modèle, clé révoquée, quota) : il remonte tronqué plutôt que remplacé.
+    // Provider error bodies are the only diagnostic clue (incorrect
+    // model, revoked key, quota): return it truncated rather than replace it.
     throw providerError(`${response.status} ${text.slice(0, 300) || response.statusText}`)
   }
   try {

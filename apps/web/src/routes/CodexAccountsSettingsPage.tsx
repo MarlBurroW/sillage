@@ -26,12 +26,11 @@ import {
 } from '../lib/codex-accounts'
 
 /**
- * Comptes Codex supplémentaires du compte Sillage.
+ * Additional Codex accounts for the Sillage account.
  *
- * Un compte naît vide, avec un nom, puis se connecte : par code d'appareil pour un
- * abonnement ChatGPT, par clé API sinon. C'est Codex qui mène la connexion dans le
- * home du compte ; l'écran montre le code à saisir et attend qu'il dise que c'est
- * fait. Rien de secret ne revient ici : au mieux un courriel et un forfait.
+ * Accounts start empty with a name, then authenticate through a device code for ChatGPT
+ * subscriptions or an API key. Codex drives login in the account home; the screen shows the
+ * code and waits for completion. No secrets return here, at most an email and plan.
  */
 
 const errorOf = (error: unknown): string | null =>
@@ -172,7 +171,7 @@ function AccountCard({ account }: { account: CodexAccount }) {
         </>
       ) : (
         <CardBody className="flex flex-col gap-3">
-          {/* Les boutons passent sous le nom au téléphone plutôt que de l'écraser. */}
+          {/* On phones, buttons move below the name rather than crushing it. */}
           <div className="flex flex-wrap items-start gap-3">
             <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1">
               <span className="flex flex-wrap items-center gap-2">
@@ -225,8 +224,8 @@ function AccountCard({ account }: { account: CodexAccount }) {
 }
 
 /**
- * La connexion du compte, sous sa carte : les deux voies tant qu'il n'est pas
- * connecté, le code à saisir pendant l'attente, la déconnexion une fois prêt.
+ * Account login beneath its card: two methods while signed out, code while waiting, logout once
+ * ready.
  */
 export function LoginControls({ account }: { account: CodexAccount }) {
   const t = useTranslate()

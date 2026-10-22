@@ -9,15 +9,10 @@ import { failureNotice, useGitPane } from './context'
 const DRAFT_PREFIX = 'sillage.git.commitDraft:'
 
 /**
- * Le message et le bouton de commit, sous la liste des changements.
- *
- * Le brouillon survit au changement d'onglet : l'onglet Git se démonte quand on va voir
- * un fichier, et perdre trois paragraphes parce qu'on a vérifié une ligne serait
- * impardonnable. Par portée, pour qu'un worktree ne reçoive pas le message d'un autre.
- *
- * Sans rien dans l'index mais avec des changements, le bouton propose de tout ajouter
- * et commiter d'un geste : c'est le cas le plus courant hors d'un commit soigné, et
- * refuser en silence obligerait à comprendre l'index pour commiter une ligne.
+ * Commit message and button beneath changes. Drafts survive Git tab unmounting during file
+ * inspection, preserving written paragraphs, and are scoped so worktrees never share messages. With
+ * unstaged changes and no index, offer stage-all-and-commit for common simple cases rather than
+ * silently requiring index knowledge.
  */
 export function CommitForm({ repo }: { repo: GitRepoStatusDto }) {
   const t = useTranslate()
@@ -41,13 +36,13 @@ export function CommitForm({ repo }: { repo: GitRepoStatusDto }) {
       if (message) sessionStorage.setItem(draftKey, message)
       else sessionStorage.removeItem(draftKey)
     } catch {
-      /* Le brouillon reste en mémoire le temps de l'onglet. */
+      /* Keep drafts in memory across tab use. */
     }
   }, [draftKey, message])
 
   const hasStaged = repo.staged.length > 0
   const canStageAll = repo.unstaged.length > 0
-  // Un conflit non résolu bloque tout commit : git le refuserait, autant le dire avant.
+  // Unresolved conflicts block commits; explain before Git rejects them.
   const blocked = repo.conflicted.length > 0
   const ready =
     message.trim().length > 0 && !blocked && (hasStaged || canStageAll || amend) && !commit.isPending
@@ -67,7 +62,7 @@ export function CommitForm({ repo }: { repo: GitRepoStatusDto }) {
     )
   }
 
-  /** Amender sans message repart de celui du dernier commit, qu'on retouche ou non. */
+  /** Amending without a message starts with the latest commit message for optional editing. */
   const toggleAmend = () => {
     const next = !amend
     setAmend(next)
@@ -113,7 +108,7 @@ export function CommitForm({ repo }: { repo: GitRepoStatusDto }) {
             type="checkbox"
             checked={amend}
             onChange={toggleAmend}
-            // Rien à amender dans un dépôt sans commit.
+            // Repositories without commits have nothing to amend.
             disabled={!repo.head}
             className="accent-[var(--sg-accent)]"
           />

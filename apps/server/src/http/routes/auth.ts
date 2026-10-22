@@ -19,7 +19,7 @@ import { requireUser } from '../require-user.js'
 const LOGIN_WINDOW_MS = 60_000
 const LOGIN_MAX_ATTEMPTS = 5
 
-/** Limitation de débit du login, en mémoire : le daemon est un process unique. */
+/** In-memory login rate limiting: the daemon is a single process. */
 class LoginThrottle {
   private readonly attempts = new Map<string, { count: number; resetAt: number }>()
 
@@ -66,14 +66,7 @@ export function toCurrentUser(row: {
 export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
   const throttle = new LoginThrottle()
 
-  /**
-   * `Secure` décidé par requête, pas par variable d'environnement.
-   *
-   * La même instance est jointe à la fois en clair sur le réseau local et en HTTPS
-   * derrière l'ingress. Un `Secure` global rendrait la connexion impossible en clair,
-   * et son absence priverait la connexion chiffrée de la protection. `trustProxy` est
-   * actif, donc `request.protocol` reflète `X-Forwarded-Proto`.
-   */
+  /** Choose `Secure` per request rather than through an environment variable. The same instance is reachable over plain HTTP locally and HTTPS behind ingress. A global `Secure` would prevent plain-HTTP login; omitting it would deprive encrypted sessions of protection. With `trustProxy`, `request.protocol` reflects `X-Forwarded-Proto`. */
   const isSecure = (request: FastifyRequest): boolean => request.protocol === 'https'
 
   app.post('/api/auth/login', async (request, reply) => {
@@ -84,7 +77,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       await ctx.db.select().from(users).where(eq(users.username, body.username)).limit(1)
     )[0]
 
-    // Message identique dans les deux cas : ne pas révéler l'existence d'un compte.
+    // Use identical messages in both cases to avoid revealing whether accounts exist.
     const invalid = new HttpError(401, 'invalid_credentials', 'Incorrect username or password.')
     if (!row) throw invalid
     if (!(await verifyPassword(row.passwordHash, body.password))) throw invalid
@@ -103,14 +96,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     return toCurrentUser(row)
   })
 
-  /**
-   * Le premier compte, créé depuis la visite quand la base n'en a aucun.
-   *
-   * Publique, mais fermée dès qu'un compte existe : c'est l'absence de compte qui vaut
-   * autorisation, et le comptage se fait dans la même transaction que l'insertion pour
-   * que deux navigateurs ouverts au même moment n'en créent pas deux. La session s'ouvre
-   * dans la foulée : la visite continue sans passer par la page de connexion.
-   */
+  /** First account, created during the tour when the database has none. Public until any account exists: absence grants authorization. Count and insert in the same transaction so simultaneous browsers cannot create two first accounts. Open the session immediately so the tour continues without a login screen. */
   app.post('/api/auth/setup', async (request, reply) => {
     if (INSTANCE_PROFILE === 'desktop') {
       throw new HttpError(404, 'not_found', 'Not found.')

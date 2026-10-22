@@ -10,7 +10,7 @@ import { allowedProjectIds } from './access.js'
 export function registerProjectCreationRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.post('/api/v1/projects', async (request, reply) => {
     const { token, user } = requireScope(request, 'projects:write')
-    // Créer hors de la liste autorisée élargirait les droits confiés au jeton.
+    // Creating outside the allowlist would expand the rights granted to the token.
     if (allowedProjectIds(token).length > 0) {
       throw forbidden('project_creation_restricted', 'Creating projects requires a token without project restrictions.')
     }

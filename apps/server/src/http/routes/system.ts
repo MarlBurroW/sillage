@@ -10,18 +10,14 @@ import { ReleaseChecker } from '../../update/release-checker.js'
 import { HttpError } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
 
-/**
- * Version installée, disponibilité d'une mise à jour et pilotage de celle-ci.
- * La vérification est visible de tout utilisateur connecté ; seul un
- * administrateur peut forcer un rafraîchissement ou lancer la mise à jour.
- */
+/** Installed version, update availability and update controls. Any signed-in user can check; only administrators can force a refresh or start an update. */
 export function registerSystemRoutes(app: FastifyInstance, ctx: AppContext): void {
   const checker = new ReleaseChecker()
   const executor = new UpdateExecutor(checker, app.log)
 
-  // Public, comme la santé : l'interface l'attend avant la page de connexion, et le profil
-  // ne dit rien qu'un visiteur ne puisse déduire de l'écran. Qu'il n'y ait aucun compte
-  // non plus : la page de connexion le dirait à sa façon, en refusant tout le monde.
+  // Public like health checks: the interface needs this before login, and the profile
+  // reveals nothing visitors cannot infer from the screen. The absence of accounts
+  // is equally visible: the login page would reveal it by rejecting everyone.
   app.get('/api/system/instance', async (): Promise<InstanceInfo> => {
     const info = instanceInfo()
     const [tally] = ctx.db.select({ total: count() }).from(users).all()
@@ -45,8 +41,8 @@ export function registerSystemRoutes(app: FastifyInstance, ctx: AppContext): voi
 
   app.post('/api/system/update', async (request, reply): Promise<UpdateStatus> => {
     requireAdmin(request)
-    // La cible vient de l'état serveur, pas du client : on met toujours à jour
-    // vers la dernière release connue, jamais vers une version arbitraire.
+    // The target comes from server state rather than the client: always update to
+    // the latest known release, never an arbitrary version.
     const info = await checker.getVersionInfo()
     if (!info.updateAvailable || !info.latest) {
       throw new HttpError(409, 'no_update', 'No update is available.')

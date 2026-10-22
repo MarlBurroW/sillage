@@ -11,12 +11,11 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Décisions des sessions autonomes, de bout en bout : une session de tâche planifiée
-// demande une décision (par la même file que le serveur MCP), un toast et la section
-// « À décider » apparaissent, on répond dans le dialogue, l'historique la garde. Puis
-// l'écran des notifications : appareils, essai, préférences. Aucun CLI ne tourne : la
-// session est en Codex, désactivé, et la remise de la réponse échoue sans conséquence.
-// Les captures vont dans DECISIONS_SHOTS, ou dans un dossier temporaire.
+// Autonomous-session decisions end to end: a scheduled-task session requests a
+// decision (through the same queue as MCP), toast and “Decisions” section appear,
+// answer through the dialog, history retains it. Then notifications screen: devices,
+// test, preferences. No CLI runs: session uses disabled Codex, and answer delivery
+// fails harmlessly. Screenshots go to DECISIONS_SHOTS or a temporary directory.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -74,7 +73,7 @@ try {
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
-  // Une tâche planifiée qui permet les décisions, et une de ses sessions.
+  // A scheduled task allowing decisions and one of its sessions.
   const db = new Database(join(data, 'data', 'sillage.db'))
   const project = db.prepare("SELECT id, owner_id AS ownerId FROM projects WHERE name = 'Nimbus'").get()
   const now = Date.now()
@@ -104,7 +103,7 @@ try {
   await page.getByRole('heading', { name: 'Board' }).waitFor()
   assert.equal(await page.getByRole('region', { name: 'À décider' }).count(), 0, 'No section without pending decisions')
 
-  // La session demande : toast et section apparaissent, sans recharger.
+  // Session asks: toast and section appear without reload.
   ask({
     question: 'Monter vite en 7.0 maintenant ?',
     context: '**Vite 7.0** est sorti hier. Les tests passent sur la branche `chore/vite-7`, mais deux plugins affichent des avertissements de dépréciation.\n\n- [Notes de version](https://vite.dev/blog)\n- Diff : 4 fichiers',
@@ -118,7 +117,7 @@ try {
   await page.waitForTimeout(300)
   await page.screenshot({ path: join(shots, 'decisions-toast.png') })
 
-  // Le dialogue : contexte, choix, précision, envoi.
+  // Dialog: context, choices, detail, submit.
   await toast.getByRole('button', { name: 'Répondre' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByText('Vite 7.0', { exact: false }).first().waitFor()
@@ -136,7 +135,7 @@ try {
   const stored = db.prepare('SELECT status, answer_option AS option, answer_text AS text FROM decisions').get()
   assert.deepEqual(stored, { status: 'answered', option: 'Oui, fusionner', text: 'Vérifie d’abord les avertissements des deux plugins.' })
 
-  // L'historique, et une seconde demande ouverte depuis la sidebar.
+  // History, and a second request opened from the sidebar.
   ask({ question: 'Fermer l’issue #18 comme doublon de #12 ?', options: ['Oui', 'Non'] })
   await section.getByText('Fermer l’issue #18', { exact: false }).waitFor({ timeout: 15000 })
   await page.goto(`${base}/decisions`)
@@ -145,7 +144,7 @@ try {
   await page.waitForTimeout(300)
   await page.screenshot({ path: join(shots, 'decisions-history.png') })
 
-  // Les notifications : appareils, essai sans appareil, préférences.
+  // Notifications: devices, test without devices, preferences.
   await page.goto(`${base}/settings/notifications`)
   await page.getByRole('heading', { name: 'Appareils abonnés' }).waitFor()
   await page.getByText('Aucun appareil n’est encore abonné', { exact: false }).or(page.getByText("Aucun appareil n'est encore abonné", { exact: false })).waitFor()
@@ -156,7 +155,7 @@ try {
   assert.equal(settings.notifications.cliRequest, false)
   await page.screenshot({ path: join(shots, 'decisions-notifications.png'), fullPage: true })
 
-  // Au téléphone : la section dans le tiroir de navigation, la décision en feuille.
+  // Phone: section in navigation drawer, decision in a sheet.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block', storageState: await context.storageState() })
   await phone.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
   const mobile = await phone.newPage()

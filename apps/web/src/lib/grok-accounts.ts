@@ -3,15 +3,13 @@ import type { GrokAccount, GrokAccountListDto, GrokLoginStatusDto } from '@silla
 import { api } from './api'
 
 /**
- * Comptes Grok supplémentaires du compte courant.
- *
- * La connexion est menée par Grok côté serveur : ici on la lance, on affiche le code
- * à saisir, et on relit l'état jusqu'à ce qu'elle aboutisse. Aucun hook ne voit de
- * secret : seule la clé API part, à l'aller.
+ * Additional Grok accounts for the current user. Grok handles login server-side: start it here,
+ * display the code, and poll until complete. Hooks never see secrets; only API keys are sent
+ * outbound.
  */
 
 const ACCOUNTS_KEY = ['grok-accounts']
-/** Hors de `ACCOUNTS_KEY`, pour la même raison que côté Claude : voir `claude-accounts.ts`. */
+/** Outside `ACCOUNTS_KEY` for the same reason as Claude; see `claude-accounts.ts`. */
 const loginKey = (id: string) => ['grok-login', id]
 
 export function useGrokAccounts(enabled = true) {
@@ -49,8 +47,8 @@ export function useDeleteGrokAccount() {
 }
 
 /**
- * L'état de la connexion d'un compte, relu toutes les deux secondes tant qu'un code
- * attend d'être saisi : c'est le serveur qui apprend la fin, par la sortie de `grok login`.
+ * Account login state polled every two seconds while awaiting code entry. The server detects
+ * completion through `grok login` output.
  */
 export function useGrokLoginStatus(id: string, watch: boolean) {
   const queryClient = useQueryClient()
@@ -58,8 +56,8 @@ export function useGrokLoginStatus(id: string, watch: boolean) {
     queryKey: loginKey(id),
     queryFn: async () => {
       const status = await api.get<GrokLoginStatusDto>(`/api/grok-accounts/${encodeURIComponent(id)}/login`)
-      // C'est la relecture qui apprend que Grok a fini, le code d'appareil se saisissant
-      // ailleurs : la carte doit passer à « Connecté » sans recharger la page.
+      // Polling detects Grok completion because device codes are entered elsewhere: the card must
+      // show Connected without reload.
       if (status.state === 'done') {
         void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
         void queryClient.invalidateQueries({ queryKey: ['usage'] })
@@ -78,14 +76,14 @@ export function useStartGrokLogin(id: string) {
       api.post<GrokLoginStatusDto>(`/api/grok-accounts/${encodeURIComponent(id)}/login`, input),
     onSuccess: (status) => {
       queryClient.setQueryData(loginKey(id), status)
-      // Une clé API connecte tout de suite : la liste doit le montrer sans attendre.
+      // API keys connect immediately: update the list without waiting.
       void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
       void queryClient.invalidateQueries({ queryKey: ['usage'] })
     },
   })
 }
 
-/** Annule une attente de code, ou déconnecte un compte prêt : la même route pour les deux. */
+/** Cancel a pending code or disconnect a ready account through the same route. */
 export function useStopGrokLogin(id: string) {
   const queryClient = useQueryClient()
   return useMutation({

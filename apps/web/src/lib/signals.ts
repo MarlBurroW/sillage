@@ -6,26 +6,21 @@ import { describeSchedule, formatAgo, type ArmedLoop } from './loops'
 import { subAgentLabel, type SubAgent } from './subagents'
 
 /**
- * Ce qui se passe dans une conversation, sous une forme unique que l'en-tête, le
- * composer et la liste des conversations affichent chacun à leur densité.
- *
- * Une seule dérivation pour trois surfaces : jusqu'ici chacune décidait de son côté
- * quoi montrer et de quelle couleur, et les mêmes travaux de fond apparaissaient en
- * violet à trois endroits sans que rien ne garantisse qu'ils disent la même chose.
- *
- * Les familles disent ce que le lecteur doit en faire, et non de quelle fonctionnalité
- * le signal vient. C'est ce qui borne la palette : deux signaux d'une même famille se
- * distinguent par leur icône et leur libellé, jamais par leur couleur.
+ * Conversation activity in one shared form, displayed by the header, composer, and conversation
+ * list at their own density. One derivation for three surfaces: previously each chose content and
+ * colors independently, so identical purple background-task indicators could disagree. Families
+ * describe what the reader should do, not the originating feature. This bounds the palette: signals
+ * in one family differ by icon and label, never color.
  */
 
 export type SignalFamily =
-  /** Quelque chose tourne en ce moment. */
+  /** Something is running now. */
   | 'working'
-  /** Rien ne tourne, mais la conversation repartira d'elle-même. */
+  /** Nothing is running, but the conversation will restart by itself. */
   | 'scheduled'
-  /** L'agent ou la liaison attend quelque chose de l'utilisateur. */
+  /** The agent or connection needs something from the user. */
   | 'awaiting'
-  /** Un état qui invalide ce qu'on lit. */
+  /** A state invalidating the displayed information. */
   | 'broken'
 
 export type SignalKind =
@@ -56,16 +51,15 @@ export const SIGNAL_FAMILY: Record<SignalKind, SignalFamily> = {
 export interface Signal {
   kind: SignalKind
   family: SignalFamily
-  /** Libellé traduit, tel qu'il s'affiche quand la place le permet. */
+  /** Translated label displayed when space permits. */
   label: string
-  /** Ce que l'infobulle ajoute, vide quand le libellé se suffit. */
+  /** Additional tooltip information, empty when the label is sufficient. */
   detail: string
 }
 
 /**
- * L'ordre est celui des familles, pas celui des fonctionnalités : les couleurs se
- * suivent au lieu d'alterner, et la ligne se lit de gauche à droite du plus courant au
- * plus grave.
+ * Order by family rather than feature: colors remain grouped and the row reads from common to
+ * severe left to right.
  */
 const ORDER: SignalKind[] = [
   'running',
@@ -88,14 +82,13 @@ export interface SignalInput {
   loops: ArmedLoop[]
   queued: QueuedMessage[]
   /**
-   * Ce que le CLI applique encore, alors qu'un autre réglage est enregistré et affiché.
-   * Vide quand les deux coïncident, c'est-à-dire hors de l'attente d'un redémarrage.
+   * Configuration still applied by the CLI while another is saved and displayed. Empty when both
+   * agree, meaning no restart is pending.
    */
   pending: string | null
   /**
-   * Horodatage de rendu, pour l'ancienneté des réveils. Passé plutôt que lu ici : une
-   * dérivation qui lit l'heure ne redonne pas le même résultat deux fois de suite, et
-   * plus rien ne serait mémoïsable.
+   * Render timestamp used for wakeup ages. Pass it in rather than reading time here: reading the
+   * clock would make derivation nondeterministic and prevent memoization.
    */
   now: number
 }
@@ -142,7 +135,7 @@ export function buildSignals(input: SignalInput): Signal[] {
     )
   }
 
-  // Avant les états de statut : ce qui gouverne le tour prime sur ce que le tour fait.
+  // Before status-derived states: what governs the turn takes precedence over what the turn is doing.
   if (input.pending) {
     add('pending', translate('signal.pending'), translate('signal.pending.detail', { value: input.pending }))
   }
@@ -151,19 +144,17 @@ export function buildSignals(input: SignalInput): Signal[] {
   if (input.status === 'interrupted') add('interrupted', translate('signal.interrupted'))
   if (input.status === 'error') add('error', translate('signal.error'))
 
-  // L'ambiant ne devient un signal que lorsqu'il tourne mal : une liaison qui marche
-  // n'a rien à dire, une liaison coupée invalide tout ce que la page affiche.
+  // Ambient state becomes a signal only when something fails: a working connection has nothing to
+  // report, while a broken one invalidates the page's displayed data.
   if (!input.connected) add('offline', translate('signal.offline'), translate('signal.offline.detail'))
 
   return sorted(found)
 }
 
 /**
- * Les signaux d'une conversation qu'on n'a pas ouverte.
- *
- * La liste des conversations n'a pas de journal à replier : elle ne reçoit que des
- * compteurs par le flux de statuts. Elle en tire les mêmes signaux, sans les détails
- * qu'aucune infobulle n'affichera de toute façon sur une ligne de six pixels.
+ * Signals for an unopened conversation. The list has no log to fold, only counters from the status
+ * stream. Derive the same signals without details that no tooltip would show on a six-pixel row
+ * anyway.
  */
 export function buildSidebarSignals(input: {
   status: ConversationStatus
@@ -193,9 +184,8 @@ function sorted(found: Map<SignalKind, Signal>): Signal[] {
 }
 
 /**
- * Le catalogue n'a pas de règle de pluriel : le choix se fait à l'appel, comme
- * partout ailleurs. Le préfixe est restreint aux clés qui existent en `.one` et
- * `.many`, ce qui fait vérifier la concaténation par le compilateur.
+ * The catalog has no plural rules: select at the call site as elsewhere. Restrict prefixes to keys
+ * with both `.one` and `.many` variants so the compiler checks concatenation.
  */
 type PluralPrefix =
   | 'signal.subagents'
@@ -208,7 +198,7 @@ function plural(prefix: PluralPrefix, count: number): string {
   return translate(`${prefix}.${count > 1 ? 'many' : 'one'}`, { count })
 }
 
-/** Cadence, réveils comptés et ancienneté du dernier, une boucle par ligne. */
+/** Cadence, counted wakeups, and latest wakeup age, one loop per line. */
 function describeLoops(loops: ArmedLoop[], now: number): string {
   return loops
     .map((loop) => {
@@ -226,11 +216,9 @@ function describeLoops(loops: ArmedLoop[], now: number): string {
 }
 
 /**
- * Le signal qui décrit le mieux l'état présent, ou null quand il n'y a rien à dire.
- *
- * Sert là où il n'y a la place que pour un point. Les boucles en sont exclues : elles
- * parlent de ce qui arrivera, pas de ce qui se passe, et restent donc affichables à
- * côté de celui-ci plutôt qu'en concurrence avec lui.
+ * Signal best describing the current state, or null when there is nothing to report. Used where
+ * only a dot fits. Exclude loops: they describe future activity and can appear alongside this
+ * signal rather than competing with it.
  */
 const PRESENT_PRIORITY: SignalFamily[] = ['broken', 'awaiting', 'working']
 

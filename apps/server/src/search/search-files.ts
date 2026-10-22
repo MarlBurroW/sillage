@@ -9,32 +9,23 @@ import {
 } from '@sillage/protocol'
 import { listWorkspaceFiles } from '../files.js'
 
-/**
- * Recherche de fichiers dans tous les projets à la fois, pour la palette.
- *
- * Les listes sont gardées un court moment : une saisie déclenche plusieurs recherches,
- * et relancer `git ls-files` dans chaque projet à chaque lettre referait le même travail.
- * Assez court pour qu'un fichier tout juste créé se trouve à la recherche suivante.
- */
+/** Cross-project file search for the palette. Cache briefly because typing triggers repeated searches and rerunning `git ls-files` per project per letter wastes work. Keep short enough for newly created files to appear on the next search. */
 const LISTING_TTL_MS = 15_000
 
-/** Plafond par répertoire : un dépôt démesuré ne doit pas remplir la mémoire du daemon. */
+/** Per-directory cap prevents oversized repositories from exhausting daemon memory. */
 const MAX_FILES = 50_000
 
-/** Répertoires listés en même temps : quarante `git` lancés d'un coup se gêneraient. */
+/** Concurrent directory listings: forty simultaneous git processes would compete. */
 const CONCURRENCY = 6
 
-/**
- * Poids des champs, les mêmes que ceux de la palette qui reclasse derrière : le nom du
- * fichier compte plus que son dossier, et le nom du projet ne fait que restreindre.
- */
+/** Field weights match the palette's later ranking: filenames matter more than directories, while project names only restrict matches. */
 const NAME_WEIGHT = 1
 const DIR_WEIGHT = 0.6
 const PROJECT_WEIGHT = 0.35
 
 interface Listing {
   paths: string[]
-  /** Les mêmes, repliés une fois pour toutes les frappes qui suivent. */
+  /** The same values normalized once for subsequent keystrokes. */
   folded: string[]
 }
 
@@ -49,11 +40,11 @@ function listing(cwd: string): Promise<Listing> {
       const paths = all.slice(0, MAX_FILES)
       return { paths, folded: paths.map(foldForMatch) }
     })
-    // Un répertoire disparu ou illisible ne prive pas les autres projets de résultats.
+    // Missing or unreadable directories must not suppress results from other projects.
     .catch((): Listing => ({ paths: [], folded: [] }))
   listings.set(cwd, pending)
-  // Retirée plutôt que marquée périmée : rien ne reste en mémoire une fois la saisie
-  // finie, la palette pouvant ne pas resservir avant des heures.
+  // Remove rather than mark stale: release memory once typing stops,
+  // since the palette may not reopen for hours.
   setTimeout(() => {
     if (listings.get(cwd) === pending) listings.delete(cwd)
   }, LISTING_TTL_MS).unref()
@@ -74,16 +65,12 @@ async function inBatches<T, R>(items: readonly T[], size: number, run: (item: T)
   return results
 }
 
-/**
- * Chaque mot doit se trouver dans le chemin ou dans le nom du projet, et au moins un dans
- * le chemin : « nimbus forecast » cherche `forecast` dans Nimbus, mais « nimbus » seul ne
- * rend pas tous ses fichiers.
- */
+/** Every word must appear in the path or project name, with at least one in the path: 'nimbus forecast' searches `forecast` in Nimbus, while 'nimbus' alone does not return all its files. */
 async function searchOne(target: FileSearchTarget, tokens: string[]): Promise<PaletteFileGroupDto> {
   const { paths, folded } = await listing(target.cwd)
   const project = foldForMatch(target.projectName)
-  // Les mots que le nom du projet ne porte pas doivent tous se trouver dans le chemin :
-  // de quoi écarter d'un coup les milliers de chemins hors course.
+  // Words absent from project names must all occur in paths,
+  // ruling out thousands of irrelevant paths immediately.
   const required = tokens.filter((token) => !project.includes(token))
   const projectField: FuzzyField = { text: target.projectName, folded: project, weight: PROJECT_WEIGHT, mode: 'strict' }
 
@@ -93,9 +80,9 @@ async function searchOne(target: FileSearchTarget, tokens: string[]): Promise<Pa
     if (!required.every((token) => containsInOrder(lower, token))) continue
     if (!tokens.some((token) => containsInOrder(lower, token))) continue
 
-    // Le nom se cherche en lettres éparses, le dossier d'un seul tenant, comme dans
-    // VS Code : chercher le chemin entier en lettres éparses trouvait toujours une lettre
-    // par dossier, et « palette » ramenait `packages/…/RateLimitResetType.ts`.
+    // Fuzzy-match filenames but require contiguous directory matches, like
+    // VS Code: fuzzy-matching whole paths always found one letter
+    // per directory, making palette match packages/…/RateLimitResetType.ts.
     const slash = path.lastIndexOf('/')
     const dir = Math.max(slash, 0)
     const match = matchFields(

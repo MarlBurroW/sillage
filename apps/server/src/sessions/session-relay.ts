@@ -13,55 +13,20 @@ import { formatSessionMessage } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
 import type { SessionManager } from './session-manager.js'
 
-/**
- * Remet aux sessions les messages que d'autres sessions leur ont laissés.
- *
- * Le serveur MCP dépose le message en base, faute de mieux : il n'a qu'un accès au
- * fichier, pas aux runners. Le relais balaie ces dépôts et les remet par les gestes que
- * l'utilisateur a déjà : une inflexion si le destinataire travaille, un message ordinaire
- * sinon, qui le relance.
- *
- * Il tient aussi les surveillances de `notify_when_done` : c'est lui qui voit passer les
- * statuts, et la fin d'une session devient un message comme un autre.
- *
- * Un balayage et non une notification : les deux process ne partagent que SQLite, qui ne
- * prévient pas d'une écriture faite par un autre. Deux secondes sont invisibles à
- * l'échelle d'un tour d'agent, et les requêtes tiennent dans des index.
- */
+/** Delivers inter-session messages. MCP deposits messages in databases because it lacks runners; relay sweeps inject by steering working recipients or ordinary messages waking idle ones. Also handles `notify_when_done` watches, turning session completions into messages. Poll because processes share only SQLite without cross-process notifications. Two seconds are negligible beside agent turns, and queries use indexes. */
 
 const POLL_MS = 2000
 
-/**
- * Profondeur au-delà de laquelle une réponse ne relance plus son destinataire.
- *
- * Deux agents polis se remercient indéfiniment, chacun relancé par l'autre, et brûlent
- * des jetons sans que personne regarde. La chaîne `reply_to` compte les allers-retours ;
- * passé ce seuil le message est retenu, et le fil du destinataire le montre pour qu'une
- * personne le remette ou l'écarte.
- *
- * Doit rester d'accord avec `apps/server/src/mcp/sillage-mcp.mjs`, qui prévient
- * l'expéditeur au moment de l'envoi.
- */
+/** Reply depth beyond which messages no longer wake idle recipients. Polite agents otherwise thank each other forever, spending unattended tokens. Count `reply_to` chains; hold beyond the limit for human delivery/dismissal in recipient conversations. Must match `apps/server/src/mcp/sillage-mcp.mjs`, which warns senders immediately. */
 export const MAX_HOPS = 6
 
-/**
- * Relances par destinataire et par heure, quelle que soit la chaîne.
- *
- * Le garde-fou précédent suppose que l'agent renseigne `reply_to`, ce que rien n'oblige.
- * Celui-ci ne suppose rien : une session réveillée six fois en une heure par ses voisines
- * attend désormais une personne. Même accord à tenir avec le serveur MCP.
- */
+/** Recipient wakeups per hour across chains. Previous safeguards depend on optional `reply_to`; this unconditional limit makes recipients awakened six times per hour await human intervention. Keep MCP constants consistent. */
 export const WAKES_PER_HOUR = 6
 
-/**
- * Âge au-delà duquel un message n'est plus remis, ni une surveillance tenue.
- *
- * Retenu un jour entier, un message ne parle plus de l'état présent et tomberait au
- * milieu d'un autre travail comme une consigne. Il reste lisible par l'outil.
- */
+/** Maximum delivery/watch age. Day-old messages no longer describe current state and would interrupt unrelated work like fresh instructions. Remain readable through tools. */
 const STALE_MS = 24 * 60 * 60 * 1000
 
-/** Le dernier message d'une session qui a fini, tel qu'il est cité à qui l'attendait. */
+/** Completed-session final messages quoted to waiting sessions. */
 const DONE_EXCERPT_CHARS = 1500
 
 type Outcome =
@@ -76,9 +41,9 @@ const STATUS_WORDS: Record<string, string> = {
 
 export class SessionRelay {
   private timer: NodeJS.Timeout | null = null
-  /** Un balayage ne démarre pas tant que le précédent attend encore un CLI. */
+  /** Never start sweeps while previous ones still await CLIs. */
   private busy = false
-  /** Posé par `start` : le logger est celui de l'application, construite après. */
+  /** Set by `start`: logger belongs to the subsequently built application. */
   private logger: FastifyBaseLogger | null = null
 
   constructor(
@@ -126,12 +91,7 @@ export class SessionRelay {
     }
   }
 
-  /**
-   * Remet un message retenu, à la demande d'une personne.
-   *
-   * Les garde-fous ne s'appliquent plus : ils existent pour qu'aucun échange ne tourne
-   * sans témoin, et quelqu'un vient justement de regarder.
-   */
+  /** Human-requested delivery of held messages bypasses safeguards because those prevent unattended loops and someone has now reviewed the exchange. */
   async release(conversationId: string, messageId: string): Promise<boolean> {
     const message = this.pendingFor(conversationId, messageId)
     if (!message) return false
@@ -173,8 +133,8 @@ export class SessionRelay {
       return
     }
 
-    // Annoncé une fois : le message est réexaminé à chaque balayage, et redémarrer le
-    // daemon ne doit pas le faire apparaître deux fois dans le fil.
+    // Announce once: messages are reconsidered every sweep and daemon restarts
+    // must not duplicate conversation notices.
     if (message.heldAt !== null) return
     this.db
       .update(sessionMessages)
@@ -193,19 +153,13 @@ export class SessionRelay {
     this.db
       .update(sessionMessages)
       .set({ deliveredAt: Date.now(), deliveredVia: via })
-      // Le destinataire a pu le lire par l'outil pendant la remise : son marquage est
-      // le bon, il ne faut pas l'écraser.
+      // The recipient may read through the tool during delivery: that marking is
+      // correct, and must not be overwritten.
       .where(and(eq(sessionMessages.id, id), isNull(sessionMessages.deliveredAt)))
       .run()
   }
 
-  /**
-   * Retire du fil les retenues dont le message est parti, quelle que soit la voie.
-   *
-   * Balayé plutôt qu'appelé au moment de la remise : un message retenu peut aussi être
-   * lu par `read_session_messages`, depuis le process MCP, qui n'a pas accès au journal.
-   * `heldAt` repasse à nul une fois l'annonce close, c'est ce qui la rend unique.
-   */
+  /** Closes held notices after delivery through any path. Sweep because MCP `read_session_messages` may mark them read without journal access. Reset `heldAt` after closure to keep announcements unique. */
   private closeHeld(): void {
     const closed = this.db
       .select()
@@ -234,12 +188,12 @@ export class SessionRelay {
 
     const text = this.frame(message)
 
-    // L'identifiant du message sert d'identifiant client : si la remise est rejouée
-    // après un échec d'écriture du marquage, la déduplication du gestionnaire l'avale.
+    // Use message IDs as client IDs so manager deduplication absorbs retries
+    // after delivery-marker write failures.
     if (recipient.status === 'running') {
       if (await this.sessions.steer(recipient.id, message.id, text)) return { via: 'steer' }
-      // Le tour a fini entre la lecture du statut et l'inflexion : le message part en
-      // message ordinaire, qui attendra la fin du tour s'il en reste un.
+      // If turns finish between status reads and steering, send ordinary messages,
+      // which queue if another turn still runs.
       const now = this.conversation(recipient.id)
       if (now?.status === 'running' || now?.status === 'awaiting_input') {
         await this.sessions.sendMessage(recipient.id, message.id, text)
@@ -247,17 +201,17 @@ export class SessionRelay {
       }
     }
 
-    // Une sollicitation en attente : le message passe derrière la réponse humaine.
+    // Pending requests put messages behind human answers.
     if (recipient.status === 'awaiting_input') {
       await this.sessions.sendMessage(recipient.id, message.id, text)
       return { via: 'queue' }
     }
 
-    // Une annonce ne vaut que pour qui travaille au moment où elle est faite : relancer
-    // une session au repos pour lui dire qu'on redémarre le service n'a pas de sens.
+    // Announcements apply only to sessions working at the time: waking idle sessions
+    // solely to announce service restarts makes no sense.
     if (message.kind === 'broadcast') return { via: 'skipped' }
 
-    // Une fin de travail a été demandée explicitement : elle relance sans compter.
+    // Explicitly requested completion notices wake sessions without rate counting.
     if (message.kind === 'message' && !force) {
       const held = this.holdReason(message)
       if (held) return { via: 'held', reason: held }
@@ -284,7 +238,7 @@ export class SessionRelay {
     return (row?.total ?? 0) >= WAKES_PER_HOUR ? 'rate' : null
   }
 
-  /** Longueur de la chaîne de réponses, bornée : au-delà du seuil, compter ne sert plus. */
+  /** Bounded reply-chain length: counting beyond limits adds no value. */
   private hops(message: SessionMessageRow): number {
     let depth = 0
     let parent = message.replyTo
@@ -300,13 +254,7 @@ export class SessionRelay {
     return depth
   }
 
-  /**
-   * Dépose un message `done` pour chaque surveillance dont la cible a fini.
-   *
-   * « Fini » veut dire plus rien en cours : ni tour, ni travail de fond, ni boucle, et
-   * pas de sollicitation en attente, qui n'est qu'une pause. Le message part ensuite
-   * par le chemin ordinaire, dans le même balayage.
-   */
+  /** Deposits `done` messages for watches whose targets finished: no turn, background work, loop or pending requests, which are merely pauses. Messages then follow normal delivery in the same sweep. */
   private fireWatches(): void {
     const open = this.db.select().from(sessionWatches).where(isNull(sessionWatches.firedAt)).all()
 
@@ -378,7 +326,7 @@ export class SessionRelay {
       .join('\n')}`
   }
 
-  /** Le dernier texte de l'agent dans le fil principal, sous-agents exclus. */
+  /** Latest main-agent conversation text excluding subagents. */
   private lastAgentText(conversationId: string): string | null {
     const rows = this.db
       .select({ payload: events.payload })
@@ -421,7 +369,7 @@ and(eq(events.conversationId, conversationId), eq(events.type, 'message.complete
       .get()
   }
 
-  /** Le message tel que le destinataire le lit, voir `formatSessionMessage`. */
+  /** Message as read by its recipient; see formatSessionMessage. */
   private frame(message: SessionMessageRow): string {
     const sender = this.conversation(message.fromConversationId)
     return formatSessionMessage({

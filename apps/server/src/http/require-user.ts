@@ -14,12 +14,7 @@ export function requireAdmin(request: FastifyRequest): UserRow {
   return user
 }
 
-/**
- * L'appelant d'une route `/api/v1`, avec la portée qu'elle exige.
- *
- * Le hook global garantit déjà la présence du jeton sur ce préfixe ; ce garde le
- * retype et vérifie la portée, qui est propre à chaque route.
- */
+/** Caller of an `/api/v1` route with its required scope. The global hook already ensures a token exists under this prefix; this guard narrows its type and checks the route-specific scope. */
 export function requireScope(
   request: FastifyRequest,
   scope: ApiScope,

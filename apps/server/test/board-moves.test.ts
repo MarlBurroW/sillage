@@ -10,11 +10,7 @@ import { cardNotes, cards, conversations, openDatabase, projects, runMigrations,
 import type { WorktreeStatusDto, WorktreeStatusListDto } from '@sillage/protocol'
 import { closeMergedCards } from '../src/worktrees/merged-cards.js'
 
-/**
- * Les cartes qui changent de colonne sans la main de l'utilisateur : par un agent
- * (move_card du serveur MCP), par la fusion de leur worktree, et la date d'arrivée dans
- * la colonne que tiennent les déclencheurs de la migration 0047.
- */
+/** Cards changing columns without user actions: agent MCP move_card, worktree merges and column arrival timestamps maintained by migration 0047 triggers. */
 function harness(t: TestContext) {
   const dir = mkdtempSync(join(tmpdir(), 'sillage-board-moves-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
@@ -56,7 +52,7 @@ test('la date d’arrivée suit la colonne, et elle seule', (t) => {
   assert.ok(row(id).columnEnteredAt! >= before - 1, 'un changement de colonne date l’arrivée')
 })
 
-/** Un appel d'outil au vrai serveur MCP, dans la conversation `agent`. */
+/** Real MCP tool call in conversation `agent`. */
 async function call(dbPath: string, name: string, args: object) {
   const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
     env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: 'agent' },
@@ -116,16 +112,16 @@ test('la fusion du worktree passe sa carte en Terminé, une seule fois', (t) => 
   const id = card(1, 'review')
   session('worker', id)
 
-  // Un arbre neuf, sans commit à lui, est déjà « fusionné » : ce n'est pas un travail fini.
+  // Fresh trees without independent commits already look merged but are not completed work.
   assert.equal(closeMergedCards(db, project, list({ lastCommitAt: 4000 })), 0)
   assert.equal(row(id).column, 'review')
 
-  // Une session encore au travail dans l'arbre retient la carte.
+  // Sessions still working in trees prevent card completion.
   db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, 'worker')).run()
   assert.equal(closeMergedCards(db, project, list({})), 0)
   db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 'worker')).run()
 
-  // Pas fusionné : rien.
+  // Not merged: no change.
   assert.equal(closeMergedCards(db, project, list({ state: 'unmerged', ahead: 2 })), 0)
 
   assert.equal(closeMergedCards(db, project, list({})), 1)
@@ -133,7 +129,7 @@ test('la fusion du worktree passe sa carte en Terminé, une seule fois', (t) => 
   assert.equal(row(id).doneByMerge, '/tmp/feat-x')
   assert.match(notes(id)[0]!.body, /`feat\/x` est fusionnée dans `main`/)
 
-  // Ramenée en cours à la main : le même arbre ne la renvoie pas.
+  // Manually moved-back cards are not completed again by the same tree.
   db.update(cards).set({ column: 'in_progress' }).where(eq(cards.id, id)).run()
   assert.equal(closeMergedCards(db, project, list({})), 0)
   assert.equal(row(id).column, 'in_progress')

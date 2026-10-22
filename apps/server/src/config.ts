@@ -11,25 +11,13 @@ const configSchema = z.object({
     .object({
       host: z.string().default('127.0.0.1'),
       port: z.number().int().min(1).max(65535).default(7317),
-      /**
-       * Racine publique de l'instance, pour les liens que l'API met dans ses réponses.
-       *
-       * Vide, elle se déduit de l'en-tête `Host` de la requête, ce qui marche aussi bien
-       * par le nom de domaine que par l'adresse locale. La renseigner ferme le cas où un
-       * appelant forge ce `Host` pour obtenir un lien vers un autre site, qu'il ferait
-       * ensuite suivre à un humain.
-       */
+      /** Public instance root for API response links. Empty infers from request `Host`, working with domains and local addresses. Setting it prevents forged Host values from generating links to another site that callers could forward to humans. */
       publicUrl: z.string().default(''),
     })
     .default({}),
   limits: z
     .object({
-      /**
-       * Une session Claude coûte 400 à 500 Mo. C'est le seul plafond qui compte.
-       *
-       * Défaut de provisionnement seulement : l'interface écrit la valeur en base, et
-       * celle-ci l'emporte (voir `readAppSettings`).
-       */
+      /** Claude sessions cost 400–500 MB: this is the meaningful concurrency limit. Provisioning default only; interface values stored in the database override it (see `readAppSettings`). */
       maxConcurrentSessions: z.number().int().min(1).default(10),
       sessionIdleTimeoutMin: z.number().int().min(1).default(30),
       ptyIdleTimeoutMin: z.number().int().min(1).default(60),
@@ -39,38 +27,21 @@ const configSchema = z.object({
   retention: z
     .object({
       archivedEventsDays: z.number().int().min(1).default(90),
-      /**
-       * Jours d'inactivité au bout desquels une conversation lue et au repos est
-       * rangée. Zéro coupe le rangement automatique, l'action manuelle restant là.
-       */
+      /** Inactivity days before read, idle conversations are archived. Zero disables automatic archiving while retaining the manual action. */
       autoArchiveDays: z.number().int().min(0).default(14),
-      /**
-       * Motif cron du passage d'archivage. Au petit matin par défaut, et décalé des
-       * autres ménages pour ne pas se retrouver à quatre sur l'unique rédacteur SQLite.
-       */
+      /** Archival cron expression. Defaults to early morning, offset from other housekeeping to avoid four jobs competing for SQLite's sole writer. */
       autoArchiveSchedule: cronScheduleSchema.default('45 4 * * *'),
     })
     .default({}),
   mcp: z
     .object({
-      /**
-       * Monte le serveur MCP de Sillage dans les conversations, qui ouvre à l'agent
-       * l'historique du projet.
-       *
-       * Vrai par défaut, et coupable ici pour toute l'instance : certains ne veulent de
-       * Sillage qu'une interface à Claude Code et Codex, sans les capacités que la
-       * plateforme ajoute par-dessus. À faux, l'entrée disparaît aussi de l'interface,
-       * un réglage visible mais inopérant valant moins que pas de réglage du tout.
-       */
+      /** Mounts Sillage MCP in conversations to expose project history. Enabled by default and globally disableable: some users want only a Claude Code/Codex interface without platform capabilities. When false, hide the interface entry too, since visible inoperative settings are worse than none. */
       sillageServer: z.boolean().default(true),
     })
     .default({}),
   skills: z
     .object({
-      /**
-       * Livre la bibliothèque de skills de Sillage aux sessions. Coupable ici pour toute
-       * l'instance, par le même raisonnement que `mcp.sillageServer`.
-       */
+      /** Delivers the Sillage skill library to sessions. Globally disableable for the same reason as `mcp.sillageServer`. */
       library: z.boolean().default(true),
     })
     .default({}),
@@ -98,40 +69,26 @@ export interface Paths {
   data: string
   database: string
   attachments: string
-  /**
-   * Préfixe npm où Sillage installe les CLI qu'il gère lui-même.
-   *
-   * Sous le répertoire de données, et non ailleurs : en Docker c'est déjà le volume
-   * monté, donc les CLI survivent au remplacement du conteneur sans qu'il faille en
-   * monter un second, et le dossier appartient déjà à l'utilisateur du service.
-   */
+  /** Managed CLI npm prefix under the data directory. Docker already mounts this volume, so CLIs survive container replacement without a second mount, and the directory already belongs to the service user. */
   agents: string
   worktrees: string
   logs: string
-  /** Bibliothèque de skills, voir `skill-library/layout.ts`. */
+  /** Skill library; see `skill-library/layout.ts`. */
   skillLibrary: string
-  /** Mémoire des agents, un dossier par projet, voir `memory/store.ts`. */
+  /** Agent memory, one directory per project; see `memory/store.ts`. */
   memory: string
-  /**
-   * Clones des sources de skills, dans le cache et non dans les données : ils se
-   * refont d'un rafraîchissement, et la sauvegarde n'a pas à les transporter.
-   */
+  /** Skill source clones live in cache rather than data: refresh rebuilds them, so backups need not carry them. */
   skillSourcesCache: string
-  /** Un `CODEX_HOME` par compte Codex supplémentaire, voir `codex-accounts/homes.ts`. */
+  /** One `CODEX_HOME` per additional Codex account; see `codex-accounts/homes.ts`. */
   codexAccounts: string
-  /** Un `GROK_HOME` par compte Grok supplémentaire, voir `grok-accounts/homes.ts`. */
+  /** One `GROK_HOME` per additional Grok account; see `grok-accounts/homes.ts`. */
   grokAccounts: string
-  /** Une connexion par abonnement Claude, pour sa seule jauge, voir `claude-accounts/gauges.ts`. */
+  /** One login per Claude subscription solely for usage gauges; see `claude-accounts/gauges.ts`. */
   claudeAccounts: string
   webRoot: string
 }
 
-/**
- * Le fichier d'exemple et l'usage TOML courant écrivent `max_concurrent_sessions`,
- * mais le schéma est en camelCase. Sans cette passe, les clés snake_case étaient
- * silencieusement ignorées et l'utilisateur tournait sur les défauts en croyant
- * ses réglages appliqués. On accepte donc les deux graphies.
- */
+/** Example files and conventional TOML use `max_concurrent_sessions`, but schemas use camelCase. Without normalization, snake_case keys were silently ignored while users assumed their settings applied. Accept both spellings. */
 function camelizeKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(camelizeKeys)
   if (value === null || typeof value !== 'object') return value
@@ -162,9 +119,9 @@ function resolvePaths(): Paths {
     codexAccounts: join(data, 'codex-accounts'),
     grokAccounts: join(data, 'grok-accounts'),
     claudeAccounts: join(data, 'claude-accounts'),
-    // Propre à chaque répertoire de données : deux instances sur une machine (un serveur
-    // de test à côté du daemon) ont les mêmes identifiants de sources préconfigurées, et
-    // ne doivent pas rafraîchir le même clone en même temps.
+    // Per data directory: test servers beside daemons share preconfigured source IDs
+    // but must not refresh
+    // the same clone concurrently.
     skillSourcesCache: join(
       xdg('XDG_CACHE_HOME', '.cache'),
       'sillage',
@@ -175,11 +132,7 @@ function resolvePaths(): Paths {
   }
 }
 
-/**
- * Un fichier de configuration absent est normal : tous les champs ont un défaut.
- * En revanche un fichier présent mais invalide doit faire échouer le démarrage,
- * sinon on tourne silencieusement avec des réglages que l'utilisateur croit appliqués.
- */
+/** Missing configuration files are normal because every field has a default. Existing invalid files must fail startup rather than silently ignore settings users believe applied. */
 export function loadConfig(): Config {
   const configPath =
     process.env.SILLAGE_CONFIG ?? join(xdg('XDG_CONFIG_HOME', '.config'), 'sillage/config.toml')
@@ -201,9 +154,9 @@ export function loadConfig(): Config {
 
   const config = parsed.data
 
-  // En conteneur, écrire un fichier TOML pour changer l'adresse d'écoute est
-  // disproportionné : l'image Docker fixe SILLAGE_HOST=0.0.0.0 et l'utilisateur
-  // ajuste le port par variable d'environnement.
+  // Containers should not need TOML files just to change bind addresses:
+  // the Docker image sets SILLAGE_HOST=0.0.0.0 and users
+  // adjust the port through environment variables.
   if (process.env.SILLAGE_HOST) config.server.host = process.env.SILLAGE_HOST
   if (process.env.SILLAGE_PORT) {
     const port = Number(process.env.SILLAGE_PORT)

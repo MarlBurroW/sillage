@@ -15,43 +15,37 @@ import type {
 } from '@sillage/protocol'
 import { locale, translate } from './i18n'
 
-/**
- * Fold du journal vers le modèle d'affichage (invariant I2 : le rendu est une
- * fonction pure du journal, rejouable depuis zéro).
+/** Fold the event log into the display model (invariant I2: rendering is a pure function of the log, replayable from scratch).
  *
- * Aucune information affichée ne doit provenir d'ailleurs que d'ici. Si un état de
- * l'UI n'est pas dérivable de cette fonction, c'est que l'événement manque côté
- * serveur, pas qu'il faut une variable d'état supplémentaire côté client.
- */
+ * All displayed information must originate here. If UI state cannot be derived from this function, the server is missing an event; the client does not need another state variable. */
 
 export interface MessageItem {
   kind: 'message'
   id: string
   role: 'user' | 'assistant'
-  /** Date du premier événement qui a créé le message, en millisecondes. */
+  /** Timestamp of the first event that created the message, in milliseconds. */
   ts: number
-  /** Position dans le journal, seul repère utilisable pour couper le fil (fork). */
+  /** Position in the log, the only reliable boundary for forking the thread. */
   seq: number
   blocks: ContentBlock[]
-  /** Texte en cours de réception, vidé dès que le message correspondant arrive. */
+  /** Incoming text, cleared when the corresponding message arrives. */
   streamingText: string
   streamingThinking: string
-  /** Appel qui a lancé le sous-agent auteur du message. Null pour l'agent principal. */
+  /** Call that spawned the subagent authoring this message. Null for the main agent. */
   parentToolCallId: string | null
 }
 
 export interface ToolItem {
   kind: 'tool'
   id: string
-  /** Date d'ouverture de l'appel : la seule base pour un chronomètre en cours. */
+  /** Call start time: the only basis for a running timer. */
   ts: number
   name: string
   input: unknown
   output: unknown
   /**
-   * Taille réelle de la sortie quand `output` n'en est qu'un aperçu, sinon null. Une
-   * relecture d'historique réduit les sorties volumineuses ; la carte demande le corps
-   * complet à l'ouverture.
+   * Actual output size when `output` is only a preview, otherwise null. History replay trims large
+   * outputs; the card requests the full body when opened.
    */
   outputBytes: number | null
   status: 'running' | 'done' | 'failed' | 'interrupted'
@@ -66,23 +60,23 @@ export interface PermissionItem {
   input: unknown
   suggestions: PermissionOption[]
   status: 'pending' | 'allowed' | 'denied' | 'expired'
-  /** Phrase rédigée par le CLI, qui sait pourquoi il demande. Null s'il n'en donne pas. */
+  /** Wording supplied by the CLI, which knows why it is asking. Null if none is provided. */
   title: string | null
   description: string | null
 }
 
-/** Une question posée par l'agent, en attente ou déjà tranchée. */
+/** An agent question, pending or already resolved. */
 export interface QuestionItem {
   kind: 'question'
   id: string
   questions: AgentQuestion[]
   status: 'pending' | 'answered' | 'cancelled' | 'expired'
-  /** Réponses retenues, par identifiant de question. Vide tant qu'on n'a pas répondu. */
+  /** Selected answers by question ID. Empty until answered. */
   answers: Record<string, string[]>
   blocking: boolean
 }
 
-/** Une saisie réclamée par un serveur MCP. */
+/** Input requested by an MCP server. */
 export interface ElicitationItem {
   kind: 'elicitation'
   id: string
@@ -96,15 +90,15 @@ export interface ElicitationItem {
   content: Record<string, ElicitationValue>
 }
 
-/** Un plan soumis à validation avant passage à l'exécution. */
+/** A plan submitted for approval before execution. */
 export interface PlanItem {
   kind: 'plan'
   id: string
   plan: string
   status: 'pending' | 'approved' | 'rejected' | 'expired'
-  /** Suites proposées par l'adaptateur ; vide sur les journaux d'avant le champ. */
+  /** Follow-up options supplied by the adapter; empty for logs predating this field. */
   followUpOptions: PlanFollowUpOption[]
-  /** L'`id` de l'option retenue, opaque pour l'UI. */
+  /** The selected option's `id`, opaque to the UI. */
   followUpMode: string | null
 }
 
@@ -116,7 +110,7 @@ export interface ErrorItem {
   recoverable: boolean
 }
 
-/** Repère discret dans le fil, sans contenu propre (changement de modèle, reprise). */
+/** A subtle thread marker with no content of its own (model change, resume). */
 export interface NoticeItem {
   kind: 'notice'
   id: string
@@ -139,11 +133,9 @@ export interface DiffItem {
 }
 
 /**
- * Le compte rendu d'un travail que le fil ne suivait plus.
- *
- * Seuls les travaux devenus autonomes en ont un. Un sous-agent que le fil suit rend
- * déjà son résultat dans l'appel qui l'a lancé : le répéter ici mettrait deux fois la
- * même chose à l'écran.
+ * Report from work the thread was no longer tracking. Only autonomous work receives one. A tracked
+ * subagent already returns its result through the spawning call; repeating it here would display
+ * the same result twice.
  */
 export interface TaskItem {
   kind: 'task'
@@ -167,7 +159,7 @@ export type ChatItem =
   | PlanProgressItem
   | DiffItem
 
-/** Vrai si un élément attend une décision de l'utilisateur pour que le tour reprenne. */
+/** Whether an item awaits a user decision before the turn can resume. */
 export function isAwaitingUser(item: ChatItem): boolean {
   if (item.kind === 'question' && !item.blocking) return false
   return (
@@ -180,11 +172,9 @@ export function isAwaitingUser(item: ChatItem): boolean {
 }
 
 /**
- * Un message en attente de la fin du tour courant.
- *
- * Volontairement hors de `items` : il ne fait pas partie du fil, il s'affiche après
- * l'indicateur d'activité pour montrer que l'agent traite ce qui est au-dessus. Le
- * mettre dans `items` obligerait la réglette et le regroupement d'outils à l'ignorer.
+ * A message waiting for the current turn to end. Kept outside `items`: it appears after the
+ * activity indicator to show that the agent is handling the content above it. Putting it in `items`
+ * would force turn navigation and tool grouping to ignore it.
  */
 export interface QueuedMessage {
   queueId: string
@@ -193,10 +183,9 @@ export interface QueuedMessage {
 }
 
 /**
- * Message d'une autre session que Sillage a retenu au lieu de relancer celle-ci.
- *
- * Hors de `items` pour la même raison que la file : l'agent ne l'a pas lu. `text` est
- * l'enveloppe complète, à lire avec `parseSessionMessage`.
+ * A message from another session held by Sillage instead of restarting this one. Outside `items`
+ * for the same reason as queued messages: the agent has not read it. `text` is the full envelope,
+ * read using `parseSessionMessage`.
  */
 export interface HeldSessionMessage {
   messageId: string
@@ -204,61 +193,54 @@ export interface HeldSessionMessage {
   reason: 'loop' | 'rate'
 }
 
-/** Un fichier touché par l'agent pendant un tour. */
+/** A file touched by the agent during a turn. */
 export interface EditedFile {
   path: string
   action: 'created' | 'modified' | 'deleted'
   /**
-   * Appels ayant touché ce fichier pendant le tour, dans l'ordre.
-   *
-   * Le fichier n'apparaît qu'une fois, mais un agent le reprend souvent en plusieurs
-   * passes : garder chaque appel permet de montrer chaque modification, alors que ne
-   * retenir que la dernière effacerait les précédentes.
+   * Calls that touched this file during the turn, in order. The file appears once, but agents often
+   * revisit it over several passes: retaining every call lets us display every edit; retaining only
+   * the last would erase earlier edits.
    */
   toolCallIds: string[]
 }
 
 /**
- * Modifications d'un tour, dans l'ordre où les tours ont eu lieu.
- *
- * Regroupées par message utilisateur plutôt que par `turn.started` : c'est la demande
- * qui donne son sens à une série de modifications, et l'ordre des deux événements
- * diffère selon le CLI.
+ * Edits grouped by turn, in turn order. Grouped by user message rather than `turn.started`: the
+ * request gives a series of edits its meaning, and the order of these two events varies by CLI.
  */
 export interface EditTurn {
-  /** Identifiant du message utilisateur qui a ouvert le tour. */
+  /** ID of the user message that opened the turn. */
   id: string
   ts: number
-  /** Début du message, pour reconnaître le tour dans la liste. */
+  /** Message prefix used to identify the turn in the list. */
   label: string
   files: EditedFile[]
 }
 
 /**
- * Point de reprise d'un tour : ce que le tour a changé dans le dépôt, et de quoi y
- * revenir.
- *
- * Rattaché au message utilisateur qui a ouvert le tour, comme `EditTurn` : c'est là
- * que le fil le montre. `openerId` reste null le temps que ce message arrive, l'ordre
- * du journal étant « capture d'avant, puis message ».
+ * Turn checkpoint: changes made to the repository and the information needed to restore it.
+ * Attached to the opening user message, like `EditTurn`, since that is where it appears in the
+ * thread. `openerId` remains null until that message arrives: the log records the before snapshot
+ * first, then the message.
  */
 export interface TurnCheckpoint {
   key: string
-  /** Position de la capture d'avant dans le journal : juste avant le message du tour. */
+  /** Position of the before snapshot in the log, immediately before the turn's message. */
   seq: number
   openerId: string | null
-  /** Texte du message qui a ouvert le tour : nomme le tour, et sert de brouillon au fork. */
+  /** Opening message text: labels the turn and seeds the fork draft. */
   openerText: string
   status: 'pending' | 'ready' | 'failed'
   files: CheckpointFile[]
   truncated: boolean
   excluded: number
   reason: string | null
-  /** Vrai une fois le workspace ramené à l'état d'avant ce tour. */
+  /** True once the workspace has been restored to its state before this turn. */
   restored: boolean
 }
 
-/** Dernier état de quota connu, tel qu'annoncé par le CLI. */
+/** Latest known quota state reported by the CLI. */
 export interface RateLimitState {
   type: string
   status: 'allowed' | 'allowed_warning' | 'rejected'
@@ -266,7 +248,7 @@ export interface RateLimitState {
   resetsAt: number | null
 }
 
-/** Occupation de la fenêtre de contexte, telle que le CLI la rapporte. */
+/** Context window usage reported by the CLI. */
 export interface ContextState {
   usedTokens: number
   maxTokens: number
@@ -280,7 +262,7 @@ export interface ChatState {
   queued: QueuedMessage[]
   heldSessionMessages: HeldSessionMessage[]
   lastSeq: number
-  /** Coût API équivalent. Sur un compte par abonnement, il n'est pas facturé. */
+  /** Equivalent API cost. Not billed on subscription accounts. */
   costUsd: number
   inputTokens: number
   outputTokens: number
@@ -289,127 +271,101 @@ export interface ChatState {
   model: string | null
   rateLimit: RateLimitState | null
   context: ContextState | null
-  /** Les tours terminés, pour afficher un indicateur d'activité fiable. */
+  /** Track turn completion to display a reliable activity indicator. */
   turnRunning: boolean
   /**
-   * Taille de la réflexion en cours, révélée ou non.
-   *
-   * Non nulle veut dire « l'agent réfléchit en ce moment » : tout autre signe de
-   * progrès la remet à null, de sorte que l'indicateur n'annonce jamais une réflexion
-   * pendant que du texte s'écrit ou qu'un outil tourne.
+   * Size of the current reasoning, whether revealed or hidden. A non-null value means the agent is
+   * thinking now: any other sign of progress resets it to null, so the indicator never claims
+   * reasoning while text is being written or a tool is running.
    */
   thinkingTokens: number | null
-  /** Historique des modifications, tour par tour, dérivé de `file.edited`. */
+  /** Edit history by turn, derived from `file.edited`. */
   editTurns: EditTurn[]
-  /** Points de reprise, un par tour capturé, dans l'ordre des tours. */
+  /** Checkpoints, one per captured turn, in turn order. */
   checkpoints: TurnCheckpoint[]
   /**
-   * Une compaction est en cours.
-   *
-   * Distinct de `turnRunning` : pendant une compaction l'agent ne répond pas, il
-   * réécrit sa mémoire, et l'annoncer comme une réflexion fait attendre une réponse
-   * qui ne viendra pas.
+   * Compaction is underway. Separate from `turnRunning`: during compaction the agent rewrites its
+   * memory rather than answering. Labeling it as reasoning would imply an answer that will never
+   * arrive.
    */
   compacting: boolean
   /**
-   * Les travaux que le CLI poursuit hors du tour : workflows, commandes lancées en
-   * fond, sous-agents basculés en arrière-plan.
-   *
-   * Remplacée à chaque `background.updated` et jamais complétée : c'est un niveau, pas
-   * une suite de débuts et de fins. Non vide alors que `turnRunning` est faux décrit
-   * l'état que le fil ne savait pas montrer, celui où l'agent a rendu la main mais où
-   * des fichiers changent encore.
+   * Work the CLI continues outside the turn: workflows, background commands, and backgrounded
+   * subagents. Replaced on every `background.updated`, never appended to: this is a snapshot, not a
+   * sequence of starts and stops. A nonempty list while `turnRunning` is false describes the
+   * previously invisible state where the agent has yielded but files are still changing.
    */
   background: BackgroundTask[]
   /**
-   * Les boucles armées, telles que le dernier relevé de fin de tour les décrit.
-   *
-   * Remplacée et jamais complétée, comme `background` : le CLI ne raconte ni la
-   * création ni la fin d'une boucle, il ne répond qu'à l'inventaire.
+   * Armed loops from the latest end-of-turn inventory. Replaced rather than appended to, like
+   * `background`: the CLI reports neither loop creation nor completion, only an inventory.
    */
   loops: Loop[]
   /**
-   * Les serveurs MCP de la session, tels que le CLI les rapporte.
-   *
-   * Remplacée et jamais complétée, comme `background` et `loops` : le CLI publie
-   * l'inventaire entier à chaque changement. Contient aussi les serveurs venus de sa
-   * propre configuration, marqués `external`, que l'utilisateur subit sans les avoir
-   * déclarés dans Sillage et doit pouvoir voir échouer.
+   * Session MCP servers reported by the CLI. Replaced rather than appended to, like `background`
+   * and `loops`: the CLI publishes the full inventory on every change. Includes servers from its
+   * own configuration, marked `external`; users must be able to see failures even if they never
+   * declared those servers in Sillage.
    */
   mcp: McpServerStatus[]
   /**
-   * Les commandes en `/` reconnues par la session, déjà réduites par le serveur à ce
-   * qui est proposable ici.
-   *
-   * Remplacée et jamais complétée, comme `mcp` : le CLI republie la liste entière.
-   * Vide tant qu'aucune session n'a démarré, et pour un CLI qui ne les publie pas.
+   * Slash commands recognized by the session, already filtered by the server to those usable here.
+   * Replaced rather than appended to, like `mcp`: the CLI republishes the full list. Empty before
+   * any session starts and for CLIs that do not publish commands.
    */
   commands: SlashCommandDto[]
   /**
-   * Les compétences que le CLI met à disposition, référencées en `$`.
-   *
-   * Remplacée et jamais complétée, comme `commands`. Publiée par Codex seul : Claude
-   * expose les siennes parmi ses commandes.
+   * Skills provided by the CLI, referenced with `$`. Replaced rather than appended to, like
+   * `commands`. Published only by Codex: Claude includes its skills among commands.
    */
   skills: AgentSkillDto[]
   /**
-   * Le message suivant que le CLI prédit, après le dernier tour.
-   *
-   * Remplacée et jamais complétée : une suggestion ne vaut que pour le tour qui vient.
-   * Effacée dès qu'un tour repart, quel que soit le message qui l'ouvre, y compris un
-   * autre que celui suggéré. Null aussi pour un CLI qui n'en propose pas.
+   * The next message predicted by the CLI after the latest turn. Replaced rather than appended to:
+   * a suggestion applies only to the next turn. Cleared whenever a turn starts, including one
+   * opened by a different message. Also null for CLIs without suggestions.
    */
   suggestion: string | null
   /**
-   * Les réveils observés, par consigne réinjectée : combien, et le dernier quand.
-   *
-   * Tenue à part de `loops` parce qu'elle doit survivre au remplacement de la liste.
-   * Indexée sur la consigne faute de mieux : le CLI réinjecte le texte seul, sans dire
-   * de quelle tâche il vient. Deux boucles partageant leurs 200 premiers caractères
-   * mêleraient donc leurs comptes, ce qui reste préférable à ne rien compter.
+   * Observed wakeups by reinjected instruction: count and latest timestamp. Kept separately from
+   * `loops` to survive list replacement. Keyed by instruction for lack of a better identifier: the
+   * CLI reinjects only text without its task origin. Two loops sharing their first 200 characters
+   * would combine counts, which is still preferable to counting nothing.
    */
   loopFires: Map<string, { count: number; lastAt: number }>
   /**
-   * Ce que le CLI dit de chaque travail enregistré, de son lancement à son arrêt.
-   *
-   * Tenue à part de `background` : la liste de niveau dit qui vit, cette table dit
-   * quoi. Elle garde aussi les travaux déjà finis, dont on affiche encore le compte
-   * rendu.
+   * What the CLI reports about each registered task from start to stop. Separate from `background`:
+   * that snapshot says which tasks are alive, while this table describes them. Also retains
+   * completed tasks whose reports remain visible.
    */
   tasks: Map<string, TaskState>
 }
 
-/** L'avancement d'un travail, tel que les événements `task.*` le décrivent. */
+/** Task progress described by `task.*` events. */
 export interface TaskState {
   id: string
-  /** L'appel d'outil qui l'a lancé, nul quand le harnais l'a lancé de lui-même. */
+  /** Spawning tool call, null when the harness started it independently. */
   toolCallId: string | null
   kind: string
   description: string
-  /** Ce qu'il fait à l'instant, nul tant qu'il n'a pas rendu compte une première fois. */
+  /** Current activity, null until the first progress report. */
   activity: string | null
   lastTool: string | null
   toolUses: number
   totalTokens: number
   durationMs: number
   /**
-   * Vrai dès que le travail a continué alors que le fil ne le suivait plus : son appel
-   * d'outil était déjà rendu, ou il n'en avait aucun.
-   *
-   * C'est ce qui sépare un workflow d'un sous-agent ordinaire, les deux étant annoncés
-   * dans la même liste. Une fois posé, l'indicateur ne retombe pas : un travail rendu
-   * à lui-même le reste, et son compte rendu de fin doit arriver dans le fil même si
-   * la dernière liste de niveau l'a déjà retiré.
+   * True once work continues after the thread stops tracking it: its tool call has returned or it
+   * never had one. This distinguishes workflows from ordinary subagents, both reported in the same
+   * list. Once set, it stays set: autonomous work must report completion in the thread even if the
+   * latest snapshot has already removed it.
    */
   unattended: boolean
-  /** Vrai une fois son compte rendu reçu. Le travail peut alors être cru sur parole. */
+  /** True once its report arrives; the task can then be taken at its word. */
   done: boolean
   /**
-   * Comment il s'est terminé, nul tant qu'il tourne.
-   *
-   * Tenu à part de `done` parce qu'un travail détaché ne finit pas toujours de lui-même :
-   * arrêté avec sa session, il est fini sans avoir abouti, et la ligne du sous-agent doit
-   * le dire plutôt que d'afficher la fin normale de l'appel qui l'a lancé.
+   * How it ended, null while running. Separate from `done` because detached work does not always
+   * finish by itself: stopped with its session, it has ended without succeeding. The subagent row
+   * must say so rather than show normal completion of its spawning call.
    */
   outcome: 'completed' | 'failed' | 'stopped' | null
 }
@@ -447,47 +403,41 @@ export function emptyChatState(): ChatState {
 }
 
 /**
- * Clé d'appariement entre une consigne réinjectée et la boucle qui la porte.
- *
- * Tronquée bien en deçà des 1000 caractères auxquels le CLI coupe les consignes qu'il
- * inventorie : comparer les chaînes entières ferait manquer l'appariement des longues,
- * seules celles-là étant coupées d'un côté et pas de l'autre.
+ * Matching key between a reinjected instruction and its loop. Truncated well below the CLI's
+ * 1000-character inventory limit: comparing full strings would miss long instructions truncated on
+ * only one side.
  */
 export function loopKey(prompt: string): string {
   return prompt.slice(0, 200)
 }
 
 /**
- * Ce qu'un tour a fait d'un fichier, quand il y touche plusieurs fois.
- *
- * Créé puis réécrit reste une création ; supprimé en dernier l'emporte sur tout, le
- * fichier n'étant plus là à la fin du tour.
+ * What a turn did to a file touched several times. Created then rewritten remains a creation; a
+ * final deletion takes precedence because the file no longer exists at the end of the turn.
  */
 function mergeAction(current: EditedFile['action'], next: EditedFile['action']): EditedFile['action'] {
   if (next === 'deleted') return 'deleted'
   return current
 }
 
-/** Tokens en milliers, la maille sous laquelle le chiffre n'apprend plus rien. */
+/** Tokens in thousands, below which extra precision adds no useful information. */
 function thousands(tokens: number): string {
   return `${Math.round(tokens / 1000)} k`
 }
 
 /**
- * Tokens au token près, groupés selon la langue.
- *
- * Distinct de `thousands` : celui-ci mesure une taille qu'on lit d'un coup d'œil, alors
- * qu'un compteur qui avance est lu deux fois de suite, et c'est l'écart entre les deux
- * lectures qui l'anime. Arrondi au millier, il affiche « 0 k » un long moment puis saute
- * à « 1 k » : le chiffre est juste, mais il ne bouge plus, donc il ne prouve plus rien.
+ * Exact token count, grouped according to locale. Unlike `thousands`, which conveys size at a
+ * glance, a moving counter is read repeatedly and its changing value conveys activity. Rounding to
+ * thousands leaves it at 0 k before jumping to 1 k: accurate, but motionless and therefore no proof
+ * of progress.
  */
 function exactTokens(tokens: number): string {
   return tokens.toLocaleString(locale())
 }
 
 /**
- * Ce que la compaction a réellement libéré, dans la limite de ce que le CLI en dit :
- * Claude donne les deux tailles, Codex n'en donne aucune.
+ * What compaction actually freed, limited to what the CLI reports: Claude provides both sizes;
+ * Codex provides neither.
  */
 function describeCompaction(preTokens: number | null, postTokens: number | null): string {
   if (preTokens === null) return translate('activity.compaction.done')
@@ -501,17 +451,14 @@ function describeCompaction(preTokens: number | null, postTokens: number | null)
 }
 
 /**
- * Ce que l'agent est en train de faire, ou null quand il n'y a rien à signaler.
- *
- * Dérivé du seul journal, comme tout le reste de l'affichage : c'est ce qui permet à
- * l'indicateur de rester juste après un rechargement, sans état parallèle à tenir.
- * Une demande de permission en attente ne renvoie rien, la demande elle-même étant
- * déjà l'information.
+ * What the agent is doing, or null when there is nothing to report. Derived solely from the log,
+ * like the rest of the display, so it remains accurate after reload without parallel state. A
+ * pending permission request returns nothing because the request itself provides the information.
  */
 export function describeActivity(state: ChatState): string | null {
-  // Avant le tour : la compaction déclenchée depuis le menu n'ouvre pas toujours un
-  // tour, et c'est de toute façon elle qu'il faut nommer quand les deux coexistent.
-  // La taille annoncée est celle d'avant, la seule connue tant qu'elle n'est pas finie.
+  // Check compaction before the turn: menu-triggered compaction does not always open a turn, and
+  // takes precedence when both coexist. The reported size is the pre-compaction size, the only one
+  // known until completion.
   if (state.compacting) {
     return state.context
       ? translate('activity.compacting.tokens', { tokens: thousands(state.context.usedTokens) })
@@ -519,9 +466,9 @@ export function describeActivity(state: ChatState): string | null {
   }
   if (!state.turnRunning) return null
 
-  // Le compteur prime sur le dernier élément du fil : il n'est renseigné que pendant
-  // une réflexion en cours, et il en dit plus que le « Réflexion » nu déduit d'un outil
-  // déjà rendu. C'est aussi le seul signe de vie quand le modèle cache son texte.
+  // The counter takes precedence over the last thread item: it is populated only during active
+  // reasoning and says more than a bare Thinking label inferred from a completed tool. It is also
+  // the only sign of life when the model hides its text.
   if (state.thinkingTokens !== null) {
     return translate('activity.thinking.tokens', { tokens: exactTokens(state.thinkingTokens) })
   }
@@ -530,11 +477,9 @@ export function describeActivity(state: ChatState): string | null {
 }
 
 /**
- * Ce que fait l'auteur d'un fil, d'après son dernier élément.
- *
- * `thread` désigne l'auteur : `null` pour l'agent principal, l'appel de spawn pour un
- * sous-agent. Sans ce filtre, un sous-agent occupé fait dire au fil principal qu'il
- * cherche dans les fichiers alors qu'il attend son rapport.
+ * The thread author's activity inferred from its latest item. `thread` identifies the author:
+ * `null` for the main agent, the spawning call for a subagent. Without this filter a busy subagent
+ * would make the main thread claim to search files while it is waiting for the report.
  */
 export function activityOf(items: ChatItem[], thread: string | null): string | null {
   for (let i = items.length - 1; i >= 0; i -= 1) {
@@ -568,14 +513,12 @@ export function activityOf(items: ChatItem[], thread: string | null): string | n
   return translate('message.thinking.label')
 }
 
-/** Au-delà, l'intitulé d'un tour déborde de la colonne du panneau. */
+/** Beyond this length, a turn label overflows the panel column. */
 const TURN_LABEL_MAX = 60
 
 /**
- * Le message utilisateur qui a ouvert le tour en cours.
- *
- * Un tour peut n'en avoir aucun (une compaction, une reprise) : le repère devient
- * alors la position dans le journal, qui reste unique.
+ * The user message opening the current turn. Some turns have none (compaction or resume); the log
+ * position then serves as a unique marker.
  */
 function lastUserMessage(state: ChatState): { id: string; label: string } {
   for (let i = state.items.length - 1; i >= 0; i -= 1) {
@@ -599,12 +542,10 @@ function lastUserMessage(state: ChatState): { id: string; label: string } {
 }
 
 /**
- * Blocs qui ont leur place dans la bulle.
- *
- * Les `tool_use` sont rendus comme éléments propres. Les blocs de texte et de
- * réflexion sans contenu sont écartés : Fable et Opus raisonnent côté serveur et
- * renvoient un bloc `thinking` vide, réduit à sa signature chiffrée, dont le seul
- * effet à l'écran serait un volet « Réflexion » qui ne s'ouvre sur rien.
+ * Blocks suitable for a message bubble. `tool_use` blocks render separately. Empty text and
+ * reasoning blocks are omitted: Fable and Opus reason on the server and return an empty `thinking`
+ * block containing only its encrypted signature, which would otherwise create an empty expandable
+ * Thinking section.
  */
 export function renderableBlocks(blocks: ContentBlock[]): ContentBlock[] {
   return blocks.filter((block) => {
@@ -615,12 +556,10 @@ export function renderableBlocks(blocks: ContentBlock[]): ContentBlock[] {
 }
 
 /**
- * Vrai si l'élément produit quelque chose à l'écran.
- *
- * Un message d'agent qui ne porte que des `tool_use` n'affiche rien : ses blocs sont
- * rendus à part, comme appels d'outils. Il reste pourtant dans le fil, et le compter
- * comme visible laissait une ligne vide dans la gouttière, en plus de couper une suite
- * d'outils en deux groupes sans raison apparente.
+ * Whether the item produces visible content. An agent message containing only `tool_use` blocks
+ * renders nothing because its blocks appear separately as tool calls. It remains in the thread, but
+ * counting it as visible left an empty gutter row and split consecutive tools into two groups for
+ * no apparent reason.
  */
 export function hasVisibleContent(item: ChatItem): boolean {
   if (item.kind !== 'message') return true
@@ -629,23 +568,17 @@ export function hasVisibleContent(item: ChatItem): boolean {
 }
 
 /**
- * Ajoute un élément en renouvelant le tableau.
- *
- * Le tableau doit changer d'identité à chaque modification, sinon tout `useMemo` ou
- * `useEffect` qui en dépend ne se déclenche jamais : c'est exactement ce qui rendait
- * la réglette des tours définitivement vide.
+ * Append an item using a new array. The array must change identity on every edit or dependent
+ * `useMemo` and `useEffect` hooks never run; this was precisely why turn navigation stayed empty.
  */
 function appendItem(state: ChatState, item: ChatItem): void {
   state.items = [...state.items, item]
 }
 
 /**
- * Remplace un élément par une copie modifiée, au lieu de le muter.
- *
- * C'est ce qui rend la mémoïsation des lignes possible : muter en place laisse la
- * référence inchangée, donc `React.memo` conclurait que rien n'a bougé et le message
- * en cours de frappe ne se redessinerait jamais. Les voisins, eux, gardent leur
- * identité et ne sont pas redessinés.
+ * Replace an item with an updated copy instead of mutating it. This enables row memoization:
+ * in-place mutation preserves the reference, so `React.memo` would see no change and the streaming
+ * message would never redraw. Neighboring items retain their identity and avoid redrawing.
  */
 function replaceItem<T extends ChatItem>(state: ChatState, index: number, next: T): void {
   const items = [...state.items]
@@ -661,7 +594,7 @@ function findLastIndex(items: ChatItem[], predicate: (item: ChatItem) => boolean
   return -1
 }
 
-/** Index du message, en le créant s'il n'existe pas encore. */
+/** Message index, creating the message if it does not exist yet. */
 function messageIndex(
   state: ChatState,
   id: string,
@@ -677,8 +610,8 @@ function messageIndex(
     kind: 'message',
     id,
     role,
-    // Date et position du premier fragment reçu : un message livré en plusieurs
-    // morceaux garde l'heure à laquelle il a commencé, pas celle de son dernier bloc.
+    // Timestamp and position of the first received fragment: a multipart message retains its start
+    // time, not its last block's time.
     ts,
     seq,
     blocks: [],
@@ -700,27 +633,22 @@ function updateMessage(
 ): void {
   const index = messageIndex(state, id, role, ts, seq, parentToolCallId)
   const current = state.items[index] as MessageItem
-  // Un même message peut arriver en morceaux de provenances mêlées : des deltas
-  // journalisés avant l'ajout du champ (parent absent), puis un `message.completed`
-  // qui le porte. Le premier événement qui nomme un parent fait foi ; on n'oublie
-  // jamais un parent connu, une resynchronisation de transcript émettant null.
+  // Message fragments may have mixed origins: deltas logged before the parent field existed,
+  // followed by a `message.completed` carrying it. The first event naming a parent wins; never
+  // discard a known parent, since transcript resynchronization emits null.
   const parent = current.parentToolCallId ?? parentToolCallId
   replaceItem(state, index, { ...update(current), parentToolCallId: parent })
 }
 
 /**
- * Clôt les appels restés ouverts à la fin d'un tour ou d'une session.
- *
- * Un CLI interrompu n'envoie pas le résultat des appels en vol : sans ce filet ils
- * restent « en cours » pour toujours, y compris après rechargement, et un `Task`
- * abandonné annonce alors un sous-agent qui travaille encore, chronomètre à l'appui.
- *
- * Un `tool.completed` en retard reprend la main : il réécrit le statut sans condition.
+ * Close calls still open at the end of a turn or session. An interrupted CLI does not return
+ * results for in-flight calls: without this fallback they stay running forever, even after reload,
+ * and an abandoned `Task` claims its subagent is still working, complete with a timer. A late
+ * `tool.completed` takes over by unconditionally rewriting the status.
  */
 /**
- * Remplace un travail dans la table. La table entière est recopiée, pour la même
- * raison que les éléments du fil : muter en place laisserait la référence inchangée,
- * et les vues mémoïsées sur elle ne se redessineraient pas.
+ * Replace a task in the table. Copy the whole table for the same reason as thread items: in-place
+ * mutation preserves its reference and prevents memoized views from redrawing.
  */
 function putTask(state: ChatState, task: TaskState): void {
   const tasks = new Map(state.tasks)
@@ -728,7 +656,7 @@ function putTask(state: ChatState, task: TaskState): void {
   state.tasks = tasks
 }
 
-/** L'état d'un appel d'outil du fil, ou null s'il n'y en a pas trace. */
+/** State of a thread tool call, or null if no record exists. */
 function toolStatus(state: ChatState, toolCallId: string): ToolItem['status'] | null {
   const index = findLastIndex(state.items, (item) => item.kind === 'tool' && item.id === toolCallId)
   const item = index === -1 ? null : state.items[index]
@@ -744,12 +672,10 @@ function closeRunningTools(state: ChatState): void {
 }
 
 /**
- * Le pendant de `closeRunningTools` pour les travaux, à la fin d'une session.
- *
- * Un sous-agent passé en arrière-plan a son appel d'outil déjà rendu : `closeRunningTools`
- * ne le voit donc pas, et c'est son travail, resté sans compte rendu, qui le maintenait
- * affiché comme actif. Sans cette clôture il l'était pour toujours, y compris au
- * rechargement, puisque plus rien n'allait être écrit à son sujet.
+ * The task counterpart of `closeRunningTools` at session end. A backgrounded subagent's tool call
+ * has already returned, so `closeRunningTools` misses it; its unreported task kept it displayed as
+ * active. Without this closure it stayed active forever, including after reload, because no further
+ * events would be written for it.
  */
 function closePendingTasks(state: ChatState): void {
   const tasks = new Map(state.tasks)
@@ -760,15 +686,11 @@ function closePendingTasks(state: ChatState): void {
 }
 
 /**
- * Ce qui prouve qu'une réflexion est finie.
- *
- * Liste explicite plutôt que « tout sauf `thinking.progress` » : un relevé d'usage ou
- * un rapport de sous-agent arrive au milieu d'une réflexion sans rien y mettre fin, et
- * éteindrait le compteur le temps d'un battement.
- *
- * `thinking.delta` en est absent, et c'est tout l'enjeu : les deux alternent frame par
- * frame quand la pensée est révélée. L'y mettre effaçait chaque valeur avant qu'elle
- * soit rendue, et le compteur ne s'affichait jamais.
+ * Events proving reasoning has ended. Use an explicit list rather than everything except
+ * `thinking.progress`: usage updates and subagent reports can arrive during reasoning without
+ * ending it and would briefly blank the counter. `thinking.delta` is deliberately absent: it
+ * alternates frame by frame with progress when reasoning is revealed. Including it erased every
+ * value before rendering, so the counter never appeared.
  */
 const THINKING_ENDED_BY = new Set<SillageEvent['type']>([
   'message.started',
@@ -783,13 +705,10 @@ const THINKING_ENDED_BY = new Set<SillageEvent['type']>([
 ])
 
 /**
- * Applique un événement. L'état est muté puis renvoyé dans un nouvel objet : les
- * conversations longues rendent une copie profonde par événement trop coûteuse sur
- * un téléphone, et seule la référence racine sert à déclencher le rendu React.
- *
- * `ts` vient du journal : c'est la date d'écriture côté serveur, la seule qui ait un
- * sens partagé. Une date posée par le client varierait d'un appareil à l'autre pour un
- * même message.
+ * Apply an event. Mutate state, then return it in a new object: deep-copying on every event is too
+ * expensive for long conversations on phones, and only the root reference triggers React rendering.
+ * `ts` comes from the log: the server write time is the only shared reference. Client timestamps
+ * would vary across devices for the same message.
  */
 export function applyEvent(
   state: ChatState,
@@ -797,27 +716,24 @@ export function applyEvent(
   ts: number,
   event: SillageEvent,
 ): ChatState {
-  // Un tour se reconnaît à ce qu'il produit, pas seulement à son marqueur d'ouverture.
-  //
-  // `turn.started` n'est émis que quand Sillage envoie un message, alors que
-  // `turn.completed` l'est à chaque `result` du CLI : un redémarrage de session laisse
-  // donc des complétions orphelines, et le fil se croyait au repos pendant que l'agent
-  // travaillait, sans bouton Stop ni indicateur d'activité. Du texte qui arrive ou un
-  // outil qui démarre prouvent le contraire, et `turn.completed` refermera de toute
-  // façon.
+  // Recognize a turn by its output as well as its opening marker. `turn.started` is emitted only
+  // when Sillage sends a message, whereas `turn.completed` is emitted for every CLI `result`.
+  // Session restarts therefore leave orphan completions, making the thread appear idle while the
+  // agent works, with no Stop button or activity indicator. Incoming text or a starting tool proves
+  // activity; `turn.completed` will close it either way.
   if (event.type === 'message.delta' || event.type === 'tool.started') {
     state.turnRunning = true
   }
 
-  // La réflexion muette n'a pas de fin annoncée : c'est ce qui la suit qui la referme.
-  // Sans cette remise à zéro, le compteur resterait affiché pendant la rédaction ou
-  // l'exécution d'un outil, et annoncerait une réflexion déjà terminée.
+  // Silent reasoning has no explicit end: the activity following it closes it. Without this reset,
+  // the counter would remain visible during writing or tool execution and claim reasoning had not
+  // finished.
   if (THINKING_ENDED_BY.has(event.type)) state.thinkingTokens = null
 
   switch (event.type) {
     case 'session.started': {
-      // Le CLI ré-émet son init quand le modèle change en cours de session : c'est
-      // le seul signal fiable pour marquer la bascule dans le fil.
+      // The CLI re-emits initialization when the model changes during a session: the only reliable
+      // signal for marking the switch in the thread.
       if (state.model && state.model !== event.model && state.items.length > 0) {
         appendItem(state, {
           kind: 'notice',
@@ -833,8 +749,7 @@ export function applyEvent(
       state.turnRunning = true
       state.planId = null
       state.diffId = null
-      // Le tour qui s'ouvre est la réponse à la suggestion, ou à autre chose : dans
-      // les deux cas elle ne vaut plus rien.
+      // The new turn answers either the suggestion or something else; either way the suggestion is now obsolete.
       state.suggestion = null
       break
     }
@@ -844,8 +759,8 @@ export function applyEvent(
       state.planId = null
       state.diffId = null
       closeRunningTools(state)
-      // Filet : une compaction qui se termine sans frontière ni erreur laisserait
-      // sinon l'indicateur allumé jusqu'au rechargement.
+      // Fallback: compaction ending without a boundary or error would otherwise leave the indicator
+      // on until reload.
       state.compacting = false
       state.costUsd += event.costUsd
       state.inputTokens += event.inputTokens
@@ -858,10 +773,9 @@ export function applyEvent(
     case 'session.ended': {
       state.turnRunning = false
       state.compacting = false
-      // Le travail de fond appartient au process du CLI : il s'arrête avec lui, sans
-      // que rien ne vienne l'annoncer. Les boucles aussi, une tâche planifiée ne tirant
-      // que pendant que le CLI tourne. Les réveils déjà comptés restent, eux : ce sont
-      // des faits du journal, pas un état de process.
+      // Background work belongs to the CLI process and stops with it without an announcement. Loops
+      // stop too, since scheduled tasks fire only while the CLI runs. Previously counted wakeups
+      // remain: they are log facts, not process state.
       state.background = []
       state.loops = []
       closeRunningTools(state)
@@ -878,8 +792,8 @@ export function applyEvent(
     }
 
     case 'thinking.progress': {
-      // Un tour reprise de session n'a pas de `turn.started` : réfléchir suffit à
-      // prouver qu'il tourne, comme le fait déjà un delta de texte plus haut.
+      // A resumed-session turn has no `turn.started`: reasoning proves it is running, just as a
+      // text delta does above.
       state.turnRunning = true
       state.thinkingTokens = event.estimatedTokens
       break
@@ -894,7 +808,7 @@ export function applyEvent(
     }
 
     case 'message.completed': {
-      // Le message qui suit une capture d'avant est celui qui ouvre le tour capturé.
+      // The message following a before snapshot opens the captured turn.
       if (event.role === 'user' && !event.parentToolCallId) {
         const index = state.checkpoints.findIndex((checkpoint) => checkpoint.openerId === null)
         if (index !== -1) {
@@ -909,9 +823,8 @@ export function applyEvent(
       }
       updateMessage(state, event.messageId, event.role, ts, seq, event.parentToolCallId, (message) => ({
         ...message,
-        // Un message arrive en plusieurs morceaux sous le même identifiant : les
-        // blocs s'ajoutent, ils ne remplacent pas. Le contenu reçu en flux est
-        // maintenant porté par ces blocs, donc les tampons sont vidés.
+        // A message arrives in several parts under one ID: append blocks rather than replace them.
+        // The blocks now carry streamed content, so clear the buffers.
         blocks: [...message.blocks, ...event.blocks],
         streamingText: '',
         streamingThinking: '',
@@ -940,7 +853,7 @@ export function applyEvent(
           )
         : [...turn.files, { path: event.path, action: event.action, toolCallIds: [event.toolCallId] }]
 
-      // Remplacé plutôt que muté : le fil se re-rend par comparaison de références.
+      // Replace rather than mutate: the thread rerenders by comparing references.
       state.editTurns =
         turn === current
           ? [...state.editTurns.slice(0, -1), { ...turn, files }]
@@ -976,7 +889,7 @@ export function applyEvent(
         const tool = state.items[index] as ToolItem
         if (tool.status !== 'running') break
         const output = (typeof tool.output === 'string' ? tool.output : '') + event.chunk
-        // La sortie définitive reste dans le journal ; le tampon live reste borné.
+        // The final output remains in the log; keep the live buffer bounded.
         replaceItem(state, index, { ...tool, output: output.length > 100_000 ? `…\n${output.slice(-100_000)}` : output })
       }
       break
@@ -996,9 +909,8 @@ export function applyEvent(
           durationMs: event.durationMs,
         })
       }
-      // L'appel est rendu alors que le travail qu'il a lancé vit encore : personne ne
-      // le suit plus. La liste de niveau pose la même marque de son côté, parce que
-      // rien ne garantit lequel des deux événements arrive en premier.
+      // The call has returned while its spawned task is still alive: it is no longer tracked. The
+      // snapshot sets the same flag because neither event is guaranteed to arrive first.
       for (const task of state.tasks.values()) {
         if (task.toolCallId !== event.toolCallId || task.unattended) continue
         if (state.background.some((live) => live.id === task.id)) {
@@ -1107,7 +1019,7 @@ export function applyEvent(
       state.checkpoints = state.checkpoints.map((checkpoint) =>
         checkpoint.key === event.key ? { ...checkpoint, restored: true } : checkpoint,
       )
-      // Repère dans le fil : l'agent, lui, ne sait pas que ses fichiers sont repartis.
+      // Thread marker: the agent does not know its files have been restored.
       appendItem(state, {
         kind: 'notice',
         id: `restore-${seq}`,
@@ -1118,15 +1030,15 @@ export function applyEvent(
 
     case 'context.compacted': {
       state.compacting = false
-      // Repère discret : le fil ne perd rien à l'écran, mais tout ce qui précède n'est
-      // plus dans la mémoire de l'agent sous sa forme d'origine.
+      // Subtle marker: the thread loses no visible content, but earlier content is no longer in the
+      // agent's memory in its original form.
       appendItem(state, {
         kind: 'notice',
         id: `compact-${seq}`,
         text: describeCompaction(event.preTokens, event.postTokens),
       })
-      // La jauge doit repartir de ce que le CLI annoncera au prochain tour : garder
-      // l'ancienne valeur afficherait un contexte plein juste après l'avoir vidé.
+      // Reset the gauge to what the CLI reports next turn: retaining the old value would show a
+      // full context immediately after clearing it.
       state.context = null
       break
     }
@@ -1230,16 +1142,15 @@ export function applyEvent(
     }
 
     case 'suggestion.updated': {
-      // Arrive après le `result` du tour : seule la dernière compte, et elle ne vaut
-      // que tant qu'aucun tour n'a repris depuis.
+      // Arrives after the turn's `result`: only the latest suggestion counts, and only until another turn starts.
       state.suggestion = event.text
       break
     }
 
     case 'error': {
       state.compacting = false
-      // Un réglage qui attend la fin du tour n'est pas une panne : le tour continue et
-      // le choix est déjà enregistré. Un bandeau d'alerte le ferait passer pour un échec.
+      // A setting waiting for the turn to end is not a failure: the turn continues and the choice
+      // is saved. An alert banner would make it look like an error.
       if (event.code === 'config_restart_deferred') {
         appendItem(state, {
           kind: 'notice',
@@ -1255,11 +1166,10 @@ export function applyEvent(
         message: event.message,
         recoverable: event.recoverable,
       })
-      // Une panne sans retour possible a emporté la session, et avec elle les travaux
-      // de fond qui vivaient dans le process du CLI : même conclusion que `session.ended`,
-      // que le serveur journalise juste après. Mais cette fin passe par la même base que
-      // l'erreur et peut manquer à l'appel, et sans elle le tour resterait ouvert pour
-      // toujours. Refermer ici aussi.
+      // An unrecoverable failure ended the session and its CLI background work, just like
+      // `session.ended`, logged immediately afterward by the server. But that end event uses the
+      // same database as the error and may be missing; without it the turn would remain open
+      // forever. Close it here too.
       if (!event.recoverable) {
         state.turnRunning = false
         state.background = []
@@ -1277,13 +1187,11 @@ export function applyEvent(
     }
 
     case 'background.updated': {
-      // Remplacement et non fusion : l'événement porte la liste entière, et c'est ce
-      // qui rend l'indicateur increvable. Un événement perdu se rattrape au suivant
-      // au lieu de laisser un travail allumé pour toujours.
+      // Replace rather than merge: the event carries the full list, keeping the indicator
+      // resilient. The next event repairs a missed one instead of leaving a task active forever.
       state.background = event.tasks
-      // Un travail encore vivant alors que son appel d'outil est rendu n'est plus
-      // suivi par personne. C'est le seul moment où la question se pose : la liste
-      // est justement ce qui dit qu'il vit encore.
+      // A task still alive after its tool call returns is no longer tracked. This is the only point
+      // where that question arises: the list proves it is still alive.
       for (const task of event.tasks) {
         const known = state.tasks.get(task.id)
         if (!known || known.unattended) continue
@@ -1341,9 +1249,8 @@ export function applyEvent(
 
     case 'task.progress': {
       const known = state.tasks.get(event.taskId)
-      // Un avancement sans lancement connu vient d'un journal tronqué par la
-      // rétention : il n'y a rien à quoi le rattacher, et l'inventer donnerait un
-      // travail sans nom ni origine.
+      // Progress without a known start comes from a retention-truncated log: there is nothing to
+      // attach it to, and inventing an entry would create a task with no name or origin.
       if (!known) break
       putTask(state, {
         ...known,
@@ -1367,9 +1274,9 @@ export function applyEvent(
           outcome: event.status,
         })
       }
-      // La liste de niveau est remplacée, jamais amendée, et le CLI la republie en
-      // effet juste après. Mais s'il meurt entre les deux, sa dernière liste garde le
-      // travail allumé pour toujours : une fin annoncée vaut retrait.
+      // The snapshot list is replaced, never amended, and the CLI republishes it immediately
+      // afterward. If it dies between these events, its last list would keep the task active
+      // forever: an announced completion also removes it.
       state.background = state.background.filter((live) => live.id !== event.taskId)
       if (known?.unattended && !event.ambient) {
         appendItem(state, {

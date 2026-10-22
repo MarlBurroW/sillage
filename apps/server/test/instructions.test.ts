@@ -29,7 +29,7 @@ async function harness(t: TestContext, { admin = true } = {}) {
   t.after(() => sqlite.close())
 
   db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'Owner', passwordHash: '', isAdmin: admin, createdAt: 1 }).run()
-  // Un projet d'avant le réglage : pas de mode.
+  // Project predating the setting: no mode.
   db.insert(projects).values({ id: 'project', name: 'project', workspacePath: workspace, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
   db.insert(conversations).values({
     id: 'c', projectId: 'project', userId: 'owner', agent: 'claude', title: 'Session qui retient',
@@ -66,7 +66,7 @@ async function harness(t: TestContext, { admin = true } = {}) {
 test('global et projet : écrits par une personne, injectés ensemble', async (t) => {
   const { app, project, appendix } = await harness(t)
 
-  // Rien à dire, et pas d'outil pour retenir : rien n'est injecté.
+  // No content and no persistence tools: inject nothing.
   assert.equal(appendix('sillage', false), null)
   assert.match(appendix('sillage') ?? '', /edit_instructions/)
 
@@ -76,7 +76,7 @@ test('global et projet : écrits par une personne, injectés ensemble', async (t
 
   const patched = await app.inject({ method: 'PATCH', url: '/api/projects/project/instructions', payload: { content: '- Tests avec `pnpm test`.' } })
   assert.equal(patched.statusCode, 200, patched.body)
-  // Écrire le contenu d'un projet d'avant le réglage fixe son mode.
+  // Writing legacy-project contents fixes its mode.
   assert.equal(patched.json<ProjectInstructionsDto>().modeChosen, true)
   assert.equal((await project()).mode, 'sillage')
 
@@ -85,7 +85,7 @@ test('global et projet : écrits par une personne, injectés ensemble', async (t
   assert.match(text, /Pour tous les projets\n\n- Répondre en français\./)
   assert.match(text, /Pour ce projet\n\n- Tests avec `pnpm test`\./)
 
-  // En mode dépôt, la partie projet est le fichier du dépôt : seul le global part.
+  // Repository mode uses repository project instructions; inject only global content.
   const repo = appendix('repo') ?? ''
   assert.match(repo, /Répondre en français/)
   assert.doesNotMatch(repo, /pnpm test/)
@@ -101,21 +101,21 @@ test("projet d'avant le réglage : suit son dépôt, puis migre sans toucher aux
   assert.equal(legacy.modeChosen, false)
   assert.deepEqual(legacy.repoFiles.map((file) => file.path), ['CLAUDE.md'])
 
-  // Éditer le fichier du dépôt depuis l'interface.
+  // Edit repository files through the interface.
   const written = await app.inject({
     method: 'PUT', url: '/api/projects/project/instructions/repo-file',
     payload: { path: 'AGENTS.md', content: 'Toujours lancer les tests.\n' },
   })
   assert.equal(written.statusCode, 200, written.body)
   assert.equal(await readFile(join(workspace, 'AGENTS.md'), 'utf8'), 'Toujours lancer les tests.\n')
-  // Rien d'autre que les deux fichiers de consignes.
+  // Only the two instruction files are permitted.
   const other = await app.inject({
     method: 'PUT', url: '/api/projects/project/instructions/repo-file',
     payload: { path: '../evil.md', content: 'x' },
   })
   assert.equal(other.statusCode, 400)
 
-  // La migration : contenu importé et mode basculé d'un geste, fichiers intacts.
+  // Migration imports content and switches mode together, leaving files intact.
   const migrated = await app.inject({
     method: 'PATCH', url: '/api/projects/project/instructions',
     payload: { mode: 'sillage', content: 'Ne jamais pousser sur main.' },
@@ -150,12 +150,12 @@ test('outils MCP : lire, éditer, réécrire, comme un fichier', async (t) => {
 
   assert.match(out(mcp('read_instructions')), /vide/)
 
-  // old_text vide : ajout à la fin.
+  // Empty old_text appends content.
   assert.equal(mcp('edit_instructions', { old_text: '', new_text: '- Répondre en français.' }).isError, undefined)
   assert.equal(mcp('edit_instructions', { old_text: '', new_text: '- Pas de `--no-sandbox`.' }).isError, undefined)
   assert.equal((await project()).content, '- Répondre en français.\n- Pas de `--no-sandbox`.')
 
-  // Remplacement exact, unique.
+  // Exact, unique replacement.
   assert.equal(mcp('edit_instructions', { old_text: 'français', new_text: 'anglais' }).isError, undefined)
   assert.match((await project()).content, /anglais/)
   const missing = mcp('edit_instructions', { old_text: 'absent', new_text: 'x' })
@@ -169,23 +169,23 @@ test('outils MCP : lire, éditer, réécrire, comme un fichier', async (t) => {
   )
   assert.equal((await project()).content, '- Répondre en anglais.')
 
-  // Réécriture entière, puis lecture.
+  // Full rewrite followed by read.
   assert.equal(mcp('write_instructions', { content: '# Projet\n\n- Tout nouveau.' }).isError, undefined)
   assert.match(out(mcp('read_instructions')), /# Projet\n\n- Tout nouveau\./)
   assert.equal(mcp('write_instructions', { content: 'x'.repeat(40001) }).isError, true)
 
   const after = await project()
   assert.deepEqual(after.author, { kind: 'session', conversationId: 'c', projectId: 'project', title: 'Session qui retient' })
-  // La première écriture a fixé le mode : un AGENTS.md apparu ensuite ne fait pas taire SILLAGE.md.
+  // First writes fixed mode: later AGENTS.md must not silence SILLAGE.md.
   assert.equal(after.modeChosen, true)
   await writeFile(join(workspace, 'AGENTS.md'), 'x')
   assert.equal((await project()).mode, 'sillage')
 
-  // Global, pour un administrateur.
+  // Global scope for administrators.
   assert.equal(mcp('write_instructions', { content: '- Tutoyer.', scope: 'global' }).isError, undefined)
   assert.equal((await app.inject({ url: '/api/instructions' })).json<InstructionsDto>().content, '- Tutoyer.')
 
-  // En mode dépôt, la partie projet renvoie au fichier.
+  // Repository-mode project sections refer to repository files.
   await app.inject({ method: 'PATCH', url: '/api/projects/project/instructions', payload: { mode: 'repo' } })
   for (const [name, args] of [['read_instructions', {}], ['write_instructions', { content: 'x' }]] as const) {
     const refused = mcp(name, args)

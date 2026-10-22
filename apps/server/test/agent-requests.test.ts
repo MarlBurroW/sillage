@@ -90,7 +90,7 @@ async function harness(t: TestContext) {
   const registry = {
     adapter: (agent: string) => ({
       models: async () => ({ models: CATALOG[agent] }),
-      // Le CLI remplace le modèle vide par le sien, comme le vrai adaptateur.
+      // CLI substitutes its model for empty model names, like the real adapter.
       resolveDefaults: async (config: AgentConfig) =>
         config.model ? config : { ...config, model: CATALOG[agent]?.[0]?.value ?? '' },
     }),
@@ -99,10 +99,7 @@ async function harness(t: TestContext) {
   const log = new EventLog(db)
   const requests = new AgentRequests({ db, config }, sessions, registry, undefined, undefined, undefined, undefined, log)
 
-  /**
-   * Appelle un outil sur le vrai serveur MCP, pendant que le daemon balaie. `from` vide :
-   * le serveur en mode global, au nom du compte `owner`, avec le projet en paramètre.
-   */
+  /** Calls the real MCP server while the daemon sweeps. Empty `from` uses global mode as `owner`, with the project passed explicitly. */
   const mcp = async (from: string, name: string, args: object) => {
     const env = from
       ? { SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: from }
@@ -162,7 +159,7 @@ test('start_session launches a session with the requested CLI, model and effort'
   assert.equal(config.model, 'astra-1')
   assert.equal(config.agent === 'codex' && config.reasoningEffort, 'high')
 
-  // La mission arrive enveloppée, signée par la session qui l'a confiée.
+  // Missions arrive enveloped and signed by delegating sessions.
   const envelope = parseSessionMessage(sent[0]!.text)
   assert.equal(sent[0]!.to, launched.id)
   assert.equal(envelope?.kind, 'launch')
@@ -238,7 +235,7 @@ test('a global MCP client launches sessions and opens cards in the name of its a
   const launched = db.select().from(conversations).where(eq(conversations.id, request.launchedConversationId!)).get()!
   assert.equal(launched.userId, 'owner')
   assert.equal(launched.agent, 'codex')
-  // Pas de session d'origine : la mission arrive nue, sans enveloppe qui renverrait à rien.
+  // Without source sessions, missions arrive bare rather than with dangling envelopes.
   assert.equal(sent[0]!.text, 'Relire la doc.')
   assert.equal(parseSessionMessage(sent[0]!.text), null)
 
@@ -263,9 +260,9 @@ test('a global MCP client writes to, steers, interrupts and answers its own sess
     createdAt: 1, updatedAt: Date.now(),
   }).run()
 
-  // Depuis une session, ces gestes sont refusés : elle a send_session_message.
+  // Sessions cannot use these actions: they have send_session_message.
   assert.equal((await mcp('busy-one', 'message_session', { session: 'idle-one', body: 'x' })).isError, true)
-  // La session d'un autre compte n'existe pas pour ce client.
+  // Other accounts' sessions do not exist for this client.
   assert.equal((await mcp('', 'message_session', { project: 'project', session: 'theirs', body: 'x' })).isError, true)
   assert.equal((await mcp('', 'message_session', { project: 'project', session: 'idle-one', body: '' })).isError, true)
 
@@ -287,7 +284,7 @@ test('a global MCP client writes to, steers, interrupts and answers its own sess
   assert.match((await mcp('', 'interrupt_session', { project: 'project', session: 'busy-one' })).content[0]!.text, /interrompu/)
   assert.equal(gestures.at(-1), 'interrupt busy-one')
 
-  // Sans sollicitation ouverte, rien à répondre ; avec, la réponse prend la forme de la demande.
+  // Without open requests there is nothing to answer; otherwise responses follow request types.
   assert.equal((await mcp('', 'reply_session', { project: 'project', session: 'busy-one', decision: 'allowed' })).isError, true)
   log.append('busy-one', { type: 'permission.requested', requestId: 'perm-1', toolName: 'Bash', input: { command: 'rm -rf dist' } } as never)
   const wrong = await mcp('', 'reply_session', { project: 'project', session: 'busy-one', answers: { q: ['x'] } })

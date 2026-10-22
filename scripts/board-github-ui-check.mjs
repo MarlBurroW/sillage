@@ -10,10 +10,10 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { startFakeGitHub } from './fake-github.mjs'
 
-// Board relié aux issues GitHub, de bout en bout dans l'interface, contre un faux GitHub
-// local : liaison, import, filtre, fil d'une issue, publication d'une note, colonne
-// renvoyée à GitHub, carte créée en issue, carte locale publiée, déliaison.
-// Les captures vont dans BOARD_GITHUB_SHOTS, ou dans un dossier temporaire.
+// GitHub-linked board end to end against local fake GitHub: linking, import, filter,
+// issue thread, note publication, column sent back to GitHub, card created as issue,
+// local card published, unlinking. Screenshots go to BOARD_GITHUB_SHOTS or a
+// temporary directory.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -97,7 +97,7 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // Sans jeton GitHub, le dialogue le dit et renvoie vers les réglages.
+  // Without GitHub token, dialog says so and links to settings.
   await page.goto(`${base}/p/${project.id}/board`)
   await page.getByRole('button', { name: 'Relier à GitHub' }).click()
   const dialog = page.getByRole('dialog')
@@ -116,7 +116,7 @@ try {
   await dialog.getByRole('button', { name: 'Relier', exact: true }).click()
   await dialog.waitFor({ state: 'detached' })
 
-  // Les issues ouvertes et la fermée récente arrivent ; ni la PR, ni la vieille fermée.
+  // Open issues and recently closed issue arrive; neither PR nor old closed issue.
   await page.getByText('Crash when the cache folder is missing').waitFor({ timeout: 20000 })
   await until(async () => (await cardsOf()).filter((card) => card.external).length === 5, 'Five issues imported')
   const imported = (await cardsOf()).filter((card) => card.external).map((card) => card.external.number).sort((a, b) => a - b)
@@ -125,7 +125,7 @@ try {
   await page.getByRole('button', { name: /Liaison GitHub : acme\/nimbus/ }).waitFor()
   await page.screenshot({ path: join(shots, 'board-github-board.png') })
 
-  // Le filtre : GitHub seules, puis locales seules.
+  // Filter: GitHub only, then local only.
   const localCount = (await cardsOf()).filter((card) => !card.external).length
   await page.getByRole('radio', { name: /^GitHub/ }).click()
   await until(async () => (await page.locator('[data-card-open]').count()) === 5, 'GitHub filter shows the issues')
@@ -134,7 +134,7 @@ try {
   await until(async () => (await page.locator('[data-card-open]').count()) === localCount, 'Local filter hides the issues')
   await page.getByRole('radio', { name: /^Toutes/ }).click()
 
-  // Le fil d'une issue : les commentaires de la communauté, et une réponse publiée.
+  // Issue thread: community comments and a published response.
   await page.getByText('Crash when the cache folder is missing').click()
   const panel = page.getByRole('complementary', { name: /Carte/ })
   await panel.getByText('Issue #12, ouverte par @lena-k').waitFor()
@@ -147,13 +147,13 @@ try {
   await panel.getByText('sur GitHub', { exact: true }).waitFor({ timeout: 10000 })
   await page.screenshot({ path: join(shots, 'board-github-thread.png') })
 
-  // Déplacer la carte la renvoie à GitHub : « Terminé » ferme l'issue.
+  // Moving card sends back to GitHub: “Done” closes issue.
   await panel.getByRole('button', { name: /Changer la colonne|Colonne/ }).first().click()
   await page.getByRole('menuitem', { name: 'Terminé' }).click()
   await until(() => github.issues.get(12).state === 'closed', 'Done closes the issue')
   await page.keyboard.press('Escape')
 
-  // Une carte créée en issue depuis le dialogue.
+  // Card created as issue through dialog.
   await page.goto(`${base}/p/${project.id}/board`)
   await page.getByRole('button', { name: 'Nouveau ticket' }).first().click()
   const create = page.getByRole('dialog')
@@ -165,7 +165,7 @@ try {
   await create.waitFor({ state: 'detached' })
   assert.ok([...github.issues.values()].some((issue) => issue.title === 'Document the cache folder'))
 
-  // Une carte locale publiée par le menu GitHub du panneau.
+  // Local card published through panel's GitHub menu.
   const local = (await cardsOf()).find((card) => !card.external)
   await page.goto(`${base}/p/${project.id}/board?carte=${local.number}`)
   const localPanel = page.getByRole('complementary', { name: /Carte/ })
@@ -174,7 +174,7 @@ try {
   await page.getByRole('dialog').getByRole('button', { name: 'Publier sur GitHub' }).click()
   await until(() => [...github.issues.values()].some((issue) => issue.title === local.title), 'Local card published')
 
-  // Au téléphone.
+  // On a phone.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block', storageState: await context.storageState() })
   await phone.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
   const mobile = await phone.newPage()
@@ -192,7 +192,7 @@ try {
   await mobile.screenshot({ path: join(shots, 'board-github-phone-maintenance.png') })
   await phone.close()
 
-  // Maintenance : les deux déclencheurs, leurs instructions, l'identité, la session.
+  // Maintenance: both triggers, instructions, identity, session.
   await page.goto(`${base}/p/${project.id}/board`)
   await page.getByRole('button', { name: /Liaison GitHub/ }).click()
   const settings = page.getByRole('dialog')
@@ -209,7 +209,7 @@ try {
   await settings.getByRole('radio', { name: /Arbre principal/ }).click()
   await settings.getByLabel('Sessions et commentaires par heure, au plus').fill('5')
   await page.waitForTimeout(300)
-  // Le dialogue défile à l'intérieur : une capture par hauteur, du haut vers le bas.
+  // Dialog scrolls internally: one screenshot per height, top to bottom.
   const scroller = settings.locator('form > div').first()
   for (const [index, ratio] of [0, 0.5, 1].entries()) {
     await scroller.evaluate((node, at) => { node.scrollTop = (node.scrollHeight - node.clientHeight) * at }, ratio)
@@ -224,11 +224,11 @@ try {
   const saved = (await (await context.request.get(`${base}/api/projects/${project.id}/board-link`)).json()).link
   assert.equal(saved.issueInstructions, 'Reproduis le bug puis réponds avec ton analyse.')
   assert.equal(saved.replyStyle, 'En anglais, bref.')
-  // Coupés avant la suite : aucune vraie session ne doit partir pendant le contrôle.
+  // Disable before continuing: no real session must start during check.
   await context.request.put(`${base}/api/projects/${project.id}/board-link`, { data: { ...saved, onIssue: false, onComment: false } })
   await page.keyboard.press('Escape')
 
-  // Délier : les cartes GitHub sans travail local partent.
+  // Unlink: GitHub cards without local work are removed.
   await page.reload()
   await page.getByRole('button', { name: /Liaison GitHub/ }).click()
   await page.getByRole('dialog').getByText('Synchronisé il y a', { exact: false }).waitFor()

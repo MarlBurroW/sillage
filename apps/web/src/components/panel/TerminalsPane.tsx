@@ -11,19 +11,14 @@ import { Banner, Button, cx } from '../ui'
 import { TerminalView } from './TerminalView'
 
 /**
- * Onglets de terminaux, et le terminal actif en dessous.
- *
- * La liste est celle du **projet** : ouverte depuis une session ou depuis la vue
- * projet, c'est la même, et chaque onglet dit dans quel répertoire son shell tourne.
- * Seul le répertoire du nouveau terminal dépend d'où l'on est.
- *
- * Les vues restent toutes montées : une commande qui tourne dans l'un ne doit pas être
- * coupée parce qu'on regarde l'autre, et remonter un terminal repartirait d'un écran
- * vide alors que le pty, lui, a continué.
+ * Terminal tabs above the active terminal. Lists belong to projects and are shared across
+ * session/project views; each tab names its shell directory. Only new-terminal cwd depends on
+ * current context. Keep every view mounted so switching neither interrupts commands nor clears
+ * screens while PTYs continue.
  */
 export function TerminalsPane({
   projectId,
-  /** Présente en vue conversation : le nouveau terminal s'ouvre dans son répertoire. */
+  /** Present in conversation views to open terminals in their cwd. */
   conversationId,
   visible,
 }: {
@@ -40,8 +35,7 @@ export function TerminalsPane({
 
   const workspacePath = projects?.find((project) => project.id === projectId)?.workspacePath
 
-  // La sélection suit la liste : un terminal fermé ne doit pas laisser une vue
-  // pointant sur rien.
+  // Selection follows the list: closed terminals must not leave views targeting nothing.
   useEffect(() => {
     if (!terminals) return
     setActive((current) =>
@@ -51,7 +45,7 @@ export function TerminalsPane({
     )
   }, [terminals])
 
-  // Un terminal ouvert par une action passe devant dès que la liste relue le contient.
+  // Bring action-opened terminals forward as soon as refetched lists contain them.
   const focused = useFocusedTerminal()
   useEffect(() => {
     if (!focused || !terminals?.some((terminal) => terminal.id === focused)) return
@@ -65,7 +59,7 @@ export function TerminalsPane({
       onSuccess: (created) => setActive(created.id),
     })
 
-  /** Où tourne ce shell : le workspace, ou le nom du dossier de worktree. */
+  /** Shell location: workspace or worktree directory name. */
   const dirLabel = (terminal: TerminalDto) =>
     terminal.cwd === workspacePath
       ? t('terminal.dir.workspace')
@@ -93,13 +87,12 @@ export function TerminalsPane({
               {terminal.title}
               <span className="text-[0.625rem] text-ink-faint">{dirLabel(terminal)}</span>
             </button>
-            {/* Vivant ou terminé : sans ce repère, un onglet dont le shell est mort
-                ressemble à un onglet inactif. */}
+            {/* Distinguish running and finished shells so dead tabs do not resemble inactive ones. */}
             <span
               aria-label={terminal.alive ? t('terminal.tab.shellAlive') : t('terminal.tab.shellDone')}
               className={cx(
                 'size-1.5 shrink-0 rounded-full',
-                // Une commande d'action sortie en erreur se signale sans ouvrir l'onglet.
+                // Signal failed action commands without opening their tab.
                 terminal.alive ? 'bg-positive' : terminal.exitCode ? 'bg-critical' : 'bg-ink-faint/50',
               )}
             />
@@ -116,8 +109,7 @@ export function TerminalsPane({
 
         <TooltipButton
           type="button"
-          // Le nouveau terminal devient l'actif : cliquer sur « + » sans rien voir
-          // changer donne l'impression que rien ne s'est passé.
+          // Select newly created terminals: clicking plus without visible change would appear ineffective.
           onClick={() => openNew()}
           disabled={full || open.isPending}
           aria-label={t('terminal.new')}
@@ -163,8 +155,7 @@ export function TerminalsPane({
         </PanelEmptyState>
       ) : null}
 
-      {/* Le shell a été emporté par un redémarrage du daemon : l'écran en dessous est
-          son dernier état, et la relance rouvre un shell neuf au même endroit. */}
+      {/* Daemon restart ended the shell: retain its last screen and relaunch a fresh shell in the same directory. */}
       {activeTerminal?.interrupted ? (
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface-high px-2.5 py-1.5">
           <p className="text-[0.6875rem] text-ink-faint">{t('terminal.interrupted')}</p>

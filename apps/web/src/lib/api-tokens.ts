@@ -3,11 +3,8 @@ import type { AgentKind, ApiScope, ApiTokenDto, CreatedApiTokenDto } from '@sill
 import { api } from './api'
 
 /**
- * Jetons d'API, ceux que présentent les clients machine.
- *
- * Le secret ne circule qu'une fois, dans la réponse à la création : aucun hook ne sait
- * le relire, parce qu'aucune route ne le rend. L'écran doit donc l'afficher sur-le-champ
- * ou le perdre.
+ * API tokens for machine clients. Secrets travel once in creation responses: no hook can reread
+ * them because no route returns them. Screens must display them immediately or lose them.
  */
 
 const TOKENS_KEY = ['api-tokens']

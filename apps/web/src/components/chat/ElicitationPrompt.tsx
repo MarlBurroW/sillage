@@ -7,9 +7,8 @@ import { useTranslate } from '../../lib/i18n'
 import { Badge, Button, cx } from '../ui'
 
 /**
- * Types d'input HTML correspondant aux formats de chaîne que MCP déclare. Ils
- * apportent la validation et le clavier adapté sur mobile, sans rien inventer : chaque
- * entrée vient de `McpElicitationStringFormat`.
+ * HTML input types for MCP string formats, adding validation and appropriate mobile keyboards.
+ * Every entry comes from McpElicitationStringFormat rather than guesswork.
  */
 const INPUT_TYPES: Record<string, string> = {
   email: 'email',
@@ -18,7 +17,7 @@ const INPUT_TYPES: Record<string, string> = {
   'date-time': 'datetime-local',
 }
 
-/** Valeur de départ d'un champ, telle que le serveur MCP la propose. */
+/** Initial field value proposed by the MCP server. */
 function initialValue(field: ElicitationField): ElicitationValue {
   switch (field.kind) {
     case 'boolean':
@@ -36,7 +35,7 @@ function initialContent(fields: ElicitationField[]): Record<string, ElicitationV
   return Object.fromEntries(fields.map((field) => [field.name, initialValue(field)]))
 }
 
-/** Un champ obligatoire doit être renseigné, un champ vide facultatif ne part pas. */
+/** Required fields need values; empty optional fields are omitted. */
 function isFilled(value: ElicitationValue): boolean {
   if (typeof value === 'string') return value.trim().length > 0
   if (Array.isArray(value)) return value.length > 0
@@ -44,11 +43,9 @@ function isFilled(value: ElicitationValue): boolean {
 }
 
 /**
- * Saisie réclamée par un serveur MCP (`elicitation/create`).
- *
- * Le serveur MCP n'est pas l'agent : c'est un tiers branché sur la session, d'où son
- * nom affiché en tête. Deux modes existent dans le protocole, un formulaire et une
- * ouverture d'URL pour les authentifications.
+ * Input requested by an MCP server (elicitation/create). Servers are third parties attached to the
+ * session, not the agent, hence the prominent name. Protocol modes support forms and URLs for
+ * authentication.
  */
 export function ElicitationPrompt({
   conversationId,
@@ -87,16 +84,15 @@ export function ElicitationPrompt({
     setBusy(true)
     setError(null)
     try {
-      // Les champs facultatifs laissés vides sont omis : MCP attend une valeur absente,
-      // pas une chaîne vide, qu'un serveur strict rejetterait.
+      // Omit empty optional fields: MCP expects absence rather than empty strings that strict servers reject.
       const content =
         action === 'accept'
           ? Object.fromEntries(Object.entries(values).filter(([, value]) => isFilled(value)))
           : {}
       await answerElicitation(conversationId, item.id, action, content)
     } catch (err) {
-      // L'événement `elicitation.resolved` viendra du serveur : on n'anticipe pas
-      // l'état ici, sinon l'affichage cesserait d'être un pur fold du journal.
+      // Await elicitation.resolved from the server rather than predicting state, preserving display
+      // as a pure log fold.
       setError(err instanceof Error ? err.message : t('elicitation.answerError'))
       setBusy(false)
     }
@@ -259,8 +255,7 @@ function Field({
       {label}
 
       {field.kind === 'select' ? (
-        // Select natif plutôt que celui de l'UI : la liste vient d'un serveur tiers,
-        // elle peut être longue, et le natif donne le sélecteur du système sur mobile.
+        // Native select handles potentially long third-party choices and gives mobile users system pickers.
         <select
           value={typeof value === 'string' ? value : ''}
           disabled={!editable}
@@ -282,8 +277,7 @@ function Field({
           min={field.minimum ?? undefined}
           max={field.maximum ?? undefined}
           disabled={!editable}
-          // Un champ vidé redevient une chaîne vide : le convertir en 0 enverrait une
-          // valeur que personne n'a saisie.
+          // Cleared fields remain empty strings: converting to zero would send a value nobody entered.
           onChange={(event) =>
             onChange(event.target.value === '' ? '' : Number(event.target.value))
           }

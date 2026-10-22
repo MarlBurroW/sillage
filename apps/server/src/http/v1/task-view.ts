@@ -10,8 +10,8 @@ import {
 import type { EventLog } from '../../events/event-log.js'
 
 /**
- * Événements qui décrivent le présent d'une conversation. Les deltas en sont exclus :
- * ils arrivent au token et ne disent rien de plus que l'appel d'outil qui les produit.
+ * Events describing a conversation's current state. Excludes token-level deltas,
+ * which add nothing beyond the tool call producing them.
  */
 const DIGEST_TYPES = [
   'tool.started',
@@ -28,12 +28,11 @@ const DIGEST_TYPES = [
 ]
 
 /**
- * Combien d'entrées récentes suffisent à décrire le présent.
+ * Recent entry limit sufficient to describe the present state.
  *
- * Un tour ordinaire tient largement dedans. Au-delà, l'appel d'outil en cours et le
- * dernier message sont forcément plus récents que la borne, sauf fil resté ouvert
- * pendant des centaines d'outils sans jamais rien dire, cas où la vue rend `null`
- * plutôt qu'une valeur périmée.
+ * An ordinary turn fits comfortably. Current tool calls and the last message
+ * should be newer than this bound unless a conversation has run hundreds of
+ * tools without speaking; return `null` rather than a stale value in that case.
  */
 const DIGEST_WINDOW = 300
 
@@ -51,7 +50,7 @@ const RESOLVED_TYPES = new Set([
   'elicitation.resolved',
 ])
 
-/** Texte d'un message assistant, blocs de réflexion et d'outils retirés. */
+/** Assistant message text with reasoning and tool blocks removed. */
 function messageText(event: Extract<SillageEvent, { type: 'message.completed' }>): string {
   return event.blocks
     .filter((block) => block.type === 'text')
@@ -67,11 +66,10 @@ interface Digest {
 }
 
 /**
- * Replie les dernières entrées du journal en un état lisible.
+ * Folds recent journal entries into a readable state.
  *
- * La lecture se fait du plus récent au plus ancien, et s'arrête sur la première réponse
- * de chaque question : c'est ce qui rend la vue bornée, là où un fold complet paierait
- * tout l'historique à chaque consultation.
+ * Reads newest first and stops at the first answer to each question, keeping
+ * the view bounded instead of replaying the full history on every read.
  */
 function digest(log: EventLog, conversationId: string): Digest {
   const entries = log.latest(conversationId, DIGEST_TYPES, DIGEST_WINDOW)
@@ -100,8 +98,8 @@ function digest(log: EventLog, conversationId: string): Digest {
       continue
     }
     if (event.type === 'message.completed') {
-      // Un message de sous-agent n'est pas la parole de la conversation : le rendre
-      // ferait passer un détail d'exécution pour la réponse attendue.
+      // Subagent messages are not the conversation's response: exposing them would
+      // mistake execution details for the expected answer.
       if (lastMessage || event.role !== 'assistant' || event.parentToolCallId !== null) continue
       const text = messageText(event)
       if (text) lastMessage = { text, at: entry.ts }
@@ -125,11 +123,10 @@ function digest(log: EventLog, conversationId: string): Digest {
 }
 
 /**
- * Ce qu'une tâche coûte gratuitement : sa ligne de table, sans toucher au journal.
+ * Task information available from its table row without reading the journal.
  *
- * `baseUrl` sert à composer le lien vers l'interface : une tâche lancée par un agent
- * finit souvent devant un humain, et lui faire reconstruire l'URL est le genre de
- * détail qu'on oublie de documenter.
+ * `baseUrl` builds the interface link: agent-created tasks often reach humans,
+ * and requiring them to reconstruct the URL is easily left undocumented.
  */
 export function taskToSummaryDto(row: ConversationRow, baseUrl: string): TaskSummaryDto {
   return {
@@ -152,10 +149,10 @@ export function taskToSummaryDto(row: ConversationRow, baseUrl: string): TaskSum
 }
 
 /**
- * L'état d'une tâche tel qu'un appelant machine le consulte.
+ * Task state as seen by a machine caller.
  *
- * Réservé à la consultation d'une tâche : le repliage lit le journal et le compte des
- * tours le parcourt entièrement, ce qu'une liste ne peut pas se permettre par ligne.
+ * Reserved for individual task reads: folding reads the journal and counting
+ * turns scans all of it, which a list cannot afford for every row.
  */
 export function taskToDto(log: EventLog, row: ConversationRow, baseUrl: string): TaskDto {
   const { activity, lastMessage, pending } = digest(log, row.id)

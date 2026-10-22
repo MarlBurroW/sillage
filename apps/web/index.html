@@ -2,33 +2,33 @@
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
-    <!-- `maximum-scale` complete la taille de police des champs : sans les deux,
-         iOS zoome a la mise au point d'une saisie et ne revient jamais en arriere.
-
-         `viewport-fit=cover` rend leurs vraies valeurs aux `env(safe-area-inset-*)`,
-         sans quoi elles valent zero et l'application ne peut plus ecarter son contenu
-         des encoches. Il ne suffit pas a couvrir l'ecran pour autant : une application
-         installee sur iOS garde un viewport rabote de la hauteur de la barre d'etat
-         (894 px mesures sur un ecran de 956) et ancre en haut. La bande qui reste en bas
-         n'est peinte que par le fond de la racine, voir `index.css`. -->
+    <!--
+         `maximum-scale` complements input font sizing: both are needed to prevent iOS focusing zoom
+         that never resets. `viewport-fit=cover` exposes actual `env(safe-area-inset-*)` values;
+         otherwise zero insets prevent spacing around device cutouts. It still cannot cover the
+         entire screen: installed iOS apps retain a top-anchored viewport reduced by status-bar
+         height (894 px measured on a 956 px screen). Only the root background paints the remaining
+         bottom strip; see index.css.
+    -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
     />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#120d13" />
-    <!-- iOS ignore le manifest pour le mode plein écran et l'icône d'accueil.
-
-         Pas de `apple-mobile-web-app-status-bar-style`. `black-translucent` décalait le
-         viewport vers le haut sans l'agrandir, laissant une bande morte en bas que
-         Sillage ne pouvait pas peindre : elle gardait la couleur du lancement, donc ne
-         suivait ni le thème ni les curseurs d'apparence. Sans cette balise, la barre
-         d'état se pose sur la page, qui la peint avec le reste. -->
+    <!--
+         iOS ignores the manifest for fullscreen mode and home-screen icons. Omit
+         apple-mobile-web-app-status-bar-style: black-translucent shifted the viewport upward
+         without enlarging it, leaving an unreachable bottom strip retaining launch colors instead
+         of following theme or appearance changes. Without this tag the status bar overlays the
+         page, which paints it with the rest.
+    -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Sillage" />
-    <!-- Sans icône déclarée, le navigateur réclame /favicon.ico à chaque page et
-         récolte un 404. Le SVG passe en premier, il reste net à toutes les densités ;
-         le PNG reste pour les navigateurs qui ne le prennent pas. -->
+    <!--
+         Without a declared icon browsers request /favicon.ico on each page and receive 404. Prefer
+         SVG for sharp rendering at every density, retaining PNG for unsupported browsers.
+    -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -37,8 +37,7 @@
       name="description"
       content="Plateforme de développement agentique self-hosted et multi-CLI : Claude Code et Codex depuis une seule interface web."
     />
-    <!-- Chemins relatifs : chaque instance est servie derrière sa propre origine, il n'y
-         a pas de domaine canonique à écrire en dur. -->
+    <!-- Relative paths: every instance has its own origin, with no canonical domain to hardcode. -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Sillage" />
     <meta
@@ -48,21 +47,18 @@
     <meta property="og:image" content="/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <script>
-      // Appliqué avant l'hydratation, sinon un flash de thème clair au chargement.
+      // Apply before hydration to prevent a light-theme flash on load.
       (() => {
         const root = document.documentElement
         const stored = localStorage.getItem('sillage.theme')
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
         root.dataset.theme = stored ?? (prefersDark ? 'dark' : 'light')
 
-        // La palette de coloration suit le meme chemin : posee avant l'hydratation,
-        // sinon le premier bloc de code s'affiche dans la palette par defaut puis
-        // change de couleurs sous les yeux.
+        // Apply the syntax palette before hydration too, preventing initial code blocks from changing colors after appearing.
         const syntax = localStorage.getItem('sillage.syntax')
         if (syntax && syntax !== 'sillage') root.dataset.syntax = syntax
 
-        // Doit rester aligné sur APPEARANCE_SETTINGS (src/lib/appearance.ts) : ce
-        // script s'exécute avant le bundle, il ne peut pas l'importer.
+        // Keep in sync with APPEARANCE_SETTINGS (src/lib/appearance.ts): this script executes before the bundle and cannot import it.
         for (const [key, prop] of [
           ['sillage.hue', '--sg-hue'],
           ['sillage.tint', '--sg-tint'],

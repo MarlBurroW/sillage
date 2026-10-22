@@ -1,13 +1,6 @@
 import { z } from 'zod'
 
-/**
- * Recherche sur skills.sh, l'annuaire de Vercel.
- *
- * Son API n'est pas documentée : c'est celle qu'interroge `npx skills find`, relevée le
- * 2026-10-04. Tout est donc isolé ici et lu par un schéma tolérant. Si la réponse change
- * de forme ou n'arrive pas, la fonction rend null, et l'interface masque la recherche
- * plutôt que d'afficher une erreur que l'utilisateur ne peut pas corriger.
- */
+/** Searches skills.sh, Vercel's directory. Its undocumented API was observed in `npx skills find` on 2026-10-04. Isolate it here with a tolerant schema: changed or unavailable responses yield null, hiding search rather than showing errors users cannot fix. */
 
 const ENDPOINT = 'https://skills.sh/api/search'
 const TIMEOUT_MS = 8000
@@ -24,7 +17,7 @@ const responseSchema = z.object({
 })
 
 export interface SkillsShResult {
-  /** `owner/repo` sur GitHub, la forme que `normalizeSourceUrl` accepte. */
+  /** GitHub `owner/repo` form accepted by `normalizeSourceUrl`. */
   repository: string
   name: string
   installs: number

@@ -11,12 +11,9 @@ function plural(prefix: 'worktrees.modified' | 'worktrees.untracked' | 'worktree
 }
 
 /**
- * La confirmation du nettoyage : ce qui serait perdu, et les gestes qui l'accompagnent,
- * chacun débrayable. Le plan est relu à l'ouverture, parce que ce qui tourne dans
- * l'arbre et les sessions qui y tiennent changent d'une minute à l'autre.
- *
- * La carte passe en Terminé par le geste ordinaire du board, depuis le client : la
- * colonne reste un geste humain, et la synchronisation GitHub suit comme d'habitude.
+ * Cleanup confirmation explains losses and independently optional accompanying actions. Reread
+ * plans on opening because active processes and sessions change. Move cards to Done through normal
+ * client board actions, preserving human column choices and standard GitHub synchronization.
  */
 export function WorktreeCleanupDialog({
   projectId,
@@ -38,7 +35,7 @@ export function WorktreeCleanupDialog({
   const [stopServices, setStopServices] = useState(true)
   const [cardDone, setCardDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Une carte encore ouverte se propose en Terminé, sans s'imposer : décoché par défaut.
+  // Offer Done for open cards without imposing it: unchecked by default.
   useEffect(() => { setCardDone(false) }, [plan?.card?.id])
 
   const lost: string[] = []

@@ -1,7 +1,7 @@
 import type { ContextState } from '../../lib/chat-fold'
 import { cx } from '../ui'
 
-/** Au-delà, la conversation approche de la compaction : le repère change de ton. */
+/** Beyond this threshold compaction approaches and indicator tone changes. */
 const WARN_RATIO = 0.75
 const CRITICAL_RATIO = 0.9
 
@@ -15,15 +15,12 @@ function formatTokens(count: number): string {
 }
 
 /**
- * Occupation de la fenêtre de contexte.
- *
- * Distincte du quota d'abonnement affiché en en-tête : celle-ci se vide à chaque
- * nouvelle conversation et décide du moment où il faudra compacter.
+ * Context-window usage distinct from subscription quota in the header: reset per conversation and
+ * determines compaction timing.
  */
 /**
- * Indicateur, et rien d'autre : compacter se déclenche depuis le menu de la
- * conversation. Une jauge cliquable ne dit pas ce que le clic ferait, et la seule
- * façon de l'apprendre était de l'essayer sur une conversation en cours.
+ * Indicator only: compaction belongs to the conversation menu. Clickable gauges did not explain
+ * their effect except by trying on active conversations.
  */
 export function ContextMeter({ context, compact = false }: { context: ContextState; compact?: boolean }) {
   const ratio = Math.min(Math.max(context.ratio, 0), 1)
@@ -47,7 +44,7 @@ export function ContextMeter({ context, compact = false }: { context: ContextSta
           strokeWidth="2"
           opacity="0.22"
         />
-        {/* Le tracé part de midi et tourne dans le sens horaire, d'où la rotation. */}
+        {/* Rotate to start at noon and proceed clockwise. */}
         <circle
           cx="9"
           cy="9"
@@ -61,8 +58,10 @@ export function ContextMeter({ context, compact = false }: { context: ContextSta
           transform="rotate(-90 9 9)"
         />
       </svg>
-      {/* Au téléphone, l'anneau seul : le pourcentage reste lu par le lecteur d'écran
-          et dans l'infobulle, sans prendre la place d'un bouton sur la ligne. */}
+      {/*
+       * Phone ring only: percentages remain available through screen readers/tooltips without
+       * consuming button space.
+       */}
       {compact ? <span className="sr-only">{percent} %</span> : `${percent} %`}
     </span>
   )

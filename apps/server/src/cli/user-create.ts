@@ -32,7 +32,7 @@ async function main(): Promise<void> {
       throw new Error('Les deux mots de passe diffèrent.')
     }
 
-    // Le premier compte créé est administrateur d'office : personne ne peut le promouvoir.
+    // First accounts are administrators automatically because nobody can promote them.
     const [tally] = await db.select({ total: count() }).from(users)
     const isFirstUser = (tally?.total ?? 0) === 0
     const isAdmin =
@@ -47,7 +47,7 @@ async function main(): Promise<void> {
       isAdmin,
       createdAt: Date.now(),
     })
-    // La visite attend ce compte à sa première connexion, comme un compte créé par l'écran.
+    // Tours await these accounts' first logins, like interface-created accounts.
     armOnboarding(db, id)
 
     console.log(`Utilisateur "${username}" créé${isAdmin ? ' (administrateur)' : ''}.`)

@@ -7,7 +7,7 @@ import { setTimeout } from 'node:timers/promises'
 import { chromium } from 'playwright'
 import { checkJournalCache } from './checks/journal-cache.mjs'
 
-// Vérifie les vrais composants avec une API simulée ; aucune conversation réelle.
+// Check real components with a mocked API; no real conversation.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
@@ -28,7 +28,7 @@ try {
     await setTimeout(100)
   }
   assert.ok(ready, diagnostics || 'Vite failed to start')
-  // Le Chromium complet est couvert par le profil AppArmor du serveur.
+  // Full Chromium is covered by the server's AppArmor profile.
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     const page = await browser.newPage({ viewport, locale: 'fr-FR' })

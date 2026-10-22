@@ -45,7 +45,7 @@ test('fichiers annexes : texte édité, binaire décrit, SKILL.md et évasions r
   assert.deepEqual(detail.files, ['SKILL.md', 'assets/logo.png', 'references/guide.md'])
   assert.deepEqual(detail.compat, [])
 
-  // SKILL.md s'édite par les champs, qui gardent le nom du dossier.
+  // Edit SKILL.md through fields preserving directory names.
   const reserved = await call('admin', 'PUT', `${base}/files/SKILL.md`, { content: 'x' })
   assert.equal(reserved.json().error.code, 'skill_file_reserved')
   for (const evil of ['..%2F..%2Fevil.txt', 'a/..%2F..%2F..%2Fevil.txt', '%2Fetc%2Fevil']) {
@@ -71,7 +71,7 @@ test('export puis import : le même dossier, sous un nom libre, frontmatter ré�
   const archive = new Uint8Array(exported.rawPayload)
   assert.deepEqual(Object.keys(unzipSync(archive)).sort(), ['deploy/SKILL.md', 'deploy/scripts/run.sh'])
 
-  // Même nom : refusé. Sous un autre nom, dans un projet : accepté par son propriétaire.
+  // Same names are rejected; different project names are accepted for owners.
   assert.equal((await upload('admin', '/api/skill-library/import?scope=global', 'deploy.zip', archive)).statusCode, 409)
   const imported = await upload('owner', '/api/skill-library/import?scope=project&projectId=p1&name=ship', 'deploy.zip', archive)
   assert.equal(imported.statusCode, 201)
@@ -100,7 +100,7 @@ test('dupliquer : droits sur la destination, provenance laissée derrière', asy
   assert.deepEqual(library.list('p1').map((entry) => entry.name), ['deploy', 'deploy-local'])
 })
 
-/** Une machine fictive : dossiers de l'utilisateur et dépôt du projet. */
+/** Fictional machine with user directories and project repository. */
 function machine(dir: string) {
   const write = (path: string, content: string) => {
     mkdirSync(join(dir, path, '..'), { recursive: true })
@@ -132,7 +132,7 @@ test('scan de la machine : skills de chaque CLI, sans ceux qu’ils gèrent eux-
       ['claude-user', 'review', null],
     ],
   )
-  // Le lien est suivi : c'est le dossier réel qui sert de clé.
+  // Follow symlinks and use real directories as keys.
   assert.equal(found.find((skill) => skill.name === 'linked')!.path, join(dir, 'elsewhere/linked'))
 })
 
@@ -149,7 +149,7 @@ test('reprise : admin pour la machine, membres pour le dépôt, rien hors du sca
   assert.deepEqual(member.skills.map((skill) => skill.name).sort(), ['broken', 'repo-only'])
   assert.equal((await call('member', 'GET', '/api/skill-library/local?projectId=secret')).statusCode, 404)
 
-  // Un chemin que le scan n'a pas proposé n'est pas copié, même par un admin.
+  // Never copy paths not offered by scans, even for administrators.
   const outside = await call('admin', 'POST', '/api/skill-library/adopt', { scope: 'global', projectId: null, path: join(dir, 'elsewhere') })
   assert.equal(outside.statusCode, 404)
   const review = admin.skills.find((skill) => skill.name === 'review')!
@@ -158,12 +158,12 @@ test('reprise : admin pour la machine, membres pour le dépôt, rien hors du sca
   assert.equal(readFileSync(join(root, 'global/sillage/skills/review/notes.md'), 'utf8'), 'notes')
   assert.ok(existsSync(review.path), 'l’original reste en place')
 
-  // Un nom invalide se reprend sous un nom choisi.
+  // Invalid names can be replaced with a chosen name.
   const bad = admin.skills.find((skill) => skill.problem === 'skill_name_invalid')!
   assert.equal((await call('admin', 'POST', '/api/skill-library/adopt', { scope: 'global', projectId: null, path: bad.path })).statusCode, 400)
   assert.equal((await call('admin', 'POST', '/api/skill-library/adopt', { scope: 'global', projectId: null, path: bad.path, name: 'good-name' })).statusCode, 201)
 
-  // Le dépôt se reprend dans son projet, par son propriétaire.
+  // Adopt repository skills into their own projects through their owners.
   const repo = member.skills.find((skill) => skill.name === 'repo-only')!
   assert.equal((await call('member', 'POST', '/api/skill-library/adopt', { scope: 'project', projectId: 'p1', path: repo.path })).statusCode, 403)
   assert.equal((await call('owner', 'POST', '/api/skill-library/adopt', { scope: 'project', projectId: 'p1', path: repo.path })).statusCode, 201)

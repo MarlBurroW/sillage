@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
 
-// Les événements sont simulés : seul un iPad réel peut valider les calques WebKit.
+// Events are simulated: only a real iPad can validate WebKit layers.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
@@ -72,12 +72,12 @@ try {
       }
       await page.evaluate(() => window.dispatchEvent(new Event('orientationchange')))
       assert.notEqual(await page.evaluate(() => document.documentElement.style.getPropertyValue('--sg-app-height')), '')
-      // Une fermeture avec focus conservé doit encore recaler les zones de toucher.
+      // Closing with focus retained must still realign touch areas.
       const before = await page.evaluate(() => window.recalibrations)
       await page.evaluate(() => window.keyboard(false))
       assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--sg-app-height')), '')
       assert.ok(await page.evaluate(() => window.recalibrations) > before)
-      // Et le filet focusout reste actif si WebKit omet son événement de viewport.
+      // The focusout fallback remains active if WebKit omits its viewport event.
       await page.evaluate(() => window.keyboard(true))
       const beforeBlur = await page.evaluate(() => window.recalibrations)
       await page.evaluate(() => { window.keyboard(false, false, false); document.querySelector('textarea').blur() })

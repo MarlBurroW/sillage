@@ -1,127 +1,126 @@
-# Intégration Grok Build
+# Grok Build integration
 
-Sillage lance un `grok agent --no-leader stdio` par conversation et lui parle en **ACP**
-(Agent Client Protocol) : du JSON-RPC sur stdio, une ligne par message, comme l'éditeur
-Zed. Grok Build double l'ACP standard d'extensions `_x.ai/…`, dans les deux sens. Tout
-ce qui suit a été sondé sur **Grok Build 1.0.62** et lu dans ses sources publiques
-(`xai-org/grok-build`, Apache-2.0, dont le dépôt public avait la 1.0.45 au moment de
-l'intégration).
+Sillage starts one `grok agent --no-leader stdio` per conversation and speaks **ACP**
+(Agent Client Protocol): JSON-RPC over stdio, one line per message, like the Zed
+editor. Grok Build adds `_x.ai/…` extensions to standard ACP in both directions.
+Everything below was probed on **Grok Build 1.0.62** and read in its public source
+(`xai-org/grok-build`, Apache-2.0, whose public repository contained 1.0.45 at
+integration time).
 
-Le client ACP (`apps/server/src/agents/acp/client.ts`) est écrit à la main ; seuls les
-types viennent du SDK officiel `@agentclientprotocol/sdk`. La `ClientSideConnection` du
-SDK valide chaque message entrant avec son schéma zod, et rejetterait les variantes
-propres à Grok au lieu de les laisser passer.
+The ACP client (`apps/server/src/agents/acp/client.ts`) is handwritten; only the
+types come from the official `@agentclientprotocol/sdk` SDK. The SDK's
+`ClientSideConnection` validates every incoming message with its zod schema and
+would reject Grok-specific variants instead of passing them through.
 
-## Lancement et isolation
+## Launch and isolation
 
-Le process reçoit un environnement qui coupe ce que Grok lit d'office ailleurs que dans
-Sillage (`apps/server/src/agents/grok/launch.ts`) :
+The process receives an environment that disables what Grok reads by default
+outside Sillage (`apps/server/src/agents/grok/launch.ts`):
 
-| Variable | Pourquoi |
+| Variable | Why |
 |---|---|
-| `GROK_{CLAUDE,CURSOR}_{RULES,SKILLS,MCPS,HOOKS,AGENTS,SESSIONS}_ENABLED=0` | Grok relit la configuration de Claude Code et de Cursor. Sans ça, SILLAGE.md et le serveur `sillage` arrivent en double. Surtout, Grok republie dans `_x.ai/mcp/servers_updated` l'environnement des serveurs MCP du `~/.claude.json`, jetons compris. |
-| `GROK_TELEMETRY_ENABLED`, `GROK_TELEMETRY_TRACE_UPLOAD`, `GROK_ERROR_REPORTING` = `false`, `GROK_STORAGE_MODE=local` | Coupés par défaut, mais des réglages distants de xAI peuvent les allumer. L'envoi des traces de session (prompts, images) en fait partie. |
-| `GROK_FOLDER_TRUST=0` | En ACP, un dossier non déclaré de confiance qui porte des consignes, des serveurs MCP ou des skills voit ces fichiers ignorés en silence, faute d'invite. |
-| `GROK_DISABLE_AUTOUPDATER=1` | C'est Sillage qui choisit la version, comme pour les autres CLI. |
+| `GROK_{CLAUDE,CURSOR}_{RULES,SKILLS,MCPS,HOOKS,AGENTS,SESSIONS}_ENABLED=0` | Grok rereads Claude Code and Cursor configuration. Otherwise, SILLAGE.md and the `sillage` server arrive twice. More critically, Grok republishes the environment of MCP servers from `~/.claude.json`, including tokens, in `_x.ai/mcp/servers_updated`. |
+| `GROK_TELEMETRY_ENABLED`, `GROK_TELEMETRY_TRACE_UPLOAD`, `GROK_ERROR_REPORTING` = `false`, `GROK_STORAGE_MODE=local` | Disabled by default, but xAI remote settings can enable them, including uploading session traces (prompts, images). |
+| `GROK_FOLDER_TRUST=0` | In ACP, instruction files, MCP servers, and skills in an untrusted folder are silently ignored because no prompt is available. |
+| `GROK_DISABLE_AUTOUPDATER=1` | Sillage chooses the version, as with other CLIs. |
 
-`--no-leader` donne un process à soi, sans le serveur partagé que `grok` lance pour ses
-clients, et qui ignorerait `--plugin-dir`. `--disable-web-search` coupe les outils web ;
-c'est une option de `grok` et non de `grok agent`, elle se place donc avant la
-sous-commande.
+`--no-leader` provides a dedicated process without the shared server `grok` starts
+for its clients, which would ignore `--plugin-dir`. `--disable-web-search` disables
+web tools; it is a `grok` option, not a `grok agent` option, so it goes before
+the subcommand.
 
-## Ce qui se règle au lancement, et ce qui se règle à chaud
+## Launch settings and live settings
 
-| Réglage Sillage | Chez Grok | À chaud |
+| Sillage setting | In Grok | Live |
 |---|---|---|
-| Modèle, effort | `_meta.modelId` et `_meta.reasoningEffort` de `session/new`, puis `session/set_config_option` (`model`, `reasoning_effort`) | oui |
-| Demander (`default`) | `yoloMode` et `autoMode` faux | oui |
-| Automatique (`auto`) | `autoMode` : un classifieur tranche | oui |
-| Tout autoriser (`bypassPermissions`) | `yoloMode` | oui |
-| Plan (`plan`) | `session/set_mode` `plan` ; Grok soumet le plan par `_x.ai/exit_plan_mode` et repasse en `default` | oui |
-| Recherche web | `--disable-web-search` | relance |
-| Bibliothèque de skills | `--plugin-dir` par racine ; `_x.ai/plugins/reload` après une écriture | relance pour l'interrupteur |
-| Serveurs MCP du registre, serveur de Sillage | `mcpServers` de `session/new` (stdio, http, sse) | relance |
-| SILLAGE.md, mémoire, transfert entre CLI | `_meta.rules` de `session/new`, ajouté au prompt système dans `<human_rules>` | à la création seulement |
-| Consignes tenues dans SILLAGE.md | `_meta.agentProfile` avec `agentsMd: false` : les `AGENTS.md`/`CLAUDE.md` du dépôt sont sinon toujours lus | à la création et à la reprise |
+| Model, effort | `session/new`'s `_meta.modelId` and `_meta.reasoningEffort`, then `session/set_config_option` (`model`, `reasoning_effort`) | yes |
+| Ask (`default`) | `yoloMode` and `autoMode` false | yes |
+| Automatic (`auto`) | `autoMode`: a classifier decides | yes |
+| Allow everything (`bypassPermissions`) | `yoloMode` | yes |
+| Plan (`plan`) | `session/set_mode` `plan`; Grok submits the plan through `_x.ai/exit_plan_mode` and returns to `default` | yes |
+| Web search | `--disable-web-search` | restart |
+| Skill library | `--plugin-dir` per root; `_x.ai/plugins/reload` after a write | restart for the toggle |
+| Registry MCP servers, Sillage server | `session/new`'s `mcpServers` (stdio, http, sse) | restart |
+| SILLAGE.md, memory, CLI handoff | `session/new`'s `_meta.rules`, appended to the system prompt in `<human_rules>` | creation only |
+| Instructions managed in SILLAGE.md | `_meta.agentProfile` with `agentsMd: false`: otherwise repository `AGENTS.md`/`CLAUDE.md` are always read | creation and resume |
 
-Les permissions à chaud passent par la notification `_x.ai/yolo_mode_changed`
-(`yolo_mode`, `auto_mode`), qui vise toutes les sessions du process : il n'y en a qu'une.
+Live permissions use the `_x.ai/yolo_mode_changed` notification (`yolo_mode`,
+`auto_mode`), which targets every session in the process: there is only one.
 
-## Comportements relevés
+## Observed behavior
 
-- **Champ `systemPrompt` de l'ACP et option `--rules`** : ignorés par `grok agent`. Seul
-  `_meta.rules` passe, et seulement à la création : une reprise garde le prompt système
-  enregistré avec la session (`system_prompt.txt`).
-- **Reprise** : `session/resume`, sans rejeu de l'historique. `session/load` rejouerait
-  tout en `session/update`. `session/resume` refuse `additionalDirectories`, et
-  `session/new` ne le lit pas : les fichiers hors du dossier de travail passent par une
-  permission.
-- **Notifications précoces** : les commandes en `/` et l'état des serveurs MCP arrivent
-  avant la réponse à `session/new`. Le runner les garde et les rejoue.
-- **Texte et réflexion** : en morceaux, sans identifiant de message.
-- **Outils** : le nom fiable est `_meta["x.ai/tool"].name` (`read_file`, `search_replace`,
-  `write`, `run_terminal_command`, `grep`, `list_dir`, `todo_write`, `spawn_subagent`…),
-  ramené aux noms du journal (`Read`, `Edit`, `Write`, `Bash`…). Le `title` de l'ACP est
-  une phrase qui change d'une mise à jour à l'autre. Les outils MCP ne sont pas exposés
-  un par un : le modèle les cherche (`search_tool`) puis les appelle par `use_tool`, avec
-  `serveur__outil` pour nom.
-- **Sortie d'une commande** : cumulée dans `rawOutput.output`, en octets.
-- **Éditions** : blocs `diff` (`path`, `oldText`, `newText`). Pour `search_replace`, ce
-  sont les extraits remplacés, pas les fichiers entiers : le diff affiché est partiel.
-- **Permission** : `session/request_permission` propose `allow-once`,
-  `allow-edits-session`, `always-allow`, `reject-once`… Grok lit la réponse par son
-  genre (`allow_once`, `allow_always`, `reject_once`). **Un refus clôt le tour entier**
-  (`cancelled`, catégorie `PermissionRejected`), journalisé en `permission_denied`.
-- **Questions** : requête `_x.ai/ask_user_question`, réponses rangées par intitulé de
-  question. L'outil est actif par défaut.
-- **Élicitations MCP** : requête `_x.ai/mcp/elicit` (formulaire ou URL), close par
+- **ACP `systemPrompt` field and `--rules` option**: ignored by `grok agent`. Only
+  `_meta.rules` works, and only at creation: resume keeps the system prompt saved
+  with the session (`system_prompt.txt`).
+- **Resume**: `session/resume`, without history replay. `session/load` would replay
+  everything through `session/update`. `session/resume` rejects
+  `additionalDirectories`, and `session/new` does not read it: files outside the
+  working directory require permission.
+- **Early notifications**: slash commands and MCP server state arrive before the
+  `session/new` response. The runner keeps and replays them.
+- **Text and reasoning**: chunked, without a message ID.
+- **Tools**: the reliable name is `_meta["x.ai/tool"].name` (`read_file`,
+  `search_replace`, `write`, `run_terminal_command`, `grep`, `list_dir`, `todo_write`,
+  `spawn_subagent`…), normalized to journal names (`Read`, `Edit`, `Write`, `Bash`…).
+  ACP's `title` is a sentence that changes between updates. MCP tools are not
+  exposed individually: the model searches for them (`search_tool`), then calls
+  them through `use_tool`, with `server__tool` as the name.
+- **Command output**: accumulated in `rawOutput.output`, in bytes.
+- **Edits**: `diff` blocks (`path`, `oldText`, `newText`). For `search_replace`, these
+  are replaced excerpts, not entire files: the displayed diff is partial.
+- **Permission**: `session/request_permission` offers `allow-once`,
+  `allow-edits-session`, `always-allow`, `reject-once`… Grok reads the response by
+  kind (`allow_once`, `allow_always`, `reject_once`). **Rejection ends the entire
+  turn** (`cancelled`, category `PermissionRejected`), journaled as `permission_denied`.
+- **Questions**: `_x.ai/ask_user_question` request, answers keyed by question title.
+  The tool is enabled by default.
+- **MCP elicitations**: `_x.ai/mcp/elicit` request (form or URL), closed by
   `_x.ai/mcp/elicit_complete`.
-- **Infléchir** : `_x.ai/interject`, pris au prochain point sûr du tour. Un second
-  `session/prompt` pendant un tour attend dans la file de Grok.
-- **Interrompre** : `session/cancel`. Le `session/prompt` en cours répond `cancelled`.
-- **Compaction** : `_x.ai/compact_conversation`, fin annoncée par `auto_compact_completed`
-  (tailles avant et après) sous `_x.ai/session_notification`.
-- **Fork** : `_x.ai/session/fork` avec `targetPromptIndex`, le rang du dernier prompt à
-  garder (à partir de zéro). Chaque tour de Sillage en est un.
-- **Consommation** : dans le `_meta.usage` de la réponse au `session/prompt`. `inputTokens`
-  y compte le cache ; `costUsdTicks` vaut un dix-milliardième de dollar. La taille du
-  contexte voyage dans le `_meta.totalTokens` de chaque `session/update`.
-- **Images** : Grok annonce `image: false` mais lit les blocs image que son TUI lui
-  envoie. Les fichiers mentionnés partent en liens `file://`, développés comme un `@chemin`.
-- **Catalogue** : la réponse à `initialize` porte les modèles du compte connecté
-  (`_meta.modelState`) et les commandes intégrées, sans ouvrir de session.
+- **Steering**: `_x.ai/interject`, applied at the turn's next safe point. A second
+  `session/prompt` during a turn waits in Grok's queue.
+- **Interruption**: `session/cancel`. The active `session/prompt` responds `cancelled`.
+- **Compaction**: `_x.ai/compact_conversation`, completion announced by
+  `auto_compact_completed` (before and after sizes) under `_x.ai/session_notification`.
+- **Fork**: `_x.ai/session/fork` with `targetPromptIndex`, the index of the last prompt
+  to keep (zero-based). Each Sillage turn is one prompt.
+- **Usage**: in the `session/prompt` response's `_meta.usage`. `inputTokens` includes
+  cache; `costUsdTicks` is one ten-billionth of a dollar. Context size travels in
+  each `session/update`'s `_meta.totalTokens`.
+- **Images**: Grok reports `image: false` but reads image blocks sent by its TUI.
+  Mentioned files are sent as `file://` links, expanded like an `@path`.
+- **Catalog**: the `initialize` response contains the signed-in account's models
+  (`_meta.modelState`) and built-in commands without opening a session.
 
-## Connexion, comptes et consommation
+## Sign-in, accounts, and usage
 
-La connexion du CLI : `grok login --device-auth` sur la machine qui fait tourner Sillage
-(abonnement SuperGrok ou X Premium), ou `XAI_API_KEY`. Les identifiants vont dans
-`~/.grok/auth.json`.
+CLI sign-in: `grok login --device-auth` on the machine running Sillage (SuperGrok
+or X Premium subscription), or `XAI_API_KEY`. Credentials go in `~/.grok/auth.json`.
 
-Des comptes supplémentaires se déclarent dans **Réglages › Comptes Grok**, sur le modèle
-des comptes Codex : un `GROK_HOME` par compte sous `<données>/grok-accounts/<id>`, lié au
-home de l'utilisateur sauf `auth.json`, `models_cache.json` et `settings_cache.json`. La
-connexion passe par `grok login --device-auth` lancé dans ce home (Sillage lit l'URL et le
-code sur sa sortie), ou par la méthode ACP `xai.api_key`, que Grok enregistre dans
-l'`auth.json` du home. La déconnexion joue `grok logout` puis retire cet `auth.json`.
+Extra accounts are registered in **Settings › Grok accounts**, following the Codex
+account design: one `GROK_HOME` per account under `<data>/grok-accounts/<id>`, linked
+to the user's home except `auth.json`, `models_cache.json`, and `settings_cache.json`.
+Sign-in uses `grok login --device-auth` in that home (Sillage reads the URL and code
+from its output), or the ACP `xai.api_key` method, which Grok stores in the home's
+`auth.json`. Sign-out runs `grok logout`, then removes that `auth.json`.
 
-La jauge vient de l'extension `_x.ai/billing` (`creditUsagePercent`, `currentPeriod`,
-`onDemandCap`/`onDemandUsed`, `prepaidBalance`, `subscription_tier`), lue sur un process
-jetable, pour la connexion du CLI comme pour chaque compte.
+The gauge comes from the `_x.ai/billing` extension (`creditUsagePercent`,
+`currentPeriod`, `onDemandCap`/`onDemandUsed`, `prepaidBalance`, `subscription_tier`),
+read in a disposable process for both the CLI sign-in and every account.
 
-## Hors périmètre
+## Out of scope
 
-Fil des sous-agents (leurs `session/update` arrivent sous l'identifiant de leur propre
-session), travaux de fond, import des sessions commencées dans le TUI.
+Subagent threads (their `session/update` events arrive under their own session ID),
+background jobs, importing sessions started in the TUI.
 
-## Vérifications
+## Verification
 
 ```sh
 pnpm typecheck
-pnpm test                 # dont test/grok-*.test.ts, sur un faux Grok (test/fixtures/grok-agent.mjs)
-pnpm test:grok-ui         # rendu d'un fil Grok : outils, MCP, permission, question, plan
-pnpm test:grok-accounts-ui # comptes Grok : connexion, choix du compte, jauge, déconnexion
+pnpm test                 # includes test/grok-*.test.ts, using a fake Grok (test/fixtures/grok-agent.mjs)
+pnpm test:grok-ui         # Grok thread rendering: tools, MCP, permission, question, plan
+pnpm test:grok-accounts-ui # Grok accounts: sign-in, account choice, gauge, sign-out
 ```
 
-Pour un essai réel : un serveur Sillage jetable (`SILLAGE_DATA_DIR`, `SILLAGE_PORT`
-libre, `SILLAGE_CONFIG` qui pointe `[agents.grok] binary` sur le binaire voulu), puis
-une conversation Grok depuis l'interface.
+For a real trial: use a disposable Sillage server (`SILLAGE_DATA_DIR`, a free
+`SILLAGE_PORT`, `SILLAGE_CONFIG` pointing `[agents.grok] binary` to the desired
+binary), then open a Grok conversation from the interface.

@@ -2,37 +2,34 @@ import { isSpawnTool } from '@sillage/protocol'
 import { activityOf, type ChatItem, type ChatState, type TaskState, type ToolItem } from './chat-fold'
 
 /**
- * Les sous-agents d'une conversation, dérivés du seul journal (invariant I2).
- *
- * Un sous-agent n'a pas d'existence propre côté serveur : c'est un appel d'outil,
- * et tout ce qu'il produit porte l'identifiant de cet appel. Cet identifiant lui
- * sert donc d'identité ici, sans état parallèle à tenir ni requête à faire.
+ * Conversation subagents derived solely from the log (invariant I2). A subagent has no independent
+ * server entity: it is a tool call, and all output carries that call ID. Use it as identity here,
+ * with no parallel state or requests.
  */
 
 export interface SubAgent {
-  /** L'appel qui l'a lancé. Sert d'identité et de clé de rattachement. */
+  /** Spawning call. Serves as identity and association key. */
   id: string
-  /** Type déclaré à l'appel (`Explore`, `general-purpose`...), ou l'outil à défaut. */
+  /** Type declared at invocation (`Explore`, `general-purpose`, etc.), falling back to the tool name. */
   type: string
-  /** Ce que l'appel dit chercher. Vide si le CLI n'en donne pas. */
+  /** What the call says it is seeking. Empty if omitted by the CLI. */
   description: string
   status: ToolItem['status']
   startedAt: number
-  /** Connue seulement une fois l'appel terminé : le CLI ne la donne pas avant. */
+  /** Known only after call completion: the CLI does not provide it earlier. */
   durationMs: number | null
-  /** Ce qu'il fait en ce moment, ou null s'il ne tourne plus. */
+  /** Current activity, or null when no longer running. */
   activity: string | null
-  /** Le fil du sous-agent, dans l'ordre du journal. */
+  /** Subagent thread in log order. */
   items: ChatItem[]
-  /** Ses propres appels d'outils. Ceux d'un sous-agent imbriqué comptent pour lui. */
+  /** Its own tool calls. Nested subagent calls count toward that nested agent. */
   toolCount: number
   /**
-   * Ce qu'il a consommé, tel que le CLI le compte. Zéro tant qu'il n'a pas rendu
-   * compte : le fil ne peut pas le déduire, les tokens d'un sous-agent n'apparaissent
-   * nulle part ailleurs.
+   * Usage reported by the CLI. Zero until a report arrives: the thread cannot infer subagent tokens
+   * because they appear nowhere else.
    */
   totalTokens: number
-  /** L'appel de spawn du sous-agent parent, pour les imbrications. */
+  /** Parent subagent's spawning call for nesting. */
   parentId: string | null
 }
 
@@ -43,16 +40,13 @@ function field(input: unknown, key: string): string {
 }
 
 /**
- * Un sous-agent par appel de spawn, dans l'ordre où ils ont été lancés.
- *
- * Un appel dont le journal ne porte encore aucune retombée reste dans la liste : entre
- * le lancement et le premier événement du sous-agent, il s'écoule plusieurs secondes,
- * et l'omettre ferait apparaître puis clignoter le bandeau.
+ * One subagent per spawning call, in launch order. Keep calls whose log has no child output yet:
+ * several seconds can pass before the first event, and omitting them would make the banner appear
+ * then flicker.
  */
 export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): SubAgent[] {
   const byId = new Map<string, SubAgent>()
-  // Le CLI décrit ses travaux par leur propre identifiant ; le fil, lui, ne connaît
-  // que l'appel d'outil. C'est ce dernier qui fait le lien entre les deux vues.
+  // The CLI identifies tasks by their own IDs; the thread knows only the tool call, which links the two views.
   const byToolCall = new Map<string, TaskState>()
   for (const task of tasks.values()) {
     if (task.toolCallId) byToolCall.set(task.toolCallId, task)
@@ -62,16 +56,15 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
     if (item.kind !== 'tool' || !isSpawnTool(item.name)) continue
     const task = byToolCall.get(item.id)
     /*
-     * Un agent passé en arrière-plan rend son appel d'outil aussitôt, avec un résultat
-     * qui dit seulement qu'il continue ailleurs. Sans ce redressement, la ligne
-     * l'annonçait terminé en quarante millisecondes alors qu'il travaillait encore
-     * vingt secondes, et le bandeau cessait de le compter parmi les agents actifs.
+     * A backgrounded agent immediately returns its tool call with a result saying it continues
+     * elsewhere. Without correction the row claimed completion in forty milliseconds while work
+     * continued for twenty seconds, and the banner stopped counting it as active.
      */
     const backgrounded = task !== undefined && !task.done && item.status === 'done'
     /*
-     * Et l'inverse : un agent arrêté avec sa session a lui aussi rendu son appel, mais
-     * son travail n'a pas abouti. Sans ce redressement, la ligne annonçait « terminé »
-     * un agent dont plus personne n'a jamais eu de nouvelles.
+     * Conversely, an agent stopped with its session has returned its call without completing its
+     * work. Without correction the row labeled an agent completed even though it was never heard
+     * from again.
      */
     const cutShort = task?.outcome === 'stopped' && item.status === 'done'
     byId.set(item.id, {
@@ -80,7 +73,7 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
       description: field(item.input, 'description'),
       status: backgrounded ? 'running' : cutShort ? 'interrupted' : item.status,
       startedAt: item.ts,
-      // La durée de l'appel n'est celle du travail que tant qu'il l'attend.
+      // Call duration equals task duration only while the call is waiting for it.
       durationMs: task && task.durationMs > 0 ? task.durationMs : item.durationMs,
       activity: null,
       items: [],
@@ -104,15 +97,14 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
   const agents = [...byId.values()]
   for (const agent of agents) {
     if (agent.status !== 'running') continue
-    // Le CLI décrit lui-même ce que fait son agent, y compris pendant qu'il réfléchit
-    // sans rien appeler. Le repli sur le journal couvre les secondes qui précèdent son
-    // premier compte rendu, et les CLI qui n'en donnent aucun.
+    // The CLI describes its agent's activity, including reasoning without tool calls. Log fallback
+    // covers the seconds before the first report and CLIs that never report.
     agent.activity = byToolCall.get(agent.id)?.activity ?? activityOf(agent.items, agent.id)
   }
   return agents
 }
 
-/** Comment nommer un sous-agent dans une liste, au plus court qui reste parlant. */
+/** Shortest meaningful subagent label for a list. */
 export function subAgentLabel(agent: SubAgent): string {
   return agent.description || agent.type
 }

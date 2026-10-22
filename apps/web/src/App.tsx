@@ -16,11 +16,9 @@ import { BoardPage } from './routes/BoardPage'
 import { ProjectPage } from './routes/ProjectPage'
 import { NewProjectPage } from './routes/NewProjectPage'
 import { SchedulePage } from './routes/SchedulePage'
-// À la demande : l'explorateur et l'éditeur de script ne servent qu'ici, et le paquet
-// principal n'a plus de marge sous la limite du précache.
+// Load on demand: explorer and script editor are used only here and the main bundle has no precache headroom.
 const AutomationPage = lazy(() => import('./routes/AutomationPage').then((module) => ({ default: module.AutomationPage })))
-// La visite ne sert qu'une fois par compte : son code, générateur de QR compris, n'a
-// rien à faire dans le paquet principal.
+// Onboarding runs once per account: its code, including QR generation, does not belong in the main bundle.
 const OnboardingPage = lazy(() => import('./routes/OnboardingPage').then((module) => ({ default: module.OnboardingPage })))
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
@@ -44,7 +42,7 @@ import { SessionsSettingsPage } from './routes/SessionsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
 import { UsersSettingsPage } from './routes/UsersSettingsPage'
 
-/** Après la visite : la création du premier projet s'il n'y en a aucun, sinon l'accueil. */
+/** After onboarding: create the first project if none exists, otherwise show home. */
 function OnboardingExit() {
   const { data: projects } = useProjects()
   if (!projects) return null
@@ -53,14 +51,14 @@ function OnboardingExit() {
 
 export function App() {
   const { data: user, isPending } = useCurrentUser()
-  // Attendu avec la session : les écrans lisent ses capacités sans état intermédiaire.
+  // Await with the session so screens read capabilities without an intermediate state.
   const { data: instance, isPending: instancePending } = useInstance()
-  // Les réglages du compte décident si la visite est due : attendus aussi, pour ne pas
-  // dessiner l'application une fraction de seconde avant de l'ouvrir.
+  // Account settings determine whether onboarding is due: await them too to avoid briefly rendering
+  // the app before opening it.
   const { data: settings, isPending: settingsPending } = useUserSettings(Boolean(user))
 
-  // Écran vide plutôt qu'un spinner : la vérification de session est locale et brève,
-  // un spinner qui clignote est plus désagréable que rien.
+  // Blank screen rather than spinner: session checks are local and brief, so a flashing spinner is
+  // more distracting than nothing.
   if (isPending || instancePending || (user && settingsPending)) return null
 
   const onboarding = (
@@ -70,8 +68,8 @@ export function App() {
   )
 
   if (!user) {
-    // Une base sans compte n'a pas de page de connexion à proposer : la visite
-    // commence par créer le premier compte, sur n'importe quelle adresse.
+    // A database with no account has no login page to offer: onboarding starts by creating the
+    // first account at any address.
     if (instance?.needsSetup && instance.capabilities.passwordAuth) {
       return (
         <BrowserRouter>
@@ -91,8 +89,8 @@ export function App() {
     )
   }
 
-  // La visite due prend toute la place : rien d'autre à voir tant qu'elle n'est pas
-  // finie ou passée, et elle reprend à son étape sur n'importe quel appareil.
+  // Due onboarding occupies the entire screen until finished or skipped and resumes at its saved
+  // step on any device.
   if (settings?.onboarding.pending) {
     return (
       <BrowserRouter>
@@ -118,7 +116,7 @@ export function App() {
           <Route path="/p/:projectId/board" element={<BoardPage />} />
           <Route path="/p/:projectId/schedules" element={<SchedulePage />} />
           <Route path="/p/:projectId/schedules/:taskId" element={<Suspense fallback={null}><AutomationPage /></Suspense>} />
-          {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
+          {/* Before ID routes so new is not mistaken for a conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />
           <Route path="/settings" element={<SettingsLayout />}>

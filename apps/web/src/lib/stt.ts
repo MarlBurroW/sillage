@@ -5,29 +5,29 @@ import { useAppSettings } from './app-settings'
 import { locale, translate, translateError } from './i18n'
 
 /**
- * Dictée vocale du composer : enregistrement dans le navigateur, transcription par le
- * serveur (`/api/stt/transcribe`), qui la relaie au fournisseur configuré. Le module
- * ne touche jamais à une clé d'API, elle vit dans les secrets de l'instance.
+ * Composer voice dictation: browser recording, then server transcription (`/api/stt/transcribe`)
+ * relayed to the configured provider. This module never accesses an API key; keys remain in
+ * instance secrets.
  */
 
-/** La dictée n'apparaît que si l'instance est configurée pour. */
+/** Show dictation only when configured for the instance. */
 export function useSttEnabled(): boolean {
   const { data: settings } = useAppSettings()
   return Boolean(settings?.sttBaseUrl && settings.sttModel && settings.sttSecret)
 }
 
 /**
- * L'envoi passe par `fetch` directement, comme les pièces jointes : un multipart
- * laisse le navigateur composer son en-tête `content-type`, frontière comprise.
+ * Send directly with `fetch`, like attachments: let the browser build the multipart `content-type`
+ * header with its boundary.
  */
 async function postAudio(path: string, audio: Blob, projectId?: string): Promise<unknown> {
   const extension = audio.type.includes('mp4') ? 'mp4' : 'webm'
   const body = new FormData()
   if (projectId) body.append('projectId', projectId)
-  // La langue de l'interface est celle qu'on dicte : l'imposer évite à la détection
-  // automatique de basculer sur un « test » isolé qui sonne allemand.
+  // Dictate in the UI language: forcing it prevents automatic detection from interpreting an
+  // isolated test as German.
   body.append('language', locale())
-  // Le fichier en dernier : @fastify/multipart ne lit que les champs qui précèdent.
+  // File last: @fastify/multipart reads only preceding fields.
   body.append('file', audio, `dictation.${extension}`)
 
   const response = await fetch(path, {
@@ -61,9 +61,9 @@ async function requestTranscription(audio: Blob, projectId?: string): Promise<st
 }
 
 /**
- * Vérifie la configuration en parcourant le chemin d'une vraie dictée, sur un court
- * échantillon sonore. Il est synthétisé par WebAudio plutôt qu'enregistré : le test ne
- * doit pas demander l'accès au micro, ni dépendre de ce qu'il capte.
+ * Test configuration through the real dictation path using a short audio sample. Synthesize with
+ * WebAudio instead of recording: testing must not request microphone access or depend on captured
+ * sound.
  */
 export async function testDictation(): Promise<{ cleanupTested: boolean }> {
   const audio = await recordTestTone()
@@ -106,7 +106,7 @@ interface DictationOptions {
   onError(message: string): void
 }
 
-/** Format d'enregistrement que le navigateur sait produire, WebM partout sauf Safari. */
+/** Recording format supported by the browser: WebM everywhere except Safari. */
 function recordingMimeType(): string | undefined {
   if (typeof MediaRecorder === 'undefined') return undefined
   return ['audio/webm', 'audio/mp4'].find((type) => MediaRecorder.isTypeSupported(type))
@@ -114,24 +114,23 @@ function recordingMimeType(): string | undefined {
 
 export function useDictation({ projectId, onText, onError }: DictationOptions) {
   const [state, setState] = useState<DictationState>('idle')
-  /** Branché sur le flux du micro pendant l'enregistrement, pour le vumètre. */
+  /** Connected to the microphone stream during recording for the level meter. */
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
   const audio = useRef<AudioContext | null>(null)
-  /** Clone du flux micro réservé au vumètre, à éteindre avec le reste. */
+  /** Microphone stream clone dedicated to the level meter, stopped with the rest. */
   const monitor = useRef<MediaStream | null>(null)
   /**
-   * Référence vivante sur le nœud source du vumètre. Sans elle, Chrome le considère
-   * comme orphelin et le ramasse-miettes le détruit en pleine dictée : l'analyseur
-   * sort une première barre puis des zéros plats, dès que le GC passe.
+   * Keep a live reference to the meter's source node. Otherwise Chrome considers it orphaned and
+   * garbage-collects it mid-dictation: the analyzer shows one bar then flat zeros after GC.
    */
   const meterSource = useRef<MediaStreamAudioSourceNode | null>(null)
-  // Les callbacks se relisent au moment où la transcription aboutit, pas à celui où
-  // l'enregistrement démarre : sans ces refs, `onText` insérerait dans un texte périmé.
+  // Read callbacks when transcription completes, not when recording starts: without refs `onText`
+  // would insert into stale text.
   const callbacks = useRef({ onText, onError })
   callbacks.current = { onText, onError }
 
-  // Un composer démonté en cours d'enregistrement doit rendre le micro au système.
+  // A composer unmounted while recording must release the microphone.
   useEffect(
     () => () => {
       stopTracks(recorder.current)
@@ -144,10 +143,9 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
   const start = async () => {
     if (state !== 'idle') return
 
-    // Créé et réveillé dans le geste de toucher lui-même, avant toute attente : une
-    // fois l'`await` du micro passé, le geste est consommé et mobile Safari comme
-    // Chrome Android refusent de sortir le contexte de l'état `suspended`. L'analyseur
-    // sortirait alors des zéros plats pendant que l'enregistreur capte normalement.
+    // Create and resume within the touch gesture before awaiting: after awaiting microphone access,
+    // the gesture is consumed and mobile Safari and Chrome Android refuse to resume a suspended
+    // context. The analyzer would return flat zeros while recording works normally.
     const context = new AudioContext()
     void context.resume().catch(() => {})
 
@@ -160,9 +158,9 @@ export function useDictation({ projectId, onText, onError }: DictationOptions) {
       return
     }
 
-    // L'analyseur écoute un clone du flux, même micro donc même signal : Safari iOS
-    // affame l'une des deux sorties quand l'enregistreur et WebAudio lisent le même
-    // MediaStream, et le vumètre tombait à plat dès le premier échantillon enregistré.
+    // The analyzer listens to a cloned stream from the same microphone: Safari iOS starves one
+    // output when MediaRecorder and WebAudio read the same MediaStream, making the meter go flat on
+    // the first recorded sample.
     const meterStream = stream.clone()
     monitor.current = meterStream
     const meter = context.createAnalyser()

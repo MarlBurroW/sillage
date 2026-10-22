@@ -11,9 +11,9 @@ import { PathField } from './PathField'
 import { Banner, Button, Select, type SelectOption } from './ui'
 
 /**
- * Le projet d'essai : Sillage écrit un petit dépôt, avec des tests qui échouent exprès,
- * et crée le projet dessus. Il n'y a qu'à dire où. Le dossier des projets déjà mémorisé
- * sert de proposition, sinon `projects` sous le dossier personnel du serveur.
+ * Trial project: Sillage writes a small repository with intentionally failing tests and creates a
+ * project; users choose only location. Suggest remembered project parent or projects under server
+ * home.
  */
 export function SampleProjectForm() {
   const t = useTranslate()

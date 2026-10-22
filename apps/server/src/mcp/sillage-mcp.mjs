@@ -1,36 +1,4 @@
-/**
- * Serveur MCP de Sillage : rend au CLI ce que la plateforme sait et qu'il ignore.
- *
- * Un CLI redémarre amnésique à chaque conversation, alors que Sillage garde le journal
- * de toutes les précédentes et le board du projet. Les outils exposés ici ouvrent cette
- * mémoire et cet état, cadrés au projet courant.
- *
- * Toute session peut modifier les cartes de son projet et leurs relations, sans
- * rattachement obligatoire. Les notes gardent le fil du travail ; la description
- * porte l’énoncé courant. Les modifications de contenu et de relations passent par
- * le daemon pour partager les validations de l’interface.
- *
- * Un message entre sessions n'est que déposé ici. Ce process n'a que la base, il ne
- * tient aucun runner : c'est le daemon qui le remet, en l'injectant dans le tour en
- * cours du destinataire ou en le réveillant (`apps/server/src/sessions/session-relay.ts`).
- *
- * En `.mjs` plutôt qu'en TypeScript compilé, comme la sonde : le process est lancé par
- * le CLI, pas par Sillage, et le garder hors du graphe de modules du serveur évite
- * qu'il n'embarque un jour la moitié de l'application par un import distrait. Sa seule
- * dépendance est `better-sqlite3`, déjà présente.
- *
- * Il lit la base directement, en lecture seule, plutôt que d'appeler l'API HTTP. Pas de
- * jeton à faire circuler, pas de port à ouvrir : l'environnement ne porte qu'une portée,
- * jamais un secret. Ce n'est pas une frontière de sécurité pour autant, l'agent ayant
- * déjà un shell et le fichier sur le disque ; c'est le même accès, en plus commode.
- *
- * Deux modes. Monté par Sillage dans une conversation, il est cadré à son projet et
- * parle au nom de cette session. Lancé à la main sans `SILLAGE_MCP_PROJECT`, par un CLI
- * local branché sur toute l'instance (`docs/mcp.md`), il est *global* : chaque outil
- * prend un paramètre `project`, `list_projects` les énumère, et les écritures sont au
- * nom d'un compte (`SILLAGE_MCP_USER`) et non d'une session. Ce qui n'a de sens qu'entre
- * sessions (messages, surveillances, décisions) n'y est pas proposé.
- */
+/** Sillage MCP server exposes platform knowledge unavailable to CLIs. Each CLI conversation starts without knowledge of previous conversations, whereas Sillage retains their journals and project board; these tools expose that memory and state within the current project. Any session can edit project cards and relations without attachment; notes retain work history while descriptions hold current requirements. Content and relation edits go through the daemon to share interface validation. Inter-session messages are only deposited here: this process holds a database, no runners; the daemon delivers them by steering or waking recipients (`apps/server/src/sessions/session-relay.ts`). Keep this as `.mjs`, like probes, rather than compiled TypeScript: CLIs launch it directly, and excluding it from the server module graph prevents accidental imports from bundling half the app. Its only dependency is existing `better-sqlite3`. Reads use the database directly, read-only, avoiding HTTP tokens and ports; the environment carries scope, never secrets. This is convenience rather than a security boundary because agents already have shell and disk access. Conversation mode is project-scoped and acts as that session. Manual launches without `SILLAGE_MCP_PROJECT` are global (`docs/mcp.md`): tools accept `project`, `list_projects` lists projects, and writes use `SILLAGE_MCP_USER` rather than a session. Session-only messaging, watches and decisions are omitted. */
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
@@ -39,77 +7,37 @@ import { dirname, join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SILLAGE_MCP_DB
-/** Mode global : aucun projet imposé, chaque appel nomme le sien (voir l'en-tête). */
+/** Global mode: no fixed project; each call names its own (see header). */
 const GLOBAL = !process.env.SILLAGE_MCP_PROJECT
-/**
- * Le projet servi. Fixé pour toute la vie du process en mode conversation ; en mode
- * global, posé au début de chaque appel d'outil d'après son paramètre `project`, les
- * appels étant traités un par un pour que deux ne se marchent pas dessus.
- */
+/** Served project: fixed for conversation-mode processes, set from each tool call's `project` parameter in global mode. Serialize calls to prevent interference. */
 let PROJECT_ID = process.env.SILLAGE_MCP_PROJECT ?? ''
-/** Exclue des résultats : sans ça l'agent se relit lui-même et tourne en rond. */
+/** Exclude from results so agents do not reread themselves and loop. */
 const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
-/**
- * Dossier de mémoire du projet, partagé avec la mémoire automatique de Claude. En mode
- * global, `SILLAGE_MCP_MEMORY` désigne la racine de la mémoire (à défaut, `memory/` à
- * côté de la base, comme le daemon) et le dossier suit le projet de chaque appel.
- */
+/** Project memory directory shared with Claude automatic memory. In global mode, `SILLAGE_MCP_MEMORY` identifies the memory root (default `memory/` beside the database, like the daemon), and each call selects its project's directory. */
 let MEMORY_DIR = GLOBAL ? '' : (process.env.SILLAGE_MCP_MEMORY ?? '')
 const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
 const MEMORY_ROOT = GLOBAL && DB_PATH ? process.env.SILLAGE_MCP_MEMORY || join(dirname(DB_PATH), 'memory') : ''
-/** Compte au nom duquel le mode global écrit : son nom d'utilisateur, ou le seul compte de la base. */
+/** Global write identity: configured username or the database's sole account. */
 const USER_NAME = process.env.SILLAGE_MCP_USER ?? ''
-/**
- * Mode global : projets permis, identifiants séparés par des virgules ; vide, tous ceux
- * que le compte voit. C'est la liste blanche d'un jeton d'API, posée par le pont HTTP.
- */
+/** Global allowed project IDs, comma-separated; empty means everything visible to the account. API-token allowlist supplied by the HTTP bridge. */
 const ALLOWED_PROJECTS = (process.env.SILLAGE_MCP_PROJECTS ?? '').split(',').map((id) => id.trim()).filter(Boolean)
 
-/** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
+/** Beyond this size, history displaces ongoing work from context. */
 const MAX_THREAD_CHARS = 20000
 
-/**
- * Part du budget qu'un seul message peut prendre.
- *
- * Un quart et non une valeur fixe basse : une session de vérification tient parfois
- * toute entière dans son dernier message, et un plafond serré coupait exactement la
- * conclusion qu'on venait chercher. Un quart laisse passer un rapport de plusieurs
- * milliers de caractères sans qu'un seul message puisse monopoliser un long fil.
- */
+/** Maximum budget share for one message. Use a quarter rather than a low fixed limit: verification sessions sometimes fit entirely in their final message, and tight caps truncated the sought conclusion. A quarter allows reports of thousands of characters without letting one message monopolize long conversations. */
 const MAX_MESSAGE_CHARS = Math.floor(MAX_THREAD_CHARS / 4)
 
-/**
- * Fenêtre par défaut de `list_sessions`.
- *
- * Quinze minutes répond à « qui travaille en ce moment », qui est la question posée dans
- * la plupart des cas. Un défaut plus large inviterait à tout ramener à chaque appel ;
- * un modèle qui veut savoir sur quoi on a travaillé aujourd'hui demande vingt-quatre
- * heures de lui-même.
- */
+/** Default `list_sessions` window. Fifteen minutes answers the usual question of who is working now. Wider defaults encourage fetching everything; models seeking today's work can explicitly request twenty-four hours. */
 const RECENT_MINUTES = 15
 
-/**
- * Fenêtre par défaut de `find_file_edits`.
- *
- * Plus large que celle des sessions : une modification non commitée reste dans l'arbre
- * après la fin de la session qui l'a faite, et c'est justement quand plus rien ne tourne
- * qu'on cherche d'où elle vient. Bornée quand même, et c'est le point : le journal garde
- * les éditions indéfiniment, y compris celles commitées depuis des jours, qui
- * n'expliquent plus rien de l'état de l'arbre et feraient passer une session close pour
- * une session en train d'écrire.
- */
+/** Default `find_file_edits` window. Wider than session discovery because uncommitted edits outlive their sessions and provenance is often sought after work stops. Still bounded: journals retain committed edits indefinitely, which no longer explain current tree state and could imply closed sessions are still writing. */
 const EDIT_MINUTES = 120
 
-/** Plafond de couples session-fichier rendus, annoncé quand il mord. */
+/** Maximum session/file pairs returned; report truncation when reached. */
 const EDIT_ROW_LIMIT = 40
 
-/**
- * Libellés des colonnes du board, en clair.
- *
- * Les valeurs stockées (`todo`, `in_progress`) sont des identifiants, pas de la langue :
- * les rendre telles quelles obligerait le modèle à deviner que `review` veut dire « à
- * relire par un humain » et non « en cours de relecture par un agent ».
- */
+/** Readable board column labels. Stored values (`todo`, `in_progress`) are identifiers, not language: raw values would force models to infer that `review` means awaiting human review rather than an agent actively reviewing. */
 const COLUMN_LABELS = {
   todo: 'à faire',
   in_progress: 'en cours',
@@ -118,28 +46,16 @@ const COLUMN_LABELS = {
   abandoned: 'abandonné',
 }
 
-/** Au-delà, le board pèse plus qu'il n'oriente. Annoncé quand il mord. */
+/** Beyond this limit, boards cost more context than guidance. Report truncation. */
 const CARD_LIMIT = 40
 
-/** Une description entière peut faire des pages ; le board n'en rend qu'un aperçu. */
+/** Full descriptions may span pages; board lists show previews only. */
 const CARD_EXCERPT_CHARS = 160
 
-/**
- * Taille maximale d'un message entre sessions.
- *
- * Il arrive dans le contexte du destinataire sans qu'il l'ait demandé, au milieu de son
- * propre travail : c'est un mot glissé à un collègue, pas un rapport. Ce qui demande plus
- * se met dans un fichier, ou se lit par read_conversation.
- */
+/** Maximum inter-session message length. Messages enter recipients' context unsolicited during their own work: brief colleague notes rather than reports. Longer content belongs in files or `read_conversation`. */
 const MAX_PEER_MESSAGE_CHARS = 4000
 
-/**
- * Combien de temps un outil attend que le daemon ait traité sa demande.
- *
- * Lancer une session démarre un CLI, et parfois un worktree avant lui : quelques
- * secondes d'ordinaire, davantage sur une machine chargée. Passé ce délai, l'agent
- * apprend que la demande court toujours plutôt que de rester suspendu.
- */
+/** How long tools wait for daemon request processing. Session starts launch CLIs and sometimes worktrees, usually seconds but longer under load. After this timeout, report that processing continues rather than remain suspended. */
 const REQUEST_WAIT_MS = {
   start_session: 90000,
   create_card: 15000,
@@ -150,7 +66,7 @@ const REQUEST_WAIT_MS = {
   schedule_task: 30000,
   register_action: 15000,
   remove_action: 20000,
-  // Démarrer une unité systemd, puis attendre de voir si elle tient.
+  // Start a systemd unit, then wait to confirm it stays running.
   run_action: 30000,
   create_automation: 30000,
   request_decision: 15000,
@@ -159,64 +75,41 @@ const REQUEST_WAIT_MS = {
   steer_session: 20000,
   interrupt_session: 20000,
   reply_session: 20000,
-  // `git worktree add` extrait tout l'arbre : quelques secondes sur un gros dépôt.
+  // `git worktree add` checks out the whole tree, taking seconds for large repositories.
   create_worktree: 60000,
-  // Le premier calcul d'avancement lance plusieurs git par arbre.
+  // The first progress assessment launches several Git commands per tree.
   list_worktrees: 30000,
 }
 
-/** Attente la plus longue de wait_for_session : sous les deux minutes du pont HTTP. */
+/** Maximum wait_for_session timeout, below the HTTP bridge's two-minute limit. */
 const MAX_WAIT_SECONDS = 100
 const WAIT_POLL_MS = 1000
 
-/**
- * Bornes d'une action de projet, d'accord avec `MAX_ACTION_LABEL_CHARS` et
- * `MAX_ACTION_COMMAND_CHARS` du protocole (`packages/protocol/src/actions.ts`). Le
- * daemon revalide tout : elles ne servent ici qu'à rédiger les descriptions.
- */
+/** Project action limits matching protocol `MAX_ACTION_LABEL_CHARS` and `MAX_ACTION_COMMAND_CHARS` (`packages/protocol/src/actions.ts`). The daemon revalidates; these only inform tool descriptions. */
 const MAX_ACTION_LABEL_CHARS = 60
 const MAX_ACTION_COMMAND_CHARS = 4000
 const REQUEST_POLL_MS = 200
 
-/** Doit rester d'accord avec `MAX_LAUNCH_PROMPT_CHARS` de `agent-requests.ts`. */
+/** Must match `MAX_LAUNCH_PROMPT_CHARS` in `agent-requests.ts`. */
 const MAX_LAUNCH_PROMPT_CHARS = 20000
 
-/**
- * Bornes d'une tâche planifiée, d'accord avec `MAX_SCHEDULE_PROMPT_CHARS` et
- * `DEFAULT_SCHEDULE_DURATION_MINUTES` du protocole, et avec `MIN_AGENT_SCHEDULE_MINUTES`
- * de `apps/server/src/sessions/agent-requests.ts`. Le daemon revalide tout : elles ne
- * servent ici qu'à rédiger les descriptions.
- */
+/** Scheduled task limits matching protocol `MAX_SCHEDULE_PROMPT_CHARS`, `DEFAULT_SCHEDULE_DURATION_MINUTES` and `MIN_AGENT_SCHEDULE_MINUTES` in `apps/server/src/sessions/agent-requests.ts`. The daemon revalidates; these only inform descriptions. */
 const MAX_SCHEDULE_PROMPT_CHARS = 20000
 const DEFAULT_SCHEDULE_DURATION_MINUTES = 30
 const MIN_AGENT_SCHEDULE_MINUTES = 15
-/**
- * Vérification avant le tour, d'accord avec `CHECK_SKIP_EXIT_CODE`,
- * `MAX_CHECK_SCRIPT_CHARS` et `DEFAULT_CHECK_TIMEOUT_SECONDS` du protocole.
- */
+/** Pre-turn checks matching protocol `CHECK_SKIP_EXIT_CODE`, `MAX_CHECK_SCRIPT_CHARS` and `DEFAULT_CHECK_TIMEOUT_SECONDS`. */
 const CHECK_SKIP_EXIT_CODE = 10
 const MAX_CHECK_SCRIPT_CHARS = 20000
 const DEFAULT_CHECK_TIMEOUT_SECONDS = 120
 
-/** Messages rendus par read_session_messages, les plus récents. */
+/** Most recent messages returned by read_session_messages. */
 const PEER_HISTORY_LIMIT = 20
 
-/**
- * Garde-fous du relais, pour prévenir l'expéditeur dès l'envoi qu'un message sera
- * retenu plutôt que de le lui laisser découvrir.
- *
- * Doivent rester d'accord avec `apps/server/src/sessions/session-relay.ts`, qui seul
- * décide ; ce module ne peut pas l'importer, étant hors du graphe de modules du serveur.
- */
+/** Relay safeguards informing senders immediately when messages will be held. Must match `apps/server/src/sessions/session-relay.ts`, the authoritative decision maker, which this standalone module cannot import. */
 const MAX_HOPS = 6
 const WAKES_PER_HOUR = 6
 
-/**
- * Plafond d'une image de projet, et tri de ce qui en est une.
- *
- * Doivent rester d'accord avec `MAX_PROJECT_IMAGE_BYTES` du protocole et avec
- * `apps/server/src/projects/image.ts`, que ce module ne peut pas importer.
- */
+/** Project image size and classification must match protocol `MAX_PROJECT_IMAGE_BYTES` and `apps/server/src/projects/image.ts`, which this module cannot import. */
 const MAX_PROJECT_IMAGE_BYTES = 1024 * 1024
 
 function sniffProjectImage(buffer) {
@@ -231,18 +124,15 @@ function sniffProjectImage(buffer) {
   return null
 }
 
-/** Plafond d'une partie de SILLAGE.md, d'accord avec `MAX_INSTRUCTIONS_CHARS` du protocole. */
+/** SILLAGE.md section limit matching protocol `MAX_INSTRUCTIONS_CHARS`. */
 const MAX_INSTRUCTIONS_CHARS = 40000
 
-/**
- * Mémoire du projet. Doivent rester d'accord avec `memoryFileSchema`, `MEMORY_INDEX_FILE`
- * et `MAX_MEMORY_FILE_CHARS` du protocole, et avec `apps/server/src/memory/store.ts`.
- */
+/** Project memory constants must match protocol `memoryFileSchema`, `MEMORY_INDEX_FILE`, `MAX_MEMORY_FILE_CHARS` and `apps/server/src/memory/store.ts`. */
 const MEMORY_INDEX = 'MEMORY.md'
 const MEMORY_FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.md$/
 const MAX_MEMORY_FILE_CHARS = 100000
 
-/** Doit rester d'accord avec `REPO_INSTRUCTION_FILES` du protocole. */
+/** Must match protocol `REPO_INSTRUCTION_FILES`. */
 const REPO_INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md']
 
 const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
@@ -255,12 +145,7 @@ if (!DB_PATH) {
 
 const db = new Database(DB_PATH, { readonly: true, fileMustExist: true })
 
-/**
- * Le compte du mode global, résolu une fois au démarrage : nommé par l'environnement,
- * ou le seul compte de la base, cas de la quasi-totalité des instances. Sans lui, pas
- * d'auteur pour une carte ou une session lancée : on s'arrête tout de suite plutôt que
- * de refuser chaque écriture.
- */
+/** Global account resolved at startup from the environment or the database's sole account, covering most instances. Without one, cards and sessions have no author; fail immediately rather than reject every write later. */
 const USER = GLOBAL ? resolveUser() : null
 function resolveUser() {
   const columns = 'id, username, display_name AS displayName, is_admin AS admin'
@@ -280,17 +165,7 @@ function resolveUser() {
   return rows[0]
 }
 
-/**
- * Connexion d'écriture, ouverte au premier besoin et gardée ensuite.
- *
- * Séparée de la connexion de lecture, qui reste en lecture seule : la quasi-totalité de
- * ce serveur observe, et un seul outil écrit. Deux handles rendent cette asymétrie
- * visible et empêchent qu'une requête de lecture mal écrite touche quoi que ce soit.
- *
- * Le `busy_timeout` compte : le daemon écrit son journal en continu pendant que l'agent
- * travaille, et sans attente une note de carte échouerait au premier chevauchement.
- * Même valeur que la connexion du serveur, dans `packages/db`.
- */
+/** Write connection opened lazily and retained. Separate from the read-only connection: almost all tools observe and only one writes. Two handles expose this asymmetry and prevent faulty reads from mutating data. Set `busy_timeout` because the daemon continuously journals while agents work; without waiting, card notes fail on the first overlap. Match server connection settings in `packages/db`. */
 let writable = null
 function writeDb() {
   if (!writable) {
@@ -458,7 +333,7 @@ const TOOLS = [
       properties: {
         number: { type: 'integer', description: 'Numéro de la carte de départ dans le projet.' },
         target: { type: 'integer', description: 'Numéro de la carte cible dans le même projet.' },
-        // Doit rester d’accord avec cardRelationKindSchema dans @sillage/protocol.
+        // Must match cardRelationKindSchema in @sillage/protocol.
         kind: { type: 'string', enum: ['blocks', 'blocked_by', 'related', 'duplicates', 'duplicated_by', 'parent', 'child', 'replaces', 'replaced_by'] },
       },
       required: ['number', 'target', 'kind'],
@@ -970,14 +845,7 @@ const TOOLS = [
   },
 ]
 
-/**
- * Outils du seul mode global, sur une session existante.
- *
- * Une session Sillage n'en a pas l'usage : elle parle à une autre avec
- * send_session_message, et c'est le daemon qui remet le message dans les formes. Un
- * client hors session agit comme l'utilisateur le ferait dans l'interface : il lit où
- * en est une session, lui écrit, répond à ce qu'elle demande, l'interrompt, et attend.
- */
+/** Global-only tools acting on existing sessions. Sillage sessions use send_session_message and daemon delivery instead. External clients act like interface users: inspect progress, send messages, answer requests, interrupt and wait. */
 const SESSION_PARAM = { type: 'string', description: "Identifiant de la session, tel que list_sessions ou start_session le rendent." }
 const GLOBAL_ONLY_TOOLS = [
   {
@@ -1047,14 +915,7 @@ const GLOBAL_ONLY_TOOLS = [
   },
 ]
 
-/**
- * Mode global : ce que le client voit à la place de la liste cadrée.
- *
- * Un outil de plus, `list_projects`, et un paramètre `project` sur chaque autre, requis
- * sauf là où un appel a un sens sans projet (le compte sur toute l'instance, la partie
- * globale de SILLAGE.md). Les outils qui parlent entre sessions ne sont pas proposés :
- * un client hors session n'a ni identité pour signer un message ni tour où en recevoir.
- */
+/** Global tool list replacing project-scoped tools. Add `list_projects` and `project` parameters, required except where calls make sense without projects (instance-wide account or global SILLAGE.md). Omit inter-session tools because external clients have neither a sender identity nor a turn receiving messages. */
 const LIST_PROJECTS = {
   name: 'list_projects',
   description:
@@ -1071,7 +932,7 @@ const SESSION_ONLY_TOOLS = new Set([
   'withdraw_decision',
 ])
 
-/** Outils qui se passent de projet, pour certains appels. */
+/** Tools permitting some calls without projects. */
 const PROJECT_OPTIONAL_TOOLS = new Set(['count_active_sessions', 'read_instructions', 'edit_instructions', 'write_instructions'])
 
 const PROJECT_PARAM = {
@@ -1079,7 +940,7 @@ const PROJECT_PARAM = {
   description: 'Projet visé : son nom ou son identifiant, tels que list_projects les rend.',
 }
 
-/** `card` remplace la carte de la conversation, qu'un client hors session n'a pas. */
+/** `card` replaces the current conversation's card, unavailable to external clients. */
 const CARD_PARAM = { type: 'integer', description: 'Numéro de la carte visée, tel que list_cards le donne.' }
 
 function globalTools() {
@@ -1091,7 +952,7 @@ function globalTools() {
       const required = [...(optional ? [] : ['project']), ...(byCard ? ['card'] : []), ...(tool.inputSchema.required ?? [])]
       const properties = Object.fromEntries(
         Object.entries(tool.inputSchema.properties ?? {}).map(([key, value]) =>
-          // Hors session, « le tien » ne désigne aucun CLI : le daemon prend Claude.
+          // Outside sessions, 'yours' identifies no CLI: the daemon selects Claude.
           key === 'agent' && typeof value.description === 'string'
             ? [key, { ...value, description: value.description.replace('Omettre pour le même que le tien.', 'Omettre pour Claude.') }]
             : [key, value],
@@ -1114,11 +975,7 @@ function globalTools() {
   ]
 }
 
-/**
- * Le projet d'un appel du mode global, posé dans `PROJECT_ID` et `MEMORY_DIR`, ou le
- * refus à rendre. Par identifiant, par nom exact, sinon par nom approchant s'il n'y en
- * a qu'un : deviner entre deux serait écrire dans le mauvais projet.
- */
+/** Global call project set in `PROJECT_ID` and `MEMORY_DIR`, or rejection returned unchanged. Resolve by ID, exact name, then unique approximate name; guessing between two would write to the wrong project. */
 function selectProject(name, args) {
   if (name === 'list_projects') return null
   const wanted = typeof args?.project === 'string' ? args.project.trim() : ''
@@ -1150,11 +1007,7 @@ function selectProject(name, args) {
   return null
 }
 
-/**
- * Les projets que le mode global sert : ceux que le compte voit dans l'interface (les
- * siens et les partagés), restreints à la liste blanche s'il y en a une. Les deux
- * filtres se composent, comme pour un jeton d'API : un compte emprunté ne s'élargit pas.
- */
+/** Global projects visible in the account's interface (owned and shared), further restricted by optional allowlists. Combine both filters like API tokens: borrowing identities never expands them. */
 function visibleProjects() {
   return db
     .prepare(
@@ -1193,16 +1046,7 @@ function renderProjects(rows) {
   ].join('\n')
 }
 
-/**
- * Traduit une saisie libre en requête FTS5.
- *
- * Chaque terme est cité, ce qui neutralise la syntaxe du moteur : sans ça un `-` ou un
- * `"` au milieu d'une phrase fait échouer la requête entière. Pas de préfixe sur le
- * dernier terme, contrairement à la recherche de l'interface : ici la requête arrive
- * complète, personne n'est en train de la taper.
- *
- * Doit rester d'accord avec `apps/server/src/search/search-messages.ts`.
- */
+/** Converts free text to FTS5 queries. Quote every term to neutralize engine syntax: `-` or `\"` inside sentences must not fail queries. Unlike interface search, omit final-term prefixes because complete queries arrive without ongoing typing. Must match `apps/server/src/search/search-messages.ts`. */
 function toMatchQuery(input) {
   return input
     .trim()
@@ -1212,17 +1056,7 @@ function toMatchQuery(input) {
     .join(' ')
 }
 
-/**
- * Conversations du projet dont un message contient la requête.
- *
- * Une conversation peut avoir plusieurs messages qui répondent ; seul le mieux classé
- * est gardé, l'agent cherchant une conversation à ouvrir et non un message isolé. D'où
- * la marge sur la limite SQL, réduite ensuite au nombre demandé.
- *
- * Lit `search_messages`, l'index plein texte que le serveur maintient à l'écriture
- * (`apps/server/src/search/search-index.ts`). Table dérivée, jamais source : un journal
- * indexé de travers se rattrape par `pnpm search:reindex`.
- */
+/** Project conversations with matching messages. Retain only each conversation's highest-ranked message because agents seek conversations to open, not isolated messages; overfetch SQL results then trim. Read server-maintained `search_messages` (`apps/server/src/search/search-index.ts`), a derived index rather than authority, repairable with `pnpm search:reindex`. */
 function searchHistory(query, limit) {
   const match = toMatchQuery(query)
   if (!match) return []
@@ -1253,14 +1087,7 @@ function searchHistory(query, limit) {
   return [...best.values()]
 }
 
-/**
- * Messages d'un fil, appels d'outils exclus.
- *
- * L'extraction reprend celle de l'index de recherche : mêmes blocs de texte, même
- * exclusion des messages de sous-agents, qui appartiennent à un panneau latéral et non
- * au fil. Le `project_id` est vérifié ici et pas seulement à la recherche : rien
- * n'empêche l'agent de fabriquer un identifiant.
- */
+/** Conversation messages excluding tools. Match search extraction: same text blocks and exclusion of subagent messages belonging to side panels. Check `project_id` here as well as during search because agents can fabricate IDs. */
 function readConversation(id) {
   const conversation = db
     .prepare(
@@ -1290,24 +1117,10 @@ function readConversation(id) {
   return { conversation, messages }
 }
 
-/**
- * Une conversation travaille si un tour est en cours, ou si un travail détaché continue
- * après lui.
- *
- * Les deux compteurs sont sur la ligne de conversation et non déduits du journal : le
- * statut retombe à `idle` à la fin du tour, pas à la fin du travail, et le déduire
- * demanderait de replier le journal de chaque ligne énumérée. Ils sont remis à zéro au
- * démarrage du daemon, donc une valeur non nulle décrit bien un process vivant.
- */
+/** Conversations work while turns run or detached work continues afterward. Read counters from conversation rows rather than derive them from journals: `idle` means turn completion, not work completion, and replaying every listed journal would be expensive. Daemon startup zeroes counters so nonzero values describe live processes. */
 const WORKING = `(c.status = 'running' OR c.background_count > 0 OR c.loop_count > 0)`
 
-/**
- * Conversations du projet qui travaillent, plus celles vues récemment.
- *
- * Celles qui travaillent sortent quelle que soit la fenêtre : une session lancée il y a
- * trois heures et toujours en train de tourner est exactement ce qu'on cherche à ne pas
- * manquer. La fenêtre ne gouverne que les autres.
- */
+/** Working and recently seen project conversations. Include working conversations regardless of window: sessions started three hours ago but still running are precisely what must not be missed. The window limits only others. */
 function listSessions(withinMinutes) {
   return db
     .prepare(
@@ -1333,15 +1146,7 @@ function listSessions(withinMinutes) {
     .all(PROJECT_ID, CURRENT_CONVERSATION, Date.now() - withinMinutes * 60_000)
 }
 
-/**
- * Branche et nombre de fichiers modifiés d'un arbre de travail, ou null si git ne
- * répond pas.
- *
- * Lu sur le disque à l'appel et non tiré du journal : la question est « où en est
- * l'arbre maintenant », et c'est justement quand une session a changé de branche sous
- * une autre que le journal ne le dit pas. Un appel par arbre distinct, pas par session :
- * dix sessions à la racine du projet ne coûtent qu'un `git status`.
- */
+/** Worktree branch and modified-file count, or null if git fails. Read disk at call time: journals cannot reliably describe current trees when sessions change branches beneath others. One call per distinct tree rather than session, so ten root sessions share one `git status`. */
 function gitState(path, cache) {
   if (cache.has(path)) return cache.get(path)
   let state = null
@@ -1357,21 +1162,16 @@ function gitState(path, cache) {
       : head.replace(/^## (No commits yet on )?/, '').split('...')[0].split(' ')[0]
     state = { branch, dirty: files.length }
   } catch {
-    // Pas un dépôt, dossier disparu, git absent : l'information manque, rien de plus.
+    // Nonrepository, missing directory, or absent Git: information is simply unavailable.
   }
   cache.set(path, state)
   return state
 }
 
-/** Une conversation travaille-t-elle, d'après une ligne qui porte statut et compteurs. */
+/** Whether a conversation works, from a row containing status and counters. */
 const isWorking = (row) => row.status === 'running' || row.background > 0 || row.loops > 0
 
-/**
- * Le message serait-il retenu plutôt que de relancer son destinataire au repos.
- *
- * Même règle que le relais, évaluée à l'envoi : l'expéditeur qui attend une réponse
- * doit savoir tout de suite qu'elle ne viendra pas sans une personne.
- */
+/** Whether messages would be held instead of waking idle recipients. Apply relay rules during send so senders awaiting replies immediately know human intervention is required. */
 function predictHold(to, replyTo) {
   let depth = 0
   let parent = replyTo
@@ -1413,7 +1213,7 @@ function broadcast(body) {
   return targets.length
 }
 
-/** Pose une surveillance, sauf s'il en existe déjà une ouverte sur la même cible. */
+/** Adds a watch unless an open watch for the same target already exists. */
 function watch(target) {
   const open = db
     .prepare(
@@ -1431,13 +1231,7 @@ function watch(target) {
   return true
 }
 
-/**
- * Le worktree de la conversation courante, `undefined` si on ne sait pas qui elle est.
- *
- * Sert à ne comparer que ce qui est comparable : deux conversations dans deux worktrees
- * différents éditent le même chemin relatif sans jamais se marcher dessus, ce sont deux
- * fichiers distincts sur le disque. Ne restent donc que celles qui partagent l'arbre.
- */
+/** Current conversation worktree, or `undefined` when its identity is unknown. Compare only shared trees: identical relative paths in separate worktrees represent different disk files and cannot collide. */
 function currentWorktree() {
   const row = db
     .prepare(`SELECT worktree_id AS worktreeId FROM conversations WHERE id = ?`)
@@ -1445,30 +1239,8 @@ function currentWorktree() {
   return row ? row.worktreeId : undefined
 }
 
-/**
- * Qui d'autre a touché à ce fichier, et où en est cette session.
- *
- * L'activité de la conversation voyage avec la modification plutôt que d'être à
- * rechercher ensuite : la question n'est jamais « qui a édité » seule, elle est « qui a
- * édité, et est-ce que ça bouge encore », dont dépend le fait d'attendre ou de passer.
- *
- * Un chemin donné cherche sans fenêtre de temps : une modification non commitée reste
- * dans l'arbre longtemps après la session qui l'a faite, et la borner ferait répondre
- * « personne » au moment où la question se pose. La fenêtre ne sert qu'à la liste
- * générale, qui n'aurait sinon pas de fin.
- *
- * Balayage de la table d'événements, sans index sur le type : mesuré à 30 ms sur 115 000
- * lignes, pour un outil appelé quand un doute survient et non en boucle. Un index
- * partiel serait la sortie si ça devenait chaud.
- */
-/**
- * La modification la plus récente hors fenêtre, pour que la réponse vide dise s'il y a
- * quelque chose à aller chercher.
- *
- * Sans ça, « rien dans les 120 dernières minutes » se lit comme « personne n'y a
- * touché », et l'appelant conclut à tort plutôt que d'élargir. Une requête de plus,
- * seulement quand la réponse est vide.
- */
+/** Other sessions editing this file and their current state. Include activity with edits: callers need both provenance and whether work continues to decide whether to wait. Specific-path queries are unbounded because uncommitted edits outlive sessions; general lists need bounded windows. Scan events without type indexes: measured 30 ms over 115,000 rows for an occasional diagnostic tool. A partial index is the next step if this becomes hot. */
+/** Most recent edit outside the window, so empty results disclose older evidence. Otherwise 'nothing in 120 minutes' would imply nobody touched the file. Run one extra query only when results are empty. */
 function oldestOutsideWindow({ path, byName, withinMinutes }) {
   const worktree = currentWorktree()
   const filters = [
@@ -1505,9 +1277,9 @@ function findFileEdits({ path, withinMinutes }) {
   const rows = queryEdits({ path: exact, byName: false, withinMinutes })
   if (rows.length > 0 || !exact) return rows
 
-  // Repli et non cumul : tant qu'un chemin exact répond, un homonyme ailleurs dans
-  // l'arbre n'est que du bruit. Il ne sert qu'au cas où l'appelant ne connaît que le
-  // nom du fichier, ou l'a écrit depuis un autre répertoire que celui du journal.
+  // Fallback rather than union: exact-path matches make same-named files elsewhere
+  // irrelevant. Basename matching serves callers knowing only filenames or using
+  // a directory different from journal paths.
   return queryEdits({ path: exact.split('/').pop(), byName: true, withinMinutes })
 }
 
@@ -1518,13 +1290,13 @@ function queryEdits({ path, byName, withinMinutes }) {
     `e.type = 'file.edited'`,
     `c.project_id = ?`,
     `c.id != ?`,
-    // `IS` et non `=` : le worktree nul, qui vaut « racine du projet », est le cas le
-    // plus courant et une égalité SQL ne le rapproche de rien.
+    // `IS` rather than `=`: null worktrees mean project roots, the common case,
+    // and SQL equality never matches nulls.
     worktree === undefined ? null : `c.worktree_id IS ?`,
-    // La fenêtre vaut aussi pour une recherche par chemin. Le journal garde les
-    // éditions indéfiniment, y compris celles commitées depuis longtemps : sans borne,
-    // la réponse mêle des modifications qui n'expliquent plus rien de l'état de l'arbre
-    // à celles qu'on cherche, et laisse croire qu'une session travaille encore dessus.
+    // Apply windows to path searches too. Journals retain edits indefinitely, including
+    // long-committed ones: unbounded results would mix edits unrelated to current
+    // tree state with relevant changes
+    // and imply sessions are still working on them.
     `e.ts >= ?`,
     path === null
       ? null
@@ -1566,14 +1338,7 @@ function queryEdits({ path, byName, withinMinutes }) {
     .all(...params)
 }
 
-/**
- * Décompte sur toute l'instance, pour la seule question qui justifie d'en sortir :
- * peut-on redémarrer le service.
- *
- * Des nombres et rien d'autre. Le besoin est de savoir si on va couper quelqu'un, pas
- * de savoir qui ni sur quoi, et rendre des titres ferait de cet outil une fenêtre sur
- * les projets auxquels la conversation n'a pas affaire.
- */
+/** Instance-wide counts solely to answer whether restarting the service is safe. Return numbers only: callers need to know if anyone would be interrupted, not identities or work titles that would expose unrelated projects. */
 function countActiveSessions() {
   const row = db
     .prepare(
@@ -1602,7 +1367,7 @@ function countActiveSessions() {
 
 const asDate = (ts) => new Date(ts).toISOString().slice(0, 10)
 
-/** Ancienneté en clair : un horodatage absolu obligerait le modèle à faire la soustraction. */
+/** Readable age avoids requiring models to subtract absolute timestamps. */
 function ago(ts) {
   const minutes = Math.max(0, Math.round((Date.now() - ts) / 60_000))
   if (minutes < 1) return "à l'instant"
@@ -1619,7 +1384,7 @@ const STATUS_LABELS = {
   error: 'en erreur',
 }
 
-/** Ce que fait une conversation, statut et travail détaché réunis en une clause. */
+/** Conversation activity summarized in one clause combining status and detached work. */
 function describeActivity(row) {
   const parts = [STATUS_LABELS[row.status] ?? row.status]
   if (row.background > 0) parts.push(`${row.background} travail(aux) de fond`)
@@ -1646,13 +1411,7 @@ function renderSessions(rows, withinMinutes) {
 
 const ACTION_LABELS = { created: 'créé', modified: 'modifié', deleted: 'supprimé' }
 
-/**
- * Une conclusion en tête plutôt qu'une table à interpréter.
- *
- * L'outil est appelé au moment d'un doute, et ce que l'appelant doit décider est
- * d'attendre ou de passer. La réponse le dit donc explicitement quand une des sessions
- * travaille encore, au lieu de laisser déduire d'un statut noyé dans une liste.
- */
+/** Lead with a conclusion instead of a table requiring interpretation. Called when uncertain whether to wait or proceed, so explicitly report ongoing work rather than bury it in statuses. */
 function renderFileEdits(rows, { path, withinMinutes, older }) {
   if (rows.length === 0) {
     const scope = path ? `n'a touché à « ${path} »` : `n'a modifié de fichier`
@@ -1667,10 +1426,10 @@ function renderFileEdits(rows, { path, withinMinutes, older }) {
     ? `Attention, ${busy.length} de ces sessions travaillent encore : attendre peut valoir mieux qu'annuler leurs modifications.`
     : "Aucune de ces sessions ne travaille plus : leurs modifications sont figées."
 
-  // Deux regroupements pour deux questions. Sur un chemin, le sujet est le fichier et
-  // chaque ligne dit une session qui y a touché. Sans chemin, le sujet est la session :
-  // regrouper par fichier y répétait son titre et son état à chaque ligne, quinze fois
-  // à l'identique sur un cas réel, pour un outil censé économiser du contexte.
+  // Two groupings answer different questions. With paths, each row describes a session
+  // that touched the file. Without paths, group by session:
+  // grouping by file repeated titles and states identically fifteen times in a real
+  // case, wasting context in a tool intended to save it.
   const lines = path ? renderByFile(rows) : renderBySession(rows)
   const capped =
     rows.length >= EDIT_ROW_LIMIT
@@ -1688,7 +1447,7 @@ function renderByFile(rows) {
   })
 }
 
-/** Au-delà, la liste de fichiers d'une seule session noie les autres. */
+/** Beyond this limit, one session's files overwhelm the others. */
 const FILES_PER_SESSION = 8
 
 function renderBySession(rows) {
@@ -1701,8 +1460,8 @@ function renderBySession(rows) {
 
   return [...sessions.values()].map(({ head, files }) => {
     const where = head.worktree ? `worktree ${head.worktree}` : 'racine du projet'
-    // Par nombre d'éditions et non par date : le fichier le plus remué est celui sur
-    // lequel une collision est la plus probable, et c'est ce qu'on cherche à voir en tête.
+    // Sort by edit count rather than date: heavily edited files carry higher collision
+    // risk and belong first.
     const sorted = [...files].sort((a, b) => b.edits - a.edits)
     const shown = sorted
       .slice(0, FILES_PER_SESSION)
@@ -1714,13 +1473,7 @@ function renderBySession(rows) {
   })
 }
 
-/**
- * Le board du projet, une ligne par carte.
- *
- * Le compte de sessions vient d'une sous-requête et non d'une jointure : joindre
- * `conversations` dupliquerait la carte autant de fois qu'elle a de sessions, et le
- * `GROUP BY` qu'il faudrait ensuite masquerait les cartes qui n'en ont aucune.
- */
+/** Project board, one row per card. Count sessions with subqueries rather than joins: joining `conversations` duplicates cards per session, and compensating `GROUP BY` would hide cards without sessions. */
 function listCards(column) {
   return db
     .prepare(
@@ -1812,7 +1565,7 @@ function readCard(number) {
     )
     .all(card.id)
 
-  // Les libellés doivent rester d’accord avec CARD_RELATION_INVERSE du protocole.
+  // Labels must match protocol CARD_RELATION_INVERSE.
   const labels = {
     blocks: ['Bloque', 'Est bloqué par'], related: ['Est lié à', 'Est lié à'],
     duplicates: ['Est un doublon de', 'A pour doublon'], parent: ['Contient', 'Est un sous-ticket de'],
@@ -1833,10 +1586,7 @@ function readCard(number) {
   return card
 }
 
-/**
- * Le board relié à GitHub, s'il l'est. Les noms de colonnes et leur sens doivent rester
- * d'accord avec `board_links` dans `packages/db/src/schema.ts`.
- */
+/** GitHub board connection when present. Column names and meanings must match `board_links` in `packages/db/src/schema.ts`. */
 function boardLink() {
   return (
     db
@@ -1848,7 +1598,7 @@ function boardLink() {
   )
 }
 
-/** L'issue que suit une carte, détachée ou non. */
+/** Issue tracked by a card, attached or detached. */
 function cardIssue(cardId) {
   return (
     db
@@ -1860,7 +1610,7 @@ function cardIssue(cardId) {
   )
 }
 
-/** La ligne d'en-tête du board relié, qui dit où vont les cartes neuves. */
+/** Linked board header identifying where new cards go. */
 function describeBoardLink(link) {
   const where =
     link.newCards === 'github'
@@ -1869,7 +1619,7 @@ function describeBoardLink(link) {
   return `Board relié aux issues de github.com/${link.repo} : une carte marquée « GitHub #n » est une issue, publique si le dépôt l'est ; les autres sont locales. Ici, ${where}.`
 }
 
-/** La carte que traite la conversation courante, s'il y en a une. */
+/** Card handled by the current conversation, if any. */
 function currentCard() {
   return (
     db
@@ -1884,12 +1634,7 @@ function currentCard() {
 
 const DECISION_TOOLS = new Set(['request_decision', 'withdraw_decision'])
 
-/**
- * La session courante peut-elle demander une décision ? Doit rester d'accord avec
- * `DecisionService.sourceOf` (`apps/server/src/decisions/service.ts`) : une tâche
- * planifiée ou une automatisation par sa colonne `schedule_id`, une session de
- * maintenance par l'issue qu'elle suit (`card_issues.responder_id`).
- */
+/** Whether the current session may request decisions. Must match `DecisionService.sourceOf` (`apps/server/src/decisions/service.ts`): scheduled tasks or automations through `schedule_id`, maintenance sessions through tracked issues (`card_issues.responder_id`). */
 function decisionsAllowed() {
   if (!CURRENT_CONVERSATION) return false
   try {
@@ -1908,12 +1653,12 @@ function decisionsAllowed() {
       .get(CURRENT_CONVERSATION)
     return Boolean(link?.enabled)
   } catch {
-    // Une base d'avant ces colonnes : pas de décisions.
+    // Databases predating these columns have no decisions.
     return false
   }
 }
 
-/** Les notes d'une carte, du plus ancien au plus récent, avec leur auteur. */
+/** Card notes oldest first with authors. */
 function cardNotes(cardId) {
   return db
     .prepare(
@@ -1931,10 +1676,7 @@ function cardNotes(cardId) {
     .all(cardId)
 }
 
-/**
- * `publish` met la note en file : le daemon, qui seul déchiffre l'identifiant GitHub,
- * la poste en commentaire au passage suivant.
- */
+/** `publish` queues notes: only the daemon decrypts GitHub credentials and posts comments on the next pass. */
 function addCardNote(cardId, body, publish) {
   writeDb()
     .prepare(
@@ -1944,10 +1686,7 @@ function addCardNote(cardId, body, publish) {
     .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, USER?.id ?? null, body, Date.now(), publish ? 'pending' : null)
 }
 
-/**
- * Change la colonne d'une carte, en fin de colonne, comme le fait le détail de la carte.
- * Pour une carte suivie, le daemon voit l'écart avec l'issue et l'applique sur GitHub.
- */
+/** Moves cards to the end of a column, matching card details. For tracked cards, the daemon detects issue differences and applies them to GitHub. */
 function moveCard(cardId, column) {
   const db = writeDb()
   const { last } = db
@@ -1973,11 +1712,7 @@ function setProjectImage(mimeType, data, provisional) {
     .run(PROJECT_ID, mimeType, data, provisional ? 1 : 0, Date.now())
 }
 
-/**
- * Le mode de consignes du projet. Doit rester d'accord avec `resolveInstructionsMode` de
- * `apps/server/src/instructions/store.ts` : un projet d'avant le réglage suit son dépôt
- * s'il porte un fichier de consignes.
- */
+/** Project instruction mode. Must match `resolveInstructionsMode` in `apps/server/src/instructions/store.ts`: projects predating this setting follow repositories when instruction files exist. */
 function projectInstructionsMode() {
   const project = db
     .prepare('SELECT instructions_mode AS mode, workspace_path AS path FROM projects WHERE id = ?')
@@ -1994,7 +1729,7 @@ function projectInstructionsMode() {
   return { mode: hasFile ? 'repo' : 'sillage', chosen: false }
 }
 
-/** Le compte qui a ouvert cette conversation est-il administrateur. */
+/** Whether the account that opened this conversation is an administrator. */
 function conversationOwnerIsAdmin() {
   if (!CURRENT_CONVERSATION) return false
   const row = db
@@ -2006,19 +1741,14 @@ function conversationOwnerIsAdmin() {
   return Boolean(row?.admin)
 }
 
-/** La partie de SILLAGE.md visée, telle qu'elle est en base. */
+/** Target SILLAGE.md section as stored in the database. */
 function readInstructionsRow(projectId) {
   return db
     .prepare('SELECT content, updated_at AS updatedAt FROM instructions WHERE id = ?')
     .get(projectId ?? 'global')
 }
 
-/**
- * Réécrit une partie de SILLAGE.md d'après sa version courante, dans une transaction :
- * une édition calculée sur un contenu qu'une autre session vient de changer ne doit pas
- * effacer ce changement. `transform` rend le nouveau contenu, ou une chaîne d'erreur
- * dans `{ error }`.
- */
+/** Rewrites SILLAGE.md sections from their current version inside a transaction: edits computed before another session's change must not erase it. `transform` returns new content or an error string inside `{ error }`. */
 function saveInstructions(projectId, transform, fixMode) {
   const write = writeDb()
   return write.transaction(() => {
@@ -2052,10 +1782,7 @@ function saveInstructions(projectId, transform, fixMode) {
   })()
 }
 
-/**
- * La portée demandée, ou le refus à rendre tel quel. `writing` parce que lire la partie
- * globale est permis à tous, comme dans l'interface.
- */
+/** Requested scope or rejection returned unchanged. `writing` distinguishes globally readable sections, matching the interface. */
 function instructionsTarget(args, writing) {
   const scope = args?.scope === 'global' ? 'global' : 'project'
   if (scope === 'global') {
@@ -2080,7 +1807,7 @@ function instructionsTarget(args, writing) {
 
 const scopeLabel = (scope) => (scope === 'global' ? 'partie globale' : 'partie de ce projet')
 
-/** Les notes de la mémoire, index d'abord. */
+/** Memory notes, index first. */
 function memoryFiles() {
   let names = []
   try {
@@ -2101,18 +1828,14 @@ function readMemoryFile(file) {
   }
 }
 
-/** Ce que l'en-tête d'une note dit d'elle, pour sa ligne d'index. */
+/** Note header metadata for its index entry. */
 function frontmatterField(content, field) {
   const head = /^---\n([\s\S]*?)\n---/.exec(content)?.[1] ?? ''
   const line = head.split('\n').find((candidate) => candidate.startsWith(`${field}:`))
   return line ? line.slice(field.length + 1).trim().replace(/^["']|["']$/g, '') : null
 }
 
-/**
- * Ajoute à l'index la ligne d'une note qu'il ne cite pas encore. Claude tient son index
- * lui-même ; ici l'outil le fait pour que Codex n'ait pas à y penser, et une note absente
- * de l'index est une note que personne ne lira.
- */
+/** Adds index entries for notes not yet listed. Claude maintains its own index; this tool does so for Codex because unindexed notes are notes nobody reads. */
 function indexNote(file, content) {
   const index = readMemoryFile(MEMORY_INDEX) ?? ''
   if (index.includes(`](${file})`)) return false
@@ -2123,7 +1846,7 @@ function indexNote(file, content) {
   return true
 }
 
-/** Une conversation du projet que cette session peut joindre, ou null. */
+/** Reachable project conversation for this session, or null. */
 function peerConversation(id) {
   return (
     db
@@ -2150,13 +1873,7 @@ function sendSessionMessage({ to, body, replyTo }) {
   return id
 }
 
-/**
- * L'échange de cette conversation avec les autres, du plus ancien au plus récent.
- *
- * Les messages reçus et pas encore remis sont marqués lus au passage : les avoir sous
- * les yeux ici rend leur injection ultérieure redondante, et elle tomberait en plein
- * travail pour redire ce qui vient d'être lu.
- */
+/** Inter-session exchanges oldest first. Mark received undelivered messages read: subsequent injection would repeat already-read content and interrupt ongoing work. */
 function readSessionMessages(withId) {
   const rows = db
     .prepare(
@@ -2364,12 +2081,7 @@ function renderSearch(query, results) {
 
 const block = (role, body) => `## ${role === 'user' ? 'Utilisateur' : 'Agent'}\n${body}`
 
-/**
- * Remplit un budget en partant de la fin, sans casser l'ordre chronologique.
- *
- * Un message seul plus gros que le budget entier est rendu quand même, tronqué : rendre
- * une tranche vide en disant qu'elle ne tient pas laisserait l'appelant sans recours.
- */
+/** Fills budgets newest first while retaining chronological order. Return single oversized messages truncated rather than an empty range that leaves callers no recourse. */
 function fillFromEnd(messages, budget) {
   const kept = []
   let total = 0
@@ -2383,31 +2095,20 @@ function fillFromEnd(messages, budget) {
   return kept
 }
 
-/**
- * Le fil, ou ce qui en tient dans le budget.
- *
- * Les deux bouts plutôt que le début : la fin porte les conclusions, mais le premier
- * message porte la demande, et des conclusions sans énoncé se lisent de travers. Le
- * milieu est ce qu'on sacrifie, en annonçant combien de messages manquent et par où les
- * reprendre.
- *
- * Le curseur est le numéro de message et non un numéro de page : les messages ont des
- * tailles très inégales, donc une page n'est pas une unité stable, et une conversation
- * reprise plus tard décalerait toute numérotation partant de la fin.
- */
+/** Conversation history within budget. Retain both ends: conclusions come last but the original request provides context; omit the middle while reporting counts and retrieval instructions. Cursors use message numbers, not pages, because sizes vary and later continuation would shift end-relative numbering. */
 function renderThread(found, before) {
   const { conversation, messages } = found
-  // « ouverte le » et non une date nue : search_history date le message qui correspond,
-  // celle-ci date la création du fil. Deux dates justes pour un même objet se lisent
-  // comme une contradiction tant qu'aucune des deux ne dit ce qu'elle mesure.
+  // Say 'opened on' rather than bare dates: search_history dates matching messages,
+  // while this date marks conversation creation. Both correct dates otherwise look
+  // contradictory without identifying what they measure.
   const header = `${conversation.title} (${conversation.agent}, ouverte le ${asDate(conversation.createdAt)})`
   if (messages.length === 0) return `${header}\n\nAucun message dans ce fil.`
 
   const scoped = before === null ? messages : messages.filter((message) => message.seq < before)
   if (scoped.length === 0) return `${header}\n\nAucun message avant ${before} dans ce fil.`
 
-  // La demande n'est reprise qu'à la première lecture : en remontant le fil, l'appelant
-  // l'a déjà, et la lui resservir mangerait le budget de ce qu'il est venu chercher.
+  // Include the original request only on first reads: callers paging backward already
+  // have it, and repeating it consumes the budget for sought content.
   const head = before === null && scoped[0].role === 'user' ? scoped[0] : null
   const rest = head ? scoped.slice(1) : scoped
   const headBody = head ? clip(head.text ?? '', MAX_MESSAGE_CHARS) : ''
@@ -2428,12 +2129,7 @@ function renderThread(found, before) {
 
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
 
-/**
- * Dépose une demande pour le daemon et attend qu'il y réponde.
- *
- * Le daemon balaie la table toutes les demi-secondes ; ce process relit la ligne
- * jusqu'à la trouver traitée, sur sa connexion en lecture seule.
- */
+/** Deposits daemon requests and waits for responses. The daemon polls every half-second; this process rereads rows through its read-only connection until handled. */
 async function requestDaemon(kind, payload) {
   const id = randomUUID()
   writeDb()
@@ -2460,10 +2156,7 @@ async function requestDaemon(kind, payload) {
   }
 }
 
-/**
- * Le numéro explicite vise une carte du projet ; sans numéro, on garde la carte
- * de la conversation. En mode global, `card` reste compatible avec les clients.
- */
+/** Explicit numbers select project cards; otherwise retain the conversation card. Global `card` remains backward-compatible for clients. */
 function targetCard(args) {
   const explicit = GLOBAL ? (args?.card ?? args?.number) : args?.number
   if (!GLOBAL && explicit === undefined) return currentCard()
@@ -2475,11 +2168,7 @@ function targetCard(args) {
   return card ?? null
 }
 
-/**
- * L'état présent d'une session, replié depuis la fin de son journal. Doit rester
- * d'accord avec `digest` de `apps/server/src/http/v1/task-view.ts` : mêmes types lus,
- * même fenêtre, même règle pour la sollicitation ouverte.
- */
+/** Current session state folded backward from its journal. Must match `digest` in `apps/server/src/http/v1/task-view.ts`: event types, window and pending-request rules. */
 const DIGEST_TYPES = [
   'tool.started', 'tool.completed', 'message.completed',
   'permission.requested', 'permission.resolved', 'question.requested', 'question.resolved',
@@ -2540,7 +2229,7 @@ function digestSession(id) {
   return { activity, lastMessage, pending }
 }
 
-/** La sollicitation ouverte, avec ce qu'il faut pour y répondre. */
+/** Open request with everything needed to answer it. */
 function renderPending(pending) {
   const { event } = pending
   const head = `Elle attend une réponse (${pending.kind}, request_id ${pending.requestId}, ${ago(pending.at)}) :`
@@ -2573,14 +2262,14 @@ function renderSession(row) {
   return lines.join('\n\n')
 }
 
-/** Un tour est fini quand plus rien ne tourne et que rien de détaché ne continue. */
+/** Turns finish only when neither active nor detached work remains. */
 const settled = (row) => row.status !== 'running' && row.background <= 0 && row.loops <= 0
 
 async function waitForSession(id, timeoutSeconds) {
   const deadline = Date.now() + timeoutSeconds * 1000
   let row = sessionRow(id)
-  // Un message vient souvent d'être envoyé : le statut ne passe à `running` qu'après
-  // un court délai, et rendre tout de suite « au repos » ferait rater le tour entier.
+  // Messages may have just been sent: status takes a moment to become `running`,
+  // so immediately reporting idle could miss entire turns.
   const grace = Date.now() + 3000
   while (row && Date.now() < deadline) {
     if (settled(row) && Date.now() >= grace) return { row, timedOut: false }
@@ -2654,8 +2343,8 @@ async function callTool(name, args) {
     const asked = Number.isInteger(args?.within_minutes) ? args.within_minutes : EDIT_MINUTES
     const withinMinutes = Math.min(Math.max(asked, 1), 60 * 24 * 7)
     const rows = findFileEdits({ path, withinMinutes })
-    // Sondé seulement quand la fenêtre ne rend rien : c'est le seul cas où la réponse
-    // risque de se lire comme « personne n'y a touché ».
+    // Probe only when windows return nothing, the only case where results
+    // could imply nobody touched the file.
     const older =
       rows.length === 0
         ? oldestOutsideWindow({
@@ -2790,8 +2479,8 @@ async function callTool(name, args) {
     const file = resolve(path)
     let data
     try {
-      // La taille avant la lecture : un chemin qui désigne par erreur une vidéo ou une
-      // archive ne doit pas passer par la mémoire pour être refusé.
+      // Check size before reading: accidentally referenced videos or archives must
+      // not enter memory merely to be rejected.
       const info = statSync(file)
       if (!info.isFile()) return { ...text(`${file} n'est pas un fichier.`), isError: true }
       if (info.size > MAX_PROJECT_IMAGE_BYTES) {
@@ -3104,11 +2793,7 @@ async function callTool(name, args) {
 
 log(GLOBAL ? `prêt, mode global, compte=${USER.username}` : `prêt, projet=${PROJECT_ID}`)
 
-/**
- * Les appels d'outils, un par un. Le serveur répond vite et le CLI n'en envoie guère
- * plusieurs à la fois ; mais en mode global le projet est un état du process, et deux
- * appels entrelacés sur des projets différents écriraient chacun dans celui de l'autre.
- */
+/** Serialize tool calls. Calls are normally fast and CLIs seldom overlap them, but global projects are process state: interleaved calls on different projects would write into each other's project. */
 let calls = Promise.resolve()
 
 createInterface({ input: process.stdin }).on('line', async (line) => {
@@ -3127,7 +2812,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       jsonrpc: '2.0',
       id: msg.id,
       result: {
-        // La version demandée par le client : le CLI décide, pas nous.
+        // Client-requested version: the CLI decides, not us.
         protocolVersion: msg.params?.protocolVersion ?? '2025-06-18',
         capabilities: { tools: {} },
         serverInfo: { name: 'sillage', version: '1' },
@@ -3137,11 +2822,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   }
 
   if (msg.method === 'tools/list') {
-    // Les outils de décision ne sont proposés qu'aux sessions autonomes dont la source
-    // les permet : ailleurs, ils inciteraient l'agent à demander ce qu'il doit décider.
+    // Offer decision tools only to autonomous sessions whose sources allow them:
+    // elsewhere they would encourage agents to ask what they should decide themselves.
     const decisions = decisionsAllowed()
-    // Sans dossier de mémoire (projet en mode natif), les outils de mémoire n'ont rien
-    // sur quoi agir : ils ne sont pas annoncés plutôt que de répondre une erreur.
+    // Without memory directories (native project mode), memory tools have nothing
+    // to act on: omit them instead of returning errors.
     const tools = GLOBAL
       ? globalTools()
       : TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (MEMORY_DIR || !MEMORY_TOOLS.has(tool.name)))
@@ -3159,8 +2844,8 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
           ? { ...text(`Outil ${name} indisponible hors session : il n'y a ni session pour signer ni tour où recevoir.`), isError: true }
           : (GLOBAL && selectProject(name, args)) || (await callTool(name, args))
       } catch (err) {
-        // Rendu en résultat d'outil et non en erreur JSON-RPC : le modèle peut corriger
-        // sa requête, là où une erreur de protocole ne lui apprend rien.
+        // Return tool results rather than JSON-RPC errors so models can correct requests;
+        // protocol errors provide no useful guidance.
         log(`échec de ${name} : ${err.message}`)
         result = { ...text(`La recherche a échoué : ${err.message}`), isError: true }
       }
@@ -3174,7 +2859,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     return
   }
 
-  // Les notifications n'ont pas d'id et n'attendent pas de réponse.
+  // Notifications have no IDs and expect no responses.
   if (msg.id === undefined) return
 
   send({

@@ -28,13 +28,9 @@ import { Badge, Banner, Button, Card, ConfirmDialog, IconButton, Menu, MenuItem,
 import { ActionDialog } from './ActionDialog'
 
 /**
- * Les actions d'un projet, présentées comme les listes des réglages. Chaque élément
- * porte un seul geste nommé, celui qui compte à cet instant : lancer quand rien ne
- * tourne, arrêter un service en marche, voir la sortie d'une tâche en cours, relire une
- * commande qu'un agent a proposée. Le reste (journal, relance, édition) se range dans
- * son menu.
- *
- * Partagée par l'onglet du panneau et le lanceur de l'en-tête.
+ * Project actions in settings-list style. Each offers one named primary action matching state:
+ * launch idle, stop services, view active task output, or review agent-proposed commands. Logs,
+ * restart, and editing remain in menus. Shared by panel tab and header launcher.
  */
 export interface ActionHandlers {
   onReview: (action: ProjectActionDto) => void
@@ -49,9 +45,9 @@ export function ActionList({
   compact = false,
 }: {
   actions: ProjectActionDto[]
-  /** Dans le lanceur, plus étroit : marges resserrées et geste réduit à son icône. */
+  /** Narrow launcher layout with tighter spacing and icon-only primary actions. */
   compact?: boolean
-  /** Depuis une conversation, l'action tourne dans son worktree. */
+  /** Conversation actions run within its worktree. */
   conversationId?: string
   handlers: ActionHandlers
 }) {
@@ -91,9 +87,8 @@ export function ActionList({
 }
 
 /**
- * Relire, modifier, supprimer : les dialogues d'une liste d'actions, tenus par son
- * hôte et non par la liste. Dans le lanceur, la liste vit dans un popover qui se ferme
- * au premier clic dans un dialogue ; un dialogue qu'elle porterait disparaîtrait avec.
+ * Review/edit/delete dialogs belong to list hosts. Launcher lists live in popovers closed by dialog
+ * clicks; dialogs owned by the list would disappear too.
  */
 export function useActionDialogs(projectId: string, conversationId?: string) {
   const t = useTranslate()
@@ -180,8 +175,8 @@ const PRIMARY = {
 } as const
 
 /**
- * Une action, sous la forme des éléments de liste des réglages : tuile d'icône, nom et
- * badges, commande, état, puis le geste du moment en bouton nommé et le reste au menu.
+ * Settings-style action row: icon tile, name, badges, command, status, primary named button, and
+ * secondary menu.
  */
 function ActionRow({
   action,
@@ -282,7 +277,6 @@ function ActionRow({
         </div>
   )
 
-  // Dans le lanceur, une carte par action ferait une pile de boîtes dans une boîte :
-  // même anatomie, séparée par des filets.
+  // Launcher cards would stack boxes inside a box: preserve anatomy with separator lines instead.
   return compact ? <li className="border-b border-line last:border-b-0">{body}</li> : <li><Card>{body}</Card></li>
 }

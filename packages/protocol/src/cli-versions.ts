@@ -1,26 +1,23 @@
 import type { AgentKind } from './events.js'
 
 /**
- * Le paquet npm de chaque CLI, et la version que cette release de Sillage vise.
+ * Each CLI's npm package and the version targeted by this Sillage release.
  *
- * Sillage ne transporte plus les binaires : ils viennent du système, donc leur version
- * n'est plus figée par la release et les écarts de comportement deviennent visibles pour
- * l'utilisateur. Ce tableau est ce à quoi on compare, pour pouvoir le dire plutôt que de
- * le subir.
+ * Sillage no longer bundles binaries: they come from the system, so versions are not fixed by
+ * the release and behavior differences become user-visible. This table provides a comparison
+ * point so differences can be explained rather than silently endured.
  *
- * « Préférée » et non « testée » : on ne vérifie pas chaque version de chaque CLI, et
- * prétendre le contraire ferait passer pour garanti ce qui ne l'est pas. C'est la version
- * sur laquelle Sillage est développé, celle que l'installation posera, et celle dont on
- * s'écarte à ses risques.
+ * “Preferred”, not “tested”: we do not verify every version of every CLI, and claiming
+ * otherwise would imply guarantees we cannot provide. This is the development baseline, the
+ * version installed by Sillage, and the version users depart from at their own risk.
  *
- * À bumper délibérément. Un numéro qu'on relève sans regarder ne vaut pas mieux que pas
- * de numéro du tout.
+ * Bump deliberately. Updating a number without checking is no better than having no number.
  *
- * Une seule table plutôt que deux : le paquet et la version qu'on en attend sont le même
- * fait, et les séparer les laisserait diverger au premier bump.
+ * One table rather than two: the package and expected version describe the same fact, and
+ * separating them would invite drift at the first bump.
  */
 export interface PreferredCliRelease {
-  /** Paquet npm, tel que l'installation depuis l'interface le posera. */
+  /** npm package used by installation from the UI. */
   readonly package: string
   readonly version: string
 }
@@ -38,7 +35,7 @@ interface Parsed {
   patch: number
 }
 
-/** Null quand la chaîne n'a pas de tête de version : un CLI peut répondre n'importe quoi. */
+/** Null when the string has no leading version: a CLI can return anything. */
 function parse(version: string): Parsed | null {
   const match = /^(\d+)\.(\d+)(?:\.(\d+))?/.exec(version.trim())
   if (!match) return null
@@ -50,28 +47,25 @@ function compare(a: Parsed, b: Parsed): number {
 }
 
 /**
- * La version installée est-elle compatible avec celle que Sillage vise ?
+ * Is the installed version compatible with Sillage's target?
  *
- * Sémantique du caret npm, plutôt qu'une règle inventée ici : c'est déjà celle que
- * l'écosystème applique, et elle épouse les deux façons de versionner qu'on rencontre.
- * Claude publie des centaines de correctifs sous une même mineure (189 pour la seule
- * 2.1), donc comparer la mineure ne signalerait jamais rien ; Codex est en 0.x et change
- * de mineure toutes les quelques semaines, donc la même comparaison hurlerait en
- * permanence. Le caret traite les deux correctement, parce que pour un 0.y.z la mineure
- * *est* le segment cassant.
+ * Uses npm caret semantics rather than inventing a rule: the ecosystem already applies it, and
+ * it fits both versioning styles we encounter. Claude publishes hundreds of patches under one
+ * minor (189 for 2.1 alone), so minor-only comparison would never flag anything; Codex uses 0.x
+ * and changes minor versions every few weeks, so the same comparison would constantly warn.
+ * Caret handles both because for 0.y.z, the minor *is* the breaking segment.
  *
- * Deux bornes, donc : pas plus ancienne que la version visée, et sans avoir franchi la
- * limite cassante au-dessus.
+ * Two bounds: no older than the target and below the next breaking boundary.
  *
- * Null quand l'une des deux ne se lit pas : sans comparaison possible, on n'affirme rien.
+ * Null if either version is unreadable: without a valid comparison, make no claim.
  */
 export function isCompatibleVersion(installed: string, preferred: string): boolean | null {
   const a = parse(installed)
   const b = parse(preferred)
   if (!a || !b) return null
   if (compare(a, b) < 0) return false
-  // Le plafond : même majeure, et pour les 0.x aussi la même mineure. Le test sur la
-  // majeure vaut dans les deux cas, sans quoi une 1.145 passerait pour compatible avec
-  // une 0.145 sur la seule foi de la mineure.
+  // Upper bound: same major, and for 0.x also the same minor. Check the major
+  // in both cases, otherwise 1.145 would appear compatible with
+  // 0.145 solely because the minor matches.
   return a.major === b.major && (b.major > 0 || a.minor === b.minor)
 }

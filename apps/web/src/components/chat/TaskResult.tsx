@@ -7,12 +7,9 @@ import { Markdown } from './Markdown'
 import { formatDuration } from './ToolCall'
 
 /**
- * Le compte rendu d'un travail qui s'est terminé hors du tour.
- *
- * Replié par défaut : il arrive dans le fil longtemps après ce qui l'a lancé, souvent
- * pendant qu'on lit autre chose, et un rapport de mille mots qui se déplie tout seul
- * pousse la conversation hors de l'écran. La ligne dit ce qui a fini, le contenu
- * attend qu'on le demande.
+ * Report from work completed outside a turn. Collapse by default: late thousand-word reports may
+ * arrive while reading elsewhere and must not push conversations offscreen. The row names
+ * completion and details await a request.
  */
 export function TaskResult({ item }: { item: TaskItem }) {
   const t = useTranslate()

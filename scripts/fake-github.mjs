@@ -2,11 +2,11 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 
 /**
- * Un faux GitHub, juste ce que le board relié appelle : issues, commentaires, `since`,
- * pagination. Pour les contrôles d'interface et les démonstrations, avec
- * `SILLAGE_GITHUB_API_URL` pointé dessus : rien ne part sur le vrai.
+ * Fake GitHub exposing only linked-board calls: issues, comments, `since`,
+ * pagination. For UI checks/demos with `SILLAGE_GITHUB_API_URL` pointing here:
+ * nothing reaches real GitHub.
  *
- * `node scripts/fake-github.mjs [port]` le lance seul, avec quelques issues d'exemple.
+ * `node scripts/fake-github.mjs [port]` starts standalone with sample issues.
  */
 export async function startFakeGitHub({ port = 0, repo = 'acme/nimbus', seed = true, publicUrl = '' } = {}) {
   const issues = new Map()
@@ -15,7 +15,7 @@ export async function startFakeGitHub({ port = 0, repo = 'acme/nimbus', seed = t
   const now = () => Date.now()
   const iso = (ms) => new Date(ms).toISOString()
   const base = () => `http://127.0.0.1:${server.address().port}`
-  // Les liens des issues mènent à la page du faux GitHub, pas au vrai, où elles n'existent pas.
+  // Issue links lead to fake GitHub, not real GitHub where they do not exist.
   const page = (number, anchor = '') => publicUrl ? `${publicUrl}/#issue-${number}${anchor}` : `https://github.com/${repo}/issues/${number}${anchor}`
 
   const issueJson = (issue) => ({
@@ -64,7 +64,7 @@ export async function startFakeGitHub({ port = 0, repo = 'acme/nimbus', seed = t
       response.writeHead(status, { 'content-type': 'application/json' })
       response.end(JSON.stringify(payload))
     }
-    // Une page pour jouer la communauté : ouvrir une issue, commenter, voir les réponses.
+    // Community simulation page: open issues, comment, see responses.
     if (url.pathname === '/' && request.method === 'GET') {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       return response.end(PAGE.replace('__REPO__', repo))

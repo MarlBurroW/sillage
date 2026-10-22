@@ -1,7 +1,7 @@
 name: Pages
 
-# Déploie le site vitrine (dossier site/) sur GitHub Pages.
-# Réglage requis une fois : Settings > Pages > Source = GitHub Actions.
+# Deploy marketing site (site/ directory) to GitHub Pages.
+# One-time setting: Settings > Pages > Source = GitHub Actions.
 
 on:
   push:
@@ -26,8 +26,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      # L'installeur est aussi servi depuis le site : l'URL courte
-      # marlburrow.github.io/sillage/install.sh reste valable.
+      # Installer also served from site: short URL
+      # marlburrow.github.io/sillage/install.sh remains valid.
       - run: cp install.sh site/install.sh
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

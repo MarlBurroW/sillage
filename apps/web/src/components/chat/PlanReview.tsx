@@ -28,10 +28,8 @@ export function PlanReview({
   const pending = item.status === 'pending'
 
   /**
-   * Valider un plan, c'est aussi décider comment la suite s'exécute : les options
-   * viennent de l'adaptateur, qui seul sait quels modes son CLI accepte ensuite. Un
-   * journal d'avant ce champ n'en propose aucune : la validation part alors sans
-   * changement de mode.
+   * Plan approval also chooses execution mode from adapter options, since only adapters know
+   * CLI-supported follow-ups. Older logs without this field approve without mode changes.
    */
   const followUp = item.followUpOptions
 

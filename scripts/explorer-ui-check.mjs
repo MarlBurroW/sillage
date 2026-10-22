@@ -10,8 +10,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Explorateur de fichiers : sélection multiple, clavier, presse-papiers, archive et
-// mode sélection au doigt. Base, projet et serveurs jetables, comme les autres contrôles.
+// File explorer: multiple selection, keyboard, clipboard, archive, touch selection
+// mode. Disposable database/project/servers, like the other checks.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -71,7 +71,7 @@ try {
   const conversation = db.prepare('SELECT * FROM conversations WHERE project_id = ? LIMIT 1').get(project.id)
   db.close()
 
-  // Un dossier à soi dans le workspace de démonstration, trié en tête de la racine.
+  // Own directory in demo workspace, sorted first at root.
   const fixture = join(project.workspace_path, 'aa-explorer')
   await mkdir(join(fixture, 'inner'), { recursive: true })
   for (const name of ['a.txt', 'b.txt', 'c.txt', 'd.md']) await writeFile(join(fixture, name), `${name}\n`)
@@ -105,19 +105,19 @@ try {
   await row('a.txt').click()
   assert.deepEqual(await selected(), ['aa-explorer/a.txt'])
 
-  // Maj-clic étend depuis le dernier clic, Ctrl-clic coche ou décoche. Les dossiers
-  // passent avant les fichiers : `inner` est en tête.
+  // Shift-click extends from last click; Ctrl-click toggles. Directories sort
+  // before files: `inner` comes first.
   await row('d.md').click({ modifiers: ['Shift'] })
   assert.deepEqual(await selected(), ['aa-explorer/a.txt', 'aa-explorer/b.txt', 'aa-explorer/c.txt', 'aa-explorer/d.md'])
   await bar.getByText('4 sélectionnés').waitFor()
   await row('b.txt').click({ modifiers: ['ControlOrMeta'] })
   await row('inner').click({ modifiers: ['ControlOrMeta'] })
   assert.deepEqual(await selected(), ['aa-explorer/a.txt', 'aa-explorer/c.txt', 'aa-explorer/d.md', 'aa-explorer/inner'])
-  // Les lignes changent de fond en transition : la capture attend qu'elle soit finie.
+  // Row backgrounds transition: screenshot waits for completion.
   await delay(200)
   await page.screenshot({ path: '/tmp/sillage-explorer-selection.png' })
 
-  // Clavier : la sélection suit le curseur, s'étend à la Maj.
+  // Keyboard: selection follows cursor, Shift extends it.
   await row('a.txt').click()
   await page.keyboard.press('ArrowDown')
   assert.deepEqual(await selected(), ['aa-explorer/b.txt'])
@@ -126,7 +126,7 @@ try {
   await page.keyboard.press('Escape')
   assert.deepEqual(await selected(), [])
 
-  // Copier deux fichiers, puis les coller dans `inner`.
+  // Copy two files, then paste into `inner`.
   await row('b.txt').click()
   await page.keyboard.press('Shift+ArrowDown')
   await page.keyboard.press('ControlOrMeta+c')
@@ -148,7 +148,7 @@ try {
   await page.keyboard.press('ControlOrMeta+v')
   await until(async () => (await exists(join(fixture, 'inner/d.md'))) && !(await exists(join(fixture, 'd.md'))), 'Cut/paste did not move')
 
-  // Glisser deux fichiers sélectionnés sur un dossier les déplace tous les deux.
+  // Dragging two selected files onto a directory moves both.
   await row('a.txt').click()
   await row('a copy.txt').click({ modifiers: ['ControlOrMeta'] })
   await row('a.txt').dragTo(row('inner'))
@@ -158,7 +158,7 @@ try {
   await tabs.locator('[aria-label="Ouvrir aa-explorer/inner/a.txt"]').waitFor()
   assert.equal(await tabs.locator('[aria-label="Ouvrir aa-explorer/a.txt"]').count(), 0)
 
-  // Supprimer une sélection passe par une seule confirmation.
+  // Deleting selection uses one confirmation.
   await row('inner/a.txt').click()
   await row('inner/a copy.txt').click({ modifiers: ['ControlOrMeta'] })
   await page.keyboard.press('Delete')
@@ -166,10 +166,10 @@ try {
   await dialog.getByText('Supprimer ces 2 éléments ?').waitFor()
   await dialog.getByRole('button', { name: 'Supprimer', exact: true }).click()
   await until(async () => !(await exists(join(fixture, 'inner/a.txt'))) && !(await exists(join(fixture, 'inner/a copy.txt'))), 'Delete failed')
-  // Sans brouillon, l'onglet d'un fichier supprimé se ferme.
+  // Without a draft, deleted files' tabs close.
   await tabs.locator('[aria-label^="Ouvrir aa-explorer/inner/a"]').waitFor({ state: 'detached' })
 
-  // Copier le chemin relatif, et télécharger un dossier en zip.
+  // Copy relative path and download a directory as zip.
   await row('inner').click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Copier le chemin relatif' }).click()
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'aa-explorer/inner')
@@ -179,7 +179,7 @@ try {
   const zipped = Object.keys(unzipSync(new Uint8Array(await readFile(await download.path())))).sort()
   assert.deepEqual(zipped, ['inner/', 'inner/b.txt', 'inner/c.txt', 'inner/d.md'])
 
-  // Les dossiers dépliés survivent à une recherche, et se replient d'un geste.
+  // Expanded directories survive search and collapse with one action.
   await panel.getByRole('searchbox').fill('b.txt')
   await panel.locator('[data-tree-path="aa-explorer/b.txt"]').waitFor()
   await panel.getByRole('searchbox').fill('')
@@ -187,7 +187,7 @@ try {
   await panel.getByRole('button', { name: 'Replier tous les dossiers' }).click()
   assert.equal(await row('').getAttribute('aria-expanded'), 'false')
 
-  // Taper le début d'un nom y amène.
+  // Typing a name prefix navigates to it.
   await row('').click()
   await page.keyboard.press('ArrowRight')
   await page.keyboard.type('c')
@@ -195,7 +195,7 @@ try {
   await delay(200)
   await page.screenshot({ path: '/tmp/sillage-explorer-desktop.png' })
 
-  // Au doigt : « Sélectionner » ouvre le mode sélection, où un appui coche.
+  // Touch: “Select” opens selection mode, where tapping selects.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await phone.addInitScript(() => {
     localStorage.setItem('sillage.locale', 'fr')

@@ -18,19 +18,8 @@ import {
 import { replayPayload, replayWeight } from './tool-output.js'
 import { touchedPaths } from './touched-paths.js'
 
-/**
- * Le journal (invariant I2 de la spec).
- *
- * Tout ce que produit un agent est écrit ici avant d'être diffusé. Les clients ne
- * reçoivent jamais un événement qui ne serait pas déjà persisté, donc une coupure
- * réseau ne peut pas faire perdre d'information : à la reconnexion, le client rejoue
- * depuis son curseur.
- *
- * `seq` est strictement croissant par conversation. Il peut comporter des trous après
- * compaction des deltas ; la lecture se fait toujours par `seq > curseur`, jamais par
- * incrément supposé.
- */
-/** Les trois formes d'interaction bloquante, indexées par l'événement qui les ouvre. */
+/** Journal (spec invariant I2). Persist all agent output before broadcasting so clients never receive unpersisted events; reconnect replay from cursors prevents network loss. `seq` strictly increases per conversation but may have gaps after delta compaction: always read `seq > cursor`, never assume increments. */
+/** Three blocking interaction types indexed by their opening events. */
 const PROMPT_KINDS: Record<string, PromptKind | undefined> = {
   'permission.requested': 'permission',
   'question.requested': 'question',
@@ -47,29 +36,7 @@ const RESOLUTIONS: Record<PromptKind, string> = {
 
 export type PromptKind = 'permission' | 'question' | 'plan' | 'elicitation'
 
-/**
- * Tours du fil principal, comptés depuis le journal.
- *
- * Un par message de l'utilisateur : c'est le découpage de la réglette de repères
- * (`buildTurns` côté web), et les deux surfaces doivent s'accorder sur le même fil.
- * Compter aussi les messages de l'agent reviendrait à compter ses étapes, chacun de ses
- * appels d'outil en produisant un.
- *
- * Dérivé des messages et non des `turn.started`, dont il diffère dans les deux sens :
- * un tour s'ouvre aussi sans que personne n'écrive (reprise de session, réveil de
- * boucle, suite de plan), et un steer ajoute un message au tour en cours sans en ouvrir
- * un. Sur les conversations mesurées, un peu moins de la moitié s'écartent. C'est le
- * découpage du fil qui fait foi ici, pas le cycle de vie du runner : le nombre affiché
- * doit être celui des repères qu'on peut réellement atteindre.
- *
- * Sur `messageId` distinct et non sur les événements : un message arrive en plusieurs
- * `message.completed` (réflexion, puis appels d'outils). Les messages d'un sous-agent
- * portent un `parentToolCallId` et appartiennent à son fil, pas à celui-ci.
- *
- * Recompté plutôt qu'incrémenté : reconnaître le premier `message.completed` d'un
- * message demanderait de retenir le précédent, état de plus pour un compte qu'une
- * requête rend en une fois, et seulement en fin de tour.
- */
+/** Main-conversation turn count from journals. One per user message, matching web `buildTurns` markers; counting agent messages would count tool steps instead. Message-based rather than `turn.started`: turns may start without user input (resume, loops, plan continuation), while steering adds messages without new turns. Nearly half measured conversations differed. Displayed counts must match navigable markers, not runner lifecycle. Count distinct `messageId` because responses span multiple `message.completed`; exclude subagents with `parentToolCallId`. Recount at turn end rather than maintain extra state detecting first completions: one query suffices. */
 const TURN_COUNT = sql<number>`(
   select count(distinct ${events.payload} ->> '$.messageId')
   from ${events}
@@ -79,19 +46,7 @@ const TURN_COUNT = sql<number>`(
     and coalesce(${events.payload} ->> '$.parentToolCallId', '') = ''
 )`
 
-/**
- * Les événements qui valent qu'on signale la conversation à son lecteur.
- *
- * Même doctrine que `NOTIFIABLE` du gestionnaire de sessions, et presque la même liste :
- * les moments où l'agent réclame une décision, et la fin d'un tour. `error` s'y ajoute,
- * qu'une notification n'annonce pas mais qui compte quand on retrouve le fil plus tard.
- *
- * Liste nommée plutôt qu'une exclusion des événements de service : le journal avance
- * aussi tout seul, et compter `session.ended` ou `usage.updated`, écrits une fois tout
- * le monde parti, allumait 57 conversations sur 80 sans que personne n'ait rien à y
- * lire. Une liste fermée se relit ; une règle par la négative se serait retrouvée
- * fausse au premier type d'événement ajouté.
- */
+/** Events worth highlighting to readers. Mirrors session-manager `NOTIFIABLE`: agent decision requests and turn endings, plus errors relevant when revisiting. Use an explicit allowlist: service events such as `session.ended` and `usage.updated` otherwise marked 57 of 80 conversations unread after everyone left. Closed lists are auditable and do not become wrong when new service types appear. */
 const NOTABLE = new Set<SillageEvent['type']>([
   'turn.completed',
   'error',
@@ -99,19 +54,16 @@ const NOTABLE = new Set<SillageEvent['type']>([
   'question.requested',
   'elicitation.requested',
   'plan.review_requested',
-  // Un message de session retenu attend qu'une personne le remette ou l'écarte.
+  // Held session messages await human delivery or dismissal.
   'session_message.held',
 ])
 
-/**
- * Poids d'une entrée sur disque, en octets et non en caractères : un fil accentué ou
- * riche en emoji pèse davantage que ce que `String.length` en dit.
- */
+/** Disk entry weight in bytes rather than characters: accents and emoji weigh more than `String.length` suggests. */
 function byteSize(payload: string, raw: string | null): number {
   return Buffer.byteLength(payload) + (raw === null ? 0 : Buffer.byteLength(raw))
 }
 
-/** Index de relecture gardés en mémoire : ceux des conversations ouvertes récemment. */
+/** In-memory replay indexes for recently opened conversations. */
 const SUPERSESSION_INDEXES = 32
 
 export class EventLog {
@@ -119,15 +71,12 @@ export class EventLog {
   private readonly supersession = new Map<string, SupersessionIndex>()
 
   constructor(private readonly db: Db) {
-    // Une conversation très suivie (plusieurs onglets, mobile et desktop) dépasse
-    // vite la limite par défaut de 10 écouteurs.
+    // Popular conversations with several mobile/desktop tabs quickly exceed
+    // the default ten-listener limit.
     this.bus.setMaxListeners(200)
   }
 
-  /**
-   * Incrémente `seq` et insère l'événement dans la même transaction : deux écritures
-   * concurrentes sur la même conversation ne peuvent pas obtenir le même numéro.
-   */
+  /** Increment `seq` and insert events in one transaction so concurrent writes cannot receive identical numbers. */
   append(
     conversationId: string,
     event: SillageEvent,
@@ -171,8 +120,8 @@ export class EventLog {
         .where(eq(conversations.id, conversationId))
         .run()
 
-      // Dans la même transaction que l'écriture du journal : l'index ne peut pas
-      // contenir un message que le journal n'aurait pas, ni l'inverse.
+      // Same transaction as journal writes: indexes cannot contain absent messages
+      // or omit committed ones.
       if (event.type === 'message.completed') indexMessage(tx, conversationId, seq)
       recordTouchedPaths(tx, conversationId, event, ts)
 
@@ -184,20 +133,11 @@ export class EventLog {
     return entry
   }
 
-  /**
-   * Ajoute d'un bloc les événements traduits d'un transcript CLI (import ou
-   * resynchronisation), avec leurs dates d'origine.
-   *
-   * Une transaction pour l'ensemble : un import de plusieurs centaines d'événements
-   * en autant de transactions multiplierait les fsync pour rien, et un échec à
-   * mi-course laisserait un fil tronqué sans que rien ne le dise. La diffusion sur le
-   * bus reste par événement, comme pour `append` : un onglet déjà abonné voit la
-   * resynchronisation arriver en direct.
-   */
+  /** Appends translated CLI transcript events (imports/resynchronization) with original dates in one transaction. Hundreds of individual transactions would multiply fsyncs and partial failure would silently truncate history. Broadcast per event like `append` so subscribed tabs see resynchronization live. */
   appendBatch(
     conversationId: string,
     batch: { ts: number; event: SillageEvent; raw?: unknown }[],
-    /** Provenance commune des `raw` du lot, quand ils viennent d'une même source. */
+    /** Shared `raw` provenance for batches from one source. */
     rawFormat?: string,
   ): number {
     if (batch.length === 0) return 0
@@ -235,8 +175,8 @@ export class EventLog {
         return { conversationId, seq, ts: item.ts, event: item.event }
       })
 
-      // Le compte de tours est repris ici et pas au fil des insertions : un import
-      // amène des messages entiers d'un coup, et une seule requête les couvre tous.
+      // Recount turns here rather than per insert: imports supply complete messages
+      // and one query covers them all.
       tx.update(conversations)
         .set({
           lastSeq: row.lastSeq + batch.length,
@@ -255,22 +195,7 @@ export class EventLog {
     return entries.at(-1)?.seq ?? 0
   }
 
-  /**
-   * Repères pour aligner le journal sur le transcript CLI.
-   *
-   * `uuids` : identifiants de transcript déjà connus, portés par les `raw` (le flux
-   * vivant comme l'import les conservent). Le dernier commun aux deux côtés donne le
-   * point de reprise. `startedToolCallIds` et `completedToolCallIds` : les appels
-   * d'outils déjà journalisés, dont l'entrée de transcript peut se trouver après ce
-   * point quand un tour a été interrompu, et qu'il ne faut pas réimporter en doublon.
-   * `subAgentIds` : les appels dont le sous-agent a déjà laissé des traces au journal.
-   * Un fil de sous-agent ne se découpe pas au point de reprise, il a sa propre
-   * chronologie : c'est tout ou rien, et c'est cet ensemble qui le dit.
-   *
-   * Contrat Claude : `raw.uuid` est un identifiant d'entrée du transcript de Claude
-   * Code, seul CLI à en écrire un. Les `raw` Codex n'en portent pas, la lecture est
-   * donc inoffensive ailleurs, mais elle n'a de sens que pour cet adaptateur.
-   */
+  /** Markers aligning journals with CLI transcripts. `uuids` are known transcript IDs retained in live/import `raw` fields; the latest shared ID identifies resumption. `startedToolCallIds` and `completedToolCallIds` prevent duplicate tools whose transcript entries lie after that point following interrupted turns. `subAgentIds` identifies subagents already journaled: their independent timelines require all-or-nothing import. Claude contract: only Claude Code writes transcript `raw.uuid`; Codex raw payloads lack it, making reads harmless elsewhere but meaningful only to Claude adapters. */
   importAnchors(conversationId: string): {
     uuids: Set<string>
     startedToolCallIds: Set<string>
@@ -324,22 +249,7 @@ export class EventLog {
     }))
   }
 
-  /**
-   * Page de relecture d'historique, sans ce que la suite du journal rend caduc
-   * (`superseded.ts`) ni les sorties d'outils volumineuses (`tool-output.ts`), et bornée
-   * en octets autant qu'en lignes.
-   *
-   * Les lignes sont d'abord listées sans leur contenu (`octet_length` lit la taille sans
-   * charger le payload), puis seules celles qu'on garde sont lues et validées : un patch
-   * écarté ne quitte pas le disque.
-   *
-   * La borne en octets protège le tas du daemon. Deux mille lignes consécutives pèsent
-   * jusqu'à 141 Mo sur une conversation de la base, quand la plupart tiennent en quelques
-   * centaines de ko. Une page garde toujours au moins un événement, sans quoi un
-   * événement plus lourd que la borne ne passerait jamais.
-   *
-   * `nextAfter` est le dernier `seq` examiné, gardé ou non : la page suivante reprend là.
-   */
+  /** History replay pages exclude superseded entries (`superseded.ts`) and large tool outputs (`tool-output.ts`), bounded by both bytes and rows. First list rows without contents (`octet_length` avoids loading payloads), then read and validate retained rows only: discarded patches never leave disk. Byte bounds protect daemon heaps: two thousand consecutive rows can weigh 141 MB although most pages occupy hundreds of KB. Always retain at least one event so oversized events can progress. `nextAfter` is the last examined sequence whether retained or not. */
   readForReplay(
     conversationId: string,
     afterSeq: number,
@@ -392,13 +302,7 @@ export class EventLog {
     }
   }
 
-  /**
-   * Index de supplantation d'une conversation, à jour de son dernier `seq`.
-   *
-   * Construit une fois (44 ms sur la plus lourde en base), puis avancé à chaque page sur
-   * les seuls événements arrivés depuis : relire toute la suite du journal à chaque page
-   * coûterait autant que ce qu'on cherche à épargner.
-   */
+  /** Conversation supersession index current through its latest `seq`. Build once (44 ms on the largest conversation), then advance each page using only new events; rescanning later history per page would erase savings. */
   private supersessionIndex(conversationId: string): SupersessionIndex {
     const lastSeq =
       this.db
@@ -408,8 +312,8 @@ export class EventLog {
         .get()?.lastSeq ?? 0
 
     let index = this.supersession.get(conversationId)
-    // Un journal ne raccourcit que remis à zéro hors du daemon : l'index repart alors de
-    // rien, plutôt que de trier selon un journal qui n'existe plus.
+    // Journals shrink only through out-of-daemon resets: restart indexes from scratch
+    // instead of filtering against nonexistent history.
     if (!index || index.seq > lastSeq) index = emptySupersessionIndex()
 
     if (lastSeq > index.seq) {
@@ -434,8 +338,8 @@ export class EventLog {
       advanceIndex(index, rows, lastSeq)
     }
 
-    // Réinsérée pour passer en queue : une `Map` garde l'ordre d'insertion, donc la
-    // première clé est celle qu'on a relue le moins récemment.
+    // Reinsert to move to the end: `Map` preserves insertion order,
+    // so the first key is least recently read.
     this.supersession.delete(conversationId)
     this.supersession.set(conversationId, index)
     if (this.supersession.size > SUPERSESSION_INDEXES) {
@@ -445,13 +349,7 @@ export class EventLog {
     return index
   }
 
-  /**
-   * Les derniers événements de certains types, du plus récent au plus ancien.
-   *
-   * Replier un journal entier pour dire où en est une conversation coûterait le prix de
-   * tout son historique à chaque appel. Ce qui décrit le présent tient dans les
-   * dernières entrées, et `limit` borne la lecture.
-   */
+  /** Latest events of selected types, newest first. Replaying entire journals to report present state would pay full-history costs on every call. Recent entries suffice, bounded by `limit`. */
   latest(conversationId: string, types: string[], limit: number): JournalEntry[] {
     const rows = this.db
       .select()
@@ -469,10 +367,7 @@ export class EventLog {
     }))
   }
 
-  /**
-   * Dernier texte que l'agent a adressé à l'utilisateur, hors sous-agents : ce qu'un
-   * appelant sans interface (webhook, tir planifié suivant) retient d'un tour.
-   */
+  /** Latest main-agent text addressed to users, retained by noninterface callers such as webhooks and subsequent scheduled runs. */
   lastAssistantText(conversationId: string): string | null {
     const entries = this.latest(conversationId, ['message.completed'], 20)
     for (const entry of entries) {
@@ -492,12 +387,7 @@ export class EventLog {
     return null
   }
 
-  /**
-   * Remet le compte de tours d'aplomb sur ce que contient le journal.
-   *
-   * Appelée en fin de tour : c'est le moment où les messages du tour sont tous écrits,
-   * et une fois par tour suffit pour une ligne de sidebar.
-   */
+  /** Reconciles turn counts with journals at turn completion, when all messages are persisted. Once per turn suffices for sidebar rows. */
   refreshTurnCount(conversationId: string): void {
     this.db
       .update(conversations)
@@ -506,7 +396,7 @@ export class EventLog {
       .run()
   }
 
-  /** Nombre d'événements d'un type, sans les charger. */
+  /** Counts events by type without loading them. */
   count(conversationId: string, type: string): number {
     const row = this.db
       .select({ n: sql<number>`count(*)` })
@@ -517,14 +407,7 @@ export class EventLog {
     return row?.n ?? 0
   }
 
-  /**
-   * Demandes d'interaction encore ouvertes : une requête dont la résolution n'a jamais
-   * été journalisée.
-   *
-   * Un daemon tué net n'exécute pas la sortie de ses runners, donc rien ne vient
-   * clore les demandes en cours. Sans ce relevé, le fil rejoué garderait
-   * indéfiniment une question posée et une conversation coincée en attente.
-   */
+  /** Unresolved interaction requests lacking journaled resolutions. Abruptly killed daemons skip runner cleanup, leaving pending requests open. This inventory prevents replay from displaying permanent questions and stuck waiting conversations. */
   openPrompts(conversationId: string): { kind: PromptKind; requestId: string }[] {
     const rows = this.db
       .select({ type: events.type, payload: events.payload })
@@ -551,7 +434,7 @@ export class EventLog {
     return [...open].map(([requestId, kind]) => ({ kind, requestId }))
   }
 
-  /** Une question asynchrone peut rester ouverte sur une conversation au repos. */
+  /** Asynchronous questions may remain open while conversations are idle. */
   openAsyncQuestionConversationIds(): string[] {
     return this.db.selectDistinct({ id: events.conversationId }).from(events).where(sql`
       ${events.type} = 'question.requested' AND ${events.payload} ->> '$.blocking' = 0
@@ -565,17 +448,7 @@ export class EventLog {
     `).all().map((row) => row.id)
   }
 
-  /**
-   * Les travaux de fond que le journal donne encore pour vivants.
-   *
-   * Même service que `openPrompts`, pour la liste de niveau. Le CLI publie l'ensemble
-   * de ses travaux à chaque changement et ne publie rien en mourant : sa dernière liste
-   * reste donc le dernier mot du journal, dont tout l'affichage est dérivé. C'est ce
-   * relevé qui dit ce qu'il reste à clore quand le process s'en va.
-   *
-   * Rejoué dans l'ordre, avec la même sémantique que le fold côté web : la liste de
-   * niveau remplace, une fin de travail retire, une fin de session vide tout.
-   */
+  /** Background work journals still report alive. Like `openPrompts` for top-level lists: CLIs publish complete lists on change but nothing when dying, so the last list remains authoritative for display and identifies work needing closure. Replay using web fold semantics: lists replace, task endings remove, session endings clear everything. */
   openBackgroundTasks(conversationId: string): BackgroundTask[] {
     const rows = this.db
       .select({ type: events.type, payload: events.payload })
@@ -607,17 +480,7 @@ export class EventLog {
     return [...live.values()]
   }
 
-  /**
-   * Copie le début d'un journal vers une autre conversation, pour un fork.
-   *
-   * `raw` est copié aussi : c'est lui qui porte l'identifiant de transcript dont un
-   * fork ultérieur de la branche aura besoin (invariant I3). Les `seq` sont renumérotés
-   * depuis 1, la nouvelle conversation ayant sa propre séquence.
-   *
-   * Le fil forké serait vide sans cette copie, alors que l'agent, lui, se souvient :
-   * c'est exactement le genre d'écart entre affichage et réalité que l'invariant I2
-   * interdit.
-   */
+  /** Copies journal prefixes into forked conversations. Copy `raw` too because later forks need transcript identifiers (invariant I3). Renumber `seq` from 1 for the new conversation. Without this copy, displayed forks would be empty while agents remember history, violating invariant I2. */
   copyThrough(fromConversationId: string, toConversationId: string, throughSeq: number): number {
     const rows = this.db
       .select()
@@ -648,25 +511,15 @@ export class EventLog {
         .where(eq(conversations.id, toConversationId))
         .run()
 
-      // La copie n'emprunte pas `append` : sans cette ligne, une branche resterait
-      // introuvable par la recherche alors que son fil, lui, contient bien tout.
+      // Copying bypasses `append`: without this line, forks would remain
+      // unfindable in search despite retaining complete thread contents.
       indexConversation(tx, toConversationId)
     })
 
     return rows.length
   }
 
-  /**
-   * Payload natif du dernier événement d'un type donné, jusqu'à `throughSeq`.
-   *
-   * Sert au fork Claude : le point de coupe est une entrée du fichier de transcript,
-   * dont l'identifiant n'existe que dans `raw`.
-   *
-   * `topLevelOnly` écarte les événements produits par un sous-agent (payload portant
-   * un `parentToolCallId`) : leur `raw` vient d'une sidechain du transcript, et un
-   * point de coupe pris là viserait le mauvais fichier. Les événements d'avant le
-   * champ n'en portent pas et restent inclus, comme avant.
-   */
+  /** Latest native payload of a given type through `throughSeq`. Claude forks use transcript cut-point identifiers available only in `raw`. `topLevelOnly` excludes subagent events carrying `parentToolCallId`: their sidechain raw entries target different files. Legacy events without the field remain included. */
   lastRawOfType(
     conversationId: string,
     type: string,
@@ -693,14 +546,7 @@ export class EventLog {
     return row?.raw ? JSON.parse(row.raw) : null
   }
 
-  /**
-   * Sortie complète d'un appel d'outil, que la relecture d'historique ne rend qu'en
-   * aperçu au-delà d'une certaine taille.
-   *
-   * Le filtre sur `toolCallId` est fait par SQLite plutôt qu'en JS : `rawOfTool` juste
-   * en dessous charge tous les appels de la conversation et les parse un par un pour en
-   * retenir un seul, ce qui se paie sur un fil qui en porte des milliers.
-   */
+  /** Full tool output, reduced to previews beyond replay size thresholds. Filter `toolCallId` in SQLite: `rawOfTool` below loads and parses every conversation call to select one, costly for thousands of calls. */
   toolOutput(conversationId: string, toolCallId: string): { output: unknown } | null {
     const row = this.db
       .select({ payload: events.payload })
@@ -720,14 +566,7 @@ export class EventLog {
     return { output: (JSON.parse(row.payload) as { output?: unknown }).output ?? null }
   }
 
-  /**
-   * Payloads natifs d'un appel d'outil : celui de son démarrage et celui de sa fin.
-   *
-   * C'est là que vit le détail d'une modification de fichier, que le schéma normalisé
-   * ne porte pas : le contenu écrit et l'extrait remplacé côté Claude, le patch
-   * unifié côté Codex. L'invariant I3 n'est pas contourné pour autant : la lecture est
-   * faite par l'adaptateur du CLI concerné, jamais par le frontend.
-   */
+  /** Native payloads from tool start and completion. Hold file-edit details absent from normalized schemas: written/replaced content for Claude and unified patches for Codex. Still respects invariant I3: relevant CLI adapters interpret these, never frontends. */
   rawOfTool(conversationId: string, toolCallId: string): { started: unknown; completed: unknown } {
     const rows = this.db
       .select({ type: events.type, payload: events.payload, raw: events.raw })
@@ -751,13 +590,7 @@ export class EventLog {
     return found
   }
 
-  /**
-   * Nature du changement journalisé pour ce couple appel/fichier.
-   *
-   * Relue plutôt que reçue du client : c'est elle qui décide si un contenu écrit se
-   * présente comme une création complète ou comme une réécriture sans point de
-   * comparaison, et le journal en est la seule source (invariant I2).
-   */
+  /** Journaled change type for a call/file pair. Reread rather than trust clients because it determines full creations versus rewrites without comparison points; journals are authoritative (invariant I2). */
   fileEditAction(
     conversationId: string,
     toolCallId: string,
@@ -780,7 +613,7 @@ export class EventLog {
     return null
   }
 
-  /** Nombre d'événements d'un type donné, avant et après un point de coupe. */
+  /** Counts events of a type before and after cut points. */
   countByType(conversationId: string, type: string, throughSeq: number): { kept: number; total: number } {
     const rows = this.db
       .select({ seq: events.seq })
@@ -794,12 +627,7 @@ export class EventLog {
     }
   }
 
-  /**
-   * Messages mis en file dont le départ n'a jamais été journalisé.
-   *
-   * Distinct de `openPrompts` : la clé est un `queueId`, et la résolution ne porte pas
-   * de décision mais une raison de sortie.
-   */
+  /** Queued messages whose departure was never journaled. Distinct from `openPrompts`: keys are `queueId`, resolutions contain departure reasons rather than decisions. */
   openQueuedMessages(conversationId: string): string[] {
     const rows = this.db
       .select({ type: events.type, payload: events.payload })
@@ -824,20 +652,14 @@ export class EventLog {
     return [...open]
   }
 
-  /**
-   * Les événements sont validés à la relecture, pas seulement castés.
-   *
-   * C'est ce qui applique les valeurs par défaut du schéma aux entrées écrites avant
-   * l'ajout d'un champ : le journal est rejoué indéfiniment (invariant I2), donc une
-   * ancienne forme doit continuer à produire un affichage juste plutôt qu'un `NaN`.
-   */
+  /** Validate events during replay rather than merely cast them. Applies schema defaults to entries predating fields: indefinitely replayable journals (invariant I2) must render old forms correctly instead of producing `NaN`. */
   private parseStored(seq: number, payload: string): SillageEvent {
     const raw: unknown = JSON.parse(payload)
     const parsed = sillageEventSchema.safeParse(raw)
     if (parsed.success) return parsed.data
 
-    // Un événement irrécupérable est remplacé par une erreur visible dans le fil :
-    // le masquer laisserait un trou silencieux dans l'historique.
+    // Replace irrecoverable events with visible conversation errors:
+    // hiding them would leave silent history gaps.
     return {
       type: 'error',
       code: 'event_unreadable',
@@ -851,27 +673,17 @@ export class EventLog {
     return () => this.bus.off(conversationId, listener)
   }
 
-  /**
-   * Toutes les conversations à la fois, pour les consommateurs transverses (webhooks).
-   *
-   * Volontairement absent du chemin des imports (`appendBatch`) : rejouer un transcript
-   * n'est pas de l'activité, et notifier un appelant pour chaque événement importé
-   * l'inonderait de tours vieux de plusieurs jours.
-   */
+  /** All conversations for cross-cutting consumers such as webhooks. Deliberately excluded from `appendBatch`: transcript replay is not activity, and per-import notifications would flood callers with days-old turns. */
   subscribeAll(listener: (entry: JournalEntry) => void): () => void {
     this.bus.on(ALL_EVENTS, listener)
     return () => this.bus.off(ALL_EVENTS, listener)
   }
 }
 
-/** Canal du bus réservé aux abonnés transverses ; hors de portée d'un id de conversation. */
+/** Bus channel for cross-conversation subscribers, unreachable by conversation IDs. */
 const ALL_EVENTS = Symbol('all-events')
 
-/**
- * Mémorise les chemins hors cwd que l'événement révèle (voir `touched-paths.ts`), dans
- * la transaction du journal : la vue des chantiers les lit au lieu de rebalayer les
- * événements, et ne peut pas en voir un que le journal n'aurait pas.
- */
+/** Stores outside-cwd paths exposed by events (see `touched-paths.ts`) within journal transactions. Worktree views read these instead of rescanning events and cannot observe paths absent from journals. */
 function recordTouchedPaths(
   tx: Tx,
   conversationId: string,

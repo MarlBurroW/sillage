@@ -11,11 +11,9 @@ import { NameField } from './SkillDialog'
 import { originLabel } from './SkillList'
 
 /**
- * Les skills que la machine porte déjà, chacun lu par un seul CLI. Les reprendre les
- * copie dans la bibliothèque, d'où ils servent aux deux ; l'original reste en place.
- *
- * Un skill de dépôt ne se reprend que dans son projet : c'est le seul où le serveur lit
- * ce dépôt.
+ * Existing machine skills each read by one CLI. Import copies into the shared library serving both
+ * while retaining originals. Repository skills can import only within their project, the only
+ * repository the server reads.
  */
 export function LocalSkillsDialog({
   open,
@@ -78,7 +76,7 @@ function LocalSkillRow({
   const t = useTranslate()
   const navigate = useNavigate()
   const adopt = useAdoptLocalSkill()
-  /** Un nom à choisir, d'office pour un nom invalide, après coup pour un nom pris. */
+  /** Choose a name immediately for invalid names or after collision. */
   const [renaming, setRenaming] = useState(skill.problem === 'skill_name_invalid')
   const [name, setName] = useState('')
 

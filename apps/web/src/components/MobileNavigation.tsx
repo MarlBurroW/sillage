@@ -7,12 +7,11 @@ import { UpdateDot } from './UpdateDot'
 
 export const MobileNavigationContext = createContext<() => void>(() => {})
 
-/** L'accès à la navigation suit l'en-tête de l'écran sur téléphone. */
+/** Phone navigation access follows each screen's header. */
 export function MobileNavigationButton() {
   const open = useContext(MobileNavigationContext)
   const t = useTranslate()
-  // Au téléphone, la barre latérale est repliée derrière ce bouton : sa pastille
-  // serait invisible si celui-ci ne la reprenait pas.
+  // The collapsed phone sidebar's badge must also appear on its visible toggle.
   const updateNotice = useUpdateNotice()
   return (
     <IconButton

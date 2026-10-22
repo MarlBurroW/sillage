@@ -52,7 +52,7 @@ async function harness(t: TestContext) {
     async sendMessage(to: string, _id: string, text: string) {
       if (failSend) throw new Error('CLI introuvable')
       sent.push({ to, text })
-      // Le vrai gestionnaire passe le fil en `running` dès que le CLI prend le tour.
+      // The real manager sets conversations `running` when CLIs begin turns.
       db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, to)).run()
     },
     async terminate(id: string) {
@@ -80,7 +80,7 @@ async function harness(t: TestContext) {
       { name: 'Veille', agent: 'claude', config: DEFAULT_CLAUDE_CONFIG, prompt: 'Sonde les CLI.', cadence, overlapPolicy, maxDurationMinutes, enabled: true },
     )
 
-  /** Fait finir le tour d'un fil comme le ferait le CLI : une réponse, puis le repos. */
+  /** Completes turns like CLIs: response followed by idle. */
   const finish = (conversationId: string, reply: string) => {
     log.append(conversationId, {
       type: 'message.completed',
@@ -101,7 +101,7 @@ async function harness(t: TestContext) {
     db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, conversationId)).run()
   }
 
-  /** Une tâche avec vérification, écrite dans l'interface (validée) ou par un agent. */
+  /** Task with a check written through the interface (approved) or by an agent. */
   const checkedTask = (checkScript: string, options: { byAgent?: boolean; prompt?: string; timeoutSeconds?: number } = {}) =>
     createScheduledTask(
       db,
@@ -120,7 +120,7 @@ async function harness(t: TestContext) {
       },
     )
 
-  /** La vérification ne bloque pas le balayage : on attend que son tir ait tranché. */
+  /** Checks do not block sweeps: wait for their run verdicts. */
   const settled = async (taskId: string) => {
     for (let i = 0; i < 300; i++) {
       const open = db.select().from(scheduledRuns).where(eq(scheduledRuns.taskId, taskId)).all()
@@ -143,7 +143,7 @@ test('nextScheduleRun counts an interval from the last run and never catches up'
   const every10: ScheduleCadence = { kind: 'interval', minutes: 10 }
   assert.equal(nextScheduleRun(every10, 1000), 1000 + 10 * MINUTE)
   assert.equal(nextScheduleRun(every10, 5 * MINUTE, MINUTE), 11 * MINUTE)
-  // Le daemon est resté arrêté trois intervalles : un seul tir à venir, pas trois.
+  // Daemon missed three intervals: one upcoming run rather than three.
   assert.equal(nextScheduleRun(every10, 40 * MINUTE, MINUTE), 50 * MINUTE)
 
   assert.equal(nextScheduleRun({ kind: 'once', at: 500 }, 100), 500)
@@ -193,7 +193,7 @@ test('a due task opens a tagged session, then settles with the last reply as sum
   assert.ok(reload(created.id).nextRunAt! > due)
   assert.ok(reload(created.id).lastRunAt)
 
-  // Le fil tourne : rien ne bouge.
+  // While the thread runs nothing changes.
   await scheduler.tick(due + MINUTE)
   assert.equal(runs()[0]?.status, 'running')
 
@@ -266,7 +266,7 @@ test('a one-off task fires once and pauses itself; a failed launch is recorded, 
   const failed = runs().find((run) => run.taskId === broken.id)!
   assert.equal(failed.status, 'failed')
   assert.match(failed.error!, /CLI introuvable/)
-  // Le fil créé pour rien a été retiré, et la tâche attend son prochain créneau.
+  // The unneeded conversation was removed; the task awaits its next slot.
   assert.equal(db.select().from(conversations).where(eq(conversations.scheduleId, broken.id)).all().length, 0)
   assert.ok(reload(broken.id).nextRunAt! > broken.nextRunAt!)
 })
@@ -326,7 +326,7 @@ test('schedule_task creates a task from a session, within the agent guard rails'
   const created = await mcp('parent', { name: 'Veille des CLI', prompt: 'Sonde les binaires.', cron: '0 9 * * 1' })
   assert.equal(created.isError, undefined, created.content[0]?.text)
   assert.match(created.content[0]!.text, /Tâche planifiée « Veille des CLI » créée/)
-  // Les défauts sont en permissions manuelles : la réponse doit le signaler.
+  // Defaults use manual permissions: responses must disclose this.
   assert.match(created.content[0]!.text, /personne ne donnera/)
   const row = db.select().from(scheduledTasks).get()!
   assert.equal(row.createdByConversationId, 'parent')
@@ -374,7 +374,7 @@ test('runCheck turns the exit code into a verdict and keeps the output', async (
   const skip = await runCheck(`echo "rien de neuf"; exit ${CHECK_SKIP_EXIT_CODE}`, context)
   assert.equal(skip.verdict, 'skip')
 
-  // Un plantage n'est jamais pris pour « rien à faire ».
+  // Crashes must never count as 'nothing to do'.
   const crash = await runCheck('exit 1', context)
   assert.equal(crash.verdict, 'error')
   assert.equal(crash.exitCode, 1)
@@ -398,7 +398,7 @@ test('runCheck keeps its state between runs, but an essay works on a copy', asyn
   const script = `last=$(cat "$SILLAGE_STATE_DIR/seen" 2>/dev/null); [ "$last" = "1.2" ] && exit ${CHECK_SKIP_EXIT_CODE}; echo 1.2 > "$SILLAGE_STATE_DIR/seen"; echo "1.2 publiée"`
 
   assert.equal((await runCheck(script, { ...context, trigger: 'test' })).verdict, 'launch')
-  // L'essai n'a rien laissé : le vrai tir voit encore la nouveauté.
+  // Trials leave no state: real runs still see new work.
   assert.equal((await runCheck(script, context)).verdict, 'launch')
   assert.equal((await runCheck(script, context)).verdict, 'skip')
 })
@@ -413,7 +413,7 @@ test('a checked task only wakes the LLM when its script says so', async (t) => {
   assert.equal(skipped?.error, 'Toujours 0.160.1')
   assert.equal(skipped?.conversationId, null)
   assert.equal(sent.length, 0)
-  // La cadence a avancé : le tir écarté compte comme un tir.
+  // Cadence advanced: skipped runs still count as runs.
   assert.ok(reload(quiet.id).nextRunAt! > quiet.nextRunAt!)
 
   const busy = checkedTask('echo "Codex 0.161.0 publiée"', { prompt: 'Analyse : {{check_output}}' })
@@ -423,7 +423,7 @@ test('a checked task only wakes the LLM when its script says so', async (t) => {
   assert.equal(launched?.checkExitCode, 0)
   assert.ok(launched?.conversationId)
   assert.equal(db.select().from(conversations).where(eq(conversations.id, launched!.conversationId!)).get()?.scheduleId, busy.id)
-  // Citée par la consigne, la sortie n'est pas répétée dans l'en-tête.
+  // Output referenced by instructions is not repeated in headers.
   assert.match(sent[0]!.text, /Analyse : Codex 0\.161\.0 publiée$/)
   assert.doesNotMatch(sent[0]!.text, /Sa sortie :/)
 
@@ -450,7 +450,7 @@ test('a check written by an agent does not run before someone approves it', asyn
   assert.equal(sent.length, 0)
   await assert.rejects(stat(marker))
 
-  // Valider un texte qui a changé depuis l'affichage est refusé.
+  // Reject approving text changed since display.
   assert.throws(() => approveScheduleCheck(db, reload(proposed.id), 'echo autre chose'), /changed/)
   approveScheduleCheck(db, reload(proposed.id), `touch ${marker}`)
   await scheduler.runNow(proposed.id)
@@ -458,7 +458,7 @@ test('a check written by an agent does not run before someone approves it', asyn
   await stat(marker)
   assert.equal(sent.length, 1)
 
-  // L'interface qui réécrit le script le valide ; un agent qui le réécrit le remet en proposition.
+  // Interface script rewrites approve them; agent rewrites make them proposed again.
   const edited = updateScheduledTask(db, reload(proposed.id), { checkScript: 'exit 0' }, 'agent-conversation')
   assert.equal(edited.checkApprovedAt, null)
   assert.ok(updateScheduledTask(db, edited, { checkScript: 'exit 10' }).checkApprovedAt)

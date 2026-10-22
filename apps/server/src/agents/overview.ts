@@ -2,42 +2,18 @@ import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { automationWebhooks, cards, conversations, projectImages, scheduledTasks, worktrees, type Db } from '@sillage/db'
 import { sessionMarker, sessionTrailer } from '@sillage/protocol'
 
-/**
- * Ce qui se passe sur le projet, injecté au démarrage d'une session.
- *
- * Un CLI arrive sans rien savoir de ce que les autres ont fait, et rien ne le pousse à
- * aller le demander : les outils du serveur MCP répondent quand on les interroge, encore
- * faut-il y penser. Cet aperçu est le seul élément qui arrive sans initiative de l'agent,
- * et c'est ce qui le justifie malgré son coût en jetons.
- *
- * Calculé et non stocké. Une note écrite quelque part et jamais relue vieillit et finit
- * par tromper avec l'autorité d'une note ; recalculer à chaque démarrage coûte une
- * requête et ne peut pas mentir. Les consignes durables ont leur place à part, dans
- * SILLAGE.md (`instructions/store.ts`), que l'utilisateur relit et taille lui-même.
- *
- * Le projet entier et non le seul worktree, contrairement à `find_file_edits` : ici on
- * cherche à savoir quels chantiers sont ouverts, et un chantier sur une autre branche
- * en est un. Le worktree est dit ligne par ligne, pour que l'agent fasse la part des
- * choses lui-même.
- */
+/** Project activity injected at session startup. CLIs lack others' history and may not think to query MCP; this unsolicited overview justifies its token cost. Compute rather than store notes that grow stale with undeserved authority: one fresh query per start. Durable user-managed instructions belong separately in SILLAGE.md (`instructions/store.ts`). Cover the whole project rather than `find_file_edits`' worktree scope because other branches are active work too; identify worktrees per row for agents to distinguish. */
 
-/** Au-delà, l'aperçu pèse plus qu'il n'oriente. */
+/** Beyond this size, overviews cost more context than guidance. */
 const MAX_SESSIONS = 6
 
-/**
- * Fenêtre des sessions dites « récentes ».
- *
- * Trois jours plutôt qu'une journée : un chantier ouvert vendredi est toujours le
- * chantier en cours le lundi, et l'ignorer ferait repartir de zéro sur un sujet déjà
- * traité. Les sessions qui travaillent en ce moment sortent de toute façon, quelle que
- * soit leur ancienneté.
- */
+/** Recent-session window: three days rather than one so Friday work remains relevant Monday. Currently working sessions always appear regardless of age. */
 const RECENT_MS = 3 * 24 * 60 * 60 * 1000
 
 interface OverviewInput {
   projectId: string
   conversationId: string
-  /** L'agent a-t-il les outils du serveur MCP de Sillage sous la main. */
+  /** Whether Sillage MCP tools are available to agents. */
   sillageMcp: boolean
 }
 
@@ -54,7 +30,7 @@ interface Row {
   worktree: string | null
 }
 
-/** Ancienneté en clair, l'horodatage absolu obligeant le modèle à faire la soustraction. */
+/** Readable ages avoid model subtraction of absolute timestamps. */
 function ago(ts: number, now: number): string {
   const minutes = Math.max(0, Math.round((now - ts) / 60_000))
   if (minutes < 1) return "à l'instant"
@@ -63,7 +39,7 @@ function ago(ts: number, now: number): string {
   return hours < 24 ? `il y a ${hours} h` : `il y a ${Math.round(hours / 24)} j`
 }
 
-/** Taille du chantier, arrondie : ce qui compte est l'ordre de grandeur. */
+/** Rounded work size: scale matters rather than exact counts. */
 function size(tokens: number): string {
   if (tokens < 1000) return 'quelques échanges'
   return `~${Math.round(tokens / 1000)} k jetons`
@@ -85,13 +61,7 @@ function describe(row: Row, now: number): string {
   return `- ${row.title}\n  ${row.agent}, ${state}, ${where}, ${size(row.tokens)}, ouverte ${ago(row.createdAt, now)}, dernier échange ${ago(row.updatedAt, now)}`
 }
 
-/**
- * La carte que cette conversation traite, et ce qui l'a précédée dessus.
- *
- * C'est la partie de l'aperçu qui parle du travail demandé plutôt que de son voisinage,
- * et la seule qui manquait vraiment : un agent qui reprend un chantier à la quatrième
- * session repartait de zéro sans savoir qu'il y en avait eu trois.
- */
+/** Current card and preceding sessions working on it. Unlike neighboring activity, this explains the requested work; agents resuming a fourth session otherwise would miss three previous sessions. */
 function cardBriefing(db: Db, input: OverviewInput): string | null {
   const card = db
     .select({ number: cards.number, title: cards.title, column: cards.column, id: cards.id })
@@ -127,7 +97,7 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
   return lines.join(' ')
 }
 
-/** Les colonnes en toutes lettres : les valeurs stockées sont des identifiants. */
+/** Readable column names: stored values are identifiers. */
 const COLUMN_WORDS: Record<string, string> = {
   todo: 'à faire',
   in_progress: 'en cours',
@@ -136,16 +106,7 @@ const COLUMN_WORDS: Record<string, string> = {
   abandoned: 'marquée abandonnée',
 }
 
-/**
- * Le rappel de l'image du projet, tant qu'elle manque ou n'est que provisoire.
- *
- * L'image est ce qui fait reconnaître un projet dans la navigation, et personne ne pense
- * à en mettre une : l'agent, lui, a le dépôt sous les yeux et sait y trouver un logo.
- * Deux temps, parce qu'un projet qui démarre n'a souvent pas encore de logo : l'agent en
- * pose alors une d'attente, déclarée provisoire, et c'est ce drapeau qui garde le rappel
- * en vie jusqu'à ce qu'un vrai logo la remplace. Une image définitive ne fait plus rien
- * dire, pas plus qu'un agent sans l'outil pour agir.
- */
+/** Project image reminder while missing or provisional. Navigation images aid recognition but humans forget them; agents can find repository logos. New projects may lack logos, so provisional placeholders keep reminders active until replaced. Permanent images and agents without relevant tools suppress reminders. */
 function imageReminder(db: Db, input: OverviewInput): string | null {
   if (!input.sillageMcp) return null
 
@@ -166,12 +127,7 @@ function imageReminder(db: Db, input: OverviewInput): string | null {
   return null
 }
 
-/**
- * La marque à laisser sur une forge, quand le projet a des automatisations déclenchées
- * par webhook : c'est elle qui fait reconnaître qu'une issue ou une PR vient d'une
- * session, et qui borne les chaînes. Rien à dire sans webhook : la consigne coûterait
- * du contexte à chaque session pour un risque qui n'existe pas.
- */
+/** Forge markers for webhook-enabled projects identify session-originated issues/PRs and bound launch chains. Omit instructions without webhooks to avoid needless context cost. */
 function forgeMarkerReminder(db: Db, input: OverviewInput): string | null {
   const hooks = db
     .select({ name: scheduledTasks.name, enabled: scheduledTasks.enabled })
@@ -184,14 +140,10 @@ function forgeMarkerReminder(db: Db, input: OverviewInput): string | null {
   return `Ce projet a des automatisations déclenchées par webhook (${names}). Ce que tu publies sur une forge pour lui (issue, pull request, commentaire, revue) se termine par ${sessionMarker(input.conversationId)}, et tes messages de commit par le trailer \`${sessionTrailer(input.conversationId)}\` : c'est ce qui permet à Sillage de reconnaître ton travail et d'empêcher des agents de se relancer en chaîne. Ne pose jamais un label et n'écris jamais une commande qui déclenche l'une d'elles, sauf si l'utilisateur te le demande.`
 }
 
-/**
- * Null quand il n'y a rien à dire, et c'est important : un aperçu vide répété à chaque
- * démarrage apprend au modèle à ne plus le lire, et le jour où il porte quelque chose
- * il passe inaperçu.
- */
+/** Null when empty: repeated empty overviews teach models to ignore them, making future relevant content unnoticed. */
 export function projectOverview(db: Db, input: OverviewInput): string | null {
   const now = Date.now()
-  // La carte d'abord, puis l'image : ce qui est demandé passe avant ce qui est suggéré.
+  // Cards before images: requested work precedes suggestions.
   const briefing = [cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
     .filter((part) => part !== null)
     .join('\n\n') || null
@@ -228,8 +180,8 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
     .limit(MAX_SESSIONS)
     .all() as Row[]
 
-  // La carte parle même quand le projet est calme : elle dit ce qui est demandé, ce que
-  // le voisinage ne dit pas.
+  // Cards matter even on quiet projects because they state requested work,
+  // unlike neighboring activity.
   if (rows.length === 0) return briefing
 
   const working = rows.filter(

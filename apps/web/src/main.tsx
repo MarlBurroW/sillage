@@ -21,10 +21,9 @@ watchThemeColor()
 const container = document.getElementById('root')
 if (!container) throw new Error('Élément #root absent du document.')
 
-// Le catalogue de la langue retenue arrive avant le premier rendu : rendre d'abord
-// ferait clignoter l'interface en anglais le temps de le télécharger. `initLocale` ne
-// rejette jamais (repli sur l'anglais), et un `then` plutôt qu'un `await` de premier
-// niveau évite d'exiger cette syntaxe des navigateurs ciblés.
+// Load the selected language catalog before first render to avoid flashing English during download.
+// `initLocale` never rejects (English fallback); using `then` rather than top-level await avoids
+// requiring that syntax from target browsers.
 void initLocale().then(() => {
   createRoot(container).render(
     <StrictMode>

@@ -2,19 +2,13 @@ import { Cron } from 'croner'
 import cronstrue from 'cronstrue/i18n'
 
 /**
- * Lecture humaine d'un motif cron, et prochains passages.
- *
- * Un champ où l'on écrit `45 4 * * *` sans rien d'autre à l'écran est un piège : la
- * faute de frappe ne se voit qu'à l'exécution, le lendemain, et par son absence. La
- * phrase et les trois prochaines dates sont ce qui rend le motif vérifiable au moment
- * où on l'écrit.
- *
- * Calculé dans le navigateur : c'est ce qui met l'aperçu à jour à la frappe, sans
- * aller-retour. Contrepartie assumée, les dates sont celles du poste et non du serveur,
- * ce que l'écran dit.
+ * Readable cron description and next occurrences. A bare `45 4 * * *` input hides typos until the
+ * next day's missing run. A sentence and the next three dates make the pattern verifiable while
+ * typing. Compute in the browser for immediate preview without round trips; dates therefore use
+ * device time rather than server time, explicitly stated in the UI.
  */
 
-/** Null quand le motif est invalide, ce qui en fait aussi le test de validité. */
+/** Null for invalid patterns, also serving as validity checking. */
 export function cronToHuman(expression: string, locale: string): string | null {
   if (!expression.trim()) return null
 

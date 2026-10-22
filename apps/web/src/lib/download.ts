@@ -1,8 +1,6 @@
 /**
- * Téléchargement d'un contenu produit côté client.
- *
- * Passe par un objet URL plutôt que par une `data:` URI : celle-ci est plafonnée par
- * le navigateur, ce qu'un long bloc de code atteint sans mal.
+ * Download client-generated content through object URLs rather than data URIs, whose browser size
+ * limits are easily reached by long code blocks.
  */
 export function downloadText(filename: string, content: string, mimeType: string): void {
   const url = URL.createObjectURL(new Blob([content], { type: `${mimeType};charset=utf-8` }))
@@ -14,11 +12,8 @@ export function downloadText(filename: string, content: string, mimeType: string
 }
 
 /**
- * Encode une ligne au format CSV (RFC 4180).
- *
- * Le guillemet, la virgule et le retour à la ligne imposent d'entourer le champ, et
- * le guillemet se double à l'intérieur. Sans ça, une cellule contenant une virgule
- * décale toutes les colonnes suivantes.
+ * Encode a CSV row (RFC 4180). Quotes, commas, and newlines require enclosing the field, with
+ * doubled internal quotes. Otherwise a comma-containing cell shifts every subsequent column.
  */
 export function toCsv(rows: string[][]): string {
   return rows

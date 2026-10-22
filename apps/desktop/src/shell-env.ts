@@ -3,13 +3,12 @@ import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 
-/** Au-delà, le shell est jugé bloqué (une invite dans un `.zshrc`, un réseau lent). */
+/** After this, consider the shell stuck (a `.zshrc` prompt or slow network). */
 const SHELL_TIMEOUT_MS = 10_000
 
 /**
- * Les dossiers où les installeurs courants posent leurs binaires, repris du service
- * launchd de l'installeur (`deploy/sillage.plist.tmpl`). Servent quand le shell de
- * connexion ne répond pas.
+ * Common installer binary directories, taken from the installer's launchd service
+ * (`deploy/sillage.plist.tmpl`). Used when the login shell does not respond.
  */
 const COMMON_BIN_DIRS = [
   join(homedir(), '.local/bin'),
@@ -20,17 +19,16 @@ const COMMON_BIN_DIRS = [
 ]
 
 /**
- * L'environnement du shell de connexion de l'utilisateur, celui de ses terminaux.
+ * The user's login-shell environment, matching their terminals.
  *
- * Lancée depuis le Finder ou un menu d'applications, l'app hérite de l'environnement
- * minimal du gestionnaire de session ; sur macOS, `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
- * Ni les CLI des agents, ni Homebrew, ni nvm n'y figurent, et le serveur ne trouverait
- * rien à lancer. On demande donc au shell de l'utilisateur, en connexion et en interactif
- * comme un terminal, d'afficher le sien. C'est le Node embarqué qui l'écrit, en JSON :
- * la sortie ne dépend ni du shell (zsh, bash, fish) ni des valeurs sur plusieurs lignes.
+ * Launched from Finder or an application menu, the app inherits a minimal session
+ * manager environment; on macOS, `PATH=/usr/bin:/bin:/usr/sbin:/sbin`. Agent CLIs,
+ * Homebrew, and nvm are absent, leaving the server nothing to launch. Ask the user's
+ * shell, in login and interactive mode like a terminal, to print its environment.
+ * Bundled Node writes JSON, independent of shell (zsh, bash, fish) or multiline values.
  *
- * `lang` sert quand aucune locale n'est posée, ce qui est la règle pour une app lancée
- * depuis le Finder : sans elle, zsh affiche les accents en séquences d'octets.
+ * `lang` supplies a missing locale, normal for Finder-launched apps: otherwise zsh
+ * displays accented characters as byte sequences.
  */
 export async function loginShellEnv(node: string, lang: string): Promise<NodeJS.ProcessEnv> {
   const base = withoutLauncherVars(process.env)
@@ -50,8 +48,8 @@ async function askLoginShell(node: string, base: NodeJS.ProcessEnv): Promise<Nod
   const script =
     '"$SILLAGE_ENV_NODE" -e "process.stdout.write(process.env.SILLAGE_ENV_MARK + JSON.stringify(process.env) + process.env.SILLAGE_ENV_MARK)"'
   const output = await run(shell, ['-ilc', script], { ...base, SILLAGE_ENV_NODE: node, SILLAGE_ENV_MARK: mark })
-  // Ce que les fichiers du shell écrivent avant ou après (un message d'accueil) reste
-  // hors des marques.
+  // Shell startup output before or after the environment (a welcome message) stays
+  // outside the markers.
   const json = output.split(mark)[1]
   if (!json) throw new Error("le shell de connexion n'a pas rendu son environnement")
   const env = JSON.parse(json) as NodeJS.ProcessEnv
@@ -61,9 +59,9 @@ async function askLoginShell(node: string, base: NodeJS.ProcessEnv): Promise<Nod
 }
 
 /**
- * La clé du PATH dans `env`. Sous Windows elle s'écrit `Path`, et une copie de
- * `process.env` en objet ordinaire n'est plus insensible à la casse : écrire `PATH` à côté
- * créerait une seconde variable, et le processus enfant ne lirait que l'une des deux.
+ * The PATH key in `env`. On Windows it is `Path`, and a plain-object copy of
+ * `process.env` loses case insensitivity: writing `PATH` alongside it would create
+ * a second variable, only one of which the child process would read.
  */
 export function pathKey(env: NodeJS.ProcessEnv): string {
   return Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH'
@@ -71,8 +69,8 @@ export function pathKey(env: NodeJS.ProcessEnv): string {
 
 function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
-    // stdin fermé : un shell interactif qui poserait une question n'attend pas une
-    // réponse qui ne viendra jamais.
+    // Close stdin so an interactive shell asking a question cannot wait for an
+    // answer that will never arrive.
     const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'ignore'] })
     let output = ''
     child.stdout.setEncoding('utf8')
@@ -93,11 +91,10 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<s
 }
 
 /**
- * Retire ce que l'emballage de l'app ajoute à l'environnement et qui n'a rien à faire
- * chez les agents ni dans les terminaux. Une AppImage pose `APPDIR` et préfixe des
- * chemins vers son point de montage, qui change à chaque lancement : un `git` lancé par
- * un agent chargerait sinon les bibliothèques embarquées dans l'app. Le profil jetable du
- * contrôle de lancement ne regarde que l'app, pas ses enfants.
+ * Remove packaging environment additions that do not belong in agents or terminals.
+ * AppImage sets `APPDIR` and prefixes paths to its mount point, which changes on
+ * every launch: otherwise an agent's `git` would load app-bundled libraries.
+ * The launch check's disposable profile applies only to the app, not its children.
  */
 function withoutLauncherVars(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...source }

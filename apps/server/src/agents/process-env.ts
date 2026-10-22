@@ -1,7 +1,7 @@
-/** Le mode du serveur ne doit pas imposer celui des projets travaillés par les agents. */
+/** Server mode must not determine agent project modes. */
 export function agentProcessEnv(overrides?: Record<string, string>): NodeJS.ProcessEnv {
   const env = { ...process.env }
-  // En production, npm omet les devDependencies, pourtant nécessaires aux agents.
+  // Production npm omits devDependencies needed by agents.
   delete env.NODE_ENV
   return { ...env, ...overrides }
 }

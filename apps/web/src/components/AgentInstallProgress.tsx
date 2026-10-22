@@ -8,7 +8,7 @@ export interface InstallProgress {
   current: string | null
 }
 
-/** Le temps écoulé depuis `startedAt`, rafraîchi chaque seconde. */
+/** Elapsed time since startedAt refreshed every second. */
 function useElapsed(startedAt: number): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -19,14 +19,9 @@ function useElapsed(startedAt: number): number {
 }
 
 /**
- * L'avancement d'une installation de CLI, partout où on peut en lancer une : la visite
- * de première ouverture et la page de nouvelle session.
- *
- * npm ne sait pas dire quelle part du paquet est arrivée, seulement qu'il télécharge
- * tel fichier et combien il en a déjà reçus. La barre est donc animée sans être
- * proportionnelle : son rôle est de montrer que ça avance, et les lignes dessous disent
- * quoi. Le temps écoulé répond à la question qu'on se pose devant un bouton muet :
- * « est-ce que c'est planté ? ».
+ * CLI installation progress shared by onboarding and new-session pages. npm reports files and
+ * counts but no total fraction, so animate without percentage; text explains actual progress.
+ * Elapsed time answers whether an apparently silent installation is stuck.
  */
 export function AgentInstallProgress({
   label,

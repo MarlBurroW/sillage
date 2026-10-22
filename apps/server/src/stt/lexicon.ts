@@ -1,20 +1,13 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
-/**
- * Lexique de dictée d'un projet, sous ses deux formes.
- *
- * `spoken` part dans le paramètre `prompt` de Whisper, qui n'accepte qu'environ 224
- * tokens et cale son vocabulaire sur du texte qui sonne comme une transcription : une
- * phrase naturelle, pas une liste. `written` alimente la passe de nettoyage, qui n'a
- * pas cette limite et a besoin des graphies exactes (`vite.config.ts`, `@scope/pkg`).
- */
+/** Project dictation lexicon in two forms. `spoken` goes to Whisper's roughly 224-token `prompt`, using natural transcript-like sentences rather than lists. `written` feeds cleanup without that limit and provides exact spellings (`vite.config.ts`, `@scope/pkg`). */
 export interface Lexicon {
   spoken: string
   written: string[]
 }
 
-/** Ce qui décrit un projet sans avoir à fouiller son code. */
+/** Project description sources without digging through code. */
 const SOURCES = [
   'CLAUDE.md',
   'AGENTS.md',
@@ -33,21 +26,12 @@ interface CachedLexicon {
   lexicon: Lexicon | null
 }
 
-/**
- * En mémoire seulement : la génération est rapide et peu coûteuse, un redémarrage du
- * serveur la refait au premier usage. Un échec est retenu aussi, sinon chaque dictée
- * repartirait taper un fournisseur qui vient de refuser.
- */
+/** Memory-only cache: generation is fast and inexpensive, so regenerate on first use after restart. Cache failures too, preventing every dictation from retrying a provider that just rejected us. */
 const cache = new Map<string, CachedLexicon>()
 
 export type ChatCall = (system: string, user: string) => Promise<string>
 
-/**
- * Lexique du projet, régénéré quand ses sources changent.
- *
- * `null` quand le workspace ne décrit rien ou que la génération a échoué : la dictée
- * fonctionne alors sans biais, ce qui reste mieux que de la bloquer.
- */
+/** Project lexicon regenerated when sources change. `null` for undescribed workspaces or generation failure: unbiased dictation is still preferable to blocking. */
 export async function projectLexicon(
   projectId: string,
   workspacePath: string,
@@ -124,10 +108,7 @@ async function generate(
   return parseLexicon(raw)
 }
 
-/**
- * Lecture indulgente : tous les fournisseurs ne savent pas forcer du JSON, et un
- * modèle bavard enrobe parfois sa réponse. On extrait le premier objet plausible.
- */
+/** Tolerant parsing: not all providers enforce JSON and verbose models may wrap responses. Extract the first plausible object. */
 function parseLexicon(raw: string): Lexicon | null {
   const start = raw.indexOf('{')
   const end = raw.lastIndexOf('}')

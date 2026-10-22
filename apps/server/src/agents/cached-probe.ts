@@ -1,9 +1,8 @@
 /**
- * Cache d'une sonde coûteuse, avec une seule lecture en vol.
+ * Expensive-probe cache with one read in flight.
  *
- * Toutes les sondes d'agent démarrent un process CLI : dix requêtes simultanées ne
- * doivent pas lancer dix CLI, et une valeur fraîche n'a pas à être relue. Ce
- * squelette était recopié dans chaque catalogue et lecteur de quota.
+ * Every agent probe starts CLI: ten simultaneous requests must not launch ten CLIs, fresh values
+ * need no reread. Skeleton previously duplicated across catalogs/quota readers.
  */
 export class CachedProbe<T extends object> {
   private cache: (T & { fetchedAt: number }) | null = null
@@ -27,12 +26,12 @@ export class CachedProbe<T extends object> {
     return this.cache
   }
 
-  /** Oublie la valeur : la prochaine lecture sondera, TTL ou pas. */
+  /** Forget value: next read probes regardless of TTL. */
   invalidate(): void {
     this.cache = null
   }
 
-  /** Périmée et sans lecture en vol : plus rien à garder. */
+  /** Expired without in-flight read: nothing to keep. */
   expired(ttlMs: number): boolean {
     if (this.inflight !== null) return false
     return this.cache === null || Date.now() - this.cache.fetchedAt >= ttlMs
@@ -40,12 +39,10 @@ export class CachedProbe<T extends object> {
 }
 
 /**
- * Même chose, une sonde par clé : pour ce qui dépend d'un dossier plutôt que du daemon.
+ * Same per key for directory-dependent probes.
  *
- * Les entrées périmées sont retirées au passage plutôt que gardées à vie : les
- * worktrees naissent et disparaissent, et rien d'autre ne viendrait purger la carte.
- * La clé passe par `normalize` pour que deux écritures du même dossier (barre finale,
- * segment `..`) partagent une sonde au lieu d'en lancer deux.
+ * Remove expired entries while traversing: worktrees appear/disappear and nothing else purges map.
+ * normalize makes alternate directory spellings (trailing slash, ..) share one probe.
  */
 export class CachedProbeMap<T extends object> {
   private readonly probes = new Map<string, CachedProbe<T>>()

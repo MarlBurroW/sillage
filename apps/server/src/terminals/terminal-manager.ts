@@ -8,29 +8,12 @@ import type { Config } from '../config.js'
 import { commandShell, interactiveShell } from '../platform/shells.js'
 import { processOrigins } from '../services/origins.js'
 
-/**
- * Terminaux attachés aux projets.
- *
- * Un pty est un process qui vit dans un répertoire : rien ne le rattache à une
- * conversation, et l'y indexer rendait introuvable un serveur lancé dans le shell
- * d'une session archivée. La session ne fait que fournir un répertoire par défaut
- * (son worktree) au moment de l'ouverture.
- *
- * Volontairement hors du journal : la sortie d'un shell n'est pas du contenu de
- * conversation, elle est massive, et la persister en base ferait grossir celle-ci
- * sans qu'aucun rendu ne s'appuie dessus. Ce que le terminal garde, c'est un tampon,
- * juste assez pour restituer l'écran quand on revient sur la vue.
- *
- * Les process ne survivent pas au redémarrage du daemon, et c'est assumé : les faire
- * survivre demanderait un porteur externe (la pente tmux). En revanche les
- * métadonnées et le dernier écran sont écrits sur disque : au redémarrage, l'entrée
- * réapparaît marquée « interrompue », écran lisible, prête à être relancée.
- */
+/** Project-attached terminals. A pty lives in a directory rather than a conversation; conversation indexing hid servers launched from archived sessions. Sessions only supply default directories (worktrees) at opening. Deliberately outside journals: shell output is large, not conversation content, and database persistence would add unused weight. Retain just enough buffer to restore screens on return. Processes intentionally do not survive daemon restarts, which would require external hosts such as tmux. Persist metadata and final screens so entries return as interrupted, readable and restartable. */
 
-/** Tampon de restitution. Au-delà, on ne reconstitue plus un écran mais un historique. */
+/** Screen restoration buffer; larger buffers would reconstruct history rather than screens. */
 const REPLAY_BYTES = 128 * 1024
 
-/** L'écran se réécrit sur disque à ce pas, tant qu'il a changé depuis la dernière fois. */
+/** Persist changed screens at this interval. */
 const FLUSH_INTERVAL_MS = 30 * 1000
 
 const DEFAULT_COLS = 80
@@ -45,23 +28,23 @@ interface ManagedTerminal {
   id: string
   projectId: string
   title: string
-  /** Null pour une entrée restaurée après un redémarrage : le process est perdu. */
+  /** Null for entries restored after restarts because their processes are gone. */
   pty: IPty | null
   cwd: string
-  /** Sortie récente, pour repeindre l'écran à la reconnexion. */
+  /** Recent output for repainting screens after reconnecting. */
   replay: string
-  /** L'écran sur disque est en retard sur celui en mémoire. */
+  /** Disk screen lags behind memory. */
   replayDirty: boolean
   subscribers: Set<TerminalSubscriber>
   idleTimer: NodeJS.Timeout | null
   cols: number
   rows: number
   createdAt: number
-  /** Le process s'est terminé : l'onglet reste, avec son écran final. */
+  /** Process exited; retain its tab and final screen. */
   exited: boolean
-  /** Le process a été emporté par un redémarrage du daemon, pas par un `exit`. */
+  /** Process ended through daemon restart rather than `exit`. */
   interrupted: boolean
-  /** Action de projet dont ce terminal joue la commande ; null pour un shell. */
+  /** Project action run by this terminal; null for shells. */
   actionId: string | null
   exitCode: number | null
 }
@@ -75,16 +58,16 @@ interface PersistedTerminal {
   actionId?: string | null
 }
 
-/** Une commande à jouer à la place du shell interactif. */
+/** Command to run instead of an interactive shell. */
 export interface TerminalCommand {
   command: string
   title: string
   actionId: string | null
-  /** Variables propres à cette exécution, par-dessus celles du daemon et l'origine. */
+  /** Execution-specific variables overriding daemon environment and origin. */
   env?: Record<string, string>
 }
 
-/** Le shell s'est terminé, ou n'a jamais démarré : deux refus distincts à afficher. */
+/** Shell exited or never started: distinct rejections for display. */
 export class TerminalError extends Error {
   constructor(
     readonly code: 'too_many_terminals' | 'terminal_not_found',
@@ -118,23 +101,17 @@ export class TerminalManager {
       () => this.reapIfIdle(terminalId),
       this.config.limits.ptyIdleTimeoutMin * 60 * 1000,
     )
-    // Un terminal en veille ne doit pas maintenir le process en vie à lui seul.
+    // Idle terminals alone must not keep processes alive.
     managed.idleTimer.unref()
   }
 
-  /**
-   * L'échéance d'inactivité ne fauche que les shells au prompt.
-   *
-   * Un shell qui fait tourner quelque chose (un serveur de dev, un build long) n'est
-   * pas inactif : personne ne lui parle, mais son travail est la raison pour laquelle
-   * on l'a ouvert. Tant qu'il a un process enfant, on remet l'échéance.
-   */
+  /** Inactivity deadlines reap only shells at prompts. Shells running dev servers or long builds are working even without user input; that work is why they were opened. Extend deadlines while child processes exist. */
   private reapIfIdle(terminalId: string): void {
     const managed = this.terminals.get(terminalId)
     if (!managed || managed.exited || !managed.pty) return
 
-    // Le process d'une action est la commande elle-même (`sh -c` l'exécute souvent à la
-    // place du shell) : pas d'enfant à voir, mais rien d'inactif non plus.
+    // Action processes are commands themselves (`sh -c` often replaces the shell),
+    // so no children does not imply inactivity.
     if (managed.actionId || hasChildProcess(managed.pty.pid)) {
       this.touch(terminalId)
       return
@@ -152,31 +129,25 @@ export class TerminalManager {
     return this.of(projectId).map(toDto)
   }
 
-  /** Le dernier terminal ouvert pour cette action, vivant ou non. */
+  /** Latest terminal opened for this action, alive or not. */
   latestForAction(projectId: string, actionId: string): TerminalDto | null {
     const found = this.of(projectId).filter((managed) => managed.actionId === actionId).at(-1)
     return found ? toDto(found) : null
   }
 
-  /** Shells vivants du projet, pour l'indicateur d'activité de la liste de projets. */
+  /** Live project shells for project-list activity indicators. */
   aliveCount(projectId: string): number {
     return [...this.terminals.values()].filter(
       (managed) => managed.projectId === projectId && !managed.exited,
     ).length
   }
 
-  /**
-   * Ouvre un shell, ou joue une commande quand `run` est donné.
-   *
-   * Une commande passe par `shell -lc` plutôt que par une frappe dans un shell
-   * interactif : le terminal se termine avec elle, ce qui donne son code de sortie, et
-   * le shell de connexion charge le même PATH que celui qu'on ouvrirait à la main.
-   */
+  /** Opens shells or executes commands when `run` is supplied. Commands use `shell -lc` rather than typing into interactive shells: terminals exit with commands and expose exit codes; login shells load the same PATH as manual shells. */
   open(projectId: string, cwd: string, run?: TerminalCommand): TerminalDto {
     const existing = this.of(projectId)
     if (run?.actionId) {
-      // Une exécution terminée de la même action cède sa place : relancer un bouton ne
-      // doit pas épuiser le plafond de terminaux avec des écrans périmés.
+      // Completed runs of the same action yield their slot: repeated launches must not
+      // exhaust terminal limits with stale screens.
       for (const previous of existing) {
         if (previous.actionId === run.actionId && previous.exited) this.close(previous.id)
       }
@@ -190,8 +161,8 @@ export class TerminalManager {
     }
 
     const id = randomUUID()
-    // Une commande se lance dans le shell qui comprend sa syntaxe POSIX, un terminal vide
-    // dans celui de l'utilisateur (voir `platform/shells.ts`).
+    // Commands use POSIX-compatible shells; empty terminals use the user's shell
+    // (see `platform/shells.ts`).
     const shell = run ? commandShell() : interactiveShell()
     const pty = spawn(shell.command, run ? [...shell.args, run.command] : shell.args, {
       name: 'xterm-256color',
@@ -209,13 +180,13 @@ export class TerminalManager {
     const managed: ManagedTerminal = {
       id,
       projectId,
-      // Numéroté d'après ce qui est ouvert, pas d'un compteur : fermer le premier puis
-      // en rouvrir un ne doit pas donner deux « shell 2 ».
+      // Number by open entries rather than counters: closing the first and reopening
+      // must not produce duplicate 'shell 2' labels.
       title: run?.title ?? nextTitle(remaining),
       pty,
       cwd,
-      // La commande en tête, en gris : l'écran dit ce qui a été lancé, même une fois
-      // la sortie défilée hors de vue.
+      // Show commands first in gray so screens retain launch information after
+      // output scrolls away.
       replay: run ? `\x1b[2m$ ${run.command.replace(/\n/g, '\r\n  ')}\x1b[0m\r\n` : '',
       replayDirty: false,
       subscribers: new Set(),
@@ -238,8 +209,8 @@ export class TerminalManager {
     })
 
     pty.onExit(({ exitCode }) => {
-      // L'entrée survit à son process, avec son dernier écran : un `exit` accidentel ou
-      // une commande qui plante ne doivent pas faire disparaître ce qu'on voulait lire.
+      // Entries outlive processes with their final screen: accidental `exit` or failed
+      // commands must not erase output users wanted to read.
       managed.exited = true
       if (managed.idleTimer) clearTimeout(managed.idleTimer)
       managed.idleTimer = null
@@ -264,10 +235,7 @@ export class TerminalManager {
     return toDto(managed)
   }
 
-  /**
-   * Attache un client. Renvoie la sortie déjà produite pour qu'il repeigne son écran,
-   * ainsi que la façon de se détacher.
-   */
+  /** Attaches clients, returning prior output for screen restoration and a detach function. */
   attach(
     projectId: string,
     terminalId: string,
@@ -282,8 +250,8 @@ export class TerminalManager {
       cols: managed.cols,
       rows: managed.rows,
       exited: managed.exited,
-      // Le terminal survit au départ de son dernier client : fermer un onglet ne doit
-      // pas tuer une commande en cours. C'est l'inactivité qui finit par le libérer.
+      // Terminals survive the last client leaving: closing tabs must not kill running
+      // commands. Inactivity eventually releases them.
       detach: () => managed.subscribers.delete(subscriber),
     }
   }
@@ -295,13 +263,7 @@ export class TerminalManager {
     this.touch(terminalId)
   }
 
-  /**
-   * Redimensionne le pty.
-   *
-   * Plusieurs clients peuvent regarder le même terminal avec des tailles différentes ;
-   * le pty n'en a qu'une. Le dernier qui parle l'emporte, comme le ferait un
-   * multiplexeur sans mode « taille minimale ».
-   */
+  /** Resizes ptys. Multiple clients may view one terminal at different sizes, but ptys have one size. Last writer wins like multiplexers without minimum-size modes. */
   resize(projectId: string, terminalId: string, cols: number, rows: number): void {
     const managed = this.terminals.get(terminalId)
     if (!managed || managed.projectId !== projectId || managed.exited || !managed.pty) return
@@ -313,12 +275,7 @@ export class TerminalManager {
     managed.pty.resize(cols, rows)
   }
 
-  /**
-   * Le terminal, s'il appartient bien à ce projet.
-   *
-   * La vérification est ici et non chez l'appelant : un identifiant seul suffirait
-   * sinon à lire le shell d'un projet qu'on n'a pas le droit de voir.
-   */
+  /** Terminal only if it belongs to this project. Check here rather than in callers: IDs alone must not expose inaccessible projects' shells. */
   private require(projectId: string, terminalId: string): ManagedTerminal {
     const managed = this.terminals.get(terminalId)
     if (!managed || managed.projectId !== projectId) {
@@ -342,19 +299,19 @@ export class TerminalManager {
     this.close(terminalId)
   }
 
-  /** À la suppression du projet : rien ne doit continuer à tourner en son nom. */
+  /** Project deletion: nothing may keep running on its behalf. */
   closeForProject(projectId: string): void {
     for (const managed of this.of(projectId)) this.close(managed.id)
   }
 
-  /** À la suppression d'un worktree : un shell dans un dossier disparu n'a plus d'objet. */
+  /** Worktree deletion: shells in vanished directories have no purpose. */
   closeForCwd(cwd: string): void {
     for (const managed of [...this.terminals.values()]) {
       if (managed.cwd === cwd) this.close(managed.id)
     }
   }
 
-  /** Les shells ouverts dans un dossier ou en dessous : à fermer avant qu'il parte. */
+  /** Shells in or below a directory, to close before removing it. */
   underCwd(cwd: string): string[] {
     const prefix = cwd.endsWith('/') ? cwd : `${cwd}/`
     return [...this.terminals.values()]
@@ -362,10 +319,7 @@ export class TerminalManager {
       .map((managed) => managed.id)
   }
 
-  /**
-   * Arrêt du daemon : on écrit les écrans puis on tue les process, mais on garde les
-   * fichiers. C'est eux qui feront réapparaître les entrées, marquées interrompues.
-   */
+  /** Daemon shutdown writes screens then kills processes while retaining files, which restore entries as interrupted after restart. */
   shutdown(): void {
     clearInterval(this.flushTimer)
     for (const managed of this.terminals.values()) {
@@ -384,8 +338,8 @@ export class TerminalManager {
       try {
         meta = JSON.parse(readFileSync(join(this.storeDir, entry), 'utf8')) as PersistedTerminal
       } catch {
-        // Un fichier tronqué par un arrêt brutal ne doit pas empêcher le démarrage,
-        // ni rester là à échouer à chaque redémarrage.
+        // Files truncated by abrupt shutdown must neither block startup
+        // nor remain to fail again on every restart.
         rmSync(join(this.storeDir, entry), { force: true })
         continue
       }
@@ -394,7 +348,7 @@ export class TerminalManager {
       try {
         replay = readFileSync(join(this.storeDir, `${meta.id}.replay`), 'utf8')
       } catch {
-        // Pas d'écran sauvé : l'entrée réapparaît quand même, vide.
+        // No saved screen: the entry still reappears, empty.
       }
 
       this.terminals.set(meta.id, {
@@ -430,8 +384,8 @@ export class TerminalManager {
     try {
       writeFileSync(join(this.storeDir, `${managed.id}.json`), JSON.stringify(meta))
     } catch {
-      // Disque plein ou dossier retiré : le terminal fonctionne, seule la
-      // restitution après redémarrage est perdue.
+      // Full disk or removed directory: the terminal still works; only
+      // restoration after restart is lost.
     }
   }
 
@@ -441,7 +395,7 @@ export class TerminalManager {
       writeFileSync(join(this.storeDir, `${managed.id}.replay`), managed.replay)
       managed.replayDirty = false
     } catch {
-      // Même contrat que persistMeta : on réessaiera au prochain passage.
+      // Same contract as persistMeta: retry on the next pass.
     }
   }
 
@@ -455,14 +409,7 @@ export class TerminalManager {
   }
 }
 
-/**
- * Le shell a-t-il un process enfant en cours ?
- *
- * Lecture de `/proc` sous Linux, `pgrep` sur macOS, qui n'a pas de `/proc` et sort en 1
- * quand rien ne correspond. Ailleurs, la question répond non et l'échéance d'inactivité
- * retrouve son comportement d'origine. Posée une fois par échéance, pas plus souvent :
- * l'appel synchrone ne coûte rien.
- */
+/** Whether shells have running children. Read `/proc` on Linux, use `pgrep` on macOS where `/proc` is absent and no matches exit 1. Elsewhere return false, retaining original inactivity behavior. Query only once per deadline, making synchronous calls negligible. */
 function hasChildProcess(pid: number): boolean {
   try {
     if (process.platform === 'darwin') {
@@ -487,7 +434,7 @@ function toDto(managed: ManagedTerminal): TerminalDto {
   }
 }
 
-/** Premier numéro libre, pour que les intitulés restent lisibles après des fermetures. */
+/** First free number keeps labels readable after closures. */
 function nextTitle(existing: ManagedTerminal[]): string {
   const taken = new Set(existing.map((managed) => managed.title))
   for (let index = 1; ; index += 1) {

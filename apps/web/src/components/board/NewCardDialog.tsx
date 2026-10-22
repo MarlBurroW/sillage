@@ -19,7 +19,7 @@ export function NewCardDialog({ projectId, link, open, onClose, onCreated }: {
   const { draft, setDraft, acknowledge } = useCardDraft(user?.id ?? '', `new:${projectId}`)
   const value = draft ?? { title: '', description: '' }
   const [column, setColumn] = useState<CardColumn>('todo')
-  // Null : le réglage du board décide. Un choix fait ici vaut pour cette carte seulement.
+  // Null uses board settings; explicit choices affect only this card.
   const [target, setTarget] = useState<'local' | 'github' | null>(null)
   const where = target ?? link?.newCards ?? 'local'
   const create = useCreateCard(projectId)

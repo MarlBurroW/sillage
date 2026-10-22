@@ -3,11 +3,8 @@ import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
 /**
- * Lecture et écriture d'un fichier du workspace.
- *
- * Hors react-query volontairement : le contenu d'un onglet est édité en place, et un
- * cache qui le remplacerait derrière l'utilisateur écraserait sa saisie. C'est
- * l'onglet qui décide quand relire.
+ * Read and write workspace files. Deliberately outside react-query: tab content edits in place, and
+ * background cache replacement would overwrite user input. Tabs decide when to reread.
  */
 
 export function readFile(scope: WorkspaceScope, path: string): Promise<FileContentDto> {
@@ -16,7 +13,7 @@ export function readFile(scope: WorkspaceScope, path: string): Promise<FileConte
   )
 }
 
-/** Renvoie la nouvelle empreinte. `fingerprint: null` écrase sciemment. */
+/** Return the new fingerprint. `fingerprint: null` deliberately overwrites. */
 export function writeFile(
   scope: WorkspaceScope,
   path: string,
@@ -34,7 +31,7 @@ export function rawFileUrl(scope: WorkspaceScope, path: string): string {
   return `${workspaceApiBase(scope)}/file/raw?path=${encodeURIComponent(path)}`
 }
 
-/** Le navigateur reçoit le flux directement, même pour les fichiers trop gros pour l'éditeur. */
+/** Stream directly to the browser, including files too large for the editor. */
 export function downloadFile(scope: WorkspaceScope, path: string): void {
   startDownload(
     `${workspaceApiBase(scope)}/file/download?path=${encodeURIComponent(path)}`,
@@ -43,11 +40,9 @@ export function downloadFile(scope: WorkspaceScope, path: string): void {
 }
 
 /**
- * Dossiers et sélections, réunis en `.zip` par le serveur.
- *
- * Une archive plutôt qu'un téléchargement par fichier : le navigateur n'en accepte
- * qu'un par geste, et demande pour les suivants une autorisation que rien n'explique.
- * Le nom vient du serveur, qui seul sait de quel dossier commun partent les entrées.
+ * Directories and selections zipped server-side. One archive rather than one download per file:
+ * browsers allow only one per gesture and request unexplained permission for extras. The server
+ * determines the filename because only it knows the entries' common directory.
  */
 export function downloadArchive(scope: WorkspaceScope, paths: string[]): void {
   const query = paths.map((path) => `path=${encodeURIComponent(path)}`).join('&')
@@ -58,7 +53,7 @@ function startDownload(href: string, filename: string): void {
   const anchor = document.createElement('a')
   anchor.href = href
   anchor.download = filename
-  // Une erreur HTTP éventuelle ne doit pas remplacer l'IDE et ses brouillons.
+  // An HTTP error must not replace the IDE and its drafts.
   anchor.target = '_blank'
   anchor.rel = 'noopener'
   document.body.append(anchor)

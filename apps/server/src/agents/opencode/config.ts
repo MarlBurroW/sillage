@@ -3,21 +3,19 @@ import type { Config, MCPStatus, PermissionConfig } from '@sillage/opencode-bind
 import type { McpServer, McpServerState, McpServerStatus, OpencodeConfig } from '@sillage/protocol'
 
 /**
- * Traduction d'une configuration de conversation vers celle d'opencode.
+ * Translate conversation config to opencode.
  *
- * opencode ne règle rien par session : permissions, serveurs MCP et dossiers de skills
- * se lisent dans sa configuration, au lancement. Sillage les pose donc dans
- * `OPENCODE_CONFIG_CONTENT`, qui se fusionne par-dessus l'`opencode.json` de
- * l'utilisateur sans y toucher. La contrepartie est qu'en changer relance le serveur,
- * ce que `sameLaunchConfig` sert à décider.
+ * opencode reads permissions/MCP/skill paths at launch, not per session. Inject
+ * OPENCODE_CONFIG_CONTENT merged over user opencode.json without touching it. Changes restart
+ * server; sameLaunchConfig decides.
  */
 
 export interface LaunchInputs {
   config: OpencodeConfig
   mcpServers: McpServer[]
-  /** Racines de plugin de la bibliothèque de skills ; leurs skills sont sous `skills/`. */
+  /** Library plugin roots; skills under skills/. */
   skillRoots: string[]
-  /** Dossiers hors du répertoire de travail que l'agent lit sans demander. */
+  /** Outside-cwd directories agent may read without asking. */
   readableDirs: string[]
 }
 
@@ -33,19 +31,16 @@ function toMcpEntry(server: McpServer): McpEntry {
       enabled: true,
     }
   }
-  // opencode ne distingue pas `http` de `sse` : il essaie l'un puis l'autre. `oauth`
-  // coupé, sans quoi il tente une découverte OAuth sur un serveur dont Sillage fournit
-  // déjà les en-têtes.
+  // opencode tries http then sse rather than distinguishing them. Disable oauth to avoid discovery
+  // when Sillage already provides headers.
   return { type: 'remote', url: transport.url, headers: transport.headers, oauth: false, enabled: true }
 }
 
 /**
- * Les règles posées par Sillage. Une famille en `CLI_DEFAULT` est omise : la fusion
- * laisse alors parler la règle du poste.
+ * Sillage rules. Omit CLI_DEFAULT families so machine rules survive merge.
  *
- * `external_directory` ne reçoit que des motifs précis, jamais de `*` : la règle
- * générale d'opencode (demander hors du répertoire de travail) reste celle du poste,
- * Sillage n'ouvre que ce qu'il fournit lui-même.
+ * external_directory gets precise patterns, never *: machine default still asks outside cwd;
+ * Sillage opens only its own supplied directories.
  */
 function toPermission({ config, skillRoots, readableDirs }: LaunchInputs): PermissionConfig {
   const { edit, bash, webfetch } = config.permissions
@@ -63,7 +58,7 @@ function toPermission({ config, skillRoots, readableDirs }: LaunchInputs): Permi
 
 export function toOpencodeConfig(inputs: LaunchInputs): Config {
   return {
-    // Un serveur par conversation ne doit ni se mettre à jour tout seul ni publier.
+    // Per-conversation servers must neither self-update nor publish.
     autoupdate: false,
     share: 'disabled',
     permission: toPermission(inputs),
@@ -74,7 +69,7 @@ export function toOpencodeConfig(inputs: LaunchInputs): Config {
   }
 }
 
-/** Deux configurations qui donnent le même lancement ne justifient pas de relancer. */
+/** Equivalent launch configurations do not warrant restart. */
 export function sameLaunchConfig(a: Config, b: Config): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
@@ -88,8 +83,8 @@ const MCP_STATES: Record<MCPStatus['status'], McpServerState> = {
 }
 
 /**
- * Inventaire MCP tel qu'opencode le rend sur `GET /mcp`. Il n'annonce pas les outils de
- * chaque serveur : la liste reste vide plutôt que devinée d'après les préfixes de noms.
+ * GET /mcp inventory. opencode omits individual tools: keep empty list instead of guessing name
+ * prefixes.
  */
 export function fromOpencodeMcpStatus(
   statuses: Record<string, MCPStatus>,

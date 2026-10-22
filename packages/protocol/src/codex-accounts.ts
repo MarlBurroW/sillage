@@ -1,18 +1,16 @@
 import { z } from 'zod'
 
 /**
- * Comptes Codex supplémentaires, par utilisateur.
+ * Additional Codex accounts per user.
  *
- * Codex ne tient qu'une connexion par `CODEX_HOME`, dans son `auth.json`. Sillage donne
- * donc à chaque compte supplémentaire son propre home, où seul `auth.json` est réel :
- * tout le reste (config.toml, sessions, skills, mémoires) est un lien vers le home de
- * l'utilisateur, pour que le compte ne change que l'abonnement qui paie, pas les
- * réglages ni les threads (sondé sur codex-cli 0.162.1 : un thread se reprend d'un
- * home à l'autre).
+ * Codex keeps one login per `CODEX_HOME` in `auth.json`. Sillage gives each additional account
+ * its own home, where only `auth.json` is real: everything else (config.toml, sessions, skills,
+ * memories) links to the user's home so switching accounts changes only the paying
+ * subscription, not settings or threads (probed on codex-cli 0.162.1: threads resume across
+ * homes).
  *
- * Sillage ne stocke aucun secret lui-même : la connexion se fait par l'app-server
- * lancé dans ce home, par code d'appareil ou par clé API, et c'est Codex qui écrit son
- * `auth.json` et le rafraîchit.
+ * Sillage stores no secrets itself: login uses the app-server launched in that home, with a
+ * device code or API key; Codex writes and refreshes `auth.json`.
  */
 
 export const codexAccountLabelSchema = z.string().trim().min(1).max(60)
@@ -20,11 +18,11 @@ export const codexAccountLabelSchema = z.string().trim().min(1).max(60)
 export const codexAccountSchema = z.object({
   id: z.string(),
   label: z.string(),
-  /** `pending` tant qu'aucune connexion n'a abouti dans son home. */
+  /** `pending` until a login succeeds in its home. */
   status: z.enum(['pending', 'ready']),
-  /** Comment le home est connecté, tel que Codex le déclare ; null tant qu'il ne l'est pas. */
+  /** Home authentication method as reported by Codex; null before login. */
   authMode: z.enum(['chatgpt', 'apiKey']).nullable(),
-  /** Courriel et forfait lus après la connexion ChatGPT, null pour une clé API. */
+  /** Email and plan read after ChatGPT login; null for API keys. */
   email: z.string().nullable(),
   planType: z.string().nullable(),
   createdAt: z.number(),
@@ -36,10 +34,9 @@ export const createCodexAccountBodySchema = z.object({ label: codexAccountLabelS
 export const updateCodexAccountBodySchema = z.object({ label: codexAccountLabelSchema })
 
 /**
- * Deux façons de connecter un home : le code d'appareil, pour un abonnement ChatGPT
- * sans navigateur sur le serveur, et une clé API. Le flux navigateur classique est
- * écarté : son retour se fait sur `localhost:1455` du serveur, que le navigateur de
- * l'utilisateur ne joint pas.
+ * Two ways to authenticate a home: device code for a ChatGPT subscription without a browser on
+ * the server, or API key. The standard browser flow is excluded: its callback targets the
+ * server's `localhost:1455`, unreachable from the user's browser.
  */
 export const startCodexLoginBodySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('deviceCode') }),
@@ -47,8 +44,8 @@ export const startCodexLoginBodySchema = z.discriminatedUnion('type', [
 ])
 
 /**
- * Où en est la connexion d'un compte. `pending` porte ce que l'utilisateur doit faire
- * de son côté : ouvrir l'URL et saisir le code. `failed` garde le motif donné par Codex.
+ * Account login progress. `pending` carries the user's next steps: open the URL and enter the
+ * code. `failed` retains Codex's reason.
  */
 export interface CodexLoginStatusDto {
   state: 'idle' | 'pending' | 'done' | 'failed'

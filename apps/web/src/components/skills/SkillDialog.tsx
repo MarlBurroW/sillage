@@ -6,9 +6,8 @@ import { useTranslate } from '../../lib/i18n'
 import { Button, Field, IconButton } from '../ui'
 
 /**
- * Coque des petits formulaires de la bibliothèque : créer, dupliquer, déplacer,
- * renommer à l'import. Même présentation que la création de carte, en feuille au
- * doigt et centrée ailleurs.
+ * Shell for small library forms: create, duplicate, move, and import rename. Match card creation
+ * with touch sheets and centered desktop dialogs.
  */
 export function SkillDialog({
   open,
@@ -66,7 +65,7 @@ export function SkillDialog({
   )
 }
 
-/** Zone de texte au gabarit des champs, pour la description d'un skill. */
+/** Field-sized textarea for skill descriptions. */
 export function DescriptionField({
   label,
   hint,
@@ -96,7 +95,7 @@ export function DescriptionField({
   )
 }
 
-/** Le nom est aussi celui du dossier et de la commande : minuscules, chiffres, tirets. */
+/** Names are also directory and command names: lowercase letters, digits, hyphens. */
 export function NameField({ value, onChange, disabled }: { value: string; onChange: (value: string) => void; disabled?: boolean }) {
   const t = useTranslate()
   const invalid = value.length > 0 && !skillNameSchema.safeParse(value).success

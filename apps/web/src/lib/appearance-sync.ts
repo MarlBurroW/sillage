@@ -14,19 +14,17 @@ import { useUserSettings } from './user-settings'
 import { applyTypingIndicator, currentTypingIndicator, resolveTypingIndicator, subscribeTypingIndicator } from './typing-indicator'
 
 /**
- * Thème, palette de code, indicateur et curseurs d'apparence, enregistrés sur le compte.
- *
- * `localStorage` reste le cache lu par `index.html` avant l'hydratation, sans quoi
- * chaque chargement flasherait les couleurs par défaut. Le compte fait foi : sa copie
- * est appliquée dès qu'elle arrive, et chaque changement local y repart.
+ * Theme, code palette, indicator, and appearance sliders stored on the account. `localStorage`
+ * remains the pre-hydration cache read by `index.html` to prevent default-color flashes. The
+ * account is authoritative: apply its copy when received and send every local change back.
  */
 
-/** Les curseurs glissent : on n'écrit qu'une fois le geste posé. */
+/** Sliders move continuously: write only after the gesture settles. */
 const PUSH_DELAY_MS = 500
 
 let timer: ReturnType<typeof setTimeout> | null = null
 let inFlight = 0
-// Vrai pendant qu'on applique la copie du serveur : ce n'est pas un changement à renvoyer.
+// True while applying the server copy: do not send that back as a local change.
 let adopting = false
 
 function snapshot(): AppearancePrefs {
@@ -49,13 +47,12 @@ function schedulePush(): void {
 
 function push(): void {
   inFlight += 1
-  // Sans mise à jour du cache de requête : la réponse ne dit rien de plus que ce
-  // qu'on vient d'envoyer, et la réappliquer pourrait défaire un geste plus récent.
+  // Do not update query cache: the reply adds nothing to the sent data and reapplying it could undo
+  // a newer gesture.
   void api
     .patch('/api/me/settings', { appearance: snapshot() })
     .catch(() => {
-      // Hors ligne ou session expirée : le cache local garde le réglage, et le
-      // prochain changement retentera l'envoi.
+      // Offline or expired session: local cache retains settings and the next change retries sending.
     })
     .finally(() => {
       inFlight -= 1
@@ -67,7 +64,7 @@ function adopt(prefs: AppearancePrefs): void {
   try {
     const typingIndicator = resolveTypingIndicator(prefs.typingIndicator)
     if (typingIndicator !== currentTypingIndicator()) applyTypingIndicator(typingIndicator)
-    // Un nom retiré depuis l'enregistrement est ignoré plutôt qu'appliqué tel quel.
+    // Ignore names removed since saving rather than applying them unchanged.
     if (prefs.theme && THEMES.includes(prefs.theme as Theme) && prefs.theme !== currentTheme()) {
       applyTheme(prefs.theme as Theme)
     }
@@ -79,8 +76,8 @@ function adopt(prefs: AppearancePrefs): void {
       applySyntaxTheme(prefs.syntax as SyntaxTheme)
     }
 
-    // Tous les curseurs connus, défaut compris pour ceux absents de la copie : un
-    // réglage remis à zéro sur un autre poste doit l'être ici aussi.
+    // Apply all known sliders, including defaults for omitted ones: a reset on another device must
+    // reset this one too.
     const current = currentAppearance()
     const next: Partial<Record<AppearanceKey, number>> = {}
     for (const [name, setting] of Object.entries(APPEARANCE_SETTINGS) as [AppearanceKey, typeof APPEARANCE_SETTINGS[AppearanceKey]][]) {
@@ -95,7 +92,7 @@ function adopt(prefs: AppearancePrefs): void {
   }
 }
 
-/** À monter une fois, dans la coquille authentifiée. */
+/** Mount once in the authenticated shell. */
 export function useAppearanceSync(): void {
   const { data: settings } = useUserSettings()
 
@@ -114,13 +111,13 @@ export function useAppearanceSync(): void {
   const appearance = settings?.appearance
   useEffect(() => {
     if (appearance === undefined) return
-    // Jamais enregistré : ce navigateur a peut-être déjà des réglages, ils deviennent
-    // ceux du compte au lieu d'être écrasés par les défauts.
+    // Never saved: adopt this browser's existing settings for the account instead of overwriting
+    // them with defaults.
     if (appearance === null) {
       push()
       return
     }
-    // Un envoi en attente ou en route est plus récent que cette copie.
+    // A pending or in-flight send is newer than this copy.
     if (timer || inFlight > 0) return
     adopt(appearance)
   }, [appearance])

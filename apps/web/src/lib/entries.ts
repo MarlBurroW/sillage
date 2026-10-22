@@ -3,12 +3,9 @@ import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
 /**
- * Manipulations de fichiers et de dossiers depuis l'explorateur.
- *
- * Chaque opération invalide l'arborescence entière plutôt que le seul niveau touché :
- * un déplacement change deux niveaux, une suppression peut vider l'état git d'un
- * ancêtre, et recalculer ces dépendances côté client reproduirait ce que le serveur
- * sait déjà.
+ * Explorer file and directory operations. Invalidate the entire tree rather than just the touched
+ * level: moves affect two levels, deletion may alter ancestor Git state, and client dependency
+ * calculation would duplicate server knowledge.
  */
 function useEntryMutation<T, R = unknown>(scope: WorkspaceScope, run: (input: T) => Promise<R>) {
   const queryClient = useQueryClient()
@@ -25,7 +22,7 @@ export function useCreateEntry(scope: WorkspaceScope) {
   )
 }
 
-/** Renommer et déplacer sont la même opération : seul le chemin de destination change. */
+/** Rename and move are the same operation; only the destination path differs. */
 export function useMoveEntry(scope: WorkspaceScope) {
   return useEntryMutation<{ from: string; to: string }>(scope, (body) =>
     api.post(`${workspaceApiBase(scope)}/entries/move`, body),
@@ -44,7 +41,7 @@ export type EntryOperation =
   | { kind: 'delete'; path: string }
 
 export interface OperationsOutcome {
-  /** Chaque opération réussie, et le chemin où elle a abouti. */
+  /** Each successful operation and its resulting path. */
   done: Array<{ operation: EntryOperation; path: string }>
   failures: Error[]
 }
@@ -66,13 +63,10 @@ async function runOperation(scope: WorkspaceScope, operation: EntryOperation): P
 }
 
 /**
- * Plusieurs manipulations d'un coup : une sélection déplacée, collée ou supprimée.
- *
- * Envoyées l'une après l'autre plutôt qu'ensemble : deux copies vers un même dossier se
- * disputeraient le même nom libre. Une erreur n'arrête pas les suivantes, la sélection
- * n'étant pas une transaction : ce qui a réussi reste fait, et doit apparaître. Les
- * échecs sont rendus plutôt que levés pour la même raison, et l'arborescence n'est
- * relue qu'une fois, à la fin.
+ * Bulk move, paste, or delete operations. Send sequentially: concurrent copies to one directory
+ * would race for the same free name. Continue after errors because selection is not a transaction:
+ * successes remain and must appear. Return rather than throw failures for the same reason, and
+ * reread the tree once at the end.
  */
 export function useEntryOperations(scope: WorkspaceScope) {
   const queryClient = useQueryClient()
@@ -95,13 +89,13 @@ export function useEntryOperations(scope: WorkspaceScope) {
   })
 }
 
-/** Dossier parent d'un chemin relatif, chaîne vide à la racine. */
+/** Parent directory of a relative path, empty at root. */
 export function parentOf(path: string): string {
   const at = path.lastIndexOf('/')
   return at === -1 ? '' : path.slice(0, at)
 }
 
-/** Même dossier, autre nom. */
+/** Same directory, different name. */
 export function siblingPath(path: string, name: string): string {
   const parent = parentOf(path)
   return parent ? `${parent}/${name}` : name

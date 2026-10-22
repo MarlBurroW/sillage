@@ -2,12 +2,9 @@ import { TooltipButton } from './Tooltip'
 import { cx } from './cx'
 
 /**
- * Interrupteur à deux états, pour un réglage qui s'applique au clic.
- *
- * Un bouton « Désactiver » dit ce qu'on va faire ; l'interrupteur montre en plus où on
- * en est, et dans une liste les états se comparent d'une ligne à l'autre d'un coup
- * d'œil. Réservé à ce qui s'applique immédiatement : dans un formulaire à enregistrer,
- * une case à cocher convient mieux.
+ * Immediate two-state setting. Unlike Disable buttons, switches show both the action and current
+ * state, allowing cross-row comparison. Reserve for immediate application; saved forms should use
+ * checkboxes.
  */
 export function Switch({
   checked,
@@ -17,7 +14,7 @@ export function Switch({
 }: {
   checked: boolean
   onCheckedChange: (checked: boolean) => void
-  /** Obligatoire : l'interrupteur n'a pas de texte, le lecteur d'écran a besoin du sien. */
+  /** Required accessible name because switches contain no text. */
   label: string
   disabled?: boolean
 }) {
@@ -31,7 +28,7 @@ export function Switch({
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
       className={cx(
-        // Même cible tactile que `IconButton` : 44px au doigt, plus serré à la souris.
+        // Same target as IconButton: 44px on touch, denser with mouse.
         'flex size-11 shrink-0 items-center justify-center rounded-md md:h-7 md:w-9 pointer-coarse:size-11',
         'focus-visible:outline-2 focus-visible:outline-accent',
         'disabled:pointer-events-none disabled:opacity-45',

@@ -4,31 +4,22 @@ import { cardNotes, cards, conversations, worktrees, type Db, type ProjectRow } 
 import type { WorktreeStatusDto, WorktreeStatusListDto } from '@sillage/protocol'
 import type { WorktreeStatusService } from './status-service.js'
 
-/** Les colonnes d'où une fusion fait passer une carte en « Terminé ». */
+/** Columns from which merges move cards to 'Done'. */
 const OPEN_COLUMNS = ['in_progress', 'review'] as const
 
-/**
- * Passe en « Terminé » les cartes dont le worktree vient d'être fusionné.
- *
- * Branché sur les calculs d'avancement : une fusion
- * se fait par l'onglet Git, par un agent au shell ou sur la forge puis un pull, et seul
- * l'état de l'arbre les voit toutes. Une carte encore à faire n'est pas touchée (rien
- * n'y a été lancé, ou quelqu'un l'y a remise), ni une carte déjà terminée ou abandonnée.
- * Pour une carte qui suit une issue GitHub, la synchronisation ferme ensuite l'issue,
- * comme le ferait un « Fixes #n » dans le commit.
- */
+/** Moves cards to 'Done' when their worktree has just merged. Driven by progress assessments: merges may happen through the Git tab, agent shells or remote merges followed by pull, and only worktree state captures every path. Leave todo cards untouched (nothing started, or deliberately moved back), as well as completed or abandoned cards. For GitHub-linked cards, synchronization then closes the issue like a 'Fixes #n' commit would. */
 export function watchMergedCards(db: Db, status: WorktreeStatusService): void {
   status.onComputed((project, list) => {
     closeMergedCards(db, project, list)
   })
 }
 
-/** Exporté pour les tests : un passage, sur une liste d'avancement donnée. */
+/** Exported for tests: one pass over a supplied progress list. */
 export function closeMergedCards(db: Db, project: ProjectRow, list: WorktreeStatusListDto): number {
   if (!list.base) return 0
   let closed = 0
   for (const tree of list.worktrees) {
-    // L'arbre qui porte la branche par défaut n'est pas un chantier qu'on fusionne.
+    // The default-branch worktree is not work awaiting merge.
     if (tree.state !== 'merged' || tree.branch === list.base) continue
     const ids = tree.conversations.map((entry) => entry.id)
     if (ids.length === 0) continue
@@ -38,7 +29,7 @@ export function closeMergedCards(db: Db, project: ProjectRow, list: WorktreeStat
       .from(conversations)
       .where(inArray(conversations.id, ids))
       .all()
-    // Une session qui travaille encore dans l'arbre n'a peut-être pas fini.
+    // Sessions still working in the tree may not be finished.
     if (linked.some((row) => row.status === 'running' || row.status === 'awaiting_input')) continue
     if (!hasOwnWork(db, tree, linked)) continue
 
@@ -52,7 +43,7 @@ export function closeMergedCards(db: Db, project: ProjectRow, list: WorktreeStat
           eq(cards.projectId, project.id),
           inArray(cards.id, cardIds),
           inArray(cards.column, [...OPEN_COLUMNS]),
-          // Une seule fois par arbre : la carte ramenée en cours à la main y reste.
+          // Once per tree: manually moved-back cards stay in progress.
           or(isNull(cards.doneByMerge), ne(cards.doneByMerge, tree.path)),
         ),
       )
@@ -70,8 +61,8 @@ export function closeMergedCards(db: Db, project: ProjectRow, list: WorktreeStat
           .set({ column: 'done', position: (last ?? 0) + 1, doneByMerge: tree.path, updatedAt: now })
           .where(eq(cards.id, id))
           .run()
-        // Une ligne dans l'activité : sans elle, une carte qui change de colonne seule
-        // ressemble à une erreur.
+        // Record activity: cards changing columns on their own
+        // would otherwise look like errors.
         tx.insert(cardNotes)
           .values({
             id: randomUUID(),
@@ -90,12 +81,7 @@ export function closeMergedCards(db: Db, project: ProjectRow, list: WorktreeStat
   return closed
 }
 
-/**
- * L'arbre a-t-il porté du travail à lui ? Un worktree fraîchement créé, sans commit,
- * est lui aussi « fusionné » : sa tête est déjà dans la base. Le signe d'un vrai
- * travail est un dernier commit postérieur à la naissance de l'arbre (sa ligne en base
- * pour un arbre de Sillage, sa première session pour un arbre créé au shell).
- */
+/** Has this worktree held its own work? Newly created trees without commits also appear merged because their tip is already in the base. Real work requires the latest commit to postdate creation: the database row for Sillage trees, or first session for shell-created trees. */
 function hasOwnWork(db: Db, tree: WorktreeStatusDto, linked: { createdAt: number }[]): boolean {
   if (tree.lastCommitAt === null) return false
   const row = tree.id

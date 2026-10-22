@@ -10,8 +10,8 @@ metadata:
     {{- include "sillage.labels" $ | nindent 4 }}
     sillage.dev/volume: {{ $vol }}
   annotations:
-    # Le PVC survit à un `helm uninstall` : ces données ne se régénèrent pas.
-    # Suppression explicite : kubectl delete pvc <nom>
+    # PVC survives `helm uninstall`: these data cannot be regenerated.
+    # Explicit deletion: kubectl delete pvc <name>
     helm.sh/resource-policy: keep
 spec:
   accessModes:

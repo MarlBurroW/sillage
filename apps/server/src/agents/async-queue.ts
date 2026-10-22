@@ -1,11 +1,4 @@
-/**
- * File asynchrone servant d'entrée au mode streaming du SDK.
- *
- * Le SDK consomme un AsyncIterable de messages utilisateur et garde le canal ouvert
- * tant qu'il n'est pas terminé. C'est cette persistance qui permet le protocole de
- * contrôle bidirectionnel, donc les demandes de permission interactives : sans stdin
- * maintenu, Claude Code refuse l'outil au lieu de demander.
- */
+/** Asynchronous input queue for SDK streaming mode. SDKs consume AsyncIterable user messages and keep channels open until completion. Persistent stdin enables bidirectional controls and interactive permissions; otherwise Claude refuses tools rather than asks. */
 export class AsyncQueue<T> implements AsyncIterable<T> {
   private readonly buffer: T[] = []
   private pending: ((result: IteratorResult<T>) => void) | null = null

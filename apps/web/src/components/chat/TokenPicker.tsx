@@ -4,11 +4,8 @@ import type { PickerEntry } from '../../lib/composer-tokens'
 import { cx } from '../ui'
 
 /**
- * Liste proposée sous le sigle en cours de saisie, `/` pour les commandes du CLI et
- * `$` pour ses compétences.
- *
- * Posée au-dessus de la zone de saisie pour la même raison que `MentionPicker` : sur
- * téléphone, le clavier virtuel occupe le bas de l'écran.
+ * Slash-command and dollar-skill suggestions above the input, like MentionPicker, because phone
+ * keyboards occupy the screen bottom.
  */
 export function TokenPicker({
   sigil,
@@ -29,8 +26,7 @@ export function TokenPicker({
 }) {
   const list = useRef<HTMLUListElement>(null)
 
-  // La navigation au clavier peut sortir de la zone visible : l'élément actif est
-  // ramené dans le cadre, sans faire défiler la conversation derrière.
+  // Reveal keyboard-selected entries within this list without scrolling the conversation behind.
   useEffect(() => {
     list.current?.children[active]?.scrollIntoView({ block: 'nearest' })
   }, [active])
@@ -56,8 +52,7 @@ export function TokenPicker({
             type="button"
             role="option"
             aria-selected={index === active}
-            // `onMouseDown` : un `onClick` laisserait d'abord le champ perdre le focus,
-            // ce qui referme la liste avant que la sélection soit prise en compte.
+            // Use mousedown: click would blur input and close the list before applying selection.
             onMouseDown={(event) => {
               event.preventDefault()
               onPick(entry)

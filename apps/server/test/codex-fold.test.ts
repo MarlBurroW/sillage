@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SillageEvent } from '@sillage/protocol'
 
-// Le fold est indépendant de React ; seul le choix initial de langue lit le navigateur.
+// The fold is React-independent; only initial language selection reads browsers.
 Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => 'fr' }, configurable: true })
 const { applyEvent, emptyChatState, isAwaitingUser } = await import('../../web/src/lib/chat-fold.js')
 

@@ -48,30 +48,25 @@ import { columnLabel } from '../board/columns'
 import { FileIcon } from './FileIcon'
 
 /**
- * Fabrication des résultats de la palette, un type d'entité après l'autre.
- *
- * Chaque résultat dit où le chercher (ses champs) et ce qu'il ouvre ; le classement, lui,
- * est le même pour tous et vit dans `lib/palette`.
+ * Build palette results entity type by type. Each supplies searchable fields and destination; all
+ * share ranking in lib/palette.
  */
 
 type Translate = (key: MessageKey, params?: MessageParams) => string
 
 const ICON = 15
 
-/**
- * Une description, une consigne : de la prose, où une correspondance éparpillée ne serait
- * que du bruit. Seul un morceau d'un seul tenant y compte.
- */
+/** Descriptions and instructions are prose where scattered matches are noise: require contiguous matches. */
 function prose(text: string) {
   return field(text, 'detail', WEIGHT.detail, { mode: 'strict' })
 }
 
-/** Un titre qui se lit comme une phrase : morceaux et initiales, pas de lettres éparses. */
+/** Sentence-like titles allow substrings and initials, not scattered letters. */
 function sentence(text: string) {
   return field(text, 'title', WEIGHT.title, { mode: 'words' })
 }
 
-/** Une catégorie de réglages, telle que la déclare la page des réglages. */
+/** Settings category as declared by the settings page. */
 export interface SettingsEntry {
   to: string
   labelKey: MessageKey
@@ -95,8 +90,8 @@ export interface PaletteSources {
 }
 
 function projectItems(t: Translate, project: ProjectDto, current: boolean): PaletteItem[] {
-  // Hors du projet courant, une action ne vient que si la saisie nomme son projet
-  // (« nimbus board ») : sans quoi « board » alignerait un board par projet.
+  // Other-project shortcuts appear only when the query names their project (nimbus board), or board
+  // would list every project's board.
   const context = projectField(project.name, { required: !current })
   const action = (key: string, title: string, to: string, icon: ReactNode): PaletteItem => ({
     key: `action:${key}:${project.id}`,
@@ -145,13 +140,12 @@ function conversationItem(t: Translate, conversation: ConversationDto, project: 
     fields: [
       sentence(conversation.title),
       ...(card ? [prose(card)] : []),
-      // Taper le nom d'un projet liste ses conversations, les plus récentes devant.
+      // Project-name queries list its conversations newest first.
       projectField(project.name, { browse: true }),
       kindField(t('search.kind.conversation')),
     ],
     target: { type: 'navigate', to: `/p/${conversation.projectId}/c/${conversation.id}` },
-    // Un favori est presque toujours ce qu'on cherche ; un fil rangé ou ouvert par une
-    // tâche planifiée, rarement.
+    // Favorites are usually intended; archived or scheduled threads rarely are.
     boost: (conversation.favorite ? 1.5 : 0) - (conversation.archivedAt !== null ? 3 : 0) - (conversation.scheduleId ? 1 : 0),
   }
 }
@@ -202,7 +196,7 @@ function scheduleItems(t: Translate, schedules: readonly ScheduledTaskDto[], nam
   })
 }
 
-/** Ce qu'un résultat de la palette fait d'une action. */
+/** Action performed by a palette result. */
 export type PaletteActionOp = 'run' | 'stop' | 'restart' | 'open' | 'output' | 'review'
 
 const ACTION_OPS: Record<PaletteActionOp, { title: MessageKey; icon: ReactNode }> = {
@@ -215,9 +209,8 @@ const ACTION_OPS: Record<PaletteActionOp, { title: MessageKey; icon: ReactNode }
 }
 
 /**
- * Les actions de projet, avec les gestes que leur état permet : un service en marche
- * s'arrête, se relance et s'ouvre ; il ne se « lance » pas une seconde fois. Comme les
- * raccourcis d'un projet, celles d'un autre projet ne viennent que si la saisie le nomme.
+ * Project actions with state-appropriate gestures: running services stop, restart, or open rather
+ * than start twice. Other-project actions require naming their project, like project shortcuts.
  */
 function runItems(sources: PaletteSources, names: Map<string, string>): PaletteItem[] {
   const { t } = sources
@@ -242,7 +235,7 @@ function runItems(sources: PaletteSources, names: Map<string, string>): PaletteI
         icon: ACTION_OPS[op].icon,
         aside: t('search.kind.runAction'),
         fields: [
-          // Le verbe compris : « arrêter » liste ce qui tourne, « lancer » ce qui attend.
+          // Include verbs in matching: stop finds running services, launch finds waiting ones.
           sentence(title),
           prose(action.command),
           projectField(project, { required: action.projectId !== sources.currentProjectId }),
@@ -332,7 +325,7 @@ function generalItems(sources: PaletteSources): PaletteItem[] {
   const commands = [
     command('new-project', t('shell.projects.add'), <FolderPlus size={ICON} />, { type: 'navigate', to: '/projects/new' }),
     command('services', t('services.title'), <Server size={ICON} />, { type: 'navigate', to: '/services' }),
-    // Le thème déjà appliqué n'est pas proposé : le choisir ne ferait rien.
+    // Omit the applied theme because selecting it would do nothing.
     ...THEMES.filter((theme) => theme !== sources.theme).map((theme) =>
       command(`theme:${theme}`, t('search.command.theme', { name: t(THEME_LABELS[theme]) }), themeIcons[theme], {
         type: 'run',
@@ -345,10 +338,8 @@ function generalItems(sources: PaletteSources): PaletteItem[] {
 }
 
 /**
- * Tout ce que la palette sait sans interroger le serveur à chaque frappe.
- *
- * Les projets archivés n'y entrent pas, ni rien de ce qui leur appartient : la palette
- * voit ce que la navigation voit.
+ * Everything known without per-keystroke server queries. Exclude archived projects and their
+ * contents so palette visibility matches navigation.
  */
 export function buildPaletteItems(sources: PaletteSources): PaletteItem[] {
   const { t } = sources
@@ -371,7 +362,7 @@ export function buildPaletteItems(sources: PaletteSources): PaletteItem[] {
   ]
 }
 
-/** Fichiers trouvés par le serveur, que la palette reclasse avec le reste. */
+/** Server-found files reranked alongside other results. */
 export function buildFileItems(t: Translate, files: PaletteFilesDto | undefined, projects: readonly ProjectDto[]): PaletteItem[] {
   const names = new Map(projects.map((project) => [project.id, project.name]))
   return (files?.projects ?? []).flatMap((group) => {
@@ -389,7 +380,7 @@ export function buildFileItems(t: Translate, files: PaletteFilesDto | undefined,
         detail: dir || undefined,
         icon: <FileIcon name={name} />,
         aside: t('search.kind.file'),
-        // Mêmes champs que la présélection du serveur, voir `search/search-files.ts`.
+        // Same fields as server preselection; see search/search-files.ts.
         fields: [
           field(name, 'title', WEIGHT.title),
           field(dir, 'detail', WEIGHT.dir, { mode: 'strict' }),
@@ -401,13 +392,10 @@ export function buildFileItems(t: Translate, files: PaletteFilesDto | undefined,
   })
 }
 
-/**
- * Score des passages trouvés dans les messages : sous tout ce qui correspond par son nom,
- * un passage ne disant qu'un mot en commun avec la saisie.
- */
+/** Message excerpt scores rank below named matches because excerpts may share only incidental query words. */
 const MESSAGE_SCORE = 0.5
 
-/** Un passage par conversation : dix extraits du même fil noieraient tout le reste. */
+/** One excerpt per conversation: ten from one thread would bury other results. */
 export function buildMessageItems(
   t: Translate,
   messages: readonly SearchMessageDto[] | undefined,

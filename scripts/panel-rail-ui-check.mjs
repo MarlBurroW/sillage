@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Le rail sur une démo isolée : aucune lecture ni écriture en production.
+// Rail on an isolated demo: no production reads/writes.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -51,7 +51,7 @@ try {
   await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n')
   const env = {
     ...process.env,
-    // Le dépôt de démo n'a pas d'identité : git prend celle de l'environnement.
+    // Demo repository has no identity: git uses environment's identity.
     GIT_AUTHOR_NAME: 'Alex Demo',
     GIT_AUTHOR_EMAIL: 'alex@example.test',
     GIT_COMMITTER_NAME: 'Alex Demo',

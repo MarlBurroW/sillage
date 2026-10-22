@@ -3,12 +3,10 @@ import type { TerminalDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
- * Cycle de vie des terminaux d'un projet.
- *
- * Scopés au projet et non à la conversation : la liste est la même partout dans le
- * projet, et un serveur lancé dans un shell ne peut pas se retrouver caché derrière
- * une session archivée. Les process vivent en mémoire du daemon ; un redémarrage les
- * interrompt mais leurs entrées reviennent, marquées telles, avec leur dernier écran.
+ * Project terminal lifecycle. Scope by project rather than conversation: lists are shared
+ * project-wide and servers launched in shells cannot become hidden behind archived sessions.
+ * Processes live in daemon memory; restart interrupts them but restores their entries marked
+ * interrupted with the last screen.
  */
 
 const key = (projectId: string) => ['terminals', projectId]

@@ -5,13 +5,7 @@ import { join } from 'node:path'
 import { DEFAULT_OPENCODE_CONFIG, sillageEventSchema, type SillageEvent } from '@sillage/protocol'
 import { OpencodeRunner } from '../agents/opencode/runner.js'
 
-/**
- * Sonde manuelle : un vrai tour sur l'opencode installé, jamais exécutée en CI.
- *
- * Le modèle gratuit `opencode/big-pickle` suffit, sans identifiant de fournisseur. La
- * session créée reste dans la base d'opencode du poste : la sonde affiche son
- * identifiant, à supprimer avec `opencode session delete <id>`.
- */
+/** Manual installed-opencode probe with real turns, never CI. Free `opencode/big-pickle` needs no provider credentials. Created sessions remain in the host database; print IDs for deletion with `opencode session delete <id>`. */
 const cwd = await mkdtemp(join(tmpdir(), 'sillage-opencode-probe-'))
 await writeFile(join(cwd, 'note.txt'), 'hello\n')
 
@@ -30,7 +24,7 @@ const runner = new OpencodeRunner({
   setStatus: (status) => { console.log(`status: ${status}`) },
   emit: (event) => {
     events.push(sillageEventSchema.parse(event))
-    // Aucune sortie native : seulement le résultat de la sonde.
+    // No native output, only probe results.
     if (!event.type.endsWith('.delta')) {
       console.log(event.type, event.type === 'tool.started' ? event.name : event.type === 'agent.notice' ? event.code : '')
     }

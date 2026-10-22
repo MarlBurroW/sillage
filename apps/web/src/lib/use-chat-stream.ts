@@ -14,25 +14,23 @@ interface JournalSnapshot {
 const SNAPSHOT_KEY = 'chat-journal-snapshot'
 const MAX_SNAPSHOTS = 4
 
-/** Les deltas sont appliqués par lots : un rendu par token effondre le framerate mobile. */
+/** Batch deltas: rendering once per token destroys mobile frame rates. */
 const FLUSH_INTERVAL_MS = 60
 
 export interface ChatStream {
   state: ChatState
   status: ConversationStatus
   connected: boolean
-  /** Un process CLI tourne encore pour cette conversation. Null tant qu'on l'ignore. */
+  /** A CLI process is still running for this conversation. Null while unknown. */
   warm: boolean | null
   /**
-   * Configuration sous laquelle le CLI tourne vraiment, `null` à froid ou avant le
-   * premier statut poussé. Elle diverge de celle enregistrée tant qu'un réglage que le
-   * CLI ne sait pas changer en vol attend son redémarrage.
+   * Configuration actually used by the CLI, `null` before startup or the first status push. Differs
+   * from saved settings while a setting that cannot change live awaits a restart.
    */
   appliedConfig: AgentConfig | null
   /**
-   * Le journal n'a pas fini d'être rejoué. Vrai jusqu'à la dernière page, et non
-   * jusqu'à la première : c'est ce qui permet à la page de garder le fil masqué le
-   * temps qu'il se construise, plutôt que de le montrer pousser par paquets.
+   * Log replay is incomplete. True until the last page, not the first, allowing the page to hide
+   * the thread while it is built instead of showing it grow in batches.
    */
   loading: boolean
   error: string | null
@@ -51,19 +49,15 @@ export function useChatStream(
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  // L'état vit dans une ref : le fold doit voir la valeur courante, pas celle
-  // capturée à la création de l'abonnement.
+  // Keep state in a ref: the fold must see its current value rather than the one captured when subscribing.
   const stateRef = useRef<ChatState>(emptyChatState())
   const pending = useRef<{ seq: number; ts: number; event: SillageEvent }[]>([])
   const flushTimer = useRef<number | null>(null)
   /**
-   * Dernier `seq` reçu, qui n'est pas `state.lastSeq`.
-   *
-   * Le serveur fusionne les deltas d'une page sous le `seq` du premier fragment de
-   * chaque message, donc l'état s'arrête au dernier `seq` *rendu*, en deçà du dernier
-   * lu. Reprendre sur l'état ferait redemander les fragments déjà fusionnés, que le
-   * garde d'idempotence ne rattraperait pas puisque leur `seq` est plus grand : leur
-   * texte s'ajouterait une seconde fois au message en cours.
+   * Latest received `seq`, distinct from `state.lastSeq`. The server merges page deltas under each
+   * message's first fragment sequence, so state stops at the last returned sequence before the last
+   * read one. Resuming from state would request already-merged fragments again; their larger
+   * sequences bypass the idempotence guard and duplicate text in the current message.
    */
   const cursor = useRef(0)
 
@@ -75,8 +69,8 @@ export function useChatStream(
     if (!conversationId) return
 
     let cancelled = false
-    // Cache de l'onglet, effacé avec les autres requêtes à la déconnexion.
-    // Le fold traduit certains événements : une autre langue repart du journal.
+    // Tab cache cleared with other queries on logout. The fold translates some events, so a
+    // language change replays the log.
     const snapshotKey = [SNAPSHOT_KEY, conversationId, locale()]
     const snapshot = queryClient.getQueryData<JournalSnapshot>(snapshotKey)
     stateRef.current = snapshot?.state ?? emptyChatState()
@@ -92,8 +86,8 @@ export function useChatStream(
 
       let next = stateRef.current
       for (const { seq, ts, event } of pending.current) {
-        // Un événement déjà appliqué (rejeu après rechargement REST) est ignoré :
-        // c'est ce qui garantit qu'une reconnexion ne duplique jamais le fil.
+        // Ignore previously applied events (replay after REST reload), ensuring reconnection never
+        // duplicates the thread.
         if (seq <= next.lastSeq) continue
         next = applyEvent(next, seq, ts, event)
       }
@@ -119,17 +113,15 @@ export function useChatStream(
           if (cancelled) return
 
           for (const entry of entries) enqueue(entry.seq, entry.ts, entry.event)
-          // Replié page par page plutôt qu'en un bloc à la fin : le fil reste masqué
-          // pendant ce temps, mais étaler le fold laisse la main à l'interface entre
-          // deux pages, ce qui est ce qui compte sur une conversation longue.
+          // Fold page by page rather than all at the end: the thread stays hidden, but spreading
+          // the work yields to the UI between pages, especially useful for long conversations.
           flush()
         })
         if (cancelled) return
 
         cursor.current = Math.max(cursor.current, read)
         wsClient.setCursor(conversationId, cursor.current)
-        // Un checkpoint seulement après un rattrapage complet : un curseur de
-        // page fusionnée ne doit jamais être associé à un état encore incomplet.
+        // Checkpoint only after fully catching up: a merged-page cursor must never be paired with incomplete state.
         flush()
         queryClient.setQueryData<JournalSnapshot>(snapshotKey, {
           state: stateRef.current,
@@ -148,8 +140,7 @@ export function useChatStream(
       }
     }
 
-    // Chargement initial d'abord, abonnement ensuite : le socket reprend exactement
-    // là où l'historique s'arrête.
+    // Load history before subscribing so the socket resumes exactly where history ends.
     void loadFromRest().then(() => {
       if (cancelled) return
 
@@ -161,16 +152,14 @@ export function useChatStream(
           setAppliedConfig(applied)
         },
         onTitle: () => {
-          // Le titre vit dans la ligne de conversation, pas dans le journal : il faut
-          // relire, ici la sidebar comme l'en-tête.
+          // The title belongs to the conversation row, not the log: reread both sidebar and header.
           void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
           void queryClient.invalidateQueries({ queryKey: ['conversations'] })
         },
         onCatchupNeeded: () => void loadFromRest(),
         onConnectionChange: (isConnected) => {
           setConnected(isConnected)
-          // Une reconnexion peut avoir manqué des événements si le socket a été tué
-          // sans que le serveur s'en aperçoive : on rejoue depuis le curseur.
+          // Reconnection may have missed events if the socket died unnoticed by the server: replay from the cursor.
           if (isConnected) void loadFromRest()
         },
       })
@@ -197,18 +186,12 @@ export function useChatStream(
 }
 
 /**
- * Réconcilie le statut poussé avec ce que dit le journal (invariant I2).
- *
- * Le journal ne peut qu'ajouter de l'occupation, jamais en retirer : une sollicitation
- * ouverte ou un tour en cours priment sur un statut qui n'est pas encore arrivé, mais
- * un journal qui paraît au repos ne fait pas taire le serveur.
- *
- * Il le faisait, et ramenait tout `running` poussé à `idle` : la sidebar montrait la
- * conversation en cours pendant que l'en-tête n'affichait rien et que la barre de saisie
- * gardait son bouton d'envoi. Le statut du serveur est la valeur en base, poussée à
- * chaque transition, renvoyée en instantané à chaque abonnement, et remise à
- * `interrupted` au démarrage du daemon pour les conversations qu'un arrêt brutal avait
- * laissées en cours. Rien ne justifie de le contredire.
+ * Reconcile pushed status with the log (invariant I2). The log can add activity, never remove it:
+ * an open prompt or running turn takes precedence over a delayed status, but an apparently idle log
+ * must not override the server. It previously converted every pushed `running` to `idle`: sidebar
+ * activity remained visible while the header and composer appeared idle. Server status is
+ * persisted, pushed at each transition, snapshotted on subscription, and reset to `interrupted` at
+ * daemon startup after abrupt shutdown. There is no reason to contradict it.
  */
 function reconcileStatus(pushed: ConversationStatus, state: ChatState): ConversationStatus {
   if (state.items.some(isAwaitingUser)) return 'awaiting_input'

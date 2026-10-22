@@ -1,16 +1,11 @@
 import { useEffect, useSyncExternalStore } from 'react'
 
 /**
- * Écran d'accueil d'un projet, retenu projet par projet.
- *
- * Certains projets se pilotent au board, d'autres n'en ont aucun et s'ouvrent sur une
- * conversation neuve. Une préférence globale trancherait mal pour la moitié d'entre eux,
- * et rouvrir le board à chaque fois d'un menu use vite.
- *
- * La mémoire est locale au navigateur, à la différence du repli de la sidebar : sur
- * quoi s'ouvre un projet tient à l'écran qu'on a devant soi — le board sur grand écran,
- * une conversation neuve sur téléphone — alors qu'un projet replié l'est parce qu'on
- * n'y travaille pas en ce moment, ce qui suit le compte d'un poste à l'autre.
+ * Project landing view remembered per project. Some projects use a board, others open a new
+ * conversation; a global preference would suit only some, and repeatedly reopening boards through
+ * menus gets tiresome. Stored in the browser unlike sidebar collapse: preferred landing views
+ * depend on the current screen (board on desktop, new conversation on phone), while collapsed
+ * projects represent current work priorities and follow the account across devices.
  */
 
 const KEY = 'sillage.projectView'
@@ -22,16 +17,15 @@ function read(): Record<string, ProjectView> {
     const raw = localStorage.getItem(KEY)
     const parsed: unknown = raw ? JSON.parse(raw) : null
     if (!parsed || typeof parsed !== 'object') return {}
-    // Les valeurs sont refiltrées : la clé est éditable à la main, et une vue inconnue
-    // produirait un chemin qui ne mène nulle part.
+    // Filter values again: users can edit storage manually and unknown views would create invalid paths.
     return Object.fromEntries(
       Object.entries(parsed as Record<string, unknown>).filter(
         (entry): entry is [string, ProjectView] => entry[1] === 'board' || entry[1] === 'draft',
       ),
     )
   } catch {
-    // Une préférence d'affichage illisible ne vaut pas d'écran d'erreur : on repart du
-    // défaut, et la prochaine visite réécrit une valeur saine.
+    // An unreadable display preference does not warrant an error screen: fall back to defaults and
+    // let the next visit write a valid value.
     return {}
   }
 }
@@ -60,15 +54,10 @@ export function setProjectView(projectId: string, view: ProjectView): void {
 }
 
 /**
- * Retient la vue en cours pour ce projet, ou ne retient rien quand `view` est nul.
- *
- * Posé par les écrans concernés plutôt que par les liens qui y mènent : ce qui doit
- * être retenu est là où l'on travaille, et non le bouton par lequel on y est arrivé.
- *
- * D'où le cas nul, qui n'est pas un détail : lancer une session depuis une carte passe
- * par le brouillon, et l'y retenir ferait retomber sur le brouillon au prochain clic
- * sur le projet. Le geste le plus caractéristique du board aurait donc désarmé le
- * board, une fois sur deux, sans que personne ait rien demandé.
+ * Remember the current project view, or nothing when `view` is null. Set by destination screens
+ * rather than links: retain where users work, not which button led there. The null case matters:
+ * starting from a card passes through the draft, which must not replace the board preference.
+ * Otherwise the board's primary action would silently disable board landing every other visit.
  */
 export function useRememberProjectView(
   projectId: string | undefined,
@@ -79,12 +68,12 @@ export function useRememberProjectView(
   }, [projectId, view])
 }
 
-/** Vue retenue pour un projet, lue hors rendu : pour des liens fabriqués en lot. */
+/** Remembered project view read outside rendering for bulk link construction. */
 export function projectViewOf(projectId: string): ProjectView {
   return views[projectId] ?? 'draft'
 }
 
-/** Chemin d'accueil d'un projet, d'après ce qui a été retenu pour lui. */
+/** Project landing path based on its remembered view. */
 export function projectViewPath(projectId: string, view: ProjectView): string {
   return view === 'board' ? `/p/${projectId}/board` : `/p/${projectId}/c/new`
 }

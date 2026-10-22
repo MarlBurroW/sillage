@@ -31,13 +31,11 @@ import { ScheduleApprovalStrip } from './ScheduleApprovalStrip'
 import { isSillageTool } from '../../lib/sillage-tools'
 
 /**
- * Rendu d'un appel d'outil, et d'une suite d'appels repliée derrière une ligne.
- *
- * Les deux vivent dans le même module parce qu'un groupe déplié rend des appels :
- * les séparer donnerait un cycle d'imports pour rien.
+ * Render tool calls and collapsed sequences. Share a module because expanded groups render calls;
+ * separating them would create needless import cycles.
  */
 
-/** Icône par outil. Le rendu détaillé, lui, passe par le registre de vues (`tools/`). */
+/** Tool icons; detailed rendering uses the tools view registry. */
 const TOOL_ICONS: Record<string, ReactNode> = {
   Bash: <SquareTerminal size={14} />,
   Read: <FileText size={14} />,
@@ -54,22 +52,17 @@ const TOOL_ICONS: Record<string, ReactNode> = {
   ExitPlanMode: <ListChecks size={14} />,
 }
 
-/** `mono` distingue un fragment de code d'une phrase : les deux ne se lisent pas pareil. */
+/** mono distinguishes code fragments from prose, which require different reading styles. */
 interface ToolSummary {
   text: string
   mono: boolean
 }
 
 /**
- * Résumé d'une ligne.
- *
- * La description passe avant tout le reste : elle dit ce que l'appel cherche à faire,
- * là où la commande ou le chemin ne disent que comment. Claude Code en joint une à ses
- * appels `Bash` et à ses sous-agents, et elle vaut mieux qu'un `sed -n '334,364p'`
- * tronqué au milieu. Elle n'est pas garantie pour autant : Codex n'en produit aucune,
- * et le repli sur le paramètre identifiant reprend alors la main.
- *
- * La commande, elle, ne disparaît pas : elle reste sous l'entrée de l'appel déplié.
+ * Single-line summary. Prefer descriptions: they explain purpose rather than commands or paths
+ * explaining mechanics. Claude Code supplies them for Bash and subagents, more informative than
+ * truncated sed ranges. Codex provides none, so fall back to identifying parameters. Commands
+ * remain visible beneath expanded input.
  */
 function summarize(name: string, input: unknown): ToolSummary | null {
   if (typeof input !== 'object' || input === null) return null
@@ -95,11 +88,8 @@ function summarize(name: string, input: unknown): ToolSummary | null {
 }
 
 /**
- * L'issue d'un appel, en une icône.
- *
- * « Interrompu » n'est pas un échec : l'appel n'a simplement jamais rendu sa réponse,
- * le CLI ayant été coupé. Le confondre avec une erreur ferait chercher une cause qui
- * n'existe pas.
+ * Call outcome icon. Interrupted is not failure: the CLI stopped before returning. Treating it as
+ * an error would prompt investigation of a nonexistent cause.
  */
 export function ToolStatusIcon({ status }: { status: ToolItem['status'] }) {
   if (status === 'running') return <Loader size={13} className="shrink-0 animate-spin text-accent" />
@@ -109,11 +99,8 @@ export function ToolStatusIcon({ status }: { status: ToolItem['status'] }) {
 }
 
 /**
- * Une durée, à la précision qu'elle mérite.
- *
- * Les minutes sont nommées plutôt que comptées en secondes : un sous-agent tourne
- * couramment plusieurs minutes, et « 185.0 s » demande une conversion mentale à
- * chaque coup d'œil.
+ * Duration at suitable precision. Name minutes instead of accumulating seconds: multi-minute
+ * subagents are common and 185.0 s requires repeated mental conversion.
  */
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms} ms`
@@ -123,7 +110,7 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`
 }
 
-/** Langage du fichier que l'appel déclare, quand il en déclare un. */
+/** File language declared by the call, when available. */
 function languageOfInput(input: unknown): string {
   if (typeof input !== 'object' || input === null) return ''
   const fields = input as Record<string, unknown>
@@ -132,12 +119,9 @@ function languageOfInput(input: unknown): string {
 }
 
 /**
- * Un payload d'outil, avec le langage à lui appliquer.
- *
- * La sortie est tantôt du JSON, tantôt du texte : le contenu d'un fichier, la sortie
- * d'une commande. Colorer une sortie de commande comme du JSON la rendrait illisible,
- * donc `fallback` ne sert qu'aux chaînes, et seulement quand l'appel dit de quel
- * fichier elles viennent.
+ * Tool payload and applicable language. Outputs may be JSON or plain file/command text;
+ * JSON-highlighting command output harms readability. Fallback applies only to strings whose source
+ * file is declared.
  */
 function asPayload(value: unknown, fallback = ''): { content: string; language: string } {
   if (value === null || value === undefined) return { content: '', language: '' }
@@ -146,17 +130,15 @@ function asPayload(value: unknown, fallback = ''): { content: string; language: 
 }
 
 /**
- * La sortie à afficher : celle du journal, ou le corps complet une fois arrivé.
- *
- * `undefined` tant que la requête n'a pas répondu, ce que `OutputSlot` distingue d'une
- * sortie réellement vide.
+ * Output to display: log output or loaded full body. Undefined until the query returns, distinct
+ * from genuinely empty output in OutputSlot.
  */
 function outputOf(tool: ToolItem, full: ToolOutputDto | undefined): unknown {
   if (tool.outputBytes === null) return tool.output
   return full ? full.output : undefined
 }
 
-/** La sortie, son chargement, ou l'échec de celui-ci. */
+/** Output, loading state, or loading failure. */
 function OutputSlot({
   ready,
   error,
@@ -200,15 +182,14 @@ export const ToolCall = memo(function ToolCall({
   const [raw, setRaw] = useState(false)
   const summary = summarize(tool.name, tool.input)
 
-  // Une sortie volumineuse n'est pas transférée avec le fil : la relecture n'en rend
-  // qu'un aperçu, et le corps complet se demande ici, à l'ouverture de la carte.
+  // Large output is omitted from thread transfers: replay supplies only a preview and the full body
+  // loads when this card opens.
   const previewed = tool.outputBytes !== null
   const full = useToolOutput(conversationId, tool.id, open && previewed)
   const ready = !previewed || full.data !== undefined
   const output = outputOf(tool, full.data)
-  // Les vues lisibles lisent `tool.output` et distinguent une chaîne d'un tableau de
-  // blocs : les nourrir avec l'aperçu ferait clignoter une image cassée avant le vrai
-  // contenu, d'où l'attente du corps complet plutôt qu'un rendu intermédiaire.
+  // Readable views distinguish strings and block arrays in tool.output: previews could briefly show
+  // broken images, so wait for the full body rather than render an intermediate state.
   const readable = open && ready ? readableView({ ...tool, output }) : null
 
   return (
@@ -273,8 +254,7 @@ export const ToolCall = memo(function ToolCall({
         </div>
       ) : null}
 
-      {/* Le fil du sous-agent est ailleurs, dans le panneau : sans ce passage, la
-          seule façon d'y arriver serait de le retrouver dans une liste. */}
+      {/* Subagent threads live in the panel: this shortcut avoids finding them manually in a list. */}
       {isSpawnTool(tool.name) ? (
         <button
           type="button"
@@ -295,11 +275,9 @@ export const ToolCall = memo(function ToolCall({
 })
 
 /**
- * Bascule entre la vue lisible et le payload natif.
- *
- * Le brut n'est pas un mode dégradé qu'on cacherait : c'est ce que le CLI a réellement
- * envoyé, et la seule façon de vérifier qu'une vue ne ment pas ou de retrouver un champ
- * qu'elle a jugé secondaire. Il reste donc à un clic, sur chaque appel.
+ * Toggle readable view and native payload. Raw is not a hidden degraded mode: it is the actual CLI
+ * data and the only way to verify views or find omitted secondary fields. Keep it one click away on
+ * every call.
  */
 function ViewSwitch({ raw, onChange }: { raw: boolean; onChange: (raw: boolean) => void }) {
   const t = useTranslate()
@@ -357,7 +335,7 @@ function Payload({
   )
 }
 
-/** Au-delà, l'énumération des noms d'outils déborde de la ligne. */
+/** Beyond this length tool names overflow the row. */
 const NAMES_SHOWN = 3
 
 function summarizeNames(tools: ToolItem[]): string {
@@ -367,15 +345,10 @@ function summarizeNames(tools: ToolItem[]): string {
 }
 
 /**
- * Suite d'appels d'outils terminés, repliée derrière une ligne.
- *
- * Les échecs sont comptés dans l'en-tête : replier ne doit jamais faire disparaître
- * une erreur du champ de vision.
- *
- * La comparaison porte sur le contenu du tableau, pas sur son identité : `buildRows`
- * regroupe à chaque appel, donc à chaque lot de deltas, et rend un tableau neuf pour
- * des appels inchangés. Comparé par référence, le `memo` ratait toujours et chaque
- * groupe du fil se redessinait seize fois par seconde pendant un tour.
+ * Collapsed sequence of completed calls. Count failures in the heading so collapse never hides
+ * errors. Compare array contents rather than identity: buildRows creates new grouping arrays each
+ * delta batch, causing reference-based memoization to miss and redraw every group sixteen times per
+ * second.
  */
 const ToolCallGroupInner = function ToolCallGroup({
   tools,
@@ -442,7 +415,7 @@ export const ToolCallGroup = memo(
   (prev, next) =>
     prev.conversationId === next.conversationId &&
     prev.tools.length === next.tools.length &&
-    // Le fold remplace l'objet d'un appel qui change : la comparaison par référence
-    // sur chaque élément est donc exacte, sans avoir à comparer champ par champ.
+    // The fold replaces changed call objects, so per-item reference comparison is exact without
+    // checking every field.
     prev.tools.every((tool, index) => tool === next.tools[index]),
 )

@@ -28,12 +28,12 @@ import { readUserSettings } from '../settings/user-settings.js'
 import type { GitHubComment } from './github-issues.js'
 
 const HOUR_MS = 3_600_000
-/** Le fil recopié dans le prompt : assez pour situer, read_card donne le reste. */
+/** Thread excerpt injected into prompts; `read_card` provides the rest. */
 const THREAD_NOTES = 12
 const DESCRIPTION_CHARS = 6000
 const NOTE_CHARS = 2000
 
-/** Ce qui ouvre une session de maintenance, ou lui arrive. */
+/** Trigger opening or messaging maintenance sessions. */
 export type MaintenanceEvent =
   | { kind: 'issue'; link: BoardLinkRow; issue: CardIssueRow }
   | { kind: 'comment'; link: BoardLinkRow; issue: CardIssueRow; comments: GitHubComment[] }
@@ -44,18 +44,9 @@ export interface Responder {
   respond(event: MaintenanceEvent): Promise<MaintenanceOutcome>
 }
 
-/**
- * Les sessions de maintenance d'un board relié : une par issue, ouverte au premier
- * déclencheur et rattachée à la carte ; les commentaires suivants lui arrivent en
- * message, pour qu'elle garde l'historique de ce qu'elle a déjà fait et dit.
- *
- * Sillage n'y écrit que des faits (l'issue, le commentaire, où publier et comment ne pas
- * se relancer soi-même) puis les instructions de l'utilisateur, telles quelles. Ce que
- * l'agent fait, corriger, répondre ou rien, et sous quelle identité, c'est elles qui le
- * disent.
- */
+/** One maintenance session per linked-board issue, created on the first trigger and attached to the card. Later comments become messages so sessions retain prior work and replies. Sillage provides only facts (issue, comment, publication location and loop prevention) followed by verbatim user instructions. Those determine whether agents fix, reply or do nothing, and under which identity. */
 export class BoardResponder implements Responder {
-  /** Lancements et messages par board, sur l'heure glissante. En mémoire : un garde-fou. */
+  /** Launches and messages per board over a sliding hour; in-memory safeguard. */
   private readonly recent = new Map<string, number[]>()
 
   constructor(
@@ -78,8 +69,8 @@ export class BoardResponder implements Responder {
     recent.push(now)
     this.recent.set(link.projectId, recent)
 
-    // La session de l'issue, tant qu'elle existe, suit cette carte et n'a pas été
-    // archivée : archiver est la façon de dire « repars de zéro ».
+    // Reuse issue sessions while they exist, track this card and remain unarchived:
+    // archiving explicitly requests a fresh start.
     const session = issue.responderId
       ? this.ctx.db
           .select({ id: conversations.id })
@@ -94,8 +85,8 @@ export class BoardResponder implements Responder {
 
     const id = randomUUID()
     const worktreeId = link.workspace === 'worktree' ? await this.worktree(project, link.userId, issue.number) : null
-    // Posé avant le lancement : le serveur MCP de la session lit dès son démarrage si elle
-    // est une session de maintenance (outils de décision), avant que la création rende la main.
+    // Set before launch: session MCP reads maintenance status for decision tools
+    // before creation returns.
     this.ctx.db.update(cardIssues).set({ responderId: id }).where(eq(cardIssues.cardId, card.id)).run()
     const row = await createConversation(this.ctx.db, this.sessions, {
       id,
@@ -104,8 +95,8 @@ export class BoardResponder implements Responder {
       agent: link.sessionAgent,
       config: await this.config(link, project),
       worktreeId,
-      // Rattachée sans avancer la carte : la colonne dit l'état de l'issue sur GitHub,
-      // c'est l'agent qui la change s'il en a reçu l'instruction.
+      // Attach without advancing cards: columns describe GitHub issue state,
+      // and agents change them only when instructed.
       cardId: card.id,
       title: `Issue #${issue.number} · ${issue.title}`.slice(0, 200),
       origin: null,
@@ -121,17 +112,14 @@ export class BoardResponder implements Responder {
     return 'launched'
   }
 
-  /**
-   * Un commentaire pour une session qui existe : il attend la fin du tour en cours, ou
-   * l'infléchit si le board le demande et que le CLI le sait faire.
-   */
+  /** Comments for existing sessions wait until current turns end, or steer when board settings request it and the CLI supports it. */
   private async deliver(conversationId: string, link: BoardLinkRow, text: string): Promise<void> {
     const messageId = randomUUID()
     if (link.commentDelivery === 'steer' && (await this.sessions.steer(conversationId, messageId, text))) return
     await this.sessions.sendMessage(conversationId, messageId, text)
   }
 
-  /** Les réglages choisis pour le board, ou ceux du projet pour ce CLI. */
+  /** Board-selected settings, falling back to project settings for this CLI. */
   private async config(link: BoardLinkRow, project: ProjectRow): Promise<AgentConfig> {
     const agent = link.sessionAgent
     const chosen = link.sessionConfig ? agentConfigSchema.safeParse(JSON.parse(link.sessionConfig)) : null
@@ -143,7 +131,7 @@ export class BoardResponder implements Responder {
     return this.registry.adapter(agent).resolveDefaults(base)
   }
 
-  /** Le worktree `issue-<n>`, créé au besoin, repris s'il existe déjà. */
+  /** `issue-<n>` worktree, created as needed or reused when present. */
   private async worktree(project: ProjectRow, userId: string, number: number): Promise<string> {
     const name = `issue-${number}`
     const existing = this.ctx.db
@@ -155,7 +143,7 @@ export class BoardResponder implements Responder {
     return (await createWorktree(this.ctx, project, userId, name, 'HEAD')).id
   }
 
-  /** Les dernières notes de la carte, de la plus ancienne à la plus récente. */
+  /** Latest card notes, oldest first. */
   private thread(cardId: string) {
     return this.ctx.db
       .select({
@@ -186,7 +174,7 @@ function stamp(ms: number): string {
   return `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
 
-/** Un commentaire cité : son auteur, sa date, son lien, puis le texte en citation. */
+/** Quoted comment: author, date, link, then quoted text. */
 function quote(comment: GitHubComment): string {
   const body = clip(comment.body ?? '', NOTE_CHARS)
     .split('\n')
@@ -195,7 +183,7 @@ function quote(comment: GitHubComment): string {
   return `@${comment.user?.login ?? 'ghost'}, ${stamp(Date.parse(comment.created_at))} — ${comment.html_url}\n${body}`
 }
 
-/** Où et comment publier, et la marque sans laquelle l'agent se relancerait lui-même. */
+/** Where and how to publish, plus the marker preventing self-triggered sessions. */
 function publishing(link: BoardLinkRow, conversationId: string): string {
   const signature = link.identity === 'ai' ? link.signature.trim() : ''
   const added = signature
@@ -223,7 +211,7 @@ export function firstPrompt(
   const labels = JSON.parse(issue.labels || '[]') as string[]
   const fresh = event.kind === 'comment' ? event.comments : []
   const history = thread
-    // Les nouveaux commentaires sont déjà des notes : ils sont cités plus bas, à part.
+    // New comments are already notes and are quoted separately below.
     .filter((note) => !fresh.some((comment) => String(comment.id) === note.externalId))
     .map((note) => {
       const who = note.externalAuthor

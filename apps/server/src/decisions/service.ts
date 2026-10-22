@@ -29,14 +29,14 @@ import { HttpError } from '../http/errors.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 
-/** Échéances et remises en retard : la précision de la minute suffit. */
+/** Minute precision suffices for deadlines and delayed deliveries. */
 const TICK_MS = 30_000
 const HOUR_MS = 3_600_000
 
-/** Refus adressé à l'agent : le texte lui est rendu tel quel. */
+/** Agent-facing rejections returned verbatim. */
 export class DecisionRefusal extends Error {}
 
-/** La source autonome d'une session : ce qui l'a ouverte, et ce qu'elle permet. */
+/** Autonomous session source: what launched it and what it permits. */
 export interface DecisionSource {
   kind: DecisionSourceKind
   label: string
@@ -60,15 +60,7 @@ function stamp(ms: number): string {
   return `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
 
-/**
- * Les décisions demandées par les sessions autonomes.
- *
- * Une session ouverte par une personne pose ses questions dans le fil, où quelqu'un les
- * lit ; une tâche planifiée, une automatisation ou la maintenance du board n'a personne
- * en face. Elle dépose ici sa demande sans se bloquer, termine son tour ou continue, et
- * la réponse lui revient en message : c'est ce qui survit aux redémarrages, là où une
- * demande native du CLI meurt avec son process.
- */
+/** Decisions requested by autonomous sessions. Human-opened sessions ask in conversations with someone reading; scheduled tasks, automations and board maintenance have nobody present. They deposit requests without blocking and finish or continue turns; answers return as messages, surviving restarts unlike native CLI requests that die with processes. */
 export class DecisionService {
   private timer: NodeJS.Timeout | null = null
   private logger: FastifyBaseLogger | null = null
@@ -92,11 +84,7 @@ export class DecisionService {
     this.timer = null
   }
 
-  /**
-   * La source autonome d'une conversation, ou null pour une session ouverte par une
-   * personne. Lue sur la conversation elle-même (tâche) ou sur l'issue qu'elle suit
-   * (maintenance) : rien qu'un agent puisse déclarer de lui-même.
-   */
+  /** Autonomous conversation source, or null for human-opened sessions. Read task association from conversations or maintenance association from tracked issues; agents cannot self-declare it. */
   sourceOf(conversation: Pick<ConversationRow, 'id' | 'scheduleId' | 'projectId'>): DecisionSource | null {
     if (conversation.scheduleId) {
       const task = this.ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, conversation.scheduleId)).get()
@@ -131,7 +119,7 @@ export class DecisionService {
     }
   }
 
-  // --- Gestes de l'agent (par le serveur MCP, via `agent_requests`) ----------------
+  // --- Agent actions (through the MCP server and agent_requests) ----------------
 
   async request(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
     const source = this.sourceOf(requester)
@@ -225,12 +213,9 @@ export class DecisionService {
     return `Demande retirée (« ${pending.question} »).`
   }
 
-  // --- Gestes de l'utilisateur ------------------------------------------------------
+  // --- User actions ------------------------------------------------------
 
-  /**
-   * `sources` : celles que le client sait afficher (voir `requestedDecisionSources`).
-   * Toutes par défaut, comme pour `get` : seule la route restreint.
-   */
+  /** `sources`: kinds the client can display (see `requestedDecisionSources`). Defaults to all like `get`; only routes restrict it. */
   list(
     userId: string,
     status: 'pending' | 'all',
@@ -253,7 +238,7 @@ export class DecisionService {
     return this.toDtos(rows)
   }
 
-  /** Toutes les sources par défaut : seul un client qui lit pour afficher en restreint la liste. */
+  /** All sources by default; only display clients restrict lists. */
   get(userId: string, id: string, sources: readonly DecisionSourceKind[] = decisionSourceKindSchema.options): DecisionDto {
     const row = this.ctx.db.select().from(decisions).where(eq(decisions.id, id)).get()
     if (!row || row.userId !== userId || !sources.includes(row.sourceKind)) {
@@ -288,7 +273,7 @@ export class DecisionService {
     return this.get(userId, id)
   }
 
-  /** Les anciennes propositions restent consultables, sans action ni relance d'agent. */
+  /** Old proposals remain readable without actions or agent restarts. */
   private retireWorktreeProposal(row: DecisionRow): void {
     this.close(row, {
       status: 'withdrawn',
@@ -297,13 +282,9 @@ export class DecisionService {
     })
   }
 
-  // --- Passages ---------------------------------------------------------------------
+  // --- Processing passes ---------------------------------------------------------------------
 
-  /**
-   * Échéances, demandes devenues caduques (session archivée ou supprimée) et remises
-   * restées en souffrance, par exemple parce que le daemon a redémarré entre la réponse
-   * et la remise.
-   */
+  /** Handles deadlines, obsolete requests (archived/deleted sessions) and pending deliveries, such as daemon restarts between answering and delivery. */
   async tick(): Promise<void> {
     if (this.ticking) return
     this.ticking = true
@@ -322,15 +303,15 @@ export class DecisionService {
               .map((row) => [row.id, row.archivedAt]),
       )
       for (const row of pending) {
-        // Les versions précédentes déposaient ici les nettoyages : on les retire
-        // dès le démarrage, sans toucher aux arbres ni aux demandes des agents.
+        // Older versions deposited cleanup proposals here: remove them at startup
+        // without touching trees or agent requests.
         if (row.sourceKind === 'worktree') {
           this.retireWorktreeProposal(row)
           continue
         }
         const archivedAt = alive.get(row.conversationId)
         if (archivedAt === undefined || archivedAt !== null) {
-          // Archiver une session, c'est la ranger : sa demande n'attend plus personne.
+          // Archiving puts sessions away; their requests no longer await anyone.
           this.close(row, { status: 'withdrawn', withdrawnReason: null, deliveredAt: now })
         } else if (row.expiresAt <= now) {
           await this.deliver(this.close(row, { status: 'expired' }))
@@ -357,7 +338,7 @@ export class DecisionService {
     return closed
   }
 
-  /** La réponse, ou l'échéance, part à la session : c'est ce message qui la relance. */
+  /** Answers or deadlines become session messages, waking agents. */
   private async deliver(row: DecisionRow): Promise<void> {
     if (row.sourceKind === 'worktree') {
       this.ctx.db.update(decisions).set({ deliveredAt: Date.now() }).where(eq(decisions.id, row.id)).run()
@@ -368,7 +349,7 @@ export class DecisionService {
       try {
         await this.sessions.sendMessage(row.conversationId, randomUUID(), this.message(row))
       } catch (err) {
-        // Le passage suivant réessaie ; la décision, elle, est tranchée.
+        // Retry delivery next pass; decisions themselves are already resolved.
         this.logger?.warn({ err, decision: row.id }, 'réponse de décision non remise')
         return
       }
@@ -400,7 +381,7 @@ export class DecisionService {
       .join('\n')
   }
 
-  /** Pour une session de maintenance, la décision s'inscrit aussi dans le fil de la carte. */
+  /** Maintenance-session decisions also appear in card threads. */
   private noteOnCard(row: DecisionRow): void {
     const answer =
       row.status === 'expired'
@@ -421,7 +402,7 @@ export class DecisionService {
       .run()
   }
 
-  /** Notification et toast : une décision attend, c'est tout l'intérêt de la prévenir. */
+  /** Notifications and toasts announce pending decisions, the purpose of notifying users. */
   private async announce(row: DecisionRow): Promise<void> {
     const project = this.ctx.db.select({ name: projects.name }).from(projects).where(eq(projects.id, row.projectId)).get()
     this.notifications.decisionsChanged(row.userId)
@@ -472,7 +453,7 @@ export class DecisionService {
         ? []
         : this.ctx.db.select({ id: users.id, name: users.displayName }).from(users).where(inArray(users.id, answerers)).all().map((row) => [row.id, row.name]),
     )
-    // Le numéro de la carte, pas celui de l'issue : c'est lui qui ouvre la carte au board.
+    // Card numbers, not issue numbers, open board cards.
     const cardNumbers = new Map(
       this.ctx.db
         .select({ cardId: cards.id, number: cards.number })

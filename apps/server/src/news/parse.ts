@@ -20,7 +20,7 @@ function articleUrl(value: string, base: string): string | null {
 }
 
 export function parseFeed(xml: string, base: string): NewsFeed {
-  // Les flux n'ont besoin ni de DTD ni d'entités définies par leur auteur.
+  // Feeds need neither DTDs nor author-defined entities.
   if (/<!DOCTYPE|<!ENTITY/i.test(xml) || XMLValidator.validate(xml) !== true) throw new FeedError('news_parse')
   const parsed = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, parseAttributeValue: false }).parse(xml) as Node
   const atom = parsed.feed !== undefined

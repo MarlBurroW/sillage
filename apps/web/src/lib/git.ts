@@ -11,11 +11,9 @@ import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
 /**
- * Lectures et actions git de l'onglet Git.
- *
- * Toutes les clés commencent par `['git', scope]` : une action, quelle qu'elle soit,
- * invalide tout ce que l'onglet sait du dépôt d'un coup. Chercher ce qu'un `pull` a pu
- * changer (la branche, l'index, les commits, les stashs) serait toujours incomplet.
+ * Git reads and actions for the Git tab. Every key starts with `['git', scope]`: any action
+ * invalidates all repository knowledge at once. Enumerating everything changed by `pull` (branch,
+ * index, commits, stashes) would always be incomplete.
  */
 
 const gitKey = (scope: WorkspaceScope, ...rest: string[]) => ['git', scope, ...rest]
@@ -24,8 +22,8 @@ export function useGitStatus(scope: WorkspaceScope) {
   return useQuery({
     queryKey: gitKey(scope, 'status'),
     queryFn: () => api.get<GitStatusDto>(`${workspaceApiBase(scope)}/git/status`),
-    // Relu à chaque ouverture de l'onglet, à la fin d'un tour, et après chaque action.
-    // Jamais en boucle : un statut lance plusieurs processus git.
+    // Reread on tab opening, turn completion, and after actions. Never poll: status launches
+    // several Git processes.
     staleTime: Infinity,
     refetchOnMount: 'always',
   })
@@ -51,7 +49,7 @@ export function useGitStashes(scope: WorkspaceScope, enabled: boolean) {
   })
 }
 
-/** Le diff d'un fichier, demandé seulement quand on le déplie. */
+/** File diff requested only on expansion. */
 export function useGitFileDiff(scope: WorkspaceScope, path: string, area: GitArea, enabled: boolean) {
   return useQuery({
     queryKey: gitKey(scope, 'file-diff', area, path),
@@ -65,11 +63,8 @@ export function useGitFileDiff(scope: WorkspaceScope, path: string, area: GitAre
 }
 
 /**
- * Relit tout ce qui dépend du dépôt.
- *
- * Au-delà de l'onglet lui-même : l'arborescence porte les couleurs d'état git, la liste
- * des projets et des worktrees leur branche et leur propreté, le sélecteur de worktree
- * ses branches. Un commit ou un checkout les change tous.
+ * Reread everything depending on the repository, beyond this tab: tree Git colors, project/worktree
+ * branches and cleanliness, and worktree-switcher branches. Commits and checkouts affect them all.
  */
 export function useRefreshGit(scope: WorkspaceScope): () => void {
   const queryClient = useQueryClient()
@@ -86,11 +81,8 @@ export function useRefreshGit(scope: WorkspaceScope): () => void {
 }
 
 /**
- * Une action git de la portée.
- *
- * Le dépôt est relu que l'action ait réussi ou non : un `merge` refusé peut quand même
- * avoir touché l'index, et l'onglet doit montrer le dépôt tel qu'il est, pas tel qu'on
- * l'espérait.
+ * Git action within the scope. Reread on success or failure: rejected merges may still alter the
+ * index, and the tab must show the actual repository rather than the expected result.
  */
 export function useGitAction<Body = void, Result = void>(
   scope: WorkspaceScope,
@@ -103,8 +95,7 @@ export function useGitAction<Body = void, Result = void>(
     mutationFn: async (body: Body) => {
       const url = `${workspaceApiBase(scope)}/git/${path}`
       const paths = (body as { paths?: string[] } | undefined)?.paths
-      // Les actions globales gardent tous les fichiers, sans dépasser la limite de
-      // l'API ni celle des arguments de Git, notamment sous Windows.
+      // Global actions retain every file without exceeding API or Git argument limits, particularly on Windows.
       if (['stage', 'unstage', 'discard'].includes(path) && paths && (paths.length > 100 || paths.join('').length > 8000)) {
         let result: Result | undefined
         let offset = 0

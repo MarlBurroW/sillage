@@ -20,7 +20,7 @@ import { Badge, Banner, Button, IconButton, cx } from './ui'
 interface DirectoryPickerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Dossier ouvert à l'affichage. Vide ou invalide, on part de l'accueil. */
+  /** Initially open directory; empty or invalid falls back to home. */
   initialPath: string
   onConfirm: (path: string) => void
 }
@@ -32,21 +32,19 @@ export function DirectoryPicker({
   onConfirm,
 }: DirectoryPickerProps) {
   const t = useTranslate()
-  // null signifie "laisse le serveur choisir", c'est-à-dire le dossier personnel.
+  // null lets the server choose the home directory.
   const [path, setPath] = useState<string | null>(initialPath || null)
   const [showHidden, setShowHidden] = useState(false)
   const [creating, setCreating] = useState(false)
   const listing = useDirectoryListing(open ? path : null, showHidden)
   const createDir = useCreateDirectory()
 
-  // Rouvrir la fenêtre doit repartir du chemin courant du formulaire, pas du
-  // dernier dossier visité lors de la session précédente.
+  // Reopening starts at the form's current path rather than the last visited directory.
   useEffect(() => {
     if (open) setPath(initialPath || null)
   }, [open, initialPath])
 
-  // Changer de dossier abandonne une création en cours : la saisie ne vise plus
-  // le même parent.
+  // Directory navigation abandons ongoing creation because its parent changed.
   useEffect(() => {
     setCreating(false)
   }, [path])
@@ -79,7 +77,7 @@ export function DirectoryPicker({
         <Dialog.Content
           className={cx(
             'fixed z-50 flex flex-col overflow-hidden surface border-line shadow-pop',
-            // Mobile : feuille plein écran. Desktop : fenêtre centrée.
+            // Fullscreen sheet on mobile, centered window on desktop.
             'inset-0 border-0',
             'sm:inset-auto sm:top-1/2 sm:left-1/2 sm:h-[min(32rem,85dvh)] sm:w-[min(34rem,92vw)]',
             'sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border',

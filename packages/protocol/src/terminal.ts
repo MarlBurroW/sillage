@@ -1,49 +1,46 @@
 import { z } from 'zod'
 
 /**
- * Socket dédiée au terminal, distincte de celle du journal.
+ * Dedicated terminal socket, separate from the journal socket.
  *
- * La sortie d'un shell n'est pas du contenu de conversation : elle ne suit pas
- * l'invariant I2, n'est jamais persistée, et son débit ferait passer les événements
- * du fil derrière des kilo-octets de sortie de compilation si les deux partageaient
- * la même connexion.
+ * Shell output is not conversation content: it does not follow invariant I2, is never
+ * persisted, and its throughput would queue thread events behind kilobytes of build output if
+ * both shared one connection.
  */
 
-/** Au-delà, ce n'est plus une frappe mais un collage démesuré. */
+/** Beyond this, input is an oversized paste rather than typing. */
 export const MAX_TERMINAL_INPUT = 64 * 1024
 
 /**
- * Terminaux ouverts simultanément par projet.
+ * Simultaneously open terminals per project.
  *
- * Un shell est un process qui vit : sans plafond, un projet laissé ouvert en
- * accumulerait autant qu'on a cliqué sur « + ». Partagé plutôt que côté serveur seul,
- * pour que l'interface sache griser le bouton au lieu d'attendre un refus.
+ * Shells are live processes: without a limit, an open project would accumulate one for every
+ * “+” click. Shared rather than server-only so the UI can disable the button before rejection.
  */
 export const MAX_TERMINALS_PER_PROJECT = 6
 
 export interface TerminalDto {
   id: string
   title: string
-  /** Faux quand le shell s'est terminé mais que son onglet est encore affiché. */
+  /** False when the shell has exited but its tab remains displayed. */
   alive: boolean
-  /** Le process a été emporté par un redémarrage du daemon ; l'écran, lui, est resté. */
+  /** The process was lost in a daemon restart, but its screen remains. */
   interrupted: boolean
-  /** Répertoire du shell : le workspace du projet, ou un worktree. */
+  /** Shell directory: the project workspace or a worktree. */
   cwd: string
   createdAt: number
-  /** Action de projet qui a ouvert ce terminal pour y jouer sa commande. */
+  /** Project action that opened this terminal to run its command. */
   actionId: string | null
-  /** Code de sortie d'une commande d'action terminée ; null pour un shell ou tant qu'elle tourne. */
+  /** Exit code of a completed action command; null for shells or while running. */
   exitCode: number | null
 }
 
 export const renameTerminalBodySchema = z.object({ title: z.string().min(1).max(60) })
 
 /**
- * Ouvert depuis une session, le terminal prend son répertoire (worktree compris) ;
- * sans rien, celui du workspace du projet. `cwd` sert à relancer un shell interrompu
- * là où il tournait : le serveur ne l'accepte que s'il désigne le workspace ou un
- * worktree encore vivant du projet.
+ * Opened from a session, the terminal uses its directory, including the worktree; otherwise the
+ * project workspace. `cwd` restarts interrupted shells in their original directory: the server
+ * accepts it only if it names the workspace or a still-existing project worktree.
  */
 export const openTerminalBodySchema = z.object({
   conversationId: z.string().min(1).optional(),
@@ -61,7 +58,7 @@ export const terminalClientMessageSchema = z.discriminatedUnion('t', [
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>
 
 export type TerminalServerMessage =
-  /** Sortie déjà produite, envoyée à l'attachement pour repeindre l'écran. */
+  /** Existing output sent on attachment to redraw the screen. */
   | { t: 'ready'; replay: string; cols: number; rows: number; exited: boolean }
   | { t: 'output'; data: string }
   | { t: 'exit'; code: number }

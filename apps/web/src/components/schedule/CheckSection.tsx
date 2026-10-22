@@ -13,11 +13,8 @@ import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { useApproveScheduleCheck, useTestScheduleCheck } from '../../lib/schedules'
 
 /**
- * La vérification avant le tour, dans le formulaire d'une tâche : le script, son délai,
- * et un essai qui le joue sur le serveur sans rien lancer.
- *
- * L'essai porte sur le texte du formulaire, pas sur celui enregistré : c'est avant de
- * sauver qu'on veut savoir si le script dit ce qu'on croit.
+ * Pre-turn check in task forms: script, timeout, and server trial without launching work. Test
+ * current form text rather than saved text because users need verification before saving.
  */
 export function CheckSection({
   projectId,
@@ -28,9 +25,9 @@ export function CheckSection({
   onTimeoutChange,
 }: {
   projectId: string
-  /** La tâche modifiée, pour essayer sur une copie de son état ; absente à la création. */
+  /** Edited task for trial-state copies; absent during creation. */
   taskId?: string
-  /** Null : pas de vérification. */
+  /** Null means no check. */
   script: string | null
   timeout: string
   onScriptChange: (script: string | null) => void
@@ -106,7 +103,7 @@ const VERDICT_TONES: Record<ScheduleCheckVerdict, 'positive' | 'neutral' | 'crit
   error: 'critical',
 }
 
-/** Ce qu'un essai a donné : le verdict, puis les deux sorties, telles quelles. */
+/** Trial verdict and both outputs unchanged. */
 export function CheckResult({ result }: { result: ScheduleCheckResultDto }) {
   const t = useTranslate()
   return (
@@ -137,7 +134,7 @@ function Output({ label, text, empty }: { label: string; text: string; empty?: s
   )
 }
 
-/** Le script proposé par un agent, à relire et essayer avant de le valider. */
+/** Agent-proposed script to review and test before approval. */
 export function CheckReview({
   projectId,
   taskId,
@@ -177,9 +174,8 @@ export function CheckReview({
 }
 
 /**
- * La validation d'un script proposé par un agent : le texte, un essai, et le bouton qui
- * valide exactement ce texte-là. Ouverte depuis la carte de la tâche ou depuis l'appel
- * `schedule_task` dans la conversation.
+ * Agent script approval: text, trial, and a button approving exactly that text. Opened from task
+ * cards or schedule_task calls in conversations.
  */
 export function CheckApprovalDialog({
   task,

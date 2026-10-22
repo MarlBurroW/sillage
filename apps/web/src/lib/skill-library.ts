@@ -17,16 +17,14 @@ import { api, ApiRequestError } from './api'
 import { translate, translateError } from './i18n'
 
 /**
- * Bibliothèque de skills de Sillage, livrée aux CLI comme des skills natifs.
- *
- * Toutes les requêtes partagent la racine `skill-library` : une écriture, quelle qu'elle
- * soit, invalide tout. Les listes sont courtes, et un skill renommé ou déplacé change à
- * la fois la liste globale, celle d'un projet et son propre détail.
+ * Sillage skill library delivered to CLIs as native skills. All queries share the `skill-library`
+ * root: every write invalidates everything. Lists are short, and renaming or moving skills affects
+ * global and project lists plus details together.
  */
 
 const ROOT = ['skill-library']
 
-/** Les skills globaux, plus ceux du projet quand il est donné. */
+/** Global skills plus project skills when a project is supplied. */
 export function useSkillLibrary(projectId: string | null) {
   return useQuery({
     queryKey: [...ROOT, 'list', projectId],
@@ -46,8 +44,8 @@ export function useLibrarySkill(id: string) {
 }
 
 /**
- * Le contenu d'un fichier annexe. Pas de mise en cache durable : le fichier s'édite en
- * place, et un cache qui le remplacerait derrière l'utilisateur écraserait sa saisie.
+ * Supporting file contents. Avoid durable caching: files edit in place and a background cache
+ * replacement would overwrite user input.
  */
 export function useSkillFile(id: string, path: string | null) {
   return useQuery({
@@ -59,7 +57,7 @@ export function useSkillFile(id: string, path: string | null) {
   })
 }
 
-/** Ce que la machine porte déjà : dossiers de l'utilisateur (admin) et dépôt du projet. */
+/** Existing machine content: user directories (admin) and project repository. */
 export function useLocalSkills(projectId: string | null, enabled: boolean) {
   return useQuery({
     queryKey: [...ROOT, 'local', projectId],
@@ -118,13 +116,13 @@ export const useUploadSkillFile = () =>
 export interface ImportTarget {
   scope: LibrarySkillScope
   projectId: string | null
-  /** Remplace le nom du frontmatter, pour un skill dont le nom est déjà pris. */
+  /** Replace the frontmatter name when importing a skill whose name is taken. */
   name?: string
 }
 
 /**
- * Importe une archive `.zip`, un `.skill`, ou un dossier choisi dans le navigateur, zippé
- * ici : le serveur n'a qu'un chemin d'import, celui des archives.
+ * Import a `.zip`, `.skill`, or browser-selected directory zipped here: the server has only one
+ * import path, archives.
  */
 export const useImportLibrarySkill = () =>
   useLibraryMutation(({ target, files }: { target: ImportTarget; files: File[] }) => {
@@ -142,14 +140,14 @@ export function exportUrl(id: string): string {
   return `/api/skill-library/${id}/export`
 }
 
-/** Chaque segment encodé à part : les `/` séparent, le reste ne doit rien casser. */
+/** Encode segments individually: slashes separate them and everything else must stay safe. */
 function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/')
 }
 
 /**
- * Les fichiers d'un dossier choisi par `webkitdirectory`, dans une archive. Le dossier
- * choisi reste le premier niveau, que le serveur reconnaît comme dossier du skill.
+ * Archive files from a `webkitdirectory` selection. Retain the selected directory as the first
+ * level, recognized by the server as the skill directory.
  */
 async function zipFolder(files: File[]): Promise<Blob> {
   const entries: Zippable = {}
@@ -159,7 +157,7 @@ async function zipFolder(files: File[]): Promise<Blob> {
   return new Blob([zipSync(entries)], { type: 'application/zip' })
 }
 
-/** Un envoi multipart, l'erreur traduite comme le fait `api` pour le JSON. */
+/** Multipart upload with translated errors, like `api` for JSON. */
 async function postFile<T>(endpoint: string, file: Blob, filename: string): Promise<T> {
   const body = new FormData()
   body.append('file', file, filename)

@@ -8,14 +8,9 @@ import { EditorView } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 
 /**
- * Habillage de CodeMirror par les jetons de Sillage.
- *
- * Un thème importé (`one-dark` et consorts) jurerait avec le reste : les couleurs
- * viennent des mêmes variables que la coloration des blocs de code du fil, donc
- * changer de thème ou de teinte déplace l'éditeur avec.
- *
- * Les valeurs sont des `var()` et non des couleurs résolues : le thème se change à
- * chaud sans reconstruire l'éditeur.
+ * CodeMirror styled with Sillage tokens. Imported themes would clash; use the thread's syntax
+ * variables so theme and hue changes affect the editor too. Keep CSS var() values unresolved to
+ * update themes live without rebuilding.
  */
 export const editorTheme = EditorView.theme({
   '&': {
@@ -41,7 +36,7 @@ export const editorTheme = EditorView.theme({
     backgroundColor: 'var(--sg-surface-high)',
     color: 'var(--sg-ink-soft)',
   },
-  // Sans `!important`, la couche de sélection de CodeMirror l'emporte sur le thème.
+  // Without important, CodeMirror selection styling overrides the theme.
   '.cm-selectionBackground, ::selection': { backgroundColor: 'var(--sg-accent-wash) !important' },
   '&.cm-focused': { outline: 'none' },
   '.cm-selectionMatch': { backgroundColor: 'var(--sg-accent-wash)' },
@@ -51,9 +46,8 @@ export const editorTheme = EditorView.theme({
     color: 'var(--sg-accent-ink)',
   },
   /*
-   * Panneau de recherche. CodeMirror l'habille en champs et boutons natifs, blancs
-   * quel que soit le thème : il jurait avec le reste et devenait illisible en sombre.
-   * Les règles ci-dessous reprennent les mêmes jetons que les contrôles de Sillage.
+   * Search panel. Native white controls clash and become unreadable in dark mode. Apply the same
+   * tokens as Sillage controls.
    */
   '.cm-panels': {
     backgroundColor: 'var(--sg-surface-high)',
@@ -92,7 +86,7 @@ export const editorTheme = EditorView.theme({
     padding: '0 0.625rem',
     border: '1px solid var(--sg-line)',
     borderRadius: 'var(--radius-md, 0.5rem)',
-    // Le dégradé natif de CodeMirror ignore la couleur de fond qu'on lui donne.
+    // CodeMirror's native gradient ignores the supplied background color.
     backgroundImage: 'none',
     backgroundColor: 'var(--sg-surface)',
     color: 'var(--sg-ink)',
@@ -120,7 +114,7 @@ export const editorTheme = EditorView.theme({
   },
 })
 
-/** Mêmes sept familles que la coloration du fil : une seule palette pour l'application. */
+/** Same seven syntax families as the thread: one app palette. */
 export const editorHighlight = syntaxHighlighting(
   HighlightStyle.define([
     { tag: [tags.comment, tags.lineComment, tags.blockComment], color: 'var(--sg-syn-comment)', fontStyle: 'italic' },
@@ -146,16 +140,10 @@ export const editorHighlight = syntaxHighlighting(
 )
 
 /**
- * Un mode hérité de CodeMirror 5, enveloppé pour CodeMirror 6.
- *
- * `@codemirror/legacy-modes` n'a pas de grammaire Lezer : ses modes sont des analyseurs
- * ligne à ligne, moins fins qu'une vraie grammaire (pas de repli de code, pas
- * d'indentation contextuelle), mais ils couvrent d'un seul paquet le shell, TOML, INI,
- * Dockerfile et une vingtaine d'autres. Colorer approximativement un fichier `.env`
- * vaut mieux que le laisser tout blanc.
- *
- * Le module est passé en fonction et non en chaîne : un `import()` construit par
- * concaténation sort du champ d'analyse du bundler, qui ne saurait plus quoi produire.
+ * Legacy CodeMirror 5 mode wrapped for version 6. Legacy modes use line parsers rather than Lezer
+ * grammars, lacking folding and contextual indentation but covering shell, TOML, INI, Dockerfile,
+ * and many others in one package. Approximate env-file highlighting beats plain white text. Pass
+ * modules as functions, not concatenated import strings the bundler cannot analyze.
  */
 function legacy(load: () => Promise<StreamParser<unknown>>): () => Promise<LanguageSupport> {
   return async () => {
@@ -165,11 +153,8 @@ function legacy(load: () => Promise<StreamParser<unknown>>): () => Promise<Langu
 }
 
 /**
- * Modes chargés à la demande, comme highlight.js pour le fil : embarquer tous les
- * langages ferait grossir le paquet initial pour un panneau qu'on n'ouvre pas toujours.
- *
- * Les extensions sont les clés. Une extension absente ne colore rien plutôt que
- * d'appliquer un mode approximatif.
+ * Load modes on demand like thread highlight.js: bundling every language would inflate initial load
+ * for an optional panel. Extensions are keys; unknown ones remain uncolored rather than guessed.
  */
 const LOADERS: Record<string, () => Promise<LanguageSupport>> = {
   ts: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ typescript: true })),
@@ -232,12 +217,9 @@ const LOADERS: Record<string, () => Promise<LanguageSupport>> = {
 }
 
 /**
- * Fichiers que leur nom entier identifie, faute d'extension.
- *
- * `extname('.env')` rend une chaîne vide : pour Node, un fichier qui commence par un
- * point n'a pas d'extension, il a un nom. C'est pour ça qu'un `.env` s'affichait tout
- * blanc, commentaires compris. Les préfixes couvrent les déclinaisons (`.env.local`,
- * `Dockerfile.dev`).
+ * Whole-name matching for extensionless files. Node treats .env as a name, not an extension,
+ * previously leaving it uncolored including comments. Prefixes cover variants such as .env.local
+ * and Dockerfile.dev.
  */
 const NAMED: { prefix: string; extension: string }[] = [
   { prefix: '.env', extension: 'env' },
@@ -253,10 +235,8 @@ const NAMED: { prefix: string; extension: string }[] = [
 ]
 
 /**
- * Le mode d'un fichier, d'après son chemin.
- *
- * Le nom entier passe avant l'extension : `.env.local` a bien « local » pour extension
- * au sens de Node, ce qui ne désigne aucun langage.
+ * Mode from file path. Whole names precede extensions because .env.local has the meaningless
+ * extension local under Node rules.
  */
 export function extensionOfPath(path: string): string {
   const name = (path.split('/').pop() ?? '').toLowerCase()

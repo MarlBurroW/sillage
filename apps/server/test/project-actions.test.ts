@@ -81,7 +81,7 @@ test('an agent renaming keeps the review, changing the command drops it', async 
   assert.equal(changed.approvedAt, null)
   assert.equal(loadAction(db, row.id).approvedAt, null)
 
-  // Une retouche depuis l'interface vaut relecture.
+  // UI edits count as review.
   assert.ok(updateAction(db, changed, { command: 'pnpm dev' }, null).approvedAt)
 })
 
@@ -116,7 +116,7 @@ test('a task runs in its own terminal, keeps its exit code, and is not doubled w
   const done = terminals.latestForAction('project', row.id)!
   assert.equal(done.exitCode, 3)
 
-  // Relancer remplace l'écran terminé au lieu d'en empiler un second.
+  // Relaunching replaces finished screens instead of stacking another.
   const third = await runner.run(row, dir, null)
   assert.notEqual(third.terminal?.id, first.terminal?.id)
   assert.equal(terminals.list('project').length, 1)

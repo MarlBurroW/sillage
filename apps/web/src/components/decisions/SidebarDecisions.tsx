@@ -5,13 +5,10 @@ import { useTranslate } from '../../lib/i18n'
 import { decisionDue } from './DecisionSource'
 import { decisionQuestion } from './decision-text'
 
-/** Au-delà, la section renvoie à l'historique : la sidebar ne doit pas devenir la file. */
+/** Beyond this count link to history: the sidebar must not become the entire queue. */
 const SHOWN = 5
 
-/**
- * « À décider » : les décisions demandées par les sessions autonomes. La section
- * n'existe que s'il y en a ; c'est ce qui la rend visible quand elle apparaît.
- */
+/** Autonomous-session decisions section exists only when pending, making its appearance noticeable. */
 export function SidebarDecisions({ onNavigate }: { onNavigate: () => void }) {
   const t = useTranslate()
   const { data: decisions } = useDecisions('pending')

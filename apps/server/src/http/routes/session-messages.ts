@@ -6,13 +6,7 @@ import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-/**
- * Ce qu'une personne peut faire d'un message de session que Sillage a retenu : le
- * remettre malgré les garde-fous, ou l'écarter.
- *
- * Réservé à la propriétaire de la conversation destinataire, comme l'envoi d'un
- * message : remettre relance son agent, donc dépense pour son compte.
- */
+/** Human actions on session messages withheld by Sillage: deliver despite safeguards or dismiss. Restricted to the recipient conversation's owner like sending messages: delivery restarts their agent and spends from their account. */
 export function registerSessionMessageRoutes(
   app: FastifyInstance,
   ctx: AppContext,

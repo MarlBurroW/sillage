@@ -70,7 +70,7 @@ async function openContext(width) {
     contentType: 'text/html',
     body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>',
   }))
-  // Les vrais hooks font leurs allers-retours ; le compte est partagé entre contextes.
+  // Real hooks complete their round trips; account is shared across contexts.
   await page.route('**/api/me/settings', async (route) => {
     if (route.request().method() === 'PATCH') {
       appearance = route.request().postDataJSON().appearance
@@ -127,7 +127,7 @@ try {
   await expectStyle(first.page, 'orbit')
   await first.context.close()
 
-  // Un appareil sans cache retrouve le choix du compte, y compris sur téléphone.
+  // A device without cache retrieves the account choice, including on phones.
   const second = await openContext(390)
   await mount(second.page)
   await expectStyle(second.page, 'orbit')
@@ -148,7 +148,7 @@ try {
   assert.equal(await second.page.evaluate(() => localStorage.getItem('sillage.typingIndicator')), null)
   await second.context.close()
 
-  // Le compte fait foi, même face à un ancien cache ; un nom disparu reste lisible.
+  // Account is authoritative even over old cache; a removed name stays readable.
   for (const saved of [undefined, 'removed-style']) {
     appearance = { theme: 'dark', syntax: 'sillage', values: {}, ...(saved ? { typingIndicator: saved } : {}) }
     const legacy = await openContext(1440)

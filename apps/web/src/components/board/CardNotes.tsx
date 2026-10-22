@@ -11,12 +11,9 @@ import { Button, IconButton } from '../ui'
 import { GitHubMark } from './GitHubMark'
 
 /**
- * Le fil d'une carte : ce que les sessions y ont laissé, et ce qu'on y ajoute à la main.
- *
- * Cet écran est ce qui rend l'écriture des agents acceptable. Une note qu'aucun humain
- * ne voit est exactement le magasin de mémoire refusé ailleurs dans la roadmap : elle
- * vieillit sans contradicteur et finit par tromper avec l'autorité d'une note. Ici elle
- * est signée, datée, et se supprime d'un clic.
+ * Card thread holds session notes and human additions. Visible, attributed, dated,
+ * one-click-deletable notes make agent writing accountable, unlike hidden memory stores whose
+ * unchecked aging content can acquire misleading authority.
  */
 export function CardNotes({
   projectId,
@@ -25,12 +22,12 @@ export function CardNotes({
 }: {
   projectId: string
   cardId: string
-  /** L'issue que suit la carte : ses commentaires arrivent ici, et une note peut y partir. */
+  /** Tracked issue whose comments arrive here and can receive notes. */
   issue?: CardExternalDto | null
 }) {
   const t = useTranslate()
   const { data: notes, isPending, isError, refetch } = useCardNotes(cardId, issue !== null)
-  // Décochée à chaque fois : publier est un geste public, il ne se fait pas par habitude.
+  // Reset unchecked: public publication must be deliberate rather than habitual.
   const [publish, setPublish] = useState(false)
   const ordered = notes ? [...notes].sort((a, b) => b.createdAt - a.createdAt) : []
   const addNote = useAddCardNote(projectId, cardId)
@@ -43,7 +40,7 @@ export function CardNotes({
     if (!draft || !body.trim() || saving) return
     void addNote.mutateAsync({ body: body.trim(), publish: issue !== null && publish })
       .then(() => { acknowledge(draft); setPublish(false) })
-      .catch(() => { /* Le message d'erreur reste près de la saisie. */ })
+      .catch(() => { /* Keep errors close to input. */ })
   }
 
   return (
@@ -138,7 +135,7 @@ function Note({
         ) : note.author.kind === 'agent' ? (
           <>
             <AgentIcon agent={note.author.agent} size={11} />
-            {/* Le lien tombe avec la conversation supprimée ; la note, elle, reste. */}
+            {/* Deleted conversations remove links but leave notes. */}
             {note.author.conversationId ? (
               <Link
                 to={`/p/${projectId}/c/${note.author.conversationId}`}
@@ -157,7 +154,7 @@ function Note({
         <span className="shrink-0">{when}</span>
         <Publication note={note} />
         <div className="flex-1" />
-        {/* Ce qui vit sur GitHub s'y supprime : effacé ici seulement, il reviendrait. */}
+        {/* Delete GitHub content there; local-only deletion would return on sync. */}
         {note.externalUrl ? null : <IconButton
           label={t('board.card.notes.remove')}
           size="sm"
@@ -177,7 +174,7 @@ function Note({
   )
 }
 
-/** Où en est la note sur GitHub : partie (avec son lien), en route, ou refusée et pourquoi. */
+/** GitHub note state: delivered with link, pending, or rejected with reason. */
 function Publication({ note }: { note: CardNoteDto }) {
   const t = useTranslate()
   if (note.publication === 'published') {

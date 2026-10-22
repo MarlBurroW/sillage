@@ -1,35 +1,28 @@
 import type { AgentSkillDto, SlashCommandDto } from '@sillage/protocol'
 
 /**
- * Une entrée proposée sous le sigle en cours de saisie.
- *
- * Commandes en `/` et compétences en `$` n'ont ni la même origine ni le même effet,
- * mais se choisissent de la même façon : les deux se réduisent ici, et une seule liste
- * sait les afficher.
+ * Entry suggested for the currently typed prefix. Slash commands and dollar skills differ in source
+ * and effect but share selection behavior: normalize both here for a single list.
  */
 export interface PickerEntry {
-  /** Ce qui s'écrit après le sigle une fois l'entrée choisie. */
+  /** Text inserted after the prefix when selected. */
   name: string
-  /** Forme attendue des arguments, vide quand l'entrée n'en prend pas. */
+  /** Expected argument form, empty for entries without arguments. */
   hint: string
   summary: string
 }
 
 /**
- * Première ligne de la description, seule à tenir sur une ligne de liste.
- *
- * Une compétence décrit son propre déclenchement sur plusieurs paragraphes : les
- * afficher entiers noierait les entrées voisines, dont la description tient en
- * quelques mots.
+ * First description line, the only part fitting a list row. A skill may explain activation over
+ * several paragraphs, which would overwhelm neighboring short descriptions.
  */
 function summarize(description: string): string {
   return description.split('\n')[0]?.trim() ?? ''
 }
 
 /**
- * Tri commun : le nom canonique passe devant son alias, l'ordre alphabétique tranche
- * le reste. Celui du CLI ne se garde pas, il range les compétences découvertes avant
- * les commandes intégrées, ce qui ne veut rien dire pour qui parcourt la liste.
+ * Shared ordering: canonical names before aliases, then alphabetical. Discard CLI ordering, which
+ * puts discovered skills before built-ins without meaning to browsing users.
  */
 function byName(isCanonical: (entry: PickerEntry) => boolean) {
   return (a: PickerEntry, b: PickerEntry) => {
@@ -39,12 +32,9 @@ function byName(isCanonical: (entry: PickerEntry) => boolean) {
 }
 
 /**
- * Ce que le début de saisie désigne parmi les commandes, du plus proche au plus loin.
- *
- * Sur préfixe, et non par correspondance floue comme les fichiers : les noms sont
- * courts et connus de celui qui les tape, alors qu'un chemin se cherche. Les alias
- * concourent sous leur propre nom, `/cost` devant mener à `/usage` sans qu'il faille
- * savoir lequel des deux est le vrai.
+ * Commands matching the typed prefix, nearest first. Use prefix matching rather than file-style
+ * fuzzy search: names are short and known, while paths are searched. Aliases compete under their
+ * own names so `/cost` finds `/usage` without knowing the canonical form.
  */
 export function matchCommands(commands: SlashCommandDto[], query: string): PickerEntry[] {
   const needle = query.toLowerCase()
@@ -53,8 +43,8 @@ export function matchCommands(commands: SlashCommandDto[], query: string): Picke
 
   for (const command of commands) {
     const names = [command.name, ...command.aliases]
-    // Un seul nom retenu par commande : proposer `/usage`, `/cost` et `/stats` comme
-    // trois entrées ferait passer une commande pour trois.
+    // Keep one name per command: listing `/usage`, `/cost`, and `/stats` separately would make one
+    // command look like three.
     const name = names.find((candidate) => candidate.toLowerCase().startsWith(needle))
     if (!name) continue
     if (name === command.name) canonical.add(name)
@@ -64,7 +54,7 @@ export function matchCommands(commands: SlashCommandDto[], query: string): Picke
   return matches.sort(byName((entry) => canonical.has(entry.name)))
 }
 
-/** Même règle de préfixe pour les compétences, qui n'ont ni alias ni arguments. */
+/** Same prefix rule for skills, which have neither aliases nor arguments. */
 export function matchSkills(skills: AgentSkillDto[], query: string): PickerEntry[] {
   const needle = query.toLowerCase()
   return skills

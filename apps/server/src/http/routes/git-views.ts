@@ -11,25 +11,11 @@ import { badRequest } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { workspaceScopes } from './workspace-scopes.js'
 
-/**
- * Lectures git de l'onglet Git du panneau : les commits et ce qu'ils ont changé. L'état
- * du répertoire de travail, lui, vit dans `git-actions.ts` avec les gestes qui le
- * modifient.
- *
- * Sorties de `conversations.ts` parce qu'elles n'ont rien de propre à un fil : elles ne
- * regardent qu'un répertoire, et existent donc aussi par projet, où le panneau montre
- * l'état du workspace. Calculées à la demande plutôt que journalisées : c'est un état
- * courant du disque, pas un événement.
- */
+/** Git reads for the panel Git tab: commits and their changes. Working-directory state lives alongside its operations in `git-actions.ts`. Extracted from `conversations.ts` because these reads depend only on a directory, not a conversation, and also serve the project workspace view. Computed on demand rather than journaled because this is current disk state, not an event. */
 export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): void {
-  // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
+  // Conversation and project scopes: see `workspace-scopes.ts`.
   for (const { base, cwdOf } of workspaceScopes) {
-    /**
-     * Historique de la branche courante, ou de toutes les branches pour le graphe.
-     *
-     * Paginé plutôt que plafonné : un dépôt a des milliers de commits, et l'onglet en
-     * montre les derniers, avec de quoi remonter plus loin à la demande.
-     */
+    /** History of the current branch, or all branches for the graph. Paginated rather than capped: repositories contain thousands of commits; show recent ones with the option to load older history. */
     app.get(`${base}/commits`, async (request): Promise<CommitListDto> => {
       const user = requireUser(request)
       const { id } = request.params as { id: string }
@@ -43,7 +29,7 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
       }
     })
 
-    /** Ce qu'un commit a changé. Lu à la demande : un diff par commit coûte un process git. */
+    /** Changes made by a commit. Read on demand because each diff spawns git. */
     app.get(`${base}/commits/:hash/diff`, async (request): Promise<CommitDiffDto> => {
       const user = requireUser(request)
       const { id, hash } = request.params as { id: string; hash: string }

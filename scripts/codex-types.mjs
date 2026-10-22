@@ -14,20 +14,20 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Régénère les bindings du protocole Codex depuis le binaire installé.
+ * Regenerate Codex protocol bindings from the installed binary.
  *
- *   node scripts/codex-types.mjs          écrit dans packages/codex-bindings/src
- *   node scripts/codex-types.mjs --check  échoue si le commité a dérivé
+ *   node scripts/codex-types.mjs          writes packages/codex-bindings/src
+ *   node scripts/codex-types.mjs --check  fails if committed content has drifted
  *
- * Le mode --check est ce qui transforme une montée de version de Codex en échec
- * visible plutôt qu'en incompatibilité silencieuse à l'exécution.
+ * --check turns a Codex version bump into a visible failure instead of silent
+ * runtime incompatibility.
  */
 
 const root = join(fileURLToPath(import.meta.url), '../..')
 const target = join(root, 'packages/codex-bindings/src')
 const check = process.argv.includes('--check')
 
-/** Fichiers écrits par Sillage, à préserver et à exclure de la comparaison. */
+/** Files authored by Sillage, preserved and excluded from comparison. */
 const HAND_WRITTEN = new Set(['README.md'])
 
 function listFiles(dir, prefix = '') {
@@ -58,12 +58,12 @@ if (!check) {
   const staging = mkdtempSync(join(tmpdir(), 'sillage-codex-'))
   try {
     generateInto(staging)
-    // On repart d'un dossier propre : un type supprimé côté Codex doit disparaître ici
-    // aussi, sinon on garde indéfiniment des définitions mortes.
+    // Start with a clean directory: types removed by Codex must disappear here too,
+    // otherwise dead definitions remain forever.
     const readme = readFileSync(join(target, 'README.md'), 'utf8')
     rmSync(target, { recursive: true, force: true })
     cpSync(staging, target, { recursive: true })
-    writeFileSync(join(target, 'README.md'), readme.replace(/Généré avec \*\*codex-cli [^*]+\*\*/, `Généré avec **${version}**`))
+    writeFileSync(join(target, 'README.md'), readme.replace(/Generated with \*\*codex-cli [^*]+\*\*/, `Generated with **${version}**`))
     console.log(`Bindings régénérés depuis ${version} dans ${relative(root, target)}`)
   } finally {
     rmSync(staging, { recursive: true, force: true })

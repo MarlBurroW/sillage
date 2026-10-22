@@ -3,10 +3,9 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /**
- * Sons, vidéos et modèles 3D dans l'éditeur, avec des fixtures fabriquées sur place :
- * un WAV d'une seconde, un cube OBJ avec son MTL, un STL ASCII et un GLB minimal.
- * Le navigateur lit le son via la route `file/raw`, ce qui vérifie le flux par
- * tranches ; le visualiseur compte les maillages, ce qui vérifie le chargement.
+ * Audio, video, and 3D models in editor using locally built fixtures: one-second
+ * WAV, OBJ cube with MTL, ASCII STL, minimal GLB. Browser plays audio through
+ * `file/raw`, checking range streaming; viewer counts meshes, checking loading.
  */
 export async function checkMedia({ page, context, base, project }) {
   const dir = join(project.workspacePath, 'media-check')
@@ -36,8 +35,8 @@ export async function checkMedia({ page, context, base, project }) {
   const panel = page.locator('[data-panel="workspace"]')
   const showTree = panel.getByRole('button', { name: "Afficher l'arborescence", exact: true })
   if (await showTree.count()) await showTree.click()
-  // L'arborescence nomme ses entrées par leur nom court, suivi de la lettre d'état git
-  // (`?` pour ces fixtures non suivies) ; le dossier se déplie une fois.
+  // Tree names entries with short name followed by git status letter (`?` for
+  // these untracked fixtures); directory expands once.
   const open = (name) => panel.getByRole('button', { name: new RegExp(`^${name.replace('.', '\\.')}\\b`) }).first().click()
   await open('media-check')
 
@@ -63,7 +62,7 @@ export async function checkMedia({ page, context, base, project }) {
   console.log('OK : lecture audio par tranches, cube OBJ avec matériaux, STL et GLB rendus.')
 }
 
-/** WAV PCM 16 bits mono, `seconds` secondes d'une sinusoïde à `frequency` Hz. */
+/** 16-bit mono PCM WAV, `seconds` seconds of sine wave at `frequency` Hz. */
 function wav(seconds, frequency) {
   const rate = 8000
   const samples = rate * seconds
@@ -126,7 +125,7 @@ endfacet
 endsolid tri
 `
 
-/** GLB d'un seul triangle : un tampon de trois positions, un maillage, une scène. */
+/** Single-triangle GLB: buffer of three positions, one mesh, one scene. */
 function glbTriangle() {
   const positions = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer)
   const json = JSON.stringify({

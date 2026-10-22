@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Faux `grok agent stdio` déterministe : l'ACP de Grok Build 1.0.62, sans modèle ni réseau.
+// Deterministic fake `grok agent stdio`: Grok Build 1.0.62 ACP without models or networking.
 //
-// Un prompt `fixture:{"steps":[…]}` joue son scénario : chaque étape est une mise à
-// jour à émettre (`update`), une notification brute (`notify`), une requête vers le
-// client (`permission` pour `session/request_permission`, `request` pour les autres ;
-// la réponse est journalisée) ou une pause (`wait`).
-// La réponse au `session/prompt` porte `stopReason` et `usage` du scénario.
+// Prompts `fixture:{"steps":[…]}` play scenarios: each step emits
+// an update (`update`), raw notification (`notify`), client request
+// (`permission` for `session/request_permission`, `request` otherwise, with
+// journaled responses), or pause (`wait`).
+// `session/prompt` responses carry scenario `stopReason` and `usage`.
 import { appendFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -15,9 +15,9 @@ if (process.argv.includes('--version')) {
   process.exit(0)
 }
 
-// `grok login --device-auth` et `grok logout`, tels que sondés sur 1.0.62 : l'URL et le
-// code, puis la connexion écrite dans `$GROK_HOME/auth.json`. `FIXTURE_LOGIN=fail` simule
-// un refus, `FIXTURE_LOGIN_DELAY` le temps que l'utilisateur met à confirmer.
+// `grok login --device-auth` and `grok logout` as probed on 1.0.62: URL and code,
+// then authentication written to `$GROK_HOME/auth.json`. `FIXTURE_LOGIN=fail` simulates
+// rejections; `FIXTURE_LOGIN_DELAY` simulates user confirmation delays.
 const grokHome = process.env.GROK_HOME ?? process.cwd()
 if (process.argv[2] === 'login') {
   process.stdout.write('To sign in, open this URL in your browser:\n\n  \x1b[1mhttps://accounts.x.ai/oauth2/device?user_code=W68V-VRXD\x1b[0m\n\n')
@@ -36,8 +36,8 @@ if (process.argv[2] === 'login') {
   process.exit(0)
 }
 
-// À côté du script, jamais dans le dossier courant : le catalogue lance le CLI depuis le
-// HOME, où ces traces n'ont rien à faire.
+// Beside scripts rather than cwd: catalogs launch CLIs from HOME,
+// where these traces do not belong.
 const here = dirname(process.argv[1])
 writeFileSync(join(here, 'launch.json'), JSON.stringify({
   args: process.argv.slice(2),

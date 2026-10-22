@@ -12,21 +12,9 @@ import { agentProcessEnv } from '../agents/process-env.js'
 import type { CodexAccountHomes } from './homes.js'
 import type { CodexAccountIdentity, CodexAccountStore } from './store.js'
 
-/**
- * Connexion d'un compte Codex supplémentaire, par l'app-server lancé dans son home.
- *
- * Tout passe par Codex : c'est lui qui mène l'échange avec OpenAI, écrit `auth.json`
- * dans le home du compte et le rafraîchira ensuite. Sillage ne voit ni jeton ni clé
- * après coup, seulement ce que `account/read` dit du compte.
- *
- * Le code d'appareil est le seul flux ChatGPT possible ici : le flux navigateur revient
- * sur `localhost:1455` du serveur, injoignable depuis le poste de l'utilisateur. Il
- * demande d'être activé dans les réglages de sécurité ChatGPT, ce que l'erreur de
- * Codex dira le cas échéant (sondé sur 0.162.1 : `account/login/start` rend l'URL et
- * le code sans que `auth.json` existe, puis `account/login/completed` tombe).
- */
+/** Additional Codex account login through an app-server launched in its home. Codex handles all OpenAI exchanges, writes `auth.json` and refreshes it later. Sillage subsequently sees neither tokens nor keys, only `account/read` information. Device codes are the only viable ChatGPT flow: browser login redirects to server-side `localhost:1455`, unreachable from the user's machine. Users must enable device login in ChatGPT security settings; Codex explains failures. Probed on 0.162.1: `account/login/start` returns URL and code before `auth.json` exists, followed by `account/login/completed`. */
 
-/** Au-delà, l'app-server en attente est fermé : personne n'a saisi le code. */
+/** Close waiting app-servers after this timeout when nobody enters the code. */
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
 
 interface PendingLogin {
@@ -59,11 +47,7 @@ export class CodexLoginService {
     return { state: 'idle', verificationUrl: null, userCode: null, error: null }
   }
 
-  /**
-   * Par code d'appareil : rend ce que l'utilisateur doit faire, et garde l'app-server
-   * ouvert jusqu'à ce que Codex annonce la fin. Une connexion déjà en cours sur ce
-   * compte est reprise telle quelle plutôt que redoublée.
-   */
+  /** Device-code login: returns user instructions and keeps the app-server open until Codex reports completion. Reuse existing in-progress logins for this account rather than duplicate them. */
   async startDeviceCode(accountId: string): Promise<CodexLoginStatusDto> {
     const current = this.pending.get(accountId)
     if (current) return this.status(accountId)
@@ -96,7 +80,7 @@ export class CodexLoginService {
     return this.status(accountId)
   }
 
-  /** Par clé API : Codex l'écrit dans `auth.json` et répond tout de suite. */
+  /** API-key login: Codex writes `auth.json` and responds immediately. */
   async loginWithApiKey(accountId: string, apiKey: string): Promise<void> {
     await this.cancel(accountId)
     const client = await this.open(accountId, () => {})
@@ -112,7 +96,7 @@ export class CodexLoginService {
     }
   }
 
-  /** Relit ce que Codex dit du compte dans son home, et le retient sur la ligne. */
+  /** Rereads Codex account information from its home and stores it in the row. */
   async refresh(accountId: string): Promise<void> {
     const client = await this.open(accountId, () => {})
     try {
@@ -122,7 +106,7 @@ export class CodexLoginService {
     }
   }
 
-  /** Déconnecte le home : Codex retire son `auth.json`, la ligne redevient en attente. */
+  /** Logs out the home: Codex removes `auth.json`, and the row becomes pending again. */
   async logout(accountId: string): Promise<void> {
     await this.cancel(accountId)
     const client = await this.open(accountId, () => {})
@@ -135,7 +119,7 @@ export class CodexLoginService {
     this.outcomes.delete(accountId)
   }
 
-  /** Abandonne une connexion en cours, s'il y en a une, et efface le home à la suppression. */
+  /** Cancels any ongoing login and removes the home on account deletion. */
   async cancel(accountId: string): Promise<void> {
     const pending = this.pending.get(accountId)
     if (!pending) return
@@ -147,12 +131,12 @@ export class CodexLoginService {
   async forget(accountId: string): Promise<void> {
     await this.cancel(accountId)
     this.outcomes.delete(accountId)
-    // Sans suivre les liens : le home n'a de réel que `auth.json` et ce que Codex y a
-    // écrit, et `rm` n'entre pas dans une cible de lien symbolique.
+    // Do not follow symlinks: only `auth.json` and Codex-created entries are real,
+    // and `rm` does not descend into symlink targets.
     await rm(this.homes.path(accountId), { recursive: true, force: true })
   }
 
-  /** Ferme ce qui attend encore, au démarrage comme à l'arrêt : rien n'y survit. */
+  /** Closes pending logins at startup and shutdown; none survive. */
   async closeAll(): Promise<void> {
     for (const accountId of [...this.pending.keys()]) await this.cancel(accountId)
   }
@@ -188,7 +172,7 @@ export class CodexLoginService {
       onNotification,
       onServerRequest: () => Promise.reject(new Error('Aucune requête serveur attendue pendant une connexion.')),
       onExit: () => {
-        // Un app-server qui meurt pendant l'attente du code : la connexion a échoué.
+        // App-server death while waiting for a code means login failed.
         if (this.pending.get(accountId)?.client === client) {
           void this.finish(accountId, "L'app-server Codex s'est arrêté avant la fin de la connexion.")
         }
@@ -208,7 +192,7 @@ export class CodexLoginService {
     const account = read.account
     if (!account) return { authMode: null, email: null, planType: null }
     if (account.type === 'chatgpt') return { authMode: 'chatgpt', email: account.email, planType: account.planType }
-    // Bedrock n'a pas de place ici : un compte Codex de Sillage est un abonnement ou une clé.
+    // Bedrock is irrelevant: Sillage Codex accounts represent subscriptions or API keys.
     return { authMode: 'apiKey', email: null, planType: null }
   }
 }

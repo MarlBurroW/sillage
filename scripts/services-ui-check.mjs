@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { chromium } from 'playwright'
 
-// Base, projets et serveurs jetables : aucun agent ni service utilisateur n'est arrêté.
+// Disposable database/projects/servers: no existing agent or user service stopped.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -20,7 +20,7 @@ const runtime = process.env.SILLAGE_TEST_RUNTIME
 const data = await mkdtemp(join(tmpdir(), 'sillage-services-ui-'))
 const children = []
 const trackedProcesses = []
-// Unités systemd jetables, arrêtées en sortie même si le contrôle échoue.
+// Disposable systemd units, stopped on exit even if checks fail.
 const units = []
 const systemd = (args) => promisify(execFile)('systemd-run', ['--user', '--collect', ...args])
 let browser
@@ -68,7 +68,7 @@ try {
   await mkdir(join(env.SILLAGE_DATA_DIR, 'process-origins'))
   await writeFile(join(env.SILLAGE_DATA_DIR, 'process-origins', `${token}.json`), JSON.stringify({ projectId: project.id, conversationId: conversation.id }))
   const script = (number) => `require('node:http').createServer((_, res) => res.end('fixture')).listen(${number}, '127.0.0.1')`
-  // Même dossier et même marqueur que l’agent : ce frère indépendant doit être exclu.
+  // Same directory/marker as agent: this independent sibling must be excluded.
   const old = run(['-e', script(oldPort)], project.workspace_path, { PATH: process.env.PATH, SILLAGE_PROCESS_ORIGIN: token })
   const server = runtime
     ? run(['server/main.js'], runtime, env, process.env.SILLAGE_TEST_NODE)
@@ -76,7 +76,7 @@ try {
   const vite = runtime ? server : run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
   const base = `http://127.0.0.1:${runtime ? apiPort : webPort}`
   await Promise.all([ready(`${base}/api/health`, server), ready(base, vite), ready(`http://127.0.0.1:${oldPort}`, old)])
-  // Une app permanente comme un agent la crée : unité sillage-app-*, avec le jeton d’origine.
+  // Permanent app as agents create it: sillage-app-* unit with origin token.
   const appName = `uicheck-${token.slice(0, 8)}`
   units.push(`sillage-app-${appName}.service`)
   await systemd([`--unit=sillage-app-${appName}`, `--setenv=SILLAGE_PROCESS_ORIGIN=${token}`, `--working-directory=${project.workspace_path}`, process.execPath, '-e', script(appPort)])
@@ -142,7 +142,7 @@ try {
   await row.getByRole('link', { name: conversation.title, exact: true }).waitFor()
   assert.equal(await oldRow.count(), 0, 'Un service indépendant est exclu même avec le même dossier et le même marqueur')
   const workerRow = page.locator('li').filter({ hasText: `PID ${worker.pid}` })
-  // Les deux commandes sont rangées sous le terminal qui les a lancées, avec leur ligne de commande.
+  // Both commands appear under launching terminal with their command lines.
   const terminalGroup = page.locator('section').filter({ has: page.getByText('Terminal', { exact: true }) })
   await terminalGroup.getByRole('link', { name: 'Nimbus', exact: true }).first().waitFor()
   assert.equal(await terminalGroup.locator('li').filter({ hasText: `PID ${worker.pid}` }).count(), 1)
@@ -155,7 +155,7 @@ try {
   await appCard.getByText(`:${appPort}`, { exact: true }).waitFor()
   await page.screenshot({ path: '/tmp/sillage-services-desktop.png', fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
-  // Le tiroir de navigation termine sa transition après le changement de breakpoint.
+  // Navigation drawer finishes its transition after breakpoint change.
   await delay(350)
   await page.locator('[data-navigation-trigger]').click()
   await page.getByRole('link', { name: 'Services', exact: true }).click()

@@ -19,12 +19,11 @@ import { useDeleteSecret, usePutSecret, useSecrets } from '../lib/secrets'
 import { useCurrentUser } from '../lib/session'
 
 /**
- * Dépôt de secrets.
+ * Secret store.
  *
- * L'écran ne peut afficher aucune valeur, parce que l'API n'en rend aucune. Il montre
- * donc ce qui reste et qui compte : le nom, la date de dernière écriture, et les
- * serveurs MCP qui s'en servent. Ce dernier point est ce qui rend une suppression
- * décidable au lieu d'être un pari.
+ * The API returns no values, so none can be displayed. Show what remains meaningful: name,
+ * last-write date and dependent MCP servers. Dependencies make deletion an informed decision
+ * rather than a gamble.
  */
 
 const errorOf = (error: unknown): string | null =>
@@ -108,13 +107,14 @@ export function SecretsSettingsPage() {
                   type="password"
                   value={value}
                   onChange={(event) => setValue(event.target.value)}
-                  // Le gestionnaire de mots de passe du navigateur n'a rien à retenir ici.
+                  // The browser password manager has nothing to save here.
                   autoComplete="off"
                   required
                 />
-                {/* Au moment de saisir, pas en tête de page, et sur le ton d'une
-                    information : en rouge au-dessus de tout, on le lisait comme une
-                    erreur alors que rien n'avait encore été fait. */}
+                {/*
+                 * At input time, not page top, with an informational tone: a red banner above
+                 * everything looked like an error before any action.
+                 */}
                 <Banner tone="info">{t('secrets.writeOnly')}</Banner>
                 {errorOf(putSecret.error) ? <Banner>{errorOf(putSecret.error)}</Banner> : null}
                 <div className="flex flex-wrap items-center gap-2">
@@ -158,9 +158,10 @@ function SecretCard({ secret }: { secret: Secret }) {
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono font-medium">{secret.name}</span>
-            {/* Le point d'emploi est la seule chose qui rende une suppression
-                décidable : sans lui, effacer revient à parier qu'aucun serveur MCP
-                n'en dépend. */}
+            {/*
+             * Usage sites make deletion decidable: without them, deleting is a bet that no MCP
+             * server depends on the secret.
+             */}
             {secret.usedBy.length > 0 ? (
               <Badge tone="accent">
                 {t('secrets.usedBy', { servers: secret.usedBy.join(', ') })}

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
 
-// Vrais composants ; les sources simulées permettent un conflit reproductible, sans toucher aux skills installés.
+// Real components; simulated sources allow reproducible conflicts without touching installed skills.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
@@ -128,7 +128,7 @@ try {
     assert.equal(attempts.length, 11)
     assert.ok(await dialog.isVisible())
     assert.ok((await dialog.getByRole('alert').count()) > 0)
-    // Un conflit peut être corrigé dans l'aperçu sans quitter la source ni réinstaller les succès.
+    // Resolve conflicts in preview without leaving source or reinstalling successes.
     await dialog.getByRole('button').filter({ hasText: 'design-01' }).click()
     await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('design-renamed')
     await dialog.getByRole('button', { name: 'Installer', exact: true }).click()

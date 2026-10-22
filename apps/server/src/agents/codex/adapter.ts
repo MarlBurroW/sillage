@@ -24,16 +24,11 @@ import { CodexRunner } from './runner.js'
 import { CodexUsageReader } from './usage.js'
 
 /**
- * Point de coupe d'un fork : identifiant natif du dernier tour conservé.
- *
- * Codex ne sait pas couper à un message, seulement à la fin d'un tour entier
- * (`thread/fork { lastTurnId }`, inclusif). La granularité commune du fork est donc le
- * tour, ce qui tombe bien : c'est déjà le découpage de la réglette de navigation.
- *
- * `null` quand rien n'est à retirer : le fork copie alors tout le fil. L'ancienne
- * coupe « nombre de tours à retirer » passait par `thread/rollback`, que Codex a
- * supprimé en 0.156.0 ; l'identifiant se relit dans le `turn/completed` natif que le
- * runner conserve avec l'événement `turn.completed` (invariant I3).
+ * Fork boundary: native ID of the last retained turn. Codex cuts only at complete-turn ends
+ * (inclusive thread/fork lastTurnId), not messages, matching turn navigation granularity. Null
+ * means retain the whole thread. Previous remove-turn-count rollback used thread/rollback, removed
+ * in Codex 0.156.0. Recover IDs from native turn/completed stored beside turn.completed (invariant
+ * I3).
  */
 interface CodexForkCut {
   lastTurnId: string | null
@@ -53,9 +48,9 @@ export class CodexAdapter implements AgentAdapter {
   constructor(config: Config) {
     this.binary = config.agents.codex.binary
     this.cli = new CliBinary('codex', this.binary, config.agents.codex.enabled, config.paths.agents)
-    // Le nom configuré ne suffit pas : `spawn` ne connaît que le PATH, alors que le
-    // préfixe des CLI installés par Sillage l'emporte. Sonder le nom nu ferait lister
-    // les modèles d'une version que les conversations, elles, n'utilisent pas.
+    // Configured names alone are insufficient: spawn resolves PATH while Sillage's
+    // managed-install prefix takes precedence. Probing bare names would list
+    // models from versions conversations do not use.
     this.catalog = new CodexModelCatalog(() => this.cli.executable())
     this.usageReader = new CodexUsageReader(() => this.cli.executable())
   }
@@ -66,8 +61,8 @@ export class CodexAdapter implements AgentAdapter {
 
   forkCut(log: EventLog, conversationId: string, throughSeq: number): CodexForkCut {
     const turns = log.countByType(conversationId, 'turn.completed', throughSeq)
-    // Rien après le point de coupe : inutile de désigner un tour, et un journal ancien
-    // qui n'aurait pas conservé la notification native reste ainsi forkable en entier.
+    // Nothing follows the boundary, so no turn ID is needed. Older logs lacking
+    // native notifications thus remain forkable in full.
     if (turns.kept === turns.total) return { lastTurnId: null }
     if (turns.kept === 0) {
       throw new ForkError(
@@ -101,11 +96,11 @@ export class CodexAdapter implements AgentAdapter {
 
       const forked = await client.call<ThreadForkResponse, 'thread/fork'>('thread/fork', {
         threadId: target.agentSessionId,
-        // Le fork s'arrête au tour désigné, inclus (sondé sur codex-cli 0.162.1). Il ne
-        // revient pas sur les fichiers déjà écrits sur le disque, seulement sur la
-        // conversation, et cette limite est dite à l'utilisateur plutôt que devinée.
+        // Fork ends inclusively at the designated turn (probed on codex-cli 0.162.1). It
+        // rewinds only conversation history, not files already written on disk;
+        // explain this limitation rather than expecting users to infer it.
         ...(lastTurnId === null ? {} : { lastTurnId }),
-        // Seul l'identifiant sert : l'historique complet peut peser des dizaines de Mo.
+        // Only the ID is needed; full history may weigh tens of megabytes.
         excludeTurns: true,
       })
       return forked.thread.id
@@ -127,8 +122,8 @@ export class CodexAdapter implements AgentAdapter {
       description: model.description,
       hint: null,
       isDefault: model.isDefault,
-      // Chaînes libres côté protocole, sans libellé rédigé : la valeur sert de
-      // libellé, la description du CLI d'infobulle.
+      // Protocol strings have no display labels: use the value as
+      // label and CLI description as tooltip.
       efforts: model.supportedReasoningEfforts.map((effort) => ({
         value: effort.reasoningEffort,
         label: effort.reasoningEffort,
@@ -138,14 +133,14 @@ export class CodexAdapter implements AgentAdapter {
       supportsFastMode: false,
     }))
 
-    // `mode` est nullable côté protocole : un préréglage qui ne désigne aucun mode ne
-    // peut pas être proposé comme choix, il est écarté plutôt que rendu inerte.
+    // Protocol mode is nullable: presets identifying no mode cannot be offered,
+    // so omit them instead of rendering inert choices.
     const modes: CodexModeDto[] = listing.modes
       .filter((mask): mask is CollaborationModeMask & { mode: CodexMode } => mask.mode !== null)
       .map((mask) => ({ mode: mask.mode, label: mask.name }))
 
-    // Ni styles de sortie, ni mode rapide, ni sous-agents nommés : ce sont des notions
-    // de Claude Code, et les laisser vides est ce qui fait disparaître leurs réglages.
+    // No output styles, fast mode, or named subagents: these are Claude Code
+    // concepts. Empty values hide their corresponding controls.
     return {
       models,
       modes,
@@ -157,8 +152,7 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
-  /** Codex n'expose pas de commandes en `/` : ses compétences passent par `$`, publiées
-   *  par le runner une fois la session ouverte. */
+  /** Codex exposes no slash commands: skills use dollar prefixes, published after session startup. */
   async commands(): Promise<ProjectCommandsDto> {
     return { commands: [], fetchedAt: Date.now() }
   }
@@ -167,7 +161,7 @@ export class CodexAdapter implements AgentAdapter {
     return this.usageReader.read(force)
   }
 
-  /** `credential` est ici le `CODEX_HOME` du compte, voir `CodexAccountHomes`. */
+  /** credential is the account's CODEX_HOME; see CodexAccountHomes. */
   usageForAccount(accountId: string, credential: string, force: boolean): Promise<AgentUsage> {
     return this.usageReader.readForAccount(accountId, credential, force)
   }

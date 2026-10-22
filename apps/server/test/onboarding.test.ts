@@ -23,7 +23,7 @@ import { readUserSettings } from '../src/settings/user-settings.js'
 
 const run = promisify(execFile)
 
-/** Une base vide, comme à la première ouverture, et les routes que la visite emploie. */
+/** Empty database like first startup, and routes used by onboarding. */
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'sillage-onboarding-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
@@ -41,8 +41,8 @@ async function harness(t: TestContext) {
 
   const app = Fastify()
   await app.register(cookie)
-  // Le compte courant est posé par le test, par l'en-tête `x-user` : pas de cookie à
-  // rejouer ici, c'est la route de création qui est exercée, pas le hook de session.
+  // Tests assign the current account through `x-user`, without cookie replay:
+  // exercise creation routes rather than session hooks.
   app.addHook('preHandler', async (request) => {
     const id = request.headers['x-user']
     if (typeof id === 'string') request.user = db.select().from(users).where(eq(users.id, id)).get()
@@ -83,7 +83,7 @@ test('premier compte : créé une seule fois, administrateur, visite armée, ses
   const after = await app.inject({ url: '/api/system/instance' })
   assert.equal(after.json<InstanceInfo>().needsSetup, false)
 
-  // Un second appel n'a plus de raison d'exister : la base a un compte.
+  // Second calls no longer apply because an account exists.
   const again = await app.inject({
     method: 'POST',
     url: '/api/auth/setup',
@@ -127,7 +127,7 @@ test('la visite se mémorise au compte, et un membre créé par un administrateu
   assert.equal(onboarding.answers.permission, 'acceptEdits')
   assert.deepEqual(onboarding.skipped, ['appearance'])
 
-  // Terminée : plus due, et le reste de l'état est libre d'être conservé ou non.
+  // Completed: no longer due, with remaining state free to persist or not.
   await app.inject({ method: 'PATCH', url: '/api/me/settings', headers: { 'x-user': admin.id }, payload: { onboarding: { ...onboarding, pending: false } } })
   assert.equal(readUserSettings(db, admin.id).onboarding.pending, false)
 
@@ -155,7 +155,7 @@ test('adresse publique : la base l’emporte sur le fichier, et la chaîne vide 
   writeAppSettings(db, { publicUrl: '' })
   assert.equal(readAppSettings(db, configured).publicUrl, '')
 
-  // Le schéma retire la barre finale et refuse un chemin.
+  // Schemas remove trailing slashes and reject paths.
   assert.equal(updateAppSettingsBodySchema.parse({ publicUrl: 'https://x.example.com/' }).publicUrl, 'https://x.example.com')
   assert.equal(updateAppSettingsBodySchema.parse({ publicUrl: '' }).publicUrl, '')
   assert.throws(() => updateAppSettingsBodySchema.parse({ publicUrl: 'https://x.example.com/sillage' }))
@@ -176,12 +176,12 @@ test('projet d’essai : un dépôt écrit dans le dossier demandé, créé au b
   }
   assert.match(await readFile(join(row.workspacePath, 'README.md'), 'utf8'), /Sillage sample/)
 
-  // Un dépôt, avec un commit : c'est ce que le panneau git et les points de reprise montrent.
+  // Repository with one commit for Git panels and checkpoints to display.
   const log = await run('git', ['log', '--oneline'], { cwd: row.workspacePath }).catch(() => null)
   if (log) assert.equal(log.stdout.trim().split('\n').length, 1)
 
-  // Les tests échouent exprès : c'est le premier travail à confier à l'agent. Lancés hors
-  // du contexte de ce test runner, sans quoi le `--test` enfant se prend pour un des nôtres.
+  // Tests deliberately fail as the agent's first task. Launch outside this test
+  // runner's context so child `--test` does not mistake itself for part of the suite.
   const env = { ...process.env }
   delete env.NODE_TEST_CONTEXT
   delete env.NODE_OPTIONS
@@ -191,7 +191,7 @@ test('projet d’essai : un dépôt écrit dans le dossier demandé, créé au b
   )
   assert.equal(tests, 'failed')
 
-  // Un second projet d'essai ne s'écrit pas par-dessus le premier.
+  // Second sample projects must not overwrite first ones.
   const second = await createSampleProject(ctx, 'owner', { parentDir: parent, visibility: 'private' })
   assert.equal(second.workspacePath, join(parent, 'sillage-sample-2'))
 })

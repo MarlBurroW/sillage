@@ -11,8 +11,8 @@ import { DecisionSourceLine, decisionDue } from './DecisionSource'
 import { decisionContext, decisionOption, decisionQuestion } from './decision-text'
 
 /**
- * La réponse à une décision, d'où qu'on l'ouvre : la sidebar, un toast, l'historique ou
- * une notification. On tranche ici sans entrer dans la conversation, qui reste à un clic.
+ * Answer decisions opened from sidebar, toast, history, or notifications without entering
+ * conversations, still one click away.
  */
 export function DecisionDialog() {
   const t = useTranslate()
@@ -52,10 +52,10 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
   const [option, setOption] = useState<string | null>(null)
   const [text, setText] = useState('')
   const pending = decision.status === 'pending'
-  // Une proposition de nettoyage se tranche par un choix : pas d'agent à qui écrire.
+  // Cleanup proposals use choices; there is no agent to message.
   const worktree = decision.source.kind === 'worktree'
   const context = decisionContext(decision, t)
-  // Tranchée ailleurs pendant qu'on hésitait : on le dit plutôt que d'échouer à l'envoi.
+  // Explain decisions resolved elsewhere while users considered them rather than failing on submission.
   useEffect(() => { if (!pending) answer.reset() }, [pending]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
@@ -143,7 +143,7 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
   )
 }
 
-/** Ce qu'il est advenu d'une décision fermée : la réponse, l'échéance ou le retrait. */
+/** Closed-decision outcome: answer, expiry, or withdrawal. */
 export function DecisionOutcome({ decision }: { decision: DecisionDto }) {
   const t = useTranslate()
   if (decision.status === 'withdrawn') {

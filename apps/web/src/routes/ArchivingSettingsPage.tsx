@@ -9,11 +9,10 @@ import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 
 /**
- * Délai d'archivage automatique et heure de passage.
+ * Automatic archival delay and run time.
  *
- * Réglage d'instance et non de compte : il décide du sort de fils qui peuvent
- * appartenir à plusieurs personnes dans un projet partagé, et deux délais concurrents
- * n'auraient pas de gagnant lisible.
+ * Instance-level, not account-level: it determines the fate of threads potentially owned by
+ * several people in shared projects; competing delays would have no clear winner.
  */
 
 const PRESETS: { labelKey: MessageKey; schedule: string }[] = [
@@ -33,8 +32,8 @@ export function ArchivingSettingsPage() {
 
   const [days, setDays] = useState('')
   const [schedule, setSchedule] = useState('')
-  // Les champs suivent la valeur du serveur tant qu'on n'y a pas touché : sans ça ils
-  // restent vides au premier rendu, la requête n'ayant pas encore répondu.
+  // Fields follow server values until edited: otherwise they remain empty on first
+  // render because the request has not returned yet.
   useEffect(() => {
     if (!settings) return
     setDays(String(settings.autoArchiveDays))
@@ -117,8 +116,10 @@ export function ArchivingSettingsPage() {
                 ))}
               </div>
 
-              {/* L'aperçu est calculé dans le navigateur : le dire évite qu'un décalage
-                  avec le serveur passe pour un bug de l'archivage. */}
+              {/*
+               * The preview is calculated in the browser: stating this prevents server
+               * discrepancies from looking like archival bugs.
+               */}
               {human ? (
                 <p className="text-xs text-ink-faint">
                   <span className="text-ink-soft">{human}</span>
@@ -152,9 +153,10 @@ export function ArchivingSettingsPage() {
               {update.isSuccess && !dirty ? (
                 <span className="text-xs text-positive">{t('settings.saved')}</span>
               ) : null}
-              {/* Sur les réglages enregistrés et non sur le formulaire : lancer un
-                  passage sur un délai qu'on vient de taper sans l'enregistrer
-                  rangerait selon une règle que le serveur ne connaît pas. */}
+              {/*
+               * Use saved settings, not the form: running with an unsaved delay would archive
+               * according to a rule unknown to the server.
+               */}
               <Button
                 type="button"
                 variant="ghost"

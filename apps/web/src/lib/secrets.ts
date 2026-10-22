@@ -3,11 +3,9 @@ import type { SecretListDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
- * Dépôt de secrets de l'instance.
- *
- * Aucun hook ne lit une valeur, parce qu'aucune route n'en rend : l'API ne connaît que
- * des noms, des dates et des points d'emploi. C'est ce qui rend l'écran de gestion
- * volontairement pauvre, et il vaut mieux l'assumer que faire semblant d'afficher.
+ * Instance secret storage. Hooks never read values because no route returns them: the API exposes
+ * only names, dates, and usage locations. Management intentionally shows little; accept that rather
+ * than pretend to display secrets.
  */
 
 const SECRETS_KEY = ['secrets']

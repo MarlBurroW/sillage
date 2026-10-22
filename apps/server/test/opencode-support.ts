@@ -23,7 +23,7 @@ export async function fixture(t: TestContext) {
     (await readFile(join(cwd, file), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
   return {
     cwd, binary, onClose: (close: () => void | Promise<void>) => finalizers.push(close),
-    /** Requêtes reçues par le faux serveur, hors flux d'événements. */
+    /** Fake-server requests excluding event streams. */
     records: () => lines('http.jsonl') as Promise<{ method: string; path: string; body: any }[]>,
     launch: async () => JSON.parse(await readFile(join(cwd, 'launch.json'), 'utf8')) as { config: any; disableProjectConfig: string | null; pid: number },
   }
@@ -46,7 +46,7 @@ export function context(overrides: Partial<RunnerContext> = {}) {
   return { ctx, events, raw, statuses }
 }
 
-/** Attend qu'une condition du journal soit vraie : le flux SSE est asynchrone. */
+/** Waits for journal conditions because SSE is asynchronous. */
 export async function until(check: () => boolean, label = 'condition'): Promise<void> {
   const deadline = Date.now() + 5_000
   while (!check()) {
@@ -64,10 +64,10 @@ export async function runnerFixture(t: TestContext, overrides: Partial<RunnerCon
   const count = (type: SillageEvent['type']) => state.events.filter((event) => event.type === type).length
   return {
     ...state, ...transport, runner, count,
-    /** Envoie un message dont le faux serveur joue le scénario. */
+    /** Sends messages whose scenarios the fake server executes. */
     play: (events: unknown[], extra: Record<string, unknown> = {}) =>
       runner.send(`fixture:${JSON.stringify({ events, ...extra })}`, [], []),
-    /** Joue un scénario et attend la clôture du tour qu'il contient. */
+    /** Runs scenarios and waits for their turn completion. */
     turn: async (events: unknown[]) => {
       const before = count('turn.completed')
       await runner.send(`fixture:${JSON.stringify({ events })}`, [], [])
@@ -76,7 +76,7 @@ export async function runnerFixture(t: TestContext, overrides: Partial<RunnerCon
   }
 }
 
-// Événements natifs, dans la forme sondée sur opencode 1.19.0.
+// Native events in the format probed on opencode 1.19.0.
 
 export const busy = (sessionID = ROOT) => ({ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } })
 export const idle = (sessionID = ROOT) => ({ type: 'session.idle', properties: { sessionID } })

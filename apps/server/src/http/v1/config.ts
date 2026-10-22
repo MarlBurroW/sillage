@@ -12,12 +12,12 @@ import type { AgentRegistry } from '../../agents/registry.js'
 import { badRequest } from '../errors.js'
 
 /**
- * Avec quoi une tâche va tourner.
+ * Configuration a task will run with.
  *
- * Quatre niveaux, du plus précis au plus général : ce que la requête dit, les réglages
- * du jeton, ceux du projet, puis les défauts du compte qui possède le jeton. Un
- * appelant machine n'a ainsi qu'un prompt à fournir, et le choix du modèle a été fait
- * une fois, dans un formulaire, par quelqu'un qui savait ce qu'il faisait.
+ * Four levels, from most to least specific: request settings, token settings,
+ * project settings, then defaults of the account owning the token. A machine
+ * caller only needs to supply a prompt; someone made the model choice once
+ * through a form with the necessary context.
  */
 export async function resolveTaskConfig(
   registry: AgentRegistry,
@@ -53,9 +53,9 @@ export async function resolveTaskConfig(
     await assertModelExists(registry, agent, body.config.model)
   }
 
-  // Sur la configuration résolue, pas sur celle du jeton : le socle peut aussi venir
-  // du préréglage du projet quand la tâche vise l'autre CLI, et ce chemin-là ne doit
-  // pas contourner la portée.
+  // Check the resolved configuration rather than the token configuration: the base
+  // can also come from the project preset when the task targets the other CLI,
+  // and that path must not bypass the scope check.
   const scopes = JSON.parse(token.scopes) as string[]
   if (isPermissiveConfig(merged) && !scopes.includes('tasks:autonomous')) {
     throw badRequest(
@@ -68,11 +68,11 @@ export async function resolveTaskConfig(
 }
 
 /**
- * Le socle sur lequel la surcharge s'applique.
+ * Base configuration to which the override applies.
  *
- * Les configurations ne se fusionnent pas entre elles : chaque niveau est complet, et
- * le premier qui parle du bon CLI l'emporte. Empiler un réglage Claude sur un réglage
- * Codex ne voudrait rien dire.
+ * Configurations do not merge: each level is complete, and the first matching
+ * the requested CLI wins. Layering Claude settings onto Codex settings would
+ * make no sense.
  */
 function baseConfigFor(
   agent: AgentKind,
@@ -86,12 +86,12 @@ function baseConfigFor(
 }
 
 /**
- * Un modèle inventé doit se voir dire ce qui existe.
+ * Reject an unknown requested model with the list of available models.
  *
- * Seule la valeur explicitement demandée est vérifiée : contrôler aussi celle du jeton
- * ferait échouer une tâche pour une configuration choisie dans l'interface, et
- * dépendre du CLI à chaque lancement. Si le catalogue est injoignable, on laisse
- * passer, comme le fait `resolveDefaults` avec ses sentinelles.
+ * Only explicitly requested values are checked: validating the token's settings
+ * would reject tasks configured through the interface and require the CLI on
+ * every launch. If the catalog is unreachable, allow the request, matching
+ * `resolveDefaults` and its sentinel values.
  */
 async function assertModelExists(
   registry: AgentRegistry,

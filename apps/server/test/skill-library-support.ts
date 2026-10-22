@@ -15,10 +15,7 @@ import { registerSkillSourceRoutes } from '../src/http/routes/skill-sources.js'
 import { SkillSources } from '../src/skill-library/sources.js'
 import { SkillLibrary } from '../src/skill-library/store.js'
 
-/**
- * Une base migrée dans un dossier jetable : un admin, un propriétaire de projets, un
- * membre et un étranger ; deux projets partagés et un privé, tous au propriétaire.
- */
+/** Migrated disposable database with administrator, project owner, member and stranger; two shared projects and one private project, all owned by the owner. */
 export function harness(t: TestContext) {
   const dir = mkdtempSync(join(tmpdir(), 'sillage-skills-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
@@ -39,7 +36,7 @@ export function harness(t: TestContext) {
   return { dir, db, root, library, sources, changes }
 }
 
-/** La même bibliothèque derrière les routes, l'utilisateur choisi par en-tête. */
+/** Same library behind routes, selecting users by header. */
 export async function http(t: TestContext) {
   const h = harness(t)
   const app = Fastify()
@@ -60,7 +57,7 @@ export async function http(t: TestContext) {
   type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   const call = (user: string, method: Method, url: string, payload?: unknown) =>
     app.inject({ method, url, payload: payload as object, headers: { 'x-user': user } })
-  /** Envoi d'un fichier, comme le fait le navigateur. */
+  /** Upload a file as the browser does. */
   const upload = (user: string, url: string, filename: string, content: Uint8Array) => {
     const boundary = `----sillage${randomUUID()}`
     const head = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`

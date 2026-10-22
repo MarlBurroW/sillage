@@ -3,12 +3,9 @@ import type { ToolOutputDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
- * Sortie complète d'un appel d'outil, quand la relecture ne l'a pas transmise.
- *
- * Le journal ne bouge plus une fois le tour passé, donc le cache n'a aucune raison
- * d'expirer. La requête n'est armée qu'à l'ouverture de la carte : une conversation
- * longue porte des centaines de sorties volumineuses dont on n'en ouvre presque aucune,
- * et c'est précisément pour ça qu'elles ne sont plus transférées avec le fil.
+ * Full tool output omitted by history replay. The log is immutable after the turn, so cache never
+ * expires. Enable queries only when cards open: long conversations contain hundreds of large
+ * outputs, few ever viewed, precisely why they no longer travel with the thread.
  */
 export function useToolOutput(conversationId: string, toolCallId: string, enabled: boolean) {
   return useQuery({

@@ -10,29 +10,21 @@ import { Banner, IconButton, cx } from '../ui'
 import { UsageBar, readAge } from './UsageBar'
 
 /**
- * Consommation du compte, l'équivalent de `/usage`.
- *
- * Le panneau ne connaît aucune fenêtre à l'avance : il affiche ce que le CLI déclare,
- * dans l'ordre reçu. C'est ce qui a permis à la jauge Fable d'apparaître sans que rien
- * ne soit écrit à son sujet, et ce qui fera apparaître la suivante.
+ * Account usage equivalent to /usage. Assume no known windows: display CLI inventory in reported
+ * order. This let Fable gauges appear without specific code and supports future ones too.
  */
 
 /**
- * Monté à l'ouverture, démonté à la fermeture par le portail de Radix.
- *
- * C'est ce qui fait qu'ouvrir le panneau redemande systématiquement la consommation,
- * sans dépendre d'une durée de fraîcheur côté client. Le seul garde-fou est le cache
- * du serveur, placé là où se trouve le coût réel : une lecture y démarre un process
- * CLI. La valeur précédente reste affichée pendant la relecture, donc rouvrir
- * n'efface pas l'écran pour le remplir à nouveau.
+ * Radix portals mount on open and unmount on close, guaranteeing usage refetch without client
+ * freshness timers. Server caching guards actual CLI-process cost. Keep previous readings visible
+ * during refetch rather than blanking the panel.
  */
 function UsageContent({ agent, account }: { agent: AgentKind; account: string | null }) {
   const t = useTranslate()
   const { data: usage, error, isPending, isFetching } = useAgentUsage(agent, true, account)
   const refresh = useRefreshUsage(agent, account)
-  // Un compte Claude supplémentaire n'a pas de jauge, mais pas pour la même raison
-  // selon sa nature : une clé API n'a pas de forfait, un jeton de setup-token en a un
-  // qu'il n'a pas le droit de lire. Le message doit dire lequel.
+  // Ungauged Claude accounts differ: API keys have no plan, while setup tokens lack permission to
+  // read theirs. Explain the correct reason.
   const { data: claudeAccounts } = useClaudeAccounts(agent === 'claude' && account !== null)
   const accountKind = claudeAccounts?.accounts.find((entry) => entry.id === account)?.kind ?? null
   const noLimitsMessage = accountKind === 'oauth' ? t('usage.noLimits.token') : t('usage.noLimits')
@@ -128,7 +120,7 @@ export function UsagePanel({
   onOpenChange,
 }: {
   agent: AgentKind
-  /** Compte Claude supplémentaire de la conversation, dont on lit la consommation plutôt que celle du CLI. */
+  /** Conversation's additional Claude account, whose usage replaces CLI-login usage. */
   account?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void

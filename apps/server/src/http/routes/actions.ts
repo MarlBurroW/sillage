@@ -24,12 +24,11 @@ import { requireUser } from '../require-user.js'
 import { visibilityFilter, visibleProject } from './projects.js'
 
 /**
- * Actions de projet.
+ * Project actions.
  *
- * Mêmes droits que les terminaux : qui voit le projet peut lancer et modifier ses
- * actions. Une action n'exécute rien qu'un terminal du même projet ne permette déjà ;
- * ce qui la distingue, c'est qu'un agent peut l'écrire, d'où le passage obligé par la
- * relecture avant qu'un clic la lance.
+ * Same permissions as terminals: project viewers can launch and edit actions.
+ * Actions execute nothing unavailable in that project's terminal; agents can
+ * write them, however, so review is mandatory before a click can run them.
  */
 export function registerActionRoutes(
   app: FastifyInstance,
@@ -49,7 +48,7 @@ export function registerActionRoutes(
     return { action, project }
   }
 
-  /** Le worktree de la conversation si elle est donnée et du même projet, sinon la racine. */
+  /** Conversation worktree when supplied and in the same project; otherwise the root. */
   const baseDir = (action: ProjectActionRow, workspacePath: string, conversationId?: string) => {
     if (!conversationId) return workspacePath
     const row = ctx.db
@@ -63,7 +62,7 @@ export function registerActionRoutes(
     return sessions.workingDirectory(conversationId)
   }
 
-  /** Toutes les actions visibles : la palette les propose tous projets confondus. */
+  /** All visible actions: the palette offers them across projects. */
   app.get('/api/actions', async (request): Promise<ProjectActionDto[]> => {
     const user = requireUser(request)
     const visible = ctx.db.select({ id: projects.id }).from(projects).where(visibilityFilter(user.id)).all()
@@ -84,7 +83,7 @@ export function registerActionRoutes(
     const { id } = request.params as { id: string }
     const { action } = guardAction(id, user.id)
     const patch = updateProjectActionBodySchema.parse(request.body)
-    // Un service qui devient une tâche laisserait son unité tourner sans bouton.
+    // Turning a service into a task would leave its unit running without a button.
     if (action.kind === 'service' && patch.kind === 'task') await runner.forget(action)
     return runner.toDto(updateAction(ctx.db, action, patch, null))
   })
@@ -124,7 +123,7 @@ export function registerActionRoutes(
     const body = runProjectActionBodySchema.parse(request.body ?? {})
     const base = baseDir(action, project.workspacePath, body.conversationId)
     if (op === 'logs') return runner.logs(action, base)
-    // Relancer un service arrêté revient à le lancer : même relecture préalable.
+    // Restarting a stopped service is another launch and requires the same review.
     if (op === 'restart' && !action.approvedAt) {
       throw conflict('action_not_approved', 'Review this action before running it.')
     }

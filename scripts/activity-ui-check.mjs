@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Vrais composants et vraie API, dans une base temporaire. Aucun CLI n'est activé.
+// Real components and API, temporary database. No CLI enabled.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -68,7 +68,7 @@ try {
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', colorScheme: 'dark', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
-    // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
+    // Browser PDF viewer does not expose application storage.
     if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')
   }, new URL(base).origin)
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
@@ -108,7 +108,7 @@ try {
   await activity.getByRole('button', { name: '2 à débloquer', exact: true }).waitFor()
   assert.equal(await activity.getByRole('link').count(), 4)
   await activity.getByRole('button', { name: '+ 2 autres sessions actives', exact: true }).waitFor()
-  // L'attente est visible avant les sessions en cours, sans déplier un projet.
+  // Waiting appears before running sessions without expanding a project.
   assert.match(await activity.getByRole('link').first().innerText(), /Valider les migrations/)
   await activity.getByRole('link', { name: /Compiler la nouvelle interface/ }).waitFor()
   await page.screenshot({ path: join(shots, 'activity-expanded.png') })
@@ -126,11 +126,11 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
   await page.screenshot({ path: join(shots, 'activity-overview-light.png') })
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
-  // Une fin de tour fait baisser le compteur, sans faire disparaître la session.
+  // Turn completion lowers the counter without removing the session.
   pushStatus('activity-a', 'running')
   pushStatus('activity-a', 'idle')
   await overview.getByRole('link', { name: /Compiler la nouvelle interface.*Tour terminé/ }).waitFor()
-  // Le travail en arrière-plan compte même si le tour principal est au repos.
+  // Background work counts even when the main turn is idle.
   pushStatus('activity-a', 'idle', 1)
   await overview.getByRole('link', { name: /Compiler la nouvelle interface.*En arrière-plan/ }).waitFor()
   pushStatus('activity-a', 'error')
@@ -140,7 +140,7 @@ try {
   await overview.getByRole('button', { name: 'Non lues 6', exact: true }).click()
   assert.equal(await overview.getByRole('link').count(), 6)
   await overview.getByRole('button', { name: 'Fermer', exact: true }).click()
-  // Une nouvelle conversation, lancée depuis un autre client, rejoint le total.
+  // A new conversation started by another client joins the total.
   fixtures.push({ ...fixtures[0], id: 'activity-new', title: 'Session démarrée ailleurs', status: 'running' })
   pushStatus('activity-new', 'running')
   await activity.getByRole('button', { name: /Activité.*4 en cours/ }).waitFor()
@@ -160,7 +160,7 @@ try {
   assert.ok(box.x >= 0 && box.x + box.width <= 390 && box.y + box.height <= 844)
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
   await overview.getByRole('button', { name: 'Fermer', exact: true }).click()
-  // Au repos, l'overview reste accessible et annonce explicitement zéro.
+  // While idle, overview remains accessible and explicitly announces zero.
   for (const entry of fixtures) pushStatus(entry.id, 'idle')
   await activity.getByRole('button', { name: /Activité.*0 en cours/ }).waitFor()
   await activity.getByText('Aucune session en cours', { exact: true }).waitFor()

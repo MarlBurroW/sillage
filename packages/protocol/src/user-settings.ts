@@ -21,16 +21,15 @@ import {
 } from './agent-config.js'
 
 /**
- * Réglages propres à un compte, par opposition à ceux de l'instance.
+ * Account-specific settings, as opposed to instance settings.
  *
- * Ils ne décrivent pas un comportement du serveur mais un point de départ : avec quoi
- * une conversation s'ouvre quand personne n'a rien dit d'autre. Deux personnes du même
- * projet peuvent donc ne pas travailler avec les mêmes garde-fous, ce qui est le but :
- * le mode de permission engage celui qui lit les réponses, pas l'instance.
+ * They describe a starting point, not server behavior: how conversations open when nothing else
+ * is specified. Two people in one project may thus use different safeguards, intentionally:
+ * permission mode concerns whoever reads the answers, not the instance.
  */
 /**
- * Ordre des cartes d'une colonne : `manual` suit le glisser-déposer, `recent` met en tête
- * la dernière arrivée dans la colonne, `oldest` la plus ancienne (une file d'attente).
+ * Card order within a column: `manual` follows drag and drop, `recent` puts the latest arrival
+ * first, `oldest` puts the earliest first (a queue).
  */
 export const boardOrderSchema = z.enum(['manual', 'recent', 'oldest'])
 export type BoardOrder = z.infer<typeof boardOrderSchema>
@@ -39,84 +38,80 @@ export interface UserSettingsDto {
   news: NewsPreferences
   agentDefaults: AgentDefaults
   /**
-   * Projets repliés dans la sidebar.
+   * Collapsed sidebar projects.
    *
-   * Les repliés et non les dépliés : un projet qui vient d'être créé doit s'ouvrir
-   * déplié, comme tous les autres, sans que personne ait à l'ajouter à une liste.
+   * Track collapsed rather than expanded projects so new projects open expanded without needing
+   * to be added to a list.
    *
-   * Au compte plutôt qu'au navigateur, à la différence de la largeur ou de l'écran
-   * d'accueil d'un projet : on referme un projet parce qu'on n'y travaille pas en ce
-   * moment, ce qui reste vrai en changeant de poste ou en ouvrant l'application sur
-   * son téléphone.
+   * Stored per account rather than browser, unlike width or a project's home screen: collapsing
+   * a project means it is not currently being worked on, still true after switching machines or
+   * opening the phone app.
    */
   collapsedProjects: string[]
   /**
-   * CLI dont on ne veut plus entendre parler tant qu'ils ne sont pas installés.
+   * CLIs to hide while uninstalled.
    *
-   * Qui n'utilise que Claude Code n'a pas à voir trois boutons « Installer » à chaque
-   * nouvelle session. Masquer n'est pas désactiver : un CLI masqué qui finit par être
-   * installé réapparaît de lui-même, et la liste se rouvre d'un clic. Au compte, comme
-   * les projets repliés : le choix vaut sur tous ses appareils.
+   * Someone using only Claude Code need not see three “Install” buttons for every new session.
+   * Hiding is not disabling: a hidden CLI reappears if installed, and one click reopens the
+   * list. Account-level, like collapsed projects, so the choice applies across devices.
    */
   hiddenAgents: AgentKind[]
   /**
-   * Ordre des cartes dans les colonnes du board, par projet : manuel (glisser-déposer)
-   * ou par arrivée dans la colonne, récentes ou anciennes en tête. Absent vaut manuel.
-   * Au compte et non au projet : c'est une façon de lire le board, pas une règle qu'un
-   * membre impose aux autres.
+   * Per-project board-column ordering: manual (drag and drop), latest arrival first or earliest
+   * arrival first. Absent defaults to manual. Account-level rather than project-level: it is a
+   * way to read the board, not a rule one member imposes on others.
    */
   boardOrder: Record<string, BoardOrder>
   /**
-   * Dossier parent proposé à la création d'un projet, `null` tant qu'aucun projet n'a
-   * été créé ainsi.
+   * Suggested parent directory for project creation; `null` until a project has been created
+   * this way.
    *
-   * Mémorisé à chaque création plutôt que réglé dans un écran à part : on range ses
-   * projets toujours au même endroit, et la première création suffit à le dire.
+   * Remembered on every creation rather than configured separately: people store projects in
+   * the same place, and the first creation establishes it.
    */
   projectsDir: string | null
   /**
-   * Thème et réglages d'apparence, `null` tant que ce compte n'en a jamais enregistré.
+   * Theme and appearance settings; `null` until this account saves any.
    *
-   * Au compte pour la même raison que les projets repliés : on retrouve ses couleurs
-   * en changeant de poste. Le navigateur en garde une copie, lue avant l'hydratation
-   * pour éviter un flash, mais c'est celle-ci qui fait foi.
+   * Account-level for the same reason as collapsed projects: colors follow device changes. The
+   * browser keeps a copy read before hydration to prevent flashing, but this value is
+   * authoritative.
    *
-   * `null` et non des défauts : c'est ce qui permet au premier chargement de pousser
-   * les réglages déjà choisis dans ce navigateur au lieu de les écraser.
+   * `null` rather than defaults allows first load to upload existing browser settings instead
+   * of overwriting them.
    */
   appearance: AppearancePrefs | null
-  /** Les sortes de notifications que ce compte veut recevoir, sur tous ses appareils. */
+  /** Notification kinds this account wants across all devices. */
   notifications: NotificationPrefs
   /**
-   * Les réglages épinglés sous le composer, par CLI, en plus de la puce modèle·effort
-   * qui y est toujours. Sur ordinateur seulement : au téléphone, la puce reste seule.
+   * Settings pinned below the composer per CLI, in addition to the permanent model/effort chip.
+   * Desktop screens only; phones retain only the chip.
    *
-   * Des clés de catégories (`ultracode`, `permission`…) dans l'ordre d'affichage,
-   * et non des valeurs : ce qui s'épingle est un accès, le réglage lui-même reste dans
-   * la conversation. Par CLI parce que les catégories ne se traduisent pas d'un CLI à
-   * l'autre, comme les défauts. Au compte pour la même raison que les projets repliés :
-   * on veut retrouver sa barre en changeant d'appareil.
+   * Category keys (`ultracode`, `permission`, etc.) in display order, not values: pinning
+   * exposes a control while the setting remains in the conversation. Per CLI because categories
+   * do not map across CLIs, like defaults. Account-level so the bar follows device changes,
+   * like collapsed projects.
    */
   composerLayout: ComposerLayout
   /**
-   * La visite de première ouverture, et où elle en est.
+   * First-open tour and its progress.
    *
-   * Au compte et non au navigateur : la visite règle le compte (agents, apparence,
-   * consignes), et la reprendre sur un autre appareil doit repartir de la bonne étape.
+   * Account-level rather than browser-level: onboarding configures the account (agents,
+   * appearance, instructions), so resuming on another device must continue at the right step.
    */
   onboarding: OnboardingState
   /**
-   * Avec quoi un nouveau projet de ce compte démarre, quand sa création ne dit rien.
+   * Defaults for new projects created by this account when creation specifies nothing.
    *
-   * Au compte et non à l'instance : où l'on garde ses consignes et sa mémoire relève de
-   * la façon de travailler de chacun, comme le mode de permission.
+   * Account-level, not instance-wide: instruction and memory storage are personal working
+   * preferences, like permission mode.
    */
   projectDefaults: ProjectDefaults
 }
 
 /**
- * `auto` pour les consignes : le dépôt s'il porte déjà un `AGENTS.md` ou un
- * `CLAUDE.md`, Sillage sinon, ce que le serveur faisait d'office jusqu'ici.
+ * `auto` instructions: use the repository if it already has `AGENTS.md` or `CLAUDE.md`,
+ * otherwise Sillage, matching the server's previous automatic behavior.
  */
 export interface ProjectDefaults {
   instructionsMode: 'auto' | 'sillage' | 'repo'
@@ -131,17 +126,17 @@ export const projectDefaultsSchema = z.object({
 })
 
 /**
- * Ce que la visite demande d'abord, et qui décide des étapes suivantes.
+ * Initial onboarding answers determining subsequent steps.
  *
- * `agents` filtre l'étape des agents ; `devices` ajoute celle du téléphone ; `team`
- * ajoute la visibilité au projet ; `guidance` dose les explications. `permission` est
- * le réflexe choisi, gardé pour le récapitulatif.
+ * `agents` filters the agents step; `devices` adds the phone step; `team` adds project
+ * visibility; `guidance` controls explanation detail. `permission` records the chosen default
+ * approach for the recap.
  */
 export interface OnboardingAnswers {
   agents: AgentKind[]
   /**
-   * Vrai dès que l'utilisateur a touché à la question des agents. Avant, la liste vide
-   * ne veut rien dire, et l'interface y coche d'office les CLI trouvés sur la machine.
+   * True once the user interacts with the agents question. Before then, an empty list means
+   * nothing, and the UI automatically selects CLIs found on the machine.
    */
   agentsChosen: boolean
   team: 'solo' | 'team'
@@ -152,19 +147,18 @@ export interface OnboardingAnswers {
 
 export interface OnboardingState {
   /**
-   * Vrai tant que la visite est due. Faux par défaut : un compte d'avant la visite ne
-   * la voit pas surgir à sa prochaine connexion ; c'est la création du compte qui
-   * l'arme, et « Revoir la visite » dans les réglages.
+   * True while onboarding is due. Defaults to false so older accounts do not unexpectedly see
+   * it on their next login; account creation and “Replay tour” in settings enable it.
    */
   pending: boolean
-  /** Index de l'étape courante dans la liste que l'interface calcule des réponses. */
+  /** Current step index in the list the UI derives from answers. */
   step: number
   answers: OnboardingAnswers
-  /** Identifiants des étapes passées avec « Plus tard », pour le récapitulatif. */
+  /** IDs of steps skipped with “Later”, for the recap. */
   skipped: string[]
   /**
-   * Identifiants des étapes déjà traversées, continuées ou passées : on peut y revenir
-   * depuis la liste, en arrière comme en avant, sans refaire celles d'entre deux.
+   * IDs of visited steps, continued or skipped: users can revisit them from the list in either
+   * direction without repeating intermediate steps.
    */
   visited: string[]
 }
@@ -204,8 +198,8 @@ export const onboardingStateSchema = z.object({
 })
 
 /**
- * Clés de catégories épinglées, par CLI. Une clé inconnue du CLI est ignorée à
- * l'affichage, comme `model` et `effort` qu'enregistraient les premières versions.
+ * Pinned category keys per CLI. Unknown keys are ignored on display, as are `model` and
+ * `effort` saved by earlier versions.
  */
 export interface ComposerLayout {
   claude: string[]
@@ -214,7 +208,7 @@ export interface ComposerLayout {
   grok: string[]
 }
 
-/** Rien d'épinglé : la puce modèle·effort seule. */
+/** Nothing pinned: only the model/effort chip. */
 export const DEFAULT_COMPOSER_LAYOUT: ComposerLayout = {
   claude: [],
   codex: [],
@@ -222,7 +216,7 @@ export const DEFAULT_COMPOSER_LAYOUT: ComposerLayout = {
   grok: [],
 }
 
-/** Une clé de catégorie telle que `agent-settings` les nomme, sans rien de plus long. */
+/** A category key as named by `agent-settings`, with no longer values allowed. */
 const pinnedKeysSchema = z.array(z.string().min(1).max(40)).max(16)
 
 export const composerLayoutSchema = z.object({
@@ -233,24 +227,23 @@ export const composerLayoutSchema = z.object({
 })
 
 /**
- * Le serveur ne connaît ni les thèmes ni les curseurs : il stocke ce que l'interface
- * lui confie, borné en taille. Un nom de thème retiré retombe sur le défaut côté client.
+ * The server knows neither themes nor sliders: it stores UI-provided data within size limits.
+ * Removed theme names fall back to the client default.
  */
 export interface AppearancePrefs {
   theme: string | null
   syntax: string | null
-  /** Absent sur les anciens comptes : l’interface utilise le logo Sillage. */
+  /** Absent on older accounts: the UI uses the Sillage logo. */
   typingIndicator?: string | null
-  /** Valeurs des curseurs, par nom de réglage (`hue`, `tint`, `readingSize`…). */
+  /** Slider values keyed by setting name (`hue`, `tint`, `readingSize`, etc.). */
   values: Record<string, number>
 }
 
 /**
- * Un défaut complet par CLI, jamais un défaut commun.
+ * Complete defaults per CLI, never shared defaults.
  *
- * Même raison que pour `AgentConfig` : le mode de permission de Claude et le couple
- * approbation/sandbox de Codex ne se traduisent pas l'un dans l'autre, et un réglage
- * unique aurait à inventer cette traduction.
+ * Same reason as `AgentConfig`: Claude permission modes and Codex approval/sandbox pairs do not
+ * map onto each other; a single setting would invent that mapping.
  */
 export interface AgentDefaults {
   claude: ClaudeConfig
@@ -267,17 +260,16 @@ export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
 }
 
 /**
- * Relit ce qui est stocké pour un compte.
+ * Reads stored account settings.
  *
- * Tolérant à chaque étage : un réglage ajouté depuis l'écriture, une valeur retirée du
- * protocole ou un enregistrement à moitié écrit retombent sur le défaut du CLI plutôt
- * que de rendre l'écran de réglages illisible. C'est un point de départ de
- * conversation, rien ici ne mérite une erreur.
+ * Tolerant at every level: newly added settings, protocol values since removed or half-written
+ * records fall back to CLI defaults instead of making settings unreadable. These are
+ * conversation starting points; none warrants an error.
  */
 export const agentDefaultsSchema = z.object({
   claude: claudeConfigSchema.catch(DEFAULT_CLAUDE_CONFIG),
   codex: codexConfigSchema.catch(DEFAULT_CODEX_CONFIG),
-  // `default` en plus du `catch` : les réglages écrits avant opencode n'ont pas la clé.
+  // `default` as well as `catch`: settings predating opencode lack the key.
   opencode: opencodeConfigSchema.default(DEFAULT_OPENCODE_CONFIG).catch(DEFAULT_OPENCODE_CONFIG),
   grok: grokConfigSchema.default(DEFAULT_GROK_CONFIG).catch(DEFAULT_GROK_CONFIG),
 })
@@ -295,9 +287,9 @@ export const storedUserSettingsSchema = z
   .object({
     news: newsPreferencesSchema.default(DEFAULT_NEWS_PREFERENCES).catch(DEFAULT_NEWS_PREFERENCES),
     agentDefaults: agentDefaultsSchema.catch(DEFAULT_AGENT_DEFAULTS),
-    // Jamais purgée des projets supprimés : une liste d'identifiants inconnus ne coûte
-    // rien à qui la lit, et la nettoyer demanderait de toucher ce réglage à chaque
-    // suppression, y compris pour les comptes qui ne se connectent plus.
+    // Never purged of deleted projects: unknown IDs cost readers nothing,
+    // while cleanup would require touching these settings on every deletion,
+    // including for accounts that no longer sign in.
     collapsedProjects: z.array(z.string()).default([]).catch([]),
     hiddenAgents: z.array(agentKindSchema).default([]).catch([]),
     boardOrder: z.record(z.string(), boardOrderSchema).default({}).catch({}),
@@ -324,26 +316,26 @@ export const storedUserSettingsSchema = z
 
 export const updateUserSettingsBodySchema = z.object({
   /**
-   * Le défaut d'un seul CLI, le discriminant de la configuration disant lequel. Celui
-   * de l'autre CLI garde sa valeur : l'écran n'édite qu'un CLI à la fois, et envoyer
-   * les deux écraserait celui qu'un autre onglet vient peut-être de changer.
+   * Defaults for one CLI, identified by the configuration discriminant. Other CLIs retain their
+   * values: the screen edits one at a time, and sending both could overwrite changes made by
+   * another tab.
    */
   agentDefault: agentConfigSchema.optional(),
-  /** La liste entière : c'est un état d'affichage, pas un journal d'ouvertures. */
+  /** Whole list: display state, not an opening-history log. */
   collapsedProjects: z.array(z.string().uuid()).optional(),
-  /** La liste entière, pour la même raison. */
+  /** Whole list, for the same reason. */
   hiddenAgents: z.array(agentKindSchema).optional(),
-  /** L'ordre d'un seul board ; les autres projets gardent le leur. */
+  /** Order for one board; other projects keep theirs. */
   boardOrder: z.object({ projectId: z.string().uuid(), order: boardOrderSchema }).optional(),
-  /** `null` retire le dossier mémorisé ; absent, il ne bouge pas. */
+  /** `null` clears the remembered directory; absent leaves it unchanged. */
   projectsDir: z.string().min(1).nullable().optional(),
-  /** Remplacée en bloc, comme les projets repliés. */
+  /** Replaced wholesale, like collapsed projects. */
   appearance: appearancePrefsSchema.optional(),
   notifications: notificationPrefsSchema.optional(),
-  /** Remplacée en bloc elle aussi : l'interface connaît la liste entière du CLI. */
+  /** Also replaced wholesale: the UI knows the CLI's entire list. */
   composerLayout: composerLayoutSchema.optional(),
-  /** Remplacé en bloc : la visite connaît son état entier à chaque pas. */
+  /** Replaced wholesale: onboarding knows its complete state at every step. */
   onboarding: onboardingStateSchema.optional(),
-  /** Remplacés en bloc : deux choix, toujours faits ensemble. */
+  /** Replaced wholesale: two choices always made together. */
   projectDefaults: projectDefaultsSchema.optional(),
 })

@@ -167,7 +167,7 @@ to the Internet. [Set up remote access](docs/remote-access.md)
 The project uses TypeScript, React, Fastify, SQLite and Electron.
 
 To run it from source, start with the [development setup](docs/install.md#from-source-development)
-and the [specification](docs/SPEC.md) (in French).
+and the [specification](docs/SPEC.md).
 
 <details>
 <summary>Repository layout</summary>

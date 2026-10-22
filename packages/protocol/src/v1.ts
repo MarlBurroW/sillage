@@ -5,53 +5,49 @@ import { elicitationActionSchema, elicitationContentSchema } from './elicitation
 import { agentKindSchema, type AgentKind, type SillageEvent } from './events.js'
 
 /**
- * L'API publique, celle que pilotent les clients machine.
+ * Public API driven by machine clients.
  *
- * Elle parle tâche là où le reste de Sillage parle conversation : c'est le même objet,
- * dans la même table et le même journal, mais un appelant distant n'a pas à connaître
- * les DTO de l'interface, qui bougent au rythme des écrans. Cette traduction est le
- * prix d'un contrat stable.
+ * It speaks of tasks where the rest of Sillage speaks of conversations: the same object, table
+ * and journal, but remote callers should not know UI DTOs that evolve with screens. This
+ * translation is the price of a stable contract.
  *
- * Attention au vocabulaire : `task.started` et `task.completed` existent déjà dans le
- * journal et y désignent un travail de fond du CLI, pas une tâche au sens de cette API.
+ * Watch the vocabulary: journal events `task.started` and `task.completed` already denote CLI
+ * background jobs, not tasks in this API's sense.
  */
 
-/** Ce qu'un appelant doit fournir : un prompt. Le reste se résout. */
+/** The caller supplies a prompt; everything else is resolved. */
 export const createTaskBodySchema = z.object({
   prompt: z.string().min(1),
-  /** Défaut : le CLI choisi à la création du jeton. */
+  /** Default: CLI chosen when creating the token. */
   agent: agentKindSchema.optional(),
   /**
-   * Surcharge partielle, en vocabulaire natif du CLI visé. Volontairement non unifiée :
-   * `effort` chez Claude et `reasoningEffort` chez Codex ne recouvrent pas les mêmes
-   * valeurs, et un champ commun mentirait. `GET /api/v1/agents` publie ce qui est accepté.
+   * Partial override in the target CLI's native vocabulary. Deliberately not unified: Claude
+   * `effort` and Codex `reasoningEffort` accept different values, so a shared field would
+   * mislead. `GET /api/v1/agents` publishes accepted values.
    *
-   * Seuls les champs de `OVERRIDABLE_CONFIG_FIELDS` sont acceptés : les garde-fous ne
-   * se règlent pas par requête.
+   * Only `OVERRIDABLE_CONFIG_FIELDS` are accepted: safeguards cannot be configured per request.
    */
   config: z.record(z.string(), z.unknown()).optional(),
   worktreeId: z.string().nullable().default(null),
   title: z.string().max(200).optional(),
-  /** Remplace l'URL de webhook du jeton pour cette tâche. Signée avec le même secret. */
+  /** Overrides the token's webhook URL for this task. Signed with the same secret. */
   webhookUrl: z.string().url().optional(),
   /**
-   * Combien de temps une sollicitation de cette tâche attend une réponse avant que la
-   * couche v1 la refuse et interrompe la tâche. 0 désactive : la tâche attend alors
-   * comme le ferait une conversation humaine, en occupant une place de session.
+   * How long an input request waits before the v1 layer declines it and interrupts the task. 0
+   * disables the deadline: the task waits like a human conversation, occupying a session slot.
    */
   replyDeadlineSec: z.number().int().min(0).max(86_400).optional(),
 })
 
-/** Échéance appliquée aux tâches d'API qui n'en demandent pas d'autre. */
+/** Default deadline for API tasks that request no override. */
 export const DEFAULT_REPLY_DEADLINE_SEC = 600
 
 /**
- * Réponse à une sollicitation, les quatre types par la même route.
+ * Answer to an input request, all four kinds through one route.
  *
- * Le corps nomme le type attendu plutôt que de le deviner : un appelant qui répond
- * `permission` à ce qui est devenu une question doit être refusé, pas interprété.
- * Les vocabulaires de décision sont ceux des routes natives (`allowed`, `approved`...),
- * pour qu'il n'existe pas un second jeu de mots à documenter.
+ * The body names the expected kind rather than guessing: a caller answering `permission` to
+ * what became a question must be rejected, not reinterpreted. Decision vocabulary matches
+ * native routes (`allowed`, `approved`, etc.), avoiding a second vocabulary to document.
  */
 export const taskReplyBodySchema = z.discriminatedUnion('kind', [
   z.object({
@@ -82,9 +78,9 @@ export const taskMessageBodySchema = z.object({
 })
 
 /**
- * Une inflexion n'existe que pendant un tour, et un appelant machine perd la course :
- * il lit `running`, envoie, et le tour s'est terminé entre-temps. `queue` bascule alors
- * en message ordinaire plutôt que de laisser tomber le texte.
+ * Steering exists only during a turn, and machine clients can lose the race: read `running`,
+ * send, but the turn has already ended. `queue` then falls back to a normal message rather than
+ * dropping the text.
  */
 export const taskSteerBodySchema = z.object({
   prompt: z.string().min(1),
@@ -94,18 +90,18 @@ export const taskSteerBodySchema = z.object({
 export const taskListQuerySchema = z.object({
   status: conversationStatusSchema.optional(),
   projectId: z.string().optional(),
-  /** Par défaut, seules les tâches lancées par le jeton appelant. */
+  /** By default, only tasks launched by the calling token. */
   scope: z.enum(['token', 'user']).default('token'),
 })
 
 export const taskEventsQuerySchema = z.object({
   after: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(500).default(200),
-  /** Liste de types séparés par des virgules. Vide : tout sauf les deltas. */
+  /** Comma-separated type list. Empty means everything except deltas. */
   types: z.string().optional(),
 })
 
-/** Types trop bavards pour un client qui interroge : ils arrivent au token. */
+/** Types too verbose for polling clients: they arrive token by token. */
 export const V1_NOISY_EVENT_TYPES = [
   'message.delta',
   'thinking.delta',
@@ -117,19 +113,19 @@ export interface TaskProjectDto {
   id: string
   name: string
   workspacePath: string
-  /** Vrai si le workspace est un dépôt git, donc si un worktree est possible. */
+  /** True if the workspace is a git repository, allowing worktrees. */
   git: boolean
   worktrees: { id: string; name: string; branch: string }[]
-  /** Ce qu'une tâche lancée sur ce projet utilisera si elle ne demande rien. */
+  /** Defaults used by a task launched on this project when unspecified. */
   defaults: { agent: AgentKind; config: unknown }
 }
 
 /**
- * Ce qu'un CLI accepte en surcharge, pour qu'un appelant n'ait pas à deviner.
+ * CLI-supported overrides so callers need not guess.
  *
- * `effortField` nomme le champ plutôt que de l'uniformiser : c'est `effort` chez Claude
- * et `reasoningEffort` chez Codex, avec des valeurs différentes. Décrire la clé native
- * renseigne sans inventer d'abstraction qui mentirait.
+ * `effortField` names the field rather than normalizing it: Claude uses `effort`, Codex
+ * `reasoningEffort`, with different values. Describing native keys informs without inventing a
+ * misleading abstraction.
  */
 export interface TaskAgentDto {
   agent: AgentKind
@@ -137,16 +133,16 @@ export interface TaskAgentDto {
   available: boolean
   effortField: string
   models: { value: string; displayName: string; isDefault: boolean; efforts: string[] }[]
-  /** Valeurs acceptées pour `outputStyle` (Claude) ; vide quand le CLI n'en a pas. */
+  /** Accepted `outputStyle` values (Claude); empty if unsupported. */
   outputStyles: string[]
 }
 
-/** L'appel d'outil en cours, quand l'agent travaille. */
+/** Current tool call while the agent is working. */
 export interface TaskActivityDto {
   toolCallId: string
   toolName: string
   startedAt: number
-  /** Vrai quand l'appel vient d'un sous-agent et non du fil principal. */
+  /** True if the call comes from a sub-agent rather than the main thread. */
   nested: boolean
 }
 
@@ -154,17 +150,16 @@ export interface TaskPendingDto {
   kind: 'permission' | 'question' | 'plan' | 'elicitation'
   requestId: string
   requestedAt: number
-  /** La demande telle qu'elle a été journalisée, pour n'avoir rien à retraduire. */
+  /** Request as journaled, requiring no further translation. */
   event: SillageEvent
 }
 
 /**
- * Une tâche en liste, sans son état replié.
+ * A listed task without folded state.
  *
- * Replier coûte une lecture du journal par tâche, et compter les tours un parcours
- * complet : acceptable pour une tâche qu'on consulte, ruineux pour cinquante qu'on
- * énumère. La liste dit donc ce que la table sait déjà, et `GET /tasks/:id` reste
- * l'endroit où l'on demande où en est une tâche précise.
+ * Folding costs one journal read per task; counting turns requires a full traversal. Acceptable
+ * for one inspected task, prohibitively expensive for fifty listed tasks. Listings therefore
+ * expose existing table data; `GET /tasks/:id` provides a specific task's current state.
  */
 export interface TaskSummaryDto {
   id: string
@@ -181,15 +176,14 @@ export interface TaskSummaryDto {
 }
 
 /**
- * L'état d'une tâche, déjà replié.
+ * Already-folded task state.
  *
- * Le journal brut ne répond pas à « où en est-elle » : il faut le replier, l'interface
- * a un fold entier pour ça, et un client qui lirait les événements verrait surtout
- * passer des deltas. Cette vue est ce qu'un appelant consulte en boucle ; `/events`
- * reste pour qui veut le détail.
+ * The raw journal does not answer “where is it now?” without folding. The UI has a full fold
+ * for that, while event-reading clients mostly see deltas. This is the view callers poll;
+ * `/events` remains available for details.
  */
 export interface TaskDto extends TaskSummaryDto {
-  /** Configuration résolue : ce avec quoi la tâche tourne réellement. */
+  /** Resolved configuration: what the task actually runs with. */
   config: unknown
   turns: number
   activity: TaskActivityDto | null
@@ -200,7 +194,7 @@ export interface TaskDto extends TaskSummaryDto {
 export interface TaskEventsPageDto {
   taskId: string
   events: { seq: number; ts: number; event: SillageEvent }[]
-  /** Curseur à repasser en `after` au prochain appel. */
+  /** Cursor to pass as `after` on the next request. */
   nextAfter: number
   hasMore: boolean
 }
@@ -208,11 +202,10 @@ export interface TaskEventsPageDto {
 // Webhooks
 
 /**
- * ATTENTION AU VOCABULAIRE. Le journal contient déjà des événements `task.started`,
- * `task.progress` et `task.completed` : ils y désignent un travail de fond du CLI
- * (workflow, commande en arrière-plan), pas une tâche au sens de cette API. Les types
- * ci-dessous ne circulent QUE dans les livraisons de webhook, jamais dans le journal,
- * et un consommateur qui lit les deux ne doit pas les confondre : le canal fait foi.
+ * WATCH THE VOCABULARY. Journal events `task.started`, `task.progress` and `task.completed`
+ * describe CLI background jobs (workflows, background commands), not tasks in this API's sense.
+ * The types below appear ONLY in webhook deliveries, never in the journal. Consumers reading
+ * both must distinguish them by channel.
  */
 export type WebhookEventType =
   | 'task.completed'
@@ -223,13 +216,12 @@ export type WebhookEventType =
 export type WebhookFailureReason = 'runner_failed' | 'reply_deadline_exceeded' | 'session_ended'
 
 /**
- * Corps d'une livraison de webhook.
+ * Webhook delivery body.
  *
- * `seq` permet de reclasser des livraisons arrivées dans le désordre après reprise, et
- * `clientMessageId` de reconnaître le message qui a ouvert le tour : un message écrit
- * dans l'interface sur une tâche d'agent produit un `task.completed` que l'appelant n'a
- * pas demandé, qu'il ne peut interpréter sans cette corrélation. Null quand le serveur
- * a redémarré entre l'envoi et la fin du tour, ou quand le tour ne vient pas de l'API.
+ * `seq` reorders deliveries received out of order after recovery; `clientMessageId` identifies
+ * the message that opened the turn. A UI message on an agent task produces an unsolicited
+ * `task.completed` that callers cannot interpret without this correlation. Null if the server
+ * restarted between send and turn completion, or the turn did not originate from the API.
  */
 export interface WebhookPayload {
   type: WebhookEventType
@@ -245,28 +237,27 @@ export interface WebhookPayload {
   stopReason?: string
   lastMessage?: string | null
   /**
-   * Travaux de fond encore en cours à la fin du tour. Toujours 0 aujourd'hui : un
-   * tour qui laisse du travail derrière lui n'est pas livré du tout, la livraison du
-   * tour final suffira. Le champ reste au contrat pour qu'un consommateur puisse s'y
-   * fier si cette politique s'assouplit un jour.
+   * Background jobs still active at turn end. Currently always 0: turns leaving background work
+   * are not delivered at all; the final turn's delivery suffices. Retained in the contract so
+   * consumers can rely on it if policy changes later.
    */
   backgroundJobs?: number
   /** task.awaiting_input */
   pending?: { kind: TaskPendingDto['kind']; requestId: string; event: SillageEvent }
-  /** Échéance de réponse, absente quand la tâche n'en a pas. */
+  /** Answer deadline; absent for tasks without one. */
   replyDeadlineAt?: number
   /** task.failed */
   reason?: WebhookFailureReason
   message?: string
-  /** task.stopped : qui a repris la main. Jamais le jeton appelant lui-même. */
+  /** task.stopped: who took control. Never the calling token itself. */
   by?: { kind: 'user' | 'token'; label: string }
 }
 
 /**
- * Nom du champ d'effort dans la configuration de chaque CLI.
+ * Effort field name in each CLI's configuration.
  *
- * Table exhaustive plutôt que branchement : ajouter un CLI fait échouer la compilation
- * ici, ce qui vaut mieux que de publier une API qui tait un de ses réglages.
+ * Exhaustive table instead of branching: adding a CLI fails compilation here, preferable to
+ * publishing an API that silently omits a setting.
  */
 export const EFFORT_FIELD: Record<AgentKind, string> = {
   claude: 'effort',
@@ -276,22 +267,19 @@ export const EFFORT_FIELD: Record<AgentKind, string> = {
 }
 
 /**
- * Ce qu'une requête a le droit de changer, par CLI.
+ * Fields a request may change, per CLI.
  *
- * Liste blanche et non liste noire, parce que l'oubli doit pencher du côté sûr : un
- * champ ajouté demain à `AgentConfig` sera refusé tant qu'il n'est pas inscrit ici,
- * plutôt que surchargeable sans que personne ne l'ait décidé.
+ * Allowlist, not denylist, so omissions fail safely: new `AgentConfig` fields are rejected
+ * until listed rather than becoming overridable without a decision.
  *
- * Tout ce qui n'y figure pas relève des garde-fous (mode de permission, approbation,
- * bac à sable, répertoires supplémentaires, serveurs MCP) et se règle à la création
- * du jeton, dans l'interface. Sans cette barrière, un appelant demanderait
- * `permissionMode: bypassPermissions` ou `sandbox: danger-full-access` dans son corps
- * de requête, et le jeton ne vaudrait plus qu'un accès shell.
+ * Unlisted fields are safeguards (permission mode, approval, sandbox, extra directories, MCP
+ * servers), configured when creating the token in the UI. Without this boundary, callers could
+ * request `permissionMode: bypassPermissions` or `sandbox: danger-full-access` and turn the
+ * token into shell access.
  *
- * Même logique pour ce qui coûte : le mode rapide et le modèle conseiller dépensent
- * sur le compte de la machine, pas sur celui de l'appelant, et restent donc au jeton.
- * Les plafonds de budget vont dans l'autre sens, ils ne peuvent que réduire la dépense
- * d'une tâche : un appelant a le droit de les poser.
+ * The same applies to costly features: fast mode and the advisor model spend the machine
+ * account's resources, not the caller's, so remain token settings. Budget caps work the other
+ * way, only reducing task spending, so callers may set them.
  */
 export const OVERRIDABLE_CONFIG_FIELDS: Record<AgentKind, readonly string[]> = {
   claude: ['model', 'effort', 'outputStyle', 'maxBudgetUsd', 'maxTurns'],
@@ -301,21 +289,20 @@ export const OVERRIDABLE_CONFIG_FIELDS: Record<AgentKind, readonly string[]> = {
 }
 
 /**
- * Une configuration où le CLI n'a plus de garde-fou : rien ne sera demandé, tout
- * s'exécute. Elle exige la portée `tasks:autonomous`, où qu'elle vienne : réglages du
- * jeton, préréglage du projet servant de socle, ou surcharge. Le contrôle se fait sur
- * la configuration résolue, pour qu'aucun chemin détourné n'y échappe.
+ * A configuration without CLI safeguards: everything executes without asking. Requires
+ * `tasks:autonomous` regardless of source: token settings, project baseline or override. Check
+ * the resolved configuration so no indirect path bypasses enforcement.
  */
 export function isPermissiveConfig(config: AgentConfig): boolean {
   if (config.agent === 'claude') return config.permissionMode === 'bypassPermissions'
-  // La sentinelle compte comme permissive : sans règle posée par Sillage, opencode
-  // laisse faire, sauf réglage du poste que rien ici ne permet de connaître.
+  // The sentinel counts as permissive: without a Sillage rule, opencode allows actions
+  // unless overridden by machine settings that cannot be known here.
   if (config.agent === 'opencode') {
     return config.permissions.edit !== 'ask' && config.permissions.edit !== 'deny' &&
       config.permissions.bash !== 'ask' && config.permissions.bash !== 'deny'
   }
-  // `auto` laisse un classifieur trancher sans demander, ce qui revient au même pour qui
-  // n'est pas là : seuls `default` et `plan` gardent quelqu'un dans la boucle.
+  // `auto` lets a classifier decide without asking, equivalent for unattended callers:
+  // only `default` and `plan` retain human involvement.
   if (config.agent === 'grok') return config.permissionMode === 'bypassPermissions' || config.permissionMode === 'auto'
   return config.askForApproval === 'never' || config.sandbox === 'danger-full-access'
 }
@@ -324,10 +311,10 @@ export type CreateTaskBody = z.infer<typeof createTaskBodySchema>
 export type TaskSteerBody = z.infer<typeof taskSteerBodySchema>
 
 /**
- * Fond une surcharge dans une configuration résolue, puis valide l'ensemble.
+ * Merges an override into resolved configuration, then validates the result.
  *
- * Les champs hors liste blanche sont rendus à l'appelant plutôt qu'ignorés en silence :
- * croire avoir désactivé un garde-fou serait pire que se l'entendre refuser.
+ * Fields outside the allowlist are reported to callers rather than silently ignored: believing
+ * a safeguard was disabled would be worse than an explicit rejection.
  */
 export function mergeAgentConfig(
   base: AgentConfig,

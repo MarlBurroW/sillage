@@ -18,11 +18,7 @@ import type { CloneJobs } from '../src/clone-jobs.js'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { writeProjectDefaults } from '../src/settings/user-settings.js'
 
-/**
- * Les défauts de compte pour les projets à venir : où vivent consignes et mémoire.
- * Posés par la visite, appliqués à la création quand elle ne dit rien, et le mode
- * mémoire réglable ensuite projet par projet.
- */
+/** Account defaults for future project instructions and memory locations. Set by onboarding, used when creation omits choices; memory mode remains editable per project afterward. */
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'sillage-project-defaults-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
@@ -58,7 +54,7 @@ test('sans défaut : consignes selon le dossier, mémoire dans Sillage', async (
   assert.equal(plain.instructionsMode, 'sillage')
   assert.equal(plain.memoryMode, 'sillage')
 
-  // Un dossier qui porte déjà un AGENTS.md garde ses consignes dans le dépôt.
+  // Existing AGENTS.md directories retain repository instructions.
   await mkdir(join(parent, 'with-agents'))
   await writeFile(join(parent, 'with-agents', 'AGENTS.md'), '# rules\n')
   const repo = await create({ name: 'With agents', workspacePath: join(parent, 'with-agents') })
@@ -75,19 +71,19 @@ test('les défauts du compte s’appliquent quand la création ne dit rien, et s
   assert.equal(patched.statusCode, 200, patched.body)
   assert.deepEqual(patched.json().projectDefaults, { instructionsMode: 'sillage', memoryMode: 'native' })
 
-  // Même avec un AGENTS.md, le compte a dit « dans Sillage ».
+  // Account choice 'in Sillage' applies even with AGENTS.md present.
   await mkdir(join(parent, 'with-agents'))
   await writeFile(join(parent, 'with-agents', 'AGENTS.md'), '# rules\n')
   const project = await create({ name: 'Defaults', workspacePath: join(parent, 'with-agents') })
   assert.equal(project.instructionsMode, 'sillage')
   assert.equal(project.memoryMode, 'native')
 
-  // Un choix explicite à la création l'emporte sur le défaut.
+  // Explicit creation choices override defaults.
   const explicit = await create({ name: 'Explicit', directory: 'explicit', instructionsMode: 'repo', memoryMode: 'sillage' })
   assert.equal(explicit.instructionsMode, 'repo')
   assert.equal(explicit.memoryMode, 'sillage')
 
-  // Le défaut « dépôt » s'impose aussi à un dossier vide.
+  // Repository defaults also apply to empty directories.
   writeProjectDefaults(db, 'owner', { instructionsMode: 'repo', memoryMode: 'sillage' })
   const repo = await create({ name: 'Repo', directory: 'repo' })
   assert.equal(repo.instructionsMode, 'repo')

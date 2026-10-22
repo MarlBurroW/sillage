@@ -2,11 +2,10 @@ import { Cron } from 'croner'
 import { z } from 'zod'
 
 /**
- * Motif cron à cinq champs, validé par la bibliothèque qui l'exécutera.
+ * Five-field cron expression, validated by the library that will execute it.
  *
- * Croner plutôt qu'une expression régulière : `31 2 * * *` et `0 0 30 2 *` se
- * ressemblent, mais le second ne tombe jamais. Seul ce qui sait calculer une
- * prochaine occurrence peut faire la différence.
+ * Croner rather than a regex: `31 2 * * *` and `0 0 30 2 *` look similar, but the second never
+ * occurs. Only something capable of calculating the next occurrence can distinguish them.
  */
 export const cronScheduleSchema = z.string().refine(
   (value) => {
@@ -20,55 +19,52 @@ export const cronScheduleSchema = z.string().refine(
 )
 
 /**
- * Réglages qui valent pour l'instance entière.
+ * Instance-wide settings.
  *
- * Lisibles par tout compte connecté, modifiables par le seul administrateur : rien ici
- * n'est sensible, et l'interface a besoin de la valeur pour dire à chacun au bout de
- * combien de temps ses fils seront rangés.
+ * Readable by any signed-in account, writable only by administrators: nothing here is
+ * sensitive, and the UI needs these values to tell users when their threads will be archived.
  */
 export interface AppSettingsDto {
   autoArchiveDays: number
   autoArchiveSchedule: string
   /**
-   * Dictée vocale, sur toute API au format OpenAI (`/audio/transcriptions`).
+   * Voice dictation through any OpenAI-compatible API (`/audio/transcriptions`).
    *
-   * `sttSecret` est le nom d'un secret du dépôt, jamais la clé elle-même : la valeur
-   * ne circule pas hors du serveur. Les trois premiers champs vides coupent la dictée,
-   * `sttCleanupModel` vide coupe seulement la passe de nettoyage.
+   * `sttSecret` names a stored secret, never the key itself: its value stays on the server.
+   * Empty first three fields disable dictation; empty `sttCleanupModel` disables only the
+   * cleanup pass.
    */
   sttBaseUrl: string
   sttModel: string
   sttSecret: string
   sttCleanupModel: string
   /**
-   * Runners CLI vivants en même temps, tous comptes confondus.
+   * Simultaneously live CLI runners across all accounts.
    *
-   * Ce que ça plafonne est la mémoire de la machine, pas le nombre de conversations
-   * ouvertes : au-delà, le serveur arrête le runner au repos le plus ancien, qui
-   * repart en reprise au message suivant.
+   * Limits machine memory, not open conversation count: beyond this, the server stops the
+   * oldest idle runner, which resumes on the next message.
    */
   maxConcurrentSessions: number
   /**
-   * Racine publique de l'instance, celle que Sillage met dans les liens qu'il donne :
-   * webhooks, réponses de l'API, tâches planifiées. Vide, elle se déduit de l'en-tête
-   * `Host` de chaque requête.
+   * Instance public root used in Sillage-generated links: webhooks, API responses, scheduled
+   * tasks. Empty derives it from each request's `Host` header.
    */
   publicUrl: string
 }
 
-/** Résultat d'un passage d'archivage lancé à la main. */
+/** Result of a manually triggered archive pass. */
 export interface ArchiveRunDto {
   archived: number
 }
 
 export const updateAppSettingsBodySchema = z.object({
   /**
-   * Zéro coupe l'archivage automatique. La borne haute n'a rien de sacré, elle écarte
-   * seulement les valeurs qui ne veulent rien dire pour un réglage exprimé en jours.
+   * Zero disables automatic archiving. The upper bound has no special significance; it excludes
+   * meaningless values for a setting expressed in days.
    */
   autoArchiveDays: z.number().int().min(0).max(3650).optional(),
   autoArchiveSchedule: cronScheduleSchema.optional(),
-  // La chaîne vide est une valeur légitime partout : elle désactive.
+  // Empty strings are valid everywhere: they disable the feature.
   sttBaseUrl: z
     .string()
     .trim()
@@ -79,7 +75,7 @@ export const updateAppSettingsBodySchema = z.object({
   sttModel: z.string().trim().max(200).optional(),
   sttSecret: z.string().trim().max(200).optional(),
   sttCleanupModel: z.string().trim().max(200).optional(),
-  /** Vide pour revenir à la déduction par requête ; sinon une origine http(s), sans chemin. */
+  /** Empty restores per-request inference; otherwise an http(s) origin without a path. */
   publicUrl: z
     .string()
     .trim()
@@ -90,14 +86,14 @@ export const updateAppSettingsBodySchema = z.object({
     .transform((value) => value.replace(/\/+$/, ''))
     .optional(),
   /**
-   * Au moins une session, sinon plus rien ne peut démarrer. La borne haute écarte les
-   * valeurs qui feraient tomber la machine avant d'être atteintes : à 400-500 Mo la
-   * session, cent runners demanderaient 50 Go.
+   * At least one session, otherwise nothing can start. The upper bound excludes values that
+   * would exhaust the machine first: at 400–500 MB per session, a hundred runners would need 50
+   * GB.
    */
   maxConcurrentSessions: z.number().int().min(1).max(100).optional(),
 })
 
-/** Résultat d'une dictée transcrite. */
+/** Transcribed dictation result. */
 export interface TranscriptionDto {
   text: string
 }

@@ -1,260 +1,250 @@
-# Couverture des fonctionnalités Claude Code — 17 septembre 2026
+# Claude Code feature coverage — September 17, 2026
 
-Revue de ce que Sillage expose du CLI Claude Code, comparé à ce que le CLI et le SDK
-offrent aujourd'hui. Sur le commit `74e3391`, arbre de travail non commité compris.
+Review of what Sillage exposes from the Claude Code CLI against what the CLI and
+SDK currently offer. Based on commit `74e3391`, including uncommitted working-tree changes.
 
-**Diagnostic.** Le socle est complet : tout ce qui fait une conversation (modèle,
-effort, permissions, plan, questions, MCP, sous-agents, tâches de fond, boucles,
-compaction, steer, fork, import) est couvert et à jour. Ce qui manque tient en trois
-familles : quelques **réglages de session** apparus depuis (mode Fast, style de sortie,
-advisor), une dizaine de **signaux que le CLI émet et que Sillage avale** (notifications,
-tentatives de reconnexion à l'API, refus du modèle, refus automatiques de permission),
-et deux fonctions plus lourdes qu'on peut couvrir ou non (rewind des fichiers, dialogues
-utilisateur). Aucun manque n'est bloquant ; le plus visible est le mode Fast, et le plus
-rentable est le relais des signaux, qui explique des silences aujourd'hui inexplicables.
+**Diagnosis.** The foundation is complete: everything making up a conversation
+(model, effort, permissions, plan, questions, MCP, subagents, background tasks,
+loops, compaction, steering, fork, import) is covered and current. Gaps fall into
+three families: newer **session settings** (Fast mode, output style, advisor),
+about ten **signals emitted by the CLI but swallowed by Sillage** (notifications,
+API reconnection attempts, model refusals, automatic permission denials), and two
+larger optional features (file rewind, user dialogs). None is blocking; Fast mode
+is most visible, and forwarding signals offers the greatest return by explaining
+currently unexplained silences.
 
-**Périmètre et méthode.** Lecture de l'adaptateur (`apps/server/src/agents/claude/`),
-du schéma `ClaudeConfig` et du composer. Comparaison avec les types du SDK installé
-(0.3.220) et du dernier publié (0.3.273), et avec le changelog du CLI de 2.1.224 à
-2.1.273. Trois sondes sur le CLI installé (2.1.263), par requêtes de contrôle sans
-message envoyé au modèle, donc sans tokens : état du mode Fast, bascule à chaud du mode
-Fast et du style de sortie, liste des sous-agents. Une lecture de la base de l'instance
-pour compter les `session.started` par tour. Aucun code applicatif modifié.
+**Scope and method.** Read the adapter (`apps/server/src/agents/claude/`),
+`ClaudeConfig` schema, and composer. Compared installed SDK types (0.3.220) with
+latest published (0.3.273), and CLI changelog from 2.1.224 to 2.1.273. Three probes
+on installed CLI (2.1.263), using control requests without model messages and
+therefore no tokens: Fast mode state, live Fast/output-style changes, subagent
+list. Read instance database to count `session.started` per turn. No application
+code modified.
 
 ## Versions
 
-| | Installé sur ce poste | Dernier publié | Cible déclarée (`cli-versions.ts`) |
+| | Installed on this machine | Latest published | Declared target (`cli-versions.ts`) |
 |---|---|---|---|
 | CLI `@anthropic-ai/claude-code` | 2.1.263 | 2.1.273 | 2.1.220 |
 | SDK `@anthropic-ai/claude-agent-sdk` | 0.3.220 | 0.3.273 | — |
 
-Le diff des types entre les deux SDK fait 2 700 lignes. Rien de ce sur quoi Sillage
-s'appuie n'a bougé : `priority` sur les messages (steer), `session_crons` dans le hook
-Stop (boucles), `forwardSubagentText`, `usage_EXPERIMENTAL…`, `supportsFastMode`. Deux
-requêtes de contrôle disparaissent, `get_plan` et `get_workspace_diff`, que Sillage
-n'utilise pas. Le bump est donc sans risque connu, et il apporte des choses utiles
-listées plus bas (hooks `PreModelSwitch`/`PostModelSwitch`, `context_usage` et
-`usage_report` sur `result`, `capabilities` et `effort` effectif sur `init`,
+The SDK type diff spans 2,700 lines. Nothing Sillage depends on changed: message
+`priority` (steering), Stop-hook `session_crons` (loops), `forwardSubagentText`,
+`usage_EXPERIMENTAL…`, `supportsFastMode`. Two control requests disappear,
+`get_plan` and `get_workspace_diff`, neither used by Sillage. The bump therefore
+has no known risk and brings useful additions listed below
+(`PreModelSwitch`/`PostModelSwitch` hooks, `context_usage` and `usage_report` on
+`result`, `capabilities` and effective `effort` on `init`,
 `permissionPrompts: 'none'`, `reloadOutputStyles()`).
 
-Correctifs du CLI entre 2.1.263 et 2.1.273 qui touchent directement Sillage :
+CLI fixes between 2.1.263 and 2.1.273 directly affecting Sillage:
 
-- 2.1.265 : plus de tour parasite « Continue from where you left off. » à la reprise
-  d'une session après `/compact` ou une autre commande locale. C'est le chemin que
-  Sillage prend quand un réglage impose un redémarrage.
-- 2.1.265 : un `cd` dans Bash persiste d'un tour à l'autre en session SDK.
-- 2.1.269 : les sessions headless ne se déclarent plus « en attente » pendant qu'un
-  sous-agent de fond tourne encore.
-- 2.1.273 : le flux SDK ne perd plus les derniers messages d'un sous-agent passé en
-  arrière-plan en cours de route.
+- 2.1.265: no spurious “Continue from where you left off.” turn when resuming after
+  `/compact` or another local command. Sillage takes this path when settings
+  require restarting.
+- 2.1.265: Bash `cd` persists across turns in SDK sessions.
+- 2.1.269: headless sessions no longer report “waiting” while a background subagent
+  is still running.
+- 2.1.273: SDK streams no longer lose final messages from a subagent moved into
+  the background mid-run.
 
-## Ce qui est couvert
+## What is covered
 
-Vérifié dans le runner, l'adaptateur et le composer. Rien à faire ici.
+Verified in runner, adapter, and composer. Nothing to do here.
 
-| Domaine | Couverture |
+| Area | Coverage |
 |---|---|
-| Réglages | modèle (catalogue lu au CLI), effort `low`…`max` par modèle, six modes de permission, dossiers additionnels, serveurs MCP du registre + serveur Sillage + isolation stricte ; tout est appliqué à chaud sauf `strictMcp` et l'entrée/sortie de `bypassPermissions`, qui relancent en reprise |
-| Interactions | permissions avec les règles proposées par le CLI (`once` / session / toujours), questions à choix (`AskUserQuestion`), validation de plan avec choix du mode de suite, élicitation MCP (formulaire et URL) |
-| Flux | texte et réflexion en delta, compteur de réflexion, appels et résultats d'outils, sous-agents avec leur fil complet, `file.edited` pour `Write`/`Edit`/`NotebookEdit` |
-| Tour | steer par `priority: 'next'`, interruption avec filet de fermeture, compaction manuelle et automatique (début, frontière, échec), erreurs de tour, quota épuisé |
-| Fond | tâches de fond et leur arrêt, tâches de sous-agents (début, progression, fin), boucles `/loop` et `CronCreate` par le hook Stop |
-| Compte | fenêtres de quota (`/usage`), rate limits en direct, occupation du contexte après chaque tour, coût et tokens par tour, cache compris |
-| Session | reprise par id natif, fork à un point du fil, import des sessions du CLI et resynchronisation, titre dérivé par le CLI, commandes `/` du projet avant le premier tour, mentions `@fichier`, images en ligne |
+| Settings | model (catalog read from CLI), per-model effort `low`…`max`, six permission modes, additional directories, registry MCP servers + Sillage server + strict isolation; all apply live except `strictMcp` and entering/leaving `bypassPermissions`, which restart with resume |
+| Interactions | permissions with CLI-proposed rules (`once` / session / always), choice questions (`AskUserQuestion`), plan approval with next-mode choice, MCP elicitation (form and URL) |
+| Stream | text and reasoning deltas, reasoning counter, tool calls/results, subagents with full threads, `file.edited` for `Write`/`Edit`/`NotebookEdit` |
+| Turn | steering through `priority: 'next'`, interruption with closure fallback, manual/automatic compaction (start, boundary, failure), turn errors, exhausted quota |
+| Background | background tasks and stopping them, subagent tasks (start, progress, completion), `/loop` and `CronCreate` loops through the Stop hook |
+| Account | quota windows (`/usage`), live rate limits, context occupancy after each turn, per-turn cost/tokens including cache |
+| Session | native-ID resume, fork at a thread point, CLI session import/resync, CLI-derived title, project slash commands before the first turn, `@file` mentions, inline images |
 
-## Ce qui manque
+## What is missing
 
-Classé par ce que ça coûte de ne pas l'avoir, pas par ce que ça coûte de le faire.
+Ranked by the cost of lacking it, not implementation cost.
 
-### A. Signaux du CLI que Sillage ignore
+### A. CLI signals Sillage ignores
 
-Le `switch` du runner a un `default` qui jette ce qu'il ne connaît pas. C'est
-volontaire et documenté, mais la liste de ce qui tombe dedans a grandi. Tout ce qui
-suit a une forme stable dans le SDK installé et pourrait alimenter `agent.notice` ou
-`error`, déjà dans le schéma, sans nouveau type d'événement.
+The runner's `switch` has a `default` discarding unknown messages. This is
+intentional and documented, but its catch-all list has grown. All following
+messages have stable shapes in the installed SDK and could feed `agent.notice`
+or `error`, already in the schema, without new event types.
 
-| Message natif | Ce que l'utilisateur perd aujourd'hui |
+| Native message | What users currently lose |
 |---|---|
-| `system/notification` | Les avis du CLI : « Fast mode disabled · usage credits exhausted » (un par tour), « serveur MCP déconnecté, reconnexion abandonnée » (2.1.273), « un serveur MCP demande une authentification ». Ils partent dans le vide. |
-| `system/api_retry` | Tentative n/max, délai, statut HTTP. Une API surchargée qui retente pendant deux minutes ressemble à un tour figé. |
-| `system/model_refusal_fallback`, `model_refusal_no_fallback` | Le modèle a refusé et le CLI a basculé (ou non) : catégorie, modèle de repli, messages rétractés. Sillage ne dit rien, le fil s'arrête ou repart sans explication. |
-| `system/permission_denied` | Refus automatique par le classifieur du mode `auto`, par `dontAsk` ou par une règle, avec la raison. Il ne reste qu'un résultat d'outil en erreur. |
-| `system/informational` | Messages de hooks et avis de niveau `notice` / `suggestion` / `warning`, dont un Stop hook qui a bloqué la suite. |
-| `tool_use_summary` | Résumé d'un lot d'outils rédigé par le CLI. Tout indiqué pour l'en-tête d'un groupe replié sur mobile. |
-| `prompt_suggestion` (sur option `promptSuggestions`) | Prochain message probable, un par tour, presque gratuit (cache du parent). Un bouton « suggéré » sur téléphone. |
-| `conversation_reset` | `/clear` est caché de la palette mais reste tapable : le CLI change de conversation et le journal ne l'apprend pas. |
-| `tool_progress`, `task_updated`, `memory_recall`, `auth_status` | Durée par outil et tentatives de sous-agents ; patch d'état d'une tâche (pause, arrière-plan) ; mémoires automatiques rappelées ; authentification en cours. Secondaires. |
+| `system/notification` | CLI notices: “Fast mode disabled · usage credits exhausted” (one per turn), “MCP server disconnected, reconnection abandoned” (2.1.273), “an MCP server requires authentication”. All discarded. |
+| `system/api_retry` | Attempt n/max, delay, HTTP status. An overloaded API retrying for two minutes looks like a frozen turn. |
+| `system/model_refusal_fallback`, `model_refusal_no_fallback` | Model refused and CLI fell back (or not): category, fallback model, retracted messages. Sillage says nothing; the thread stops or restarts unexplained. |
+| `system/permission_denied` | Automatic denial by `auto` classifier, `dontAsk`, or a rule, with reason. Only an error tool result remains. |
+| `system/informational` | Hook messages and `notice` / `suggestion` / `warning` notices, including a Stop hook blocking continuation. |
+| `tool_use_summary` | CLI-written summary of a tool batch. Well suited to a collapsed mobile group header. |
+| `prompt_suggestion` (with `promptSuggestions` option) | Likely next message, one per turn, nearly free (parent cache). A “suggested” phone button. |
+| `conversation_reset` | `/clear` is hidden from the palette but can still be typed: CLI changes conversations without the journal knowing. |
+| `tool_progress`, `task_updated`, `memory_recall`, `auth_status` | Tool duration and subagent retries; task-state patches (pause/background); recalled automatic memories; ongoing authentication. Secondary. |
 
-Un cas à vérifier plutôt qu'à affirmer : un message `user` dont le contenu est une
-liste de blocs sans `tool_result` est ignoré par le runner. C'est la forme probable
-des messages venus d'une autre session (`SendMessage` entre sessions de la même
-machine, ce que Sillage héberge justement) et des canaux MCP. S'ils passent par là,
-ils n'apparaissent pas au journal.
+One case needs verification rather than assertion: the runner ignores `user`
+messages whose content is a block list without `tool_result`. This is the likely
+shape of messages from another session (`SendMessage` between sessions on the
+same machine, precisely what Sillage hosts) and MCP channels. If they take that
+path, they do not appear in the journal.
 
-### B. Réglages de session que le CLI a et que Sillage n'offre pas
+### B. CLI session settings Sillage does not offer
 
-**Mode Fast.** Même modèle, réponses jusqu'à 2,5× plus rapides, tarif $10/$50 par
-MTok, sur Opus 5 et Opus 4.8 seulement. Sur un abonnement, c'est facturé en crédits
-d'usage, hors quota du forfait. Le premier tour en Fast repaie le contexte entier au
-tarif Fast, une fois par conversation : c'est un réglage à poser au départ plutôt
-qu'à bascule. En cas de rate limit Fast, le CLI retombe seul en vitesse normale
-(état `cooldown`) puis réactive.
+**Fast mode.** Same model, responses up to 2.5× faster, $10/$50 per MTok, only
+Opus 5 and Opus 4.8. On subscriptions this uses usage credits outside plan quota.
+The first Fast turn pays again for the entire context at Fast rates, once per
+conversation: best set initially rather than toggled. On Fast rate limits, the CLI
+falls back to normal speed (`cooldown`), then reactivates.
 
-Ce que la sonde a mesuré sur ce poste, compte Claude Max :
+Probe results on this machine, Claude Max account:
 
-| Étape | Résultat |
+| Step | Result |
 |---|---|
-| `initializationResult()` au lancement | `fast_mode_state: off`, `fast_mode_disabled_reason: sdk_opt_in_required` |
-| `applyFlagSettings({ fastMode: true })` puis `reinitialize()` | `fast_mode_state: on`, sans relancer le CLI |
-| `applyFlagSettings({ fastMode: null })` | retour à `off` |
-| modèles avec `supportsFastMode` | `default` (Opus) et `opus[1m]` ; ni Fable, ni Sonnet, ni Haiku |
+| `initializationResult()` at launch | `fast_mode_state: off`, `fast_mode_disabled_reason: sdk_opt_in_required` |
+| `applyFlagSettings({ fastMode: true })` then `reinitialize()` | `fast_mode_state: on`, without restarting CLI |
+| `applyFlagSettings({ fastMode: null })` | back to `off` |
+| models with `supportsFastMode` | `default` (Opus) and `opus[1m]`; not Fable, Sonnet, or Haiku |
 
-Donc : c'est le SDK qui doit opter, un `/fast` tapé dans Sillage répond « non
-disponible » (la commande est déjà cachée de la palette pour une autre raison) ; la
-bascule se fait à chaud par la même requête que l'effort ; l'état est lisible sur
-`init` et sur chaque `result` (`fast_mode_state`, dont le `cooldown`). Ce que la
-sonde ne dit pas : si l'API accepte réellement la requête Fast pour ce compte
-(crédits d'usage activés ou non). Ça ne se voit qu'au premier tour, et l'échec arrive
-par le `system/notification` de la section A. Activer Fast sur un modèle qui ne le
-gère pas fait basculer le CLI sur Opus ; le hook `PostModelSwitch` du SDK 0.3.273
-permettrait de le voir.
+Thus the SDK must opt in: `/fast` typed in Sillage says “unavailable” (already
+hidden from the palette for another reason). Live switching uses the same request
+as effort; state is readable on `init` and each `result` (`fast_mode_state`,
+including `cooldown`). The probe does not establish whether the API actually accepts
+Fast requests for this account (usage credits enabled or not). That becomes visible
+only on the first turn, and failure arrives through section A's `system/notification`.
+Enabling Fast on an unsupported model switches the CLI to Opus; SDK 0.3.273's
+`PostModelSwitch` hook would reveal it.
 
-Forme naturelle : un booléen `fastMode` dans `ClaudeConfig`, proposé seulement quand
-le modèle choisi a `supportsFastMode` (à remonter dans `AgentModelDto`), passé au
-lancement et à chaud par `applyFlagSettings`, avec l'état (`on` / `cooldown`) et une
-mention du coût dans la rangée de signaux du composer.
+Natural shape: a `fastMode` boolean in `ClaudeConfig`, offered only when the
+selected model has `supportsFastMode` (to expose in `AgentModelDto`), passed at
+launch and live through `applyFlagSettings`, with state (`on` / `cooldown`) and
+cost notice in the composer signal row.
 
-**Style de sortie.** Cinq styles sur ce poste : `default`, `Proactive`, `Concise`,
-`Explanatory`, `Learning`. `Concise` est celui que le CLI a ajouté en 2.1.236 : résultats
-d'abord, sans préambule. Sondé : `applyFlagSettings({ outputStyle: 'Concise' })` change
-`output_style` à chaud, `null` revient au défaut. La liste vient de
-`initializationResult().available_output_styles`. Réglage simple, dans la lignée de
-l'effort.
+**Output style.** Five styles on this machine: `default`, `Proactive`, `Concise`,
+`Explanatory`, `Learning`. `Concise`, added in CLI 2.1.236, puts results first
+without preamble. Probed: `applyFlagSettings({ outputStyle: 'Concise' })` changes
+`output_style` live; `null` returns to default. The list comes from
+`initializationResult().available_output_styles`. A simple setting like effort.
 
-**Advisor.** `/advisor <modèle>` et la clé `advisorModel` : un modèle plus fort que le
-modèle principal consulte à la demande. Disponible en headless depuis 2.1.260. Coût
-supplémentaire par consultation. À exposer comme option, pas comme défaut.
+**Advisor.** `/advisor <model>` and `advisorModel`: a stronger model consulted on
+demand by the main model. Available headless since 2.1.260. Extra cost per
+consultation. Expose as an option, not a default.
 
-**Garde-fous de budget.** `maxTurns`, `maxBudgetUsd` (le tour se ferme en
-`error_max_budget_usd`), `taskBudget` en alpha. Rien de tout ça n'est exposé. C'est
-surtout pertinent pour l'API de tâches `/api/v1`, où une machine ouvre des tâches
-sans les regarder.
+**Budget guards.** `maxTurns`, `maxBudgetUsd` (turn closes with
+`error_max_budget_usd`), alpha `taskBudget`. None is exposed. Particularly relevant
+for `/api/v1` tasks, where machines start tasks without watching them.
 
-**Sous-agents nommés.** `supportedAgents()` en liste cinq ici (`claude`, `Explore`,
-`general-purpose`, `Plan`, `statusline-setup`), plus ceux du projet sous
-`.claude/agents/`. Le CLI accepte `@agent` dans le texte et le propose à la frappe ;
-Sillage ne les connaît pas. Même mécanique que les commandes `/`.
+**Named subagents.** `supportedAgents()` lists five here (`claude`, `Explore`,
+`general-purpose`, `Plan`, `statusline-setup`) plus project `.claude/agents/` entries.
+CLI accepts `@agent` in text and suggests while typing; Sillage does not know them.
+Same mechanism as slash commands.
 
-**Réflexion.** Option `thinking` (adaptative, budget fixe, coupée) et
-`setMaxThinkingTokens`. Sur les modèles récents la réflexion est adaptative et pilotée
-par l'effort, déjà exposé : redondant pour l'usage courant.
+**Thinking.** `thinking` option (adaptive, fixed budget, disabled) and
+`setMaxThinkingTokens`. Recent models use adaptive thinking controlled by effort,
+already exposed: redundant for normal use.
 
-**Bac à sable, outils, repli.** `sandbox` (bubblewrap sur Linux), `tools` /
-`allowedTools` / `disallowedTools`, `fallbackModel`, `planModeInstructions`. Le bac à
-sable et les règles d'outils viennent des `settings.json` du poste, que le SDK charge
-par défaut (`settingSources` omis = tout) : ils s'appliquent donc déjà, sans réglage
-par conversation. Codex a un sélecteur de bac à sable dans Sillage, Claude non ; c'est
-une asymétrie acceptable tant que personne ne la demande.
+**Sandbox, tools, fallback.** `sandbox` (Linux bubblewrap), `tools` / `allowedTools`
+/ `disallowedTools`, `fallbackModel`, `planModeInstructions`. Sandbox/tool rules
+come from machine `settings.json`, loaded by default by SDK (omitted
+`settingSources` = all), so already apply without per-conversation settings.
+Codex has a Sillage sandbox selector, Claude does not; acceptable asymmetry until
+requested.
 
-### C. Deux fonctions plus lourdes, à trancher
+### C. Two larger features to decide
 
-**Rewind des fichiers.** `/rewind` dans le CLI : `enableFileCheckpointing` au lancement,
-puis `rewindFiles(userMessageId)` ramène les fichiers à leur état au message choisi.
-Sillage sait forker une conversation à un point du fil mais pas remettre le disque
-dans l'état de ce point. C'est la fonction la plus demandée du CLI qui manque ; elle
-touche le journal (il faut l'`uuid` du message utilisateur), le panneau de fichiers
-et les worktrees.
+**File rewind.** CLI `/rewind`: `enableFileCheckpointing` at launch, then
+`rewindFiles(userMessageId)` returns files to their state at a selected message.
+Sillage can fork a thread at a point but cannot restore disk state there. This is
+the most requested missing CLI feature; it affects the journal (needs user-message
+`uuid`), file panel, and worktrees.
 
-**Dialogues utilisateur.** `onUserDialog` + `supportedDialogKinds` : des dialogues
-bloquants que le CLI demande à l'hôte de rendre (`request_user_dialog`), par exemple
-la proposition de repli après un refus du modèle. Sans rappel, le CLI applique le
-défaut de chaque dialogue. L'ensemble des `dialogKind` est ouvert et n'est pas
-énuméré dans les types : à relever par sonde avant de câbler quoi que ce soit.
+**User dialogs.** `onUserDialog` + `supportedDialogKinds`: blocking dialogs the
+CLI asks the host to render (`request_user_dialog`), for example a fallback offer
+after model refusal. Without a callback, CLI applies each dialog's default.
+`dialogKind` is open-ended, not enumerated in types: probe before wiring anything.
 
-### D. Hors de portée, ou déjà écarté
+### D. Out of scope or already rejected
 
-Remote Control (écarté après mesure, SPEC §11), Teleport, sessions cloud et
-self-hosted runner, tout ce qui est propre au terminal (mode plein écran, panneau
-`/diff`, `/focus`, `/recap`, correcteur, raccourcis, thèmes), `claude agents`, la
-dictée du CLI (Sillage a la sienne), `/desktop`, `/ide`. Les plugins et les
-compétences s'installent sur le disque du CLI et sont chargés par défaut : Sillage
-les subit correctement sans UI dédiée, et pourrait au plus offrir un « recharger »
-(`reloadPlugins()`, `reloadSkills()`). Ultracode, Workflow et Monitor sont des outils
-du modèle, visibles par les tâches de fond : rien à faire.
+Remote Control (rejected after measurement, SPEC §11), Teleport, cloud sessions,
+self-hosted runner, terminal-specific features (fullscreen, `/diff` panel, `/focus`,
+`/recap`, spellcheck, shortcuts, themes), `claude agents`, CLI dictation (Sillage
+has its own), `/desktop`, `/ide`. Plugins and skills install on the CLI's disk and
+load by default: Sillage handles them without dedicated UI and could at most offer
+“reload” (`reloadPlugins()`, `reloadSkills()`). Ultracode, Workflow, and Monitor
+are model tools visible through background tasks: nothing to do.
 
-## Relevé en passant
+## Incidental findings
 
-- **`init` arrive à chaque tour**, pas seulement au lancement. Compté en base sur
-  une conversation récente : 13 `session.started` et 13 `commands.updated` pour
-  13 tours. Le runner réémet donc `session.started` et refait une requête
-  `supportedCommands()` à chaque tour. Pas un bug, mais du bruit au journal et une
-  requête de contrôle inutile par tour. N'émettre qu'au changement de `session_id`
-  ou de `model` suffirait, et le `model` porté par ces `init` est justement ce qui
-  rend visible un changement de modèle décidé par le CLI.
-- **`file.edited` ne voit que les outils de fichiers.** Le réglage
-  `bashEditDiffEnabled` (2.1.269) joint au résultat de `Bash` le diff des fichiers
-  que la commande a modifiés, ce qui couvrirait le `sed -i` et le `rm` que la SPEC
-  signale comme angles morts.
-- **La cible `PREFERRED_CLI_RELEASES.claude` est à 2.1.220**, deux mois derrière le
-  poste. Le caret ne hurle pas, mais à bumper avec le SDK.
+- **`init` arrives every turn**, not only at launch. Database count in a recent
+  conversation: 13 `session.started` and 13 `commands.updated` for 13 turns. Runner
+  therefore reemits `session.started` and calls `supportedCommands()` every turn.
+  Not a bug, but journal noise and an unnecessary control request per turn.
+  Emitting only on `session_id` or `model` changes would suffice; these `init`
+  messages' `model` reveals CLI-decided model changes.
+- **`file.edited` sees only file tools.** `bashEditDiffEnabled` (2.1.269) attaches
+  diffs of command-modified files to Bash results, covering the `sed -i` and `rm`
+  blind spots identified in SPEC.
+- **`PREFERRED_CLI_RELEASES.claude` targets 2.1.220**, two months behind the machine.
+  The caret does not complain, but bump it with the SDK.
 
-## Recommandation, dans l'ordre
+## Recommendations, in order
 
-| Priorité | Chantier | Bénéfice | Ampleur |
+| Priority | Work | Benefit | Scope |
 |---|---|---|---|
-| P1 | Bump SDK 0.3.273 et cible CLI 2.1.273 | Prérequis des hooks de changement de modèle et de `context_usage` sur `result` ; aucun type utilisé ne casse | Petite |
-| P1 | Relayer `notification`, `api_retry`, `model_refusal_*`, `permission_denied`, `informational` sur `agent.notice` / `error` | Les silences deviennent des phrases ; c'est aussi ce qui dira « Fast coupé, crédits épuisés » | Petite |
-| P1 | Mode Fast par conversation, à chaud, visible seulement sur les modèles qui le gèrent, état et coût affichés | La nouveauté la plus visible du CLI, sondée et bascule vérifiée | Moyenne |
-| P2 | Style de sortie | Réglage à chaud vérifié, cinq styles, `Concise` en tête | Petite |
-| P2 | `prompt_suggestion` en option | Un tap pour le message suivant sur téléphone | Petite |
-| P2 | `session.started` seulement au changement | Journal plus léger, une requête de contrôle de moins par tour | Petite |
-| P3 | Sous-agents `@` à la frappe, garde-fous de budget pour `/api/v1`, advisor | Parité de saisie, sécurité des tâches machine | Petite à moyenne |
-| P3 | Rewind des fichiers, dialogues utilisateur | Fonctions entières, à sonder avant de décider | Importante |
+| P1 | Bump SDK 0.3.273 and CLI target 2.1.273 | Prerequisite for model-switch hooks and `context_usage` on `result`; no used type breaks | Small |
+| P1 | Forward `notification`, `api_retry`, `model_refusal_*`, `permission_denied`, `informational` to `agent.notice` / `error` | Silences become explanations; also reports “Fast disabled, credits exhausted” | Small |
+| P1 | Per-conversation live Fast mode, only on supported models, with state and cost | Most visible CLI addition, probed and live switch verified | Medium |
+| P2 | Output style | Verified live setting, five styles, `Concise` first | Small |
+| P2 | Optional `prompt_suggestion` | One tap for the next phone message | Small |
+| P2 | `session.started` only on change | Lighter journal, one fewer control request per turn | Small |
+| P3 | Typed `@` subagents, `/api/v1` budget guards, advisor | Input parity, machine-task safeguards | Small to medium |
+| P3 | File rewind, user dialogs | Entire features, probe before deciding | Large |
 
-Les ampleurs sont des estimations de périmètre, pas des engagements de délai.
+Sizes estimate scope, not delivery commitments.
 
-## Suite donnée, le même jour
+## Follow-up the same day
 
-Tout ce qui précède est fait, sauf le rewind des fichiers, écarté par l'utilisateur,
-et les dialogues utilisateur, dont les sortes ne sont pas énumérables sans sonde.
+Everything above is done except file rewind, rejected by the user, and user dialogs,
+whose kinds cannot be enumerated without probing.
 
-- SDK 0.3.273 et cible CLI 2.1.273. Rien de ce que Sillage utilise n'a bougé.
-- Les signaux du CLI sont traduits en `agent.notice` dans `signals.ts`, module pur et
-  testé : notifications, tentatives d'API, refus du modèle, refus automatiques,
-  messages de hooks, remise à zéro de conversation.
-- Mode rapide, style de réponse et conseiller sont des réglages de conversation,
-  appliqués au lancement par `settings` et à chaud par `applyFlagSettings`. Le mode
-  rapide n'est proposé que sur les modèles qui le gèrent et si le compte y a droit ;
-  son état revient dans le fil, en un seul avis qui se remplace.
-- `maxBudgetUsd` et `maxTurns` sont des champs de configuration, surchargeables par
-  l'API de tâches, sans réglage dans le composer.
-- Les suggestions de message suivant sont demandées au CLI et proposées sous le fil,
-  un tap les pose dans la saisie. `promptSuggestionEnabled: false` dans les réglages
-  du poste les coupe.
-- `session.started` n'est plus journalisé qu'au changement de session ou de modèle,
-  et les commandes ne sont demandées qu'au premier init.
-- Les sous-agents nommés arrivent dans le catalogue (`agents`), sans proposition à la
-  frappe pour l'instant : le composer était en cours de refonte par une autre session.
+- SDK 0.3.273 and CLI target 2.1.273. Nothing Sillage uses changed.
+- CLI signals translate to `agent.notice` in pure, tested `signals.ts`:
+  notifications, API retries, model refusals, automatic denials, hook messages,
+  conversation reset.
+- Fast mode, output style, and advisor are conversation settings applied at launch
+  through `settings` and live through `applyFlagSettings`. Fast is offered only
+  on supported models and eligible accounts; its state returns in the thread as
+  one replaceable notice.
+- `maxBudgetUsd` and `maxTurns` are configuration fields overridable by the task
+  API, without composer settings.
+- Next-message suggestions are requested from CLI and offered below the thread;
+  one tap places them in input. Machine setting `promptSuggestionEnabled: false`
+  disables them.
+- `session.started` is journaled only on session/model changes, and commands are
+  requested only on first init.
+- Named subagents arrive in the catalog (`agents`), without typing suggestions
+  yet: another session was redesigning the composer.
 
-Vérifié de bout en bout par `pnpm --filter @sillage/server claude:probe`, trois tours
-minuscules sur le CLI 2.1.263 avec le SDK 0.3.273 : un seul `session.started` pour
-trois tours, le style `Concise` accepté au lancement, la bascule à chaud
-`applyConfig({ fastMode: true })` acceptée, l'avis « Mode rapide activé » au tour
-suivant, puis la suggestion de message après le `result`. Sur ce compte, l'API a
-refusé la requête rapide faute de crédits d'usage : le CLI l'a redit dans une
-`notification` (« Fast mode disabled · usage credits exhausted »), relayée dans le fil,
-et le tour s'est fait à vitesse normale. C'est le comportement documenté, et la raison
-pour laquelle le réglage est proposé même quand la première requête peut échouer :
-Sillage ne peut pas le savoir avant, la vérification de disponibilité passe.
+Verified end to end with `pnpm --filter @sillage/server claude:probe`, three tiny
+turns on CLI 2.1.263 with SDK 0.3.273: one `session.started` for three turns,
+`Concise` accepted at launch, live `applyConfig({ fastMode: true })` accepted,
+“Fast mode enabled” notice next turn, then message suggestion after `result`.
+This account's API rejected Fast requests for lack of usage credits: CLI reported
+it through `notification` (“Fast mode disabled · usage credits exhausted”),
+forwarded to the thread, and the turn ran at normal speed. This is documented
+behavior and why the setting is offered even when the first request may fail:
+Sillage cannot know in advance; the availability check passes.
 
-## Sondes
+## Probes
 
-Scripts jetables, lancés depuis `apps/server` avec le SDK installé et le binaire
-résolu par `readlink -f "$(which claude)"`. Ils ouvrent une session avec une file
-d'entrée vide, posent leurs requêtes de contrôle et ferment : aucun message au modèle.
+Disposable scripts run from `apps/server` with installed SDK and binary resolved
+through `readlink -f "$(which claude)"`. They open sessions with an empty input
+queue, send control requests, and close: no model messages.
 
 ```js
-// Mode Fast : état au lancement, bascule à chaud, modèles compatibles.
+// Fast mode: launch state, live switch, supported models.
 const init = await q.initializationResult()
 init.fast_mode_state              // 'off'
 init.fast_mode_disabled_reason    // 'sdk_opt_in_required'
@@ -262,164 +252,150 @@ init.models.map((m) => [m.value, m.supportsFastMode])
 await q.applyFlagSettings({ fastMode: true })
 ;(await q.reinitialize()).fast_mode_state   // 'on'
 
-// Style de sortie : même mécanique.
+// Output style: same mechanism.
 init.available_output_styles      // ['default', 'Proactive', 'Concise', 'Explanatory', 'Learning']
 await q.applyFlagSettings({ outputStyle: 'Concise' })
 ;(await q.reinitialize()).output_style      // 'Concise'
 ```
 
-À rejouer au prochain bump du SDK : rien de tout ça n'est documenté au-delà des
-types, et `applyFlagSettings` est annoncé « streaming input only ».
+Rerun at the next SDK bump: none of this is documented beyond types, and
+`applyFlagSettings` is described as “streaming input only”.
 
-## Complément du 6 octobre 2026 : cible 2.1.291
+## October 6, 2026 addendum: target 2.1.291
 
-Relecture du changelog de 2.1.274 à 2.1.291 (≈ 1 500 lignes, surtout des correctifs) et
-du diff des types entre le SDK 0.3.273 et 0.3.291, avec des sondes par requêtes de
-contrôle sur le CLI du poste (2.1.286) et sur un 2.1.291 téléchargé à part, sans
-toucher au binaire du système.
+Reviewed changelog from 2.1.274 to 2.1.291 (≈1,500 lines, mostly fixes) and SDK
+0.3.273 → 0.3.291 type diff, with control-request probes on machine CLI 2.1.286
+and a separately downloaded 2.1.291, without touching the system binary.
 
-| | Installé sur ce poste | Dernier publié | Cible déclarée |
+| | Installed on this machine | Latest published | Declared target |
 |---|---|---|---|
-| CLI `@anthropic-ai/claude-code` | 2.1.286 | 2.1.291 (`stable` : 2.1.285, `next` : 2.1.292) | 2.1.273 → **2.1.291** |
+| CLI `@anthropic-ai/claude-code` | 2.1.286 | 2.1.291 (`stable`: 2.1.285, `next`: 2.1.292) | 2.1.273 → **2.1.291** |
 | SDK `@anthropic-ai/claude-agent-sdk` | 0.3.273 | 0.3.291 | 0.3.273 → **0.3.291** |
 
-Rien de ce que Sillage utilise n'a bougé dans le SDK : le typecheck passe sans
-retouche. Les outils `TaskOutput` (retiré en 2.1.276) et `REPL` sortent des schémas
-d'outils ; Sillage ne les traitait pas à part.
+Nothing Sillage uses changed in SDK: typecheck passes without edits. `TaskOutput`
+(removed in 2.1.276) and `REPL` leave tool schemas; Sillage did not treat them separately.
 
-### Ce qui touchait Sillage, et ce qui a été fait
+### What affected Sillage, and what was done
 
-- **Ultracode n'est plus un niveau d'effort (2.1.284).** Il n'impose plus `xhigh` et
-  tient à tout niveau ; en revanche un `effortLevel` qui change le niveau sans la clé
-  `ultracode` l'éteint. Sillage envoyait l'effort seul : changer l'effort d'une
-  conversation en Ultracode l'éteignait côté CLI pendant que le composer l'affichait
-  allumé. Sondé sur 2.1.286 et 2.1.291 par `getSettings().applied` (méthode présente à
-  l'exécution, absente du type public). Corrigé : `liveFlagSettings` renvoie
-  `ultracode: true` avec tout changement d'effort, et le composer n'aligne plus
-  l'effort sur `xhigh` quand on l'allume. Le CLI le refuse toujours aux modèles sans
-  `xhigh` (`ultracodeAvailable: false` sur Haiku 4.5 et Sonnet 4.6) : le réglage reste
-  réservé à ceux-là.
-- **Noms de modèles qui sortent du catalogue.** `opus[1m]` n'est plus listé depuis
-  2.1.282 (Opus a d'office un million de tokens), et 2.1.291 liste Fable 5.1 sous
-  l'alias `fable` au lieu de `claude-fable-5-1`. Le CLI accepte toujours les anciens
-  noms, mais le composer, qui cherchait la valeur exacte, perdait l'effort, la vitesse
-  et Ultracode de ces conversations : 94 actives en `opus[1m]` en base, une dizaine en
-  `claude-fable-5-1`. `catalogModel` retrouve désormais l'entrée par le nom sans
-  `[1m]`, puis par l'identifiant résolu.
-- **Deux signaux de plus.** `conversation_reset` porte son `trigger` (`clear`,
-  `plan_mode_exit`, `fresh_session`, `onboarding`), traduit en phrase ; l'`init`
-  porte `plugin_errors`, relayé en un avis qui ne revient qu'au changement. Sillage
-  charge sa bibliothèque de skills comme plugins : un refus y était muet.
+- **Ultracode is no longer an effort level (2.1.284).** It no longer forces
+  `xhigh` and works at every level; however, `effortLevel` changes without
+  `ultracode` disable it. Sillage sent effort alone: changing effort in an
+  Ultracode conversation disabled it in CLI while composer showed it enabled.
+  Probed on 2.1.286/2.1.291 through `getSettings().applied` (present at runtime,
+  absent from public types). Fixed: `liveFlagSettings` sends `ultracode: true`
+  with effort changes, and composer no longer aligns effort to `xhigh` when
+  enabling it. CLI still rejects models without `xhigh` (`ultracodeAvailable:
+  false` on Haiku 4.5 and Sonnet 4.6), so the setting stays limited accordingly.
+- **Model names leaving the catalog.** `opus[1m]` is unlisted since 2.1.282 (Opus
+  has a million tokens by default), and 2.1.291 lists Fable 5.1 as `fable` instead
+  of `claude-fable-5-1`. CLI still accepts old names, but exact-match composer
+  lookup lost effort, speed, and Ultracode for these conversations: 94 active
+  `opus[1m]` entries and about ten `claude-fable-5-1` in the database.
+  `catalogModel` now finds entries without `[1m]`, then by resolved ID.
+- **Two more signals.** `conversation_reset` carries `trigger` (`clear`,
+  `plan_mode_exit`, `fresh_session`, `onboarding`), translated into a sentence;
+  `init` carries `plugin_errors`, forwarded in a notice repeated only on change.
+  Sillage loads its skill library as plugins: failures were silent.
 
-### Ce qui touche Sillage sans code
+### What affects Sillage without code
 
-- **Limite des commandes de fond (2.1.285, 2.1.288).** Une commande lancée avec
-  `run_in_background` s'arrête au bout de 30 min par défaut, 2 h au plus, dans les
-  sessions « non surveillées ». Le CLI range dans cette catégorie toute session SDK
-  qui ne se déclare pas Desktop ou VS Code, donc celles de Sillage. À trancher : carte
-  #12.
-- **AGENTS.md lu par Claude (2.1.277)** : déjà couvert, `claudeMdExcludes` masque les
-  deux fichiers en mode SILLAGE.md (sondé le 5 octobre, `docs/sillage-md.md`).
-- **Mode de permission par défaut à `auto`** quand la session n'en donne aucun : Sillage
-  en passe toujours un.
-- **Opus 5.5 et Sonnet 5.5** : le catalogue est lu au CLI, ils sont apparus seuls.
-- Correctifs SDK qui profitent directement : un message envoyé en priorité ne coupe
-  plus un WebFetch en cours, les heartbeats d'outil arrivent pendant un flux bloqué,
-  le repli de modèle ne se répète plus à chaque message après un changement de modèle
-  en vol, `set_model` reprend les limites de sortie du nouveau modèle, un tour ne
-  reste plus ouvert quand son flux est coupé.
+- **Background command limits (2.1.285, 2.1.288).** Commands launched with
+  `run_in_background` stop after 30 minutes by default, 2 hours maximum, in
+  “unattended” sessions. CLI classifies all SDK sessions not identifying as
+  Desktop/VS Code this way, including Sillage. Decision pending: card #12.
+- **Claude reads AGENTS.md (2.1.277)**: covered already; `claudeMdExcludes` hides
+  both files in SILLAGE.md mode (probed October 5, `docs/sillage-md.md`).
+- **Default permission mode is `auto`** when none supplied: Sillage always supplies one.
+- **Opus 5.5 and Sonnet 5.5**: catalog is read from CLI; they appeared automatically.
+- Beneficial SDK fixes: priority messages no longer interrupt active WebFetch;
+  tool heartbeats arrive during blocked streams; model fallback no longer repeats
+  every message after an in-flight model change; `set_model` adopts new model
+  output limits; turns no longer stay open when their stream cuts off.
 
-### Laissé de côté, noté
+### Deferred and recorded
 
-- `get_task_output`, la fin de la sortie d'une commande de fond, sans tour de modèle :
-  carte #13. Présente à l'exécution du SDK mais pas dans son type public.
-- Consultations de l'advisor (`advisor_tool_result`) que le fil ne rend pas : carte
-  #14.
-- `prewarm()` / `claim()` (alpha) : un CLI démarré d'avance, lié ensuite à une session.
-  Gagnerait le démarrage d'une conversation, mais impose de figer à l'avance tout ce
-  que Sillage passe au lancement (MCP, plugins, hooks).
-- MCP Apps (`readMcpResource`, `_meta.ui`, alpha) : rendre les widgets HTML des
-  serveurs MCP, en bac à sable.
-- `mcpServer` sur les demandes de permission (serveur et provenance d'un outil
-  `mcp__*`), `verbatimPrompts`, `pasted_content`, `view_mode` de `/focus` : sans usage
-  identifié aujourd'hui.
+- `get_task_output`, final background-command output without a model turn: card
+  #13. Present at SDK runtime but not in public types.
+- Advisor consultations (`advisor_tool_result`) not rendered in thread: card #14.
+- `prewarm()` / `claim()` (alpha): CLI started ahead of time, then bound to a session.
+  Could improve conversation startup but requires fixing all launch inputs
+  (MCP, plugins, hooks) in advance.
+- MCP Apps (`readMcpResource`, `_meta.ui`, alpha): render sandboxed MCP HTML widgets.
+- Permission-request `mcpServer` (server and provenance of `mcp__*` tools),
+  `verbatimPrompts`, `pasted_content`, `/focus`'s `view_mode`: no identified use today.
 
-Vérifié : typecheck, tests (dont `claude-flag-settings.test.ts` et les nouveaux cas de
-`claude-signals.test.ts`), lint, et un passage Playwright jetable sur le composer réel
-(API simulée), grand écran et téléphone : une conversation `opus[1m]` s'affiche « Opus
-5.5 » avec son effort, une `claude-fable-5-1` « Fable 5.1 », et Ultracode s'allume sans
-toucher à l'effort.
+Verified: typecheck, tests (including `claude-flag-settings.test.ts` and new
+`claude-signals.test.ts` cases), lint, disposable Playwright pass on real composer
+(mocked API), desktop and phone: `opus[1m]` shows “Opus 5.5” with effort,
+`claude-fable-5-1` shows “Fable 5.1”, Ultracode enables without changing effort.
 
-## Complément du 12 octobre 2026 : cible 2.1.296
+## October 12, 2026 addendum: target 2.1.296
 
-Relecture du changelog de 2.1.292 à 2.1.296 (≈ 390 lignes, deux tiers de correctifs,
-beaucoup de Claude Tag, cloud et gateway sans rapport avec Sillage) et du diff des types
-entre le SDK 0.3.291 et 0.3.296. Sondes par requêtes de contrôle sur un 2.1.296 téléchargé
-à part (`npm pack @anthropic-ai/claude-code-linux-x64@2.1.296`), sans toucher au binaire
-du système, puis une session réelle sur un serveur jetable configuré sur ce binaire
-(`agents.claude.binary`), pilotée par l'API v1.
+Reviewed 2.1.292 → 2.1.296 changelog (≈390 lines, two-thirds fixes, much unrelated
+Claude Tag/cloud/gateway content) and SDK 0.3.291 → 0.3.296 type diff. Control-request
+probes used separately downloaded 2.1.296
+(`npm pack @anthropic-ai/claude-code-linux-x64@2.1.296`) without touching system
+binary, then a real session on a disposable server configured for that binary
+(`agents.claude.binary`), driven through API v1.
 
-| | Installé sur ce poste | Dernier publié | Cible déclarée |
+| | Installed on this machine | Latest published | Declared target |
 |---|---|---|---|
-| CLI `@anthropic-ai/claude-code` | 2.1.292 | 2.1.296 (9 octobre) | 2.1.291 → **2.1.296** |
+| CLI `@anthropic-ai/claude-code` | 2.1.292 | 2.1.296 (October 9) | 2.1.291 → **2.1.296** |
 | SDK `@anthropic-ai/claude-agent-sdk` | 0.3.291 | 0.3.296 | 0.3.291 → **0.3.296** |
 
-Le SDK n'a que des ajouts de champs optionnels, aucun retrait : typecheck, tests et lint
-passent sans retouche de code. Seuls deux commentaires sondés ont été actualisés.
+SDK only adds optional fields, removes none: typecheck, tests, lint pass without
+code changes. Only two probe-related comments were updated.
 
-### Ce qui change pour Sillage
+### What changes for Sillage
 
-- **L'alias `haiku` désigne Haiku 5.5 (2.1.293).** Sondé : `haiku` → `claude-haiku-5-5`,
-  « Haiku 5.5 », contexte d'un million de tokens, efforts `low` → `max`, et Ultracode
-  s'y ouvre (`ultracodeAvailable: true` par `getSettings().applied`). Haiku 4.5 ne
-  s'obtient plus que sous `claude-haiku-4-5-20251001`, sans niveau d'effort, et
-  Ultracode lui reste refusé. Le catalogue vient du CLI, rien n'est codé en dur : les
-  conversations et tâches planifiées réglées sur `haiku` passent sur 5.5 au prochain
-  tour, sans rien dire. La session d'essai l'a montré (`session.started` annonce
-  `claude-haiku-5-5` pour une tâche créée en `haiku`). Le composer, qui n'offre Ultracode
-  qu'aux modèles à `xhigh`, l'offre donc désormais sur `haiku` : c'est voulu. Prévenir
-  du changement de modèle : carte #26.
-- **`claude_code_version` dans la réponse d'initialisation** : la version du process
-  qui tient la session, absente des CLI antérieurs. Sillage ne la lit pas encore ; elle
-  dirait quelle version une conversation en cours utilise réellement, là où l'écran
-  Agents ne connaît que le binaire du moment. Carte #27.
-- **Attribution des sous-agents et des tâches** : `agent_id` sur les messages, puis
-  `parent_task_id`, `subagent_type` et `run_id` sur `background_tasks_changed` et les
-  `task_*`. `background.updated` ne garde que l'identifiant, le type et la description.
-  Carte #22, ouverte par la veille.
-- **`overageEnabled` sur `rate_limit_event` (2.1.295)** : l'avertissement de quota dit
-  si l'usage supplémentaire est activé. `usage.updated` ne relaie pas le champ. Carte
-  #28.
-- **Nouveaux paramètres d'outils** : `effort` sur l'outil Agent (2.1.292), `allow_large`
-  sur Read (2.1.296). Les vues d'outils ne les montrent pas. Carte #29.
-- **Retards de réessai sur 529** : `CLAUDE_CODE_OVERLOADED_RETRY_BASE_DELAY_MS`
-  (2.1.292), `…_MAX_DELAY_MS` (2.1.296) et `CLAUDE_CODE_RETRY_WATCHDOG_MAX_WAIT_MS`
-  (2.1.295). Utiles aux sessions planifiées sans personne devant. Carte #30.
-- **Limite des descriptions d'outils MCP et des consignes de serveur portée de 2 048 à
-  4 096 caractères (2.1.296)** : les consignes du serveur `sillage` ont de la marge ;
-  `sillage-mcp.mjs` n'a rien à changer.
-- `SDKStartupFailureReason` gagne `org_config_required_unavailable` et
-  `org_config_refused` ; Sillage ne lit pas `startup_failure_reason`.
-- `autoCompactWindow` sur les définitions d'agents (2.1.296), `onFailure: "block"` sur
-  les hooks (2.1.295) : Sillage n'écrit ni agents personnalisés ni hooks de ce type.
+- **`haiku` now means Haiku 5.5 (2.1.293).** Probed: `haiku` → `claude-haiku-5-5`,
+  “Haiku 5.5”, million-token context, `low` → `max` efforts, and Ultracode available
+  (`ultracodeAvailable: true` through `getSettings().applied`). Haiku 4.5 is available
+  only as `claude-haiku-4-5-20251001`, without effort levels or Ultracode. Catalog
+  comes from CLI, nothing hardcoded: conversations/scheduled tasks using `haiku`
+  silently move to 5.5 next turn. Trial confirmed it (`session.started` announces
+  `claude-haiku-5-5` for a task created as `haiku`). Composer offers Ultracode only
+  on `xhigh` models, so now offers it on `haiku`: intentional. Notify about model
+  changes: card #26.
+- **`claude_code_version` in initialization response**: session process version,
+  absent in older CLIs. Sillage does not read it yet; it would show what version
+  an active conversation actually uses, while Agents knows only the current
+  binary. Card #27.
+- **Subagent/task attribution**: message `agent_id`, then `parent_task_id`,
+  `subagent_type`, `run_id` on `background_tasks_changed` and `task_*`.
+  `background.updated` keeps only ID, type, description. Card #22, opened by monitoring.
+- **`overageEnabled` on `rate_limit_event` (2.1.295)**: quota warnings indicate
+  whether extra usage is enabled. `usage.updated` does not forward it. Card #28.
+- **New tool parameters**: Agent `effort` (2.1.292), Read `allow_large` (2.1.296).
+  Tool views do not show them. Card #29.
+- **529 retry delays**: `CLAUDE_CODE_OVERLOADED_RETRY_BASE_DELAY_MS` (2.1.292),
+  `…_MAX_DELAY_MS` (2.1.296), `CLAUDE_CODE_RETRY_WATCHDOG_MAX_WAIT_MS` (2.1.295).
+  Useful for unattended scheduled sessions. Card #30.
+- **MCP tool-description and server-instruction limits raised from 2,048 to
+  4,096 characters (2.1.296)**: `sillage` server instructions have headroom;
+  no `sillage-mcp.mjs` change needed.
+- `SDKStartupFailureReason` adds `org_config_required_unavailable` and
+  `org_config_refused`; Sillage does not read `startup_failure_reason`.
+- Agent-definition `autoCompactWindow` (2.1.296), hook `onFailure: "block"`
+  (2.1.295): Sillage writes neither custom agents nor hooks of this kind.
 
-### Correctifs qui profitent aux sessions SDK, sans code
+### SDK-session fixes requiring no code
 
-- 2.1.292 : une commande de fond n'est plus arrêtée 5 s après le résultat final d'un
-  run SDK (voir #12 pour la limite de 30 min, qui demeure) ; le premier tour n'attend
-  plus le `resources/list` des serveurs MCP HTTP et SSE.
-- 2.1.293 : fuite mémoire des connexions MCP HTTP ; reprise erronée après compaction.
-- 2.1.295 : serveurs MCP distants qui restaient déconnectés après une coupure de plus
-  de 15 s ; retour en mode auto refusé après retrait de `disableAutoMode` ; un message
-  envoyé pendant qu'un tour tourne n'est plus perdu.
-- 2.1.296 : une interruption pendant un hook `UserPromptSubmit` ne termine plus une
-  session headless ; `/code-review` rend une liste numérotée au lieu d'un tableau JSON
-  brut ; le coût du cache de Sonnet 5.5 passe à 0,10 $/Mtok dans les chiffres du SDK.
+- 2.1.292: background commands no longer stop 5 seconds after an SDK run's final
+  result (see #12 for remaining 30-minute limit); first turn no longer waits for
+  HTTP/SSE MCP `resources/list`.
+- 2.1.293: HTTP MCP connection memory leak; incorrect post-compaction resume.
+- 2.1.295: remote MCP servers staying disconnected after outages above 15 seconds;
+  rejected return to auto after removing `disableAutoMode`; messages sent during
+  active turns no longer lost.
+- 2.1.296: interruption during `UserPromptSubmit` hook no longer ends headless
+  sessions; `/code-review` returns a numbered list instead of raw JSON array;
+  Sonnet 5.5 cache cost becomes $0.10/MTok in SDK figures.
 
-### Sondes du jour
+### Today's probes
 
 ```js
-// Binaire 2.1.296 téléchargé à part, file d'entrée vide, aucun message au modèle.
+// Separately downloaded 2.1.296 binary, empty input queue, no model message.
 const init = await q.initializationResult()
 init.claude_code_version                       // '2.1.296'
 await q.applyFlagSettings({ ultracode: true, effortLevel: 'high' })
@@ -430,86 +406,83 @@ await q.setModel('claude-haiku-4-5-20251001')
 // { model: 'claude-haiku-4-5-20251001', effort: null, ultracode: false, ultracodeAvailable: false }
 ```
 
-Vérifié : typecheck, tests, lint ; une session réelle (`haiku`, effort `low`, mode auto)
-sur un serveur jetable avec le binaire 2.1.296 : `GET /api/agents` lit 2.1.296 sans
-écart de version, l'outil Read tourne, le tour se termine en `success` et le contexte
-annonce un million de tokens. Au déploiement, `claude install 2.1.296` sur marldev : le
-CLI du poste ne se met pas à jour seul.
+Verified: typecheck, tests, lint; real session (`haiku`, effort `low`, auto mode)
+on disposable server using 2.1.296: `GET /api/agents` reads 2.1.296 without version
+mismatch, Read runs, turn completes with `success`, context reports one million
+tokens. At deployment, run `claude install 2.1.296` on marldev: machine CLI does
+not self-update.
 
-## Complément du 17 octobre 2026 : cible 2.1.301
+## October 17, 2026 addendum: target 2.1.301
 
-Carte #42, incluant les veilles #37 et #38. Cible CLI **2.1.301**, dépendance
-SDK **^0.3.301**, résolution du lockfile **0.3.301**. La 2.1.302 existe déjà lors du
-chantier ; elle ne fait pas partie de cette validation. Une installation fraîche
-sans lockfile peut résoudre le caret vers une version ultérieure.
+Card #42, including monitoring cards #37/#38. CLI target **2.1.301**, SDK dependency
+**^0.3.301**, lockfile resolution **0.3.301**. 2.1.302 already exists during this
+work but is outside this validation. A fresh install without a lockfile may resolve
+the caret to a later version.
 
-### Compatibilité et périmètre
+### Compatibility and scope
 
-Le [changelog officiel](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)
-annonce notamment des corrections de double exécution en reprise SDK, de pièces
-jointes envoyées en cours de tour, de reprise après compaction et de permissions
-interrompues par un message. Ces corrections viennent du CLI ; elles ne demandent
-pas de changement d'adaptateur. Elles ne sont pas toutes reproduites ici.
+The [official changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)
+mentions fixes for duplicate SDK resume execution, mid-turn attachments,
+post-compaction resume, and message-interrupted permissions. These fixes come
+from CLI and require no adapter changes. Not all are reproduced here.
 
-Le diff des déclarations SDK 0.3.296 → 0.3.301 ne retire aucun contrat utilisé par
-Sillage. Les nouveaux paramètres restent optionnels. Décisions pour les ajouts :
+SDK 0.3.296 → 0.3.301 declarations remove no contract used by Sillage. New
+parameters remain optional. Decisions for additions:
 
-- `reloadPlugins({ addPlugins })` permet un ajout à chaud, mais pas un retrait :
-  conserver pour ce bump la relance actuelle quand les racines de skills changent.
-- `BUILTIN_TOOL_NAMES` et `LEGACY_TOOL_NAME_ALIASES` ne justifient pas à eux seuls
-  un nouvel écran. La liste d'outils disponible vient toujours de la session.
-- Les politiques par outil des serveurs MCP SDK ne concernent pas notre transport
-  MCP stdio/HTTP actuel.
-- `CLAUDE_CODE_RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS` complète la piste #30 :
-  il faudra régler ensemble l'activation du watchdog et ses délais. Ce bump
-  n'active pas de réessai automatique.
-- La compaction au repos reste une piste : aucun bénéfice en SDK n'a été démontré
-  par cette sonde. Ne pas la présenter comme disponible dans Sillage.
+- `reloadPlugins({ addPlugins })` supports live addition, not removal: retain
+  current restart when skill roots change for this bump.
+- `BUILTIN_TOOL_NAMES` and `LEGACY_TOOL_NAME_ALIASES` alone do not justify a new
+  screen. Available tool list still comes from the session.
+- SDK MCP per-tool policies do not concern our current stdio/HTTP MCP transport.
+- `CLAUDE_CODE_RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS` adds to #30: watchdog
+  enablement and delays must be configured together. This bump enables no
+  automatic retries.
+- Idle compaction remains a possibility: this probe established no SDK benefit.
+  Do not present it as available in Sillage.
 
-### Transcripts : protection de l'import et de la synchronisation
+### Transcripts: protecting import and synchronization
 
-Le vrai transcript de l'essai 2.1.301 contient `api-request-shape`,
-`api-request-blob` et `api-request`, avec `type` en première propriété. Même un
-appel refusé pour quota écrit ces lignes. `readJsonl` lit désormais ligne par ligne
-et saute ces trois types avant parsing dans ce format ; un filtre après parsing
-couvre aussi un ordre différent des propriétés. L'ancrage du premier filtre évite
-les faux positifs dans le contenu d'un message. Le même lecteur sert aux sous-agents.
+The real 2.1.301 trial transcript contains `api-request-shape`, `api-request-blob`,
+and `api-request`, with `type` as first property. Even quota-rejected calls write
+these lines. `readJsonl` now reads line by line, skipping these three types before
+parsing in that format; a post-parse filter also covers different property order.
+Anchoring the first filter avoids false positives inside message content. Subagents
+use the same reader.
 
-Aucune dépendance au drapeau interne `CLAUDE_CODE_ELEGANT_MEADOW` : le CLI continue
-à écrire son rejeu. La croissance disque reste donc présente. Cette protection ne
-remplace pas tout le chantier #17 : les entrées utiles sont encore accumulées en
-mémoire, et la synchronisation ne lit pas seulement le suffixe manquant.
+No dependency on internal `CLAUDE_CODE_ELEGANT_MEADOW`: CLI continues writing its
+replay, so disk growth remains. This protection does not replace all of #17:
+useful entries still accumulate in memory, and synchronization does not read only
+the missing suffix.
 
-### Vérifications et limites
+### Verification and limits
 
-Binaire téléchargé à part : `@anthropic-ai/claude-code-linux-x64@2.1.301`.
-Le CLI système reste **2.1.296** ; aucun déploiement ni redémarrage de production.
+Separately downloaded binary: `@anthropic-ai/claude-code-linux-x64@2.1.301`.
+System CLI remains **2.1.296**; no deployment or production restart.
 
-- `initializationResult().claude_code_version` : `2.1.301`.
-- Catalogue : Opus 5.5, Fable 5.1, Sonnet 5.5 et Haiku 5.5, mêmes alias qu'avant.
-- `applyFlagSettings({ ultracode: true, effortLevel: 'high' })`, puis
-  `getSettings().applied` : Haiku 5.5, effort high, Ultracode actif et disponible.
-  Après `setModel('claude-haiku-4-5-20251001')` : effort null, Ultracode inactif et
-  indisponible. Aucun appel au modèle nécessaire pour ces contrôles.
-- La sonde renvoie `capabilities: ['mcp_call_result_not_for_model_v1']` ; ne pas
-  supposer cette liste identique à la précédente. L'adaptateur ne s'y appuie pas.
-- Serveur jetable, base neuve, port 7501, binaire 2.1.301 : création d'un projet et
-  d'une tâche par l'API v1, initialisation Haiku 5.5 et connexion du MCP Sillage
-  réussies. **Essai réel bloqué par le quota du compte**, avant Read et
-  AskUserQuestion. Le journal reçoit bien `error: turn_failed` avec le refus de
-  quota ; le SDK envoie aussi un résultat final traduit en `stopReason: success`,
-  qui ne prouve donc pas à lui seul la réussite. Refaire Read + réponse à
-  AskUserQuestion après rétablissement du quota avant de déclarer ce parcours validé.
-- `NODE_ENV=development pnpm typecheck`, `pnpm test` (241 tests) et `pnpm lint` : OK.
-  Test ajouté : rejeu de 2 Mo, ordre des propriétés différent, contenu ressemblant
-  à un type de rejeu, CRLF, ligne tronquée, dernière ligne sans saut, sous-agent et
-  fichier absent.
-- Sonde mémoire séparée : 200 Mo de lignes de rejeu, puis un message utile, lus
-  avec Node 24 `--max-old-space-size=96` ; seul le message est conservé, sans OOM
-  (RSS ≈ 180 Mio, le plafond de tas n'est pas un plafond de RSS).
-- pnpm signale le peer Zod 4 attendu par le SDK face au Zod 3 du projet ; cet
-  avertissement était déjà présent avec 0.3.296. Aucun serveur MCP SDK n'est créé.
+- `initializationResult().claude_code_version`: `2.1.301`.
+- Catalog: Opus 5.5, Fable 5.1, Sonnet 5.5, Haiku 5.5, same aliases as before.
+- `applyFlagSettings({ ultracode: true, effortLevel: 'high' })`, then
+  `getSettings().applied`: Haiku 5.5, high effort, Ultracode active/available.
+  After `setModel('claude-haiku-4-5-20251001')`: null effort, Ultracode
+  inactive/unavailable. These checks need no model call.
+- Probe returns `capabilities: ['mcp_call_result_not_for_model_v1']`; do not assume
+  this matches the previous list. Adapter does not depend on it.
+- Disposable server, new database, port 7501, binary 2.1.301: project/task creation
+  through API v1, Haiku 5.5 initialization, and Sillage MCP connection succeed.
+  **Real trial blocked by account quota** before Read and AskUserQuestion.
+  Journal correctly receives `error: turn_failed` with quota refusal; SDK also
+  sends a final result translated to `stopReason: success`, which alone therefore
+  does not prove success. Rerun Read + AskUserQuestion response after quota
+  recovery before declaring this path validated.
+- `NODE_ENV=development pnpm typecheck`, `pnpm test` (241 tests), `pnpm lint`: OK.
+  Added test: 2 MB replay, different property order, content resembling replay
+  type, CRLF, truncated line, final line without newline, subagent, missing file.
+- Separate memory probe: 200 MB of replay lines followed by one useful message,
+  read with Node 24 `--max-old-space-size=96`; only the message retained, no OOM
+  (RSS ≈180 MiB; heap limit is not an RSS limit).
+- pnpm flags SDK's expected Zod 4 peer against project Zod 3; warning already
+  present with 0.3.296. No SDK MCP server is created.
 
-Pas de changement d'interface : aucun parcours Playwright ajouté pour ce bump.
-Lors d'un futur déploiement autorisé, installer aussi `claude install 2.1.301`
-selon la procédure supervisée ; ne pas installer le CLI système pendant la préparation.
+No interface change: no Playwright path added for this bump. During a future
+authorized deployment, also install `claude install 2.1.301` through the supervised
+procedure; do not install the system CLI during preparation.

@@ -4,7 +4,7 @@ import { locale, translate, useTranslate, type MessageKey } from '../../lib/i18n
 import { formatTokens } from '../../lib/tokens'
 import { cx } from '../ui'
 
-/** Libellés des fenêtres de quota annoncées par le CLI. */
+/** Quota-window labels reported by the CLI. */
 const WINDOW_LABEL_KEYS: Record<string, MessageKey> = {
   five_hour: 'usage.window.fiveHour',
   seven_day: 'usage.window.sevenDay',
@@ -31,9 +31,8 @@ function formatCountdown(resetsAt: number): string {
 }
 
 /**
- * Le CLI n'envoie pas toujours `utilization`. Dans ce cas, afficher la seule fenêtre
- * (« 5 h ») n'apprend rien : on montre le temps restant avant réinitialisation, qui
- * est l'information exploitable.
+ * When utilization is absent, window duration alone adds nothing: show actionable time until reset
+ * instead.
  */
 function describeQuota(rateLimit: RateLimitState): string {
   const window = windowLabel(rateLimit.type)
@@ -59,12 +58,9 @@ interface UsageSummaryProps {
 }
 
 /**
- * Ce que consomme réellement la conversation.
- *
- * Sur un abonnement, le CLI calcule bien un `total_cost_usd`, mais c'est un
- * équivalent API que personne ne facture : l'afficher en dollars laisserait croire à
- * une dépense. La ressource réellement épuisable est le quota, donc c'est lui qu'on
- * montre. Le montant n'apparaît que sur un compte facturé à l'usage.
+ * Actual conversation consumption. Subscription total_cost_usd is an unbilled API equivalent and
+ * showing dollars would imply spending. Show quota, the exhaustible resource; money appears only
+ * for usage-billed accounts.
  */
 export function UsageSummary({
   account,
@@ -76,8 +72,7 @@ export function UsageSummary({
   cacheReadTokens,
 }: UsageSummaryProps) {
   const t = useTranslate()
-  // Le cache domine la consommation réelle : l'exclure du total afficherait quelques
-  // dizaines de tokens là où la conversation en a consommé des dizaines de milliers.
+  // Cache dominates actual usage: excluding it would show dozens of tokens instead of tens of thousands.
   const tokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens
   const showCost = account?.billedBySubscription === false && costUsd > 0
 

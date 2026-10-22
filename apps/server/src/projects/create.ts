@@ -29,19 +29,13 @@ export async function assertUsableWorkspace(path: string): Promise<string> {
   return resolved
 }
 
-/**
- * Le dossier que le clone va remplir.
- *
- * Symétrique de `assertUsableWorkspace` : là où un projet ordinaire exige un dossier qui
- * existe, un clone exige un emplacement libre. Un dossier existant mais vide est accepté,
- * parce que c'est ce que produit un `mkdir` fait d'avance par l'utilisateur.
- */
+/** Clone destination directory. Counterpart to `assertUsableWorkspace`: ordinary projects require existing directories, while clones need free destinations. Existing empty directories are allowed because users may have run `mkdir` beforehand. */
 export async function assertFreeDestination(parentDir: string, directory: string): Promise<string> {
   if (!isAbsolute(parentDir)) {
     throw badRequest('workspace_not_absolute', 'The workspace path must be absolute.')
   }
-  // Le nom de dossier vient d'une URL de dépôt : sans cette garde, `..` ferait écrire
-  // le clone n'importe où sur le disque.
+  // Directory names come from repository URLs: without this guard, `..` could direct
+  // clones anywhere on disk.
   if (directory.includes('/') || directory.includes('\\') || directory.startsWith('.')) {
     throw badRequest('clone_directory_invalid', 'The directory name must be a plain folder name.')
   }
@@ -68,10 +62,7 @@ export async function assertFreeDestination(parentDir: string, directory: string
   return destination
 }
 
-/**
- * En fin de liste : s'insérer au milieu déplacerait visuellement des projets que
- * l'utilisateur avait rangés lui-même.
- */
+/** Append to the list: inserting in the middle would visually move projects the user organized manually. */
 export const insertProject = async (
   ctx: AppContext,
   ownerId: string,
@@ -85,15 +76,15 @@ export const insertProject = async (
   },
 ) => {
   const [highest] = await ctx.db.select({ max: max(projects.position) }).from(projects)
-  // Ce que le compte a choisi pour ses projets à venir, quand la création ne dit rien.
+  // Account defaults for future projects when creation supplies none.
   const defaults = readUserSettings(ctx.db, ownerId).projectDefaults
 
   const row = {
     id: randomUUID(),
     ...fields,
-    // Fixé dès la création : un mode résolu à chaque lancement basculerait le jour où
-    // un agent crée un AGENTS.md. Faute de choix, le défaut du compte ; `auto` regarde
-    // ce que le dossier porte déjà.
+    // Fix at creation: resolving on every launch would switch modes when agents create
+    // AGENTS.md. Without a choice, use account defaults; `auto` checks
+    // files already present.
     instructionsMode:
       fields.instructionsMode ??
       (defaults.instructionsMode !== 'auto'
@@ -113,7 +104,7 @@ export const insertProject = async (
   return row
 }
 
-/** Partagé avec l'interface pour garder les mêmes validations et valeurs initiales. */
+/** Shared with the interface to keep validation and initial values consistent. */
 export async function createProject(ctx: AppContext, ownerId: string, input: unknown) {
   const body = createProjectBodySchema.parse(input)
   let workspacePath: string

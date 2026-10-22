@@ -12,16 +12,7 @@ import { ClaudeRunner } from '../agents/claude/runner.js'
 import { CodexRunner } from '../agents/codex/runner.js'
 import type { AgentRunner, RunnerContext } from '../agents/types.js'
 
-/**
- * Sonde de bout en bout du chemin MCP, sur le vrai code des runners.
- *
- * Ce que la sonde vérifie ne se déduit d'aucune documentation : que les serveurs
- * déclarés dans Sillage arrivent bien jusqu'au CLI, et surtout qu'ils survivent à une
- * reprise de session, cas où Codex les perd si la configuration n'est pas repassée.
- *
- * Ne remplace pas un test : elle lance de vrais CLI, coûte un vrai tour de modèle et
- * demande des CLI authentifiés. Elle se lance à la main, quand on touche à ce chemin.
- */
+/** End-to-end MCP integration probe using real runners. Documentation cannot prove that declared servers actually reach CLIs and survive resumes, where Codex loses them unless configuration is resent. Not a substitute for tests: launches authenticated real CLIs and spends real model turns. Run manually when changing this path. */
 
 const PROBE_NAME = 'sillage_probe'
 
@@ -31,8 +22,8 @@ const probeServer: McpServer = {
   enabled: true,
   transport: {
     type: 'stdio',
-    // Un serveur MCP réduit à ce qu'il faut pour être listé : pas de réseau, donc un
-    // échec ne peut venir que du chemin qu'on sonde.
+    // Minimal listable MCP server without networking, so failures identify
+    // the integration path under probe.
     command: process.execPath,
     args: [join(import.meta.dirname, 'mcp-probe-server.mjs')],
     env: {},
@@ -83,7 +74,7 @@ function buildProbe(config: AgentConfig, binary: string, resumeSessionId: string
   return { runner, seen: () => seen, sessionId: () => sessionId }
 }
 
-/** L'inventaire arrive de façon asynchrone : le CLI démarre ses serveurs après coup. */
+/** Inventory arrives asynchronously because CLIs start servers afterward. */
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const report = (label: string, seen: string[]) => {
@@ -106,7 +97,7 @@ async function main(): Promise<void> {
   await settle(4000)
   report('codex, au lancement', codex.seen())
 
-  // Un thread sans tour n'a pas de rollout sur disque, et `thread/resume` le refuse.
+  // Threads without turns have no disk rollout and `thread/resume` rejects them.
   await codex.runner.send('Reply with exactly: ok', [], [], [])
   await settle(15_000)
   const threadId = codex.sessionId()
@@ -117,7 +108,7 @@ async function main(): Promise<void> {
     return
   }
 
-  // Le cas qui casse en silence si la configuration n'est pas repassée au resume.
+  // Case silently breaking when resume omits configuration.
   const resumed = buildProbe(
     { ...DEFAULT_CODEX_CONFIG, mcpServers: [probeServer.id] },
     codexBinary,

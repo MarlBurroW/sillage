@@ -1,4 +1,4 @@
-/* Les aperçus et le fil emploient les mêmes mouvements, à des tailles différentes. */
+/* Previews and the thread share motion at different sizes. */
 .sg-typing-indicator {
   display: inline-flex;
   position: relative;
@@ -103,7 +103,7 @@
   50% { transform: scale(1.1); opacity: .2; }
 }
 
-/* Arrêter le geste au dernier instant rendrait Encre invisible : poser un état fixe. */
+/* Stopping at the final instant would hide Ink: provide a fixed visible state. */
 @media (prefers-reduced-motion: reduce) {
   .sg-typing-indicator * { animation: none !important; }
   .sg-typing-sillage path, .sg-typing-constellation circle { opacity: .8; }

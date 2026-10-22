@@ -4,25 +4,10 @@ import { touchedPaths } from '../events/touched-paths.js'
 
 const MARKER = 'worktree_paths_backfill'
 
-/**
- * Commandes lues par lot. Le daemon tourne avec un tas de 256 Mo et le journal de
- * marldev en garde plus de cent mille, soit 70 Mo de texte : tout charger d'un coup au
- * démarrage risquait la panne de mémoire.
- */
+/** Read commands in batches. The daemon has a 256 MB heap and marldev retains over a hundred thousand commands totaling 70 MB: loading them all at startup risked running out of memory. */
 const BATCH = 2000
 
-/**
- * Rattrapage unique des dossiers cités par les commandes Bash déjà journalisées.
- *
- * La migration 0044 reprend les éditions à chemin absolu, que SQL sait extraire ; les
- * commandes, elles, demandent les expressions de `touched-paths.ts`, d'où ce passage en
- * TypeScript au premier démarrage, marqué dans `app_settings` pour ne pas se rejouer.
- *
- * Par lots, avec un curseur sur la clé primaire du journal : un seul parcours de la
- * table, une mémoire bornée par lot. Chaque lot s'écrit dans sa transaction ; un arrêt
- * au milieu reprend au début au démarrage suivant, sans dommage puisque l'écriture est
- * idempotente. Quelques secondes sur cent mille commandes, une fois.
- */
+/** One-time backfill of directories referenced by already-journaled Bash commands. Migration 0044 extracts absolute-path edits through SQL, but commands require `touched-paths.ts` expressions, hence this first-start TypeScript pass marked in `app_settings`. Batch with a journal primary-key cursor for one traversal and bounded memory. Each batch has its own transaction; interruptions restart safely from the beginning because writes are idempotent. Runs once, taking a few seconds for a hundred thousand commands. */
 export function backfillCommandPaths(db: Db, batch = BATCH): number {
   const done = db.select().from(appSettings).where(eq(appSettings.key, MARKER)).get()
   if (done) return 0

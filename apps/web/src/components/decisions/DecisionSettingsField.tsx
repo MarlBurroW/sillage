@@ -3,9 +3,8 @@ import { useTranslate } from '../../lib/i18n'
 import { Field, Switch } from '../ui'
 
 /**
- * Le réglage d'une source autonome : ses sessions peuvent-elles demander une décision,
- * et combien de temps une demande attend au plus. Éteint par défaut : on l'allume quand
- * ses instructions prévoient de demander.
+ * Autonomous-source setting: whether sessions may request decisions and their maximum wait. Default
+ * off, enabled when instructions call for asking.
  */
 export function DecisionSettingsField({
   value,

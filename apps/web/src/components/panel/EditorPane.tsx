@@ -30,13 +30,13 @@ import { Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, c
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import { MediaView } from './MediaView'
 
-/** Chargé à la demande : le visualiseur entraîne `three`, plus lourd que tout le reste. */
+/** Lazy-load the viewer because three exceeds the rest of the app's size. */
 const ModelView = lazy(() => import('./ModelView').then((m) => ({ default: m.ModelView })))
 
-/** Type de transfert du glisser-déposer des onglets, distinct de celui de l'arborescence. */
+/** Tab drag transfer type distinct from explorer entries. */
 const TAB_DRAG_TYPE = 'application/x-sillage-tab'
 
-/** Onglets ouverts, et le fichier actif en dessous. */
+/** Open tabs above the active file. */
 export function EditorPane({ scope }: { scope: string }) {
   const { data: user } = useCurrentUser()
   return user ? <UserEditorPane key={`${user.id}:${scope}`} userId={user.id} scope={scope} /> : null
@@ -123,7 +123,7 @@ function UserEditorPane({ userId, scope }: { userId: string; scope: string }) {
         </Menu>
       </div>
 
-      {/* Un seul CodeMirror monté ; les documents et brouillons vivent hors du panneau. */}
+      {/* Only one CodeMirror mounted; documents and drafts live outside the panel. */}
       {active ? (
         <FileView
           key={active}
@@ -137,12 +137,7 @@ function UserEditorPane({ userId, scope }: { userId: string; scope: string }) {
   )
 }
 
-/**
- * Un onglet, déplaçable par glissement.
- *
- * L'ordre d'ouverture ne dit rien de l'usage : on regroupe volontiers ce qui va
- * ensemble. Le clic du milieu ferme, comme dans un navigateur.
- */
+/** Draggable tabs allow grouping related files beyond opening order. Middle-click closes like browsers. */
 function Tab({
   path,
   index,
@@ -158,7 +153,7 @@ function Tab({
   path: string
   index: number
   active: boolean
-  /** Onglet de parcours, que le prochain clic simple dans l'arborescence remplacera. */
+  /** Preview tab replaced by the next tree single-click. */
   preview: boolean
   dirty: boolean
   showParent: boolean
@@ -179,7 +174,7 @@ function Tab({
       }}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return
-        // Sans `preventDefault`, le navigateur refuse le dépôt sans rien dire.
+        // Without preventDefault browsers silently reject drops.
         event.preventDefault()
         setDropping(true)
       }}
@@ -201,8 +196,7 @@ function Tab({
       title={path}
       data-index={index}
     >
-      {/* Le double clic garde l'onglet, comme dans un éditeur : c'est le même geste que
-          celui qui l'ouvre pour de bon depuis l'arborescence. */}
+      {/* Double-click retains tabs like editors, matching permanent opening from the tree. */}
       <button
         type="button"
         onClick={onActivate}
@@ -227,7 +221,7 @@ function Tab({
           aria-hidden
           className="size-4 shrink-0"
         />
-        {/* L'italique dit que l'onglet ne survivra pas au fichier suivant. */}
+        {/* Italics indicate tabs that will yield to the next file. */}
         <span className="flex min-w-0 flex-col text-left">
           <span className={cx('max-w-40 truncate text-xs', preview && 'italic')}>{path.split('/').pop()}</span>
           {showParent ? <span className="max-w-40 truncate text-[0.625rem] text-ink-faint">{path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '/'}</span> : null}
@@ -313,8 +307,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
 
       {isMarkdown && view === 'preview' ? (
         <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3">
-          {/* La portée de l'éditeur, et non celle du fil : l'aperçu s'ouvre aussi depuis
-              le panneau d'un projet, hors de toute conversation. */}
+          {/* Editor scope rather than thread scope: project panels also preview outside conversations. */}
           <FileLinkContext.Provider value={scope}>
             <Markdown text={content} base={path.slice(0, path.lastIndexOf('/') + 1)} />
           </FileLinkContext.Provider>

@@ -2,21 +2,16 @@ import type { AutomationTemplateId } from '@sillage/protocol'
 import type { MessageKey } from './i18n'
 
 /**
- * Des appels d'exemple pour le bac à sable de la page d'une automatisation : de quoi
- * essayer ses réglages sans GitHub ni curl.
- *
- * Au format des vrais appels, réduits à ce qui sert : les champs que lisent les modèles
- * et ceux qu'on a envie de filtrer (`action`, `label`, `sender`…). Leur contenu est en
- * anglais, comme le gros de ce qu'on trouve sur une forge, quelle que soit la langue de
- * l'interface. Chargés seulement par
- * la page, qui vit dans son propre morceau : ils n'ont rien à faire dans le paquet
- * principal.
+ * Sample calls for an automation page's sandbox, allowing settings tests without GitHub or curl.
+ * Use real call shapes reduced to useful template and filter fields (`action`, `label`, `sender`,
+ * etc.). Contents remain English, like most forge data, regardless of UI language. Loaded only by
+ * this page's own chunk, never the main bundle.
  */
 
 export interface AutomationSample {
   id: string
   label: MessageKey
-  /** Les modèles pour lesquels cet exemple est pertinent ; proposés en premier. */
+  /** Templates for which this example is relevant, offered first. */
   templates: AutomationTemplateId[]
   headers: Record<string, string>
   payload: unknown
@@ -40,10 +35,9 @@ const issue = {
   labels: [{ name: 'bug' }],
 }
 
-/** Un identifiant de livraison, comme GitHub en met un à chaque envoi. */
+/** Delivery identifier like GitHub includes with every delivery. */
 function deliveryId(): string {
-  // `crypto.randomUUID` n'existe qu'en contexte sécurisé, et une démo sur le tailnet
-  // est servie en http.
+  // `crypto.randomUUID` exists only in secure contexts; tailnet demos use HTTP.
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
     const value = Math.floor(Math.random() * 16)
     return (char === 'x' ? value : (value & 0x3) | 0x8).toString(16)
@@ -57,7 +51,7 @@ function github(event: string, payload: unknown): { headers: Record<string, stri
   }
 }
 
-/** Les exemples, avec un identifiant de livraison neuf à chaque appel. */
+/** Examples with a fresh delivery ID for each call. */
 export function automationSamples(): AutomationSample[] {
   return [
     {

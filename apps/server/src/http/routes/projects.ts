@@ -39,15 +39,12 @@ import {
 import { SkillLibrary } from '../../skill-library/store.js'
 import { assertFreeDestination, assertUsableWorkspace, createProject, insertProject } from '../../projects/create.js'
 
-/**
- * Un utilisateur voit un projet s'il en est propriétaire ou si le projet est partagé.
- * Seul le propriétaire peut le modifier ou le supprimer.
- */
+/** Users see projects they own or that are shared. Only owners can edit or delete them. */
 export function visibilityFilter(userId: string) {
   return or(eq(projects.ownerId, userId), eq(projects.visibility, 'shared'))
 }
 
-/** Le projet, s'il est visible par cet utilisateur. Pour les routes hébergées ailleurs. */
+/** Project if visible to this user, for routes defined elsewhere. */
 export function visibleProject(ctx: AppContext, projectId: string, userId: string) {
   return ctx.db
     .select()
@@ -84,7 +81,7 @@ export function registerProjectRoutes(
         project: projects,
         ownerName: users.displayName,
         conversationCount: count(conversations.id),
-        // Sa date et son statut seulement : le blob ne sort que par sa propre route.
+        // Only timestamp and status: the blob has its own route.
         imageUpdatedAt: projectImages.updatedAt,
         imageProvisional: projectImages.provisional,
         pinnedAt: projectPins.createdAt,
@@ -106,13 +103,13 @@ export function registerProjectRoutes(
           : and(visibilityFilter(user.id), isNull(projects.archivedAt)),
       )
       .groupBy(projects.id)
-      // Le nom départage les positions égales : tant que rien n'a été déplacé, tous
-      // les projets sont à zéro et la liste garde son ordre alphabétique d'origine.
+      // Names break position ties: before any reordering all positions are zero,
+      // preserving the original alphabetical order.
       .orderBy(asc(projects.position), sql`${projects.name} collate nocase`)
 
-    // À part plutôt qu'en jointure : joindre les cartes à côté des conversations
-    // multiplierait les lignes et fausserait le compte des conversations. Une seule
-    // requête groupée suffit pour tous les projets.
+    // Query separately: joining cards alongside conversations would multiply rows
+    // and distort conversation counts. One grouped query
+    // suffices for all projects.
     const cardCounts = new Map<string, Partial<Record<CardColumn, number>>>()
     for (const entry of await ctx.db
       .select({ projectId: cards.projectId, column: cards.column, total: count() })
@@ -123,7 +120,7 @@ export function registerProjectRoutes(
       cardCounts.set(entry.projectId, counts)
     }
 
-    // Les statuts git sont lus en parallèle : un dépôt lent ne doit pas sérialiser la liste.
+    // Read git statuses concurrently: a slow repository must not serialize the list.
     return Promise.all(
       rows.map(async ({ project, ownerName, conversationCount, ...row }): Promise<ProjectDto> => {
         return {
@@ -164,7 +161,7 @@ export function registerProjectRoutes(
 
     const row = await createProject(ctx, user.id, body)
     if ('parentDir' in body) {
-      // Seule l'interface mémorise le dossier proposé à la prochaine création.
+      // Only the interface remembers the directory suggested for the next creation.
       writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
     }
 
@@ -183,7 +180,7 @@ export function registerProjectRoutes(
     return reply.status(201).send(dto)
   })
 
-  /** Le projet d'essai de la visite : un petit dépôt écrit par Sillage, puis le projet dessus. */
+  /** Tour demo project: Sillage writes a small repository, then creates its project. */
   app.post('/api/projects/sample', async (request, reply) => {
     const user = requireUser(request)
     const body = createSampleProjectBodySchema.parse(request.body)
@@ -206,15 +203,7 @@ export function registerProjectRoutes(
     return reply.status(201).send(dto)
   })
 
-  /**
-   * Lance un clone et rend son identifiant de suivi.
-   *
-   * Le projet n'est créé qu'à la réussite : une ligne pointant sur un dossier à demi
-   * cloné n'aurait rien à offrir, et il faudrait la supprimer à la main.
-   *
-   * 202 et non 201 : un gros dépôt met plusieurs minutes, bien au-delà de ce qu'une
-   * requête HTTP peut tenir ouvert.
-   */
+  /** Starts a clone and returns its tracking ID. Create the project only on success: a row pointing to a half-cloned directory offers nothing and would require manual deletion. Return 202 rather than 201 because large repositories take minutes, longer than an HTTP request can stay open. */
   app.post('/api/projects/clone', async (request, reply): Promise<CloneJobDto> => {
     const user = requireUser(request)
     const body = startCloneBodySchema.parse(request.body)
@@ -227,13 +216,13 @@ export function registerProjectRoutes(
       )
     }
     const destination = await assertFreeDestination(body.parentDir, body.directory)
-    // Même mémoire que pour un projet créé de zéro : le dossier où l'on range.
+    // Remember the parent directory just as for projects created from scratch.
     writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
 
     const job = cloneJobs.start({
       ownerId: user.id,
-      // La forme normalisée, pas la saisie : git échouerait sur la requête d'une adresse
-      // copiée depuis un navigateur.
+      // Use the normalized form rather than raw input: git would fail on a URL query
+      // copied from a browser.
       url: remote.url,
       destination,
       env: credentialEnv(ctx.config.paths, user.id),
@@ -253,12 +242,7 @@ export function registerProjectRoutes(
     return reply.status(202).send(job)
   })
 
-  /**
-   * État d'un clone, interrogé par le client jusqu'à ce qu'il aboutisse.
-   *
-   * Les états ne survivent pas au redémarrage du serveur, qui aurait de toute façon tué
-   * le process git : un identifiant inconnu vaut donc « clone perdu ».
-   */
+  /** Clone state polled until completion. State does not survive server restarts, which kill git anyway; unknown identifiers therefore mean the clone was lost. */
   app.get('/api/projects/clone/:id', async (request): Promise<CloneJobDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -268,14 +252,7 @@ export function registerProjectRoutes(
     return job
   })
 
-  /**
-   * Ordre manuel des projets. Le client envoie la liste complète telle qu'elle
-   * s'affiche : réécrire les positions en bloc évite les trous et les égalités qu'un
-   * déplacement unitaire finirait par produire.
-   *
-   * La position vit sur le projet, comme celle des conversations : deux comptes qui
-   * voient un même projet partagé partagent aussi son rang.
-   */
+  /** Manual project order. Clients send the entire displayed list; rewriting positions together avoids gaps and ties from individual moves. Positions belong to projects, like conversation positions: accounts viewing the same shared project also share its rank. */
   app.post('/api/projects/order', async (request) => {
     const user = requireUser(request)
     const body = reorderProjectsBodySchema.parse(request.body)
@@ -288,8 +265,8 @@ export function registerProjectRoutes(
         .all()
         .map((row) => row.id),
     )
-    // Un projet invisible dans la liste reclasserait quelque chose que l'utilisateur
-    // n'a pas le droit de voir : on refuse l'ensemble plutôt qu'un ordre partiel.
+    // An invisible project in the list would reorder something the user cannot see:
+    // reject the entire request rather than apply a partial order.
     const intruder = body.ids.find((id) => !visible.has(id))
     if (intruder) throw notFound('project_not_found', 'Project not found.')
 
@@ -315,15 +292,15 @@ export function registerProjectRoutes(
     const patch: Partial<typeof projects.$inferInsert> = {}
     if (body.name !== undefined) patch.name = body.name
     if (body.workspacePath !== undefined) {
-      // Les runners déjà lancés gardent leur cwd jusqu'à leur prochain démarrage :
-      // le répertoire de travail d'un CLI est fixé au lancement.
+      // Running runners retain their cwd until their next start:
+      // CLI working directories are fixed at launch.
       patch.workspacePath = await assertUsableWorkspace(body.workspacePath)
     }
     if (body.visibility !== undefined) patch.visibility = body.visibility
     if (body.color !== undefined) patch.color = body.color
     if (body.defaultConfig !== undefined) {
-      // Relu puis réécrit en entier : l'écran n'édite qu'un CLI à la fois, et écrire
-      // les deux écraserait le préréglage que l'autre onglet vient peut-être de poser.
+      // Read and rewrite the whole value: the screen edits one CLI at a time, and writing
+      // both would overwrite a preset another tab may have just saved.
       const current = readProjectDefaults(project.defaultConfig)
       patch.defaultConfig = serializeProjectDefaults({
         ...current,
@@ -332,7 +309,7 @@ export function registerProjectRoutes(
     }
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
     if (body.turnCheckpoints !== undefined) patch.turnCheckpoints = body.turnCheckpoints
-    // Pris au prochain lancement de runner : une session en cours garde sa mémoire.
+    // Applied on the next runner launch; running sessions retain their memory.
     if (body.memoryMode !== undefined) patch.memoryMode = body.memoryMode
 
     if (Object.keys(patch).length > 0) {
@@ -350,8 +327,8 @@ export function registerProjectRoutes(
       throw forbidden('project_delete_forbidden', 'Only the owner can delete this project.')
     }
 
-    // Les conversations du projet partent en cascade, donc leurs pièces jointes
-    // aussi : leurs fichiers doivent être retirés du disque avant.
+    // Project conversations cascade on deletion, as do their attachments:
+    // remove their disk files first.
     const owned = ctx.db
       .select({ id: conversations.id })
       .from(conversations)
@@ -360,32 +337,21 @@ export function registerProjectRoutes(
     await attachments.removeForConversations(owned.map((row) => row.id))
     const tickets = ctx.db.select({ id: cards.id }).from(cards).where(eq(cards.projectId, id)).all()
     await attachments.removeForCards(tickets.map((row) => row.id))
-    // Même raison pour l'index de recherche, que la cascade SQL n'atteint pas.
+    // The same applies to the search index, which SQL cascades cannot reach.
     for (const row of owned) dropConversation(ctx.db, row.id)
 
-    // Le workspace sur disque n'est jamais touché : Sillage pointe dessus, ne le possède
-    // pas. Les shells du projet, en revanche, tournent en son nom : on les ferme.
+    // Never touch the disk workspace: Sillage references it but does not own it.
+    // Project shells run on its behalf, however, and must be closed.
     terminals.closeForProject(id)
-    // Les skills du projet, eux, appartiennent à Sillage. Avant la cascade, qui efface
-    // les lignes dont on a besoin pour retrouver les skills désactivés.
+    // Project skills do belong to Sillage. Remove them before the cascade deletes
+    // the rows needed to locate disabled skills.
     new SkillLibrary(ctx.db, ctx.config.paths.skillLibrary).removeProject(id)
     await ctx.db.delete(projects).where(eq(projects.id, id))
     return reply.status(204).send()
   })
 
-  /**
-   * L'image du projet. Lisible par quiconque voit le projet, comme son nom.
-   *
-   * L'URL donnée au client porte la date de l'image : chaque version a la sienne, d'où
-   * le cache immuable.
-   */
-  /**
-   * Épingle ou désépingle le projet pour le compte appelant.
-   *
-   * Ouvert à tout membre qui voit le projet : épingler n'est pas le modifier. Idempotent
-   * des deux côtés, comme le signet de conversation, pour que le client n'ait pas à
-   * connaître l'état d'avant.
-   */
+  /** Project image, readable by anyone who can see the project, like its name. Client URLs include the image timestamp, giving every version a distinct URL and allowing immutable caching. */
+  /** Pins or unpins the project for the caller. Any project viewer may do this: pinning does not modify the project. Both operations are idempotent, like conversation bookmarks, so clients need not know the previous state. */
   app.put('/api/projects/:id/pin', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -425,15 +391,15 @@ export function registerProjectRoutes(
       reply
         .type(image.mimeType)
         .header('x-content-type-options', 'nosniff')
-        // Un SVG ouvert dans son propre onglet est un document, scripts compris, et il
-        // vient parfois d'un dépôt cloné : le bac à sable le réduit à une image.
+        // SVGs opened in their own tabs are documents including scripts, sometimes from
+        // cloned repositories: sandboxing reduces them to images.
         .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox")
         .header('cache-control', 'private, max-age=31536000, immutable')
         .send(image.data)
     )
   })
 
-  /** Une image choisie par une personne : elle n'est jamais provisoire. */
+  /** An image chosen by a person is never provisional. */
   app.put('/api/projects/:id/image', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -444,7 +410,7 @@ export function registerProjectRoutes(
 
     const file = await request.file({ limits: { fileSize: MAX_PROJECT_IMAGE_BYTES } })
     if (!file) throw badRequest('no_file', 'No file received.')
-    // `toBuffer` échoue quand la limite est franchie, comme pour les pièces jointes.
+    // `toBuffer` fails on exceeding the limit, as with attachments.
     const data = await file.toBuffer().catch(() => null)
     if (!data) {
       throw badRequest('project_image_too_large', 'Image is too large (maximum {maxKb} KB).', {
@@ -476,13 +442,7 @@ export function registerProjectRoutes(
     return reply.status(204).send()
   })
 
-  /**
-   * Fichiers du répertoire de travail, pour l'autocomplétion des mentions.
-   *
-   * Portée par le projet plutôt que par la conversation : la barre de saisie propose
-   * déjà des mentions avant qu'une conversation existe. Le worktree, quand il est
-   * choisi, change le dossier consulté.
-   */
+  /** Working-directory files for mention completion. Project-scoped because the composer offers mentions before a conversation exists. Choosing a worktree changes the directory queried. */
   app.get('/api/projects/:id/files', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

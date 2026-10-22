@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Installation macOS de bout en bout, sur une machine jetable (runner de CI) :
+# End-to-end macOS installation on a disposable machine (CI runner):
 #
 #   scripts/macos-install-check.sh sillage-<version>-darwin-arm64.tar.gz
 #
-# Lance install.sh avec un Node trop vieux sur le PATH, qu'il doit écarter pour le sien, puis vérifie
-# l'agent launchd, la relance après un arrêt (le chemin de la mise à jour intégrée), une
-# réinstallation à l'identique et le passage à une autre version. Installe pour de bon
-# sous ~/.local/share/sillage et ~/Library/LaunchAgents : pas sur un poste de travail.
+# Run install.sh with an old Node on PATH, which it must discard for its own, then
+# check launchd agent, restart after stop (integrated update path), identical
+# reinstall, and version switch. Really installs under ~/.local/share/sillage
+# and ~/Library/LaunchAgents: do not run on a workstation.
 set -euo pipefail
 
 ARCHIVE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
@@ -21,10 +21,9 @@ trap 'rm -rf "$WORK"' EXIT
 step() { printf '\n\033[1;35m### %s\033[0m\n' "$*"; }
 fail() { printf '\033[1;31mcheck failed:\033[0m %s\n' "$*" >&2; exit 1; }
 
-# Le PATH de launchd, précédé de $2 s'il est donné. Sans terminal, comme sous
-# `curl | bash` lancé par un script.
-# install.sh s'est déjà arrêté à mi-chemin sur le runner, sur une erreur d'expansion du
-# bash 3.2, sans que son code de sortie le dise : on exige aussi son dernier message.
+# launchd PATH, prefixed by $2 if supplied. No terminal, as with scripted `curl | bash`.
+# install.sh previously stopped midway on this runner due to a bash 3.2 expansion
+# error without reporting it in its exit code: also require its final message.
 run_installer() {
   env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" SHELL=/bin/zsh LANG=fr_FR.UTF-8 \
     PATH="${2:-}/usr/bin:/bin:/usr/sbin:/sbin" SILLAGE_ARCHIVE="$1" \
@@ -43,8 +42,8 @@ wait_healthy() {
   fail "Sillage does not answer on port 7317"
 }
 
-# Aucun lien `current.tmp` ne doit rester, ni à côté de `current` ni dedans : c'est là
-# qu'un mv sans -h l'aurait déposé, en laissant l'ancien lien en place.
+# No `current.tmp` link may remain beside or inside `current`: mv without -h
+# would have put it there while leaving the old link in place.
 check_links() {
   local dir
   for dir in "$DATA_DIR/app" "$DATA_DIR/node"; do
@@ -53,8 +52,8 @@ check_links() {
   done
 }
 
-# Node 22.12 a N-API 9 : il charge better-sqlite3, puis plante à la première requête.
-# Un Node nvm de cet âge est courant sur un poste de développeur.
+# Node 22.12 has N-API 9: it loads better-sqlite3 then crashes on the first query.
+# An nvm Node this old is common on developer machines.
 step "First install, Node 22.12 on the PATH: too old, install.sh brings its own"
 curl -fsSL https://nodejs.org/dist/v22.12.0/node-v22.12.0-darwin-arm64.tar.gz | tar -xz -C "$WORK"
 run_installer "$ARCHIVE" "$WORK/node-v22.12.0-darwin-arm64/bin:"

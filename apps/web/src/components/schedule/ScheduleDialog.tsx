@@ -38,11 +38,8 @@ import { formatDateTime, useCreateSchedule, useUpdateSchedule, type ScheduleInpu
 import { useUserSettings } from '../../lib/user-settings'
 
 /**
- * Création et modification d'une tâche planifiée.
- *
- * Les réglages du CLI sont ceux du composer, à la même source (`useAgentSettings`) :
- * une tâche est une conversation qu'on écrit d'avance, et lui inventer un second jeu de
- * modèles et de modes de permission aurait garanti que les deux divergent.
+ * Scheduled task creation and editing. CLI settings share the composer source (useAgentSettings):
+ * tasks are conversations written in advance, and separate model/permission lists would diverge.
  */
 
 type CadenceKind = Exclude<ScheduleCadence['kind'], 'webhook'>
@@ -58,7 +55,7 @@ const CRON_PRESETS: { labelKey: MessageKey; expression: string }[] = [
   { labelKey: 'schedule.form.preset.weekly', expression: '0 9 * * 1' },
 ]
 
-/** Valeur d'un champ `datetime-local`, à l'heure du poste. */
+/** datetime-local field value in device time. */
 function toLocalInput(ts: number): string {
   const date = new Date(ts)
   const pad = (value: number) => String(value).padStart(2, '0')
@@ -78,10 +75,10 @@ export function ScheduleDialog({
   onCreated,
 }: {
   project: ProjectDto
-  /** La tâche à modifier ; absente pour une création. */
+  /** Task being edited, absent during creation. */
   task?: ScheduledTaskDto
   onClose: () => void
-  /** Une automatisation par webhook créée : l'hôte ouvre sa page, où elle se règle. */
+  /** Created webhook automation: its host opens the configuration page. */
   onCreated?: (task: ScheduledTaskDto) => void
 }) {
   const t = useTranslate()
@@ -93,8 +90,8 @@ export function ScheduleDialog({
 
   const [name, setName] = useState(task?.name ?? '')
   const [prompt, setPrompt] = useState(task?.prompt ?? '')
-  // Horaire ou webhook se choisit à la création seulement : l'un a une heure, l'autre une
-  // adresse et un journal, et le serveur refuse de passer de l'un à l'autre.
+  // Choose schedule versus webhook only at creation: one has a time, the other an address and log,
+  // and the server forbids conversion.
   const [trigger, setTrigger] = useState<Trigger>(task?.cadence.kind === 'webhook' ? 'webhook' : 'schedule')
   const [template, setTemplate] = useState<AutomationTemplateId | 'generic'>('github_issue_label')
   const [kind, setKind] = useState<CadenceKind>(task && task.cadence.kind !== 'webhook' ? task.cadence.kind : 'interval')
@@ -120,9 +117,8 @@ export function ScheduleDialog({
 
   const templateName = (id: AutomationTemplateId | 'generic') => (id === 'generic' ? '' : t(TEMPLATE_LABELS[id].name))
 
-  // Un webhook se crée avec son modèle et son nom, rien d'autre : tout ce qui le règle
-  // (déclenchement, session, prompt, garde-fous) vit sur sa page, où un vrai appel
-  // permet de l'essayer. Le formulaire crée, la page configure.
+  // Create webhooks with template and name only. Triggers, session, prompt, and safeguards belong
+  // on the page where real calls can test them. Forms create; pages configure.
   const webhookCreation = trigger === 'webhook' && !task
 
   const chooseTrigger = (next: Trigger) => {
@@ -131,13 +127,13 @@ export function ScheduleDialog({
   }
 
   const chooseTemplate = (next: AutomationTemplateId | 'generic') => {
-    // Le nom suit le modèle tant qu'on ne l'a pas retouché.
+    // Follow the template name until manually edited.
     if (!name.trim() || name === templateName(template)) setName(templateName(next))
     setTemplate(next)
   }
 
-  // Même ordre que pour une conversation neuve : le préréglage du projet, puis les
-  // défauts du compte. Une configuration d'un autre CLI est abandonnée, pas convertie.
+  // Same precedence as new conversations: project preset then account defaults. Discard
+  // configurations from other CLIs rather than converting.
   const defaults =
     project.defaultConfig[agent] ?? userSettings?.agentDefaults[agent] ?? defaultConfigFor(agent)
   const config = edited?.agent === agent ? edited : defaults
@@ -155,8 +151,8 @@ export function ScheduleDialog({
     return parsed.success ? parsed.data : null
   }, [trigger, kind, intervalValue, intervalUnit, cron, onceAt])
 
-  // Le même calcul que le daemon : ce que l'aperçu annonce est ce qui sera armé, au
-  // fuseau près, les heures d'un motif se lisant sur l'horloge du serveur.
+  // Same calculation as the daemon: preview matches arming except timezone, since cron hours follow
+  // server time.
   const nextRun = useMemo(() => (cadence ? nextScheduleRun(cadence, Date.now(), task?.lastRunAt ?? null) : null), [cadence, task?.lastRunAt])
   const cronHuman = useMemo(() => (kind === 'cron' ? cronToHuman(cron, locale()) : null), [kind, cron])
 
@@ -164,7 +160,7 @@ export function ScheduleDialog({
   const durationValid =
     Number.isInteger(duration) && duration >= MIN_SCHEDULE_DURATION_MINUTES && duration <= MAX_SCHEDULE_DURATION_MINUTES
   const timeoutSeconds = Number(checkTimeout)
-  // Un script vidé vaut « pas de vérification » ; un délai, lui, doit se lire.
+  // Empty script means no check; timeout must be readable.
   const checkValid =
     trigger !== 'schedule' ||
     checkScript === null ||
@@ -181,11 +177,10 @@ export function ScheduleDialog({
           name: name.trim(),
           agent,
           config,
-          // Le prompt du modèle, retouché ensuite sur la page avec un vrai appel sous les yeux.
+          // Template prompt edited later on the page alongside a real call.
           prompt: templatePrompt(template) || t('automation.form.genericPrompt'),
           cadence,
-          // Un webhook reçoit des appels en rafale : les mettre en file vaut mieux que de
-          // les perdre pendant qu'une session tourne.
+          // Webhooks receive bursts: queue calls rather than lose them during active sessions.
           overlapPolicy: 'wait',
           maxDurationMinutes: DEFAULT_SCHEDULE_DURATION_MINUTES,
           webhook: { template: template === 'generic' ? undefined : template },
@@ -199,7 +194,7 @@ export function ScheduleDialog({
           overlapPolicy: overlap,
           maxDurationMinutes: duration,
           ...decisionSettings,
-          // Un webhook a son propre script, sur sa page : celui-ci ne vaut que pour l'horaire.
+          // Webhooks have their own page script; this one applies only to schedules.
           ...(trigger === 'schedule'
             ? {
                 checkScript: checkScript?.trim() ? checkScript : null,

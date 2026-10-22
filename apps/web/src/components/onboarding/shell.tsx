@@ -7,12 +7,9 @@ import { Logo } from '../Logo'
 import { Button, cx } from '../ui'
 
 /**
- * Ce qu'une étape dit à la page : si « Continuer » est possible, et ce qu'il doit faire
- * avant de passer à la suite.
- *
- * La page tient les boutons, l'étape tient son formulaire : le bouton d'une étape qui
- * crée un compte ne peut pas s'activer tant que le mot de passe est trop court, et c'est
- * l'étape qui le sait.
+ * Step contract for the page: whether Continue is available and what to do before advancing. The
+ * page owns navigation buttons while steps own forms; account-creation steps know when passwords
+ * are too short to continue.
  */
 export interface StepGate {
   canContinue?: boolean
@@ -28,17 +25,17 @@ export interface StepNav {
 export interface StepProps {
   nav: StepNav
   state: OnboardingState
-  /** Mémorise une partie de l'état, tout de suite. */
+  /** Save part of the state immediately. */
   update: (patch: Partial<OnboardingState>) => void
   setAnswers: (patch: Partial<OnboardingAnswers>) => void
   profile: InstanceProfile
-  /** Null tant que le premier compte n'est pas créé. */
+  /** Null until the first account is created. */
   user: CurrentUser | null
   hostname: string
   homeDir: string
 }
 
-/** Ce que « Continuer » exécute d'abord, relu à chaque rendu pour voir les champs à jour. */
+/** Action executed before Continue, refreshed each render to read current fields. */
 export function useCommit(nav: StepNav, fn: (() => Promise<void>) | null): void {
   useEffect(() => {
     nav.commit.current = fn
@@ -56,7 +53,7 @@ export function useGate(nav: StepNav, gate: StepGate): void {
   }, [setGate, canContinue, laterAllowed, skipAllowed])
 }
 
-/** L'encart « pourquoi » : un trait droit à gauche, comme les autres repères de bordure. */
+/** Why callout uses a straight left rule like other edge markers. */
 export function Why({ children }: { children: ReactNode }) {
   return (
     <div className="flex gap-3 border-l-[3px] border-accent bg-accent-wash/40 px-4 py-3 text-sm leading-relaxed text-ink-soft">
@@ -97,8 +94,8 @@ export function Question({ label, hint, children }: { label: string; hint?: stri
 }
 
 /**
- * Un choix en carte : une icône, un libellé, une ligne d'explication, et la coche sur
- * celle qui est prise. `multi` en fait une case à cocher plutôt qu'un bouton radio.
+ * Card choice with icon, label, explanation, and selected checkmark. multi makes it a checkbox
+ * rather than radio.
  */
 export function ChoiceCard({
   selected,
@@ -152,9 +149,8 @@ export function CardGrid({ columns = 2, children }: { columns?: 1 | 2 | 3; child
 }
 
 /**
- * La langue, à portée de main dès le premier écran : c'est la première chose qu'on règle
- * quand l'interface ne parle pas la sienne, et le réglage d'Apparence est trop loin
- * pour une visite qui n'a pas encore commencé. Même mécanique que là-bas.
+ * Language accessible from the first screen: users need it immediately when the interface speaks
+ * another language, before Appearance settings are reachable. Same mechanism as settings.
  */
 function LanguageSwitch() {
   const active = useLocale()
@@ -190,14 +186,13 @@ export interface ShellStep {
   title: string
   sub: string
   status: 'done' | 'skipped' | 'current' | 'todo'
-  /** Cliquable : en arrière, ou en avant vers une étape déjà traversée. */
+  /** Clickable backward or forward to previously visited steps. */
   reachable: boolean
 }
 
 /**
- * Le cadre de la visite : la liste des étapes à gauche sur grand écran, une barre de
- * progression en haut au téléphone, et les boutons en bas. Plein écran, sans la barre
- * latérale de l'application : rien d'autre à regarder.
+ * Tour frame: steps on the left for desktop, top progress on phones, bottom buttons. Fullscreen
+ * without app navigation to keep attention here.
  */
 export function OnboardingShell({
   steps,
@@ -236,11 +231,9 @@ export function OnboardingShell({
   const last = index === steps.length - 1
 
   /*
-   * Entrée dans un champ vaut le bouton d'action de l'étape, comme dans un formulaire.
-   * Les étapes n'en sont pas un : les formulaires qu'elles embarquent (création de
-   * projet, ajout de compte) ont le leur, et deux formulaires ne s'imbriquent pas. Un
-   * champ posé dans l'un d'eux garde donc son propre bouton. Dans une zone de texte,
-   * Entrée reste un retour à la ligne : c'est Ctrl ou Cmd + Entrée qui valide.
+   * Enter in an input activates the step action like a form. Steps cannot be forms because embedded
+   * project/account forms cannot nest. Inputs within embedded forms retain their own submit
+   * actions. Textareas preserve Enter newlines and submit with Ctrl/Cmd+Enter.
    */
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
@@ -271,7 +264,7 @@ export function OnboardingShell({
             <li key={step.id}>
               <button
                 type="button"
-                // On ne saute pas vers l'inconnu : une étape future peut dépendre de celle-ci.
+                // Do not jump into unknown steps that may depend on current answers.
                 disabled={!step.reachable || i === index}
                 aria-current={step.status === 'current' ? 'step' : undefined}
                 onClick={() => onGoto(i)}
@@ -306,9 +299,8 @@ export function OnboardingShell({
       </aside>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* Téléphone : la progression en tête, l'étape nommée. */}
-        {/* La marge de l'encoche s'ajoute à celle du bloc : la classe `pt-safe` seule la
-            remplacerait, et vaut zéro hors d'un téléphone. */}
+        {/* Phone layout: named step and progress at top. */}
+        {/* Add safe-area padding to block spacing: pt-safe alone replaces it and is zero off phones. */}
         <div className="flex shrink-0 flex-col gap-2 px-4 md:hidden" style={{ paddingTop: 'calc(0.75rem + var(--sg-safe-top))' }}>
           <div className="flex items-center gap-2">
             <span className="gradient-accent grid size-7 place-items-center rounded-lg">
@@ -350,7 +342,7 @@ export function OnboardingShell({
         </main>
 
         <footer className="shrink-0 border-t border-line bg-surface px-4 pt-3 md:px-14" style={{ paddingBottom: 'calc(0.75rem + var(--sg-safe-bottom))' }}>
-          {/* Sur toute la largeur, les boutons aux coins : c'est là qu'on les cherche. */}
+          {/* Full-width buttons at corners, where users expect them. */}
           <div className="flex w-full items-center gap-2">
             {first ? null : (
               <Button variant="secondary" onClick={onBack} disabled={pending} icon={<ArrowLeft size={15} />}>

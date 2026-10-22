@@ -1,17 +1,17 @@
-# Copier vers ~/.config/sillage/config.toml
-# Tous les champs sont optionnels : un fichier absent équivaut à ces valeurs.
-# En revanche un fichier présent mais invalide fait échouer le démarrage, pour ne pas
-# tourner avec des réglages que tu crois appliqués.
+# Copy to ~/.config/sillage/config.toml
+# All fields are optional: a missing file uses these defaults.
+# A present but invalid file intentionally prevents startup, avoiding settings
+# you believe are applied when they are not.
 
 [server]
 host = "127.0.0.1"
 port = 7317
 
 [limits]
-# Une session Claude coûte 400 à 500 Mo de RSS. C'est le plafond qui compte vraiment.
-# Valeur de départ : une fois réglée depuis l'écran Sessions, c'est la base qui décide.
+# One Claude session costs 400–500 MB RSS. This limit matters most.
+# Initial value: once adjusted from Sessions, the database is authoritative.
 max_concurrent_sessions = 10
-# Un runner inactif est arrêté puis relancé en reprise au message suivant.
+# Idle runners stop, then restart with resume on the next message.
 session_idle_timeout_min = 30
 pty_idle_timeout_min = 60
 

@@ -1,43 +1,73 @@
-# Proposition pour les réglages du composer
+# Composer settings proposal
 
-Maquette autonome du 17 septembre 2026, préparée après consultation du composer actuel. L’utilisateur a indiqué changer surtout **le modèle et l’effort de réflexion**. Après validation de la proposition, cette interaction a été intégrée au frontend : voir le [compte rendu d’intégration](IMPLEMENTATION.md).
+Standalone mockup from September 17, 2026, prepared after reviewing the current
+composer. The user mostly changes **model and reasoning effort**. Once approved,
+this interaction was integrated into the frontend: see the
+[integration report](IMPLEMENTATION.md).
 
-[Ouvrir la maquette privée, via Tailscale](http://marldev.tail710c78.ts.net:7520/).
+[Open the private mockup through Tailscale](http://marldev.tail710c78.ts.net:7520/).
 
-## Interaction proposée
+## Proposed interaction
 
-- Deux boutons montrent en permanence le modèle et l’effort sous le message, également sur téléphone. Toucher le bouton ouvre directement ses valeurs ; choisir applique la valeur et ferme. **Deux interactions au lieu de trois** pour chaque réglage, quatre au lieu de six pour changer successivement les deux.
-- Le bouton « Tous les réglages » ouvre une vue sans sous-écrans, qui reste ouverte pendant les changements : modèle, effort, mode et permissions propres à l’agent, puis MCP. Les modifications s’appliquent à chaque choix ; « Terminé » ferme simplement le panneau.
-- Sur téléphone, les sélecteurs prennent la forme d’une feuille en bas de l’écran. Les commandes ont une cible d’au moins 44 px ; les deux raccourcis restent visibles sans défilement horizontal. Le contenu long du panneau défile entre un en-tête et un pied fixes.
-- Sur ordinateur, le panneau s’ancre au bouton. Les flèches parcourent les choix, Entrée ou Espace sélectionne, Échap ferme.
-- Le texte saisi reste présent. Sur téléphone, fermer un panneau restitue le focus au bouton pour éviter de faire surgir le clavier ; sur ordinateur, une saisie déjà commencée reprend au même endroit.
-- Les états « Plan », « Accès total », « Approbations : jamais » et « Tout autoriser » restent lisibles dans le composer lorsqu’ils sont sélectionnés.
+- Two buttons always show model and effort below the message, including on phones.
+  Tapping a button opens its values directly; selecting applies and closes.
+  **Two interactions instead of three** per setting, four instead of six to change both.
+- “All settings” opens a view without subpages that stays open during changes:
+  model, effort, agent-specific mode and permissions, then MCP. Changes apply on
+  each choice; “Done” simply closes the panel.
+- On phones, selectors are bottom sheets. Controls have targets of at least 44 px;
+  both shortcuts stay visible without horizontal scrolling. Long panel content
+  scrolls between a fixed header and footer.
+- On desktop, the panel anchors to its button. Arrows navigate choices, Enter or
+  Space selects, Escape closes.
+- Draft text stays present. On phones, closing a panel returns focus to its button
+  to avoid opening the keyboard; on desktop, existing typing resumes at the same position.
+- “Plan”, “Full access”, “Approvals: never”, and “Allow everything” remain readable
+  in the composer when selected.
 
-![Deux accès directs sur mobile](mobile-390-light.png)
+![Two direct controls on mobile](mobile-390-light.png)
 
-![Choix de l’effort sur mobile](mobile-390-effort.png)
+![Effort choice on mobile](mobile-390-effort.png)
 
-![Vue complète sur mobile](mobile-390-all.png)
+![Complete view on mobile](mobile-390-all.png)
 
-![Panneau ancré sur ordinateur](desktop-models.png)
+![Anchored panel on desktop](desktop-models.png)
 
-## Portée de la maquette
+## Mockup scope
 
-`index.html`, `prototype.css` et `prototype.js` fonctionnent sans dépendance. Les modèles, niveaux et serveurs MCP sont illustratifs. Les choix vivent uniquement en mémoire dans cette page ; aucune requête ne part vers une API Sillage ou un agent. L’envoi, les pièces jointes et la dictée sont désactivés. Le menu d’agent et le changement de thème permettent de comparer les rendus.
+`index.html`, `prototype.css`, and `prototype.js` work without dependencies.
+Models, levels, and MCP servers are illustrative. Choices live only in page memory;
+no request reaches a Sillage API or agent. Sending, attachments, and dictation are
+disabled. Agent menu and theme switching allow comparing renderings.
 
-Pour l’intégration, conserver les données et règles de `useAgentSettings` dans `apps/web/src/components/chat/agent-settings.tsx` : catalogue réel, niveaux disponibles, repli de l’effort au changement de modèle, valeurs enregistrées et différence entre configuration choisie et appliquée. Les accès rapides viendraient dans `ComposerSettings.tsx`, et le panneau à deux étages de `SettingsPanel.tsx` deviendrait une vue à plat. Les permissions de Claude et celles de Codex gardent leurs différences. L’inventaire MCP conserve aussi la distinction entre serveurs gérés par Sillage et serveurs externes.
+For integration, keep the data and rules from `useAgentSettings` in
+`apps/web/src/components/chat/agent-settings.tsx`: real catalog, available levels,
+effort fallback on model changes, saved values, and distinction between selected
+and applied configuration. Quick access would go in `ComposerSettings.tsx`, and
+`SettingsPanel.tsx`'s two-level panel would become a flat view. Claude and Codex
+permissions keep their differences. The MCP inventory also retains the distinction
+between Sillage-managed and external servers.
 
-## Vérification
+## Verification
 
-Parcours Playwright dans Chromium, sur ordinateur à 1440 px et en émulation mobile à 390 et 320 px : choix rapides et fermeture, modifications successives dans le panneau complet, adaptation des niveaux au modèle, disparition du réglage sans effet, brouillon conservé, états de permissions visibles, thèmes clair/sombre et absence de débordement horizontal. Les boutons rapides mesurent au moins 44 × 44 px. Un contrôle complémentaire couvre les flèches, Entrée, Échap, Tab et Maj+Tab, la sélection du texte conservée sur ordinateur, le retour du focus et la disposition en paysage à 667 × 375 px. Aucune exception JavaScript sur ces parcours.
+Playwright walkthrough in Chromium on desktop at 1440 px and mobile emulation at
+390 and 320 px: quick choices and dismissal, successive changes in the full panel,
+model-dependent levels, hiding ineffective settings, preserved drafts, visible
+permission states, light/dark themes, and no horizontal overflow. Quick buttons
+measure at least 44 × 44 px. Additional checks cover arrows, Enter, Escape, Tab,
+Shift+Tab, preserved desktop text selection, focus return, and landscape at
+667 × 375 px. No JavaScript exceptions on these paths.
 
-Safari sur un iPhone physique et son clavier virtuel restent à essayer. Cette validation concerne la maquette ; elle ne valide pas encore son intégration aux mises à jour réelles de configuration.
+Safari on a physical iPhone and its virtual keyboard remain untested. This
+validation covers the mockup, not its integration with real configuration updates.
 
-## Service d’aperçu
+## Preview service
 
-Unité utilisateur temporaire `sillage-composer-preview`, serveur Python lié à `127.0.0.1:7520`, racine limitée à ce dossier. L’exposition Tailscale est privée. La réponse HTTP et le contenu servi ont été contrôlés avec `curl` et `cmp`.
+Temporary user unit `sillage-composer-preview`, Python server bound to
+`127.0.0.1:7520`, root limited to this directory. Tailscale exposure is private.
+HTTP response and served content checked with `curl` and `cmp`.
 
-Pour retirer l’aperçu :
+To remove the preview:
 
 ```sh
 systemctl --user stop sillage-composer-preview

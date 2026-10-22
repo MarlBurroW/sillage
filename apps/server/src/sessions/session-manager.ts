@@ -61,7 +61,7 @@ import {
 import { serialized } from '../git-workflow.js'
 import { linkedWorktreePaths } from '../worktrees/linked.js'
 
-/** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
+/** Message written during a turn, waiting for its completion. */
 interface QueuedMessage {
   queueId: string
   clientMessageId: string
@@ -76,50 +76,28 @@ interface ManagedRunner {
   lastActivity: number
   status: ConversationStatus
   idleTimer: NodeJS.Timeout | null
-  /**
-   * Travaux de fond vivants, tels que le dernier `background.updated` les décrit.
-   *
-   * En mémoire et non en base : ils appartiennent au process CLI, et meurent avec
-   * lui. Une conversation rechargée après un redémarrage n'en a plus aucun.
-   */
+  /** Live background work from the latest `background.updated`, held in memory rather than databases because it belongs to CLI processes and dies with them. Reloaded conversations have none after restart. */
   background: number
-  /**
-   * Boucles armées, telles que le dernier `loops.updated` les décrit. En mémoire pour
-   * la même raison que `background` : elles ne survivent pas au process CLI.
-   */
+  /** Armed loops from the latest `loops.updated`, memory-only like background work because they cannot outlive CLI processes. */
   loops: number
-  /**
-   * Pourquoi ce runner doit être relancé, quand un réglage n'a pas pu être appliqué à
-   * chaud pendant un tour. Le redémarrage attend la fin du tour ; `null` le reste du
-   * temps. Voir `reloadConfig`.
-   */
+  /** Reason a runner needs restarting when settings cannot apply live during turns. Restart waits for turn completion; otherwise null. See `reloadConfig`. */
   pendingRestart: string | null
 }
 
-/** Fenêtre de déduplication des envois (invariant I5). Voir sendMessage(). */
+/** Send deduplication window (invariant I5). See sendMessage(). */
 const DEDUPE_TTL_MS = 5 * 60 * 1000
 
-/**
- * Point de reprise ouvert pour le tour en cours : la capture d'avant est faite, celle
- * d'après attend la fin du tour. Les fichiers que les outils touchent sont retenus ici
- * pour distinguer, au diff, le travail du tour de ce qu'un pull a pu apporter.
- */
+/** Open checkpoint for the current turn: before snapshot captured, after snapshot awaiting completion. Retain tool-touched files to distinguish turn work from files introduced by pulls. */
 interface ActiveCheckpoint {
   key: string
   cwd: string
   edited: Set<string>
 }
 
-/** Au-delà, l'événement de fin ne liste plus les fichiers : le fil n'en montre pas tant. */
+/** Beyond this limit, completion events omit files because conversations cannot display that many. */
 const CHECKPOINT_EVENT_FILES = 500
 
-/**
- * Événements qui valent une notification, avec ce qu'ils annoncent.
- *
- * Liste nommée plutôt qu'une règle implicite : notifier chaque événement du journal
- * reviendrait à n'être lu par personne. Ne sont retenus que les moments où l'agent
- * réclame une décision, et la fin d'un tour, qu'on ne peut pas deviner de loin.
- */
+/** Notifiable events and their meanings. Explicit allowlist rather than implicit rules: notifying every event would make notifications unread. Retain only agent decision requests and turn completions users cannot infer remotely. */
 const NOTIFIABLE: Partial<Record<SillageEvent['type'], string>> = {
   'permission.requested': 'Une autorisation est demandée',
   'question.requested': "L'agent te demande de choisir",
@@ -128,29 +106,26 @@ const NOTIFIABLE: Partial<Record<SillageEvent['type'], string>> = {
   'turn.completed': "L'agent a terminé",
 }
 
-/**
- * Ce que porte l'événement `status` du bus. Repris tel quel par le message WebSocket du
- * même nom : le hub ne fait que rediffuser, il n'a rien à recomposer.
- */
+/** Bus `status` payload reused unchanged by same-named WebSocket messages: hubs merely rebroadcast. */
 export interface StatusBroadcast {
   conversationId: string
   status: ConversationStatus
   warm: boolean
   background: number
   loops: number
-  /** Voir le message `status` du protocole : la config en vigueur, `null` à froid. */
+  /** See protocol `status`: active configuration or `null` for cold sessions. */
   appliedConfig: AgentConfig | null
   lastNotableSeq: number
   metrics: ConversationMetrics
 }
 
-/** Ce que le gestionnaire attend de la couche de notification, sans la connaître. */
-/** L'aiguillage des notifications (`notifications/dispatcher.ts`), vu d'ici. */
+/** Notification-layer contract without depending on its implementation. */
+/** Notification routing (`notifications/dispatcher.ts`) as viewed here. */
 export interface ConversationNotifier {
   dispatch(userId: string, notification: OutgoingNotification): Promise<void>
 }
 
-/** Ce qu'un CLI attend, en une ligne : l'outil et sa commande, ou la question posée. */
+/** One-line CLI wait description: tool and command or question. */
 function requestDetail(event: SillageEvent): string | null {
   const clip = (text: string) => (text.length > 160 ? `${text.slice(0, 160)}…` : text)
   if (event.type === 'permission.requested') {
@@ -172,22 +147,13 @@ const REQUEST_KINDS: Partial<Record<SillageEvent['type'], CliRequestKind>> = {
 
 export class SessionManager {
   private readonly runners = new Map<string, ManagedRunner>()
-  /** Démarrages en cours, pour qu'un envoi concurrent attende au lieu de doubler. */
+  /** In-progress starts so concurrent sends wait instead of duplicate processes. */
   private readonly startingRunners = new Map<string, Promise<AgentRunner>>()
   private readonly recentClientMessages = new Map<string, number>()
-  /**
-   * Messages en attente, par conversation.
-   *
-   * En mémoire seulement : un message qui n'a jamais atteint le CLI n'a pas à survivre
-   * à un redémarrage, et le journal porte déjà de quoi le clore proprement à la
-   * reprise (voir `expireQueuedMessages`).
-   */
+  /** Pending messages per conversation, memory-only: messages never reaching CLIs need not survive restarts, and journals already allow clean closure on recovery (see `expireQueuedMessages`). */
   private readonly queues = new Map<string, QueuedMessage[]>()
   private readonly checkpoints = new Map<string, ActiveCheckpoint>()
-  /**
-   * Renseigné après coup : le hub WebSocket, qui sait qui regarde quoi, n'existe pas
-   * encore quand le gestionnaire est construit.
-   */
+  /** Set later because the WebSocket hub tracking viewers does not exist when managers are constructed. */
   private notifier: ConversationNotifier | null = null
   readonly statusBus = new EventEmitter()
 
@@ -204,11 +170,7 @@ export class SessionManager {
     this.statusBus.setMaxListeners(200)
   }
 
-  /**
-   * Au démarrage, aucune conversation ne peut légitimement être en cours : les
-   * runners sont morts avec le process précédent. Les laisser en `running` afficherait
-   * un état mensonger et bloquerait l'envoi de messages.
-   */
+  /** At startup no conversations can legitimately run: runners died with the previous process. Leaving `running` would misrepresent state and block messages. */
   recoverInterrupted(): string[] {
     const stale = this.db
       .select({ id: conversations.id })
@@ -222,8 +184,8 @@ export class SessionManager {
       .where(eq(conversations.status, 'awaiting_input'))
       .all()
 
-    // Relevé avant toute écriture : la remise à zéro plus bas efface ce qui permet de
-    // retrouver les conversations qui portaient du travail détaché.
+    // Read before writes: resets below erase information needed to identify
+    // conversations with detached work.
     const detached = new Map(
       this.db
         .select({ id: conversations.id, loops: conversations.loopCount })
@@ -237,8 +199,8 @@ export class SessionManager {
       this.log.append(row.id, {
         type: 'error',
         code: 'daemon_restarted',
-        // Le web traduit d'après le code ; le message anglais sert aux lecteurs du journal
-        // qui n'ont pas le catalogue (MCP, recherche).
+        // Web clients translate codes; English messages serve journal readers without
+        // catalogs, including MCP and search.
         message: 'The daemon restarted during this conversation. The agent was interrupted.',
         recoverable: true,
       })
@@ -254,16 +216,16 @@ export class SessionManager {
         .run()
     }
 
-    // Le travail de fond survit à la fin de son tour : une conversation au repos peut en
-    // porter, et son process est mort avec le daemon comme les autres. Elle n'a pas été
-    // interrompue en plein tour pour autant, donc pas d'erreur ni de changement de
-    // statut, seulement la clôture de ce qui ne tourne plus.
+    // Background work outlives turns, so idle conversations may still carry it.
+    // Their CLI processes died with the daemon too. These were not interrupted
+    // mid-turn: emit neither errors nor status changes,
+    // only closure for work no longer running.
     for (const [conversationId, hadLoops] of detached) {
       this.closeDetachedWork(conversationId, hadLoops)
     }
 
-    // Ces conversations peuvent déjà être idle : leurs formulaires ont pourtant
-    // perdu le runner qui savait transmettre la réponse.
+    // Conversations may already be idle, but their forms lost the runner
+    // that could deliver answers.
     for (const conversationId of this.log.openAsyncQuestionConversationIds()) {
       this.expireOpenPrompts(conversationId)
     }
@@ -274,8 +236,8 @@ export class SessionManager {
       .where(eq(permissionRequests.status, 'pending'))
       .run()
 
-    // Le pendant en base de la clôture écrite plus haut : la sidebar lit cette ligne,
-    // la page lit le journal, et les deux doivent dire la même chose.
+    // Database counterpart to journal closure above: sidebars read rows,
+    // pages read journals, and both must agree.
     this.db
       .update(conversations)
       .set({ backgroundCount: 0, loopCount: 0 })
@@ -285,13 +247,7 @@ export class SessionManager {
     return [...stale, ...awaiting].map((row) => row.id)
   }
 
-  /**
-   * Clôt dans le journal les demandes restées sans réponse.
-   *
-   * Le fold de rendu ne connaît que le journal : sans ces événements, une permission
-   * ou une question posée avant l'arrêt resterait affichée comme en attente, avec des
-   * boutons qui ne répondent plus à personne.
-   */
+  /** Closes unanswered requests in journals. Rendering folds know only journals; without these events, pre-shutdown questions and permissions would remain pending with buttons reaching nobody. */
   private expireOpenPrompts(conversationId: string): void {
     for (const { kind, requestId } of this.log.openPrompts(conversationId)) {
       if (kind === 'permission') {
@@ -340,12 +296,12 @@ export class SessionManager {
     return row
   }
 
-  /** Répertoire de travail d'une conversation, worktree compris. */
+  /** Conversation working directory including worktrees. */
   workingDirectory(conversationId: string): string {
     return this.resolveCwd(this.loadConversation(conversationId))
   }
 
-  /** Répertoire de travail : le worktree s'il y en a un, sinon la racine du projet. */
+  /** Working directory: worktree when present, otherwise project root. */
   private resolveCwd(conversation: ConversationRow): string {
     return resolveConversationCwd(this.db, conversation)
   }
@@ -357,30 +313,27 @@ export class SessionManager {
     this.db.update(conversations).set({ status }).where(eq(conversations.id, conversationId)).run()
     this.broadcastStatus(conversationId, status, this.isWarm(conversationId))
 
-    // Le tour vient de se terminer : c'est le seul moment où un message en attente
-    // peut partir sans se mêler au contexte du tour précédent, et le seul où un
-    // redémarrage promis peut avoir lieu sans rien couper.
+    // Turn just finished: the only point when queued messages can leave without
+    // mixing into previous-turn context, and promised restarts can happen
+    // without interrupting work.
     if (status === 'idle') void this.settleIdle(conversationId)
 
-    // Un runner en erreur est mort pour de bon : le garder en mémoire renverrait
-    // les messages suivants vers un process hors d'état. L'arrêter libère la place,
-    // et le prochain message repartira en reprise sur une session neuve.
+    // Errored runners are irrecoverably dead: retaining them routes subsequent
+    // messages to unusable processes. Stop to free capacity;
+    // the next message resumes through a fresh session.
     if (status === 'error') void this.stopRunner(conversationId)
   }
 
-  /**
-   * Diffuse un statut. `warm` est passé plutôt que relu : l'arrêt d'un runner annonce
-   * une session froide alors que la table le donne encore chaud.
-   */
+  /** Broadcasts status. Pass `warm` explicitly: stopping runners announces cold sessions while the map still contains warm entries. */
   private broadcastStatus(
     conversationId: string,
     status: ConversationStatus,
     warm: boolean,
   ): void {
-    // `lastNotableSeq` et les métriques sont relus en base à chaque diffusion : le
-    // journal est écrit avant le changement de statut, donc les valeurs sont fraîches,
-    // et une transition de statut se compte en quelques-unes par tour. Aucun compteur
-    // en mémoire à tenir en plus.
+    // Reread `lastNotableSeq` and metrics on every broadcast: journals are written
+    // before status changes so values are fresh, and transitions occur only a few
+    // times per turn. No additional
+    // in-memory counters are needed.
     const row = this.db
       .select({
         lastNotableSeq: conversations.lastNotableSeq,
@@ -415,17 +368,7 @@ export class SessionManager {
     this.statusBus.emit('status', update)
   }
 
-  /**
-   * Enregistre le travail détaché qui continue pour une conversation.
-   *
-   * Trois écritures d'un seul geste : la mémoire, que le flux de statuts lit ; la ligne
-   * de conversation, seule visible depuis un autre process ; la diffusion, qui prévient
-   * les clients. Les séparer, c'est laisser une des trois se désynchroniser des deux
-   * autres, ce qui était déjà le cas avant que la base en fasse partie.
-   *
-   * Sans runner en mémoire, il n'y a rien à enregistrer : l'événement vient d'un process
-   * qui n'existe plus, et la remise à zéro du démontage a déjà eu lieu.
-   */
+  /** Records continuing detached work in three synchronized steps: memory read by status streams, conversation rows visible across processes and broadcasts notifying clients. Separating them risks divergence, already observed before database updates were added. Without in-memory runners, ignore events from vanished processes whose teardown resets already ran. */
   private setActivity(
     conversationId: string,
     patch: { background?: number; loops?: number },
@@ -445,13 +388,7 @@ export class SessionManager {
     this.broadcastStatus(conversationId, managed.status, true)
   }
 
-  /**
-   * Efface le travail détaché d'une conversation dont le process s'en va.
-   *
-   * Appelée au démontage d'un runner : les travaux de fond et les boucles appartiennent
-   * au process CLI, donc ils n'existent plus. Sans elle, la ligne garderait un compte
-   * non nul indéfiniment et la conversation passerait pour active à jamais.
-   */
+  /** Clears detached work when runner processes leave. Background work and loops belong to CLI processes and no longer exist; otherwise nonzero row counts would make conversations appear active forever. */
   private clearActivity(conversationId: string): void {
     this.db
       .update(conversations)
@@ -460,24 +397,7 @@ export class SessionManager {
       .run()
   }
 
-  /**
-   * Clôt au journal le travail détaché d'une conversation dont le process s'en va.
-   *
-   * Le pendant de `clearActivity` pour le fil : la remise à zéro de la ligne suffit à la
-   * sidebar, qui lit la base, mais pas à la page, qui ne connaît que le journal
-   * (invariant I2). Sans cette clôture, la dernière liste publiée par le CLI reste le
-   * dernier mot : un serveur de dev lancé en fond s'affichait vivant indéfiniment alors
-   * qu'il était mort avec le process qui le portait.
-   *
-   * Écrite ici plutôt que laissée à `session.ended`, que la boucle de lecture n'émet
-   * qu'en réagissant à l'abort, plus tard et sans que personne ne l'attende : un arrêt
-   * du daemon peut couper avant.
-   *
-   * Chaque travail est clos nommément, et non effacé par une liste vide silencieuse. Un
-   * shell peut avoir survécu au CLI (kill dur du seul daemon, sans le groupe de
-   * contrôle), et le fil doit alors dire qu'il a été arrêté avec la session plutôt que
-   * de laisser croire à une fin normale.
-   */
+  /** Journals detached-work closure when processes leave, complementing `clearActivity`. Row resets suffice for database-reading sidebars but journal-only pages need events (invariant I2); otherwise final CLI lists show dead dev servers as alive forever. Write now instead of waiting for asynchronous abort-driven `session.ended`, which daemon shutdown may preempt. Close each task explicitly rather than silently empty lists: shells may survive hard daemon-only kills outside cgroup termination, and history must say work ended with sessions rather than normally. */
   private closeDetachedWork(conversationId: string, hadLoops: boolean): void {
     const live = this.log.openBackgroundTasks(conversationId)
     for (const task of live) {
@@ -491,43 +411,27 @@ export class SessionManager {
       })
     }
     if (live.length > 0) this.log.append(conversationId, { type: 'background.updated', tasks: [] })
-    // Les boucles meurent avec le process comme le reste, et le CLI ne les inventorie
-    // qu'à la demande : rien d'autre ne viendrait éteindre la dernière liste connue.
+    // Loops die with processes too; CLIs list them only on demand,
+    // so nothing else clears their last known list.
     if (hadLoops) this.log.append(conversationId, { type: 'loops.updated', loops: [] })
   }
 
-  /** Combien de travaux de fond tournent pour cette conversation, à l'instant. */
+  /** Current number of background tasks for this conversation. */
   backgroundCount(conversationId: string): number {
     return this.runners.get(conversationId)?.background ?? 0
   }
 
-  /** Combien de boucles sont armées pour cette conversation, à l'instant. */
+  /** Current number of armed loops for this conversation. */
   loopCount(conversationId: string): number {
     return this.runners.get(conversationId)?.loops ?? 0
   }
 
-  /**
-   * La configuration sous laquelle le CLI tourne, `null` si aucun ne tourne.
-   *
-   * Elle diverge de celle enregistrée entre le moment où un réglage inapplicable à chaud
-   * est demandé et le redémarrage qui le prend en compte, en fin de tour.
-   */
+  /** Configuration the CLI is actually running, null without a running CLI. May differ from stored settings between requests for changes unsupported live and turn-end restarts applying them. */
   appliedConfig(conversationId: string): AgentConfig | null {
     return this.runners.get(conversationId)?.runner.appliedConfig ?? null
   }
 
-  /**
-   * Forke une conversation à un point du fil.
-   *
-   * `throughSeq` est le dernier événement conservé : la branche reprend l'historique
-   * jusque-là, et l'agent est ramené au même point côté CLI. Les deux doivent
-   * correspondre, sinon le fil afficherait une chose et l'agent se souviendrait d'une
-   * autre (invariant I2).
-   *
-   * Retourne l'identifiant natif de la session branchée, à écrire dans la nouvelle
-   * conversation. La copie du journal, elle, appartient à l'appelant : c'est lui qui
-   * crée la ligne de conversation.
-   */
+  /** Forks conversations at history points. `throughSeq` is the last retained event: native CLI state must resume at the same point, preventing display/memory disagreement (invariant I2). Returns native fork session IDs for new conversation rows. Callers create rows and copy journals. */
   async forkSession(conversationId: string, throughSeq: number): Promise<string> {
     const conversation = this.loadConversation(conversationId)
     if (!conversation.agentSessionId) {
@@ -538,8 +442,8 @@ export class SessionManager {
       )
     }
 
-    // Le point de coupe est propre à chaque CLI (entrée de transcript, tours à
-    // retirer...) : l'adaptateur le calcule depuis le journal et le consomme lui-même.
+    // Cut points are CLI-specific (transcript entries, rollback turns…):
+    // adapters calculate them from journals and consume them themselves.
     const adapter = this.registry.adapter(conversation.agent)
     return adapter.fork(
       { agentSessionId: conversation.agentSessionId, cwd: this.resolveCwd(conversation) },
@@ -551,16 +455,7 @@ export class SessionManager {
     this.notifier = notifier
   }
 
-  /**
-   * Notifie le propriétaire, sauf s'il a la conversation sous les yeux.
-   *
-   * Le socket est le seul signal fiable de présence : un onglet abonné à ce fil reçoit
-   * déjà l'événement en direct, lui envoyer en plus une notification système reviendrait
-   * à le prévenir de ce qu'il est en train de lire.
-   *
-   * Rien de ce qui se passe ici ne doit interrompre un agent (invariant I1), d'où
-   * l'absence de propagation d'erreur.
-   */
+  /** Notifies owners unless viewing conversations. Sockets are the only reliable presence signal: subscribed tabs already receive live events, so additional system pushes would announce content being read. Errors never propagate because notification failures must not interrupt agents (invariant I1). */
   private async notifyIfAway(conversationId: string, event: SillageEvent): Promise<void> {
     const notifier = this.notifier
     const title = NOTIFIABLE[event.type]
@@ -578,14 +473,14 @@ export class SessionManager {
         .where(eq(conversations.id, conversationId))
         .get()
       if (!conversation) return
-      // Un tir planifié qui finit n'a rien à annoncer : une tâche horaire sonnerait
-      // vingt-quatre fois par jour. Ses demandes de décision, elles, passent toujours,
-      // puisque le tir reste suspendu tant que personne n'y répond.
+      // Scheduled run completion needs no announcement: hourly tasks would notify
+      // twenty-four times daily. Decision requests always pass,
+      // because runs remain blocked until someone responds.
       if (conversation.scheduleId && event.type === 'turn.completed') return
       const request = REQUEST_KINDS[event.type]
 
-      // Visible sur la conversation : rien. Visible ailleurs : un toast pour une demande,
-      // rien pour une fin de tour, que la sidebar montre déjà. Absent : notification.
+      // Visible target conversation: nothing. Visible elsewhere: request toasts only,
+      // no turn-end toast because sidebars show it. Absent: system notification.
       await notifier.dispatch(conversation.userId, {
         kind: request ? 'cliRequest' : 'turnCompleted',
         conversationId,
@@ -593,8 +488,8 @@ export class SessionManager {
           title,
           body: conversation.title,
           url: `/p/${conversation.projectId}/c/${conversationId}`,
-          // Une conversation ne garde qu'une notification affichée : empiler « l'agent a
-          // terminé » cinq fois ne dit rien de plus que la dernière.
+          // Keep one displayed notification per conversation: five copies of 'agent finished'
+          // add nothing beyond the latest.
           tag: conversationId,
           kind: request ?? 'turnCompleted',
         },
@@ -610,8 +505,8 @@ export class SessionManager {
           : undefined,
       })
     } catch (err) {
-      // Une notification perdue n'est pas un incident de conversation, mais l'avaler
-      // en silence rendrait tout diagnostic impossible.
+      // Lost notifications are not conversation failures, but swallowing them
+      // silently would prevent diagnosis.
       process.stderr.write(
         `[push] notification non emise pour ${conversationId} : ${
           err instanceof Error ? err.message : String(err)
@@ -620,30 +515,23 @@ export class SessionManager {
     }
   }
 
-  /** Vrai si un process CLI tourne encore pour cette conversation. */
+  /** Whether a CLI process still runs for this conversation. */
   isWarm(conversationId: string): boolean {
     return this.runners.has(conversationId)
   }
 
-  /** Conversations dont un process CLI tourne, pour l'instantané d'un socket qui arrive. */
+  /** Conversations with running CLIs for new-socket snapshots. */
   warmConversationIds(): string[] {
     return [...this.runners.keys()]
   }
 
-  /** Vrai si un message envoyé maintenant n'atteindrait pas le CLI immédiatement. */
+  /** Whether messages sent now would not reach CLIs immediately. */
   private isBusy(conversationId: string): boolean {
     const status = this.runners.get(conversationId)?.status
     return status === 'running' || status === 'awaiting_input'
   }
 
-  /**
-   * Ce qui se joue au retour au repos : d'abord le redémarrage qu'un réglage attendait,
-   * ensuite seulement la file.
-   *
-   * Le redémarrage repasse par `setStatus('idle')`, qui rappelle cette méthode ; le
-   * drapeau est effacé avant, donc le second passage tombe directement sur la file, et
-   * le message en attente part vers un runner déjà reconfiguré.
-   */
+  /** On returning idle, apply pending restarts before flushing queues. Restarts call `setStatus('idle')` and reenter here; clear flags beforehand so reentry goes directly to queues and pending messages reach reconfigured runners. */
   private async settleIdle(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (managed?.pendingRestart) {
@@ -656,16 +544,10 @@ export class SessionManager {
     await this.flushQueue(conversationId)
   }
 
-  /**
-   * Envoie le premier message en attente, s'il y en a un.
-   *
-   * Un seul à la fois : `runner.send` repasse le statut à `running`, donc le suivant
-   * repartira au `turn.completed` d'après. Les envoyer tous d'un coup les fusionnerait
-   * dans un même tour, ce que la file existe justement pour éviter.
-   */
+  /** Sends the first queued message only. `runner.send` returns to `running`, so the next waits for another `turn.completed`. Sending everything together would merge messages into one turn, defeating queues. */
   private async flushQueue(conversationId: string): Promise<void> {
-    // Un tour a pu redémarrer entre l'annonce du statut et ce flush : le message
-    // reste alors en file, il repartira à la prochaine transition vers `idle`.
+    // Turns may restart between status announcements and flushing: leave messages
+    // queued until the next idle transition.
     if (this.isBusy(conversationId)) return
 
     const queue = this.queues.get(conversationId)
@@ -693,14 +575,7 @@ export class SessionManager {
     }
   }
 
-  /**
-   * Sort un message de la file pour l'injecter dans le tour en cours.
-   *
-   * Le message est retiré avant l'appel au CLI et remis à sa place si celui-ci refuse :
-   * un `steer` est asynchrone, et le laisser en file le temps de l'aller-retour
-   * l'exposerait à partir une seconde fois par `flushQueue`. Un refus le laisse donc
-   * là où il était, à attendre la fin du tour comme avant le clic.
-   */
+  /** Removes queued messages for injection into current turns. Remove before asynchronous CLI calls to prevent `flushQueue` sending them again during round trips; restore their positions on rejection, preserving original turn-end waits. */
   async steerQueued(
     conversationId: string,
     queueId: string,
@@ -736,7 +611,7 @@ export class SessionManager {
     return 'steered'
   }
 
-  /** Retire un message de la file avant qu'il ne parte. */
+  /** Removes queued messages before sending. */
   cancelQueued(conversationId: string, queueId: string): boolean {
     const queue = this.queues.get(conversationId)
     const index = queue?.findIndex((entry) => entry.queueId === queueId) ?? -1
@@ -753,28 +628,14 @@ export class SessionManager {
     return true
   }
 
-  /**
-   * Clôt les messages restés en file à l'arrêt du daemon.
-   *
-   * La file est en mémoire, donc ils sont perdus ; sans cet événement, le fil rejoué
-   * les afficherait indéfiniment comme en attente d'un envoi qui n'aura jamais lieu.
-   */
+  /** Closes messages left queued at daemon shutdown. Memory queues are lost; without events, replay would show them pending forever for sends that cannot happen. */
   private expireQueuedMessages(conversationId: string): void {
     for (const queueId of this.log.openQueuedMessages(conversationId)) {
       this.log.append(conversationId, { type: 'message.dequeued', queueId, reason: 'expired' })
     }
   }
 
-  /**
-   * Le jeton du compte Claude que la conversation désigne, dans la variable que le CLI
-   * fait passer devant sa connexion enregistrée (sondé sur 2.1.296). Rien pour la
-   * connexion du CLI, ni pour un autre agent.
-   *
-   * Un compte introuvable, supprimé depuis ou désigné par le préréglage d'un projet
-   * partagé alors qu'il appartient à un autre utilisateur, ne bloque pas le lancement :
-   * la session part sur la connexion du CLI, et le fil le dit, parce que c'est un autre
-   * abonnement qui va payer le tour.
-   */
+  /** Selected Claude account tokens placed in variables taking precedence over stored CLI authentication (probed 2.1.296). Nothing for CLI-default authentication or other agents. Missing/deleted/foreign shared-project account references do not block startup: fall back to CLI login and disclose it in history because a different subscription pays. */
   private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
     if (config.agent === 'opencode' || !config.account) return {}
     const missing = (code: string, message: string) => {
@@ -789,14 +650,14 @@ export class SessionManager {
           "Le compte Claude choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
         )
       }
-      // Les deux passent devant la connexion enregistrée du CLI ; en mode non
-      // interactif, la clé API est prise sans qu'on le demande (sondé sur 2.1.296).
+      // Both override stored CLI authentication; noninteractive API keys are accepted
+      // without prompts (probed 2.1.296).
       return resolved.kind === 'apiKey'
         ? { ANTHROPIC_API_KEY: resolved.token }
         : { CLAUDE_CODE_OAUTH_TOKEN: resolved.token }
     }
-    // Grok : même parti que Codex, un `GROK_HOME` par compte, dont seule la connexion lui
-    // est propre. Un compte jamais connecté vaut un compte absent.
+    // Grok follows Codex: per-account `GROK_HOME` with account-specific authentication.
+    // Never-connected accounts count as absent.
     if (config.agent === 'grok') {
       const account = this.grokAccounts.store.find(conversation.userId, config.account)
       if (!account || account.status !== 'ready') {
@@ -809,8 +670,8 @@ export class SessionManager {
       }
       return { GROK_HOME: this.grokAccounts.homes.ensure(account.id) }
     }
-    // Codex : le home du compte, dont seul `auth.json` lui est propre. Un compte jamais
-    // connecté vaut un compte absent : sans `auth.json`, l'app-server refuserait le tour.
+    // Codex account home, where only auth.json is account-specific. Accounts never
+    // connected count as absent: without auth.json, app-servers reject turns.
     const account = this.codexAccounts.store.find(conversation.userId, config.account)
     if (!account || account.status !== 'ready') {
       return missing(
@@ -830,8 +691,8 @@ export class SessionManager {
     const adapter = this.registry.adapter(conversation.agent)
     const config = parseAgentConfig(conversation.config)
     const cwd = this.resolveCwd(conversation)
-    // Relu à chaque appel et non figé ici : le mode peut changer entre deux lancements
-    // d'un même runner, et pour un projet d'avant le réglage il dépend du dossier.
+    // Reread on every call rather than fix here: modes may change between runner
+    // starts and depend on directory contents for legacy projects.
     const instructions = () => {
       const project = this.db
         .select({ instructionsMode: projects.instructionsMode, workspacePath: projects.workspacePath, memoryMode: projects.memoryMode })
@@ -840,9 +701,9 @@ export class SessionManager {
         .get()
       return project ? { ...project, mode: resolveInstructionsMode(project) } : null
     }
-    // Créé et, la première fois, rempli de la mémoire que Claude tenait pour ce
-    // workspace : sans l'import, déplacer son dossier lui ferait tout oublier. Null en
-    // mode natif : chaque CLI garde alors la sienne, et Sillage n'en parle pas.
+    // Create and initially import prior Claude workspace memory:
+    // without import, moving directories would erase learning. Null in native
+    // mode: each CLI retains its own memory and Sillage injects nothing.
     const memoryDir = () => {
       const project = instructions()
       if (project?.memoryMode === 'native') return null
@@ -853,24 +714,24 @@ export class SessionManager {
       conversationId,
       cwd,
       config,
-      // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
-      // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Sillage
-      // installe les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc
-      // les installations faites depuis l'interface.
+      // Resolve once here rather than in each runner: Codex passes this to `spawn`,
+      // which searches PATH but ignores Sillage's managed installation
+      // prefix. Bare runner names would miss
+      // interface-installed CLIs.
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
       processEnv: {
         ...processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId),
-        // Dit à Claude Code que c'est un hôte local qui l'a planifié, et non une
-        // personne qui l'a ouvert (sondé sur 2.1.291). Les autres CLI l'ignorent.
+        // Tells Claude Code a local host scheduled it rather than a person opening it
+        // (probed 2.1.291). Other CLIs ignore this.
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
         ...this.accountEnv(conversation, config),
       },
-      // Le serveur de Sillage passe en dernier : l'ordre départage deux serveurs qui
-      // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
-      // l'emporter sur celui que la plateforme ajoute d'elle-même.
+      // Sillage's server goes last: order resolves duplicate tool names,
+      // and user-declared servers must win
+      // over platform-added servers.
       resolveMcpServers: (current) => {
         const resolved = resolveMcpServers(this.db, this.secrets, current.mcpServers)
         const builtin = builtinMcpServer({
@@ -884,18 +745,18 @@ export class SessionManager {
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },
 
-      // Suit les mêmes interrupteurs que le serveur MCP, sauf `strictMcp` : celui-ci
-      // dit « pas d'autre serveur que ceux que j'ai déclarés », ce qui parle des outils
-      // et non de ce que Sillage raconte de son propre état.
+      // Follow MCP server switches except `strictMcp`, which excludes undeclared
+      // servers and therefore concerns tools rather than
+      // Sillage's descriptions of platform state.
       //
-      // SILLAGE.md passe devant et hors de ces interrupteurs : ce sont les consignes de
-      // l'utilisateur, pas un apport de Sillage qu'on choisirait de couper.
+      // SILLAGE.md bypasses these switches: user instructions are not optional
+      // platform additions.
       projectOverview: (current) => {
         const sillageMcp = builtinMcpEnabled(this.config.mcp.sillageServer, current)
-        // Le contexte transmis par la conversation que celle-ci continue, dans le
-        // même canal que SILLAGE.md et hors de tout interrupteur : c'est l'historique
-        // de ce fil, pas un apport de Sillage. Relu à chaque démarrage parce que le
-        // CLI repart sans lui à chaque reprise, comme pour les consignes.
+        // Source-conversation handoff context uses the same channel as SILLAGE.md,
+        // outside all switches: this is the conversation's history,
+        // not platform additions. Reread at every start because CLIs lose it
+        // on resume, like instructions.
         const handoff = this.db
           .select({ text: conversationHandoffs.text })
           .from(conversationHandoffs)
@@ -908,8 +769,8 @@ export class SessionManager {
             mode: instructions()?.mode ?? 'repo',
             sillageMcp,
           }),
-          // Claude charge l'index de sa mémoire de lui-même ; Codex et opencode n'ont que
-          // ce qu'on leur dit. Rien en mode natif.
+          // Claude loads its memory index itself; Codex and opencode have only
+          // the information supplied explicitly. Nothing in native mode.
           memoryDirOrNull(conversation.agent, memoryDir(), sillageMcp),
           this.config.mcp.sillageServer && current.sillageMcp
             ? projectOverview(this.db, {
@@ -936,17 +797,17 @@ export class SessionManager {
       emit: (event: SillageEvent, raw?: unknown) => {
         this.log.append(conversationId, event, raw, adapter.rawFormat)
         void this.notifyIfAway(conversationId, event)
-        // Le journal suffit au fil ouvert, qui le replie ; la liste des conversations et
-        // tout lecteur hors de ce process n'ont que la ligne de conversation pour savoir
-        // qu'un travail continue ailleurs.
+        // Journals suffice for open conversations folding events; conversation lists and
+        // other processes have only conversation rows to determine
+        // that work continues elsewhere.
         if (event.type === 'background.updated') {
           this.setActivity(conversationId, { background: event.tasks.length })
         }
         if (event.type === 'loops.updated') {
           this.setActivity(conversationId, { loops: event.loops.length })
         }
-        // Le CLI ré-émet son init quand le modèle change en cours de session : la
-        // dernière valeur reçue est celle qui répondra encore une fois le fil refroidi.
+        // CLIs reemit initialization on live model changes:
+        // retain the latest value for reads after sessions cool.
         if (event.type === 'session.started') {
           this.db
             .update(conversations)
@@ -954,8 +815,8 @@ export class SessionManager {
             .where(eq(conversations.id, conversationId))
             .run()
         }
-        // Le contexte n'accompagne pas tous les relevés d'usage : sans cette garde, le
-        // premier qui en est dépourvu effacerait le seul chiffre connu.
+        // Not every usage update includes context: without this guard, the first missing
+        // value would erase the only known figure.
         if (event.type === 'usage.updated' && event.context) {
           this.db
             .update(conversations)
@@ -969,18 +830,18 @@ export class SessionManager {
         if (event.type === 'file.edited') {
           this.checkpoints.get(conversationId)?.edited.add(event.path)
         }
-        // La fin du tour et la fin de la capture sont deux jalons : la capture part
-        // ici sans être attendue, le statut retombe sans elle.
+        // Turn completion and snapshot completion are separate milestones: start capture
+        // here without awaiting; status becomes idle independently.
         if (event.type === 'turn.completed' || event.type === 'session.ended') {
           this.closeCheckpoint(conversationId)
         }
         if (event.type === 'turn.completed') {
           this.log.refreshTurnCount(conversationId)
-          // Le CLI ne résume la session qu'une fois le tour fini : c'est le premier
-          // moment où un titre utile existe.
+          // CLIs summarize sessions only after turns finish,
+          // the first moment useful titles exist.
           void this.adoptSuggestedTitle(conversationId)
-          // Incrément SQL et non addition en mémoire : `conversation` est la ligne lue
-          // à la création du runner, repartir d'elle écraserait les tours précédents.
+          // SQL increments rather than memory additions: `conversation` was read at runner
+          // creation, so reusing it would overwrite previous turns.
           this.db
             .update(conversations)
             .set({
@@ -1052,19 +913,14 @@ export class SessionManager {
     }
   }
 
-  /**
-   * Libère une place quand le plafond de sessions est atteint. On arrête le runner
-   * inactif le plus ancien : il repartira en reprise au prochain message, sans que
-   * l'utilisateur perde quoi que ce soit. Si tout tourne, on refuse explicitement
-   * plutôt que de dépasser le budget mémoire de la machine.
-   */
+  /** Makes room at session limits by stopping the oldest idle runner, which resumes on the next message without user loss. Reject when all work rather than exceed machine memory budgets. */
   private async makeRoom(): Promise<void> {
-    // Relu à chaque démarrage plutôt que gardé : le plafond se change depuis l'écran
-    // des réglages, et une valeur capturée à la construction attendrait un redémarrage.
+    // Reread limits at every start: settings are editable through the interface,
+    // whereas constructor-captured values would wait for restart.
     const limit = readAppSettings(this.db, this.config).maxConcurrentSessions
 
-    // Une boucle et non un seul arrêt : le plafond se baisse depuis l'interface, et
-    // les runners déjà vivants peuvent alors être plus nombreux que la place restante.
+    // Loop rather than stop once: lowering limits through the interface can leave
+    // more live runners than available capacity.
     while (this.runners.size >= limit) {
       const idle = [...this.runners.entries()]
         .filter(([, managed]) => managed.status === 'idle' || managed.status === 'interrupted')
@@ -1088,9 +944,9 @@ export class SessionManager {
     const existing = this.runners.get(conversation.id)
     if (existing) return existing.runner
 
-    // Un seul démarrage à la fois par conversation : `makeRoom` cède la main, et deux
-    // envois concurrents lanceraient chacun leur process CLI, dont un fuirait sans
-    // jamais être arrêté.
+    // Only one startup per conversation: `makeRoom` yields control, so concurrent sends
+    // could launch duplicate CLIs,
+    // one leaking forever.
     const inFlight = this.startingRunners.get(conversation.id)
     if (inFlight) return inFlight
 
@@ -1104,7 +960,7 @@ export class SessionManager {
   private async startRunner(conversationId: string): Promise<AgentRunner> {
     await this.makeRoom()
 
-    // Relu depuis la base : agentSessionId a pu être renseigné par un runner précédent.
+    // Reread from the database: previous runners may have set agentSessionId.
     const fresh = this.loadConversation(conversationId)
     const context = this.buildContext(fresh)
     const runner = this.registry.adapter(fresh.agent).createRunner(context)
@@ -1122,8 +978,8 @@ export class SessionManager {
     try {
       await runner.start()
     } catch (err) {
-      // Un runner qui n'a pas démarré ne doit pas occuper la place d'un vivant : le
-      // prochain envoi retenterait sinon sur un process qui n'existe pas.
+      // Failed starts must not occupy live slots; otherwise later sends would retry
+      // nonexistent processes.
       this.runners.delete(conversationId)
       this.clearActivity(conversationId)
       await runner.stop().catch(() => undefined)
@@ -1146,31 +1002,11 @@ export class SessionManager {
       () => this.reapIfIdle(conversationId),
       this.config.limits.sessionIdleTimeoutMin * 60 * 1000,
     )
-    // Un runner en veille ne doit pas maintenir le process en vie à lui seul.
+    // Idle runners alone must not keep processes alive.
     managed.idleTimer.unref()
   }
 
-  /**
-   * Échéance du délai d'inactivité.
-   *
-   * Le compteur ne court que sur les actions de l'utilisateur : il expirait donc aussi
-   * au milieu d'un tour long, où l'agent travaille seul sans rien demander, et le
-   * coupait net. Un tour en cours n'est pas de l'inactivité, on réarme.
-   *
-   * Une sollicitation ouverte non plus, et c'est `isBusy` qui le dit pour tout le
-   * monde. Le CLI est arrêté sur son appel d'outil et ne consomme rien tant qu'on ne
-   * lui a pas répondu. La récolter perdait la question, tuait la session et laissait le
-   * tour figé, au terme d'un délai qui n'était même pas le délai entier : il courait
-   * depuis la dernière action de l'utilisateur, donc le travail de l'agent avant sa
-   * question en mangeait la moitié sans que rien ne l'annonce. Une demande attend une
-   * intervention humaine, aussi longtemps qu'il le faut.
-   *
-   * Le travail détaché non plus : un serveur de dev lancé en fond tourne dans le process
-   * du CLI, et le récolter le tuait sans que rien ne le demande, une demi-heure après le
-   * dernier message. Vérifié à part de `isBusy`, qui garde son sens de « le CLI a la
-   * main » pour la file d'attente et le pilotage : une conversation qui porte un serveur
-   * de dev reste parfaitement disponible pour recevoir un message.
-   */
+  /** Inactivity deadline. User actions alone advance timers, so long autonomous turns previously expired and were interrupted: rearm while busy. Pending requests are also busy, as `isBusy` consistently reports. Waiting CLI tool calls consume nothing, and reaping lost questions and killed sessions after timers partly consumed by prior agent work; human requests must wait as long as needed. Detached work also counts: background dev servers live within CLI processes and must not die thirty minutes after messages. Check separately from `isBusy`, whose queue/control meaning remains 'CLI has control'; conversations hosting dev servers are still available for messages. */
   private reapIfIdle(conversationId: string): void {
     const managed = this.runners.get(conversationId)
     if (!managed) return
@@ -1183,23 +1019,12 @@ export class SessionManager {
     void this.stopRunner(conversationId)
   }
 
-  /**
-   * Résout les chemins mentionnés en chemins absolus, sous le répertoire de travail.
-   *
-   * La mention arrive du client : un `../` la ferait pointer n'importe où sur le
-   * disque du serveur. On rejette au lieu de tronquer, pour que l'agent ne reçoive
-   * jamais un fichier différent de celui qui a été désigné.
-   */
+  /** Resolves client mentions to absolute paths within working directories. Reject escaping `../` rather than truncate so agents never receive files different from those named. */
   private resolveMentions(cwd: string, relativePaths: string[]): OutgoingMention[] {
     return relativePaths.map((relativePath) => resolveMention(cwd, relativePath))
   }
 
-  /**
-   * Retient un identifiant de message client, et dit s'il est nouveau (invariant I5).
-   *
-   * La fenêtre est en mémoire : un doublon ne peut venir que d'un renvoi réseau à
-   * quelques secondes d'intervalle, jamais d'un autre process.
-   */
+  /** Records client message IDs and reports whether new (invariant I5). Memory windows suffice because duplicates are network retries seconds apart, never other processes. */
   private claimClientMessage(conversationId: string, clientMessageId: string): boolean {
     const key = `${conversationId}:${clientMessageId}`
     const now = Date.now()
@@ -1211,22 +1036,12 @@ export class SessionManager {
     return true
   }
 
-  /**
-   * Rend un identifiant réclamé mais jamais porté : l'envoi a échoué avant d'atteindre
-   * le CLI, et un renvoi légitime du client ne doit pas être avalé comme un doublon.
-   */
+  /** Releases claimed but undelivered IDs when sends fail before reaching CLIs, so legitimate retries are not swallowed as duplicates. */
   private releaseClientMessage(conversationId: string, clientMessageId: string): void {
     this.recentClientMessages.delete(`${conversationId}:${clientMessageId}`)
   }
 
-  /**
-   * Infléchit le tour en cours plutôt que d'ouvrir le suivant.
-   *
-   * Retourne false quand ce n'est pas possible : CLI sans équivalent, session arrêtée,
-   * ou tour déjà terminé entre l'affichage du bouton et le clic. L'appelant le dit
-   * alors franchement, plutôt que de basculer en file d'attente dans le dos de
-   * l'utilisateur : les deux gestes ne produisent pas le même résultat.
-   */
+  /** Steers current turns instead of opening new ones. False for unsupported CLIs, stopped sessions or turns finishing before clicks. Callers explain rather than silently queue: these actions have different outcomes. */
   async steer(
     conversationId: string,
     clientMessageId: string,
@@ -1235,11 +1050,11 @@ export class SessionManager {
     mentions: string[] = [],
     skills: string[] = [],
   ): Promise<boolean> {
-    // Un renvoi réseau ne doit pas infléchir deux fois : le premier a déjà porté.
+    // Network retries must not steer twice: the first already delivered.
     if (!this.claimClientMessage(conversationId, clientMessageId)) return true
 
-    // Un steer refusé ou échoué n'a pas porté : l'appelant retombe sur un envoi
-    // ordinaire avec le même identifiant, qui ne doit pas être pris pour un doublon.
+    // Rejected or failed steering delivered nothing: callers fall back to
+    // ordinary sends using the same ID, which must not count as duplicates.
     let steered = false
     try {
       const managed = this.runners.get(conversationId)
@@ -1266,8 +1081,8 @@ export class SessionManager {
   ): Promise<void> {
     if (!this.claimClientMessage(conversationId, clientMessageId)) return
 
-    // Un tour est en cours : le message attend la fin plutôt que d'être poussé au CLI,
-    // où il se mêlerait au contexte du tour courant.
+    // During active turns, messages wait rather than enter CLIs
+    // and mix into current-turn context.
     if (this.isBusy(conversationId)) {
       const queueId = randomUUID()
       const queue = this.queues.get(conversationId) ?? []
@@ -1287,14 +1102,14 @@ export class SessionManager {
     try {
       await this.deliver(conversationId, text, attachments, mentions, skills)
     } catch (err) {
-      // L'envoi n'a pas atteint le CLI : rendre l'identifiant permet au client de
-      // renvoyer le même message sans qu'il soit avalé par la déduplication.
+      // Sends failed before reaching CLIs: release IDs so clients can retry
+      // without deduplication swallowing their messages.
       this.releaseClientMessage(conversationId, clientMessageId)
       throw err
     }
   }
 
-  /** Transmet réellement le message au CLI, en démarrant le runner si besoin. */
+  /** Actually delivers messages to CLIs, starting runners when necessary. */
   private async deliver(
     conversationId: string,
     text: string,
@@ -1303,13 +1118,13 @@ export class SessionManager {
     skills: string[],
   ): Promise<void> {
     const conversation = this.loadConversation(conversationId)
-    // Résolu avant de démarrer le runner : une mention invalide doit faire échouer
-    // l'envoi, pas laisser une session lancée avec un message perdu.
+    // Resolve before starting runners: invalid mentions must reject sends
+    // rather than leave launched sessions with lost messages.
     const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
 
     const runner = await this.ensureRunner(conversation)
-    // Après le démarrage du runner, qui peut prendre des secondes, et juste avant
-    // l'envoi : la capture doit être au plus près du premier geste de l'agent.
+    // After potentially slow runner startup, immediately before sending:
+    // capture as close as possible to the agent's first action.
     await this.openCheckpoint(conversation)
     try {
       await runner.send(text, attachments, resolved, skills)
@@ -1320,12 +1135,7 @@ export class SessionManager {
     this.touch(conversationId)
   }
 
-  /**
-   * Capture l'état du workspace avant le tour, si le projet le demande.
-   *
-   * Un échec n'empêche jamais le message de partir : la capture est un confort, le
-   * tour est le travail. Hors dépôt git, rien n'est tenté ni signalé.
-   */
+  /** Captures pre-turn workspace state when enabled. Failure never blocks delivery: snapshots are convenience; turns are the work. Outside git, do nothing silently. */
   private async openCheckpoint(conversation: ConversationRow): Promise<void> {
     if (this.checkpoints.has(conversation.id)) return
     const project = this.db
@@ -1349,12 +1159,7 @@ export class SessionManager {
     this.log.append(conversation.id, { type: 'checkpoint.started', key })
   }
 
-  /**
-   * Capture l'état d'après et journalise ce que le tour a changé, sans bloquer.
-   *
-   * Le point est retiré de la table avant la capture : un message en file peut ouvrir
-   * le tour suivant pendant qu'elle tourne, et il lui faut son propre point.
-   */
+  /** Captures post-turn state and journals changes without blocking. Remove open checkpoints before capture because queued messages may start another turn needing its own checkpoint meanwhile. */
   private closeCheckpoint(conversationId: string): void {
     const active = this.checkpoints.get(conversationId)
     if (!active) return
@@ -1385,19 +1190,12 @@ export class SessionManager {
         })
       }
     })().catch((err: unknown) => {
-      // La conversation a pu être supprimée pendant la capture : plus de journal où écrire.
+      // Conversations may disappear during capture, leaving no journal to write.
       console.warn(`[checkpoints] capture après le tour perdue (${conversationId}) :`, err)
     })
   }
 
-  /**
-   * Ramène le workspace à l'état d'avant un tour.
-   *
-   * Refusé pendant un tour : l'agent écrirait dans des fichiers qu'on est en train de
-   * remettre. Sérialisé avec les actions de l'onglet Git, qui touchent le même dépôt.
-   * L'agent, lui, garde le souvenir du tour : c'est le fork, proposé à côté, qui
-   * ramène aussi la conversation en arrière.
-   */
+  /** Restores pre-turn workspace state. Reject during active turns to avoid racing agent writes. Serialize with Git tab actions on the same repository. Agents still remember the turn; adjacent fork actions also rewind conversation context. */
   async restoreCheckpoint(
     conversationId: string,
     key: string,
@@ -1422,7 +1220,7 @@ export class SessionManager {
     return result
   }
 
-  /** Donne à une branche les captures de sa source, pour que son journal recopié y mène. */
+  /** Gives forks source snapshots so copied journal markers resolve. */
   async inheritCheckpoints(fromId: string, toId: string): Promise<void> {
     try {
       await copyCheckpoints(this.workingDirectory(toId), fromId, toId)
@@ -1431,7 +1229,7 @@ export class SessionManager {
     }
   }
 
-  /** Retire les captures d'une conversation qu'on supprime ou qu'on range. Jamais bloquant. */
+  /** Removes deleted/archived conversation snapshots without blocking. */
   async dropCheckpoints(conversationId: string): Promise<void> {
     this.checkpoints.delete(conversationId)
     try {
@@ -1441,12 +1239,7 @@ export class SessionManager {
     }
   }
 
-  /**
-   * Compacte le contexte de la conversation.
-   *
-   * Un runner arrêté est relancé : compacter demande la session chargée, et la reprise
-   * est de toute façon ce qui se passerait au message suivant.
-   */
+  /** Compacts conversation context. Restart cold runners because compaction requires loaded sessions and the next message would resume them anyway. */
   async compact(conversationId: string): Promise<boolean> {
     if (this.isBusy(conversationId)) {
       throw new HttpError(
@@ -1463,13 +1256,7 @@ export class SessionManager {
     return compacted
   }
 
-  /**
-   * Arrête un travail de fond de la conversation.
-   *
-   * Contrairement à `compact`, un runner arrêté n'est pas relancé : les travaux de
-   * fond meurent avec le process CLI, donc sans runner il n'y a rien à arrêter et
-   * relancer la session n'y changerait rien.
-   */
+  /** Stops background conversation work. Unlike compaction, do not restart cold runners: background work dies with CLI processes, leaving nothing to stop. */
   async stopBackgroundTask(conversationId: string, taskId: string): Promise<boolean> {
     const managed = this.runners.get(conversationId)
     if (!managed) return false
@@ -1485,13 +1272,7 @@ export class SessionManager {
     await managed.runner.interrupt()
   }
 
-  /**
-   * Arrête pour de bon une conversation que personne ne surveille : le tour en cours,
-   * puis le process, travaux de fond et boucles compris.
-   *
-   * `interrupt` seul ne suffit pas à un tir planifié qui déborde : il rend la main au
-   * CLI, dont un travail de fond ou une boucle continuerait de tourner sans limite.
-   */
+  /** Permanently stops unwatched conversations: turn, process, background work and loops. `interrupt` alone leaves CLI-hosted work alive indefinitely, unsuitable for overlong scheduled runs. */
   async terminate(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (managed) {
@@ -1499,7 +1280,7 @@ export class SessionManager {
       this.expireOpenPrompts(conversationId)
       await this.stopRunner(conversationId)
     }
-    // Le CLI n'a pas toujours eu le temps d'annoncer la fin du tour avant de mourir.
+    // CLIs may die before announcing turn completion.
     const { status } = this.loadConversation(conversationId)
     if (status === 'running' || status === 'awaiting_input') this.setStatus(conversationId, 'interrupted')
   }
@@ -1548,8 +1329,8 @@ export class SessionManager {
         and(
           eq(permissionRequests.id, requestId),
           eq(permissionRequests.conversationId, conversationId),
-          // Une demande déjà tranchée n'est plus en attente : sans ce filtre, elle
-          // passerait pour ouverte et l'appelant répondrait « expirée » à tort.
+          // Resolved requests are no longer pending: otherwise callers would incorrectly
+          // reply 'expired' to already answered requests.
           eq(permissionRequests.status, 'pending'),
         ),
       )
@@ -1557,11 +1338,7 @@ export class SessionManager {
     return row !== undefined
   }
 
-  /**
-   * Reprend le titre proposé par le CLI, tant que l'utilisateur n'a pas renommé
-   * lui-même. Évite le « Nouvelle conversation » générique sans jamais écraser un
-   * choix explicite.
-   */
+  /** Adopts CLI-proposed titles unless users renamed conversations, avoiding generic 'New conversation' without overwriting explicit choices. */
   private async adoptSuggestedTitle(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (!managed) return
@@ -1584,18 +1361,7 @@ export class SessionManager {
     this.statusBus.emit('title', { conversationId, title })
   }
 
-  /**
-   * Applique la configuration relue en base. Le SDK sait changer modèle, effort et
-   * mode de permission à chaud, donc la session garde son contexte ; on ne retombe
-   * sur l'arrêt du runner (et la reprise au message suivant) que si le CLI refuse.
-   *
-   * Le cas connu est `bypassPermissions`, que Claude Code ne règle qu'au lancement, dans
-   * les deux sens. Y entrer échoue franchement : `set_permission_mode` répond « the
-   * session was not launched with --dangerously-skip-permissions ». En sortir est tout
-   * aussi impossible mais réussit en apparence, d'où le refus explicite du runner. Le
-   * redémarrage attend la fin du tour, parce que couper là perd le travail en cours pour
-   * un réglage qui vaut pour la suite.
-   */
+  /** Applies reread database configuration. SDK live model, effort and permission updates preserve context; stop and resume only on CLI rejection. Known exception: Claude `bypassPermissions` changes require startup in both directions. Entering explicitly fails ('the session was not launched with --dangerously-skip-permissions'); leaving apparently succeeds but is ineffective, so runners reject explicitly. Delay restart until turn completion to avoid losing ongoing work for future settings. */
   async reloadConfig(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (!managed) return
@@ -1612,8 +1378,8 @@ export class SessionManager {
       reason = err instanceof Error ? err.message : String(err)
     }
     if (applied) {
-      // Un réglage revenu à une valeur applicable à chaud annule le redémarrage promis :
-      // le laisser armé relancerait la session en fin de tour pour rien.
+      // Returning settings to live-applicable values cancels promised restarts:
+      // otherwise sessions would restart needlessly after turns.
       managed.pendingRestart = null
       return
     }
@@ -1632,13 +1398,7 @@ export class SessionManager {
     await this.restartForConfig(conversationId, reason)
   }
 
-  /**
-   * Fait relire la bibliothèque de skills aux sessions ouvertes qu'une écriture concerne :
-   * toutes pour la portée globale (`null`), celles du projet sinon.
-   *
-   * Sans attendre et sans échouer : l'écriture a réussi, et une session qui ne recharge
-   * pas verra le changement à sa prochaine reprise.
-   */
+  /** Reloads skills in affected open sessions: all for global scope (`null`), project sessions otherwise. Fire and forget without failure: writes already succeeded and unsuccessful reloads apply on next resume. */
   reloadSkillLibrary(projectId: string | null): void {
     for (const [conversationId, managed] of this.runners) {
       if (projectId !== null) {
@@ -1657,16 +1417,11 @@ export class SessionManager {
     }
   }
 
-  /**
-   * Arrête le runner pour qu'il reparte avec la configuration à jour.
-   *
-   * Le repli est visible dans le fil plutôt qu'avalé : redémarrer la session a un coût
-   * réel (contexte rechargé) et l'utilisateur doit savoir pourquoi.
-   */
+  /** Stops runners to reload current configuration. Explain fallback in conversations because reloading context has real cost users should understand. */
   private async restartForConfig(conversationId: string, reason: string | null): Promise<void> {
-    // La file survit : le prochain envoi la trouvera, et `deliver` démarrera un runner
-    // neuf qui lira la configuration à jour. Expirer les messages ici les perdrait pour
-    // un redémarrage qui, lui, ne perd rien.
+    // Queues survive: the next send finds them, and `deliver` starts fresh runners
+    // with current configuration. Expiring messages would lose them
+    // for restarts that otherwise lose nothing.
     await this.stopRunner(conversationId, { keepQueue: true })
     this.log.append(conversationId, {
       type: 'error',
@@ -1677,18 +1432,7 @@ export class SessionManager {
     this.setStatus(conversationId, 'idle')
   }
 
-  /**
-   * Arrête le runner d'une conversation, s'il tourne, et dit s'il a bien été libéré.
-   *
-   * Utilisé par la resynchronisation depuis le transcript CLI : un process encore
-   * chaud garde en mémoire un contexte qui ignore les tours faits au CLI, alors
-   * qu'une reprise repart du fichier, qui a tout.
-   *
-   * Refuse tant qu'un tour est en cours. L'appelant vérifie le statut avant de lire le
-   * transcript sur disque, mais un tour peut démarrer entre les deux : couper là perd
-   * le tour, et fait écrire au CLI un `[Request interrupted by user]` que la
-   * resynchronisation suivante relit comme un message. C'est le direct qui fait foi.
-   */
+  /** Stops running conversation runners and reports release. Transcript resynchronization needs this because warm context ignores external CLI turns, while resume loads complete files. Refuse active turns: although callers check before reading, turns may start meanwhile; interruption loses work and adds `[Request interrupted by user]` messages later reimported. Live activity takes precedence. */
   async releaseRunner(conversationId: string): Promise<boolean> {
     if (this.isBusy(conversationId)) return false
 
@@ -1696,10 +1440,7 @@ export class SessionManager {
     return true
   }
 
-  /**
-   * `keepQueue` sert au redémarrage volontaire, où un runner neuf reprend juste après :
-   * la file y garde un sens. Partout ailleurs l'arrêt est un point final.
-   */
+  /** `keepQueue` preserves queues for intentional restarts immediately followed by fresh runners. Other stops are final. */
   private async stopRunner(
     conversationId: string,
     { keepQueue = false }: { keepQueue?: boolean } = {},
@@ -1707,8 +1448,8 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (!managed) return
 
-    // Les messages en attente ne partiront pas : le runner s'arrête. Les laisser en
-    // file les rendrait invisiblement perdus au prochain message.
+    // Pending messages cannot depart after runner shutdown: leaving them queued
+    // would silently lose them at the next message.
     if (!keepQueue) {
       for (const entry of this.queues.get(conversationId) ?? []) {
         this.log.append(conversationId, {
@@ -1724,13 +1465,13 @@ export class SessionManager {
     this.clearActivity(conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
     await managed.runner.stop()
-    // Après l'arrêt : le CLI ne publiera plus de liste par-dessus celle qu'on écrit, et
-    // l'écriture est synchrone, donc elle tient même quand le daemon s'arrête juste
-    // derrière.
+    // After shutdown, CLIs can no longer overwrite our final list;
+    // synchronous writes persist even when daemon shutdown
+    // follows immediately.
     this.closeDetachedWork(conversationId, managed.loops > 0)
 
-    // Le statut ne bouge pas quand un runner expire : sans cette diffusion, l'UI
-    // continuerait d'annoncer une session chaude qui n'existe plus.
+    // Runner expiry does not change status: broadcast cold state or interfaces
+    // would keep showing nonexistent warm sessions.
     this.broadcastStatus(conversationId, managed.status, false)
   }
 

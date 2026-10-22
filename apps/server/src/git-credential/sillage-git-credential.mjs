@@ -1,20 +1,4 @@
-/**
- * Helper de credentials git de Sillage.
- *
- * Git l'interroge chaque fois qu'un dépôt cloné par Sillage a besoin de s'authentifier :
- * le `fetch` d'un agent, le `push` que tu lances dans un terminal, le clone lui-même.
- * Il reçoit l'hôte sur son entrée standard et rend le couple utilisateur / jeton.
- *
- * En `.mjs` plutôt qu'en TypeScript compilé, comme le serveur MCP intégré : le process
- * est lancé par git, pas par Sillage, et le garder hors du graphe de modules du serveur
- * évite qu'il n'embarque un jour la moitié de l'application par un import distrait.
- *
- * Il lit la base et déchiffre lui-même, plutôt que de recevoir un jeton par son
- * environnement ou d'appeler l'API HTTP. Rien à faire circuler, rien à écrire en clair
- * sur le disque, et révoquer une credential dans Sillage prend effet au prochain appel
- * de git. Le format de chiffrement est celui de `secrets/cipher.ts`, réimplémenté ici :
- * toute évolution là-bas doit être répercutée ici.
- */
+/** Sillage git credential helper. Git invokes it for authentication in Sillage clones: agent fetches, terminal pushes and cloning itself. Reads hosts from stdin and returns username/token pairs. Keep `.mjs` outside the compiled server graph, like bundled MCP, because git launches it directly and accidental imports must not bundle half the application. Reads the database and decrypts locally instead of receiving environment tokens or calling HTTP: no circulating or plaintext disk secrets, and revocation applies on the next git call. Duplicates `secrets/cipher.ts` encryption format; changes there must be mirrored here. */
 import { createDecipheriv } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
@@ -27,18 +11,11 @@ function argValue(name) {
   return index === -1 ? undefined : process.argv[index + 1]
 }
 
-/**
- * L'opération est le dernier argument, et pas le premier : git l'ajoute à la fin de la
- * commande configurée, derrière les arguments que Sillage y a mis.
- *
- * Il n'attend une réponse que pour `get`. `store` et `erase` doivent être acceptés en
- * silence : les credentials vivent dans Sillage, et git n'a rien à y écrire ni à en
- * effacer. Sortir en erreur ferait échouer l'opération git elle-même.
- */
+/** Operation is the final argument: git appends it after Sillage's configured arguments. Only `get` expects replies. Accept `store` and `erase` silently because credentials belong to Sillage and git must not mutate them. Error exits would fail the git operation itself. */
 const operation = process.argv[process.argv.length - 1]
 if (operation !== 'get') process.exit(0)
 
-/** Les clés du protocole arrivent en `clé=valeur`, terminées par une ligne vide. */
+/** Protocol keys arrive as `key=value`, terminated by a blank line. */
 async function readRequest() {
   const request = {}
   const lines = createInterface({ input: process.stdin })
@@ -55,8 +32,8 @@ const request = await readRequest()
 const host = (request.host ?? '').toLowerCase()
 if (!host) process.exit(0)
 
-// Le port fait partie de `host` quand il y en a un, alors que la credential est
-// enregistrée sur l'hôte seul.
+// host includes the port when present, whereas credentials are
+// stored against the host alone.
 const hostname = host.replace(/:\d+$/, '')
 
 const databasePath = argValue('--db')
@@ -76,8 +53,8 @@ const row = db
   .get(ownerId, hostname)
 db.close()
 
-// Aucune credential pour cet hôte : sortir muet laisse git suivre son cours, essayer
-// ses propres helpers, et finir sur son message d'authentification habituel.
+// No credential for this host: silent exit lets git continue with its own helpers
+// and eventually its ordinary authentication error.
 if (!row) process.exit(0)
 
 const key = Buffer.from(readFileSync(keyPath, 'utf8').trim(), 'base64')
@@ -91,9 +68,9 @@ try {
     decipher.final(),
   ]).toString('utf8')
 } catch (err) {
-  // Une ligne présente qui ne se déchiffre pas n'est pas une credential absente : c'est
-  // une clé qui ne correspond pas à la base. Le dire, sinon git affiche un banal refus
-  // d'authentification et la vraie cause reste introuvable.
+  // Undecryptable existing rows are not missing credentials: the key does not match
+  // the database. Explain this; otherwise git reports generic authentication failure
+  // and obscures the real cause.
   console.error(
     `sillage-git-credential : la credential de ${hostname} ne se déchiffre pas (${err.message}). ` +
       'La clé de chiffrement ne correspond pas à la base.',

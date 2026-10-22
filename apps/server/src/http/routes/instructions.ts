@@ -23,17 +23,7 @@ import { forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { visibleProject } from './projects.js'
 
-/**
- * SILLAGE.md, édité depuis l'interface.
- *
- * Mêmes droits que la bibliothèque de skills : tout compte lit la partie globale et
- * seuls les administrateurs l'écrivent, puisqu'elle entre dans toutes les sessions de
- * l'instance ; les membres d'un projet lisent la sienne, son propriétaire l'écrit.
- *
- * Une écriture vaut pour les sessions qui démarrent ensuite. Claude enregistre son prompt
- * système au premier échange et le rejoue tel quel à la reprise : une session déjà
- * ouverte garde la version qu'elle a reçue jusqu'à sa prochaine compaction.
- */
+/** SILLAGE.md edited through the interface. Permissions match the skill library: everyone reads global instructions, only administrators write them because they enter every session; project members read project instructions and owners edit them. Writes affect subsequently started sessions. Claude records its system prompt at the first exchange and reuses it when resuming; open sessions retain their version until their next compaction. */
 export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext): void {
   const requireProject = (projectId: string, user: UserRow): ProjectRow => {
     const project = visibleProject(ctx, projectId, user.id)
@@ -91,12 +81,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
     return projectDto(project, user)
   })
 
-  /**
-   * Change le mode, le contenu, ou les deux d'un coup : c'est ce que fait la migration
-   * depuis les fichiers du dépôt, qui importe leur texte et bascule dans le même geste.
-   * Écrire le contenu d'un projet d'avant le réglage fixe son mode à `sillage`, faute de
-   * quoi un `AGENTS.md` apparu plus tard ferait taire ce qui vient d'être écrit.
-   */
+  /** Changes mode, content or both: repository-file migration imports text and switches mode together. Writing content for a project predating this setting selects `sillage`, otherwise a later `AGENTS.md` would silence the newly written instructions. */
   app.patch('/api/projects/:id/instructions', async (request): Promise<ProjectInstructionsDto> => {
     const user = requireUser(request)
     let project = requireProject((request.params as { id: string }).id, user)
@@ -113,12 +98,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
     return projectDto(project, user)
   })
 
-  /**
-   * Écrit un fichier de consignes du dépôt, à la racine du workspace.
-   *
-   * Seuls `AGENTS.md` et `CLAUDE.md` passent, par le schéma : cette route n'est pas un
-   * éditeur de fichiers, elle évite d'en ouvrir un pour la seule chose qu'on y relit.
-   */
+  /** Writes a repository instruction file at the workspace root. The schema allows only `AGENTS.md` and `CLAUDE.md`: this route avoids opening a file editor solely to review instructions, rather than serving as a general editor. */
   app.put(
     '/api/projects/:id/instructions/repo-file',
     async (request): Promise<RepoInstructionFileDto> => {

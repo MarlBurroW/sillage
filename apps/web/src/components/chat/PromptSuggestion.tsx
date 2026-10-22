@@ -5,12 +5,9 @@ import { useTranslate } from '../../lib/i18n'
 import { IconButton } from '../ui'
 
 /**
- * Le message suivant que le CLI prédit, proposé sous le fil, au-dessus de la saisie.
- *
- * Un tap le pose dans la barre de saisie sans l'envoyer : la suggestion vaut un
- * brouillon, pas une décision. Elle disparaît d'elle-même dès qu'un tour repart,
- * puisque l'état qui la porte est remis à zéro par le fold ; ignorer ne fait que la
- * cacher plus tôt, et seulement celle-là, la suivante reviendra.
+ * Predicted next message below the thread above input. Tapping creates a draft, never sends. Fold
+ * resets clear suggestions on the next turn; dismiss only hides this one sooner, not future
+ * suggestions.
  */
 export function PromptSuggestion({ text, disabled }: { text: string; disabled: boolean }) {
   const t = useTranslate()

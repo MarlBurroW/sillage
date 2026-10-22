@@ -1,35 +1,30 @@
 /**
- * Largeur du tiroir de détail d'une carte, publiée en variable CSS.
- *
- * Séparée de celle du panneau d'outils d'une conversation (`sillage.sheetWidth`) parce
- * que les deux ne servent pas la même chose : celui-là doit loger un explorateur et un
- * éditeur côte à côte, celui-ci une description et une liste de sessions. Partager la
- * valeur ferait qu'élargir l'un élargit l'autre sans qu'on l'ait demandé.
+ * Card detail drawer width published as a CSS variable. Separate from conversation tools
+ * (`sillage.sheetWidth`): that panel needs explorer and editor side by side, while this drawer
+ * needs description and sessions. Sharing would resize both when users adjust only one.
  */
 
 const WIDTH_KEY = 'sillage.cardPanelWidth'
 
-/** En deçà, le titre d'une session et sa branche ne tiennent plus sur une ligne. */
+/** Below this width a session title and branch no longer fit on a line. */
 const MIN_WIDTH = 480
 
-/** Ce qui reste du board derrière le tiroir, pour qu'une colonne garde une prise. */
+/** Board space left behind the drawer so a column remains accessible. */
 const MIN_BOARD = 200
 
 function maxWidth(): number {
   return Math.max(MIN_WIDTH, window.innerWidth - MIN_BOARD)
 }
 
-/** Une fiche assez large pour écrire, avec une partie du board toujours visible. */
+/** A sheet wide enough for writing while preserving some visible board. */
 function defaultWidth(): number {
   return Math.min(680, Math.round(window.innerWidth * 0.52))
 }
 
 /**
- * Écrit la largeur retenue et la renvoie, bornes appliquées.
- *
- * En variable CSS plutôt qu'en état React : le glissement émet un événement par image,
- * et re-rendre le board entier à chacun rendrait la poignée pâteuse. `persist` n'est
- * vrai qu'en fin de geste, une écriture par image dans `localStorage` étant synchrone.
+ * Write and return the clamped width. Use CSS rather than React state: dragging emits events per
+ * frame, and rerendering the whole board would lag. `persist` is true only on release because
+ * `localStorage` writes are synchronous.
  */
 export function setCardPanelWidth(px: number, persist: boolean): number {
   const width = Math.round(Math.min(maxWidth(), Math.max(MIN_WIDTH, px)))

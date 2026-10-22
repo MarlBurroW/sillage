@@ -5,12 +5,9 @@ import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
- * Ce qu'un tour a changé dans le dépôt, en une ligne sous le tour.
- *
- * Un repère et non une bulle : il ne dit rien que le tour n'ait déjà dit, il ouvre
- * seulement sur le diff et sur le retour en arrière. Un tour sans changement n'en a
- * pas, et une capture manquée non plus : le fil n'a pas à annoncer ce qu'il ne peut
- * pas montrer.
+ * Single-line turn changes beneath the turn. A marker rather than a bubble, linking to
+ * diff/restoration without adding narrative. Omit unchanged turns and failed snapshots because the
+ * thread should not advertise unavailable content.
  */
 export function TurnChanges({
   checkpoint,
@@ -19,7 +16,7 @@ export function TurnChanges({
 }: {
   checkpoint: TurnCheckpoint
   onShow: (checkpoint: TurnCheckpoint) => void
-  /** Absent quand le lecteur ne peut pas toucher au dépôt : conversation partagée. */
+  /** Absent for readers unable to modify repositories, such as shared conversations. */
   onRestore?: (checkpoint: TurnCheckpoint) => void
 }) {
   const t = useTranslate()
@@ -31,7 +28,7 @@ export function TurnChanges({
     <div
       data-checkpoint={checkpoint.key}
       className={cx(
-        // Bordure gauche à angles droits : un repère de marge, pas une carte.
+        // Sharp-cornered left border: margin marker rather than card.
         'my-1 flex flex-wrap items-center gap-x-2 gap-y-1 border-l-2 py-1 pl-3 text-[0.75rem] text-ink-faint',
         checkpoint.restored ? 'border-ink-faint/40' : 'border-accent/50',
       )}

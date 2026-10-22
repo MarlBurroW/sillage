@@ -8,15 +8,7 @@ import { migrationsFolder, runPendingMigrations } from '../migrations.js'
 import { loadOrCreateKey } from '../secrets/cipher.js'
 import { SecretStore } from '../secrets/store.js'
 
-/**
- * Contrôle du chemin des secrets, sur une base jetable.
- *
- * Contrairement à `mcp-probe`, cette vérification ne lance aucun CLI et ne coûte aucun
- * tour de modèle : elle est déterministe et peut se relancer à volonté. Elle couvre ce
- * qu'on ne veut pas découvrir en production, à savoir qu'une valeur chiffrée ne se
- * retrouve pas en clair dans le fichier de base, que la substitution atteint bien
- * l'en-tête transmis, et qu'un secret manquant écarte le serveur en le nommant.
- */
+/** Secret-path checks on disposable databases. Unlike `mcp-probe`, deterministic without CLIs or model turns and safe to repeat. Verifies encrypted values never appear plaintext in database files, substitutions reach transmitted headers, and missing secrets exclude servers by name rather than discovering failures in production. */
 
 const dir = mkdtempSync(join(tmpdir(), 'sillage-secret-'))
 const { db } = openDatabase(join(dir, 'check.db'))

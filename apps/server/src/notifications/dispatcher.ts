@@ -3,38 +3,28 @@ import type { InAppNotification, NotificationKind, PushPayload } from '@sillage/
 import type { PushService } from '../push/push-service.js'
 import { readUserSettings } from '../settings/user-settings.js'
 
-/**
- * Ce que le hub WebSocket sait des onglets ouverts, et lui seul : lesquels sont
- * visibles, ce qu'ils regardent, et à quel abonnement push correspond leur appareil.
- */
+/** Open-tab state known only by the WebSocket hub: visibility, viewed content and the push subscription corresponding to each device. */
 export interface Presence {
-  /** Abonnements push des appareils où l'application est visible, pour ce compte. */
+  /** Push subscriptions for devices where this account's application is visible. */
   visibleEndpoints(userId: string): Set<string>
-  /** Un onglet visible de ce compte a cette conversation sous les yeux. */
+  /** A visible tab belonging to this account is viewing this conversation. */
   watchesVisibly(conversationId: string, userId: string): boolean
-  /** Un toast pour chaque onglet visible de ce compte. */
+  /** One toast per visible tab belonging to this account. */
   toast(userId: string, notification: InAppNotification): void
-  /** Les décisions de ce compte ont changé : ses onglets relisent la liste. */
+  /** This account's decisions changed: its tabs reload the list. */
   decisionsChanged(userId: string): void
 }
 
 export interface OutgoingNotification {
   kind: NotificationKind
   push: PushPayload
-  /** Absent : pas de toast, seulement la notification système (une fin de tour). */
+  /** Absent: no toast, only a system notification (turn completion). */
   toast?: InAppNotification
-  /** La conversation concernée : si elle est sous les yeux, rien ne part. */
+  /** Target conversation: suppress notifications when it is already being viewed. */
   conversationId?: string
 }
 
-/**
- * Aiguille une notification : toast sur l'appareil où l'application est visible,
- * notification système sur les autres, jamais les deux au même endroit, et rien du
- * tout si la conversation est déjà regardée. Le compte peut couper chaque sorte.
- *
- * Le tri se fait ici et pas dans le service worker : Safari exige que chaque push
- * affiche une notification, et retire l'abonnement d'une application qui en escamote.
- */
+/** Routes notifications: toast on devices with the app visible, system notification on others, never both on the same device, and nothing when the conversation is being viewed. Accounts may disable each kind. Filter here rather than in the service worker: Safari requires every push to display a notification and unsubscribes apps that suppress them. */
 export class Notifications {
   private presence: Presence | null = null
 

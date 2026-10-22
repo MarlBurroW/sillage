@@ -88,22 +88,21 @@ import { useWorktrees } from '../lib/worktrees'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 
 /**
- * Chargé à la demande : l'éditeur embarque CodeMirror, et le mettre dans le paquet
- * initial ferait payer à chaque ouverture de conversation un panneau qu'on n'ouvre pas
- * toujours.
+ * Lazy-loaded: the editor bundles CodeMirror, and including it initially would charge every
+ * conversation opening for a panel users may never open.
  */
 const SidePanel = lazy(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
 )
 
-/** Instance unique : une liste vide recréée à chaque rendu ferait rendre le panneau. */
+/** Singleton: recreating an empty list on every render would rerender the panel. */
 const NO_BACKGROUND: BackgroundWork[] = []
 const NO_LOOPS: ArmedLoop[] = []
 
-/** Ce que l'en-tête garde : les états sous lesquels ce qu'on lit n'est plus à jour. */
+/** Header-retained states indicating that displayed content is no longer current. */
 const HEADER_SIGNALS = new Set<SignalKind>(['error', 'interrupted', 'offline'])
 
-/** Assez lâche pour une ancienneté affichée à la minute, assez court pour ne pas mentir. */
+/** Infrequent enough for minute-level age display, frequent enough to stay truthful. */
 const TICK_MS = 30_000
 
 function useTicker(active: boolean): number {
@@ -118,30 +117,28 @@ function useTicker(active: boolean): number {
   return now
 }
 
-/** Marge sous laquelle on considère que l'utilisateur suit le bas du fil. */
+/** Distance within which the user is considered to be following the thread bottom. */
 const STICKY_THRESHOLD_PX = 120
 
-/** Doit couvrir l'animation `sg-flash-turn`, sinon l'anneau est coupé net. */
+/** Must cover the `sg-flash-turn` animation, otherwise the ring cuts off abruptly. */
 const FLASH_DURATION_MS = 1500
 
 /**
- * Au-delà, le rejeu du journal cesse d'être instantané et s'annonce.
+ * Beyond this, journal replay is no longer instant and needs an indicator.
  *
- * Le fil est masqué le temps qu'il se construise, ce qui suffit tant que c'est l'affaire
- * d'une image ou deux. Un fil de vingt mille événements demande une quarantaine de pages
- * enchaînées, le curseur d'une page étant le dernier `seq` de la précédente, et le
- * masquage seul y rendrait l'écran mort. Assez long pour qu'une conversation ordinaire
- * s'ouvre sans jamais le montrer.
+ * Hide the thread while it builds, sufficient for one or two frames. A twenty-thousand-event
+ * thread requires roughly forty sequential pages, each cursor derived from the previous page's
+ * last `seq`; hiding alone would make the screen look dead. Delay long enough that ordinary
+ * conversations open without ever showing it.
  */
 const SLOW_REPLAY_MS = 400
 
 /**
- * Ramène le fil tout en bas.
+ * Scroll the thread all the way down.
  *
- * La position visée est calculée plutôt que laissée au rognage d'un `scrollTop` trop
- * grand, et reposée à la frame suivante : la hauteur du fil bouge encore après le saut,
- * le temps que les blocs de code et les images se mettent en place, et viser une hauteur
- * périmée laisse le fil arrêté avant sa fin.
+ * Calculate the target instead of relying on clamping an oversized `scrollTop`, then reapply
+ * next frame: code blocks and images still change thread height after the jump, and targeting
+ * an outdated height stops short of the end.
  */
 function scrollToBottom(node: HTMLElement): void {
   node.scrollTop = node.scrollHeight - node.clientHeight
@@ -154,56 +151,53 @@ export function ConversationPage() {
   const t = useTranslate()
   const { conversationId } = useParams()
   const navigate = useNavigate()
-  // Brouillon transmis par un fork : le message coupé revient dans la barre de saisie.
+  // Draft passed by a fork: the cut message returns to the composer.
   const draft = (useLocation().state as { draft?: string } | null)?.draft ?? ''
   const queryClient = useQueryClient()
   const { data: user } = useCurrentUser()
   const { data: conversation } = useConversation(conversationId)
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
-  // Être sur la page vaut lecture : la sidebar n'a plus à signaler ce qu'on regarde.
+  // Viewing the page counts as reading: the sidebar need not flag what is already visible.
   //
-  // Le `seq` de la ligne prime sur celui du fil replié : ouvrir une conversation, c'est
-  // en prendre acte entièrement, et non à hauteur de ce qui a fini d'arriver. Le journal
-  // se charge par pages, et s'en remettre à lui laissait une visite courte sur un long
-  // fil marquée à sa première page seulement, donc toujours signalée en non lu. Le fil
-  // reprend la main dès qu'il dépasse : c'est lui qui avance pendant un tour.
+  // The row's `seq` takes precedence over the folded thread: opening a conversation
+  // acknowledges all of it, not just what has arrived. Journal loading is paginated,
+  // and relying on it marked a short visit to a long thread as read only through
+  // the first page, leaving it unread. The thread takes over once it advances
+  // past the row, since it progresses during a turn.
   useTrackRead(conversationId, Math.max(conversation?.lastSeq ?? 0, stream.state.lastSeq))
-  // Le catalogue porte la nature du compte : elle décide si un montant a un sens.
-  // Comme tous les hooks, il doit rester avant le premier retour anticipé. La sonde
-  // démarre le CLI côté serveur : elle ne part que pour l'agent de la conversation.
+  // The catalog carries account type, determining whether a monetary amount is meaningful.
+  // Like all hooks, keep this before the first early return. Probing starts the CLI
+  // server-side, so only probe the conversation's agent.
   const { data: catalog } = useAgentModels(conversation?.agent ?? 'claude', Boolean(conversation))
   const { data: worktrees } = useWorktrees(conversation?.projectId)
-  // Déjà chargée pour la sidebar : la provenance d'une branche s'y trouve sans requête
-  // supplémentaire.
+  // Already loaded for the sidebar: fork origin is available without an extra
+  // request.
   const { data: allConversations } = useAllConversations()
 
   const scroller = useRef<HTMLDivElement>(null)
   const [stuckToBottom, setStuckToBottom] = useState(true)
   /**
-   * Position lue au dernier événement de défilement, pour reconnaître un geste de lecture.
+   * Position from the last scroll event, used to recognize a reading gesture.
    *
-   * Le suivi du bas ne peut pas se déduire de la seule distance au bas du fil : le
-   * contenu s'agrandit encore après avoir été collé, un bloc de code se colorant ou une
-   * image se posant, et l'événement du collage est alors traité contre une hauteur qui a
-   * déjà bougé. Le fil passait pour quitté, le suivi se coupait, et le direct continuait
-   * sans le lecteur, plusieurs écrans plus bas. Une hauteur qui grandit ne fait jamais
-   * baisser `scrollTop`, et un collage ne fait que l'augmenter : seul un geste vers le
-   * haut décolle désormais le fil.
+   * Following the bottom cannot rely solely on distance to it: content continues growing after
+   * snapping, as code highlights or images load, so the snap event is processed against an
+   * already changed height. The thread appeared abandoned, follow mode stopped, and live output
+   * continued screens below the reader. Growing height never lowers `scrollTop`, and snapping
+   * only raises it: now only an upward gesture detaches the thread.
    */
   const lastTop = useRef(0)
   /**
-   * Le fil est en place et peut se montrer.
+   * The thread is positioned and ready to show.
    *
-   * Faux pendant tout le rejeu du journal : le fil s'y construit par paquets, à une
-   * position qui ne veut encore rien dire, et le donner à voir dans cet état revient à
-   * montrer l'échafaudage. Faux aussi le temps d'un changement de conversation, où le
-   * fil précédent est encore monté.
+   * False throughout journal replay: content is built in batches at a meaningless position, and
+   * exposing it would show scaffolding. Also false during conversation switches while the
+   * previous thread remains mounted.
    */
   const [placed, setPlaced] = useState(false)
-  /** Le rejeu dure assez pour qu'un fil masqué passe pour un écran mort. */
+  /** Replay has lasted long enough for a hidden thread to look like a dead screen. */
   const [slowReplay, setSlowReplay] = useState(false)
 
-  /** Position de chaque tour dans le fil, alimentée par les messages utilisateur. */
+  /** Each turn's position in the thread, populated from user messages. */
   const turnAnchors = useRef(new Map<string, HTMLElement>())
   const [visibleTurns, setVisibleTurns] = useState<Set<string>>(() => new Set())
   const visibilityFrame = useRef<number | null>(null)
@@ -219,32 +213,31 @@ export function ConversationPage() {
     [subAgents],
   )
   /**
-   * Le journal peut rester sur un travail de fond que plus rien ne fait tourner : un
-   * démon tué net n'écrit pas la fin de session qui l'aurait éteint. Une session
-   * froide n'a plus de process, donc plus de travail de fond, quoi qu'en dise le fil.
+   * The journal may retain background work no process runs anymore: an abruptly killed daemon
+   * cannot write the session-end event. Cold sessions have no process and thus no background
+   * work, regardless of the thread.
    */
   const background = useMemo(
     () => (stream.warm === false ? NO_BACKGROUND : buildBackground(stream.state)),
     [stream.warm, stream.state],
   )
-  /** Même raison que le travail de fond : une tâche planifiée ne tire que si le CLI vit. */
+  /** Same reason as background work: scheduled tasks run only while the CLI is alive. */
   const loops = useMemo(
     () => (stream.warm === false ? NO_LOOPS : buildLoops(stream.state)),
     [stream.warm, stream.state],
   )
   /**
-   * Réveillé périodiquement pour que l'ancienneté du dernier réveil d'une boucle ne
-   * fige pas. Sans boucle armée, aucun signal ne dépend de l'heure et le minuteur ne
-   * tourne pas.
+   * Periodic wakeup keeps last-loop-wakeup age current. Without armed loops no signal depends
+   * on time, so the timer stays stopped.
    */
   const now = useTicker(loops.length > 0)
-  // Relu par le schéma plutôt que casté : une configuration enregistrée avant un
-  // nouveau champ récupère ainsi ses valeurs par défaut au lieu d'arriver trouée.
-  // Déclaré ici et non après les retours anticipés, où il vivait : la rangée de signaux
-  // en a besoin, et un hook ne peut pas se déclarer plus bas.
+  // Read through the schema rather than casting: configurations saved before new
+  // fields gain defaults rather than arriving with holes.
+  // Declared here, not after early returns as before: the signal row needs it,
+  // and hooks cannot be declared farther down.
   const { config, error: configError, change: updateConfig, retry: retryConfig, flush: flushConfig } = useConversationConfig(conversation)
-  // Le catalogue décrit la connexion du CLI ; une conversation sur une clé API d'un
-  // compte supplémentaire est, elle, facturée à l'usage, et le montant y a un sens.
+  // The catalog describes CLI login; conversations using an additional account's API
+  // key are usage-billed, where a monetary amount does make sense.
   const { data: claudeAccounts } = useClaudeAccounts(conversation?.agent === 'claude')
   const accountKind = claudeAccounts?.accounts.find((entry) => entry.id === usageAccountOf(config))?.kind ?? null
   const billingAccount =
@@ -252,8 +245,8 @@ export function ConversationPage() {
       ? { subscriptionType: null, organization: null, billedBySubscription: false }
       : catalog?.account
   /**
-   * Le mode de permission que le CLI applique encore, quand ce n'est pas celui choisi.
-   * Null le reste du temps, donc aucun signal à afficher.
+   * Permission mode still applied by the CLI when it differs from the chosen one. Otherwise
+   * null, with no signal to display.
    */
   const pendingPermission = useMemo(
     () => (config ? appliedPermissionLabel(config, stream.appliedConfig, t) : null),
@@ -284,42 +277,42 @@ export function ConversationPage() {
   )
   const [usageOpen, setUsageOpen] = useState(false)
   const [forking, setForking] = useState(false)
-  /** Message dont le fork est proposé : le geste est trop peu courant pour être direct. */
+  /** Message offered for forking: too uncommon an action to trigger directly. */
   const [forkTarget, setForkTarget] = useState<MessageItem | null>(null)
-  /** Tour dont on propose de défaire les changements du workspace. */
+  /** Turn whose workspace changes are proposed for undo. */
   const [restoreTarget, setRestoreTarget] = useState<TurnCheckpoint | null>(null)
-  /** Échec d'une action ponctuelle sur la conversation : fork, compaction. */
+  /** Failure of a one-off conversation action: fork or compaction. */
   const [actionError, setActionError] = useState<string | null>(null)
   const [compacting, setCompacting] = useState(false)
-  /** Dernier tour atteint par un saut, mis en évidence le temps qu'on le repère. */
+  /** Last turn reached by a jump, highlighted briefly for orientation. */
   const [flashed, setFlashed] = useState<string | null>(null)
   const [metaOpen, setMetaOpen] = useState(false)
-  /** Dialogue « Continuer dans un autre CLI » : le geste change d'outil, il se confirme. */
+  /** “Continue in another CLI” dialog: switching tools requires confirmation. */
   const [handoffOpen, setHandoffOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
   const [instructionsOpen, setInstructionsOpen] = useState(false)
 
-  /** Nombre de lignes montées, en partant de la fin. Voir `thread-window`. */
+  /** Mounted row count, from the end. See `thread-window`. */
   const [windowSize, setWindowSize] = useState(INITIAL_WINDOW_ROWS)
-  /** Position du fil avant un dépliage, pour la reposer une fois le début inséré. */
+  /** Thread position before expansion, restored after inserting earlier content. */
   const scrollAnchor = useRef<{ height: number; top: number } | null>(null)
-  /** Tour visé alors qu'il n'était pas monté : le saut part une fois qu'il l'est. */
+  /** Target turn not yet mounted: jump once it is mounted. */
   const pendingJump = useRef<string | null>(null)
 
-  // Une autre conversation repart de la fin, sinon elle s'ouvrirait dépliée d'autant de
-  // lignes que la précédente, sans rapport avec sa propre longueur.
+  // A different conversation starts from the end; otherwise it would open with as
+  // many expanded rows as the previous one, unrelated to its own length.
   //
-  // Avant peinture, et `placed` avec : la page n'est pas remontée d'un fil à l'autre,
-  // donc au premier rendu du nouvel identifiant le fil précédent est encore monté, à sa
-  // position, et se donnerait à voir le temps d'une image sous le nouveau titre.
+  // Before paint, resetting `placed` too: the page is not remounted between threads,
+  // so the new ID's first render still contains the old thread at its old position,
+  // which would briefly appear under the new title.
   useLayoutEffect(() => {
     setWindowSize(INITIAL_WINDOW_ROWS)
     setPlaced(false)
   }, [conversationId])
 
-  // L'indicateur n'est armé qu'une fois le fil masqué, et désarmé dès qu'il se montre :
-  // sur une conversation ordinaire le minuteur n'arrive jamais à son terme, et rien ne
-  // clignote entre deux fils.
+  // Arm the indicator only after hiding the thread, and disarm when shown:
+  // ordinary conversations never reach the timeout, so nothing flashes
+  // between threads.
   useEffect(() => {
     setSlowReplay(false)
     if (placed) return
@@ -328,14 +321,14 @@ export function ConversationPage() {
   }, [placed, conversationId])
 
   const view = useMemo(
-    // La recherche dans le fil parcourt le DOM : avec une fenêtre, elle chercherait
-    // dans un fil tronqué et annoncerait moins d'occurrences qu'il n'y en a. Tant
-    // qu'elle est ouverte, tout est monté.
+    // Thread search traverses the DOM: windowing would search truncated content and
+    // report too few matches. Keep everything mounted while search
+    // is open.
     () => windowRows(rows, findOpen ? Number.POSITIVE_INFINITY : windowSize),
     [rows, windowSize, findOpen],
   )
 
-  /** Monte une ligne restée avant la fenêtre. Faux si elle n'est pas dans le fil. */
+  /** Mount a row preceding the window. False if absent from the thread. */
   const reveal = useCallback(
     (itemId: string) => {
       const needed = windowToReveal(rows, itemId)
@@ -352,7 +345,7 @@ export function ConversationPage() {
     setWindowSize((size) => size + WINDOW_STEP_ROWS)
   }, [])
 
-  /** Message visé par un résultat de recherche, une fois le fil chargé. */
+  /** Message targeted by a search result, once the thread loads. */
   const [searchParams] = useSearchParams()
   const anchorSeq = Number(searchParams.get('seq'))
   const hasAnchor = Number.isInteger(anchorSeq) && anchorSeq > 0
@@ -362,15 +355,14 @@ export function ConversationPage() {
   const panel = usePanelPresence()
   const panelLayout = usePanelLayout()
   const { data: projects } = useProjects()
-  // Le fil entier accepte les fichiers, pas seulement la barre de saisie : c'est sur la
-  // conversation qu'on lâche une capture d'écran, et viser un champ de 40 pixels de haut
-  // au doigt ou à la souris n'a rien d'évident.
+  // The entire thread accepts files, not just the composer: users drop screenshots
+  // onto the conversation, and aiming for a 40-pixel-high field is difficult
+  // with either touch or a mouse.
   const drop = useFileDrop(conversation !== undefined && conversation.userId === user?.id)
 
   /**
-   * Tours dont la région croise la zone affichée. La région d'un tour va de son
-   * message utilisateur au suivant : c'est ce qui permet à un long tour de rester
-   * mis en évidence tant qu'on est encore dedans.
+   * Turns whose regions intersect the viewport. A turn spans from its user message to the next,
+   * keeping long turns highlighted while reading anywhere within them.
    */
   const syncVisibleTurns = useCallback(() => {
     const node = scroller.current
@@ -389,20 +381,19 @@ export function ConversationPage() {
       if (end > top && anchor.top < bottom) next.add(anchor.id)
     })
 
-    // Un nouvel ensemble à chaque événement de défilement redessinerait la réglette
-    // en continu : on ne remplace l'état que s'il a réellement changé.
+    // A new set on every scroll event would continuously redraw the ruler:
+    // replace state only when it actually changes.
     setVisibleTurns((current) =>
       current.size === next.size && [...next].every((id) => current.has(id)) ? current : next,
     )
   }, [])
 
   /**
-   * Retient l'endroit lu, pour rouvrir la conversation là où on l'a laissée.
+   * Remember the reading position to reopen where the user left off.
    *
-   * Le repère est le message le plus haut affiché : les éléments sont dans l'ordre du
-   * document, donc le dernier dont le sommet est passé au-dessus du bord est celui
-   * qu'on est en train de lire. Aucun au-dessus veut dire qu'on est avant le premier
-   * message, et le premier fait alors l'affaire.
+   * Use the topmost displayed message: elements follow document order, so the last whose top
+   * passed above the edge is the current message. None above means the reader precedes the
+   * first message, which then suffices.
    */
   const rememberScroll = useCallback(
     (node: HTMLElement) => {
@@ -430,20 +421,20 @@ export function ConversationPage() {
 
   const onScroll = useCallback(() => {
     const node = scroller.current
-    // Tant que le fil se construit, ses hauteurs bougent à chaque paquet replié et le
-    // collage se repose à chaque fois : les événements de défilement qui en découlent
-    // ne disent rien de l'intention de qui lit, et les prendre pour tels décollait le
-    // fil de son bas avant même qu'il ne s'affiche.
+    // While the thread builds, heights change with each folded batch and snapping
+    // is reapplied. Resulting scroll events say nothing about reader intent;
+    // treating them as intentional detached the thread from its bottom
+    // before it even appeared.
     if (!node || !placed) return
 
-    // Une marge d'un pixel : le défilement est fractionnaire sur mobile, et le bruit
-    // d'arrondi d'une inertie qui descend passerait sinon pour une remontée.
+    // One-pixel tolerance: mobile scrolling is fractional, and rounding noise during
+    // downward momentum would otherwise look like upward movement.
     const top = node.scrollTop
     const wentUp = top < lastTop.current - 1
     lastTop.current = top
 
-    // Le bas l'emporte : il vaut aussi quand le contenu rétrécit et que le navigateur
-    // rogne `scrollTop`, ce qui fait bien remonter la position sans qu'on ait défilé.
+    // The bottom takes precedence: it also applies when content shrinks and the browser
+    // clamps `scrollTop`, moving the position upwards without user scrolling.
     if (node.scrollHeight - top - node.clientHeight < STICKY_THRESHOLD_PX) setStuckToBottom(true)
     else if (wentUp) setStuckToBottom(false)
 
@@ -461,26 +452,26 @@ export function ConversationPage() {
       if (!node) return
 
       const anchor = turnAnchors.current.get(id)
-      // La réglette liste tous les tours, y compris ceux restés avant la fenêtre : on
-      // les monte, et le saut repart de l'effet de mise en page une fois l'ancre posée.
+      // The ruler lists all turns, including those before the window: mount them, then
+      // resume the jump from the layout effect once the anchor exists.
       if (!anchor) {
         if (reveal(id)) pendingJump.current = id
         return
       }
 
-      // `scrollTo` plutôt que `scrollIntoView` : ce dernier fait aussi défiler les
-      // conteneurs parents, donc la page entière sur mobile.
+      // `scrollTo`, not `scrollIntoView`: the latter also scrolls parent containers,
+      // including the entire page on mobile.
       node.scrollTo({ top: anchor.offsetTop - 12, behavior: 'smooth' })
-      // Sur un fil dense, arriver quelque part sans savoir où l'on a atterri ne vaut
-      // guère mieux que de ne pas s'être déplacé : le message atteint se signale.
+      // In dense threads, landing without knowing where is little better than not moving:
+      // highlight the destination message.
       setFlashed(id)
     },
     [reveal],
   )
 
-  // Saut différé le temps que le tour visé soit monté, et repositionnement du fil
-  // après un dépliage. Les deux sont des corrections de défilement à faire avant
-  // peinture, sinon le fil part au mauvais endroit puis se rattrape à l'écran.
+  // Delay jumps until the target turn mounts, and reposition after expansion.
+  // Both scroll corrections must precede paint; otherwise the thread visibly
+  // starts in the wrong place then corrects itself.
   useLayoutEffect(() => {
     const node = scroller.current
     if (!node) return
@@ -490,8 +481,8 @@ export function ConversationPage() {
       const anchor = turnAnchors.current.get(jump)
       if (!anchor) return
       pendingJump.current = null
-      // Sans animation : le tour vient d'apparaître, et l'y faire glisser depuis une
-      // position qui n'existait pas au clic ne montre rien d'utile.
+      // No animation: the turn just appeared, and sliding from a position that did not
+      // exist at click time conveys nothing useful.
       node.scrollTo({ top: anchor.offsetTop - 12 })
       setFlashed(jump)
       return
@@ -504,20 +495,19 @@ export function ConversationPage() {
   }, [view.rows])
 
   /**
-   * La recherche dans le fil prend le raccourci de recherche du navigateur.
+   * Thread search takes over the browser's search shortcut.
    *
-   * C'est le geste attendu dans une application, et la recherche native ne sait ni
-   * compter les occurrences ni sauter de l'une à l'autre dans un conteneur qui défile
-   * seul. Elle reste atteignable par le menu du navigateur.
+   * Expected app behavior: native search cannot count or navigate occurrences within an
+   * independently scrolling container. Browser search remains accessible through its menu.
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'f') return
 
-      // Depuis le panneau, c'est l'éditeur qui doit chercher dans son fichier :
-      // sans ce partage, le raccourci ouvrait les deux recherches à la fois.
-      // `data-panel` plutôt que l'`aria-label` : celui-ci est traduit, et une
-      // langue changée ne doit pas casser ce repérage.
+      // Within the panel, the editor should search its file: without this division,
+      // the shortcut opened both searches simultaneously.
+      // Use `data-panel`, not translated `aria-label`: changing language must not
+      // break detection.
       const target = event.target
       if (target instanceof Element && target.closest('[data-panel="workspace"]')) return
 
@@ -530,29 +520,29 @@ export function ConversationPage() {
   }, [])
 
   /**
-   * Rattrape les tours faits au CLI Claude Code hors de Sillage.
+   * Catch up on turns performed in the Claude Code CLI outside Sillage.
    *
-   * Le CLI relit toujours le transcript complet, mais le journal est sa propre copie :
-   * sans ce rattrapage à l'ouverture, une session poursuivie au terminal s'afficherait
-   * ici tronquée. Les événements repris arrivent par l'abonnement WebSocket, comme le
-   * direct, donc il n'y a rien à recharger.
+   * The CLI always rereads the full transcript, but the journal is a separate copy: without
+   * catch-up on opening, sessions continued in a terminal would appear truncated here.
+   * Recovered events arrive through the WebSocket subscription like live events, requiring no
+   * reload.
    */
   useEffect(() => {
     if (!conversationId || !conversation?.isOwner) return
     if (!AGENT_CAPABILITIES[conversation.agent].cliSessions) return
     syncClaudeConversation(conversationId).catch((err: unknown) => {
-      // Un rattrapage manqué n'empêche pas la conversation de vivre, mais le taire
-      // rendrait indiagnosticable un fil qui semble incomplet.
+      // Failed catch-up does not prevent conversation use, but hiding it would make
+      // apparently incomplete threads impossible to diagnose.
       console.error('Resynchronisation du transcript CLI impossible :', err)
     })
   }, [conversationId, conversation?.agent, conversation?.isOwner])
 
-  // Un appel de spawn n'existe que dans son fil : gardée d'une conversation à l'autre,
-  // la sélection ouvrirait le panneau sur un sous-agent introuvable.
+  // Spawn calls exist only within their thread: retaining selection across conversations
+  // would open the panel on a nonexistent sub-agent.
   useEffect(() => clearSubAgent, [conversationId])
 
-  // L'anneau s'efface tout seul. Sans ça, il resterait sur un message qu'on a quitté
-  // depuis longtemps et cesserait de vouloir dire « c'est là que tu viens d'arriver ».
+  // The ring clears itself; otherwise it would remain on a long-abandoned message
+  // and stop meaning “you just arrived here”.
   useEffect(() => {
     if (!flashed) return
     const timer = setTimeout(() => setFlashed(null), FLASH_DURATION_MS)
@@ -560,12 +550,11 @@ export function ConversationPage() {
   }, [flashed])
 
   /**
-   * Monte un message resté avant la fenêtre, par son `seq`.
+   * Mount a message before the window by its `seq`.
    *
-   * Rend vrai seulement si la fenêtre grandit vraiment, donc si un rendu suivra. C'est
-   * ce que demandent les deux placements d'ouverture ci-dessous : ils gardent le fil
-   * masqué le temps que la cible soit montée, et une attente que rien ne réveillerait
-   * le laisserait invisible pour de bon.
+   * Return true only when the window actually grows and another render follows. The two
+   * initial-positioning paths below need this: they hide the thread until the target mounts,
+   * and waiting without a future wakeup would keep it invisible forever.
    */
   const growWindowTo = useCallback(
     (seq: number): boolean => {
@@ -582,24 +571,23 @@ export function ConversationPage() {
   )
 
   /**
-   * Ouverture sur un message précis, quand on arrive depuis la recherche.
+   * Open at a specific message when arriving from search.
    *
-   * Le journal est chargé en entier, donc le message est déjà dans le fil, mais pas
-   * forcément monté : la cible peut être restée avant la fenêtre, auquel cas on la
-   * dévoile et l'effet repasse au rendu suivant. Une seule fois par cible, sinon chaque
-   * événement reçu ramènerait le défilement au même endroit pour le reste de la session.
+   * The journal is fully loaded, so the message is in the thread but may not be mounted. If it
+   * precedes the window, reveal it and rerun the effect on the next render. Once per target
+   * only, otherwise every received event would reset scrolling for the session's remainder.
    */
   useLayoutEffect(() => {
     const node = scroller.current
-    // `conversation` pour la même raison que le placement ci-dessous : c'est elle qui
-    // décide que le fil est monté, donc qu'il y a un nœud à mesurer.
+    // Depend on `conversation` for the same reason as positioning below: it determines
+    // whether the thread is mounted and has a measurable node.
     if (stream.loading || !conversation || !node) return
     if (!hasAnchor || anchored.current === anchorSeq) return
     if (growWindowTo(anchorSeq)) return
 
-    // Marquée avant de savoir si la cible existe : le journal est entièrement replié à
-    // ce stade, donc un message introuvable ne viendra plus, et laisser la cible en
-    // attente retiendrait indéfiniment l'affichage du fil.
+    // Mark before checking target existence: the journal is fully folded now, so a
+    // missing message will never arrive; keeping it pending would hide the thread
+    // indefinitely.
     anchored.current = anchorSeq
 
     const element = node.querySelector<HTMLElement>(`[data-seq="${anchorSeq}"]`)
@@ -613,40 +601,40 @@ export function ConversationPage() {
   }, [anchorSeq, hasAnchor, stream.loading, stream.state.items, conversation, growWindowTo])
 
   /**
-   * Place le fil à son ouverture, puis le donne à voir.
+   * Position the thread on opening, then reveal it.
    *
-   * Une seule fois par conversation, une fois le journal replié en entier : c'est la
-   * seule position qui ait un sens, celles d'avant portant sur un fil encore en train
-   * de se construire. Tant que ce n'est pas fait, `placed` garde le fil masqué.
+   * Once per conversation after full journal folding: only then does the position mean
+   * anything. Earlier positions concern a thread still under construction. Until then, `placed`
+   * keeps it hidden.
    */
   useLayoutEffect(() => {
     const node = scroller.current
-    // La conversation, et pas seulement son identifiant : le fil n'est rendu qu'une fois
-    // ses métadonnées connues, et un journal replié avant elles laisserait cet effet
-    // sans nœud à mesurer, sans que rien ne le rappelle une fois le fil monté.
+    // The conversation, not just its ID: the thread renders only after metadata arrives.
+    // If folding finishes first, this effect has no node to measure and would not
+    // rerun when the thread mounts.
     if (placed || stream.loading || !conversationId || !conversation || !node) return
 
     /**
-     * Pose la position d'ouverture, `null` valant le bas du fil, et lève le masque.
+     * Set the opening position, with `null` meaning bottom, then reveal.
      *
-     * Le collage est relu sur le résultat plutôt que déduit de l'intention : une
-     * position d'avant peut se retrouver au bas d'un fil qui a peu grandi, et l'annoncer
-     * décollé afficherait la flèche de retour en bas alors qu'on y est.
+     * Derive bottom-following from the result rather than intent: an old position can end up at
+     * the bottom of a barely grown thread; marking it detached would show a bottom arrow while
+     * already there.
      */
     const settle = (top: number | null) => {
       if (top === null) scrollToBottom(node)
       else node.scrollTop = top
-      // `onScroll` ne tient pas la position tant que le fil n'est pas placé : sans ce
-      // report, le premier geste de lecture serait comparé à celle d'une autre
-      // conversation et ne décollerait pas le fil.
+      // `onScroll` does not track position before placement: without this assignment,
+      // the first reading gesture would be compared with another conversation's
+      // position and fail to detach the thread.
       lastTop.current = node.scrollTop
       setStuckToBottom(node.scrollHeight - node.scrollTop - node.clientHeight < STICKY_THRESHOLD_PX)
       setPlaced(true)
     }
 
-    // La recherche l'emporte : ouvrir un fil depuis un résultat doit montrer le
-    // résultat, pas l'endroit d'une lecture précédente. L'effet ci-dessus l'a placé,
-    // il ne reste qu'à en tirer le collage et à lever le masque.
+    // Search takes precedence: opening from a result must show that result, not a
+    // previous reading position. The effect above positioned it; only derive
+    // bottom-following and reveal it now.
     if (hasAnchor) {
       if (anchored.current === anchorSeq) settle(node.scrollTop)
       return
@@ -658,25 +646,24 @@ export function ConversationPage() {
       return
     }
 
-    // Le message repéré peut être resté avant la fenêtre : on l'y ramène et le
-    // placement reprend au rendu suivant, toujours masqué.
+    // The remembered message may precede the window: bring it in, then resume
+    // positioning on the next render while still hidden.
     if (growWindowTo(saved.seq)) return
 
     const element = node.querySelector<HTMLElement>(`[data-seq="${saved.seq}"]`)
-    // Plus dans le fil : compacté, forké, effacé. Le bas reste le bon défaut.
+    // No longer in the thread: compacted, forked or deleted. Bottom remains the right default.
     settle(element ? element.offsetTop - saved.offset : null)
   }, [placed, stream.loading, conversationId, conversation, hasAnchor, anchorSeq, growWindowTo])
 
   /**
-   * Tour suivant ou précédent, à partir de la position de défilement.
+   * Next or previous turn from the scroll position.
    *
-   * Volontairement pas à partir de `visibleTurns` : après un saut, le tour
-   * précédent reste visible, puisque sa région s'étend jusqu'au message suivant.
-   * Prendre le premier visible ramenait donc systématiquement au même endroit, et
-   * la flèche « suivant » ne descendait jamais.
+   * Deliberately not from `visibleTurns`: after a jump, the preceding turn remains visible
+   * because its region extends to the next message. Taking the first visible turn repeatedly
+   * returned to the same place, preventing the next arrow from descending.
    *
-   * Les ancres sont relues à chaque appel : elles bougent à mesure que le contenu
-   * grandit, et une position mémorisée serait périmée dès le tour suivant.
+   * Reread anchors on every call: they move as content grows, so cached positions would be
+   * stale by the next turn.
    */
   const step = useCallback(
     (direction: -1 | 1) => {
@@ -687,9 +674,9 @@ export function ConversationPage() {
         .map(([id, element]) => ({ id, top: element.offsetTop }))
         .sort((a, b) => a.top - b.top)
 
-      // Tolérance : le saut se pose à `offsetTop - 12`, et un défilement fluide
-      // s'arrête à quelques pixels près. Sans elle, le tour où l'on vient d'arriver
-      // se retrouve « en dessous » de lui-même et la flèche fait du surplace.
+      // Tolerance: jumps land at `offsetTop - 12`, and smooth scrolling stops a few
+      // pixels away. Without it, the just-reached turn appears “below” itself,
+      // leaving the arrow stuck in place.
       const cursor = node.scrollTop + 16
       const target =
         direction === 1
@@ -701,9 +688,9 @@ export function ConversationPage() {
         return
       }
 
-      // Plus rien au-dessus dans ce qui est monté, mais le fil continue avant la
-      // fenêtre : sans ce relais, la flèche s'arrêterait au premier tour affiché comme
-      // si la conversation commençait là.
+      // Nothing mounted above, but the thread continues before the window:
+      // without this fallback, the arrow would stop at the first displayed turn
+      // as if the conversation began there.
       if (direction === -1 && view.hidden > 0) {
         const first = anchors[0]
         const index = first ? turns.findIndex((turn) => turn.id === first.id) : turns.length
@@ -714,23 +701,23 @@ export function ConversationPage() {
     [jumpToTurn, turns, view.hidden],
   )
 
-  // Défilement avant peinture : sinon le fil saute visiblement à chaque delta.
+  // Scroll before paint; otherwise every delta causes a visible jump.
   //
-  // Rien tant que le fil n'est pas placé : cet effet est déclaré après le placement,
-  // donc il passerait après lui dans la même vague, avec un `stuckToBottom` d'avant, et
-  // renverrait au bas du fil la position de lecture qu'on vient tout juste de rétablir.
+  // Do nothing before placement: this effect follows positioning in the same batch
+  // with stale `stuckToBottom`, which would send the freshly restored reading
+  // position back to the bottom.
   useLayoutEffect(() => {
     if (!placed || !stuckToBottom) return
     const node = scroller.current
     if (node) scrollToBottom(node)
   }, [stream.state.items, stream.state.lastSeq, stuckToBottom, placed])
 
-  // Le contenu qui grandit déplace les tours : la réglette doit suivre, y compris
-  // quand on ne défile pas soi-même.
+  // Growing content moves turns: the ruler must follow even without
+  // user scrolling.
   useEffect(syncVisibleTurns, [syncVisibleTurns, stream.state.items, stream.state.lastSeq])
 
-  // Le clavier qui s'ouvre réduit la zone du fil : sans ce recalage, le dernier
-  // message se retrouve masqué juste au moment où on répond.
+  // Opening the keyboard shrinks the thread viewport: without realignment, the latest
+  // message is hidden just when the user replies.
   useEffect(() => {
     const viewport = window.visualViewport
     if (!viewport) return
@@ -743,17 +730,17 @@ export function ConversationPage() {
     return () => viewport.removeEventListener('resize', stick)
   }, [stuckToBottom])
 
-  // Le titre vit dans la ligne de conversation, pas dans le journal : il est relu
-  // quand un tour se termine, moment où le CLI a pu en proposer un.
+  // The title lives in the conversation row, not the journal: reread it at turn end,
+  // when the CLI may have suggested one.
   useEffect(() => {
     if (!stream.state.turnRunning && conversationId) {
       void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
     }
   }, [stream.state.turnRunning, conversationId, queryClient])
 
-  // La branche de l'en-tête aussi, mais seulement à la fin d'un tour vu en direct : un
-  // checkout l'a peut-être changée. À l'ouverture du fil le cache suffit, et relire
-  // l'état git de tous les projets à chaque navigation coûterait pour rien.
+  // Also refresh the header branch, but only after a live turn: a checkout may have
+  // changed it. Cached state suffices on opening; rereading every project's git
+  // state on each navigation would be needless overhead.
   const turnWasRunning = useRef(false)
   useEffect(() => {
     if (turnWasRunning.current && !stream.state.turnRunning) {
@@ -764,16 +751,14 @@ export function ConversationPage() {
   }, [stream.state.turnRunning, queryClient])
 
   /**
-   * Branche la conversation juste avant un message.
+   * Fork the conversation just before a message.
    *
-   * La coupe se fait à `seq - 1` : la branche reprend tout ce qui précède, et le
-   * message coupé revient dans la barre de saisie pour être reformulé. C'est le geste
-   * que le fork sert à faire, et le laisser dans l'historique le rendrait inutile.
+   * Cut at `seq - 1`: retain everything before it and return the cut message to the composer
+   * for rephrasing. That is the purpose of a fork; keeping it in history would defeat it.
    *
-   * Stable d'un rendu à l'autre : passée telle quelle aux bulles utilisateur, une
-   * fonction recréée à chaque rendu casse leur mémoïsation, et le fil entier est
-   * redessiné à chaque défilement. Le surlignage de la recherche, qui tient des plages
-   * sur ces nœuds de texte, les perdait au passage.
+   * Stable across renders: passed directly to user bubbles, a recreated function breaks
+   * memoization and redraws the whole thread on every scroll. Search highlights, which retain
+   * ranges on those text nodes, were lost in the process.
    */
   const fork = useCallback(
     async (message: MessageItem) => {
@@ -799,16 +784,16 @@ export function ConversationPage() {
     [conversationId, navigate, queryClient, t],
   )
 
-  // Lu seulement quand le dialogue de détails est ouvert : la plupart des fils n'en ont pas.
+  // Read only while the details dialog is open: most threads have none.
   const handoff = useHandoff(conversationId, metaOpen && Boolean(conversation?.handoffFromId))
 
-  // `config` est nul exactement quand la conversation l'est, mais le typage ne le sait
-  // pas : il rejoint la garde plutôt que d'être forcé plus bas.
+  // `config` is null exactly when the conversation is, but the type system does not
+  // know it: include it in the guard instead of forcing it later.
   if (!conversationId || !conversation || !config) return null
 
   const isOwner = conversation.userId === user?.id
-  // Infléchir suppose un tour ouvert et un CLI qui sait le faire : proposer le geste
-  // ailleurs reviendrait à annoncer une action que le serveur refuserait.
+  // Steering requires an open turn and a capable CLI: offering it elsewhere would
+  // advertise an action the server rejects.
   const canSteer =
     isOwner &&
     AGENT_CAPABILITIES[conversation.agent].steer &&
@@ -835,10 +820,10 @@ export function ConversationPage() {
   }
 
   /**
-   * Commandes que Sillage exécute lui-même, lancées depuis le composer.
+   * Commands Sillage executes itself, launched from the composer.
    *
-   * L'erreur remonte au champ de saisie, qui rend la commande telle quelle, plutôt qu'à
-   * la bannière de la page : le geste part du champ, et c'est là qu'on la relance.
+   * Errors return to the input, restoring the command verbatim, rather than the page banner:
+   * the action starts in the input and is retried there.
    */
   const runCommand = async (name: string) => {
     await flushConfig()
@@ -866,30 +851,32 @@ export function ConversationPage() {
     await steerConversation(conversationId, text, attachmentIds, mentions, skills)
   }
 
-  // `relative` porte le bouton de retour en bas, et la hauteur retire l'en-tête
-  // mobile de la coque, absent en desktop.
+  // `relative` anchors the back-to-bottom button; height excludes the shell's mobile
+  // header, absent on desktop.
   return (
-    // Le workspace de cette conversation sert de référence aux chemins cités dans le
-    // fil : c'est lui, et pas le projet, qui décide de ce qu'un chemin relatif désigne
-    // quand la conversation tourne dans un worktree.
+    // This conversation's workspace resolves paths mentioned in the thread: it, not
+    // the project, determines what relative paths mean when the conversation runs
+    // inside a worktree.
     <FileLinkContext.Provider value={conversationId}>
-    {/* Les `#12` du fil désignent les cartes du board de ce projet. */}
+    {/* Thread `#12` references identify this project's board cards. */}
     <CardRefContext.Provider value={conversation.projectId}>
-    {/* `overflow-clip` et non `hidden` : un conteneur `hidden` reste défilable par programme, et l éditeur qui révèle une ligne pendant que le panneau glisse hors écran le décalait, laissant le panneau coupé à gauche. */}
+    {/* `overflow-clip`, not `hidden`: hidden containers remain programmatically scrollable. An editor revealing a line while the panel slid out shifted the container, leaving the panel clipped on the left. */}
     <div ref={panelLayout.containerRef} className="relative flex h-full overflow-clip">
       <div
         className={cx(
-          // `@container` : la réglette et les réglages du composer se replient selon la
-          // largeur réellement disponible pour le fil, pas celle de la fenêtre, qui
-          // ignore la sidebar.
-          // `h-full` : la hauteur vient du calque racine, qui suit déjà le viewport
-          // visuel. Un calcul local reproduirait ce que la coque sait déjà.
+          // `@container`: the ruler and composer settings collapse according to actual
+          // thread width, not window width, which does not account for
+          // the sidebar.
+          // `h-full`: height comes from the root layer, which already follows the visual
+          // viewport. Local calculation would duplicate shell knowledge.
           '@container/thread relative flex h-full min-w-0 flex-1 flex-col pb-safe',
         )}
         {...drop.handlers}
       >
-        {/* Voile de dépôt, en surimpression et sans capter le pointeur : intercaler une
-            couche cliquable interromprait le glissement qu'elle annonce. */}
+        {/*
+         * Drop overlay without pointer capture: an interactive layer would interrupt the drag
+         * it announces.
+         */}
         {drop.dragging ? (
           <div
             className={cx(
@@ -905,8 +892,8 @@ export function ConversationPage() {
           className={cx(
             'surface sticky top-0 z-10 flex shrink-0 items-center gap-1.5',
             'border-b border-line px-2 py-2 @min-[44rem]/thread:gap-3 @min-[44rem]/thread:px-4',
-            // Le bouton de réaffichage de la navigation se pose dans ce coin : sans place
-            // réservée, il recouvre l'icône du CLI.
+            // The show-navigation button occupies this corner: without reserved space,
+            // it covers the CLI icon.
             sidebarHidden && 'md:pl-14',
           )}
         >
@@ -921,7 +908,7 @@ export function ConversationPage() {
           </span>
 
           <div className="min-w-0 flex-1">
-            {/* Le projet garde sa place, c'est la branche qui se tronque d'abord. */}
+            {/* Preserve project width; truncate the branch first. */}
             <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
               <Link
                 to={`/p/${conversation.projectId}`}
@@ -943,14 +930,16 @@ export function ConversationPage() {
           </div>
 
           {/*
-            L'en-tête ne garde que ce qui invalide la lecture en cours : une erreur, un
-            tour interrompu, une liaison coupée. Le reste vit au-dessus du composer, qui
-            est visible en même temps que lui, et le répéter ici l'afficherait deux fois.
-          */}
+           * The header retains only states invalidating the current reading: errors,
+           * interrupted turns or disconnected links. Everything else lives above the composer,
+           * visible alongside the header; repeating it would duplicate it.
+           */}
           <SignalRow signals={signals.filter((signal) => HEADER_SIGNALS.has(signal.kind))} />
 
-          {/* La consommation appartient au compte, pas à la conversation : le panneau
-              reste le même quel que soit le fil ouvert. */}
+          {/*
+           * Usage belongs to the account, not the conversation: the panel stays the same
+           * regardless of the open thread.
+           */}
           <button
             type="button"
             onClick={() => setUsageOpen(true)}
@@ -962,20 +951,25 @@ export function ConversationPage() {
             )}
           >
             <GaugeCircle size={13} />
-            {/* Réduit à son icône au doigt : la consommation doit rester joignable
-                depuis un téléphone, c'est le libellé qui prend la place, pas le bouton. */}
+            {/*
+             * Icon-only on touch screens: usage must remain accessible from phones; the label
+             * takes space, not the button.
+             */}
             <span className="hidden md:inline">{t('conversation.usage.label')}</span>
           </button>
 
-          {/* Sur grand écran les deux actions sont posées directement : elles sont peu
-              nombreuses, et un menu qui n'en cache que deux coûte un clic pour rien.
-              Au doigt la place manque, elles repassent derrière les trois points.
-
-              Lire une conversation partagée donne le droit d'y chercher : seule la
-              compaction touche à l'état du fil, et elle reste au propriétaire. */}
+          {/*
+           * Large screens expose both actions directly: a menu hiding just two costs an
+           * unnecessary click. On touch screens, limited space moves them behind the ellipsis.
+           *
+           * Read access to shared conversations includes search; only compaction changes thread
+           * state and remains owner-only.
+           */}
           <span className="hidden @min-[44rem]/thread:contents">
-            {/* Les consignes se relisent et se retouchent souvent en travaillant : un
-                geste, sans quitter le fil ni passer par l'éditeur. */}
+            {/*
+             * Instructions are frequently reread and edited while working: one action, without
+             * leaving the thread or using the editor.
+             */}
             <IconButton label={t('conversation.instructions')} onClick={() => setInstructionsOpen(true)}>
               <FileText size={18} />
             </IconButton>
@@ -989,8 +983,8 @@ export function ConversationPage() {
                     ? t('conversation.compact.running')
                     : t('conversation.compact.action')
                 }
-                // Le contexte bouge encore pendant un tour : compacter au milieu
-                // résumerait un état que l'agent est en train de changer.
+                // Context still changes during a turn: compacting midway would summarize
+                // state the agent is actively changing.
                 disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
                 onClick={() => void compact()}
               >
@@ -1046,10 +1040,11 @@ export function ConversationPage() {
             </Menu>
           </span>
 
-          {/* Tout à droite, contre le bord : c'est le panneau qu'il ouvre, et il doit
-              se trouver du côté où celui-ci apparaît. Le panneau appartient à la
-              conversation, il lit le répertoire de travail de ce fil, worktree
-              compris, pas celui du projet. */}
+          {/*
+           * At the far right edge, where the panel opens. The panel belongs to the conversation
+           * and reads this thread's working directory, including its worktree, not the
+           * project's.
+           */}
           <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} />
           <IconButton
             label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
@@ -1095,9 +1090,11 @@ export function ConversationPage() {
                   {worktree ? worktree.name : t('conversation.meta.project')}
                 </Meta>
 
-                {/* Une branche dit d'où elle vient : sans ça, deux fils presque identiques
-                    dans la sidebar sont impossibles à distinguer. Le lien disparaît si
-                    l'originale a été supprimée, la référence devenant orpheline. */}
+                {/*
+                 * Forks show their origin: otherwise two nearly identical sidebar threads
+                 * cannot be distinguished. The link disappears if the original is deleted and
+                 * the reference becomes orphaned.
+                 */}
                 {origin ? (
                   <Link
                     to={`/p/${origin.projectId}/c/${origin.id}`}
@@ -1109,9 +1106,10 @@ export function ConversationPage() {
                   </Link>
                 ) : null}
 
-                {/* Une suite dit quel fil elle continue, et avec quel CLI il était mené :
-                    c'est ce qui explique que l'agent connaisse un travail que ce fil ne
-                    montre pas. */}
+                {/*
+                 * Continuations show their source thread and CLI, explaining why the agent
+                 * knows work not visible in this thread.
+                 */}
                 {continued ? (
                   <Link
                     to={`/p/${continued.projectId}/c/${continued.id}`}
@@ -1123,9 +1121,10 @@ export function ConversationPage() {
                   </Link>
                 ) : null}
 
-                {/* Le chemin de retour vers le chantier : depuis une session, on remonte
-                    au travail qu'elle traite. Le titre est celui de la carte au moment du
-                    chargement, pas une copie figée à la création. */}
+                {/*
+                 * Route back to the work item: from a session to its card. Use the card title
+                 * at load time, not a copy frozen at creation.
+                 */}
                 {conversation.card ? (
                   <Link
                     to={`/p/${conversation.projectId}/board?carte=${conversation.card.number}`}
@@ -1137,12 +1136,15 @@ export function ConversationPage() {
                   </Link>
                 ) : null}
 
-                {/* Une conversation lancée par l'API se dit en toutes lettres : on peut y
-                    écrire comme dans une autre, mais un agent distant la pilote aussi, et
-                    découvrir un tour qu'on n'a pas demandé sans savoir d'où il vient est
-                    la pire façon de l'apprendre. */}
-                {/* Pas un `Meta` : ceux-ci sont en chasse fixe et tronqués à 10rem, ce qui
-                    couperait la phrase au milieu. Elle se lit entière ou ne sert à rien. */}
+                {/*
+                 * Explicitly identify API-launched conversations: users can write in them
+                 * normally, but remote agents also control them. Discovering an unsolicited
+                 * turn without knowing its origin is the worst way to learn this.
+                 */}
+                {/*
+                 * Not `Meta`: it uses monospace and truncates at 10rem, cutting the sentence
+                 * midway. The sentence must be readable in full to be useful.
+                 */}
                 {conversation.origin ? (
                   <span className="flex min-w-0 items-center gap-1 rounded-full bg-accent-wash px-1.5 py-0.5 text-accent">
                     <Terminal size={10} />
@@ -1150,8 +1152,10 @@ export function ConversationPage() {
                   </span>
                 ) : null}
 
-                {/* Ce que l'agent d'une suite sait de sa source : le bloc tel qu'il
-                    l'a reçu, pour vérifier ce qui lui manque avant de le lui redire. */}
+                {/*
+                 * What a continuation knows of its source: the exact received block, allowing
+                 * users to check omissions before repeating them.
+                 */}
                 {handoff.data ? (
                   <details className="basis-full text-xs">
                     <summary className="cursor-pointer text-ink-soft">
@@ -1167,8 +1171,10 @@ export function ConversationPage() {
                   </details>
                 ) : null}
 
-                {/* Tout vient du fold : le journal est la seule source d'affichage (I2),
-                    et lui seul porte le détail des tokens de cache. */}
+                {/*
+                 * Everything comes from the fold: the journal is the sole display source (I2)
+                 * and alone carries cache-token details.
+                 */}
                 <UsageSummary
                   account={billingAccount}
                   rateLimit={stream.state.rateLimit}
@@ -1222,9 +1228,10 @@ export function ConversationPage() {
           revision={stream.state.lastSeq}
         />
 
-        {/* Contexte de positionnement de l'indicateur d'attente : posé dans le fil, il
-            se placerait par rapport à son contenu et se retrouverait hors de l'écran
-            dès que celui-ci dépasse la hauteur affichée. */}
+        {/*
+         * Positioning context for the waiting indicator: inside the thread, it would align with
+         * content and move offscreen once content exceeds viewport height.
+         */}
         <div className="relative flex min-h-0 flex-1 flex-col">
           {!placed && slowReplay ? (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
@@ -1241,14 +1248,16 @@ export function ConversationPage() {
             onScroll={onScroll}
             className="fade-bottom relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
           >
-            {/* Seule la réglette latérale a besoin d'une gouttière, et seulement là où elle
-                s'affiche. Elle est symétrique, sinon le fil cesse d'être centré. Rien à
-                réserver à droite : les flèches de navigation sont posées au-dessus de la
-                barre de saisie, hors du fil. */}
-            {/* Masqué et non démonté tant que le fil n'est pas placé : le placement se
-                fait sur des hauteurs mesurées, qu'un fil absent de la mise en page
-                n'aurait pas. L'apparition est fondue, la disparition immédiate : au
-                changement de conversation, ce qui s'efface est le fil précédent. */}
+            {/*
+             * Only the side ruler needs gutters, and only where visible. Keep them symmetrical
+             * to center the thread. No right reservation: navigation arrows sit above the
+             * composer outside the thread.
+             */}
+            {/*
+             * Hidden, not unmounted, until positioned: placement needs measured heights,
+             * unavailable outside layout. Fade in, disappear immediately: on conversation
+             * switches, the disappearing thread is the previous one.
+             */}
             <div
               className={cx(
                 'mx-auto flex sg-conversation-width flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12',
@@ -1298,7 +1307,7 @@ export function ConversationPage() {
               {activity ? <TurnActivity label={activity} /> : null}
               {stream.state.turnRunning ? <NewsTicker key={conversationId} /> : null}
     
-              {/* Sous l'indicateur : ce que l'agent n'a pas encore lu. */}
+              {/* Below the indicator: what the agent has not read yet. */}
               <QueuedMessages
                 conversationId={conversationId}
                 messages={stream.state.queued}
@@ -1312,19 +1321,21 @@ export function ConversationPage() {
                 canDecide={isOwner}
               />
 
-              {/* Le message suivant que le CLI prédit, tant que rien n'est parti ni en
-                  attente : un message en file est déjà la réponse au tour. */}
+              {/*
+               * CLI-predicted next message while nothing is sent or queued: a queued message
+               * already answers the turn.
+               */}
               {stream.state.suggestion && !stream.state.turnRunning && stream.state.queued.length === 0 ? (
                 <PromptSuggestion text={stream.state.suggestion} disabled={!isOwner} />
               ) : null}
             </div>
           </div>
 
-          {/* Posée dans la zone de fil et non dans la colonne entière : centrée sur
-              celle-ci, elle passait sous la barre de saisie dès que la saisie
-              s'agrandissait. Avec le fil, aussi : une réglette qui se remplit toute
-              seule à côté d'un fil vide montre la construction que le masquage vient
-              d'épargner. */}
+          {/*
+           * Place within the thread area, not the whole column: centering on the column moved
+           * it beneath the growing composer. Show it with the thread too: a ruler filling
+           * beside an empty thread reveals the construction hidden by masking.
+           */}
           {placed ? (
             <ConversationMinimap
               turns={turns}
@@ -1335,10 +1346,11 @@ export function ConversationPage() {
           ) : null}
         </div>
 
-        {/* Les commandes de défilement se posent juste au-dessus de la barre de saisie,
-            dont la hauteur varie : `bottom-full` sur ce conteneur les y ancre sans
-            dépendre d'un décalage fixe. Elles ne servent qu'une fois le fil quitté du
-            bas, donc elles disparaissent quand on y est revenu. */}
+        {/*
+         * Scroll controls sit immediately above the variable-height composer: `bottom-full`
+         * anchors them without a fixed offset. Useful only while detached from the bottom, so
+         * hide them upon returning.
+         */}
         <div className="relative shrink-0">
           {placed && !stuckToBottom ? (
             <>
@@ -1365,11 +1377,10 @@ export function ConversationPage() {
           ) : null}
 
           {/*
-            Au-dessus de la barre de saisie et non sous elle : c'est la dernière chose
-            qu'on lit avant d'écrire. Aligné sur la largeur du composer pour que les deux
-            forment un bloc. `TurnActivity` dit la même activité un peu plus haut, mais
-            depuis le fil, donc il sort de l'écran dès qu'on remonte ; cette rangée reste.
-          */}
+           * Above the composer, not below: the last thing read before typing. Match composer
+           * width to form one block. `TurnActivity` reports the same activity within the thread
+           * but scrolls away; this row stays.
+           */}
           <SignalRow
             signals={signals}
             onSelect={() => setPanelOpen(true)}
@@ -1408,9 +1419,11 @@ export function ConversationPage() {
         </div>
       </div>
 
-      {/* Monté le temps de la sortie : `panel.open` porte l'état visé, `panel.mounted`
-          la présence dans le document. Pas de voile d'attente, le panneau apparaît
-          quand son code est là plutôt que de faire clignoter une colonne vide. */}
+      {/*
+       * Mounted through the exit animation: `panel.open` is the target state; `panel.mounted`
+       * controls document presence. No loading overlay: show the panel once its code loads
+       * instead of flashing an empty column.
+       */}
       {panel.mounted ? (
         <Suspense fallback={null}>
           <SidePanel

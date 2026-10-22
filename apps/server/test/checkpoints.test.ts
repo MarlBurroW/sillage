@@ -16,13 +16,7 @@ import {
   restoreSnapshot,
 } from '../src/checkpoints.js'
 
-/**
- * Points de reprise d'un tour : capture, diff, restauration, nettoyage.
- *
- * Même cloisonnement que `git-workflow.test.ts` : le module recopie `process.env` dans
- * chaque git qu'il lance, et la configuration de la machine ne doit pas décider du
- * résultat.
- */
+/** Turn checkpoint capture, diff, restoration and cleanup. Isolate like `git-workflow.test.ts`: spawned git commands copy `process.env`, and host configuration must not determine results. */
 const isolation = mkdtempSync(join(tmpdir(), 'sillage-checkpoint-isolation-'))
 writeFileSync(join(isolation, 'gitconfig'), '')
 process.env.GIT_CONFIG_NOSYSTEM = '1'
@@ -67,7 +61,7 @@ function identify(repo: string): void {
   git(repo, 'config', 'user.email', 'testeur@example.com')
 }
 
-/** Un dépôt avec un premier commit : `a.txt`, `b.txt`, un dossier ignoré. */
+/** Repository with an initial commit: `a.txt`, `b.txt` and an ignored directory. */
 function createRepo(t: TestContext): string {
   const repo = join(tempDir(t), 'repo')
   mkdirSync(repo)
@@ -101,7 +95,7 @@ test('la capture ignore les fichiers ignorés et les gros fichiers non suivis, s
   assert.equal(snapshot.head, headBefore)
   assert.ok(snapshot.indexTree)
 
-  // Rien n'a bougé dans le dépôt lui-même.
+  // Nothing changed in the repository itself.
   assert.deepEqual(porcelain(repo), statusBefore)
   assert.equal(head(repo), headBefore)
   assert.deepEqual(lines(repo, 'diff', '--cached', '--name-only'), [])
@@ -110,7 +104,7 @@ test('la capture ignore les fichiers ignorés et les gros fichiers non suivis, s
   assert.deepEqual(captured.sort(), ['.gitignore', 'a.txt', 'b.txt', 'untracked.txt'])
   assert.equal(line(repo, 'show', `${before()}:worktree/a.txt`), 'a2')
 
-  // La ref pointe sur un arbre : aucun commit n'apparaît dans l'historique.
+  // Refs point to trees: no commits appear in history.
   assert.equal(line(repo, 'cat-file', '-t', before()), 'tree')
   assert.deepEqual(lines(repo, 'log', '--all', '--format=%s'), ['Premier commit'])
 
@@ -158,7 +152,7 @@ test('un pull pendant le tour n’apparaît pas dans le diff, sauf ce que le tou
   git(repo, 'remote', 'add', 'origin', bare)
   git(repo, 'push', '-q', '-u', 'origin', 'main')
 
-  // Un collègue pousse deux fichiers : l'un que le tour touchera aussi, l'autre non.
+  // A colleague pushes two files, only one of which the turn will also edit.
   const clone = join(dir, 'clone')
   git(dir, 'clone', '-q', bare, clone)
   identify(clone)
@@ -205,7 +199,7 @@ test('la restauration remet le répertoire de travail et l’index d’avant, sa
   const headBefore = head(repo)
   const statusBefore = porcelain(repo)
 
-  // Le tour : modifie, supprime, crée, indexe, commite, écrit dans un dossier ignoré.
+  // Turn modifies, deletes, creates, stages, commits and writes ignored directories.
   write(repo, 'a.txt', 'a2\n')
   rmSync(join(repo, 'b.txt'))
   write(repo, 'untracked.txt', 'u2\n')
@@ -214,7 +208,7 @@ test('la restauration remet le répertoire de travail et l’index d’avant, sa
   git(repo, 'reset', '-q', 'staged.txt')
   write(repo, 'committed.txt', 'c\n')
   git(repo, 'add', '--intent-to-add', 'committed.txt')
-  // Ce seul chemin : `new.txt` reste indexé sans être commité.
+  // Only this path: `new.txt` remains staged without being committed.
   git(repo, 'commit', '-q', '-m', 'Commit pendant le tour', '--', 'committed.txt')
   write(repo, 'ignored/generated', 'g')
 
@@ -228,11 +222,11 @@ test('la restauration remet le répertoire de travail et l’index d’avant, sa
   assert.equal(read(repo, 'untracked.txt'), 'u\n')
   assert.equal(existsSync(join(repo, 'sub')), false)
   assert.equal(existsSync(join(repo, 'committed.txt')), false)
-  // Jamais capturés, jamais supprimés : l'ignoré et le gros fichier restent.
+  // Never captured, never deleted: ignored and oversized files remain.
   assert.equal(existsSync(join(repo, 'ignored/generated')), true)
   assert.equal(existsSync(join(repo, 'big.bin')), true)
 
-  // Le commit du tour reste ; le fichier commité y est, mais plus sur le disque.
+  // The turn's commit remains; committed files exist there but no longer on disk.
   assert.notEqual(head(repo), headBefore)
   assert.equal(line(repo, 'log', '-1', '--format=%s'), 'Commit pendant le tour')
   assert.deepEqual(lines(repo, 'diff', '--cached', '--name-only').sort(), ['committed.txt', 'staged.txt'])

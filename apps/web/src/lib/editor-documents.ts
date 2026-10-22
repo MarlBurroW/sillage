@@ -12,7 +12,7 @@ interface Document {
   conflict: boolean
   error: { kind: 'read' | 'write'; message: string } | null
   persisted: boolean
-  /** Seule une relecture qui remplace le texte doit remonter CodeMirror. */
+  /** Only rereads replacing text should remount CodeMirror. */
   revision: number
 }
 
@@ -32,7 +32,7 @@ function read(key: string): Document {
       if (typeof stored?.content === 'string' && typeof stored.file?.content === 'string' &&
         typeof stored.file?.fingerprint === 'string' && typeof stored.file?.path === 'string' &&
         typeof stored.file?.extension === 'string') document = { ...EMPTY, file: stored.file, content: stored.content }
-    } catch { /* Un stockage inaccessible ne doit pas empêcher l'édition. */ }
+    } catch { /* Unavailable storage must not prevent editing. */ }
     documents.set(key, document)
   }
   return documents.get(key)!
@@ -41,8 +41,7 @@ function read(key: string): Document {
 function update(key: string, patch: Partial<Document>) {
   const document = { ...read(key), ...patch }
   try {
-    // Garder aussi la version de départ : une reprise doit détecter les écritures
-    // faites par un agent pendant que l'éditeur était fermé.
+    // Retain the starting version too: restoring must detect agent writes made while the editor was closed.
     if (dirty(document) || document.saving) sessionStorage.setItem(key, JSON.stringify({ file: document.file, content: document.content }))
     else sessionStorage.removeItem(key)
     document.persisted = true
@@ -56,8 +55,7 @@ function subscribe(notify: () => void) {
   return () => { listeners.delete(notify) }
 }
 
-// Seulement quand le stockage a réellement échoué : dans ce cas fermer la page
-// ferait perdre la seule copie du brouillon, encore conservée en mémoire.
+// Only after actual storage failure: closing would lose the only draft copy still held in memory.
 window.addEventListener('beforeunload', (event) => {
   if ([...documents.values()].some((document) => dirty(document) && !document.persisted)) {
     event.preventDefault()
@@ -72,8 +70,8 @@ async function load(key: string, scope: string, path: string, discard: boolean) 
   try {
     const file = await readFile(scope, path)
     const current = read(key)
-    // La saisie reste possible pendant la lecture. Même un abandon explicite ne
-    // doit pas effacer ce qui a été écrit après son déclenchement.
+    // Editing remains possible while loading. Even explicit discard must preserve text written
+    // after it was triggered.
     const replace = current.content === before.content && (discard || !dirty(current))
     if (replace || current.content === file.content) {
       update(key, { file, content: file.content, conflict: false, revision: current.revision + (current.content !== file.content ? 1 : 0) })
@@ -91,8 +89,8 @@ async function save(key: string, scope: string, path: string, force: boolean) {
   update(key, { saving: true, error: null })
   try {
     const { fingerprint } = await writeFile(scope, path, before.content, force ? null : before.file.fingerprint)
-    // Avancer la version enregistrée, en gardant la saisie courante. Une réponse
-    // lente peut arriver après un changement d'onglet ou de nouvelles frappes.
+    // Advance the saved version while retaining current input. Slow replies may arrive after tab
+    // changes or new keystrokes.
     update(key, { file: { ...before.file, content: before.content, fingerprint }, conflict: false })
   } catch (error) {
     if (error instanceof ApiRequestError && error.code === 'stale_write') update(key, { conflict: true })
@@ -114,14 +112,14 @@ export function useEditorDocument(userId: string, scope: string, path: string) {
   }
 }
 
-/** Les fichiers fermés restent récupérables, sans garder leurs éditeurs montés. */
+/** Closed files remain recoverable without retaining mounted editors. */
 export function useEditorDraftPaths(userId: string, scope: string): string[] {
   const prefix = PREFIX + JSON.stringify([userId, scope]).slice(0, -1) + ','
   if (!recovered.has(prefix)) {
     recovered.add(prefix)
     try {
       for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) read(key)
-    } catch { /* Les brouillons en mémoire restent disponibles. */ }
+    } catch { /* In-memory drafts remain available. */ }
   }
   const paths = useSyncExternalStore(subscribe, () => JSON.stringify(
     [...documents].filter(([key, document]) => key.startsWith(prefix) && (dirty(document) || document.saving))
@@ -130,7 +128,7 @@ export function useEditorDraftPaths(userId: string, scope: string): string[] {
   return JSON.parse(paths) as string[]
 }
 
-/** Chemins des documents de cette portée situés dans `path` ou égaux à lui. */
+/** Document paths in this scope equal to or within `path`. */
 function documentsWithin(scope: string, path: string): Array<{ key: string; userId: string; path: string }> {
   return [...documents.keys()].flatMap((key) => {
     const [userId, documentScope, documentPath] = JSON.parse(key.slice(PREFIX.length)) as string[]
@@ -141,15 +139,15 @@ function documentsWithin(scope: string, path: string): Array<{ key: string; user
 }
 
 /**
- * Le document suit son fichier renommé, brouillon compris. Resté sous l'ancien chemin,
- * le brouillon s'enregistrerait là-bas et recréerait le fichier qu'on vient de déplacer.
+ * Documents follow renamed files, including drafts. A draft retained at the old path would recreate
+ * the moved file when saved.
  */
 export function moveDocuments(scope: string, from: string, to: string): void {
   for (const entry of documentsWithin(scope, from)) {
     const document = read(entry.key)
     const next = to + entry.path.slice(from.length)
     documents.delete(entry.key)
-    try { sessionStorage.removeItem(entry.key) } catch { /* Le brouillon reste en mémoire. */ }
+    try { sessionStorage.removeItem(entry.key) } catch { /* Keep the draft in memory. */ }
     update(keyOf(entry.userId, scope, next), {
       ...document,
       file: document.file && { ...document.file, path: next },
@@ -157,7 +155,7 @@ export function moveDocuments(scope: string, from: string, to: string): void {
   }
 }
 
-/** Vrai si un brouillon non enregistré porte sur ce chemin : son onglet doit rester. */
+/** Whether an unsaved draft belongs to this path: its tab must remain. */
 export function hasDraft(scope: string, path: string): boolean {
   return documentsWithin(scope, path).some((entry) => {
     const document = read(entry.key)

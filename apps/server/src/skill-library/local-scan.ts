@@ -3,33 +3,21 @@ import { join } from 'node:path'
 import { SKILL_MAIN_FILE, skillNameSchema, type LocalSkillDto, type LocalSkillOrigin } from '@sillage/protocol'
 import { parseSkillMarkdown } from './frontmatter.js'
 
-/**
- * Les skills déjà présents sur la machine, que chaque CLI lit de son côté.
- *
- * Les lister sert deux fins : les reprendre dans la bibliothèque, pour qu'ils servent
- * aux deux CLI et non à un seul ; et repérer un homonyme, qui masquerait l'alias `/nom`
- * côté Claude et apparaîtrait deux fois côté Codex.
- *
- * Les dossiers de l'utilisateur ne sont lus que pour un administrateur : ils exposent le
- * dossier personnel du compte système. Ceux du dépôt suivent la visibilité du projet.
- */
+/** Existing machine skills read separately by each CLI. Listing supports library adoption so both CLIs can use them, and detects duplicate names that would hide Claude's `/nom` alias and appear twice in Codex. User directories are scanned only for administrators because they expose the system account's home; repository directories follow project visibility. */
 
 interface ScanRoot {
   origin: LocalSkillOrigin
   dir: string
-  /**
-   * Entrées gérées par le CLI lui-même, qu'il n'y a pas lieu de reprendre : les skills
-   * synchronisés depuis le compte Claude, ceux que Codex embarque.
-   */
+  /** CLI-managed entries that should not be adopted: account-synchronized Claude skills and bundled Codex skills. */
   skip: string[]
 }
 
 export interface LocalScanOptions {
-  /** Dossier personnel à parcourir, null pour s'en tenir au dépôt. */
+  /** Home directory to scan, or null to limit scanning to the repository. */
   home: string | null
-  /** `$CODEX_HOME`, à défaut `~/.codex`. */
+  /** `$CODEX_HOME`, falling back to `~/.codex`. */
   codexHome: string | null
-  /** Workspace du projet, null hors d'un projet. */
+  /** Project workspace, null outside projects. */
   workspace: string | null
 }
 
@@ -55,8 +43,8 @@ export function scanLocalSkills(options: LocalScanOptions): LocalSkillDto[] {
     if (!existsSync(root.dir)) continue
     for (const entry of readdirSync(root.dir)) {
       if (root.skip.includes(entry) || entry.startsWith('.')) continue
-      // Un skill personnel est souvent un lien vers un dépôt : on le suit pour lire, et
-      // c'est le dossier réel qui sert de clé à la reprise.
+      // Personal skills often symlink to repositories: follow them for reads and use
+      // the real directory as the adoption key.
       let path: string
       try {
         path = realpathSync(join(root.dir, entry))

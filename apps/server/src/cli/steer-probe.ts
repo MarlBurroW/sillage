@@ -4,23 +4,7 @@ import { DEFAULT_CLAUDE_CONFIG, type SillageEvent } from '@sillage/protocol'
 import { ClaudeRunner } from '../agents/claude/runner.js'
 import type { RunnerContext } from '../agents/types.js'
 
-/**
- * Sonde du repli d'un message dans le tour en cours, côté Claude.
- *
- * Rien de ce qu'elle vérifie n'est documenté : le champ `priority` de `SDKUserMessage`
- * est exporté sans commentaire, et la page « Streaming Input » décrit encore une file
- * strictement séquentielle. Le comportement est donc relevé plutôt que déduit, et cette
- * sonde est ce qui permettra de le revérifier au prochain bump du SDK.
- *
- * Le scénario tient à l'occupation du CLI : trois commandes lentes lui donnent des
- * frontières de lot d'outils, seuls moments où un message poussé peut être replié. Le
- * steer part pendant la première, et ce qu'on lit ensuite tranche entre les deux
- * comportements possibles. Un seul `turn.completed` dit que le message a rejoint le
- * tour ouvert ; deux disent qu'il a attendu le suivant, ce que la file fait déjà.
- *
- * Ne remplace pas un test : elle lance un vrai CLI authentifié et coûte un vrai tour
- * de modèle. Elle se lance à la main, quand on touche à ce chemin.
- */
+/** Manual Claude same-turn message-folding probe. Undocumented behavior: SDKUserMessage `priority` has no comment and Streaming Input still documents strict queues. Measure rather than infer for future SDK bumps. Three slow commands create tool-batch boundaries where injected messages may fold; steer during the first, leaving two opportunities. One `turn.completed` means it joined the current turn; two means ordinary queuing. Uses authenticated real CLIs and costs real model turns; run manually when changing this path. */
 
 const MARKER = 'PINEAPPLE'
 
@@ -53,7 +37,7 @@ function buildTrace(events: SillageEvent[]): Trace {
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** Attend la fin du tour plutôt qu'une durée fixe : le CLI n'est pas régulier. */
+/** Waits for completion rather than fixed durations because CLI timing varies. */
 async function waitForIdle(isIdle: () => boolean, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -71,8 +55,8 @@ async function main(): Promise<void> {
   const ctx: RunnerContext = {
     conversationId: 'probe-steer',
     cwd: tmpdir(),
-    // `bypassPermissions` : la sonde ne peut répondre à aucune demande d'approbation,
-    // et trois `sleep` dans un répertoire temporaire ne demandent pas d'arbitrage.
+    // `bypassPermissions`: probes cannot answer approval requests, and three sleeps
+    // in temporary directories require no judgment.
     config: { ...DEFAULT_CLAUDE_CONFIG, permissionMode: 'bypassPermissions' },
     binary: process.env.CLAUDE_BIN ?? 'claude',
     attachmentsRoot: tmpdir(),
@@ -94,8 +78,8 @@ async function main(): Promise<void> {
   await runner.start()
   await runner.send(TASK, [], [], [])
 
-  // Assez tard pour que le tour soit ouvert et le premier outil lancé, assez tôt pour
-  // qu'il reste deux commandes, donc deux frontières où le repli peut avoir lieu.
+  // Late enough for turn and first tool startup, early enough to leave two
+  // commands and therefore two folding boundaries.
   await settle(8000)
 
   const steered = await runner.steer(STEER, [], [], [])

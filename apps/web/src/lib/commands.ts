@@ -3,13 +3,10 @@ import type { AgentKind, ProjectCommandsDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
- * Commandes en `/` que le CLI reconnaît dans le dossier du projet, avant qu'une
- * conversation existe. Une fois le fil créé, c'est `commands.updated` qui fait foi.
- *
- * La sonde démarre un process CLI et le serveur ne met en cache que ses réussites :
- * pas de nouvel essai ni de relecture au retour sur l'onglet, un échec ne changerait
- * pas tout seul. `enabled` est à la charge de l'appelant, qui sait si le CLI est
- * installé et si le dossier visé est déjà connu.
+ * Slash commands recognized in the project directory before a conversation exists. After creation,
+ * `commands.updated` is authoritative. Probing starts a CLI process and the server caches only
+ * successes: disable retries and tab-return refetch because failure will not fix itself. The caller
+ * controls `enabled`, knowing CLI presence and directory availability.
  */
 export function useProjectCommands(
   projectId: string | undefined,

@@ -37,7 +37,7 @@ test('apparence : le style d’activité traverse l’API et la base, les ancien
     ...appearance, typingIndicator: 'constellation',
   })
 
-  // Une ancienne interface n’envoie pas encore ce choix, sans perdre ses couleurs.
+  // Older interfaces omit this choice without losing their colors.
   const legacy = await app.inject({ method: 'PATCH', url: '/api/me/settings', payload: { appearance } })
   assert.equal(legacy.statusCode, 200, legacy.body)
   assert.deepEqual((await app.inject('/api/me/settings')).json().appearance, appearance)

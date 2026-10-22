@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 env:
-  # Le binaire d'Electron ne sert qu'à lancer l'app de bureau depuis le dépôt.
+  # Electron binary only launches desktop app from repository.
   ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
 jobs:
@@ -14,17 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # pnpm doit être en place avant setup-node : la clé de cache du store en dépend.
+      # pnpm must precede setup-node because store cache key depends on it.
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Même version que les bindings relus ; une mise à jour se traite explicitement.
+      # Same version as checked bindings; updates are handled explicitly.
       - run: npm install --global @openai/codex@0.163.0
       - run: pnpm codex:types:check
-      # Idem pour OpenCode : le script lance un `opencode serve` jetable pour lire son OpenAPI.
+      # Likewise for OpenCode: script starts disposable `opencode serve` to read OpenAPI.
       - run: npm install --global opencode-ai@1.19.3
       - run: pnpm opencode:types:check
       - run: pnpm typecheck
@@ -33,10 +33,9 @@ jobs:
       - run: pnpm build
 
   macos:
-    # L'installation macOS de bout en bout, que rien ne permet d'essayer depuis Linux :
-    # l'archive construite comme en release, puis install.sh et l'agent launchd sur un
-    # Mac Apple Silicon. L'archive reste en artefact, pour un essai sur une vraie machine
-    # avec SILLAGE_ARCHIVE.
+    # End-to-end macOS installation, impossible to try from Linux: release-style
+    # archive, then install.sh/launchd agent on Apple Silicon Mac. Archive remains
+    # an artifact for real-machine trials with SILLAGE_ARCHIVE.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -46,8 +45,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Une version non numérotée : l'application ne propose aucune mise à jour à un
-      # build de CI, et install.sh ne le range pas parmi les releases à élaguer.
+      # Unnumbered version: application offers no updates to CI builds, and
+      # install.sh excludes it from release pruning.
       - name: Build identifier
         id: build
         run: echo "version=ci-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -73,10 +72,9 @@ jobs:
           tail -n 100 ~/.local/share/sillage/logs/sillage.log || true
 
   desktop:
-    # L'application de bureau de Linux et de Windows, empaquetée comme en release puis
-    # lancée pour de vrai : ce qu'un tag publierait ne se découvre pas cassé le jour de la
-    # release. Windows y est parce que ses chemins de code (lanceurs npm, shells) ne
-    # s'éprouvent nulle part ailleurs. Les paquets restent en artefacts du run.
+    # Linux/Windows desktop app packaged like release and really launched: tag
+    # output must not be discovered broken on release day. Windows-specific paths
+    # (npm launchers, shells) cannot be tested elsewhere. Packages remain run artifacts.
     uses: ./.github/workflows/desktop.yml
     with:
       version: v0.0.0-ci

@@ -26,7 +26,7 @@ test('un changement d’effort renvoie Ultracode allumé, que le CLI éteindrait
     advisorModel: null,
     ultracode: true,
   })
-  // Éteint, il n'a rien à protéger : la clé reste absente.
+  // When disabled there is nothing to protect: the key remains absent.
   const off = config({ effort: 'high' })
   assert.equal('ultracode' in liveFlagSettings(off, { ...off, effort: 'low' }), false)
 })

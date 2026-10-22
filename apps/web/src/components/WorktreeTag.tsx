@@ -4,10 +4,7 @@ import { setPanelOpen, setPanelTab } from '../lib/panel'
 import { useConversationWorktree } from '../lib/worktrees'
 import { cx } from './ui'
 
-/**
- * Couleur d'un état de chantier, partagée entre la ligne de la barre latérale et la
- * vue des chantiers pour que le même mot ait la même teinte partout.
- */
+/** Worktree-state colors shared by sidebar and worktree overview so identical states have identical hues. */
 export const WORKTREE_STATE_COLOR: Record<WorktreeState, string> = {
   missing: 'bg-critical',
   dirty: 'bg-caution',
@@ -22,21 +19,15 @@ export const WORKTREE_STATE_TONE: Record<WorktreeState, 'critical' | 'caution' |
   merged: 'positive',
 }
 
-/**
- * Le repère d'état d'un arbre : un carré plein, sans arrondi, pour ne pas se confondre
- * avec les points de signal de la ligne, qui parlent de l'instant et non de l'arbre.
- */
+/** Solid square with sharp corners distinguishes tree state from circular current-activity signals. */
 export function WorktreeStateMark({ state, className }: { state: WorktreeState; className?: string }) {
   return <span aria-hidden className={cx('size-1.5 shrink-0', WORKTREE_STATE_COLOR[state], className)} />
 }
 
 /**
- * La branche et l'état de l'arbre d'une session, sous son titre dans la barre latérale.
- *
- * Rien pour une session de l'arbre principal : c'est l'absence qui fait ressortir les
- * autres d'un coup d'œil. Le clic ouvre l'onglet Git du fil, la suite naturelle de la
- * question « où en est cet arbre ». Pas un bouton : la ligne est déjà un lien, et un
- * bouton dedans serait invalide ; le lien navigue, et le geste choisit l'onglet.
+ * Session branch and tree state beneath sidebar titles, omitted for main-tree sessions so others
+ * stand out. Clicking chooses Git while the enclosing link navigates; nested buttons would be
+ * invalid.
  */
 export function WorktreeTag({ conversation }: { conversation: Pick<ConversationDto, 'id' | 'projectId'> }) {
   const t = useTranslate()

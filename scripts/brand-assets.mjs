@@ -23,9 +23,9 @@ try {
     ['icon-maskable-512.png', 512, false],
     ['apple-touch-icon.png', 180, false],
   ]) {
-    // Le cadre central de 64 % tient dans le cercle sûr de 80 %, même aux extrémités.
-    // La tuile reprend l'accent indigo de l'application (teinte 275, comme le favicon) :
-    // sur un écran d'accueil, l'icône est le seul lien visuel avec l'interface.
+    // Central 64% frame fits inside 80% safe circle, including extremities. Tile uses
+    // app indigo accent (hue 275, like favicon): on home screens, icon is the only
+    // visual link to the interface.
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
       <rect width="100" height="100" rx="${rounded ? 23 : 0}" fill="#535cda"/>
       <g transform="translate(18 18) scale(.64)" fill="white">${paths}</g>
@@ -33,16 +33,16 @@ try {
     await render(`apps/web/public/${name}`, size, size, svg)
   }
 
-  // L'application de bureau, au gabarit des icônes macOS : la tuile occupe 824 px d'un
-  // carré de 1024, aux coins de 185 px, et la marge reste transparente pour l'ombre que
-  // le Dock dessine. electron-builder en tire l'.icns du Mac et les tailles de Linux.
+  // Desktop app follows macOS icon sizing: tile occupies 824 px of a 1024 square,
+  // 185 px corners, transparent margin for Dock shadow. electron-builder derives
+  // Mac .icns and Linux sizes from it.
   const desktop = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
     <rect x="100" y="100" width="824" height="824" rx="185" fill="#535cda"/>
     <g transform="translate(248.3 248.3) scale(5.2736)" fill="white">${paths}</g>
   </svg>`
   await render('apps/desktop/resources/icon.png', 1024, 1024, desktop)
 
-  // Un même visuel de partage évite de laisser l’ancienne marque sur le site.
+  // A shared social visual avoids leaving the old brand on the site.
   const og = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
     <rect width="1200" height="630" fill="#0b0d1c"/>
     <g transform="translate(85 145) scale(1.5)" fill="#8f9bff">${paths}</g>

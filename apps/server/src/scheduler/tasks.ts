@@ -25,12 +25,9 @@ import {
 import { webhookToDto } from '../automations/webhooks.js'
 import { badRequest, conflict, notFound } from '../http/errors.js'
 
-/**
- * Lecture et écriture des tâches planifiées, partagées entre les routes de l'interface
- * et l'outil MCP `schedule_task` : deux copies auraient armé différemment la même tâche.
- */
+/** Scheduled-task reads and writes shared by interface routes and MCP `schedule_task`; duplicate implementations would arm tasks differently. */
 
-/** Tirs rendus avec une tâche : de quoi remplir son historique sans second appel. */
+/** Runs included with tasks to populate history without another call. */
 const RUNS_PER_TASK = 20
 
 export function readCadence(raw: string): ScheduleCadence {
@@ -48,7 +45,7 @@ export function runToDto(row: ScheduledRunRow): ScheduledRunDto {
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
     error: row.error,
-    // La durée est toujours posée quand le script a tourné, même tué avant d'avoir un code.
+    // Always set duration after running scripts, even when killed before exit codes.
     check:
       row.checkDurationMs === null
         ? null
@@ -71,8 +68,8 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[], publicUrl: string):
       .all()
       .map((hook) => [hook.taskId, hook]),
   )
-  // Une requête par tâche plutôt qu'une fenêtre sur toutes : elles se comptent sur les
-  // doigts, et l'index (task_id, started_at) rend chacune immédiate.
+  // One query per task rather than a global window: there are few tasks,
+  // and the (task_id, started_at) index makes each query immediate.
   return rows.map((row) => {
     const runs = db
       .select()
@@ -81,8 +78,8 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[], publicUrl: string):
       .orderBy(desc(scheduledRuns.startedAt))
       .limit(RUNS_PER_TASK)
       .all()
-    // Un fil supprimé depuis ne doit pas laisser dans l'historique un lien qui ne mène
-    // nulle part : le tir reste, sans sa conversation.
+    // Deleted conversations must not leave broken history links:
+    // retain runs without their conversations.
     const threadIds = runs.flatMap((run) => (run.conversationId ? [run.conversationId] : []))
     const alive = new Set(
       threadIds.length > 0
@@ -133,17 +130,17 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[], publicUrl: string):
 export interface ScheduledTaskInput {
   name: string
   agent: AgentKind
-  /** Déjà résolue : les `CLI_DEFAULT` sont remplacés avant l'écriture. */
+  /** Already resolved: replace `CLI_DEFAULT` before writing. */
   config: AgentConfig
   prompt: string
   cadence: ScheduleCadence
   overlapPolicy: ScheduleOverlapPolicy
   maxDurationMinutes: number
   enabled: boolean
-  /** Null : pas de vérification avant le tour. */
+  /** Null means no pre-turn check. */
   checkScript?: string | null
   checkTimeoutSeconds?: number
-  /** L'agent peut demander une décision humaine ; éteint par défaut. */
+  /** Whether agents can request human decisions; disabled by default. */
   decisionsEnabled?: boolean
   decisionMaxHours?: number
 }
@@ -154,14 +151,9 @@ function assertCoherent(agent: AgentKind, config: AgentConfig): void {
   }
 }
 
-/**
- * Prochain tir à armer, ou l'erreur qui dit pourquoi il n'y en a pas.
- *
- * Une tâche active sans prochain tir est une tâche qui ne partira jamais sans le dire :
- * autant la refuser à l'écriture.
- */
+/** Next run to arm, or an error explaining its absence. Active tasks without future runs would silently never execute, so reject them on write. */
 function armedAt(cadence: ScheduleCadence, enabled: boolean, lastRunAt: number | null): number | null {
-  // Un webhook n'a pas d'heure : il part quand un appel arrive.
+  // Webhooks have no schedule: calls trigger runs.
   if (!enabled || cadence.kind === 'webhook') return null
   const next = nextScheduleRun(cadence, Date.now(), lastRunAt)
   if (next === null) {
@@ -193,8 +185,8 @@ export function createScheduledTask(
     createdByConversationId: owner.conversationId ?? null,
     checkScript: input.checkScript ?? null,
     checkTimeoutSeconds: input.checkTimeoutSeconds ?? DEFAULT_CHECK_TIMEOUT_SECONDS,
-    // Écrit dans l'interface, il est relu par qui l'a tapé ; écrit par un agent, il
-    // attend une personne.
+    // Interface-written scripts have been read by their author;
+    // agent-written scripts await human review.
     checkApprovedAt: input.checkScript && !owner.conversationId ? now : null,
     checkProposedBy: input.checkScript && owner.conversationId ? owner.conversationId : null,
     decisionsEnabled: input.decisionsEnabled ?? false,
@@ -208,11 +200,7 @@ export function createScheduledTask(
   return row
 }
 
-/**
- * Modifie une tâche. `agentConversationId` null : le geste vient de l'interface, et
- * enregistrer le script vaut le relire. Par un agent, un script changé redevient une
- * proposition, comme la commande d'une action de projet.
- */
+/** Edits tasks. Null `agentConversationId` means interface edits, where saving counts as review. Agent-modified scripts become proposals again, like project action commands. */
 export function updateScheduledTask(
   db: Db,
   current: ScheduledTaskRow,
@@ -225,8 +213,8 @@ export function updateScheduledTask(
 
   const cadence = patch.cadence ?? readCadence(current.cadence)
   const enabled = patch.enabled ?? current.enabled
-  // Réarmée seulement si la cadence ou la pause ont bougé : renommer une tâche ne doit
-  // pas repousser un tir par intervalle qui approchait.
+  // Rearm only when cadence or pause changes: renaming must not postpone
+  // an approaching interval run.
   const rearm = patch.cadence !== undefined || enabled !== current.enabled
   const next: ScheduledTaskRow = {
     ...current,
@@ -253,10 +241,7 @@ export function updateScheduledTask(
   return next
 }
 
-/**
- * Valide le script tel qu'il a été relu. S'il a changé depuis l'affichage, rien n'est
- * validé : on aurait approuvé un texte que personne n'a vu.
- */
+/** Approves exactly the reviewed script. If changed since display, approve nothing: otherwise unseen content would be approved. */
 export function approveScheduleCheck(db: Db, task: ScheduledTaskRow, reviewed: string): ScheduledTaskRow {
   if (!task.checkScript) throw notFound('schedule_check_missing', 'This task has no check script.')
   if (task.checkScript !== reviewed) {
@@ -270,14 +255,7 @@ export function approveScheduleCheck(db: Db, task: ScheduledTaskRow, reviewed: s
   return next
 }
 
-/**
- * Supprime une tâche et rend ses fils à la vie ordinaire, rangés.
- *
- * Rangés plutôt que laissés actifs : sortis de leur section, les tirs d'une tâche
- * horaire déferleraient d'un coup dans la liste principale, ce que la colonne
- * `schedule_id` servait justement à éviter. Renvoie les fils encore en cours, que
- * l'appelant doit arrêter : plus rien ne les surveillera.
- */
+/** Deletes tasks and archives their now-ordinary conversations. Otherwise hourly runs would flood the main list after leaving their scheduled section, defeating `schedule_id`. Returns still-active conversations for callers to stop because nothing will monitor them anymore. */
 export function deleteScheduledTask(db: Db, taskId: string): string[] {
   const threads = db
     .select({ id: conversations.id, status: conversations.status, archivedAt: conversations.archivedAt })
@@ -291,7 +269,7 @@ export function deleteScheduledTask(db: Db, taskId: string): string[] {
     db.update(conversations).set({ archivedAt: now }).where(inArray(conversations.id, fresh)).run()
   }
   db.update(conversations).set({ scheduleId: null }).where(eq(conversations.scheduleId, taskId)).run()
-  // Les tirs partent avec elle, par cascade.
+  // Runs cascade on deletion.
   db.delete(scheduledTasks).where(eq(scheduledTasks.id, taskId)).run()
 
   return threads

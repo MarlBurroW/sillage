@@ -7,21 +7,16 @@ import { translate } from './i18n'
 const PUSH_KEY = ['push']
 
 /**
- * Abonnement aux notifications système.
- *
- * Trois conditions doivent être réunies, et elles échouent chacune pour une raison
- * différente qu'il faut savoir distinguer : un service worker enregistré (donc HTTPS),
- * l'API Push disponible, et la permission accordée par l'utilisateur.
+ * System notification subscription. Three independent prerequisites have distinct failure reasons:
+ * a registered service worker (thus HTTPS), Push API availability, and user permission.
  */
 
 export type PushAvailability = 'ok' | 'insecure' | 'unsupported'
 
 /**
- * Ce que le navigateur permet ici.
- *
- * Hors contexte sécurisé, ni le service worker ni l'API Push n'existent : le distinguer
- * d'un navigateur qui ne les gère pas évite de dire « non supporté » à quelqu'un dont
- * le seul tort est d'être en `http://`.
+ * Browser capabilities in this context. In insecure contexts neither service workers nor Push
+ * exist: distinguish this from an unsupported browser rather than blaming support when the issue is
+ * HTTP.
  */
 export function pushAvailability(): PushAvailability {
   if (!window.isSecureContext) return 'insecure'
@@ -30,10 +25,8 @@ export function pushAvailability(): PushAvailability {
 }
 
 /**
- * La clé publique voyage en base64url ; l'API en attend les octets.
- *
- * Le type de retour est `ArrayBuffer` et non `Uint8Array` : depuis que les tableaux
- * typés peuvent s'appuyer sur un `SharedArrayBuffer`, ils ne satisfont plus `BufferSource`.
+ * Public keys travel as base64url; the API expects bytes. Return `ArrayBuffer` rather than
+ * `Uint8Array`: typed arrays can now wrap `SharedArrayBuffer` and no longer satisfy `BufferSource`.
  */
 function decodeKey(base64url: string): ArrayBuffer {
   const padded = base64url.padEnd(base64url.length + ((4 - (base64url.length % 4)) % 4), '=')
@@ -65,8 +58,8 @@ export function useSubscribePush() {
       }
 
       const registration = await navigator.serviceWorker.ready
-      // `userVisibleOnly` est obligatoire : les navigateurs refusent un abonnement qui
-      // permettrait de recevoir des messages sans rien montrer à l'utilisateur.
+      // `userVisibleOnly` is mandatory: browsers reject subscriptions allowing messages without
+      // visible user notifications.
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: decodeKey(publicKey),
@@ -91,8 +84,8 @@ export function useUnsubscribePush() {
       const subscription = await registration.pushManager.getSubscription()
       if (!subscription) return
 
-      // Le serveur d'abord : si le navigateur se désabonne et que l'appel échoue,
-      // l'endpoint resterait en base et recevrait des envois voués à l'échec.
+      // Server first: unsubscribing in the browser before a failed API call would leave a database
+      // endpoint receiving doomed deliveries.
       await api.post('/api/push/unsubscribe', { endpoint: subscription.endpoint })
       await subscription.unsubscribe()
       wsClient.setPushEndpoint(null)
@@ -106,7 +99,7 @@ export function useUnsubscribePush() {
 
 const PUSH_DEVICES_KEY = ['push-devices']
 
-/** Les appareils abonnés du compte, et celui-ci parmi eux. */
+/** Subscribed account devices and this device among them. */
 export function usePushDevices(enabled: boolean) {
   return useQuery({
     queryKey: PUSH_DEVICES_KEY,
@@ -122,8 +115,8 @@ export function usePushDevices(enabled: boolean) {
 async function currentEndpoint(): Promise<string | null> {
   if (!('serviceWorker' in navigator)) return null
   try {
-    // `getRegistration` et non `ready` : sans service worker enregistré, `ready` ne se
-    // résout jamais, et l'écran attendrait indéfiniment.
+    // Use `getRegistration`, not `ready`: without a registered service worker, `ready` never
+    // resolves and the screen would wait forever.
     const registration = await navigator.serviceWorker.getRegistration()
     return (await registration?.pushManager?.getSubscription())?.endpoint ?? null
   } catch {
@@ -142,7 +135,7 @@ export function useRemovePushDevice() {
   })
 }
 
-/** Une notification d'essai, après un délai pour fermer l'application ; suivie jusqu'au résultat. */
+/** A test notification after a delay allowing the app to close, tracked through its result. */
 export function useSendPushTest() {
   return useMutation({
     mutationFn: (delaySeconds: number) => api.post<PushTestDto>('/api/push/test', { delaySeconds }),

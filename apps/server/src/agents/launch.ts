@@ -1,22 +1,13 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
-/** Ce qu'il faut réellement lancer : un exécutable, et les arguments qui précèdent les siens. */
+/** Actual launch command: executable and arguments preceding native arguments. */
 export interface Launch {
   command: string
   args: string[]
 }
 
-/**
- * Comment lancer le CLI résolu en `binary`.
- *
- * Ailleurs que sous Windows, tel quel. Sous Windows, npm expose ses CLI par des lanceurs
- * `.cmd`, que Node refuse de lancer sans shell depuis le correctif de la CVE-2024-27980,
- * et qu'un shell lancerait au prix d'un échappement fragile des arguments. On lit donc le
- * lanceur pour retrouver sa cible : un exécutable natif (Claude Code, OpenCode) se lance
- * directement, un script JavaScript (Codex) par le Node de ce processus, celui que l'app
- * de bureau embarque.
- */
+/** Launching resolved `binary`: unchanged outside Windows. npm `.cmd` launchers require shells since Node's CVE-2024-27980 fix, but shell argument escaping is fragile. Read launcher targets instead: native Claude/OpenCode directly, JavaScript Codex through this process's Node bundled by desktop. */
 export function launchOf(binary: string, platform: NodeJS.Platform = process.platform): Launch {
   if (platform !== 'win32' || !/\.(cmd|bat)$/i.test(binary)) return { command: binary, args: [] }
   const content = readFileSync(binary, 'utf8')
@@ -27,26 +18,13 @@ export function launchOf(binary: string, platform: NodeJS.Platform = process.pla
   return runsThroughNode(content, target) ? { command: process.execPath, args: [target] } : { command: target, args: [] }
 }
 
-/**
- * Le chemin à donner au SDK de Claude comme `pathToClaudeCodeExecutable`.
- *
- * Le SDK lance lui-même un exécutable natif, et un script JavaScript par Node : seul un
- * lanceur `.cmd` lui est inutilisable, d'où sa cible à la place.
- */
+/** Claude SDK `pathToClaudeCodeExecutable`: SDK handles native executables and JavaScript via Node itself; only unusable `.cmd` wrappers require target resolution. */
 export function sdkExecutable(binary: string, platform: NodeJS.Platform = process.platform): string {
   const launch = launchOf(binary, platform)
   return launch.args[0] ?? launch.command
 }
 
-/**
- * La cible d'un lanceur `.cmd` écrit par npm, ou null.
- *
- * Deux formes : celle du paquet `cmd-shim`, pour les CLI installés (`"%dp0%\…\codex.js"
- * %*`), et le `npm.cmd` livré avec Node (`SET "NPM_CLI_JS=%~dp0\…\npm-cli.js"`). Dans les
- * deux, la cible est le dernier chemin relatif au dossier du lanceur ; un `node.exe` posé
- * à côté n'est que l'interpréteur qu'il préférerait, et `npm-prefix.js` un calcul préalable
- * de npm.
- */
+/** Target of npm `.cmd` launchers, or null. Supports `cmd-shim` (`"%dp0%\…\codex.js" %*`) and Node's npm.cmd (`SET "NPM_CLI_JS=%~dp0\…\npm-cli.js"`). Last launcher-relative paths are targets; sibling node.exe is merely the preferred interpreter, npm-prefix.js preliminary npm logic. */
 export function npmShimTarget(shim: string, content: string): string | null {
   const relatives = [...content.matchAll(/%~?dp0%?\\([^"\r\n%]+)/gi)]
     .map((match) => match[1]!)
@@ -55,12 +33,7 @@ export function npmShimTarget(shim: string, content: string): string | null {
   return relative ? path.win32.join(path.win32.dirname(shim), relative) : null
 }
 
-/**
- * Le lanceur passe-t-il sa cible à Node ? Un script `.js` toujours ; un fichier sans
- * extension quand le lanceur le confie à `%_prog%` (le Node que `cmd-shim` choisit) ou à
- * `%NODE_EXE%` (le `npm.cmd` de Node). C'est le cas de Grok, dont `bin/grok` est un script
- * à shebang node qui lance ensuite le binaire natif.
- */
+/** Whether launchers pass targets to Node: always `.js`, or extensionless files invoked through `%_prog%` (cmd-shim Node) or `%NODE_EXE%` (Node npm.cmd). Grok's `bin/grok` is a Node-shebang script launching its native binary. */
 function runsThroughNode(content: string, target: string): boolean {
   return /\.(c|m)?js$/i.test(target) || /%_prog%|%NODE_EXE%/i.test(content)
 }

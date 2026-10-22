@@ -58,7 +58,7 @@ test('copier un dossier ailleurs garde son nom et son contenu', async (t) => {
 
   assert.equal(await copyEntry(root, 'src', 'dest'), 'dest/src')
   assert.equal(await readFile(join(root, 'dest/src/lib/a.ts'), 'utf8'), 'x')
-  // Un dossier n'a pas d'extension : « v1.2 » ne devient pas « v1 copy.2 ».
+  // Directories have no extensions: 'v1.2' must not become 'v1 copy.2'.
   await mkdir(join(root, 'v1.2'))
   assert.equal(await copyEntry(root, 'v1.2', ''), 'v1.2 copy')
 })

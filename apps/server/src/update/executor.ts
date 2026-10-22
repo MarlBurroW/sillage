@@ -13,18 +13,7 @@ import type { ReleaseChecker } from './release-checker.js'
 
 const execFileAsync = promisify(execFile)
 
-/**
- * Applique une mise à jour sur le layout de l'installeur :
- *
- *   $SILLAGE_INSTALL_DIR/
- *   ├── releases/vX.Y.Z/     un arbre autonome par version (node_modules inclus)
- *   └── current -> releases/vX.Y.Z
- *
- * Rien n'est jamais modifié dans une release existante : on télécharge, on
- * extrait dans un dossier de transit, puis on bascule le lien `current` d'un
- * `rename` atomique. Tant que la bascule n'a pas eu lieu, un échec laisse
- * l'installation intacte. Le redémarrage est délégué à systemd, ou à launchd sur macOS.
- */
+/** Updates installer layouts: `$SILLAGE_INSTALL_DIR/` contains independent `releases/vX.Y.Z/` trees including node_modules, with `current -> releases/vX.Y.Z`. Never modify existing releases: download and extract into staging, then atomically rename the `current` link. Failures before activation leave installations intact. Delegate restart to systemd or macOS launchd. */
 export class UpdateExecutor {
   private status: UpdateStatus = {
     phase: 'idle',
@@ -47,10 +36,7 @@ export class UpdateExecutor {
     return !['idle', 'failed'].includes(this.status.phase)
   }
 
-  /**
-   * Valide et démarre la mise à jour, sans l'attendre : la route répond 202 et
-   * le client suit la progression en sondant getStatus().
-   */
+  /** Validates and starts updates without awaiting: routes return 202 and clients poll getStatus() for progress. */
   start(targetTag: string): void {
     if (detectChannel() !== 'installer') {
       throw new UpdateError('unsupported_channel', 'This installation does not support the built-in update.')
@@ -104,8 +90,8 @@ export class UpdateExecutor {
       this.append('Extraction…')
       await rm(stagingDir, { recursive: true, force: true })
       await mkdir(stagingDir, { recursive: true })
-      // L'archive a un dossier racine `sillage/` : on l'aplatit dans le dossier
-      // de transit, renommé en dossier de release seulement une fois complet.
+      // Flatten archive root `sillage/` into staging,
+      // renaming to the release directory only when complete.
       await execFileAsync('tar', ['-xzf', archive, '--strip-components=1', '-C', stagingDir])
       await this.ensureNativeModules(stagingDir)
       await rm(releaseDir, { recursive: true, force: true })
@@ -117,8 +103,8 @@ export class UpdateExecutor {
       const currentTmp = join(root, 'current.tmp')
       await rm(currentTmp, { force: true })
       await symlink(join('releases', `v${target}`), currentTmp)
-      // rename() écrase `current` atomiquement ; un unlink+symlink laisserait
-      // une fenêtre sans lien si le process meurt entre les deux.
+      // rename() replaces `current` atomically; unlink+symlink would leave missing links
+      // if processes die between steps.
       await rename(currentTmp, join(root, 'current'))
       this.append(`Version ${target} activée.`)
 
@@ -133,21 +119,11 @@ export class UpdateExecutor {
     }
   }
 
-  /**
-   * Vérifie que le module natif de la nouvelle version se charge, et le recompile
-   * sinon — avant la bascule, jamais après.
-   *
-   * Tous les modules natifs de l'arbre passent par N-API : leurs binaires ne sont plus
-   * liés à l'ABI de Node, donc ils devraient se charger partout. Devraient — une archive
-   * tronquée ou une plateforme que les prebuilds ne couvrent pas donne encore un module
-   * qui refuse de se charger, et la version installée démarre, meurt, et systemd la
-   * relance sans fin : l'interface qui aurait permis de revenir en arrière est justement
-   * celle qui ne remonte plus. Échouer ici laisse `current` sur la version qui marche.
-   */
+  /** Loads the new version's native module and rebuilds if needed before activation. All native modules use N-API rather than specific Node ABIs and should load everywhere, but truncated archives or unsupported prebuild platforms can still fail. Activating broken versions would create restart loops and remove the interface needed for rollback. Failure here leaves `current` on the working release. */
   private async ensureNativeModules(dir: string): Promise<void> {
     const loads = () =>
-      // Une requête, pas un simple require : un Node à qui manque la version de N-API du
-      // module le charge, puis plante au premier appel.
+      // Execute a query, not just require: Node lacking the module's N-API version
+      // can load it successfully but crashes on the first call.
       execFileAsync(process.execPath, ['-e', 'require("better-sqlite3")(":memory:").prepare("select 1").get()'], { cwd: dir })
 
     try {
@@ -160,8 +136,8 @@ export class UpdateExecutor {
     }
 
     try {
-      // Les sources voyagent dans l'archive : la recompilation ne télécharge rien, mais
-      // demande une chaîne de compilation sur la machine.
+      // Sources accompany archives, so rebuilding downloads nothing
+      // but requires local build tools.
       await execFileAsync('npm', ['rebuild', 'better-sqlite3'], { cwd: dir })
       await loads()
     } catch (err) {
@@ -173,7 +149,7 @@ export class UpdateExecutor {
     this.append('Module natif recompilé.')
   }
 
-  /** Garde la version courante et les deux précédentes, supprime le reste. */
+  /** Retains current and two previous versions, deleting others. */
   private async pruneOldReleases(root: string, target: string): Promise<void> {
     const entries = await readdir(join(root, 'releases'))
     const versions = entries
@@ -186,16 +162,7 @@ export class UpdateExecutor {
     }
   }
 
-  /**
-   * `systemctl --user restart` tue ce process en plein appel : le fils doit
-   * être détaché pour survivre. Si systemctl n'est pas joignable (pas de bus
-   * utilisateur), on sort en erreur pour que `Restart=` de l'unité relance le
-   * process, qui suivra alors le lien `current` déjà basculé.
-   *
-   * Sous launchd, l'agent est `KeepAlive` : il relance le process quelle que soit
-   * sa sortie. Un SIGTERM à soi-même passe par l'arrêt propre de main.ts, sans
-   * avoir à connaître le label de l'agent.
-   */
+  /** `systemctl --user restart` kills this process mid-call, so detach children to survive. If systemctl is unreachable without user buses, exit with failure so unit `Restart=` relaunches through the activated `current` link. launchd `KeepAlive` restarts on any exit; self-SIGTERM triggers graceful main.ts cleanup without knowing agent labels. */
   private scheduleRestart(): void {
     setTimeout(() => {
       if (process.platform === 'darwin') {

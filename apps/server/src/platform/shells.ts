@@ -2,49 +2,26 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { resolveBinary } from '../agents/cli-binary.js'
 
-/** Un shell, et les arguments qui le préparent avant ceux de l'appelant. */
+/** Shell and preparatory arguments preceding caller arguments. */
 export interface Shell {
   command: string
   args: string[]
 }
 
-/**
- * Le shell d'un terminal interactif.
- *
- * Celui de l'utilisateur sous Linux et macOS (`$SHELL`, à défaut `/bin/sh`), en shell de
- * connexion sur macOS comme l'ouvre Terminal : c'est là que /etc/zprofile complète le
- * PATH et que ~/.zprofile charge Homebrew.
- *
- * Sous Windows, PowerShell : celui qu'ouvrent le Terminal Windows et VS Code par défaut,
- * PowerShell 7 quand il est installé, sinon celui du système.
- */
+/** Interactive terminal shell. Linux/macOS use `$SHELL`, falling back to `/bin/sh`; macOS uses login shells like Terminal so /etc/zprofile extends PATH and ~/.zprofile loads Homebrew. Windows uses PowerShell like Windows Terminal and VS Code: PowerShell 7 when available, otherwise the system version. */
 export function interactiveShell(platform: NodeJS.Platform = process.platform): Shell {
   if (platform === 'win32') return { command: powershell(), args: ['-NoLogo'] }
   return { command: posixShell(), args: platform === 'darwin' ? ['-l'] : [] }
 }
 
-/**
- * Le shell qui exécute une commande écrite en syntaxe POSIX : une action de projet, la
- * commande d'un terminal ouvert pour elle, un script de vérification sans shebang.
- *
- * Ces commandes sont écrites pour `sh`, souvent par un agent : sous Windows, Claude Code
- * lui-même exécute les siennes dans le bash de Git for Windows. On fait de même, le Git
- * que Sillage exige y apportant ce bash ; PowerShell ne sert qu'à défaut, et une commande
- * POSIX un peu élaborée y échouera.
- */
+/** Shell for POSIX-syntax commands: project actions, their terminals and shebangless checks. Agents commonly write sh commands; Claude Code itself uses Git for Windows bash on Windows. Follow that approach using Sillage's required Git installation. PowerShell is a fallback where elaborate POSIX commands will fail. */
 export function commandShell(platform: NodeJS.Platform = process.platform): Shell {
   if (platform !== 'win32') return { command: posixShell(), args: ['-lc'] }
   const bash = gitBash()
   return bash ? { command: bash, args: ['-lc'] } : { command: powershell(), args: ['-NoLogo', '-Command'] }
 }
 
-/**
- * Le bash de Git for Windows, ou null.
- *
- * `CLAUDE_CODE_GIT_BASH_PATH` d'abord, la variable que Claude Code lit pour la même
- * question. Sinon à côté du `git.exe` du PATH (`…\Git\cmd\git.exe` → `…\Git\bin\bash.exe`),
- * puis à l'emplacement d'installation par défaut.
- */
+/** Git for Windows bash, or null. Prefer `CLAUDE_CODE_GIT_BASH_PATH` like Claude Code, then beside PATH `git.exe` (`…\Git\cmd\git.exe` → `…\Git\bin\bash.exe`), then default installation paths. */
 export function gitBash(env: NodeJS.ProcessEnv = process.env): string | null {
   const declared = env.CLAUDE_CODE_GIT_BASH_PATH
   if (declared && existsSync(declared)) return declared

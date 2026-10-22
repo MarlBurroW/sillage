@@ -26,21 +26,15 @@ import { rawFileUrl } from './files-io'
 import type { WorkspaceScope } from './workspace-scope'
 
 /**
- * Visualiseur 3D : une scène three.js par onglet, rendue à la demande.
- *
- * Isolé de React pour que ce module, et `three` avec lui, ne soient chargés que
- * lorsqu'un modèle est ouvert : la bibliothèque pèse plus que tout le reste de
- * l'application. Le composant ne connaît que `load`, `fit`, `setGrid` et `dispose`.
+ * 3D viewer: one three.js scene per tab rendered on demand. Isolate from React so this module and
+ * `three` load only when a model opens: the library exceeds the rest of the app's size. The
+ * component knows only `load`, `fit`, `setGrid`, and `dispose`.
  */
 
 /**
- * Préfixe des ressources annexes d'un modèle (`.bin`, textures, `.mtl`).
- *
- * Les chargeurs de three.js construisent l'URL d'une ressource par concaténation
- * `chemin + nom`. Comme le chemin d'un fichier du workspace vit dans un paramètre de
- * requête, cette concaténation ne donne rien d'utilisable ; un préfixe reconnaissable
- * permet à `LoadingManager` de la remplacer par la vraie URL, à côté du fichier
- * principal.
+ * Prefix for supporting model resources (`.bin`, textures, `.mtl`). three.js loaders concatenate
+ * path and name, which cannot work with workspace paths stored in query parameters. A recognizable
+ * prefix lets `LoadingManager` replace it with the true URL beside the main file.
  */
 const RESOURCE_PREFIX = 'sillage-resource:'
 
@@ -87,8 +81,8 @@ export class ModelViewer {
     this.manager.setURLModifier((url) => {
       if (!url.startsWith(RESOURCE_PREFIX)) return url
       let name = url.slice(RESOURCE_PREFIX.length)
-      // Les URI d'un glTF sont encodées en pourcentage ; un nom d'`obj` ne l'est pas.
-      try { name = decodeURIComponent(name) } catch { /* nom brut */ }
+      // glTF URIs are percent-encoded; OBJ names are not.
+      try { name = decodeURIComponent(name) } catch { /* raw name */ }
       return rawFileUrl(scope, directory + name)
     })
 
@@ -97,7 +91,7 @@ export class ModelViewer {
     this.resize()
   }
 
-  /** Charge le fichier principal, en remplaçant le modèle courant s'il y en a un. */
+  /** Load the main file, replacing any current model. */
   async load(): Promise<ModelStats> {
     const extension = this.path.slice(this.path.lastIndexOf('.') + 1).toLowerCase()
     const url = rawFileUrl(this.scope, this.path)
@@ -124,7 +118,7 @@ export class ModelViewer {
       case 'obj': {
         const loader = new OBJLoader(this.manager)
         const object = await loader.loadAsync(url)
-        // L'`obj` déclare ses matériaux dans un `.mtl` voisin : le premier trouvé s'applique.
+        // OBJ declares materials in a neighboring `.mtl`: use the first one found.
         const library = (object as Group & { materialLibraries?: string[] }).materialLibraries?.[0]
         if (library) {
           const materials = await new MTLLoader(this.manager)
@@ -157,7 +151,7 @@ export class ModelViewer {
     }
   }
 
-  /** Cadre la caméra sur le modèle entier et pose la grille sous lui. */
+  /** Frame the entire model and place the grid beneath it. */
   fit(): void {
     if (!this.model) return
     const box = new Box3().setFromObject(this.model)
@@ -205,7 +199,7 @@ export class ModelViewer {
     this.requestRender()
   }
 
-  /** Rendu à la demande : une scène immobile ne coûte rien. */
+  /** Render on demand: stationary scenes cost nothing. */
   private requestRender(): void {
     if (this.frame || this.disposed) return
     this.frame = requestAnimationFrame(() => {
@@ -221,7 +215,7 @@ export class ModelViewer {
     this.model = null
   }
 
-  /** Rend le contexte WebGL : le navigateur n'en accorde qu'une poignée par page. */
+  /** Release the WebGL context: browsers allow only a handful per page. */
   dispose(): void {
     this.disposed = true
     cancelAnimationFrame(this.frame)

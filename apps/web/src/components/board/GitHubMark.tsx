@@ -1,6 +1,6 @@
 /**
- * Le logo de GitHub, absent de lucide : il marque ce qui vient d'une issue ou y part,
- * repère qu'un pictogramme générique de lien ne donnerait pas.
+ * GitHub logo absent from lucide: specifically marks issue-originated or published content beyond a
+ * generic link icon.
  */
 export function GitHubMark({ size = 14, className }: { size?: number; className?: string }) {
   return (

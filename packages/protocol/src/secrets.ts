@@ -1,21 +1,19 @@
 import { z } from 'zod'
 
 /**
- * Dépôt de secrets de l'instance.
+ * Instance secret store.
  *
- * Un secret est écrit une fois et ne se relit jamais par l'API : les routes ne
- * renvoient que des noms et des dates. C'est ce qui distingue ce dépôt d'un simple
- * champ de configuration, et c'est aussi ce qui impose de remplacer un secret plutôt
- * que de le corriger, puisque l'interface ne peut pas afficher sa valeur actuelle.
+ * Secrets are written once and never read back through the API: routes return only names and
+ * dates. Unlike a simple configuration field, this requires replacement rather than correction,
+ * since the UI cannot show the current value.
  *
- * Les valeurs ne sont déchiffrées que côté serveur, au lancement d'un runner, pour
- * être posées dans l'environnement ou les en-têtes d'un serveur MCP. Elles ne
- * traversent jamais le WebSocket ni le journal.
+ * Values are decrypted only server-side when launching a runner, for MCP server environment
+ * variables or headers. They never cross the WebSocket or journal.
  */
 
 /**
- * Le nom sert d'identifiant dans `{{secret.NOM}}` : ce qu'on y accepte doit pouvoir
- * s'écrire dans un motif sans échappement ni ambiguïté de fin de jeton.
+ * Names identify secrets in `{{secret.NOM}}`: accepted characters must work in a pattern
+ * without escaping or ambiguous token boundaries.
  */
 export const secretNameSchema = z
   .string()
@@ -23,16 +21,16 @@ export const secretNameSchema = z
   .max(64)
   .regex(/^[A-Za-z0-9_]+$/)
 
-/** Ce que l'API rend d'un secret : tout sauf sa valeur. */
+/** What the API returns for a secret: everything except its value. */
 export const secretSchema = z.object({
   name: z.string(),
   createdAt: z.number(),
   updatedAt: z.number(),
   /**
-   * Où ce secret est employé, calculé à la lecture.
+   * Where this secret is used, calculated on read.
    *
-   * Sans ça, supprimer un secret revient à parier : rien à l'écran ne dit qu'un
-   * serveur MCP en dépend, et la panne n'apparaît qu'au prochain lancement.
+   * Otherwise deleting a secret is a gamble: nothing indicates that an MCP server depends on
+   * it, and failure appears only at the next launch.
    */
   usedBy: z.array(z.string()).default([]),
 })
@@ -47,21 +45,20 @@ export interface SecretListDto {
   secrets: Secret[]
 }
 
-/** Motif de substitution, reconnu dans les valeurs d'environnement et d'en-têtes. */
+/** Substitution pattern recognized in environment and header values. */
 const SECRET_PATTERN = /\{\{\s*secret\.([A-Za-z0-9_]+)\s*\}\}/g
 
-/** Noms de secrets référencés par un texte, sans doublon et dans l'ordre de lecture. */
+/** Secret names referenced in text, deduplicated in reading order. */
 export function referencedSecrets(text: string): string[] {
   return [...new Set([...text.matchAll(SECRET_PATTERN)].map((match) => match[1] as string))]
 }
 
 /**
- * Remplace les motifs par leur valeur.
+ * Replaces patterns with values.
  *
- * `resolve` rend `undefined` pour un secret absent, et c'est l'appelant qui décide
- * quoi en faire : ici on ne substitue rien et on laisse le nom manquant remonter, un
- * en-tête d'authentification vidé en silence produisant une erreur distante que rien
- * ne relie à sa cause.
+ * `resolve` returns `undefined` for missing secrets, leaving callers to decide what to do.
+ * Here, substitute nothing and report the missing name: silently emptying an authentication
+ * header would cause a remote error disconnected from its cause.
  */
 export function applySecrets(
   text: string,

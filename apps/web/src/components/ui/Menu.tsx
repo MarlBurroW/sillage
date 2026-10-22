@@ -34,20 +34,16 @@ interface MenuItemProps {
   onSelect: () => void
   tone?: 'neutral' | 'critical'
   /**
-   * Une action momentanément impossible reste affichée plutôt que retirée : la voir
-   * grisée dit qu'elle existe et qu'elle reviendra, alors que sa disparition laisse
-   * croire qu'elle n'existe pas.
+   * Keep temporarily unavailable actions visible but disabled, conveying that they exist and will
+   * return rather than implying absence.
    */
   disabled?: boolean
-  /** Raccourci clavier équivalent, voir `MenuHint`. */
+  /** Equivalent shortcut; see MenuHint. */
   hint?: string
   children: ReactNode
 }
 
-/**
- * Raccourci rappelé en bout de ligne : c'est dans le menu qu'on découvre qu'il existe.
- * Caché au doigt, où il n'y a pas de clavier pour s'en servir.
- */
+/** Shortcut at row end for discoverability. Hide on touch without a usable keyboard. */
 export function MenuHint({ children }: { children: ReactNode }) {
   return (
     <span className="ml-auto pl-4 text-xs text-ink-faint pointer-coarse:hidden">{children}</span>
@@ -82,10 +78,8 @@ export function MenuItem({
 }
 
 /**
- * Entrée à cocher, pour un menu qui règle plusieurs choses à la fois.
- *
- * Le menu reste ouvert à la sélection, contrairement à `MenuItem` : cocher trois
- * serveurs demanderait sinon de le rouvrir trois fois.
+ * Checkbox menu item stays open on selection unlike MenuItem, avoiding reopening three times to
+ * enable three servers.
  */
 export function MenuCheckboxItem({
   checked,
@@ -131,8 +125,8 @@ export function MenuLabel({ children }: { children: ReactNode }) {
 }
 
 /**
- * Pastille de couleur. `DropdownMenu.Item` en `asChild` pour que Radix ferme le menu
- * et gère le focus, tout en gardant un bouton rond plutôt qu'une ligne de menu.
+ * Color swatch uses DropdownMenu.Item asChild so Radix closes and manages focus while retaining a
+ * round button.
  */
 export function MenuSwatch({
   color,
@@ -140,7 +134,7 @@ export function MenuSwatch({
   label,
   onSelect,
 }: {
-  /** null signifie « couleur d'accent du thème ». */
+  /** null means theme accent color. */
   color: string | null
   selected: boolean
   label: string

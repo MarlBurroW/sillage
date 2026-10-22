@@ -12,19 +12,16 @@ import {
 } from './agent-config.js'
 
 /**
- * Préréglages d'un projet : avec quoi ses conversations s'ouvrent, avant les défauts
- * du compte.
+ * Project presets: initial conversation settings before account defaults.
  *
- * Réglage partagé et non personnel, à la différence de `AgentDefaults` : il décrit le
- * projet, pas celui qui le lit. Les serveurs MCP utiles à un dépôt le sont pour tout
- * le monde, et les répertoires supplémentaires — retirés des défauts de compte parce
- * qu'ils désignent des dossiers précis — retrouvent ici le seul endroit où ils ont un
- * sens. Seul le propriétaire du projet peut les écrire.
+ * Shared rather than personal, unlike `AgentDefaults`: they describe the project, not its
+ * reader. MCP servers useful to a repository are useful to everyone, and additional
+ * directories, excluded from account defaults because they name specific folders, belong here.
+ * Only the project owner can write them.
  *
- * Un préréglage par CLI, comme pour le compte, et pour la même raison : les garde-fous
- * de Claude et ceux de Codex ne se traduisent pas les uns dans les autres. `null`
- * signifie « ce projet ne dit rien de ce CLI », et les défauts du compte reprennent la
- * main — ce n'est pas la même chose qu'un préréglage vide.
+ * One preset per CLI, as for accounts and for the same reason: Claude and Codex safeguards do
+ * not map onto each other. `null` means “this project says nothing about this CLI”, leaving
+ * account defaults in control; it differs from an empty preset.
  */
 export interface ProjectAgentDefaults {
   claude: ClaudeConfig | null
@@ -41,8 +38,8 @@ export const NO_PROJECT_DEFAULTS: ProjectAgentDefaults = {
 }
 
 /**
- * Tolérant comme celui des réglages de compte : un CLI dont la configuration a dérivé
- * du protocole retombe sur « rien de dit », plutôt que de rendre le projet illisible.
+ * Tolerant like account settings: CLI configurations that drifted from the protocol fall back
+ * to “unspecified” rather than making the project unreadable.
  */
 export const projectAgentDefaultsSchema = z
   .object({
@@ -54,11 +51,10 @@ export const projectAgentDefaultsSchema = z
   .catch(NO_PROJECT_DEFAULTS)
 
 /**
- * Relit la colonne `projects.default_config`.
+ * Reads `projects.default_config`.
  *
- * La forme d'avant les préréglages par CLI y est encore possible : une configuration
- * seule, sans le CLI en clé. Elle se range sous le CLI que porte son discriminant,
- * plutôt que d'être silencieusement perdue à la première lecture.
+ * The previous format may still exist: one configuration without a CLI key. Store it under the
+ * CLI named by its discriminant rather than silently losing it on first read.
  */
 export function readProjectDefaults(raw: string | null | undefined): ProjectAgentDefaults {
   if (!raw) return NO_PROJECT_DEFAULTS
@@ -77,10 +73,10 @@ export function readProjectDefaults(raw: string | null | undefined): ProjectAgen
 }
 
 /**
- * Ce qui doit être écrit en colonne pour un préréglage remplacé.
+ * Column value for a replaced preset.
  *
- * `null` quand plus aucun CLI n'a de préréglage : la colonne retrouve son état de
- * projet neuf, et rien ne distingue « vidé » de « jamais réglé ».
+ * `null` when no CLI has a preset: restores the new-project state, with no distinction between
+ * “cleared” and “never configured”.
  */
 export function serializeProjectDefaults(defaults: ProjectAgentDefaults): string | null {
   if (!defaults.claude && !defaults.codex && !defaults.opencode && !defaults.grok) return null

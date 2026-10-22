@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm'
 import { codexAccounts, type CodexAccountRow, type Db } from '@sillage/db'
 import type { CodexAccount } from '@sillage/protocol'
 
-/** Ce que Codex a dit du compte à la dernière lecture, à retenir sur la ligne. */
+/** Account information from the latest Codex read, retained in the row. */
 export interface CodexAccountIdentity {
   authMode: 'chatgpt' | 'apiKey' | null
   email: string | null
@@ -23,10 +23,7 @@ function toDto(row: CodexAccountRow): CodexAccount {
   }
 }
 
-/**
- * Lignes des comptes Codex supplémentaires. Le home et sa connexion sont à côté, dans
- * `CodexAccountHomes` : la ligne ne dit que le libellé et l'identité lue.
- */
+/** Additional Codex account rows. Homes and authentication live separately in `CodexAccountHomes`; rows hold only labels and observed identity. */
 export class CodexAccountStore {
   constructor(private readonly db: Db) {}
 
@@ -71,7 +68,7 @@ export class CodexAccountStore {
     return true
   }
 
-  /** Écrit ce que Codex a dit du compte ; `authMode` null vaut « déconnecté ». */
+  /** Stores Codex account information; null `authMode` means logged out. */
   setIdentity(id: string, identity: CodexAccountIdentity): void {
     this.db
       .update(codexAccounts)

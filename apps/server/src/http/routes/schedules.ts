@@ -32,13 +32,7 @@ import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-/**
- * Tâches planifiées d'un projet.
- *
- * Lisibles par qui voit le projet, comme ses conversations. Modifiables par qui a créé
- * la tâche ou possède le projet : un tir s'ouvre au nom de son créateur, avec les
- * permissions qu'il a choisies, et un autre compte n'a pas à les élargir à sa place.
- */
+/** Project scheduled tasks. Project viewers may read them, like conversations. Only their creator or project owner may edit: runs use the creator's identity and selected permissions, which another account must not expand on their behalf. */
 export function registerScheduleRoutes(
   app: FastifyInstance,
   ctx: AppContext,
@@ -47,7 +41,7 @@ export function registerScheduleRoutes(
   tasks: TaskScheduler,
   automations: AutomationReceiver,
 ): void {
-  // Lue à chaque appel : la configuration peut manquer au moment de l'enregistrement.
+  // Read on every call: configuration may be missing at registration time.
   const publicUrl = () => publicUrlOf(ctx.db, ctx.config)
   const loadProject = (projectId: string, userId: string) => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
@@ -69,7 +63,7 @@ export function registerScheduleRoutes(
 
   const one = (row: ScheduledTaskRow): ScheduledTaskDto => tasksToDto(ctx.db, [row], publicUrl())[0]!
 
-  /** Toutes les tâches visibles, tous projets confondus : la sidebar les range par projet. */
+  /** All visible tasks across projects; the sidebar groups them by project. */
   app.get('/api/schedules', async (request): Promise<ScheduledTaskDto[]> => {
     const user = requireUser(request)
     const rows = ctx.db
@@ -92,11 +86,11 @@ export function registerScheduleRoutes(
     const body = createScheduledTaskBodySchema.parse(request.body)
     loadProject(id, user.id)
 
-    // Comme à la création d'une conversation : la tâche garde une configuration
-    // explicite, pas un « défaut du CLI » qui changerait de sens d'un tir à l'autre.
+    // As with conversation creation, retain explicit settings rather than a 'CLI default'
+    // whose meaning could change between runs.
     const config = await registry.adapter(body.agent).resolveDefaults(body.config)
-    // La tâche et son webhook ensemble : une automatisation sans adresse ne recevrait
-    // jamais rien, et resterait là sans le dire.
+    // Create the task and webhook together: automation without an address would never
+    // receive anything and would remain silently broken.
     const row = ctx.db.transaction(() => {
       const created = createScheduledTask(ctx.db, { projectId: id, userId: user.id }, { ...body, config })
       if (body.cadence.kind === 'webhook') {
@@ -113,12 +107,12 @@ export function registerScheduleRoutes(
     const { id } = request.params as { id: string }
     const body = updateScheduledTaskBodySchema.parse(request.body)
     const task = loadWritable(id, user.id)
-    // Horaire et webhook ne s'échangent pas : l'un a une adresse et un journal, l'autre
-    // une heure. Mieux vaut en créer une seconde que de perdre l'un en route.
+    // Schedules and webhooks cannot be swapped: one has a time, the other an address
+    // and journal. Create another instead of losing either along the way.
     if (body.cadence && (body.cadence.kind === 'webhook') !== (readCadence(task.cadence).kind === 'webhook')) {
       throw badRequest('automation_trigger_fixed', 'A scheduled task cannot become a webhook automation, or the reverse.')
     }
-    // Réactiver après un disjoncteur, c'est le réarmer.
+    // Re-enabling after the circuit breaker trips resets it.
     if (body.enabled) {
       ctx.db.update(automationWebhooks).set({ trippedAt: null }).where(eq(automationWebhooks.taskId, task.id)).run()
     }
@@ -135,14 +129,14 @@ export function registerScheduleRoutes(
     loadWritable(id, user.id)
 
     const running = deleteScheduledTask(ctx.db, id)
-    // Un tir en vol n'a plus de tâche pour le borner : il s'arrête avec elle.
+    // An in-flight run loses its bounds when its task disappears, so stop it too.
     await Promise.all(running.map((conversationId) => sessions.terminate(conversationId)))
-    // Ce que sa vérification gardait d'un tir à l'autre ne sert plus à personne.
+    // State retained by its check between runs is no longer needed.
     await rm(checkStateDir(ctx.config.paths.data, id), { recursive: true, force: true })
     return reply.status(204).send()
   })
 
-  /** « Lancer maintenant » : un tir hors cadence, qui ne décale pas le suivant. */
+  /** 'Run now': an out-of-cycle run that leaves the next scheduled run unchanged. */
   app.post('/api/schedules/:id/run', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -151,11 +145,7 @@ export function registerScheduleRoutes(
     return reply.status(201).send(runToDto(await tasks.runNow(id, { skipCheck: body.skipCheck })))
   })
 
-  /**
-   * Joue un script de vérification sans rien lancer, celui du formulaire, enregistré ou
-   * non. C'est exécuter du code sur le serveur : réservé à qui peut modifier la tâche,
-   * ou en créer une dans ce projet. L'état gardé entre deux tirs n'est pas touché.
-   */
+  /** Runs the form's check script, saved or unsaved, without launching anything. This executes server code and requires permission to edit the task or create one in the project. State retained between runs remains untouched. */
   app.post('/api/projects/:id/schedules/check-test', async (request): Promise<ScheduleCheckResultDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -176,7 +166,7 @@ export function registerScheduleRoutes(
       taskName: task?.name ?? '',
       projectId: project.id,
       cwd: project.workspacePath,
-      // Sans tâche, un dossier vide : l'essai le copie sans jamais y écrire.
+      // Without a task, use an empty directory: the trial copies it without writing to it.
       stateDir: checkStateDir(ctx.config.paths.data, task?.id ?? '_draft'),
       firedAt: Date.now(),
       trigger: 'test',
@@ -185,7 +175,7 @@ export function registerScheduleRoutes(
     })
   })
 
-  /** Valide le script qu'un agent a proposé, tel qu'il a été relu. */
+  /** Approves the exact agent-proposed script that was reviewed. */
   app.post('/api/schedules/:id/check/approve', async (request): Promise<ScheduledTaskDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

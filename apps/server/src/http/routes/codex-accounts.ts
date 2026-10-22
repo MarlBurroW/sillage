@@ -13,11 +13,11 @@ import { HttpError, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
- * Comptes Codex supplémentaires de l'utilisateur courant.
+ * Additional Codex accounts belonging to the current user.
  *
- * Par compte Sillage et non par instance, comme les comptes Claude. La connexion
- * elle-même est menée par Codex dans le home du compte : les routes ne transportent
- * qu'une clé API à l'aller, jamais rien au retour.
+ * Per Sillage account rather than instance, like Claude accounts. Codex handles
+ * authentication inside the account home: routes send API keys one way and
+ * never return secrets.
  */
 export function registerCodexAccountRoutes(
   app: FastifyInstance,
@@ -31,7 +31,7 @@ export function registerCodexAccountRoutes(
     if (!account) throw notFound('codex_account_not_found', 'Unknown Codex account.')
     return account
   }
-  /** Ce que Codex a refusé, tel quel : c'est lui qui sait pourquoi. */
+  /** Preserve Codex's rejection verbatim: it knows the reason. */
   const codexRefused = (err: unknown) =>
     new HttpError(502, 'codex_login_failed', 'Codex could not sign in: {error}.', {
       error: err instanceof Error ? err.message : String(err),
@@ -70,8 +70,8 @@ export function registerCodexAccountRoutes(
   })
 
   /**
-   * Lance la connexion. Par code d'appareil, la réponse porte l'URL et le code, et la
-   * suite se lit par `GET …/login` ; par clé API, tout est fait au retour.
+   * Starts login. Device-code responses include a URL and code; progress is read
+   * through `GET …/login`. API-key login is complete when this returns.
    */
   app.post('/api/codex-accounts/:id/login', async (request): Promise<CodexLoginStatusDto> => {
     const user = requireUser(request)
@@ -102,7 +102,7 @@ export function registerCodexAccountRoutes(
     const { id } = request.params as { id: string }
     const account = owned(user.id, id)
     try {
-      // Une attente en cours s'annule ; un home connecté se déconnecte.
+      // Cancel pending logins; log out homes that are already authenticated.
       if (login.status(id).state === 'pending') await login.cancel(id)
       else if (account.status === 'ready') await login.logout(id)
     } catch (err) {

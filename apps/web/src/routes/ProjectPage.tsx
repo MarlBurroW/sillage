@@ -60,8 +60,10 @@ import {
   useUpdateProject,
 } from '../lib/projects'
 
-/** Recalculée à chaque rendu plutôt que figée au chargement du module : sinon un
- *  changement de langue laisserait ces deux options dans l'ancienne. */
+/**
+ * Recomputed on every render rather than frozen at module load; otherwise changing language
+ * would leave these two options in the old one.
+ */
 function visibilityOptions(): SelectOption<ProjectVisibility>[] {
   return [
     {
@@ -180,10 +182,10 @@ export function ProjectPage() {
 }
 
 /**
- * L'image du projet : l'envoyer, la remplacer, la retirer.
+ * Project image: upload, replace or remove.
  *
- * Les agents en posent une d'eux-mêmes quand elle manque ; cette carte est là pour
- * choisir la sienne, ou corriger la leur.
+ * Agents supply one when missing; this card lets users choose their own or correct the agent's
+ * choice.
  */
 function ProjectImage({ project }: { project: ProjectDto }) {
   const t = useTranslate()
@@ -210,7 +212,7 @@ function ProjectImage({ project }: { project: ProjectDto }) {
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0]
-              // Vidé pour que choisir deux fois le même fichier redéclenche l'envoi.
+              // Clear so choosing the same file twice triggers another upload.
               event.target.value = ''
               if (!file) return
               removeImage.reset()
@@ -249,16 +251,15 @@ function ProjectImage({ project }: { project: ProjectDto }) {
 }
 
 /**
- * Les préréglages du projet : le socle des conversations qui s'y ouvrent.
+ * Project presets: baseline for conversations opened here.
  *
- * Partagé, à la différence des défauts de compte, et pour ce que le projet a de propre :
- * les serveurs MCP utiles à ce dépôt le sont pour tout le monde, et les répertoires
- * supplémentaires ne veulent rien dire ailleurs. D'où l'écriture réservée au
- * propriétaire, comme le reste des réglages du projet.
+ * Shared, unlike account defaults, and specific to the project: repository-useful MCP servers
+ * benefit everyone, and extra directories have no meaning elsewhere. Hence owner-only writes,
+ * like other project settings.
  *
- * Chaque CLI est indépendant, et peut ne rien dire : « les défauts de compte » n'est pas
- * un préréglage vide mais une absence, qui laisse chacun démarrer avec les siens. Rien
- * n'est appliqué aux conversations déjà ouvertes, qui portent chacune sa configuration.
+ * Each CLI is independent and may specify nothing: “account defaults” is an absence, not an
+ * empty preset, letting everyone start with their own. Existing conversations retain their own
+ * configurations.
  */
 function ProjectDefaults({
   projectId,
@@ -273,15 +274,14 @@ function ProjectDefaults({
 
   const [agent, setAgent] = useState<AgentKind>('claude')
   /**
-   * Ce qui vient d'être choisi, tant que la liste des projets n'a pas été relue. Sans
-   * lui, chaque réglage reviendrait à sa valeur d'avant le temps de l'aller-retour, et
-   * couper le préréglage le ferait réapparaître sous le curseur.
+   * Pending choice until the project list is reread. Otherwise settings would revert during the
+   * round trip, and disabling a preset would make it reappear under the pointer.
    */
   const [pending, setPending] = useState<{ [K in AgentKind]?: AgentConfig | null }>({})
 
   const stored = agent in pending ? (pending[agent] ?? null) : defaults[agent]
-  // Le CLI de la valeur retenue fait foi : une configuration Claude n'a rien à régler
-  // pour Codex, et l'écran en montrerait les mauvaises options.
+  // The selected value's CLI is authoritative: Claude configuration cannot configure
+  // Codex, and the screen would display incorrect options.
   const preset = stored?.agent === agent ? stored : null
   const account = settings?.agentDefaults[agent] ?? defaultConfigFor(agent)
 
@@ -329,17 +329,18 @@ function ProjectDefaults({
           label={t('project.defaults.source')}
           value={preset ? 'project' : 'account'}
           options={sources}
-          // Le préréglage part de ce qui était montré, c'est-à-dire des défauts du
-          // compte : accepter le socle proposé ne doit pas demander de le ressaisir.
+          // Start presets from displayed account defaults: accepting the proposed baseline
+          // must not require re-entering it.
           onChange={(source) => write(source === 'project' ? (preset ?? account) : null)}
         />
 
         {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
         {update.isError ? <Banner>{t('project.defaults.save.error')}</Banner> : null}
 
-        {/* Rien à déplier tant que le projet ne dit rien de ce CLI : les réglages
-            affichés seraient ceux du compte, et un clic les figerait pour tout le
-            monde sans que personne l'ait demandé. */}
+        {/*
+         * Nothing to expand while the project specifies nothing for this CLI: displayed account
+         * defaults would become shared settings on click without anyone requesting it.
+         */}
         {preset ? (
           <>
             {groups.map((group) => (
@@ -350,8 +351,10 @@ function ProjectDefaults({
               <span className="text-sm font-medium text-ink-soft">
                 {t('project.defaults.mcp.label')}
               </span>
-              {/* Le contrôle porte déjà son icône et son décompte : l'encadrer d'un
-                  second repère ferait deux prises pour un seul réglage. */}
+              {/*
+               * The control already includes its icon and count; another marker would create
+               * two handles for one setting.
+               */}
               <div className="flex">{mcp}</div>
               <p className="text-xs text-ink-faint">{t('project.defaults.mcp.hint')}</p>
             </div>
@@ -365,9 +368,8 @@ function ProjectDefaults({
 }
 
 /**
- * Une catégorie de réglage, en liste déroulante, comme sur l'écran des défauts de CLI :
- * celle des modèles est trop longue pour être dépliée, et aligner les autres dessus vaut
- * mieux qu'un écran où chaque réglage a sa forme propre.
+ * Settings category dropdown, like CLI defaults: the model list is too long to expand, and
+ * consistent controls beat a different form for every setting.
  */
 function GroupField({ group }: { group: SettingGroup }) {
   const selected = group.options.find((option) => option.value === group.value)
@@ -416,7 +418,7 @@ function ProjectSettings({
   const [workspacePath, setWorkspacePath] = useState(initialPath)
   const [visibility, setVisibility] = useState(initialVisibility)
 
-  // Les valeurs du serveur font foi quand le projet change ou après enregistrement.
+  // Server values are authoritative on project changes or after saving.
   useEffect(() => {
     setName(initialName)
     setWorkspacePath(initialPath)
@@ -459,7 +461,7 @@ function ProjectSettings({
           />
         ) : null}
 
-        {/* Appliqué au clic, hors du formulaire : un interrupteur, pas une case à enregistrer. */}
+        {/* Applied on click outside the form: a switch, not a checkbox to save. */}
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-sm">{t('project.settings.checkpoints')}</p>

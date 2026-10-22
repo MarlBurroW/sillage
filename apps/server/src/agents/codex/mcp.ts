@@ -5,25 +5,20 @@ import type {
 import type { McpServer, McpServerState, McpServerStatus } from '@sillage/protocol'
 
 /**
- * Traduction du registre Sillage vers la configuration que Codex accepte, et retour.
- *
- * Codex ne lit les serveurs MCP que depuis sa configuration : il n'a pas d'équivalent
- * de `setMcpServers`. Sillage les pose en surcharge de thread plutôt que d'écrire dans
- * `~/.codex/config.toml`, ce qui laisse le fichier de l'utilisateur intact et rend
- * l'activation par conversation possible.
+ * Translate Sillage registry to Codex configuration and back. Codex reads MCP only through
+ * configuration without setMcpServers. Apply thread overrides rather than writing user config.toml,
+ * preserving their file and supporting per-conversation activation.
  */
 
-/** Serveur MCP intégré à Codex, présent dans tout thread sans que personne l'ait déclaré. */
+/** Built-in Codex MCP server present in every thread without explicit declaration. */
 const BUILTIN_SERVERS = new Set(['codex_apps'])
 
 type ThreadConfig = NonNullable<ThreadStartParams['config']>
 type ConfigValue = NonNullable<ThreadConfig[string]>
 
 /**
- * Surcharges à passer dans `config` de `thread/start` et `thread/resume`.
- *
- * Toujours renseigné, même vide : l'absence de clé et une table vide se valent ici, et
- * un objet inconditionnel évite d'avoir à distinguer les deux au point d'appel.
+ * Overrides for config in thread/start and thread/resume. Always supply even when empty: missing
+ * keys and empty tables are equivalent, while unconditional objects avoid call-site branching.
  */
 export function toCodexThreadConfig(servers: McpServer[]): ThreadConfig {
   const entries = servers.map((server): [string, ConfigValue] => {
@@ -34,8 +29,8 @@ export function toCodexThreadConfig(servers: McpServer[]): ThreadConfig {
         { command: transport.command, args: transport.args, env: transport.env },
       ]
     }
-    // Codex ne distingue pas `http` de `sse` en configuration : il déduit le transport
-    // de la présence d'une URL.
+    // Codex does not distinguish HTTP and SSE configuration; it infers transport
+    // from URL presence.
     return [server.name, { url: transport.url, http_headers: transport.headers }]
   })
 
@@ -43,19 +38,18 @@ export function toCodexThreadConfig(servers: McpServer[]): ThreadConfig {
 }
 
 /**
- * Codex décrit un serveur par deux axes que Claude fond en un seul : un état de
- * démarrage et un état d'authentification. L'authentification manquante l'emporte,
- * étant la seule que l'utilisateur peut corriger lui-même.
+ * Codex separates startup and authentication states that Claude combines. Missing authentication
+ * takes precedence because users can directly fix it.
  */
 const STARTUP_STATES: Record<string, McpServerState> = {
   starting: 'pending',
   ready: 'connected',
   failed: 'failed',
-  /** Démarrage abandonné : le serveur n'est pas là, et pas davantage en route. */
+  /** Abandoned startup: the server is neither present nor still starting. */
   cancelled: 'failed',
 }
 
-/** Dernier démarrage annoncé par `mcpServer/startupStatus/updated`, par serveur. */
+/** Latest startup status per server from mcpServer/startupStatus/updated. */
 export interface CodexMcpStartup {
   status: string
   error: string | null
@@ -70,9 +64,9 @@ export function fromCodexMcpStatus(
 
   return statuses.map((status) => {
     const latest = startup.get(status.name)
-    // Le serveur figure dans l'inventaire sans annonce de démarrage : il est en place
-    // depuis avant que Sillage n'écoute. `connected` plutôt que `pending`, qui
-    // laisserait un serveur fonctionnel affiché comme en cours de lancement.
+    // Inventory entries without startup announcements were already running
+    // before Sillage subscribed. Use connected rather than pending, which would
+    // leave functioning servers displayed as starting.
     const state = status.authStatus === 'notLoggedIn'
       ? 'needs-auth'
       : (latest ? (STARTUP_STATES[latest.status] ?? 'pending') : 'connected')

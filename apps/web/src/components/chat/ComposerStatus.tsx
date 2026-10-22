@@ -5,13 +5,9 @@ import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
- * Ce qui est toujours vrai d'une conversation, sous la barre de saisie : le CLI, la
- * session chargée ou non, la liaison, le raccourci d'envoi.
- *
- * Rien de ce qui va et vient n'a sa place ici. Les signaux sont au-dessus du composer,
- * en couleur ; cette ligne-ci reste grise et immobile, et ne doit jamais attirer l'œil.
- * Les mélanger donnait à l'attente d'une réponse le même poids visuel qu'un rappel de
- * raccourci clavier.
+ * Persistent conversation facts beneath input: CLI, loaded session, connection, send shortcut.
+ * Changing signals belong above in color; this quiet gray row never attracts attention. Mixing them
+ * gave response waits the same weight as shortcut reminders.
  */
 export function ComposerStatus({
   agent,
@@ -20,7 +16,7 @@ export function ComposerStatus({
 }: {
   agent: AgentKind
   connected: boolean
-  /** Null tant que le serveur ne l'a pas annoncé, c'est-à-dire avant l'abonnement. */
+  /** Null until announced by the server after subscription. */
   warm: boolean | null
 }) {
   const t = useTranslate()
@@ -47,15 +43,14 @@ export function ComposerStatus({
         </span>
       ) : null}
 
-      {/* La liaison n'est dite ici que lorsqu'elle fonctionne. Coupée, elle devient un
-          signal au-dessus du composer, où l'ambiant va quand il tourne mal. */}
+      {/* Show connections here only while healthy; broken ambient state becomes a signal above the composer. */}
       {connected ? (
         <span title={t('composer.status.connected.title')}>
           {t('composer.status.connected.label')}
         </span>
       ) : null}
 
-      {/* Le raccourci ne se découvre pas tout seul, et il n'a pas de sens au doigt. */}
+      {/* Shortcuts need discoverability but have no touch meaning. */}
       <span className="ml-auto hidden pointer-fine:inline">{t('composer.status.shortcut')}</span>
     </div>
   )

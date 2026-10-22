@@ -46,7 +46,7 @@ export function ImageViewer({ images, initialIndex, onClose }: { images: ViewerI
 }
 
 function Action({ label, onClick, children, disabled }: { label: string; onClick: () => void; children: ReactNode; disabled?: boolean }) {
-  // Garder le focus pendant la copie permet de continuer à naviguer au clavier.
+  // Retain focus while copying so keyboard navigation continues.
   return <button type="button" aria-label={label} title={label} aria-disabled={disabled || undefined} onClick={() => { if (!disabled) onClick() }} className="rounded-md p-3 hover:bg-surface-high focus-visible:outline-accent aria-disabled:opacity-40">{children}</button>
 }
 
@@ -84,7 +84,7 @@ function ImageCanvas({ image }: { image: ViewerImage }) {
     } catch { setStatus(t('image.downloadError')) } finally { setBusy(false) }
   }
   const copy = () => {
-    // La promesse est passée immédiatement : Safari exige le geste utilisateur lors de write().
+    // Pass the promise immediately because Safari requires a user gesture at write time.
     setBusy(true)
     const png = async () => {
       const data = await blob()

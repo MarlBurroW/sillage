@@ -33,16 +33,12 @@ import {
 import { decryptValue, encryptValue, type EncryptedValue } from '../secrets/cipher.js'
 import { runAutomationScript, type ScriptOutcome } from './script.js'
 
-/**
- * Le webhook d'une automatisation : réglages, événement, vérification, décision et
- * journal. Le moteur de tirs reste celui des tâches planifiées (`TaskScheduler`) ;
- * ce module dit seulement si un appel doit en produire un, et avec quoi.
- */
+/** Automation webhooks: settings, events, verification, decisions and journal. Scheduled tasks' `TaskScheduler` still runs executions; this module only decides whether a call should trigger one and with what input. */
 
-/** Livraisons gardées par webhook : assez pour mettre des conditions au point. */
+/** Deliveries retained per webhook, sufficient for refining conditions. */
 const DELIVERIES_KEPT = 100
 
-/** En-têtes jamais écrits au journal : ils portent un secret ou une session. */
+/** Headers never written to the journal because they contain secrets or sessions. */
 const SECRET_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization', 'x-gitlab-token'])
 
 export function webhookUrl(publicUrl: string, token: string): string {
@@ -87,10 +83,7 @@ function settingsColumns(settings: WebhookSettings) {
   }
 }
 
-/**
- * Le secret de signature est tiré ici et jamais choisi : c'est lui qu'on recopie chez
- * l'appelant, et un secret saisi à la main finit par être `secret`.
- */
+/** Generate signing secrets here instead of accepting user choices: callers copy them into their configuration, while manually chosen secrets eventually become `secret`. */
 export function createWebhook(
   db: Db,
   key: Buffer,
@@ -120,10 +113,7 @@ export function revealSecret(key: Buffer, row: AutomationWebhookRow): string {
   return decryptValue(key, JSON.parse(row.secret) as EncryptedValue)
 }
 
-/**
- * Nouveau secret, et nouvelle URL avec lui : un secret qu'on change parce qu'il a fuité
- * a souvent fuité avec l'adresse.
- */
+/** New secret and new URL: leaked secrets are often leaked together with their address. */
 export function rotateWebhook(db: Db, key: Buffer, row: AutomationWebhookRow): AutomationWebhookRow {
   const next = {
     ...row,
@@ -134,7 +124,7 @@ export function rotateWebhook(db: Db, key: Buffer, row: AutomationWebhookRow): A
   return next
 }
 
-// --- Événement -----------------------------------------------------------------------
+// --- Event -----------------------------------------------------------------------
 
 export function normalizeHeaders(raw: Record<string, string | string[] | undefined>): Record<string, string> {
   const headers: Record<string, string> = {}
@@ -145,21 +135,18 @@ export function normalizeHeaders(raw: Record<string, string | string[] | undefin
   return headers
 }
 
-/**
- * Le corps lu comme JSON quand il en est : directement, ou dans le champ `payload` d'un
- * formulaire, que GitHub envoie quand le webhook est réglé en `x-www-form-urlencoded`.
- */
+/** Parse JSON bodies directly or from the form `payload` field GitHub sends for `x-www-form-urlencoded` webhooks. */
 function parsePayload(body: string, contentType: string): unknown {
   const trimmed = body.trim()
   if (contentType.includes('application/x-www-form-urlencoded')) {
     const field = new URLSearchParams(body).get('payload')
     if (field) {
-      try { return JSON.parse(field) } catch { /* Un formulaire sans JSON reste du texte. */ }
+      try { return JSON.parse(field) } catch { /* Non-JSON form data remains text. */ }
     }
     return Object.fromEntries(new URLSearchParams(body))
   }
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try { return JSON.parse(trimmed) } catch { /* Pas du JSON : le corps brut suffira. */ }
+    try { return JSON.parse(trimmed) } catch { /* Not JSON: the raw body suffices. */ }
   }
   return null
 }
@@ -172,7 +159,7 @@ export function buildEvent(
   return { headers, query, body, payload: parsePayload(body, headers['content-type'] ?? '') }
 }
 
-/** Ce qui est écrit au journal : sans en-têtes secrets, corps borné. */
+/** Journal representation: no secret headers and a bounded body. */
 function storedEvent(event: AutomationEvent, verification: WebhookVerification) {
   const headers = Object.fromEntries(
     Object.entries(event.headers).filter(([name]) =>
@@ -190,7 +177,7 @@ export function eventOf(row: AutomationDeliveryRow): AutomationEvent {
   return buildEvent(headers, JSON.parse(row.query) as Record<string, string>, row.body)
 }
 
-// --- Vérification --------------------------------------------------------------------
+// --- Verification ----------------------------------------------------------------
 
 function sameText(a: string, b: string): boolean {
   const left = Buffer.from(a)
@@ -198,7 +185,7 @@ function sameText(a: string, b: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right)
 }
 
-/** Vérifiée sur le corps brut, octet pour octet : un JSON réécrit ne signerait plus rien. */
+/** Verify raw bodies byte for byte: reserialized JSON would invalidate signatures. */
 export function verifyCaller(
   verification: WebhookVerification,
   secret: string,
@@ -213,7 +200,7 @@ export function verifyCaller(
   return sameText(received.trim().toLowerCase(), `${verification.prefix}${digest}`.toLowerCase())
 }
 
-// --- Décision ------------------------------------------------------------------------
+// --- Decision --------------------------------------------------------------------
 
 export interface Decision {
   verdict: 'launch' | 'filtered' | 'script_skipped' | 'script_error'
@@ -222,11 +209,11 @@ export interface Decision {
   subject: string | null
   vars: Record<string, unknown>
   reason: DeliveryReason | null
-  /** Session dont la marque figure dans l'appel, si elle existe encore. */
+  /** Session whose marker appears in the call, if it still exists. */
   originConversationId: string | null
 }
 
-/** La première règle qui fait échouer l'appel, avec ce que son champ valait. */
+/** First rule rejecting the call, with its actual field value. */
 function filterReason(settings: WebhookSettings, results: RuleResult[]): DeliveryReason {
   if (settings.conditions.mode === 'any') return { code: 'filter_any' }
   const index = results.findIndex((result) => !result.ok)
@@ -280,7 +267,7 @@ export async function decide(db: Db, settings: WebhookSettings, event: Automatio
   }
 }
 
-// --- Journal -------------------------------------------------------------------------
+// --- Log -------------------------------------------------------------------------
 
 export function recordDelivery(
   db: Db,
@@ -321,7 +308,7 @@ export function recordDelivery(
   return row
 }
 
-/** Les plus anciennes partent, sauf celles qui attendent encore leur tour. */
+/** Remove oldest deliveries except those still awaiting their turn. */
 function prune(db: Db, taskId: string): void {
   const keep = db
     .select({ id: automationDeliveries.id })
@@ -353,13 +340,13 @@ export function setDeliveryOutcome(
     .run()
 }
 
-/** Une raison lue en base ; un texte d'une version antérieure reste lisible tel quel. */
+/** Database reason; text from older versions remains readable unchanged. */
 function readReason(raw: string | null): DeliveryReason | null {
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw) as DeliveryReason
     if (parsed && typeof parsed === 'object' && typeof parsed.code === 'string') return parsed
-  } catch { /* Texte libre. */ }
+  } catch { /* Free text. */ }
   return { code: 'text', params: { text: raw } }
 }
 

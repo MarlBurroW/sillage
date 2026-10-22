@@ -3,11 +3,9 @@ import { highlight, languageFromPath, useHighlighterReady } from '../lib/highlig
 import { cx } from './ui'
 
 /**
- * Les sections d'un diff unifié.
- *
- * Partagé par le panneau de modifications et par les renderers d'outils : l'état
- * courant vient de git, l'historique du journal, un appel d'outil de son propre
- * payload, mais les trois montrent la même chose et doivent se lire pareil.
+ * Unified diff hunks shared by changes panels and tool renderers. Current state comes from Git,
+ * history from logs, calls from payloads, but all show the same structure and need consistent
+ * reading.
  */
 export function DiffHunks({ hunks, path }: { hunks: DiffHunk[]; path: string }) {
   const ready = useHighlighterReady()
@@ -30,8 +28,7 @@ export function DiffHunks({ hunks, path }: { hunks: DiffHunk[]; path: string }) 
                     line.kind === 'removed' && 'bg-critical/12',
                   )}
                 >
-                  {/* Les numéros ne se sélectionnent pas : copier un extrait de diff
-                      doit donner du code, pas du code numéroté. */}
+                  {/* Exclude line numbers from selection so copied diffs produce code rather than numbered code. */}
                   <td className="w-8 border-r border-line/60 px-1 text-right text-ink-faint/70 select-none">
                     {line.before ?? ''}
                   </td>
@@ -53,21 +50,18 @@ export function DiffHunks({ hunks, path }: { hunks: DiffHunk[]; path: string }) 
 }
 
 /**
- * Une ligne de diff colorée.
- *
- * Colorée ligne à ligne, et non par bloc : un diff n'est pas du code continu, ses
- * lignes supprimées et ajoutées ne coexistent nulle part. Un commentaire multiligne ou
- * un littéral de gabarit peut donc être mal coloré, ce que `ignoreIllegals` rend
- * inoffensif, et que la lecture d'un diff pardonne largement.
+ * Highlight diff lines individually rather than as continuous code because removed and added lines
+ * never coexist. Multiline comments/templates may highlight imperfectly; ignoreIllegals makes this
+ * harmless and acceptable for diffs.
  */
 function DiffCode({ text, language }: { text: string; language: string }) {
   const rendered = highlight(text, language)
 
   return rendered.applied ? (
-    // Les jetons sont des `<span>` de classes `hljs-*`, stylés avec les tokens de thème.
+    // Tokens are hljs spans styled through theme tokens.
     <span className="hljs" dangerouslySetInnerHTML={{ __html: rendered.html }} />
   ) : (
-    // Rendu comme texte : React échappe, on n'a rien à assainir nous-mêmes.
+    // Render as text and let React escape without manual sanitization.
     <>{text}</>
   )
 }

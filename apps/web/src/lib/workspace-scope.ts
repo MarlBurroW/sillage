@@ -1,11 +1,7 @@
 /**
- * Portée du panneau latéral : le répertoire consulté appartient soit à une
- * conversation (son cwd, worktree compris), soit à un projet (son workspace).
- *
- * Encodée en chaîne plutôt qu'en objet : une conversation garde son identifiant nu, ce
- * qui laisse inchangés les appels du fil (openTab, clés de cache) qui ne connaissent
- * qu'elle ; un projet se préfixe. Les deux formes ne peuvent pas se confondre, et le
- * décodage vit ici, nulle part ailleurs.
+ * Side-panel scope: either a conversation's cwd including worktree, or a project's workspace.
+ * Encode as a string rather than an object: bare conversation IDs preserve thread calls (openTab,
+ * cache keys), while projects use a prefix. Forms cannot collide and decoding lives only here.
  */
 export type WorkspaceScope = string
 
@@ -23,7 +19,7 @@ export function decodeScope(scope: WorkspaceScope): {
     : { kind: 'conversation', id: scope }
 }
 
-/** Préfixe des routes du panneau pour cette portée. */
+/** Panel route prefix for this scope. */
 export function workspaceApiBase(scope: WorkspaceScope): string {
   const { kind, id } = decodeScope(scope)
   return kind === 'project' ? `/api/projects/${id}` : `/api/conversations/${id}`

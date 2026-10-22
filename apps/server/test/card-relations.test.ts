@@ -48,7 +48,7 @@ for (const kind of ['blocks', 'related', 'duplicates', 'parent', 'replaces'] as 
     assert.equal(incoming.card.number, 1)
     linkCards(db, 'project', 2, 1, CARD_RELATION_INVERSE[kind])
     assert.equal(db.select().from(cardRelations).all().length, 1)
-    // Une relation ne change jamais la colonne ou la description.
+    // Relations never change columns or descriptions.
     assert.ok(db.select().from(cards).all().every(c => c.column === 'todo' && c.description === ''))
     unlinkCards(db, 'project', 2, 1, incoming.kind)
     assert.deepEqual(listCardRelations(db, 'project', 1), [])

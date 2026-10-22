@@ -9,9 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// La branche et le worktree dans l'en-tête d'une conversation, sur la démo : vrai
-// serveur, vrai git. Le chantier « offline cache » tourne dans un worktree aux
-// changements non commités, les autres fils à la racine du projet, sur main.
+// Conversation header branch/worktree on demo: real server/git. The “offline cache”
+// task runs in a worktree with uncommitted changes; other threads use project root
+// on main.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -94,8 +94,7 @@ try {
 
   const worktreeBar = (page) => page.getByRole('region', { name: 'Worktree de la conversation' })
 
-  // Grand écran, fil en worktree : la branche, l'état des changements non commités,
-  // et le clic qui ouvre l'onglet Git.
+  // Desktop worktree thread: branch, uncommitted-change status, click opens Git tab.
   const desk = await session({ width: 1440, height: 900 }, false)
   await desk.page.goto(`${base}/p/${desk.project.id}/c/${desk.hero.id}`)
   const label = worktreeBar(desk.page).getByText('feat/offline-cache', { exact: true })
@@ -107,13 +106,13 @@ try {
   await panel.getByRole('button', { name: /^Espace de travail/ }).waitFor()
   console.log('OK : branche du worktree affichée, onglet Git ouvert au clic.')
 
-  // Fil à la racine du projet : la branche de l'arbre principal.
+  // Project-root thread: main-tree branch.
   await desk.page.goto(`${base}/p/${desk.project.id}/c/${desk.rooted.id}`)
   await header(desk.page).getByRole('button', { name: /^Dossier du projet · Branche main/ }).waitFor()
   console.log('OK : branche de l’arbre principal affichée à la racine.')
   assert.deepEqual(desk.errors, [])
 
-  // Téléphone : le nom du projet reste entier, la branche se tronque, rien ne déborde.
+  // Phone: project name stays complete, branch truncates, no overflow.
   const phone = await session({ width: 390, height: 844 }, true)
   await phone.page.goto(`${base}/p/${phone.project.id}/c/${phone.hero.id}`)
   const phoneHeader = header(phone.page)
@@ -129,7 +128,7 @@ try {
   await phone.page.screenshot({ path: join(shots, 'workspace-label-phone.png'), clip: { x: 0, y: 0, width: 390, height: 120 } })
   assert.deepEqual(phone.errors, [])
 
-  // Worktree effacé hors de Sillage : la barre le dit une fois le cache git renouvelé.
+  // Worktree deleted outside Sillage: bar reports it after git cache refresh.
   const worktrees = await (await desk.context.request.get(`${base}/api/projects/${desk.project.id}/worktrees`)).json()
   const offline = worktrees.find((entry) => entry.name === 'feat/offline-cache')
   await rm(offline.path, { recursive: true, force: true })

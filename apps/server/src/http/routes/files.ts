@@ -20,33 +20,19 @@ import { HttpError, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { workspaceScopes } from './workspace-scopes.js'
 
-/**
- * Octets inspectés pour décider si un fichier est binaire. Un en-tête suffit : les
- * formats binaires portent presque toujours un octet nul dans leurs premiers octets,
- * et lire le fichier entier pour en juger coûterait ce qu'on cherche à éviter.
- */
+/** Bytes inspected to detect binary files. Headers suffice: binary formats nearly always contain null bytes near the start, and reading entire files would incur the very cost this avoids. */
 const SNIFF_BYTES = 8192
 
 function extensionOf(path: string): string {
   return extname(path).replace('.', '').toLowerCase()
 }
 
-/**
- * Empreinte du fichier sur le disque.
- *
- * Taille et date de modification plutôt qu'un hachage du contenu : c'est ce que le
- * système de fichiers donne sans relire le fichier, et deux écritures distinctes ne
- * produisent pas la même paire.
- */
+/** Disk file fingerprint. Size and modification time avoid hashing content: the filesystem supplies both without rereading the file, and distinct writes produce different pairs. */
 function fingerprint(size: number, mtimeMs: number): string {
   return `${size}:${Math.round(mtimeMs)}`
 }
 
-/**
- * Interprète un en-tête `Range` à une seule tranche, `bytes=start-end`, `bytes=start-`
- * ou `bytes=-suffix`. Les formes à plusieurs tranches sont ignorées : le navigateur
- * n'en émet pas pour lire un média, et y répondre demanderait un corps multipart.
- */
+/** Parses single-range `Range` headers: `bytes=start-end`, `bytes=start-` or `bytes=-suffix`. Ignore multiple ranges: browsers do not use them for media playback, and supporting them requires multipart bodies. */
 function parseRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
   if (!header) return null
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
@@ -65,16 +51,11 @@ function parseRange(header: string | undefined, size: number): { start: number; 
   return { start, end }
 }
 
-/**
- * Lecture et écriture des fichiers du workspace, pour l'éditeur du panneau.
- *
- * L'invariant I2 ne s'applique pas : un fichier est l'état vivant du disque, pas un
- * événement. Rien n'est journalisé ici.
- */
+/** Workspace file reads and writes for the panel editor. Invariant I2 does not apply: files are live disk state rather than events. Nothing here is journaled. */
 export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void {
-  // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
+  // Conversation and project scopes: see `workspace-scopes.ts`.
   for (const { base, cwdOf } of workspaceScopes) {
-    /** Tout compte qui voit le projet peut lire et écrire, y compris partagé. */
+    /** Any project viewer can read and write, including shared projects. */
     const workspaceOf = (id: string, userId: string): string => cwdOf(ctx.db, id, userId)
 
     app.get(`${base}/file`, async (request): Promise<FileContentDto> => {
@@ -111,16 +92,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       }
     })
 
-    /**
-     * Parmi les chemins proposés, ceux qui désignent un fichier de ce workspace.
-     *
-     * Le fil s'en sert pour ne rendre cliquable que ce qui s'ouvrira vraiment. Une forme
-     * de chemin ne prouve rien : `text/plain`, `@sillage/protocol` ou `fs/promises` en
-     * ont une, et un lien qui mène à une erreur vaut moins que du texte.
-     *
-     * `POST` pour une lecture, parce que la liste tient mal dans une URL et qu'elle est
-     * la clé du cache côté client.
-     */
+    /** Filters candidate paths to actual workspace files. Conversations use this to make only working links clickable. Path-like syntax proves nothing: `text/plain`, `@sillage/protocol` and `fs/promises` all resemble paths, and broken links are worse than text. Uses `POST` for reads because lists fit poorly in URLs and form the client cache key. */
     app.post(`${base}/files/exist`, async (request) => {
       const user = requireUser(request)
       const { id } = request.params as { id: string }
@@ -129,8 +101,8 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const workspace = workspaceOf(id, user.id)
       const checked = await Promise.all(
         paths.map(async (path) => {
-          // `resolveInside` rejette ce qui sort du workspace : un `../` glissé dans un
-          // message ne doit pas révéler l'existence d'un fichier au-dehors.
+          // `resolveInside` rejects paths outside the workspace: `../` inside messages must
+          // not reveal whether external files exist.
           let absolute
           try {
             absolute = resolveInside(workspace, path)
@@ -145,15 +117,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       return { files: checked.filter((path): path is string => path !== null) }
     })
 
-    /**
-     * Contenu brut, pour afficher une image, un document, un média ou un modèle 3D dans
-     * un onglet. Restreint à une liste fermée d'extensions : servir n'importe quel
-     * binaire avec un type deviné inviterait le navigateur à l'interpréter.
-     *
-     * Servi en flux, et par tranches quand le navigateur le demande (`Range`) : c'est
-     * ce qui permet de sauter dans une vidéo, et de ne pas charger en mémoire un
-     * fichier de plusieurs centaines de Mo.
-     */
+    /** Raw content for displaying images, documents, media and 3D models in tabs. Restricted to an extension allowlist: serving arbitrary binaries with guessed types would invite browser interpretation. Streams content and supports browser-requested `Range` slices to enable seeking and avoid loading hundred-megabyte files into memory. */
     app.get(`${base}/file/raw`, async (request, reply) => {
       const user = requireUser(request)
       const { id } = request.params as { id: string }
@@ -171,11 +135,11 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const info = await stat(absolute).catch(() => null)
       if (!info?.isFile()) throw notFound('file_not_found', 'File not found.')
 
-      // `Content-Security-Policy` : un SVG est un document, donc capable de porter du
-      // script. Servi comme image inerte plutôt que comme page. Un PDF n'y passe pas :
-      // c'est la visionneuse du navigateur qui l'affiche, et la même politique la prive
-      // de ses propres ressources, donc de tout affichage. `nosniff` reste la garantie
-      // que le type annoncé est celui qui sera appliqué.
+      // Content-Security-Policy: SVG is a document capable of carrying
+      // scripts. Serve SVG as inert images rather than pages. Exclude PDFs:
+      // the browser viewer renders them, and this policy would block its own resources,
+      // preventing display. `nosniff` still guarantees
+      // that browsers apply the declared type.
       if (imageType) {
         reply.header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'")
       }
@@ -184,7 +148,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         .header('content-type', type)
         .header('accept-ranges', 'bytes')
         .header('x-content-type-options', 'nosniff')
-        // Sans nom, la visionneuse PDF intitule son onglet d'après l'URL de l'API.
+        // Without a filename, the PDF viewer titles its tab after the API URL.
         .header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(basename(path))}`)
         .header('cache-control', 'no-store')
 
@@ -202,7 +166,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       return reply.header('content-length', info.size).send(createReadStream(absolute))
     })
 
-    /** Tous les formats se téléchargent, sans charger le fichier entier en mémoire. */
+    /** All formats can be downloaded without loading entire files into memory. */
     app.get(`${base}/file/download`, async (request, reply) => {
       const user = requireUser(request)
       const { id } = request.params as { id: string }
@@ -212,9 +176,9 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const resolved = await Promise.all([realpath(workspace), realpath(candidate)]).catch(() => null)
       if (!resolved) throw notFound('file_not_found', 'File not found.')
 
-      // Vérifier aussi la cible réelle : un lien symbolique ne donne pas accès au dehors.
+      // Check real targets too: symlinks must not grant access outside the workspace.
       const absolute = resolveInside(resolved[0], resolved[1])
-      // Un tube nommé doit pouvoir être refusé sans attendre qu'un producteur l'ouvre.
+      // Named pipes must be rejectable without waiting for a writer to open them.
       const file = await open(absolute, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW).catch(() => null)
       if (!file) throw notFound('file_not_found', 'File not found.')
       const info = await file.stat().catch(() => null)
@@ -244,10 +208,10 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         throw new HttpError(400, 'not_a_file', 'This path is not a file.')
       }
 
-      // L'agent écrit dans les mêmes fichiers pendant qu'on les édite. Sans cette
-      // comparaison, enregistrer écrase en silence ce qu'il vient de faire, et la perte
-      // ne se remarque qu'une heure plus tard. `fingerprint: null` est le choix explicite
-      // d'écraser, pris après qu'un conflit a été montré.
+      // Agents write the same files while users edit them. Without this comparison,
+      // saving silently overwrites their latest changes, with losses noticed much later.
+      // `fingerprint: null` explicitly chooses overwriting
+      // after a conflict has been displayed.
       if (body.fingerprint !== null) {
         const current = info ? fingerprint(info.size, info.mtimeMs) : null
         if (current !== body.fingerprint) {

@@ -1,11 +1,8 @@
 import { locale } from './i18n'
 
 /**
- * Ancienneté d'un horodatage, dans la langue de l'interface.
- *
- * Calculée ici et non par git : `%cr` sort dans la langue du serveur, qui n'est pas
- * celle du lecteur, et se fige au moment de la requête alors qu'une liste de commits
- * reste affichée longtemps.
+ * Timestamp age in the UI language. Compute here rather than with Git: `%cr` uses server language
+ * and freezes at query time, while commit lists can remain visible for a long time.
  */
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ['second', 60],

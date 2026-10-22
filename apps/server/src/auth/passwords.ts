@@ -8,8 +8,8 @@ export async function verifyPassword(digest: string, password: string): Promise<
   try {
     return await verify(digest, password)
   } catch {
-    // Un digest corrompu ou d'un format inconnu ne doit pas faire tomber la route de
-    // login, mais ne doit jamais valider non plus.
+    // Corrupt or unknown digest formats must not crash login routes,
+    // but must never authenticate either.
     return false
   }
 }

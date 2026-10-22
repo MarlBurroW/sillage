@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Relations des tickets : Server et Desktop, grand écran et téléphone.
+// Ticket relationships: Server/Desktop, desktop and phone.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -45,7 +45,7 @@ async function ready(url, child) {
 }
 
 try {
-  // Desktop sert le build sur son propre port : son contrôle d’origine refuse Vite.
+  // Desktop serves the build on its own port: origin checks reject Vite.
   const build = run(['--filter', '@sillage/web', 'build'], root, { ...process.env, NODE_ENV: 'production' }, 'pipe', 'pnpm')
   const [buildCode] = await once(build, 'exit')
   assert.equal(buildCode, 0, build.diagnostics)
@@ -93,7 +93,7 @@ try {
       await page.goto(`${board}?carte=1`)
       const section = page.getByRole('region', { name: 'Relations', exact: true })
       await section.waitFor()
-      // Chaque type se crée depuis le ticket, sans manipulation de sa description.
+      // Create each relationship type from the ticket without editing its description.
       for (const [target, label] of [[2, 'Bloque'], [3, 'Est lié à'], [4, 'Est un doublon de'], [5, 'Contient le sous-ticket'], [6, 'Remplace']]) {
         await section.getByRole('button', { name: 'Ajouter une relation', exact: true }).click()
         await section.getByRole('combobox', { name: 'Ce ticket…' }).click()
@@ -110,7 +110,7 @@ try {
       await section.getByRole('button', { name: new RegExp(`#2 ${card(2).title}`) }).click()
       await page.waitForURL(/carte=2$/)
       await section.getByText('Est bloqué par', { exact: true }).waitFor()
-      // Suppression depuis le sens inverse, puis contrôle sur la carte de départ.
+      // Delete from the inverse direction, then check the source card.
       await section.getByRole('button', { name: 'Retirer le lien avec #1', exact: true }).click()
       await section.getByText('Aucune relation pour le moment.', { exact: true }).waitFor()
       await page.goto(`${board}?carte=1`)
@@ -121,7 +121,7 @@ try {
         await section.getByRole('button', { name: `Retirer le lien avec #${target}`, exact: true }).waitFor({ state: 'detached' })
       }
       await section.getByText('Aucune relation pour le moment.', { exact: true }).waitFor()
-      // La recherche par titre fonctionne aussi, et annuler n’écrit rien.
+      // Title search also works, and cancel writes nothing.
       await section.getByRole('button', { name: 'Ajouter une relation', exact: true }).click()
       await section.getByLabel('Chercher un ticket', { exact: true }).fill('offline')
       await section.getByRole('list', { name: 'Tickets correspondants' }).getByRole('button', { name: /Offline caching/ }).waitFor()

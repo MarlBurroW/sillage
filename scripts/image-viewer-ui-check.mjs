@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
 
-// Composants réels et images locales, sans daemon ni base de production.
+// Real components and local images, without daemon or production database.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
@@ -27,7 +27,7 @@ async function mount(page) {
     window.$RefreshSig$ = () => (type) => type
     window.__vite_plugin_react_preamble_installed__ = true
     localStorage.setItem('sillage.locale', 'fr')
-    // readableView est appelé hors rendu : son libellé se fige, il faut le catalogue d'abord.
+    // readableView runs outside render: label freezes, so load catalog first.
     await (await import('/src/lib/i18n/index.ts')).initLocale()
     document.documentElement.dataset.theme = 'dark'
     await import('/src/styles/index.css')
@@ -87,7 +87,7 @@ try {
     await page.route(`${origin}/`, (route) => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
     await page.route('**/api/attachments/pending-*', (route) => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64') }))
     await mount(page)
-    // La pièce jointe reste dans le brouillon pendant l'aperçu, sans soumettre le formulaire.
+    // Attachment remains in draft during preview without submitting form.
     const pending = page.getByRole('button', { name: 'Agrandir l’image : avant-envoi.png', exact: true })
     await pending.focus()
     await page.keyboard.press('Enter')

@@ -7,16 +7,7 @@ import {
   type SearchMessageDto,
 } from '@sillage/protocol'
 
-/**
- * Traduit une saisie libre en requête FTS5.
- *
- * Chaque terme est cité, ce qui neutralise la syntaxe du moteur : sans ça, un `-` ou
- * un `"` tapé au milieu d'une phrase fait échouer la requête entière. Le dernier terme
- * accepte un préfixe, la frappe étant encore en cours au moment où on interroge.
- *
- * Un terme sans lettre ni chiffre ne produit aucun jeton et ne ramène donc rien, ce qui
- * est le comportement attendu plutôt qu'une erreur.
- */
+/** Converts free text to FTS5 queries. Quote every term to neutralize engine syntax: `-` and `\"` inside sentences must not fail queries. Allow a prefix on the last term because typing is ongoing. Terms without letters or digits produce no tokens and correctly return nothing rather than errors. */
 function toMatchQuery(input: string): string {
   return input
     .trim()
@@ -40,17 +31,7 @@ interface Row {
   excerpt: string
 }
 
-/**
- * Messages contenant la requête, dans les conversations que ce compte peut voir.
- *
- * La visibilité est appliquée dans la requête et non après coup : un extrait de projet
- * privé qui remonterait jusqu'à la couche HTTP aurait déjà fuité si un filtre y était
- * oublié un jour. La jointure sur `conversations` rend aussi invisibles les lignes
- * orphelines, une table virtuelle FTS5 ne recevant pas les suppressions en cascade.
- *
- * Les conversations archivées sont exclues, comme partout ailleurs dans l'interface :
- * la recherche voit ce que la navigation voit.
- */
+/** Matching messages in conversations this account can view. Apply visibility within the query: private excerpts reaching HTTP would leak if downstream filtering were forgotten. Joining `conversations` also hides orphaned rows from FTS5's lack of cascades. Exclude archived conversations like navigation elsewhere in the interface. */
 export function searchMessages(
   db: Db,
   userId: string,
@@ -85,8 +66,8 @@ export function searchMessages(
     conversationTitle: row.conversationTitle,
     agent: row.agent,
     seq: row.seq,
-    // Le rôle vient de l'index, donc d'un événement déjà validé à l'écriture ; tout
-    // ce qui n'est pas un message utilisateur est de l'agent.
+    // Roles come from already-validated indexed events;
+    // anything other than a user message belongs to the agent.
     role: row.role === 'user' ? 'user' : 'assistant',
     ts: row.ts,
     excerpt: row.excerpt,

@@ -12,13 +12,9 @@ import { failureNotice, useGitPane } from './context'
 import { Section, useSectionOpen } from './Section'
 
 /**
- * Ce qui n'est pas commité, en trois groupes : les conflits à résoudre, ce qui est dans
- * l'index, ce qui ne l'est pas encore. Puis le formulaire de commit.
- *
- * Trois groupes et non une liste à cases : l'index est la notion que le workflow git
- * demande de comprendre pour choisir ce qu'un commit emporte, et la montrer telle
- * qu'elle est vaut mieux que de la cacher derrière une abstraction qui finit toujours
- * par fuir (un `git add` d'un agent, un hook qui reformate).
+ * Uncommitted work in conflict, staged, and unstaged groups, followed by commit form. Expose the
+ * actual index rather than checkbox abstractions: users need it to choose commit contents and
+ * abstractions leak through agent git add or formatting hooks.
  */
 export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
   const t = useTranslate()
@@ -27,7 +23,7 @@ export function ChangesSection({ repo }: { repo: GitRepoStatusDto }) {
   const stage = useGitAction<{ paths?: string[] }>(scope, 'stage')
   const unstage = useGitAction<{ paths?: string[] }>(scope, 'unstage')
   const discard = useGitAction<{ paths: string[] }>(scope, 'discard')
-  /** Les changements dont on demande l'abandon, en attente de confirmation. */
+  /** Changes proposed for discard, awaiting confirmation. */
   const [discarding, setDiscarding] = useState<GitChangeDto[] | null>(null)
   const busy = stage.isPending || unstage.isPending || discard.isPending
 
@@ -213,8 +209,7 @@ function Group({
       [change.path, change.oldPath].some((path) => path?.toLocaleLowerCase().includes(needle)),
     ) : changes
   }, [changes, query])
-  // Borner le rendu avant de créer les lignes et leurs infobulles : plusieurs milliers
-  // de fichiers non suivis ne doivent pas immobiliser toute l'interface.
+  // Bound rendering before rows and tooltips so thousands of untracked files cannot freeze the UI.
   const pageSize = 100
   const lastPage = Math.max(0, Math.ceil(filtered.length / pageSize) - 1)
   const currentPage = Math.min(page, lastPage)
@@ -261,11 +256,8 @@ function Group({
 }
 
 /**
- * Un fichier changé, dépliable sur son diff, avec ses actions à droite.
- *
- * Les actions n'apparaissent qu'au survol ou au focus sur grand écran, pour que la
- * liste se lise comme une liste ; au doigt, où il n'y a pas de survol, elles restent
- * visibles.
+ * Changed file expandable to diff, with right-side actions visible on desktop hover/focus and
+ * always on touch.
  */
 function ChangeRow({
   change,
@@ -334,7 +326,7 @@ function ChangeRow({
   )
 }
 
-/** Le diff d'un fichier, lu quand on le déplie et pas avant. */
+/** Load file diffs only on expansion. */
 function FileDiffBody({ path, area }: { path: string; area: GitArea }) {
   const t = useTranslate()
   const { scope } = useGitPane()

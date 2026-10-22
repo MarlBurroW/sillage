@@ -6,52 +6,36 @@ import { subsequenceGaps } from './subsequence.js'
 
 const exec = promisify(execFile)
 
-/**
- * Recherche de fichiers dans le répertoire de travail, pour l'autocomplétion des
- * mentions.
- *
- * Faite ici plutôt qu'en interrogeant chaque CLI : Claude et Codex savent tous deux
- * chercher des fichiers, mais il faudrait alors un process lancé rien que pour
- * compléter une saisie, et rien du tout ne serait proposé sur une conversation qui
- * n'a pas encore démarré. Lister un dossier n'est pas une valeur de protocole.
- */
+/** Working-directory file search for mention completion. Implement here rather than query CLIs: both Claude and Codex can search, but completion would require dedicated processes and offer nothing before conversations start. Directory listing is not protocol-specific data. */
 
-/** Au-delà, la liste ne tient plus à l'écran et le tri n'apporte plus rien. */
+/** Beyond this limit lists no longer fit screens and sorting adds no value. */
 const MAX_RESULTS = 30
 
-/** Garde-fou du parcours de repli, pour ne pas arpenter un dossier démesuré. */
+/** Fallback traversal guard against oversized directories. */
 const MAX_SCANNED_ENTRIES = 20_000
 
-/**
- * Dossiers ignorés par le parcours de repli. Hors dépôt git il n'existe aucune règle
- * déclarée à respecter, et ces quatre-là noieraient toute recherche.
- */
+/** Directories skipped by fallback traversal. Outside git there are no declared ignore rules, and these four would overwhelm results. */
 const SKIPPED = new Set(['.git', 'node_modules', 'dist', '.venv'])
 
 export interface FileMatch {
-  /** Chemin relatif au répertoire de travail, tel qu'il s'écrit dans un message. */
+  /** Working-directory-relative path as written in messages. */
   path: string
   name: string
 }
 
-/**
- * Fichiers suivis par git, dossiers ignorés exclus.
- *
- * `--others --exclude-standard` ajoute les fichiers non encore suivis tout en
- * respectant .gitignore : un fichier tout juste créé doit être proposable.
- */
+/** Git-tracked files excluding ignored directories. `--others --exclude-standard` includes untracked files while honoring .gitignore, so newly created files can be offered. */
 async function gitFiles(cwd: string): Promise<string[] | null> {
   try {
     const { stdout } = await exec(
       'git',
       ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
-      // Un dossier non ignoré de plusieurs millions de fichiers ferait attendre la
-      // saisie indéfiniment : passé ce délai, le parcours borné prend le relais.
+      // Unignored directories with millions of files would stall completion indefinitely:
+      // after this timeout, switch to bounded traversal.
       { cwd, maxBuffer: 32 * 1024 * 1024, timeout: 10_000 },
     )
     return stdout.split('\0').filter((entry) => entry.length > 0)
   } catch {
-    // Pas un dépôt, ou git absent : le parcours de repli prend le relais.
+    // Outside git, or when git is missing, use fallback traversal.
     return null
   }
 }
@@ -69,7 +53,7 @@ async function walk(cwd: string): Promise<string[]> {
     try {
       entries = await readdir(dir, { withFileTypes: true })
     } catch {
-      // Dossier illisible : il est sauté, pas la recherche entière.
+      // Skip unreadable directories rather than the entire search.
       continue
     }
 
@@ -86,19 +70,19 @@ async function walk(cwd: string): Promise<string[]> {
   return found
 }
 
-/** Plus le score est bas, meilleure est la correspondance. */
+/** Lower scores indicate stronger matches. */
 function score(path: string, query: string): number | null {
   const gaps = subsequenceGaps(path, query)
   if (gaps === null) return null
 
   const haystack = path.toLowerCase()
-  // À correspondance égale, le chemin le plus court et le nom de fichier atteint le
-  // plus tôt passent devant.
+  // Break equal-match ties by shorter paths and earlier filename
+  // matches.
   const inName = haystack.lastIndexOf(sep) < haystack.indexOf(query[0]?.toLowerCase() ?? '') ? 0 : 40
   return gaps * 4 + path.length + inName
 }
 
-/** Fichiers du répertoire de travail, suivis ou non, ce que git ignore exclu. */
+/** Working-directory files, tracked or not, excluding git-ignored entries. */
 export async function listWorkspaceFiles(cwd: string): Promise<string[]> {
   return (await gitFiles(cwd)) ?? (await walk(cwd))
 }
@@ -112,8 +96,8 @@ export async function searchFiles(cwd: string, query: string): Promise<FileMatch
         .map((path) => ({ path, rank: score(path, trimmed) }))
         .filter((entry): entry is { path: string; rank: number } => entry.rank !== null)
         .sort((a, b) => a.rank - b.rank)
-    : // Sans requête, les chemins les plus courts sont les plus proches de la racine,
-      // donc les plus probables.
+    : // Without queries, shorter paths are nearer the root
+      // and therefore likelier targets.
       paths.map((path) => ({ path, rank: path.length })).sort((a, b) => a.rank - b.rank)
 
   return scored.slice(0, MAX_RESULTS).map(({ path }) => ({

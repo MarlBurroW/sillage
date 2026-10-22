@@ -12,12 +12,7 @@ import { conversationWorkspace } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { requireUser } from '../require-user.js'
 
-/**
- * Palette de recherche : ce qu'aucune liste de l'interface ne porte déjà.
- *
- * Projets visibles et non archivés seulement : la palette voit ce que la navigation
- * voit, comme la recherche dans les messages.
- */
+/** Search palette data not already available in interface lists. Only visible, unarchived projects: the palette sees the same projects as navigation and message search. */
 export function registerPaletteRoutes(app: FastifyInstance, ctx: AppContext, library: SkillLibrary): void {
   const visibleProjects = (userId: string) =>
     ctx.db
@@ -62,9 +57,9 @@ export function registerPaletteRoutes(app: FastifyInstance, ctx: AppContext, lib
         .where(eq(conversations.id, conversationId))
         .get()
       const target = targets.find((entry) => entry.projectId === row?.projectId)
-      // `conversationWorkspace` refait le contrôle d'accès ; une conversation que ce
-      // compte ne voit pas appartient à un projet qu'il ne voit pas non plus, absent
-      // de `targets`, donc rien n'est substitué.
+      // `conversationWorkspace` repeats access checks; invisible conversations belong
+      // to invisible projects, which are absent from `targets`, so nothing
+      // is substituted.
       if (target) target.cwd = conversationWorkspace(ctx.db, conversationId, user.id)
     }
 

@@ -3,21 +3,7 @@ import type { RunnerContext } from './types.js'
 
 type ErrorEvent = Extract<SillageEvent, { type: 'error' }>
 
-/**
- * Raconte au journal la mort d'un runner : la panne s'il y en a une, puis la fin de
- * session qui referme le tour.
- *
- * La fin de session est ce qui éteint l'indicateur d'activité côté web. Un `error`
- * seul laisse le tour ouvert dans le fil replié, donc la conversation affichée « en
- * cours » à chaque rechargement, indéfiniment : c'est arrivé sur une écriture de
- * journal refusée en pleine session.
- *
- * Le statut est posé par l'appelant, avant l'appel : ce qui vient de tuer le runner
- * peut être l'écriture du journal elle-même, et le statut est le seul des deux qui
- * déverrouille l'interface. L'échec d'écriture s'arrête donc sur la sortie d'erreur,
- * plutôt que de remonter dans un `void consume()` ou un gestionnaire de sortie de
- * process, où il abattrait le daemon pour une base momentanément occupée.
- */
+/** Journals runner death: failure when present, then session ending to close turns. `error` alone leaves folded turns open and activity permanently running after reload, observed after rejected journal writes. Callers set status first because journal writing itself may have killed runners, and only status unlocks interfaces. Log write failures to stderr rather than propagate through unawaited consume loops or exit handlers and crash daemons over temporarily busy databases. */
 export function journalDeath(ctx: Pick<RunnerContext, 'emit'>, error: ErrorEvent | null): void {
   try {
     if (error) ctx.emit(error)

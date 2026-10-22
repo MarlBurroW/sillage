@@ -46,7 +46,7 @@ try {
   await page.getByRole('heading', { name: 'An idea takes shape.' }).waitFor()
   await page.locator('#language').selectOption('fr')
   await page.locator('#theme').click()
-  // Les mêmes fichiers statiques servent les deux éditions, sans connexion ni API.
+  // Same static files serve both editions, without sign-in or API.
   for (const width of [390, 320, 768]) {
     await page.setViewportSize({ width, height: 844 })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No horizontal overflow at ' + width)

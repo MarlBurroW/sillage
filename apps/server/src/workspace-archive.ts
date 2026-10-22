@@ -7,32 +7,20 @@ import { Zip, ZipDeflate, ZipPassThrough } from 'fflate'
 import { HttpError } from './http/errors.js'
 import { refuseGitInternals, resolveRealInside } from './workspace.js'
 
-/**
- * Archive `.zip` d'une sélection de l'explorateur : un dossier, ou plusieurs entrées.
- *
- * Le navigateur ne sait télécharger qu'un fichier par geste, et en déclencher plusieurs
- * d'affilée lui fait demander une autorisation que personne ne comprend. Réunir la
- * sélection dans une archive est ce que fait tout explorateur web.
- */
+/** Explorer selection as `.zip`: one directory or multiple entries. Browsers download one file per gesture; several consecutive downloads trigger confusing permission requests. Combining selections into archives matches other web explorers. */
 
-/**
- * Plafonds d'une archive. Le second tient aussi à fflate, qui n'écrit pas le format
- * zip64 : au-delà de 4 Go, les décalages de l'archive ne tiennent plus.
- */
+/** Archive limits. The second also reflects fflate lacking zip64: offsets no longer fit beyond 4 GB. */
 const MAX_ARCHIVE_FILES = 20_000
 const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
 
-/**
- * Formats déjà compressés, rangés tels quels : les recompresser coûte du processeur au
- * serveur sans faire gagner un octet.
- */
+/** Store already-compressed formats unchanged: recompression costs server CPU without saving bytes. */
 const STORED = new Set([
   '7z', 'avif', 'br', 'bz2', 'gif', 'gz', 'jpeg', 'jpg', 'mkv', 'mov', 'mp3', 'mp4',
   'ogg', 'png', 'rar', 'tgz', 'webm', 'webp', 'woff', 'woff2', 'xz', 'zip', 'zst',
 ])
 
 interface ArchiveItem {
-  /** Nom dans l'archive, relatif au dossier commun de la sélection. */
+  /** Archive name relative to the selection's common directory. */
   name: string
   absolute: string
   isDirectory: boolean
@@ -44,10 +32,7 @@ export interface Archive {
   items: ArchiveItem[]
 }
 
-/**
- * Retire les entrées déjà comprises dans un dossier sélectionné : sans ça, choisir un
- * dossier et l'un de ses fichiers mettrait ce fichier deux fois dans l'archive.
- */
+/** Excludes entries already included by selected parent directories, avoiding duplicate files when selecting both a directory and one of its children. */
 function pruneNested(paths: string[]): string[] {
   const unique = [...new Set(paths)].sort()
   return unique.filter(
@@ -55,7 +40,7 @@ function pruneNested(paths: string[]): string[] {
   )
 }
 
-/** Dossier le plus profond qui contient toutes les entrées, chaîne vide à la racine. */
+/** Deepest directory containing all entries; empty at root. */
 function commonParent(paths: string[]): string {
   const parents = paths.map((path) => path.split('/').slice(0, -1))
   const first = parents[0] ?? []
@@ -66,14 +51,7 @@ function commonParent(paths: string[]): string {
   return first.slice(0, depth).join('/')
 }
 
-/**
- * Inventaire de l'archive, fait avant d'écrire le moindre octet : un dépassement doit
- * répondre une erreur lisible, pas couper un téléchargement déjà commencé.
- *
- * Les noms partent du dossier commun de la sélection : deux dossiers `src` venus de
- * deux paquets gardent ce qui les distingue, et un dossier seul arrive sous son nom.
- * Ni `.git` ni les liens symboliques ne sont parcourus, comme dans l'arborescence.
- */
+/** Inventory before writing any bytes: excess sizes must return readable errors rather than interrupt started downloads. Paths start at the selection's common directory so same-named `src` folders from different packages retain distinguishing paths; a lone folder retains its name. Skip `.git` and symlinks like tree browsing. */
 export async function collectArchive(root: string, requested: string[]): Promise<Archive> {
   const paths = pruneNested(requested)
   const base = commonParent(paths)
@@ -105,8 +83,8 @@ export async function collectArchive(root: string, requested: string[]): Promise
     }
     if (!info.isDirectory()) return
 
-    // Le dossier a son entrée à lui : sans elle, un dossier vide disparaîtrait de
-    // l'archive, et la structure rapportée ne serait plus celle du disque.
+    // Give directories their own entries: empty directories would otherwise disappear
+    // from archives, changing the exported structure.
     items.push({ name: nameOf(path), absolute, isDirectory: true, mtime: info.mtime })
     const children = await readdir(absolute, { withFileTypes: true }).catch(() => [])
     for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
@@ -124,11 +102,7 @@ export async function collectArchive(root: string, requested: string[]): Promise
   return { filename: `${label || 'files'}.zip`, items }
 }
 
-/**
- * Le format zip ne date rien hors de 1980–2107, et fflate refuse l'entrée plutôt que de
- * tronquer : un fichier daté de 1970 (archive reproductible, magasin Nix) ferait
- * échouer tout le téléchargement.
- */
+/** ZIP timestamps only support 1980–2107 and fflate rejects rather than truncates them. Files dated 1970 (reproducible archives, Nix stores) would otherwise fail entire downloads. */
 function zipDate(date: Date): Date {
   const year = date.getFullYear()
   if (year < 1980) return new Date(1980, 0, 1, 12)
@@ -136,13 +110,7 @@ function zipDate(date: Date): Date {
   return date
 }
 
-/**
- * Écrit l'archive en flux, un fichier à la fois.
- *
- * Rien n'est assemblé en mémoire, et la lecture attend que le client ait vidé ce qui
- * est déjà parti : fflate ne connaît pas la contre-pression, et sans cette attente un
- * téléchargement lent accumulerait l'archive entière dans le tas du serveur.
- */
+/** Streams archives one file at a time. Never assemble in memory; wait for clients to drain prior output because fflate lacks backpressure and slow downloads would otherwise accumulate the whole archive in the server heap. */
 export function streamArchive(items: ArchiveItem[]): Readable {
   const out = new PassThrough()
   const zip = new Zip((err, chunk, final) => {
@@ -154,7 +122,7 @@ export function streamArchive(items: ArchiveItem[]): Readable {
     if (final) out.end()
   })
 
-  /** Attend que le client reprenne, ou qu'il s'en aille : `drain` ne vient plus alors. */
+  /** Waits for clients to resume or disconnect, since `drain` never arrives after disconnection. */
   const backpressure = async () => {
     if (out.writableNeedDrain) await Promise.race([once(out, 'drain'), once(out, 'close')])
   }
@@ -171,9 +139,9 @@ export function streamArchive(items: ArchiveItem[]): Readable {
         continue
       }
 
-      // Ouvert avant d'annoncer l'entrée : un fichier disparu depuis l'inventaire est
-      // simplement absent de l'archive, au lieu d'y laisser une entrée vide. Ni lien
-      // suivi, ni tube nommé qui bloquerait la lecture en attendant un producteur.
+      // Open before announcing entries: files disappearing after inventory are omitted
+      // instead of leaving empty entries. Never follow symlinks or read named pipes
+      // that could block awaiting writers.
       const handle = await open(
         item.absolute,
         constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,

@@ -13,13 +13,7 @@ import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { visibleProject } from './projects.js'
 
-/**
- * La mémoire d'un projet, lue et corrigée depuis l'interface.
- *
- * Les membres du projet la lisent, son propriétaire la modifie, comme les consignes. Les
- * agents, eux, y écrivent sans passer par ici : Claude dans le dossier, Codex par le
- * serveur MCP.
- */
+/** Project memory read and edited through the interface. Members can read it and owners can edit it, like instructions. Agents write directly instead: Claude through the directory, Codex through the MCP server. */
 export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): void {
   const requireProject = (projectId: string, user: UserRow): ProjectRow => {
     const project = visibleProject(ctx, projectId, user.id)
@@ -51,7 +45,7 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
   app.get('/api/projects/:id/memory', async (request): Promise<ProjectMemoryDto> => {
     const user = requireUser(request)
     const project = requireProject((request.params as { id: string }).id, user)
-    // En mode natif, Sillage ne tient pas de dossier : rien à lister, et rien à créer.
+    // Native mode maintains no Sillage directory: nothing to list or create.
     if (project.memoryMode === 'native') {
       return { mode: 'native', dir: '', files: [], importedFrom: null, canEdit: project.ownerId === user.id }
     }

@@ -9,8 +9,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Comptes Claude supplémentaires : l'écran de réglages, puis le sélecteur de compte dans
-// les défauts du CLI. Vrais composants et vraie API, base temporaire, aucun CLI lancé.
+// Extra Claude accounts: settings screen, then account selector in CLI defaults.
+// Real components and API, temporary database, no CLI launched.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -77,12 +77,12 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // L'écran : vide, puis un compte ajouté, jamais de jeton à l'écran.
+  // Screen: empty, then an added account, never a token displayed.
   await page.goto(`${base}/settings/comptes-claude`)
   await page.getByText('Aucun compte supplémentaire').waitFor()
   await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
   await page.getByLabel('Nom').fill('Boulot')
-  // Le flux guidé est proposé d'abord ; coller un secret est l'autre voie.
+  // Guided sign-in is offered first; pasting a secret is the alternative.
   await page.getByRole('radio', { name: /Coller un jeton/ }).click()
   await page.getByLabel('Jeton ou clé API').fill('sk-ant-api03-pas-le-bon')
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
@@ -92,8 +92,8 @@ try {
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText('Secret mis à jour le').waitFor()
   await page.getByText('Abonnement', { exact: true }).waitFor()
-  // Un abonnement sans jauge le dit, et propose de l'activer ; le flux lancé montre un lien
-  // d'autorisation qui demande la portée du profil, puis s'annule.
+  // A subscription without a gauge says so and offers to enable it; starting the flow
+  // shows an authorization link requesting profile scope, then cancels.
   await page.getByText("Pas de jauge d'usage").waitFor()
   await page.getByRole('button', { name: 'Activer la jauge' }).click()
   await page.getByText("Jauge d'usage", { exact: true }).or(page.getByRole('alert')).first().waitFor({ timeout: 40000 })
@@ -101,7 +101,7 @@ try {
   await page.getByRole('button', { name: 'Annuler' }).click()
   await page.getByRole('button', { name: 'Activer la jauge' }).waitFor()
   assert.ok(!(await page.content()).includes(TOKEN), 'Le jeton ne revient jamais au navigateur')
-  // Une clé API Console se reconnaît à son préfixe et s'affiche comme telle.
+  // A Console API key is recognized by prefix and displayed accordingly.
   await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
   await page.getByLabel('Nom').fill('Boîte')
   await page.getByRole('radio', { name: /Coller un jeton/ }).click()
@@ -114,11 +114,11 @@ try {
   await page.screenshot({ path: '/tmp/sillage-claude-accounts-desktop.png' })
   const keyed = listed.accounts[1].id
   await context.request.delete(`${base}/api/claude-accounts/${keyed}`)
-  // Supprimé par l'API, hors de la page : elle ne le sait qu'en relisant.
+  // Deleted through the API outside the page: only rereading reveals it.
   await page.reload()
   await page.getByText('Boulot', { exact: true }).waitFor()
 
-  // La connexion guidée sans CLI : l'écran dit que le CLI n'a rien imprimé, et on annule.
+  // Guided sign-in without a CLI: screen says the CLI printed nothing, then cancel.
   await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
   await page.getByLabel('Nom').fill('Guidé')
   await page.getByRole('button', { name: 'Lancer la connexion' }).click()
@@ -126,13 +126,13 @@ try {
   await page.getByRole('button', { name: 'Annuler' }).click()
   await page.getByRole('button', { name: 'Ajouter un compte' }).first().waitFor()
 
-  // Renommer sans toucher au jeton.
+  // Rename without touching the token.
   await page.getByRole('button', { name: 'Modifier' }).click()
   await page.getByLabel('Nom').fill('Travail')
   await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await page.getByText('Travail', { exact: true }).waitFor()
 
-  // Le sélecteur de compte dans les défauts du CLI, et sa persistance.
+  // CLI-default account selector and its persistence.
   await page.goto(`${base}/settings/cli`)
   const account = page.getByRole('combobox', { name: 'Compte' })
   await account.waitFor()
@@ -148,7 +148,7 @@ try {
   await page.getByRole('combobox', { name: 'Compte' }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: 'Compte' }).textContent(), 'Travail')
 
-  // Un compte supprimé reste désigné : le sélecteur le dit au lieu de se vider.
+  // A deleted account remains selected: the selector says so rather than going blank.
   const removed = await context.request.delete(`${base}/api/claude-accounts/${listed.accounts[0].id}`)
   assert.equal(removed.status(), 204)
   await page.reload()
@@ -162,7 +162,7 @@ try {
   await page.getByRole('combobox', { name: 'Modèle' }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: 'Compte' }).count(), 0, 'Sans compte, pas de sélecteur')
 
-  // Au téléphone : l'écran tient dans la largeur.
+  // Phone: screen fits the width.
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await mobile.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
   await mobile.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })

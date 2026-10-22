@@ -1,9 +1,9 @@
 /**
- * En-tête `content-disposition` d'un téléchargement, nom compris.
+ * Download `content-disposition` header, including the filename.
  *
- * Encodé selon la RFC 5987 plutôt que glissé entre guillemets : un nom accentué ou qui
- * contient un guillemet casserait l'en-tête, et le navigateur retomberait sur un nom
- * tiré de l'URL.
+ * Encoded according to RFC 5987 rather than inserted in quotes: an accented name
+ * or one containing a quote would break the header, causing the browser to fall
+ * back to a name derived from the URL.
  */
 export function attachmentHeader(name: string): string {
   const encoded = encodeURIComponent(name).replace(

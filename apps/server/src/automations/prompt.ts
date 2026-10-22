@@ -1,14 +1,7 @@
 import type { AutomationDeliveryRow, ScheduledTaskRow } from '@sillage/db'
 import { renderTemplate, sessionMarker, type AutomationEvent } from '@sillage/protocol'
 
-/**
- * Le premier message d'une session née d'un webhook : sa situation, puis le prompt de
- * l'automatisation rendu avec l'appel reçu.
- *
- * Comme pour un tir planifié, personne n'est au clavier, et l'agent doit le savoir avant
- * tout. Il apprend aussi la marque à laisser sur la forge : c'est elle qui permet de
- * reconnaître que ce qu'il publie vient d'une session, et d'arrêter une chaîne.
- */
+/** First message for a webhook-created session: situation followed by the automation prompt rendered with the received call. As for scheduled runs, nobody is at the keyboard and the agent must know immediately. Also provides the forge marker identifying session-originated publications so launch chains can be stopped. */
 export function buildWebhookPrompt(input: {
   task: Pick<ScheduledTaskRow, 'name' | 'prompt' | 'maxDurationMinutes'>
   delivery: Pick<AutomationDeliveryRow, 'receivedAt' | 'subject' | 'summary' | 'deliveryId' | 'vars'>

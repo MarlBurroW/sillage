@@ -5,43 +5,33 @@ import { CloneError, cloneRepository, setCredentialHelper, type CloneProgress } 
 export interface CloneJob {
   id: string
   status: 'running' | 'done' | 'failed'
-  /** Ce que git dit de sa phase en cours, vide tant qu'il n'a rien dit. */
+  /** Current phase reported by Git, empty until its first report. */
   phase: string
   percent: number | null
-  /** Renseigné quand le clone a réussi : le projet créé dans la foulée. */
+  /** Set after successful cloning: the project created immediately afterward. */
   projectId: string | null
-  /** Un code que le client traduit, et un message anglais de repli. */
+  /** Client-translated code and fallback English message. */
   error: { code: string; message: string } | null
 }
 
 export interface StartCloneParams {
-  /** Qui a lancé le clone : personne d'autre n'a à en suivre l'avancement. */
+  /** Clone initiator; nobody else should track its progress. */
   ownerId: string
   url: string
   destination: string
-  /** Environnement du clone, qui porte la déclaration du helper de credentials. */
+  /** Clone environment including credential-helper registration. */
   env: NodeJS.ProcessEnv
-  /** Valeur à inscrire dans le `.git/config` du dépôt une fois cloné. */
+  /** Value written to the clone's `.git/config`. */
   helper: string
-  /** Crée la ligne de projet et rend son identifiant. Appelé seulement si le clone réussit. */
+  /** Creates the project row and returns its ID, only after successful cloning. */
   createProject: () => Promise<string>
 }
 
-/**
- * Suivi des clones en cours.
- *
- * En mémoire, et c'est suffisant : un clone ne survit pas au redémarrage du serveur, qui
- * tuerait le process git de toute façon. Un redémarrage pendant un clone laisse un
- * dossier à demi rempli, que l'utilisateur verra puisque le projet n'aura pas été créé.
- *
- * Le client interroge l'état plutôt que de le recevoir : le hub WebSocket est indexé par
- * conversation, et ouvrir une famille d'événements pour un flux qui dure une minute et
- * n'existe qu'à la création d'un projet coûterait plus qu'il ne rapporte.
- */
+/** Tracks ongoing clones in memory. Enough because server restart kills git anyway; interrupted clones leave partial directories users can see, with no project created. Clients poll rather than subscribe: the WebSocket hub is conversation-indexed, and adding an event family for a short project-creation-only flow costs more than it provides. */
 export class CloneJobs {
   private readonly jobs = new Map<string, { ownerId: string; job: CloneJob }>()
 
-  /** Au-delà, un état terminé n'intéresse plus personne : le client l'a lu et est passé. */
+  /** Completed states older than this are no longer useful: clients already read them. */
   private static readonly RETENTION_MS = 10 * 60 * 1000
 
   start(params: StartCloneParams): CloneJob {
@@ -59,8 +49,7 @@ export class CloneJobs {
     return job
   }
 
-  /** `undefined` aussi quand le clone appartient à quelqu'un d'autre : rien ne distingue
-   * un identifiant inconnu d'un identifiant qui ne vous regarde pas. */
+  /** Also `undefined` for other users' clones: unknown and inaccessible IDs are indistinguishable. */
   get(id: string, ownerId: string): CloneJob | undefined {
     const entry = this.jobs.get(id)
     return entry?.ownerId === ownerId ? entry.job : undefined
@@ -80,16 +69,16 @@ export class CloneJobs {
       job.percent = 100
       job.status = 'done'
     } catch (err) {
-      // Un clone échoué laisse un dossier partiel que git ne nettoie pas toujours.
-      // Le laisser ferait échouer la tentative suivante sur « destination non vide »,
-      // avec un message qui n'explique pas le vrai problème.
+      // Failed clones may leave partial directories git does not clean up.
+      // Leaving them would make retries fail with 'destination not empty',
+      // obscuring the original problem.
       await rm(params.destination, { recursive: true, force: true }).catch(() => {})
 
       job.error =
         err instanceof CloneError
           ? { code: err.code, message: err.message }
-          : // Tout ce qui n'est pas un échec de git : l'écriture de la configuration du
-            // dépôt, ou la création du projet en base.
+          : // Failures outside git: repository configuration writes
+            // or database project creation.
             { code: 'clone_failed', message: err instanceof Error ? err.message : String(err) }
       job.status = 'failed'
     } finally {

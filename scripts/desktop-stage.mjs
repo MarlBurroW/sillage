@@ -1,18 +1,17 @@
 /**
- * Prépare `apps/desktop/stage/`, ce que l'application de bureau embarque :
+ * Prepare `apps/desktop/stage/`, bundled by desktop app:
  *
  *   stage/
- *   ├── sillage/   l'arbre d'exécution de la release (server/, web/, node_modules/ natifs)
- *   └── node/      le Node officiel qui le fait tourner, npm compris
+ *   ├── sillage/   release runtime (server/, web/, native node_modules/)
+ *   └── node/      official Node running it, including npm
  *
- * Le Node embarqué est celui qui exécute ce script, à la version près. En CI, c'est
- * celui sous lequel l'arbre d'exécution vient d'être installé et vérifié : l'app livre
- * ce couple tel quel. Il est téléchargé depuis nodejs.org et vérifié contre le
- * SHASUMS256 publié à côté, comme le fait install.sh. Sous Windows, l'archive est un
- * .zip, `node.exe` est à sa racine et npm s'y lance par `npm.cmd`.
+ * Bundled Node matches the version running this script. In CI it is the Node under
+ * which the runtime was just installed/checked: app ships this pair unchanged.
+ * Download from nodejs.org, verify against accompanying SHASUMS256 like install.sh.
+ * Windows archive is .zip, node.exe lives at root, npm launches through npm.cmd.
  *
- * Usage : node scripts/desktop-stage.mjs <arbre d'exécution>
- * (l'arbre que `.github/actions/runtime-archive` assemble dans out/sillage)
+ * Usage: node scripts/desktop-stage.mjs <runtime tree>
+ * (the tree `.github/actions/runtime-archive` assembles in out/sillage)
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -41,22 +40,22 @@ const stage = join(root, 'apps/desktop/stage')
 rmSync(stage, { recursive: true, force: true })
 mkdirSync(stage, { recursive: true })
 
-// Les liens de `node_modules/.bin` ne servent qu'aux scripts npm, que l'app ne lance pas,
-// et l'empaquetage ne garde pas toujours les liens symboliques.
+// `node_modules/.bin` links only serve npm scripts the app never runs, and
+// packaging does not always preserve symlinks.
 cpSync(runtime, join(stage, 'sillage'), { recursive: true, verbatimSymlinks: true })
 const modules = join(stage, 'sillage/node_modules')
 rmSync(join(modules, '.bin'), { recursive: true, force: true })
 
-// Les modules natifs livrent les binaires de toutes les plateformes, et leurs sources C
-// pour une recompilation que l'app ne fait jamais : une centaine de Mo pour rien. Seul
-// reste le binaire de la cible (node-pty compile le sien sous Linux, dans build/).
+// Native modules ship all-platform binaries and C sources for recompilation the
+// app never does: about 100 MB wasted. Keep only target binary (node-pty builds
+// its own on Linux in build/).
 const target = `${process.platform}-${process.arch}`
 keepOnly(join(modules, 'node-pty/prebuilds'), (entry) => entry === target)
 keepOnly(join(modules, 'better-sqlite3/prebuilds'), (entry) => entry === `${target}.node`)
 for (const sources of ['node-pty/deps', 'node-pty/third_party', 'better-sqlite3/deps']) {
   rmSync(join(modules, sources), { recursive: true, force: true })
 }
-// Les symboles de débogage de node-pty pour Windows pèsent plus que ses binaires.
+// Windows node-pty debug symbols weigh more than its binaries.
 keepOnly(join(modules, 'node-pty/prebuilds', target), (entry) => !entry.endsWith('.pdb'))
 
 const version = process.version
@@ -82,20 +81,20 @@ try {
   writeFileSync(file, archive)
   const node = join(stage, 'node')
   mkdirSync(node)
-  // Le tar de Windows (bsdtar, dans System32) lit les .zip ; celui de Git for Windows, plus
-  // tôt dans le PATH d'un shell bash, ne les lit pas.
+  // Windows tar (bsdtar in System32) reads .zip; Git for Windows tar, earlier
+  // on bash PATH, does not.
   const tar = windows ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
   execFileSync(tar, [windows ? '-xf' : '-xzf', file, '-C', node, '--strip-components=1'])
 
-  // Ni en-têtes C, ni pages de manuel, ni corepack : l'app lance Node et npm, rien d'autre.
+  // No C headers, manual pages, or corepack: app runs Node/npm only.
   const extras = windows
     ? ['corepack', 'corepack.cmd', 'node_modules/corepack', 'install_tools.bat', 'nodevars.bat', 'CHANGELOG.md', 'README.md']
     : ['include', 'share', 'lib/node_modules/corepack', 'bin/corepack', 'CHANGELOG.md', 'README.md']
   for (const entry of extras) {
     rmSync(join(node, entry), { recursive: true, force: true })
   }
-  // npm et npx sont des liens symboliques dans l'archive : des lanceurs à la place, qui
-  // survivent à l'empaquetage. Sous Windows, ce sont déjà des fichiers (`npm.cmd`).
+  // npm/npx are symlinks in archive: replace with launchers surviving packaging.
+  // On Windows they are already files (`npm.cmd`).
   for (const [command, script] of windows ? [] : [
     ['npm', 'npm-cli.js'],
     ['npx', 'npx-cli.js'],
@@ -109,8 +108,8 @@ try {
     chmodSync(launcher, 0o755)
   }
 
-  // Le contrôle qui compte, après l'élagage : sous le Node embarqué, la base s'ouvre et un
-  // terminal démarre, comme le vérifie l'archive de la release.
+  // Important check after trimming: under bundled Node, database opens and terminal
+  // starts, as release archive verification does.
   const shell = windows ? '["cmd.exe", ["/d", "/c", "exit 3"]]' : '["/bin/sh", ["-c", "exit 3"]]'
   execFileSync(
     join(node, windows ? 'node.exe' : 'bin/node'),

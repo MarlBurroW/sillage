@@ -16,10 +16,7 @@ import type { SessionManager } from '../src/sessions/session-manager.js'
 import { linkedWorktreePaths } from '../src/worktrees/linked.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
-/**
- * Les worktrees créés par un agent : le vrai serveur MCP en sous-processus, le daemon
- * qui balaie ses demandes, un vrai dépôt.
- */
+/** Agent-created worktrees: real MCP subprocess, daemon request sweeps and a real repository. */
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
@@ -35,7 +32,7 @@ function harness(t: TestContext) {
   writeFileSync(join(repo, 'README.md'), 'main\n')
   git(repo, 'add', '-A')
   git(repo, 'commit', '-q', '-m', 'root')
-  // L'arbre principal est resté sur une autre branche : la base doit rester main.
+  // Main worktree remains on another branch; the base must stay main.
   git(repo, 'checkout', '-q', '-b', 'elsewhere')
   writeFileSync(join(repo, 'README.md'), 'elsewhere\n')
   git(repo, 'commit', '-q', '-am', 'elsewhere')
@@ -97,7 +94,7 @@ test('create_worktree : depuis la branche par défaut, rattaché sans toucher au
   const path = join(config.paths.worktrees, 'project', 'feat__mcp')
   assert.match(created.content[0]!.text, new RegExp(`prêt dans ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
   assert.match(created.content[0]!.text, /partie de main/)
-  // Parti de main, pas de la branche où l'arbre principal était resté.
+  // Start from main rather than the main worktree's current branch.
   assert.equal(git(path, 'rev-parse', 'HEAD'), git(repo, 'rev-parse', 'main'))
 
   const row = db.select().from(worktrees).where(eq(worktrees.name, 'feat/mcp')).get()!
@@ -106,18 +103,18 @@ test('create_worktree : depuis la branche par défaut, rattaché sans toucher au
   assert.deepEqual(db.select({ path: conversationPaths.path }).from(conversationPaths).all(), [{ path }])
   assert.deepEqual(linkedWorktreePaths(db, 'agent', 'project'), [path])
 
-  // Redemander le même arbre le rend tel quel.
+  // Requesting the same tree returns it unchanged.
   const again = await call('create_worktree', { branch: 'feat/mcp' })
   assert.equal(again.isError, undefined)
   assert.match(again.content[0]!.text, /existait déjà/)
 
-  // Une branche déjà extraite ailleurs ne peut pas l'être deux fois : git refuse, et
-  // l'agent l'apprend en clair.
+  // Branches checked out elsewhere cannot be checked out twice: git rejects them and
+  // explain this plainly to the agent.
   const busy = await call('create_worktree', { branch: 'elsewhere' })
   assert.equal(busy.isError, true)
   assert.match(busy.content[0]!.text, /déjà extraite/)
 
-  // Une branche existante et libre est reprise telle quelle, pas recréée depuis la base.
+  // Reuse available existing branches instead of recreating them from the base.
   git(repo, 'branch', 'feat/kept', 'elsewhere')
   const reused = await call('create_worktree', { branch: 'feat/kept' })
   assert.equal(reused.isError, undefined, reused.content[0]?.text)

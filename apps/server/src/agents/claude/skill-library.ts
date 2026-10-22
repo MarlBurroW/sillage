@@ -1,23 +1,6 @@
 import type { SdkPluginConfig } from '@anthropic-ai/claude-agent-sdk'
 
-/**
- * Ce que la bibliothèque de skills ajoute au lancement de Claude Code.
- *
- * Chaque racine est un plugin local : ses skills deviennent des commandes natives
- * (`/sillage:nom`, alias `/nom`), que le modèle déclenche aussi par leur description.
- * Rien n'est écrit dans `~/.claude`.
- *
- * Trois choses, toutes relevées par sonde :
- * - `skipMcpDiscovery` : un plugin peut déclarer des serveurs MCP, et ceux de Sillage
- *   passent par son registre, pas par là ;
- * - les racines en répertoires autorisés : sans elles, lire un fichier annexe d'un skill
- *   (`references/`, `scripts/`) déclenche une demande de permission ;
- * - des règles `deny` sur `Edit` et `Write` : autoriser un dossier ouvre aussi son
- *   écriture en `acceptEdits`, et l'agent d'un projet pourrait modifier un skill
- *   global que toutes les conversations chargent. C'est un garde-fou contre le geste
- *   involontaire, pas une frontière : une redirection Bash passe toujours. Le `//`
- *   initial désigne un chemin absolu dans la syntaxe des règles de Claude Code.
- */
+/** Skill library additions to Claude launch. Roots are local plugins exposing native commands (`/sillage:nom`, alias `/nom`) and description-triggered skills without writing `~/.claude`. Probed requirements: `skipMcpDiscovery` keeps plugin MCP outside registry authority; allowed root directories prevent supporting-file read prompts; `Edit`/`Write` deny rules prevent unintended global-skill edits when `acceptEdits` grants directory writes. This is a safeguard, not a security boundary, because Bash redirection remains possible. Initial `//` denotes absolute paths in Claude rules. */
 export interface SkillLibraryLaunchOptions {
   plugins: SdkPluginConfig[]
   additionalDirectories: string[]

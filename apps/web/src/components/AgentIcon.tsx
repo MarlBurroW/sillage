@@ -2,23 +2,20 @@ import type { ComponentType } from 'react'
 import type { AgentKind } from '@sillage/protocol'
 import { translate } from '../lib/i18n'
 
-/** Couleurs de marque, appliquées partout où le logo apparaît. */
+/** Brand colors wherever logos appear. */
 const BRAND: Record<AgentKind, string> = {
   claude: '#D97757',
-  // OpenAI n'a pas de couleur de marque en aplat : le logo se porte en monochrome et
-  // hérite donc de la couleur du texte environnant.
+  // OpenAI has no solid brand color: use a monochrome logo inheriting surrounding text.
   codex: 'currentColor',
-  // Le logo d'opencode est lui aussi monochrome.
+  // opencode's logo is monochrome too.
   opencode: 'currentColor',
-  // Celui de Grok aussi : xAI le décline en noir ou en blanc selon le fond.
+  // So is Grok: xAI uses black or white depending on background.
   grok: 'currentColor',
 }
 
 /**
- * Marque Claude, tracé issu de Simple Icons (CC0 1.0), source https://claude.ai.
- *
- * C'est le logo Claude et non celui de Claude Code : il est bien plus reconnaissable,
- * alors que le CLI reste identifié par le libellé à côté.
+ * Claude mark from Simple Icons (CC0 1.0), source https://claude.ai. Use the recognizable Claude
+ * logo rather than Claude Code's; adjacent labels identify the CLI.
  */
 function ClaudeMark({ size }: { size: number }) {
   return (
@@ -29,10 +26,8 @@ function ClaudeMark({ size }: { size: number }) {
 }
 
 /**
- * Marque OpenAI, tracé issu de @lobehub/icons-static-svg (MIT).
- *
- * Usage nominatif : identifier quel CLI répond dans une conversation. Sillage n'est
- * affilié ni à OpenAI ni à Anthropic, et ne se présente jamais comme tel.
+ * OpenAI mark from @lobehub/icons-static-svg (MIT). Nominative use identifies the responding CLI.
+ * Sillage is not affiliated with OpenAI or Anthropic and never presents itself as such.
  */
 function OpenAiMark({ size }: { size: number }) {
   return (
@@ -51,11 +46,8 @@ function OpenAiMark({ size }: { size: number }) {
 }
 
 /**
- * Marque opencode : le cadre de son logo, redessiné à la main en deux rectangles (le
- * contour et le creux qu'il laisse en bas), sur la grille 24 des deux autres.
- *
- * Usage nominatif, comme pour OpenAI : dire quel CLI répond. Sillage n'est pas affilié
- * à opencode.
+ * opencode mark redrawn as two rectangles (outline and bottom cutout) on the same 24-unit grid.
+ * Nominative CLI identification like OpenAI; Sillage is not affiliated with opencode.
  */
 function OpencodeMark({ size }: { size: number }) {
   return (
@@ -67,11 +59,8 @@ function OpencodeMark({ size }: { size: number }) {
 }
 
 /**
- * Marque Grok, tracé issu de @lobehub/icons-static-svg (MIT).
- *
- * Le symbole de Grok plutôt que le logo de xAI : c'est lui que l'on reconnaît, comme le
- * logo Claude plutôt que celui de Claude Code. Usage nominatif là encore, Sillage n'est
- * pas affilié à xAI.
+ * Grok mark from @lobehub/icons-static-svg (MIT). Use Grok's recognizable symbol rather than xAI's,
+ * like Claude versus Claude Code. Nominative use; Sillage is not affiliated with xAI.
  */
 function GrokMark({ size }: { size: number }) {
   return (
@@ -82,14 +71,10 @@ function GrokMark({ size }: { size: number }) {
 }
 
 /**
- * Ce que l'UI sait de chaque CLI : libellé, éditeur, phrase de présentation, marque.
- *
- * Table exhaustive sur l'enum plutôt que des ternaires dispersés : un CLI ajouté au
- * protocole sans sa ligne ici ne compile pas, là où le ternaire binaire d'avant
- * aurait affiché le logo OpenAI sur n'importe quel nouvel agent.
- *
- * Les phrases sont descriptives et non promotionnelles : le choix se fait sur ce qui
- * distingue réellement les CLI, pas sur des adjectifs.
+ * UI CLI metadata: label, publisher, description, and brand. Exhaustive enum table instead of
+ * scattered ternaries: adding a protocol CLI without metadata fails compilation, whereas previous
+ * binary logic showed OpenAI logos for any new agent. Descriptions explain real distinctions rather
+ * than promotional adjectives.
  */
 export interface AgentMeta {
   label: string
@@ -129,7 +114,7 @@ export const AGENT_LABELS: Record<AgentKind, string> = Object.fromEntries(
   Object.entries(AGENT_META).map(([kind, meta]) => [kind, meta.label]),
 ) as Record<AgentKind, string>
 
-/** Repère visuel du CLI d'une conversation. */
+/** Visual marker for a conversation's CLI. */
 export function AgentIcon({ agent, size = 14 }: { agent: AgentKind; size?: number }) {
   const { label, Mark } = AGENT_META[agent]
   return (

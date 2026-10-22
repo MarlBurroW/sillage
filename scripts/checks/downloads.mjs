@@ -4,7 +4,7 @@ import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { promisify } from 'node:util'
 
-/** Vrais téléchargements du navigateur, uniquement dans la démo temporaire. */
+/** Real browser downloads, only in temporary demo. */
 export async function checkDownloads({ page, context, base, project, hero, data }) {
   assert.ok(project.workspacePath.startsWith(`${data}${sep}`))
   const folder = join(project.workspacePath, 'ui-downloads')

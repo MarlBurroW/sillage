@@ -13,28 +13,24 @@ import type {
   RunnerContext,
 } from './types.js'
 
-/**
- * Suggestions par défaut d'une demande de permission. Communes aux CLI : ce sont les
- * gestes que Sillage sait rejouer, pas ceux du protocole natif, qui garde les siens
- * dans la réponse construite par le runner.
- */
+/** Default permission suggestions shared across CLIs: actions Sillage can replay rather than native choices retained in runner responses. */
 const PERMISSION_SUGGESTIONS: PermissionOption[] = [
   { id: 'allow-once', label: 'Autoriser', scope: 'once', behavior: 'allow' },
   { id: 'allow-session', label: 'Autoriser pour la session', scope: 'session', behavior: 'allow' },
   { id: 'deny', label: 'Refuser', scope: 'once', behavior: 'deny' },
 ]
 
-/** Ce qu'une demande de permission montre à l'utilisateur, au-delà de l'outil. */
+/** Permission request details shown beyond tool names. */
 export interface PermissionDetails {
   toolName: string
   input: unknown
-  /** Libellés rédigés par le CLI quand il en fournit ; null sinon. */
+  /** CLI-provided labels when available, otherwise null. */
   title?: string | null
   description?: string | null
   displayName?: string | null
 }
 
-/** Ce qu'une élicitation MCP montre à l'utilisateur. */
+/** MCP elicitation information shown to users. */
 export interface ElicitationDetails {
   serverName: string
   mode: 'form' | 'url'
@@ -44,20 +40,7 @@ export interface ElicitationDetails {
   title: string | null
 }
 
-/**
- * Les demandes en attente d'une réponse de l'utilisateur, et leur chorégraphie.
- *
- * Chaque canal (permission, question, élicitation, plan) suit le même cycle :
- * émettre `*.requested` et passer en `awaiting_input` si la demande bloque, retenir la
- * façon de répondre au CLI, puis à la décision émettre `*.resolved`, répondre et
- * repasser en `running` quand aucune demande bloquante ne reste. À l'arrêt du runner, tout ce qui attend encore est clos en
- * `expired` : un CLI ne doit jamais rester suspendu à une réponse qui ne viendra pas.
- *
- * Cette chorégraphie était recopiée dans chaque runner, à l'identique au payload de
- * réponse près : c'est précisément ce payload, et lui seul, que le runner fournit,
- * sous forme d'un rappel `respond`. Une réponse `null` signifie que la demande a
- * expiré sans décision.
- */
+/** Pending user requests and their shared lifecycle. Permissions, questions, elicitations and plans emit `*.requested`, enter `awaiting_input` when blocking, retain native response callbacks, then emit `*.resolved`, respond and return to `running` once no blocking requests remain. Runner shutdown expires everything so CLIs never await impossible answers. Runners previously duplicated this except response payloads; now each supplies only `respond`. Null responses mean expiry without decisions. */
 export class PendingInteractions {
   private readonly permissions = new Map<string, (decision: PermissionDecision | null) => void>()
   private readonly questions = new Map<string, (answer: QuestionAnswer | null) => void>()
@@ -223,14 +206,14 @@ export class PendingInteractions {
     return true
   }
 
-  /** Un runner qui s'arrête ne doit pas laisser le CLI attendre une réponse à jamais. */
+  /** Stopping runners must never leave CLIs waiting forever for responses. */
   expireAll(): void {
     for (const id of [...this.questions.keys(), ...this.elicitations.keys(), ...this.plans.keys(), ...this.permissions.keys()]) {
       this.expire(id)
     }
   }
 
-  /** Une annulation native ne clôt que la demande concernée, jamais ses voisines. */
+  /** Native cancellation closes only its own request, never neighboring requests. */
   expire(requestId: string): boolean {
     const question = this.questions.get(requestId)
     if (question) {

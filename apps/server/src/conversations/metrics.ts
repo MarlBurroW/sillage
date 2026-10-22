@@ -1,20 +1,13 @@
 import type { ConversationRow } from '@sillage/db'
 import type { ConversationMetrics } from '@sillage/protocol'
 
-/**
- * Les colonnes du relevé, isolées pour que la diffusion de statut n'ait pas à lire la
- * ligne entière : elle passe déjà par là plusieurs fois par tour.
- */
+/** Usage columns selected separately so status broadcasting avoids reading entire rows several times per turn. */
 export type MetricColumns = Pick<
   ConversationRow,
   'turnCount' | 'journalBytes' | 'contextUsedTokens' | 'contextMaxTokens' | 'model'
 >
 
-/**
- * Met en forme le relevé pour le client, seul endroit où les deux colonnes de contexte
- * redeviennent le couple qu'elles décrivent. Un maximum inconnu ne se remplace pas par
- * un défaut : sans lui, il n'y a pas de proportion à afficher.
- */
+/** Formats usage for clients, the sole place where two context columns become their pair again. Never substitute defaults for unknown maxima: without them there is no ratio to display. */
 export function conversationMetrics(row: MetricColumns): ConversationMetrics {
   return {
     turnCount: row.turnCount,

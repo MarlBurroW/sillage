@@ -47,7 +47,7 @@ test('un tour : texte en deltas, outil normalisé, sortie en flux, édition, con
   assert.deepEqual(usage?.context, { usedTokens: 500, maxTokens: 1000, ratio: 0.5 })
   const done = f.events.find((event) => event.type === 'turn.completed')
   assert.deepEqual(done, { type: 'turn.completed', stopReason: 'completed', costUsd: 0.5, inputTokens: 100, outputTokens: 20, cacheReadTokens: 400, cacheCreationTokens: 0 })
-  // Le fork retrouve son point de coupe dans le payload natif de la clôture.
+  // Forks locate cut points in native completion payloads.
   assert.deepEqual(f.raw[f.events.indexOf(done!)], { sessionID: ROOT, messageID: 'msg_a' })
   assert.deepEqual(f.statuses.slice(-2), ['running', 'idle'])
   for (const event of f.events) sillageEventSchema.parse(event)
@@ -89,14 +89,14 @@ test('lancement : session, modèle par défaut, inventaire MCP, commandes et cor
     parts: 1, agent: 'plan', model: { providerID: 'fixture', modelID: 'small' }, variant: 'high', system: 'OVERVIEW',
   })
 
-  // Une commande en `/` connue passe par sa route, pas par `prompt_async`.
+  // Known slash commands use dedicated routes rather than `prompt_async`.
   await f.runner.send(`/review fixture:${JSON.stringify({ events: [busy(), idle()] })}`, [], [])
   await until(() => f.count('turn.completed') === 2)
   const command = (await f.records()).find((record) => record.method === 'POST' && record.path.endsWith('/command'))!
   assert.equal(command.body.command, 'review')
   assert.equal(command.body.model, 'fixture/small')
 
-  // Modèle et agent se changent à chaud ; une permission relance le serveur.
+  // Model/agent changes apply live; permission changes restart servers.
   assert.equal(await f.runner.applyConfig({ ...f.ctx.config, model: 'fixture/other' } as never), true)
   assert.equal(await f.runner.applyConfig({ ...f.ctx.config, permissions: { edit: 'allow', bash: 'ask', webfetch: '' } } as never), false)
 })
@@ -138,7 +138,7 @@ test('permissions : portées traduites, demande close par opencode, expiration �
   assert.equal(f.runner.resolvePermission(requests[1]!.requestId, { decision: 'denied', scope: 'once', decidedBy: 'u' }), false)
   assert.equal(f.statuses.at(-1), 'awaiting_input', 'deux demandes attendent encore')
 
-  // opencode clôt la troisième de lui-même, puis le tour s'arrête sur la quatrième.
+  // opencode closes the third request itself, then the turn stops on the fourth.
   await f.runner.steer(`fixture:${JSON.stringify({ events: [{ type: 'permission.replied', properties: { sessionID: ROOT, requestID: 'per_3', reply: 'once' } }] })}`, [], [])
   await until(() => f.events.filter((event) => event.type === 'permission.resolved' && event.decision === 'expired').length === 1)
   await f.runner.interrupt()
@@ -210,7 +210,7 @@ test('sous-agent : sa session se rattache à l\'appel task et ne clôt pas le to
     part({ id: 'prt_child', type: 'text', text: 'trouvé', time: { start: 1, end: 2 } }, 'msg_c', child),
     stepFinish({ input: 7, output: 3 }, 0.1, 'msg_c', child),
     idle(child),
-    // Une session étrangère à l'arbre est ignorée.
+    // Ignore sessions outside the tree.
     part({ id: 'prt_other', type: 'text', text: 'ailleurs', time: { start: 1, end: 2 } }, 'msg_o', 'ses_other'),
     tool('call_task', 'task', { status: 'completed', input: { description: 'Explore', prompt: 'look', subagent_type: 'explore' },
       output: 'trouvé', title: 'Explore', metadata: { sessionId: child }, time: { start: 1, end: 9 } }),
@@ -221,7 +221,7 @@ test('sous-agent : sa session se rattache à l\'appel task et ne clôt pas le to
   assert.deepEqual(started.map((event) => [event.name, event.parentToolCallId]), [['Agent', null], ['Read', 'call_task']])
   const text = f.events.filter((event) => event.type === 'message.completed' && event.role === 'assistant')
   assert.deepEqual(text.map((event) => event.parentToolCallId), ['call_task'])
-  // La consommation du sous-agent compte dans le tour, pas dans la jauge de contexte.
+  // Subagent usage counts toward turns but not context gauges.
   const usage = f.events.find((event) => event.type === 'usage.updated')
   assert.equal(usage?.context, null)
   assert.equal(f.events.find((event) => event.type === 'turn.completed')?.inputTokens, 7)
@@ -243,7 +243,7 @@ test('panne de tour, plan, titre, compaction et événement inconnu', async (t) 
     { type: 'session.error', properties: { sessionID: ROOT, error } },
     assistant('msg_a', { error, time: { created: 1, completed: 2 } }),
     idle(),
-    // opencode clôt l'outil après `idle` : le tour l'a déjà fait.
+    // opencode closes tools after `idle`, which already closed them.
     tool('call_1', 'bash', { status: 'error', input: { command: 'sleep 9' }, error: 'Tool execution aborted', time: { start: 1, end: 2 } }),
   ])
   assert.deepEqual(f.events.find((event) => event.type === 'plan.updated')?.items, [{ text: 'A', status: 'in_progress' }, { text: 'C', status: 'pending' }])
@@ -253,7 +253,7 @@ test('panne de tour, plan, titre, compaction et événement inconnu', async (t) 
   assert.equal(f.events.filter((event) => event.type === 'agent.notice' && event.code === 'future.thing').length, 1)
   assert.equal(f.events.filter((event) => event.type === 'tool.completed' && event.toolCallId === 'call_1').length, 1)
 
-  // Compaction demandée : annoncée une fois, résumé masqué, clôture journalisée.
+  // Requested compaction announced once, summary hidden, completion journaled.
   assert.equal(await f.runner.compact(), true)
   await f.turn([
     busy(), assistant('msg_s', { summary: true, mode: 'compaction' }),
@@ -287,7 +287,7 @@ test('bibliothèque de skills : l\'instance est rechargée au repos, le flux reb
   const f = await runnerFixture(t)
   await until(() => f.count('commands.updated') === 1)
 
-  // Pendant un tour, la relecture attend : jeter l'instance emporterait le tour.
+  // During turns rereading waits: discarding the instance would interrupt the turn.
   await f.play([busy(), assistant('msg_a')])
   await until(() => f.count('turn.started') === 1)
   await f.runner.reloadSkillLibrary()
@@ -296,7 +296,7 @@ test('bibliothèque de skills : l\'instance est rechargée au repos, le flux reb
   await until(() => f.count('commands.updated') === 2, 'commandes republiées après le tour')
   assert.equal((await f.records()).filter((record) => record.path === '/instance/dispose').length, 1)
 
-  // Le flux d'avant est muet : un tour qui aboutit prouve qu'il a été rebranché.
+  // Old streams are silent: completed turns prove reconnection.
   await f.turn([busy(), idle()])
   assert.equal(f.count('turn.completed'), 2)
 

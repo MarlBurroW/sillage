@@ -6,8 +6,8 @@ import { ActionList, useActionDialogs } from '../actions/ActionList'
 import { Banner, Button, EmptyState } from '../ui'
 
 /**
- * L'onglet Actions du panneau : la liste complète, et l'endroit où l'on en crée. Le
- * lanceur de l'en-tête montre la même liste sans quitter ce qu'on regarde.
+ * Panel Actions tab holds the full list and creation controls. The header launcher shows the same
+ * list without leaving current content.
  */
 export function ActionsPane({ projectId, conversationId }: { projectId: string; conversationId?: string }) {
   const t = useTranslate()

@@ -23,9 +23,8 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          # Une seule règle : l'interface, l'API et les WebSockets (/api/ws)
-          # partagent le même port. Les contrôleurs nginx et traefik gèrent
-          # l'upgrade WebSocket sans annotation particulière.
+          # One rule: interface, API, WebSockets (/api/ws) share a port. nginx/traefik
+          # controllers handle WebSocket upgrade without special annotations.
           - path: {{ .Values.ingress.path }}
             pathType: {{ .Values.ingress.pathType }}
             backend:

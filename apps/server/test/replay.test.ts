@@ -7,7 +7,7 @@ import { coalesceDeltas } from '../src/events/coalesce.js'
 import { EventLog } from '../src/events/event-log.js'
 import { MAX_OUTPUT_BYTES } from '../src/events/tool-output.js'
 
-// Le fold est indépendant de React ; seul le choix initial de langue lit le navigateur.
+// The fold is React-independent; only initial language selection reads the browser.
 Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => 'fr' }, configurable: true })
 const { applyEvent, emptyChatState } = await import('../../web/src/lib/chat-fold.js')
 type ChatState = ReturnType<typeof emptyChatState>
@@ -37,11 +37,7 @@ const turnEnd: SillageEvent = {
   cacheCreationTokens: 0, cacheReadTokens: 0,
 }
 
-/**
- * Tout ce que la relecture peut écarter, et ce qu'elle doit garder alors qu'il y ressemble :
- * un appel interrompu sans `tool.completed`, un identifiant d'appel réutilisé après sa
- * fin, un appel encore en cours, des deltas de texte que la page fusionne.
- */
+/** Everything replay may omit and similar entries it must retain: interrupted calls without `tool.completed`, reused call IDs after completion, active calls and text deltas merged within pages. */
 const JOURNAL: SillageEvent[] = [
   turnStart,
   user('u1', 'Lance les tests'),
@@ -88,7 +84,7 @@ function openJournal(events: SillageEvent[] = JOURNAL): { log: EventLog; close: 
   return { log, close: () => sqlite.close() }
 }
 
-/** Ce que fait le client de chaque entrée : le garde d'idempotence, puis le fold. */
+/** Client entry handling: idempotency guard then fold. */
 function fold(state: ChatState, entries: Pick<JournalEntry, 'seq' | 'ts' | 'event'>[]): ChatState {
   let next = state
   for (const entry of entries) {
@@ -98,12 +94,12 @@ function fold(state: ChatState, entries: Pick<JournalEntry, 'seq' | 'ts' | 'even
   return next
 }
 
-/** Le journal entier, sans rien écarter : la référence. */
+/** Full unfiltered journal as the reference. */
 function reference(log: EventLog, throughSeq = Number.POSITIVE_INFINITY): ChatState {
   return fold(emptyChatState(), log.read('c', 0, 10_000).filter((entry) => entry.seq <= throughSeq))
 }
 
-/** La relecture telle que la route la sert et que le client l'enchaîne, page après page. */
+/** Replay as routes serve it and clients concatenate it page by page. */
 function replay(log: EventLog, state: ChatState, after: number, limits = { rows: 3, bytes: 400 }) {
   const received: JournalEntry[] = []
   let cursor = after
@@ -117,10 +113,7 @@ function replay(log: EventLog, state: ChatState, after: number, limits = { rows:
   }
 }
 
-/**
- * L'état affiché, sans `lastSeq` : c'est un curseur de relecture, que les deltas fusionnés
- * faisaient déjà différer, pas quelque chose que le fil montre.
- */
+/** Displayed state excluding `lastSeq`, a replay cursor already changed by merged deltas rather than visible conversation content. */
 const shown = (state: ChatState) =>
   JSON.stringify({ ...state, lastSeq: 0 }, (_key, value: unknown) => (value instanceof Map ? [...value] : value))
 
@@ -138,8 +131,8 @@ test('relecture : un client repris à n’importe quel point du journal retrouve
   const { log, close } = openJournal()
   try {
     const expected = shown(reference(log))
-    // Un onglet qui suivait le direct jusqu'à `seq`, puis a perdu le fil : il rattrape par
-    // la route, en cours de tour, avec une carte de diff déjà posée ou un outil qui tourne.
+    // A tab followed live through `seq`, then disconnected: catch up through routes
+    // mid-turn with existing diff cards or running tools.
     for (let seq = 0; seq <= JOURNAL.length; seq += 1) {
       assert.equal(shown(replay(log, reference(log, seq), seq).state), expected, `repris après ${seq}`)
     }
@@ -154,10 +147,10 @@ test('relecture : ce que la suite rend caduc n’est pas envoyé', () => {
     const of = <T extends SillageEvent['type']>(type: T) =>
       events.filter((event): event is Extract<SillageEvent, { type: T }> => event.type === type)
 
-    // La sortie de t1 tient dans son `tool.completed` ; celle de t2, interrompu, et celle
-    // de t3, en cours, n'existent que par leurs deltas. Le t1 relancé aussi.
+    // t1 output lives in `tool.completed`; interrupted t2 and running t3 exist
+    // only through deltas, as does restarted t1.
     assert.deepEqual(of('tool.output_delta').map((event) => event.chunk), ['interrompu en route', 'de nouveau', 'toujours en cours'])
-    // Le premier diff de chaque tour pose la carte, le dernier la remplit.
+    // Each turn's first diff creates the card; its last diff fills it.
     assert.deepEqual(of('diff.updated').map((event) => event.patch), ['p1', 'p1p2p3', 'q1', 'q1q2'])
     assert.deepEqual(of('commands.updated').map((event) => event.commands.map((command) => command.name)), [['a', 'b']])
     assert.deepEqual(of('mcp.updated').map((event) => event.servers[0]?.state), ['connected'])
@@ -172,12 +165,12 @@ test('relecture : une page s’arrête à sa borne en octets, mais garde toujour
       const read = log.readForReplay('c', after, { rows: 5000, bytes: 1_000 })
       return { seqs: read.entries.map((entry) => entry.seq), nextAfter: read.nextAfter }
     }
-    // La page s'arrête avant l'événement qui la ferait déborder…
+    // Pages stop before events exceeding their budget…
     assert.deepEqual(page(0), { seqs: [1], nextAfter: 1 })
-    // … qui passe seul dans la suivante, sans quoi il ne passerait jamais.
+    // …then return those events alone on the next page so they can always pass.
     assert.deepEqual(page(1), { seqs: [2], nextAfter: 2 })
     assert.deepEqual(page(2), { seqs: [3, 4], nextAfter: 4 })
-    // Au bout du journal, le curseur ne bouge plus : c'est ce qui arrête le client.
+    // At journal end cursors stop advancing, which stops clients.
     assert.deepEqual(page(4), { seqs: [], nextAfter: 4 })
   } finally { close() }
 })
@@ -194,12 +187,12 @@ test('relecture : une sortie volumineuse n’est ni lue ni envoyée, et ne rempl
       .received.flatMap((entry) => (entry.event.type === 'tool.completed' ? [entry.event] : []))
     assert.deepEqual(completed.map((event) => [event.toolCallId, event.output, event.outputBytes]), [
       ['small', 'a.ts', undefined],
-      // La taille est celle du JSON que le client aurait reçu, accents compris.
+      // Size reflects JSON clients would receive, including accented characters.
       ['big', null, Buffer.byteLength(JSON.stringify(big))],
       ['blocks', null, Buffer.byteLength(JSON.stringify([{ type: 'text', text: big }]))],
     ])
-    // Les deux sorties pèsent 16 ko chacune en base, mais ne comptent que pour ce que la
-    // relecture en garde : les six événements tiennent dans une page de 24 ko.
+    // Both outputs occupy 16 KB each in the database but count only their retained
+    // replay representation: six events fit a 24 KB page.
     assert.equal(log.readForReplay('c', 0, { rows: 5000, bytes: 3 * MAX_OUTPUT_BYTES }).entries.length, 6)
   } finally { close() }
 })
@@ -208,8 +201,8 @@ test('relecture : l’index suit un journal qui s’allonge entre deux pages', (
   const { log, close } = openJournal()
   try {
     const halfway = replay(log, emptyChatState(), 0, { rows: 5000, bytes: 8_000_000 })
-    // t3 se termine et le tour 3 reçoit un nouveau diff : l'ancien dernier devient
-    // intermédiaire, et les deltas de t3 deviennent inutiles à qui relit depuis le début.
+    // t3 completes and turn 3 receives another diff: the former final diff becomes
+    // intermediate and t3 deltas become unnecessary for full replay.
     for (const event of [diff('q1q2q3'), done('t3', 'fini'), turnEnd]) log.append('c', event)
 
     const expected = shown(reference(log))

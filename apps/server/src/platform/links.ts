@@ -1,14 +1,7 @@
 import { linkSync, readlinkSync, statSync, symlinkSync } from 'node:fs'
 import path from 'node:path'
 
-/**
- * Pose en `link` un lien vers `target` : symbolique, ou ce qui en tient lieu sous Windows.
- *
- * Windows ne laisse créer un lien symbolique qu'en mode développeur ou en administrateur.
- * Un dossier y devient une jonction, qui ne demande aucun droit ; un fichier, un lien
- * symbolique quand c'est permis, sinon un lien physique (même volume), qui partage le
- * contenu du fichier mais pas son remplacement par un nouveau.
- */
+/** Creates `link` pointing to `target` via symlinks or Windows equivalents. Windows requires developer mode or administrator rights for symlinks. Directories use unprivileged junctions; files use symlinks when permitted, otherwise same-volume hardlinks sharing contents but not replacement by new files. */
 export function linkTo(target: string, link: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') return symlinkSync(target, link)
   if (statSync(target).isDirectory()) return symlinkSync(target, link, 'junction')
@@ -20,10 +13,7 @@ export function linkTo(target: string, link: string, platform: NodeJS.Platform =
   }
 }
 
-/**
- * Vrai quand le lien `link` mène à `target`. Une jonction rend sa cible en chemin absolu,
- * parfois préfixé de `\\?\` : on compare des chemins résolus.
- */
+/** Whether `link` targets `target`. Junction targets are absolute, sometimes prefixed `\\?\`; compare resolved paths. */
 export function linksTo(link: string, target: string): boolean {
   const current = readlinkSync(link).replace(/^\\\\\?\\/, '')
   return path.resolve(path.dirname(link), current) === path.resolve(target)

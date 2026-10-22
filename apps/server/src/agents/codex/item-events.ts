@@ -6,7 +6,7 @@ import { toWorkspacePath } from '../paths.js'
 
 type ToolStart = Extract<SillageEvent, { type: 'tool.started' }>
 
-/** Exhaustivité à la compilation, repli lisible si le CLI est plus récent au runtime. */
+/** Compile-time exhaustive coverage with readable runtime fallback for newer CLIs. */
 function futureItem(item: never): ThreadItem {
   return item
 }
@@ -43,20 +43,17 @@ function tool(item: ThreadItem): { name: string; input: unknown } | null {
 }
 
 /**
- * Au-delà, l'image reste un chemin. Le journal et le flux SSE portent le base64 en
- * entier, et une capture d'écran de Codex tient très largement sous ce plafond.
+ * Beyond this limit retain the path only. Logs and SSE carry full base64, and Codex screenshots fit
+ * comfortably below it.
  */
 const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
 
 /**
- * Sortie d'un `imageView`, dans la forme du `tool_result` que Claude Code rend pour
- * un `Read` d'image : un bloc `image` en base64, puis le chemin en texte. La vue web
- * lit déjà cette forme, et le fil affiche l'image au lieu d'un chemin en JSON.
- *
- * Synchrone à dessein : l'événement `tool.completed` doit partir dans l'ordre des
- * items, et un fichier local de quelques Mo se lit sans latence sensible. Une image
- * illisible (supprimée, trop lourde, format inconnu) rend le chemin seul, sans erreur :
- * Codex, lui, l'a bien vue.
+ * imageView output in Claude image-Read tool_result shape: base64 image block then text path. Web
+ * views already support it, displaying images rather than JSON paths. Deliberately synchronous to
+ * preserve tool.completed item ordering; reading a few local megabytes has negligible latency.
+ * Missing, oversized, or unknown images return paths without errors because Codex already viewed
+ * them.
  */
 function imageViewOutput(cwd: string, path: string): unknown {
   const absolute = isAbsolute(path) ? path : resolve(cwd, path)
@@ -127,8 +124,8 @@ export function completedItem(
       type: 'agent.notice', code: item.type, level: 'info',
       message: item.type === 'enteredReviewMode' ? 'Codex démarre une revue.' : 'Codex a terminé la revue.', details: item.review,
     }]
-    case 'userMessage': // Déjà journalisé à l'envoi.
-    case 'subAgentActivity': // Rattaché au sous-agent par le runner.
+    case 'userMessage': // Already journaled on send.
+    case 'subAgentActivity': // Associated with its subagent by the runner.
       return []
     default: return [finish(futureItem(item))]
   }

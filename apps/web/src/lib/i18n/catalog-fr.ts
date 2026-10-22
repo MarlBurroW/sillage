@@ -1,6 +1,6 @@
 import type { Catalog } from './catalog-en'
 
-/** Catalogue français. Typé d'après l'anglais : une clé oubliée casse le build. */
+/** French catalog. Typed from English so missing keys fail the build. */
 export const fr: Catalog = {
   "news.title": "Veille",
   "news.description": "Vos sources et articles récents, à retrouver aussi pendant le travail des agents.",
@@ -43,7 +43,7 @@ export const fr: Catalog = {
   'typingIndicator.breath': "Souffle",
   'typingIndicator.default': "Par défaut",
   'typingIndicator.preview': "Aperçu dans le fil",
-  // Textes de l’atelier autonome pour comparer les mouvements avant intégration.
+  // Standalone workshop text for comparing motion before integration.
   "prototype.typing.title": "Indicateurs de saisie · Sillage",
   "prototype.typing.workshop": "Atelier du mouvement",
   "prototype.typing.prototype": "Propositions interactives",
@@ -362,7 +362,7 @@ export const fr: Catalog = {
   'agent.install.hidden': 'Masqués tant qu’ils ne sont pas installés : {labels}.',
   'agent.install.reveal': 'Afficher',
 
-  // Fil de conversation
+  // Conversation thread
   'conversation.drop.attach': 'Déposer pour joindre au message',
   'conversation.meta.worktree': 'Worktree {name}',
   'conversation.meta.projectFolder': 'Dossier du projet',
@@ -445,7 +445,7 @@ export const fr: Catalog = {
   'task.status.failed': 'Échoué en arrière-plan',
   'task.status.stopped': 'Arrêté avant la fin',
 
-  // Composer - réglages du tour
+  // Composer - turn settings
   'composer.grokPermission.auto.hint': 'Grok décide, demande en cas de doute',
   'composer.setting.webSearch': 'Recherche web',
   'composer.webSearch.on': 'Activée',
@@ -591,7 +591,7 @@ export const fr: Catalog = {
   'composer.dictate.recording': 'Enregistrement en cours',
   'composer.dictate.silent': 'Aucun son capté. Vérifie le micro sélectionné.',
 
-  // Panneau du workspace
+  // Workspace panel
   'panel.aria': 'Panneau du workspace',
   'panel.tab.files': 'Fichiers',
   'panel.tab.git': 'Git',
@@ -690,7 +690,7 @@ export const fr: Catalog = {
   'panel.mcp.empty.title': 'Aucun serveur MCP',
   'panel.mcp.empty.description': 'Déclare des serveurs dans les réglages, puis active-les sur cette conversation.',
 
-  // Coquille applicative (navigation, projets, comptes)
+  // Application shell (navigation, projects, accounts)
   'shell.nav.resize.aria': 'Largeur de la navigation',
   'shell.nav.show': 'Afficher la navigation',
   'shell.nav.close': 'Fermer la navigation',
@@ -740,7 +740,7 @@ export const fr: Catalog = {
   'shell.conversation.contextTitle': 'Contexte : {used} sur {max} tokens',
   'shell.conversation.modelTitle': 'Modèle',
 
-  // Réglages
+  // Settings
   'settings.section.account': 'Compte',
   'settings.section.account.description': 'Nom affiché, identifiant, mot de passe',
   'settings.section.appearance': 'Apparence',
@@ -810,7 +810,7 @@ export const fr: Catalog = {
   'settings.section.stt': 'Dictée',
   'settings.section.stt.description': 'Saisie vocale par un fournisseur de transcription IA',
 
-  // Dictée
+  // Dictation
   'stt.section.title': 'Dictée',
   'stt.section.description': 'Dicter les prompts par une API de transcription au format OpenAI',
   'stt.adminOnly.title': 'Administrateurs uniquement',
@@ -841,7 +841,7 @@ export const fr: Catalog = {
   'error.no_audio': 'Aucun audio reçu.',
   'error.audio_too_large': "L'enregistrement est vide ou trop volumineux.",
 
-  // Jetons d'API
+  // API tokens
   'apiTokens.section.title': 'API et serveur MCP',
   'apiTokens.section.description': "Sillage s'ouvre aux outils extérieurs de deux façons, avec les mêmes jetons",
   'apiTokens.banner':
@@ -1222,7 +1222,7 @@ export const fr: Catalog = {
   'settings.title': 'Réglages',
   'settings.buildInfo': 'Sillage {version} · build du',
 
-  // À propos et mise à jour
+  // About and updates
   'about.title': 'À propos',
   'about.description': 'Version installée et mises à jour.',
   'about.version.card': 'Version',
@@ -1254,7 +1254,7 @@ export const fr: Catalog = {
   'about.confirm.action': 'Mettre à jour',
   'about.confirm.body': "Le service sera indisponible quelques secondes pendant le redémarrage. Les conversations en cours d'exécution seront interrompues et reprendront au prochain message.",
 
-  // Arborescence de fichiers
+  // File tree
   'filetree.search.placeholder': 'Chercher un fichier...',
   'filetree.search.label': 'Chercher un fichier',
   'filetree.search.clear': 'Effacer la recherche',
@@ -1319,7 +1319,7 @@ export const fr: Catalog = {
   'filetree.failures.more.one': '{message} (1 autre échec)',
   'filetree.failures.more.other': '{message} ({count} autres échecs)',
 
-  // Fichiers déposés dans l'explorateur
+  // Explorer file drops
   'uploads.status.pending': 'en attente',
   'uploads.status.sending': '{sent} / {total}',
   'uploads.status.done': 'envoyé',
@@ -1333,7 +1333,7 @@ export const fr: Catalog = {
   'error.upload_failed': "Écriture de {path} impossible : {reason}.",
   'error.upload_too_large': "Fichier trop volumineux (maximum {maxGb} Go).",
 
-  // Rendu des appels d'outils
+  // Tool call rendering
   'tool.output.label': 'Sortie',
   'tool.output.empty': '(vide)',
   'tool.bash.command': 'Commande',
@@ -1365,7 +1365,7 @@ export const fr: Catalog = {
   'tool.webfetch.answer': 'Réponse',
   'tool.plan.label': 'Plan proposé',
 
-  // Projet
+  // Project
   'project.notFound': 'Projet introuvable',
   'project.visibility.private': 'Privé',
   'project.visibility.private.hint': 'Visible par toi seul',
@@ -1384,7 +1384,7 @@ export const fr: Catalog = {
   'project.worktree.deleteConfirm': 'Supprimer le worktree « {name} » ?',
   'project.worktree.deleteUsedCount': "{count} conversation(s) l'utilisent et passeront en lecture seule.",
   'project.worktree.delete': 'Supprimer',
-  // Chantiers : l'avancement des worktrees
+  // Worktree progress
   'worktrees.state.missing': 'Introuvable',
   'worktrees.state.dirty': 'Non commité',
   'worktrees.state.unmerged': 'À fusionner',
@@ -1474,7 +1474,7 @@ export const fr: Catalog = {
   'project.settings.remove.confirm': 'Retirer "{name}" de Sillage ?',
   'project.settings.remove': 'Retirer',
 
-  // Modifications (diff et historique)
+  // Changes (diff and history)
   'changes.diff.recalculate': 'Recalculer le diff',
   'changes.diff.current': 'Non commité',
   'changes.commits.title': 'Commits',
@@ -1502,7 +1502,7 @@ export const fr: Catalog = {
   'changes.edit.loading': 'Lecture du journal...',
   'changes.edit.error': 'Modification illisible.',
 
-  // Onglet Git : le workflow (index, commit, branches, remote, stash)
+  // Git tab workflow (index, commit, branches, remote, stash)
   'git.header.detached': 'HEAD détachée',
   'git.header.unborn': 'Aucun commit',
   'git.header.upstream': 'Suit {upstream}',
@@ -1701,7 +1701,7 @@ export const fr: Catalog = {
   'design.empty.description': 'Essaie un autre terme de recherche.',
   'design.empty.reset': 'Réinitialiser',
 
-  // Consommation du compte - vue d'ensemble
+  // Account usage - overview
   'usage.reset.imminent': 'imminent',
   'usage.reset.inMinutes': 'dans {minutes} min',
   'usage.reset.inHours': 'dans {hours} h',
@@ -1743,7 +1743,7 @@ export const fr: Catalog = {
   'message.attachment.alt': 'Pièce jointe',
   'message.thinking.label': 'Réflexion',
 
-  // Composer - réglages de la conversation
+  // Composer - conversation settings
   'composer.settings.label': 'Réglages de la conversation, {summary}',
   'composer.settings.title': 'Réglages de la conversation',
   'composer.settings.short': 'Réglages',
@@ -1769,7 +1769,7 @@ export const fr: Catalog = {
   'composer.settings.reorder.dropped': '{setting} posé en position {position}.',
   'composer.settings.reorder.cancelled': 'Déplacement de {setting} annulé.',
 
-  // Commun
+  // Common
   'common.close': 'Fermer',
   'common.cancel': 'Annuler',
 
@@ -1787,7 +1787,7 @@ export const fr: Catalog = {
   'worktree.create.pending': 'Création...',
   'worktree.create.action': 'Créer',
 
-  // Consommation du compte - quotas et coûts
+  // Account usage - quotas and costs
   'usage.window.fiveHour': '5 h',
   'usage.window.sevenDay': '7 j',
   'usage.window.sevenDayOpus': '7 j Opus',
@@ -1806,7 +1806,7 @@ export const fr: Catalog = {
   'usage.billed.perUse': "Facturé à l'usage",
   'usage.cost.amount': '{amount} $',
 
-  // Composer - statut de session
+  // Composer - session status
   'composer.status.warm.title': 'Le process CLI tourne : le prochain message part immédiatement.',
   'composer.status.cold.title': 'Aucun process CLI : le prochain message relance la session et recharge son contexte.',
   'composer.status.warm.label': 'Session chargée',
@@ -1815,7 +1815,7 @@ export const fr: Catalog = {
   'composer.status.connected.label': 'Connecté',
   'composer.status.shortcut': 'Entrée pour envoyer, Maj+Entrée pour un retour à la ligne',
 
-  // Éditeur
+  // Editor
   'editor.tab.label': "Ouvrir {path}",
   'editor.tab.labelDirty': "Ouvrir {path}, non enregistré",
   'editor.drafts.recover': "Brouillons conservés ({count})",
@@ -1880,7 +1880,7 @@ export const fr: Catalog = {
   'minimap.turn.you': 'Toi',
   'minimap.turn.attachmentOnly': '(pièce jointe seule)',
 
-  // Recherche
+  // Search
   'search.dialog.label': 'Recherche',
   'search.title': 'Rechercher',
   'search.placeholder': 'Rechercher projets, conversations, fichiers, skills...',
@@ -1919,7 +1919,7 @@ export const fr: Catalog = {
   'search.role.user': 'Toi',
   'search.role.agent': 'Agent',
 
-  // Connexion
+  // Login
   'login.error.unreachable': 'Le serveur est injoignable.',
   'login.subtitle': 'Plateforme de développement agentique',
   'login.username.label': "Nom d'utilisateur",
@@ -1927,7 +1927,7 @@ export const fr: Catalog = {
   'login.submit.pending': 'Connexion...',
   'login.submit.action': 'Se connecter',
 
-  // Comptes
+  // Accounts
   'users.adminOnly.title': 'Réservé aux administrateurs',
   'users.adminOnly.description': "Demande à un administrateur de l'instance.",
   'users.section.title': 'Comptes',
@@ -1961,13 +1961,13 @@ export const fr: Catalog = {
   'users.delete.confirm': 'Supprimer le compte « {username} » ?',
   'users.delete.action': 'Supprimer',
 
-  // Thème
+  // Theme
   'theme.syntax.contrastNotice': "Le thème contrasté garde sa propre palette : son contraste est ce pour quoi on le choisit, et une palette d'ambiance l'annulerait. Le réglage reprendra effet sur les thèmes clair et sombre.",
 
-  // Dialogue générique
+  // Generic dialog
   'dialog.cancel': 'Annuler',
 
-  // Mode plan
+  // Plan mode
   'plan.status.approved': 'Validé',
   'plan.status.rejected': 'Refusé',
   'plan.status.expired': 'Expiré',
@@ -1978,7 +1978,7 @@ export const fr: Catalog = {
   'plan.review.continuePlanning': 'Continuer à planifier',
   'plan.review.ownerOnly': 'Seul le propriétaire de la conversation peut décider.',
 
-  // Elicitation MCP
+  // MCP elicitation
   'elicitation.status.accept': 'Envoyé',
   'elicitation.status.decline': 'Refusé',
   'elicitation.status.cancel': 'Annulé',
@@ -2008,9 +2008,9 @@ export const fr: Catalog = {
   'terminal.interrupted': 'Shell interrompu par un redémarrage du serveur. Son dernier écran est affiché.',
   'terminal.relaunch': 'Relancer ici',
 
-  // Sous-agents
+  // Subagents
 
-  // Réglages : apparence et langue
+  // Settings: appearance and language
   'settings.appearance.title': 'Apparence',
   'settings.appearance.description': "Les préférences visuelles suivent ton compte. La langue se choisit sur chaque appareil.",
   'settings.language.title': 'Langue',
@@ -2018,7 +2018,7 @@ export const fr: Catalog = {
   'settings.theme.title': 'Thème et couleurs',
   'settings.theme.description': "La teinte pilote les surfaces et l'accent.",
 
-  // Activité du fil (compaction, écriture, outils, changement de modèle)
+  // Thread activity (compaction, writing, tools, model changes)
   'activity.compaction.done': 'Contexte résumé',
   'activity.compaction.doneWithPre': 'Contexte résumé, {tokens} tokens avant',
   'activity.compaction.doneWithBoth': 'Contexte résumé, {pre} vers {post} tokens',
@@ -2031,7 +2031,7 @@ export const fr: Catalog = {
   'activity.modelChanged': 'Modèle passé à {model}',
   'activity.configRestartDeferred': 'Réglage appliqué à la fin du tour',
 
-  // Board et cartes
+  // Board and cards
   'board.newConversation': 'Nouvelle conversation',
   'board.column.todo': 'À faire',
   'board.column.inProgress': 'En cours',
@@ -2090,7 +2090,7 @@ export const fr: Catalog = {
   'draft.card.detach': 'Détacher cette carte',
   'draft.card.prompt': 'Prends en charge la carte #{number} de ce projet.',
 
-  // Board relié à GitHub
+  // GitHub-linked board
   'board.github.connect': 'Relier à GitHub',
   'board.github.open': 'Liaison GitHub : {repo}',
   'board.github.dialog.title': 'Relier le board à GitHub',
@@ -2207,7 +2207,7 @@ export const fr: Catalog = {
   'board.github.notes.pending': 'publication...',
   'board.github.notes.failed': 'non publiée',
 
-  // Projets (réglages)
+  // Projects (settings)
   'projects.title': 'Projets',
   'projects.description': 'Un projet est un répertoire de travail et sa visibilité.',
   'projects.create.title': 'Nouveau projet',
@@ -2237,7 +2237,7 @@ export const fr: Catalog = {
   'projects.empty.title': 'Aucun projet pour le moment',
   'projects.empty.description': 'Crée-en un avec le formulaire ci-dessus.',
 
-  // Question de l'agent
+  // Agent question
   'question.status.answered': 'Répondu',
   'question.status.cancelled': 'Sans réponse',
   'question.status.expired': 'Expiré',
@@ -2258,7 +2258,7 @@ export const fr: Catalog = {
   'question.skip': 'Ne pas répondre',
   'question.ownerOnly': 'Seul le propriétaire de la conversation peut répondre.',
 
-  // Compte (réglages)
+  // Account (settings)
   'account.password.changed': 'Mot de passe changé.',
   'account.updated': 'Compte mis à jour.',
   'account.username.label': "Nom d'utilisateur",
@@ -2273,7 +2273,7 @@ export const fr: Catalog = {
   'account.save.pending': 'Enregistrement...',
   'account.save.action': 'Enregistrer',
 
-  // Apparence (réglages fins)
+  // Appearance (fine settings)
   'appearance.hue.title': 'Teinte',
   'appearance.hue.hint': "Partagée avec la couleur d'accent",
   'appearance.tint.title': 'Intensité',
@@ -2292,7 +2292,7 @@ export const fr: Catalog = {
   'appearance.messageContrast.hint': 'Écart entre tes messages et les réponses',
   'appearance.reset': 'Défaut',
 
-  // Notifications push
+  // Push notifications
   'push.insecure':
     "Les notifications exigent une connexion HTTPS. Le navigateur ne donne accès ni au service worker ni à l'API Push en clair.",
   'push.unsupported': 'Ce navigateur ne gère pas les notifications push.',
@@ -2380,7 +2380,7 @@ export const fr: Catalog = {
   'decision.settings.maxHoursHint': "Ensuite, son choix par défaut s'applique, ou l'agent apprend que personne n'a répondu.",
   'decision.settings.maxHoursInvalid': 'Entre 1 et {max} heures.',
 
-  // Permissions (demandes de l'agent)
+  // Permissions (agent requests)
   'permission.status.allowed': 'Autorisé',
   'permission.status.denied': 'Refusé',
   'permission.status.expired': 'Expiré',
@@ -2392,7 +2392,7 @@ export const fr: Catalog = {
   'permission.deny': 'Refuser',
   'permission.ownerOnly': 'Seul le propriétaire de la conversation peut décider.',
 
-  // Vue terminal
+  // Terminal view
   'terminal.view.shellExited': "Le shell s'est terminé (code {code}).",
   'terminal.view.connectionFailed': 'Connexion au terminal impossible.',
   'terminal.view.sessionExpired': 'Session expirée, reconnecte-toi.',
@@ -2405,7 +2405,7 @@ export const fr: Catalog = {
   'terminal.view.paste.hint': 'Colle ici avec ton raccourci habituel ou un appui long, puis envoie.',
   'terminal.view.paste.send': 'Envoyer au terminal',
 
-  // Éditeur - recherche et remplacement
+  // Editor - search and replace
   'editor.search.find': 'Rechercher',
   'editor.search.replace': 'Remplacer',
   'editor.search.next': 'Suivant',
@@ -2422,7 +2422,7 @@ export const fr: Catalog = {
   'editor.search.replacedMatchOnLine': 'occurrence remplacée ligne $',
   'editor.search.onLine': 'ligne',
 
-  // Sélecteur de dossier
+  // Directory picker
   'directoryPicker.title': 'Choisir un dossier',
   'directoryPicker.newFolder': 'Nouveau dossier',
   'directoryPicker.newFolder.placeholder': 'Nom du dossier',
@@ -2434,7 +2434,7 @@ export const fr: Catalog = {
   'directoryPicker.gitRepo': 'dépôt git',
   'directoryPicker.confirm': 'Choisir ce dossier',
 
-  // Panneau des sous-agents
+  // Subagent panel
   'subagent.pane.empty.title': 'Aucun sous-agent',
   'subagent.pane.empty.description':
     'Les agents lancés par la conversation apparaîtront ici, avec leur fil complet.',
@@ -2444,12 +2444,12 @@ export const fr: Catalog = {
   'subagent.row.toolCount.one': '{count} outil',
   'subagent.row.toolCount.other': '{count} outils',
 
-  // Aperçu de lecture (design system)
+  // Reading preview (design system)
   'readingPreview.question': "Pourquoi le fichier `.env` s'affichait-il sans couleur ?",
   'readingPreview.answer':
     "Parce que `extname('.env')` rend une chaîne vide : pour Node, un fichier\nqui commence par un point n'a pas d'extension, il a un **nom**.\n\nDeux conséquences :\n\n- aucun mode n'était trouvé, donc aucune coloration ;\n- les commentaires eux-mêmes passaient en texte brut.\n\nLe mode se décide maintenant sur le nom du fichier.",
 
-  // Rendu des appels d'outils (payload et groupes)
+  // Tool call rendering (payloads and groups)
   'toolcall.payload.input': 'Entrée',
   'toolcall.payload.output': 'Sortie',
   'toolcall.output.loading': 'Chargement de la sortie complète...',
@@ -2463,13 +2463,13 @@ export const fr: Catalog = {
   'toolcall.group.failed.one': '{count} échec',
   'toolcall.group.failed.other': '{count} échecs',
 
-  // CLI agents - présentation
+  // Agent CLI presentation
   'agent.blurb.claude': 'Sous-agents, mode plan, permissions demandées outil par outil.',
   'agent.blurb.codex': 'Mode plan, exécution en bac à sable, approbations groupées.',
   'agent.blurb.opencode': 'Tous fournisseurs et modèles, agents primaires, règles de permission par outil.',
   'agent.blurb.grok': 'Modèles de xAI, mode plan, permissions demandées par l’Agent Client Protocol.',
 
-  // Bloc de code
+  // Code block
   'code.filename.default': 'extrait.txt',
   'code.filename': 'extrait.{extension}',
   'code.language.plain': 'texte',
@@ -2479,7 +2479,7 @@ export const fr: Catalog = {
   'code.copy': 'Copier le bloc',
   'code.copy.failed': 'Copie impossible',
 
-  // Recherche dans le fil et navigation par tours
+  // Thread search and turn navigation
   'thread.search.placeholder': 'Rechercher dans la conversation...',
   'thread.search.noResults': 'Aucun résultat',
   'thread.search.position': '{index} sur {count}',
@@ -2489,10 +2489,10 @@ export const fr: Catalog = {
   'turn.nav.previous': 'Tour précédent',
   'turn.nav.next': 'Tour suivant',
 
-  // Commun
+  // Common
   'common.select.placeholder': 'Choisir...',
 
-  // Queue de l'extraction : divers
+  // Remaining extracted text: miscellaneous
   'common.copy': 'Copier',
   'common.copied': 'Copié',
   'common.failed': 'Échec',
@@ -2549,7 +2549,7 @@ export const fr: Catalog = {
   'home.empty.title': 'Aucun projet',
   'error.http': 'La requête a échoué ({status}).',
 
-  // Erreurs du serveur, indexées par le code qu'il renvoie
+  // Server errors indexed by returned code
   'error.admin_only': "Réservé aux administrateurs.",
   'error.already_sent': "Cette pièce jointe fait déjà partie de la conversation.",
   'error.attachment_file_missing': "Le fichier a disparu du disque.",
@@ -2563,8 +2563,8 @@ export const fr: Catalog = {
   'error.binary': "Fichier binaire, non modifiable comme du texte.",
   'error.claude_only': "Seules les conversations Claude Code peuvent être resynchronisées.",
   'error.compact_unsupported': "Ce CLI ne gère pas la compaction.",
-  // Pannes de tour, relayées par les runners. Le titre traduit le code, le message du
-  // CLI suit tel quel dans le bandeau.
+  // Turn failures relayed by runners. Titles translate codes;
+  // banners preserve the following CLI message unchanged.
   'error.usage_limit_exceeded': "Quota d'utilisation épuisé",
   'error.session_budget_exceeded': "Budget de la session épuisé",
   'error.context_window_exceeded': "Fenêtre de contexte dépassée",
@@ -2692,7 +2692,7 @@ export const fr: Catalog = {
   'error.config_field_locked': "Ces réglages sont fixés par le jeton et ne se changent pas par tâche : {fields}.",
   'error.config_requires_autonomous': "Une configuration sans garde-fou exige la portée tasks:autonomous.",
   'error.model_unknown': "Modèle {model} inconnu pour {agent}. Connus : {known}.",
-  // Bibliothèque de skills
+  // Skill library
   'settings.section.skills': "Skills",
   'settings.section.skills.description': "Des skills natifs pour tous les CLI",
   'skills.section.title': "Bibliothèque de skills",
@@ -2833,7 +2833,7 @@ export const fr: Catalog = {
   'error.skill_name_invalid': "Nom de skill invalide : {name}.",
   'error.skill_description_missing': "Le SKILL.md de ce skill n'a pas de description.",
   'error.local_skill_not_found': "Ce skill n'est plus sur la machine.",
-  // Sources de la bibliothèque de skills
+  // Skill library sources
   'skills.add.catalog': "Depuis un catalogue…",
   'skills.badge.update': "Mise à jour disponible",
   "skills.catalog.back": "Retour aux skills",
@@ -3314,7 +3314,7 @@ export const fr: Catalog = {
   "error.schedule_already_running": "Un tir de cette tâche est encore en cours.",
   "error.schedule_never_fires": "Cette cadence ne donne aucun tir à venir.",
 
-  // Réglages : listes avant formulaires, et retours d'enregistrement.
+  // Settings: lists before forms and save feedback.
   'settings.saved': 'Enregistré.',
   'account.section.description': 'Ce que les autres comptes voient de toi.',
   'push.status.on': 'Activées sur cet appareil',
@@ -3358,7 +3358,7 @@ export const fr: Catalog = {
   'checkpoint.view.excluded.hint': "Fichiers changés par un pull, une fusion ou un rebase pendant le tour, qui ne sont pas son travail.",
   'project.settings.checkpoints': 'Points de reprise par tour',
   'project.settings.checkpoints.hint': "Capture le workspace avant et après chaque tour dans des refs git cachées, pour montrer ce qu'un tour a changé et y revenir. À couper sur un dépôt si lourd que l'envoi d'un message en devient visiblement plus lent.",
-  // Visite de première ouverture
+  // First-launch tour
   'about.tour.title': "Première visite",
   'about.tour.description': "Rejouer la visite guidée : agents, projet, permissions, consignes, téléphone. Rien n'est défait.",
   'about.tour.replay': "Revoir la visite",

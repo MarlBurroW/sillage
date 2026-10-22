@@ -1,27 +1,19 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * Onglets ouverts dans l'éditeur, par conversation.
- *
- * Hors de React parce que l'explorateur ouvre un onglet que l'éditeur affiche, et que
- * les deux sont dans des onglets de panneau distincts : passer par le parent ferait
- * remonter l'état à chaque frappe dans l'arborescence.
- *
- * Volontairement non persisté : un onglet renvoie à un fichier qui peut avoir disparu
- * entre deux sessions, et rouvrir une liste d'erreurs au démarrage vaut moins que de
- * repartir vide.
+ * Open editor tabs per conversation. Outside React because the explorer opens tabs displayed by the
+ * editor across separate panel tabs; lifting state would propagate every tree keystroke through the
+ * parent. Deliberately not persisted: files may disappear between sessions, and starting empty is
+ * preferable to reopening errors.
  */
 
 interface Tabs {
   paths: string[]
   active: string | null
   /**
-   * Onglet d'aperçu, celui qu'un clic simple vient d'ouvrir.
-   *
-   * Il n'y en a qu'un, et le prochain clic simple le remplace au lieu de s'ajouter :
-   * sans lui, parcourir dix fichiers de l'arborescence laisse dix onglets derrière soi.
-   * Il devient un onglet ordinaire dès qu'on montre qu'on le garde, en le double
-   * cliquant ou en y écrivant.
+   * Preview tab opened by a single click. Only one exists; the next single click replaces it rather
+   * than accumulating ten tabs while browsing ten files. Double-clicking or editing promotes it to
+   * a regular tab.
    */
   preview: string | null
 }
@@ -49,10 +41,8 @@ export function useEditorTabs(conversationId: string): Tabs {
 }
 
 /**
- * Ouvre un fichier, ou l'active s'il est déjà là.
- *
- * `preview` désigne une ouverture de parcours, celle du clic simple dans
- * l'arborescence. Une ouverture demandée explicitement, elle, garde sa place.
+ * Open a file or activate its existing tab. `preview` means a browsing open from a tree
+ * single-click; explicit opens retain their place.
  */
 export function openTab(
   conversationId: string,
@@ -65,15 +55,14 @@ export function openTab(
     byConversation.set(conversationId, {
       ...current,
       active: path,
-      // Rouvrir explicitement ce qui n'était qu'un aperçu, c'est décider de le garder.
+      // Explicitly reopening a preview means choosing to keep it.
       preview: !preview && current.preview === path ? null : current.preview,
     })
     emit()
     return
   }
 
-  // L'aperçu se remplace à sa place plutôt qu'en fin de barre : les onglets ouverts
-  // avant lui ne doivent pas se déplacer à chaque fichier survolé.
+  // Replace the preview in place rather than at the end: earlier tabs must not move while browsing files.
   const replacing = preview && current.preview !== null ? current.paths.indexOf(current.preview) : -1
   const paths = [...current.paths]
   if (replacing === -1) paths.push(path)
@@ -87,7 +76,7 @@ export function openTab(
   emit()
 }
 
-/** Fait d'un aperçu un onglet ordinaire : le suivant ne le remplacera plus. */
+/** Promote a preview to a regular tab so the next preview cannot replace it. */
 export function pinTab(conversationId: string, path: string): void {
   const current = byConversation.get(conversationId) ?? EMPTY
   if (current.preview !== path) return
@@ -103,10 +92,8 @@ export function activateTab(conversationId: string, path: string): void {
 }
 
 /**
- * Déplace un onglet à une position donnée.
- *
- * L'ordre est celui d'ouverture par défaut, ce qui ne dit rien de l'usage : on
- * regroupe volontiers ce qui va ensemble.
+ * Move a tab to a position. Default order follows opening time, but users may want related files
+ * grouped together.
  */
 export function reorderTabs(conversationId: string, from: string, toIndex: number): void {
   const current = byConversation.get(conversationId) ?? EMPTY
@@ -119,7 +106,7 @@ export function reorderTabs(conversationId: string, from: string, toIndex: numbe
   emit()
 }
 
-/** Ferme tout sauf le chemin donné, ou tout si aucun n'est donné. */
+/** Close all except the given path, or everything when no path is supplied. */
 export function closeOtherTabs(conversationId: string, keep: string | null): void {
   const current = byConversation.get(conversationId) ?? EMPTY
   const paths = keep === null ? [] : [keep]
@@ -139,8 +126,8 @@ export function closeTab(conversationId: string, path: string): void {
   const paths = current.paths.filter((entry) => entry !== path)
   byConversation.set(conversationId, {
     paths,
-    // Fermer l'onglet actif passe au voisin de droite, puis de gauche : c'est ce que
-    // fait un navigateur, et revenir au premier onglet perdrait le fil de la lecture.
+    // Closing the active tab selects its right neighbor, then left, like a browser: jumping to the
+    // first tab loses reading context.
     active:
       current.active === path ? (paths[index] ?? paths[index - 1] ?? null) : current.active,
     preview: current.preview === path ? null : current.preview,
@@ -149,8 +136,8 @@ export function closeTab(conversationId: string, path: string): void {
 }
 
 /**
- * Reporte un renommage ou un déplacement fait dans l'explorateur : l'onglet suit son
- * fichier, dossier parent compris, au lieu de rester sur un chemin qui n'existe plus.
+ * Apply explorer renames or moves, including parent directories: tabs follow their files instead of
+ * retaining nonexistent paths.
  */
 export function moveTabs(conversationId: string, from: string, to: string): void {
   const current = byConversation.get(conversationId)

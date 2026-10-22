@@ -129,22 +129,19 @@ import {
 } from './ui'
 
 /**
- * Au doigt, le clic droit n'existe pas et l'appui long lance déjà le glissement d'une
- * ligne : le menu contextuel y reste muet, le bouton « … » toujours visible suffit.
+ * Touch has no right click and long-press already starts row dragging: omit context menus; the
+ * always-visible ellipsis button suffices.
  */
 function useContextMenuEnabled(): boolean {
   return !useMediaQuery('(pointer: coarse)')
 }
 
-/** Le raccourci porte la touche que la plateforme utilise réellement. */
+/** Display the modifier key actually used by the platform. */
 const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
 
 /**
- * Neutralise le clic qui suit immédiatement un glisser-déposer.
- *
- * L'écouteur est posé en phase de capture pour passer avant le lien, et retiré au
- * tour de boucle suivant : si le glissement n'a produit aucun clic, il ne doit surtout
- * pas manger le clic légitime d'après.
+ * Suppress the click immediately following drag-and-drop. Capture before links, then remove on the
+ * next event-loop tick: if no click follows the drag, never swallow the next legitimate one.
  */
 function swallowNextClick(): void {
   const swallow = (event: MouseEvent) => {
@@ -157,11 +154,8 @@ function swallowNextClick(): void {
 }
 
 /**
- * Champ de renommage, ouvert par double-clic sur le nom.
- *
- * Le texte est sélectionné à l'ouverture : renommer part presque toujours d'un nom
- * proposé par le CLI qu'on remplace, et le curseur posé en fin de ligne obligeait à
- * tout effacer à la main.
+ * Rename field opened by double-clicking the name. Select text on opening because users usually
+ * replace a CLI-suggested name; an end-position cursor forced manual deletion.
  */
 function RenameInput({
   value,
@@ -193,8 +187,8 @@ function RenameInput({
 }
 
 /**
- * Souris : un seuil de déplacement, pour que le clic sur un lien reste un clic.
- * Tactile : un appui long, sinon le glissement volerait le défilement de la liste.
+ * Mouse uses a movement threshold so link clicks remain clicks. Touch uses long-press so dragging
+ * does not steal list scrolling.
  */
 function useDragSensors() {
   return useSensors(
@@ -204,8 +198,8 @@ function useDragSensors() {
 }
 
 /**
- * Desktop : sidebar persistante. Mobile : la même sidebar en tiroir plein écran.
- * Un seul composant de navigation, deux présentations.
+ * Desktop has a persistent sidebar; mobile presents the same navigation component as a full-screen
+ * drawer.
  */
 export function AppShell() {
   useDecisionsLive()
@@ -253,8 +247,7 @@ export function AppShell() {
     }
   }, [wide, hidden])
 
-  // Raccourci global : la palette doit s'ouvrir depuis n'importe quelle vue, y compris
-  // avec le curseur dans la barre de saisie.
+  // Global shortcut: open the palette from any view, including while the composer has focus.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return
@@ -267,8 +260,8 @@ export function AppShell() {
   }, [])
 
   /**
-   * La sidebar commence au bord gauche de la fenêtre : l'abscisse du pointeur est donc
-   * la largeur voulue, sans décalage à mémoriser au début du geste.
+   * Sidebar starts at the window's left edge, so pointer x is the desired width with no initial
+   * offset to retain.
    */
   const handle = resizeHandle({
     widthAt: (clientX) => clientX,
@@ -278,11 +271,8 @@ export function AppShell() {
 
   return (
     /**
-     * Calque fixe de l'application, dimensionné par `.app-layer`.
-     *
-     * À l'ouverture du clavier, il se cale sur le viewport visuel et remonte de
-     * `--sg-viewport-top` : le clavier pousse tout vers le haut au lieu de recouvrir la
-     * barre de saisie.
+     * Fixed app layer sized by app-layer. With the keyboard open it follows the visual viewport and
+     * offsets by viewport-top, moving above the keyboard instead of hiding the composer.
      */
     <MobileNavigationContext.Provider value={() => setNavOpen(true)}>
     <div className="app-layer flex overflow-hidden text-ink">
@@ -315,26 +305,19 @@ export function AppShell() {
           }
         }}
         className={cx(
-          // `absolute` et non `fixed` : le repère est le calque ci-dessus, donc le
-          // tiroir suit le viewport visuel au lieu de passer sous le clavier.
-          // Pleine largeur sur mobile : à 16.5rem, un titre de conversation était coupé
-          // au bout de quelques mots. Le tiroir se recouvre de toute façon, rien ne
-          // reste à voir derrière lui.
+          // Absolute rather than fixed: reference the app layer above so the drawer follows the
+          // visual viewport. Fill mobile width because 16.5rem truncated titles after a few words;
+          // nothing behind the overlay needs to remain visible.
           'absolute inset-y-0 left-0 z-30 w-full shrink-0',
           'md:w-[var(--sidebar-desktop-width)]',
           'surface border-r border-line pt-safe',
-          // Sur mobile, la sidebar est en surimpression : une translation suffit à la
-          // faire entrer et sortir. Sur grand écran elle occupe une colonne du flex,
-          // donc c'est la marge qui doit se refermer, sinon translater ne ferait que
-          // laisser un vide de sa largeur.
-          // `translate` et non `transform` : Tailwind v4 pose les utilitaires de
-          // translation sur la propriété CSS `translate`, qui est distincte. Une
-          // transition déclarée sur `transform` ne portait donc sur rien, et le
-          // tiroir sautait d'un bord à l'autre sur mobile.
+          // Mobile overlays need only translation to enter and leave. Desktop occupies a flex
+          // column, so collapse its margin or translation would leave empty space. Transition
+          // translate rather than transform: Tailwind v4 uses the separate CSS translate property,
+          // so transform transitions did nothing and mobile drawers jumped.
           'transition-[translate,margin] duration-200 ease-out',
-          // `md:left-auto` : en `sticky`, un `left: 0` réépingle l'élément au bord du
-          // viewport et annule visuellement la marge négative du repli, alors même
-          // que la place, elle, est bien rendue.
+          // md:left-auto prevents sticky left:0 pinning the element to the viewport and visually
+          // canceling negative collapse margins even though space was released.
           'md:relative md:h-full md:translate-x-0',
           navOpen ? 'translate-x-0' : '-translate-x-full',
           hidden ? 'md:-ml-[var(--sidebar-desktop-width)]' : 'md:ml-0',
@@ -350,9 +333,10 @@ export function AppShell() {
           }}
         />
 
-        {/* Poignée de largeur, sur le bord droit. Retirée quand la sidebar est repliée :
-            elle se retrouverait sinon au bord gauche de la vue, par-dessus le bouton de
-            réaffichage, à redimensionner quelque chose d'invisible. */}
+        {/*
+         * Right-edge resize handle hidden when collapsed, or it would sit over the restore button
+         * resizing an invisible sidebar.
+         */}
         {hidden ? null : (
           <div
             role="separator"
@@ -363,8 +347,8 @@ export function AppShell() {
             onKeyDown={handle.onKeyDown}
             className={cx(
               'absolute inset-y-0 -right-1 z-10 hidden w-2 cursor-col-resize md:block',
-              // Le trait n'apparaît qu'au survol : au repos, la bordure de la sidebar
-              // suffit, et une seconde ligne permanente la doublerait.
+              // Show the resize line only on hover: the sidebar border already suffices at rest and
+              // a permanent extra line would double it.
               'after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2',
               'after:transition-colors hover:after:bg-accent focus-visible:after:bg-accent',
               'outline-none',
@@ -382,13 +366,13 @@ export function AppShell() {
       ) : null}
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
-      {/* Monter l'invite enregistre le service worker : sans PWA, ni l'un ni l'autre. */}
+      {/* Mounting the prompt registers the service worker: without PWA, mount neither. */}
       {pwa ? <UpdatePrompt /> : null}
 
-      {/* Aucune gouttière : le bouton de réaffichage se pose dans le coin haut-gauche,
-          et ce sont les vues qui ont un en-tête qui lui réservent sa place
-          (`useSidebarHidden`). Une colonne décalée de sa largeur laissait une bande vide
-          sur toute la hauteur de l'écran. */}
+      {/*
+       * No gutter: restore buttons overlay top-left corners and header views reserve space with
+       * useSidebarHidden. Offsetting the entire column left an empty full-height strip.
+       */}
       <div
         inert={!wide && navOpen}
         className={cx('flex min-w-0 flex-1 flex-col', contextualHeader && 'pt-safe md:pt-0')}
@@ -406,14 +390,12 @@ export function AppShell() {
         </header>
         ) : null}
 
-        {/* Le calque racine ne défile plus : chaque vue porte son propre défilement.
-            Les pages de réglages n'en gèrent aucun, il leur est donné ici. */}
+        {/* The root layer never scrolls: views own scrolling. Supply it here for settings pages without their own. */}
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>
-      {/* Hors de la colonne principale : une décision s'ouvre et un toast apparaît
-          par-dessus n'importe quelle vue, sidebar comprise. */}
+      {/* Outside the main column so decisions and toasts overlay every view including sidebar. */}
       <DecisionDialog />
       <Toaster />
     </div>
@@ -439,14 +421,14 @@ function Sidebar({
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
-  // Les tirs planifiés ne comptent pas dans l'activité : une tâche qui tourne toute
-  // seule n'est pas une session qu'on suit, et sa section dit déjà où elle en est.
+  // Exclude scheduled runs from activity: autonomous tasks are not followed sessions and their own
+  // section already reports state.
   const attended = useMemo(() => conversations?.filter((entry) => !entry.scheduleId), [conversations])
-  // Une seule mutation pour les deux apparitions d'un favori. Son erreur reste
-  // visible même si le retrait optimiste fait disparaître la ligne des favoris.
+  // One mutation for both favorite appearances. Keep errors visible even if optimistic removal
+  // hides the favorite row.
   const toggleFavorite = useToggleFavorite()
   const logout = useLogout()
-  // Sans mot de passe, une déconnexion ne laisserait qu'une page de connexion sans issue.
+  // Without a password, logout would leave an unusable login page.
   const passwordAuth = useCapability('passwordAuth')
   const updateNotice = useUpdateNotice()
   const navigate = useNavigate()
@@ -465,10 +447,9 @@ function Sidebar({
   const nav = useRef<HTMLElement>(null)
 
   /**
-   * Le repli vient du compte, pas du navigateur : on referme un projet parce qu'on n'y
-   * travaille pas en ce moment, ce qui reste vrai d'un poste à l'autre. Tout est
-   * déplié tant que les réglages n'ont pas répondu — l'inverse ferait clignoter la
-   * liste fermée à chaque chargement.
+   * Collapse follows the account rather than browser: a project is collapsed because it is not
+   * current work, across devices. Start expanded until settings load to avoid a closed-list flash
+   * on every load.
    */
   const { data: settings } = useUserSettings()
   const setCollapsedProjects = useUpdateCollapsedProjects()
@@ -483,18 +464,15 @@ function Sidebar({
   }
 
   /**
-   * Pendant qu'on déplace un projet, toutes les conversations sont repliées.
-   *
-   * Sans ça, un projet qui en porte trente rend la liste plus haute que l'écran et le
-   * glissement devient impraticable. Le repli est temporaire et n'écrase pas les
-   * projets que l'utilisateur avait lui-même repliés.
+   * Temporarily collapse all conversations while dragging projects. Projects with thirty
+   * conversations exceed screen height and make dragging impractical. Preserve user-selected
+   * collapsed state separately.
    */
   const [dragging, setDragging] = useState(false)
 
   /**
-   * Les signets du compte, tous projets confondus. Les archivés compris : mettre un fil
-   * de côté puis le laisser se ranger n'est pas une raison de le perdre de vue, et
-   * c'est justement là qu'un raccourci sert.
+   * Account bookmarks across all projects, including archived threads: automatic archiving should
+   * not hide deliberately saved conversations, precisely where shortcuts help.
    */
   const favorites = useMemo(
     () => (conversations ?? []).filter((entry) => entry.favorite),
@@ -504,9 +482,8 @@ function Sidebar({
 
   const onDragEnd = (event: DragEndEvent) => {
     setDragging(false)
-    // Un glissement se termine par un `mouseup` sur le lien du projet, donc le
-    // navigateur émet un clic juste après : sans l'avaler, réordonner ouvrirait le
-    // projet déplacé.
+    // Dragging ends with mouseup on the project link, causing a browser click: suppress it or
+    // reordering opens the moved project.
     swallowNextClick()
 
     const { active, over } = event
@@ -525,10 +502,10 @@ function Sidebar({
       <div className="flex h-[var(--header-height)] shrink-0 items-center gap-2 px-4">
         <Logo size={20} className="text-accent" />
         <span className="text-[0.9375rem] font-semibold tracking-tight">Sillage</span>
-        {/* Enveloppes plutôt que `hidden` sur le bouton : `IconButton` pose déjà un
-            `inline-flex`, et entre deux utilitaires de display c'est l'ordre du CSS
-            généré qui tranche, pas celui de la chaîne de classes. Les deux boutons
-            s'affichaient donc côte à côte sur mobile. */}
+        {/*
+         * Use wrappers instead of hidden on IconButton, whose inline-flex conflicts according to
+         * generated CSS order rather than class order. Otherwise both buttons appeared on mobile.
+         */}
         <span className="ml-auto md:hidden">
           <IconButton label={t('shell.nav.close')} onClick={onClose}>
             <X size={18} />
@@ -542,8 +519,7 @@ function Sidebar({
       </div>
 
       <div className="shrink-0 px-2 pb-1">
-        {/* Le raccourci n'existe pas au doigt : sans cette entrée, la recherche serait
-            inatteignable depuis un téléphone. */}
+        {/* Keyboard shortcuts do not exist on touch: this entry makes phone search reachable. */}
         <button
           type="button"
           onClick={onSearch}
@@ -589,9 +565,10 @@ function Sidebar({
         <PullToRefresh target={nav} refreshing={refreshing} onRefresh={refresh} />
         <SidebarDecisions onNavigate={onNavigate} />
         <SidebarActivity conversations={attended} projects={projects} onNavigate={onNavigate}>
-        {/* Au-dessus des projets et transverse : c'est ce qui fait l'intérêt d'un
-            signet, atteindre un fil sans se rappeler d'où il vient. La conversation
-            reste listée dans son projet, elle n'est pas déplacée ici. */}
+        {/*
+         * Bookmarks span projects above their lists, allowing access without remembering origins.
+         * Conversations remain listed in their own projects too.
+         */}
         {favorites.length > 0 ? (
           <div className="mb-1">
             <button
@@ -628,13 +605,14 @@ function Sidebar({
             {t(allProjects ? 'shell.projects.heading' : 'shell.switcher.project')}
           </span>
           <span className="flex items-center">
-            {/* Le geste existe aussi au doigt, en tirant la liste vers le bas. Le bouton
-                reste pour la souris, et pour qui ignore le geste. */}
+            {/*
+             * Touch also refreshes by pulling down. Retain the button for mouse users and those
+             * unfamiliar with the gesture.
+             */}
             <IconButton label={t('shell.refresh')} size="sm" onClick={refresh} aria-busy={refreshing}>
               <RefreshCw size={15} className={cx(refreshing && 'animate-spin')} />
             </IconButton>
-            {/* Un seul interrupteur pour toute la liste : le mode sert à comparer des
-                conversations entre elles, ce qu'un dépliage ligne à ligne interdit. */}
+            {/* One switch for the entire list enables comparison impossible with individual expansion. */}
             <IconButton
               label={detailed ? t('shell.conversations.detail.hide') : t('shell.conversations.detail.show')}
               size="sm"
@@ -676,9 +654,8 @@ function Sidebar({
                     schedules={(schedules ?? []).filter((task) => task.projectId === project.id)}
                     focused={!allProjects}
                     open={!allProjects || (!dragging && !collapsed.has(project.id))}
-                    // Le repli voulu par l'utilisateur, que `open` ne dit pas : un
-                    // glissement ferme tous les projets, et le report du non-lu
-                    // s'allumerait partout le temps du déplacement.
+                    // User-requested collapse, which open alone cannot express: dragging closes all
+                    // projects and would otherwise light every unread aggregate during the gesture.
                     collapsed={allProjects && collapsed.has(project.id)}
                     onToggle={() => toggle(project.id)}
                     onNavigate={onNavigate}
@@ -727,12 +704,12 @@ function Sidebar({
 interface ProjectGroupProps {
   project: ProjectDto
   toggleFavorite: FavoriteMutation
-  /** Actives et rangées mêlées : le groupe fait lui-même la coupure. */
+  /** Active and archived together: the group separates them itself. */
   conversations: ConversationDto[]
   schedules: ScheduledTaskDto[]
   open: boolean
   focused?: boolean
-  /** Replié par l'utilisateur, indépendamment de la fermeture forcée par un glissement. */
+  /** User-collapsed independently of temporary drag closure. */
   collapsed: boolean
   onToggle: () => void
   onNavigate: () => void
@@ -752,19 +729,16 @@ function ProjectGroup({
   const t = useTranslate()
   const updateProject = useUpdateProject()
   const reorder = useReorderConversations(project.id)
-  // Les tirs planifiés sortent des deux listes, actives comme rangées : ils vivent sous
-  // leur tâche, dans la section « Planifiées ».
+  // Exclude scheduled runs from active and archived lists: they live beneath their task in Scheduled.
   const active = useMemo(() => conversations.filter((c) => !c.archivedAt && !c.scheduleId), [conversations])
   const archived = useMemo(() => conversations.filter((c) => c.archivedAt && !c.scheduleId), [conversations])
   const scheduled = useMemo(() => conversations.filter((c) => c.scheduleId), [conversations])
   const [archiveOpen, setArchiveOpen] = useState(false)
-  // Le clic rouvre le projet là où on l'a laissé : au board pour ceux qui s'y pilotent,
-  // sur une conversation neuve pour les autres.
+  // Reopen the project's remembered view: board where used, otherwise a new conversation.
   const view = useProjectView(project.id)
-  // Replié, le projet répond pour ses lignes : sans ce report, un agent qui finit son
-  // tour dans un projet fermé ne se signalerait nulle part. Le fil ouvert en est exclu
-  // comme il l'est de sa propre ligne, sinon replier le projet qu'on lit l'allumerait
-  // à chaque fin de tour, le temps que le curseur reparte.
+  // Collapsed projects aggregate row unread state so completed turns remain visible. Exclude the
+  // open thread as its own row does, or collapsing its project would flash unread at every turn end
+  // until the cursor is sent.
   const openConversationId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
   const hasUnread = useHasUnread(active, openConversationId)
 
@@ -778,11 +752,8 @@ function ProjectGroup({
   const sensors = useDragSensors()
 
   /**
-   * Le projet est déplaçable, mais seul son en-tête sert de poignée.
-   *
-   * Les listeners posés sur l'élément entier engloberaient la liste des conversations,
-   * qui a son propre contexte de glissement : un appui sur une conversation
-   * démarrerait les deux déplacements à la fois.
+   * Projects are draggable only by their header. Whole-element listeners would include conversation
+   * lists with their own drag context and start both drags on conversation presses.
    */
   const {
     attributes,
@@ -801,8 +772,7 @@ function ProjectGroup({
   }
 
   const onDragEnd = (event: DragEndEvent) => {
-    // Un glissement se termine par un `mouseup` sur le lien, donc le navigateur émet
-    // un clic juste après : sans l'avaler, réordonner ouvrirait la conversation.
+    // Dragging ends with mouseup on the link, causing a click: suppress it or reordering opens the conversation.
     swallowNextClick()
 
     const { active: dragged, over } = event
@@ -822,12 +792,11 @@ function ProjectGroup({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cx(isDragging && 'shadow-float z-10 rounded-md bg-surface-high opacity-90')}
     >
-      {/* Le fond est porté par la ligne entière, pas par le lien : sinon les boutons
-          d'action se retrouvent visuellement hors de l'élément survolé. */}
-      {/* Le clic droit sur l'en-tête ouvre le même menu que le bouton « … » : viser le
-          bouton est fastidieux, et un explorateur de fichiers a habitué à ce geste. Sur
-          l'en-tête seul, pas sur la ligne entière : les conversations dessous ont le
-          leur, et deux menus pour un même clic s'ouvriraient l'un sur l'autre. */}
+      {/* The whole row owns hover background, including action buttons that otherwise look outside it. */}
+      {/*
+       * Heading right-click opens the ellipsis menu like file explorers, avoiding precise targets.
+       * Listen only on headings because conversation rows below have their own menus.
+       */}
       <ContextMenu
         disabled={!contextMenu || !project.isOwner || editing}
         trigger={
@@ -835,9 +804,8 @@ function ProjectGroup({
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
-        // Le projet porte le nom en gras et à pleine encre, la conversation en plus
-        // petit et en encre atténuée : sans cet écart, les deux niveaux de la
-        // navigation se lisaient comme une seule liste plate.
+        // Projects use bold full ink; conversations use smaller muted text. Without this hierarchy
+        // both navigation levels looked like one flat list.
         className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11"
       >
         {!focused && <TooltipButton
@@ -865,9 +833,8 @@ function ProjectGroup({
           <NavLink
             to={projectViewPath(project.id, view)}
             onClick={onNavigate}
-            // Renommer au double-clic, comme dans un explorateur de fichiers. Le premier
-            // clic navigue quand même : c'est le prix d'un lien, et ouvrir le projet
-            // qu'on renomme n'a rien de gênant.
+            // Double-click rename like file explorers. The first click still navigates, an
+            // acceptable consequence of a link when renaming its project.
             onDoubleClick={(event) => {
               event.preventDefault()
               if (project.isOwner) setEditing(true)
@@ -877,16 +844,14 @@ function ProjectGroup({
           >
             <ProjectAvatar project={project} />
             <span className="truncate">{project.name}</span>
-            {/* Uniquement replié : déplié, ce sont les lignes elles-mêmes qui le disent,
-                et le point ferait doublon avec ce qu'on a déjà sous les yeux. */}
+            {/* Only when collapsed: expanded rows already display these signals, making the dot redundant. */}
             {collapsed && hasUnread ? (
               <span
                 title={t('shell.project.unread')}
                 className="size-1.5 shrink-0 rounded-full bg-ink"
               />
             ) : null}
-            {/* Un shell tourne quelque part dans le projet : c'est le repère qui évite
-                d'oublier un serveur de dev lancé depuis une session refermée depuis. */}
+            {/* A project shell is running: reminder for development servers left behind closed sessions. */}
             {project.activeTerminals > 0 ? (
               <SquareTerminal
                 size={12}
@@ -894,8 +859,7 @@ function ProjectGroup({
                 aria-label={t('shell.project.terminals')}
               />
             ) : null}
-            {/* Seul le partage est signalé : le privé est le cas normal, et le marquer
-                mettrait un cadenas sur presque toutes les lignes. */}
+            {/* Mark only shared projects: private is normal and locks on nearly every row add no information. */}
             {project.visibility === 'shared' ? (
               <Users
                 size={12}
@@ -929,14 +893,12 @@ function ProjectGroup({
 
       {open ? (
         <ul className="mt-1 mb-2 ml-3 flex flex-col gap-px border-l border-line pl-1.5">
-          {/* Vu seul, le projet se lit en sections au même format, en-tête en petites
-              capitales : Board, Sessions, Planifiées (les archivées ferment la marche).
-              Le Board n'a pas de lignes à montrer ici, son en-tête est donc un simple
-              lien vers sa page, comme celui des Planifiées.
-
-              Parmi tous les projets, ces en-têtes coûteraient deux lignes par projet
-              déplié : la vue d'ensemble garde la densité, et le projet ne montre que la
-              ligne d'ajout et ses sessions. Le Board reste au menu du projet. */}
+          {/*
+           * Single-project navigation uses consistent small-caps Board, Sessions, Scheduled, and
+           * trailing Archive sections. Board and Scheduled headings link to pages without inline
+           * rows. All-project views omit these repeated headings for density, retaining Add and
+           * sessions; Board stays in project menus.
+           */}
           {focused ? (
             <>
               <li>
@@ -961,8 +923,7 @@ function ProjectGroup({
               </li>
             </>
           ) : null}
-          {/* L'ajout ouvre la liste qu'il alimente, comme « Nouvelle tâche planifiée »
-              ouvre la sienne. */}
+          {/* Adding opens the list receiving the item, like new scheduled tasks. */}
           <li>
             <NavLink
               to={`/p/${project.id}/c/new`}
@@ -981,8 +942,8 @@ function ProjectGroup({
               collisionDetection={closestCenter}
               modifiers={[restrictToVerticalAxis, restrictToParentElement]}
               onDragEnd={onDragEnd}
-              // Annuler par Échap relâche aussi la souris sur le lien : même
-              // traitement, sinon l'annulation ouvre la conversation.
+              // Escape cancellation also releases the mouse over the link: suppress its click too
+              // or cancellation opens the conversation.
               onDragCancel={swallowNextClick}
             >
               <SortableContext
@@ -1026,9 +987,10 @@ function ProjectGroup({
             )}
           />
 
-          {/* Repliée et en fin de liste : ce qui est rangé doit rester atteignable sans
-              revenir peser sur ce qu'on a sous les yeux. Hors des contextes de
-              glissement au-dessus, les archivées n'ayant pas d'ordre à défendre. */}
+          {/*
+           * Collapsed at list end: archived work remains reachable without crowding current
+           * content. Outside drag contexts because archives have no manual order.
+           */}
           {archived.length > 0 ? (
             <li>
               <button
@@ -1064,10 +1026,9 @@ function ProjectGroup({
 }
 
 /**
- * Le board résumé en face de son en-tête, en mots plutôt qu'en pastilles : des
- * couleurs demanderaient une légende. On n'en garde que deux nombres, le travail
- * ouvert (tout sauf les sorties, repliées aussi sur le board) et, en ambre, ce qui
- * attend une relecture : la seule file qui réclame quelqu'un.
+ * Board summary beside the project heading uses words rather than color dots requiring a legend.
+ * Keep two counts: open work (excluding terminal columns also collapsed on boards), and amber
+ * review-needed work, the only queue requiring attention.
  */
 function BoardCounts({ counts }: { counts: ProjectDto['cardCounts'] }) {
   const t = useTranslate()
@@ -1088,10 +1049,9 @@ function BoardCounts({ counts }: { counts: ProjectDto['cardCounts'] }) {
 }
 
 /**
- * Les chantiers en face du projet, au même format que le board : ce qui attend encore
- * (non commité, à fusionner, introuvable) et, en ambre, ce qui n'attend que d'être
- * nettoyé. Absent tant que le projet n'a pas d'arbre hors du principal : la ligne ne
- * vaut que par ce qu'elle compte.
+ * Worktree summary beside projects in the board's format: remaining work (uncommitted, unmerged,
+ * missing) and amber cleanup-only trees. Omit when no extra trees exist because the row matters
+ * only through its count.
  */
 function WorktreesLine({ projectId, onNavigate }: { projectId: string; onNavigate: () => void }) {
   const t = useTranslate()
@@ -1131,9 +1091,8 @@ function ConversationRow({
   toggleFavorite: FavoriteMutation
   onNavigate: () => void
   /**
-   * Faux dans la section des favoris, qui vit hors de tout contexte de glissement :
-   * l'ordre y est celui de la liste, et une ligne déplaçable sans conteneur pour la
-   * recevoir n'aurait nulle part où tomber.
+   * False in Favorites, outside drag contexts: order follows the list and a draggable row would
+   * have no drop container.
    */
   draggable?: boolean
 }) {
@@ -1143,15 +1102,14 @@ function ConversationRow({
   const openMatch = useMatch('/p/:projectId/c/:conversationId')
   const contextMenu = useContextMenuEnabled()
   const [editing, setEditing] = useState(false)
-  // Le statut du socket prime sur celui de la liste, qui date de son chargement.
+  // Socket status takes precedence over the load-time list snapshot.
   const status = useLiveStatus(conversation.id) ?? conversation.status
   const background = useLiveBackground(conversation.id)
   const loops = useLiveLoops(conversation.id)
   const pushedSeq = useLiveSeq(conversation.id)
   const detailed = useSidebarDetailed()
-  // Même arbitrage que le statut : ce que le socket a poussé prime sur la liste, qui
-  // date de son chargement. Rien n'a encore été poussé pour un fil froid, et les
-  // chiffres de la liste sont alors les bons.
+  // Same precedence as status: pushed values override the load-time list. Cold threads have no
+  // pushes yet, so list readings remain correct.
   const metrics = useLiveMetrics(conversation.id) ?? conversation.metrics
   const signals = useMemo(
     () => buildSidebarSignals({ status, background, loops }),
@@ -1163,10 +1121,8 @@ function ConversationRow({
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: conversation.id,
-    // Renommer place un champ de saisie dans la ligne : la rendre déplaçable
-    // pendant ce temps rendrait la sélection de texte impossible. Rangée ou en
-    // favori, la ligne vit hors de tout contexte de glissement et n'a rien à y
-    // inscrire.
+    // Renaming adds an input, so disable dragging to permit text selection. Archived and favorite
+    // rows are outside drag contexts and register nothing.
     disabled: !sortable || editing,
   })
 
@@ -1195,26 +1151,23 @@ function ConversationRow({
 
   const isActive = openMatch?.params.conversationId === conversation.id
   /*
-    Le non-lu se dit par l'encre et la graisse, pas par un troisième point : la ligne en
-    tient deux au plus, et une pastille de plus ferait concurrence à des signaux qui,
-    eux, parlent de l'instant. Un fil qui a du nouveau remonte simplement de l'encre
-    atténuée à l'encre pleine.
-
-    Le fil ouvert en est exclu sans attendre le serveur : on est dedans, et le curseur
-    ne part qu'à la seconde suivante.
-  */
+   * Convey unread through ink and weight rather than a third dot: rows hold at most two, and
+   * another would compete with current-state signals. New content simply promotes muted text to
+   * full ink. Exclude the open thread immediately without awaiting the server because its read
+   * cursor is sent later.
+   */
   const unread = !isActive && isUnread(conversation, pushedSeq)
 
   return (
-    // Le clic droit sur la ligne ouvre le menu du bouton « … », qu'il faut sinon viser.
+    // Right-clicking the row opens the ellipsis menu without requiring a precise button target.
     <ContextMenu
       disabled={!contextMenu}
       trigger={
     <li
       ref={setNodeRef}
       style={style}
-      // Une ligne non déplaçable reste navigable : les attributs du hook désactivé
-      // porteraient aria-disabled sur tous ses liens et boutons, favoris compris.
+      // Nondraggable rows stay navigable: disabled hook attributes would set aria-disabled on all
+      // links and buttons, including favorites.
       {...(sortable ? attributes : {})}
       {...(sortable ? listeners : {})}
       className={cx(
@@ -1223,12 +1176,11 @@ function ConversationRow({
         isDragging ? 'shadow-float z-10 bg-surface-high opacity-90' : '',
         isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
         /*
-          Le titre monte d'un cran quand la ligne porte son relevé, qui reste à l'encre
-          atténuée : sans cela les deux se lisaient à la même encre et la ligne n'avait
-          plus de tête. C'est le titre qu'on remonte plutôt que le relevé qu'on enfonce,
-          l'encre atténuée étant le plancher de l'échelle. Le non-lu garde l'encre pleine
-          et la graisse, donc son écart au lu ne se referme pas.
-        */
+         * Promote the title one ink level when showing muted usage below; otherwise both looked
+         * equal and the row lacked a heading. Raise the title instead of dimming usage because
+         * muted ink is the minimum. Unread retains full ink and bold, preserving its difference
+         * from read state.
+         */
         isActive || unread ? 'text-ink' : detailed ? 'text-ink-soft' : 'text-ink-faint',
       )}
     >
@@ -1251,15 +1203,10 @@ function ConversationRow({
           </span>
           <span className={cx('line-clamp-2 break-words', unread && 'font-medium')}>{conversation.title}</span>
           {/*
-            Deux points au plus, et jamais davantage : l'état présent, et la boucle.
-            Le premier est le plus grave de ce qui se passe maintenant ; la seconde parle
-            de ce qui arrivera, donc elle ne lui fait pas concurrence et s'affiche à côté,
-            y compris pendant un tour.
-
-            La pastille d'origine les précède sans leur faire concurrence : elle ne dit pas
-            un état mais une provenance, elle ne change jamais, et elle s'efface au survol
-            pour rendre la place aux actions de la ligne.
-          */}
+           * At most two dots: current state and future loops. The first shows the most severe
+           * present signal; loops remain beside it even during turns. Immutable origin markers
+           * precede them without competing, disappearing on hover to reveal actions.
+           */}
           <span className="ml-auto flex shrink-0 items-center gap-1">
             {conversation.origin ? (
               <span
@@ -1273,14 +1220,15 @@ function ConversationRow({
             {loop ? <SignalDot signal={loop} /> : null}
           </span>
         </span>
-        {/* Hors de l'arbre principal, la ligne dit où : branche et état de l'arbre.
-            Rien sinon, c'est le contraste qui fait repérer les sessions en worktree. */}
+        {/* Outside the main tree show branch and tree state. Otherwise omit so worktree sessions stand out. */}
         <WorktreeTag conversation={conversation} />
         {detailed ? <ConversationMetricsLine metrics={metrics} /> : null}
       </NavLink>
 
-      {/* Le signet posé reste visible. L'ajout passe par le menu pour rendre au titre
-          la place d'un bouton auparavant invisible. Disponible sur les fils partagés. */}
+      {/*
+       * Keep existing bookmarks visible; adding moves into the menu to return an otherwise
+       * invisible button's space to titles. Available on shared threads.
+       */}
       {conversation.favorite ? (
       <IconButton
         label={t('shell.conversation.unfavorite')}
@@ -1318,9 +1266,8 @@ function ConversationRow({
 }
 
 /**
- * Les actions d'une conversation, pour le menu déroulant du bouton « … » comme pour le
- * clic droit sur la ligne : une seule liste, deux primitives Radix qui ne partagent
- * pas leurs entrées. Même découpage que les entrées de l'explorateur.
+ * Conversation actions shared by ellipsis dropdown and row context menu: one list, two Radix
+ * primitives with separate entries, like explorer actions.
  */
 function ConversationMenuItems({
   variant,
@@ -1369,9 +1316,8 @@ function ConversationMenuItems({
                 return
               const wasOpen = openMatch?.params.conversationId === conversation.id
               remove.mutate(conversation.id, {
-                // Ne quitter la vue que si c'est bien celle qu'on vient de supprimer,
-                // et retomber là où ce projet s'ouvre d'habitude : un repli de secours
-                // n'a pas à décider de sa page d'accueil.
+                // Leave the view only if it is the deleted conversation, falling back to the
+                // project's usual landing view rather than choosing a new home preference.
                 onSuccess: () => {
                   if (wasOpen) navigate(projectViewPath(conversation.projectId, projectView))
                 },
@@ -1386,7 +1332,7 @@ function ConversationMenuItems({
   )
 }
 
-/** Les actions d'un projet, pour le bouton « … » comme pour le clic droit sur l'en-tête. */
+/** Project actions shared by ellipsis button and heading context menu. */
 function ProjectMenuItems({
   variant,
   project,
@@ -1424,7 +1370,7 @@ function ProjectMenuItems({
         {t('shell.project.settings')}
       </Item>
       <Separator />
-      {/* Libellé et rangée sont de simples blocs, communs aux deux primitives. */}
+      {/* Labels and rows are plain blocks shared by both primitives. */}
       <MenuLabel>
         <span className="flex items-center gap-1.5">
           <Palette size={11} /> {t('shell.color')}
@@ -1446,11 +1392,9 @@ function ProjectMenuItems({
 }
 
 /**
- * Le relevé de volume, sous le titre.
- *
- * Ni bordure ni fond : c'est un prolongement de la ligne, pas un panneau posé dedans.
- * Les chiffres restent sur une seule ligne et disparaissent par la droite plutôt que de
- * passer à la suivante, l'ordre allant du plus parlant au plus accessoire.
+ * Usage readings beneath the title without border or background: continuation of the row rather
+ * than an embedded panel. Keep one line, clipping rightward instead of wrapping, ordered from most
+ * useful to incidental.
  */
 function ConversationMetricsLine({ metrics }: { metrics: ConversationMetrics }) {
   const t = useTranslate()

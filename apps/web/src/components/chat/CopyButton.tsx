@@ -5,15 +5,13 @@ import { cx } from '../ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
- * Copie d'un bloc de texte.
- *
- * Discret au survol sur desktop, toujours visible au doigt : un bouton qui n'apparaît
- * qu'au survol est inatteignable sur un écran tactile.
+ * Text-block copy button shown on desktop hover and always on touch, where hover-only controls are
+ * unreachable.
  */
 export function CopyButton({ text, label }: { text: string; label?: string }) {
   const t = useTranslate()
-  // Résolu ici et non en valeur par défaut de paramètre : un défaut ne peut pas
-  // appeler de hook, et une constante figerait le libellé dans la langue de départ.
+  // Resolve here rather than parameter defaults, which cannot call hooks; constants would freeze
+  // the initial language.
   const title = label ?? t('copy.message.aria')
   const { state, copy } = useCopy()
 

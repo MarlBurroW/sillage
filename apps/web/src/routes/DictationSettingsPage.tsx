@@ -12,11 +12,10 @@ import { useCurrentUser } from '../lib/session'
 import { testDictation } from '../lib/stt'
 
 /**
- * Dictée vocale, branchée sur n'importe quelle API au format OpenAI.
+ * Voice dictation through any OpenAI-compatible API.
  *
- * Les presets ne sont que du confort de saisie : sous le capot il n'existe qu'un seul
- * client, et un fournisseur absent de la liste se configure par son URL. La clé d'API
- * vit dans le dépôt de secrets, cette page n'en manipule que le nom.
+ * Presets only simplify input: there is one client underneath, and unlisted providers are
+ * configured by URL. API keys live in the secret store; this page handles names only.
  */
 
 interface Preset {
@@ -60,8 +59,8 @@ export function DictationSettingsPage() {
   const [model, setModel] = useState('')
   const [secret, setSecret] = useState('')
   const [cleanupModel, setCleanupModel] = useState('')
-  // Les champs suivent la valeur du serveur tant qu'on n'y a pas touché : sans ça ils
-  // restent vides au premier rendu, la requête n'ayant pas encore répondu.
+  // Fields follow server values until edited; otherwise they remain empty on first
+  // render before the request returns.
   useEffect(() => {
     if (!settings) return
     setBaseUrl(settings.sttBaseUrl)
@@ -97,7 +96,7 @@ export function DictationSettingsPage() {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (!urlValid || !dirty) return
-    // Un verdict de test affiché ne vaut que pour les réglages qu'il a testés.
+    // A displayed test verdict applies only to the settings it tested.
     test.reset()
     update.mutate({
       sttBaseUrl: baseUrl,
@@ -203,9 +202,10 @@ export function DictationSettingsPage() {
               <Button type="submit" disabled={!urlValid || !dirty || update.isPending}>
                 {t('stt.save')}
               </Button>
-              {/* Sur les réglages enregistrés et non sur le formulaire : tester des
-                  valeurs que le serveur ne connaît pas encore validerait autre chose
-                  que ce que la dictée utilisera. */}
+              {/*
+               * Use saved settings, not the form: testing values unknown to the server would
+               * validate something different from what dictation uses.
+               */}
               <Button
                 type="button"
                 variant="ghost"
@@ -215,8 +215,9 @@ export function DictationSettingsPage() {
               >
                 {t('stt.test.button')}
               </Button>
-              {/* Un bouton grisé sans raison visible passe pour cassé : la raison
-                  tient en une ligne. */}
+              {/*
+               * A disabled button without a visible reason looks broken; one line explains it.
+               */}
               {update.isSuccess && !dirty ? (
                 <span className="text-xs text-positive">{t('settings.saved')}</span>
               ) : dirty ? (

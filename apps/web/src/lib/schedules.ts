@@ -16,12 +16,10 @@ import { locale, translate, type MessageKey } from './i18n'
 export const SCHEDULES_KEY = ['schedules']
 
 /**
- * Toutes les tâches planifiées visibles, tous projets confondus : la sidebar et la page
- * Planification lisent la même liste, filtrée par projet.
- *
- * Relue périodiquement : un tir part et finit sans qu'aucune requête de l'interface
- * l'ait provoqué, et l'état d'une tâche n'a pas de canal poussé à lui. Le premier statut
- * d'un fil neuf déclenche aussi une relecture, voir `useStatusFeed`.
+ * All visible scheduled tasks across projects: sidebar and scheduling page share this list filtered
+ * by project. Poll because runs start and finish independently of UI requests and tasks have no
+ * dedicated push channel. The first status of a new thread also triggers a refetch; see
+ * `useStatusFeed`.
  */
 export function useSchedules() {
   return useQuery({
@@ -33,7 +31,7 @@ export function useSchedules() {
 }
 
 export interface ScheduleInput {
-  /** À la création d'une automatisation par webhook : son modèle de départ. */
+  /** Starting template when creating a webhook automation. */
   webhook?: { template?: AutomationTemplateId; settings?: Partial<WebhookSettings> }
   name: string
   agent: AgentKind
@@ -42,10 +40,10 @@ export interface ScheduleInput {
   cadence: ScheduleCadence
   overlapPolicy: ScheduleOverlapPolicy
   maxDurationMinutes: number
-  /** Null retire la vérification. */
+  /** Null removes the check. */
   checkScript?: string | null
   checkTimeoutSeconds?: number
-  /** L'agent peut demander une décision, attendue au plus `decisionMaxHours`. */
+  /** The agent may request a decision, waiting at most `decisionMaxHours`. */
   decisionsEnabled?: boolean
   decisionMaxHours?: number
 }
@@ -54,7 +52,7 @@ function useInvalidate() {
   const queryClient = useQueryClient()
   return () => {
     void queryClient.invalidateQueries({ queryKey: SCHEDULES_KEY })
-    // Un tir lancé ou une tâche supprimée changent aussi la liste des fils.
+    // Starting a run or deleting a task also changes the thread list.
     void queryClient.invalidateQueries({ queryKey: ['conversations'] })
   }
 }
@@ -94,7 +92,7 @@ export function useRunSchedule() {
   })
 }
 
-/** Joue un script de vérification sans rien lancer ; rien n'est mis en cache. */
+/** Run a check script without starting a task; cache nothing. */
 export function useTestScheduleCheck(projectId: string) {
   return useMutation({
     mutationFn: (input: { script: string; timeoutSeconds: number; taskId?: string }) =>
@@ -112,10 +110,8 @@ export function useApproveScheduleCheck() {
 }
 
 /**
- * Ce que la tâche est en train de faire, en un mot : c'est l'état de sa ligne.
- *
- * Le tir en cours prime sur la pause : une tâche mise en pause pendant un tir tourne
- * encore, et l'afficher « en pause » cacherait la session qui travaille.
+ * One-word task activity for its row state. An active run takes precedence over pause: pausing
+ * during a run does not stop it, so displaying paused would hide the working session.
  */
 export type ScheduleState = 'running' | 'approval' | 'paused' | 'failed' | 'done' | 'waiting'
 
@@ -129,11 +125,10 @@ export const SCHEDULE_STATE_LABELS: Record<ScheduleState, MessageKey> = {
 }
 
 export function scheduleState(task: ScheduledTaskDto): ScheduleState {
-  // Les tirs sautés ne disent rien de la santé de la tâche : on lit le dernier vrai.
+  // Skipped runs say nothing about task health: inspect the latest actual run.
   const last = task.runs.find((run) => run.status !== 'skipped')
   if (last?.status === 'running' || last?.status === 'checking') return 'running'
-  // Avant la pause : une tâche qui attend une validation ne fait rien tant qu'on ne l'a
-  // pas donnée, et c'est la seule chose qu'on attende de qui la regarde.
+  // Before pause: a task awaiting approval does nothing until granted, the only action needed from the viewer.
   if (task.check && !task.check.approved && !task.webhook) return 'approval'
   if (!task.enabled) return task.cadence.kind === 'once' && task.lastRunAt ? 'done' : 'paused'
   if (last?.status === 'failed' || last?.status === 'timed_out') return 'failed'
@@ -156,7 +151,7 @@ export function formatDateTime(ts: number): string {
   })
 }
 
-/** La cadence en clair ; le motif cron est traduit par l'appelant, qui a `cronToHuman`. */
+/** Readable cadence; the caller translates cron patterns with `cronToHuman`. */
 export function describeCadence(cadence: ScheduleCadence, cronHuman: (expression: string) => string | null): string {
   if (cadence.kind === 'interval') return formatMinutes(cadence.minutes)
   if (cadence.kind === 'once') return translate('schedule.cadence.onceAt', { date: formatDateTime(cadence.at) })

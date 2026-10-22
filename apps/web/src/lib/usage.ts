@@ -2,7 +2,7 @@ import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AgentKind, AgentUsage } from '@sillage/protocol'
 import { api } from './api'
 
-/** `account` est l'identifiant d'un compte Claude supplémentaire, null pour la connexion du CLI. */
+/** `account` identifies an additional Claude account, null for the CLI login. */
 const usageKey = (agent: AgentKind, account: string | null) => ['usage', agent, account]
 
 const usagePath = (agent: AgentKind, account: string | null, refresh: boolean) => {
@@ -14,18 +14,11 @@ const usagePath = (agent: AgentKind, account: string | null, refresh: boolean) =
 }
 
 /**
- * Consommation du compte.
- *
- * `staleTime` à zéro : le hook n'est monté que pendant que le panneau est ouvert, donc
- * chaque ouverture redemande la valeur. Le garde-fou est côté serveur, où se trouve le
- * coût réel (une lecture y démarre un process CLI) : deux caches empilés donneraient une
- * fraîcheur impossible à raisonner, et un panneau qui semble ne rien relire.
- *
- * La valeur précédente reste en cache le temps de la relecture, donc rouvrir affiche
- * l'ancienne mesure immédiatement plutôt qu'un écran vide.
- *
- * `enabled` sert aux appelants qui affichent la consommation sans qu'on l'ait demandée,
- * comme la page de brouillon : interroger un CLI absent ne rapporterait qu'une erreur.
+ * Account usage. `staleTime` is zero because the hook mounts only while the panel is open: refetch
+ * on every opening. The real cost is server-side (a read starts a CLI process), so cache there;
+ * layered caches obscure freshness and make refresh seem ineffective. Keep previous data cached
+ * during refetch so reopening shows it immediately. `enabled` serves callers showing usage without
+ * an explicit request, such as drafts: probing missing CLIs would only yield errors.
  */
 export function useAgentUsage(agent: AgentKind, enabled = true, account: string | null = null) {
   return useQuery({
@@ -33,13 +26,12 @@ export function useAgentUsage(agent: AgentKind, enabled = true, account: string 
     queryFn: () => api.get<AgentUsage>(usagePath(agent, account, false)),
     enabled,
     staleTime: 0,
-    // La consommation d'un compte n'a pas d'à-coups : réessayer en boucle ne ferait
-    // que relancer des CLI pour rien.
+    // Usage does not fluctuate abruptly: retry loops would only launch pointless CLI processes.
     retry: false,
   })
 }
 
-/** Relecture explicite, qui court-circuite aussi le cache du serveur. */
+/** Explicit refetch, bypassing the server cache too. */
 export function useRefreshUsage(agent: AgentKind, account: string | null = null) {
   const queryClient = useQueryClient()
 
@@ -49,15 +41,15 @@ export function useRefreshUsage(agent: AgentKind, account: string | null = null)
   }
 }
 
-/** Le compte supplémentaire qu'une configuration désigne, null pour la connexion du CLI. */
+/** Additional account selected by configuration, null for the CLI login. */
 export function usageAccountOf(config: { agent: AgentKind; account?: string | null } | null | undefined): string | null {
   return config?.agent === 'claude' || config?.agent === 'codex' || config?.agent === 'grok' ? (config.account ?? null) : null
 }
 
 /**
- * La consommation de plusieurs comptes d'un même CLI à la fois, pour les comparer avant
- * de choisir. Mêmes clés et même cache que `useAgentUsage` : la jauge détaillée du
- * compte retenu ne relance pas de lecture, et chaque sonde reste plafonnée côté serveur.
+ * Usage for several accounts of one CLI at once for comparison before selection. Shares keys and
+ * cache with `useAgentUsage`: detailed usage for the selected account does not repeat the read, and
+ * server limits still bound probes.
  */
 export function useAccountsUsage(agent: AgentKind, accounts: (string | null)[], enabled: boolean) {
   return useQueries({

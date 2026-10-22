@@ -1,52 +1,48 @@
-# Board et édition des tickets
+# Board and ticket editing
 
-Le board propose une recherche par texte ou numéro, une création complète de ticket,
-des colonnes avec repères colorés et des cartes plus lisibles. Sur mobile, la recherche
-sélectionne une colonne contenant un résultat. Le déplacement reste disponible au
-clavier ; il est désactivé pendant une recherche pour éviter de réordonner une liste
-partielle.
+The board offers text/number search, complete ticket creation, columns with colored
+markers, and more readable cards. On mobile, search selects a column containing a
+result. Keyboard movement stays available; it is disabled during search to avoid
+reordering a partial list.
 
-La fiche est plus large et sépare Détails, Activité et Sessions. L'éditeur nomme ses
-champs, propose un aperçu Markdown et garde ses actions d'enregistrement visibles.
-Les brouillons restent conservés dans l'onglet. Ctrl/Cmd + Entrée enregistre ; lancer
-une nouvelle session exige d'avoir enregistré les modifications.
+The detail view is wider and separates Details, Activity, and Sessions. The editor
+labels its fields, provides a Markdown preview, and keeps save actions visible.
+Drafts stay in the tab. Ctrl/Cmd + Enter saves; launching a new session requires
+saving changes first.
 
-Les pièces jointes s'ajoutent après création du ticket, par sélection multiple ou dépôt.
-Elles sont enregistrées immédiatement, indépendamment du brouillon de description.
-Les images ont une miniature, les fichiers un lien de consultation/téléchargement.
-La limite est de 20 Mo par fichier. Les agents retrouvent nom, type, taille et chemin
-local avec `read_card`. Les fichiers suivent la visibilité du projet.
+Attachments are added after ticket creation through multiple selection or drop.
+They save immediately, independently of the description draft. Images have thumbnails;
+files have view/download links. The limit is 20 MB per file. Agents retrieve name,
+type, size, and local path through `read_card`. Files follow project visibility.
 
-## Stockage et installation
+## Storage and installation
 
-La migration `0025_eager_zarek.sql` ajoute `attachments.card_id` et son index. Elle
-s'applique au démarrage du serveur. Les fichiers de tickets sont exclus du ramassage
-des téléversements abandonnés et ne peuvent pas être réaffectés à un message de chat.
-La suppression d'un ticket ou d'un projet retire ses fichiers ; la clé étrangère
-`ON DELETE SET NULL` laisse aussi les fichiers collectables en cas de suppression
-SQL directe. Les chemins locaux sont réservés à l'outil des agents, pas à l'API web.
+Migration `0025_eager_zarek.sql` adds `attachments.card_id` and its index. It applies
+at server startup. Ticket files are excluded from abandoned-upload cleanup and
+cannot be reassigned to a chat message. Deleting a ticket or project removes its
+files; the `ON DELETE SET NULL` foreign key also leaves files eligible for cleanup
+in direct SQL deletions. Local paths are reserved for the agent tool, not the web API.
 
-## Vérifications
+## Verification
 
-- `pnpm typecheck` et `pnpm build` : réussis.
-- `pnpm test` : 37 tests réussis, dont upload, limites, droits, nettoyage et lecture MCP réelle.
-- `pnpm test:board-ui` : création, brouillons, aperçu, raccourci de sauvegarde, ajout
-  multiple, dépôt, lecture, échec/réessai, suppression, recherche, tri clavier et mobile.
-- `pnpm test:ui` : suite complète réussie, y compris sauvegardes concurrentes,
-  navigation clavier et absence de débordement de 320 à 1440 pixels.
+- `pnpm typecheck` and `pnpm build`: passed.
+- `pnpm test`: 37 tests passed, including upload, limits, permissions, cleanup, and real MCP reads.
+- `pnpm test:board-ui`: creation, drafts, preview, save shortcut, multiple attachments,
+  drop, reading, failure/retry, deletion, search, keyboard sorting, mobile.
+- `pnpm test:ui`: full suite passed, including concurrent saves, keyboard navigation,
+  and no overflow from 320 to 1440 pixels.
 
-Les captures de ce dossier sont produites par `scripts/board-ui-check.mjs`, sur une
-base temporaire avec les agents désactivés. Les avertissements de build sur
-`::highlight` et la taille des bundles préexistaient à cette refonte.
+Screenshots in this directory are produced by `scripts/board-ui-check.mjs` on a
+temporary database with agents disabled. Build warnings about `::highlight` and
+bundle size predated this redesign.
 
-## Aperçu temporaire
+## Temporary preview
 
-Une instance de démonstration séparée, avec des données fictives et les agents
-désactivés, tourne pendant 24 h sous l'unité utilisateur `sillage-board-preview`.
-Elle est exposée uniquement via Tailscale sur le port 7620. Connexion de démonstration :
-`alex` / `sillage-demo`. L'instance principale n'a pas été redéployée.
+A separate demo instance with fictitious data and disabled agents runs for 24 hours
+under user unit `sillage-board-preview`. It is exposed only through Tailscale on
+port 7620. Demo sign-in: `alex` / `sillage-demo`. The main instance was not redeployed.
 
-Pour fermer cet aperçu :
+To close this preview:
 
 ```sh
 systemctl --user stop sillage-board-preview

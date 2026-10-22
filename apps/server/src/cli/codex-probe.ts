@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { DEFAULT_CODEX_CONFIG, type SillageEvent } from '@sillage/protocol'
 import { CodexRunner } from '../agents/codex/runner.js'
 
-/** Sonde manuelle : un vrai tour court sur le compte Codex, jamais exécuté en CI. */
+/** Manual short real-turn probe on Codex accounts, never CI. */
 const cwd = await mkdtemp(join(tmpdir(), 'sillage-codex-probe-'))
 const blocking = process.argv.includes('--blocking')
 const events: SillageEvent[] = []
@@ -25,7 +25,7 @@ const runner = new CodexRunner({
   setStatus: (status) => { console.log(`status: ${status}`) },
   emit: (event) => {
     events.push(event)
-    // Aucune sortie native ni donnée du compte : seulement le résultat de la sonde.
+    // No native output or account data, only probe results.
     if (!event.type.endsWith('.delta')) console.log(event.type, event.type === 'agent.notice' ? event.code : '')
     if (event.type === 'question.requested') {
       answering = runner.answerQuestion(event.requestId, {
