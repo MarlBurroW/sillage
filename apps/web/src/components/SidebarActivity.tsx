@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { ArrowUpRight, Check, ChevronRight, Inbox, MessageCircleQuestion, X } from 'lucide-react'
+import { Activity, Check, Inbox, MessageCircleQuestion, X } from 'lucide-react'
 import { NavLink, useMatch } from 'react-router-dom'
 import type { ConversationDto, ConversationStatus, ProjectDto } from '@sillage/protocol'
 import { liveBackground, liveSeq, liveSettledAt, liveStatus, subscribeStatus } from '../lib/conversation-status'
@@ -28,7 +28,6 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   children: ReactNode
 }) {
   const t = useTranslate()
-  const [collapsed, setCollapsed] = useState(false)
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<View>('all')
   const returnFocus = useRef<HTMLElement | null>(null)
@@ -79,34 +78,14 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
 
   return (
     <>
-      <div className="mb-2 flex shrink-0 flex-col border-b border-line pb-2" role="group" aria-label={t('shell.activity.label')}>
-        <div className="flex items-center gap-1">
-          <IconButton size="sm" label={t(collapsed ? 'shell.overview.expand' : 'shell.overview.collapse')} onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed} aria-controls="global-activity-projects">
-            <ChevronRight size={13} className={cx('transition-transform', !collapsed && 'rotate-90')} />
-          </IconButton>
-          <button type="button" onClick={() => show()} aria-haspopup="dialog" className="flex min-h-11 md:min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md pr-2 text-xs hover:bg-surface-high">
-            <span className="font-semibold text-ink-soft">{t('shell.overview.heading')}</span>
-            <span className={cx('ml-auto flex items-center gap-1.5 rounded-full px-2 py-1 tabular-nums', running.length > 0 ? 'bg-accent-wash text-accent' : 'text-ink-faint')}>
-              {running.length > 0 && <RunningDot />}{t('shell.overview.runningCount', { count: running.length })}
-            </span>
-            <ArrowUpRight size={12} className="shrink-0 text-ink-faint" />
-          </button>
-        </div>
-        {awaiting.length > 0 && <button type="button" onClick={() => show('awaiting')} className="flex min-h-11 md:min-h-9 items-center gap-2 rounded-md px-2 text-xs text-caution hover:bg-surface-high">
-          <MessageCircleQuestion size={14} />{t('shell.overview.awaitingCount', { count: awaiting.length })}<ChevronRight size={12} className="ml-auto" />
-        </button>}
-        {!collapsed && <div id="global-activity-projects" className="max-h-[32dvh] overflow-y-auto">
-          {rows(active.slice(0, 4), true)}
-          {active.length === 0 && <p className="px-2 py-2 text-xs text-ink-faint">{t('shell.overview.quiet')}</p>}
-        </div>}
-        <div className="flex items-center justify-between gap-1 px-1">
-          <button type="button" onClick={() => show()} className="min-h-11 md:min-h-8 rounded px-1 text-left text-[0.6875rem] text-ink-faint hover:bg-surface-high hover:text-ink">
-            {t(!collapsed && active.length > 4 ? 'shell.overview.moreActive' : 'shell.overview.show', { count: active.length - 4 })}
-          </button>
-          <button type="button" onClick={() => show('unread')} aria-label={t('shell.overview.unreadCount', { count: unread.length })} className="flex min-h-11 md:min-h-8 items-center gap-1 rounded px-1 text-xs tabular-nums text-ink-faint hover:bg-surface-high hover:text-ink"><Inbox size={13} />{t('shell.overview.unreadCount', { count: unread.length })}</button>
+      <div className="sidebar-activity" role="group" aria-label={t('shell.activity.label')}>
+        <button type="button" onClick={() => show()} aria-haspopup="dialog" className="sidebar-activity-main"><Activity size={15} /><span><span className="block font-medium text-ink-soft">{t('shell.overview.heading')}</span><span className="mt-1 block text-[0.625rem] text-ink-faint">{t('shell.overview.runningCount', { count: running.length })}</span></span></button>
+        <div className="sidebar-activity-counts">
+          {awaiting.length > 0 && <button type="button" onClick={() => show('awaiting')} className="text-caution">{t('shell.overview.awaitingCount', { count: awaiting.length })}</button>}
+          <button type="button" onClick={() => show('unread')} className="text-ink-faint"><Inbox size={11} />{t('shell.overview.unreadCount', { count: unread.length })}</button>
         </div>
       </div>
-      <div id="sidebar-activity-results" className="min-h-0 flex-1 overflow-y-auto pb-4">{children}</div>
+      <div id="sidebar-activity-results" className="flex min-h-0 flex-1 flex-col">{children}</div>
 
       <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Portal>

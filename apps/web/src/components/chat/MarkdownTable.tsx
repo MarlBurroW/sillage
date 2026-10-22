@@ -1,5 +1,5 @@
 import { Sheet } from 'lucide-react'
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, type RefObject } from 'react'
 import { downloadText, toCsv } from '../../lib/download'
 import { ToolbarButton } from './CodeBlock'
 import { useTranslate } from '../../lib/i18n'
@@ -55,6 +55,7 @@ export function MarkdownTable({ html, rows }: { html: string; rows: string[][] }
   const t = useTranslate()
   const scroll = useRef<HTMLDivElement>(null)
   useContainedCellSelection(scroll)
+  const markup = useMemo(() => ({ __html: html }), [html])
   return (
     <div className="overflow-hidden rounded-md border border-line">
       <div className="flex items-center gap-1 border-b border-line px-2 py-1">
@@ -70,7 +71,7 @@ export function MarkdownTable({ html, rows }: { html: string; rows: string[][] }
         </ToolbarButton>
       </div>
 
-      <div ref={scroll} className="sg-table-scroll overflow-x-auto" dangerouslySetInnerHTML={{ __html: html }} />
+      <div ref={scroll} className="sg-table-scroll overflow-x-auto" dangerouslySetInnerHTML={markup} />
     </div>
   )
 }

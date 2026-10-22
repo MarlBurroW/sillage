@@ -25,6 +25,11 @@ on:
         required: false
         type: string
         default: ''
+      update-check:
+        description: Éprouver la mise à jour de l'app, d'une version empaquetée à une autre
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       version:
@@ -42,6 +47,11 @@ on:
         required: false
         type: string
         default: ''
+      update-check:
+        description: Éprouver la mise à jour de l'app, d'une version empaquetée à une autre
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -130,6 +140,45 @@ jobs:
           else
             echo "::warning::xvfb-run absent du runner, lancement non vérifié"
           fi
+      # Package and install two versions, then verify discovery, download, replacement
+      # and relaunch using a local HTTP feed. The .deb needs administrator permission
+      # and is checked separately.
+      - name: Update check
+        if: inputs.update-check
+        env:
+          # Runners may lack FUSE; extract the AppImage instead of mounting it.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          case "$PLATFORM" in
+            darwin) os=mac target=zip ;;
+            win32) os=win target=nsis ;;
+            *) os=linux target=AppImage ;;
+          esac
+          check="$RUNNER_TEMP/update-check"
+          for version in 0.0.1 0.0.2; do
+            (cd apps/desktop && pnpm exec electron-builder "--$os" "$target" "--$ARCH" --publish never \
+              -c.extraMetadata.version="$version" -c.directories.output="$check/$version")
+          done
+          case "$PLATFORM" in
+            darwin)
+              mkdir -p "$check/Applications"
+              ditto -x -k "$check"/0.0.1/Sillage-mac-*.zip "$check/Applications"
+              app="$check/Applications/Sillage.app/Contents/MacOS/Sillage"
+              node scripts/desktop-update-check.mjs --app "$app" --feed "$check/0.0.2"
+              ;;
+            win32)
+              installer=$(cygpath -w "$check"/0.0.1/Sillage-win-*.exe)
+              powershell -NoProfile -Command "Start-Process -Wait -FilePath '$installer' -ArgumentList '/S'"
+              app=$(powershell -NoProfile -Command "(Get-ChildItem \"\$env:LOCALAPPDATA\\Programs\" -Recurse -Filter Sillage.exe | Select-Object -First 1).FullName" | tr -d '\r')
+              node scripts/desktop-update-check.mjs --app "$app" --feed "$check/0.0.2"
+              ;;
+            *)
+              mkdir -p "$check/app"
+              cp "$check"/0.0.1/Sillage-linux-*.AppImage "$check/app/"
+              app=$(ls "$check"/app/Sillage-linux-*.AppImage)
+              xvfb-run -a node scripts/desktop-update-check.mjs --app "$app" --feed "$check/0.0.2"
+              ;;
+          esac
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}
@@ -139,4 +188,6 @@ jobs:
             apps/desktop/release/*.exe
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
           if-no-files-found: error

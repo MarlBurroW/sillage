@@ -26,6 +26,16 @@ authenticates (see below). Its environment determines the scope it serves.
 and writes are attributed to the conversation: a card note links to the session;
 a started session receives the wrapped task, identifying who assigned it.
 
+Agents can name their own conversation with `rename_session({ title })`. The
+shared startup context asks for a concrete title of three to six words in the
+user's language, at most 60 characters, once the request is understood. This runs
+within the existing turn; there is no separate title-generation model call.
+The daemon broadcasts the change immediately. An agent's title takes precedence
+over native CLI summaries, while a title set by the user is always preserved.
+The tool has no target-session parameter and is unavailable in global mode.
+Existing unnamed sessions receive the instruction when their runner next starts;
+disabling Sillage MCP keeps the native CLI naming behavior.
+
 **Global mode.** Without `SILLAGE_MCP_PROJECT`, the server serves the entire instance:
 
 - an extra tool, `list_projects`, returns projects with their directory, working
@@ -55,6 +65,30 @@ a started session receives the wrapped task, identifying who assigned it.
 Actions going through the daemon remain subject to its guards: at most six
 launches per hour, counted together for everything coming from outside sessions;
 the daemon must be running, otherwise the request expires.
+
+## Referencing sessions
+
+Use `session:<conversation UUID>` to cite a Sillage conversation. `list_sessions`,
+`search_history`, and `read_conversation` return this stable reference; the latter
+also accepts it as its `id` argument. Search includes archived conversations.
+The reference survives renames and archiving, and does not depend on a Server
+hostname or a Desktop port. It identifies a session within the current instance;
+it does not transfer conversations between installations.
+
+In messages, Sillage renders the reference with the current title, CLI logo, and
+the same details as the sidebar preview. Known bare UUIDs and same-origin
+conversation URLs are recognized too. Fenced code is left intact. Users can insert
+references with `@@` completion or copy one from a session's ellipsis/context menu.
+The composer’s **Insert** button explains the available prefixes and opens their
+suggestions: `@` files, `@@` sessions, `#` cards, plus `/` commands and `$` skills
+when the agent publishes them. Choosing a prefix preserves the draft and does not
+send a message. Suggestions and reference resolution stay within the current project.
+
+Outgoing references add only bounded identity metadata to the model input. The
+journal keeps the original user text. Agents can read the relevant history with
+`read_conversation`; mentioning a session does not contact or wake its agent.
+When Sillage MCP is disabled, the metadata explicitly says that history tools
+are unavailable. Deleted or inaccessible references expose no session details.
 
 ## Over HTTP, with an API token
 

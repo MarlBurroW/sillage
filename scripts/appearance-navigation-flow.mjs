@@ -22,7 +22,7 @@ export async function checkAppearance(context, origin, width, profile, shots) {
   assert.ok((await context.request.patch(`${origin}/api/me/settings`, { data: { appearance: { theme: 'light', syntax: 'sillage', typingIndicator: 'sillage', values: {} } } })).ok())
   await page.goto(url)
   await navigation.waitFor()
-  assert.equal(await navigation.getByRole('link').count(), 4)
+  assert.equal(await navigation.getByRole('link').count(), 5)
   assert.equal(await region('Lecture').count(), 0, 'Inactive categories are absent from the accessibility tree')
   await page.getByRole('button', { name: 'Sombre', exact: true }).click()
   await page.getByText('Réglages fins des couleurs', { exact: true }).click()
@@ -45,6 +45,9 @@ export async function checkAppearance(context, origin, width, profile, shots) {
   await go('Code')
   await save(() => region('Code').getByRole('button', { name: 'Océan', exact: true }).click(), (a) => a?.syntax === 'ocean')
   await page.screenshot({ animations: 'disabled', path: join(shots, `${profile}-${width}-code.png`) })
+  await go('Outils')
+  await save(() => region('Outils').getByRole('button', { name: 'Chronologie', exact: true }).click(), (a) => a?.toolStyle === 'timeline')
+  await page.screenshot({ animations: 'disabled', path: join(shots, `${profile}-${width}-tools.png`) })
   await go('Interface')
   assert.equal(await page.locator('details').getAttribute('open'), '')
   assert.equal(await hue.inputValue(), newHue)
@@ -76,7 +79,8 @@ export async function checkAppearance(context, origin, width, profile, shots) {
   assert.equal(stored.appearance.values.hue, Number(newHue))
   assert.equal(stored.appearance.syntax, 'ocean')
   assert.equal(stored.appearance.typingIndicator, 'orbit')
-  for (const [key, label] of [['motion', 'Animations'], ['code', 'Code'], ['unknown', 'Interface']]) {
+  assert.equal(stored.appearance.toolStyle, 'timeline')
+  for (const [key, label] of [['motion', 'Animations'], ['code', 'Code'], ['tools', 'Outils'], ['unknown', 'Interface']]) {
     await page.goto(`${url}?section=${key}`)
     await region(label).waitFor()
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
@@ -109,7 +113,7 @@ export async function checkAppearance(context, origin, width, profile, shots) {
   if (width < 768) {
     for (const extraWidth of [320, 768]) {
       await page.setViewportSize({ width: extraWidth, height: 844 })
-      for (const key of ['interface', 'code']) {
+      for (const key of ['interface', 'tools', 'code']) {
         await page.goto(`${url}?section=${key}`)
         await navigation.waitFor()
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Overflow at ${extraWidth}px`)

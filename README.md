@@ -64,6 +64,10 @@ you to allow it on first launch. Windows also needs Git for Windows; on macOS,
 install the Command Line Tools if Git is missing. On Ubuntu, use the `.deb`.
 The [desktop guide](docs/desktop.md) walks through these steps and troubleshooting.
 
+The app downloads updates in the background. Install a ready update from Settings >
+About, or quit the app to install it automatically (except `.deb`, which asks for
+administrator permission). On macOS, keep Sillage in the Applications folder.
+
 ### Install the server
 
 Install Sillage on a machine that stays on, then connect through your browser.

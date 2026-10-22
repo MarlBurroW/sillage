@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it'
+import { sessionReference, sessionReferenceRanges } from '@sillage/protocol'
 import type Token from 'markdown-it/lib/token.mjs'
 import { VIEWABLE_IMAGE_TYPES, cardReferenceRanges } from '@sillage/protocol'
 import { rawFileUrl } from './files-io'
@@ -287,6 +288,62 @@ function markFilePaths(md: MarkdownIt): void {
   }
 }
 
+/** Reference slots mount React links that share the sidebar's session details. */
+function markSessionReferences(md: MarkdownIt): void {
+  md.core.ruler.push('sg_session_refs', state => {
+    const env = state.env as MarkdownEnv
+    if (!env.projectId) return
+    const ranges = (value: string) => sessionReferenceRanges(value, env.origin)
+      .filter(ref => (!ref.projectId || ref.projectId === env.projectId) && (ref.explicit || env.sessionIds?.has(ref.id)))
+    const slot = (id: string) => {
+      const token = new state.Token('html_inline', '', 0)
+      token.meta = { sessionReference: sessionReference(id) }
+      token.content = '<span data-sg-session-ref="' + md.utils.escapeHtml(id) + '"></span>'
+      return token
+    }
+    for (const token of state.tokens) {
+      if (token.type !== 'inline' || !token.children) continue
+      const children: Token[] = []
+      let inLink = 0
+      for (let index = 0; index < token.children.length; index++) {
+        const child = token.children[index]!
+        if (child.type === 'link_open') {
+          const href = child.attrGet('href') ?? ''
+          const reference = ranges(href).find(ref => ref.start === 0 && ref.end === href.length)
+          const close = token.children.findIndex((next, i) => i > index && next.type === 'link_close')
+          if (reference && close !== -1) {
+            children.push(slot(reference.id))
+            index = close
+            continue
+          }
+          inLink++
+        }
+        if (child.type === 'link_close') inLink--
+        const found = inLink === 0 && (child.type === 'text' || child.type === 'code_inline') ? ranges(child.content) : []
+        // Code containing commands remains copyable code.
+        if (!found.length || (child.type === 'code_inline' && (found.length !== 1 || found[0]!.start !== 0 || found[0]!.end !== child.content.length))) {
+          children.push(child)
+          continue
+        }
+        let at = 0
+        const text = (content: string) => {
+          if (!content) return
+          const plain = new state.Token('text', '', 0)
+          plain.content = content
+          children.push(plain)
+        }
+        for (const ref of found) {
+          text(child.content.slice(at, ref.start))
+          children.push(slot(ref.id))
+          at = ref.end
+        }
+        text(child.content.slice(at))
+      }
+      token.children = children
+    }
+  })
+}
+markSessionReferences(md)
 markFilePaths(md)
 
 /**
@@ -340,6 +397,9 @@ markCardReferences(md)
 
 /** Inputs and outputs of the rendering pass. */
 interface MarkdownEnv {
+  sessionIds?: Pick<ReadonlySet<string>, 'has'>
+  projectId?: string | null
+  origin?: string
   /** Potential paths encountered, to submit to the server. */
   candidates?: Set<string>
   /** Paths the server confirmed as files. */
@@ -371,8 +431,8 @@ export interface MarkdownDocument {
 function cellText(inline: Token | undefined): string {
   if (!inline?.children) return inline?.content ?? ''
   return inline.children
-    .filter((child) => child.type === 'text' || child.type === 'code_inline')
-    .map((child) => child.content)
+    .filter((child) => child.type === 'text' || child.type === 'code_inline' || child.meta?.sessionReference)
+    .map((child) => child.meta?.sessionReference ?? child.content)
     .join('')
     .trim()
 }
@@ -405,7 +465,7 @@ function tableRows(tokens: Token[], start: number, end: number): string[][] {
  */
 export function parseMarkdown(
   text: string,
-  options: { knownFiles?: Set<string>; scope?: WorkspaceScope; base?: string; cards?: Set<number> } = {},
+  options: Omit<MarkdownEnv, 'candidates'> = {},
 ): MarkdownDocument {
   const candidates = new Set<string>()
   const env: MarkdownEnv = { candidates, ...options }

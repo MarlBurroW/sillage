@@ -5,11 +5,12 @@ import type { OutgoingAttachment } from './types.js'
 export function describeOutgoingMessage(
   text: string,
   attachments: OutgoingAttachment[],
+  referenceContext?: string | null,
 ): { blocks: ContentBlock[]; promptText: string } {
   const blocks: ContentBlock[] = []
 
   const files = attachments.filter((entry) => !entry.inlineImage)
-  const promptText = files.length
+  const attachmentText = files.length
     ? [
         text,
         '',
@@ -20,7 +21,9 @@ export function describeOutgoingMessage(
         .trim()
     : text
 
-  if (promptText) {
+  const promptText = referenceContext ? `${attachmentText}\n\n${referenceContext}` : attachmentText
+
+  if (attachmentText) {
     blocks.push({ type: 'text', text })
   }
 

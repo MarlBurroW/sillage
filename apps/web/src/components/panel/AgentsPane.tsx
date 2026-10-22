@@ -1,8 +1,9 @@
+import { useThreadLayout } from '../../lib/use-thread-layout'
 import { PanelEmptyState } from './PanelEmptyState'
 import { TooltipButton } from '../ui/Tooltip'
 import { AGENT_CAPABILITIES, type AgentKind } from '@sillage/protocol'
 import { ArrowLeft, Bot, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useRef, useMemo, useState, type ReactNode } from 'react'
 import type { BackgroundWork } from '../../lib/background'
 import { stopBackgroundTask } from '../../lib/conversations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
@@ -197,7 +198,10 @@ function SubAgentThread({
   onBack: () => void
 }) {
   const t = useTranslate()
-  const rows = useMemo(() => buildRows(agent.items, agent.id), [agent.items, agent.id])
+  const scroller = useRef<HTMLDivElement>(null)
+  const [following, setFollowing] = useState(true)
+  useThreadLayout(scroller, following)
+  const rows = useMemo(() => buildRows(agent.items, agent.id, agent.status === 'running'), [agent.items, agent.id, agent.status])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -226,7 +230,10 @@ function SubAgentThread({
         ) : null}
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+      <div ref={scroller} className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3" onScroll={(event) => {
+        const node = event.currentTarget
+        setFollowing(node.scrollHeight - node.scrollTop - node.clientHeight < 48)
+      }}><div className="flex flex-col gap-3">
         {rows.length === 0 ? (
           <p className="text-xs text-ink-faint">
             {/* CLI streams subagent work; there is nothing to show before its first output. */}
@@ -235,9 +242,9 @@ function SubAgentThread({
               : t('subagent.pane.silent')}
           </p>
         ) : (
-          <ChatThread rows={rows} conversationId={conversationId} />
+          <ChatThread rows={rows} conversationId={conversationId} mayCollapseTools={following} />
         )}
-      </div>
+      </div></div>
     </div>
   )
 }

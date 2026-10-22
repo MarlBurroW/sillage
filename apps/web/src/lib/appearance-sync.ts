@@ -1,3 +1,4 @@
+import { applyToolStyle, currentToolStyle, resolveToolStyle, subscribeToolStyle } from './tool-style'
 import { useEffect } from 'react'
 import type { AppearancePrefs } from '@sillage/protocol'
 import {
@@ -32,6 +33,7 @@ function snapshot(): AppearancePrefs {
     theme: currentTheme(),
     syntax: currentSyntaxTheme(),
     typingIndicator: currentTypingIndicator(),
+    toolStyle: currentToolStyle(),
     values: { ...currentAppearance() },
   }
 }
@@ -62,6 +64,8 @@ function push(): void {
 function adopt(prefs: AppearancePrefs): void {
   adopting = true
   try {
+    const toolStyle = resolveToolStyle(prefs.toolStyle)
+    if (toolStyle !== currentToolStyle()) applyToolStyle(toolStyle)
     const typingIndicator = resolveTypingIndicator(prefs.typingIndicator)
     if (typingIndicator !== currentTypingIndicator()) applyTypingIndicator(typingIndicator)
     // Ignore names removed since saving rather than applying them unchanged.
@@ -101,6 +105,7 @@ export function useAppearanceSync(): void {
       subscribeTheme(schedulePush),
       subscribeSyntaxTheme(schedulePush),
       subscribeTypingIndicator(schedulePush),
+      subscribeToolStyle(schedulePush),
       subscribeAppearance(schedulePush),
     ]
     return () => {

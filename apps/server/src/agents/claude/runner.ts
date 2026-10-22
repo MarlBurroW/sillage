@@ -26,6 +26,7 @@ import {
   type PlanFollowUpOption,
 } from '@sillage/protocol'
 import { failedStatuses } from '../mcp-registry.js'
+import { BUILTIN_MCP_SERVER_ID } from '../mcp-builtin.js'
 import { sdkExecutable } from '../launch.js'
 import { AsyncQueue } from '../async-queue.js'
 import { agentProcessEnv } from '../process-env.js'
@@ -113,8 +114,9 @@ type InlineImageSource = Extract<
 async function buildUserMessage(
   text: string,
   attachments: OutgoingAttachment[],
+  referenceContext?: string | null,
 ): Promise<{ blocks: ContentBlock[]; prompt: PromptBlock[] }> {
-  const { blocks, promptText } = describeOutgoingMessage(text, attachments)
+  const { blocks, promptText } = describeOutgoingMessage(text, attachments, referenceContext)
   const prompt: PromptBlock[] = []
 
   if (promptText) {
@@ -243,6 +245,9 @@ export class ClaudeRunner implements AgentRunner {
         // therefore lacks these servers, the cost of leaving user files untouched. Established by
         // probe, not inferable from documentation.
         mcpServers: this.appliedMcpServers,
+        // Only the built-in tool can name this session; it never overrides a human title.
+        allowedTools: resolved.servers.filter((server) => server.id === BUILTIN_MCP_SERVER_ID)
+          .map((server) => `mcp__${server.name}__rename_session`),
         strictMcpConfig: config.strictMcp,
         settings: flagSettings(
           config,
@@ -1065,7 +1070,7 @@ export class ClaudeRunner implements AgentRunner {
     _mentions: OutgoingMention[],
     _skills: string[],
   ): Promise<void> {
-    const { blocks, prompt } = await buildUserMessage(text, attachments)
+    const { blocks, prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
 
     this.ctx.emit({
       type: 'message.completed',
@@ -1106,7 +1111,7 @@ export class ClaudeRunner implements AgentRunner {
   ): Promise<boolean> {
     if (!this.session || !this.turnOpen) return false
 
-    const { blocks, prompt } = await buildUserMessage(text, attachments)
+    const { blocks, prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
 
     this.ctx.emit({
       type: 'message.completed',

@@ -85,6 +85,7 @@ async function listening(port) {
 try {
   app = await electron.launch({
     executablePath: executable,
+    chromiumSandbox: true,
     env: { ...process.env, SILLAGE_DESKTOP_USER_DATA: userData },
     timeout: 120_000,
   })

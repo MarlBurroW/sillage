@@ -14,6 +14,10 @@ import {
 } from 'react'
 import {
   DEFAULT_COMPOSER_LAYOUT,
+  sessionMentionAt,
+  sessionReference,
+  sessionReferenceRanges,
+  type ConversationDto,
   MAX_ATTACHMENTS_PER_MESSAGE,
   NATIVE_SLASH_COMMANDS,
   parseSlashCommand,
@@ -30,6 +34,7 @@ import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
 import { useComposerDrops, useComposerPrefill, useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
+import { ComposerInsert, type ComposerPrefix } from './ComposerInsert'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useCardSuggestions } from '../../lib/cards'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
@@ -47,6 +52,9 @@ import { toolButtonClass } from './composer-buttons'
 import { SkillsControl } from './SkillsControl'
 import { CardPicker } from './CardPicker'
 import { MentionPicker } from './MentionPicker'
+import { SessionPicker } from './SessionPicker'
+import { SessionReference } from './SessionReference'
+import { matchSessions, useSessionReferences } from '../../lib/session-references'
 
 /** The `@...` mention around the cursor. */
 /** Below this toolbar width, use the phone composer layout. */
@@ -225,6 +233,10 @@ export function Composer({
   const [attachments, setAttachments] = useState<AttachmentDto[]>(restored.attachments)
   const [uploading, setUploading] = useState(0)
   const [token, setToken] = useState<MentionToken | null>(null)
+  const [sessionToken, setSessionToken] = useState<MentionToken | null>(null)
+  const { sessions: referenceSessions, loading: searchingSessions } = useSessionReferences(projectId)
+  const sessionSuggestions = useMemo(() => matchSessions(referenceSessions, sessionToken?.query ?? '', draftKey), [referenceSessions, sessionToken, draftKey])
+  const referencedIds = useMemo(() => [...new Set(sessionReferenceRanges(text, window.location.origin).filter(ref => !ref.projectId || ref.projectId === projectId).filter(ref => ref.explicit || referenceSessions.has(ref.id)).map(ref => ref.id))], [text, referenceSessions, projectId])
   const [cardToken, setCardToken] = useState<MentionToken | null>(null)
   const [sigil, setSigil] = useState<SigilToken | null>(null)
   // Shared by suggestion lists: tokens are mutually exclusive, since no cursor position opens @, /,
@@ -241,6 +253,7 @@ export function Composer({
    */
   const [invoked, setInvoked] = useState<Set<string>>(() => new Set(restored.skills))
   const textarea = useRef<HTMLTextAreaElement>(null)
+  const dismissedSessionToken = useRef<{ value: string; caret: number } | null>(null)
   const filePicker = useRef<HTMLInputElement>(null)
 
   const running = status === 'running' || status === 'awaiting_input'
@@ -360,6 +373,17 @@ export function Composer({
     })
   }
 
+  const pickSession = (session: ConversationDto) => {
+    const node = textarea.current
+    if (!sessionToken || !node) return
+    const reference = sessionReference(session.id)
+    const next = `${text.slice(0, sessionToken.start)}${reference} ${text.slice(sessionToken.end)}`
+    const caret = sessionToken.start + reference.length + 1
+    setText(next)
+    setSessionToken(null)
+    requestAnimationFrame(() => { node.focus(); node.setSelectionRange(caret, caret) })
+  }
+
   /**
    * File referenced from the explorer. Append rather than insert at the cursor: focus is in another
    * column and the old insertion point is meaningless. Also retain it as a selected mention because
@@ -447,6 +471,11 @@ export function Composer({
 
   const syncToken = (value: string, caret: number | null) => {
     const position = caret ?? value.length
+    const dismissed = dismissedSessionToken.current
+    if (dismissed?.value !== value || dismissed.caret !== position) {
+      dismissedSessionToken.current = null
+      setSessionToken(sessionMentionAt(value, position))
+    }
     setToken(mentionAt(value, position))
     setCardToken(cardAt(value, position))
     // Prefixes without published CLI entries open no list: better offer nothing than announce
@@ -455,6 +484,26 @@ export function Composer({
     const available = found?.sigil === '/' ? offered.length > 0 : skills.length > 0
     setSigil(found && available ? found : null)
     setActive(0)
+  }
+
+  const insertPrefix = (prefix: ComposerPrefix) => {
+    const node = textarea.current
+    if (!node || disabled) return
+    // Commands start the message; preserve the draft as arguments. Other references replace only
+    // the selection and retain the caret captured by the textarea while the help panel was open.
+    const start = prefix === '/' ? 0 : node.selectionStart
+    const end = prefix === '/' ? 0 : node.selectionEnd
+    const before = text.slice(0, start)
+    const inserted = `${before && !/\s$/.test(before) ? ' ' : ''}${prefix}`
+    const next = before + inserted + text.slice(end)
+    const caret = start + inserted.length
+    setText(next)
+    dismissedSessionToken.current = null
+    requestAnimationFrame(() => {
+      node.focus({ preventScroll: true })
+      node.setSelectionRange(caret, caret)
+      syncToken(next, caret)
+    })
   }
 
   const entries = !sigil
@@ -500,10 +549,12 @@ export function Composer({
   ) => {
     if (!canSend) return
 
-    const value = text.trim()
+    let value = text.trim()
     const sent = attachments
     // Mentions or skills deleted from text after selection must not be sent: current text is
     // authoritative, not previous clicks.
+    const urls = sessionReferenceRanges(value, window.location.origin).filter(ref => ref.projectId === projectId)
+    for (const ref of urls.reverse()) value = `${value.slice(0, ref.start)}${sessionReference(ref.id)}${value.slice(ref.end)}`
     const paths = [...mentioned].filter((path) => value.includes(`@${path}`))
     const invocations = [...invoked].filter((name) => value.includes(`$${name}`))
 
@@ -515,6 +566,8 @@ export function Composer({
     setInvoked(new Set())
     setToken(null)
     setSigil(null)
+    setCardToken(null)
+    setSessionToken(null)
     try {
       await action(
         value,
@@ -605,7 +658,14 @@ export function Composer({
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Open lists capture navigation and confirmation first or Enter would send instead of insert.
     // Mutually exclusive tokens allow only one list at a time.
-    const listed = sigil
+    if (event.nativeEvent.isComposing) return
+    if (event.key === 'Escape' && (sessionToken || token || cardToken || sigil)) {
+      event.preventDefault()
+      dismissedSessionToken.current = { value: text, caret: event.currentTarget.selectionStart }
+      setToken(null); setCardToken(null); setSessionToken(null); setSigil(null)
+      return
+    }
+    const listed = sessionToken ? sessionSuggestions.length : sigil
       ? entries.length
       : cardToken
         ? cardSuggestions.length
@@ -622,6 +682,8 @@ export function Composer({
         return
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
+        const session = sessionToken ? sessionSuggestions[active] : undefined
+        if (session) { event.preventDefault(); pickSession(session); return }
         const entry = sigil ? entries[active] : undefined
         if (entry) {
           event.preventDefault()
@@ -729,6 +791,12 @@ export function Composer({
             onRemove={removeAttachment}
           />
 
+          {sessionToken && <SessionPicker sessions={sessionSuggestions} active={active} loading={searchingSessions} onPick={pickSession} onHover={setActive} />}
+
+          {referencedIds.length > 0 && <div className="flex flex-wrap gap-1 px-2 py-1" aria-label={t('sessionRef.attached')}>
+            {referencedIds.map(id => <SessionReference key={id} id={id} conversation={referenceSessions.get(id)} loading={searchingSessions} />)}
+          </div>}
+
           {sigil ? (
             <TokenPicker
               sigil={sigil.sigil}
@@ -782,10 +850,14 @@ export function Composer({
             }
             onBlur={() => {
               setToken(null)
+              setCardToken(null)
+              setSessionToken(null)
               setSigil(null)
             }}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
+            aria-controls={sessionToken ? 'session-suggestions' : undefined}
+            aria-activedescendant={sessionToken && sessionSuggestions[active] ? `session-option-${active}` : undefined}
             rows={1}
             disabled={disabled}
             placeholder={disabled ? t('composer.placeholder.readonly') : t('composer.placeholder.write')}
@@ -903,7 +975,12 @@ export function Composer({
         </div>
       </form>
 
-      {footer}
+      <div className="mx-auto flex sg-conversation-width items-start gap-2">
+        <ComposerInsert inputRef={textarea} disabled={disabled} project={Boolean(projectId)}
+          commands={offered.length > 0} skills={skills.length > 0}
+          combinedCommands={config.agent === 'claude' || config.agent === 'grok'} onInsert={insertPrefix} />
+        {footer ? <div className="min-w-0 flex-1">{footer}</div> : null}
+      </div>
     </div>
   )
 }

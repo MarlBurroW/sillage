@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UpdateStatus, VersionInfo } from '@sillage/protocol'
 import { api } from './api'
+import { useDesktopUpdate } from './desktop-updates'
 import { useCurrentUser } from './session'
 
 const VERSION_KEY = ['system', 'version']
@@ -20,13 +21,20 @@ export function useVersionInfo() {
 /**
  * Whether an update awaits an administrator: only administrators can launch it, so do not prompt
  * others. The sidebar uses this, checking at app opening rather than only in settings; server
- * caching still limits GitHub to one request per hour.
+ * caching still limits GitHub to one request per hour. Desktop only signals ready
+ * downloads, falling back to release availability for unsupported or failed updates.
  */
 export function useUpdateNotice(): boolean {
   const { data: user } = useCurrentUser()
   const isAdmin = user?.isAdmin === true
   const { data } = useQuery({ ...versionQuery, enabled: isAdmin })
-  return isAdmin && data?.updateAvailable === true
+  const desktop = useDesktopUpdate()
+  if (!isAdmin) return false
+  if (desktop) {
+    const status = desktop.state?.status
+    if (status !== 'unsupported' && status !== 'error') return status === 'ready'
+  }
+  return data?.updateAvailable === true
 }
 
 /** Forced administrator refresh bypassing the one-hour server cache. */

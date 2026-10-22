@@ -52,6 +52,8 @@ export interface RunnerContext {
   resolveMcpServers(config: AgentConfig): ResolvedMcpServers
   /** Project activity injected at startup, null when empty or platform additions disabled. The only context arriving without agent initiative; MCP queries require remembering to ask. */
   projectOverview(config: AgentConfig): string | null
+  /** Small, project-scoped metadata for references in this message; transcript text stays on demand. */
+  sessionReferenceContext?(text: string, config: AgentConfig): string | null
   /** Directories whose CLAUDE.md/AGENTS.md must be hidden because Sillage-held SILLAGE.md already arrives through `projectOverview`. Empty for repository-held instructions. Startup-only; mode changes apply to subsequent sessions. */
   maskedInstructionRoots(): string[]
   /** Project memory directory replacing Claude's native directory through `autoMemoryDirectory`. Created before return; null for probes preserving host memory. Codex receives it via `projectOverview`. */

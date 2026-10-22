@@ -11,6 +11,8 @@ const DB_PATH = process.env.SILLAGE_MCP_DB
 const GLOBAL = !process.env.SILLAGE_MCP_PROJECT
 /** Served project: fixed for conversation-mode processes, set from each tool call's `project` parameter in global mode. Serialize calls to prevent interference. */
 let PROJECT_ID = process.env.SILLAGE_MCP_PROJECT ?? ''
+// Keep the reference prefix aligned with packages/protocol/src/session-references.ts.
+const sessionReference = (id) => `session:${id}`
 /** Exclude from results so agents do not reread themselves and loop. */
 const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
 /** Project memory directory shared with Claude automatic memory. In global mode, `SILLAGE_MCP_MEMORY` identifies the memory root (default `memory/` beside the database, like the daemon), and each call selects its project's directory. */
@@ -57,6 +59,7 @@ const MAX_PEER_MESSAGE_CHARS = 4000
 
 /** How long tools wait for daemon request processing. Session starts launch CLIs and sometimes worktrees, usually seconds but longer under load. After this timeout, report that processing continues rather than remain suspended. */
 const REQUEST_WAIT_MS = {
+  rename_session: 15000,
   start_session: 90000,
   create_card: 15000,
   update_card: 15000,
@@ -92,6 +95,9 @@ const REQUEST_POLL_MS = 200
 
 /** Must match `MAX_LAUNCH_PROMPT_CHARS` in `agent-requests.ts`. */
 const MAX_LAUNCH_PROMPT_CHARS = 20000
+
+/** Must match protocol `MAX_SESSION_TITLE_CHARS` in session-title.ts. */
+const MAX_SESSION_TITLE_CHARS = 60
 
 /** Scheduled task limits matching protocol `MAX_SCHEDULE_PROMPT_CHARS`, `DEFAULT_SCHEDULE_DURATION_MINUTES` and `MIN_AGENT_SCHEDULE_MINUTES` in `apps/server/src/sessions/agent-requests.ts`. The daemon revalidates; these only inform descriptions. */
 const MAX_SCHEDULE_PROMPT_CHARS = 20000
@@ -178,6 +184,18 @@ function writeDb() {
 
 const TOOLS = [
   {
+    name: 'rename_session',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    description:
+      "Donne un titre court et parlant à ta propre session, pour la retrouver dans la sidebar. Fais-le dès que tu comprends la demande : vise 3 à 6 mots dans la langue de l'utilisateur, centrés sur le sujet concret (par exemple « Refonte de la sidebar »), sans préambule ni état d'avancement. Ne le change ensuite que si le sujet principal change. Un titre choisi manuellement par l'utilisateur reste prioritaire : si Sillage le conserve, ne réessaie pas. Cet outil ne peut pas renommer une autre session.",
+    inputSchema: {
+      type: 'object',
+      properties: { title: { type: 'string', minLength: 1, maxLength: MAX_SESSION_TITLE_CHARS, description: `Titre sur une ligne, ${MAX_SESSION_TITLE_CHARS} caractères au plus.` } },
+      required: ['title'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'search_history',
     description:
       "Cherche dans les conversations passées de ce projet sur Sillage, celles menées avec ce CLI comme avec les autres. Rend une liste de conversations avec un extrait, pas leur contenu : utiliser read_conversation ensuite pour en lire une. Appelle cet outil avant de conclure qu'un sujet est neuf, quand une décision semble avoir déjà été prise, quand un bug ressemble à du déjà-vu, ou quand l'utilisateur fait référence à un travail antérieur.",
@@ -203,7 +221,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Identifiant rendu par search_history.' },
+        id: { type: 'string', description: 'Identifiant Sillage ou référence session:<id> rendue par search_history ou list_sessions, archives comprises.' },
         before: {
           type: 'integer',
           description:
@@ -924,6 +942,7 @@ const LIST_PROJECTS = {
 }
 
 const SESSION_ONLY_TOOLS = new Set([
+  'rename_session',
   'send_session_message',
   'broadcast_session_message',
   'notify_when_done',
@@ -1066,6 +1085,7 @@ function searchHistory(query, limit) {
       `SELECT m.conversation_id AS id,
               c.title AS title,
               c.agent AS agent,
+              c.archived_at AS archivedAt,
               m.ts AS ts,
               snippet(search_messages, 0, '', '', '...', 15) AS excerpt
        FROM search_messages AS m
@@ -1073,7 +1093,6 @@ function searchHistory(query, limit) {
        WHERE search_messages MATCH ?
          AND c.project_id = ?
          AND c.id != ?
-         AND c.archived_at IS NULL
        ORDER BY bm25(search_messages)
        LIMIT ?`,
     )
@@ -1089,6 +1108,7 @@ function searchHistory(query, limit) {
 
 /** Conversation messages excluding tools. Match search extraction: same text blocks and exclusion of subagent messages belonging to side panels. Check `project_id` here as well as during search because agents can fabricate IDs. */
 function readConversation(id) {
+  id = id.replace(/^session:/i, '')
   const conversation = db
     .prepare(
       `SELECT id, title, agent, created_at AS createdAt
@@ -1404,7 +1424,7 @@ function renderSessions(rows, withinMinutes) {
     const tree = git
       ? `, branche ${git.branch}${git.dirty > 0 ? `, ${git.dirty} fichier(s) modifié(s)` : ''}`
       : ''
-    return `- ${row.id} | ${row.agent} | ${describeActivity(row)} | ${where}${tree} | ${ago(row.updatedAt)}\n  ${row.title}`
+    return `- ${row.id} | ${sessionReference(row.id)} | ${row.agent} | ${describeActivity(row)} | ${where}${tree} | ${ago(row.updatedAt)}\n  ${row.title}`
   })
   return `${rows.length} conversation(s), fenêtre de ${withinMinutes} min :\n${lines.join('\n')}`
 }
@@ -2074,7 +2094,7 @@ function renderSearch(query, results) {
 
   const lines = results.map(
     (row) =>
-      `- ${row.id} | ${row.agent} | échange du ${asDate(row.ts)} | ${row.title}\n  ${row.excerpt}`,
+      `- ${row.id} | ${sessionReference(row.id)} | ${row.agent} | échange du ${asDate(row.ts)}${row.archivedAt !== null ? ' | archivée' : ''} | ${row.title}\n  ${row.excerpt}`,
   )
   return `${results.length} conversation(s) pour « ${query} » :\n${lines.join('\n')}`
 }
@@ -2101,7 +2121,7 @@ function renderThread(found, before) {
   // Say 'opened on' rather than bare dates: search_history dates matching messages,
   // while this date marks conversation creation. Both correct dates otherwise look
   // contradictory without identifying what they measure.
-  const header = `${conversation.title} (${conversation.agent}, ouverte le ${asDate(conversation.createdAt)})`
+  const header = `${conversation.title} | ${sessionReference(conversation.id)} (${conversation.agent}, ouverte le ${asDate(conversation.createdAt)})`
   if (messages.length === 0) return `${header}\n\nAucun message dans ce fil.`
 
   const scoped = before === null ? messages : messages.filter((message) => message.seq < before)
@@ -2622,6 +2642,7 @@ async function callTool(name, args) {
   }
 
   if (
+    name === 'rename_session' ||
     name === 'link_cards' ||
     name === 'unlink_cards' ||
     name === 'update_card' ||
@@ -2644,6 +2665,12 @@ async function callTool(name, args) {
   ) {
     if (!CURRENT_CONVERSATION && !USER) {
       return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
+    }
+    if (name === 'rename_session') {
+      const title = typeof args?.title === 'string' ? args.title.trim() : ''
+      if (!title || title.length > MAX_SESSION_TITLE_CHARS) {
+        return { ...text(`Le paramètre \`title\` doit contenir entre 1 et ${MAX_SESSION_TITLE_CHARS} caractères.`), isError: true }
+      }
     }
     if (name === 'request_decision' && !(typeof args?.question === 'string' && args.question.trim())) {
       return { ...text('Le paramètre `question` est requis.'), isError: true }

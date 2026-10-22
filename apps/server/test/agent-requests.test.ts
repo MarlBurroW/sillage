@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,6 +25,8 @@ import { EventLog } from '../src/events/event-log.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests, LAUNCHES_PER_HOUR, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
+import { adoptSessionTitle } from '../src/conversations/title.js'
+import { projectOverview } from '../src/agents/overview.js'
 
 const model = (value: string, displayName: string, efforts: string[], isDefault = false): AgentModelDto => ({
   value,
@@ -65,8 +68,12 @@ async function harness(t: TestContext) {
 
   const sent: { to: string; text: string }[] = []
   const gestures: string[] = []
+  const titleEvents: { conversationId: string; title: string }[] = []
+  const statusBus = new EventEmitter()
+  statusBus.on('title', (event) => titleEvents.push(event))
   let steerWorks = false
   const sessions = {
+    statusBus,
     async sendMessage(to: string, _id: string, text: string) {
       sent.push({ to, text })
     },
@@ -120,8 +127,69 @@ async function harness(t: TestContext) {
     return JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
   }
 
-  return { db, conversation, mcp, sent, gestures, log, setSteer: (value: boolean) => { steerWorks = value } }
+  return { db, conversation, mcp, sent, gestures, log, statusBus, titleEvents, setSteer: (value: boolean) => { steerWorks = value } }
 }
+
+test('an agent names only its own session and broadcasts the title without changing its activity', async (t) => {
+  const { db, conversation, mcp, titleEvents, statusBus } = await harness(t)
+  conversation('self')
+  conversation('peer')
+  const before = db.select().from(conversations).where(eq(conversations.id, 'self')).get()!
+  const renamed = await mcp('self', 'rename_session', { title: '  Refonte de la sidebar  ' })
+  assert.equal(renamed.isError, undefined, renamed.content[0]?.text)
+  const current = db.select().from(conversations).where(eq(conversations.id, 'self')).get()!
+  assert.equal(current.title, 'Refonte de la sidebar')
+  assert.equal(current.titleSetByAgent, true)
+  assert.equal(current.titleSetByUser, false)
+  assert.equal(current.updatedAt, before.updatedAt)
+  assert.deepEqual(titleEvents, [{ conversationId: 'self', title: current.title }])
+  assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Native CLI summary', 'cli'), 'protected')
+  await mcp('self', 'rename_session', { title: current.title })
+  assert.equal(titleEvents.length, 1)
+
+  for (const args of [{ title: '' }, { title: 'x'.repeat(61) }, { title: 'Two\nlines' }, { title: 'Bad\u0000title' }, { title: 'Peer', session: 'peer' }]) {
+    assert.equal((await mcp('self', 'rename_session', args)).isError, true, JSON.stringify(args))
+  }
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'peer')).get()?.title, 'Session peer')
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'self')).get()?.title, current.title)
+  const changedSubject = await mcp('self', 'rename_session', { title: 'Corriger la connexion' })
+  assert.equal(changedSubject.isError, undefined)
+  assert.equal(titleEvents.at(-1)?.title, 'Corriger la connexion')
+  assert.equal((await mcp('', 'rename_session', { project: 'project', title: 'Global' })).isError, true)
+})
+
+test('human titles win over both explicit agent titles and delayed native CLI suggestions', async (t) => {
+  const { db, conversation, mcp, statusBus, titleEvents } = await harness(t)
+  conversation('self')
+  assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Native summary', 'cli'), 'updated')
+  // Claiming an identical provisional title must still protect it from native summaries.
+  await mcp('self', 'rename_session', { title: 'Native summary' })
+  assert.equal(db.select().from(conversations).get()?.titleSetByAgent, true)
+  db.update(conversations).set({ title: 'Mon titre personnel', titleSetByUser: true, titleSetByAgent: false }).run()
+  titleEvents.length = 0
+  const denied = await mcp('self', 'rename_session', { title: 'Agent title' })
+  assert.equal(denied.isError, undefined)
+  assert.match(denied.content[0]!.text, /choisi par l'utilisateur/)
+  assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Late CLI summary', 'cli'), 'protected')
+  assert.equal(db.select().from(conversations).get()?.title, 'Mon titre personnel')
+  assert.deepEqual(titleEvents, [])
+  assert.equal(adoptSessionTitle(db, statusBus, 'deleted', 'Late summary', 'cli'), 'missing')
+})
+
+test('every CLI receives a naming instruction, respecting manual titles and disabled MCP', async (t) => {
+  const { db, conversation, statusBus } = await harness(t)
+  conversation('self')
+  const overview = (sillageMcp = true) => projectOverview(db, { projectId: 'project', conversationId: 'self', sillageMcp }) ?? ''
+  for (const agent of ['claude', 'codex', 'opencode', 'grok'] as const) {
+    db.update(conversations).set({ agent }).run()
+    assert.match(overview(), /appelle `rename_session`/)
+  }
+  assert.doesNotMatch(overview(false), /rename_session/)
+  adoptSessionTitle(db, statusBus, 'self', 'Refonte de la sidebar', 'agent')
+  assert.match(overview(), /Conserve-le tant que le sujet principal ne change pas/)
+  db.update(conversations).set({ titleSetByUser: true }).run()
+  assert.doesNotMatch(overview(), /rename_session/)
+})
 
 test('matchModel finds a model by the name the user says, and never guesses between two', () => {
   assert.equal(matchModel(CATALOG.codex!, 'Astra')?.value, 'astra-1')

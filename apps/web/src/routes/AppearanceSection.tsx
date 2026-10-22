@@ -1,4 +1,5 @@
-import { Code, Contrast, Languages, Loader, Moon, Palette, Sun, TextQuote } from 'lucide-react'
+import { ToolStyleControls } from '../components/ToolStyleControls'
+import { Code, Contrast, Languages, Loader, Moon, Palette, Sun, TextQuote, Wrench } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AppearanceControls } from '../components/AppearanceControls'
@@ -24,6 +25,7 @@ const CATEGORIES = [
   { key: 'reading', icon: TextQuote },
   { key: 'motion', icon: Logo },
   { key: 'code', icon: Code },
+  { key: 'tools', icon: Wrench },
 ] as const
 
 export function AppearanceSection() {
@@ -44,7 +46,7 @@ export function AppearanceSection() {
           title={t('settings.appearance.title')}
           description={t('settings.appearance.description')}
         />
-        <nav aria-label={t('appearance.navigation')} className="grid grid-cols-4 border-b border-line">
+        <nav aria-label={t('appearance.navigation')} className="grid grid-cols-3 border-b sm:grid-cols-5 border-line">
           {CATEGORIES.map(({ key, icon: Icon }) => {
             const search = new URLSearchParams(params)
             search.set('section', key)
@@ -196,6 +198,13 @@ export function AppearanceSection() {
           <CardBody>
             <SyntaxThemeControls />
           </CardBody>
+        </Card>
+      </section>
+      <section aria-label={t('appearance.category.tools')} hidden={category !== 'tools'}
+        className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1', category !== 'tools' && 'hidden')}>
+        <Card>
+          <CardHeader title={t('toolStyle.title')} description={t('toolStyle.description')} icon={<Wrench size={16} />} />
+          <CardBody><ToolStyleControls /></CardBody>
         </Card>
       </section>
     </div>

@@ -25,8 +25,9 @@ directly:
 
 ### macOS
 
-Open the `.dmg` and drag Sillage into Applications. The app is not notarized by
-Apple yet, so the first launch is refused: open **System Settings > Privacy &
+Open the `.dmg` and drag Sillage into Applications, and keep it there: that is where
+it can update itself. The app is not notarized by Apple yet, so the first launch is
+refused: open **System Settings > Privacy &
 Security** and click **Open Anyway**. From Terminal, this does the same:
 
 ```bash
@@ -92,12 +93,31 @@ from the one Claude keeps when used alone.
   its sessions running; quit with ⌘Q. On Windows and Linux, closing the last window
   quits. Nothing runs while the computer sleeps, and a scheduled task that came due
   during sleep runs once on wake.
-- **Updates.** The app tells you when a release is out (Settings > About). Download
-  the new version and replace the app; there is no automatic update yet.
+- **Updates** are automatic: see [below](#updates).
 - **Not available:** access from other devices, push notifications, and webhook
   automations triggered from the Internet, which need a public address (the test
   bench still works). Settings hide the password, logout, push notifications and
   user accounts. The process view (Services) stays Linux only.
+
+## Updates
+
+The app updates itself from the GitHub releases. It checks when it starts, then every
+four hours, downloads a new version in the background and installs it when you quit
+Sillage; Settings > About shows the download, then the version that is ready. To
+install it right away, click **Restart and update** there: Sillage closes, installs the
+new version and reopens. Running conversations are interrupted and resume with the next
+message. Your data stays where it is.
+
+- **Windows:** the installer runs silently, for your user, as on the first install.
+- **macOS:** Sillage replaces its own app in the Applications folder. Run from the disk
+  image, or from a folder where macOS isolates it, it cannot, and About says so. Should
+  macOS refuse the replacement, About tells you to allow Sillage under System Settings >
+  Privacy & Security > App Management.
+- **Linux:** the AppImage is replaced in place. The `.deb` is installed only when you
+  click **Restart and update**, since it asks for your administrator password.
+
+Versions through 0.24.2 do not include the updater: install the first release that
+includes it manually once. The updater keeps its log in `logs/updater.log`, next to the server's.
 
 ## Uninstall
 
@@ -116,3 +136,13 @@ that built it (`scripts/desktop-stage.mjs`), then packages with electron-builder
 `apps/desktop`. `pnpm test:desktop-ui` launches the packaged app and checks it: the
 server answers, the window opens without sign-in, other origins are refused, and
 quitting stops the server. On Linux it needs a display, for example `xvfb-run`.
+
+`scripts/desktop-update-check.mjs` checks the update end to end: an installed version
+finds a newer one in a folder served over HTTP (`SILLAGE_DESKTOP_UPDATE_FEED`), downloads
+it, then replaces and relaunches itself. The workflow runs it with `update-check`, on
+two versions it packages for the purpose; the CI does so on Linux and Windows.
+
+`pnpm test:desktop-updates-ui` checks About in both editions at desktop and phone
+widths with deterministic update states (build the web app first).
+`pnpm test:desktop-mac-install` checks bundle replacement and rollback with injected
+rename failures on a Unix host; it also runs shellcheck on the installer script.

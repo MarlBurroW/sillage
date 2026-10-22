@@ -7,11 +7,12 @@ interface MenuProps {
   trigger: ReactNode
   children: ReactNode
   align?: 'start' | 'end'
+  onOpenChange?: (open: boolean) => void
 }
 
-export function Menu({ trigger, children, align = 'end' }: MenuProps) {
+export function Menu({ trigger, children, align = 'end', onOpenChange }: MenuProps) {
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root onOpenChange={onOpenChange}>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
@@ -31,7 +32,7 @@ export function Menu({ trigger, children, align = 'end' }: MenuProps) {
 
 interface MenuItemProps {
   icon?: ReactNode
-  onSelect: () => void
+  onSelect: (event: Event) => void
   tone?: 'neutral' | 'critical'
   /**
    * Keep temporarily unavailable actions visible but disabled, conveying that they exist and will

@@ -1,3 +1,5 @@
+import { sessionReference } from '@sillage/protocol'
+import { useCopy } from '../lib/clipboard'
 import { Tooltip, TooltipButton } from './ui/Tooltip'
 import {
   DndContext,
@@ -20,10 +22,9 @@ import {
   Archive,
   ArchiveRestore,
   CalendarClock,
+  Link2,
   ChevronRight,
   FolderPlus,
-  ListTree,
-  MessagesSquare,
   LogOut,
   MoreHorizontal,
   Palette,
@@ -47,7 +48,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
-import type { ConversationDto, ConversationMetrics, ProjectDto, ScheduledTaskDto } from '@sillage/protocol'
+import type { ConversationDto, ProjectDto, ScheduledTaskDto } from '@sillage/protocol'
 import {
   useAllConversations,
   useArchiveConversation,
@@ -71,7 +72,9 @@ import { useUpdateCollapsedProjects, useUserSettings } from '../lib/user-setting
 import { useAppearanceSync } from '../lib/appearance-sync'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
 import { SignalDot } from './chat/Signals'
-import { WorktreeTag } from './WorktreeTag'
+import { SessionPreview } from './SessionPreview'
+import { compactRelativeDate, relativeDate } from '../lib/dates'
+import '../styles/sidebar.css'
 import { useProjects, useReorderProjects, useUpdateProject } from '../lib/projects'
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import { useWorktreeStatuses, worktreeCounts } from '../lib/worktrees'
@@ -88,14 +91,10 @@ import { ProjectSwitcher } from './ProjectSwitcher'
 import { useProjectVisits } from '../lib/project-visits'
 import {
   restoreSidebarWidth,
-  setSidebarDetailed,
   setSidebarHidden,
   setSidebarWidth,
-  useSidebarDetailed,
   useSidebarHidden,
 } from '../lib/sidebar'
-import { formatBytes } from '../lib/attachments'
-import { formatTokens } from '../lib/tokens'
 import { useFileDropGuard } from '../lib/file-drop'
 import { useTranslate } from '../lib/i18n'
 import { resizeHandle } from '../lib/resize-handle'
@@ -441,7 +440,6 @@ function Sidebar({
   const visibleProjects = allProjects ? projects : projects?.filter((project) => project.id === selectedProject?.id)
   const reorder = useReorderProjects()
   const sensors = useDragSensors()
-  const detailed = useSidebarDetailed()
   useStatusFeed()
   const { refreshing, refresh } = useRefreshLists()
   const nav = useRef<HTMLElement>(null)
@@ -478,7 +476,9 @@ function Sidebar({
     () => (conversations ?? []).filter((entry) => entry.favorite),
     [conversations],
   )
-  const [favoritesOpen, setFavoritesOpen] = useState(true)
+  const [favoritesOpen, setFavoritesOpen] = useState(false)
+  const [editingProject, setEditingProject] = useState(false)
+  const updateSelectedProject = useUpdateProject()
 
   const onDragEnd = (event: DragEndEvent) => {
     setDragging(false)
@@ -498,59 +498,44 @@ function Sidebar({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex h-[var(--header-height)] shrink-0 items-center gap-2 px-4">
-        <Logo size={20} className="text-accent" />
-        <span className="text-[0.9375rem] font-semibold tracking-tight">Sillage</span>
-        {/*
-         * Use wrappers instead of hidden on IconButton, whose inline-flex conflicts according to
-         * generated CSS order rather than class order. Otherwise both buttons appeared on mobile.
-         */}
-        <span className="ml-auto md:hidden">
-          <IconButton label={t('shell.nav.close')} onClick={onClose}>
-            <X size={18} />
-          </IconButton>
-        </span>
-        <span className="ml-auto hidden md:block">
-          <IconButton label={t('shell.nav.collapse')} onClick={onCollapse}>
-            <PanelLeftClose size={18} />
-          </IconButton>
-        </span>
+    <div className="sidebar-layout">
+      <div className="sidebar-brand">
+        <Logo size={21} className="text-accent" /><span className="text-[0.9375rem] font-semibold tracking-tight">Sillage</span>
+        <span className="ml-auto md:hidden"><IconButton label={t('shell.nav.close')} onClick={onClose}><X size={18} /></IconButton></span>
+        <span className="ml-auto hidden md:block"><IconButton label={t('shell.nav.collapse')} onClick={onCollapse}><PanelLeftClose size={18} /></IconButton></span>
       </div>
-
-      <div className="shrink-0 px-2 pb-1">
-        {/* Keyboard shortcuts do not exist on touch: this entry makes phone search reachable. */}
-        <button
-          type="button"
-          onClick={onSearch}
-          className={cx(
-            'flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm',
-            'text-ink-soft transition-colors hover:bg-surface-high hover:text-ink',
-          )}
-        >
-          <Search size={15} className="shrink-0" />
-          <span className="flex-1">{t('shell.search')}</span>
-          <kbd className="hidden shrink-0 rounded border border-line px-1 text-[0.625rem] text-ink-faint md:block">
-            {SEARCH_HINT}
-          </kbd>
-        </button>
-      </div>
-
-      {toggleFavorite.isError ? <div className="shrink-0 px-2 pb-2">
-        <Banner>
-          <span className="block">{t('shell.favorites.error')}</span>
-          <span className="mt-1 block text-xs">{toggleFavorite.error.message}</span>
-          <span className="mt-1 flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={() => {
-              if (toggleFavorite.variables) toggleFavorite.mutate(toggleFavorite.variables)
-            }}>{t('editor.retry')}</Button>
-            <IconButton size="sm" label={t('common.close')} onClick={() => toggleFavorite.reset()}><X size={14} /></IconButton>
-          </span>
-        </Banner>
-      </div> : null}
-
-      <div className="shrink-0 px-2">
+      <button type="button" onClick={onSearch} className="sidebar-search">
+        <Search size={15} /><span className="flex-1 text-left">{t('shell.search')}</span><kbd className="hidden text-[0.625rem] md:block">{SEARCH_HINT}</kbd>
+      </button>
+      {toggleFavorite.isError && <div className="shrink-0 px-2 pb-2"><Banner>
+        <span className="block">{t('shell.favorites.error')}</span><span className="mt-1 block text-xs">{toggleFavorite.error.message}</span>
+        <span className="mt-1 flex items-center gap-1"><Button variant="ghost" size="sm" onClick={() => { if (toggleFavorite.variables) toggleFavorite.mutate(toggleFavorite.variables) }}>{t('editor.retry')}</Button><IconButton size="sm" label={t('common.close')} onClick={() => toggleFavorite.reset()}><X size={14} /></IconButton></span>
+      </Banner></div>}
+      <nav ref={nav} className="sidebar-navigation" aria-label={t('shell.nav.label')}>
+        <PullToRefresh target={nav} refreshing={refreshing} onRefresh={refresh} />
+        <SidebarActivity conversations={attended} projects={projects} onNavigate={onNavigate}>
+          <div className="sidebar-global-links">
+            <button type="button" className="sidebar-global-link" onClick={() => setFavoritesOpen(value => !value)} aria-expanded={favoritesOpen} aria-controls="sidebar-favorites"><Star size={14} /><span>{t('shell.favorites.heading')}</span><span className="ml-auto tabular-nums text-ink-faint">{favorites.length}</span></button>
+            <SidebarDecisions onNavigate={onNavigate} />
+          </div>
+          {favoritesOpen && <div id="sidebar-favorites" className="sidebar-favorites"><ul>
+            {favorites.map(conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={false} onNavigate={onNavigate} />)}
+            {!favorites.length && <li className="px-3 py-3 text-xs text-ink-faint">{t('shell.favorites.empty')}</li>}
+          </ul></div>}
+          <div className="sidebar-project-switcher">
         <ProjectSwitcher onNavigate={onNavigate} key={user?.id ?? ''} userId={user?.id ?? ''} projects={projects ?? []} selected={selectedProject}
+          nameEditor={editingProject && selectedProject ? <RenameInput value={selectedProject.name} onCancel={() => setEditingProject(false)} onCommit={(draft) => {
+            setEditingProject(false)
+            const name = draft.trim()
+            if (name && name !== selectedProject.name) updateSelectedProject.mutate({ id: selectedProject.id, name })
+          }} className="h-9 min-w-0 flex-1 rounded border border-accent bg-sunken px-2 text-sm outline-none" /> : undefined}
+          actions={<Menu trigger={<IconButton label={selectedProject && !allProjects ? t('shell.project.actions', { name: selectedProject.name }) : t('shell.projects.heading')} size="sm"><MoreHorizontal size={16} /></IconButton>}>
+            {!allProjects && selectedProject?.isOwner && <ProjectMenuItems variant="dropdown" project={selectedProject} onRename={() => setEditingProject(true)} onNavigate={onNavigate} />}
+            {!allProjects && selectedProject && !selectedProject.isOwner && <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => { navigate(`/p/${selectedProject.id}`); onNavigate() }}>{t('shell.project.settings')}</MenuItem>}
+            {!allProjects && selectedProject && <MenuSeparator />}
+            <MenuItem icon={<RefreshCw size={14} />} disabled={refreshing} onSelect={refresh}>{t('shell.refresh')}</MenuItem>
+            <MenuItem icon={<FolderPlus size={14} />} onSelect={() => { navigate('/projects/new'); onNavigate() }}>{t('shell.projects.add')}</MenuItem>
+          </Menu>}
           all={allProjects} recent={visits.map((entry) => entry.projectId)} onAll={() => setAllProjects(true)}
           onSelect={(project, fallback) => {
             setAllProjects(false)
@@ -560,74 +545,8 @@ function Sidebar({
             navigate(visit && valid ? visit.path : fallback)
             onNavigate()
           }} />
-      </div>
-      <nav ref={nav} className="relative min-h-0 flex flex-1 flex-col px-2">
-        <PullToRefresh target={nav} refreshing={refreshing} onRefresh={refresh} />
-        <SidebarDecisions onNavigate={onNavigate} />
-        <SidebarActivity conversations={attended} projects={projects} onNavigate={onNavigate}>
-        {/*
-         * Bookmarks span projects above their lists, allowing access without remembering origins.
-         * Conversations remain listed in their own projects too.
-         */}
-        {favorites.length > 0 ? (
-          <div className="mb-1">
-            <button
-              type="button"
-              onClick={() => setFavoritesOpen((current) => !current)}
-              aria-expanded={favoritesOpen}
-              className="flex w-full items-center gap-1 py-1 pr-1 pl-1.5 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft"
-            >
-              <ChevronRight
-                size={11}
-                className={cx('shrink-0 transition-transform', favoritesOpen && 'rotate-90')}
-              />
-              <span className="flex-1 text-left">{t('shell.favorites.heading')}</span>
-              <span className="tabular-nums">{favorites.length}</span>
-            </button>
-            {favoritesOpen ? (
-              <ul className="flex flex-col gap-px">
-                {favorites.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    conversation={conversation}
-                    toggleFavorite={toggleFavorite}
-                    draggable={false}
-                    onNavigate={onNavigate}
-                  />
-                ))}
-              </ul>
-            ) : null}
           </div>
-        ) : null}
-
-        <div className="flex items-center justify-between py-1 pr-1 pl-2.5">
-          <span className="text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
-            {t(allProjects ? 'shell.projects.heading' : 'shell.switcher.project')}
-          </span>
-          <span className="flex items-center">
-            {/*
-             * Touch also refreshes by pulling down. Retain the button for mouse users and those
-             * unfamiliar with the gesture.
-             */}
-            <IconButton label={t('shell.refresh')} size="sm" onClick={refresh} aria-busy={refreshing}>
-              <RefreshCw size={15} className={cx(refreshing && 'animate-spin')} />
-            </IconButton>
-            {/* One switch for the entire list enables comparison impossible with individual expansion. */}
-            <IconButton
-              label={detailed ? t('shell.conversations.detail.hide') : t('shell.conversations.detail.show')}
-              size="sm"
-              onClick={() => setSidebarDetailed(!detailed)}
-              className={detailed ? 'text-accent' : undefined}
-            >
-              <ListTree size={15} />
-            </IconButton>
-            <Tooltip label={t('shell.projects.add')}><NavLink to="/projects/new" onClick={onNavigate} aria-label={t('shell.projects.add')}
-              className="inline-flex size-11 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink md:size-7 pointer-coarse:size-11">
-                <FolderPlus size={15} />
-            </NavLink></Tooltip>
-          </span>
-        </div>
-
+          <div className="sidebar-project-area">
         {projects && projects.length > 0 ? (
           <DndContext
             sensors={sensors}
@@ -644,7 +563,7 @@ function Sidebar({
               items={projects.map((project) => project.id)}
               strategy={verticalListSortingStrategy}
             >
-              <ul className="flex flex-col gap-2">
+              <ul className={cx('sidebar-projects', !allProjects && 'sidebar-projects-focused')}>
                 {visibleProjects?.map((project) => (
                   <ProjectGroup
                     key={project.id}
@@ -667,35 +586,15 @@ function Sidebar({
         ) : (
           <p className="px-2.5 py-1 text-sm text-ink-faint">{t('shell.projects.empty')}</p>
         )}
+          </div>
         </SidebarActivity>
       </nav>
-
-      <div className="shrink-0 border-t border-line p-2 pb-safe">
-        <SidebarRow to="/services" onClick={onNavigate}>
-          <Server size={16} className="shrink-0" />
-          <span>{t('services.title')}</span>
-        </SidebarRow>
-        <SidebarRow to="/settings" end={false} onClick={onNavigate}>
-          <span className="relative shrink-0">
-            <Settings size={16} />
-            {updateNotice ? <UpdateDot /> : null}
-          </span>
-          <span className="truncate">{t('shell.settings.label')}</span>
-          {updateNotice ? <span className="sr-only">{t('about.badge.updateAvailable')}</span> : null}
-        </SidebarRow>
-        {passwordAuth ? (
-          <button
-            type="button"
-            onClick={() => logout.mutate()}
-            className={cx(
-              'flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm',
-              'text-ink-faint transition-colors hover:bg-surface-high hover:text-ink',
-            )}
-          >
-            <LogOut size={16} className="shrink-0" />
-            {t('shell.logout')}
-          </button>
-        ) : null}
+      <div className="sidebar-utilities pb-safe">
+        <SidebarRow to="/services" onClick={onNavigate}><Server size={15} /><span>{t('services.title')}</span></SidebarRow>
+        <SidebarRow to="/settings" end={false} onClick={onNavigate}><span className="relative"><Settings size={15} />{updateNotice && <UpdateDot />}</span><span>{t('shell.settings.label')}</span>{updateNotice && <span className="sr-only">{t('about.badge.updateAvailable')}</span>}</SidebarRow>
+        {passwordAuth && <Menu trigger={<button type="button" className="sidebar-account" aria-label={t('shell.account.menu')}>{user?.username.slice(0, 1).toLocaleUpperCase()}</button>}>
+          <MenuLabel>{user?.username}</MenuLabel><MenuItem icon={<LogOut size={14} />} onSelect={() => logout.mutate()}>{t('shell.logout')}</MenuItem>
+        </Menu>}
       </div>
     </div>
   )
@@ -744,9 +643,16 @@ function ProjectGroup({
 
   const contextMenu = useContextMenuEnabled()
   const [showAll, setShowAll] = useState(false)
-  const visibleActive = focused && !showAll
-    ? active.filter((entry, index) => index < 10 || entry.id === openConversationId || entry.favorite)
-    : active
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filter, setFilter] = useState('')
+  const filterInput = useRef<HTMLInputElement>(null)
+  const { data: treeStatus } = useWorktreeStatuses(project.id)
+  const query = filter.trim().toLocaleLowerCase()
+  const matching = active.filter(entry => !query || entry.title.toLocaleLowerCase().includes(query)
+    || treeStatus?.worktrees.some(tree => tree.conversations.some(link => link.id === entry.id) && `${tree.name} ${tree.branch ?? ''}`.toLocaleLowerCase().includes(query)))
+  const visibleActive = focused && !showAll && !query
+    ? matching.filter((entry, index) => index < 10 || entry.id === openConversationId || entry.favorite)
+    : matching
   const [editing, setEditing] = useState(false)
 
   const sensors = useDragSensors()
@@ -787,16 +693,9 @@ function ProjectGroup({
   }
 
   return (
-    <li
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cx(isDragging && 'shadow-float z-10 rounded-md bg-surface-high opacity-90')}
-    >
-      {/* The whole row owns hover background, including action buttons that otherwise look outside it. */}
-      {/*
-       * Heading right-click opens the ellipsis menu like file explorers, avoiding precise targets.
-       * Listen only on headings because conversation rows below have their own menus.
-       */}
+    <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cx('sidebar-project', focused && 'sidebar-project-focused', isDragging && 'relative z-10 bg-surface-high opacity-90')}>
+      {!focused && <>
       <ContextMenu
         disabled={!contextMenu || !project.isOwner || editing}
         trigger={
@@ -890,137 +789,38 @@ function ProjectGroup({
       >
         <ProjectMenuItems variant="context" project={project} onRename={() => setEditing(true)} onNavigate={onNavigate} />
       </ContextMenu>
-
-      {open ? (
-        <ul className="mt-1 mb-2 ml-3 flex flex-col gap-px border-l border-line pl-1.5">
-          {/*
-           * Single-project navigation uses consistent small-caps Board, Sessions, Scheduled, and
-           * trailing Archive sections. Board and Scheduled headings link to pages without inline
-           * rows. All-project views omit these repeated headings for density, retaining Add and
-           * sessions; Board stays in project menus.
-           */}
-          {focused ? (
-            <>
-              <li>
-                <NavLink
-                  to={`/p/${project.id}/board`}
-                  onClick={onNavigate}
-                  className={({ isActive }) => cx(
-                    'flex min-h-11 items-center gap-1.5 rounded px-1 text-[0.6875rem] font-semibold tracking-wider uppercase transition-colors hover:text-ink-soft md:min-h-7 pointer-coarse:min-h-11',
-                    isActive ? 'text-ink' : 'text-ink-faint',
-                  )}
-                >
-                  <SquareKanban size={11} className="shrink-0" />
-                  <span className="flex-1">{t('shell.project.board')}</span>
-                  <BoardCounts counts={project.cardCounts} />
-                </NavLink>
-              </li>
-              <WorktreesLine projectId={project.id} onNavigate={onNavigate} />
-              <li className="mt-2 flex h-7 items-center gap-1.5 px-1 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
-                <MessagesSquare size={11} className="shrink-0" />
-                <span className="flex-1">{t('shell.project.sessions')}</span>
-                <span className="tabular-nums">{active.length}</span>
-              </li>
-            </>
-          ) : null}
-          {/* Adding opens the list receiving the item, like new scheduled tasks. */}
-          <li>
-            <NavLink
-              to={`/p/${project.id}/c/new`}
-              onClick={onNavigate}
-              className={({ isActive }) => cx(
-                'flex min-h-11 items-center gap-2 rounded-md px-2 text-[0.8125rem] transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11',
-                isActive ? 'bg-surface-high text-ink' : 'text-ink-faint',
-              )}
-            >
-              <Plus size={13} className="shrink-0" />{t('shell.project.newSession')}
-            </NavLink>
-          </li>
-          {active.length > 0 ? (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-              onDragEnd={onDragEnd}
-              // Escape cancellation also releases the mouse over the link: suppress its click too
-              // or cancellation opens the conversation.
-              onDragCancel={swallowNextClick}
-            >
-              <SortableContext
-                items={visibleActive.map((entry) => entry.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {visibleActive.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    conversation={conversation}
-                    toggleFavorite={toggleFavorite}
-                    onNavigate={onNavigate}
-                  />
-                ))}
+      </>}
+      {open && <div className={cx('sidebar-project-content', !focused && 'sidebar-project-nested')}>
+          <ul className="sidebar-project-links">
+            <li><NavLink to={`/p/${project.id}/board`} onClick={onNavigate} className={({ isActive }) => cx('sidebar-project-link', isActive && 'sidebar-current')}><SquareKanban size={14} /><span className="flex-1">{t('shell.project.board')}</span><BoardCounts counts={project.cardCounts} /></NavLink></li>
+            <WorktreesLine projectId={project.id} onNavigate={onNavigate} />
+            {focused && <li><NavLink to={`/p/${project.id}/schedules`} onClick={onNavigate} className={({ isActive }) => cx('sidebar-project-link', isActive && 'sidebar-current')}><CalendarClock size={14} /><span className="flex-1">{t('schedule.sidebar.heading')}</span><span className="text-[0.625rem] text-ink-faint">{schedules.length}</span></NavLink></li>}
+          </ul>
+        {focused && <>
+          <div className="sidebar-sessions-heading"><span>{t('shell.project.sessions')}<span className="ml-2 text-[0.625rem] font-normal tabular-nums text-ink-faint">{active.length}</span></span>
+            <IconButton label={t('shell.sessions.filter')} size="sm" aria-expanded={filterOpen} onClick={() => { setFilterOpen(value => !value); setFilter(''); if (!filterOpen) requestAnimationFrame(() => filterInput.current?.focus()) }}><Search size={14} /></IconButton>
+            <Tooltip label={t('shell.project.newSession')}><NavLink to={`/p/${project.id}/c/new`} onClick={onNavigate} aria-label={t('shell.project.newSession')} className="sidebar-add-session"><Plus size={16} /></NavLink></Tooltip>
+          </div>
+          {filterOpen && <div className="sidebar-session-filter"><Search size={14} /><input ref={filterInput} type="search" value={filter} onChange={event => setFilter(event.target.value)} aria-label={t('shell.sessions.search')} placeholder={t('shell.sessions.search')} /><IconButton label={t('shell.sessions.clear')} size="sm" onClick={() => { setFilter(''); filterInput.current?.focus() }}><X size={13} /></IconButton></div>}
+        </>}
+        <div className="sidebar-session-scroll" data-sidebar-session-scroll={project.id}>
+          <ul className="flex flex-col gap-px">
+            {!focused && <li><NavLink to={`/p/${project.id}/c/new`} onClick={onNavigate} className="sidebar-new-session"><Plus size={14} />{t('shell.project.newSession')}</NavLink></li>}
+            {active.length > 0 ? <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis, restrictToParentElement]} onDragEnd={onDragEnd} onDragCancel={swallowNextClick}>
+              <SortableContext items={visibleActive.map(entry => entry.id)} strategy={verticalListSortingStrategy}>
+                {visibleActive.map(conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={!query} onNavigate={onNavigate} />)}
               </SortableContext>
-            </DndContext>
-          ) : (
-            <li className="px-2 py-1.5 text-xs text-ink-faint">{t('shell.conversations.empty')}</li>
-          )}
-
-          {focused && (active.length > visibleActive.length || showAll) && <li>
-            <button type="button" onClick={() => setShowAll((value) => !value)} className="min-h-9 w-full rounded px-2 text-left text-xs text-ink-soft hover:bg-surface-high">
-              {t(showAll ? 'shell.switcher.less' : 'shell.switcher.more', { count: active.length })}
-            </button>
-          </li>}
-
-          <SidebarSchedules
-            projectId={project.id}
-            tasks={schedules}
-            conversations={scheduled}
-            focused={focused}
-            onNavigate={onNavigate}
-            renderRun={(conversation) => (
-              <ConversationRow
-                key={conversation.id}
-                conversation={conversation}
-                toggleFavorite={toggleFavorite}
-                draggable={false}
-                onNavigate={onNavigate}
-              />
-            )}
-          />
-
-          {/*
-           * Collapsed at list end: archived work remains reachable without crowding current
-           * content. Outside drag contexts because archives have no manual order.
-           */}
-          {archived.length > 0 ? (
-            <li>
-              <button
-                type="button"
-                onClick={() => setArchiveOpen((current) => !current)}
-                aria-expanded={archiveOpen}
-                className="flex h-7 w-full items-center gap-1 rounded px-1 text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink-soft"
-              >
-                <ChevronRight
-                  size={11}
-                  className={cx('shrink-0 transition-transform', archiveOpen && 'rotate-90')}
-                />
-                {t('shell.conversations.archived', { count: String(archived.length) })}
-              </button>
-              {archiveOpen ? (
-                <ul className="flex flex-col gap-px">
-                  {archived.map((conversation) => (
-                    <ConversationRow
-                      key={conversation.id}
-                      conversation={conversation}
-                      toggleFavorite={toggleFavorite}
-                      onNavigate={onNavigate}
-                    />
-                  ))}
-                </ul>
-              ) : null}
-            </li>
-          ) : null}
-        </ul>
-      ) : null}
+            </DndContext> : <li className="px-3 py-3 text-xs text-ink-faint">{t('shell.conversations.empty')}</li>}
+            {query && !visibleActive.length && <li role="status" className="px-3 py-3 text-xs text-ink-faint">{t('shell.sessions.noResults')}</li>}
+            {focused && !query && (active.length > visibleActive.length || showAll) && <li><button type="button" onClick={() => setShowAll(value => !value)} className="min-h-11 w-full rounded px-3 text-left text-xs text-ink-faint hover:bg-surface-high">{t(showAll ? 'shell.switcher.less' : 'shell.switcher.more', { count: active.length })}</button></li>}
+            {!focused && <SidebarSchedules projectId={project.id} tasks={schedules} conversations={scheduled} focused={false} onNavigate={onNavigate} renderRun={conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={false} onNavigate={onNavigate} />} />}
+          </ul>
+        </div>
+        {archived.length > 0 && <div className="sidebar-archives">
+          <button type="button" onClick={() => setArchiveOpen(value => !value)} aria-expanded={archiveOpen} aria-controls={`sidebar-archives-${project.id}`}><Archive size={14} /><span>{t('shell.conversations.archived', { count: String(archived.length) })}</span><ChevronRight size={12} className={cx('ml-auto', archiveOpen && 'rotate-90')} /></button>
+          {archiveOpen && <ul id={`sidebar-archives-${project.id}`}>{archived.map(conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={false} onNavigate={onNavigate} />)}</ul>}
+        </div>}
+      </div>}
     </li>
   )
 }
@@ -1063,9 +863,9 @@ function WorktreesLine({ projectId, onNavigate }: { projectId: string; onNavigat
       <NavLink
         to={`/p/${projectId}#worktrees`}
         onClick={onNavigate}
-        className="flex min-h-11 items-center gap-1.5 rounded px-1 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft md:min-h-7 pointer-coarse:min-h-11"
+        className="sidebar-project-link"
       >
-        <FolderGit2 size={11} className="shrink-0" />
+        <FolderGit2 size={14} className="shrink-0" />
         <span className="flex-1">{t('shell.project.worktrees')}</span>
         <span className="shrink-0 font-medium tracking-normal normal-case tabular-nums">
           {pending > 0
@@ -1102,12 +902,13 @@ function ConversationRow({
   const openMatch = useMatch('/p/:projectId/c/:conversationId')
   const contextMenu = useContextMenuEnabled()
   const [editing, setEditing] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [contextOpen, setContextOpen] = useState(false)
   // Socket status takes precedence over the load-time list snapshot.
   const status = useLiveStatus(conversation.id) ?? conversation.status
   const background = useLiveBackground(conversation.id)
   const loops = useLiveLoops(conversation.id)
   const pushedSeq = useLiveSeq(conversation.id)
-  const detailed = useSidebarDetailed()
   // Same precedence as status: pushed values override the load-time list. Cold threads have no
   // pushes yet, so list readings remain correct.
   const metrics = useLiveMetrics(conversation.id) ?? conversation.metrics
@@ -1159,107 +960,27 @@ function ConversationRow({
   const unread = !isActive && isUnread(conversation, pushedSeq)
 
   return (
-    // Right-clicking the row opens the ellipsis menu without requiring a precise button target.
-    <ContextMenu
-      disabled={!contextMenu}
-      trigger={
-    <li
-      ref={setNodeRef}
-      style={style}
-      // Nondraggable rows stay navigable: disabled hook attributes would set aria-disabled on all
-      // links and buttons, including favorites.
-      {...(sortable ? attributes : {})}
-      {...(sortable ? listeners : {})}
-      className={cx(
-        'group/row flex rounded-md pr-1 transition-colors',
-        'min-h-11 items-center',
-        isDragging ? 'shadow-float z-10 bg-surface-high opacity-90' : '',
-        isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
-        /*
-         * Promote the title one ink level when showing muted usage below; otherwise both looked
-         * equal and the row lacked a heading. Raise the title instead of dimming usage because
-         * muted ink is the minimum. Unread retains full ink and bold, preserving its difference
-         * from read state.
-         */
-        isActive || unread ? 'text-ink' : detailed ? 'text-ink-soft' : 'text-ink-faint',
-      )}
-    >
-      <NavLink
-        to={`/p/${conversation.projectId}/c/${conversation.id}`}
-        title={conversation.title}
-        onClick={onNavigate}
-        onDoubleClick={(event) => {
-          event.preventDefault()
-          if (conversation.isOwner) setEditing(true)
-        }}
-        className={cx(
-          'flex min-w-0 flex-1 flex-col justify-center px-2 text-[0.8125rem]',
-          'py-2',
-        )}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 text-ink-faint">
-            <AgentIcon agent={conversation.agent} size={13} />
+    <ContextMenu disabled={!contextMenu} onOpenChange={setContextOpen} trigger={
+      <li ref={setNodeRef} style={style} {...(sortable ? attributes : {})} {...(sortable ? listeners : {})}
+        data-sidebar-session={conversation.id}
+        className={cx('group/row sidebar-session', isDragging && 'relative z-10 bg-surface-high opacity-90', isActive && 'sidebar-current', unread && 'sidebar-unread')}>
+        <SessionPreview conversation={conversation} metrics={metrics} signals={signals} disabled={menuOpen || contextOpen} trigger={
+          <NavLink to={`/p/${conversation.projectId}/c/${conversation.id}`} onClick={onNavigate}
+            onDoubleClick={event => { event.preventDefault(); if (conversation.isOwner) setEditing(true) }}
+            className="sidebar-session-link">
+            <AgentIcon agent={conversation.agent} size={16} />
+            <span className="sidebar-session-title">{conversation.title}</span>
+            {conversation.favorite && <Star size={10} aria-label={t('shell.favorites.heading')} className="shrink-0 text-ink-faint" />}
+            <span className="sidebar-session-signals">{present && <SignalDot signal={present} />}{loop && <SignalDot signal={loop} />}</span>
+          </NavLink>}>
+          <span className="sidebar-session-actions">
+            <time className="sidebar-session-age" dateTime={new Date(conversation.updatedAt).toISOString()} title={relativeDate(conversation.updatedAt)}>{compactRelativeDate(conversation.updatedAt)}</time>
+            <Menu onOpenChange={setMenuOpen} trigger={<button type="button" aria-label={t('shell.conversation.actions')} className="sidebar-session-menu" onPointerDown={event => event.stopPropagation()}><MoreHorizontal size={15} /></button>}>
+              <ConversationMenuItems variant="dropdown" conversation={conversation} toggleFavorite={toggleFavorite} onRename={() => setEditing(true)} />
+            </Menu>
           </span>
-          <span className={cx('line-clamp-2 break-words', unread && 'font-medium')}>{conversation.title}</span>
-          {/*
-           * At most two dots: current state and future loops. The first shows the most severe
-           * present signal; loops remain beside it even during turns. Immutable origin markers
-           * precede them without competing, disappearing on hover to reveal actions.
-           */}
-          <span className="ml-auto flex shrink-0 items-center gap-1">
-            {conversation.origin ? (
-              <span
-                title={t('shell.conversation.origin', { label: conversation.origin.label })}
-                className="rounded-full bg-accent-wash px-1 py-px text-[0.5625rem] font-semibold uppercase tracking-wide text-accent"
-              >
-                {t('shell.conversation.api')}
-              </span>
-            ) : null}
-            {present ? <SignalDot signal={present} /> : null}
-            {loop ? <SignalDot signal={loop} /> : null}
-          </span>
-        </span>
-        {/* Outside the main tree show branch and tree state. Otherwise omit so worktree sessions stand out. */}
-        <WorktreeTag conversation={conversation} />
-        {detailed ? <ConversationMetricsLine metrics={metrics} /> : null}
-      </NavLink>
-
-      {/*
-       * Keep existing bookmarks visible; adding moves into the menu to return an otherwise
-       * invisible button's space to titles. Available on shared threads.
-       */}
-      {conversation.favorite ? (
-      <IconButton
-        label={t('shell.conversation.unfavorite')}
-        disabled={toggleFavorite.isPending}
-        size="sm"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={() =>
-          toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })
-        }
-        className="self-center text-accent hover:text-accent"
-      >
-        <Star size={14} className={conversation.favorite ? 'fill-current' : undefined} />
-      </IconButton>
-      ) : null}
-
-        <Menu
-          trigger={
-            <IconButton
-              label={t('shell.conversation.actions')}
-              size="sm"
-              className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
-            >
-              <MoreHorizontal size={15} />
-            </IconButton>
-          }
-        >
-          <ConversationMenuItems variant="dropdown" conversation={conversation} toggleFavorite={toggleFavorite} onRename={() => setEditing(true)} />
-        </Menu>
-    </li>
-      }
-    >
+        </SessionPreview>
+      </li>}>
       <ConversationMenuItems variant="context" conversation={conversation} toggleFavorite={toggleFavorite} onRename={() => setEditing(true)} />
     </ContextMenu>
   )
@@ -1281,6 +1002,7 @@ function ConversationMenuItems({
   onRename: () => void
 }) {
   const t = useTranslate()
+  const { copy, state: copyState } = useCopy()
   const remove = useDeleteConversation()
   const setArchived = useArchiveConversation()
   const isArchived = conversation.archivedAt !== null
@@ -1294,6 +1016,9 @@ function ConversationMenuItems({
     <>
       <Item icon={<Star size={14} />} disabled={toggleFavorite.isPending} onSelect={() => toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })}>
         {conversation.favorite ? t('shell.conversation.unfavorite') : t('shell.conversation.favorite')}
+      </Item>
+      <Item icon={<Link2 size={14} />} onSelect={event => { event.preventDefault(); copy(sessionReference(conversation.id)) }}>
+        {t(copyState === 'copied' ? 'sessionRef.copied' : copyState === 'failed' ? 'sessionRef.copyFailed' : 'sessionRef.copy')}
       </Item>
       {conversation.isOwner ? (
         <>
@@ -1388,40 +1113,6 @@ function ProjectMenuItems({
         ))}
       </MenuSwatchRow>
     </>
-  )
-}
-
-/**
- * Usage readings beneath the title without border or background: continuation of the row rather
- * than an embedded panel. Keep one line, clipping rightward instead of wrapping, ordered from most
- * useful to incidental.
- */
-function ConversationMetricsLine({ metrics }: { metrics: ConversationMetrics }) {
-  const t = useTranslate()
-  const { context } = metrics
-
-  return (
-    <span className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden pl-[21px] text-[0.6875rem] whitespace-nowrap text-ink-faint tabular-nums">
-      <span title={t('shell.conversation.turnsTitle')}>
-        {t('shell.conversation.turns', { count: metrics.turnCount })}
-      </span>
-      <span title={t('shell.conversation.sizeTitle')}>{formatBytes(metrics.journalBytes)}</span>
-      {context && context.maxTokens > 0 ? (
-        <span
-          title={t('shell.conversation.contextTitle', {
-            used: formatTokens(context.usedTokens),
-            max: formatTokens(context.maxTokens),
-          })}
-        >
-          {Math.round((context.usedTokens / context.maxTokens) * 100)} %
-        </span>
-      ) : null}
-      {metrics.model ? (
-        <span className="truncate" title={t('shell.conversation.modelTitle')}>
-          {metrics.model}
-        </span>
-      ) : null}
-    </span>
   )
 }
 

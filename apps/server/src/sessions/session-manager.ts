@@ -22,7 +22,10 @@ import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
+import { sessionReferenceContext } from '../conversations/references.js'
+import { publicUrlOf } from '../settings/app-settings.js'
 import { projectOverview } from '../agents/overview.js'
+import { adoptSessionTitle } from '../conversations/title.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
 import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
@@ -745,6 +748,11 @@ export class SessionManager {
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },
 
+      sessionReferenceContext: (text, current) => sessionReferenceContext(
+        this.db, conversation.projectId, text, publicUrlOf(this.db, this.config),
+        builtinMcpEnabled(this.config.mcp.sillageServer, current),
+      ),
+
       // Follow MCP server switches except `strictMcp`, which excludes undeclared
       // servers and therefore concerns tools rather than
       // Sillage's descriptions of platform state.
@@ -1338,27 +1346,22 @@ export class SessionManager {
     return row !== undefined
   }
 
-  /** Adopts CLI-proposed titles unless users renamed conversations, avoiding generic 'New conversation' without overwriting explicit choices. */
+  /** Native summaries are a fallback; explicit human and agent titles take precedence. */
   private async adoptSuggestedTitle(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (!managed) return
 
     const conversation = this.db
-      .select({ title: conversations.title, titleSetByUser: conversations.titleSetByUser })
+      .select({ title: conversations.title, titleSetByUser: conversations.titleSetByUser, titleSetByAgent: conversations.titleSetByAgent })
       .from(conversations)
       .where(eq(conversations.id, conversationId))
       .get()
-    if (!conversation || conversation.titleSetByUser) return
+    if (!conversation || conversation.titleSetByUser || conversation.titleSetByAgent) return
 
     const title = await managed.runner.suggestedTitle()
     if (!title || title === conversation.title) return
 
-    this.db
-      .update(conversations)
-      .set({ title })
-      .where(eq(conversations.id, conversationId))
-      .run()
-    this.statusBus.emit('title', { conversationId, title })
+    adoptSessionTitle(this.db, this.statusBus, conversationId, title, 'cli')
   }
 
   /** Applies reread database configuration. SDK live model, effort and permission updates preserve context; stop and resume only on CLI rejection. Known exception: Claude `bypassPermissions` changes require startup in both directions. Entering explicitly fails ('the session was not launched with --dangerously-skip-permissions'); leaving apparently succeeds but is ineffective, so runners reject explicitly. Delay restart until turn completion to avoid losing ongoing work for future settings. */

@@ -1,3 +1,6 @@
+import { Logo } from '../Logo'
+import { useToolStyle, type ToolStyle } from '../../lib/tool-style'
+import { toolLabel, toolOrigin, toolPreview, toolIntent, INTENT_LABELS } from '../../lib/tool-presentation'
 import {
   Bot,
   ChevronRight,
@@ -17,7 +20,7 @@ import {
   SquareTerminal,
   Wrench,
 } from 'lucide-react'
-import { memo, useState, type ReactNode } from 'react'
+import { memo, useCallback, useLayoutEffect, useState, type ReactNode } from 'react'
 import { isSpawnTool, type ToolOutputDto } from '@sillage/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
@@ -78,7 +81,7 @@ function summarize(name: string, input: unknown): ToolSummary | null {
       ? ['command']
       : name === 'WebFetch' || name === 'WebSearch'
         ? ['url', 'query']
-        : ['file_path', 'path', 'pattern', 'prompt']
+        : ['file_path', 'path', 'file', 'title', 'query', 'pattern', 'prompt', 'card_number', 'conversation_id']
 
   for (const key of candidates) {
     const value = fields[key]
@@ -173,14 +176,23 @@ function OutputSlot({
 export const ToolCall = memo(function ToolCall({
   tool,
   conversationId,
+  variant,
+  onOpenChange,
 }: {
   tool: ToolItem
   conversationId: string
+  variant?: ToolStyle
+  onOpenChange?: (id: string, open: boolean) => void
 }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const [raw, setRaw] = useState(false)
   const summary = summarize(tool.name, tool.input)
+  const [preferredStyle] = useToolStyle()
+  const style = variant ?? preferredStyle
+  const origin = toolOrigin(tool.name)
+  const label = toolLabel(tool.name)
+  const statusLabel = t(tool.status === 'running' ? 'toolStyle.pending' : tool.status === 'done' ? 'toolStyle.done' : tool.status === 'failed' ? 'toolStyle.failed' : 'toolStyle.stopped')
 
   // Large output is omitted from thread transfers: replay supplies only a preview and the full body
   // loads when this card opens.
@@ -195,24 +207,26 @@ export const ToolCall = memo(function ToolCall({
   return (
     <div
       className={cx(
-        'rounded-md border bg-surface/60 text-sm',
+        `sg-tool sg-tools-${style} sg-tool-${origin.kind} sg-tool-${tool.status} text-sm`,
         tool.status === 'failed' ? 'border-critical/40' : 'border-line',
       )}
+      data-tool-id={tool.id}
+      data-thread-anchor={`tool-${tool.id}`}
     >
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        title={`${label} — ${statusLabel}${summary ? ` — ${summary.text}` : ''}`}
+        onClick={() => { setOpen(!open); onOpenChange?.(tool.id, !open) }}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
+        className="sg-tool-heading flex w-full items-center gap-2 text-left"
       >
         <ChevronRight
           size={14}
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
-        <span className="shrink-0 text-ink-faint">
-          {TOOL_ICONS[tool.name] ?? <Wrench size={14} />}
-        </span>
-        <span className="shrink-0 font-medium text-ink">{tool.name}</span>
+        {origin.kind === 'sillage' ? <Logo size={16} className="shrink-0 text-accent" /> : origin.kind === 'mcp' ? <span className="sg-mcp-mark">MCP</span> : <span className="sg-native-icon shrink-0 text-ink-faint">{TOOL_ICONS[tool.name] ?? <Wrench size={14} />}</span>}
+        <span className="sg-tool-label min-w-0 truncate font-medium">{label}</span>
+        {origin.kind === 'mcp' ? <span className="sg-tool-server" title={origin.server}>{origin.server}</span> : null}
         {summary ? (
           <span
             className={cx('min-w-0 flex-1 truncate text-xs text-ink-faint', summary.mono && 'font-mono')}
@@ -224,7 +238,7 @@ export const ToolCall = memo(function ToolCall({
           <span className="flex-1" />
         )}
 
-        <ToolStatusIcon status={tool.status} />
+        <span className="shrink-0" role="img" aria-label={statusLabel}><ToolStatusIcon status={tool.status} /></span>
         {tool.durationMs !== null ? (
           <span className="shrink-0 text-[0.6875rem] text-ink-faint">
             {formatDuration(tool.durationMs)}
@@ -232,8 +246,10 @@ export const ToolCall = memo(function ToolCall({
         ) : null}
       </button>
 
+      {style === 'cards' && !open ? <div className="sg-tool-preview" title={toolPreview(tool)}>{toolPreview(tool)}</div> : null}
       {open ? (
-        <div className="flex flex-col gap-2 border-t border-line px-2.5 py-2">
+        <div className="sg-tool-detail flex flex-col gap-2 border-t border-line px-2.5 py-2">
+          <span className="break-all text-xs text-ink-faint">{t('toolStyle.rawName', { name: tool.name })}</span>
           {readable ? <ViewSwitch raw={raw} onChange={setRaw} /> : null}
 
           {readable && !raw ? (
@@ -339,7 +355,7 @@ function Payload({
 const NAMES_SHOWN = 3
 
 function summarizeNames(tools: ToolItem[]): string {
-  const names = [...new Set(tools.map((tool) => tool.name))]
+  const names = [...new Set(tools.map((tool) => toolLabel(tool.name)))]
   const shown = names.slice(0, NAMES_SHOWN).join(', ')
   return names.length > NAMES_SHOWN ? `${shown}, +${names.length - NAMES_SHOWN}` : shown
 }
@@ -350,72 +366,80 @@ function summarizeNames(tools: ToolItem[]): string {
  * delta batch, causing reference-based memoization to miss and redraw every group sixteen times per
  * second.
  */
-const ToolCallGroupInner = function ToolCallGroup({
-  tools,
-  conversationId,
+export const ToolCallGroup = memo(function ToolCallGroup({
+  tools, conversationId, complete = true, mayCollapse = true, variant,
 }: {
   tools: ToolItem[]
   conversationId: string
+  complete?: boolean
+  mayCollapse?: boolean
+  variant?: ToolStyle
 }) {
   const t = useTranslate()
-  const [open, setOpen] = useState(false)
-
+  const [preferredStyle] = useToolStyle()
+  const style = variant ?? preferredStyle
+  const eligible = complete && tools.length >= 2
+  const [collapsed, setCollapsed] = useState(eligible && mayCollapse)
+  const [manual, setManual] = useState(false)
+  const [pinnedIntent, setPinnedIntent] = useState(false)
+  const [opened, setOpened] = useState<Set<string>>(() => new Set())
+  const onOpenChange = useCallback((id: string, open: boolean) => {
+    setOpened((previous) => {
+      const next = new Set(previous)
+      if (open) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+  // Le lecteur garde la main : une ouverture manuelle ou une lecture plus haut bloque le repli.
+  useLayoutEffect(() => {
+    if (eligible && mayCollapse && !manual && !pinnedIntent && opened.size === 0) setCollapsed(true)
+  }, [eligible, mayCollapse, manual, pinnedIntent, opened.size])
+  const folded = eligible && collapsed
+  const header = folded || manual
   const failed = tools.filter((tool) => tool.status === 'failed').length
+  const interrupted = tools.filter((tool) => tool.status === 'interrupted').length
   const total = tools.reduce((sum, tool) => sum + (tool.durationMs ?? 0), 0)
+  const sillage = tools.filter((tool) => toolOrigin(tool.name).kind === 'sillage').length
+  const external = tools.filter((tool) => toolOrigin(tool.name).kind === 'mcp').length
+  const servers = [...new Set(tools.map((tool) => toolOrigin(tool.name)).filter((origin) => origin.kind === 'mcp').map((origin) => origin.server))].join(', ')
 
-  return (
-    <div className="rounded-md border border-line bg-surface/60 text-sm">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
-      >
-        <ChevronRight
-          size={14}
-          className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
-        />
-        <Wrench size={14} className="shrink-0 text-ink-faint" />
-        <span className="shrink-0 font-medium text-ink">
-          {t(
-            tools.length > 1 ? 'toolcall.group.count.other' : 'toolcall.group.count.one',
-            { count: tools.length },
-          )}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink-faint">
-          {summarizeNames(tools)}
-        </span>
+  return <div className={`sg-tool-sequence sg-tools-${style}`} data-thread-anchor={`tools-${tools[0]?.id}`} data-tool-sequence data-folded={folded}>
+    {header ? <button type="button" className="sg-tool-group-heading" aria-expanded={!folded}
+      onClick={() => { setManual(true); setCollapsed(!folded) }}>
+      <ChevronRight size={14} className={cx('shrink-0 text-ink-faint', !folded && 'rotate-90')} />
+      <span className="shrink-0 font-medium">{t(tools.length > 1 ? 'toolcall.group.count.other' : 'toolcall.group.count.one', { count: tools.length })}</span>
+      <span className="min-w-0 flex-1 truncate text-xs text-ink-faint" title={summarizeNames(tools)}>{summarizeNames(tools)}</span>
+      {sillage ? <span className="sg-origin-badge text-accent" title={t('toolStyle.origin.sillage', { count: sillage })}><Logo size={16} />{sillage}</span> : null}
+      {external ? <span className="sg-origin-badge" title={servers} aria-label={`${t('toolStyle.origin.mcp', { count: external })}: ${servers}`}><span className="sg-mcp-mark">MCP</span>{external}</span> : null}
+      {failed > 0 ? <span className="shrink-0 text-xs text-critical">{t(failed > 1 ? 'toolcall.group.failed.other' : 'toolcall.group.failed.one', { count: failed })}</span> : null}
+      {interrupted > 0 ? <span className="shrink-0 text-xs text-ink-faint" title={t('toolStyle.interrupted', { count: interrupted })}><CircleSlash size={13} />{interrupted}</span> : null}
+      {total > 0 ? <span className="sg-tool-duration text-[0.6875rem] text-ink-faint">{formatDuration(total)}</span> : null}
+    </button> : null}
+    {!folded ? <div className="sg-tool-list">
+      {style === 'intent' ? intentSections(tools).map((section) => <IntentSection key={section[0]!.id} label={t(INTENT_LABELS[toolIntent(section[0]!)])} count={section.length} onInteract={() => setPinnedIntent(true)}>
+        {section.map((tool) => <ToolCall key={tool.id} tool={tool} conversationId={conversationId} variant={style} onOpenChange={onOpenChange} />)}
+      </IntentSection>) : tools.map((tool) => <ToolCall key={tool.id} tool={tool} conversationId={conversationId} variant={style} onOpenChange={onOpenChange} />)}
+    </div> : null}
+  </div>
+}, (previous, next) => previous.conversationId === next.conversationId && previous.complete === next.complete && previous.mayCollapse === next.mayCollapse && previous.variant === next.variant && previous.tools.length === next.tools.length && previous.tools.every((tool, index) => tool === next.tools[index]))
 
-        {failed > 0 ? (
-          <span className="shrink-0 text-[0.6875rem] font-medium text-critical">
-            {t(
-              failed > 1 ? 'toolcall.group.failed.other' : 'toolcall.group.failed.one',
-              { count: failed },
-            )}
-          </span>
-        ) : null}
-        {total > 0 ? (
-          <span className="shrink-0 text-[0.6875rem] text-ink-faint">{formatDuration(total)}</span>
-        ) : null}
-      </button>
-
-      {open ? (
-        <div className="flex flex-col gap-1.5 border-t border-line p-1.5">
-          {tools.map((tool) => (
-            <ToolCall key={tool.id} tool={tool} conversationId={conversationId} />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
+/** Des catégories locales, sans générer de titres ni prétendre connaître l’intention du modèle. */
+function intentSections(tools: ToolItem[]): ToolItem[][] {
+  const sections: ToolItem[][] = []
+  for (const tool of tools) {
+    const last = sections.at(-1)
+    if (last && toolIntent(last[0]!) === toolIntent(tool)) last.push(tool)
+    else sections.push([tool])
+  }
+  return sections
 }
-
-export const ToolCallGroup = memo(
-  ToolCallGroupInner,
-  (prev, next) =>
-    prev.conversationId === next.conversationId &&
-    prev.tools.length === next.tools.length &&
-    // The fold replaces changed call objects, so per-item reference comparison is exact without
-    // checking every field.
-    prev.tools.every((tool, index) => tool === next.tools[index]),
-)
+function IntentSection({ label, count, onInteract, children }: { label: string; count: number; onInteract: () => void; children: ReactNode }) {
+  const [open, setOpen] = useState(true)
+  return <div>
+    <button type="button" className="sg-tool-intent flex w-full items-center gap-2 text-left" aria-expanded={open} onClick={() => { onInteract(); setOpen(!open) }}>
+      <ChevronRight size={12} className={cx(open && 'rotate-90')} /><span className="flex-1">{label}</span><span className="text-ink-faint">{count}</span>
+    </button>
+    <div hidden={!open} className={open ? 'sg-tool-list' : undefined}>{children}</div>
+  </div>
+}
