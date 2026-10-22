@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sillage — Les outils dans le fil</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="prototype.css"></head>
+<body>
+<header><a href="#" class="brand">Sillage <span>Atelier d’interface</span></a><button id="theme">Passer au thème clair</button></header>
+<main>
+<section class="intro"><h1>Quelle place pour les outils ?</h1><p>Cinq façons de suivre le travail de l’agent. La même conversation, avec les outils natifs, Sillage et MCP externes.</p></section>
+<div class="toolbar"><div class="view-buttons" aria-label="Présentation"><button data-view="gallery" aria-pressed="true">Comparer</button><button data-view="focus" aria-pressed="false">Voir dans le fil</button></div><label>Outils <select id="grouping"><option value="separate">Séparés</option><option value="closed">Groupés repliés</option><option value="open">Groupés dépliés</option></select></label><label>Dernier outil <select id="state"><option value="running">En cours</option><option value="done">Réussi</option><option value="failed">En erreur</option><option value="interrupted">Interrompu</option></select></label><button id="expand">Tout déplier</button></div>
+<section class="replay" aria-label="Simuler un enchaînement d’outils"><div class="replay-controls"><button id="play">Lire un enchaînement</button><button id="step">Étape suivante</button><button id="reset">Revenir à la maquette</button><label>Regrouper <select id="policy"><option value="after-text">À la reprise du texte</option><option value="immediate">Dès 2 outils terminés (actuel)</option></select></label></div><p id="replay-status" role="status">Simulation : les appels arrivent un par un, se terminent, puis l’agent reprend la parole.</p><progress id="replay-progress" max="15" value="0" aria-label="Avancement de la simulation"></progress></section>
+<nav id="choices" aria-label="Choisir une piste"></nav>
+<div id="gallery"></div>
+<footer>Maquettes interactives · Données fictives · Même proposition pour Sillage Server et Desktop.<br>Ouvre les outils pour voir leurs détails. Aucun changement appliqué à tes conversations.</footer>
+</main><script src="prototype.js"></script>
+</body></html>

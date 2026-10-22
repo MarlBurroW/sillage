@@ -1,3 +1,4 @@
+import { ToolStyleControls } from '../components/ToolStyleControls'
 import { Code, Contrast, Languages, Loader, Moon, Palette, Sun, TextQuote } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { AppearanceControls } from '../components/AppearanceControls'
@@ -145,6 +146,11 @@ export function AppearanceSection() {
         <CardBody>
           <TypingIndicatorControls />
         </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title={t('toolStyle.title')} description={t('toolStyle.description')} icon={<Logo size={16} />} />
+        <CardBody><ToolStyleControls /></CardBody>
       </Card>
 
       {/*

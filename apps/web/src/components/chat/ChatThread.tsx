@@ -39,6 +39,7 @@ export function ChatThread({
   rows,
   conversationId,
   canDecide = false,
+  mayCollapseTools = true,
   onFork,
   flashedId = null,
   anchors,
@@ -52,6 +53,7 @@ export function ChatThread({
    * Allow responding to prompts. False by default, including read-only shared conversations, where
    * prompts render without actions.
    */
+  mayCollapseTools?: boolean
   canDecide?: boolean
   /** Absent when threads cannot fork because subagents have no independent entity. */
   onFork?: (message: MessageItem) => void
@@ -106,7 +108,7 @@ export function ChatThread({
 
   function renderRow(row: ChatRow) {
         if (row.kind === 'tool-group') {
-          return <ToolCallGroup key={row.key} tools={row.tools} conversationId={conversationId} />
+          return <ToolCallGroup key={row.key} tools={row.tools} complete={row.complete} mayCollapse={mayCollapseTools} conversationId={conversationId} />
         }
         if (row.kind === 'tool') {
           return <ToolCall key={row.key} tool={row.tool} conversationId={conversationId} />

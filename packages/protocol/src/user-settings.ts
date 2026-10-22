@@ -235,6 +235,7 @@ export interface AppearancePrefs {
   syntax: string | null
   /** Absent on older accounts: the UI uses the Sillage logo. */
   typingIndicator?: string | null
+  toolStyle?: string | null
   /** Slider values keyed by setting name (`hue`, `tint`, `readingSize`, etc.). */
   values: Record<string, number>
 }
@@ -278,6 +279,7 @@ export const appearancePrefsSchema = z.object({
   theme: z.string().max(40).nullable(),
   syntax: z.string().max(40).nullable(),
   typingIndicator: z.string().max(40).nullable().optional(),
+  toolStyle: z.string().max(40).nullable().optional(),
   values: z
     .record(z.string().max(40), z.number().finite())
     .refine((values) => Object.keys(values).length <= 32),

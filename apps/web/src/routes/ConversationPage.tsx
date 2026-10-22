@@ -1,3 +1,4 @@
+import { useThreadLayout } from '../lib/use-thread-layout'
 import { NewsTicker } from '../components/chat/NewsTicker'
 import { TooltipButton } from '../components/ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
@@ -194,6 +195,7 @@ export function ConversationPage() {
    * previous thread remains mounted.
    */
   const [placed, setPlaced] = useState(false)
+  useThreadLayout(scroller, stuckToBottom, placed)
   /** Replay has lasted long enough for a hidden thread to look like a dead screen. */
   const [slowReplay, setSlowReplay] = useState(false)
 
@@ -203,7 +205,7 @@ export function ConversationPage() {
   const visibilityFrame = useRef<number | null>(null)
 
   const turns = useMemo(() => buildTurns(stream.state.items), [stream.state.items])
-  const rows = useMemo(() => buildRows(stream.state.items), [stream.state.items])
+  const rows = useMemo(() => buildRows(stream.state.items, null, stream.state.turnRunning), [stream.state.items, stream.state.turnRunning])
   const subAgents = useMemo(
     () => buildSubAgents(stream.state.items, stream.state.tasks),
     [stream.state.items, stream.state.tasks],
@@ -1294,6 +1296,7 @@ export function ConversationPage() {
     
               <ChatThread
                 rows={view.rows}
+                mayCollapseTools={!placed || stuckToBottom}
                 conversationId={conversationId}
                 canDecide={isOwner}
                 onFork={isOwner && !forking ? setForkTarget : undefined}

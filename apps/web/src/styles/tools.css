@@ -1,0 +1,49 @@
+/* Les variantes partagent leur densité : une origine MCP n’ajoute jamais une ligne. */
+.sg-tool{min-width:0;border-bottom:1px solid var(--sg-line)}
+.sg-tool-heading,.sg-tool-group-heading{min-width:0;min-height:36px;width:100%;display:flex;align-items:center;gap:8px;padding:6px 8px;text-align:left;position:relative;isolation:isolate;overflow:hidden}
+.sg-tool-heading{height:36px;white-space:nowrap;font-size:12px}
+.sg-tool-label{max-width:48%;color:var(--sg-ink);flex-shrink:1}
+.sg-tool-heading:hover,.sg-tool-group-heading:hover{background:var(--sg-surface-high)}
+.sg-tool-heading:focus-visible,.sg-tool-group-heading:focus-visible{outline:2px solid var(--sg-accent);outline-offset:-2px}
+.sg-tool-server{max-width:18%;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:var(--sg-ink-soft);border:1px solid var(--sg-line-strong);border-radius:3px;padding:0 4px;flex-shrink:0}
+.sg-mcp-mark{font:600 8px/14px var(--font-sans);padding:0 3px;border:1px solid var(--sg-line-strong);border-radius:3px;color:var(--sg-ink-soft);flex-shrink:0}
+.sg-tool-sillage{border-left:2px solid var(--sg-accent);border-radius:0!important;background:color-mix(in oklab,var(--sg-accent-wash) 35%,transparent)}
+.sg-tool-sillage .sg-tool-label{color:var(--sg-accent)}
+.sg-tool-mcp{border-left:2px dashed var(--sg-line-strong);border-radius:0!important;background:color-mix(in oklab,var(--sg-surface) 60%,transparent)}
+.sg-tool-failed{border-color:var(--sg-critical)}
+.sg-tool-detail{background:var(--sg-canvas)}
+.sg-tool-preview{height:24px;line-height:20px;padding:0 8px 4px 30px;font-size:11px;color:var(--sg-ink-soft);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.sg-tool-list{display:flex;flex-direction:column;gap:4px;min-width:0}
+.sg-tool-sequence{min-width:0}
+.sg-tool-group-heading{font-size:12px;border-bottom:1px solid var(--sg-line)}
+.sg-origin-badge{display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-size:10px}
+.sg-tool-duration{flex-shrink:0;white-space:nowrap}
+.sg-tools-inline .sg-native-icon{display:none}
+.sg-tools-timeline>.sg-tool-list{border-left:1px solid var(--sg-line-strong);padding-left:14px;margin-left:6px;border-radius:0}
+.sg-tools-timeline.sg-tool{position:relative;border-bottom:0}
+.sg-tools-timeline.sg-tool::before{content:'';position:absolute;left:-18px;top:14px;width:6px;height:6px;border-radius:50%;background:var(--sg-ink-faint)}
+.sg-tools-timeline.sg-tool-running::before{background:var(--sg-accent)}
+.sg-tools-timeline.sg-tool-failed::before{background:var(--sg-critical)}
+.sg-tools-intent>.sg-tool-list{border-left:2px solid var(--sg-line-strong);padding-left:8px;border-radius:0}
+.sg-tool-intent{font-size:11px;font-weight:600;color:var(--sg-ink-soft);padding:10px 8px 4px}
+.sg-tools-cards.sg-tool,.sg-tools-classic.sg-tool{border:1px solid var(--sg-line);border-radius:8px;background:color-mix(in oklab,var(--sg-surface) 60%,transparent)}
+.sg-tools-cards.sg-tool-sillage,.sg-tools-classic.sg-tool-sillage{border-left:2px solid var(--sg-accent);background:color-mix(in oklab,var(--sg-accent-wash) 35%,transparent)}
+.sg-tools-cards.sg-tool-mcp,.sg-tools-classic.sg-tool-mcp{border-left:2px dashed var(--sg-line-strong)}
+.sg-tools-cards.sg-tool-failed,.sg-tools-classic.sg-tool-failed{border-color:var(--sg-critical)}
+.sg-tools-cards>.sg-tool-list,.sg-tools-classic>.sg-tool-list{gap:6px}
+.sg-tools-console.sg-tool-sequence{border:1px solid var(--sg-line);border-radius:6px;padding:4px;background:color-mix(in oklab,var(--sg-surface) 40%,transparent)}
+.sg-tools-console .sg-tool-heading{height:32px;min-height:32px;font-family:var(--font-mono);font-size:11px}
+.sg-tools-console .sg-native-icon{display:none}
+.sg-tools-console .sg-tool-list{gap:0}
+.sg-tools-console.sg-tool{border-bottom:0}
+.sg-tools-console .sg-tool-label{font-family:var(--font-sans)}
+.sg-tool-running>.sg-tool-heading{background:color-mix(in oklab,var(--sg-accent-wash) 30%,transparent)}
+.sg-tool-running>.sg-tool-heading::before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(100deg,transparent 15%,color-mix(in oklab,var(--sg-accent) 14%,transparent) 48%,transparent 80%);background-size:240% 100%;animation:sg-tool-sweep 2.8s ease-in-out infinite}
+.sg-tool-running>.sg-tool-heading::after{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--sg-accent);pointer-events:none;animation:sg-tool-beacon 1.8s ease-in-out infinite}
+.sg-tool-running .sg-tool-label{color:var(--sg-accent)}
+@keyframes sg-tool-sweep{from{background-position:180% 0}to{background-position:-80% 0}}
+@keyframes sg-tool-beacon{0%,100%{opacity:.5}50%{opacity:1}}
+@media(max-width:550px){.sg-tool-heading,.sg-tool-group-heading{gap:6px;padding-left:6px;padding-right:6px}.sg-tool-heading>.text-\[0\.6875rem\],.sg-tool-duration{display:none}.sg-tool-label{max-width:55%}}
+@media(prefers-reduced-motion:reduce){.sg-tool-running>.sg-tool-heading::before{display:none}.sg-tool-running>.sg-tool-heading::after,.sg-tool-running .animate-spin{animation:none}.sg-tool-heading *{transition:none}}
+.sg-tool-sequence.sg-tools-classic:has(>.sg-tool-group-heading),.sg-tool-sequence.sg-tools-cards:has(>.sg-tool-group-heading){border:1px solid var(--sg-line);border-radius:8px;background:color-mix(in oklab,var(--sg-surface) 60%,transparent)}
+.sg-tool-sequence.sg-tools-classic:has(>.sg-tool-group-heading)>.sg-tool-list,.sg-tool-sequence.sg-tools-cards:has(>.sg-tool-group-heading)>.sg-tool-list{padding:6px}
