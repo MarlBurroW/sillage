@@ -1,6 +1,5 @@
 import type { ConversationDto, WorktreeState } from '@sillage/protocol'
 import { useTranslate } from '../lib/i18n'
-import { setPanelOpen, setPanelTab } from '../lib/panel'
 import { useConversationWorktree } from '../lib/worktrees'
 import { cx } from './ui'
 
@@ -26,8 +25,7 @@ export function WorktreeStateMark({ state, className }: { state: WorktreeState; 
 
 /**
  * Session branch and tree state beneath sidebar titles, omitted for main-tree sessions so others
- * stand out. Clicking chooses Git while the enclosing link navigates; nested buttons would be
- * invalid.
+ * stand out. The enclosing session link owns navigation; this label must not also open the panel.
  */
 export function WorktreeTag({ conversation }: { conversation: Pick<ConversationDto, 'id' | 'projectId'> }) {
   const t = useTranslate()
@@ -40,11 +38,7 @@ export function WorktreeTag({ conversation }: { conversation: Pick<ConversationD
       role="note"
       aria-label={t('shell.conversation.worktree', { name: tree.name, state })}
       title={`${tree.name} · ${state}\n${tree.path}`}
-      onClick={() => {
-        setPanelTab('git')
-        setPanelOpen(true)
-      }}
-      className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4 text-ink-faint hover:text-ink-soft"
+      className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4 text-ink-faint"
     >
       <WorktreeStateMark state={tree.state} />
       <span className="min-w-0 truncate font-mono">{tree.name}</span>

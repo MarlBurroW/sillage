@@ -1411,7 +1411,7 @@ export const fr: Catalog = {
   'worktrees.link.edited': 'y a travaillé',
   'worktrees.card': 'Carte #{number}',
   'worktrees.path': 'Chemin',
-  'shell.conversation.worktree': 'Worktree {name}, {state}. Ouvre l\'onglet Git.',
+  'shell.conversation.worktree': 'Worktree {name}, {state}.',
   'worktrees.conversation.label': 'Worktree de la conversation',
   'worktrees.conversation.git': 'Voir le Git',
   'worktrees.conversation.overview': 'Voir les chantiers',

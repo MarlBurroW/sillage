@@ -1416,7 +1416,7 @@ export const en = {
   'worktrees.link.edited': 'worked here',
   'worktrees.card': 'Card #{number}',
   'worktrees.path': 'Path',
-  'shell.conversation.worktree': 'Worktree {name}, {state}. Opens the Git tab.',
+  'shell.conversation.worktree': 'Worktree {name}, {state}.',
   'worktrees.conversation.label': 'Conversation worktree',
   'worktrees.conversation.git': 'Open Git',
   'worktrees.conversation.overview': 'Open worktrees',
