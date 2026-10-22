@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { DEFAULT_CLAUDE_CONFIG } from '@sillage/protocol'
 import { ClaudeRunner } from '../src/agents/claude/runner.js'
 import type { RunnerContext } from '../src/agents/types.js'
+import { builtinMcpServer } from '../src/agents/mcp-builtin.js'
 
 // The real SDK builds command lines; replace only CLIs to verify launch contracts
 // without Claude accounts or quota usage.
@@ -32,11 +33,12 @@ for (const mode of ['manual', 'bypassPermissions'] as const) {
       const binary = join(cwd, 'claude.mjs')
       await writeFile(binary, cli)
       const config = { ...DEFAULT_CLAUDE_CONFIG, permissionMode: mode }
+      const builtin = builtinMcpServer({ enabled: true, config, databasePath: join(cwd, 'unused.sqlite'), projectId: 'project', conversationId: 'test', memoryDir: null })!
       const ctx: RunnerContext = {
         conversationId: 'test', cwd, binary, config, resumeSessionId: resume,
         attachmentsRoot: cwd,
         projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
-        resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
+        resolveMcpServers: () => ({ servers: [builtin], failures: [] }), skillRoots: () => [],
         emit: () => {}, setStatus: () => {}, setAgentSessionId: () => {},
         updateConfig: () => {}, openPermissionRequest: () => 'permission', closePermissionRequest: () => {},
       }
@@ -56,6 +58,7 @@ for (const mode of ['manual', 'bypassPermissions'] as const) {
       assert.ok(args.includes(`--permission-mode=${mode === 'manual' ? 'default' : mode}`))
       assert.equal(args.includes('--allow-dangerously-skip-permissions'), mode === 'bypassPermissions')
       assert.equal(args.includes(`--resume=${resume}`), resume !== null)
+      assert.ok(args.includes('--allowedTools=mcp__sillage__rename_session'), 'only session naming is pre-authorized')
 
       // Managers must restart CLIs in both directions: control acknowledgments alone
       // must not imply live application.

@@ -1,6 +1,7 @@
 import * as RadixTooltip from '@radix-ui/react-tooltip'
-import { createContext, useContext, type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react'
+import { createContext, useContext, useState, type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react'
 import { useMediaQuery } from '../../lib/viewport'
+import { cx } from './cx'
 
 const TooltipEnabled = createContext(true)
 
@@ -13,15 +14,23 @@ export function TooltipProvider({ children }: { children: ReactNode }) {
 }
 
 /** Portals prevent clipping within panels and scrolling lists. */
-export function Tooltip({ label, children }: { label: string; children: ReactElement }) {
+export function Tooltip({ label, children, side = 'top', sideOffset = 6, className, disabled }: {
+  label: ReactNode
+  children: ReactElement
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  sideOffset?: number
+  className?: string
+  disabled?: boolean
+}) {
   const enabled = useContext(TooltipEnabled)
+  const [open, setOpen] = useState(false)
   if (!enabled) return children
   return (
-    <RadixTooltip.Root>
+    <RadixTooltip.Root {...(disabled === undefined ? {} : { open: !disabled && open, onOpenChange: (value: boolean) => setOpen(!disabled && value) })}>
       <RadixTooltip.Trigger asChild>{children}</RadixTooltip.Trigger>
       <RadixTooltip.Portal>
-        <RadixTooltip.Content side="top" sideOffset={6} collisionPadding={8}
-          className="surface z-[100] max-w-[min(22rem,calc(100vw-1rem))] rounded-md border border-line px-2.5 py-1.5 text-xs leading-relaxed text-ink shadow-pop">
+        <RadixTooltip.Content side={side} sideOffset={sideOffset} collisionPadding={8}
+          className={cx('surface z-[100] max-w-[min(22rem,calc(100vw-1rem))] rounded-md border border-line px-2.5 py-1.5 text-xs leading-relaxed text-ink shadow-pop', className)}>
           {label}
         </RadixTooltip.Content>
       </RadixTooltip.Portal>

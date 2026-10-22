@@ -43,6 +43,8 @@
     "test:onboarding-ui": "node scripts/onboarding-ui-check.mjs",
     "test:windows-feedback-ui": "node scripts/windows-feedback-ui-check.mjs",
     "test:board-feedback-ui": "node scripts/board-feedback-ui-check.mjs",
+    "test:sidebar-ui": "node scripts/sidebar-ui-check.mjs",
+    "test:panel-navigation-ui": "node scripts/panel-navigation-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
     "db:generate": "pnpm --filter @sillage/db generate",
     "db:migrate": "pnpm --filter @sillage/server migrate",

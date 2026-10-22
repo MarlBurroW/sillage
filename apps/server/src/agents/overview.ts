@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { automationWebhooks, cards, conversations, projectImages, scheduledTasks, worktrees, type Db } from '@sillage/db'
-import { sessionMarker, sessionTrailer } from '@sillage/protocol'
+import { MAX_SESSION_TITLE_CHARS, sessionMarker, sessionTrailer } from '@sillage/protocol'
 
 /** Project activity injected at session startup. CLIs lack others' history and may not think to query MCP; this unsolicited overview justifies its token cost. Compute rather than store notes that grow stale with undeserved authority: one fresh query per start. Durable user-managed instructions belong separately in SILLAGE.md (`instructions/store.ts`). Cover the whole project rather than `find_file_edits`' worktree scope because other branches are active work too; identify worktrees per row for agents to distinguish. */
 
@@ -140,11 +140,25 @@ function forgeMarkerReminder(db: Db, input: OverviewInput): string | null {
   return `Ce projet a des automatisations déclenchées par webhook (${names}). Ce que tu publies sur une forge pour lui (issue, pull request, commentaire, revue) se termine par ${sessionMarker(input.conversationId)}, et tes messages de commit par le trailer \`${sessionTrailer(input.conversationId)}\` : c'est ce qui permet à Sillage de reconnaître ton travail et d'empêcher des agents de se relancer en chaîne. Ne pose jamais un label et n'écris jamais une commande qui déclenche l'une d'elles, sauf si l'utilisateur te le demande.`
 }
 
+/** A session-specific instruction reaches every CLI through the same startup context. */
+function sessionTitleReminder(db: Db, input: OverviewInput): string | null {
+  if (!input.sillageMcp) return null
+  const current = db.select({ title: conversations.title, user: conversations.titleSetByUser, agent: conversations.titleSetByAgent })
+    .from(conversations)
+    .where(and(eq(conversations.id, input.conversationId), eq(conversations.projectId, input.projectId)))
+    .get()
+  if (!current || current.user) return null
+  if (current.agent) {
+    return `Titre de cette session : ${JSON.stringify(current.title)}. Conserve-le tant que le sujet principal ne change pas. Si la demande change réellement de sujet, ajuste-le avec \`rename_session\` du serveur \`sillage\`, en 3 à 6 mots dans la langue de l'utilisateur (${MAX_SESSION_TITLE_CHARS} caractères maximum).`
+  }
+  return `Dès que tu as compris la demande, appelle \`rename_session\` du serveur \`sillage\` pour donner à cette session un titre court et parlant : vise 3 à 6 mots, ${MAX_SESSION_TITLE_CHARS} caractères maximum, dans la langue de l'utilisateur. Nomme le sujet concret, par exemple « Refonte de la sidebar » ou « Corriger la connexion », plutôt que recopier sa phrase ou annoncer un état d'avancement. Ce titre aide l'utilisateur à retrouver le fil ; fais-le sans lui demander de confirmer et sans interrompre le travail demandé. Ne le change ensuite que si le sujet principal change.`
+}
+
 /** Null when empty: repeated empty overviews teach models to ignore them, making future relevant content unnoticed. */
 export function projectOverview(db: Db, input: OverviewInput): string | null {
   const now = Date.now()
   // Cards before images: requested work precedes suggestions.
-  const briefing = [cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
+  const briefing = [sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
     .filter((part) => part !== null)
     .join('\n\n') || null
 

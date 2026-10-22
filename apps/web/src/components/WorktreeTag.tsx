@@ -1,4 +1,5 @@
 import type { ConversationDto, WorktreeState } from '@sillage/protocol'
+import { Check, CircleHelp, GitPullRequestArrow, Pencil, TriangleAlert } from 'lucide-react'
 import { useTranslate } from '../lib/i18n'
 import { useConversationWorktree } from '../lib/worktrees'
 import { cx } from './ui'
@@ -16,6 +17,19 @@ export const WORKTREE_STATE_TONE: Record<WorktreeState, 'critical' | 'caution' |
   dirty: 'caution',
   unmerged: 'accent',
   merged: 'positive',
+}
+
+export type WorktreePreviewState = WorktreeState | 'unknown'
+export const WORKTREE_STATE_TEXT: Record<WorktreePreviewState, string> = {
+  missing: 'text-critical', dirty: 'text-caution', unmerged: 'text-accent',
+  merged: 'text-positive', unknown: 'text-ink-faint',
+}
+const STATE_ICONS = { missing: TriangleAlert, dirty: Pencil, unmerged: GitPullRequestArrow, merged: Check, unknown: CircleHelp }
+
+/** The row and its explanation share the same glyph, including unavailable Git state. */
+export function WorktreeStateIcon({ state }: { state: WorktreePreviewState }) {
+  const Icon = STATE_ICONS[state]
+  return <Icon size={15} aria-hidden className={cx('shrink-0', WORKTREE_STATE_TEXT[state])} />
 }
 
 /** Solid square with sharp corners distinguishes tree state from circular current-activity signals. */

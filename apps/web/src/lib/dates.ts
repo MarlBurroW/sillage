@@ -23,3 +23,11 @@ export function relativeDate(ts: number): string {
   }
   return format.format(Math.round(value), 'year')
 }
+
+/** Narrow list label; full localized dates remain available in session details. */
+export function compactRelativeDate(ts: number): string {
+  const minutes = Math.max(1, Math.floor((Date.now() - ts) / 60_000))
+  const [value, unit]: [number, string] = minutes < 60 ? [minutes, 'minute'] : minutes < 1440
+    ? [Math.floor(minutes / 60), 'hour'] : [Math.floor(minutes / 1440), 'day']
+  return new Intl.NumberFormat(locale(), { style: 'unit', unit, unitDisplay: 'narrow' }).format(value)
+}

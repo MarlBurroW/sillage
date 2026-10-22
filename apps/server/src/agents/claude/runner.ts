@@ -26,6 +26,7 @@ import {
   type PlanFollowUpOption,
 } from '@sillage/protocol'
 import { failedStatuses } from '../mcp-registry.js'
+import { BUILTIN_MCP_SERVER_ID } from '../mcp-builtin.js'
 import { sdkExecutable } from '../launch.js'
 import { AsyncQueue } from '../async-queue.js'
 import { agentProcessEnv } from '../process-env.js'
@@ -243,6 +244,9 @@ export class ClaudeRunner implements AgentRunner {
         // therefore lacks these servers, the cost of leaving user files untouched. Established by
         // probe, not inferable from documentation.
         mcpServers: this.appliedMcpServers,
+        // Only the built-in tool can name this session; it never overrides a human title.
+        allowedTools: resolved.servers.filter((server) => server.id === BUILTIN_MCP_SERVER_ID)
+          .map((server) => `mcp__${server.name}__rename_session`),
         strictMcpConfig: config.strictMcp,
         settings: flagSettings(
           config,
