@@ -4,6 +4,25 @@ import { DEFAULT_CODEX_CONFIG, sillageEventSchema } from '@sillage/protocol'
 import { CodexRunner } from '../src/agents/codex/runner.js'
 import { runnerFixture, asyncMessage, context, done, fixture, itemEvent } from './codex-support.js'
 
+test('session references reach CLI sends and steering without changing the journal text', async t => {
+  const transport = await fixture(t)
+  const seen: string[] = []
+  const state = context({ ...transport, sessionReferenceContext: text => { seen.push(text); return 'Referenced session metadata' } })
+  const runner = new CodexRunner(state.ctx)
+  transport.onClose(() => runner.stop())
+  await runner.start()
+  await runner.send('Read this session', [], [], [])
+  assert.equal(await runner.steer('Also compare this one', [], [], []), true)
+  const turns = (await transport.records()).filter(record => ['turn/start', 'turn/steer'].includes(record.method))
+  assert.equal(turns.length, 2)
+  assert.deepEqual(seen, ['Read this session', 'Also compare this one'])
+  for (const turn of turns) assert.match(turn.params.input[0].text, /Referenced session metadata/)
+  const messages = state.events.filter(event => event.type === 'message.completed' && event.role === 'user')
+  assert.deepEqual(messages.map(event => event.type === 'message.completed' && event.blocks), [
+    [{ type: 'text', text: 'Read this session' }], [{ type: 'text', text: 'Also compare this one' }],
+  ])
+})
+
 test('questions Astra interactives, non bloquantes et encore répondables après la fin du tour', async (t) => {
   const f = await runnerFixture(t)
   await f.emit([itemEvent(asyncMessage), done()])

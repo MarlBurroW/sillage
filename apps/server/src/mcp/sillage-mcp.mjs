@@ -11,6 +11,8 @@ const DB_PATH = process.env.SILLAGE_MCP_DB
 const GLOBAL = !process.env.SILLAGE_MCP_PROJECT
 /** Served project: fixed for conversation-mode processes, set from each tool call's `project` parameter in global mode. Serialize calls to prevent interference. */
 let PROJECT_ID = process.env.SILLAGE_MCP_PROJECT ?? ''
+// Keep the reference prefix aligned with packages/protocol/src/session-references.ts.
+const sessionReference = (id) => `session:${id}`
 /** Exclude from results so agents do not reread themselves and loop. */
 const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
 /** Project memory directory shared with Claude automatic memory. In global mode, `SILLAGE_MCP_MEMORY` identifies the memory root (default `memory/` beside the database, like the daemon), and each call selects its project's directory. */
@@ -219,7 +221,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Identifiant rendu par search_history.' },
+        id: { type: 'string', description: 'Identifiant Sillage ou référence session:<id> rendue par search_history ou list_sessions, archives comprises.' },
         before: {
           type: 'integer',
           description:
@@ -1083,6 +1085,7 @@ function searchHistory(query, limit) {
       `SELECT m.conversation_id AS id,
               c.title AS title,
               c.agent AS agent,
+              c.archived_at AS archivedAt,
               m.ts AS ts,
               snippet(search_messages, 0, '', '', '...', 15) AS excerpt
        FROM search_messages AS m
@@ -1090,7 +1093,6 @@ function searchHistory(query, limit) {
        WHERE search_messages MATCH ?
          AND c.project_id = ?
          AND c.id != ?
-         AND c.archived_at IS NULL
        ORDER BY bm25(search_messages)
        LIMIT ?`,
     )
@@ -1106,6 +1108,7 @@ function searchHistory(query, limit) {
 
 /** Conversation messages excluding tools. Match search extraction: same text blocks and exclusion of subagent messages belonging to side panels. Check `project_id` here as well as during search because agents can fabricate IDs. */
 function readConversation(id) {
+  id = id.replace(/^session:/i, '')
   const conversation = db
     .prepare(
       `SELECT id, title, agent, created_at AS createdAt
@@ -1421,7 +1424,7 @@ function renderSessions(rows, withinMinutes) {
     const tree = git
       ? `, branche ${git.branch}${git.dirty > 0 ? `, ${git.dirty} fichier(s) modifié(s)` : ''}`
       : ''
-    return `- ${row.id} | ${row.agent} | ${describeActivity(row)} | ${where}${tree} | ${ago(row.updatedAt)}\n  ${row.title}`
+    return `- ${row.id} | ${sessionReference(row.id)} | ${row.agent} | ${describeActivity(row)} | ${where}${tree} | ${ago(row.updatedAt)}\n  ${row.title}`
   })
   return `${rows.length} conversation(s), fenêtre de ${withinMinutes} min :\n${lines.join('\n')}`
 }
@@ -2091,7 +2094,7 @@ function renderSearch(query, results) {
 
   const lines = results.map(
     (row) =>
-      `- ${row.id} | ${row.agent} | échange du ${asDate(row.ts)} | ${row.title}\n  ${row.excerpt}`,
+      `- ${row.id} | ${sessionReference(row.id)} | ${row.agent} | échange du ${asDate(row.ts)}${row.archivedAt !== null ? ' | archivée' : ''} | ${row.title}\n  ${row.excerpt}`,
   )
   return `${results.length} conversation(s) pour « ${query} » :\n${lines.join('\n')}`
 }
@@ -2118,7 +2121,7 @@ function renderThread(found, before) {
   // Say 'opened on' rather than bare dates: search_history dates matching messages,
   // while this date marks conversation creation. Both correct dates otherwise look
   // contradictory without identifying what they measure.
-  const header = `${conversation.title} (${conversation.agent}, ouverte le ${asDate(conversation.createdAt)})`
+  const header = `${conversation.title} | ${sessionReference(conversation.id)} (${conversation.agent}, ouverte le ${asDate(conversation.createdAt)})`
   if (messages.length === 0) return `${header}\n\nAucun message dans ce fil.`
 
   const scoped = before === null ? messages : messages.filter((message) => message.seq < before)

@@ -65,16 +65,19 @@ async function mount(page) {
     function Harness() {
       const [id, setId] = React.useState('codex')
       const [disabled, setDisabled] = React.useState(false)
+      const [catalog, setCatalog] = React.useState(false)
       useVisualViewport()
       const { data } = useConversation(id)
       const settings = useConversationConfig(data)
       window.setConversation = setId
       window.setReadOnly = setDisabled
+      window.setCatalog = setCatalog
       window.settings = settings
       if (!settings.config) return null
       return React.createElement(Composer, {
         key: id, config: settings.config, draftKey: `composer-test-${id}`, status: 'idle', disabled,
-        commands: [], skills: [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
+        commands: catalog ? [{ name: 'review', aliases: [], description: 'Review the draft', argumentHint: '' }] : [],
+        skills: catalog ? [{ name: 'writing', description: 'Edit prose', path: '/skills/writing' }] : [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
         appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual' } : null,
         onConfigChange: settings.change, configError: settings.error?.message, onConfigRetry: settings.retry,
         onSend: async (text) => { await settings.flush(); await api.post(`/api/conversations/${id}/messages`, { text }) },
@@ -121,6 +124,7 @@ try {
         if (request.method() === 'PATCH') { account.composerLayout = request.postDataJSON().composerLayout; layouts.push(account.composerLayout) }
         return route.fulfill({ json: account })
       }
+      if (path === '/api/conversations') return route.fulfill({ json: [] })
       if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true }], sillageServer: true } })
       if (path.endsWith('/messages')) {
         messages.push({ text: request.postDataJSON().text, config: structuredClone(stored[id]) })
@@ -143,7 +147,7 @@ try {
       return route.fulfill({ json: {} })
     })
     await mount(page)
-    const field = page.getByPlaceholder('Écris ton message...')
+    const field = page.getByPlaceholder(/^Écris ton message/)
     // Phone: below 480 px, only model·effort chip, opening complete sheet;
     // no separate settings button or pins.
     const narrow = viewport.width < 500
@@ -496,8 +500,39 @@ try {
 
     await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    // The discoverable panel uses the same live catalogs and preserves unsent text and selection.
+    const insert = page.getByRole('button', { name: 'Insérer — aides de saisie', exact: true })
+    await insert.click()
+    const help = page.getByRole('dialog', { name: 'Aides de saisie', exact: true })
+    await help.waitFor()
+    assert.equal(await help.getByRole('button', { name: 'Commandes et skills', exact: true }).count(), 0)
+    await help.getByRole('button', { name: 'Fermer', exact: true }).click()
+    await page.evaluate(() => window.setCatalog(true))
+    const beforeMessages = messages.length
+    await field.fill('Texte conservé')
+    await insert.click()
+    await help.getByRole('button', { name: 'Commandes et skills', exact: true }).click()
+    const commands = page.getByRole('listbox', { name: 'Commandes', exact: true })
+    await commands.waitFor()
+    assert.equal(await field.inputValue(), '/Texte conservé')
+    await field.press('Tab')
+    assert.equal(await field.inputValue(), '/review Texte conservé')
+    await field.fill('Avant remplacer après')
+    await field.evaluate(node => node.setSelectionRange(6, 15))
+    await insert.click()
+    await help.getByRole('button', { name: 'Skill', exact: true }).click()
+    await page.getByRole('listbox', { name: 'Compétences', exact: true }).waitFor()
+    assert.equal(await field.inputValue(), 'Avant $ après')
+    await field.press('Tab')
+    assert.equal(await field.inputValue(), 'Avant $writing  après')
+    assert.equal(messages.length, beforeMessages, 'Insertion never sends or executes a command')
+    await insert.click()
+    await help.getByRole('button', { name: 'Fermer', exact: true }).click()
+    assert.equal(await field.inputValue(), 'Avant $writing  après', 'Dismissing help preserves the draft')
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.evaluate(() => window.setReadOnly(true))
     await page.waitForFunction(() => document.querySelector('button[aria-label^="Modèle"]').disabled)
+    assert.equal(await insert.isDisabled(), true)
     assert.equal(await chip().isDisabled(), true)
     if (!narrow) assert.equal(await full.isDisabled(), true)
     assert.deepEqual(errors, [])

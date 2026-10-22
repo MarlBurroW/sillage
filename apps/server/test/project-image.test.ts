@@ -114,10 +114,10 @@ test("rappel aux agents : absent, puis provisoire, puis plus rien", async (t) =>
   await writeFile(join(dir, 'logo.png'), PNG)
   assert.equal(mcp({ path: join(dir, 'logo.png') }).isError, undefined)
   assert.equal((await listed()).image?.provisional, false)
-  assert.equal(overview(), null)
+  assert.doesNotMatch(overview() ?? '', /n'a pas d'image|provisoire/)
 
   // User-selected images replace agent images and are never provisional.
   mcp({ path: join(dir, 'draft.svg'), provisional: true })
   assert.equal((await upload(PNG)).statusCode, 200)
-  assert.equal(overview(), null)
+  assert.doesNotMatch(overview() ?? '', /n'a pas d'image|provisoire/)
 })

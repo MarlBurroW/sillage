@@ -1,4 +1,4 @@
-import { useContext, useMemo, useState, type MouseEvent } from 'react'
+import { useContext, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useCardRefs } from '../../lib/card-refs'
 import { openTab } from '../../lib/editor-tabs'
 import { FileLinkContext, useKnownFiles } from '../../lib/file-links'
@@ -7,6 +7,8 @@ import { setPanelOpen, setPanelTab } from '../../lib/panel'
 import { useCardRefPreview } from '../board/CardRefPreview'
 import { CodeBlock } from './CodeBlock'
 import { ImageViewer, type ViewerImage } from './ImageViewer'
+import { useSessionReferencePortals } from './SessionReferencePortals'
+import { useSessionReferences } from '../../lib/session-references'
 import { MarkdownTable } from './MarkdownTable'
 
 /**
@@ -24,11 +26,14 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
   const { projectId, cards: cardsByNumber } = useCardRefs()
   const cards = useMemo(() => (cardsByNumber.size > 0 ? new Set(cardsByNumber.keys()) : undefined), [cardsByNumber])
   const cardRefs = useCardRefPreview(projectId, cardsByNumber)
+  const { sessions, ids: sessionIds, loading: loadingSessions } = useSessionReferences(projectId)
+  const root = useRef<HTMLDivElement>(null)
+  const origin = window.location.origin
 
   // First pass collects cited paths without file links; its HTML displays while awaiting the server.
   const found = useMemo(
-    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, cards }),
-    [text, conversationId, base, cards],
+    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, cards, sessionIds, projectId, origin }),
+    [text, conversationId, base, cards, sessionIds, projectId, origin],
   )
   const known = useKnownFiles(found.candidates)
 
@@ -40,11 +45,13 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
   const segments = useMemo(
     () =>
       linkable
-        ? parseMarkdown(text, { knownFiles: known, scope: conversationId ?? undefined, base, cards })
+        ? parseMarkdown(text, { knownFiles: known, scope: conversationId ?? undefined, base, cards, sessionIds, projectId, origin })
             .segments
         : found.segments,
-    [linkable, text, known, conversationId, base, cards, found.segments],
+    [linkable, text, known, conversationId, base, cards, found.segments, sessionIds, projectId, origin],
   )
+
+  const sessionRefs = useSessionReferencePortals({ root, segments, sessions, loading: loadingSessions })
 
   /**
    * Open cited paths through one delegated container listener: injected HTML has no React component
@@ -73,9 +80,10 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
   return (
     // Listen on the whole container, not per segment: card references can occur inside separately
     // rendered table cells.
-    <div className="sg-reading flex flex-col gap-3" {...cardRefs.handlers}>
+    <div ref={root} className="sg-reading flex flex-col gap-3" {...cardRefs.handlers}>
       {viewer && <ImageViewer images={viewer.images} initialIndex={viewer.index} onClose={() => setViewer(null)} />}
       {cardRefs.preview}
+      {sessionRefs}
       {segments.map((segment, index) => {
         // Use indices as keys: segments have no independent identity and rebuild fully whenever text changes.
         const key = `${segment.kind}-${index}`
@@ -87,14 +95,15 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
           return <MarkdownTable key={key} html={segment.html} rows={segment.rows} />
         }
         return (
-          <div
-            key={key}
-            className="sg-markdown"
-            onClick={onClick}
-            dangerouslySetInnerHTML={{ __html: segment.html }}
-          />
+          <MarkdownHtml key={key} html={segment.html} onClick={onClick} />
         )
       })}
     </div>
   )
+}
+
+/** Equal HTML must retain its DOM, including portal state and the reader's text selection. */
+function MarkdownHtml({ html, onClick }: { html: string; onClick: (event: MouseEvent<HTMLDivElement>) => void }) {
+  const markup = useMemo(() => ({ __html: html }), [html])
+  return <div className="sg-markdown" onClick={onClick} dangerouslySetInnerHTML={markup} />
 }

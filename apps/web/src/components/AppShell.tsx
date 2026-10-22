@@ -1,3 +1,5 @@
+import { sessionReference } from '@sillage/protocol'
+import { useCopy } from '../lib/clipboard'
 import { Tooltip, TooltipButton } from './ui/Tooltip'
 import {
   DndContext,
@@ -20,6 +22,7 @@ import {
   Archive,
   ArchiveRestore,
   CalendarClock,
+  Link2,
   ChevronRight,
   FolderPlus,
   LogOut,
@@ -999,6 +1002,7 @@ function ConversationMenuItems({
   onRename: () => void
 }) {
   const t = useTranslate()
+  const { copy, state: copyState } = useCopy()
   const remove = useDeleteConversation()
   const setArchived = useArchiveConversation()
   const isArchived = conversation.archivedAt !== null
@@ -1012,6 +1016,9 @@ function ConversationMenuItems({
     <>
       <Item icon={<Star size={14} />} disabled={toggleFavorite.isPending} onSelect={() => toggleFavorite.mutate({ id: conversation.id, favorite: !conversation.favorite })}>
         {conversation.favorite ? t('shell.conversation.unfavorite') : t('shell.conversation.favorite')}
+      </Item>
+      <Item icon={<Link2 size={14} />} onSelect={event => { event.preventDefault(); copy(sessionReference(conversation.id)) }}>
+        {t(copyState === 'copied' ? 'sessionRef.copied' : copyState === 'failed' ? 'sessionRef.copyFailed' : 'sessionRef.copy')}
       </Item>
       {conversation.isOwner ? (
         <>

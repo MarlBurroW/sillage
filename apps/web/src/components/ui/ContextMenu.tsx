@@ -51,7 +51,7 @@ export function ContextMenuItem({
   children,
 }: {
   icon?: ReactNode
-  onSelect: () => void
+  onSelect: (event: Event) => void
   tone?: 'neutral' | 'critical'
   /** Disable rather than remove, like MenuItem. */
   disabled?: boolean
