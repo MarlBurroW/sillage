@@ -66,7 +66,7 @@ test('the global tool list adds list_projects, a project parameter, and drops se
   const names = tools.map((tool) => tool.name)
 
   assert.equal(names[0], 'list_projects')
-  for (const absent of ['send_session_message', 'broadcast_session_message', 'notify_when_done', 'read_session_messages', 'request_decision']) {
+  for (const absent of ['rename_session', 'send_session_message', 'broadcast_session_message', 'notify_when_done', 'read_session_messages', 'request_decision']) {
     assert.ok(!names.includes(absent), absent)
   }
   const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))

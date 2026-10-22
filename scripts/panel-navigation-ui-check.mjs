@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Session navigation must preserve panel state, including clicks on worktree labels.
+// Session navigation and worktree previews must preserve panel state.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -101,9 +101,17 @@ try {
     await panel.waitFor({ state: 'detached' })
 
     const navigate = async (id, tag = false) => {
-      const link = page.locator(`a[href="/p/${project.id}/c/${id}"]`).filter({ has: page.getByText(tag ? 'feat/offline-cache' : rooted.title, { exact: true }) }).first()
       if (width < 700) await page.locator('[data-navigation-trigger]').click()
-      await (tag ? link.getByRole('note') : link).click()
+      const row = page.locator(`.sidebar-session[data-sidebar-session="${id}"]`)
+      if (tag) {
+        const before = page.url()
+        await row.locator('[data-session-details]').click()
+        await page.locator('.session-preview-popover').waitFor()
+        assert.equal(page.url(), before, 'Details do not navigate')
+        assert.equal(await panel.count(), 0)
+        await page.keyboard.press('Escape')
+      }
+      await row.locator('.sidebar-session-link').click()
       await page.waitForURL(`**/c/${id}`)
     }
     for (let i = 0; i < 2; i++) {

@@ -32,6 +32,7 @@ import {
   agentConfigSchema,
   automationConditionsSchema,
   taskReplyBodySchema,
+  renameSessionBodySchema,
   createProjectActionBodySchema,
   updateProjectActionBodySchema,
   updateCardBodySchema,
@@ -62,6 +63,7 @@ import type { AgentRegistry } from '../agents/registry.js'
 import type { EventLog } from '../events/event-log.js'
 import { createWebhook, readSettings, revealSecret, webhookUrl } from '../automations/webhooks.js'
 import { createConversation } from '../conversations/create.js'
+import { adoptSessionTitle } from '../conversations/title.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { advanceCardOnLaunch, createCard, updateCard } from '../http/routes/cards.js'
@@ -223,6 +225,14 @@ export class AgentRequests {
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
         this.settle(request.id, text, false, launchedId)
+      } else if (request.kind === 'rename_session') {
+        if (!conversation) throw new Refusal("Cet outil ne renomme que ta propre session, pas une session désignée de l'extérieur.")
+        const { title } = renameSessionBodySchema.parse(payload)
+        const result = adoptSessionTitle(this.ctx.db, this.sessions.statusBus, conversation.id, title, 'agent')
+        if (result === 'missing') throw new Refusal("Cette session n'existe plus.")
+        this.settle(request.id, result === 'protected'
+          ? "Le titre a été choisi par l'utilisateur : il est conservé. Ne réessaie pas de le renommer."
+          : `Titre de ta session : « ${title} ».`, false)
       } else if (request.kind === 'schedule_task') {
         this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
       } else if (request.kind === 'request_decision' || request.kind === 'withdraw_decision') {

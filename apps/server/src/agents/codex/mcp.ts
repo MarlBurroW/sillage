@@ -3,6 +3,7 @@ import type {
   ThreadStartParams,
 } from '@sillage/codex-bindings/v2'
 import type { McpServer, McpServerState, McpServerStatus } from '@sillage/protocol'
+import { BUILTIN_MCP_SERVER_ID } from '../mcp-builtin.js'
 
 /**
  * Translate Sillage registry to Codex configuration and back. Codex reads MCP only through
@@ -23,10 +24,14 @@ type ConfigValue = NonNullable<ThreadConfig[string]>
 export function toCodexThreadConfig(servers: McpServer[]): ThreadConfig {
   const entries = servers.map((server): [string, ConfigValue] => {
     const { transport } = server
+    // Naming the current conversation is platform metadata, with human titles protected by the daemon.
+    const naming = server.id === BUILTIN_MCP_SERVER_ID
+      ? { tools: { rename_session: { approval_mode: 'approve' } } }
+      : {}
     if (transport.type === 'stdio') {
       return [
         server.name,
-        { command: transport.command, args: transport.args, env: transport.env },
+        { command: transport.command, args: transport.args, env: transport.env, ...naming },
       ]
     }
     // Codex does not distinguish HTTP and SSE configuration; it infers transport

@@ -26,6 +26,16 @@ authenticates (see below). Its environment determines the scope it serves.
 and writes are attributed to the conversation: a card note links to the session;
 a started session receives the wrapped task, identifying who assigned it.
 
+Agents can name their own conversation with `rename_session({ title })`. The
+shared startup context asks for a concrete title of three to six words in the
+user's language, at most 60 characters, once the request is understood. This runs
+within the existing turn; there is no separate title-generation model call.
+The daemon broadcasts the change immediately. An agent's title takes precedence
+over native CLI summaries, while a title set by the user is always preserved.
+The tool has no target-session parameter and is unavailable in global mode.
+Existing unnamed sessions receive the instruction when their runner next starts;
+disabling Sillage MCP keeps the native CLI naming behavior.
+
 **Global mode.** Without `SILLAGE_MCP_PROJECT`, the server serves the entire instance:
 
 - an extra tool, `list_projects`, returns projects with their directory, working

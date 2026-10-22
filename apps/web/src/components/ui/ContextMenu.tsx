@@ -12,6 +12,7 @@ export function ContextMenu({
   trigger,
   disabled = false,
   children,
+  onOpenChange,
 }: {
   trigger: ReactNode
   /**
@@ -20,9 +21,10 @@ export function ContextMenu({
    */
   disabled?: boolean
   children: ReactNode
+  onOpenChange?: (open: boolean) => void
 }) {
   return (
-    <Primitive.Root>
+    <Primitive.Root onOpenChange={onOpenChange}>
       <Primitive.Trigger asChild disabled={disabled}>{trigger}</Primitive.Trigger>
       <Primitive.Portal>
         <Primitive.Content

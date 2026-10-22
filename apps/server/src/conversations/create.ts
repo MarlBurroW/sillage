@@ -73,6 +73,7 @@ export async function createConversation(
     userId: input.userId,
     title: input.title ?? provisionalTitle(input.titleSource ?? input.firstMessage?.text),
     titleSetByUser: input.title !== undefined,
+    titleSetByAgent: false,
     agent: input.agent,
     agentSessionId: null,
     forkedFromId: null,

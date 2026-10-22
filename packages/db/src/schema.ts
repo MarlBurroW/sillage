@@ -531,6 +531,7 @@ export const agentRequests = sqliteTable(
     kind: text('kind', {
       enum: [
         'start_session',
+        'rename_session',
         'create_card',
         'update_card',
         'link_cards',
@@ -604,6 +605,8 @@ export const conversations = sqliteTable(
      * behind their back.
      */
     titleSetByUser: integer('title_set_by_user', { mode: 'boolean' }).notNull().default(false),
+    /** An explicit agent title takes precedence over later native CLI summaries. */
+    titleSetByAgent: integer('title_set_by_agent', { mode: 'boolean' }).notNull().default(false),
     // Derived from the protocol enum: adding a CLI does not require changing
     // the column, and the two lists cannot drift apart.
     agent: text('agent').$type<AgentKind>().notNull(),

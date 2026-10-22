@@ -9,7 +9,7 @@ interface PopoverProps {
   children: ReactNode
   /** Panel name when no persistent heading is visible. */
   label: string
-  side?: 'top' | 'bottom'
+  side?: 'top' | 'bottom' | 'left' | 'right'
   align?: 'start' | 'end'
   onEscapeKeyDown?: (event: KeyboardEvent) => void
   /** Intercept Radix focus return to send it somewhere besides the trigger. */

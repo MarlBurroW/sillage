@@ -179,17 +179,16 @@ try {
   assert.equal(git(repoRoot, 'branch', '--list', 'docs/readme'), '')
   console.log('OK : worktree dans le fil, nettoyage confirmé, aucune décision automatique.')
 
-  // Sidebar: worktree sessions carry branch/status, others do not.
+  // Sidebar: worktree status stays visible; full branch details open without navigation.
   await page.goto(`${base}/p/${project.id}/board`)
   const nav = page.getByRole('navigation').filter({ has: page.getByRole('group', { name: 'Suivi des conversations' }) })
-  // Session row has its title attribute; activity tracking above does not.
-  const row = (scope, title) => scope.locator(`a[title="${title}"]`)
+  const row = (scope, title) => scope.locator('[data-sidebar-session]').filter({ has: scope.page().getByText(title, { exact: true }) })
   const offline = row(nav, 'Add offline caching for forecasts')
   await offline.waitFor()
-  await offline.getByRole('note', { name: /Worktree feat\/offline-cache, Non commité/ }).waitFor()
-  await row(nav, 'Radar tile prefetching').getByRole('note', { name: /À fusionner/ }).waitFor()
-  // Root sessions show no extra note: only the two worktree sessions do.
-  assert.equal(await nav.getByRole('note').count(), 2)
+  await offline.getByRole('button', { name: /Détails de .*Non commité/ }).waitFor()
+  await row(nav, 'Radar tile prefetching').getByRole('button', { name: /Détails de .*À fusionner/ }).waitFor()
+  // Main-tree details have no Git state icon.
+  assert.equal(await nav.locator('[data-worktree-state]').count(), 2)
   const chantiers = nav.getByRole('link', { name: /^Chantiers/ })
   await chantiers.waitFor()
   assert.match(await chantiers.innerText(), /3 en attente/)
@@ -197,12 +196,17 @@ try {
   await page.screenshot({ path: join(shots, 'sidebar-desktop.png') })
   console.log('OK : barre latérale sur grand écran.')
 
-  // Clicking the badge opens the thread and its Git tab.
-  await offline.getByRole('note').click()
+  // Inspecting Git does not navigate or open the project panel.
+  const beforePreview = page.url()
+  await offline.locator('[data-session-details]').click()
+  await page.locator('.session-preview-popover').getByText('feat/offline-cache', { exact: true }).waitFor()
+  assert.equal(page.url(), beforePreview)
+  await page.keyboard.press('Escape')
+  await offline.locator('.sidebar-session-link').click()
   await page.waitForURL(/\/c\//)
   const panel = page.locator('[data-panel="workspace"]')
+  await worktreeBar(page).getByRole('button', { name: 'Voir le Git', exact: true }).click()
   await panel.getByText('feat/offline-cache', { exact: true }).first().waitFor()
-  console.log('OK : la pastille ouvre l’onglet Git.')
   await worktreeBar(page).getByText('Non commité', { exact: true }).waitFor()
   assert.equal(await worktreeBar(page).getByRole('button', { name: 'Nettoyer', exact: true }).count(), 0)
   await worktreeBar(page).getByRole('button', { name: 'Voir le Git', exact: true }).waitFor()
@@ -265,7 +269,7 @@ try {
   await phone.page.goto(`${base}/p/${project.id}/board`)
   await phone.page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
   const phoneNav = phone.page.getByRole('navigation').filter({ has: phone.page.getByRole('group', { name: 'Suivi des conversations' }) })
-  const phoneTag = row(phoneNav, 'Add offline caching for forecasts').getByRole('note')
+  const phoneTag = row(phoneNav, 'Add offline caching for forecasts').locator('[data-session-details]')
   await phoneTag.waitFor()
   // Drawer slides: screenshot waits until it is in position.
   await delay(600)

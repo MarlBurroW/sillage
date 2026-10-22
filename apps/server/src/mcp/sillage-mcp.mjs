@@ -57,6 +57,7 @@ const MAX_PEER_MESSAGE_CHARS = 4000
 
 /** How long tools wait for daemon request processing. Session starts launch CLIs and sometimes worktrees, usually seconds but longer under load. After this timeout, report that processing continues rather than remain suspended. */
 const REQUEST_WAIT_MS = {
+  rename_session: 15000,
   start_session: 90000,
   create_card: 15000,
   update_card: 15000,
@@ -92,6 +93,9 @@ const REQUEST_POLL_MS = 200
 
 /** Must match `MAX_LAUNCH_PROMPT_CHARS` in `agent-requests.ts`. */
 const MAX_LAUNCH_PROMPT_CHARS = 20000
+
+/** Must match protocol `MAX_SESSION_TITLE_CHARS` in session-title.ts. */
+const MAX_SESSION_TITLE_CHARS = 60
 
 /** Scheduled task limits matching protocol `MAX_SCHEDULE_PROMPT_CHARS`, `DEFAULT_SCHEDULE_DURATION_MINUTES` and `MIN_AGENT_SCHEDULE_MINUTES` in `apps/server/src/sessions/agent-requests.ts`. The daemon revalidates; these only inform descriptions. */
 const MAX_SCHEDULE_PROMPT_CHARS = 20000
@@ -177,6 +181,18 @@ function writeDb() {
 }
 
 const TOOLS = [
+  {
+    name: 'rename_session',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    description:
+      "Donne un titre court et parlant à ta propre session, pour la retrouver dans la sidebar. Fais-le dès que tu comprends la demande : vise 3 à 6 mots dans la langue de l'utilisateur, centrés sur le sujet concret (par exemple « Refonte de la sidebar »), sans préambule ni état d'avancement. Ne le change ensuite que si le sujet principal change. Un titre choisi manuellement par l'utilisateur reste prioritaire : si Sillage le conserve, ne réessaie pas. Cet outil ne peut pas renommer une autre session.",
+    inputSchema: {
+      type: 'object',
+      properties: { title: { type: 'string', minLength: 1, maxLength: MAX_SESSION_TITLE_CHARS, description: `Titre sur une ligne, ${MAX_SESSION_TITLE_CHARS} caractères au plus.` } },
+      required: ['title'],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'search_history',
     description:
@@ -924,6 +940,7 @@ const LIST_PROJECTS = {
 }
 
 const SESSION_ONLY_TOOLS = new Set([
+  'rename_session',
   'send_session_message',
   'broadcast_session_message',
   'notify_when_done',
@@ -2622,6 +2639,7 @@ async function callTool(name, args) {
   }
 
   if (
+    name === 'rename_session' ||
     name === 'link_cards' ||
     name === 'unlink_cards' ||
     name === 'update_card' ||
@@ -2644,6 +2662,12 @@ async function callTool(name, args) {
   ) {
     if (!CURRENT_CONVERSATION && !USER) {
       return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
+    }
+    if (name === 'rename_session') {
+      const title = typeof args?.title === 'string' ? args.title.trim() : ''
+      if (!title || title.length > MAX_SESSION_TITLE_CHARS) {
+        return { ...text(`Le paramètre \`title\` doit contenir entre 1 et ${MAX_SESSION_TITLE_CHARS} caractères.`), isError: true }
+      }
     }
     if (name === 'request_decision' && !(typeof args?.question === 'string' && args.question.trim())) {
       return { ...text('Le paramètre `question` est requis.'), isError: true }
