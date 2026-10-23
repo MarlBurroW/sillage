@@ -14,6 +14,7 @@ import {
 import {
   createConversationBodySchema,
   editDiffQuerySchema,
+  eventBodyRefSchema,
   elicitationAnswerBodySchema,
   forkConversationBodySchema,
   handoffConversationBodySchema,
@@ -626,6 +627,20 @@ export function registerConversationRoutes(
     return { favorite: false }
   })
 
+  app.get('/api/conversations/:id/thread', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadReadable(id, user.id)
+    const query = request.query as { before?: string; after?: string }
+    const before = query.before === undefined ? undefined : Number(query.before)
+    const after = query.after === undefined ? undefined : Number(query.after)
+    if ([before, after].some((value) => value !== undefined && (!Number.isSafeInteger(value) || value < 0))) {
+      throw badRequest('invalid_thread_cursor', 'Invalid thread cursor.')
+    }
+    reply.header('cache-control', 'no-store')
+    return log.thread.page(id, before, after)
+  })
+
   app.get('/api/conversations/:id/events', async (request): Promise<JournalPageDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -633,7 +648,8 @@ export function registerConversationRoutes(
     const after = Number.isFinite(asked) ? asked : 0
     const conversation = await loadReadable(id, user.id)
 
-    const page = log.readForReplay(id, after, { rows: PAGE_ROWS, bytes: PAGE_BYTES })
+    const bodies = (request.query as { bodies?: string }).bodies === '1'
+    const page = log.readForReplay(id, after, { rows: PAGE_ROWS, bytes: PAGE_BYTES, bodies })
     return {
       entries: coalesceDeltas(page.entries).map((entry) => ({
         seq: entry.seq,
@@ -643,6 +659,34 @@ export function registerConversationRoutes(
       nextAfter: page.nextAfter,
       lastSeq: conversation.lastSeq,
     }
+  })
+
+  // Body routes follow conversation visibility, including readers of shared projects.
+  // No native/raw payload is exposed and no caller-supplied JSON path is evaluated.
+  app.get('/api/conversations/:id/events/:seq/body/:field', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, seq, field } = request.params as { id: string; seq: string; field: string }
+    await loadReadable(id, user.id)
+    const block = (request.query as { block?: string }).block
+    const ref = eventBodyRefSchema.parse({ seq: Number(seq), field, ...(block === undefined ? {} : { block: Number(block) }) })
+    const found = log.eventBody(id, ref.seq, ref.field, ref.block)
+    if (!found) throw notFound('event_body_not_found', 'Content not found in this conversation.')
+    return reply.header('cache-control', 'private, no-store').send(found)
+  })
+
+  app.get('/api/conversations/:id/events/:seq/images/:block', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, seq, block } = request.params as { id: string; seq: string; block: string }
+    await loadReadable(id, user.id)
+    const ref = eventBodyRefSchema.parse({ seq: Number(seq), field: 'output', block: Number(block) })
+    const url = log.eventImage(id, ref.seq, ref.block!)
+    // Raster images only: active content (HTML/SVG) must never execute on our origin.
+    const match = url && /^data:(image\/(?:png|jpeg|gif|webp|avif));base64,/.exec(url)
+    if (!match) throw notFound('event_body_not_found', 'Content not found in this conversation.')
+    return reply.type(match[1]!).header('x-content-type-options', 'nosniff')
+      .header('content-security-policy', "default-src 'none'; sandbox")
+      .header('cache-control', 'private, no-store')
+      .send(Buffer.from(url!.slice(match[0].length), 'base64'))
   })
 
   /** Full tool-call output. History replay returns previews of large outputs to avoid transferring megabytes nobody opens. Tool cards request full bodies here only when expanded. */

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./chat-state": "./src/chat-state.ts"
   },
   "scripts": {
     "build": "tsc -b",

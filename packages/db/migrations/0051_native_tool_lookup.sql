@@ -1,0 +1,1 @@
+CREATE INDEX `idx_events_native_tool` ON `events` (`conversation_id`,`type`,("payload" ->> '$.toolCallId'),`seq`) WHERE "events"."type" = 'tool.started' or "events"."type" = 'tool.completed';

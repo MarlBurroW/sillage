@@ -354,9 +354,8 @@ export type JournalPage = { seq: number; ts: number; event: SillageEvent }[]
 /**
  * Catch up fully from a cursor. The route is paginated, so loop until reaching the server's latest
  * `seq`; stopping at the first page would leave invisible thread gaps. Deliver pages as they arrive
- * rather than waiting for all of them: a twenty-thousand-event conversation takes roughly forty
- * sequential round trips, previously leaving the screen empty. The thread now appears with the
- * first page and grows to completion. Pages cannot be requested in parallel: each cursor is the
+ * rather than waiting for all of them, so folding yields between pages while the initial thread
+ * stays hidden. Pages cannot be requested in parallel: each cursor is the
  * previous page's last read `seq`, which cannot be predicted because merged deltas mean pages
  * return fewer entries than they read. Return the last read `seq`, distinct from the last returned
  * entry, for the WebSocket subscription cursor.
@@ -364,29 +363,31 @@ export type JournalPage = { seq: number; ts: number; event: SillageEvent }[]
 export async function fetchJournal(
   conversationId: string,
   afterSeq: number,
-  onPage: (entries: JournalPage) => void,
+  onPage: (entries: JournalPage, readThrough: number) => void,
+  signal?: AbortSignal,
 ): Promise<number> {
   let cursor = afterSeq
 
   for (;;) {
+    signal?.throwIfAborted()
     const page = await api.get<JournalPageDto>(
-      `/api/conversations/${conversationId}/events?after=${cursor}`,
+      `/api/conversations/${conversationId}/events?after=${cursor}&bodies=1`,
+      signal,
     )
-
-    if (page.entries.length > 0) {
-      onPage(
-        page.entries.map((entry) => ({
-          seq: entry.seq,
-          ts: entry.ts,
-          event: entry.event as SillageEvent,
-        })),
-      )
-    }
+    signal?.throwIfAborted()
 
     // The web app can deploy without restarting the server. Older servers omit `nextAfter`, so fall
     // back to the last returned entry as before; advancing to `undefined` would reread the first
     // page forever.
     const next = page.nextAfter ?? page.entries.at(-1)?.seq ?? cursor
+    // Commit every examined cursor, even for filtered-out pages. A failed later page
+    // can then resume without replaying already-coalesced deltas.
+    onPage(page.entries.map((entry) => ({
+      seq: entry.seq,
+      ts: entry.ts,
+      event: entry.event as SillageEvent,
+    })), next)
+    signal?.throwIfAborted()
 
     // Stop if a page makes no progress: otherwise a server returning a stationary cursor would loop
     // on the same page indefinitely.

@@ -1,3 +1,4 @@
+import { ThreadProjection } from './thread-projection.js'
 import { EventEmitter } from 'node:events'
 import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm'
 import { conversationPaths, conversations, events, writeTransaction, type Db, type Tx } from '@sillage/db'
@@ -15,6 +16,7 @@ import {
   isSuperseded,
   type SupersessionIndex,
 } from './superseded.js'
+import { bodyPayload, bodyWeight, prepareBodyPayload } from './event-bodies.js'
 import { replayPayload, replayWeight } from './tool-output.js'
 import { touchedPaths } from './touched-paths.js'
 
@@ -64,16 +66,19 @@ function byteSize(payload: string, raw: string | null): number {
 }
 
 /** In-memory replay indexes for recently opened conversations. */
-const SUPERSESSION_INDEXES = 32
+const SUPERSESSION_INDEX_BYTES = 16 * 1024 * 1024
 
 export class EventLog {
+  readonly thread: ThreadProjection
   private readonly bus = new EventEmitter()
+  private readonly indexWeights = new WeakMap<SupersessionIndex, { seq: number; bytes: number }>()
   private readonly supersession = new Map<string, SupersessionIndex>()
 
   constructor(private readonly db: Db) {
     // Popular conversations with several mobile/desktop tabs quickly exceed
     // the default ten-listener limit.
     this.bus.setMaxListeners(200)
+    this.thread = new ThreadProjection(db, this)
   }
 
   /** Increment `seq` and insert events in one transaction so concurrent writes cannot receive identical numbers. */
@@ -130,6 +135,7 @@ export class EventLog {
 
     this.bus.emit(conversationId, entry)
     this.bus.emit(ALL_EVENTS, entry)
+    this.thread.schedule(conversationId)
     return entry
   }
 
@@ -139,8 +145,12 @@ export class EventLog {
     batch: { ts: number; event: SillageEvent; raw?: unknown }[],
     /** Shared `raw` provenance for batches from one source. */
     rawFormat?: string,
+    /** Persist a transcript cursor in the same commit as its translated events. */
+    checkpoint?: (tx: Tx, lastSeq: number) => void,
+    /** Streaming imports recount once on completion, not once per small batch. */
+    recountTurns = true,
   ): number {
-    if (batch.length === 0) return 0
+    if (batch.length === 0 && !checkpoint) return 0
 
     const entries = writeTransaction(this.db, (tx): JournalEntry[] => {
       const row = tx
@@ -175,15 +185,16 @@ export class EventLog {
         return { conversationId, seq, ts: item.ts, event: item.event }
       })
 
-      // Recount turns here rather than per insert: imports supply complete messages
-      // and one query covers them all.
-      tx.update(conversations)
+      checkpoint?.(tx, row.lastSeq + batch.length)
+
+      // Repeated full-journal counts would make a bounded streaming import quadratic.
+      if (batch.length || recountTurns) tx.update(conversations)
         .set({
           lastSeq: row.lastSeq + batch.length,
           ...(notableSeq > 0 ? { lastNotableSeq: notableSeq } : {}),
           updatedAt: Date.now(),
           journalBytes: sql`${conversations.journalBytes} + ${bytes}`,
-          turnCount: TURN_COUNT,
+          ...(recountTurns ? { turnCount: TURN_COUNT } : {}),
         })
         .where(eq(conversations.id, conversationId))
         .run()
@@ -192,18 +203,26 @@ export class EventLog {
     })
 
     for (const entry of entries) this.bus.emit(conversationId, entry)
+    if (entries.length) this.thread.schedule(conversationId)
     return entries.at(-1)?.seq ?? 0
   }
 
-  /** Markers aligning journals with CLI transcripts. `uuids` are known transcript IDs retained in live/import `raw` fields; the latest shared ID identifies resumption. `startedToolCallIds` and `completedToolCallIds` prevent duplicate tools whose transcript entries lie after that point following interrupted turns. `subAgentIds` identifies subagents already journaled: their independent timelines require all-or-nothing import. Claude contract: only Claude Code writes transcript `raw.uuid`; Codex raw payloads lack it, making reads harmless elsewhere but meaningful only to Claude adapters. */
+  /** Markers aligning journals with CLI transcripts. `uuids` are known transcript IDs retained in live/import `raw` fields; the latest shared ID identifies resumption. `startedToolCallIds` and `completedToolCallIds` prevent duplicate tools whose transcript entries lie after that point following interrupted turns. `subAgentIds` distinguishes already journaled children from new files when a child has no matching UUID. Claude contract: only Claude Code writes transcript `raw.uuid`; Codex raw payloads lack it, making reads harmless elsewhere but meaningful only to Claude adapters. */
   importAnchors(conversationId: string): {
     uuids: Set<string>
     startedToolCallIds: Set<string>
     completedToolCallIds: Set<string>
     subAgentIds: Set<string>
   } {
+    // Only identifiers cross into JS: native raw and normalized bodies can each
+    // exceed the daemon heap on long conversations.
     const rows = this.db
-      .select({ type: events.type, payload: events.payload, raw: events.raw })
+      .select({
+        type: events.type,
+        uuid: sql<string | null>`case when json_valid(${events.raw}) and json_type(${events.raw}, '$.uuid') = 'text' then ${events.raw} ->> '$.uuid' end`,
+        toolCallId: sql<string | null>`case when json_type(${events.payload}, '$.toolCallId') = 'text' then ${events.payload} ->> '$.toolCallId' end`,
+        parentToolCallId: sql<string | null>`case when json_type(${events.payload}, '$.parentToolCallId') = 'text' then ${events.payload} ->> '$.parentToolCallId' end`,
+      })
       .from(events)
       .where(eq(events.conversationId, conversationId))
       .all()
@@ -213,21 +232,10 @@ export class EventLog {
     const completedToolCallIds = new Set<string>()
     const subAgentIds = new Set<string>()
     for (const row of rows) {
-      if (row.raw) {
-        const raw = JSON.parse(row.raw) as { uuid?: unknown }
-        if (typeof raw.uuid === 'string') uuids.add(raw.uuid)
-      }
-      const payload = JSON.parse(row.payload) as {
-        toolCallId?: unknown
-        parentToolCallId?: unknown
-      }
-      if (row.type === 'tool.started' && typeof payload.toolCallId === 'string') {
-        startedToolCallIds.add(payload.toolCallId)
-      }
-      if (row.type === 'tool.completed' && typeof payload.toolCallId === 'string') {
-        completedToolCallIds.add(payload.toolCallId)
-      }
-      if (typeof payload.parentToolCallId === 'string') subAgentIds.add(payload.parentToolCallId)
+      if (typeof row.uuid === 'string') uuids.add(row.uuid)
+      if (row.type === 'tool.started' && typeof row.toolCallId === 'string') startedToolCallIds.add(row.toolCallId)
+      if (row.type === 'tool.completed' && typeof row.toolCallId === 'string') completedToolCallIds.add(row.toolCallId)
+      if (typeof row.parentToolCallId === 'string') subAgentIds.add(row.parentToolCallId)
     }
     return { uuids, startedToolCallIds, completedToolCallIds, subAgentIds }
   }
@@ -253,14 +261,17 @@ export class EventLog {
   readForReplay(
     conversationId: string,
     afterSeq: number,
-    limits: { rows: number; bytes: number },
+    limits: { rows: number; bytes: number; bodies?: boolean; unfiltered?: boolean },
   ): { entries: JournalEntry[]; nextAfter: number } {
-    const index = this.supersessionIndex(conversationId)
+    // Returning to an unchanged projected thread needs no historical supersession index.
+    const lastSeq = this.db.select({ seq: conversations.lastSeq }).from(conversations).where(eq(conversations.id, conversationId)).get()?.seq ?? 0
+    if (afterSeq >= lastSeq) return { entries: [], nextAfter: afterSeq }
+    const index = limits.unfiltered ? null : this.supersessionIndex(conversationId)
     const listed = this.db
       .select({
         seq: events.seq,
         type: events.type,
-        bytes: replayWeight,
+        bytes: limits.bodies ? bodyWeight : replayWeight,
         toolCallId: sql<string | null>`case when ${events.type} = 'tool.output_delta'
           then ${events.payload} ->> '$.toolCallId' end`,
       })
@@ -274,7 +285,7 @@ export class EventLog {
     let bytes = 0
     let nextAfter = afterSeq
     for (const row of listed) {
-      if (!isSuperseded(index, row)) {
+      if (!index || !isSuperseded(index, row)) {
         if (kept.length > 0 && bytes + row.bytes > limits.bytes) break
         kept.push(row.seq)
         bytes += row.bytes
@@ -285,7 +296,7 @@ export class EventLog {
     if (kept.length === 0) return { entries: [], nextAfter }
 
     const rows = this.db
-      .select({ seq: events.seq, ts: events.ts, payload: replayPayload })
+      .select({ seq: events.seq, ts: events.ts, payload: limits.bodies ? bodyPayload : replayPayload })
       .from(events)
       .where(and(eq(events.conversationId, conversationId), inArray(events.seq, kept)))
       .orderBy(asc(events.seq))
@@ -296,10 +307,45 @@ export class EventLog {
         conversationId,
         seq: row.seq,
         ts: row.ts,
-        event: this.parseStored(row.seq, row.payload),
+        event: this.parseStored(row.seq, row.payload, limits.bodies),
       })),
       nextAfter,
     }
+  }
+
+  /** Socket catch-up keeps all sequence numbers but shares REST's lightweight representation. */
+  readWithBodies(conversationId: string, afterSeq: number, limit: number): JournalEntry[] {
+    return this.db.select({ seq: events.seq, ts: events.ts, payload: bodyPayload })
+      .from(events).where(and(eq(events.conversationId, conversationId), gt(events.seq, afterSeq)))
+      .orderBy(asc(events.seq)).limit(limit).all().map((row) => ({
+        conversationId, seq: row.seq, ts: row.ts,
+        event: this.parseStored(row.seq, row.payload, true),
+      }))
+  }
+
+  /** Live events were persisted before broadcasting; project that exact row, never a later call. */
+  withBodies(entry: JournalEntry): JournalEntry {
+    if (!['message.completed', 'tool.started', 'tool.input_updated', 'tool.completed', 'diff.updated'].includes(entry.event.type)) return entry
+    return this.readWithBodies(entry.conversationId, entry.seq - 1, 1)[0] ?? entry
+  }
+
+  eventBody(conversationId: string, seq: number, field: 'input' | 'output' | 'patch', block?: number): { value: unknown } | null {
+    const path = block === undefined ? `$.${field}` : `$.blocks[${block}].${field}`
+    const row = this.db.select({ value: sql<string | null>`${events.payload} -> ${path}`,
+      type: events.type, blockType: sql<string | null>`${events.payload} ->> ${block === undefined ? '$.type' : `$.blocks[${block}].type`}` })
+      .from(events).where(and(eq(events.conversationId, conversationId), eq(events.seq, seq))).get()
+    if (!row || row.value === null) return null
+    const allowed = block === undefined
+      ? (field === 'input' && ['tool.started', 'tool.input_updated'].includes(row.type)) || (field === 'output' && row.type === 'tool.completed') || (field === 'patch' && row.type === 'diff.updated')
+      : row.type === 'message.completed' && ((field === 'input' && row.blockType === 'tool_use') || (field === 'output' && row.blockType === 'tool_result'))
+    return allowed ? { value: JSON.parse(row.value) } : null
+  }
+
+  eventImage(conversationId: string, seq: number, block: number): string | null {
+    const row = this.db.select({ url: sql<string | null>`${events.payload} ->> ${`$.blocks[${block}].url`}` })
+      .from(events).where(and(eq(events.conversationId, conversationId), eq(events.seq, seq),
+        eq(events.type, 'message.completed'), sql`${events.payload} ->> ${`$.blocks[${block}].type`} = 'image'`)).get()
+    return row?.url ?? null
   }
 
   /** Conversation supersession index current through its latest `seq`. Build once (44 ms on the largest conversation), then advance each page using only new events; rescanning later history per page would erase savings. */
@@ -342,9 +388,15 @@ export class EventLog {
     // so the first key is least recently read.
     this.supersession.delete(conversationId)
     this.supersession.set(conversationId, index)
-    if (this.supersession.size > SUPERSESSION_INDEXES) {
-      const stale = this.supersession.keys().next().value
-      if (stale !== undefined) this.supersession.delete(stale)
+    if (this.indexWeights.get(index)?.seq !== index.seq) {
+      let weight = 128 + conversationId.length * 2 + index.diffTurn.size * 48 + index.turnDiffs.size * 80
+      for (const key of index.completed.keys()) weight += 64 + key.length * 2
+      this.indexWeights.set(index, { seq: index.seq, bytes: weight })
+    }
+    let bytes = 0
+    for (const [id, cached] of [...this.supersession].reverse()) {
+      bytes += this.indexWeights.get(cached)?.bytes ?? 0
+      if (bytes > SUPERSESSION_INDEX_BYTES) this.supersession.delete(id)
     }
     return index
   }
@@ -568,26 +620,25 @@ export class EventLog {
 
   /** Native payloads from tool start and completion. Hold file-edit details absent from normalized schemas: written/replaced content for Claude and unified patches for Codex. Still respects invariant I3: relevant CLI adapters interpret these, never frontends. */
   rawOfTool(conversationId: string, toolCallId: string): { started: unknown; completed: unknown } {
-    const rows = this.db
-      .select({ type: events.type, payload: events.payload, raw: events.raw })
-      .from(events)
-      .where(
-        and(
+    const latest = (type: 'tool.started' | 'tool.completed'): unknown => {
+      // A single diff previously loaded every tool payload (hundreds of MB) into JS.
+      // Keep the last native event of each kind, including when a call ID is reused.
+      const row = this.db
+        .select({ raw: events.raw })
+        .from(events)
+        .where(and(
           eq(events.conversationId, conversationId),
-          inArray(events.type, ['tool.started', 'tool.completed']),
-        ),
-      )
-      .orderBy(asc(events.seq))
-      .all()
+          eq(events.type, type),
+          sql`nullif(${events.raw}, '') is not null`,
+          sql`${events.payload} ->> '$.toolCallId' = ${toolCallId}`,
+        ))
+        .orderBy(desc(events.seq))
+        .limit(1)
+        .get()
 
-    const found: { started: unknown; completed: unknown } = { started: null, completed: null }
-    for (const row of rows) {
-      const payload = JSON.parse(row.payload) as { toolCallId?: string }
-      if (payload.toolCallId !== toolCallId || !row.raw) continue
-      if (row.type === 'tool.started') found.started = JSON.parse(row.raw)
-      else found.completed = JSON.parse(row.raw)
+      return row?.raw ? JSON.parse(row.raw) : null
     }
-    return found
+    return { started: latest('tool.started'), completed: latest('tool.completed') }
   }
 
   /** Journaled change type for a call/file pair. Reread rather than trust clients because it determines full creations versus rewrites without comparison points; journals are authoritative (invariant I2). */
@@ -653,8 +704,8 @@ export class EventLog {
   }
 
   /** Validate events during replay rather than merely cast them. Applies schema defaults to entries predating fields: indefinitely replayable journals (invariant I2) must render old forms correctly instead of producing `NaN`. */
-  private parseStored(seq: number, payload: string): SillageEvent {
-    const raw: unknown = JSON.parse(payload)
+  private parseStored(seq: number, payload: string, bodies = false): SillageEvent {
+    const raw: unknown = bodies ? prepareBodyPayload(payload) : JSON.parse(payload)
     const parsed = sillageEventSchema.safeParse(raw)
     if (parsed.success) return parsed.data
 

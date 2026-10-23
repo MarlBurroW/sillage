@@ -17,10 +17,17 @@ export type AgentKind = z.infer<typeof agentKindSchema>
 
 export const planStatusSchema = z.enum(['pending', 'in_progress', 'completed'])
 
+export const eventBodyRefSchema = z.object({
+  seq: z.number().int().positive(),
+  field: z.enum(['input', 'output', 'patch']),
+  block: z.number().int().nonnegative().optional(),
+})
+export type EventBodyRef = z.infer<typeof eventBodyRefSchema>
+
 export const contentBlockSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('thinking'), text: z.string() }),
-  z.object({ type: z.literal('image'), mimeType: z.string(), url: z.string() }),
+  z.object({ type: z.literal('image'), mimeType: z.string(), url: z.string(), width: z.number().positive().optional(), height: z.number().positive().optional() }),
   /**
    * Attachment that cannot display inline. The path passed to the agent is absent here: the
    * thread shows the file, not its location on server disk.
@@ -37,11 +44,13 @@ export const contentBlockSchema = z.discriminatedUnion('type', [
     toolCallId: z.string(),
     name: z.string(),
     input: z.unknown(),
+    inputRef: eventBodyRefSchema.optional(),
   }),
   z.object({
     type: z.literal('tool_result'),
     toolCallId: z.string(),
     output: z.unknown(),
+    outputRef: eventBodyRefSchema.optional(),
     isError: z.boolean(),
   }),
 ])
@@ -238,6 +247,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     toolCallId: z.string(),
     name: z.string(),
     input: z.unknown(),
+    inputRef: eventBodyRefSchema.optional(),
     parentToolCallId: z.string().nullable(),
   }),
   z.object({
@@ -249,17 +259,19 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     type: z.literal('tool.input_updated'),
     toolCallId: z.string(),
     input: z.unknown(),
+    inputRef: eventBodyRefSchema.optional(),
   }),
   z.object({
     type: z.literal('tool.completed'),
     toolCallId: z.string(),
     output: z.unknown(),
+    outputRef: eventBodyRefSchema.optional(),
     isError: z.boolean(),
     durationMs: z.number(),
     /**
      * Actual output size, present only when `output` was omitted. History replay removes large
      * outputs to avoid transferring unread megabytes; the tool-call card requests the full body
-     * when opened. Never set on live events, which deliver everything.
+     * when opened. Also used by live connections that opt into body references.
      */
     outputBytes: z.number().optional(),
   }),
@@ -695,6 +707,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     type: z.literal('diff.updated'),
     /** Native unified diff, when provided. */
     patch: z.string().optional(),
+    patchRef: eventBodyRefSchema.optional(),
     files: z.array(
       z.object({ path: z.string(), added: z.number(), removed: z.number() }),
     ),

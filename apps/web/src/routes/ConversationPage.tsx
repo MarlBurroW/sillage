@@ -1,3 +1,4 @@
+import { recordPerformance } from '../lib/performance-diagnostics'
 import { useThreadLayout } from '../lib/use-thread-layout'
 import { NewsTicker } from '../components/chat/NewsTicker'
 import { TooltipButton } from '../components/ui/Tooltip'
@@ -158,6 +159,9 @@ export function ConversationPage() {
   const { data: user } = useCurrentUser()
   const { data: conversation } = useConversation(conversationId)
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
+  const { loadOlder } = stream
+  const currentThread = useRef(conversationId)
+  currentThread.current = conversationId
   // Viewing the page counts as reading: the sidebar need not flag what is already visible.
   //
   // The row's `seq` takes precedence over the folded thread: opening a conversation
@@ -322,6 +326,14 @@ export function ConversationPage() {
     return () => clearTimeout(timer)
   }, [placed, conversationId])
 
+  useEffect(() => {
+    if (findOpen && stream.hasMore && !stream.loadingOlder && !stream.error && !stream.loading) void loadOlder()
+  }, [findOpen, stream.hasMore, stream.loadingOlder, stream.error, stream.loading, loadOlder, stream.state.items])
+
+  useEffect(() => {
+    if (placed) recordPerformance('thread-visible')
+  }, [placed])
+
   const view = useMemo(
     // Thread search traverses the DOM: windowing would search truncated content and
     // report too few matches. Keep everything mounted while search
@@ -342,10 +354,15 @@ export function ConversationPage() {
   )
 
   const showEarlier = useCallback(() => {
-    const node = scroller.current
-    if (node) scrollAnchor.current = { height: node.scrollHeight, top: node.scrollTop }
-    setWindowSize((size) => size + WINDOW_STEP_ROWS)
-  }, [])
+    const expand = () => {
+      if (currentThread.current !== conversationId) return
+      const node = scroller.current
+      if (node) scrollAnchor.current = { height: node.scrollHeight, top: node.scrollTop }
+      setWindowSize((size) => size + WINDOW_STEP_ROWS)
+    }
+    if (view.hidden === 0 && stream.hasMore) void loadOlder().then(expand)
+    else expand()
+  }, [view.hidden, stream.hasMore, loadOlder, conversationId])
 
   /** Message targeted by a search result, once the thread loads. */
   const [searchParams] = useSearchParams()
@@ -554,29 +571,33 @@ export function ConversationPage() {
   /**
    * Mount a message before the window by its `seq`.
    *
-   * Return true only when the window actually grows and another render follows. The two
-   * initial-positioning paths below need this: they hide the thread until the target mounts,
-   * and waiting without a future wakeup would keep it invisible forever.
+   * Return true while a page request or window expansion will produce another render. Both
+   * opening paths keep the thread hidden until the requested message can be positioned.
    */
   const growWindowTo = useCallback(
     (seq: number): boolean => {
       const target = stream.state.items.find(
         (item) => item.kind === 'message' && item.seq === seq,
       )
-      if (!target) return false
+      if (!target) {
+        if (stream.hasMore && !stream.error) {
+          if (!stream.loadingOlder) void loadOlder()
+          return true
+        }
+        return false
+      }
       const needed = windowToReveal(rows, target.id)
       if (needed === null || needed <= windowSize) return false
       setWindowSize(needed)
       return true
     },
-    [stream.state.items, rows, windowSize],
+    [stream.state.items, rows, windowSize, stream.hasMore, stream.error, stream.loadingOlder, loadOlder],
   )
 
   /**
    * Open at a specific message when arriving from search.
    *
-   * The journal is fully loaded, so the message is in the thread but may not be mounted. If it
-   * precedes the window, reveal it and rerun the effect on the next render. Once per target
+   * Fetch earlier pages and expand the rendering window until the message is mounted. Once per target
    * only, otherwise every received event would reset scrolling for the session's remainder.
    */
   useLayoutEffect(() => {
@@ -587,9 +608,7 @@ export function ConversationPage() {
     if (!hasAnchor || anchored.current === anchorSeq) return
     if (growWindowTo(anchorSeq)) return
 
-    // Mark before checking target existence: the journal is fully folded now, so a
-    // missing message will never arrive; keeping it pending would hide the thread
-    // indefinitely.
+    // No more pages can supply this target; do not hide the thread forever if it is absent.
     anchored.current = anchorSeq
 
     const element = node.querySelector<HTMLElement>(`[data-seq="${anchorSeq}"]`)
@@ -605,9 +624,8 @@ export function ConversationPage() {
   /**
    * Position the thread on opening, then reveal it.
    *
-   * Once per conversation after full journal folding: only then does the position mean
-   * anything. Earlier positions concern a thread still under construction. Until then, `placed`
-   * keeps it hidden.
+   * Once per conversation after the initial view and any pages needed for the saved anchor
+   * arrive. Until then, `placed` keeps the changing layout hidden.
    */
   useLayoutEffect(() => {
     const node = scroller.current
@@ -1227,7 +1245,8 @@ export function ConversationPage() {
           scroller={scroller}
           open={findOpen}
           onClose={() => setFindOpen(false)}
-          revision={stream.state.lastSeq}
+          revision={stream.state.lastSeq + stream.state.items.length}
+          loading={(stream.hasMore && !stream.error) || stream.loadingOlder}
         />
 
         {/*
@@ -1276,16 +1295,17 @@ export function ConversationPage() {
                 />
               ) : null}
     
-              {view.hidden > 0 ? (
+              {view.hidden > 0 || stream.hasMore ? (
                 <button
                   type="button"
                   onClick={showEarlier}
+                  disabled={stream.loadingOlder}
                   className={cx(
                     'surface mx-auto rounded-full border border-line px-3 py-1.5',
                     'text-xs text-ink-soft transition-colors hover:text-ink',
                   )}
                 >
-                  {t(
+                  {stream.loadingOlder ? t('journal.history.loading') : stream.hasMore ? t('journal.history.earlier') : t(
                     view.hidden > 1
                       ? 'conversation.thread.earlier.other'
                       : 'conversation.thread.earlier.one',
@@ -1435,6 +1455,7 @@ export function ConversationPage() {
             workspaceName={conversation.worktreeId ? (worktree?.name ?? '…') : undefined}
             agent={conversation.agent}
             editTurns={stream.state.editTurns}
+            history={{ hasMore: stream.hasMore, loading: stream.loadingOlder, load: loadOlder }}
             checkpoints={stream.state.checkpoints}
             canRestore={isOwner && !stream.state.turnRunning}
             turnRunning={stream.state.turnRunning}

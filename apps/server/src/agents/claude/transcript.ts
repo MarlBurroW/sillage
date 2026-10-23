@@ -1,9 +1,9 @@
-import { open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ContentBlock, SillageEvent } from '@sillage/protocol'
 import { toWorkspacePath } from '../paths.js'
 import { editedPath } from './file-edits.js'
+import { TranscriptReader } from './transcript-reader.js'
 
 /**
  * Read/translate Claude Code session transcripts.
@@ -57,42 +57,14 @@ export function readTranscript(cwd: string, sessionId: string): Promise<Transcri
   return readJsonl(transcriptPath(cwd, sessionId))
 }
 
-const REQUEST_REPLAY_TYPES = new Set(['api-request', 'api-request-shape', 'api-request-blob'])
-
 async function readJsonl(path: string): Promise<TranscriptEntry[]> {
-  let file
+  const reader = await TranscriptReader.open(path)
+  if (!reader) return []
   try {
-    file = await open(path, 'r')
-  } catch {
-    return []
-  }
-
-  const entries: TranscriptEntry[] = []
-  try {
-    // Since 2.1.300 CLI replay duplicates prompts/tools. Streaming avoids holding full file
-    // alongside display-relevant entries.
-    for await (const line of file.readLines()) {
-      // Probed on 2.1.301: lines start with type. Anchoring avoids discarding messages merely
-      // quoting this format.
-      if (/^\s*\{\s*"type"\s*:\s*"api-request(?:-shape|-blob)?"\s*[,}]/.test(line)) continue
-      try {
-        const parsed: unknown = JSON.parse(line)
-        if (typeof parsed !== 'object' || parsed === null) continue
-        const entry = parsed as TranscriptEntry
-        // Filter remains correct if future versions move type property.
-        if (typeof entry.type === 'string' && REQUEST_REPLAY_TYPES.has(entry.type)) continue
-        entries.push(entry)
-      } catch {
-        // Truncated lines from concurrent writes do not invalidate rest of file.
-      }
-    }
-  } catch {
-    // Unreadable files provide no history, like absent files.
-    return []
-  } finally {
-    await file.close()
-  }
-  return entries
+    const entries: TranscriptEntry[] = []
+    for await (const { entry } of reader.lines(0, await reader.prefix(0))) if (entry) entries.push(entry)
+    return entries
+  } finally { await reader.file.close() }
 }
 
 /**
@@ -136,7 +108,7 @@ export async function readSubAgentTranscripts(
  * Entry carries agentId, blocks carry call ID: grouped results cannot identify which spawned
  * subagent. No link beats random linkage making whole thread silently invisible.
  */
-function spawnedAgents(entries: TranscriptEntry[]): Map<string, string> {
+export function spawnedAgents(entries: TranscriptEntry[]): Map<string, string> {
   const spawned = new Map<string, string>()
   for (const entry of entries) {
     const agentId = entry.toolUseResult?.agentId
@@ -153,7 +125,7 @@ function spawnedAgents(entries: TranscriptEntry[]): Map<string, string> {
   return spawned
 }
 
-function entryTs(entry: TranscriptEntry): number {
+export function entryTs(entry: TranscriptEntry): number {
   const parsed = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN
   return Number.isFinite(parsed) ? parsed : Date.now()
 }
@@ -178,9 +150,15 @@ function isLocalCommand(text: string): boolean {
 const INTERRUPT_MARKER = /^\[Request interrupted by user[^\]]*\]$/
 
 interface ToolUse {
-  name: string
-  input: unknown
+  path: string | null
   startedAt: number
+}
+
+export interface TranscriptTranslationState {
+  pendingTools: [string, ToolUse][]
+  model: string | null
+  inTurn: boolean
+  count: number
 }
 
 /**
@@ -218,25 +196,23 @@ export function translateTranscript(
  *
  * Only main owns turn boundaries/compactions: subagents work inside turns, never open them.
  */
-function translateThread(
-  entries: TranscriptEntry[],
-  cwd: string,
-  thread: string | null,
-): { events: TranslatedEvent[]; model: string | null } {
-  const events: TranslatedEvent[] = []
-  const pendingTools = new Map<string, ToolUse>()
-  let model: string | null = null
-  let inTurn = false
+export function transcriptTranslator(cwd: string, thread: string | null, saved?: TranscriptTranslationState) {
+  const pendingTools = new Map<string, ToolUse>(saved?.pendingTools)
+  let model: string | null = saved?.model ?? null
+  let inTurn = saved?.inTurn ?? false
+  let count = saved?.count ?? 0
 
-  for (const entry of entries) {
+  const snapshot = (): TranscriptTranslationState => ({ pendingTools: [...pendingTools], model, inTurn, count })
+  const push = (entry: TranscriptEntry): TranslatedEvent[] => {
+    const events: TranslatedEvent[] = []
     // Older CLIs mark inline subagent turns this way. Treating as main would show subagent prompts
     // as user speech.
-    if (thread === null && entry.isSidechain === true) continue
+    if (thread === null && entry.isSidechain === true) return events
     const ts = entryTs(entry)
 
     if (entry.type === 'assistant') {
       const message = entry.message
-      if (!message || !Array.isArray(message.content)) continue
+      if (!message || !Array.isArray(message.content)) return events
       if (typeof message.model === 'string' && message.model !== '<synthetic>') {
         model = message.model
       }
@@ -249,7 +225,7 @@ function translateThread(
           blocks.push({ type: 'thinking', text: block.thinking })
         } else if (block.type === 'tool_use' && typeof block.id === 'string') {
           const name = typeof block.name === 'string' ? block.name : ''
-          pendingTools.set(block.id, { name, input: block.input, startedAt: ts })
+          pendingTools.set(block.id, { path: editedPath(name, block.input), startedAt: ts })
           blocks.push({ type: 'tool_use', toolCallId: block.id, name, input: block.input })
           events.push({
             ts,
@@ -278,11 +254,11 @@ function translateThread(
           raw: entry,
         })
       }
-      continue
+      return events
     }
 
     if (entry.type === 'user') {
-      if (entry.isMeta === true || entry.isCompactSummary === true) continue
+      if (entry.isMeta === true || entry.isCompactSummary === true) return events
       const content = entry.message?.content
 
       if (Array.isArray(content)) {
@@ -306,7 +282,7 @@ function translateThread(
             raw: block,
           })
 
-          const path = started && !isError ? editedPath(started.name, started.input) : null
+          const path = started && !isError ? started.path : null
           if (path !== null) {
             events.push({
               ts,
@@ -320,7 +296,7 @@ function translateThread(
             })
           }
         }
-        if (handled) continue
+        if (handled) return events
       }
 
       const text =
@@ -332,7 +308,7 @@ function translateThread(
                 .map((block) => block.text as string)
                 .join('\n')
             : ''
-      if (!text.trim() || isLocalCommand(text) || INTERRUPT_MARKER.test(text.trim())) continue
+      if (!text.trim() || isLocalCommand(text) || INTERRUPT_MARKER.test(text.trim())) return events
 
       // Subagents work inside parent turn; opening their own would flicker main activity.
       if (!inTurn && thread === null) {
@@ -343,14 +319,14 @@ function translateThread(
         ts,
         event: {
           type: 'message.completed',
-          messageId: typeof entry.uuid === 'string' ? entry.uuid : `import-${events.length}`,
+          messageId: typeof entry.uuid === 'string' ? entry.uuid : `import-${count + events.length}`,
           role: 'user',
           blocks: [{ type: 'text', text }],
           parentToolCallId: thread,
         },
         raw: entry,
       })
-      continue
+      return events
     }
 
     if (entry.type === 'system' && thread === null) {
@@ -388,13 +364,26 @@ function translateThread(
     }
     // Everything else (mode, last-prompt, file-history-*, attachment...) is internal CLI state
     // without thread translation.
+    return events
   }
-
-  // Mid-turn transcript ending means interrupted session; close it or replay keeps activity lit.
-  if (inTurn) {
-    const last = events.at(-1)
-    events.push({ ts: last?.ts ?? Date.now(), event: { type: 'session.ended', reason: 'interrupted' } })
+  return {
+    snapshot,
+    push(entry: TranscriptEntry) {
+      const events = push(entry)
+      count += events.length
+      return events
+    },
+    finish(ts: number): TranslatedEvent[] {
+      if (!inTurn) return []
+      inTurn = false
+      return [{ ts, event: { type: 'session.ended', reason: 'interrupted' } }]
+    },
   }
+}
 
-  return { events, model }
+function translateThread(entries: TranscriptEntry[], cwd: string, thread: string | null) {
+  const translator = transcriptTranslator(cwd, thread)
+  const events = entries.flatMap((entry) => translator.push(entry))
+  events.push(...translator.finish(events.at(-1)?.ts ?? Date.now()))
+  return { events, model: translator.snapshot().model }
 }

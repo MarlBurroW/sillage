@@ -17,6 +17,7 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     t: z.literal('subscribe'),
     conversationId: z.string(),
     afterSeq: z.number().int().min(0),
+    bodies: z.literal(1).optional(),
   }),
   z.object({ t: z.literal('unsubscribe'), conversationId: z.string() }),
   /**

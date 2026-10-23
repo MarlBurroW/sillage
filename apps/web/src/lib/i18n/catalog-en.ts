@@ -1377,6 +1377,10 @@ export const en = {
   'settings.buildInfo': 'Sillage {version} · build from',
 
   // About and updates
+  'about.diagnostics.title': "Performance diagnostics",
+  'about.diagnostics.description': "Save a local report with the app version, memory use and recent loading times. Conversation content is excluded.",
+  'about.diagnostics.export': "Export report…",
+  'about.diagnostics.error': "The report could not be saved.",
   'about.title': 'About',
   'about.description': 'Installed version and updates.',
   'about.version.card': 'Version',
@@ -2622,6 +2626,11 @@ export const en = {
   // Tool call rendering (payloads and groups)
   'toolcall.payload.input': 'Input',
   'toolcall.payload.output': 'Output',
+  'error.invalid_thread_cursor': 'Invalid conversation history position.',
+  'journal.history.earlier': 'Load earlier activity',
+  'journal.history.loading': 'Loading history…',
+  'journal.content.loading': 'Loading the full content…',
+  'journal.content.error': 'Could not load this content.',
   'toolcall.output.loading': 'Loading the full output...',
   'toolcall.output.error': 'Could not load the output.',
   'toolcall.payload.empty': '(empty)',
@@ -2725,6 +2734,7 @@ export const en = {
   'error.already_sent': "This attachment is already part of the conversation.",
   'error.attachment_file_missing': "The file is gone from disk.",
   'error.attachment_forbidden': "This attachment is not yours.",
+  'error.event_body_not_found': "Content not found in this conversation.",
   'error.attachment_not_found': "Attachment not found.",
   'error.attachment_unavailable': "Attachment {id} is unavailable or has already been sent.",
   'error.bad_message': "Unreadable message.",

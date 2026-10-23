@@ -1372,6 +1372,10 @@ export const fr: Catalog = {
   'settings.buildInfo': 'Sillage {version} · build du',
 
   // About and updates
+  'about.diagnostics.title': "Diagnostic de performance",
+  'about.diagnostics.description': "Enregistrer un rapport local avec la version, la mémoire utilisée et les derniers temps de chargement. Le contenu des conversations en est exclu.",
+  'about.diagnostics.export': "Exporter le rapport…",
+  'about.diagnostics.error': "Le rapport n’a pas pu être enregistré.",
   'about.title': 'À propos',
   'about.description': 'Version installée et mises à jour.',
   'about.version.card': 'Version',
@@ -2618,6 +2622,11 @@ export const fr: Catalog = {
   // Tool call rendering (payloads and groups)
   'toolcall.payload.input': 'Entrée',
   'toolcall.payload.output': 'Sortie',
+  'error.invalid_thread_cursor': 'Position invalide dans l’historique de la conversation.',
+  'journal.history.earlier': 'Charger l’activité précédente',
+  'journal.history.loading': 'Chargement de l’historique…',
+  'journal.content.loading': 'Chargement du contenu complet…',
+  'journal.content.error': 'Chargement de ce contenu impossible.',
   'toolcall.output.loading': 'Chargement de la sortie complète...',
   'toolcall.output.error': 'Chargement de la sortie impossible.',
   'toolcall.payload.empty': '(vide)',
@@ -2720,6 +2729,7 @@ export const fr: Catalog = {
   'error.already_sent': "Cette pièce jointe fait déjà partie de la conversation.",
   'error.attachment_file_missing': "Le fichier a disparu du disque.",
   'error.attachment_forbidden': "Cette pièce jointe ne t'appartient pas.",
+  'error.event_body_not_found': "Contenu introuvable dans cette conversation.",
   'error.attachment_not_found': "Pièce jointe introuvable.",
   'error.attachment_unavailable': "La pièce jointe {id} est indisponible ou déjà envoyée.",
   'error.bad_message': "Message illisible.",

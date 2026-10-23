@@ -231,7 +231,7 @@ function Attachments({
     <div className="flex flex-col gap-2">
       {images.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          <ImageGallery images={images.map((image) => ({ src: image.url, alt: t('message.attachment.alt') }))} className="max-h-56 rounded-md border border-line object-contain" />
+          <ImageGallery maxHeight={224} images={images.map((image) => ({ src: image.url, width: image.width, height: image.height, alt: t('message.attachment.alt') }))} className="max-h-56 rounded-md border border-line object-contain" />
         </div>
       ) : null}
 

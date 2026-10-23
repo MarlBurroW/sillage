@@ -1,0 +1,249 @@
+{
+  "environment": {
+    "browserNode": "22.23.2",
+    "chromium": "151.0.7922.34",
+    "platform": "Linux",
+    "cpuRate": 1,
+    "cliProcessesEnabled": false,
+    "preparedProjection": true
+  },
+  "profiles": {
+    "desktop": {
+      "scenarios": [
+        {
+          "scenario": "cold-A",
+          "loadMs": 226.99,
+          "heapAfterGcMiB": 12.375,
+          "requests": 1,
+          "decodedBytes": 197777,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 2.74
+        },
+        {
+          "scenario": "cold-B",
+          "loadMs": 95.27,
+          "heapAfterGcMiB": 13.36,
+          "requests": 1,
+          "decodedBytes": 221891,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 2.74
+        },
+        {
+          "scenario": "cold-C",
+          "loadMs": 117.57,
+          "heapAfterGcMiB": 16.37,
+          "requests": 1,
+          "decodedBytes": 311825,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 2.38
+        },
+        {
+          "scenario": "cached-A",
+          "loadMs": 107.78,
+          "heapAfterGcMiB": 14.46,
+          "requests": 1,
+          "decodedBytes": 48,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 2.44
+        },
+        {
+          "scenario": "cached-B",
+          "loadMs": 78.69,
+          "heapAfterGcMiB": 14.634,
+          "requests": 1,
+          "decodedBytes": 48,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 4.6
+        },
+        {
+          "scenario": "mobile-B",
+          "loadMs": 205.88,
+          "heapAfterGcMiB": 11.753,
+          "requests": 1,
+          "decodedBytes": 221891,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 7.75
+        }
+      ],
+      "cancelledRequestsAfterNavigation": 0,
+      "historyUi": {
+        "viewports": [
+          1440,
+          390
+        ],
+        "olderPages": true,
+        "deepLinks": true,
+        "sameTabReadingPosition": true,
+        "completeSearch": true
+      }
+    },
+    "server": {
+      "scenarios": [
+        {
+          "scenario": "cold-A",
+          "loadMs": 221.09,
+          "heapAfterGcMiB": 12.353,
+          "requests": 1,
+          "decodedBytes": 197777,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 5.77
+        },
+        {
+          "scenario": "cold-B",
+          "loadMs": 103.18,
+          "heapAfterGcMiB": 13.406,
+          "requests": 1,
+          "decodedBytes": 221891,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 2.36
+        },
+        {
+          "scenario": "cold-C",
+          "loadMs": 109.43,
+          "heapAfterGcMiB": 15.622,
+          "requests": 1,
+          "decodedBytes": 311825,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 2.68
+        },
+        {
+          "scenario": "cached-A",
+          "loadMs": 98.97,
+          "heapAfterGcMiB": 14.469,
+          "requests": 1,
+          "decodedBytes": 48,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 2.36
+        },
+        {
+          "scenario": "cached-B",
+          "loadMs": 77.6,
+          "heapAfterGcMiB": 14.702,
+          "requests": 1,
+          "decodedBytes": 48,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 2.34
+        },
+        {
+          "scenario": "mobile-B",
+          "loadMs": 206.44,
+          "heapAfterGcMiB": 11.803,
+          "requests": 1,
+          "decodedBytes": 221891,
+          "imageBytes": 0,
+          "longestBrowserTaskMs": 0,
+          "slowestHealthMs": 2.33
+        }
+      ],
+      "cancelledRequestsAfterNavigation": 0,
+      "historyUi": {
+        "viewports": [
+          1440,
+          390
+        ],
+        "olderPages": true,
+        "deepLinks": true,
+        "sameTabReadingPosition": true,
+        "completeSearch": true
+      }
+    }
+  },
+  "navigationCycles": {
+    "count": 20,
+    "heapAfterGcMiB": [
+      14.662,
+      14.756,
+      16.282,
+      14.913,
+      15.104,
+      16.545,
+      15.148,
+      15.264,
+      16.67,
+      15.225,
+      15.32,
+      16.778,
+      15.359,
+      15.427,
+      16.866,
+      15.446,
+      15.526,
+      16.961,
+      15.573,
+      15.658
+    ]
+  },
+  "projectionRebuild": {
+    "node": "24.20.0",
+    "scenarios": [
+      {
+        "label": "A",
+        "buildMs": 2614.555625,
+        "maxBatchMs": 76.37260600000002,
+        "batches": 331,
+        "readyMs": 2.73341500000015,
+        "bytes": 197777,
+        "items": 8256,
+        "different": []
+      },
+      {
+        "label": "B",
+        "buildMs": 628.1926030000004,
+        "maxBatchMs": 32.51415200000065,
+        "batches": 87,
+        "readyMs": 1.8665329999994356,
+        "bytes": 221891,
+        "items": 2334,
+        "different": []
+      },
+      {
+        "label": "C",
+        "buildMs": 2058.4274990000004,
+        "maxBatchMs": 74.08538599999974,
+        "batches": 420,
+        "readyMs": 4.319784999999683,
+        "bytes": 311825,
+        "items": 8507,
+        "different": []
+      }
+    ]
+  },
+  "nativeDesktopCheck": {
+    "electron": "44.9.0",
+    "platform": "linux",
+    "export": "passed",
+    "redaction": "passed",
+    "simulatedLifecycleEvents": "passed",
+    "serverNode": "24.20.0"
+  },
+  "validation": {
+    "serverTests": 392,
+    "typecheck": true,
+    "lint": true,
+    "serverWebDesktopBuilds": true,
+    "codexUiWidths": [
+      1280,
+      390
+    ],
+    "claudeSyncProfiles": [
+      "server",
+      "desktop"
+    ],
+    "claudeSyncWidths": [
+      1440,
+      390
+    ],
+    "nativeWindowsMacOS": false
+  }
+}

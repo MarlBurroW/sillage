@@ -1,0 +1,303 @@
+{
+  "environment": {
+    "node": "v22.23.2",
+    "chromium": "151.0.7922.34",
+    "platform": "Linux",
+    "nativeElectron": false,
+    "rendererCpuRate": 1,
+    "cliProcessesEnabled": false
+  },
+  "baseline": {
+    "profile": "desktop",
+    "scenarios": [
+      {
+        "scenario": "cold-A",
+        "loadMs": 2480.24,
+        "journalRequests": 17,
+        "journalDecodedMiB": 123.7288,
+        "journalEncodedMiB": 84.7563,
+        "browserHeapAfterGcMiB": 108.55,
+        "longestBrowserTaskMs": 72,
+        "sampledServerMaxRssMiB": 480,
+        "sampledServerMaxHeapMiB": 269,
+        "slowestHealthMs": 266.07
+      },
+      {
+        "scenario": "cold-B",
+        "loadMs": 1083.36,
+        "journalRequests": 5,
+        "journalDecodedMiB": 47.9775,
+        "journalEncodedMiB": 33.6151,
+        "browserHeapAfterGcMiB": 148.34,
+        "longestBrowserTaskMs": 61,
+        "sampledServerMaxRssMiB": 358,
+        "sampledServerMaxHeapMiB": 110,
+        "slowestHealthMs": 108.79
+      },
+      {
+        "scenario": "cold-C",
+        "loadMs": 1464.25,
+        "journalRequests": 22,
+        "journalDecodedMiB": 24.6754,
+        "journalEncodedMiB": 3.8279,
+        "browserHeapAfterGcMiB": 178.71,
+        "longestBrowserTaskMs": 52,
+        "sampledServerMaxRssMiB": 456,
+        "sampledServerMaxHeapMiB": 228,
+        "slowestHealthMs": 24.15
+      },
+      {
+        "scenario": "warm-A",
+        "loadMs": 106.92,
+        "journalRequests": 1,
+        "journalDecodedMiB": 0.0,
+        "journalEncodedMiB": 0.0,
+        "browserHeapAfterGcMiB": 179.26,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 458,
+        "sampledServerMaxHeapMiB": 228,
+        "slowestHealthMs": 2.18
+      },
+      {
+        "scenario": "warm-B",
+        "loadMs": 182.18,
+        "journalRequests": 1,
+        "journalDecodedMiB": 0.0,
+        "journalEncodedMiB": 0.0,
+        "browserHeapAfterGcMiB": 151.02,
+        "longestBrowserTaskMs": 95,
+        "sampledServerMaxRssMiB": 458,
+        "sampledServerMaxHeapMiB": 222,
+        "slowestHealthMs": 3.08
+      },
+      {
+        "scenario": "navigation-away",
+        "requestsAfterNavigation": 0,
+        "requestsStarted": 2
+      },
+      {
+        "scenario": "mobile-cold-images",
+        "loadMs": 924.79,
+        "journalRequests": 5,
+        "journalDecodedMiB": 47.9775,
+        "journalEncodedMiB": 33.6151,
+        "browserHeapAfterGcMiB": 41.64,
+        "longestBrowserTaskMs": 69,
+        "sampledServerMaxRssMiB": 417,
+        "sampledServerMaxHeapMiB": 109,
+        "slowestHealthMs": 68.63
+      }
+    ],
+    "pageErrors": []
+  },
+  "afterDesktop": {
+    "profile": "desktop",
+    "scenarios": [
+      {
+        "scenario": "cold-A",
+        "loadMs": 1802.73,
+        "journalRequests": 17,
+        "journalDecodedMiB": 12.6396,
+        "journalEncodedMiB": 2.152,
+        "browserHeapAfterGcMiB": 26.54,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 313,
+        "sampledServerMaxHeapMiB": 98,
+        "slowestHealthMs": 219.84,
+        "loadedBodyResources": 3,
+        "loadedBodyDecodedMiB": 7.6671
+      },
+      {
+        "scenario": "cold-B",
+        "loadMs": 562.73,
+        "journalRequests": 5,
+        "journalDecodedMiB": 3.1823,
+        "journalEncodedMiB": 0.5478,
+        "browserHeapAfterGcMiB": 30.17,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 300,
+        "sampledServerMaxHeapMiB": 68,
+        "slowestHealthMs": 169.54,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      },
+      {
+        "scenario": "cold-C",
+        "loadMs": 1452.76,
+        "journalRequests": 22,
+        "journalDecodedMiB": 20.7118,
+        "journalEncodedMiB": 3.3852,
+        "browserHeapAfterGcMiB": 53.88,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 366,
+        "sampledServerMaxHeapMiB": 164,
+        "slowestHealthMs": 60.95,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      },
+      {
+        "scenario": "warm-A",
+        "loadMs": 110.31,
+        "journalRequests": 1,
+        "journalDecodedMiB": 0.0,
+        "journalEncodedMiB": 0.0,
+        "browserHeapAfterGcMiB": 54.5,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 366,
+        "sampledServerMaxHeapMiB": 167,
+        "slowestHealthMs": 2.51,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      },
+      {
+        "scenario": "warm-B",
+        "loadMs": 110.58,
+        "journalRequests": 1,
+        "journalDecodedMiB": 0.0,
+        "journalEncodedMiB": 0.0,
+        "browserHeapAfterGcMiB": 54.74,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 366,
+        "sampledServerMaxHeapMiB": 170,
+        "slowestHealthMs": 2.29,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      },
+      {
+        "scenario": "navigation-away",
+        "requestsAfterNavigation": 0,
+        "requestsStarted": 2
+      },
+      {
+        "scenario": "mobile-cold-images",
+        "loadMs": 921.42,
+        "journalRequests": 5,
+        "journalDecodedMiB": 3.1823,
+        "journalEncodedMiB": 0.5478,
+        "browserHeapAfterGcMiB": 17.33,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 270,
+        "sampledServerMaxHeapMiB": 65,
+        "slowestHealthMs": 20.31,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      }
+    ],
+    "pageErrors": []
+  },
+  "afterServer": {
+    "profile": "server",
+    "scenarios": [
+      {
+        "scenario": "cold-A",
+        "loadMs": 1839.2,
+        "journalRequests": 17,
+        "journalDecodedMiB": 12.6396,
+        "journalEncodedMiB": 2.152,
+        "browserHeapAfterGcMiB": 26.58,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 280,
+        "sampledServerMaxHeapMiB": 86,
+        "slowestHealthMs": 266.73,
+        "loadedBodyResources": 3,
+        "loadedBodyDecodedMiB": 7.6671
+      },
+      {
+        "scenario": "cold-B",
+        "loadMs": 557.98,
+        "journalRequests": 5,
+        "journalDecodedMiB": 3.1823,
+        "journalEncodedMiB": 0.5478,
+        "browserHeapAfterGcMiB": 30.21,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 288,
+        "sampledServerMaxHeapMiB": 109,
+        "slowestHealthMs": 160.4,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      },
+      {
+        "scenario": "cold-C",
+        "loadMs": 1467.14,
+        "journalRequests": 22,
+        "journalDecodedMiB": 20.7118,
+        "journalEncodedMiB": 3.3852,
+        "browserHeapAfterGcMiB": 53.9,
+        "longestBrowserTaskMs": 53,
+        "sampledServerMaxRssMiB": 386,
+        "sampledServerMaxHeapMiB": 205,
+        "slowestHealthMs": 55.37,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      },
+      {
+        "scenario": "warm-A",
+        "loadMs": 125.31,
+        "journalRequests": 1,
+        "journalDecodedMiB": 0.0,
+        "journalEncodedMiB": 0.0,
+        "browserHeapAfterGcMiB": 54.55,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 386,
+        "sampledServerMaxHeapMiB": 205,
+        "slowestHealthMs": 2.58,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      },
+      {
+        "scenario": "warm-B",
+        "loadMs": 101.24,
+        "journalRequests": 1,
+        "journalDecodedMiB": 0.0,
+        "journalEncodedMiB": 0.0,
+        "browserHeapAfterGcMiB": 54.76,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 320,
+        "sampledServerMaxHeapMiB": 48,
+        "slowestHealthMs": 3.02,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      },
+      {
+        "scenario": "navigation-away",
+        "requestsAfterNavigation": 0,
+        "requestsStarted": 2
+      },
+      {
+        "scenario": "mobile-cold-images",
+        "loadMs": 900.86,
+        "journalRequests": 5,
+        "journalDecodedMiB": 3.1823,
+        "journalEncodedMiB": 0.5478,
+        "browserHeapAfterGcMiB": 17.4,
+        "longestBrowserTaskMs": 0,
+        "sampledServerMaxRssMiB": 336,
+        "sampledServerMaxHeapMiB": 62,
+        "slowestHealthMs": 86.3,
+        "loadedBodyResources": 0,
+        "loadedBodyDecodedMiB": 0.0
+      }
+    ],
+    "pageErrors": []
+  },
+  "validation": {
+    "serverTests": 387,
+    "typecheck": true,
+    "lint": true,
+    "productionBuilds": [
+      "server",
+      "web"
+    ],
+    "browserSuites": [
+      "test:codex-ui (1280/390)",
+      "test:images-ui (1440/390)",
+      "production audit Desktop and Server (1440/390)"
+    ]
+  },
+  "limits": [
+    "Single observations, not percentiles. A/B/C share cached snapshots; phone context starts fresh.",
+    "Journal byte counts exclude separately requested image/body resources, reported when available.",
+    "Heap is renderer JavaScript only; decoded images, GPU, native Electron/OS and CLI processes are not measured.",
+    "History is still fully replayed. Snapshot eviction still uses a count of four; fetched bodies have zero inactive cache."
+  ]
+}

@@ -3,17 +3,26 @@ import { ChevronLeft, ChevronRight, Copy, Download, Maximize, RotateCw, X, ZoomI
 import { useRef, useState, type ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
 
-export interface ViewerImage { src: string; alt: string }
+export interface ViewerImage { src: string; alt: string; width?: number; height?: number }
 
-export function ImageGallery({ images, className = 'max-h-80 rounded-md border border-line object-contain' }: { images: ViewerImage[]; className?: string }) {
+export function ImageGallery({ images, maxHeight = 320, className = 'max-h-80 rounded-md border border-line object-contain' }: { images: ViewerImage[]; maxHeight?: number; className?: string }) {
   const t = useTranslate()
   const [selected, setSelected] = useState<number | null>(null)
   return <>
     {images.map((image, index) => <button key={index} type="button" className="max-w-full cursor-zoom-in" aria-label={t('image.open', { name: image.alt })} onClick={(event) => { event.currentTarget.focus(); setSelected(index) }}>
-      <img src={image.src} alt={image.alt} loading="lazy" className={className} />
+      <ImagePreview key={image.src} image={image} className={className} maxHeight={maxHeight} />
     </button>)}
     {selected !== null && <ImageViewer images={images} initialIndex={selected} onClose={() => setSelected(null)} />}
   </>
+}
+
+function ImagePreview({ image, className, maxHeight }: { image: ViewerImage; className: string; maxHeight: number }) {
+  const t = useTranslate()
+  const [failed, setFailed] = useState(false)
+  if (failed) return <span role="alert" className="block p-3 text-xs text-critical">{t('image.loadError')}</span>
+  return <img src={image.src} alt={image.alt} loading="lazy" width={image.width} height={image.height}
+    style={image.width && image.height ? { width: Math.min(image.width, maxHeight * image.width / image.height), height: 'auto', aspectRatio: `${image.width} / ${image.height}` } : image.src.includes('/events/') ? { width: 224, height: 168 } : undefined}
+    className={className} onError={() => setFailed(true)} />
 }
 
 export function ImageViewer({ images, initialIndex, onClose }: { images: ViewerImage[]; initialIndex: number; onClose: () => void }) {
