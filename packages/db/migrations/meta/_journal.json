@@ -358,6 +358,27 @@
       "when": 1792693107635,
       "tag": "0050_curved_overlord",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1792705566606,
+      "tag": "0051_native_tool_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1792708476379,
+      "tag": "0052_claude_transcript_cursors",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1792713612823,
+      "tag": "0053_long_power_man",
+      "breakpoints": true
     }
   ]
 }

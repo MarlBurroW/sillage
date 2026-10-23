@@ -37,6 +37,8 @@ export function AboutSection() {
   const { data: info } = useVersionInfo()
   const refresh = useRefreshVersionInfo()
   const startUpdate = useStartUpdate()
+  const [diagnosticError, setDiagnosticError] = useState(false)
+  const [exportingDiagnostics, setExportingDiagnostics] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmingDesktop, setConfirmingDesktop] = useState(false)
   const [tracking, setTracking] = useState(false)
@@ -80,6 +82,20 @@ export function AboutSection() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title={t('about.title')} description={t('about.description')} />
+
+      {window.sillageDesktop?.diagnostics ? (
+        <Card>
+          <CardHeader title={t('about.diagnostics.title')} description={t('about.diagnostics.description')} />
+          <CardBody>
+            <Button variant="secondary" disabled={exportingDiagnostics} onClick={() => {
+              setDiagnosticError(false)
+              setExportingDiagnostics(true)
+              void window.sillageDesktop?.diagnostics?.export().catch(() => setDiagnosticError(true)).finally(() => setExportingDiagnostics(false))
+            }}>{t('about.diagnostics.export')}</Button>
+            {diagnosticError ? <Banner>{t('about.diagnostics.error')}</Banner> : null}
+          </CardBody>
+        </Card>
+      ) : null}
 
       {/* Replay onboarding here: reopen at the first step without undoing anything. */}
       <Card>

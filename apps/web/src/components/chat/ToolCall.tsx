@@ -27,7 +27,7 @@ import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
 import { useTranslate } from '../../lib/i18n'
 import { showSubAgent } from '../../lib/panel'
-import { useToolOutput } from '../../lib/tool-output'
+import { useEventBody, useToolOutput } from '../../lib/tool-output'
 import { readableView } from '../tools/registry'
 import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
@@ -168,15 +168,6 @@ export const ToolCall = memo(function ToolCall({
   const label = toolLabel(tool.name)
   const statusLabel = t(tool.status === 'running' ? 'toolStyle.pending' : tool.status === 'done' ? 'toolStyle.done' : tool.status === 'failed' ? 'toolStyle.failed' : 'toolStyle.stopped')
 
-  // Large output is omitted from thread transfers: replay supplies only a preview and the full body
-  // loads when this card opens.
-  const previewed = tool.outputBytes !== null
-  const full = useToolOutput(conversationId, tool.id, open && previewed)
-  const ready = !previewed || full.data !== undefined
-  const output = outputOf(tool, full.data)
-  // Readable views distinguish strings and block arrays in tool.output: previews could briefly show
-  // broken images, so wait for the full body rather than render an intermediate state.
-  const readable = open && ready ? readableView({ ...tool, output }) : null
 
   return (
     <div
@@ -229,26 +220,7 @@ export const ToolCall = memo(function ToolCall({
 
       {style === 'cards' && !open ? <div className="sg-tool-preview" title={toolPreview(tool)}>{toolPreview(tool)}</div> : null}
       {open ? (
-        <div className="sg-tool-detail flex flex-col gap-2 border-t border-line px-2.5 py-2">
-          <span className="break-all text-xs text-ink-faint">{t('toolStyle.rawName', { name: tool.name })}</span>
-          {readable ? <ViewSwitch raw={raw} onChange={setRaw} /> : null}
-
-          {readable && !raw ? (
-            readable
-          ) : (
-            <>
-              <Payload label={t('toolcall.payload.input')} {...asPayload(tool.input)} />
-              {tool.status !== 'running' ? (
-                <OutputSlot
-                  ready={ready}
-                  error={full.error}
-                  output={output}
-                  language={languageOfInput(tool.input)}
-                />
-              ) : null}
-            </>
-          )}
-        </div>
+        <ToolDetail tool={tool} conversationId={conversationId} raw={raw} setRaw={setRaw} />
       ) : null}
 
       {/* Subagent threads live in the panel: this shortcut avoids finding them manually in a list. */}
@@ -270,6 +242,32 @@ export const ToolCall = memo(function ToolCall({
     </div>
   )
 })
+
+/** Mount only while expanded, so closing releases large query data and aborts pending requests. */
+function ToolDetail({ tool, conversationId, raw, setRaw }: {
+  tool: ToolItem; conversationId: string; raw: boolean; setRaw: (raw: boolean) => void
+}) {
+  const t = useTranslate()
+  const inputBody = useEventBody(conversationId, tool.inputRef)
+  const outputBody = useEventBody(conversationId, tool.outputRef)
+  const legacy = useToolOutput(conversationId, tool.id, tool.outputBytes !== null && !tool.outputRef)
+  const inputReady = !tool.inputRef || inputBody.data !== undefined
+  const outputReady = tool.outputRef ? outputBody.data !== undefined : tool.outputBytes === null || legacy.data !== undefined
+  const input = tool.inputRef ? inputBody.data?.value : tool.input
+  const output = tool.outputRef ? outputBody.data?.value : outputOf(tool, legacy.data)
+  const ready = inputReady && outputReady
+  const readable = ready ? readableView({ ...tool, input, output }) : null
+  return <div className="sg-tool-detail flex flex-col gap-2 border-t border-line px-2.5 py-2">
+    <span className="break-all text-xs text-ink-faint">{t('toolStyle.rawName', { name: tool.name })}</span>
+    {inputBody.error ? <p className="text-xs text-critical" role="alert">{inputBody.error.message || t('journal.content.error')}</p> : null}
+    {!inputReady && !inputBody.error ? <p className="text-xs text-ink-faint">{t('journal.content.loading')}</p> : null}
+    {readable ? <ViewSwitch raw={raw} onChange={setRaw} /> : null}
+    {readable && !raw ? readable : <>
+      {inputReady ? <Payload label={t('toolcall.payload.input')} {...asPayload(input)} /> : null}
+      {tool.status !== 'running' ? <OutputSlot ready={outputReady} error={outputBody.error ?? legacy.error} output={output} language={languageOfInput(input)} /> : null}
+    </>}
+  </div>
+}
 
 /**
  * Toggle readable view and native payload. Raw is not a hidden degraded mode: it is the actual CLI

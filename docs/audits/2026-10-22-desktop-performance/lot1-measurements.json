@@ -1,0 +1,294 @@
+{
+  "baseCommit": "0821245a",
+  "environment": "Linux; shared server/web runtime, no native Electron or CLI process",
+  "desktopBefore": {
+    "profile": "desktop",
+    "node": "v22.23.2",
+    "chromium": "151.0.7922.34",
+    "cpuRate": 1,
+    "errors": [],
+    "measurements": [
+      {
+        "scenario": "cold-A",
+        "loadMs": 2486,
+        "heapAfterGcMiB": 108.54,
+        "requests": 18,
+        "decodedMiB": 123.73,
+        "encodedMiB": 84.76,
+        "serverMaxRssMiB": 476,
+        "serverMaxHeapMiB": 269,
+        "maxHealthLatencyMs": 283,
+        "maxLongTaskMs": 64
+      },
+      {
+        "scenario": "cold-B",
+        "loadMs": 1103,
+        "heapAfterGcMiB": 139.75,
+        "requests": 6,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "serverMaxRssMiB": 375,
+        "serverMaxHeapMiB": 143,
+        "maxHealthLatencyMs": 110,
+        "maxLongTaskMs": 56
+      },
+      {
+        "scenario": "cold-C",
+        "loadMs": 1451,
+        "heapAfterGcMiB": 170.14,
+        "requests": 23,
+        "decodedMiB": 24.68,
+        "encodedMiB": 3.83,
+        "serverMaxRssMiB": 464,
+        "serverMaxHeapMiB": 232,
+        "maxHealthLatencyMs": 61,
+        "maxLongTaskMs": 0
+      },
+      {
+        "scenario": "warm-A",
+        "loadMs": 108,
+        "heapAfterGcMiB": 170.73,
+        "requests": 2,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "serverMaxRssMiB": 464,
+        "serverMaxHeapMiB": 235,
+        "maxHealthLatencyMs": 2,
+        "maxLongTaskMs": 0
+      },
+      {
+        "scenario": "warm-B",
+        "loadMs": 160,
+        "heapAfterGcMiB": 151.04,
+        "requests": 2,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "serverMaxRssMiB": 464,
+        "serverMaxHeapMiB": 238,
+        "maxHealthLatencyMs": 2,
+        "maxLongTaskMs": 84
+      },
+      {
+        "scenario": "navigation-away",
+        "requestsAfterNavigation": 15,
+        "totalRequests": 17
+      },
+      {
+        "scenario": "mobile-B",
+        "loadMs": 920,
+        "heapAfterGcMiB": 41.64,
+        "requests": 6,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "serverMaxRssMiB": 566,
+        "serverMaxHeapMiB": 270,
+        "maxHealthLatencyMs": 57,
+        "maxLongTaskMs": 70
+      }
+    ]
+  },
+  "desktopAfter": {
+    "profile": "desktop",
+    "node": "v22.23.2",
+    "chromium": "151.0.7922.34",
+    "cpuRate": 1,
+    "errors": [],
+    "measurements": [
+      {
+        "scenario": "cold-A",
+        "loadMs": 2347,
+        "heapAfterGcMiB": 116.24,
+        "requests": 17,
+        "decodedMiB": 123.73,
+        "encodedMiB": 84.76,
+        "serverMaxRssMiB": 499,
+        "serverMaxHeapMiB": 287,
+        "maxHealthLatencyMs": 246,
+        "maxLongTaskMs": 57
+      },
+      {
+        "scenario": "cold-B",
+        "loadMs": 1228,
+        "heapAfterGcMiB": 144.15,
+        "requests": 5,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "serverMaxRssMiB": 381,
+        "serverMaxHeapMiB": 147,
+        "maxHealthLatencyMs": 178,
+        "maxLongTaskMs": 53
+      },
+      {
+        "scenario": "cold-C",
+        "loadMs": 1522,
+        "heapAfterGcMiB": 174.65,
+        "requests": 22,
+        "decodedMiB": 24.68,
+        "encodedMiB": 3.83,
+        "serverMaxRssMiB": 477,
+        "serverMaxHeapMiB": 261,
+        "maxHealthLatencyMs": 50,
+        "maxLongTaskMs": 53
+      },
+      {
+        "scenario": "warm-A",
+        "loadMs": 101,
+        "heapAfterGcMiB": 175.2,
+        "requests": 1,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "serverMaxRssMiB": 477,
+        "serverMaxHeapMiB": 263,
+        "maxHealthLatencyMs": 2,
+        "maxLongTaskMs": 0
+      },
+      {
+        "scenario": "warm-B",
+        "loadMs": 163,
+        "heapAfterGcMiB": 155.53,
+        "requests": 1,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "serverMaxRssMiB": 478,
+        "serverMaxHeapMiB": 266,
+        "maxHealthLatencyMs": 3,
+        "maxLongTaskMs": 84
+      },
+      {
+        "scenario": "navigation-away",
+        "requestsAfterNavigation": 0,
+        "totalRequests": 2
+      },
+      {
+        "scenario": "mobile-B",
+        "loadMs": 928,
+        "heapAfterGcMiB": 41.64,
+        "requests": 5,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "serverMaxRssMiB": 440,
+        "serverMaxHeapMiB": 123,
+        "maxHealthLatencyMs": 59,
+        "maxLongTaskMs": 72
+      }
+    ]
+  },
+  "serverAfter": {
+    "profile": "server",
+    "node": "v22.23.2",
+    "chromium": "151.0.7922.34",
+    "cpuRate": 1,
+    "errors": [],
+    "measurements": [
+      {
+        "scenario": "cold-A",
+        "loadMs": 2349,
+        "heapAfterGcMiB": 108.61,
+        "requests": 17,
+        "decodedMiB": 123.73,
+        "encodedMiB": 84.76,
+        "serverMaxRssMiB": 485,
+        "serverMaxHeapMiB": 267,
+        "maxHealthLatencyMs": 280,
+        "maxLongTaskMs": 58
+      },
+      {
+        "scenario": "cold-B",
+        "loadMs": 1120,
+        "heapAfterGcMiB": 136.52,
+        "requests": 5,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "serverMaxRssMiB": 560,
+        "serverMaxHeapMiB": 323,
+        "maxHealthLatencyMs": 111,
+        "maxLongTaskMs": 58
+      },
+      {
+        "scenario": "cold-C",
+        "loadMs": 1516,
+        "heapAfterGcMiB": 166.88,
+        "requests": 22,
+        "decodedMiB": 24.68,
+        "encodedMiB": 3.83,
+        "serverMaxRssMiB": 487,
+        "serverMaxHeapMiB": 298,
+        "maxHealthLatencyMs": 27,
+        "maxLongTaskMs": 0
+      },
+      {
+        "scenario": "warm-A",
+        "loadMs": 116,
+        "heapAfterGcMiB": 167.44,
+        "requests": 1,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "serverMaxRssMiB": 315,
+        "serverMaxHeapMiB": 61,
+        "maxHealthLatencyMs": 2,
+        "maxLongTaskMs": 0
+      },
+      {
+        "scenario": "warm-B",
+        "loadMs": 161,
+        "heapAfterGcMiB": 147.8,
+        "requests": 1,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "serverMaxRssMiB": 316,
+        "serverMaxHeapMiB": 64,
+        "maxHealthLatencyMs": 2,
+        "maxLongTaskMs": 89
+      },
+      {
+        "scenario": "navigation-away",
+        "requestsAfterNavigation": 0,
+        "totalRequests": 2
+      },
+      {
+        "scenario": "mobile-B",
+        "loadMs": 934,
+        "heapAfterGcMiB": 41.76,
+        "requests": 5,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "serverMaxRssMiB": 418,
+        "serverMaxHeapMiB": 109,
+        "maxHealthLatencyMs": 61,
+        "maxLongTaskMs": 72
+      }
+    ]
+  },
+  "nativeToolBefore": {
+    "node": "v22.23.2",
+    "mode": "raw-tool-reference",
+    "elapsedMs": 827.68,
+    "nativePayloadFound": true,
+    "heapBeforeMiB": 21.97,
+    "heapAfterMiB": 590.87,
+    "heapIncreaseMiB": 568.9,
+    "rssAfterMiB": 696.13
+  },
+  "nativeToolBeforeRepeatAndEquality": {
+    "node": "v22.23.2",
+    "mode": "raw-tool-reference",
+    "elapsedMs": 379.75,
+    "nativePayloadFound": true,
+    "heapBeforeMiB": 22.14,
+    "heapAfterMiB": 591.39,
+    "heapIncreaseMiB": 569.24,
+    "rssAfterMiB": 706.63,
+    "matchesReference": true
+  },
+  "nativeToolAfter256MiBLimit": {
+    "node": "v22.23.2",
+    "mode": "raw-tool",
+    "elapsedMs": 3.97,
+    "nativePayloadFound": true,
+    "heapBeforeMiB": 22.1,
+    "heapAfterMiB": 22.37,
+    "heapIncreaseMiB": 0.27,
+    "rssAfterMiB": 117.75
+  },
+  "indexBuildFixtureMs": 380
+}

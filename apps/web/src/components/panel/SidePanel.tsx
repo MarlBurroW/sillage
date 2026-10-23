@@ -65,6 +65,7 @@ export function SidePanel({
   conversationId,
   agent,
   editTurns = [],
+  history,
   checkpoints = [],
   canRestore = false,
   turnRunning = false,
@@ -82,6 +83,7 @@ export function SidePanel({
   /** Conversation CLI for actions supported by particular CLIs. */
   agent?: AgentKind
   editTurns?: EditTurn[]
+  history?: { hasMore: boolean; loading: boolean; load: () => Promise<void> }
   /** Turn checkpoints for turn-filtered Git views. */
   checkpoints?: TurnCheckpoint[]
   /** True for the thread owner, the only user allowed to restore workspace state. */
@@ -314,6 +316,13 @@ export function SidePanel({
       >
         <FilesPane scope={scope} />
       </div>
+
+      {history?.hasMore && ['history', 'agents', 'git'].includes(tab) ? (
+        <button type="button" disabled={history.loading} onClick={() => void history.load()}
+          className="shrink-0 border-b border-line p-2 text-xs text-ink-soft hover:text-ink">
+          {t(history.loading ? 'journal.history.loading' : 'journal.history.earlier')}
+        </button>
+      ) : null}
 
       {/* Mount these two views only when visible: log data or on-show Git rereads lose nothing. */}
       {tab === 'git' ? (

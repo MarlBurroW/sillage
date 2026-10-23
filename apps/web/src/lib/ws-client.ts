@@ -182,7 +182,7 @@ class WsClient {
 
     this.connect()
     if (this.isOpen) {
-      this.send({ t: 'subscribe', conversationId, afterSeq: this.cursors.get(conversationId) ?? 0 })
+      this.send({ t: 'subscribe', bodies: 1, conversationId, afterSeq: this.cursors.get(conversationId) ?? 0 })
     }
     listener.onConnectionChange(this.isOpen)
 
@@ -303,7 +303,7 @@ class WsClient {
     socket.onopen = () => {
       this.reconnectAttempts = 0
       for (const [conversationId, afterSeq] of this.cursors) {
-        this.send({ t: 'subscribe', conversationId, afterSeq })
+        this.send({ t: 'subscribe', bodies: 1, conversationId, afterSeq })
       }
       // The server released watches from the lost connection: redeclare all of them using the
       // client's live set as the reference.

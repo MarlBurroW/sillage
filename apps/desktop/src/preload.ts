@@ -1,11 +1,15 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { DesktopBridge, DesktopUpdateState } from '@sillage/protocol'
-import { UPDATE_CHANNELS } from './ipc'
+import { DIAGNOSTIC_CHANNELS, UPDATE_CHANNELS } from './ipc'
 
 /**
  * Expose update actions without giving the sandboxed renderer access to Node or IPC.
  */
 const bridge: DesktopBridge = {
+  diagnostics: {
+    export: () => ipcRenderer.invoke(DIAGNOSTIC_CHANNELS.export) as Promise<void>,
+    record: (stage, metrics) => ipcRenderer.send(DIAGNOSTIC_CHANNELS.record, stage, metrics),
+  },
   updates: {
     state: () => ipcRenderer.invoke(UPDATE_CHANNELS.state) as Promise<DesktopUpdateState>,
     subscribe(listener) {

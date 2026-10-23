@@ -83,8 +83,8 @@ function HistoryTurn({
         <span className="shrink-0 font-mono text-[0.625rem] text-ink-faint">
           {formatTime(turn.ts)}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-ink-soft" title={turn.label}>
-          {turn.label}
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-ink-soft" title={turn.label || t('activity.turn.noMessage')}>
+          {turn.label || t('activity.turn.noMessage')}
         </span>
         <span className="shrink-0 text-[0.625rem] text-ink-faint">
           {turn.files.length > 1

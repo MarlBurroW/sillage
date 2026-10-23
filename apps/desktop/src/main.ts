@@ -1,3 +1,5 @@
+import { setupDiagnostics } from './diagnostics'
+import type { DiagnosticLog } from './diagnostic-log'
 import { delimiter, dirname, join } from 'node:path'
 import { BrowserWindow, app, dialog, session, shell } from 'electron'
 import { stablePort } from './port'
@@ -21,6 +23,7 @@ const SESSION_COOKIE = 'sillage_session'
 /** App background prevents a white flash before the first render. */
 const BACKGROUND = '#0b0d1c'
 
+let diagnostics: DiagnosticLog | null = null
 let server: RunningServer | null = null
 let origin = ''
 let quitting = false
@@ -61,6 +64,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function boot(): Promise<void> {
+  diagnostics = setupDiagnostics({ logDir: dirname(logFile), serverPid: () => server?.pid, origin: () => origin, isAppUrl })
   const locale = app.getSystemLocale().replace('-', '_')
   const env = await loginShellEnv(node, locale.includes('_') ? `${locale}.UTF-8` : 'en_US.UTF-8')
   // Bundled Node/npm are fallbacks: user-maintained ones take precedence, but
@@ -106,6 +110,7 @@ async function launch({ env, port }: { env: NodeJS.ProcessEnv; port: number }): 
     sameSite: 'lax',
   })
   started.onExit((code) => {
+    diagnostics?.add('server-exit', { exitCode: code })
     if (quitting || server !== started) return
     server = null
     void stopped(code, { env, port })

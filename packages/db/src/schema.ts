@@ -1077,8 +1077,20 @@ export const events = sqliteTable(
      */
     rawFormat: text('raw_format'),
   },
-  (t) => [primaryKey({ columns: [t.conversationId, t.seq] })],
+  (t) => [
+    primaryKey({ columns: [t.conversationId, t.seq] }),
+    // Diff lookups must not parse unrelated, potentially huge tool outputs.
+    index('idx_events_native_tool').on(t.conversationId, t.type, sql`(${t.payload} ->> '$.toolCallId')`, t.seq)
+      .where(sql`${t.type} = 'tool.started' or ${t.type} = 'tool.completed'`),
+  ],
 )
+
+/** Reconstructible Claude import progress, committed atomically with journal batches. */
+export const claudeTranscriptCursors = sqliteTable('claude_transcript_cursors', {
+  conversationId: text('conversation_id').primaryKey().references(() => conversations.id, { onDelete: 'cascade' }),
+  journalSeq: integer('journal_seq').notNull(),
+  state: text('state').notNull(),
+})
 
 export const permissionRequests = sqliteTable(
   'permission_requests',
@@ -1604,3 +1616,32 @@ export const newsFeeds = sqliteTable('news_feeds', {
   checkedAt: timestamp('checked_at').notNull(),
   error: text('error'),
 })
+
+/** Disposable display projection; the immutable journal remains authoritative. */
+export const threadProjections = sqliteTable('thread_projections', {
+  conversationId: text('conversation_id').primaryKey().references(() => conversations.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  cursor: integer('cursor').notNull(),
+  state: text('state').notNull(),
+})
+
+/** Collections live in indexed rows so rebuilding and paging never retain the whole thread. */
+export const threadProjectionRows = sqliteTable('thread_projection_rows', {
+  conversationId: text('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
+  category: text('category').notNull(),
+  position: integer('position').notNull(),
+  entryKey: text('entry_key').notNull(),
+  itemKind: text('item_kind').notNull(),
+  related: text('related'),
+  live: integer('live').notNull(),
+  updatedSeq: integer('updated_seq').notNull(),
+  bytes: integer('bytes').notNull(),
+  payload: text('payload').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.conversationId, t.category, t.position] }),
+  index('idx_thread_projection_key').on(t.conversationId, t.category, t.entryKey),
+  index('idx_thread_projection_live').on(t.conversationId, t.live),
+  index('idx_thread_projection_updated').on(t.conversationId, t.updatedSeq),
+  index('idx_thread_projection_related').on(t.conversationId, t.related),
+  index('idx_thread_projection_kind').on(t.conversationId, t.itemKind, t.position),
+])

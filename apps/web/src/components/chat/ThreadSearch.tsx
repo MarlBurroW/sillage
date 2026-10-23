@@ -19,7 +19,8 @@ function clearHighlights(): void {
 }
 
 /**
- * Search the open conversation client-side because the entire log is already loaded. Custom
+ * Search the displayed conversation. The owner loads earlier pages while this is open and
+ * shows progress until the complete history is available. Custom
  * Highlight API colors ranges without DOM changes that would break Markdown/code. Without support,
  * scrolling and message rings still locate matches.
  */
@@ -29,11 +30,13 @@ export function ThreadSearch({
   onClose,
   /** Changes for every received event, triggering match recomputation. */
   revision,
+  loading = false,
 }: {
   scroller: RefObject<HTMLDivElement | null>
   open: boolean
   onClose: () => void
   revision: number
+  loading?: boolean
 }) {
   const [query, setQuery] = useState('')
   const [count, setCount] = useState(0)
@@ -146,7 +149,7 @@ export function ThreadSearch({
       />
 
       <span className="shrink-0 text-xs text-ink-faint tabular-nums">
-        {query.trim() === ''
+        {loading ? t('journal.history.loading') : query.trim() === ''
           ? ''
           : count === 0
             ? t('thread.search.noResults')

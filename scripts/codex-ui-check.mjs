@@ -5,7 +5,10 @@ import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 import { chromium } from 'playwright'
+import { checkThreadPages } from './checks/thread-pages.mjs'
 import { checkJournalCache } from './checks/journal-cache.mjs'
+import { checkEventBodies, checkEventImages } from './checks/event-bodies.mjs'
+import { checkJournalLoading } from './checks/journal-loading.mjs'
 
 // Check real components with a mocked API; no real conversation.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
@@ -100,6 +103,10 @@ try {
     assert.deepEqual(errors, [])
     console.log(`OK : questions interactives, activité, réponse libre et détails (${viewport.width}px).`)
     await checkJournalCache(page)
+    await checkJournalLoading(page)
+    await checkThreadPages(page)
+    await checkEventBodies(page)
+    await checkEventImages(page)
     await page.close()
   }
 } finally {

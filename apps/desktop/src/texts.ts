@@ -7,6 +7,8 @@ import { app } from 'electron'
  */
 const MESSAGES = {
   en: {
+    diagnostics: 'Export Sillage diagnostics…',
+    diagnosticsFailed: 'The diagnostic report could not be saved.',
     startFailed: 'Sillage could not start',
     stopped: 'The Sillage server stopped unexpectedly.',
     stoppedDetail: 'Exit code {code}. The log is in {log}.',
@@ -15,6 +17,8 @@ const MESSAGES = {
     quit: 'Quit',
   },
   fr: {
+    diagnostics: "Exporter le diagnostic Sillage…",
+    diagnosticsFailed: "Le rapport de diagnostic n’a pas pu être enregistré.",
     startFailed: "Sillage n'a pas pu démarrer",
     stopped: "Le serveur de Sillage s'est arrêté de façon inattendue.",
     stoppedDetail: 'Code de sortie {code}. Le journal est dans {log}.',

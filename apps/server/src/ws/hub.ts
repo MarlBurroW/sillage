@@ -65,7 +65,7 @@ class Connection {
     this.socket.send(JSON.stringify(message))
   }
 
-  subscribe(conversationId: string, afterSeq: number): void {
+  subscribe(conversationId: string, afterSeq: number, bodies = false): void {
     if (!canReadConversation(this.ctx, conversationId, this.userId)) {
       this.send({ t: 'error', code: 'conversation_not_found', message: 'Conversation not found.' })
       return
@@ -75,7 +75,9 @@ class Connection {
 
     // Catch up before subscribing: reread missed events from the database,
     // then switch to live streaming.
-    const missed = this.log.read(conversationId, afterSeq, CATCHUP_THRESHOLD + 1)
+    const missed = bodies
+      ? this.log.readWithBodies(conversationId, afterSeq, CATCHUP_THRESHOLD + 1)
+      : this.log.read(conversationId, afterSeq, CATCHUP_THRESHOLD + 1)
     if (missed.length > CATCHUP_THRESHOLD) {
       // Too far behind for socket replay: clients reload through paginated REST routes.
       const last = missed[missed.length - 1]
@@ -108,7 +110,7 @@ class Connection {
         conversationId,
         seq: entry.seq,
         ts: entry.ts,
-        event: entry.event,
+        event: bodies ? this.log.withBodies(entry).event : entry.event,
       })
     })
     this.subscriptions.set(conversationId, unsubscribe)
@@ -343,7 +345,7 @@ export async function registerWebSocketHub(
       connection.markAlive()
       switch (parsed.t) {
         case 'subscribe':
-          connection.subscribe(parsed.conversationId, parsed.afterSeq)
+          connection.subscribe(parsed.conversationId, parsed.afterSeq, parsed.bodies === 1)
           return
         case 'unsubscribe':
           connection.unsubscribe(parsed.conversationId)

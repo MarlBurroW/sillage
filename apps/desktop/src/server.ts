@@ -21,6 +21,7 @@ export interface Handshake {
 }
 
 export interface RunningServer {
+  readonly pid: number | undefined
   /** Resolves when the server responds and the user's session is open. */
   ready: Promise<Handshake>
   onExit(listener: (code: number | null) => void): void
@@ -107,6 +108,7 @@ export function startServer(options: ServerOptions): RunningServer {
   ready.catch(() => {})
 
   return {
+    pid: child.pid,
     ready,
     onExit(listener) {
       child.on('exit', (code) => listener(code))

@@ -1,0 +1,83 @@
+{
+  "environment": {
+    "node": "v22.23.2",
+    "platform": "Linux",
+    "nativeElectron": false,
+    "installedClaudeVersion": "2.1.301",
+    "transcriptBytes": 172300743
+  },
+  "reference": {
+    "mode": "reference",
+    "node": "v22.23.2",
+    "entries": 29652,
+    "ms": 340.036516,
+    "heapBeforeMiB": 17.737831115722656,
+    "heapAfterMiB": 205.46125030517578
+  },
+  "incremental": [
+    {
+      "mode": "cold-recovery",
+      "node": "v22.23.2",
+      "ms": 347.69949700000006,
+      "bytesRead": 172300743,
+      "parsed": 29652,
+      "imported": 0,
+      "heapBeforeMiB": 17.69806671142578,
+      "heapAfterMiB": 22.968948364257812
+    },
+    {
+      "mode": "unchanged",
+      "ms": 0.5316550000000007,
+      "bytesRead": 0,
+      "parsed": 0
+    },
+    {
+      "mode": "append",
+      "ms": 86.71564999999998,
+      "bytesRead": 172300873,
+      "parsed": 1,
+      "imported": 1,
+      "heapAfterMiB": 23.919883728027344
+    }
+  ],
+  "journalAnchors": [
+    {
+      "stage": "before",
+      "mode": "anchors",
+      "node": "v22.23.2",
+      "memory": {
+        "rss": 119287808,
+        "heapTotal": 42991616,
+        "heapUsed": 23284912,
+        "external": 4478730,
+        "arrayBuffers": 2130416,
+        "maxRss": 131211264
+      }
+    },
+    {
+      "stage": "after",
+      "mode": "anchors",
+      "ms": 315.51519299999995,
+      "counts": {
+        "uuids": 11444,
+        "startedToolCallIds": 4284,
+        "completedToolCallIds": 4282,
+        "subAgentIds": 1
+      },
+      "memory": {
+        "rss": 162140160,
+        "heapTotal": 63377408,
+        "heapUsed": 48064208,
+        "external": 4470578,
+        "arrayBuffers": 2130416,
+        "maxRss": 162140160
+      }
+    }
+  ],
+  "notes": [
+    "Reference retains all transcript entries; incremental file probe uses a supplied shared UUID, so journal anchor lookup is measured separately.",
+    "Changed files verify the complete consumed prefix before decoding the suffix. Unchanged files perform no content reads.",
+    "Times are individual observations, not percentiles or end-to-end opening latency.",
+    "64 MiB JS heap limit for the incremental real-file probe and both synthetic 80 MB import/recovery regression cases."
+  ]
+}

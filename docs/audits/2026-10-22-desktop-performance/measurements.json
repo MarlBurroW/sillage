@@ -1,0 +1,518 @@
+{
+  "browser": {
+    "node": "v24.20.0",
+    "chromium": "151.0.7922.34",
+    "cpuRate": 1,
+    "errors": [],
+    "measurements": [
+      {
+        "scenario": "cold-A",
+        "loadMs": 2432,
+        "heapAfterGcMiB": 108.7,
+        "requests": 18,
+        "decodedMiB": 123.73,
+        "encodedMiB": 84.76,
+        "maxLongTaskMs": 59,
+        "totalLongTaskMs": 114,
+        "serverMaxRssMiB": 694,
+        "maxHealthLatencyMs": 242,
+        "domNodes": 2254,
+        "threadDomNodes": 1632
+      },
+      {
+        "scenario": "cold-B",
+        "loadMs": 1077,
+        "heapAfterGcMiB": 136.7,
+        "requests": 6,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "maxLongTaskMs": 56,
+        "totalLongTaskMs": 56,
+        "serverMaxRssMiB": 580,
+        "maxHealthLatencyMs": 164,
+        "domNodes": 2287,
+        "threadDomNodes": 1963
+      },
+      {
+        "scenario": "cold-C",
+        "loadMs": 1464,
+        "heapAfterGcMiB": 167.1,
+        "requests": 23,
+        "decodedMiB": 24.68,
+        "encodedMiB": 3.83,
+        "maxLongTaskMs": 0,
+        "totalLongTaskMs": 0,
+        "serverMaxRssMiB": 578,
+        "maxHealthLatencyMs": 36,
+        "domNodes": 2448,
+        "threadDomNodes": 1870
+      },
+      {
+        "scenario": "warm-A",
+        "loadMs": 120,
+        "heapAfterGcMiB": 167.5,
+        "requests": 2,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "maxLongTaskMs": 0,
+        "totalLongTaskMs": 0,
+        "serverMaxRssMiB": 525,
+        "maxHealthLatencyMs": 2,
+        "domNodes": 2246,
+        "threadDomNodes": 1624
+      },
+      {
+        "scenario": "warm-B",
+        "loadMs": 159,
+        "heapAfterGcMiB": 147.8,
+        "requests": 2,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "maxLongTaskMs": 87,
+        "totalLongTaskMs": 87,
+        "serverMaxRssMiB": 525,
+        "maxHealthLatencyMs": 2,
+        "domNodes": 2305,
+        "threadDomNodes": 1981
+      },
+      {
+        "scenario": "navigation-away",
+        "requestsAfterSwitch": 16,
+        "totalPages": 17,
+        "switchMarker": "before click"
+      },
+      {
+        "scenario": "mobile-cold-images",
+        "loadMs": 954,
+        "heapAfterGcMiB": 41.6,
+        "requests": 6,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "maxLongTaskMs": 73,
+        "totalLongTaskMs": 73,
+        "serverMaxRssMiB": 624,
+        "maxHealthLatencyMs": 61,
+        "domNodes": 2270,
+        "threadDomNodes": 1946
+      }
+    ]
+  },
+  "slowcpu": {
+    "node": "v24.20.0",
+    "chromium": "151.0.7922.34",
+    "cpuRate": 4,
+    "errors": [],
+    "measurements": [
+      {
+        "scenario": "cold-A",
+        "loadMs": 6849,
+        "heapAfterGcMiB": 101.0,
+        "requests": 18,
+        "decodedMiB": 123.73,
+        "encodedMiB": 84.76,
+        "maxLongTaskMs": 199,
+        "totalLongTaskMs": 4439,
+        "serverMaxRssMiB": 609,
+        "maxHealthLatencyMs": 299,
+        "domNodes": 2254,
+        "threadDomNodes": 1632
+      },
+      {
+        "scenario": "cold-B",
+        "loadMs": 2358,
+        "heapAfterGcMiB": 122.3,
+        "requests": 6,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "maxLongTaskMs": 161,
+        "totalLongTaskMs": 1232,
+        "serverMaxRssMiB": 609,
+        "maxHealthLatencyMs": 119,
+        "domNodes": 2287,
+        "threadDomNodes": 1963
+      },
+      {
+        "scenario": "cold-C",
+        "loadMs": 4937,
+        "heapAfterGcMiB": 152.8,
+        "requests": 23,
+        "decodedMiB": 24.68,
+        "encodedMiB": 3.83,
+        "maxLongTaskMs": 151,
+        "totalLongTaskMs": 3220,
+        "serverMaxRssMiB": 445,
+        "maxHealthLatencyMs": 41,
+        "domNodes": 2448,
+        "threadDomNodes": 1870
+      },
+      {
+        "scenario": "warm-A",
+        "loadMs": 348,
+        "heapAfterGcMiB": 153.4,
+        "requests": 2,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "maxLongTaskMs": 156,
+        "totalLongTaskMs": 156,
+        "serverMaxRssMiB": 445,
+        "maxHealthLatencyMs": 2,
+        "domNodes": 2246,
+        "threadDomNodes": 1624
+      },
+      {
+        "scenario": "warm-B",
+        "loadMs": 519,
+        "heapAfterGcMiB": 140.2,
+        "requests": 2,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "maxLongTaskMs": 321,
+        "totalLongTaskMs": 321,
+        "serverMaxRssMiB": 445,
+        "maxHealthLatencyMs": 2,
+        "domNodes": 2305,
+        "threadDomNodes": 1981
+      },
+      {
+        "scenario": "navigation-away",
+        "requestsAfterSwitch": 16,
+        "totalPages": 17,
+        "switchMarker": "before click"
+      },
+      {
+        "scenario": "mobile-cold-images",
+        "loadMs": 2731,
+        "heapAfterGcMiB": 24.0,
+        "requests": 6,
+        "decodedMiB": 47.98,
+        "encodedMiB": 33.62,
+        "maxLongTaskMs": 231,
+        "totalLongTaskMs": 1891,
+        "serverMaxRssMiB": 584,
+        "maxHealthLatencyMs": 85,
+        "domNodes": 2270,
+        "threadDomNodes": 1946
+      }
+    ]
+  },
+  "smallimages": {
+    "node": "v24.20.0",
+    "chromium": "151.0.7922.34",
+    "cpuRate": 1,
+    "errors": [],
+    "measurements": [
+      {
+        "scenario": "cold-A",
+        "loadMs": 1903,
+        "heapAfterGcMiB": 27.2,
+        "requests": 15,
+        "decodedMiB": 13.16,
+        "encodedMiB": 2.19,
+        "maxLongTaskMs": 50,
+        "totalLongTaskMs": 50,
+        "serverMaxRssMiB": 418,
+        "maxHealthLatencyMs": 313,
+        "domNodes": 2254,
+        "threadDomNodes": 1632
+      },
+      {
+        "scenario": "cold-B",
+        "loadMs": 486,
+        "heapAfterGcMiB": 31.1,
+        "requests": 4,
+        "decodedMiB": 3.55,
+        "encodedMiB": 0.6,
+        "maxLongTaskMs": 0,
+        "totalLongTaskMs": 0,
+        "serverMaxRssMiB": 412,
+        "maxHealthLatencyMs": 189,
+        "domNodes": 2301,
+        "threadDomNodes": 1977
+      },
+      {
+        "scenario": "cold-C",
+        "loadMs": 1536,
+        "heapAfterGcMiB": 61.5,
+        "requests": 23,
+        "decodedMiB": 24.68,
+        "encodedMiB": 3.83,
+        "maxLongTaskMs": 0,
+        "totalLongTaskMs": 0,
+        "serverMaxRssMiB": 436,
+        "maxHealthLatencyMs": 18,
+        "domNodes": 2448,
+        "threadDomNodes": 1870
+      },
+      {
+        "scenario": "warm-A",
+        "loadMs": 112,
+        "heapAfterGcMiB": 62.0,
+        "requests": 2,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "maxLongTaskMs": 0,
+        "totalLongTaskMs": 0,
+        "serverMaxRssMiB": 408,
+        "maxHealthLatencyMs": 2,
+        "domNodes": 2246,
+        "threadDomNodes": 1624
+      },
+      {
+        "scenario": "warm-B",
+        "loadMs": 114,
+        "heapAfterGcMiB": 62.1,
+        "requests": 2,
+        "decodedMiB": 0.0,
+        "encodedMiB": 0.0,
+        "maxLongTaskMs": 0,
+        "totalLongTaskMs": 0,
+        "serverMaxRssMiB": 408,
+        "maxHealthLatencyMs": 3,
+        "domNodes": 2305,
+        "threadDomNodes": 1981
+      },
+      {
+        "scenario": "navigation-away",
+        "requestsAfterSwitch": 11,
+        "totalPages": 14,
+        "switchMarker": "after route transition"
+      },
+      {
+        "scenario": "mobile-cold-images",
+        "loadMs": 903,
+        "heapAfterGcMiB": 17.7,
+        "requests": 4,
+        "decodedMiB": 3.55,
+        "encodedMiB": 0.6,
+        "maxLongTaskMs": 0,
+        "totalLongTaskMs": 0,
+        "serverMaxRssMiB": 418,
+        "maxHealthLatencyMs": 25,
+        "domNodes": 2284,
+        "threadDomNodes": 1960
+      }
+    ]
+  },
+  "replay-93": [
+    {
+      "stage": "before",
+      "mode": "replay",
+      "node": "v24.20.0",
+      "memory": {
+        "rss": 197443584,
+        "heapTotal": 160739328,
+        "heapUsed": 24164200,
+        "external": 6476396,
+        "arrayBuffers": 2306775,
+        "maxRss": 450580480
+      }
+    },
+    {
+      "stage": "after",
+      "mode": "replay",
+      "ms": 1394.263309,
+      "totals": {
+        "readMs": 911.3389640000001,
+        "coalesceMs": 7.691565999999966,
+        "stringifyMs": 156.2978519999997,
+        "foldMs": 196.8625330000001,
+        "bytes": 129738743,
+        "images": 50,
+        "imageBytes": 115948282,
+        "maxPageMs": 35.55500199999983,
+        "maxPageBytes": 16048035,
+        "pages": 17,
+        "events": 20370
+      },
+      "bytesByType": {
+        "agent.notice": 48192,
+        "session.started": 2848,
+        "message.completed": 116855724,
+        "turn.started": 782,
+        "message.delta": 204369,
+        "tool.started": 3599921,
+        "tool.completed": 6155035,
+        "usage.updated": 1015910,
+        "turn.completed": 5062,
+        "file.edited": 107313,
+        "diff.updated": 731866,
+        "context.compaction_started": 851,
+        "context.compacted": 1909,
+        "message.queued": 180,
+        "message.dequeued": 95,
+        "task.started": 22497,
+        "background.updated": 44150,
+        "task.completed": 81292,
+        "error": 1224,
+        "session.ended": 376,
+        "question.requested": 575,
+        "question.resolved": 210,
+        "skills.updated": 3614,
+        "mcp.updated": 2235
+      },
+      "items": 8256,
+      "memory": {
+        "rss": 457007104,
+        "heapTotal": 307195904,
+        "heapUsed": 219367544,
+        "external": 4801292,
+        "arrayBuffers": 2306775,
+        "maxRss": 546918400
+      }
+    },
+    {
+      "stage": "after-gc",
+      "memory": {
+        "rss": 455340032,
+        "heapTotal": 304979968,
+        "heapUsed": 154584624,
+        "external": 4801292,
+        "arrayBuffers": 2306775,
+        "maxRss": 546918400
+      },
+      "items": 8256
+    }
+  ],
+  "replay-claude": [
+    {
+      "stage": "before",
+      "mode": "replay",
+      "node": "v24.20.0",
+      "memory": {
+        "rss": 183095296,
+        "heapTotal": 160215040,
+        "heapUsed": 24021528,
+        "external": 6345116,
+        "arrayBuffers": 2241023,
+        "maxRss": 450580480
+      }
+    },
+    {
+      "stage": "after",
+      "mode": "replay",
+      "ms": 835.675596,
+      "totals": {
+        "readMs": 480.26975299999987,
+        "coalesceMs": 13.998811000000046,
+        "stringifyMs": 58.82010200000002,
+        "foldMs": 238.31008799999978,
+        "bytes": 25873628,
+        "images": 2,
+        "imageBytes": 106,
+        "maxPageMs": 27.46651399999996,
+        "maxPageBytes": 2029977,
+        "pages": 22,
+        "events": 46885
+      },
+      "bytesByType": {
+        "background.updated": 35023,
+        "loops.updated": 3010,
+        "message.completed": 8970184,
+        "turn.started": 1633,
+        "session.started": 45878,
+        "usage.updated": 66728,
+        "thinking.delta": 551699,
+        "tool.started": 7281279,
+        "tool.completed": 5036953,
+        "thinking.progress": 1121460,
+        "message.delta": 323410,
+        "file.edited": 54909,
+        "turn.completed": 11533,
+        "suggestion.updated": 3307,
+        "task.started": 122152,
+        "task.completed": 132065,
+        "question.requested": 75182,
+        "question.resolved": 13187,
+        "session.ended": 705,
+        "agent.notice": 3475,
+        "context.compaction_started": 1517,
+        "context.compacted": 829,
+        "error": 755,
+        "message.queued": 373,
+        "message.dequeued": 190,
+        "task.progress": 12062,
+        "commands.updated": 33979,
+        "mcp.updated": 1346
+      },
+      "items": 8507,
+      "memory": {
+        "rss": 347762688,
+        "heapTotal": 221274112,
+        "heapUsed": 104888208,
+        "external": 4735548,
+        "arrayBuffers": 2241023,
+        "maxRss": 450580480
+      }
+    },
+    {
+      "stage": "after-gc",
+      "memory": {
+        "rss": 342175744,
+        "heapTotal": 214478848,
+        "heapUsed": 55064248,
+        "external": 4735548,
+        "arrayBuffers": 2241023,
+        "maxRss": 450580480
+      },
+      "items": 8507
+    }
+  ],
+  "transcript": [
+    {
+      "stage": "before",
+      "mode": "transcript",
+      "node": "v24.20.0",
+      "memory": {
+        "rss": 179339264,
+        "heapTotal": 160739328,
+        "heapUsed": 24019536,
+        "external": 6345116,
+        "arrayBuffers": 2241023,
+        "maxRss": 450580480
+      }
+    },
+    {
+      "stage": "after",
+      "mode": "transcript",
+      "ms": 411.34840299999996,
+      "entries": 29652,
+      "memory": {
+        "rss": 433061888,
+        "heapTotal": 353288192,
+        "heapUsed": 231512088,
+        "external": 7437405,
+        "arrayBuffers": 4811661,
+        "maxRss": 450580480
+      }
+    }
+  ],
+  "raw-1024": [
+    {
+      "stage": "before",
+      "mode": "raw-tool",
+      "node": "v24.20.0",
+      "memory": {
+        "rss": 206786560,
+        "heapTotal": 94679040,
+        "heapUsed": 24448208,
+        "external": 6514077,
+        "arrayBuffers": 3885401,
+        "maxRss": 223576064
+      }
+    },
+    {
+      "stage": "after",
+      "mode": "raw-tool",
+      "ms": 387.817184,
+      "found": false,
+      "memory": {
+        "rss": 826228736,
+        "heapTotal": 709885952,
+        "heapUsed": 641180952,
+        "external": 6379614,
+        "arrayBuffers": 3885401,
+        "maxRss": 836714496
+      }
+    }
+  ]
+}
