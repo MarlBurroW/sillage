@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, unlink } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -17,7 +17,9 @@ import { _electron as electron } from 'playwright'
  * Usage: node scripts/desktop-update-check.mjs --app <executable of A> --feed <B directory>
  * Use an installed NSIS app on Windows, a writable .app on macOS, or an AppImage /
  * installed .deb on Linux (under Xvfb). The feed contains packages and latest*.yml.
- * The check uses a disposable SILLAGE_DESKTOP_USER_DATA directory.
+ * The check uses a disposable SILLAGE_DESKTOP_USER_DATA directory. Windows
+ * requires an unused default profile: a temporary junction keeps that profile
+ * isolated when NSIS relaunches through the shell without the test environment.
  * On Linux, APPIMAGE=<file> lets an AppArmor-covered unpacked executable exercise
  * file replacement where an extracted AppImage cannot retain its sandbox.
  */
@@ -120,12 +122,25 @@ const shots = join(scratch, 'shots')
 await mkdir(shots)
 let app
 let page
+let profileLink
+let launchAttempted = false
 
 try {
+  if (process.platform === 'win32') {
+    assert.ok(process.env.LOCALAPPDATA, 'LOCALAPPDATA is required for the isolated update check')
+    assert.equal(appProcesses().length, 0, 'Close the installed app before running the update check')
+    await mkdir(userData, { recursive: true })
+    const destination = join(process.env.LOCALAPPDATA, 'Sillage')
+    // Never replace an existing user profile. NSIS uses ExecShellAsUser, whose
+    // new process need not inherit SILLAGE_DESKTOP_USER_DATA from Playwright.
+    await symlink(userData, destination, 'junction')
+    profileLink = destination
+  }
   const before = installedVersion()
   assert.notEqual(before, target, `l'app installée est déjà en ${target}`)
   console.log(`app installée : ${before}, version proposée : ${target}`)
 
+  launchAttempted = true
   app = await electron.launch({
     executablePath: executable,
     env: { ...process.env, SILLAGE_DESKTOP_USER_DATA: userData, SILLAGE_DESKTOP_UPDATE_FEED: feedUrl },
@@ -193,19 +208,23 @@ try {
   console.log('contrôle de mise à jour réussi (serveur relancé et disponible)')
 } catch (err) {
   await page?.screenshot({ path: join(shots, 'failure.png'), fullPage: true }).catch(() => {})
-  const log = join(userData, 'logs', 'updater.log')
-  if (existsSync(log)) console.log(`--- updater.log\n${readFileSync(log, 'utf8')}`)
+  for (const name of ['updater.log', 'server.log', 'performance.jsonl']) {
+    const log = join(userData, 'logs', name)
+    if (existsSync(log)) console.log(`--- ${name}\n${readFileSync(log, 'utf8').slice(-16000)}`)
+  }
   console.log(`captures : ${shots}`)
   throw err
 } finally {
   await app?.close().catch(() => {})
   server.close()
-  for (const pid of appProcesses()) {
+  for (const pid of launchAttempted ? appProcesses() : []) {
     try {
       process.kill(pid)
     } catch {
       // Already exited.
     }
   }
+  // Unlink only the junction created by this run; never recurse into a profile.
+  if (profileLink) await unlink(profileLink)
   if (process.env.KEEP_DESKTOP_CHECK !== '1') await rm(scratch, { recursive: true, force: true }).catch(() => {})
 }
