@@ -10,7 +10,7 @@
 .sg-tool-sillage{border-left:2px solid var(--sg-accent);border-radius:0!important;background:color-mix(in oklab,var(--sg-accent-wash) 35%,transparent)}
 .sg-tool-sillage .sg-tool-label{color:var(--sg-accent)}
 .sg-tool-mcp{border-left:2px dashed var(--sg-line-strong);border-radius:0!important;background:color-mix(in oklab,var(--sg-surface) 60%,transparent)}
-.sg-tool-failed{border-color:var(--sg-critical)}
+.sg-tool-failure{display:inline-flex;align-items:center;gap:4px;padding:2px 5px;border-radius:4px;font-size:11px;line-height:16px;color:var(--sg-critical);background:color-mix(in oklab,var(--sg-critical) 8%,transparent)}
 .sg-tool-detail{background:var(--sg-canvas)}
 .sg-tool-preview{height:24px;line-height:20px;padding:0 8px 4px 30px;font-size:11px;color:var(--sg-ink-soft);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .sg-tool-list{display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -29,7 +29,6 @@
 .sg-tools-cards.sg-tool,.sg-tools-classic.sg-tool{border:1px solid var(--sg-line);border-radius:8px;background:color-mix(in oklab,var(--sg-surface) 60%,transparent)}
 .sg-tools-cards.sg-tool-sillage,.sg-tools-classic.sg-tool-sillage{border-left:2px solid var(--sg-accent);background:color-mix(in oklab,var(--sg-accent-wash) 35%,transparent)}
 .sg-tools-cards.sg-tool-mcp,.sg-tools-classic.sg-tool-mcp{border-left:2px dashed var(--sg-line-strong)}
-.sg-tools-cards.sg-tool-failed,.sg-tools-classic.sg-tool-failed{border-color:var(--sg-critical)}
 .sg-tools-cards>.sg-tool-list,.sg-tools-classic>.sg-tool-list{gap:6px}
 .sg-tools-console.sg-tool-sequence{border:1px solid var(--sg-line);border-radius:6px;padding:4px;background:color-mix(in oklab,var(--sg-surface) 40%,transparent)}
 .sg-tools-console .sg-tool-heading{height:32px;min-height:32px;font-family:var(--font-mono);font-size:11px}
@@ -47,3 +46,5 @@
 @media(prefers-reduced-motion:reduce){.sg-tool-running>.sg-tool-heading::before{display:none}.sg-tool-running>.sg-tool-heading::after,.sg-tool-running .animate-spin{animation:none}.sg-tool-heading *{transition:none}}
 .sg-tool-sequence.sg-tools-classic:has(>.sg-tool-group-heading),.sg-tool-sequence.sg-tools-cards:has(>.sg-tool-group-heading){border:1px solid var(--sg-line);border-radius:8px;background:color-mix(in oklab,var(--sg-surface) 60%,transparent)}
 .sg-tool-sequence.sg-tools-classic:has(>.sg-tool-group-heading)>.sg-tool-list,.sg-tool-sequence.sg-tools-cards:has(>.sg-tool-group-heading)>.sg-tool-list{padding:6px}
+
+.sg-tool-counts{display:inline-flex;gap:5px;flex-shrink:0;font:11px/16px var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}

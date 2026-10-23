@@ -68,6 +68,20 @@ async function mount(page) {
     check(buildRows([...pair, {...message('think',''), streamingThinking:'Thinking'},message('answer','Answer')], null, true)[0].complete, 'Text after thinking closes series')
     const history = Array.from({length:12}, (_,i) => message(String(i+1), 'Message antérieur '+i+'\n\n'+ 'Un paragraphe de conversation à relire. '.repeat(10)))
     const examples = [tool('sillage','sillage/read_memory'), tool('external','github/issue_read'), ...Array.from({length:17},(_,i)=>tool('native-'+i))]
+    window.presentationCases = [
+      {...tool('codex-edit','Edit'), input:{changes:[{path:'apps/web/src/components/chat/ToolCall.tsx',kind:{type:'update',move_path:null},diff:'@@ -1 +1 @@\n-before\n+after'}]}},
+      {...tool('codex-multi','Edit'), input:{changes:[{path:'src/App.tsx'},null,{path:42},{path:'src/styles.css'},{path:'src/App.tsx'}]}},
+      {...tool('claude-edit','Edit'), input:{file_path:'src/legacy.ts',old_string:'keep\nbefore\nend',new_string:'keep\nafter\nextra\nend'}},
+      {...tool('opencode-patch','ApplyPatch'), input:{patch:'*** Begin Patch\n*** Update File: src/styles.css\n@@\n-old\n+new\n+extra\n*** End Patch'}},
+      {...tool('write','Write'), input:{file_path:'src/new.ts',content:'first\nsecond\nthird\n'}},
+      {...tool('failed-write','Write','failed'), input:{file_path:'failed.ts',content:'first\n'}},
+      {...tool('failed-edit','Edit','failed'), input:{file_path:'failed.ts',old_string:'before',new_string:'after'}},
+      {...tool('bash-error','Bash','failed'), input:{command:'pnpm test'},output:'One test failed.'},
+      {...tool('sillage-error','sillage/read_memory','failed'),output:'File not found.'},
+      {...tool('mcp-error','github/issue_read','failed'),output:'Issue not found.'},
+      {...tool('bash-success','Bash'), input:{command:'pnpm typecheck'}},
+      tool('active','Read','running'),
+    ]
     window.makeItems = (mode) => [...history, ...examples.map((t,i)=> mode==='running'&&i===examples.length-1?{...t,status:'running',durationMs:null}:t), ...(mode==='text'?[message('100','Le filtre est corrigé. Les tests passent.')]:[])]
     function Screen() {
       useAppearanceSync()
@@ -75,6 +89,7 @@ async function mount(page) {
       const [following, setFollowing] = React.useState(true)
       const scroller = React.useRef(null)
       const lastTop = React.useRef(0)
+      window.threadLastTop = lastTop
       useThreadLayout(scroller, following)
       window.setItems = setItems
       window.follow = () => { setFollowing(true); scroller.current.scrollTop=scroller.current.scrollHeight }
@@ -91,6 +106,11 @@ async function mount(page) {
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider,{client:new QueryClient({defaultOptions:{queries:{retry:false}}})},React.createElement(MemoryRouter,null,React.createElement(TooltipProvider,null,React.createElement(Screen)))))
   })
   await page.locator('#thread .sg-tool-running').waitFor()
+  // Mounting commits the rows before ResizeObserver performs the initial follow-to-bottom.
+  await page.waitForFunction(() => {
+    const node = document.getElementById('thread')
+    return node && node.scrollHeight - node.clientHeight - node.scrollTop < 2 && window.threadLastTop.current === node.scrollTop
+  })
 }
 async function context(width) {
   const context = await browser.newContext({viewport:{width,height:1000},serviceWorkers:'block'})
@@ -113,18 +133,42 @@ try {
     await page.locator('#settings > summary').click()
     const choices=page.getByRole('group',{name:'Outils dans les conversations'})
     assert.equal(await choices.locator('button').count(),6)
+    await page.evaluate(()=>window.setItems(window.presentationCases))
     for(const [label,variant] of [['Lignes discrètes','inline'],['Chronologie','timeline'],['Par intention','intent'],['Aperçus utiles','cards'],['Console compacte','console'],['Classique','classic']]){
       await choices.getByRole('button',{name:new RegExp('^'+label)}).click()
       await page.locator('#thread .sg-tools-'+variant).first().waitFor()
       const heights=await page.locator('[data-tool-style-preview] .sg-tool-heading').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().height))
       assert.equal(new Set(heights).size,1,variant+' same density')
+      const heading = id => page.locator(`#thread [data-tool-id="${id}"] .sg-tool-heading`)
+      assert.match(await heading('codex-edit').innerText(),/apps\/web\/src\/components\/chat\/ToolCall.tsx/)
+      assert.match(await heading('codex-multi').innerText(),/src\/App.tsx · src\/styles.css/)
+      assert.match(await heading('claude-edit').innerText(),/src\/legacy.ts/)
+      for (const [id,expected] of [['codex-edit','+1−1'],['claude-edit','+2−1'],['opencode-patch','+2−1'],['write','+3']]) {
+        assert.equal(await heading(id).locator('.sg-tool-counts').textContent(),expected)
+        const badge=await heading(id).locator('.sg-tool-counts').boundingBox()
+        const row=await heading(id).boundingBox()
+        assert.ok(badge.x>=row.x && badge.x+badge.width<=row.x+row.width,variant+' visible counters on '+width)
+      }
+      assert.match(await heading('write').locator('.sg-tool-counts').getAttribute('aria-label'), /3 lignes écrites/)
+      assert.equal(await heading('failed-write').locator('.sg-tool-counts').count(),0,'Failed writes do not claim written lines')
+      assert.equal(await heading('failed-edit').locator('.sg-tool-counts').count(),0,'Failed edits do not claim applied changes')
+      assert.equal(await heading('bash-error').getByRole('img',{name:'Échec',exact:true}).count(),1)
+      assert.equal(await heading('bash-error').evaluate(e=>e.getBoundingClientRect().height),await heading('bash-success').evaluate(e=>e.getBoundingClientRect().height))
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
       await page.screenshot({path:`${output}/${variant}-${width}.png`})
     }
+    // Readable views and raw fallback share the same final payloads.
+    await page.locator('#thread [data-tool-id="codex-edit"] .sg-tool-heading').click()
+    assert.match(await page.locator('#thread [data-tool-id="codex-edit"] .sg-tool-detail').innerText(), /before/)
+    await page.locator('#thread [data-tool-id="codex-edit"] .sg-tool-heading').click()
+    await page.locator('#thread [data-tool-id="opencode-patch"] .sg-tool-heading').click()
+    assert.match(await page.locator('#thread [data-tool-id="opencode-patch"] .sg-tool-detail').innerText(), /Begin Patch/)
+    await page.locator('#thread [data-tool-id="opencode-patch"] .sg-tool-heading').click()
     await delay(650)
     assert.equal(appearance.toolStyle,'classic','Preference sent to account')
     await choices.getByRole('button',{name:'Lignes discrètes Par défaut'}).click()
     await page.locator('#settings > summary').click()
+    await page.evaluate(()=>window.setItems(window.makeItems('running')));await settle()
     await page.evaluate(()=>window.follow());await settle()
     await page.evaluate(()=>window.setItems(window.makeItems('done')));await settle()
     assert.equal(await page.locator('#thread [data-folded="true"]').count(),0,'Done alone must not fold')
@@ -155,7 +199,7 @@ try {
     await page.evaluate(()=>window.setItems(items=>items.map(item=>item.id==='1'?{...item,blocks:[{type:'text',text:'Un contenu chargé plus tard. '.repeat(1000)}]}:item)))
     await settle()
     const after=await page.locator(`#thread [data-tool-id="${anchor.id}"]`).evaluate(e=>e.getBoundingClientRect().top)
-    assert.ok(Math.abs(after-anchor.top)<2,'Anchor survives growth above the reader')
+    assert.ok(Math.abs(after-anchor.top)<2,`Anchor survives growth above the reader (${width}px, delta ${after-anchor.top})`)
     // Un événement scroll peut arriver après le reflow mais avant ResizeObserver.
     await page.locator('#thread').evaluate(node=>{
       node.querySelector('[data-seq="1"]').style.paddingBottom='300px'

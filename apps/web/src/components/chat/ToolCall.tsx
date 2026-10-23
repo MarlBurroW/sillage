@@ -1,6 +1,7 @@
 import { Logo } from '../Logo'
+import { toolEdits } from '../../lib/tool-edits'
 import { useToolStyle, type ToolStyle } from '../../lib/tool-style'
-import { toolLabel, toolOrigin, toolPreview, toolIntent, INTENT_LABELS } from '../../lib/tool-presentation'
+import { toolLabel, toolOrigin, toolPreview, toolIntent, toolSummary, INTENT_LABELS } from '../../lib/tool-presentation'
 import {
   Bot,
   ChevronRight,
@@ -20,7 +21,7 @@ import {
   SquareTerminal,
   Wrench,
 } from 'lucide-react'
-import { memo, useCallback, useLayoutEffect, useState, type ReactNode } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { isSpawnTool, type ToolOutputDto } from '@sillage/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
@@ -45,6 +46,9 @@ const TOOL_ICONS: Record<string, ReactNode> = {
   ViewImage: <Image size={14} />,
   Write: <Pencil size={14} />,
   Edit: <Pencil size={14} />,
+  ApplyPatch: <Pencil size={14} />,
+  NotebookEdit: <Pencil size={14} />,
+  LS: <FolderSearch size={14} />,
   Glob: <FolderSearch size={14} />,
   Grep: <Search size={14} />,
   WebFetch: <Globe size={14} />,
@@ -53,41 +57,6 @@ const TOOL_ICONS: Record<string, ReactNode> = {
   Task: <Bot size={14} />,
   Agent: <Bot size={14} />,
   ExitPlanMode: <ListChecks size={14} />,
-}
-
-/** mono distinguishes code fragments from prose, which require different reading styles. */
-interface ToolSummary {
-  text: string
-  mono: boolean
-}
-
-/**
- * Single-line summary. Prefer descriptions: they explain purpose rather than commands or paths
- * explaining mechanics. Claude Code supplies them for Bash and subagents, more informative than
- * truncated sed ranges. Codex provides none, so fall back to identifying parameters. Commands
- * remain visible beneath expanded input.
- */
-function summarize(name: string, input: unknown): ToolSummary | null {
-  if (typeof input !== 'object' || input === null) return null
-  const fields = input as Record<string, unknown>
-
-  const description = fields.description
-  if (typeof description === 'string' && description.length > 0) {
-    return { text: description, mono: false }
-  }
-
-  const candidates =
-    name === 'Bash'
-      ? ['command']
-      : name === 'WebFetch' || name === 'WebSearch'
-        ? ['url', 'query']
-        : ['file_path', 'path', 'file', 'title', 'query', 'pattern', 'prompt', 'card_number', 'conversation_id']
-
-  for (const key of candidates) {
-    const value = fields[key]
-    if (typeof value === 'string' && value.length > 0) return { text: value, mono: true }
-  }
-  return null
 }
 
 /**
@@ -187,7 +156,12 @@ export const ToolCall = memo(function ToolCall({
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const [raw, setRaw] = useState(false)
-  const summary = summarize(tool.name, tool.input)
+  const edits = useMemo(() => toolEdits(tool), [tool])
+  const summary = toolSummary(tool, edits)
+  const counts = tool.status === 'failed' || tool.status === 'interrupted' ? null : edits?.counts
+  const countLabel = counts ? t(edits?.scope === 'written'
+    ? tool.status === 'running' ? 'tool.write.countsPlanned' : 'tool.write.counts'
+    : tool.status === 'running' ? 'tool.edit.countsPlanned' : edits?.scope === 'replacement' ? 'tool.edit.countsReplacement' : edits?.scope === 'fragment' ? 'tool.edit.countsFragment' : 'tool.edit.counts', counts) : ''
   const [preferredStyle] = useToolStyle()
   const style = variant ?? preferredStyle
   const origin = toolOrigin(tool.name)
@@ -208,7 +182,7 @@ export const ToolCall = memo(function ToolCall({
     <div
       className={cx(
         `sg-tool sg-tools-${style} sg-tool-${origin.kind} sg-tool-${tool.status} text-sm`,
-        tool.status === 'failed' ? 'border-critical/40' : 'border-line',
+        'border-line',
       )}
       data-tool-id={tool.id}
       data-thread-anchor={`tool-${tool.id}`}
@@ -238,7 +212,14 @@ export const ToolCall = memo(function ToolCall({
           <span className="flex-1" />
         )}
 
-        <span className="shrink-0" role="img" aria-label={statusLabel}><ToolStatusIcon status={tool.status} /></span>
+        {counts ? <span className="sg-tool-counts" role="img" aria-label={countLabel} title={countLabel}>
+          <span className="text-positive">+{counts.added}</span>
+          {edits?.scope !== 'written' ? <span className="text-critical">−{counts.removed}</span> : null}
+        </span> : null}
+        <span className={cx('shrink-0', tool.status === 'failed' && 'sg-tool-failure')} role="img" aria-label={statusLabel}>
+          <ToolStatusIcon status={tool.status} />
+          {tool.status === 'failed' ? <span>{statusLabel}</span> : null}
+        </span>
         {tool.durationMs !== null ? (
           <span className="shrink-0 text-[0.6875rem] text-ink-faint">
             {formatDuration(tool.durationMs)}

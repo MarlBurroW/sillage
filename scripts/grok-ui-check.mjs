@@ -35,7 +35,7 @@ try {
     const page = await browser.newPage({ viewport, locale: 'fr-FR' })
     const errors = []
     const submissions = []
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => { errors.push(error.message); console.error(error.message) })
     await page.route('**/api/**', async (route) => {
       submissions.push(route.request().postDataJSON())
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' })
@@ -58,6 +58,8 @@ try {
       const queryModule = /from "([^"]*react-query[^"]*)"/.exec(source)[1]
       const { QueryClient, QueryClientProvider } = await import(queryModule)
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const routerSource = await (await fetch('/src/routes/SettingsPage.tsx')).text()
+      const { MemoryRouter } = await import(routerSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1])
       const { ChatThread } = await import('/src/components/chat/ChatThread.tsx')
       // Bubbles have tooltips (copy button): app wraps them with this provider at root
       // (main.tsx); harness must do the same.
@@ -71,10 +73,10 @@ try {
       window.appendEvent = (event) => {
         state = applyEvent(state, ++seq, Date.now(), event)
         root.render(React.createElement(QueryClientProvider, { client: queryClient },
-          React.createElement(TooltipProvider, null,
-            React.createElement(ChatThread, { rows: buildRows(state.items), conversationId: 'fixture', canDecide: true }),
+          React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null,
+            React.createElement(ChatThread, { rows: buildRows(state.items, null, state.turnRunning), conversationId: 'fixture', canDecide: true }),
             state.turnRunning ? React.createElement(TurnActivity, { label: 'Travail en cours' }) : null,
-          ),
+          )),
         ))
       }
       // Events as emitted by `apps/server/src/agents/grok/` (probed on 1.0.62).
@@ -104,11 +106,12 @@ try {
       ] })
     })
     await page.getByText('calc.py', { exact: false }).first().waitFor()
-    // Consecutive completed calls collapse into one line naming them.
-    await page.getByText('3 outils', { exact: true }).click()
+    // Completed calls stay visible until the assistant resumes text.
+    assert.equal(await page.locator('[data-folded="true"]').count(), 0)
     // Like Claude, command row shows model-written description.
     await page.getByText('Vérifier', { exact: true }).first().waitFor()
-    await page.getByText('sillage/read_card', { exact: false }).first().waitFor()
+    await page.locator('[data-tool-id="mcp"] .sg-tool-label').waitFor()
+    assert.equal(await page.locator('[data-tool-id="mcp"]').getAttribute('class').then(value => value.includes('sg-tool-sillage')), true)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'le fil ne déborde pas')
 
     // Permission: send decision with selected scope, then close card.

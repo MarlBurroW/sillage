@@ -96,6 +96,8 @@ export function completedItem(
     }
     case 'commandExecution': return [finish(item.aggregatedOutput, item.status === 'failed' || item.status === 'declined', item.durationMs ?? durationMs)]
     case 'fileChange': return [
+      // The final item is authoritative even when no patchUpdated notification was sent.
+      { type: 'tool.input_updated', toolCallId: item.id, input: { changes: item.changes } },
       finish(item.changes, item.status === 'failed' || item.status === 'declined'),
       ...(item.status === 'completed' ? item.changes.map((change): SillageEvent => ({
         type: 'file.edited', toolCallId: item.id, path: toWorkspacePath(cwd, change.path),

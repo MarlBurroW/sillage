@@ -34,7 +34,7 @@ try {
     const page = await browser.newPage({ viewport, locale: 'fr-FR' })
     const errors = []
     const submissions = []
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => { errors.push(error.message); console.error(error.message) })
     await page.route('**/api/**', async (route) => {
       submissions.push(route.request().postDataJSON())
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' })
@@ -57,6 +57,8 @@ try {
       const queryModule = /from "([^"]*react-query[^"]*)"/.exec(source)[1]
       const { QueryClient, QueryClientProvider } = await import(queryModule)
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const routerSource = await (await fetch('/src/routes/SettingsPage.tsx')).text()
+      const { MemoryRouter } = await import(routerSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1])
       const { ChatThread } = await import('/src/components/chat/ChatThread.tsx')
       // Bubbles have tooltips (copy button): the app wraps them in this provider at the
       // root (main.tsx), so the harness must do the same.
@@ -70,10 +72,10 @@ try {
       window.appendEvent = (event) => {
         state = applyEvent(state, ++seq, Date.now(), event)
         root.render(React.createElement(QueryClientProvider, { client: queryClient },
-          React.createElement(TooltipProvider, null,
-            React.createElement(ChatThread, { rows: buildRows(state.items), conversationId: 'fixture', canDecide: true }),
+          React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null,
+            React.createElement(ChatThread, { rows: buildRows(state.items, null, state.turnRunning), conversationId: 'fixture', canDecide: true }),
             state.turnRunning ? React.createElement(TurnActivity, { label: 'Travail en cours' }) : null,
-          ),
+          )),
         ))
       }
       // Events as emitted by `apps/server/src/agents/opencode/`.
@@ -102,8 +104,8 @@ try {
     })
     await page.getByText('src/note.txt', { exact: false }).first().waitFor()
     await page.getByText('Explorer le dossier', { exact: false }).first().waitFor()
-    // Two consecutive completed calls collapse into one line naming them.
-    await page.getByText('2 outils', { exact: true }).click()
+    // Completed calls stay visible while the tool sequence is active.
+    assert.equal(await page.locator('[data-folded="true"]').count(), 0)
     await page.getByText('echo sortie-en-flux', { exact: false }).first().waitFor()
     await page.getByText('Voir le fil du sous-agent', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'le fil ne déborde pas')

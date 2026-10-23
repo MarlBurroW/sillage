@@ -2,6 +2,7 @@ import { Circle, CircleCheck, CircleDot } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ToolItem } from '../../lib/chat-fold'
 import { parseUnifiedDiff } from '../../lib/diff'
+import { toolEdits } from '../../lib/tool-edits'
 import { languageFromPath } from '../../lib/highlight'
 import { translate, type MessageKey } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
@@ -143,8 +144,11 @@ const write: ToolView = (tool) => {
  * per-file unified diffs rendered normally.
  */
 const edit: ToolView = (tool) => {
-  const changes = list(tool.input, 'changes')
-  if (changes !== null) return <CodexChanges changes={changes} />
+  const presentation = toolEdits(tool)
+  if (presentation?.changes?.length) return <CodexChanges changes={presentation.changes} />
+  if (presentation?.patch) return <Section label={translate('tool.change.modified')} hint={presentation.paths.join(' · ')}>
+    <Code content={presentation.patch} language="diff" />
+  </Section>
 
   const path = text(tool.input, 'file_path')
   const before = fields(tool.input)?.old_string
@@ -376,10 +380,12 @@ export const genericView: ToolView = (tool) => {
   const images = imageBlocks(output)
   const imageText = images.length > 0 ? outputText(Array.isArray(output) ? output : fields(output)?.content) : null
 
-  if (entries.length === 0 && output === null) return null
+  const rawInput = typeof tool.input === 'string' ? tool.input : null
+  if (entries.length === 0 && output === null && rawInput === null) return null
 
   return (
     <>
+      {rawInput !== null ? <Section label={translate('toolcall.payload.input')}><Plain content={rawInput} /></Section> : null}
       {short.length > 0 ? (
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md border border-line bg-sunken p-2 text-xs">
           {short.map(([key, value]) => (
@@ -404,7 +410,7 @@ export const genericView: ToolView = (tool) => {
       {images.length > 0 ? <Section label={translate('tool.viewImage.label')}>
         <ImageGallery images={images.map((image) => ({ src: `data:${image.mediaType};base64,${image.data}`, alt: translate('image.title') }))} />
         {imageText && <Plain content={imageText} />}
-      </Section> : output === null ? null : typeof output === 'string' || Array.isArray(output) ? (
+      </Section> : output === null ? null : outputText(output) !== null || Array.isArray(output) ? (
         <TextOutput tool={tool} />
       ) : (
         <Section label={translate('tool.output.label')}>
@@ -432,6 +438,7 @@ export const VIEWS: Record<string, ToolView> = {
   ViewImage: viewImage,
   Write: write,
   Edit: edit,
+  ApplyPatch: edit,
   Glob: matchesView('tool.search.patternLabel', ['pattern']),
   Grep: matchesView('tool.search.patternLabel', ['pattern']),
   WebSearch: matchesView('tool.search.queryLabel', ['query']),

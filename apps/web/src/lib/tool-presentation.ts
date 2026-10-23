@@ -1,3 +1,5 @@
+import { fields, text, outputText, scalar } from './tool-payload'
+import { toolEdits, type EditPresentation } from './tool-edits'
 import type { ToolItem } from './chat-fold'
 import { translate, type MessageKey } from './i18n'
 
@@ -5,6 +7,8 @@ export type ToolOrigin = { kind: 'native' | 'sillage' | 'mcp'; server: string; n
 
 /** Les adaptateurs normalisent OpenCode en serveur/outil ; les anciens journaux restent lisibles. */
 export function toolOrigin(name: string): ToolOrigin {
+  // These slash namespaces belong to the Codex adapter, not to MCP servers.
+  if (/^(Collaboration|Codex)\//.test(name)) return { kind: 'native', server: '', name }
   const claude = /^mcp__([^]+?)__(.+)$/.exec(name)
   const slash = /^([^/]+)\/(.+)$/.exec(name)
   const legacy = name.startsWith('sillage_') ? ['','sillage',name.slice(8)] : null
@@ -75,8 +79,8 @@ export function toolIntent(tool: ToolItem): ToolIntent {
     if (/^(read|list|search|find|count)_/.test(origin.name)) return 'context'
     return 'change'
   }
-  if (['Read','Glob','Grep','WebFetch','WebSearch','ViewImage'].includes(tool.name)) return 'inspect'
-  if (['Edit','Write','ApplyPatch'].includes(tool.name)) return 'change'
+  if (['Read','Glob','Grep','LS','WebFetch','WebSearch','ViewImage'].includes(tool.name)) return 'inspect'
+  if (['Edit','Write','ApplyPatch','NotebookEdit'].includes(tool.name)) return 'change'
   // Une commande arbitraire n’est pas une vérification.
   if (tool.name === 'Bash' && /(?:^|[\s:])(?:test|typecheck|lint|check)(?:$|[\s:])/.test(String((tool.input as { command?: unknown } | null)?.command ?? ''))) return 'verify'
   return 'other'
@@ -85,8 +89,27 @@ export function toolIntent(tool: ToolItem): ToolIntent {
 /** Aperçu borné, sans charger les sorties complètes ni sérialiser des objets volumineux. */
 export function toolPreview(tool: ToolItem): string {
   if (tool.status === 'running') return translate('toolStyle.outputPending')
-  let output = tool.output
-  if (Array.isArray(output)) output = output.find((part) => part?.type === 'text')?.text
+  const output = outputText(tool.output, 500)
   if (typeof output === 'string' && output.slice(0,500).trim()) return output.slice(0,500).replace(/\s+/g,' ').trim()
   return translate('toolStyle.outputEmpty')
+}
+
+/** One-line identifiers for the normalized payloads produced by all four adapters. */
+export function toolSummary(tool: ToolItem, edits: EditPresentation | null = toolEdits(tool)): { text: string; mono: boolean } | null {
+  const input = fields(tool.input)
+  const description = text(input, 'description')
+  if (description) return { text: description, mono: false }
+  if (edits?.paths.length) return { text: edits.paths.join(' · '), mono: true }
+  const keys = tool.name === 'Bash' ? ['command']
+    : tool.name === 'Grep' || tool.name === 'Glob' ? ['pattern', 'query', 'path']
+    : tool.name === 'WebFetch' ? ['url', 'query']
+    : tool.name === 'WebSearch' ? ['query', 'pattern', 'url']
+    : ['file_path', 'path', 'notebook_path', 'file', 'title', 'subject', 'query', 'pattern', 'skill', 'prompt', 'card_number', 'number', 'conversation_id']
+  for (const key of keys) {
+    const numericId = key === 'card_number' || key === 'number'
+    const value = numericId ? scalar(input, key) : text(input, key)
+    if (value !== null) return { text: numericId ? `#${value}` : value, mono: true }
+  }
+  if (Array.isArray(input?.todos)) return { text: translate('tool.todo.count', { count: input.todos.length }), mono: false }
+  return null
 }

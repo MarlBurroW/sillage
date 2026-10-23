@@ -43,3 +43,5 @@ export * from './decisions.js'
 export * from './notifications.js'
 
 export * from './news.js'
+
+export * from './text-diff.js'
