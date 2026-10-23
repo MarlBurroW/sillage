@@ -45,6 +45,19 @@ explains the differences.
   is merged and clean, Sillage proposes the cleanup as a decision. Agents create and
   list worktrees through `create_worktree` and `list_worktrees`, so the interface
   sees them.
+- **References between conversations.** Type `@@` to find a session and insert a
+  reference, or copy one from the session menu. References in messages and agent
+  replies show a preview and open the original conversation. The composer's
+  **Insert** menu explains the shortcuts for files (`@`), sessions (`@@`), cards
+  (`#`), commands (`/`) and skills (`$`, where supported by the CLI).
+- **Your choice of tool presentation.** Appearance settings offer discreet lines,
+  a timeline, groups by purpose, useful previews, a compact console and the classic
+  view. Completed sequences fold when the agent speaks again. Open details to read
+  inputs, outputs and file changes; failures remain visible in folded groups.
+  Long histories load progressively and full tool outputs load on demand.
+- **Reading preferences.** Adjust the conversation width and activity indicator in
+  Appearance settings. Optionally add RSS or Atom feeds in News to read headlines
+  while an agent works; the feed is off until you enable it.
 - **Full-text search** across every conversation in every project.
 - **Processes launched by Sillage.** On Linux, see what each agent and terminal has
   started, each command with its process tree, ports and originating conversation,

@@ -119,6 +119,17 @@ working folder. Track it on the board, link a GitHub issue, review the diff, and
 see which branches are ready to merge. Enable checkpoints to inspect or undo the
 changes from a turn.
 
+Link an earlier conversation by typing `@@` in your message, or copy its reference
+to share with another agent. References in replies open the original conversation.
+The **Insert** menu helps you find shortcuts for files, sessions, cards and skills.
+
+### Make conversations easier to follow
+
+Choose how tool calls appear: discreet lines, a timeline, groups by purpose,
+previews, a compact console or the classic view. Expand a tool to inspect its
+output and file changes. Adjust the reading width in Appearance settings.
+Long conversations load progressively, with tool details fetched when you open them.
+
 Sillage also has scheduled tasks, webhook automations, voice dictation, full-text
 search, MCP connections and a task API.
 [Full feature guide](docs/features.md)
@@ -194,8 +205,7 @@ site/              Public website and screenshots
 Get the latest apps, server archives and release notes on
 [GitHub Releases](https://github.com/MarlBurroW/sillage/releases/latest).
 Sillage checks for updates in Settings. Installer-based Server setups can update
-from the interface; Docker users pull a newer image, and Desktop users download
-the new app.
+from the interface; Docker users pull a newer image, and Desktop downloads updates in the background and lets you install them from About.
 
 ## License
 
