@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +14,8 @@ import { chromium } from 'playwright'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const scratch = await mkdtemp(join(tmpdir(), 'sillage-desktop-updates-ui-'))
 const children = []
+const shots = join(scratch, 'titlebar')
+await mkdir(shots, { recursive: true })
 let browser
 async function start(profile) {
   const socket = createServer().listen(0, '127.0.0.1')
@@ -53,7 +55,7 @@ try {
     const { base, session } = instances[profile]
     for (const width of [1440, 390]) {
       const context = await browser.newContext({ viewport: { width, height: 950 }, serviceWorkers: 'block', locale: 'fr-FR' })
-      await context.addInitScript(({ desktop }) => {
+      await context.addInitScript(({ desktop, width }) => {
         localStorage.setItem('sillage.locale', 'fr')
         if (!desktop) return
         let state = { status: 'idle', checkedAt: null }
@@ -62,13 +64,18 @@ try {
           checks: 0, installs: 0,
           publish(next) { state = next; for (const listener of listeners) listener(next) },
         }
-        window.sillageDesktop = { updates: {
+        window.chromeProbe = { menus: 0, colors: [] }
+        window.sillageDesktop = { window: {
+          platform: width === 1440 ? 'win32' : 'darwin',
+          menu: async () => { window.chromeProbe.menus++ },
+          colors: async (...colors) => { window.chromeProbe.colors.push(colors) },
+        }, updates: {
           state: async () => state,
           subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
           check: async () => { window.updateProbe.checks++ },
           install: async () => { window.updateProbe.installs++ },
         } }
-      }, { desktop: profile === 'desktop' })
+      }, { desktop: profile === 'desktop', width })
       if (session) await context.addCookies([{ name: 'sillage_session', value: session, url: base }])
       else {
         const response = width === 1440
@@ -92,6 +99,26 @@ try {
       }
       await page.goto(`${base}/settings/a-propos`)
       await page.getByRole('heading', { name: 'À propos', exact: true }).waitFor()
+      const bar = page.locator('.desktop-titlebar')
+      assert.equal(await bar.count(), profile === 'desktop' ? 1 : 0)
+      if (profile === 'desktop') {
+        assert.equal((await bar.boundingBox()).height, 36)
+        const layer = await page.locator('.app-layer').first().boundingBox()
+        assert.equal(layer.y, 36)
+        assert.equal(layer.y + layer.height, 950)
+        assert.ok(await page.evaluate(() => window.chromeProbe.colors.length > 0))
+        if (width === 1440) {
+          await page.getByRole('button', { name: 'Menu de l’application' }).click()
+          assert.equal(await page.evaluate(() => window.chromeProbe.menus), 1)
+        } else assert.equal(await bar.getByRole('button').count(), 0)
+        for (const theme of ['light', 'dark', 'dark-contrast']) {
+          await page.evaluate((theme) => { document.documentElement.dataset.theme = theme }, theme)
+          await page.screenshot({ path: join(shots, `${profile}-${width}-${theme}.png`) })
+        }
+        const colors = await page.evaluate(() => window.chromeProbe.colors)
+        assert.ok(new Set(colors.map(([background]) => background)).size >= 3)
+        assert.ok(colors.flat().every((color) => /^#[0-9a-f]{6}$/.test(color)))
+      }
       const refresh = page.getByRole('button', { name: 'Vérifier maintenant' })
       const install = page.getByRole('button', { name: 'Redémarrer et mettre à jour', exact: true })
       if (profile === 'desktop') {

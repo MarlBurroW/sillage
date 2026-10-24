@@ -2,6 +2,7 @@ import type { Catalog } from './catalog-en'
 
 /** French catalog. Typed from English so missing keys fail the build. */
 export const fr: Catalog = {
+  'desktop.window.menu': 'Menu de l’application',
   "appearance.navigation": "Catégories d’apparence",
   "appearance.category.interface": "Interface",
   "appearance.category.reading": "Lecture",

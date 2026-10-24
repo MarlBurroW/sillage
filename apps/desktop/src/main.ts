@@ -1,3 +1,4 @@
+import { setupWindowChrome, windowChromeOptions } from './window-chrome'
 import { setupDiagnostics } from './diagnostics'
 import type { DiagnosticLog } from './diagnostic-log'
 import { delimiter, dirname, join } from 'node:path'
@@ -64,6 +65,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function boot(): Promise<void> {
+  setupWindowChrome(isAppUrl)
   diagnostics = setupDiagnostics({ logDir: dirname(logFile), serverPid: () => server?.pid, origin: () => origin, isAppUrl })
   const locale = app.getSystemLocale().replace('-', '_')
   const env = await loginShellEnv(node, locale.includes('_') ? `${locale}.UTF-8` : 'en_US.UTF-8')
@@ -152,6 +154,7 @@ async function stopServer(): Promise<void> {
 
 function openWindow(): void {
   const win = new BrowserWindow({
+    ...windowChromeOptions(),
     width: 1440,
     height: 920,
     minWidth: 720,
@@ -167,6 +170,7 @@ function openWindow(): void {
       preload: join(__dirname, 'preload.cjs'),
     },
   })
+  win.setMenuBarVisibility(false)
   win.once('ready-to-show', () => win.show())
   void win.loadURL(origin)
 }

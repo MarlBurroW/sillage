@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from './components/ui/Tooltip'
+import { DesktopTitleBar } from './components/DesktopTitleBar'
 import { App } from './App'
 import { initLocale } from './lib/i18n'
 import { watchThemeColor } from './lib/theme'
@@ -16,6 +17,7 @@ const queryClient = new QueryClient({
   },
 })
 
+if (window.sillageDesktop?.window) document.documentElement.dataset.desktopChrome = window.sillageDesktop.window.platform
 watchThemeColor()
 
 const container = document.getElementById('root')
@@ -28,7 +30,7 @@ void initLocale().then(() => {
   createRoot(container).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider><App /></TooltipProvider>
+        <TooltipProvider><DesktopTitleBar /><App /></TooltipProvider>
       </QueryClientProvider>
     </StrictMode>,
   )

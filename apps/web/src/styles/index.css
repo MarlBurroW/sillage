@@ -197,10 +197,10 @@
    */
   .app-layer {
     position: fixed;
-    top: var(--sg-viewport-top, 0px);
+    top: calc(var(--sg-viewport-top, 0px) + var(--sg-window-bar, 0px));
     right: 0;
     left: 0;
-    height: var(--sg-app-height, 100dvh);
+    height: calc(var(--sg-app-height, 100dvh) - var(--sg-window-bar, 0px));
   }
 
   .pb-safe {
@@ -606,3 +606,45 @@
 @media (prefers-reduced-motion: reduce) {
   .news-headline { animation: none; }
 }
+
+/* Native controls occupy the overlay exclusion area; only the menu handles clicks. */
+:root[data-desktop-chrome] { --sg-window-bar: 36px; }
+:root[data-desktop-chrome] body { padding-top: var(--sg-window-bar); }
+.desktop-titlebar {
+  position: fixed;
+  inset: 0 0 auto;
+  height: var(--sg-window-bar);
+  z-index: 1000;
+  background: var(--sg-canvas);
+  color: var(--sg-ink-soft);
+  border-bottom: 1px solid var(--sg-line);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+.desktop-titlebar-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  margin-left: env(titlebar-area-x, 0px);
+  width: env(titlebar-area-width, calc(100% - 150px));
+  padding: 0 10px;
+}
+.desktop-titlebar[data-platform='darwin'] .desktop-titlebar-content {
+  margin-left: max(80px, env(titlebar-area-x, 0px));
+  width: auto;
+}
+.desktop-titlebar-name { font-size: 12px; font-weight: 500; }
+.desktop-titlebar-menu {
+  -webkit-app-region: no-drag;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  border-radius: 4px;
+}
+.desktop-titlebar-menu:hover { background: var(--sg-surface-high); color: var(--sg-ink); }
+.desktop-titlebar-menu:focus-visible { outline: 2px solid var(--sg-accent); outline-offset: -2px; }
+
+:root[data-desktop-chrome] .h-dvh { height: calc(100dvh - var(--sg-window-bar)); }
+:root[data-desktop-chrome] .min-h-dvh { min-height: calc(100dvh - var(--sg-window-bar)); }

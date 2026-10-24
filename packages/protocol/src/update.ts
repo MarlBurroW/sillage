@@ -65,6 +65,11 @@ export type DesktopUpdateUnsupportedReason = 'development' | 'package' | 'locati
 
 /** The preload exposes this narrow API as window.sillageDesktop. */
 export interface DesktopBridge {
+  window?: {
+    platform: 'darwin' | 'win32' | 'linux'
+    menu(): Promise<void>
+    colors(background: string, foreground: string): Promise<void>
+  }
   diagnostics?: {
     export(): Promise<void>
     record(stage: string, metrics: Record<string, number>): void

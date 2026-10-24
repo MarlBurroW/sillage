@@ -7,6 +7,7 @@
  * use `{name}` and are substituted by `t()`.
  */
 export const en = {
+  'desktop.window.menu': 'Application menu',
   "appearance.navigation": "Appearance categories",
   "appearance.category.interface": "Interface",
   "appearance.category.reading": "Reading",

@@ -96,6 +96,16 @@ try {
   // creation inside the application shell.
   await page.waitForURL(/\/bienvenue$/, { timeout: 60_000 })
   await page.getByRole('heading', { level: 1 }).first().waitFor()
+  assert.equal(await page.evaluate(() => window.sillageDesktop?.window?.platform), process.platform)
+  const titlebar = page.locator('.desktop-titlebar')
+  assert.equal((await titlebar.boundingBox()).height, 36)
+  assert.equal(await titlebar.evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-app-region')), 'drag')
+  if (process.platform !== 'darwin') {
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMenuBarVisible()), false)
+    await titlebar.getByRole('button').click()
+    await page.keyboard.press('Escape')
+  }
+
   assert.equal(await page.getByText(/Créer ton compte|Create your account/).count(), 0, 'pas de compte à créer en bureau')
   await page.screenshot({ path: join(shots, 'onboarding.png') })
   await page.getByRole('button', { name: /Passer la visite|Skip the tour/ }).click()
